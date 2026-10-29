@@ -1,3 +1,4 @@
+import { llmValueFields } from '../../shared/llm-value';
 /**
  * Which model answered a session's requests, and what Kortix billed for them.
  * The runtime transcript does not know: a harness records the model it asked
@@ -183,6 +184,7 @@ export async function sessionModelUsage(session: {
 export async function projectSpendByModel(projectId: string, days: number) {
   const rows = await db
     .select({
+      ...llmValueFields,
       model: servedModelSql,
       provider: logs.provider,
       requests: sql<number>`count(*)::int`,
@@ -198,6 +200,9 @@ export async function projectSpendByModel(projectId: string, days: number) {
     .orderBy(desc(sql`count(*)`))
     .limit(12);
   return rows.map((row) => ({
+    estimated_usage_value: row.estimated_usage_value,
+    priced_requests: row.priced_requests,
+    unpriced_requests: row.unpriced_requests,
     model: row.model,
     provider: row.provider,
     requests: row.requests,

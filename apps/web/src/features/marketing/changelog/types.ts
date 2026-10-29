@@ -51,6 +51,9 @@ export interface ChangelogWeek {
   /** Up to `WEEKLY_HIGHLIGHT_COUNT` New items. `html` is the sanitized body;
    *  `title` is its bold lead, when it has one. */
   highlights: { title: string | null; html: string }[];
+  /** The week's 1–5 agent-written summary lines (`weekly-briefs.ts`), or
+   *  `null` until the Monday trigger has written them. Shown instead of `highlights`. */
+  summary: string[] | null;
   /** Every New / Improved / Fixed bullet across the week's releases. */
   counts: { new: number; improved: number; fixed: number };
 }

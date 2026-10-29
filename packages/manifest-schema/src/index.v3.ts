@@ -14,6 +14,7 @@
  * import cycle with `./index` is safe (see the header of `./index.v2.ts`).
  */
 
+import { validateAgentPolicySetRefs } from './policy-sets';
 import {
   AGENT_MODES_V2,
   CODEMODE_VALUES,
@@ -100,7 +101,7 @@ export interface AgentBlockV3 {
   permission?: PermissionConfigV2;
   /** Default `true`. */
   enabled?: boolean;
-  /** pi's codemode tool. Default `on`. */
+  /** pi's codemode tool. The session agent defaults to `on`; a subagent has none unless its own agent sets this. */
   codemode?: CodemodeV3;
   tools?: AgentToolsV3;
   skills?: GrantSetV2;
@@ -201,6 +202,7 @@ const AGENT_KEYS_V3 = new Set<string>([
   'extensions',
   'connectors',
   'connectors_required',
+  'policy_sets',
   'secrets',
   'apps',
   'kortix_permissions',
@@ -270,6 +272,7 @@ export function validateManifestBodyV3(
   const agents = validateAgentsV3(parsed.agents, 'agents', registry, issues);
   validateDefaultAgentV3(parsed.default_agent, 'default_agent', agents, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', [...agents.keys()], issues);
+  validateAgentPolicySetRefs(parsed.agents, parsed.connectors, 'agents', issues);
 }
 
 // ─── Registries ────────────────────────────────────────────────────────────
@@ -397,6 +400,8 @@ function validateExtensionsV3(node: unknown, path: string, issues: ManifestIssue
     }
     if (entry.opencode !== undefined && !safeToolFile(entry.opencode)) {
       issues.push({ path: `${where}.opencode`, message: 'must be a repository path to a .ts or .js plugin module.', severity: 'error' });
+    } else if (entry.opencode !== undefined) {
+      issues.push({ path: `${where}.opencode`, message: 'opencode is deprecated and has no effect: every new session runs pi. Remove the line.', severity: 'warning' });
     }
     if (entry.pi !== undefined) validatePiSourceV3(entry.pi, `${where}.pi`, issues);
     names.add(name);

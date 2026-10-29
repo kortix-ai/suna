@@ -494,14 +494,19 @@ describe('size cap: a mirror over the capture cap is converted by the backfill i
       });
     });
 
-    test('the memory guard: no room for the thread under 75 % of the memory limit defers the session (too_large, deferred), not converted, not failed', async () => {
+    test('the memory guard: no room for the thread under 75 % of the memory limit defers the session (too_large, deferred), not converted, not failed; a WARN names it and its size', async () => {
       const large = await oldSession([plain(0), plain(1, incompressible(6_000))]);
       const limit = config.SESSION_LOG_BACKFILL_MEMORY_MB;
       config.SESSION_LOG_BACKFILL_MEMORY_MB = 1;
+      const warn = spyOn(logger, 'warn');
       try {
         await withCap(async () => {
           const dry = await pass('dry');
           expect(['sessions', 'logs', 'failed', 'too_large', 'deferred'].map((k) => total(dry, k))).toEqual([1, 0, 0, 1, 1]);
+          const deferred = warn.mock.calls.filter(([m]) => String(m).includes('deferred: no memory for its thread'));
+          expect(deferred).toHaveLength(1);
+          const meta = deferred[0]![1] as { sessionId: string; bytes: number };
+          expect([meta.sessionId, meta.bytes > 6_000]).toEqual([large, true]);
           const write = await pass('write');
           expect(['sessions', 'logs', 'failed', 'too_large', 'deferred'].map((k) => total(write, k))).toEqual([1, 0, 0, 1, 1]);
           expect(await hasLog(large)).toBe(false);
@@ -509,6 +514,7 @@ describe('size cap: a mirror over the capture cap is converted by the backfill i
         });
       } finally {
         config.SESSION_LOG_BACKFILL_MEMORY_MB = limit;
+        warn.mockRestore();
       }
       // With room again, the next pass converts it.
       await withCap(async () => {
@@ -665,6 +671,7 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
         threads_created: 0,
         misplaced: 0,
         unplaced: 0,
+        oversize: 0,
       });
       expect(grades.partial).toBeGreaterThan(0);
       // The tick line carries the same counts.

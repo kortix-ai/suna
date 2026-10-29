@@ -1,13 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
 import { testUiTranslator } from '@/i18n/test-translator';
-import type { DependencyItem, ItemCapabilities } from '@/lib/marketplace-client';
+import type { DependencyItem, ItemCapabilities, MarketplaceItemDetail } from '@/lib/marketplace-client';
 import {
   emptyDescriptionCopy,
   emptyReadmeCopy,
   groupCapabilities,
   marketplaceFileNodes,
   resolveBundleMembers,
+  projectContentGroups,
   totalCapabilityCount,
 } from './marketplace-item-view';
 
@@ -203,5 +204,52 @@ describe('marketplaceFileNodes', () => {
 
   test('no targets, no rows', () => {
     expect(marketplaceFileNodes([])).toEqual([]);
+  });
+});
+
+describe('projectContentGroups', () => {
+  const data: MarketplaceItemDetail = {
+    id: 'synthetic:project', registry: 'synthetic', name: 'project', type: 'registry:project',
+    title: 'Project', description: null, categories: [],
+    capabilities: { secrets: [], connectors: [], tools: [], network: [] },
+    dependencies: ['second', 'missing', 'first'], fileCount: 2, external: true,
+    marketplaceId: 'synthetic-source', marketplaceLabel: 'Synthetic source',
+    owner: 'synthetic-owner', sourceUrl: 'https://example.test/source', files: [], readme: null,
+    dependencyItems: [
+      { id: 'synthetic:first', name: 'first', type: 'registry:skill', title: 'First-title', description: null },
+      { id: 'synthetic:second', name: 'second', type: 'registry:skill', title: 'Second', description: 'Description' },
+    ],
+    projectAgents: [{ name: 'review-agent', title: 'Review-agent', description: null }],
+    projectTriggers: [{ slug: 'daily-check', description: 'Trigger', agent: 'review-agent' }],
+  };
+
+  test('preserves order, filters unresolved dependencies, and assigns navigability and labels', () => {
+    const groups = projectContentGroups(data, testUiTranslator);
+    expect(groups.map((g) => [g.label, g.navigable, g.items.map((it) => it.id)])).toEqual([
+      ['Skills', true, ['synthetic:second', 'synthetic:first']],
+      ['Agents', false, ['agent:review-agent']],
+      ['Triggers', false, ['trigger:daily-check']],
+    ]);
+    expect(groups.flatMap((g) => g.items.map((it) => [it.name, it.title, it.description]))).toEqual([
+      ['second', 'Second', 'Description'], ['first', 'First-title', null],
+      ['review-agent', 'Review agent', null], ['daily-check', 'daily check', 'Trigger'],
+    ]);
+    for (const item of groups.flatMap((g) => g.items)) {
+      expect(item.registry).toBe(data.registry);
+      expect(item.external).toBe(true);
+      expect(item.marketplaceId).toBe(data.marketplaceId);
+      expect(item.marketplaceLabel).toBe(data.marketplaceLabel);
+      expect(item.owner).toBe(data.owner);
+      expect(item.sourceUrl).toBe(data.sourceUrl);
+      expect(item.categories).toEqual([]);
+      expect(item.capabilities).toEqual({ secrets: [], connectors: [], tools: [], network: [] });
+      expect(item.dependencies).toEqual([]);
+      expect(item.fileCount).toBe(0);
+    }
+  });
+
+  test('non-projects and empty projects have no card groups', () => {
+    expect(projectContentGroups({ ...data, type: 'registry:bundle' }, testUiTranslator)).toEqual([]);
+    expect(projectContentGroups({ ...data, dependencies: [], projectAgents: [], projectTriggers: [] }, testUiTranslator)).toEqual([]);
   });
 });

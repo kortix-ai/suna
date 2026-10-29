@@ -64,6 +64,7 @@ export function draftFromTrigger(
     secretName: trigger.secret_env ?? '',
     startActive: trigger.enabled,
     sessionAccess: trigger.session_access,
+    spaceId: trigger.space_id ?? null,
     maxRunsPerHour: trigger.max_runs_per_hour ? String(trigger.max_runs_per_hour) : '',
     maxRunsPerDay: trigger.max_runs_per_day ? String(trigger.max_runs_per_day) : '',
     overlap: trigger.overlap ?? 'default',
@@ -146,6 +147,7 @@ export function triggerPatch(
     Object.assign(out, sessionPatch(draft));
   }
   if (!same(draft.sessionAccess, saved.sessionAccess)) out.session_access = draft.sessionAccess;
+  if (draft.spaceId !== saved.spaceId) out.space_id = draft.spaceId;
   // An emptied run limit sends null: the hourly default (60) or no daily cap.
   if (draft.maxRunsPerHour.trim() !== saved.maxRunsPerHour.trim()) {
     out.max_runs_per_hour = runCapFromInput(draft.maxRunsPerHour);

@@ -43,7 +43,6 @@ const NON_PAGE_PREFIXES = [
   '/scim/',
   '/supabase/',
   '/ingest/',
-  '/blog',
   '/monitoring',
   '/_betterstack',
   '/docs',

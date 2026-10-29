@@ -34,7 +34,8 @@ import type { UiTranslator } from '@/i18n/translator';
 
 export const hero = {
   eyebrow: 'Connectors',
-  title: 'Every tool your company runs on. None of the keys.',
+  title: 'Every tool your company runs on.',
+  titleMuted: 'None of the keys.',
   sub: 'Connect a tool once, for the whole company. Agents reach it through one scoped token that Kortix brokers server-side — so the raw credential never lands in the machine the model is driving.',
   ctaPrimary: 'Get started',
   ctaPrimaryHref: '/auth',
@@ -53,7 +54,8 @@ export const hero = {
 
 export const connect = {
   eyebrow: 'Connect once',
-  title: 'One connection. Every agent, every session, every person.',
+  title: 'One connection.',
+  titleMuted: 'Every agent, every session, every person.',
   sub: 'A connector belongs to the project, not to a laptop or a login. Add it once and every session that project starts can reach it — with no second setup and no key passed around in a DM.',
   /** Mirrors the real tabs on the Add-a-connector screen. */
   routes: [
@@ -80,8 +82,30 @@ export const connect = {
   shot: {
     src: '/media/connectors/connector-catalogue.webp',
     alt: 'The Kortix connector catalogue, showing Notion, Google Sheets, Linear, Google Drive, Salesforce, HubSpot, GitHub, Gmail and more, each one click from connected.',
-    caption: 'Connectors → Add app → Easy connect. Real screen, real project.',
+    caption: 'Connectors → Add app → Easy connect.',
   },
+} as const;
+
+/** A sample of the catalogue for the name wall. Every app is in the catalogue
+ *  (the old hero scene's list and the Easy connect copy above). `domain` is
+ *  the row key. No count: claims.md allows "3,000+ apps" on the
+ *  agent-computer page only. */
+export const catalog = {
+  label: 'A few of the apps in the catalogue',
+  apps: [
+    { domain: 'slack.com', name: 'Slack' },
+    { domain: 'gmail.com', name: 'Gmail' },
+    { domain: 'notion.so', name: 'Notion' },
+    { domain: 'drive.google.com', name: 'Google Drive' },
+    { domain: 'linear.app', name: 'Linear' },
+    { domain: 'salesforce.com', name: 'Salesforce' },
+    { domain: 'hubspot.com', name: 'HubSpot' },
+    { domain: 'stripe.com', name: 'Stripe' },
+    { domain: 'zendesk.com', name: 'Zendesk' },
+    { domain: 'figma.com', name: 'Figma' },
+    { domain: 'airtable.com', name: 'Airtable' },
+    { domain: 'asana.com', name: 'Asana' },
+  ],
 } as const;
 
 /* ── 2 · the token flow ───────────────────────────────────────────────────── */
@@ -89,6 +113,7 @@ export const connect = {
 export const broker = {
   eyebrow: 'The credential never travels',
   title: 'The agent gets a token. It never gets the key.',
+  titleMuted: 'The key stays on our side of the wall.',
   sub: 'A sandbox is a real Linux machine the model can run anything on. So we do not put your credentials in it. The sandbox carries exactly one Kortix token, scoped to the project, and every outbound call is assembled on our side of the wall.',
 
   /** The old shape, stated plainly so the new one has something to beat. */
@@ -114,21 +139,21 @@ export const broker = {
   flow: [
     {
       id: 'agent',
-      step: '01',
+      step: '1',
       title: 'The agent asks',
       mono: 'connector.call("gmail", "send_email", {…})',
       body: 'The agent calls a tool. It names the connector and the action — it has no URL, no host, no key.',
     },
     {
       id: 'broker',
-      step: '02',
+      step: '2',
       title: 'Kortix brokers',
       mono: 'POST /v1/connectors/call',
       body: 'The gateway checks this agent may use this connector, resolves the policy, decrypts the credential server-side, and attaches it to the outbound request.',
     },
     {
       id: 'api',
-      step: '03',
+      step: '3',
       title: 'The API answers',
       mono: 'Authorization: Bearer ••••••••',
       body: 'The third-party API sees a normal authenticated request. The response comes back to the agent. The credential stays behind.',
@@ -165,7 +190,8 @@ export const broker = {
 
 export const scope = {
   eyebrow: 'Scope',
-  title: 'The same connector, readable by one agent and invisible to another.',
+  title: 'Reach is granted, not inherited.',
+  titleMuted: 'One agent sees a connector. Another never does.',
   sub: 'Reach is granted, not inherited. An agent gets the connectors you list for it and nothing else, and effective access is always the intersection of what the person can do and what the agent was granted.',
   layers: [
     {
@@ -186,17 +212,13 @@ export const scope = {
   ],
   /** Real `kortix.yaml`. Keep it valid — people will copy it. */
   codeCaption: 'kortix.yaml',
-  code: `[[agents]]
-name = "support"
-connectors = ["zendesk", "gmail"]
-
-[[agents]]
-name = "recruiting"
-connectors = ["greenhouse", "gmail"]
-
-[[agents]]
-name = "reporting"
-connectors = ["warehouse"]`,
+  code: `agents:
+  support:
+    connectors: [zendesk, gmail]
+  recruiting:
+    connectors: [greenhouse, gmail]
+  reporting:
+    connectors: [warehouse]`,
   codeNote:
     'Grants are text in the repo, so a change to who can reach what is a diff someone reviews — not a setting that quietly moved.',
 } as const;
@@ -207,7 +229,8 @@ export type PolicyStateId = 'allow' | 'ask' | 'block';
 
 export const policy = {
   eyebrow: 'Policy',
-  title: 'Decide what runs, what asks, and what never happens.',
+  title: 'Decide what runs and what asks.',
+  titleMuted: 'Some actions never happen at all.',
   sub: 'Every action a connector exposes gets one of three answers, and you set them. One tool at a time, or one pattern that covers a hundred — a glob by default, or a regular expression when you wrap it in slashes.',
   states: [
     {
@@ -221,7 +244,7 @@ export const policy = {
       id: 'ask',
       label: 'Ask',
       verb: 'Pauses for a human',
-      body: 'The run stops at the call and waits. A person approves it once, approves it for the rest of the session, or denies it.',
+      body: 'The run stops at the call and waits. A person sees the action and its arguments, then approves or denies that one call.',
       example: 'gmail.send_email',
     },
     {
@@ -256,7 +279,7 @@ export const policy = {
   shot: {
     src: '/media/connectors/connector-permissions.webp',
     alt: 'The Permissions tab of the Google Drive connector in Kortix: a default rule, then every Drive tool set to Allow, Ask, Block or Default.',
-    caption: 'Permissions on a real Google Drive connector — 51 tools, one answer each.',
+    caption: 'The Permissions tab of a Google Drive connector.',
   },
 
   /** The pause, told as a timeline. This is the part people do not expect. */
@@ -315,7 +338,8 @@ export const policy = {
 
 export const audit = {
   eyebrow: 'Audit',
-  title: 'Every call it made, and who let it.',
+  title: 'Every call it made.',
+  titleMuted: 'And who let it.',
   sub: 'The gateway that resolves the credential is also the thing that writes the record. There is no path to a connected tool that skips it.',
   /** Column names below are the real ledger fields. Do not invent more. */
   fields: [
@@ -340,7 +364,8 @@ export const audit = {
 /* ── 6 · close ────────────────────────────────────────────────────────────── */
 
 export const close = {
-  title: 'Connect the first one in a minute.',
+  title: 'Connect your first tool.',
+  titleMuted: 'Then watch the first approval hold.',
   sub: 'Start free, connect a tool, and watch the first approval gate stop an agent mid-run. Self-host it if you would rather the whole thing lived in your own environment.',
   ctaPrimary: 'Get started',
   ctaSecondary: 'Read the docs',
@@ -354,7 +379,7 @@ export const close = {
 
 export function getLocalizedConnectorsContent(tI18nComplete: UiTranslator) {
   return localizeUiCatalog(
-    { hero, connect, broker, scope, policy, audit, close },
+    { hero, connect, catalog, broker, scope, policy, audit, close },
     tI18nComplete,
     CONNECTORS_TRANSLATION_KEYS,
   );

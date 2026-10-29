@@ -903,6 +903,8 @@ export interface SandboxTemplate {
   spec: SandboxSpec;
   /** kortix.yaml `container_runtime: true` — the sandbox runs Docker. */
   containerRuntime?: boolean;
+  /** kortix.yaml `entrypoint`: the command the sandbox image starts with. */
+  entrypoint?: string;
   /**
    * True iff this is the platform default (no user customization). Never
    * declared in kortix.yaml — the platform synthesizes one of these.
@@ -1067,6 +1069,7 @@ function parseSandboxTemplate(row: Record<string, unknown>): SandboxTemplate | n
     image: !sanitizedDockerfile && image ? image : undefined,
     spec,
     ...(row.container_runtime === true ? { containerRuntime: true } : {}),
+    ...(typeof row.entrypoint === 'string' && row.entrypoint.trim() ? { entrypoint: row.entrypoint.trim() } : {}),
   };
 }
 

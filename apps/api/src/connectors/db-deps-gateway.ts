@@ -9,13 +9,13 @@ import {
 } from '@kortix/db';
 import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
 import { and, desc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
-import { resolveAgentMailApiKey } from '../channels/agentmail-api';
+import { resolveEmailApiKey } from '../channels/resend-email-api';
 import { bindSlackThreadToSession } from '../channels/slack/binding';
 import { slackUserNames } from '../channels/slack/labels';
 import {
-  loadAgentMailApiKeyForInbox,
-  loadAgentMailApiKeyForProject,
-  loadAgentMailInstall,
+  emailOwnKeyForAccount,
+  emailOwnKeyForInbox,
+  loadDefaultEmailInboxAccount,
   loadSlackTeamIdForProject,
   loadSlackTokenForProject,
   loadTeamsBotCredentials,
@@ -60,6 +60,7 @@ import {
   headersOf,
   isUuid,
   loadConnectorPoliciesFor,
+  loadConnectorPolicySetFor,
   loadDefaultModeFor,
   loadProjectPoliciesFor,
   resolveActiveConnectorConnection,
@@ -200,8 +201,12 @@ async function channelToken(
     const creds = await loadTeamsBotCredentials(projectId);
     return graphToken(tenant, creds).catch(() => null);
   }
-  if (platform === 'email')
-    return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
+  if (platform === 'email') {
+    // `slug` here is the selected account's inbox id when it names one.
+    if (slug) return resolveEmailApiKey(await emailOwnKeyForInbox(projectId, slug));
+    const account = await loadDefaultEmailInboxAccount(projectId);
+    return account ? resolveEmailApiKey(await emailOwnKeyForAccount(account)) : null;
+  }
   if (platform === 'telegram') return loadTelegramBotToken(projectId);
   return null;
 }
@@ -402,13 +407,15 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
           .from(connectors)
           .where(eq(connectors.connectorId, connector.connectorId))
           .limit(1);
-        const connectionSlug =
-          typeof connector.connectionMetadata?.connector_slug === 'string'
-            ? connector.connectionMetadata.connector_slug
+        const platform = row ? channelPlatform(row.config) : null;
+        // An email account names its inbox; the key is that inbox account's.
+        const scope =
+          platform === 'email'
+            ? typeof connector.connectionMetadata?.inbox_id === 'string'
+              ? connector.connectionMetadata.inbox_id
+              : null
             : row?.slug;
-        return row
-          ? channelToken(row.projectId, channelPlatform(row.config), connectionSlug)
-          : null;
+        return row ? channelToken(row.projectId, platform, scope) : null;
       }
       if (connector.provider === 'composio') {
         return composioConnectedAccountId(connector.connectionMetadata);
@@ -462,13 +469,15 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     gateChannelRead: (input) => gateChannelRead(input),
     gateChannelWrite: (input) => gateChannelWrite(input),
     loadEmailSessionContext: async () => null,
-    loadEmailConnectorContext: async (projectId, connectorSlug) => {
-      const install = await loadAgentMailInstall(projectId, connectorSlug).catch(() => null);
-      return install?.inboxId ? { inboxId: install.inboxId } : null;
+    // No selected account: the project's default inbox.
+    loadEmailConnectorContext: async (projectId) => {
+      const account = await loadDefaultEmailInboxAccount(projectId).catch(() => null);
+      return account ? { inboxId: account.inboxId } : null;
     },
     resolveEmailCredentialForInbox: async (projectId, inboxId) =>
-      resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(projectId, inboxId)),
+      resolveEmailApiKey(await emailOwnKeyForInbox(projectId, inboxId)),
     loadPolicies: loadConnectorPoliciesFor,
+    loadPolicySet: loadConnectorPolicySetFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
     // The link expires with the approval it points at (`expires_at`). A failed

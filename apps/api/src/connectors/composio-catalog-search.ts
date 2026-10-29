@@ -19,7 +19,6 @@ interface CatalogToolkit {
 
 interface AuthConfigRow {
   id: string;
-  name?: string;
   status: 'ENABLED' | 'DISABLED';
   is_composio_managed?: boolean;
   toolkit: { slug: string };
@@ -40,28 +39,7 @@ export interface ComposioCatalogClient {
       show_disabled: false;
       limit: number;
       cursor?: string;
-      search?: string;
     }): Promise<{ items: AuthConfigRow[]; next_cursor?: string | null }>;
-    /** Only the connection-owned app flow (`composio-own-app.ts`) writes auth configs. */
-    create?(body: {
-      toolkit: { slug: string };
-      auth_config: {
-        type: 'use_custom_auth';
-        authScheme: 'S2S_OAUTH2';
-        name: string;
-        credentials: Record<string, string>;
-      };
-    }): Promise<{ auth_config: { id: string } }>;
-    delete?(id: string): Promise<unknown>;
-  };
-  connectedAccounts?: {
-    create(body: {
-      auth_config: { id: string };
-      connection: {
-        user_id: string;
-        state: { authScheme: 'S2S_OAUTH2'; val: { status: 'INITIALIZING'; subdomain: string } };
-      };
-    }): Promise<{ id: string; status?: string }>;
   };
 }
 
@@ -144,46 +122,9 @@ export function requiresOwnAuthConfig(
 }
 
 /**
- * The name prefix of an auth config that holds ONE connection's own app
- * (`composio-own-app.ts`). Such a config carries a customer's client secret,
- * so it is never a deployment-wide config: `customAuthConfigIds` skips it.
- */
-export const CONNECTION_AUTH_CONFIG_PREFIX = 'kortix-connection:';
-
-export function connectionAuthConfigName(connectionId: string): string {
-  return `${CONNECTION_AUTH_CONFIG_PREFIX}${connectionId}`;
-}
-
-/**
- * The newest enabled auth config that holds this connection's own app, or
- * `null`. The name is derived from the connection id on the server, so a
- * caller cannot point a connection at another connection's app.
- */
-export async function connectionAuthConfigId(input: {
-  catalogClient?: ComposioCatalogClient;
-  toolkit: string;
-  connectionId: string;
-}): Promise<string | null> {
-  const authConfigs = (input.catalogClient ?? composioRestClient()).authConfigs;
-  if (!authConfigs) throw new Error('Composio auth config API is unavailable');
-  const name = connectionAuthConfigName(input.connectionId);
-  const page = await authConfigs.list({
-    toolkit_slug: input.toolkit.toLowerCase(),
-    search: name,
-    is_composio_managed: false,
-    show_disabled: false,
-    limit: 50,
-  });
-  const rows = page.items.filter((row) => row.name === name && row.status === 'ENABLED');
-  rows.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
-  return rows[0]?.id ?? null;
-}
-
-/**
  * Toolkit slug to the enabled custom auth config Kortix passes for it. When an
  * operator keeps more than one enabled, the newest wins; disable the old one to
- * rotate an OAuth app. Composio-managed and disabled configs are never used,
- * and neither is a config that holds one connection's own app.
+ * rotate an OAuth app. Composio-managed and disabled configs are never used.
  */
 export async function customAuthConfigIds(input: {
   catalogClient?: ComposioCatalogClient;
@@ -204,7 +145,6 @@ export async function customAuthConfigIds(input: {
     });
     for (const row of page.items) {
       if (row.status !== 'ENABLED' || row.is_composio_managed !== false) continue;
-      if (row.name?.startsWith(CONNECTION_AUTH_CONFIG_PREFIX)) continue;
       const slug = row.toolkit.slug.toLowerCase();
       const current = newest.get(slug);
       if (!current || (row.created_at ?? '') > (current.created_at ?? '')) newest.set(slug, row);
@@ -337,7 +277,7 @@ export function setComposioRestClientForTest(next: ComposioCatalogClient | null)
 
 /** The public card shape. `connected` is always false: connection state is
  *  per project and must never enter this deployment-wide cache. */
-function publicToolkit(item: CatalogToolkit) {
+export function publicToolkit(item: CatalogToolkit) {
   return {
     slug: item.slug,
     name: item.name,

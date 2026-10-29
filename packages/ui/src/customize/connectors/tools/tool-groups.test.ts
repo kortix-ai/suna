@@ -2,7 +2,7 @@ import type { ConnectorAction } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import { testUiTranslator } from '../../../test-utils/intl';
-import { filterActions, groupToolsByRisk, toolRowText } from './tool-groups';
+import { filterActions, groupToolsByRisk, humanizeToolName, toolBucket, toolRowText } from './tool-groups';
 
 const action = (path: string, risk: ConnectorAction['risk']): ConnectorAction => ({
   path,
@@ -86,18 +86,53 @@ describe('toolRowText', () => {
     ).toBeNull();
   });
 
-  test('no name — the path becomes the title and is not printed twice', () => {
+  test('no name — the path becomes a title in words, and the raw id stays beside it', () => {
     expect(toolRowText({ ...action('get_thing', 'read'), name: '', description: 'Reads' })).toEqual(
       {
-        title: 'get_thing',
-        path: null,
+        title: 'Get thing',
+        path: 'get_thing',
         description: 'Reads',
       },
     );
   });
 
+  test('the app prefix is dropped from the title, not from the id', () => {
+    expect(
+      toolRowText({ ...action('LINEAR_ARCHIVE_ISSUE', 'write'), name: 'LINEAR_ARCHIVE_ISSUE' }, [
+        'linear',
+      ]),
+    ).toMatchObject({ title: 'Archive issue', path: 'LINEAR_ARCHIVE_ISSUE' });
+  });
   test('no description at all', () => {
     expect(toolRowText(action('get_thing', 'read')).description).toBeNull();
+  });
+});
+
+describe('humanizeToolName', () => {
+  test.each([
+    ['LINEAR_ARCHIVE_ISSUE', ['linear'], 'Archive issue'],
+    ['ask_wiki_question', ['deepwiki'], 'Ask wiki question'],
+    ['GMAIL_SEND_EMAIL', ['gmail', 'Gmail'], 'Send email'],
+    ['GOOGLE_SHEETS_ADD_ROW', ['google-sheets'], 'Add row'],
+    ['GOOGLESHEETS_ADD_ROW', ['Google Sheets'], 'Add row'],
+    ['getPetById', [], 'Get pet by id'],
+    ['messages.send', [], 'Messages send'],
+    ['repos/create-issue', [], 'Repos create issue'],
+  ])('%s reads %p', (name, apps, title) => {
+    expect(humanizeToolName(name, apps)).toBe(title);
+  });
+
+  test('a name with a space is the connector wording and is kept', () => {
+    expect(humanizeToolName('Deletes a pet.', ['petstore'])).toBe('Deletes a pet.');
+  });
+
+  test('a prefix is not dropped when it is the whole name', () => {
+    expect(humanizeToolName('linear', ['linear'])).toBe('Linear');
+    expect(humanizeToolName('LINEAR_SEARCH', ['linear'])).toBe('Search');
+  });
+
+  test('only a whole leading word matches the app', () => {
+    expect(humanizeToolName('linearize_data', ['linear'])).toBe('Linearize data');
   });
 });
 
@@ -134,5 +169,35 @@ describe('filterActions', () => {
   test('no match returns empty — "nothing matched" is not "nothing exists"', () => {
     expect(filterActions(tools, 'zzz')).toEqual([]);
     expect(tools).toHaveLength(2);
+  });
+});
+
+describe('toolBucket', () => {
+  const unknown = (path: string) => ({ path, name: path, risk: 'unknown' });
+  test('a declared risk wins over the name', () => {
+    expect(toolBucket({ path: 'get_issue', name: 'get_issue', risk: 'write' })).toBe('write');
+    expect(toolBucket({ path: 'send', name: 'send', risk: 'read' })).toBe('read');
+  });
+  test('an unknown risk goes by the name, without the app prefix', () => {
+    expect(toolBucket(unknown('LINEAR_GET_ISSUE'), ['linear'])).toBe('read');
+    expect(toolBucket(unknown('listIssues'))).toBe('read');
+    expect(toolBucket(unknown('send_email'))).toBe('write');
+    expect(toolBucket(unknown('ask_wiki_question'))).toBe('unclassified');
+    expect(toolBucket(unknown('getaway'))).toBe('unclassified');
+  });
+  test("the server's likely_risk wins over the enforced risk", () => {
+    expect(toolBucket({ path: 'read_wiki_contents', name: 'read_wiki_contents', risk: 'write', likely_risk: 'read' })).toBe('read');
+    expect(toolBucket({ path: 'ask_wiki_question', name: 'ask_wiki_question', risk: 'write', likely_risk: 'unknown' })).toBe('unclassified');
+  });
+  test('groups come in read, write, unclassified order', () => {
+    const groups = groupToolsByRisk(
+      [
+        { ...action('ask', 'read'), risk: 'unknown' as never },
+        action('create_issue', 'write'),
+        action('get_issue', 'read'),
+      ],
+      testUiTranslator,
+    );
+    expect(groups.map((g) => g.key)).toEqual(['read', 'write', 'unclassified']);
   });
 });

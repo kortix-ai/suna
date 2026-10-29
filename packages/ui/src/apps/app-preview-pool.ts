@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * One live frame per App preview, kept for as long as the project is open.
+ * One live frame per App preview (and per artifact page), kept for as long as
+ * the project is open.
  *
  * A card thumbnail and the big view used to each own an `<iframe>`, so every
  * page switch and every open loaded the App again. Here a frame is created
@@ -87,13 +88,18 @@ function place(entry: Entry) {
 }
 
 /** The frame for `key`, created (and parked) on first use with `url`. A later `url` is ignored. */
-export function ensureFrame(key: string, url: string, attributes: { title: string; sandbox: string; allow: string }): void {
+export function ensureFrame(
+  key: string,
+  url: string,
+  attributes: { title: string; sandbox: string; allow: string; testid?: string; referrerPolicy?: ReferrerPolicy },
+): void {
   if (entries.has(key)) return;
   const frame = document.createElement('iframe');
   frame.title = attributes.title;
   frame.setAttribute('sandbox', attributes.sandbox);
   frame.allow = attributes.allow;
-  frame.dataset.testid = 'app-live-preview';
+  frame.dataset.testid = attributes.testid ?? 'app-live-preview';
+  if (attributes.referrerPolicy) frame.referrerPolicy = attributes.referrerPolicy;
   frame.dataset.frameKey = key;
   const entry: Entry = { frame, status: 'loading', claims: [] };
   frame.addEventListener('load', () => {
@@ -143,11 +149,14 @@ export function reloadFrame(key: string, url: string): void {
   notify();
 }
 
-/** Drop every frame whose key is not in `keep` (a new release, a deleted App, another project). */
-export function pruneFrames(keep: Set<string>): void {
+/**
+ * Drop every frame whose key is not in `keep` (a new release, a deleted App,
+ * another project). `owns` limits the sweep to one kind of frame.
+ */
+export function pruneFrames(keep: Set<string>, owns: (key: string) => boolean = () => true): void {
   let changed = false;
   for (const [key, entry] of entries) {
-    if (keep.has(key) || entry.claims.length > 0) continue;
+    if (!owns(key) || keep.has(key) || entry.claims.length > 0) continue;
     entry.frame.remove();
     entries.delete(key);
     changed = true;

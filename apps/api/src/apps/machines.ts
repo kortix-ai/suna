@@ -111,6 +111,7 @@ export async function releaseEnvironment(app: AppRow, deployment: DeploymentRow)
     env: {
       ...resolved.env,
       ...appRuntimeIdentityEnv(app),
+      ...(await import('./events')).appEventEnv(app),
       ...(await (await import('./tokens')).appAuthEnv(app)),
       ...appUrlEnv(app, releaseConfigOf(deployment, app)),
       ...(await usesUrlEnv(app.appId)),

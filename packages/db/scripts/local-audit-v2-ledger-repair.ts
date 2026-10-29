@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type pg from 'pg';
-import { withClient } from '../src/with-client';
+import { withClient, withTransaction } from '../src/with-client';
 
 const MIGRATION_NAME = '20260807221200000_centralized_audit_v2';
 const MIGRATION_FILE = `${MIGRATION_NAME}.sql`;
@@ -179,8 +179,7 @@ export async function repairLocalAuditV2Ledger(
   return withClient(databaseUrl, async (client) => {
     if (!(await ledgerExists(client))) return false;
 
-    await client.query('begin');
-    try {
+    return withTransaction(client, async () => {
       await client.query('lock table kortix_migrations.pgmigrations in exclusive mode');
       const applied = await client.query(
         'select 1 from kortix_migrations.pgmigrations where name = $1 limit 1',
@@ -188,7 +187,6 @@ export async function repairLocalAuditV2Ledger(
       );
       const repair = planLocalAuditV2LedgerRepair(applied.rowCount === 1, await readSignature(client));
       if (!repair) {
-        await client.query('commit');
         return false;
       }
       const inserted = await client.query(
@@ -202,11 +200,7 @@ export async function repairLocalAuditV2Ledger(
       if (inserted.rowCount !== 1) {
         throw new Error(`Could not record ${MIGRATION_NAME} in the local migration ledger.`);
       }
-      await client.query('commit');
       return true;
-    } catch (error) {
-      await client.query('rollback');
-      throw error;
-    }
+    });
   });
 }

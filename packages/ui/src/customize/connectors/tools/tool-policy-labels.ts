@@ -20,20 +20,33 @@ export interface PolicySegment {
 }
 
 /**
- * Default · Block · Ask · Allow.
+ * Default · Allow · Ask · Block.
  *
  * FOUR segments, because there are genuinely four states. Default sits first
- * because it is the state every tool starts in, and because the remaining three
- * then read left-to-right as a trust dial: least on the left, most on the right.
+ * because it is the state every tool starts in; the control labels it with
+ * what it resolves to ("Default · runs").
  *
- * Default carries no tint. Inheriting is not a decision, and colouring it would
- * put a fourth hue in every row of a 60-tool connector.
+ * Only Block carries a hue, the destructive token. Allow and Ask are plain
+ * ink: a 60-tool list in three status colours reads as noise, and the word
+ * already says the decision.
  */
 export const POLICY_SEGMENTS: readonly PolicySegment[] = [
   {
     choice: 'default',
     label: 'Default',
-    tint: 'text-muted-foreground',
+    tint: 'text-foreground',
+    hoverTint: 'hover:text-foreground',
+  },
+  {
+    choice: 'always_run',
+    label: 'Allow',
+    tint: 'text-foreground',
+    hoverTint: 'hover:text-foreground',
+  },
+  {
+    choice: 'require_approval',
+    label: 'Ask',
+    tint: 'text-foreground',
     hoverTint: 'hover:text-foreground',
   },
   {
@@ -41,18 +54,6 @@ export const POLICY_SEGMENTS: readonly PolicySegment[] = [
     label: 'Block',
     tint: 'text-destructive',
     hoverTint: 'hover:text-destructive',
-  },
-  {
-    choice: 'require_approval',
-    label: 'Ask',
-    tint: 'text-kortix-yellow',
-    hoverTint: 'hover:text-kortix-yellow',
-  },
-  {
-    choice: 'always_run',
-    label: 'Allow',
-    tint: 'text-kortix-green',
-    hoverTint: 'hover:text-kortix-green',
   },
 ];
 

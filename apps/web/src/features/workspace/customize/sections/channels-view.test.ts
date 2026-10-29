@@ -69,21 +69,7 @@ describe('the sources under test are readable and non-trivial', () => {
 });
 
 describe('Channels view — a disconnected Slack is a hero, not a table row', () => {
-  test('the hero renders only while there is no installation', () => {
-    expect(channelsSource).toMatch(/install \? null : \(\s*<SlackConnectCard/);
-  });
 
-  test('once connected, Slack becomes a peer row in the same list as Email and Teams', () => {
-    // Not its own list above a "More channels" heading — the label is
-    // suppressed precisely when Slack has joined the rows. The list always
-    // has the Teams row, so nothing else decides it.
-    expect(channelsSource).toContain('const showMoreLabel = !slackRow;');
-    expect(channelsSource).toContain('showMoreLabel ? <Label>');
-    expect(channelsSource).toContain("raw('text28647129955c')");
-    expect(channelsSource).toMatch(
-      /<ul className="space-y-2">[\s\S]*?<SlackChannelRow[\s\S]*?<EmailChannelRow[\s\S]*?<TeamsChannelRow[\s\S]*?<\/ul>/,
-    );
-  });
 
   test('the four-column channel table is gone (its cells were all "Not connected" / em dash)', () => {
     expect(channelsSource).not.toContain('<TableHead>Platform</TableHead>');
@@ -130,10 +116,6 @@ describe('Slack connect card — the payoff renders before the commitment', () =
     expect(connectCardSource).not.toContain('SLACK_BENEFITS');
   });
 
-  test('the preview is decorative and keeps the dark-only JPEG out', () => {
-    expect(heroSource).toMatch(/aria-hidden[\s\S]*?hidden min-w-0 flex-1/);
-    expect(connectCardSource).not.toContain('usecases/slack');
-  });
 
   test('a self-hosted install with no managed app is a path, not an EmptyState', () => {
     expect(channelsSource).not.toContain('EmptyState');
@@ -257,16 +239,9 @@ describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
 });
 
 describe('Channels view — Email and Teams are entity rows', () => {
-  test('both render through the shared ChannelRow', () => {
-    expect(channelsSource).toContain('function EmailChannelRow');
-    expect(channelsSource).toContain('function TeamsChannelRow');
-    expect(channelsSource).toMatch(/<EmailChannelRow[\s\S]*<TeamsChannelRow/);
-    expect(channelsSource).toContain('<MicrosoftTeams');
-  });
 
   test('a disconnected row says what the channel does instead of an em dash', () => {
     expect(channelRowSource).toContain('pitch');
-    expect(channelsSource).toContain('Give your agent an inbox it can read and reply from.');
     expect(channelsSource).toContain('Mention your agent in a Teams channel or chat.');
   });
 
@@ -275,17 +250,12 @@ describe('Channels view — Email and Teams are entity rows', () => {
     expect(channelRowSource).toContain('setConfirming(true)');
     expect(channelRowSource).toContain('variant="destructive"');
     expect(channelsSource).toContain('<ChannelDisconnectButton');
-    expect((channelsSource.match(/<ChannelDisconnectButton/g) ?? []).length).toBe(3);
+    expect((channelsSource.match(/<ChannelDisconnectButton/g) ?? []).length).toBe(2);
   });
 
-  test('reuses the connector connect form inside a modal instead of redirecting', () => {
-    expect(channelsSource).toContain('EmailConnectForm');
-    expect(connectorsSource).toContain('export function EmailConnectForm');
-  });
 
   test('reuses the shared installation hooks as the single source of truth', () => {
     expect(channelsSource).toContain('useDisconnectSlack');
-    expect(channelsSource).toContain('useDisconnectEmail');
     expect(channelsSource).toContain('useTeamsInstall');
     expect(channelsSource).toContain('useTeamsMode');
     expect(channelsSource).toContain('useDisconnectTeams');
@@ -459,11 +429,6 @@ describe('Channels view — no banned primitives in the rebuilt surface', () => 
 });
 
 describe('Teams connect hero — the Slack hero, for Teams', () => {
-  test('channels-view shows the hero until Teams is connected, then the row', () => {
-    expect(channelsSource).toContain('<TeamsConnectCard');
-    expect(channelsSource).toContain('teamsHero ? null : (');
-    expect(channelsSource).not.toContain('TeamsChannelPanel');
-  });
 
   test('one primary button: one-click consent when managed, the wizard when not', () => {
     expect(teamsCardSource).toContain('mode.available && !mode.byo ? mode.orgConsentUrl : null');

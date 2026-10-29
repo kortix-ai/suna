@@ -1,8 +1,7 @@
 'use client';
 
-import { Button } from '../../../primitives/button';
-import { ButtonGroup } from '../../../primitives/button-group';
 import Hint from '../../../primitives/hint';
+import { tabsSegmentedChipClasses, tabsSegmentedTrackClasses } from '../../../primitives/tabs';
 import { cn } from '../../../internal/lib/utils';
 import { useLocalizedUiCatalog } from '../../../i18n/ui-catalog/use-localized-ui-catalog';
 
@@ -22,24 +21,25 @@ export interface ToolPolicyControlProps {
   disabled?: boolean;
   /** Set when a project rule decides this tool: disables the group and says why. */
   lockedReason?: string;
-  /** Shown while `value` is `'default'` — what following the default DOES. */
-  defaultHint?: string;
+  /** Replaces the Default segment's label with what it resolves to: "Default · runs", "Inherit · asks". */
+  defaultLabel?: string;
 }
 
 /**
  * The per-tool decision: four segments, four states, every one reachable in
  * both directions.
  *
- * `'default'` presses its own segment and a `Hint` names what the default
- * actually does, because "Default" alone does not tell a reader whether the
- * tool runs or asks.
+ * It is the segmented track of `Tabs` (`tabs.tsx`): a recessed track and one
+ * raised chip, so the choice reads at a glance down a 60-row list. It is not
+ * a tablist: each segment is a toggle button with `aria-pressed`.
+ *
+ * `'default'` carries the label the caller gives it ("Default · runs",
+ * "Inherit · asks"), because "Default" alone does not tell a reader whether
+ * the tool runs or asks.
  *
  * `transition-[…,scale]`, not `transition-transform`: Tailwind v4's `scale-*`
  * utility sets the standalone `scale` property, which
- * `transition-property: transform` does not cover — the press would snap. The
- * explicit list also replaces `Button`'s base `transition-all`
- * (`button.tsx:8`), which the polish rules treat as a defect. Same override,
- * same reason, as `project-icon-field.tsx:217`.
+ * `transition-property: transform` does not cover — the press would snap.
  */
 export function ToolPolicyControl({
   value,
@@ -47,21 +47,23 @@ export function ToolPolicyControl({
   label,
   disabled = false,
   lockedReason,
-  defaultHint,
+  defaultLabel,
 }: ToolPolicyControlProps) {
   const policySegments = useLocalizedUiCatalog(POLICY_SEGMENTS);
   const locked = Boolean(lockedReason);
 
   const group = (
-    <ButtonGroup aria-label={label} className="shrink-0">
+    <div
+      role="group"
+      aria-label={label}
+      className={cn(tabsSegmentedTrackClasses, 'inline-flex h-7 shrink-0 items-stretch gap-0.5')}
+    >
       {policySegments.map((segment) => {
         const selected = value === segment.choice;
         return (
-          <Button
+          <button
             key={segment.choice}
             type="button"
-            size="sm"
-            variant={selected ? 'secondary-outline' : 'outline'}
             aria-pressed={selected}
             disabled={disabled || locked}
             // Re-pressing the current choice is a no-op, not a redundant PUT
@@ -70,16 +72,20 @@ export function ToolPolicyControl({
               if (!selected) onChange(segment.choice);
             }}
             className={cn(
-              'px-2.5 text-xs font-medium',
-              'transition-[color,background-color,scale] duration-150 active:scale-[0.96]',
-              selected ? segment.tint : cn('text-muted-foreground', segment.hoverTint),
+              'rounded-sm px-2 text-xs font-medium whitespace-nowrap',
+              'focus-visible:ring-kortix-blue focus-visible:ring-[0.6px] focus-visible:outline-none',
+              'disabled:pointer-events-none disabled:opacity-50',
+              'transition-[color,background-color,box-shadow,scale] duration-normal ease-default active:scale-[0.96] motion-reduce:transition-none',
+              selected
+                ? cn(tabsSegmentedChipClasses, segment.tint)
+                : cn('text-muted-foreground', segment.hoverTint),
             )}
           >
-            {segment.label}
-          </Button>
+            {segment.choice === 'default' && defaultLabel ? defaultLabel : segment.label}
+          </button>
         );
       })}
-    </ButtonGroup>
+    </div>
   );
 
   // A disabled control with no explanation is a dead end. The segments carry
@@ -88,14 +94,6 @@ export function ToolPolicyControl({
   if (lockedReason) {
     return (
       <Hint label={lockedReason} side="bottom">
-        <div className="shrink-0">{group}</div>
-      </Hint>
-    );
-  }
-
-  if (value === 'default' && defaultHint) {
-    return (
-      <Hint label={defaultHint} side="bottom">
         <div className="shrink-0">{group}</div>
       </Hint>
     );

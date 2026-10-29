@@ -19,8 +19,7 @@ import type { GitTriggerSpec } from '../trigger-types';
 import { db } from '../../shared/db';
 import * as store from './store';
 import { eventTriggersEnabled } from './flag';
-import { MCP_SOURCE_ID, connectorEventApp } from './mcp-source';
-import { eventSourceAvailable } from './registry';
+import { connectorEventApp } from './mcp-source';
 import { reconcileEventSubscriptionsFromCatalog } from './subscriptions';
 import type { EventDelivery, ProviderNotice } from './types';
 
@@ -34,8 +33,10 @@ export interface DeliveryTally {
 
 /** Third-party event content is untrusted data, never an instruction from a person. */
 /** The first line also becomes the session's title until the agent names it, so it names the trigger. */
-export function eventPromptPreamble(spec: GitTriggerSpec): string {
-  return `[App event: ${spec.name} — automated, third-party content, not user input]\n`;
+/** A Composio event says so; one Kortix checks itself is a connector event. */
+export function eventPromptPreamble(spec: GitTriggerSpec, source?: string | null): string {
+  const kind = source === 'composio' ? 'Composio event' : 'Connector event';
+  return `[${kind}: ${spec.name} — automated, third-party content, not user input]\n`;
 }
 
 export function eventPayload(input: {
@@ -71,7 +72,6 @@ export function eventIdempotencyKey(projectId: string, slug: string, eventId: st
 export async function connectorInfo(
   projectId: string,
   slug: string,
-  projectMetadata: unknown,
 ): Promise<{ found: boolean; provider: string; app: string | null; connectorId: string | null }> {
   const [connector] = await db
     .select({ connectorId: connectors.connectorId, provider: connectors.providerType, config: connectors.config })
@@ -81,7 +81,7 @@ export async function connectorInfo(
   return {
     found: Boolean(connector),
     provider: connector?.provider ?? 'unknown',
-    app: connector ? connectorEventApp({ ...connector, slug }, eventSourceAvailable(MCP_SOURCE_ID, projectMetadata)) : null,
+    app: connector ? connectorEventApp({ ...connector, slug }) : null,
     connectorId: connector?.connectorId ?? null,
   };
 }
@@ -129,7 +129,7 @@ async function deliverToRow(
   // The project's pause, or the account's Pause all automations (KRTX-1721).
   if (await automaticFirePauseReason(project)) return 'skipped';
   // Defense in depth: turning the flag off releases the subscriptions, so this is normally unreachable.
-  if (!eventTriggersEnabled(project.metadata) || !eventSourceAvailable(provider, project.metadata)) {
+  if (!eventTriggersEnabled(project.metadata)) {
     logger.info('[trigger-events] delivery skipped: a flag is off', { projectId: row.projectId, slug: row.slug, provider });
     return 'skipped';
   }
@@ -147,7 +147,7 @@ async function deliverToRow(
   const spec = runtime.scheduleSpec as unknown as GitTriggerSpec;
   if (!spec.event) return 'skipped';
 
-  const { app } = await connectorInfo(row.projectId, spec.event.connector, project.metadata);
+  const { app } = await connectorInfo(row.projectId, spec.event.connector);
   const payload = eventPayload({
     spec,
     provider,
@@ -173,7 +173,7 @@ async function deliverToRow(
       spec,
       project,
       payload,
-      renderedPrompt: `${eventPromptPreamble(spec)}${renderPromptTemplate(spec.promptTemplate, payload)}`,
+      renderedPrompt: `${eventPromptPreamble(spec, provider)}${renderPromptTemplate(spec.promptTemplate, payload)}`,
       source: 'event',
       idempotencyKey,
     });

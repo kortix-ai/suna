@@ -1,14 +1,30 @@
 /**
- * The integration event inbox (connectors_v2): an inbound event is stored once,
+ * The integration event inbox: an inbound event is stored once,
  * keyed by (source, id), before any work starts, and the webhook acks only
  * after the store. It rides the durable job queue (shared/job-queue.ts):
  * enqueue dedups on the key, every replica claims with SKIP LOCKED, a failure
  * backs off and dead-letters after `maxAttempts`.
  *
- * A consumer registers for a type prefix (`telegram.`) and must be idempotent:
- * an event runs at least once. A throw retries the event; on `finalAttempt` a
- * throw dead-letters it, so a consumer tells its user there instead.
+ * Each integration's events have their own queue, and its consumer is that
+ * queue's handler. A consumer must be idempotent: an event runs at least once.
+ * A throw retries the event; on `finalAttempt` a throw dead-letters it, so a
+ * consumer tells its user there instead.
+ *
+ * Runbook, a dead event (a consumer failed every attempt):
+ *   1. List them:
+ *        SELECT job_id, queue, job_key, attempts, max_attempts, last_error, updated_at
+ *          FROM kortix.job_queue WHERE queue LIKE 'integration.events%' AND status = 'dead';
+ *   2. Fix the cause in `last_error` (a revoked key, a provider outage).
+ *   3. Within 7 days (finished rows are pruned after that), queue it again:
+ *        UPDATE kortix.job_queue SET status = 'queued', attempts = 0, run_at = now(),
+ *               locked_until = NULL, last_error = NULL, updated_at = now()
+ *         WHERE job_id = '<job_id>' AND status = 'dead';
+ *   A message whose session create already started is a no-op when it runs again.
+ *   `attempt N of N never settled` means its last run's replica died or the run
+ *   outlived its visibility: that run may have finished its work, and the chat
+ *   was told nothing. While the row exists, a provider replay is a no-op.
  */
+import { jsonbSafeValue } from '../shared/jsonb-safe';
 import { enqueueJob, registerJobHandler } from '../shared/job-queue';
 
 export const INTEGRATION_EVENTS_QUEUE = 'integration.events';
@@ -30,11 +46,32 @@ export interface IntegrationEvent {
 
 export type EventConsumer = (event: IntegrationEvent, run: { finalAttempt: boolean }) => Promise<void>;
 
-// replica-local: consumers are code, registered at import on every replica.
-const consumers = new Map<string, EventConsumer>();
+/**
+ * The queue of an integration's events. Telegram keeps the shared queue (its
+ * rows are already there). Every other integration has its own, so a replica
+ * on older code, which has no consumer for it, never claims its events.
+ */
+function queueOf(type: string): string {
+  const integration = type.split('.')[0];
+  return integration === 'telegram' ? INTEGRATION_EVENTS_QUEUE : `${INTEGRATION_EVENTS_QUEUE}.${integration}`;
+}
 
-export function registerEventConsumer(typePrefix: string, consumer: EventConsumer): void {
-  consumers.set(typePrefix, consumer);
+/**
+ * Consume one integration's events (`typePrefix`: `<integration>.`).
+ * `visibilityMs` must exceed the consumer's worst run; `batch`: its events
+ * running at once on a replica (default: the replica's limit).
+ */
+export function registerEventConsumer(
+  typePrefix: string,
+  consumer: EventConsumer,
+  opts: { visibilityMs?: number; batch?: number } = {},
+): void {
+  registerJobHandler(
+    queueOf(typePrefix),
+    (job) => consumer(job.payload as unknown as IntegrationEvent, { finalAttempt: job.attempts >= job.maxAttempts }),
+    opts.visibilityMs ?? 2 * 60_000,
+    opts.batch,
+  );
 }
 
 /**
@@ -46,29 +83,12 @@ export function emitIntegrationEvent(
   event: IntegrationEvent,
   opts: { maxAttempts?: number } = {},
 ): Promise<boolean> {
+  // A provider string with U+0000 (an email subject) would fail the store on
+  // every retry, so the provider would retry it until it gives up.
   return enqueueJob(
-    INTEGRATION_EVENTS_QUEUE,
+    queueOf(event.type),
     `${event.source}:${event.id}`,
-    event as unknown as Record<string, unknown>,
+    jsonbSafeValue(event) as unknown as Record<string, unknown>,
     { maxAttempts: opts.maxAttempts },
   );
 }
-
-export async function dispatchIntegrationEvent(
-  event: IntegrationEvent,
-  run: { finalAttempt: boolean } = { finalAttempt: false },
-): Promise<void> {
-  for (const [prefix, consumer] of consumers) {
-    if (event.type.startsWith(prefix)) return consumer(event, run);
-  }
-  throw new Error(`no consumer for integration event type ${event.type}`);
-}
-
-registerJobHandler(
-  INTEGRATION_EVENTS_QUEUE,
-  (job) =>
-    dispatchIntegrationEvent(job.payload as unknown as IntegrationEvent, {
-      finalAttempt: job.attempts >= job.maxAttempts,
-    }),
-  2 * 60_000,
-);

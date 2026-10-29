@@ -559,3 +559,13 @@ describe('ApprovalDecisionPanel decisions', () => {
     expect(html).not.toContain('Waiting for');
   });
 });
+
+describe('policy set', () => {
+  test('names the agent and the rule set that held the call', () => {
+    const markup = panel({ details: { ...pending, policy_set: 'read_only', agent: 'support' } });
+    expect(markup).toContain('Agent support · rule set read_only');
+  });
+  test('a call the base rules held names no set', () => {
+    expect(panel({})).not.toContain('rule set');
+  });
+});

@@ -37,6 +37,7 @@ import {
   buildRegistryProjectInstallPrompt,
   buildTemplateInstallPrompt,
 } from './marketplace-install-prompts';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 /** The project's manifest raw text, preferring kortix.yaml over kortix.toml
  *  (dual-format). */
@@ -167,6 +168,7 @@ async function handleMarketplaceInstallSession(c: any) {
       prompt = buildItemInstallPrompt(entry, id);
     }
   } catch (err) {
+    rethrowDatabaseError(err);
     return c.json({ error: (err as Error).message }, 400);
   }
 

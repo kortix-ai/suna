@@ -25,6 +25,8 @@ export type RuntimeRequest =
       prefix: string;
     }
   | { kind: 'abort'; runtimeSessionId: string; prefix: string }
+  /** OpenCode's rewind: drops `messageID` and every message after it. pi answers 501. */
+  | { kind: 'revert'; runtimeSessionId: string; prefix: string }
   | { kind: 'message-list'; runtimeSessionId: string; prefix: string }
   /** A client answers (`reply`) or dismisses (`reject`) an agent question. Both harnesses serve it. */
   | { kind: 'question-answer'; requestId: string; prefix: string }
@@ -34,6 +36,7 @@ const OTHER: RuntimeRequest = { kind: 'other' };
 const PREFIX = /^\/proxy\/\d+(?=\/)/;
 const KORTIX = /^\/kortix\/(?:runtime|opencode)\/sessions\/([^/?#]+)\/(prompt|abort)\/?$/;
 const NATIVE = /^\/session\/([^/?#]+)\/(prompt_async|message|command|summarize|abort)(?=$|[/?#])(.*)$/;
+const REVERT = /^\/session\/([^/?#]+)\/revert\/?(?:$|[?#])/;
 const QUESTION = /^\/question\/([^/?#]+)\/(?:reply|reject)\/?(?:$|[?#])/;
 
 /**
@@ -71,6 +74,12 @@ export function classifyRuntimeRequest(method: string, path: string): RuntimeReq
   if (question) {
     const requestId = decodeSegment(question[1]!);
     return verb === 'POST' && requestId ? { kind: 'question-answer', requestId, prefix } : OTHER;
+  }
+
+  const revert = REVERT.exec(bare);
+  if (revert) {
+    const runtimeSessionId = decodeSegment(revert[1]!);
+    return verb === 'POST' && runtimeSessionId ? { kind: 'revert', runtimeSessionId, prefix } : OTHER;
   }
 
   const native = NATIVE.exec(bare);

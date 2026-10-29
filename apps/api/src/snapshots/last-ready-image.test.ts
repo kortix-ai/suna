@@ -105,6 +105,25 @@ describe('findServableLastReadyImage — a session boot never waits for a build'
     expect(servable).toEqual({ snapshotName: 'kortix-tpl-OLDER', contentHash: 'hash-older' });
   });
 
+  test("a build on another provider does not hide this provider's last ready image", async () => {
+    // Dev 2026-10-24: a Daytona build repointed the shared row at the identity
+    // still building on Platinum, so Platinum boots waited 12 min for it.
+    const provider = fakeProvider(['kortix-tpl-OLD']);
+    const servable = await findServableLastReadyImage(provider, {
+      project,
+      template: {
+        ...template,
+        providerSnapshotName: 'kortix-tpl-NEW',
+        contentHash: 'hash-new',
+        lastReady: { platinum: { snapshotName: 'kortix-tpl-OLD', contentHash: 'hash-old' } },
+      },
+      identity,
+      buildProvider: 'platinum',
+      readHistory: noHistory,
+    });
+    expect(servable).toEqual({ snapshotName: 'kortix-tpl-OLD', contentHash: 'hash-old' });
+  });
+
   test('a genuinely FIRST build has nothing to serve and must block', async () => {
     const provider = fakeProvider([]);
     expect(

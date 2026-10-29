@@ -78,7 +78,6 @@ describe('harness ownership boundary', () => {
       status: 'ok',
       runtimeReady: true,
       boot_error: null,
-      workload: 'session',
       harness: { id: 'test-only-adapter', version: '1.0.0', ready: true, details: { exclusiveFeature: 'preserved' } },
       // The pre-W3 flat names, composed from the block for an older API.
       opencode: 'ok',

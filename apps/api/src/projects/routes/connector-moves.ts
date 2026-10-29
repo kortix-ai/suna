@@ -1,7 +1,6 @@
-/** Move a Pipedream or Composio connector to its Kortix MCP app (`connectors_v2`). The service: connectors/connector-move.ts. */
+/** Move a Pipedream or Composio connector to its Kortix MCP app. The service: connectors/connector-move.ts. */
 import { createRoute, z } from '@hono/zod-openapi';
 import { listConnectorMoves, moveConnector } from '../../connectors/connector-move';
-import { requireFeatureFlag } from '../../feature-flags/http-gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { readJsonObject } from '../../shared/http-body';
@@ -53,8 +52,6 @@ export function registerConnectorMoveRoutes(): void {
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      const gate = requireFeatureFlag(c, loaded.row.metadata, 'connectors_v2');
-      if (gate) return gate;
       return c.json({ moves: await listConnectorMoves(projectId) }, 200);
     },
   );
@@ -81,8 +78,6 @@ export function registerConnectorMoveRoutes(): void {
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      const gate = requireFeatureFlag(c, loaded.row.metadata, 'connectors_v2');
-      if (gate) return gate;
       const mayWrite = await projectCapabilityAllowed(
         c,
         loaded.userId,

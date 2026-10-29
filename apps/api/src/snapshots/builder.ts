@@ -104,7 +104,7 @@ export async function findServableLastReadyImage(
     template: Pick<
       ResolvedTemplate,
       'slug' | 'isShared' | 'providerSnapshotName' | 'contentHash'
-    >;
+    > & Partial<Pick<ResolvedTemplate, 'lastReady'>>;
     identity: Pick<TemplateIdentity, 'snapshotName'>;
     buildProvider: string;
     /** Injected in tests; the live reader hits `project_snapshot_builds`. */
@@ -119,10 +119,13 @@ export async function findServableLastReadyImage(
       provider: input.buildProvider,
       isShared: !!template.isShared,
     }).catch(() => [] as ReadyImage[]);
+    // This provider's own last ready image: the row's snapshot columns follow
+    // whichever provider built last.
+    const own = template.lastReady?.[input.buildProvider];
     const candidates = lastReadyImageCandidates({
       recordedSnapshotName: template.providerSnapshotName,
       recordedContentHash: template.contentHash,
-      history,
+      history: own ? [own, ...history] : history,
       identitySnapshotName: identity.snapshotName,
     });
     if (candidates.length === 0) return null;
@@ -285,6 +288,13 @@ export async function ensureSandboxImage(
   }
 
   if (state === 'building') {
+    // Stable message: alert on it. Every boot that lands here waits up to 12 min.
+    logger.warn('[snapshots] no ready image to serve; waiting for the build', {
+      slug: template.slug,
+      provider: buildProvider,
+      snapshotName: identity.snapshotName,
+      source: opts.source ?? 'session-start',
+    });
     state = await waitForProviderBuild(provider, identity.snapshotName);
     if (state === 'active') {
       if (publish) await recordTemplateBuilt(template.templateId, {

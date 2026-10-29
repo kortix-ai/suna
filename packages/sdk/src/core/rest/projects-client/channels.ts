@@ -1,4 +1,4 @@
-// Project channels — Slack + email inbound/outbound connection installs.
+// Project channels — Slack, Teams, email and Telegram connection installs.
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
@@ -179,18 +179,161 @@ export async function disconnectSlack(projectId: string): Promise<void> {
   if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect');
 }
 
-/** A project's Telegram bot (the `connectors_v2` feature flag). */
+/** A project's Telegram bot. */
 export interface TelegramInstallation {
   bot_id: string;
   username: string | null;
   /** Telegram user ids allowed to talk to the bot; anyone else gets a pairing reply. */
   allowed_user_ids: string[];
+  /** How many people messaged the bot privately and are not allowed yet. Absent on older servers. */
+  access_request_count?: number;
+}
+
+/** A Telegram user, as the bot knows them. */
+export interface TelegramUser {
+  user_id: string;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  /** Changes when the profile photo changes; null when the user has no visible photo. Pass it to `getTelegramUserPhoto`. */
+  photo_version: string | null;
+  /** False when Telegram returned no profile and the bot has never seen the user: only `user_id` is real. */
+  known: boolean;
+}
+
+/** A person who messaged the bot privately but is not allowed yet. */
+export interface TelegramAccessRequest extends TelegramUser {
+  /** ISO time of their latest message. */
+  last_seen: string;
+}
+
+export interface TelegramUsers {
+  /** In allowed-list order. */
+  allowed: TelegramUser[];
+  /** Newest first. Excludes allowed users and requests older than 30 days. */
+  requests: TelegramAccessRequest[];
+}
+
+/** A chat platform whose bot keeps an allowed-user list and access requests. */
+export type ChannelAccessPlatform = 'telegram';
+
+/** A chat user, as the platform's bot knows them. */
+export interface ChannelUser {
+  user_id: string;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  /** Changes when the profile photo changes; null when the user has no visible photo. Pass it to `getChannelUserPhoto`. */
+  photo_version: string | null;
+  /** False when the platform returned no profile and the bot has never seen the user: only `user_id` is real. */
+  known: boolean;
+}
+
+/** A person who messaged the bot privately but is not allowed yet. */
+export interface ChannelAccessRequest extends ChannelUser {
+  /** ISO time of their latest message. */
+  last_seen: string;
+}
+
+export interface ChannelUsers {
+  /** In allowed-list order. */
+  allowed: ChannelUser[];
+  /** Newest first. Excludes allowed users and requests older than 30 days. */
+  requests: ChannelAccessRequest[];
+}
+
+/** The access fields of the installation that every allowed-user and access-request edit returns. */
+export interface ChannelAccessList {
+  /** The allowed user ids. Telegram returns them; another platform may not. */
+  allowed_user_ids?: string[];
+  /** How many people messaged the bot privately and are not allowed yet. */
+  access_request_count?: number;
+}
+
+const channelPath = (projectId: string, platform: ChannelAccessPlatform) =>
+  `/projects/${encodeURIComponent(projectId)}/channels/${platform}`;
+// A literal path, so route-contract.test.ts resolves the Telegram-only routes
+// to `/channels/telegram/…` and fails when the API drops one.
+const telegramPath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/channels/telegram`;
+
+async function channelUsers(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  fallback: string,
+): Promise<ChannelUsers> {
+  return unwrap(
+    await backendApi.get<ChannelUsers>(`${channelPath(projectId, platform)}/users`, { showErrors: false }),
+    fallback,
+  );
+}
+
+async function allowUser<T>(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+  fallback: string,
+): Promise<T> {
+  return unwrap(
+    await backendApi.post<T>(
+      `${channelPath(projectId, platform)}/allowed-users`,
+      { user_id: userId },
+      { showErrors: false },
+    ),
+    fallback,
+  );
+}
+
+async function removeUser<T>(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+  fallback: string,
+): Promise<T> {
+  return unwrap(
+    await backendApi.delete<T>(
+      `${channelPath(projectId, platform)}/allowed-users/${encodeURIComponent(userId)}`,
+      { showErrors: false },
+    ),
+    fallback,
+  );
+}
+
+async function dismissRequest<T>(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+  fallback: string,
+): Promise<T> {
+  return unwrap(
+    await backendApi.delete<T>(
+      `${channelPath(projectId, platform)}/access-requests/${encodeURIComponent(userId)}`,
+      { showErrors: false },
+    ),
+    fallback,
+  );
+}
+
+async function userPhoto(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+  version: string | null | undefined,
+  signal: AbortSignal | undefined,
+  fallback: string,
+): Promise<Blob | null> {
+  const query = version ? `?v=${encodeURIComponent(version)}` : '';
+  const res = await backendApi.get<Blob>(
+    `${channelPath(projectId, platform)}/users/${encodeURIComponent(userId)}/photo${query}`,
+    { showErrors: false, signal },
+  );
+  if (res.error?.status === 404) return null;
+  return unwrap(res, fallback);
 }
 
 /** The project's Telegram bot, or null when none is connected (or the flag is off). */
 export async function getTelegramInstallation(projectId: string): Promise<TelegramInstallation | null> {
   const res = await backendApi.get<TelegramInstallation | null>(
-    `/projects/${encodeURIComponent(projectId)}/channels/telegram/installation`,
+    `${telegramPath(projectId)}/installation`,
     { showErrors: false },
   );
   if (!res.success) return null;
@@ -210,7 +353,7 @@ export async function connectTelegram(
 ): Promise<TelegramInstallation> {
   return unwrap(
     await backendApi.post<TelegramInstallation>(
-      `/projects/${encodeURIComponent(projectId)}/channels/telegram/connect`,
+      `${telegramPath(projectId)}/connect`,
       input,
       { showErrors: false },
     ),
@@ -225,7 +368,7 @@ export async function setTelegramAllowedUsers(
 ): Promise<TelegramInstallation> {
   return unwrap(
     await backendApi.put<TelegramInstallation>(
-      `/projects/${encodeURIComponent(projectId)}/channels/telegram/allowed-users`,
+      `${telegramPath(projectId)}/allowed-users`,
       { user_ids: userIds },
       { showErrors: false },
     ),
@@ -234,10 +377,93 @@ export async function setTelegramAllowedUsers(
 }
 
 export async function disconnectTelegram(projectId: string): Promise<void> {
-  const res = await backendApi.delete(`/projects/${encodeURIComponent(projectId)}/channels/telegram`, {
-    showErrors: false,
-  });
+  const res = await backendApi.delete(telegramPath(projectId), { showErrors: false });
   if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect Telegram');
+}
+
+/** The allowed users and the people who asked for access, with their Telegram names. */
+export function listTelegramUsers(projectId: string): Promise<TelegramUsers> {
+  return channelUsers(projectId, 'telegram', 'Failed to load Telegram users');
+}
+
+/** Allow one Telegram user. Adds the id once and clears their access request. */
+export function allowTelegramUser(projectId: string, userId: string): Promise<TelegramInstallation> {
+  return allowUser(projectId, 'telegram', userId, 'Failed to allow the Telegram user');
+}
+
+/** Remove one Telegram user from the allowed list. Idempotent. */
+export function removeTelegramUser(projectId: string, userId: string): Promise<TelegramInstallation> {
+  return removeUser(projectId, 'telegram', userId, 'Failed to remove the Telegram user');
+}
+
+/** Dismiss one access request without allowing the user. Idempotent. */
+export function dismissTelegramAccessRequest(
+  projectId: string,
+  userId: string,
+): Promise<TelegramInstallation> {
+  return dismissRequest(projectId, 'telegram', userId, 'Failed to dismiss the access request');
+}
+
+/**
+ * A Telegram user's profile photo (JPEG), fetched through the Kortix API so the
+ * bot token stays server-side. Null when the user has no visible photo.
+ * `version` is `TelegramUser.photo_version`; it keys the HTTP cache.
+ */
+export function getTelegramUserPhoto(
+  projectId: string,
+  userId: string,
+  version?: string | null,
+  signal?: AbortSignal,
+): Promise<Blob | null> {
+  return userPhoto(projectId, 'telegram', userId, version, signal, 'Failed to load the Telegram photo');
+}
+
+/** The allowed users and the people who asked for access on one chat platform, with their names there. */
+export function listChannelUsers(projectId: string, platform: ChannelAccessPlatform): Promise<ChannelUsers> {
+  return channelUsers(projectId, platform, 'Failed to load the users');
+}
+
+/** Allow one user on a chat platform. Adds the id once and clears their access request. */
+export function allowChannelUser(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+): Promise<ChannelAccessList> {
+  return allowUser(projectId, platform, userId, 'Failed to allow the user');
+}
+
+/** Remove one user from a chat platform's allowed list. Idempotent. */
+export function removeChannelUser(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+): Promise<ChannelAccessList> {
+  return removeUser(projectId, platform, userId, 'Failed to remove the user');
+}
+
+/** Dismiss one access request on a chat platform without allowing the user. Idempotent. */
+export function dismissChannelAccessRequest(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+): Promise<ChannelAccessList> {
+  return dismissRequest(projectId, platform, userId, 'Failed to dismiss the access request');
+}
+
+/**
+ * A chat user's profile photo, fetched through the Kortix API so the bot
+ * credential stays server-side. Null when the user has no visible photo. The
+ * Blob's type is the image type (`image/jpeg` on Telegram).
+ * `version` is `ChannelUser.photo_version`; it keys the HTTP cache.
+ */
+export function getChannelUserPhoto(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+  version?: string | null,
+  signal?: AbortSignal,
+): Promise<Blob | null> {
+  return userPhoto(projectId, platform, userId, version, signal, 'Failed to load the photo');
 }
 
 /**
@@ -341,13 +567,24 @@ function normalizeEmailInstallation(value: EmailInstallationWire): EmailConnecti
   };
 }
 
+/**
+ * The email provider a server runs: `'resend'` (Resend Inboxes). `'agentmail'`
+ * is what servers before the Resend switch report.
+ */
+export type EmailProvider =
+  | 'resend'
+  /** @deprecated Older servers ran email on AgentMail. Removed in the next major. */
+  | 'agentmail';
+
 export interface EmailMode {
-  provider: 'agentmail';
+  provider: EmailProvider;
   enabled?: boolean;
   managed_available: boolean;
+  /** Where a managed inbox lives: `<username>@<managed_domain>`. Older servers omit it. */
+  managed_domain?: string;
 }
 
-const DEFAULT_EMAIL_MODE: EmailMode = { provider: 'agentmail', managed_available: false };
+const DEFAULT_EMAIL_MODE: EmailMode = { provider: 'resend', managed_available: false };
 
 export async function getEmailInstallation(
   projectId: string,
@@ -397,6 +634,97 @@ export async function connectEmail(
   return normalizeEmailInstallation(installation);
 }
 
+/** A DNS record the email provider needs before a custom domain can send and receive. */
+export interface EmailDomainRecord {
+  type: 'TXT' | 'CNAME' | 'MX';
+  name: string;
+  value: string;
+  status: 'MISSING' | 'INVALID' | 'VALID';
+  priority?: number;
+  reason?: string;
+}
+
+/** A domain an email account (Resend) can create inboxes on. `domain_id` is null for the managed domain. */
+export interface EmailDomain {
+  domain_id: string | null;
+  domain: string;
+  status: 'NOT_STARTED' | 'PENDING' | 'INVALID' | 'FAILED' | 'VERIFYING' | 'VERIFIED';
+  /** `status === 'VERIFIED'`: an inbox can be created on it. */
+  verified: boolean;
+  records: EmailDomainRecord[];
+  /** Why the domain is not verified yet, in the provider's words. */
+  reason?: string;
+}
+
+export interface EmailDomainList {
+  /** True when the list is the managed account's: one domain, no custom domains. */
+  managed: boolean;
+  default_domain: string;
+  domains: EmailDomain[];
+}
+
+/** One-click DNS setup at the domain's DNS provider (Domain Connect), when it supports it. */
+export interface EmailDomainSetup {
+  url: string;
+  provider_name: string | null;
+  /** Another email provider's MX records already on the domain; applying replaces them. */
+  conflicting_provider: string | null;
+}
+
+export interface EmailDomainResult {
+  domain: EmailDomain;
+  setup: EmailDomainSetup | null;
+}
+
+/**
+ * The domains a Resend API key can create inboxes on. No `apiKey`: the
+ * deployment's managed account, which offers its one managed domain. The key
+ * travels in the POST body, never in a URL.
+ */
+export async function listEmailDomains(
+  projectId: string,
+  input: { apiKey?: string } = {},
+): Promise<EmailDomainList> {
+  return unwrap(
+    await backendApi.post<EmailDomainList>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/domains`,
+      input.apiKey ? { api_key: input.apiKey } : {},
+      { showErrors: false },
+    ),
+    'Failed to list email domains',
+  );
+}
+
+/** Add a custom domain to the Resend account of `apiKey`; returns the DNS records to set. */
+export async function addEmailDomain(
+  projectId: string,
+  input: { apiKey: string; domain: string },
+): Promise<EmailDomainResult> {
+  return unwrap(
+    await backendApi.post<EmailDomainResult>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/domains/add`,
+      { api_key: input.apiKey, domain: input.domain },
+      { showErrors: false },
+    ),
+    'Failed to add the email domain',
+  );
+}
+
+/** Ask Resend to check a custom domain's DNS records again. */
+export async function verifyEmailDomain(
+  projectId: string,
+  input: { apiKey: string; domainId: string },
+): Promise<EmailDomainResult> {
+  return unwrap(
+    await backendApi.post<EmailDomainResult>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/domains/verify`,
+      { api_key: input.apiKey, domain_id: input.domainId },
+      { showErrors: false },
+    ),
+    'Failed to check the email domain',
+  );
+}
+
 export async function disconnectEmail(
   projectId: string,
   connectorSlug?: string | null,
@@ -423,6 +751,121 @@ export async function updateEmailPolicy(
     'Failed to update email policy',
   );
   return normalizeEmailInstallation(installation);
+}
+
+// ── Email inboxes — the accounts of the project's email connector ──────────
+// Each Resend inbox is one account of `kortix_email`: owned by one member
+// (`owner_type: 'member'`, "only me") or shared with the project. Default,
+// sharing and listing also work through the connection functions.
+
+/** Who may email the agent, on the wire (snake_case). */
+export interface EmailInboxSenderPolicy {
+  mode: 'allow_all' | 'restricted';
+  allowed_emails: string[];
+  allowed_domains: string[];
+  allowed_regex: string | null;
+}
+
+/** One email inbox: an account of the email connector. */
+export interface EmailInbox {
+  /** The account: pass it in `connector_bindings.email`. */
+  connection_id: string;
+  inbox_id: string;
+  email: string;
+  display_name: string | null;
+  label: string;
+  owner_type: 'member' | 'project';
+  owner_id: string | null;
+  is_default: boolean;
+  /** On the deployment's managed Resend team (no own key). */
+  managed: boolean;
+  /** Kortix created the inbox: removing it deletes it on Resend. */
+  created_by_kortix: boolean;
+  sender_policy: EmailInboxSenderPolicy;
+  /** The agent its mail starts; null = the project default. */
+  agent_name: string | null;
+  created_at: string;
+}
+
+export interface AddEmailInboxInput {
+  /** `me`: only you ("only me"); `project` (default): shared with the project. */
+  share?: 'me' | 'project';
+  /** Your Resend API key; omit for a managed inbox when the deployment offers one. */
+  api_key?: string;
+  /** The part before the @. */
+  username?: string;
+  /** One of your Resend domains (own key), or the managed domain. */
+  domain?: string;
+  display_name?: string;
+  label?: string;
+  sender_policy?: Partial<EmailInboxSenderPolicy> | EmailSenderPolicy;
+  agent_name?: string | null;
+  /** Attach an existing Resend inbox by id instead of creating one. */
+  inbox_id?: string;
+}
+
+export interface UpdateEmailInboxInput {
+  sender_policy?: Partial<EmailInboxSenderPolicy> | EmailSenderPolicy;
+  agent_name?: string | null;
+  display_name?: string | null;
+  label?: string;
+}
+
+export interface RemoveEmailInboxResult {
+  status: 'deleted';
+  /** True when Resend deleted the inbox (Kortix created it); false: only unlinked. */
+  inbox_deleted: boolean;
+}
+
+/** The inboxes you can see: every shared one, and your own private ones. */
+export async function listEmailInboxes(projectId: string): Promise<EmailInbox[]> {
+  const data = unwrap(
+    await backendApi.get<{ inboxes: EmailInbox[] }>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes`,
+      { showErrors: false },
+    ),
+    'Failed to list email inboxes',
+  );
+  return data.inboxes ?? [];
+}
+
+/** Add an inbox (a new account of the email connector). The key travels in the body. */
+export async function addEmailInbox(projectId: string, input: AddEmailInboxInput): Promise<EmailInbox> {
+  return unwrap(
+    await backendApi.post<EmailInbox>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes`,
+      input,
+      { showErrors: false },
+    ),
+    'Failed to add the email inbox',
+  );
+}
+
+/** Change who may email an inbox, its agent, or its names. */
+export async function updateEmailInbox(
+  projectId: string,
+  connectionId: string,
+  input: UpdateEmailInboxInput,
+): Promise<EmailInbox> {
+  return unwrap(
+    await backendApi.patch<EmailInbox>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes/${encodeURIComponent(connectionId)}`,
+      input,
+      { showErrors: false },
+    ),
+    'Failed to update the email inbox',
+  );
+}
+
+/** Remove an inbox. Resend deletes it too when Kortix created it. */
+export async function removeEmailInbox(projectId: string, connectionId: string): Promise<RemoveEmailInboxResult> {
+  return unwrap(
+    await backendApi.delete<RemoveEmailInboxResult>(
+      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes/${encodeURIComponent(connectionId)}`,
+      { showErrors: false },
+    ),
+    'Failed to remove the email inbox',
+  );
 }
 
 // ── Channel bindings — which agent/model/join-policy a bound chat channel uses ──

@@ -60,6 +60,7 @@ import {
 import {
   qk,
   removeCachedProjectSession,
+  useFeatureFlag,
   useProjectSessions,
   useSessionChildren,
 } from '@kortix/sdk/react';
@@ -270,6 +271,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const router = useUiRouter();
   const pathname = useUiPathname();
   const searchParams = useUiSearchParams();
+  const channelsOn = useFeatureFlag(projectId, 'project_channels').enabled;
   const [search, setSearch] = useState('');
   // `?view=archived` opens the archive, `?view=deleted` Recently deleted (the
   // sidebar menu's links).
@@ -800,6 +802,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       onEnterSelectMode={() => setSelectMode(true)}
       creatingSession={creatingSession}
       canSelect={sessions.length > 0 && !deletedTab}
+      showNewSession={!channelsOn}
     />
   );
 

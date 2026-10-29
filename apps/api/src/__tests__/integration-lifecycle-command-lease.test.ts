@@ -334,6 +334,21 @@ describe('a create claim', () => {
   // (`create-session.ts`), so the session origin and the principal must
   // survive the durable queue, and a row written before those signals existed
   // must replay without them.
+  test('persists the parent visibility actor for queued human grouping', async () => {
+    const userId = crypto.randomUUID();
+    const actor: NonNullable<CreateSessionCommand['parentActor']> = { userId, accountId: project.account_id, credential: { kind: 'jwt' }, ctx: {} };
+    const parentId = crypto.randomUUID();
+    const { row } = await claimCreateSessionCommand(createCommand({
+      userId,
+      parentActor: actor,
+      body: { parent_session_id: parentId },
+    }), { initialStatus: 'queued' });
+    expect((await read(row.commandId)).payload).toMatchObject({
+      parentActor: actor,
+      body: { parent_session_id: parentId },
+    });
+  });
+
   test('persists the origin signals and the principal its replay needs', async () => {
     const { row: withSignals } = await claimCreateSessionCommand(
       createCommand({

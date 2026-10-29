@@ -44,6 +44,7 @@ export function ComposerAboveCard({
   aboveSlot,
   inputSlot,
   notice = null,
+  noticeAsleep,
   onNoticeRetry,
   onModelChange,
   slashMenuPlacement = 'above',
@@ -146,7 +147,7 @@ export function ComposerAboveCard({
               questionActive && DOCKED_MIDDLE_LAYER_CLASS,
             )}
           >
-            {notice === SESSION_NOTICE.idle ? (
+            {(noticeAsleep ?? notice === SESSION_NOTICE.idle) ? (
               <MoonIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" />
             ) : (
               <Loading className="size-3.5 shrink-0" />

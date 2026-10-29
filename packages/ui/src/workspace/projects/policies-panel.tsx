@@ -5,7 +5,7 @@
  * this panel CRUDs the same file via the admin endpoint, then the gateway
  * enforces on every Connector call.
  *
- * Rendered in two places: the Global rules sheet on the Connectors page
+ * Rendered in two places: the Rules tab of the Connectors page
  * (`capabilities/connectors/connectors-page.tsx`), and the Connectors section
  * of the customize panel. Both are narrow columns, so
  * the layout is a single stack of `Label` + `bg-popover rounded-md border`
@@ -188,7 +188,9 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
     policies: draft.map((d) => toPayloadRule(d)),
     defaultMode,
   });
-  const dirty = currentSig !== serverSig;
+  // Nothing is unsaved before the rules have loaded: the empty draft would
+  // differ from the empty signature and show the save bar over skeletons.
+  const dirty = serverSig !== '' && currentSig !== serverSig;
 
   const save = useMutation({
     mutationFn: async () => {
@@ -305,7 +307,7 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
                     'flex cursor-pointer flex-col items-start gap-1 rounded-md border px-4 py-3 text-left',
                     // Never `transition-all` — `scale` is listed so the press
                     // feedback below actually eases instead of snapping.
-                    'transition-[background-color,border-color,scale] duration-150 ease-out',
+                    'transition-[background-color,border-color,scale] duration-normal ease-out',
                     'motion-safe:active:scale-[0.99]',
                     selected
                       ? 'border-primary/40 bg-primary/[0.06]'

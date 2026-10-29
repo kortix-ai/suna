@@ -22,7 +22,7 @@ the component subpaths and the stylesheets. Inside kortix-ai/suna:
 `"@kortix/ui": "workspace:*"`.
 `react` and `react-dom` 19 are peers (the PowerPoint preview needs React 19.2.7 or later).
 
-- Public docs: `apps/web/content/docs/sdk/ui.mdx` (https://kortix.com/docs/sdk/ui).
+- Public docs: the "Kortix UI" section of `apps/web/content/docs/developers.mdx` (https://kortix.com/docs/developers#kortix-ui).
 - Agent skill: `skills/kortix-ui/SKILL.md`, with `references/custom-dashboard.md`
   (a whole dashboard), `references/modules.md` (every entry, its props, an example) and
   `references/theming.md` (every theme key). Kortix sessions load the same files
@@ -186,7 +186,7 @@ The root `@kortix/ui` barrel holds only light core primitives. Toasts need one
 
 ### Routes
 
-Every URL the components link to comes from one route table, `setUiRoutes` (`@kortix/ui`), called once at module load. The defaults are Kortix's own paths: `project` `/projects/<id>`, `session` `/projects/<id>/sessions/<sessionId>`, `sessions` `/projects/<id>/sessions` (`?view=archived|deleted`), `files` `/projects/<id>/files`, `drive` `/projects/<id>/drive`, `apps` `/projects/<id>/apps`, `members` `/projects/<id>/members`, `sandboxSettings` `/projects/<id>/config?section=sandbox`, `customize` `/projects/<id>/customize/<page>` (agents, skills, connectors, triggers, reminders, models, secrets, review, settings). Return your own path for a page you serve elsewhere. Return `null` for a page you do not serve: every link to it is hidden. `project` and `session` cannot be null.
+Every URL the components link to comes from one route table, `setUiRoutes` (`@kortix/ui`), called once at module load. The defaults are Kortix's own paths: `project` `/projects/<id>`, `session` `/projects/<id>/sessions/<sessionId>`, `sessions` `/projects/<id>/sessions` (`?view=archived|deleted`), `files` `/projects/<id>/files`, `drive` `/projects/<id>/drive`, `apps` `/projects/<id>/apps`, `members` `/projects/<id>/members`, `sandboxSettings` `/projects/<id>/config?section=sandbox`, `customize` `/projects/<id>/customize/<page>` (agents, skills, connectors, triggers, reminders, models, secrets, review, settings), `channel` `/projects/<id>/c/<slug>` and `dm` `/projects/<id>/dm/<agent>` (the sidebar links them while the project's `project_channels` flag is on). Return your own path for a page you serve elsewhere. Return `null` for a page you do not serve: every link to it is hidden. `project`, `session`, `channel` and `dm` cannot be null.
 
 ## Modules
 

@@ -1,5 +1,6 @@
 /** Project settings: onboarding, deletion, feature flags, and the sandbox provider override. */
 import { releaseProjectEventSubscriptions } from '../trigger-events/subscriptions';
+import { releaseProjectChannels } from '../../channels/install-store';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, authorize } from '../../iam';
 import { actorFor } from '../../iam/actor';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
@@ -245,12 +246,22 @@ export function registerProjectSettingsRoutes(): void {
       path: '/{projectId}',
       tags: ['projects'],
       summary: 'Delete a project',
+      description:
+        'Permanent: there is no restore. Deletes the project, its Kortix-managed repository (a connected repository is never touched), its connectors and its tokens. Afterwards the project answers 404.',
       ...auth,
         request: {
           params: z.object({ projectId: z.string() }),
         },
       responses: {
-          200: json(z.any(), 'OK'),
+          200: json(
+            z.object({
+              ok: z.literal(true),
+              deleted: z.literal(true).openapi({ description: 'Always true. The project cannot be restored.' }),
+              archived: z.literal(true).openapi({ description: 'Deprecated: the same as `deleted`. Kept for older clients.' }),
+              repo_deleted: z.boolean().openapi({ description: 'The Kortix-managed repository was deleted with the project.' }),
+            }),
+            'Deleted',
+          ),
           ...errors(404, 500, 502),
       },
     }),
@@ -287,6 +298,9 @@ export function registerProjectSettingsRoutes(): void {
     // a failure leaves the project active and the deletion retryable.
     try {
       await purgeProjectConnectors(projectId);
+      // The tombstone keeps its chat installs, bindings and secrets too:
+      // release them, or the channels keep delivering to a deleted project.
+      await releaseProjectChannels(projectId);
     } catch (error) {
       logger.error('[projects] failed to purge the project connectors', { projectId, error: String(error) });
       return c.json({ error: 'Failed to purge project connectors' }, 500);
@@ -296,7 +310,8 @@ export function registerProjectSettingsRoutes(): void {
     if (!row) return c.json({ error: 'Not found' }, 404);
     // An archived project fires nothing: release its app-event provider instances.
     await releaseProjectEventSubscriptions(projectId);
-    return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
+    // `archived` stays for clients that read it; `deleted` says what happened (KRTX-3384).
+    return c.json({ ok: true, deleted: true, archived: true, repo_deleted: repoDeleted });
   },
   );
 

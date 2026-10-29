@@ -330,7 +330,7 @@ export function ConnectorCallTool({ call, defaultOpen, forceOpen, locked }: Tool
           {!outputIsError && parsed ? (
             <ToolSection label={tI18nComplete.raw('text9061383b8e22')}>
               {parsed.reason && !ok ? (
-                <p className="text-destructive font-mono text-xs">{String(parsed.reason)}</p>
+                <p className="text-muted-foreground font-mono text-xs">{String(parsed.reason)}</p>
               ) : (
                 <ConnectorJson value={'data' in parsed ? parsed.data : parsed} />
               )}

@@ -50,6 +50,8 @@ mock.module('@kortix/db', () => ({
   and: (...parts: unknown[]) => parts,
   isNull: (a: unknown) => ({ a }),
   sql: (...args: unknown[]) => ({ args }),
+  // Imported by shared/pg-broadcast.ts (#10934); a stub without it breaks a later file in the same process.
+  requiresTls: () => false,
 }));
 
 mock.module('../shared/db', () => ({

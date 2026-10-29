@@ -6,7 +6,7 @@ description: "Per-user memory in the user's own Drive folder: `/drives/me/Memory
 <skill name="kortix-user-memory">
 
 <overview>
-Each person in a Kortix project has their own folder in Files,
+Each person in a Kortix project has their own folder in Drive,
 `Users/<name>`, mounted in their sessions at `/drives/me` (and
 `~/Desktop`). Kortix creates `/drives/me/Memory` in it. That folder is this
 user's memory: what you keep about THIS person, read back in every session
@@ -19,9 +19,8 @@ they start.
   The `memory` tool covers only the project brain at `memory/`, not this
   folder.
 
-User memory is not project memory. Facts the whole team needs go in the
-project brain (`memory/`, the `kortix-memory` skill) or in `Company/Memory`
-when it is mounted (the `kortix-drives` skill).
+User memory is not project or team memory. Where every other fact goes is
+the one table in the `kortix-drives` skill (`<memory>`).
 </overview>
 
 <protocol>
@@ -40,7 +39,9 @@ when it is mounted (the `kortix-drives` skill).
 
 `/drives/me` is the folder of the session's owner. In a session several
 people use (a shared session, a channel thread), keep only the owner's facts
-there. When `/drives/me` is absent (Volumes off for the project, or no
+there. In a private channel's thread `/drives/me` is read-only: save nothing
+there, and keep what you learn in the channel's memory (the
+`kortix-channel-memory` skill). When `/drives/me` is absent (Volumes off for the project, or no
 personal folder in `/drives/README.md`), there is no user memory: do not
 write one anywhere else, and tell the user if they asked you to remember
 something.
@@ -79,7 +80,7 @@ Create the folder if it is missing: `mkdir -p /drives/me/Memory`.
   that").
 - **Ongoing work**: goals, deadlines, the thing they come back to every
   week. Convert "next Friday" to `YYYY-MM-DD`.
-- **Pointers**: where their things live (a dashboard, a folder in Files, a
+- **Pointers**: where their things live (a dashboard, a folder in Drive, a
   channel), never the content behind them.
 
 ### Drop
@@ -87,10 +88,10 @@ Create the folder if it is missing: `mkdir -p /drives/me/Memory`.
 - Secrets, passwords, tokens, API keys, card numbers. Those go in the
   Kortix Secrets Manager.
 - Anything that is only about this conversation.
-- Facts the repo, Files or a connector already holds — point to them.
+- Facts the repo, Drive or a connector already holds — point to them.
 - Guesses about the user. Store what they said or did, not what you infer
   about their personality, health, beliefs or private life.
-- Team facts. Those are project memory (`kortix-memory`).
+- Team and channel facts. Save them where the `kortix-drives` table says.
 
 ### Style
 
@@ -109,7 +110,7 @@ Create the folder if it is missing: `mkdir -p /drives/me/Memory`.
 - **The user's edits win.** A file the user changed in the web app is the
   truth. Do not restore what they removed.
 - **Shared folder = shared memory.** A user who shares their folder in
-  Files shares `Memory/` with it. Keep it to work facts.
+  Drive shares `Memory/` with it. Keep it to work facts.
 - **Small files.** The index stays under ~40 lines and each file under ~200.
   Split or prune before that.
 </gotchas>

@@ -1410,3 +1410,38 @@ flow(
     });
   },
 );
+
+flow(
+  'PROJ-46',
+  {
+    domain: 'projects',
+    requires: ['database'],
+    routes: [
+      'PATCH /v1/projects/:projectId/sandbox-templates/:templateId',
+      'DELETE /v1/projects/:projectId/sandbox-templates/:templateId',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const templateId = await withDb(ctx, async (db) => (await db.query(
+      `INSERT INTO kortix.sandbox_templates (project_id, slug, name, is_shared, source, provider, image, cpu, memory_gb, disk_gb, provider_state)
+       VALUES ($1, 'declared-tpl', 'Declared', false, 'toml', 'platinum', 'python:3.12-slim', 1, 2, 10, 'missing') RETURNING template_id`,
+      [p.id],
+    )).rows[0].template_id as string);
+    const params = { projectId: p.id, templateId };
+
+    await ctx.step('PATCH of a template kortix.yaml declares → 409 template_declared_in_manifest, and the row is unchanged', async () => {
+      (await owner.patch('/v1/projects/:projectId/sandbox-templates/:templateId', { cpu: 4 }, { params }))
+        .status(409).body().has('$.code', 'template_declared_in_manifest');
+      const cpu = await withDb(ctx, async (db) => (await db.query('SELECT cpu FROM kortix.sandbox_templates WHERE template_id = $1', [templateId])).rows[0].cpu);
+      if (cpu !== 1) throw new Error(`cpu changed to ${cpu}`);
+    });
+    await ctx.step('DELETE of it → 409 template_declared_in_manifest, and the row stays', async () => {
+      (await owner.del('/v1/projects/:projectId/sandbox-templates/:templateId', { params }))
+        .status(409).body().has('$.code', 'template_declared_in_manifest');
+      const n = await withDb(ctx, async (db) => (await db.query('SELECT count(*)::int AS n FROM kortix.sandbox_templates WHERE template_id = $1', [templateId])).rows[0].n);
+      if (n !== 1) throw new Error('the declared template was deleted');
+    });
+  },
+);

@@ -28,6 +28,7 @@
 import {
   ArrowSquareOutIcon,
   CaretDownIcon,
+  CreditCardIcon,
   MagnifyingGlassIcon,
   XIcon,
 } from '@phosphor-icons/react';
@@ -44,6 +45,7 @@ import {
   AlertDialogTitle,
 } from '../../primitives/alert-dialog';
 import { Button } from '../../primitives/button';
+import { useModelConnectionGate } from '../../session/models/use-model-connection-gate';
 import { Input } from '../../primitives/input';
 import {
   InputGroupSearch,
@@ -583,6 +585,19 @@ function SignInSubRows({
   );
 }
 
+/** Opens the plan dialog. Nothing when billing is off: no plan to sell. */
+function ManagedUpgradeButton({ projectId }: { projectId: string }) {
+  const t = useTranslations('sessionUi.modelGate');
+  const { openUpgrade, showUpgradeOption } = useModelConnectionGate(undefined, { projectId });
+  if (!showUpgradeOption) return null;
+  return (
+    <Button type="button" size="xs" className="shrink-0" onClick={openUpgrade}>
+      <CreditCardIcon className="size-3.5 shrink-0" />
+      {t('upgrade')}
+    </Button>
+  );
+}
+
 /** What an open card holds, by how the provider connects. */
 function ExpandedBody({
   projectId,
@@ -612,7 +627,15 @@ function ExpandedBody({
 
   let content: ReactNode;
   if (method === 'included' || (entry.envVars.length === 0 && !SUBSCRIPTION_BY_PROVIDER[entry.id])) {
-    content = <AccordionSubRow>{entry.hint}</AccordionSubRow>;
+    content = (
+      <AccordionSubRow
+        // Kortix with no servable model is the upgrade story: the row says so,
+        // so it carries the way out too.
+        action={entry.managed && entry.models.length === 0 ? <ManagedUpgradeButton projectId={projectId} /> : null}
+      >
+        {entry.hint}
+      </AccordionSubRow>
+    );
   } else if (pooled.pooledSecretsEnabled && pooled.accountId && entry.id === 'openai') {
     content = (
       <div className="border-border space-y-3 border-t py-3">

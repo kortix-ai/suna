@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   InvalidDeviceAuthResponseError,
   awaitDeviceAuthorization,
@@ -8,6 +11,50 @@ import {
   parseDeviceAuthStatus,
   requestDeviceAuthorization,
 } from './device-auth';
+
+describe('browser opener on Node', () => {
+  test.each([
+    ['missing opener', 'https://example.invalid/approve', '0'],
+    ['invalid URL', 'not a URL', '0'],
+    ['unsafe scheme', 'javascript:alert(1)', '0'],
+    ['browser disabled', 'https://example.invalid/approve', '1'],
+  ])('%s does not terminate authorization polling', async (_name, url, disabled) => {
+    const directory = await mkdtemp(join(tmpdir(), 'device-browser-'));
+    try {
+      const bundle = join(directory, 'device-auth.mjs');
+      const build = await Bun.build({
+        entrypoints: [join(import.meta.dir, 'device-auth.ts')],
+        target: 'node',
+      });
+      expect(build.success).toBe(true);
+      await Bun.write(bundle, await build.outputs[0].text());
+      const child = Bun.spawn([Bun.which('node') ?? '/usr/local/bin/node', '--input-type=module', '-e', `
+        import { openBrowser, awaitDeviceAuthorization } from ${JSON.stringify(bundle)};
+        openBrowser(${JSON.stringify(url)});
+        await awaitDeviceAuthorization('http://127.0.0.1:1', {
+          deviceCode: 'TEST-0001', deviceSecret: 'synthetic',
+          expiresAt: new Date(Date.now() + 60000).toISOString(), pollIntervalMs: 250,
+        }, { onWaiting() { console.log('polling'); }, sleep: async () => {
+          await new Promise(resolve => setImmediate(resolve));
+          console.log('survived');
+          process.exit(0);
+        }});
+      `], {
+        env: { ...process.env, PATH: directory, KORTIX_AGENT_TUNNEL_NO_BROWSER: disabled },
+        stdout: 'pipe', stderr: 'pipe',
+      });
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
+      ]);
+      expect(stderr).toBe('');
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('polling');
+      expect(stdout).toContain('survived');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
 
 const VALID_TUNNEL_ID = '00000000-0000-4000-8000-000000000042';
 const VALID_TOKEN = `kortix_tnl_${'A'.repeat(36)}`;

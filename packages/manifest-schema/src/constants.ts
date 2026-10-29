@@ -89,25 +89,17 @@ export function reservedEnvNameReason(name: string): string | null {
   return null;
 }
 
-export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor', 'event'] as const;
+export const TRIGGER_TYPES = ['cron', 'webhook', 'event', 'app'] as const;
 
-/** Cron/webhook/monitor-only keys: hard-rejected on a `type: event` trigger. */
+/** What a `type: monitor` entry answers since the monitor box was removed. */
+export const MONITOR_REMOVED_MESSAGE =
+  'monitor triggers were removed. Run the watcher in an App (a process that POSTs to $KORTIX_APP_EVENTS_URL) and fire with a `type: app` trigger, or poll with a cron trigger whose `target` is the App.';
+
+/** Cron/webhook-only keys: hard-rejected on a `type: event` or `type: app` trigger. */
 export const EVENT_FORBIDDEN_KEYS = [
   'cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv',
-  'run', 'mode', 'interval', 'expect_event_within',
 ] as const;
 
-/**
- * A `type: monitor` trigger's shape. `poll` runs `run` every `interval` and
- * exits; `stream` runs it once and keeps it alive. Both emit events as stdout
- * lines — downstream (filter → prompt → session_mode) cannot tell them apart.
- */
-export const MONITOR_MODES = ['poll', 'stream'] as const;
-
-/** Floor for `interval` on a `mode: poll` monitor — the platform bound. */
-export const MONITOR_MIN_INTERVAL_SECONDS = 30;
-/** Floor for `expect_event_within` (the silence watchdog) — the platform bound. */
-export const MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
 /** Floor for a cron trigger's `max_lateness` (the misfire bound, KRTX-1743). */
 export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
 /**
@@ -116,8 +108,6 @@ export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
  * trigger's hour in October 2026; the 60 s cron floor allows exactly this.
  */
 export const DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR = 60;
-/** Longest `run` command accepted. Bounds a hostile manifest out of the box config. */
-export const MONITOR_RUN_MAX_LENGTH = 1024;
 
 /**
  * Duration literal accepted by `interval` / `expect_event_within`: a positive
@@ -287,6 +277,12 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   // Rooms: read = list rooms and read messages; write = post, join, leave.
   'project.room.read',
   'project.room.write',
+  // Artifacts: read = gallery and viewer; write = publish and edit; manage =
+  // anyone's sharing; public = public links.
+  'project.artifact.read',
+  'project.artifact.write',
+  'project.artifact.manage',
+  'project.artifact.public',
   // Minting a project credential. Grantable so a manifest CAN hand it to an
   // agent explicitly, but note the two credential routes refuse an
   // agent-session token outright (projects/routes/secret-delivery.ts) — an agent that could
@@ -432,7 +428,13 @@ export const HARNESS_TOOL_NAMES = [
  * MCP-era `kortix-connectors_call` / `kortix-connectors_describe` meta-tools
  * were re-added once (#9902) and removed again; a test pins them out.
  */
-export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show'] as const;
+export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show'] as const;
+/** Kortix tools a manifest's `tools:` list loads unless it names the key. */
+export const DEFAULT_ON_KORTIX_TOOLS = ['image_gen'] as const;
+/** True for a `DEFAULT_ON_KORTIX_TOOLS` name. */
+export function isDefaultOnKortixTool(name: string): boolean {
+  return (DEFAULT_ON_KORTIX_TOOLS as readonly string[]).includes(name);
+}
 /**
  * Kortix tools that no longer exist. Manifests written while #9902 was live
  * still name them (the v2 starter, v3 agent excludes). Naming one is
@@ -450,13 +452,14 @@ export function kortixToolRef(value: unknown): string | null {
 /**
  * The Kortix tools a project's sessions get. With no `tools` key (`undefined`):
  * all of them, so a project that never lists them keeps them. With a `tools`
- * key, even an empty one: only the ones it lists, as `kortix:<name>` or as a
- * module that replaces the tool.
+ * key, even an empty one: the ones it lists, as `kortix:<name>` or as a
+ * module that replaces the tool, plus each `DEFAULT_ON_KORTIX_TOOLS` name it
+ * does not name.
  */
 export function selectedKortixTools(tools: unknown): string[] {
   if (tools === undefined) return [...KORTIX_TOOL_NAMES];
   const listed = tools && typeof tools === 'object' && !Array.isArray(tools) ? tools : {};
-  return KORTIX_TOOL_NAMES.filter((name) => Object.hasOwn(listed, name));
+  return KORTIX_TOOL_NAMES.filter((name) => Object.hasOwn(listed, name) || isDefaultOnKortixTool(name));
 }
 
 // ─── kortix_version 3 registries ────────────────────────────────────────────
@@ -472,8 +475,11 @@ export const REGISTRY_NAME_MAX = 64;
 export const KORTIX_SKILL_NAMES = [
   'kortix-cli',
   'kortix-apps',
+  'kortix-artifacts',
+  'kortix-channel-memory',
   'kortix-computer',
   'kortix-connectors',
+  'kortix-design',
   'kortix-drives',
   'kortix-genui',
   'kortix-goals',

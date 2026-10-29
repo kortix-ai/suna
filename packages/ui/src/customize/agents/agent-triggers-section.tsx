@@ -43,6 +43,7 @@ import { cn } from '../../internal/lib/utils';
 import { listProjectTriggers, type ProjectTrigger } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
+  AppWindowIcon,
   LightningIcon,
   PlusIcon,
   PulseIcon,
@@ -58,6 +59,7 @@ const KIND_ICON: Record<ProjectTrigger['type'], Icon> = {
   webhook: WebhooksLogoIcon,
   monitor: PulseIcon,
   event: LightningIcon,
+  app: AppWindowIcon,
 };
 
 /**

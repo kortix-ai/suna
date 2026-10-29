@@ -472,6 +472,24 @@ describe('directory cursor', () => {
 });
 
 describe('readRepoFileBytes', () => {
+  test('a directory requested as raw bytes is a typed file-not-found, not a GitOperationError', async () => {
+    await initRealRepo();
+    await commitFiles({ 'security/policy.md': 'synthetic policy\n' });
+
+    await expect(readRepoFileBytes(project, 'security', 'main')).rejects.toBeInstanceOf(RepoFileNotFoundError);
+    await expect(readRepoFileBytes(project, 'security', 'main', { freshOnMiss: true })).rejects.toBeInstanceOf(RepoFileNotFoundError);
+    expect(refreshes).not.toContain(true);
+  });
+
+  test('a corrupt blob remains a GitOperationError', async () => {
+    await initRealRepo();
+    await commitFiles({ 'broken.bin': 'synthetic bytes' });
+    const blob = (await realRunGitFn(['rev-parse', 'HEAD:broken.bin'], repoPath, false)).stdout.trim();
+    await rm(join(repoPath, '.git', 'objects', blob.slice(0, 2), blob.slice(2)));
+
+    await expect(readRepoFileBytes(project, 'broken.bin', 'main')).rejects.toBeInstanceOf(GitOperationError);
+  });
+
   test('returns a committed binary file byte-accurate', async () => {
     await initRealRepo();
     await commitFiles({ 'logo.png': PNG_LIKE_BYTES });

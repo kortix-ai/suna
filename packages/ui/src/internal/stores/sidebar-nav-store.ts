@@ -16,7 +16,7 @@ import { registerPersistedStore, resetPersistedStore } from './persisted-store-r
 
 // Review (2026-10-17) and Reminders (2026-10-19) left the sidebar for Customize
 // tabs. A saved layout that still names one drops the id in `normalizeSidebarNav`.
-export const SIDEBAR_NAV_ITEM_IDS = ['customize', 'apps', 'files', 'rooms', 'goals'] as const;
+export const SIDEBAR_NAV_ITEM_IDS = ['customize', 'apps', 'files', 'rooms', 'goals', 'artifacts'] as const;
 export type SidebarNavItemId = (typeof SIDEBAR_NAV_ITEM_IDS)[number];
 
 /**
@@ -40,6 +40,8 @@ export const SIDEBAR_NAV_DEFAULTS: readonly SidebarNavEntry[] = [
   { id: 'rooms', visibility: 'never' },
   // Goals (2026-10-21, flag `goals`): objectives agents own until verified done.
   { id: 'goals', visibility: 'always' },
+  // Artifacts (2026-10-23, flag `artifacts`): published docs, slides, boards, dashboards.
+  { id: 'artifacts', visibility: 'always' },
 ];
 
 function isItemId(value: unknown): value is SidebarNavItemId {

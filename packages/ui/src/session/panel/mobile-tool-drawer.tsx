@@ -25,6 +25,8 @@ import { SessionAuditPanel } from './session-audit-panel';
 import { SessionRemindersPanel } from './session-reminders-panel';
 import { SessionFilesExplorer } from './session-files-explorer';
 import { SessionTerminalPanel } from '../../terminal/session-terminal-panel';
+import { SessionBootStatus } from '../status/session-starting-loader';
+import { useOptionalSessionPanel } from './session-panel-provider';
 import { useLocalizedUiCatalog } from '../../i18n/ui-catalog/use-localized-ui-catalog';
 import { useKortixComputerStore, type QuickView } from '../../internal/stores/kortix-computer-store';
 import { sessionPreviewTabId } from '../../internal/stores/session-browser-store';
@@ -58,6 +60,11 @@ export function MobileToolDrawer({
   const closeMobileTool = useKortixComputerStore((s) => s.closeMobileTool);
   const toolMeta = useLocalizedUiCatalog(TOOL_META);
   const meta = view ? toolMeta[view] : null;
+  // Terminal, Browser and Files need the computer: while it boots, the drawer
+  // shows the wake status in their place.
+  const booting =
+    !!useOptionalSessionPanel()?.booting &&
+    (view === 'terminal' || view === 'browser' || view === 'files');
 
   return (
     <Drawer open={view !== null} onOpenChange={(next) => !next && closeMobileTool()}>
@@ -72,21 +79,22 @@ export function MobileToolDrawer({
           </DrawerTitle>
         </DrawerHeader>
         <div className="min-h-0 flex-1 overflow-hidden">
-          {view === 'terminal' && (
+          {booting && <SessionBootStatus projectId={projectId} sessionId={projectSessionId} />}
+          {!booting && view === 'terminal' && (
             <SessionTerminalPanel
               sessionId={sessionId}
               projectId={projectId}
               projectSessionId={projectSessionId}
             />
           )}
-          {view === 'browser' && (
+          {!booting && view === 'browser' && (
             <BrowserPanel
               tabId={sessionPreviewTabId(sessionId)}
               projectId={projectId}
               projectSessionId={projectSessionId}
             />
           )}
-          {view === 'files' && (
+          {!booting && view === 'files' && (
             <SessionFilesExplorer
               chatSessionId={sessionId}
               projectId={projectId}

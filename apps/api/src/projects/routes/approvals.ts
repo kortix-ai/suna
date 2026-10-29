@@ -27,6 +27,7 @@ import { markApprovalCardDecided } from '../../channels/approval-card-relay';
 import { approvalNotExpired } from '../../connectors/approval-expiry';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { approvalCallerOf } from '../lib/http-approval-caller';
+import { hiddenSpaceIds, sessionsInSpaces } from '../../shared/space-access';
 
 const APPROVAL_EXPIRED_BODY = { error: 'This approval expired', code: 'APPROVAL_EXPIRED' };
 
@@ -92,15 +93,22 @@ export function registerApprovalsRoutes(): void {
         )
         .orderBy(desc(connectorCalls.createdAt))
         .limit(limit.value);
+      // Calls of a private channel's threads the manager is not in are not listed.
+      const hiddenSessions = await sessionsInSpaces(
+        projectId,
+        rows.flatMap((r) => (r.sessionId ? [String(r.sessionId)] : [])),
+        await hiddenSpaceIds(projectId, loaded.userId, callerKortixSessionId(c)),
+      );
+      const listed = rows.filter((r) => !r.sessionId || !hiddenSessions.has(String(r.sessionId)));
 
-      const userIds = [...new Set(rows.map((r) => r.actingUserId).filter((v): v is string => !!v))];
+      const userIds = [...new Set(listed.map((r) => r.actingUserId).filter((v): v is string => !!v))];
       const emailByUser = userIds.length
         ? await lookupEmailsByUserIds(userIds)
         : new Map<string, string>();
 
       return c.json({
-        count: rows.length,
-        approvals: rows.map((r) => ({
+        count: listed.length,
+        approvals: listed.map((r) => ({
           execution_id: r.executionId,
           action: r.actionPath,
           risk: r.risk,
@@ -210,6 +218,7 @@ export function registerApprovalsRoutes(): void {
           opencodeSessionId: projectSessions.runtimeSessionId,
           createdBy: projectSessions.createdBy,
           origin: projectSessions.origin,
+          spaceId: projectSessions.spaceId,
         })
         .from(projectSessions)
         .where(
@@ -219,9 +228,12 @@ export function registerApprovalsRoutes(): void {
           ),
         );
 
+      // A private channel the caller is not in counts nothing.
+      const hidden = await hiddenSpaceIds(projectId, loaded.userId, callerKortixSessionId(c));
       const sessions: Record<string, number> = {};
       let total = 0;
       for (const s of sess) {
+        if (s.spaceId && hidden.has(s.spaceId)) continue;
         // created_by is shared across every KaaB session, so it cannot filter
         // one end-user's pending gates from another's — and an execution_id is
         // all the resolve route needs.

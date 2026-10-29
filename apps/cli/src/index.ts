@@ -37,6 +37,7 @@ import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runReminders } from './commands/reminders.ts';
 import { runGoals } from './commands/goals.ts';
+import { runArtifacts } from './commands/artifacts.ts';
 import { runReview } from './commands/review.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
@@ -250,6 +251,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   triggers: (rest) => runTriggers(rest),
   reminders: (rest) => runReminders(rest),
   goals: (rest) => runGoals(rest),
+  artifacts: (rest) => runArtifacts(rest),
   capture: (rest) => runCapture(rest),
   remind: (rest) => runReminders(rest, true),
   connectors: (rest) => runConnectors(rest),

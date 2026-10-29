@@ -5,8 +5,8 @@ import {
   strictBrowserLane,
 } from '../e2e/global-setup';
 
-const emailUp = async () => ({ available: true, reason: 'agentmail' });
-const emailDown = async () => ({ available: false, reason: 'AgentMail key rejected (HTTP 403)' });
+const emailUp = async () => ({ available: true, reason: 'resend' });
+const emailDown = async () => ({ available: false, reason: 'Resend key rejected (HTTP 403)' });
 
 const fullyConfigured: NodeJS.ProcessEnv = {
   E2E_REQUIRE_ALL_BROWSER: '1',
@@ -38,7 +38,7 @@ describe('up-front browser capability assertion', () => {
     // The exact blip that used to turn the whole lane red ~50 min in.
     await expect(
       assertBrowserLaneCapabilities(fullyConfigured, emailDown),
-    ).rejects.toThrow('AgentMail key rejected (HTTP 403)');
+    ).rejects.toThrow('Resend key rejected (HTTP 403)');
   });
 
   it('fails on a missing database URL and names the specs it would skip', async () => {

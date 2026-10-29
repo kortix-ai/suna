@@ -19,16 +19,15 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let calls: Call[] = [];
 let projectPolicies: Array<Record<string, unknown>> = [];
 let defaultMode = 'risk';
-let discoverEnabled = true;
 /** The accounts GET .../connectors/:slug/accounts returns, default first. */
 let connectorAccounts: Array<Record<string, unknown>> = [];
-/** `connectors_v2` on the project: the move routes answer, else 403 feature_disabled. */
-let connectorsV2 = true;
 /** What POST .../connectors/:slug/move answers, in order (the last one repeats). */
 let moveAnswers: Array<{ status: number; body: unknown }> = [];
 /** Slugs the fake server switched to `mcp`: an active sign-in switches the marked connector. */
 let switched = new Set<string>();
 let switchOnSignIn = true;
+/** Extra fields POST .../discover/install answers with (e.g. `existing: true`). */
+let installExtra: Record<string, unknown> = {};
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -61,14 +60,8 @@ function startServer(): string {
       calls.push({ method: req.method, path: url.pathname + url.search, body });
       const ex = `/v1/connectors/projects/${PROJECT}`;
 
-      // ── Pipedream → Kortix moves (connectors_v2) ─────────────────────────
-      const moveGate = () =>
-        Response.json(
-          { error: 'Connectors v2 is not enabled for this project. Enable it in Settings → Feature flags.', code: 'feature_disabled', feature: 'connectors_v2' },
-          { status: 403 },
-        );
+      // ── Pipedream → Kortix moves ──────────────────────────────────────────
       if (url.pathname === `/v1/projects/${PROJECT}/connector-moves` && req.method === 'GET') {
-        if (!connectorsV2) return moveGate();
         return Response.json({
           moves: [
             { slug: 'crm', name: 'CRM', provider: 'pipedream', app: 'hubspot', to: null, connection_id: null, signed_in: false, accounts: 1 },
@@ -79,7 +72,6 @@ function startServer(): string {
         });
       }
       if (/^\/v1\/projects\/proj_connectors\/connectors\/[^/]+\/move$/.test(url.pathname) && req.method === 'POST') {
-        if (!connectorsV2) return moveGate();
         const answer = moveAnswers.length > 1 ? moveAnswers.shift()! : moveAnswers[0]!;
         return Response.json(answer.body, { status: answer.status });
       }
@@ -149,24 +141,47 @@ function startServer(): string {
         return Response.json({
           item: { id: 'stripe', kind: 'api', slug: 'stripe', name: 'Stripe', description: 'Payments', url: null, categories: ['finance'] },
           variants: [
+            { id: 'stripe-mcp', kind: 'mcp', name: 'Stripe', url: 'https://mcp.stripe.test', docs: null, description: null, transports: ['http'], requiresAuth: true, command: null, connector: { provider: 'mcp' }, oneClick: true, recommended: true },
+            { id: 'composio:stripe', kind: 'composio', name: 'Stripe', url: null, docs: null, description: null, transports: [], requiresAuth: true, command: null, connector: null, oneClick: true },
             { id: 'stripe-openapi', kind: 'openapi', name: 'Stripe REST', url: 'https://stripe.test/openapi.json', docs: null, description: null, transports: [], requiresAuth: true, command: null, connector: null },
           ],
         });
       }
+      if (url.pathname === `${ex}/discover/connectors/tools` && req.method === 'GET') {
+        return Response.json({ way: { id: url.searchParams.get('way'), kind: 'mcp', name: 'Stripe' }, tools: [{ name: 'list_customers', description: 'List customers' }], total: 1, source: 'directory' });
+      }
+      if (url.pathname === `${ex}/discover/sections` && req.method === 'GET') {
+        return Response.json({ popular: [], sections: [], categories: [{ key: 'finance', label: 'Finance', count: 71 }, { key: 'crm', label: 'CRM', count: 40 }] });
+      }
+      if (url.pathname === `${ex}/connectors` && req.method === 'POST') {
+        return Response.json(
+          { error: 'a person must confirm this server', code: 'custom_connector_needs_human', setup_url: 'https://app.kortix.test/projects/p/customize/connectors?url=x' },
+          { status: 403 },
+        );
+      }
+      if (url.pathname === `${ex}/discover/install` && req.method === 'POST') {
+        return Response.json({ ok: true, slug: 'billing', name: 'Billing', provider: 'composio', way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe', oneClick: true }, next: 'connect', ...installExtra });
+      }
+      if (url.pathname === `${ex}/connectors/billing/policies` && req.method === 'GET') {
+        return Response.json({
+          policies: [],
+          sensitive: false,
+          effective: [
+            { path: 'create_charge', action: 'block', source: 'policy_set', risk: 'write', rule: { match: 'create_*', action: 'block' } },
+            { path: 'list_charges', action: 'always_run', source: 'risk_default', risk: 'read' },
+          ],
+        });
+      }
+      if (url.pathname === `${ex}/connectors/billing/oauth2/connection` && req.method === 'PUT') {
+        return Response.json({ ok: true, slug: 'billing', account: 'default', expires_at: '2026-10-24T21:00:00.000Z' });
+      }
+      if (url.pathname === `${ex}/connectors/billing/policy-sets/readonly` && req.method === 'PUT') {
+        return Response.json({ ok: true, created: true, policies: [{ match: 'create_charge', action: 'block' }] });
+      }
       if (url.pathname === `${ex}/discover/connectors` && req.method === 'GET') {
-        if (!discoverEnabled) {
-          return Response.json(
-            {
-              error: 'Connector discovery is not enabled for this project. Enable it in Settings → Feature flags.',
-              code: 'feature_disabled',
-              feature: 'connectors_api_discover',
-            },
-            { status: 403 },
-          );
-        }
         return Response.json({
           items: [
-            { id: 'stripe', kind: 'api', slug: 'stripe', name: 'Stripe', description: 'Payments', url: null, categories: ['finance'] },
+            { id: 'stripe', kind: 'api', slug: 'stripe', name: 'Stripe', description: 'Payments', url: null, categories: ['finance'], installed: ['billing'] },
             { id: 'linear', kind: 'api', slug: 'linear', name: 'Linear', description: 'Issues', url: null, categories: ['dev'] },
           ],
           total: 2,
@@ -286,12 +301,11 @@ describe('kortix connectors — capability-page parity', () => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-connectors-'));
     process.env = { ...ORIGINAL_ENV };
     calls = [];
+    installExtra = {};
     switched = new Set();
     switchOnSignIn = true;
     projectPolicies = [{ match: 'send_*', action: 'require_approval' }];
     defaultMode = 'risk';
-    discoverEnabled = true;
-    connectorsV2 = true;
     moveAnswers = [{ status: 200, body: { status: 'moved' } }];
     connectorAccounts = [
       {
@@ -320,7 +334,7 @@ describe('kortix connectors — capability-page parity', () => {
   test('--help documents every new subcommand', async () => {
     const r = await runCli(['connectors', '--help']);
     expect(r.code).toBe(0);
-    for (const fragment of ['sensitive <slug> on|off', 'owner <slug> project|user', 'catalog show <id>', 'policy add <match> <action>', 'policy rm <match>', '--device']) {
+    for (const fragment of ['sensitive <slug> on|off', '--new-profile', '--oauth2-client-credentials', 'policy <slug> effective', 'agents <slug>', 'rules [--json]', 'catalog show <id>', 'policy add <match> <action>', 'policy rm <match>', '--device']) {
       expect(r.stdout).toContain(fragment);
     }
   });
@@ -330,6 +344,9 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).not.toContain('machines <slug>');
     expect(r.stdout).toContain('--account "<machine name>"');
+    // Removed ideas stay out of the help: no connection mode, no owner strategy.
+    expect(r.stdout).not.toContain('mode <slug> shared');
+    expect(r.stdout).not.toContain('owner <slug> project|user');
   });
 
   test('ls and show opt out of action schemas; show --json still asks for them', async () => {
@@ -622,30 +639,145 @@ describe('kortix connectors — capability-page parity', () => {
     });
   });
 
-  test('catalog lists records and forwards q + cursor', async () => {
+  test('catalog lists every app by default and forwards q + cursor', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'pay', '--cursor', 'cur_1', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors?q=pay&cursor=cur_1`);
     expect(r.stdout).toContain('stripe');
     expect(r.stdout).toContain('--cursor cur_2');
+    expect(r.stdout).toContain('catalog show <id>');
+  });
+
+  test('catalog filters by type, one-click, category and page size', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'pay', '--kind', 'mcp,composio', '--one-click', '--category', 'finance', '--limit', '10', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors?q=pay&category=finance&limit=10&kind=mcp%2Ccomposio&oneClick=1`);
+  });
+
+  test('catalog categories lists the keys --category takes, with the same filters', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'categories', '--kind', 'composio', '--one-click', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/sections?perCategory=1&maxCategories=40&kind=composio&oneClick=1`);
+    expect(r.stdout).toContain('finance');
+    expect(r.stdout).toContain('71');
+    const j = await runCli(['connectors', 'catalog', 'categories', '--json', '--project', PROJECT], config);
+    expect(JSON.parse(j.stdout)).toEqual([{ key: 'finance', label: 'Finance', count: 71 }, { key: 'crm', label: 'CRM', count: 40 }]);
+  });
+
+  test('catalog tools --json prints one way\'s tools', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'tools', 'stripe', '--way', 'composio:stripe', '--json', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/tools?id=stripe&way=composio%3Astripe`);
+    expect(JSON.parse(r.stdout).tools[0].name).toBe('list_customers');
+  });
+
+  test('catalog install posts the id, way, name and slug and names the profile', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'install', 'kortix:stripe', '--way', 'composio:stripe', '--name', 'Billing', '--slug', 'billing', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)).toMatchObject({ method: 'POST', path: `/v1/connectors/projects/${PROJECT}/discover/install`, body: { id: 'kortix:stripe', way: 'composio:stripe', name: 'Billing', slug: 'billing' } });
+    expect(r.stdout).toContain('connector profile');
+    expect(r.stdout).toContain('kortix connectors connect billing');
+  });
+
+  test('catalog install of an installed app changes nothing, names the slug and exits 3', async () => {
+    const config = writeConfig(startServer());
+    installExtra = { existing: true };
+    const r = await runCli(['connectors', 'catalog', 'install', 'kortix:stripe', '--project', PROJECT], config);
+    expect(r.code).toBe(3);
+    expect((calls.at(-1)!.body as Record<string, unknown>).as_new_profile).toBeUndefined();
+    expect(r.stdout).toContain('already installed as billing');
+    expect(r.stdout).toContain('kortix connectors connect billing --label <name>');
+    expect(r.stdout).toContain('kortix connectors policy-sets billing create <name>');
+    expect(r.stdout).toContain('--new-profile');
+  });
+
+  test('catalog install --new-profile asks for a second profile', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'install', 'kortix:stripe', '--new-profile', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.body).toMatchObject({ id: 'kortix:stripe', as_new_profile: true });
+  });
+
+  test('catalog install of a no-sign-in app prints Ready with the call to run', async () => {
+    const config = writeConfig(startServer());
+    installExtra = { next: 'ready' };
+    const r = await runCli(['connectors', 'catalog', 'install', 'kortix:stripe', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('Ready, no sign-in needed: kortix connectors call billing <action>');
+  });
+
+  test('catalog install whose first sync failed prints the reason and exits 1', async () => {
+    const config = writeConfig(startServer());
+    installExtra = { next: 'fix', error: 'spec has no operations' };
+    const r = await runCli(['connectors', 'catalog', 'install', 'kortix:stripe', '--project', PROJECT], config);
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain('spec has no operations');
+  });
+
+  test('catalog rows name the profile an app is installed as', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'catalog', 'pay', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/stripe .*· installed as billing/);
+  });
+
+  test('credential --oauth2-client-credentials sends the client and the secret from a file', async () => {
+    const config = writeConfig(startServer());
+    const secretFile = join(tmp, 'secret.txt');
+    writeFileSync(secretFile, 's3cret\n');
+    const r = await runCli(['connectors', 'credential', 'billing', '--oauth2-client-credentials', '--token-url', 'https://auth.example.test/token', '--client-id', 'abc', '--client-secret-from', secretFile, '--scope', 'read write', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)).toMatchObject({
+      method: 'PUT',
+      path: `/v1/connectors/projects/${PROJECT}/connectors/billing/oauth2/connection`,
+      body: { token_url: 'https://auth.example.test/token', client_id: 'abc', client_secret: 's3cret', scopes: ['read', 'write'] },
+    });
+    expect(r.stdout).not.toContain('s3cret');
+  });
+
+  test('policy-sets create --template sends the API spelling and prints the rules it wrote', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'policy-sets', 'billing', 'create', 'readonly', '--template', 'read-only', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.body).toEqual({ template: 'read_only' });
+    expect(r.stdout).toContain('create_charge → block');
+    const bad = await runCli(['connectors', 'policy-sets', 'billing', 'create', 'x', '--template', 'loose', '--project', PROJECT], config);
+    expect(bad.code).not.toBe(0);
+  });
+
+  test('add of a server the catalog lacks, refused for an agent, hands back the setup link', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'add', 'acme', '--provider', 'mcp', '--url', 'https://mcp.acme.test/mcp', '--apply', '--project', PROJECT], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('https://app.kortix.test/projects/p/customize/connectors?url=x');
+  });
+
+  test('policy <slug> effective reads the policies route and names the deciding layer', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'policy', 'billing', 'effective', '--policy-set', 'readonly', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/connectors/billing/policies?policy_set=readonly`);
+    expect(r.stdout).toMatch(/create_charge +write +blocked +rule set \(create_\* → block\)/);
+    expect(r.stdout).toMatch(/list_charges +read +runs +default mode/);
   });
 
   test('catalog show reads the detail route by id', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'show', 'stripe', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/detail?id=stripe`);
-    expect(r.stdout).toContain('stripe-openapi');
-    expect(r.stdout).toContain('(auth)');
-  });
-
-  test('catalog surfaces the connectors_api_discover gate verbatim', async () => {
-    const config = writeConfig(startServer());
-    discoverEnabled = false;
-    const r = await runCli(['connectors', 'catalog', '--project', PROJECT], config);
-    expect(r.code).toBe(1);
-    expect(r.stderr).toContain('Connector discovery is not enabled for this project');
+    expect(calls.at(-2)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/detail?id=stripe`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/tools?id=stripe&way=stripe-mcp`);
+    expect(r.stdout).toContain('stripe-mcp');
+    expect(r.stdout).toContain('(recommended, 1-click)');
+    expect(r.stdout).toContain('Composio');
+    expect(r.stdout).toContain('third-party partner');
+    expect(r.stdout).toContain('(not installable)');
+    expect(r.stdout).toContain('list_customers');
   });
 
   for (const sub of ['machines', 'computers']) {
@@ -832,15 +964,6 @@ describe('kortix connectors — capability-page parity', () => {
     expect(parsed.moves.map((m) => m.slug)).toEqual(['crm', 'linear', 'mail', 'notes']);
     expect(parsed.moves[2]!.provider).toBe('composio');
     expect(parsed.moves[1]!.to).toEqual({ slug: 'linear', name: 'Linear', icon: null });
-  });
-
-  test('moves without connectors_v2 prints the gate and the command that turns it on', async () => {
-    const config = writeConfig(startServer());
-    connectorsV2 = false;
-    const r = await runCli(['connectors', 'moves', '--project', PROJECT], config);
-    expect(r.code).toBe(1);
-    expect(r.stderr).toContain('Connectors v2 is not enabled for this project');
-    expect(r.stderr).toContain('kortix projects features enable connectors_v2');
   });
 
   test('move on a connector already on its Kortix app says there is nothing to move', async () => {

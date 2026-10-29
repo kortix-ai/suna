@@ -13,9 +13,8 @@ import { flow } from '../core/flow';
 // auth middleware of its own (app.route('/v1/platform', platformApp) in
 // apps/api/src/index.ts:695) — the mount-point info handler and every
 // versionRouter read (apps/api/src/platform/routes/version.ts) are public.
-// version.ts falls back to `{version:'unknown'|'dev-unknown', ...}` when the
-// upstream GitHub Releases / Docker Hub calls fail or SANDBOX_VERSION isn't
-// set, so these always return 200 with a stable shape rather than erroring.
+// Running identity is independent of the release feed: without a configured
+// platform-wide image it reports version/channel none, not an unknown release.
 flow(
   'PLT-1',
   {
@@ -36,6 +35,9 @@ flow(
     await ctx.step('running sandbox version + channel', async () => {
       const r = await ctx.client.get('/v1/platform/sandbox/version');
       r.status(200).body().exists('$.version').exists('$.channel');
+      const running = r.json<{ version: string; channel: string }>();
+      if (running.version === 'unknown') throw new Error('running image identity must be explicit');
+      if (running.version === 'none' && running.channel !== 'none') throw new Error('no global image must have channel none');
     });
     await ctx.step('all known sandbox versions plus the current running one', async () => {
       const r = await ctx.client.get('/v1/platform/sandbox/version/all');

@@ -153,11 +153,13 @@ const {
   setProjectPoliciesInManifest,
   upsertConnectorInManifest,
 } = await import('./manifest-crud');
+const { manifestRetry } = await import('./manifest-mutation');
 const { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } = await import(
   './channel-manifest'
 );
 
 beforeEach(() => {
+  manifestRetry.sleep = async () => {};
   storedConnectors = [];
   commitCalls = 0;
   commitAttempts = 0;
@@ -262,8 +264,12 @@ describe('upsertConnectorInManifest create-only requests', () => {
     });
   });
 
-  test('a normal mutation reloads and retries exactly once after a revision conflict', async () => {
-    forcedCommitConflicts = 1;
+  test('a revision conflict reloads and retries, up to 4 attempts, with a jittered wait', async () => {
+    forcedCommitConflicts = 3;
+    const waits: number[] = [];
+    manifestRetry.sleep = async (ms) => {
+      waits.push(ms);
+    };
 
     const result = await upsertConnectorInManifest('project-1', 'account-1', {
       slug: 'mail-primary',
@@ -272,14 +278,17 @@ describe('upsertConnectorInManifest create-only requests', () => {
     });
 
     expect(result).toEqual({ ok: true, sync: { synced: 1, errors: [] } });
-    expect(manifestReads).toBe(2);
-    expect(commitAttempts).toBe(2);
+    expect(manifestReads).toBe(4);
+    expect(commitAttempts).toBe(4);
     expect(commitCalls).toBe(1);
     expect(syncCalls).toBe(1);
+    expect(waits).toHaveLength(3);
+    expect(waits.every((ms, i) => ms >= 50 * (i + 1) && ms < 100 * (i + 1))).toBe(true);
   });
 
-  test('a second revision conflict returns 409 without a third attempt', async () => {
-    forcedCommitConflicts = 2;
+  test('a fourth revision conflict returns 409 without a fifth attempt', async () => {
+    forcedCommitConflicts = 4;
+    manifestRetry.sleep = async () => {};
 
     const result = await upsertConnectorInManifest('project-1', 'account-1', {
       slug: 'mail-primary',
@@ -290,11 +299,11 @@ describe('upsertConnectorInManifest create-only requests', () => {
     expect(result).toEqual({
       ok: false,
       error:
-        'kortix.yaml changed twice while the connector mail-primary was being updated. Retry the command.',
+        'kortix.yaml changed 4 times while the connector mail-primary was being updated. Retry the command.',
       status: 409,
     });
-    expect(manifestReads).toBe(2);
-    expect(commitAttempts).toBe(2);
+    expect(manifestReads).toBe(4);
+    expect(commitAttempts).toBe(4);
     expect(commitCalls).toBe(0);
     expect(syncCalls).toBe(0);
   });
@@ -391,7 +400,7 @@ describe('every connector manifest mutation retries one revision conflict', () =
     });
   }
 
-  test('a second conflict returns 409 with a direct retry instruction', async () => {
+  test('a fourth conflict returns 409 with a direct retry instruction', async () => {
     storedConnectors = [
       {
         slug: 'mail-primary',
@@ -400,7 +409,7 @@ describe('every connector manifest mutation retries one revision conflict', () =
         authorization_strategy: 'project',
       },
     ];
-    forcedCommitConflicts = 2;
+    forcedCommitConflicts = 4;
 
     const result = await setConnectorNameInManifest(
       'project-1',
@@ -412,11 +421,11 @@ describe('every connector manifest mutation retries one revision conflict', () =
     expect(result).toEqual({
       ok: false,
       error:
-        'kortix.yaml changed twice while the connector mail-primary name was being updated. Retry the command.',
+        'kortix.yaml changed 4 times while the connector mail-primary name was being updated. Retry the command.',
       status: 409,
     });
-    expect(manifestReads).toBe(2);
-    expect(commitAttempts).toBe(2);
+    expect(manifestReads).toBe(4);
+    expect(commitAttempts).toBe(4);
     expect(commitCalls).toBe(0);
   });
 });

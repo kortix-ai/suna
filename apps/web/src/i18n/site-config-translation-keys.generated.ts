@@ -59,4 +59,7 @@ export const SITE_CONFIG_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   X: 'text4b68ab3847fe',
   'Your own VPC or your own on-prem network': 'textfe7fcc4818d3',
   'Kortix – the open-source AI Operating System.': 'textdcb3e70ce4dc',
+  'Company as code': 'text6007b5baf3f3',
+  'Agents and skills': 'textdf80c0ee2f08',
+  'Use cases': 'textb697dd6a71d9',
 };

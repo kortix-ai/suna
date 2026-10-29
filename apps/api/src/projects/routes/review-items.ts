@@ -8,7 +8,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { relayReviewCard } from '../../channels/turn-relay';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
-import { auth, errors, json, lenientBody } from '../../openapi';
+import { auth, errors, json, lenientBody, queryText } from '../../openapi';
 import { isUuid } from '../../shared/validate';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
@@ -99,11 +99,21 @@ export function registerReviewItemsRoutes(): void {
       tags: ['review'],
       summary: 'List review items (approvals and change requests)',
       description:
-        'One page of the inbox: Needs you, then Waiting, then Done, newest first within each. `limit` defaults to 50; above 200 answers 400. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page. A walk is not a snapshot: an item whose status changes between two pages can come back on a later page or be missed.',
+        'One page of the inbox: Needs you, then Waiting, then Done, newest first within each. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page. A walk is not a snapshot: an item whose status changes between two pages can come back on a later page or be missed.',
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        query: z.object({}).passthrough(),
+        query: z
+          .object({
+            segment: queryText('`needs_you`, `waiting` or `done`. Default: all three. Anything else is a 400.'),
+            kind: queryText('`change`, `approval`, `output`, `decision` or `batch`. Default: every kind. Anything else is a 400.'),
+            session_id: queryText('Only the items raised from this session (a UUID).'),
+            limit: queryText(
+              `Items per page, an integer from 1 to ${REVIEW_PAGE_MAX_LIMIT}. Default ${REVIEW_PAGE_DEFAULT_LIMIT}. Anything else is a 400.`,
+            ),
+            cursor: queryText('The `next_cursor` of the previous page. A malformed cursor is a 400.'),
+          })
+          .passthrough(),
       },
       responses: {
         200: json(

@@ -151,6 +151,31 @@ describe.skipIf(!dockerAvailable)('local warm-session index repair — real Post
     expect(duplicate.output).toContain('idx_project_sessions_one_available_warm');
   });
 
+  test('failed index creation rolls back duplicate discard and index removal', async () => {
+    psql(`
+      insert into kortix.project_sessions values
+        ('older', '00000000-0000-4000-a000-000000000001', '10000000-0000-4000-a000-000000000001',
+         '{"warm_session":{"state":"available"}}', '2026-01-01', '2026-01-01'),
+        ('newer', '00000000-0000-4000-a000-000000000001', '10000000-0000-4000-a000-000000000001',
+         '{"warm_session":{"state":"available"}}', '2026-01-02', '2026-01-02');
+      create index idx_project_sessions_one_available_warm on kortix.project_sessions (project_id);
+      update pg_index set indisvalid = false
+       where indexrelid = 'kortix.idx_project_sessions_one_available_warm'::regclass;
+      create function kortix.synthetic_reject_index() returns event_trigger language plpgsql as $$
+        begin raise exception 'synthetic index failure'; end;
+      $$;
+      create event trigger synthetic_reject_index on ddl_command_start
+        when tag in ('CREATE INDEX') execute function kortix.synthetic_reject_index();
+    `);
+    try {
+      await expect(repairLocalWarmSessionIndex(databaseUrl)).rejects.toThrow('synthetic index failure');
+      expect(psql("select count(*) from kortix.project_sessions where metadata->'warm_session'->>'state' = 'available'").output).toBe('2');
+      expect(psql("select indisvalid from pg_index where indexrelid = 'kortix.idx_project_sessions_one_available_warm'::regclass").output).toBe('f');
+    } finally {
+      psql('drop event trigger synthetic_reject_index');
+    }
+  });
+
   test('does nothing when the canonical index is already valid', async () => {
     psql(`
       create unique index idx_project_sessions_one_available_warm

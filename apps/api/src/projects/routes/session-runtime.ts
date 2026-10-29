@@ -99,7 +99,7 @@ export function registerSessionRuntimeRoutes(): void {
       // resumes a hibernated box days later. The session's stored `agent_name`
       // may also be the `default` sentinel, which resolves here to the manifest
       // default rather than being waved through unchecked.
-      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
       stl.mark('agent-authorized');
       // Booting a box needs the repository; a running box keeps working (its
       // keep-alive polls must not fail because GitHub went away under it).

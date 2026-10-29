@@ -72,6 +72,7 @@ describe('the catalog', () => {
     expect(paneWidth('transactions')).toBe('full');
     expect(paneWidth('settings')).toBe('default');
     expect(paneWidth('members')).toBe('fluid');
+    expect(paneWidth('access-projects')).toBe('fluid');
   });
 });
 

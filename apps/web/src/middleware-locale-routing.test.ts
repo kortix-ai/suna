@@ -21,7 +21,7 @@ const GERMAN_SESSION = `base64-${Buffer.from(
 
 describe('locale rewrite onto app/[locale]', () => {
   test('unprefixed public pages render in English', async () => {
-    for (const path of ['/pricing', '/legal', '/auth', '/game-of-life']) {
+    for (const path of ['/pricing', '/legal', '/auth', '/game-of-life', '/blog', '/blog/some-post']) {
       const response = await middleware(request(path));
       expect(response.headers.get('x-middleware-rewrite')).toBe(`${ORIGIN}/en${path}`);
       expect(response.headers.get('x-middleware-request-x-next-intl-locale')).toBe('en');
@@ -86,8 +86,8 @@ describe('locale rewrite onto app/[locale]', () => {
       '/download/macos',
       '/auth/callback',
       '/scim/v2/Users',
-      '/blog',
-      '/blog/some-post',
+      '/blog/rss.xml',
+      '/blog/some-post.md',
     ]) {
       const response = await middleware(request(path));
       expect(response.headers.get('x-middleware-rewrite')).toBeNull();
@@ -232,7 +232,8 @@ describe('docs Markdown negotiation without the middleware', () => {
     expect(source).toContain("destination: '/markdown/docs/index.md'");
     expect(source).toContain("destination: '/markdown/docs/:path*.md'");
     const docs = getPublicContentRecords().filter((record) => record.htmlPath.startsWith('/docs'));
-    expect(docs.length).toBeGreaterThan(5);
+    // One docs page, plus the unlisted Capture and audit-actions pages.
+    expect(docs.length).toBeGreaterThan(1);
     for (const record of docs.slice(0, 20)) {
       const target =
         record.htmlPath === '/docs'

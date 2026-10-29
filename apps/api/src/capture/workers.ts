@@ -251,6 +251,9 @@ export async function applyRetention(limitPerAccount = 200): Promise<number> {
 
 let lastPartitionDay = '';
 export async function captureMaintenance(): Promise<void> {
+  // First, on its own: finished jobs (channel events among them carry email
+  // headers) must not outlive their week because a capture step failed.
+  await pruneFinishedJobs(7).catch((error) => logger.warn('[job-queue] prune failed', { error: String(error) }));
   const today = utcDay(Date.now());
   if (lastPartitionDay !== today) {
     await db.execute(sql`SELECT kortix.capture_timeline_ensure_partitions((now() AT TIME ZONE 'UTC')::date, 3)`);
@@ -258,5 +261,4 @@ export async function captureMaintenance(): Promise<void> {
   }
   await applyRetention();
   await db.delete(captureDeviceGrants).where(lt(captureDeviceGrants.expiresAt, sql`now() - interval '1 day'`));
-  await pruneFinishedJobs(7);
 }

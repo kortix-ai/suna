@@ -1,6 +1,6 @@
 /**
  * Dependency-inverted hook so the platform provisioning layer can tell a channel
- * (Slack, Teams) that a session it spun up died during async provisioning —
+ * (Slack, Teams, Telegram) that a session it spun up died during async provisioning —
  * WITHOUT platform/ importing channels/.
  *
  * Why this exists: a Slack mention creates a session and returns immediately; the
@@ -25,7 +25,7 @@
 
 // Return value is ignored (the relay's boolean result is irrelevant to the
 // caller); allow any so a Promise<boolean>-returning relay registers cleanly.
-type SessionFailureNotifier = (sessionId: string, message: string) => unknown;
+type SessionFailureNotifier = (sessionId: string, message: string, failure?: { transient: boolean }) => unknown;
 
 const notifiers = new Set<SessionFailureNotifier>();
 
@@ -41,15 +41,22 @@ export function registerSessionFailureNotifier(fn: SessionFailureNotifier): () =
 }
 
 /**
- * Tell every registered channel a session failed to provision. Never throws and
- * never blocks the caller — provisioning cleanup must not depend on it, and one
- * channel's failure does not stop another's.
+ * Tell every registered channel a session failed to provision. `failure` comes
+ * from the background provisioning path (platform/services/session-sandbox.ts),
+ * where `message` is the classified user-facing reason; the kick-off path passes
+ * none and its `message` is raw internal text. Never throws and never blocks the
+ * caller — provisioning cleanup must not depend on it, and one channel's failure
+ * does not stop another's.
  */
-export function notifySessionProvisioningFailed(sessionId: string, message: string): void {
+export function notifySessionProvisioningFailed(
+  sessionId: string,
+  message: string,
+  failure?: { transient: boolean },
+): void {
   if (!sessionId) return;
   for (const fn of notifiers) {
     try {
-      void Promise.resolve(fn(sessionId, message)).catch((err) =>
+      void Promise.resolve(fn(sessionId, message, failure)).catch((err) =>
         console.warn('[session-failure-notifier] relay failed', { sessionId, err: (err as Error)?.message }),
       );
     } catch (err) {

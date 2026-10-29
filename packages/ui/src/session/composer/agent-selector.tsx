@@ -21,8 +21,19 @@ import type { Agent } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import { CaretDownIcon, CheckIcon } from '@phosphor-icons/react';
 import { AgentMark } from '../../internal/components/agent-mark';
-import { useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { composerSelectableAgents } from './composer-agent-access';
+
+/**
+ * A place's own agents, listed first in the picker under `label` (a
+ * channel's `#name`); every other agent follows under `restLabel`. Set by a
+ * channel's composer (`space-view.tsx`). No provider: one plain list.
+ */
+export const FeaturedAgentsContext = createContext<{
+  label: string;
+  restLabel: string;
+  names: readonly string[];
+} | null>(null);
 
 /**
  * Agents on screen before the popover grows a search field.
@@ -60,8 +71,11 @@ export function AgentSelector({
   unavailableHint,
   open: controlledOpen,
   onOpenChange,
+  compact = false,
   appearance = 'chip',
 }: {
+  /** The trigger shows the agent's tile alone, no caret; the name is its tooltip. */
+  compact?: boolean;
   agents: Agent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
@@ -132,6 +146,16 @@ export function AgentSelector({
   const filteredProject = useMemo(
     () => filteredPrimary.filter((a) => !isMetaAgentName(a.name)),
     [filteredPrimary],
+  );
+  // The place's agents, in its order, then every other agent.
+  const featured = useContext(FeaturedAgentsContext);
+  const filteredFeatured = useMemo(
+    () =>
+      (featured?.names ?? []).flatMap((name) => {
+        const agent = filteredPrimary.find((a) => a.name === name);
+        return agent ? [agent] : [];
+      }),
+    [featured, filteredPrimary],
   );
 
   // Keyed off the FULL list, never the filtered one: deriving it from
@@ -295,30 +319,48 @@ export function AgentSelector({
     );
   }
 
+  const trigger = (
+    <CommandPopoverTrigger>
+      {field ? (
+        fieldTrigger(true, { 'aria-label': t('selectAgent') })
+      ) : (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label={compact ? `${t('selectAgent')}: ${displayName}` : t('selectAgent')}
+        className={cn('text-muted-foreground rounded-lg hit-area-y-3', compact && 'px-1.5')}
+      >
+        {compact ? (
+          // The mark alone: the name is the tooltip and the menu's checked row.
+          // A placeholder name has no mark, so it shows as text.
+          triggerMark ?? <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
+        ) : (
+          <>
+            {triggerMark}
+            <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
+            <CaretDownIcon
+              className={cn(
+                'size-3 transition-transform duration-moderate ease-out',
+                open && 'rotate-180',
+              )}
+            />
+          </>
+        )}
+      </Button>
+      )}
+    </CommandPopoverTrigger>
+  );
+
   return (
     <CommandPopover open={open} onOpenChange={setOpen}>
-      <CommandPopoverTrigger>
-        {field ? (
-          fieldTrigger(true, { 'aria-label': t('selectAgent') })
-        ) : (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-label={t('selectAgent')}
-          className="text-foreground/70 rounded-lg hit-area-y-3"
-        >
-          {triggerMark}
-          <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
-          <CaretDownIcon
-            className={cn(
-              'size-3 transition-transform duration-200 ease-out',
-              open && 'rotate-180',
-            )}
-          />
-        </Button>
-        )}
-      </CommandPopoverTrigger>
+      {compact ? (
+        <Hint side="top" label={displayName}>
+          {trigger}
+        </Hint>
+      ) : (
+        trigger
+      )}
 
       {/* `min(...)`, not a hard `300px`: on a 320px viewport a fixed 300px
           popover plus the trigger's own inset pushed the panel off-screen.
@@ -371,7 +413,29 @@ export function AgentSelector({
             Meta agents are ordered first, so the grouping still reads without
             being announced.
           */}
-          {filteredPrimary.length > 0 && (
+          {filteredFeatured.length > 0 && featured ? (
+            // Two groups, so each earns its heading: the place's agents, then the rest.
+            <>
+              <CommandGroup
+                forceMount
+                heading={featured.label}
+                className="[&_[cmdk-group-items]]:flex [&_[cmdk-group-items]]:flex-col [&_[cmdk-group-items]]:gap-px"
+              >
+                {filteredFeatured.map((agent) => renderAgentItem(agent, isMetaAgentName(agent.name)))}
+              </CommandGroup>
+              {filteredPrimary.length > filteredFeatured.length && (
+                <CommandGroup
+                  forceMount
+                  heading={featured.restLabel}
+                  className="[&_[cmdk-group-items]]:flex [&_[cmdk-group-items]]:flex-col [&_[cmdk-group-items]]:gap-px"
+                >
+                  {filteredPrimary
+                    .filter((agent) => !filteredFeatured.includes(agent))
+                    .map((agent) => renderAgentItem(agent, isMetaAgentName(agent.name)))}
+                </CommandGroup>
+              )}
+            </>
+          ) : filteredPrimary.length > 0 && (
             // `gap-px` between rows: a selected row and a hovered row next to it
             // otherwise draw one merged grey block.
             <CommandGroup
@@ -388,7 +452,7 @@ export function AgentSelector({
 
           {/* No results */}
           {filteredPrimary.length === 0 && search.trim() && (
-            <div className="text-muted-foreground/50 py-8 text-center text-xs">
+            <div className="text-muted-foreground py-8 text-center text-xs">
               {tHardcodedUi.raw(
                 'componentsSessionSessionChatInput.line273JsxTextNoAgentsMatchLdquo',
               )}

@@ -2,6 +2,8 @@ import { Button } from '../../../primitives/button';
 import { CaretRightIcon } from '@phosphor-icons/react';
 import { UiLink as Link } from '../../../providers/ui-provider';
 import type { ReactNode } from 'react';
+import { ChannelHeroFrame } from './channel-hero-frame';
+import type { NativeConnectorApp } from '../../../internal/connector-logo/connector-logo-source';
 
 /**
  * The connect hero both chat platforms share (`slack-connect-card.tsx`,
@@ -16,7 +18,7 @@ import type { ReactNode } from 'react';
  * self-hosted route reads as a deliberate choice, not a missing feature.
  */
 export function ChannelConnectHero({
-  logo,
+  app,
   title,
   lede,
   preview,
@@ -28,7 +30,7 @@ export function ChannelConnectHero({
   readOnlyNote,
   onOwnApp,
 }: {
-  logo: ReactNode;
+  app: NativeConnectorApp;
   title: string;
   lede: string;
   preview: ReactNode;
@@ -42,20 +44,13 @@ export function ChannelConnectHero({
   onOwnApp: () => void;
 }) {
   return (
-    <div className="bg-popover flex overflow-hidden rounded-lg border">
-      <div className="flex w-full shrink-0 flex-col justify-center gap-5 px-7 py-8 md:w-80">
-        <span className="bg-background flex size-9 shrink-0 items-center justify-center rounded-md border">
-          {logo}
-        </span>
-        <div className="flex flex-col gap-1.5">
-          <h3 className="text-foreground text-xl font-medium tracking-tight text-balance">
-            {title}
-          </h3>
-          {/* text-pretty so a three-line lede never leaves one orphan word */}
-          <p className="text-muted-foreground text-sm leading-relaxed text-pretty">{lede}</p>
-        </div>
-
-        {canWrite ? (
+    <ChannelHeroFrame
+      app={app}
+      title={title}
+      lede={lede}
+      preview={preview}
+      actions={
+        canWrite ? (
           <div className="flex flex-col items-start gap-3">
             {oneClickUrl ? (
               <>
@@ -81,20 +76,8 @@ export function ChannelConnectHero({
           </div>
         ) : (
           <p className="text-muted-foreground text-xs">{readOnlyNote}</p>
-        )}
-      </div>
-
-      {/* Decorative: the heading and lede say the same thing in words. The
-          window runs off the card's right edge so it reads as a glimpse of the
-          app, not a second card. */}
-      <div
-        aria-hidden
-        className="bg-muted/50 hidden min-w-0 flex-1 border-s py-7 ps-7 select-none md:flex"
-      >
-        <div className="bg-background flex min-h-72 min-w-0 flex-1 overflow-hidden rounded-l-lg border-y border-s shadow-xs">
-          {preview}
-        </div>
-      </div>
-    </div>
+        )
+      }
+    />
   );
 }

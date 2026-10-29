@@ -1,0 +1,393 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`get-claims  empty=false 1`] = `
+"c1 [verified] (verify_public_data)
+  Section: Intro | Location: p1
+  Anchor: a1
+  Text: Synthetic text
+  Description: Synthetic description
+  Sources: https://example.test/a, https://example.test/b
+
+c2 [refuted] (numerical_consistency)
+  Section: Body | Location: p1
+  Text: Synthetic text
+  Description: Synthetic description
+
+Total: 2 claims
+"
+`;
+
+exports[`get-claims  empty=false 2`] = `
+{
+  "command": "get-claims",
+  "filters": {},
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 2,
+}
+`;
+
+exports[`get-claims  empty=true 1`] = `
+"No claims match the filter.
+"
+`;
+
+exports[`get-claims  empty=true 2`] = `
+{
+  "command": "get-claims",
+  "filters": {},
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 0,
+}
+`;
+
+exports[`get-claims --section Intro empty=false 1`] = `
+"c1 [verified] (verify_public_data)
+  Section: Intro | Location: p1
+  Anchor: a1
+  Text: Synthetic text
+  Description: Synthetic description
+  Sources: https://example.test/a, https://example.test/b
+
+Total: 1 claims
+"
+`;
+
+exports[`get-claims --section Intro empty=false 2`] = `
+{
+  "command": "get-claims",
+  "filters": {
+    "section": "Intro",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 1,
+}
+`;
+
+exports[`get-claims --section Intro empty=true 1`] = `
+"No claims match the filter.
+"
+`;
+
+exports[`get-claims --section Intro empty=true 2`] = `
+{
+  "command": "get-claims",
+  "filters": {
+    "section": "Intro",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 0,
+}
+`;
+
+exports[`get-claims --section Absent empty=false 1`] = `
+"No claims match the filter.
+"
+`;
+
+exports[`get-claims --section Absent empty=false 2`] = `
+{
+  "command": "get-claims",
+  "filters": {
+    "section": "Absent",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 0,
+}
+`;
+
+exports[`get-claims --section Absent empty=true 1`] = `
+"No claims match the filter.
+"
+`;
+
+exports[`get-claims --section Absent empty=true 2`] = `
+{
+  "command": "get-claims",
+  "filters": {
+    "section": "Absent",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 0,
+}
+`;
+
+exports[`get-claims --status verified empty=false 1`] = `
+"c1 [verified] (verify_public_data)
+  Section: Intro | Location: p1
+  Anchor: a1
+  Text: Synthetic text
+  Description: Synthetic description
+  Sources: https://example.test/a, https://example.test/b
+
+Total: 1 claims
+"
+`;
+
+exports[`get-claims --status verified empty=false 2`] = `
+{
+  "command": "get-claims",
+  "filters": {
+    "status": "verified",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 1,
+}
+`;
+
+exports[`get-claims --status verified empty=true 1`] = `
+"No claims match the filter.
+"
+`;
+
+exports[`get-claims --status verified empty=true 2`] = `
+{
+  "command": "get-claims",
+  "filters": {
+    "status": "verified",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 0,
+}
+`;
+
+exports[`get-claims --status refuted --section Intro empty=false 1`] = `
+"No claims match the filter.
+"
+`;
+
+exports[`get-claims --status refuted --section Intro empty=false 2`] = `
+{
+  "command": "get-claims",
+  "filters": {
+    "section": "Intro",
+    "status": "refuted",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 0,
+}
+`;
+
+exports[`get-claims --status refuted --section Intro empty=true 1`] = `
+"No claims match the filter.
+"
+`;
+
+exports[`get-claims --status refuted --section Intro empty=true 2`] = `
+{
+  "command": "get-claims",
+  "filters": {
+    "section": "Intro",
+    "status": "refuted",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 0,
+}
+`;
+
+exports[`get-issues  empty=false 1`] = `
+"i1 [high] narrative_logic
+  Section: Intro | Location: p1
+  Anchor: a2
+  Text: Synthetic text
+  Context: Context
+  Description: Synthetic description
+  Suggested: Replacement
+
+i2 [low] spelling_grammar
+  Section: Body | Location: p1
+  Text: Synthetic text
+  Context: 
+  Description: Synthetic description
+
+Total: 2 issues
+"
+`;
+
+exports[`get-issues  empty=false 2`] = `
+{
+  "command": "get-issues",
+  "filters": {},
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 2,
+}
+`;
+
+exports[`get-issues  empty=true 1`] = `
+"No issues match the filter.
+"
+`;
+
+exports[`get-issues  empty=true 2`] = `
+{
+  "command": "get-issues",
+  "filters": {},
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 0,
+}
+`;
+
+exports[`get-issues --section Intro empty=false 1`] = `
+"i1 [high] narrative_logic
+  Section: Intro | Location: p1
+  Anchor: a2
+  Text: Synthetic text
+  Context: Context
+  Description: Synthetic description
+  Suggested: Replacement
+
+Total: 1 issues
+"
+`;
+
+exports[`get-issues --section Intro empty=false 2`] = `
+{
+  "command": "get-issues",
+  "filters": {
+    "section": "Intro",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 1,
+}
+`;
+
+exports[`get-issues --section Intro empty=true 1`] = `
+"No issues match the filter.
+"
+`;
+
+exports[`get-issues --section Intro empty=true 2`] = `
+{
+  "command": "get-issues",
+  "filters": {
+    "section": "Intro",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 0,
+}
+`;
+
+exports[`get-issues --section Absent empty=false 1`] = `
+"No issues match the filter.
+"
+`;
+
+exports[`get-issues --section Absent empty=false 2`] = `
+{
+  "command": "get-issues",
+  "filters": {
+    "section": "Absent",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 0,
+}
+`;
+
+exports[`get-issues --section Absent empty=true 1`] = `
+"No issues match the filter.
+"
+`;
+
+exports[`get-issues --section Absent empty=true 2`] = `
+{
+  "command": "get-issues",
+  "filters": {
+    "section": "Absent",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 0,
+}
+`;
+
+exports[`get-issues --severity high empty=false 1`] = `
+"i1 [high] narrative_logic
+  Section: Intro | Location: p1
+  Anchor: a2
+  Text: Synthetic text
+  Context: Context
+  Description: Synthetic description
+  Suggested: Replacement
+
+Total: 1 issues
+"
+`;
+
+exports[`get-issues --severity high empty=false 2`] = `
+{
+  "command": "get-issues",
+  "filters": {
+    "severity": "high",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 1,
+}
+`;
+
+exports[`get-issues --severity high empty=true 1`] = `
+"No issues match the filter.
+"
+`;
+
+exports[`get-issues --severity high empty=true 2`] = `
+{
+  "command": "get-issues",
+  "filters": {
+    "severity": "high",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 0,
+}
+`;
+
+exports[`get-issues --severity low --section Intro empty=false 1`] = `
+"No issues match the filter.
+"
+`;
+
+exports[`get-issues --severity low --section Intro empty=false 2`] = `
+{
+  "command": "get-issues",
+  "filters": {
+    "section": "Intro",
+    "severity": "low",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 0,
+}
+`;
+
+exports[`get-issues --severity low --section Intro empty=true 1`] = `
+"No issues match the filter.
+"
+`;
+
+exports[`get-issues --severity low --section Intro empty=true 2`] = `
+{
+  "command": "get-issues",
+  "filters": {
+    "section": "Intro",
+    "severity": "low",
+  },
+  "phase_after": "complete",
+  "phase_before": "complete",
+  "results": 0,
+}
+`;

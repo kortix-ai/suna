@@ -216,14 +216,23 @@ export function useChangeRequestPages(
  */
 export function useSessionChangeRequests(
   sessionId: string | undefined,
-  options?: { refetchInterval?: number },
+  options?: { refetchInterval?: number; enabled?: boolean },
 ) {
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
   return useQuery<{ change_requests: ChangeRequest[] }>({
     queryKey: changeRequestKeys.sessionList(projectId, sessionId ?? ''),
-    queryFn: () => fetchChangeRequests(projectId, 'all', { originSessionId: sessionId }),
-    enabled: Boolean(projectId) && Boolean(sessionId),
+    queryFn: async () => {
+      const change_requests: ChangeRequest[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await fetchChangeRequests(projectId, 'all', { originSessionId: sessionId, cursor });
+        change_requests.push(...page.change_requests);
+        cursor = page.next_cursor ?? undefined;
+      } while (cursor);
+      return { change_requests };
+    },
+    enabled: Boolean(projectId) && Boolean(sessionId) && options?.enabled !== false,
     staleTime: 5_000,
     refetchInterval: options?.refetchInterval,
   });

@@ -52,11 +52,12 @@ describe('Discover integrations.sh catalogue', () => {
       ttlMs: 60_000,
     });
 
-    const first = await catalog.list({ limit: 2 });
-    expect(first.items.map((item) => item.id)).toEqual(['openapi/1forge-com', 'mcp/notion']);
-    expect(first.nextCursor).toBe('2');
+    const first = await catalog.list({ limit: 1 });
+    expect(first.items.map((item) => item.id)).toEqual(['openapi/1forge-com']);
+    expect(first.nextCursor).toBe('1');
     expect(first.hasMore).toBe(true);
-    expect(first.total).toBe(3);
+    // `cli/example` is not listed: Kortix cannot install a CLI as a connector.
+    expect(first.total).toBe(2);
 
     const search = await catalog.list({ q: 'productivity', limit: 10 });
     expect(search.items.map((item) => item.id)).toEqual(['mcp/notion']);
@@ -135,7 +136,6 @@ describe('Discover integrations.sh catalogue', () => {
       'http',
       'mcp',
       'graphql',
-      'cli',
     ]);
     expect(detail.variants[0]?.connector).toBeNull();
     expect(detail.variants[1]?.connector).toEqual({
@@ -153,7 +153,7 @@ describe('Discover integrations.sh catalogue', () => {
       provider: 'graphql',
       endpoint: 'https://api.notion.com/graphql',
     });
-    expect(detail.variants[3]?.connector).toBeNull();
+    expect(detail.variants).toHaveLength(3);
     expect(requested.at(-1)).toBe('https://integrations.sh/api/notion.com/surface');
   });
 

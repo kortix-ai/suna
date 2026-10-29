@@ -1,6 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
-import { type SQL, eq } from 'drizzle-orm';
+import { type SQL, eq, sql } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 /** One project: read, detail, and update. */
 import { PROJECT_ACTIONS } from '../../iam';
@@ -22,6 +22,7 @@ import { ProjectSchema, projectsApp } from '../lib/app';
 import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
+import { MANIFEST_PROJECT_NAME_KEY, commitProjectName } from '../lib/manifest-project-name';
 import { addPlatformMetaAgent } from '../lib/platform-meta-agent';
 import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { normalizeProjectIcon } from '../lib/project-icon';
@@ -260,7 +261,7 @@ export function registerProjectDetailRoutes(): void {
       },
       responses: {
         200: json(ProjectSchema, 'The updated project'),
-        ...errors(404),
+        ...errors(400, 404, 409),
       },
     }),
     async (c) => {
@@ -340,6 +341,15 @@ export function registerProjectDetailRoutes(): void {
         if (iconGlyphPresent && body.icon_glyph === null) deleteKeys.push('icon_glyph');
         if (iconPresent && body.icon === null) deleteKeys.push('icon');
         if (deleteKeys.length > 0) metadataExpr = metadataMerge({}, deleteKeys);
+      }
+
+      // kortix.yaml owns project.name: commit the rename first; a refused commit renames nothing.
+      if (name && name !== loaded.row.name) {
+        const declared = await commitProjectName(loaded.row, name);
+        if (!declared.ok) return c.json({ error: declared.error, code: declared.code ?? 'manifest_write_failed' }, declared.status as 400 | 409);
+        metadataExpr = metadataExpr
+          ? sql`${metadataExpr} || ${JSON.stringify({ [MANIFEST_PROJECT_NAME_KEY]: name })}::jsonb`
+          : metadataMerge({ [MANIFEST_PROJECT_NAME_KEY]: name });
       }
 
       const [row] = await db

@@ -63,6 +63,8 @@ export interface ApprovalRequestData {
   resolvedPreview?: Record<string, unknown> | null;
   /** Set when the server could not load that content (`unavailable`). */
   resolvedError?: string | null;
+  /** The agent's policy set that decided the call (`auditPolicySet`). */
+  policySet?: { name: string; agent: string | null } | null;
   resolution?: ApprovalDecisionValue | null;
   pending: boolean;
   status?: string | null;
@@ -1183,6 +1185,7 @@ export function ApprovalRequest({
   className,
 }: ApprovalRequestProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSets = useTranslations('connectorPolicySets');
   const reviewComplete = request.reviewComplete !== false;
   const reviewable = approvalReviewable(
     request.argsPreview,
@@ -1240,6 +1243,16 @@ export function ApprovalRequest({
             {tI18nComplete.raw('text2d9e28289fac')}{' '}
             {requestedAtFormat.format(new Date(request.requestedAt))}
           </p>
+          {request.policySet ? (
+            <p className="text-muted-foreground text-xs text-pretty">
+              {request.policySet.agent
+                ? tSets('approvalSetAgent', {
+                    agent: request.policySet.agent,
+                    set: request.policySet.name,
+                  })
+                : tSets('approvalSet', { set: request.policySet.name })}
+            </p>
+          ) : null}
         </div>
         {resolved ? (
           <Badge variant={resolutionTone} size="sm">

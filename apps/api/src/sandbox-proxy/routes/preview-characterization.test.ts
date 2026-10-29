@@ -114,6 +114,8 @@ mock.module('../../projects/surface', () => ({
   registerRuntimeFork: async () => {
     counts.registerRuntimeFork += 1;
   },
+  // Imported at load by modules this graph pulls in (memory/layers.ts); never called here.
+  resolveUserIdentities: async () => new Map(),
 }));
 // A wake claimed by `/start` or another request leaves the row `stopped` until
 // the provider confirms the box; tests flip this to model that window.
@@ -944,6 +946,7 @@ describe('resolvePreviewWsUpstream', () => {
       ok: true,
       url: 'ws://sandbox.local/kortix/pty/term-1?foo=1&user_ctx=signed-ctx&tier=free',
       headers: { [KORTIX_USER_CONTEXT_HEADER]: 'signed-ctx', authorization: 'Bearer svc-key' },
+      accessCheck: expect.any(Function),
     });
 
     const shadowed = await resolvePreviewWsUpstream(wsArgs({ queryString: '?pv=client' }));
@@ -951,6 +954,7 @@ describe('resolvePreviewWsUpstream', () => {
       ok: true,
       url: 'ws://sandbox.local/kortix/pty/term-1?pv=tok&pv=client&user_ctx=signed-ctx&tier=free',
       headers: { [KORTIX_USER_CONTEXT_HEADER]: 'signed-ctx', authorization: 'Bearer svc-key' },
+      accessCheck: expect.any(Function),
     });
   });
 });

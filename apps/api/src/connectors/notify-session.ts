@@ -124,13 +124,18 @@ export async function notifyConnectorSession(
     // is a new event, not a duplicate of the first.
     const event = account ? `${slug}:${account.connectionId}` : slug;
     const idempotencyKey = `connector-connected:${sessionId}:${event}`;
+    const text = connectorConnectedPrompt(slug, app, account);
     await enqueueContinueSessionCommand({
       source: 'system:connector-connected',
       projectId,
       accountId: session.accountId,
       sessionId,
       actorUserId,
-      text: connectorConnectedPrompt(slug, app, account),
+      text,
+      // Harness context, not the person's words: the transcript shows it as a
+      // notice, and a question the agent has open stays open (the runtime
+      // dismisses questions only for a real message).
+      parts: [{ type: 'text', text, synthetic: true }],
       idempotencyKey,
       clientMessageId: `connector-connected:${event}`,
       // Minted here, as `POST .../prompts` mints one for a caller that sends

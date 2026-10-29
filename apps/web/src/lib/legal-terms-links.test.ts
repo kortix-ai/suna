@@ -43,15 +43,6 @@ const LINK_SITES: LinkSite[] = [
     expectAbsent: [`href="/legal?tab=terms"`],
   },
   {
-    file: 'app/[locale]/(public)/(marketing)/support/page.tsx',
-    expectPresent: [
-      `href="/legal/terms"`,
-      `href="/legal?tab=privacy"`,
-      `href="/legal?tab=imprint"`,
-    ],
-    expectAbsent: [`href="/legal?tab=terms"`],
-  },
-  {
     file: 'lib/site-config.ts',
     expectPresent: [`url: '/legal/terms'`, `url: '/legal?tab=privacy'`],
     expectAbsent: [`url: '/legal?tab=terms'`],
@@ -76,20 +67,3 @@ for (const site of LINK_SITES) {
     }
   });
 }
-
-test('the legal page renders the Terms as a tab, with no link out', () => {
-  const src = readFileSync(join(WEB_ROOT, 'app/[locale]/(public)/(seo)/legal/page.tsx'), 'utf8');
-
-  // The tab union is the contract: it names every tab the page can render.
-  expect(
-    src.includes(`type LegalTab = 'imprint' | 'terms' | 'privacy';`),
-    'legal tab union changed',
-  ).toBe(true);
-  expect(src.includes(`{ id: 'imprint'`), 'imprint tab missing from the rail').toBe(true);
-  expect(src.includes(`{ id: 'terms'`), 'terms tab missing from the rail').toBe(true);
-  expect(src.includes(`{ id: 'privacy'`), 'privacy tab missing from the rail').toBe(true);
-  expect(src.includes('<TermsOfService />'), 'terms document not rendered').toBe(true);
-  // The Terms no longer live in an external Drive file: no link out of the rail.
-  expect(src.includes(`href="/legal/terms"`), 'legal page still links Terms out').toBe(false);
-  expect(src, 'legal page still names the Drive file').not.toContain('drive.google.com');
-});

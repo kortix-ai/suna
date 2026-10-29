@@ -12,6 +12,8 @@
 //   - PATCH  /:accountId/audit/webhooks/:id
 //   - DELETE /:accountId/audit/webhooks/:id
 
+import { callerKortixSessionId } from '../middleware/caller-session';
+import { redactHiddenChannelAuditRows } from '../shared/space-access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auditEventsAll, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
@@ -217,9 +219,15 @@ auditRouter.openapi(
       .limit(limit + 1);
 
     const hasMore = rows.length > limit;
-    const page = hasMore ? rows.slice(0, limit) : rows;
-    const last = page[page.length - 1];
+    const fetchedPage = hasMore ? rows.slice(0, limit) : rows;
+    const last = fetchedPage[fetchedPage.length - 1];
     const nextCursor = hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null;
+    // A private channel's threads the reader is not in: metadata only.
+    const page = await redactHiddenChannelAuditRows(
+      fetchedPage,
+      { userId: String(c.get('userId')), bound: callerKortixSessionId(c) },
+      { searching: Boolean(q) },
+    );
     const names = await auditCredentialNames(page);
 
     return c.json({
@@ -508,7 +516,11 @@ auditRouter.openapi(
         },
       },
     );
-    const rows = page.rows;
+    const rows = await redactHiddenChannelAuditRows(
+      page.rows,
+      { userId: String(c.get('userId')), bound: callerKortixSessionId(c) },
+      { searching: Boolean(q) },
+    );
     const hasMore = page.nextCursor !== null;
     const nextCursor = page.nextCursor;
 

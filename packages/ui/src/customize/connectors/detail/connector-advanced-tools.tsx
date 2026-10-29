@@ -48,8 +48,12 @@ export function ConnectorAdvancedTools({
   sensitivePending,
   onSave,
   onSensitive,
+  showSensitive = true,
 }: {
   connector: AdminConnector;
+  /** The `sensitive` flag belongs to the connector, not to a policy set, so
+   *  the set view leaves it out. */
+  showSensitive?: boolean;
   advancedRules: ConnectorPolicyRule[];
   toolRules: ConnectorPolicyRule[];
   loaded: boolean;
@@ -122,25 +126,27 @@ export function ConnectorAdvancedTools({
           </DisclosureTrigger>
           <DisclosureContent variant="outline" contentClassName="border-border border-t">
             <div className="space-y-5 px-4 py-5">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="text-foreground text-sm font-medium">
-                    {tI18nComplete.raw('text594bdd4c19b2')}
-                  </p>
-                  <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                    {tI18nComplete.raw('textf900377c2048')}
-                  </p>
+              {showSensitive ? (
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-foreground text-sm font-medium">
+                      {tI18nComplete.raw('text594bdd4c19b2')}
+                    </p>
+                    <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+                      {tI18nComplete.raw('textf900377c2048')}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {sensitivePending ? <Loading className="size-4 shrink-0" /> : null}
+                    <Switch
+                      checked={connector.sensitive === true}
+                      onCheckedChange={onSensitive}
+                      disabled={frozen || sensitivePending}
+                      aria-label={tI18nComplete.raw('text594bdd4c19b2')}
+                    />
+                  </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {sensitivePending ? <Loading className="size-4 shrink-0" /> : null}
-                  <Switch
-                    checked={connector.sensitive === true}
-                    onCheckedChange={onSensitive}
-                    disabled={frozen || sensitivePending}
-                    aria-label={tI18nComplete.raw('text594bdd4c19b2')}
-                  />
-                </div>
-              </div>
+              ) : null}
 
               <div className="space-y-2">
                 <Label>{tI18nComplete.raw('text380c0b05bcfc')}</Label>

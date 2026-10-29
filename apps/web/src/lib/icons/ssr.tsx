@@ -86,6 +86,7 @@ import {
   RepeatIcon as RepeatBase,
   RobotIcon as RobotBase,
   RocketIcon as RocketBase,
+  RssIcon as RssBase,
   ScalesIcon as ScalesBase,
   ScrollIcon as ScrollBase,
   ShareNetworkIcon as ShareNetworkBase,
@@ -123,6 +124,7 @@ export const AlarmIcon = withDefaultWeight(AlarmBase);
 export const AppleLogoIcon = withDefaultWeight(AppleLogoBase);
 export const ArrowLeftIcon = withDefaultWeight(ArrowLeftBase);
 export const ArrowRightIcon = withDefaultWeight(ArrowRightBase);
+export const RssIcon = withDefaultWeight(RssBase);
 export const ArrowClockwiseIcon = withDefaultWeight(ArrowsClockwiseBase);
 export const AtIcon = withDefaultWeight(AtBase);
 export const AtomIcon = withDefaultWeight(AtomBase);

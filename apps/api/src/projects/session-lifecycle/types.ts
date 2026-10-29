@@ -1,3 +1,4 @@
+import type { Actor } from '../../iam/actor';
 import type { ProjectRow, ProjectSessionRow, RequestAuditContext } from '../lib/serializers';
 import type { PromptOverridesWire, PromptPartWire } from './prompt-payload';
 import type { SessionCreateError } from '../lib/sessions';
@@ -16,6 +17,7 @@ export type SessionInvocationSource =
   | 'trigger:manual'
   | 'trigger:monitor'
   | 'trigger:event'
+  | 'trigger:app'
   | 'trigger:reminder'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
@@ -38,6 +40,13 @@ export type SessionLifecyclePostCreateAction =
       platform: 'slack' | 'telegram' | string;
       workspaceId: string;
       threadId: string;
+      /**
+       * The thread-create claim this create holds (`channels/core/threads.ts`):
+       * its `chat_event_dedup` key and owner token (the claim's `expires_at`,
+       * ISO). Freed after the bind or when the create is given up. Absent on
+       * Slack and Teams binds, and on commands queued before it existed.
+       */
+      createClaim?: { key: string; token: string };
     }
   | {
       type: 'deliver_prompt';
@@ -102,6 +111,7 @@ export interface CreateSessionCommand {
   apiKeyType?: string | null;
   inSession?: boolean | null;
   callerSessionId?: string | null;
+  parentActor?: Actor;
 }
 
 export interface QueuedCreateSessionPayload {
@@ -120,6 +130,7 @@ export interface QueuedCreateSessionPayload {
   apiKeyType?: string | null;
   inSession?: boolean | null;
   callerSessionId?: string | null;
+  parentActor?: Actor;
 }
 
 export interface ContinueSessionCommand {

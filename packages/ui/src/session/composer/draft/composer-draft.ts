@@ -16,11 +16,14 @@ export type StoredUpload = PromptAttachment & { isImage: boolean };
  * What a persisted composer draft is keyed by.
  *
  * Project scope is the home hero composer — one draft per project, because
- * that composer has no session yet. Session scope is every in-thread composer.
- * Both ids are UUIDs, so the two families can never collide.
+ * that composer has no session yet. Space scope is a channel or DM composer.
+ * Session scope is every in-thread composer. Every id is a UUID, and each
+ * family has its own prefix, so they can never collide.
  */
 export type DraftScope =
-  { kind: 'project'; projectId: string } | { kind: 'session'; sessionId: string };
+  | { kind: 'project'; projectId: string }
+  | { kind: 'space'; spaceId: string }
+  | { kind: 'session'; sessionId: string };
 
 /**
  * The only attachment shape that can cross a reload. A `local` AttachedFile
@@ -80,7 +83,9 @@ export interface StoredDraft {
 
 /** The `<kind>:<id>` half of the storage key. The family prefix is the store's. */
 export function draftScopeKey(scope: DraftScope): string {
-  return scope.kind === 'project' ? `project:${scope.projectId}` : `session:${scope.sessionId}`;
+  if (scope.kind === 'project') return `project:${scope.projectId}`;
+  if (scope.kind === 'space') return `space:${scope.spaceId}`;
+  return `session:${scope.sessionId}`;
 }
 
 const isRemote = (file: AttachedFile): file is RemoteAttachedFile => file.kind === 'remote';

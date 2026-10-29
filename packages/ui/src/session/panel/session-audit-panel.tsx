@@ -21,6 +21,7 @@ import { ErrorState } from '../../primitives/error-state';
 import {
   approvalLauncherName,
   approvalRequestFromAction,
+  auditPolicySet,
 } from '../prompts/session-approval-review';
 import {
   isPendingAction,
@@ -39,6 +40,11 @@ import { useProjectSession } from '@kortix/sdk/react';
 import { CaretRightIcon, ShieldCheckIcon } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
+/** The policy set that decided a history row, if one did. */
+function setNameOf(action: SessionAuditAction): string | null {
+  return auditPolicySet(action.result_summary)?.name ?? null;
+}
+
 export function SessionAuditPanel({
   projectId,
   projectSessionId,
@@ -47,6 +53,7 @@ export function SessionAuditPanel({
   projectSessionId?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSets = useTranslations('connectorPolicySets');
   const approvalQuery = useSessionAudit(projectId, projectSessionId);
   const { data } = approvalQuery;
   const timelineQuery = useSessionAuditTimeline(projectId, projectSessionId, {
@@ -292,6 +299,9 @@ export function SessionAuditPanel({
                           </div>
                           <p className="text-muted-foreground mt-0.5 truncate text-xs">
                             {action.acted_by_email ?? 'agent'} · {relativeTime(action.at)}
+                            {setNameOf(action)
+                              ? ` · ${tSets('auditSet', { set: setNameOf(action)! })}`
+                              : ''}
                             {action.resolved_by_email
                               ? tI18nComplete('text0e16f24ee012', {
                                   value0: action.status === 'denied' ? 'denied' : 'approved',

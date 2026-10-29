@@ -1,7 +1,7 @@
 'use client';
 
 import { FilePreviewModal, type FileSource } from '@kortix/ui/file-viewer';
-import { FileThumbnail, FileExplorerSourceProvider } from '@kortix/ui/files';
+import { FileThumbnail, FileExplorerSourceProvider, getFileIcon } from '@kortix/ui/files';
 import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
@@ -27,18 +27,42 @@ const YAML = `kortix_version: 3\ndefault_agent: kortix\nproject:\n  name: kaab-d
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="2000" viewBox="0 0 1600 2000"><rect width="1600" height="2000" fill="#111"/></svg>\n`;
 
-const FILES: Record<string, string> = { 'kortix.md': MD, 'kortix.yaml': YAML, 'brand.svg': SVG };
+const PY = `"""\nShared helpers for running LibreOffice headless.\n"""\n\nimport subprocess\n`;
+
+const FILES: Record<string, string> = {
+  'kortix.md': MD,
+  'kortix.yaml': YAML,
+  'brand.svg': SVG,
+  // A nested, editable file: the header shows its folders, one Download, and
+  // the editor's Save / Discard in the same row (no second breadcrumb row).
+  '/workspace/skills/xlsx/scripts/_soffice.py': PY,
+};
 const PATHS = Object.keys(FILES);
+
+// One result object per path, stable across renders as a real query result is:
+// the editable viewer derives its unsaved state from the result's identity.
+const RESULTS = Object.fromEntries(
+  PATHS.map((path) => [
+    path,
+    {
+      data: { type: 'text' as const, content: FILES[path] },
+      isLoading: false,
+      error: null,
+      refetch: async () => undefined,
+    },
+  ]),
+);
+const NO_CONTENT = { data: undefined, isLoading: false, error: null, refetch: async () => undefined };
+const NO_BLOB = { blobUrl: null, blob: null, isLoading: false, error: null };
 
 const stubSource = {
   id: 'debug-stub',
-  useFileContent: (filePath: string) => ({
-    data: { type: 'text' as const, content: FILES[filePath] ?? '' },
-    isLoading: false,
-    error: null,
-    refetch: async () => undefined,
-  }),
-  useBinaryBlob: () => ({ blobUrl: null, blob: null, isLoading: false, error: null }),
+  useFileContent: (filePath: string | null) => (filePath && RESULTS[filePath]) || NO_CONTENT,
+  useBinaryBlob: () => NO_BLOB,
+  download: async () => undefined,
+  upload: async () => undefined,
+  save: async () => undefined,
+  editablePreview: true,
 } as unknown as FileSource;
 
 export function DebugFilePreviewHarness() {
@@ -76,7 +100,7 @@ export function DebugFilePreviewHarness() {
           onPrev={() => setIndex((i) => Math.max(i - 1, 0))}
           source={stubSource}
           HistoryContent={() => null}
-          renderFileIcon={() => null}
+          renderFileIcon={(name) => getFileIcon(name, { className: 'size-4', variant: 'monochrome' })}
           embedded
         />
       </div>

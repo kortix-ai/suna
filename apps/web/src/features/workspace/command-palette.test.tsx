@@ -194,7 +194,7 @@ describe('search terms carried across from the removed registry entries', () => 
     ['cli', 'tokens'],
     // Everything else that used to be listed here named a tab that has left
     // this rail. The thirteen project-configuration words (secrets, env, git,
-    // github, members, collaborators, slack, agentmail, llm, openrouter,
+    // github, members, collaborators, slack, telegram, llm, openrouter,
     // marketplace, approvals, livekit, templates, danger zone, customize) are
     // answered by the `proj-customize` registry row now — pinned in the case
     // below — and the eight account words (subscription, ledger, pat, sso, …)
@@ -266,7 +266,7 @@ describe('search terms carried across from the removed registry entries', () => 
       ['members', 'proj-members'],
       ['collaborators', 'proj-members'],
       ['slack', 'proj-channels'],
-      ['agentmail', 'proj-channels'],
+      ['telegram', 'proj-channels'],
       ['llm', 'proj-models'],
       ['openrouter', 'proj-models'],
       ['approvals', 'proj-review-inbox'],

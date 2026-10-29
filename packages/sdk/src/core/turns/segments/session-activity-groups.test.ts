@@ -1,4 +1,6 @@
+import type { ToolPart } from '../../runtime/client';
 import { describe, expect, test } from 'bun:test';
+import { segmentTurn } from './segment-turn';
 
 import {
   isEmptyShowPart,
@@ -53,6 +55,24 @@ describe('grouping exemptions', () => {
   });
 });
 
+describe('image_gen is a deliverable', () => {
+  test('image_gen never folds into a burst group', () => {
+    for (const name of ['image_gen', 'image-gen', 'oc-image-gen']) {
+      expect(isNoGroupActivityTool(name)).toBe(true);
+      expect(isStandaloneActivityTool(name)).toBe(true);
+    }
+  });
+
+  test('image_gen between two shells splits them and stands alone', () => {
+    const call = (id: string, name: string) =>
+      ({ id, type: 'tool', tool: name, callID: `c${id}`, state: { status: 'completed', input: {} } }) as unknown as ToolPart;
+    const segments = segmentTurn([call('1', 'bash'), call('2', 'image_gen'), call('3', 'bash')]);
+
+    expect(segments.map((seg) => seg.kind)).toEqual(['burst', 'standalone', 'burst']);
+    expect((segments[1] as { part: ToolPart }).part.id).toBe('2');
+  });
+});
+
 describe('isInvisibleActivityPart', () => {
   test('bookkeeping parts and blank text render nothing', () => {
     expect(isInvisibleActivityPart({ type: 'snapshot' })).toBe(true);
@@ -77,6 +97,71 @@ describe('isInvisibleActivityPart', () => {
         state: { status: 'completed', input: { type: 'markdown' } },
       }),
     ).toBe(true);
+  });
+});
+
+/** The memory tool's real `view` output for an empty memory folder: the root line only. */
+const EMPTY_MEMORY_VIEW =
+  "Here're the files and directories up to 2 levels deep in memory, excluding hidden items and node_modules:\n4K\tmemory";
+
+const memoryPart = (status: string, input: Record<string, unknown>, output?: string) => ({
+  type: 'tool',
+  tool: 'memory',
+  state: { status, input, output },
+});
+
+describe('the empty memory read', () => {
+  test('an empty memory view is invisible', () => {
+    expect(isInvisibleActivityPart(memoryPart('completed', { command: 'view', path: 'memory' }, EMPTY_MEMORY_VIEW))).toBe(true);
+    // The same listing when the agent asked for `memory/`.
+    expect(
+      isInvisibleActivityPart(
+        memoryPart('completed', { command: 'view', path: 'memory/' }, EMPTY_MEMORY_VIEW.replace('in memory', 'in memory/').replace('\tmemory', '\tmemory/')),
+      ),
+    ).toBe(true);
+    expect(
+      isInvisibleActivityPart({ ...memoryPart('completed', { command: 'view', path: 'memory' }, EMPTY_MEMORY_VIEW), tool: 'oc-memory' }),
+    ).toBe(true);
+  });
+
+  test('a memory view that lists a file stays visible', () => {
+    expect(
+      isInvisibleActivityPart(memoryPart('completed', { command: 'view', path: 'memory' }, `${EMPTY_MEMORY_VIEW}\n1.2K\tmemory/overview.md`)),
+    ).toBe(false);
+    expect(
+      isInvisibleActivityPart(
+        memoryPart('completed', { command: 'view', path: 'memory/overview.md' }, "Here's the content of memory/overview.md with line numbers:\n1\t# Overview"),
+      ),
+    ).toBe(false);
+  });
+
+  test('a running or failed memory call stays visible', () => {
+    expect(isInvisibleActivityPart(memoryPart('running', { command: 'view', path: 'memory' }))).toBe(false);
+    expect(isInvisibleActivityPart(memoryPart('error', { command: 'view', path: 'memory' }, EMPTY_MEMORY_VIEW))).toBe(false);
+    expect(
+      isInvisibleActivityPart(
+        memoryPart('completed', { command: 'view', path: 'memory/nope' }, 'The path memory/nope does not exist. Please provide a valid path.'),
+      ),
+    ).toBe(false);
+  });
+
+  test('a memory write is never the empty read', () => {
+    expect(isInvisibleActivityPart(memoryPart('completed', { command: 'create', path: 'memory' }, EMPTY_MEMORY_VIEW))).toBe(false);
+  });
+
+  test('segmentation drops the empty read, so it cannot split a burst', () => {
+    const read = (id: string): ToolPart =>
+      ({ id, type: 'tool', tool: 'read', callID: id, state: { status: 'completed', input: {}, output: '' } }) as unknown as ToolPart;
+    const memory = {
+      id: 'm',
+      type: 'tool',
+      tool: 'memory',
+      callID: 'm',
+      state: { status: 'completed', input: { command: 'view', path: 'memory' }, output: EMPTY_MEMORY_VIEW },
+    } as unknown as ToolPart;
+    const segments = segmentTurn([read('a'), memory, read('b')]);
+    const parts = segments.flatMap((s) => ('parts' in s ? s.parts : [s.part]));
+    expect(parts.map((p) => p.id)).toEqual(['a', 'b']);
   });
 });
 

@@ -12,6 +12,7 @@ import { projectSessions } from '@kortix/db';
 import { genuiToMarkdown } from '@kortix/sdk/genui';
 import { and, eq } from 'drizzle-orm';
 import { type TeamsFormSpec, buildFormCard } from '../../channels/teams/cards';
+import { notifySessionChannel } from '../../channels/core/session-notice';
 import {
   relayTurnAnswerDetailed,
   relayTurnEnd,
@@ -20,7 +21,8 @@ import {
 import { notifySessionEvent, turnEndPushType } from '../../notifications/session-push';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
-import { turnEndNotificationContext } from '../lib/notification-recipients';
+import { trackDetached } from '../../shared/drain';
+import { turnEndNotificationContext, turnPromptSource } from '../lib/notification-recipients';
 import { clearOpenQuestions } from '../lib/pending-questions';
 import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
 import { notifyTurnEnded } from '../lib/config-convergence-triggers';
@@ -503,6 +505,20 @@ async function publishTurnEnd(
     });
   }
   const ok = relayEnd ? await relayTurnEnd(sessionId, status, errorInfo) : false;
+  // A Telegram chat has no live turn that shows the error. Tell it when no Slack
+  // or Teams turn carried the end. The gate is the push's own (turnEndPushType):
+  // an end that closed a root turn in THIS call with a non-abort error, so once
+  // per turn. The prompt's source lets the chat hear only the turns it prompted.
+  // Tracked, so a deploy drain waits for the send; never awaited, so the
+  // daemon's acknowledgement does not.
+  if (!ok && pushType === 'error') {
+    const turnMessageId = typeof body.turn_message_id === 'string' ? body.turn_message_id : null;
+    trackDetached(
+      turnPromptSource(sessionId, turnMessageId)
+        .catch(() => null)
+        .then((promptSource) => notifySessionChannel({ kind: 'run_failed', sessionId, error: errorInfo, promptSource })),
+    );
+  }
   return c.json({
     ok,
     turn_completion: {

@@ -217,8 +217,8 @@ describe('projectSpendByModel', () => {
     await request({ ...row, at: 30, resolved: 'gpt-6.1-sol', provider: 'openai-codex', metadata: { servedModel: 'codex/gpt-6.1-sol' } });
 
     expect(await projectSpendByModel(SPEND_PROJECT, 30)).toEqual([
-      { model: 'glm-5.3-flash', provider: 'kortix', requests: 2, errors: 0, cost: 0.75, kortix_cost: 0.75, provider_cost: 0, tokens: 0 },
-      { model: 'codex/gpt-6.1-sol', provider: 'openai-codex', requests: 1, errors: 0, cost: 0, kortix_cost: 0, provider_cost: 0, tokens: 0 },
+      { estimated_usage_value: null, priced_requests: 0, unpriced_requests: 2, model: 'glm-5.3-flash', provider: 'kortix', requests: 2, errors: 0, cost: 0.75, kortix_cost: 0.75, provider_cost: 0, tokens: 0 },
+      { estimated_usage_value: 0, priced_requests: 1, unpriced_requests: 0, model: 'codex/gpt-6.1-sol', provider: 'openai-codex', requests: 1, errors: 0, cost: 0, kortix_cost: 0, provider_cost: 0, tokens: 0 },
     ]);
   });
 });

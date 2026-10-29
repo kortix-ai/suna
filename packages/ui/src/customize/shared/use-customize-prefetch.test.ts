@@ -31,10 +31,6 @@ function fakeApi(calls: string[]): CustomizePrefetchApi {
     };
   return {
     getProject: read('getProject'),
-    getConnectStatus: (async () => {
-      calls.push('getConnectStatus');
-      return { configured: true, provider: 'composio', providers: ['composio'] };
-    }) as never,
     getModelDefaults: read('getModelDefaults'),
     getProjectModelPicker: read('getProjectModelPicker'),
     listConnectors: read('listConnectors'),
@@ -47,11 +43,11 @@ function fakeApi(calls: string[]): CustomizePrefetchApi {
     listReviewItems: read('listReviewItems'),
     loadCatalogQueries: async () =>
       ({
-        connectStatusQuery: { queryKey: ['connect-status', 'composio-first-v2'] as const },
-        catalogSectionsQuery: (projectId: string, catalogue: string | null) => ({
-          queryKey: ['catalog-sections', projectId, catalogue] as const,
+        catalogSectionsQuery: (projectId: string, oneClick?: boolean) => ({
+          // The real key shape (`catalogSectionsQuery` in use-catalog.ts).
+          queryKey: ['catalog-sections', projectId, 'kortix', ...(oneClick ? ['one-click'] : [])] as const,
           queryFn: async () => {
-            calls.push(`sections:${catalogue}`);
+            calls.push(`sections:kortix:${oneClick === true ? 'one-click' : 'all'}`);
             return { sections: [] } as never;
           },
           staleTime: 5 * 60_000,
@@ -79,13 +75,12 @@ describe('prefetchCustomize', () => {
       qk.project.sandboxTemplates(PROJECT),
       qk.project.snapshots(PROJECT),
       qk.project.branches(PROJECT),
-      ['connect-status', 'composio-first-v2'],
-      ['catalog-sections', PROJECT, 'composio'],
+      ['catalog-sections', PROJECT, 'kortix', 'one-click'],
     ];
     for (const key of filled) {
       expect({ key, data: client.getQueryData(key) !== undefined }).toEqual({ key, data: true });
     }
-    expect(calls).toContain('sections:composio');
+    expect(calls).toContain('sections:kortix:one-click');
   });
 
   test('keeps prefetched entries for half an hour without an observer', async () => {
@@ -141,13 +136,12 @@ describe('prefetchCustomize', () => {
     expect(second.filter((name) => name !== 'listReviewItems')).toEqual([]);
   });
 
-  test('prefetches managed discovery independently of direct discovery', async () => {
+  test('prefetches the catalogue landing the Connectors page opens (One-click only)', async () => {
     const client = new QueryClient();
     const calls: string[] = [];
 
     await prefetchCustomize(client, PROJECT, ALL, fakeApi(calls));
 
-    expect(calls).not.toContain('sections:discover');
-    expect(calls).toContain('getConnectStatus');
+    expect(calls).toContain('sections:kortix:one-click');
   });
 });

@@ -19,3 +19,18 @@ export function clientAbortTarget(port: number, method: string, path: string): s
   const request = classifyRuntimeRequest(method, path);
   return request.kind === 'abort' ? request.runtimeSessionId : null;
 }
+
+/**
+ * The message a client asked OpenCode to rewind to (`POST /session/:id/revert`
+ * `{messageID}`): `''` when the body names none, `null` when this request is
+ * not a rewind.
+ */
+export function clientRevertMessage(port: number, method: string, path: string, body: ArrayBuffer | undefined): string | null {
+  if (port !== 8000 || classifyRuntimeRequest(method, path).kind !== 'revert') return null;
+  try {
+    const parsed = body?.byteLength ? (JSON.parse(new TextDecoder().decode(body)) as Record<string, unknown>) : null;
+    return typeof parsed?.messageID === 'string' ? parsed.messageID : '';
+  } catch {
+    return '';
+  }
+}

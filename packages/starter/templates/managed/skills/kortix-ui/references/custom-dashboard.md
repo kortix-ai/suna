@@ -201,7 +201,7 @@ A Next.js host passes `next/link` and `{ useRouter, usePathname, useSearchParams
 
 ## 5. The project shell
 
-Your sidebar chrome around Kortix's session list. Every URL the components link to comes from one route table, `setUiRoutes` (`@kortix/ui`), called once at module load. The defaults are Kortix's own paths: `project` `/projects/<id>`, `session` `/projects/<id>/sessions/<sessionId>`, `sessions` `/projects/<id>/sessions` (`?view=archived|deleted`), `files` `/projects/<id>/files`, `drive` `/projects/<id>/drive`, `apps` `/projects/<id>/apps`, `members` `/projects/<id>/members`, `sandboxSettings` `/projects/<id>/config?section=sandbox`, `customize` `/projects/<id>/customize/<page>` (agents, skills, connectors, triggers, reminders, models, secrets, review, settings). Return your own path for a page you serve elsewhere. Return `null` for a page you do not serve: every link to it is hidden. `project` and `session` cannot be null. This app serves the project
+Your sidebar chrome around Kortix's session list. Every URL the components link to comes from one route table, `setUiRoutes` (`@kortix/ui`), called once at module load. The defaults are Kortix's own paths: `project` `/projects/<id>`, `session` `/projects/<id>/sessions/<sessionId>`, `sessions` `/projects/<id>/sessions` (`?view=archived|deleted`), `files` `/projects/<id>/files`, `drive` `/projects/<id>/drive`, `apps` `/projects/<id>/apps`, `members` `/projects/<id>/members`, `sandboxSettings` `/projects/<id>/config?section=sandbox`, `customize` `/projects/<id>/customize/<page>` (agents, skills, connectors, triggers, reminders, models, secrets, review, settings), `channel` `/projects/<id>/c/<slug>` and `dm` `/projects/<id>/dm/<agent>` (the sidebar links them while the project's `project_channels` flag is on). Return your own path for a page you serve elsewhere. Return `null` for a page you do not serve: every link to it is hidden. `project`, `session`, `channel` and `dm` cannot be null. This app serves the project
 home, its files and a session (section 7), so it maps the other pages to `null`.
 
 ```tsx
@@ -456,9 +456,9 @@ The modules compose at any depth (`modules.md` has every entry with its props an
   composed screens need the two scopes those screens mount: `KortixProjectProvider` (`@kortix/sdk/react`)
   and `SessionIdsProvider` (`@kortix/ui`) with the project and session ids.
 - To draw every part yourself: `useChatTurns` and `renderParts` from `@kortix/sdk/react`
-  (https://kortix.com/docs/sdk/react#build-a-chat-ui).
+  (https://kortix.com/docs/developers#react).
 - Other data for a dashboard: `useProjectApps`, `useProjectTriggers`, `useChangeRequests`,
-  `useGatewayOverview`, `useCan` (https://kortix.com/docs/sdk/react#hooks).
+  `useGatewayOverview`, `useCan` (https://kortix.com/docs/developers#react-hooks).
 
 ## 10. Verify
 

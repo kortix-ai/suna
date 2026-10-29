@@ -96,7 +96,11 @@ Submit options:
   --title <text>     One-line title (required).
   --summary <text>   The body a reviewer reads.
   --risk <r>         ${RISKS.join(' | ')} (default: none).
-  --detail <json>    Structured payload, a JSON object.
+  --detail <json>    Structured payload, a JSON object. An output names
+                     its files: {"files":[{"path":"/drives/me/cut.mp4",
+                     "note":"Final cut"}],"preview":"<text>"}. The inbox
+                     plays the first image, video or audio file under
+                     /drives and lists the rest.
   --agent <name>     Which agent produced it.
   --session <id>     Originating session; it must be one of this
                      project's sessions. Inside a session it defaults to

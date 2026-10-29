@@ -11,6 +11,7 @@ import { splitHelp } from '../command-argv.ts';
 
 import {
   emitJson,
+  fail,
   missing,
   resolveProjectContext,
   surfaceApiError,
@@ -18,6 +19,7 @@ import {
   takeFlagValue,
   takeFlagValues,
 } from '../command-helpers.ts';
+import { surfacePolicySetError } from '../policy-set-errors.ts';
 import { C, help, pad, status } from '../style.ts';
 
 /** PUT /projects/:id/agents/:name/scope response (agent-scope.ts:166). */
@@ -29,6 +31,8 @@ interface AgentScopeResponse {
   connectors_required: string[];
   /** Absent from a server that predates the Apps grant on this route. */
   apps?: string[] | 'all';
+  /** Connector slug → policy set name. Absent from a server without policy sets. */
+  policy_sets?: Record<string, string>;
 }
 
 type ProjectCtx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
@@ -56,13 +60,19 @@ Subcommands:
   config <agent> --file <path>    Replace the block with a JSON file's contents.
   config <agent> --set k=v ...    Change single (dotted) keys, merged in.
 
-Scope options (all replace, none merge):
+Scope options (each replaces the field; --policy-set merges):
   --secrets all|none|A,B          Which project secrets reach the agent's env.
   --connectors all|none|a,b       Which connectors it may call as tools.
   --apps all|none|a,b             Which Kortix Apps it may open by slug, when
                                   the App is restricted or private. The agent
                                   also needs project.app.read in its Kortix
                                   permissions. Needs kortix.yaml (kortix_version 2 or 3).
+  --policy-set <slug>=<name>      Repeatable. The connector's rule set this
+                                  agent is checked against, merged per
+                                  connector. <slug>=base puts it back on the
+                                  connector's base rules.
+                                  Needs project.connector.write too. Sets:
+                                  \`kortix connectors policy-sets <slug> ls\`.
   --require-connector <slug>      Repeatable. Deprecated and no longer enforced:
                                   a session is never refused for an unconnected
                                   connector. A call picks its account instead —
@@ -100,6 +110,7 @@ export async function runAgents(argv: string[]): Promise<number> {
   let connectorsFlag: string | undefined;
   let appsFlag: string | undefined;
   let requiredFlags: string[] = [];
+  let policySetFlags: string[] = [];
   let fileFlag: string | undefined;
   let setFlags: string[] = [];
   try {
@@ -107,6 +118,7 @@ export async function runAgents(argv: string[]): Promise<number> {
     clear = takeFlagBool(rest, ['--clear', '--default', '--reset']);
     show = takeFlagBool(rest, ['--show']);
     requiredFlags = takeFlagValues(rest, ['--require-connector', '--required-connector']);
+    policySetFlags = takeFlagValues(rest, ['--policy-set']);
     setFlags = takeFlagValues(rest, ['--set']);
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
@@ -139,6 +151,7 @@ export async function runAgents(argv: string[]): Promise<number> {
           connectors: connectorsFlag,
           apps: appsFlag,
           required: requiredFlags,
+          policySets: policySetFlags,
           show,
           json,
         });
@@ -379,22 +392,27 @@ async function agentsScope(
     connectors?: string;
     apps?: string;
     required: string[];
+    policySets: string[];
     show: boolean;
     json: boolean;
   },
 ): Promise<number> {
   if (!agent) return missing('an agent name');
+  const policySets = parsePolicySetFlags(opts.policySets);
+  if ('error' in policySets) return fail(policySets.error);
 
   const wantsWrite =
     opts.secrets !== undefined ||
     opts.connectors !== undefined ||
     opts.apps !== undefined ||
-    opts.required.length > 0;
+    opts.required.length > 0 ||
+    opts.policySets.length > 0;
   if (opts.show || !wantsWrite) {
     const cfg = await ctx.client.get<AgentConfigResponse>(
       `/projects/${ctx.projectId}/agents/${encodeURIComponent(agent)}/config`,
     );
     const block = cfg.block ?? {};
+    const assigned = (block as { policy_sets?: Record<string, string> }).policy_sets ?? {};
     const permissions = block.kortix_permissions ?? block.kortix_cli;
     if (opts.json) {
       emitJson({
@@ -403,6 +421,7 @@ async function agentsScope(
         connectors: block.connectors ?? [],
         connectors_required: block.connectors_required ?? [],
         apps: block.apps ?? 'none',
+        policy_sets: assigned,
         skills: block.skills ?? 'all',
         kortix_permissions: permissions ?? 'all',
         /** @deprecated Same value as kortix_permissions; kept for scripts written before the rename. */
@@ -416,6 +435,7 @@ async function agentsScope(
         `  ${C.dim}${pad('connectors', 20)}${C.reset} ${renderGrantSet(block.connectors, 'none (default)')}\n` +
         `  ${C.dim}${pad('required connectors', 20)}${C.reset} ${block.connectors_required?.join(', ') || 'none'}\n` +
         `  ${C.dim}${pad('apps', 20)}${C.reset} ${renderGrantSet(block.apps, 'none (default)')}\n` +
+        `  ${C.dim}${pad('policy sets', 20)}${C.reset} ${renderPolicySets(assigned, 'base rules (default)')}\n` +
         `  ${C.dim}${pad('skills', 20)}${C.reset} ${renderGrantSet(block.skills, 'all (default)')}\n` +
         `  ${C.dim}${pad('kortix permissions', 20)}${C.reset} ${renderGrantSet(permissions, 'all (default)')}\n\n`,
     );
@@ -442,22 +462,67 @@ async function agentsScope(
     );
   }
 
-  const resp = await ctx.client.put<AgentScopeResponse>(
-    `/projects/${ctx.projectId}/agents/${encodeURIComponent(agent)}/scope`,
-    body,
+  if (opts.policySets.length > 0) body.policy_sets = policySets.map;
+
+  let resp: AgentScopeResponse;
+  try {
+    resp = await ctx.client.put<AgentScopeResponse>(
+      `/projects/${ctx.projectId}/agents/${encodeURIComponent(agent)}/scope`,
+      body,
+    );
+  } catch (err) {
+    // A set error names the connector: the first one this request assigns.
+    return surfacePolicySetError(err, { slug: Object.keys(policySets.map)[0], agent });
+  }
+  // A 200 that did not store an assignment (e.g. a connector the agent is not
+  // granted) must not read as success.
+  const notApplied = Object.entries(policySets.map).filter(
+    ([slug, name]) => name !== null && resp.policy_sets?.[slug] !== name,
   );
   if (opts.json) {
     emitJson(resp);
-    return 0;
+    return notApplied.length > 0 ? 1 : 0;
   }
+  for (const [slug, name] of notApplied) {
+    process.stderr.write(
+      `${status.err(`--policy-set ${slug}=${name} was not applied. Grant ${resp.agent} the connector first: kortix agents scope ${resp.agent} --connectors <slugs>`)}\n`,
+    );
+  }
+  if (notApplied.length > 0) return 1;
   process.stdout.write(
     `${status.ok(`${C.bold}${resp.agent}${C.reset} scope updated`)}\n` +
       `  ${C.dim}${pad('secrets', 20)}${C.reset} ${renderGrantSet(resp.env, 'all')}\n` +
       `  ${C.dim}${pad('connectors', 20)}${C.reset} ${renderGrantSet(resp.connectors, 'none')}\n` +
       `  ${C.dim}${pad('required connectors', 20)}${C.reset} ${resp.connectors_required.join(', ') || 'none'}\n` +
-      `  ${C.dim}${pad('apps', 20)}${C.reset} ${renderGrantSet(resp.apps, 'none')}\n`,
+      `  ${C.dim}${pad('apps', 20)}${C.reset} ${renderGrantSet(resp.apps, 'none')}\n` +
+      (resp.policy_sets
+        ? `  ${C.dim}${pad('policy sets', 20)}${C.reset} ${renderPolicySets(resp.policy_sets, 'base rules')}\n`
+        : ''),
   );
   return 0;
+}
+
+/** `--policy-set gmail=read_only` (repeatable) → `{ gmail: 'read_only' }`;
+ *  `<slug>=base` → `null`, which the route reads as "back to base rules". */
+export function parsePolicySetFlags(
+  raw: readonly string[],
+): { map: Record<string, string | null> } | { error: string } {
+  const map: Record<string, string | null> = Object.create(null);
+  for (const entry of raw) {
+    const index = entry.indexOf('=');
+    const slug = index > 0 ? entry.slice(0, index).trim() : '';
+    const name = index > 0 ? entry.slice(index + 1).trim() : '';
+    if (!slug || !name) {
+      return { error: `--policy-set must look like <connector>=<set> or <connector>=base (got "${entry}")` };
+    }
+    map[slug] = name === 'base' ? null : name;
+  }
+  return { map };
+}
+
+function renderPolicySets(map: Record<string, string>, fallback: string): string {
+  const entries = Object.entries(map);
+  return entries.length === 0 ? fallback : entries.map(([slug, name]) => `${slug}=${name}`).join(', ');
 }
 
 // ── config ──────────────────────────────────────────────────────────────────

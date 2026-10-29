@@ -1,4 +1,4 @@
-import { clientAbortTarget } from '../client-abort';
+import { clientAbortTarget, clientRevertMessage } from '../client-abort';
 import { NOT_TURN_PROMPTER, NOT_TURN_PROMPTER_MESSAGE } from '../../shared/turn-stop-refusal';
 import { extractTurnIdentity, markTurnStopRequested } from '../../projects/session-turn-ledger';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -24,7 +24,7 @@ import {
   refuseSessionOrControlAccess,
   type PreviewProxyAccess,
 } from './access';
-import { decideClientAbort } from './abort-authority';
+import { decideClientAbort, decideClientRewind } from './abort-authority';
 import { forwardWithRetry } from './retry';
 import { claimPromptDeliveryOnce, convergeTurnStartRuntime, createTurnLifecycle } from './turn-start';
 import { wakeOrRefuseInactiveSandbox } from './wake';
@@ -189,6 +189,17 @@ export async function forwardToSandbox(
       'UserStop',
       { opencodeSessionId: abortedOpencodeSessionId },
       stop.by,
+    );
+  }
+
+  // A rewind deletes the message and every one after it: only its sender may,
+  // and only when nobody else wrote after it (`rewind-authority.ts`).
+  const revertMessageId = sandboxAuthored ? null : clientRevertMessage(upstreamPort, method, remainingPath, requestBody);
+  if (revertMessageId !== null && !(await decideClientRewind(access, record.sessionId, revertMessageId))) {
+    return jsonProxyError(
+      { error: 'Only the person who sent this message can edit it, and only while nobody has replied after it.', code: 'not_message_author' },
+      403,
+      origin,
     );
   }
 

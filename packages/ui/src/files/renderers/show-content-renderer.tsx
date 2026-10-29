@@ -40,6 +40,7 @@ import Loading from '../../primitives/loading';
 import { TextShimmer } from '../../primitives/text-shimmer';
 import { framePolicy } from '../viewer/preview-policy';
 import { useBinaryBlob } from '../runtime/hooks/use-binary-blob';
+import { useSharedImage } from '../runtime/hooks/use-shared-image';
 import { sessionDriveMountPath } from '../../internal/files/session-drive-files';
 import { useFileContent } from '../runtime/hooks/use-file-content';
 import { useHeicBlob } from '../../internal/hooks/use-heic-url';
@@ -63,10 +64,14 @@ import {
 } from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageRenderer } from './image-renderer';
+import { ImageFrame, ImageUnavailable } from './image-frame';
 import { MermaidDiagram } from './mermaid/mermaid-diagram';
 import { ViewerFrame } from './shared/viewer-frame';
 import { resolveShowType, shouldRenderFromSandboxFile } from './show-type-utils';
 import { VideoRenderer } from './video-renderer';
+import { ShowConnectHero, showConnectTarget } from '../../markdown/setup-links/show-connect-hero';
+import { ShowArtifactCard } from '../../artifacts/artifact-session';
+import { parseArtifactUrl } from '../../artifacts/frame-policy';
 
 // ── Lazy-load heavy renderers ──────────────────────────────────────────────
 
@@ -114,6 +119,71 @@ export function showDomain(url: string): string {
   } catch {
     return url;
   }
+}
+
+const SHOW_LINK_COPY = { open: 'Open' } as const;
+
+/**
+ * The `url` show: one card, centered in the panel.
+ *
+ * A connect URL (a Kortix link or a provider's sign-in page) is not a page to
+ * visit: it renders the connect step, `ShowConnectHero`. Every other URL is a link card:
+ * favicon, title, domain, the agent's sentence, and an explicit Open action.
+ */
+function ShowLink({ url, title, description }: { url: string; title: string; description: string }) {
+  const connect = showConnectTarget(url, title);
+  if (connect) {
+    return <ShowConnectHero url={url} target={connect} title={title} description={description} />;
+  }
+  // A Kortix artifact's link shows the artifact (a session page opens it in its panel,
+  // like an App link); a link the viewer cannot open stays a link.
+  if (parseArtifactUrl(url)) {
+    return <ShowArtifactCard url={url} fallback={<ShowLinkCard url={url} title={title} description={description} />} />;
+  }
+  return <ShowLinkCard url={url} title={title} description={description} />;
+}
+
+function ShowLinkCard({ url, title, description }: { url: string; title: string; description: string }) {
+  const copy = useLocalizedUiCatalog(SHOW_LINK_COPY);
+  const favicon = showFavicon(url);
+  const domain = showDomain(url);
+  const [faviconFailed, setFaviconFailed] = useState(false);
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid="show-link-card"
+      className="group border-border bg-card hover:bg-hover flex w-full max-w-xl items-start gap-3 rounded-lg border p-4 transition-colors"
+    >
+      <span className="bg-muted flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md">
+        {favicon && !faviconFailed ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={favicon}
+            alt=""
+            className="size-5 rounded-sm"
+            onError={() => setFaviconFailed(true)}
+          />
+        ) : (
+          <Globe className="text-muted-foreground size-4" />
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground block truncate text-sm font-medium">{title || domain}</span>
+        <span className="text-muted-foreground block truncate text-xs">{domain}</span>
+        {description ? (
+          <span className="text-muted-foreground mt-2 line-clamp-3 block text-sm text-pretty">
+            {description}
+          </span>
+        ) : null}
+      </span>
+      <span className="text-muted-foreground group-hover:text-foreground flex shrink-0 items-center gap-1 text-xs font-medium transition-colors">
+        {copy.open}
+        <ExternalLink className="size-3.5" />
+      </span>
+    </a>
+  );
 }
 
 export function showAspectRatioToCSS(ar: string | undefined): string | undefined {
@@ -215,6 +285,12 @@ export interface ShowContentProps {
    * blob would run agent-authored script inside the app.
    */
   attachment?: string;
+  /**
+   * The sha256 of the file's bytes, from the `show` output (R38): an image
+   * already loaded under another path (the generated original of a Drive
+   * copy) draws at once from the shared image store.
+   */
+  sha256?: string;
   /** Optional: render a proxied localhost iframe. Caller provides this component. */
   LocalhostPreview?: React.ComponentType<{ url: string; label?: string }>;
   /**
@@ -255,12 +331,14 @@ export function ShowContentRenderer({
   language = '',
   aspectRatio = '',
   attachment,
+  sha256,
   LocalhostPreview,
   fill = false,
   onStatusChange,
   toolbarActions,
 }: ShowContentProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tImageGen = useTranslations('imageGen');
   const arCSS = showAspectRatioToCSS(aspectRatio);
 
   // ── Height presets — fill the panel vs. the compact inline card ──
@@ -361,15 +439,17 @@ export function ShowContentRenderer({
   // its sandbox read is a base64 text read, but a stored copy is bytes.
   const storedCopy = isSessionAttachmentRef(attachment) ? (attachment as string) : null;
   const blobFilePath = showBlobSource({ effectiveType, attachment, sandboxPath });
-  const {
-    blobUrl,
-    blob: rawBlob,
-    isLoading: blobLoading,
-    error: blobError,
-  } = useBinaryBlob(blobFilePath);
-
   // HEIC conversion — converts the raw blob to renderable JPEG
   const isHeic = isImage && isHeicFile(fileName);
+  // Every other image draws from the page's shared image store (R38): by its
+  // sha256 when another surface already loaded those bytes, else read once.
+  const sharedImage = useSharedImage(isImage && !isHeic ? blobFilePath : null, isImage && !isHeic ? sha256 : null);
+  const binary = useBinaryBlob(isImage && !isHeic ? null : blobFilePath);
+  const { blob: rawBlob } = binary;
+  const blobUrl = isImage && !isHeic ? sharedImage.url : binary.blobUrl;
+  const blobLoading = isImage && !isHeic ? sharedImage.loading : binary.isLoading;
+  const blobError = isImage && !isHeic ? sharedImage.error : binary.error;
+
   const { url: heicImageUrl, isConverting: heicConverting } = useHeicBlob(
     isHeic ? rawBlob : null,
     fileName,
@@ -526,44 +606,14 @@ export function ShowContentRenderer({
         </div>
       );
     }
-    const favicon = showFavicon(safeExternalUrl);
-    const domain = showDomain(safeExternalUrl);
     return (
-      <div className={cn('px-5 py-5', fill && 'flex h-full items-center')}>
-        <a
-          href={safeExternalUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="group border-border/30 bg-muted/5 hover:bg-muted/20 flex w-full items-center gap-4 rounded-2xl border p-4 transition-colors"
-        >
-          <div className="bg-muted/30 flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg">
-            {favicon ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={favicon}
-                alt=""
-                className="size-6 rounded"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <Globe className="text-muted-foreground/50 size-5" />
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-foreground group-hover:text-primary truncate text-sm font-medium transition-colors">
-              {title || domain}
-            </div>
-            <div className="text-muted-foreground/60 mt-0.5 truncate font-mono text-xs">
-              {domain}
-            </div>
-            {description && (
-              <div className="text-muted-foreground mt-1 line-clamp-2 text-xs">{description}</div>
-            )}
-          </div>
-          <ExternalLink className="text-muted-foreground/30 group-hover:text-muted-foreground/60 size-4 shrink-0 transition-colors" />
-        </a>
+      <div
+        className={cn(
+          'flex justify-center px-5 py-5',
+          fill && 'h-full items-center',
+        )}
+      >
+        <ShowLink url={safeExternalUrl} title={title} description={description} />
       </div>
     );
   }
@@ -577,8 +627,36 @@ export function ShowContentRenderer({
   // it an image had no way to open in the side panel.
   // ═════════════════════════════════════════════════════════════════════════
   if (isImage && path) {
-    if (blobLoading || heicConverting) return <RendererFallback className={mediaH} />;
-    if (blobError) return <LoadError message={blobError} />;
+    // The same frame the image_gen card draws while its image is on the way,
+    // inside the same header the loaded image gets, so nothing grows on load.
+    // Never a bare path.
+    if (blobLoading || heicConverting) {
+      return framed(
+        <div className={mediaH}>
+          <ImageFrame
+            aspectRatio="auto"
+            src={null}
+            alt={title || fileName}
+            pending
+            label={
+              <span className="text-muted-foreground flex items-center gap-2 text-xs">
+                <Loading className="size-4 shrink-0" />
+                {tImageGen('loading')}
+              </span>
+            }
+            className="h-full rounded-none"
+          />
+        </div>,
+      );
+    }
+    // Never the read's raw error text on an image (R38): a short note and Try again.
+    if (blobError) {
+      return framed(
+        <div className={mediaH}>
+          <ImageFrame aspectRatio="auto" src={null} alt={title || fileName} pending={false} label={<ImageUnavailable onRetry={sharedImage.retry} />} className="h-full rounded-none" />
+        </div>,
+      );
+    }
     // HEIC: use the converted JPEG URL
     const imageUrl = isHeic ? heicImageUrl : blobUrl;
     if (imageUrl) {
@@ -987,6 +1065,8 @@ export interface ShowCarouselItem {
   aspect_ratio?: string;
   /** Stored copy of `path` from saved history — see `ShowContentProps.attachment`. */
   attachment?: string;
+  /** The bytes' sha256 from the `show` output — see `ShowContentProps.sha256`. */
+  sha256?: string;
   /** `pending`: a grouped `show` call whose payload has not arrived yet. The
    *  slot holds its place so the card does not jump when it lands. */
   status?: 'pending' | 'ready' | 'error';
@@ -1218,6 +1298,7 @@ export function ShowCarousel({
             language={currentItem.language}
             aspectRatio={currentItem.aspect_ratio}
             attachment={currentItem.attachment}
+            sha256={currentItem.sha256}
             LocalhostPreview={LocalhostPreview}
             toolbarActions={toolbarActions}
             fill={fill}

@@ -65,7 +65,7 @@ export function channelApiBase(platform: string): string {
     case 'teams':
       return 'https://graph.microsoft.com/v1.0';
     case 'email':
-      return 'https://api.agentmail.to/v0';
+      return config.RESEND_API_URL;
     case 'telegram':
       return config.TELEGRAM_API_URL;
     default:
@@ -126,7 +126,7 @@ const EMAIL_ATTACHMENT_SCHEMA = {
         type: 'string',
         description: 'Opaque handle returned after uploading raw bytes to the Connector.',
       },
-      url: { type: 'string', description: 'URL from which AgentMail can fetch the file.' },
+      url: { type: 'string', description: 'URL from which the email provider can fetch the file.' },
     },
     required: ['filename'],
     anyOf: [{ required: ['attachment_id'] }, { required: ['url'] }],
@@ -362,16 +362,24 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
   },
 ];
 
+/**
+ * The Email channel on Resend Inboxes. Kortix fills in `inbox_id` from the
+ * connection, and inside an email session the thread and email it answers.
+ * Action names predate Resend (2026-10-24) and stay; three behave differently:
+ * `send_message` creates a draft that the gateway sends right away,
+ * `reply_all_message` replies and copies whoever the agent lists in `cc`, and
+ * `list_messages` lists the emails of one thread (Resend has no inbox-wide list).
+ */
 const EMAIL_ACTIONS: ChannelActionDef[] = [
   {
     path: 'send_message',
-    method: 'inboxes/{inbox_id}/messages/send',
+    method: 'inboxes/{inbox_id}/drafts',
     verb: 'POST',
     name: 'Send email',
-    description: 'Send a new email from an AgentMail inbox. Supports text/html and attachments.',
+    description: 'Send a new email from the inbox. It starts a new thread. Supports text/html and attachments.',
     risk: 'write',
     properties: {
-      inbox_id: { type: 'string', description: 'AgentMail inbox ID to send from.' },
+      inbox_id: { type: 'string', description: 'Inbox ID to send from (Kortix fills it in).' },
       to: { type: 'array', description: 'Recipient email address or addresses.' },
       cc: { type: 'array', description: 'Optional CC recipients.' },
       bcc: { type: 'array', description: 'Optional BCC recipients.' },
@@ -384,80 +392,86 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
   },
   {
     path: 'reply_message',
-    method: 'inboxes/{inbox_id}/messages/{message_id}/reply',
+    method: 'inboxes/{inbox_id}/threads/{thread_id}/emails/{message_id}/reply',
     verb: 'POST',
     name: 'Reply to email',
-    description: 'Reply in the same AgentMail thread as an existing message.',
+    description: 'Reply in the same thread as an existing email, from the inbox address.',
     risk: 'write',
     properties: {
-      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
-      message_id: { type: 'string', description: 'Message ID to reply to.' },
-      reply_all: {
-        type: 'boolean',
-        description: 'Reply to all recipients of the original message.',
-      },
-      to: { type: 'array', description: 'Optional override recipients.' },
+      inbox_id: { type: 'string', description: 'Inbox ID (Kortix fills it in).' },
+      thread_id: { type: 'string', description: 'Thread ID of the email.' },
+      message_id: { type: 'string', description: 'Email ID to reply to.' },
       cc: { type: 'array', description: 'Optional CC recipients.' },
       bcc: { type: 'array', description: 'Optional BCC recipients.' },
+      subject: { type: 'string', description: 'Optional subject. Defaults to the thread subject with "Re:".' },
       text: { type: 'string', description: 'Plain text body.' },
       html: { type: 'string', description: 'HTML body.' },
       attachments: EMAIL_ATTACHMENT_SCHEMA,
     },
-    required: ['message_id'],
+    required: ['thread_id', 'message_id'],
   },
   {
     path: 'reply_all_message',
-    method: 'inboxes/{inbox_id}/messages/{message_id}/reply-all',
+    method: 'inboxes/{inbox_id}/threads/{thread_id}/emails/{message_id}/reply',
     verb: 'POST',
     name: 'Reply all to email',
-    description: 'Reply-all in the same AgentMail thread as an existing message.',
+    description:
+      'Reply in the same thread and copy the other people on the email: list them in `cc` (read them with get_message first).',
     risk: 'write',
     properties: {
-      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
-      message_id: { type: 'string', description: 'Message ID to reply-all to.' },
+      inbox_id: { type: 'string', description: 'Inbox ID (Kortix fills it in).' },
+      thread_id: { type: 'string', description: 'Thread ID of the email.' },
+      message_id: { type: 'string', description: 'Email ID to reply to.' },
+      cc: { type: 'array', description: 'The other recipients to copy.' },
       text: { type: 'string', description: 'Plain text body.' },
       html: { type: 'string', description: 'HTML body.' },
       attachments: EMAIL_ATTACHMENT_SCHEMA,
     },
-    required: ['message_id'],
+    required: ['thread_id', 'message_id'],
   },
   {
     path: 'list_messages',
-    method: 'inboxes/{inbox_id}/messages',
+    method: 'inboxes/{inbox_id}/threads/{thread_id}/emails',
     verb: 'GET',
-    name: 'List inbox messages',
-    description: 'List messages in an AgentMail inbox.',
+    name: 'List thread emails',
+    description: 'List the emails of one thread, oldest first, with their bodies.',
     risk: 'read',
     properties: {
-      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
-      limit: { type: 'number', description: 'Maximum messages to return.' },
+      inbox_id: { type: 'string', description: 'Inbox ID (Kortix fills it in).' },
+      thread_id: { type: 'string', description: 'Thread ID.' },
+      limit: { type: 'number', description: 'Maximum emails to return (1-100).' },
+      after: { type: 'string', description: 'Cursor: the last email ID of the previous page.' },
     },
-    required: [],
+    required: ['thread_id'],
   },
   {
     path: 'get_message',
-    method: 'inboxes/{inbox_id}/messages/{message_id}',
+    method: 'inboxes/{inbox_id}/threads/{thread_id}/emails/{message_id}',
     verb: 'GET',
-    name: 'Get email message',
-    description: 'Fetch a single AgentMail message.',
+    name: 'Get email',
+    description: 'Fetch one email of a thread with its body and attachment list.',
     risk: 'read',
     properties: {
-      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
-      message_id: { type: 'string', description: 'AgentMail message ID.' },
+      inbox_id: { type: 'string', description: 'Inbox ID (Kortix fills it in).' },
+      thread_id: { type: 'string', description: 'Thread ID.' },
+      message_id: { type: 'string', description: 'Email ID.' },
     },
-    required: ['message_id'],
+    required: ['thread_id', 'message_id'],
   },
   {
     path: 'search_messages',
-    method: 'inboxes/{inbox_id}/messages/search',
+    method: 'inboxes/{inbox_id}/threads/search',
     verb: 'GET',
-    name: 'Search inbox messages',
-    description: 'Search messages in an AgentMail inbox.',
+    name: 'Search inbox',
+    description:
+      'Search the inbox threads by subject, body, sender, recipients and attachment names. Each result names the matching email in `matched_email_id`.',
     risk: 'read',
     properties: {
-      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
-      query: { type: 'string', description: 'Search query.' },
-      limit: { type: 'number', description: 'Maximum messages to return.' },
+      inbox_id: { type: 'string', description: 'Inbox ID (Kortix fills it in).' },
+      query: { type: 'string', description: 'Search words (max 256 characters).' },
+      from: { type: 'string', description: 'Optional sender filter, comma-separated.' },
+      start_date: { type: 'string', description: 'Optional earliest date, e.g. 2026-09-01.' },
+      limit: { type: 'number', description: 'Maximum threads to return (1-100).' },
     },
     required: ['query'],
   },
@@ -466,38 +480,40 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
     method: 'inboxes/{inbox_id}/threads',
     verb: 'GET',
     name: 'List email threads',
-    description: 'List threads in an AgentMail inbox.',
+    description: 'List the inbox threads, most recently active first.',
     risk: 'read',
     properties: {
-      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
-      limit: { type: 'number', description: 'Maximum threads to return.' },
+      inbox_id: { type: 'string', description: 'Inbox ID (Kortix fills it in).' },
+      folders: { type: 'string', description: 'Comma-separated: inbox, archive, spam, trash, sent. Default inbox.' },
+      limit: { type: 'number', description: 'Maximum threads to return (1-100).' },
+      after: { type: 'string', description: 'Cursor: the last thread ID of the previous page.' },
     },
     required: [],
   },
   {
     path: 'get_thread',
-    method: 'inboxes/{inbox_id}/threads/{thread_id}',
+    method: 'inboxes/{inbox_id}/threads/{thread_id}/emails',
     verb: 'GET',
     name: 'Get email thread',
-    description: 'Fetch an AgentMail thread and its message context.',
+    description: 'Fetch every email of a thread, oldest first, with their bodies.',
     risk: 'read',
     properties: {
-      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
-      thread_id: { type: 'string', description: 'AgentMail thread ID.' },
+      inbox_id: { type: 'string', description: 'Inbox ID (Kortix fills it in).' },
+      thread_id: { type: 'string', description: 'Thread ID.' },
     },
     required: ['thread_id'],
   },
   {
     path: 'get_message_attachment',
-    method: 'inboxes/{inbox_id}/messages/{message_id}/attachments/{attachment_id}',
+    method: 'emails/receiving/{message_id}/attachments/{attachment_id}',
     verb: 'GET',
     name: 'Get email attachment',
-    description: 'Download an attachment from an AgentMail message.',
+    description: 'Get a received attachment: its metadata and a `download_url` that expires (`expires_at`).',
     risk: 'read',
     properties: {
-      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
-      message_id: { type: 'string', description: 'AgentMail message ID.' },
-      attachment_id: { type: 'string', description: 'AgentMail attachment ID.' },
+      inbox_id: { type: 'string', description: 'Inbox ID (Kortix fills it in).' },
+      message_id: { type: 'string', description: 'Email ID the attachment belongs to.' },
+      attachment_id: { type: 'string', description: 'Attachment ID from the email.' },
     },
     required: ['message_id', 'attachment_id'],
   },

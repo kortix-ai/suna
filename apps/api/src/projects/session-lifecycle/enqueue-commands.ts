@@ -20,6 +20,7 @@ function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreat
     apiKeyType: command.apiKeyType,
     inSession: command.inSession,
     callerSessionId: command.callerSessionId,
+    parentActor: command.parentActor,
   };
 }
 

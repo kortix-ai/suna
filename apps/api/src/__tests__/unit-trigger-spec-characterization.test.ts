@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { extractTriggers, parseManifestString } from '../projects/triggers';
+import { MONITOR_REMOVED, extractTriggers, parseManifestString } from '../projects/triggers';
 
 // Characterization test for the `projects/triggers.ts` module split
-// (KRTX-320): pins the exact parsed spec for one monitor, one one-off cron,
-// one scheduled cron and one webhook trigger, written BEFORE the split and
-// expected to pass unchanged after it. Behavior, not structure.
+// (KRTX-320): pins the exact parsed spec for one one-off cron, one scheduled
+// cron and one webhook trigger, written BEFORE the split and expected to pass
+// unchanged after it. Behavior, not structure. A monitor entry answers the
+// removal error since the monitor box was removed.
 
 const CHARACTERIZATION_MANIFEST = `kortix_version: 1
 project:
@@ -38,43 +39,12 @@ describe('trigger spec characterization (KRTX-320)', () => {
   const manifest = parseManifestString(CHARACTERIZATION_MANIFEST, 'yaml', 'kortix.yaml');
   const { specs, errors } = extractTriggers(manifest);
 
-  test('every entry parses without an error', () => {
-    expect(errors).toEqual([]);
-    expect(specs.map((spec) => spec.slug).sort()).toEqual([
-      'inbound-webhook',
-      'one-off-cron',
-      'poll-monitor',
-      'weekday-cron',
-    ]);
+  test('the monitor entry answers the removal error; every other entry parses', () => {
+    expect(errors.map((error) => [error.slug, error.error])).toEqual([['poll-monitor', MONITOR_REMOVED]]);
+    expect(specs.map((spec) => spec.slug).sort()).toEqual(['inbound-webhook', 'one-off-cron', 'weekday-cron']);
   });
 
   test.each([
-    [
-      'monitor trigger',
-      'poll-monitor',
-      {
-        slug: 'poll-monitor',
-        path: 'kortix.yaml#triggers.poll-monitor',
-        name: 'poll-monitor',
-        type: 'monitor',
-        agent: 'default',
-        model: null,
-        enabled: true,
-        promptTemplate: 'check the thing',
-        cron: null,
-        runAt: null,
-        timezone: 'UTC',
-        secretEnv: null,
-        run: './scripts/check.sh',
-        monitorMode: 'poll',
-        intervalSeconds: 30,
-        expectEventWithinSeconds: null,
-        sessionMode: 'reuse',
-        pinnedSessionId: null,
-        sessionKey: null,
-        filter: null,
-      },
-    ],
     [
       'one-off cron trigger',
       'one-off-cron',
@@ -91,10 +61,6 @@ describe('trigger spec characterization (KRTX-320)', () => {
         runAt: '2026-12-01T10:00:00.000Z',
         timezone: 'UTC',
         secretEnv: null,
-        run: null,
-        monitorMode: null,
-        intervalSeconds: null,
-        expectEventWithinSeconds: null,
         sessionMode: 'fresh',
         pinnedSessionId: null,
         sessionKey: null,
@@ -117,10 +83,6 @@ describe('trigger spec characterization (KRTX-320)', () => {
         runAt: null,
         timezone: 'UTC',
         secretEnv: null,
-        run: null,
-        monitorMode: null,
-        intervalSeconds: null,
-        expectEventWithinSeconds: null,
         sessionMode: 'fresh',
         pinnedSessionId: null,
         sessionKey: null,
@@ -143,10 +105,6 @@ describe('trigger spec characterization (KRTX-320)', () => {
         runAt: null,
         timezone: 'UTC',
         secretEnv: 'WEBHOOK_INBOUND_SECRET',
-        run: null,
-        monitorMode: null,
-        intervalSeconds: null,
-        expectEventWithinSeconds: null,
         sessionMode: 'fresh',
         pinnedSessionId: null,
         sessionKey: null,

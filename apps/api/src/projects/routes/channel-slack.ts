@@ -24,6 +24,7 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 interface SlackAuthTest {
   ok: boolean;
@@ -209,6 +210,7 @@ export function registerChannelSlackRoutes(): void {
         });
         authTest = (await res.json()) as SlackAuthTest;
       } catch (err) {
+        rethrowDatabaseError(err);
         return c.json({ error: `Failed to reach Slack: ${(err as Error).message}` }, 502);
       }
       if (!authTest.ok || !authTest.team_id || !authTest.user_id) {

@@ -298,38 +298,31 @@ export function finalizeConnectorSetupLink(
   });
 }
 
-/**
- * What `GET /connectors/app-form/:token` answers: the form that connects a
- * toolkit on the customer's own app (Shopify). The token is the capability,
- * so the call is anonymous.
- */
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
 export interface ConnectorAppFormInfo {
   app: string;
-  /** The app's display name ("Shopify"). */
   name: string;
-  /** The connector's name in the project. */
   connector: string;
-  /** The link already connected the account. */
   connected: boolean;
-  /** The store the account reaches, once connected. */
   connected_as: string | null;
   expires_at: string;
 }
 
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
 export interface ConnectorAppFormInput {
-  /** The store's myshopify.com name, host, or admin URL. */
   store: string;
   clientId: string;
   clientSecret: string;
 }
 
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
 export interface ConnectorAppFormResult {
   connected: true;
   connected_as: string;
-  /** Where to send the browser next, when the connect asked for it. */
   success_redirect_uri?: string;
 }
 
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
 export function getConnectorAppForm(
   token: string,
   options: HostRequestOptions,
@@ -337,10 +330,7 @@ export function getConnectorAppForm(
   return requestJson(`/connectors/app-form/${encodeURIComponent(token)}`, options);
 }
 
-/**
- * Connect with the app's credentials. A refusal (wrong credentials, unknown
- * store) rejects with a `HostBoundaryError` whose message is the reason.
- */
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
 export function submitConnectorAppForm(
   token: string,
   input: ConnectorAppFormInput,
@@ -452,6 +442,29 @@ export async function getPublicResponse(
     { ...options, accessToken: null },
   );
   return body.response;
+}
+
+/** A public artifact's title and type, and the URL of its page. */
+export interface PublicArtifact {
+  artifact_id: string;
+  title: string;
+  description: string | null;
+  type: 'doc' | 'html';
+  updated_at: string;
+  /** The page itself, served as a CSP sandbox: embed it in an iframe. */
+  content_url: string;
+}
+
+/**
+ * A public artifact, without a login (`GET /artifacts/meta/:id`). Throws a
+ * `HostBoundaryError` with `status` 404 when the artifact does not exist or is
+ * not public. `options.backendUrl` defaults to the configured backend.
+ */
+export async function getPublicArtifact(
+  artifactId: string,
+  options: HostRequestOptions = { backendUrl: getBackendUrl() },
+): Promise<PublicArtifact> {
+  return requestJson<PublicArtifact>(`/artifacts/meta/${encodeURIComponent(artifactId)}`, { ...options, accessToken: null });
 }
 
 export function startSessionWithToken(

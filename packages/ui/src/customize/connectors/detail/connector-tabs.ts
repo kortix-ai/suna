@@ -1,17 +1,18 @@
 import type { AdminConnector } from '@kortix/sdk';
 
-export type ConnectorTab = 'accounts' | 'tools' | 'triggers' | 'settings';
+export type ConnectorTab = 'accounts' | 'tools' | 'agents' | 'triggers' | 'settings';
 
 /**
  * Tab order never changes. A tab that does not apply is absent; the ones that
  * remain keep their positions, so the surface does not reshape per connector.
  */
-export const CONNECTOR_TABS: readonly ConnectorTab[] = ['accounts', 'tools', 'triggers', 'settings'];
+export const CONNECTOR_TABS: readonly ConnectorTab[] = ['accounts', 'tools', 'agents', 'triggers', 'settings'];
 
 /** `hardcodedUi.i18nComplete` key of each tab's label. */
 export const CONNECTOR_TAB_LABEL_KEY: Record<ConnectorTab, string> = {
   accounts: 'text8a7c8b67fe8b',
-  tools: 'textea93d6a262ec',
+  tools: 'text9d2b6f0c41ae',
+  agents: 'text279b44d2ab4b',
   triggers: 'texte62f2148a64d',
   settings: 'text74a883a037bc',
 };
@@ -26,6 +27,9 @@ export const CONNECTOR_TAB_LABEL_KEY: Record<ConnectorTab, string> = {
  * - Tools and Settings mutate project state, so they are writer-only. Accounts
  *   stays for readers: it is how they see whether the connector works, and how
  *   they connect their own account.
+ * - Agents lists which agents can use the connector and their rule set. It
+ *   shows for readers too (read-only), except on a channel or the computer:
+ *   those reach every agent and have no kortix.yaml entry to grant.
  * - Triggers lists the app event triggers on this connector. It shows only when
  *   the connector's app has events (`hasEvents`), and for readers too: it is a
  *   list, and its New button is gated on its own permission.
@@ -39,6 +43,7 @@ export function connectorTabs(
   const present = new Set<ConnectorTab>();
   present.add('accounts');
   if (caps.canWrite) present.add('tools');
+  if (connector.provider !== 'channel' && connector.provider !== 'computer') present.add('agents');
   if (caps.hasEvents) present.add('triggers');
   if (caps.canWrite && connector.provider !== 'computer') present.add('settings');
   return CONNECTOR_TABS.filter((tab) => present.has(tab));

@@ -93,6 +93,23 @@ flow("DOCS-1", { domain: "system", tags: ["smoke"], routes: ["GET /v1/openapi.js
     const r = await ctx.client.get("/v1/openapi.json");
     r.status(200).body().has("$.openapi", "3.1.0").exists("$.info.title");
   });
+  await ctx.step("every paged project list documents its paging parameters (KRTX-3393, KRTX-3389)", async () => {
+    type Op = { parameters?: Array<{ name: string; in: string; schema?: { description?: string } }> };
+    const spec = (await ctx.client.get("/v1/openapi.json")).json<{ paths: Record<string, { get?: Op }> }>();
+    const wrong: string[] = [];
+    for (const [path, names] of [
+      ["/v1/projects/{projectId}/change-requests", ["limit", "cursor"]],
+      ["/v1/projects/{projectId}/review/items", ["limit", "cursor"]],
+      ["/v1/projects/{projectId}/gateway/logs", ["limit", "offset"]],
+    ] as const) {
+      const query = (spec.paths[path]?.get?.parameters ?? []).filter((p) => p.in === "query");
+      for (const name of names) {
+        const param = query.find((p) => p.name === name);
+        if (!param?.schema?.description) wrong.push(`${path} lacks a described ${name}`);
+      }
+    }
+    if (wrong.length) throw new Error(wrong.join("\n"));
+  });
   await ctx.step("GET /v1/docs (public) → 200 Scalar reference HTML", async () => {
     const r = await ctx.client.get("/v1/docs");
     r.status(200).headerEquals("content-type", /html/);

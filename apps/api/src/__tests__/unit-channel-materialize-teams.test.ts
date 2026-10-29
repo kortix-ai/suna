@@ -22,9 +22,11 @@ mock.module('../shared/db', () => ({
 }));
 
 mock.module('../channels/install-store', () => ({
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   loadSlackInstall: async () => null,
   loadTeamsInstall: async () => (hasTeamsInstall ? { tenantId: 'tenant-1' } : null),
-  listAgentMailInstalls: async () => [],
+  hasEmailInboxes: async () => false,
   loadTelegramInstall: async () => null,
 }));
 

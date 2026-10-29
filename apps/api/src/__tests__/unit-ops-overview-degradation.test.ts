@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 
 // OPS-1 (tests/src/flows/ops.flow.ts) asserts the 200 body over real HTTP.
 // This file keeps the fault injection HTTP cannot reach: one query rejects,
@@ -103,6 +103,38 @@ describe('ops overview degrades one failed query instead of failing the dashboar
     process.env.BETTERSTACK_API_SENTRY_DSN = 'https://example@sentry.test/1';
     process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = 'https://otel.example.test/v1/traces';
     executeResults = happyPathResults();
+  });
+
+  test('string counts and null group keys keep their normalized shape', async () => {
+    executeResults[0] = { rows: [{ count: '12' }] };
+    executeResults[3] = { rows: [{ key: null, count: '7' }, { key: 'failed', count: null }] };
+    const response = await app().request('/v1/ops/overview');
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.totals.accounts).toBe(12);
+    expect(body.sessions.by_status).toEqual({ unknown: 7, failed: 0 });
+  });
+
+  test('all four fallback paths log the exact diagnostic and original error', async () => {
+    const error = new Error('synthetic database failure');
+    const diagnostics = [
+      [0, '[ops/overview] accounts query failed — degrading to null:'],
+      [3, '[ops/overview] sessions_by_status query failed — degrading to {} :'],
+      [8, '[ops/overview] usage 24h query failed — degrading to null:'],
+      [9, '[ops/overview] recent audit events query failed — degrading to null:'],
+    ] as const;
+    const logged = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      for (const [index, diagnostic] of diagnostics) {
+        executeResults = happyPathResults();
+        executeResults[index] = { __throw: error };
+        expect((await app().request('/v1/ops/overview')).status).toBe(200);
+        expect(logged).toHaveBeenLastCalledWith(diagnostic, error);
+      }
+      expect(logged).toHaveBeenCalledTimes(4);
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   test('degrades audit_events_24h to null (not a 500) when its count query times out', async () => {

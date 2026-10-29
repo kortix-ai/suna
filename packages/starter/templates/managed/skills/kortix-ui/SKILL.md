@@ -7,7 +7,7 @@ description: "Build React UI with @kortix/ui, the Kortix component library and t
 
 `@kortix/ui` is the one React component library for every Kortix surface: `apps/web`, Kortix Apps, the
 white-label demo and SDK customer apps. Components are Tailwind v4 class strings that read CSS variables.
-Docs: https://kortix.com/docs/sdk/ui. Live catalog: https://kortix.com/design-system.
+Docs: https://kortix.com/docs/developers#kortix-ui. Live catalog: https://kortix.com/design-system.
 
 Install: `npm i @kortix/ui @kortix/sdk`, the same version of each (peers: `references/custom-dashboard.md`).
 Module entries and `@kortix/ui/theme` need 0.14.4+. Inside `kortix-ai/suna`: `"workspace:*"`. Never copy component source.
@@ -91,7 +91,7 @@ Theme with `@kortix/ui/theme`, never by forking a component: `themeToCss(theme)`
 | `@kortix/ui` (primitives, not for feature code: section 3) | `Dialog`, `DialogClose`, `DialogContent`, `DialogDescription`, `DialogFooter`, `DialogHeader`, `DialogOverlay`, `DialogPortal`, `DialogTitle`, `DialogTrigger`, `Tooltip`, `TooltipContent`, `TooltipProvider`, `TooltipTrigger` |
 | `@kortix/ui` (navigation) | `FilterBar`, `FilterBarItem`, `Tabs`, `TabsContent`, `TabsList`, `TabsListCompact`, `TabsTrigger`, `TabsTriggerCompact`, `tabsTriggerHeightVariants`, `tabsTriggerPaddingVariants`, `tabsTriggerTextVariants`, `TabsListType`, `TabsSize`, `TabsTriggerSize`, `TabsTriggerVariant`, `TabsUnderlineSize` |
 | `@kortix/ui` (conversation) | `Bubble`, `BubbleContent`, `BubbleGroup`, `BubbleReactions`, `bubbleVariants`, `Message`, `MessageAvatar`, `MessageContent`, `MessageFooter`, `MessageGroup`, `MessageHeader`, `Marker`, `MarkerContent`, `MarkerIcon`, `markerVariants` |
-| `@kortix/ui` (hooks, helpers) | `UiLink`, `UiImage`, `useUiViewer`, `UiViewer`, `UiHostComponents`, `UiPreviewUrlResolver`, `UiPreviewRequest`, `useDebounce`, `useIsMobile`, `useMediaQuery`, `useSlashFocus`, `lazyClient`, `spring`, `floatingZ`, `dialogContentZ`, `dialogOverlayZ`, `useDialogDepth`, `hasOpenFloatingLayer`, `hasOpenNestedDialog`, `DEFAULT_ICON_WEIGHT`, `ICON_WEIGHTS`, `SHIPPED_ICON_WEIGHTS`, `faviconUrlForHostname`, `setUiTelemetry`, `setUiHostEnv`, `setUiRoutes`, `uiRoutes`, `defaultUiRoutes`, `UiRoutes` |
+| `@kortix/ui` (hooks, helpers) | `UiLink`, `UiImage`, `useUiViewer`, `UiViewer`, `UiHostComponents`, `UiPreviewUrlResolver`, `UiPreviewRequest`, `useDebounce`, `useIsMobile`, `useMediaQuery`, `useSlashFocus`, `lazyClient`, `spring`, `floatingZ`, `dialogContentZ`, `dialogOverlayZ`, `useDialogDepth`, `hasOpenFloatingLayer`, `hasOpenNestedDialog`, `DEFAULT_ICON_WEIGHT`, `ICON_WEIGHTS`, `SHIPPED_ICON_WEIGHTS`, `faviconUrlForHostname`, `setUiTelemetry`, `setUiHostEnv`, `setUiRoutes`, `uiRoutes`, `defaultUiRoutes`, `decodeSpaceSegment`, `UiRoutes` |
 | `@kortix/ui/theme` | `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`, `ThemeScopeProps`, `THEME_COLOR_VARS`, `ThemeColor`, `ThemeColors`, `ThemeCssVars`, `ThemeTextStep`, `ThemeShadowStep`, `ThemeDurationStep`, `ThemeEasing`, `WALLPAPERS`, `DEFAULT_WALLPAPER_ID`, `getWallpaperById`, `Wallpaper` |
 | `@kortix/ui/session` (whole thread) | `SessionThread`, `SessionThreadProps` |
 | `@kortix/ui/session` (blocks) | `UserMessage`, `ThrottledMarkdown`, `UnifiedMarkdown`, `UnifiedMarkdownProps`, `ToolPartRenderer`, `SessionChatInput`, `SessionChatInputProps`, `AgentSelector`, `ModelSelector`, `ModelSelectorProps`, `SessionPermissionPrompt`, `QuestionPrompt`, `QuestionPromptHandle`, `TurnErrorDisplay`, `SessionBusyIndicator`, `SessionStartingLoader` |
@@ -116,7 +116,7 @@ One entry per module. Its curated names are the public API (semver). Every name,
 | `@kortix/ui/terminal`, `@kortix/ui/browser` | The session shell; the sandbox browser | the runtime ids of a mounted `useSession` |
 | `@kortix/ui/markdown`, `@kortix/ui/genui` | Markdown with code, math, links; GenUI blocks | `<UnifiedMarkdown content trust="agent" />` |
 | `@kortix/ui/diff`, `@kortix/ui/changes` | One diff; a change list | `<DiffView before after />` |
-| `@kortix/ui/apps` | App frames, the frame pool, the App view model | none |
+| `@kortix/ui/apps`, `@kortix/ui/artifacts` | App frames, the frame pool, the App view model; artifact frames and session cards | none |
 | `@kortix/ui/access`, `@kortix/ui/customize` | Sharing and roles; project configuration pages | `<ConnectorsPage projectId />` |
 | `@kortix/ui/theme`, `@kortix/ui/i18n`, `@kortix/ui/icons` | Theme; `useTranslations`, `useLocale` (next-intl signatures); glyphs | none |
 

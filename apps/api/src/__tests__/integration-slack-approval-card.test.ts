@@ -355,3 +355,36 @@ test('a decision made in Kortix replaces the card buttons in the thread too', as
   await Bun.sleep(100);
   expect(updated).toHaveLength(1);
 });
+
+test.each(['absent', 'revoked', 'other-workspace', 'expired'] as const)(
+  'a %s identity does not produce a Slack mention in the outcome',
+  async (scenario) => {
+    const actorUserId = crypto.randomUUID();
+    const workspaceId = scenario === 'other-workspace' ? `${TEAM}OTHER` : TEAM;
+    if (scenario !== 'absent') {
+      await db.insert(chatUserIdentities).values({
+        platform: 'slack', workspaceId, platformUserId: `U${scenario}`, userId: actorUserId,
+        revokedAt: scenario === 'revoked' ? new Date() : null,
+      });
+    }
+    try {
+      const executionId = await pending({
+        args_preview: { draft_id: 'r-1' }, args_preview_complete: true,
+        chat_card: { platform: 'slack', team_id: TEAM, channel: CHANNEL, ts: '200.0010' },
+      });
+      const row = await loadApprovalRow(project.project_id, executionId);
+      if (!row) throw new Error('seeded approval is missing');
+      await markApprovalCardDecided({
+        projectId: project.project_id, row, decision: scenario === 'expired' ? 'expired' : 'deny',
+        note: '', actorUserId,
+      });
+      expect(updated).toHaveLength(1);
+      const blocks = JSON.stringify(updated[0]?.blocks);
+      expect(blocks).not.toContain('<@');
+      if (scenario === 'expired') expect(blocks).toContain('Expired');
+      else expect(blocks).toContain('a teammate in Kortix');
+    } finally {
+      await db.delete(chatUserIdentities).where(eq(chatUserIdentities.userId, actorUserId));
+    }
+  },
+);

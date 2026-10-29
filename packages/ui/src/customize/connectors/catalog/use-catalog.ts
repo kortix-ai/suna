@@ -2,12 +2,11 @@
 
 import {
   getConnectStatus,
-  listConnectSections,
   listConnectToolkits,
   listDiscoverConnectors,
   listDiscoverSections,
   listPipedreamApps,
-  listPipedreamSections,
+  type DiscoverConnectorKind,
   type PipedreamCategory,
 } from '@kortix/sdk';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
@@ -16,27 +15,9 @@ import { useCallback, useMemo } from 'react';
 import { useDebounce } from '../../../hooks/use-debounce';
 
 import { useTranslations } from '../../../i18n';
-import {
-  browseSections,
-  connectToolkitApp,
-  sectionsPageFromConnect,
-  sectionsPageFromDiscover,
-  sectionsPageFromPipedream,
-  type BrowseSectionsPage,
-} from './browse-sections';
-import {
-  catalogEntryFromDiscover,
-  catalogEntryFromEasyConnect,
-  computersCatalogEntry,
-  type CatalogEntry,
-  type CatalogSource,
-} from './catalog-entry';
+import { browseSections, sectionsPageFromDiscover, type BrowseSectionsPage } from './browse-sections';
+import { catalogEntryFromDiscover, connectToolkitApp, type CatalogEntry } from './catalog-entry';
 import { CATEGORY_ROW_CAP, localizedSectionTitle } from './connector-categories';
-import { mergeSearchEntries } from './merge-search';
-
-/** Apps per request. One page fills several rows of the widest grid, so a
- *  scroll-triggered fetch is felt as the grid growing rather than as a jump. */
-const CATALOG_PAGE_SIZE = 48;
 
 /** Cards per section on the browse page, and how many sections it shows.
  *  `CATEGORY_ROW_CAP` is two rows of `xl:grid-cols-3`; 12 sections is a browse
@@ -66,14 +47,6 @@ export interface CatalogState {
   total: number;
   /** The debounced query actually in flight, trimmed. Empty when browsing. */
   activeQuery: string;
-  /** Which catalogue answered. Decides the add flow a card opens. */
-  source: CatalogSource;
-  /** Categories the user can filter by, each with its true count. Empty for
-   *  the Discover source and while the Easy Connect index is still building. */
-  /** Apps matching the query that publish no actions, so the catalogue does
-   *  not offer them. Lets the no-match state say why instead of implying the
-   *  app does not exist — `q=SAP` is exactly this case. */
-  excludedNoActions: number;
   /** The browse page. Empty while searching or inside a category — both are
    *  one flat result set by definition. */
   sections: CatalogSection[];
@@ -168,28 +141,27 @@ export const connectStatusQuery = {
 };
 
 /**
- * The browse page's one request, keyed per catalogue. Exported so the
- * Customize prefetch (`use-customize-prefetch.ts`) fills the exact cache entry
- * the Discover landing reads.
+ * The browse page's one request. Exported so the Customize prefetch
+ * (`use-customize-prefetch.ts`) fills the exact cache entry the landing reads.
  */
 export function catalogSectionsQuery(
   projectId: string,
-  catalogue: 'kortix' | 'discover' | 'composio' | 'pipedream' | null,
+  /** Just the apps that connect with nothing to set up. */
+  oneClick = false,
+  /** Just the apps that connect these ways. */
+  kinds: readonly DiscoverConnectorKind[] = [],
 ) {
   return {
-    queryKey: ['catalog-sections', projectId, catalogue] as const,
-    queryFn: async (): Promise<BrowseSectionsPage> => {
-      const limits = { perCategory: SECTION_CARD_COUNT, maxCategories: SECTION_COUNT };
-      // `kortix` is the same Discover route: the API serves Kortix's own MCP
-      // apps to a `connectors_v2` project (apps/api/src/connectors/mcp-apps.ts).
-      if (catalogue === 'discover' || catalogue === 'kortix') {
-        return sectionsPageFromDiscover(await listDiscoverSections(projectId, limits));
-      }
-      if (catalogue === 'pipedream') {
-        return sectionsPageFromPipedream(await listPipedreamSections(projectId, limits));
-      }
-      return sectionsPageFromConnect(await listConnectSections(projectId, limits));
-    },
+    queryKey: ['catalog-sections', projectId, 'kortix', ...(oneClick ? ['one-click'] : []), ...kinds] as const,
+    queryFn: async (): Promise<BrowseSectionsPage> =>
+      sectionsPageFromDiscover(
+        await listDiscoverSections(projectId, {
+          perCategory: SECTION_CARD_COUNT,
+          maxCategories: SECTION_COUNT,
+          ...(oneClick ? { oneClick } : {}),
+          ...(kinds.length ? { kinds: [...kinds] } : {}),
+        }),
+      ),
     staleTime: 5 * 60_000,
   };
 }
@@ -223,155 +195,64 @@ export async function listConnectCatalogPage(input: {
 }
 
 /**
- * The catalogue behind the All tab, from whichever of the two
- * sources this project actually has.
- *
- * **Why two sources.** `connectors_api_discover` resolves to `false` by
- * default (`apps/api/src/experimental/features.ts:83`), so the Discover
- * catalogue is unavailable to most projects. Easy Connect (Pipedream) is not
- * flagged. Falling back keeps the page populated for every project.
- *
- * **Why not merge them.** The two publish overlapping apps under different
- * slugs and different `id` namespaces, and each has its own add flow. A merged
- * list would need a cross-catalogue identity that neither API provides.
+ * The catalogue behind the All tab: Kortix's apps, every integrations.sh
+ * server and API, and the Composio apps, each app once by its best way in
+ * (`apps/api/src/connectors/mcp-apps.ts`). One source, the Discover routes.
  *
  * **One paging mechanism.** A scroll or a click on "Load more" fetches the next
- * page. That is all. This replaces a three-layer arrangement — eager initial
- * pages, a per-category auto-deepening effect chain, and a client-side reveal
- * window over the top — that existed only because the client had to accumulate
- * enough pages to fake a category filter. The server filters by category now
- * (`pipedreamCatalogPage`), so the client asks for exactly the page it renders.
- *
- * **Filtering happens server-side, over the whole catalogue.** Both `q` and
- * `category` are query keys, so changing either starts a new list rather than
- * re-slicing an accumulated one. Pipedream's own API cannot filter by category
- * at all — see `apps/api/src/connectors/pipedream-index.ts`.
- *
- * **Easy Connect waits for the deployment probe.** No Pipedream request is sent
- * until `usePipedreamStatus` has ruled out `absent`, because on a deployment
- * without Pipedream credentials every one of them is a `501` — and one landing
- * before the probe would paint the error card the probe exists to prevent. The
- * cost is one round trip on the first load of the session, spent on a route that
- * only reads env vars, and the wait is reported as `isLoading` so the grid holds
- * its skeletons instead of flashing an empty result.
+ * page. `q`, `oneClick` and `kinds` are query keys, so changing any of them
+ * starts a new list rather than re-slicing an accumulated one.
  */
 export function useCatalog(
   projectId: string,
   query: string,
   opts: {
     enabled: boolean;
-    /** The API/MCP catalogue is on for this project (`connectors_api_discover`). */
-    discoverEnabled: boolean;
-    /** `connectors_v2`: the catalogue is Kortix's own MCP apps, served on the
-     *  Discover routes. No Composio or Pipedream request is sent. */
-    mcpApps?: boolean;
-    /** Show the native Computer card: this deployment can connect computers. */
+    /** This deployment can pair computers; without it the Computer record goes. */
     computers?: boolean;
+    /** List just the apps that connect with nothing to set up. */
+    oneClick?: boolean;
+    /** List just the apps that connect these ways. */
+    kinds?: readonly DiscoverConnectorKind[];
   },
 ): CatalogState {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { debouncedValue: activeQuery } = useDebounce(query.trim(), 300);
-  const computers = opts.computers === true;
+  const hideComputerRecord = opts.computers !== true;
   const searching = activeQuery.length > 0;
-
-  // Always probed, whether or not the catalogue is `enabled`: the answer picks
-  // the source, and `ConnectorsPage` turns the All tab OFF when it is `absent`
-  // with no API/MCP catalogue either. It is one cached request.
-  const connectStatus = useConnectProviderStatus(true);
-  // One catalogue, no source toggle. Managed apps drive browsing; a search also
-  // asks the API/MCP catalogue (below). With no managed provider on this
-  // deployment, the API/MCP catalogue is the whole catalogue.
-  // `unknown` (the probe failed) falls back to the API/MCP catalogue too, as
-  // before the merge of the two.
-  const mcpApps = opts.mcpApps === true;
-  const source: CatalogSource =
-    mcpApps ||
-    (opts.discoverEnabled && (connectStatus.state === 'absent' || connectStatus.state === 'unknown'))
-      ? 'discover'
-      : 'easy-connect';
-  const searchDirect = opts.discoverEnabled && source === 'easy-connect' && searching;
-  // Keys the Discover cache by the catalogue the API answers with.
-  const discoverCatalogue = mcpApps ? 'kortix' : 'discover';
-
-  // `unknown` proceeds: the probe failed, and refusing to load a catalogue that
-  // may well exist is the worse of the two mistakes.
-  const easyConnectRunnable =
-    source === 'easy-connect' &&
-    (connectStatus.state === 'configured' || connectStatus.state === 'unknown');
-  const easyConnectProvider = connectStatus.provider ?? 'composio';
+  const oneClick = opts.oneClick === true;
+  const kinds = useMemo(() => [...(opts.kinds ?? [])], [opts.kinds]);
 
   const discoverQuery = useInfiniteQuery({
-    // An open category is a server-side filter, so it is part of the key. The
-    // unfiltered key stays exactly the one `discover-catalogue.tsx` shares.
-    queryKey: mcpApps
-      ? ['discover-connectors', projectId, activeQuery, 'kortix']
-      : ['discover-connectors', projectId, activeQuery],
+    queryKey: ['discover-connectors', projectId, activeQuery, 'kortix', oneClick, ...kinds],
     queryFn: ({ pageParam }) =>
       listDiscoverConnectors(projectId, {
         q: activeQuery || undefined,
         cursor: pageParam as string | undefined,
+        ...(oneClick ? { oneClick } : {}),
+        ...(kinds.length ? { kinds } : {}),
       }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 5 * 60_000,
-    enabled: opts.enabled && (source === 'discover' || searchDirect),
+    enabled: opts.enabled,
     placeholderData: keepPreviousData,
   });
 
-  const easyConnectQuery = useInfiniteQuery({
-    queryKey: ['easy-connect-apps', projectId, activeQuery, null],
-    queryFn: ({ pageParam }) =>
-      listConnectCatalogPage({
-        projectId,
-        provider: easyConnectProvider,
-        q: activeQuery || undefined,
-        cursor: pageParam as string | undefined,
-        limit: CATALOG_PAGE_SIZE,
-      }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
-    staleTime: 60_000,
-    enabled: opts.enabled && easyConnectRunnable,
-    placeholderData: keepPreviousData,
-  });
-
-  // The browse page, in one request, from whichever catalogue this project
-  // uses. Every one answers with each category's TRUE size, so a heading never
-  // reports how many cards one loaded page happened to hold.
-  //
-  // Fetched while browsing. Discover and Composio also keep it while a category
-  // is open: their paged endpoints publish no category facet, and this
-  // response's facet is what lets the open category's header state its name
-  // and size. Same key, so opening a category from the browse page costs no
-  // request. Pipedream's paged endpoint carries its own facet.
-  const sectionsCatalogue = source === 'discover' ? discoverCatalogue : easyConnectProvider;
+  // The browse page, in one request. It answers with each category's TRUE
+  // size, so a heading never reports how many cards one loaded page held.
   const sectionsQuery = useQuery({
-    ...catalogSectionsQuery(projectId, sectionsCatalogue),
-    enabled: opts.enabled && (source === 'discover' || easyConnectRunnable) && !searching,
+    ...catalogSectionsQuery(projectId, oneClick, kinds),
+    enabled: opts.enabled && !searching,
   });
-
-  const active = source === 'discover' ? discoverQuery : easyConnectQuery;
 
   const entries = useMemo(
     () =>
-      assembleCatalogEntries({
-        source,
-        computers,
-        activeQuery,
-        searchDirect,
-        tI18nComplete,
-        discoverPages: discoverQuery.data?.pages,
-        managedPages: easyConnectQuery.data?.pages,
-      }),
-    [
-      searchDirect,
-      tI18nComplete,
-      computers,
-      activeQuery,
-      source,
-      easyConnectQuery.data?.pages,
-      discoverQuery.data?.pages,
-    ],
+      withoutComputerRecord(
+        hideComputerRecord,
+        (discoverQuery.data?.pages ?? []).flatMap((page) => page.items.map(catalogEntryFromDiscover)),
+      ),
+    [hideComputerRecord, discoverQuery.data?.pages],
   );
 
   const {
@@ -380,7 +261,7 @@ export function useCatalog(
     isFetchingNextPage,
     isPlaceholderData,
     refetch: activeRefetch,
-  } = active;
+  } = discoverQuery;
 
   // Stable identity: `useCatalogAutoload` lists this in its observer effect's
   // deps, and a new function every render would tear down and rebuild the
@@ -402,30 +283,20 @@ export function useCatalog(
   }, [activeRefetch, sectionsRefetch, showingSections]);
 
   /**
-   * The browse sections, normalised across every catalogue so `ConnectorBrowse`
-   * renders one shape.
-   *
-   * All of them come from the server, complete and fixed, with each section's
-   * true total. A section key is exactly what the catalogue's category filter
-   * accepts, so "View all" asks the server for the set the heading counted.
+   * The browse sections. They come from the server, complete and fixed, with
+   * each section's true total. A section key is exactly what the catalogue's
+   * category filter accepts, so "View all" asks for the set the heading counted.
    */
   const sections = useMemo<CatalogSection[]>(() => {
     if (searching || !sectionsQuery.data) return [];
     return browseSections(sectionsQuery.data, {
-      native: computers ? computersCatalogEntry(tI18nComplete) : null,
       cardCount: SECTION_CARD_COUNT,
       title: (label) => localizedSectionTitle(label, tI18nComplete),
-    });
-  }, [searching, sectionsQuery.data, tI18nComplete, computers]);
+    }).map((section) => ({ ...section, items: withoutComputerRecord(hideComputerRecord, section.items) }));
+  }, [searching, sectionsQuery.data, tI18nComplete, hideComputerRecord]);
 
-  const easyConnectPage = easyConnectQuery.data?.pages[0];
-
-  const excludedNoActions = easyConnectPage?.excludedNoActions ?? 0;
-
-  const reportedTotal =
-    source === 'discover' ? discoverQuery.data?.pages[0]?.total : easyConnectPage?.total;
-  const nativeCount = entries.some((entry) => entry.source === 'computer') ? 1 : 0;
-  const total = typeof reportedTotal === 'number' ? reportedTotal + nativeCount : entries.length;
+  const reportedTotal = discoverQuery.data?.pages[0]?.total;
+  const total = typeof reportedTotal === 'number' ? reportedTotal : entries.length;
 
   // A failed sections request on the browse page is an error, not an empty
   // catalogue — without this the grid would say "no connectors" over an outage.
@@ -435,25 +306,14 @@ export function useCatalog(
     entries,
     total,
     activeQuery,
-    source,
-    excludedNoActions,
     sections,
     // `isLoading` is the COLD state only — no cards on screen at all. A search
     // over a populated catalogue keeps its results and reports `isRefreshing`,
     // so the grid dims instead of blanking to skeletons.
-    //
-    // `asking` counts as loading: the Easy Connect queries are held disabled
-    // until the deployment probe answers, and a disabled query reports neither
-    // loading nor data — without this the grid would render "no results" for a
-    // round trip before the real request had started.
-    isLoading:
-      opts.enabled &&
-      (connectStatus.state === 'asking' ||
-        active.isLoading ||
-        (showingSections && sectionsQuery.isLoading)),
+    isLoading: opts.enabled && (discoverQuery.isLoading || (showingSections && sectionsQuery.isLoading)),
     isRefreshing: opts.enabled && isPlaceholderData,
-    isError: active.isError || sectionsFailed,
-    error: active.isError ? active.error : sectionsFailed ? sectionsQuery.error : null,
+    isError: discoverQuery.isError || sectionsFailed,
+    error: discoverQuery.isError ? discoverQuery.error : sectionsFailed ? sectionsQuery.error : null,
     hasMore: opts.enabled && hasNextPage && !isPlaceholderData,
     isLoadingMore: isFetchingNextPage,
     loadMore,
@@ -461,44 +321,7 @@ export function useCatalog(
   };
 }
 
-export function assembleCatalogEntries({
-  source,
-  computers,
-  activeQuery,
-  searchDirect,
-  tI18nComplete,
-  discoverPages,
-  managedPages,
-}: {
-  source: CatalogSource;
-  computers: boolean;
-  activeQuery: string;
-  searchDirect: boolean;
-  tI18nComplete: Parameters<typeof computersCatalogEntry>[0];
-  discoverPages?: Awaited<ReturnType<typeof listDiscoverConnectors>>[];
-  managedPages?: Awaited<ReturnType<typeof listConnectCatalogPage>>[];
-}) {
-  const native = computersCatalogEntry(tI18nComplete);
-  // The native Computers card is ours, not the catalogue's, so it is matched
-  // locally and hidden inside a category it does not claim.
-  const includeComputers =
-    computers &&
-    (!activeQuery ||
-      `${native.name} ${native.description ?? ''}`
-        .toLowerCase()
-        .includes(activeQuery.toLowerCase()));
-  const nativeEntries = includeComputers ? [native] : [];
-  if (source === 'discover') {
-    return nativeEntries.concat(
-      (discoverPages ?? []).flatMap((page) => page.items.map(catalogEntryFromDiscover)),
-    );
-  }
-  const managed = (managedPages ?? []).flatMap((page) =>
-    page.apps.map(catalogEntryFromEasyConnect),
-  );
-  if (!searchDirect) return nativeEntries.concat(managed);
-  // ponytail: only the API/MCP catalogue's first page joins a search; its
-  // ranking puts the matches there. Page it too if users miss results.
-  const direct = (discoverPages?.[0]?.items ?? []).map(catalogEntryFromDiscover);
-  return nativeEntries.concat(mergeSearchEntries(managed, direct));
+/** The catalogue's Computer record (`native:computer`), dropped where no computer can be paired. */
+function withoutComputerRecord(hide: boolean, entries: CatalogEntry[]): CatalogEntry[] {
+  return hide ? entries.filter((entry) => entry.key !== 'discover:native:computer') : entries;
 }

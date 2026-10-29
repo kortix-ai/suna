@@ -146,7 +146,6 @@ const ignoredPathParts = [
   '/packages/ui/src/primitives/',
   '/packages/ui/src/i18n/',
   '/packages/ui/src/test-utils/',
-  '/src/app/fonts/',
   '/src/app/[locale]/(system)/debug/',
   // Tool-call fixtures (#9815): sample harness output rendered only by the tool
   // tests and /debug/session-fixture, never product copy.
@@ -168,6 +167,48 @@ const ignoredPathParts = [
   // renderers parse, not UI copy; wrapping them in i18n keys would corrupt the
   // data and the tests that import the array verbatim.
   '/packages/ui/src/session/tool/foreign-tool-calls.ts',
+  // English-only copy of the marketing rebuild (#10912): its PR records the new
+  // home, /self-hosted and /enterprise copy as English in every locale. Exact
+  // files, so the rest of the marketing tree stays audited. Move the copy into
+  // i18n keys and delete each line when its page is translated.
+  '/src/app/[locale]/(public)/(marketing)/contact/page.tsx',
+  '/src/app/[locale]/(public)/(marketing)/enterprise/page.tsx',
+  '/src/app/[locale]/(public)/(marketing)/pricing/page.tsx',
+  '/src/app/[locale]/(public)/(marketing)/security/page.tsx',
+  '/src/app/[locale]/(public)/(marketing)/self-hosted/page.tsx',
+  '/src/app/[locale]/(public)/(seo)/blog/[slug]/page.tsx',
+  '/src/app/[locale]/(public)/(seo)/blog/page.tsx',
+  '/src/app/[locale]/(public)/(seo)/use-cases/[slug]/page.tsx',
+  '/src/app/[locale]/(public)/(seo)/use-cases/page.tsx',
+  '/src/components/home/footer.tsx',
+  '/src/components/home/product-menu.tsx',
+  '/src/features/marketing/enterprise/summary.ts',
+  '/src/features/marketing/how-it-work/step/step-models.tsx',
+  '/src/features/marketing/kit/closing-cta.tsx',
+  '/src/features/marketing/kit/copy-row.tsx',
+  '/src/features/marketing/landing-hero/landing-hero.tsx',
+  '/src/features/marketing/landing-hero/sand-band-hero.tsx',
+  '/src/features/marketing/landing-hero/session-window.tsx',
+  '/src/features/marketing/landing-sections/config-as-code.tsx',
+  '/src/features/marketing/landing-sections/content.ts',
+  '/src/features/marketing/landing-sections/faq-section.tsx',
+  '/src/features/marketing/landing-sections/how-it-works-tabs.tsx',
+  '/src/features/marketing/landing-sections/problem-solution.tsx',
+  '/src/features/marketing/landing-sections/stack-section.tsx',
+  '/src/features/marketing/landing-sections/trust-band.tsx',
+  '/src/features/marketing/landing-sections/use-case-teams.ts',
+  '/src/features/marketing/landing-sections/works-with-strip.tsx',
+  '/src/features/marketing/security-page/approval-tabs.tsx',
+  '/src/features/marketing/security-page/summary.ts',
+  '/src/features/marketing/self-hosted/summary.ts',
+  '/src/features/marketing/surfaces/channel-content.ts',
+  '/src/features/marketing/surfaces/chat.tsx',
+  '/src/features/marketing/surfaces/compare-tabs.tsx',
+  '/src/features/marketing/surfaces/content.ts',
+  '/src/features/marketing/surfaces/frames.tsx',
+  '/src/features/marketing/surfaces/stages.tsx',
+  '/src/features/marketing/surfaces/surface-page.tsx',
+  '/src/lib/seo/public-content.ts',
 ];
 
 const ignoredFilePattern = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
@@ -241,6 +282,22 @@ const allowedLiteralValues = new Set([
   'my-recordings',
   'us-east-1',
   'arn:aws:iam::123456789012:role/kortix-capture',
+  // The email inbox form (#10866): a Resend API key prefix, the inbox username
+  // and domain examples, the From header's angle brackets, and the sender name
+  // the API sends when none is set (channel-email.ts), shown verbatim.
+  're_…',
+  'support',
+  'support@example.com',
+  'mail.example.com',
+  '&lt;',
+  '&gt;',
+  'Kortix Agent',
+  // Channels (#10893): a rule-set slug example a user types verbatim, the sample
+  // sender's name in the email channel mock, and a class list on a tiptap key
+  // the scanner reads as a heading.
+  'read_only',
+  'Maya',
+  'text-base font-semibold',
 ]);
 
 const ignoredAttributes = new Set([
@@ -881,9 +938,6 @@ function scanFile(file) {
       const coveredSettingsRail =
         file === path.join(uiSrcDir, 'customize/settings/rail.ts') &&
         ['STATIC_GROUPS', 'RETIRED_RAIL_ITEMS'].includes(catalogRoot);
-      const coveredOnboardingProfileFixture =
-        file === path.join(srcDir, 'components/projects/onboarding/onboarding-profile.ts') &&
-        catalogRoot === 'USE_CASE_OPTIONS';
       // The foreign-harness sample payloads (Codex / Claude Code session-log
       // fixtures) are synthetic DATA, not UI copy: they render as sample tool
       // content in tests and /debug/session-fixture, and translating what a
@@ -891,9 +945,6 @@ function scanFile(file) {
       const coveredForeignToolFixture =
         file === path.join(uiSrcDir, 'session/tool/foreign-tool-calls.ts') &&
         catalogRoot === 'FOREIGN_TOOL_CALLS';
-      const coveredCompanyOsMessageKey =
-        file === path.join(srcDir, 'features/marketing/company-os-sections.tsx') &&
-        ['codePoints', 'runsPoints'].includes(catalogRoot);
       const coveredRoleCapabilityCopy =
         file === path.join(srcDir, 'components/iam/role-capability-model.ts') &&
         catalogRoot === 'AREA_COPY';
@@ -925,8 +976,6 @@ function scanFile(file) {
           catalogRoot === 'DEFAULT_COPY') ||
         (file === path.join(srcDir, 'lib/provisioning-stages.ts') &&
           ['STAGE_PROGRESS', 'STAGE_LABELS'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'components/home/interactive-demo/chat/scenarios.tsx') &&
-          catalogRoot === 'SCENARIOS') ||
         (file === path.join(srcDir, 'app/[locale]/admin/utils/_components/constants.ts') &&
           ['MAINTENANCE_LEVELS', 'AVAILABLE_SERVICES'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'app/[locale]/a1o/content.ts') &&
@@ -940,10 +989,6 @@ function scanFile(file) {
             'MOBILE_ROWS',
             'TERMINAL',
           ].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'features/marketing/interludes/content.ts') &&
-          ['asking', 'owning'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'features/marketing/security/content.ts') &&
-          ['ACCORDION', 'STAGE_DATA', 'CTA'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/layout/user-menu-shared.tsx') &&
           ['HELP_LINKS', 'LEGAL_LINKS', 'THEME_OPTIONS'].includes(catalogRoot)) ||
         (file === path.join(uiSrcDir, 'workspace/projects/policies-panel.tsx') &&
@@ -952,22 +997,12 @@ function scanFile(file) {
           catalogRoot === 'GATE_COPY_KEYS') ||
         (file === path.join(uiSrcDir, 'access/access/role-select.tsx') &&
           ['ACCOUNT_ROLE_DESCRIPTORS', 'PROJECT_ROLE_DESCRIPTORS'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'features/marketing/how-it-work/web-panel-wrapper.tsx') &&
-          catalogRoot === 'DEMO_PANEL_TABS') ||
-        (file === path.join(srcDir, 'features/marketing/how-it-work/step/step-harness.tsx') &&
-          catalogRoot === 'STEPS') ||
-        (file === path.join(srcDir, 'features/marketing/component/capability-hero-artifacts.tsx') &&
-          ['TREE_ROWS', 'PRESENCE_ROWS', 'POLICY_ROWS', 'PRINCIPALS'].includes(catalogRoot)) ||
         (file ===
           path.join(uiSrcDir, 'customize/sections/view/gateway/_metrics.tsx') &&
           ['RANGES', 'chartConfig'].includes(catalogRoot)) ||
         (file ===
           path.join(uiSrcDir, 'customize/connectors/catalog/connector-categories.ts') &&
           catalogRoot === 'CURATED_SECTIONS') ||
-        (file === path.join(srcDir, 'components/home/interactive-demo/data.ts') &&
-          catalogRoot === 'AGENTS') ||
-        (file === path.join(srcDir, 'features/marketing/capabilities/content.ts') &&
-          ['agents', 'channels', 'automations', 'control'].includes(catalogRoot)) ||
         (file ===
           path.join(uiSrcDir, 'workspace/sidebar/modal/share-session-modal.tsx') &&
           catalogRoot === 'SESSION_SHARING_COPY') ||
@@ -978,9 +1013,6 @@ function scanFile(file) {
           catalogRoot === 'NODES' &&
           localizedRemainingUiText.has(node.text)) ||
         (file ===
-          path.join(srcDir, 'features/workspace/capabilities/index/customize-index-page.tsx') &&
-          catalogRoot === 'CARD_COPY') ||
-        (file ===
           path.join(uiSrcDir, 'internal/lib/capability-tab-routes.ts') &&
           ['CAPABILITY_TABS', 'FLAGGED_CAPABILITY_TABS'].includes(catalogRoot)) ||
         (file === path.join(uiSrcDir, 'customize/sections/connectors-view.tsx') &&
@@ -989,9 +1021,6 @@ function scanFile(file) {
           catalogRoot === 'LLM_TABS') ||
         (file === path.join(uiSrcDir, 'customize/settings/tabs/sandbox-tab.tsx') &&
           catalogRoot === 'TEMPLATE_STATE_LABEL') ||
-        (file === path.join(srcDir, 'lib/themes.ts') && catalogRoot === 'THEMES') ||
-        (file === path.join(srcDir, 'app/[locale]/(app)/projects/start/landing-terminal.tsx') &&
-          catalogRoot === 'COPY') ||
         (file === path.join(srcDir, 'app/[locale]/admin/analytics/page.tsx') &&
           ['RANGES', 'sessionsConfig', 'accountsConfig', 'burnConfig'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/accounts/settings/branding-tab.tsx') &&
@@ -1048,10 +1077,6 @@ function scanFile(file) {
       const coveredTechnicalCatalog =
         (file === path.join(srcDir, 'components/home/navbar.tsx') &&
           catalogRoot === 'DRAWER_SOCIALS') ||
-        (file === path.join(srcDir, 'components/instance/config.ts') &&
-          catalogRoot === 'INSTANCE_CONFIG') ||
-        (file === path.join(srcDir, 'features/marketing/connectors/policy-section.tsx') &&
-          ['TINT', 'DOT'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/marketing/landing/code-panels.tsx') &&
           catalogRoot === 'TOKEN_CLASS') ||
         (file === path.join(srcDir, 'features/marketing/how-it-work/step/step-computer.tsx') &&
@@ -1065,9 +1090,7 @@ function scanFile(file) {
           catalogRoot === 'MODIFIER_OPTIONS') ||
         (file.includes(`${path.sep}i18n${path.sep}`) && file.endsWith('.generated.ts')) ||
         (file === path.join(uiSrcDir, 'internal/lib/codemirror-pierre-theme.ts') &&
-          ['dark', 'light'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'lib/utils/memory-search-output.ts') &&
-          catalogRoot === 'EMPTY_RESULT');
+          ['dark', 'light'].includes(catalogRoot));
       const coveredPresentationCatalog =
         (file === path.join(srcDir, 'app/[locale]/presentations/decks/security.tsx') &&
           catalogRoot === 'ANSWERS') ||
@@ -1136,9 +1159,7 @@ function scanFile(file) {
         !coveredAuditTitleText &&
         !coveredSessionsCopy &&
         !coveredSettingsRail &&
-        !coveredOnboardingProfileFixture &&
         !coveredForeignToolFixture &&
-        !coveredCompanyOsMessageKey &&
         !coveredRoleCapabilityCopy &&
         !coveredSnapshotsFallbackCopy &&
         !coveredPublicMetadata &&

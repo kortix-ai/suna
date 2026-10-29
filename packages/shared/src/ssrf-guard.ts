@@ -58,10 +58,12 @@ function ipv6Groups(ip: string): number[] | null {
     : null;
 }
 
-/** The IPv4 address embedded in an IPv4-mapped or IPv4-compatible IPv6 literal. */
+/** The IPv4 address embedded in an IPv4-mapped, IPv4-translated (`::ffff:0:0/96`) or IPv4-compatible IPv6 literal. */
 function embeddedIpv4(ip: string): string | null {
   const g = ipv6Groups(ip);
-  if (!g || g.slice(0, 5).some((x) => x !== 0)) return null;
+  if (!g || g.slice(0, 4).some((x) => x !== 0)) return null;
+  if (g[4] === 0xffff && g[5] === 0) return `${g[6]! >> 8}.${g[6]! & 0xff}.${g[7]! >> 8}.${g[7]! & 0xff}`;
+  if (g[4] !== 0) return null;
   if (g[5] !== 0xffff && g[5] !== 0) return null;
   if (g[5] === 0 && g[6] === 0) return null; // `::` and `::1`, handled by the caller
   const [, , , , , , hi = 0, lo = 0] = g;
@@ -120,6 +122,7 @@ export function isPrivateIp(ip: string): boolean {
   if (v.startsWith('fc') || v.startsWith('fd')) return true; // fc00::/7 ULA (incl. AWS fd00:ec2::254 metadata)
   if (v.startsWith('fe8') || v.startsWith('fe9') || v.startsWith('fea') || v.startsWith('feb'))
     return true; // fe80::/10 link-local
+  if (/^fe[c-f]/.test(v)) return true; // fec0::/10 deprecated site-local
   if (v.startsWith('ff')) return true; // ff00::/8 multicast
   if (v.startsWith('64:ff9b:')) return true; // NAT64 well-known prefix
   if (v.startsWith('100::')) return true; // discard prefix
@@ -256,6 +259,12 @@ export async function resolvePinnedEgress(
 interface SafeFetchInit extends RequestInit, SafeEgressUrlOptions {
   /** Redirects to follow (default {@link MAX_REDIRECTS}). 0: a 3xx throws. */
   maxRedirects?: number;
+  /**
+   * The caller's own rule for the first URL and every redirect target (`from`:
+   * the URL that redirected, null for the first). Runs before any request to
+   * that URL; throw {@link UnsafeEgressError} to refuse it.
+   */
+  checkUrl?: (url: URL, from: URL | null) => void;
 }
 
 /** Request headers a redirect to another origin must not carry (Fetch standard). */
@@ -276,9 +285,10 @@ export async function safeEgressFetch(
   rawUrl: string,
   init: SafeFetchInit = {},
 ): Promise<Response> {
-  const { allowHttp, allowPrivateHosts, maxRedirects = MAX_REDIRECTS, ...fetchInit } = init;
+  const { allowHttp, allowPrivateHosts, maxRedirects = MAX_REDIRECTS, checkUrl, ...fetchInit } = init;
   const guard = { allowHttp, allowPrivateHosts };
   let target = await resolveEgressTarget(rawUrl, guard);
+  checkUrl?.(target.url, null);
   let url = target.url;
   let hops = 0;
   // Caller-provided signal must propagate to every hop.
@@ -307,6 +317,7 @@ export async function safeEgressFetch(
     const location = res.headers.get('location');
     if (!location) return res; // malformed 3xx with no Location → let caller see it
     const nextTarget = await resolveEgressTarget(new URL(location, url).href, guard);
+    checkUrl?.(nextTarget.url, url);
     const next = nextTarget.url;
     if (
       (res.status === 303 && method !== 'HEAD') ||

@@ -19,6 +19,9 @@ import { classifyRuntimeRequest } from '../runtime-request';
 import { carriesSessionData } from '../session-data-ports';
 import { logger } from '../../lib/logger';
 import { recordSseStreamEnd, trackSseBytes } from '../sse-stall';
+import { canAccessSandboxSession } from '../../shared/preview-ownership';
+import { sessionStreamAccessCheck } from '../../shared/space-access';
+import { endStreamOnRevoke } from '../../shared/stream-access-recheck';
 import type { ForwardRequest, ForwardState } from './context';
 
 // The upstream hop itself: the request headers sent to the box, the bounded
@@ -394,8 +397,28 @@ export async function respondFromUpstream(
   // sandbox so the next connect re-resolves ingress — see `sse-stall.ts`.
   if (isSseEventStreamRequest && upstream.ok && upstream.body) {
     respHeaders.delete('content-length');
+    const tracked = trackSseBytes(upstream.body, (bytes) => recordSseStreamEnd(sseStallKey, bytes));
+    // Checked at connect only, the stream would outlive a removal from the
+    // session's private channel or a revoked share: re-check every 60 s and
+    // end it when access is gone.
+    const body =
+      access.kind === 'principal'
+        ? endStreamOnRevoke(
+            tracked,
+            sessionStreamAccessCheck(record.projectId, record.sessionId, () =>
+              canAccessSandboxSession({
+                sessionId: record.sessionId,
+                projectId: record.projectId,
+                accountId: record.accountId,
+                userId: access.userId,
+                callerSessionId: access.callerSessionId ?? null,
+                boundCredentialSessionId: access.boundCredentialSessionId,
+              }),
+            ),
+          )
+        : tracked;
     return new Response(
-      trackSseBytes(upstream.body, (bytes) => recordSseStreamEnd(sseStallKey, bytes)),
+      body,
       {
         status: upstream.status,
         statusText: upstream.statusText,

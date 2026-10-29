@@ -8,6 +8,10 @@ export interface PatternDraftRow {
   id: string;
   match: string;
   action: ConnectorPolicyAction;
+  /** Argument conditions authored in kortix.yaml. The editor has no control
+   *  for them, so they ride along untouched: dropping them on save would turn
+   *  a conditional rule into an unconditional one. */
+  conditions?: ConnectorPolicyRule['conditions'];
 }
 
 /**
@@ -37,7 +41,10 @@ export interface PatternDraftRow {
  */
 export function signPatternRules(rules: readonly ConnectorPolicyRule[]): string {
   return orderPolicyRules(rules)
-    .map((rule) => `${rule.match}=${rule.action}`)
+    .map(
+      (rule) =>
+        `${rule.match}=${rule.action}${rule.conditions?.length ? JSON.stringify(rule.conditions) : ''}`,
+    )
     .join('\n');
 }
 
@@ -46,7 +53,12 @@ export function seedPatternDraft(
   rules: readonly ConnectorPolicyRule[],
   nextId: () => string,
 ): PatternDraftRow[] {
-  return rules.map((rule) => ({ id: nextId(), match: rule.match, action: rule.action }));
+  return rules.map((rule) => ({
+    id: nextId(),
+    match: rule.match,
+    action: rule.action,
+    ...(rule.conditions?.length ? { conditions: rule.conditions } : {}),
+  }));
 }
 
 /** The wire form of a draft: blank rows dropped, every match trimmed, `id`
@@ -55,5 +67,9 @@ export function seedPatternDraft(
 export function draftToRules(draft: readonly PatternDraftRow[]): ConnectorPolicyRule[] {
   return draft
     .filter((row) => row.match.trim())
-    .map((row) => ({ match: row.match.trim(), action: row.action }));
+    .map((row) => ({
+      match: row.match.trim(),
+      action: row.action,
+      ...(row.conditions?.length ? { conditions: row.conditions } : {}),
+    }));
 }

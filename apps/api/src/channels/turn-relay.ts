@@ -1,7 +1,9 @@
 import { eq } from 'drizzle-orm';
 import { chatTurnStreams, projectSessions } from '@kortix/db';
 import { db } from '../shared/db';
-import { channelOfSessionMetadata } from './question-release';
+import type { ConnectorPrincipal } from '../connectors/router-contract';
+import { postSessionQuestion } from './core/session-notice';
+import { channelOfSessionMetadata, questionReleaseSentinel } from './question-release';
 import type { TurnErrorInfo } from './slack/errors';
 import * as slackQuestions from './slack/questions';
 import * as slackReview from './slack/review';
@@ -22,7 +24,9 @@ type Platform = 'slack' | 'teams';
 
 /**
  * Anything unrecognised still falls back to Slack, which is the historical
- * default — so a future platform renders as Slack blocks until it is added here.
+ * default. A Telegram or Email session is null: it has no live turn to render
+ * into; it renders through its session port (core/session-notice.ts), when it
+ * has one.
  */
 async function platformFor(sessionId: string, fallback: Platform | null = 'slack'): Promise<Platform | null> {
   const [row] = await db
@@ -43,7 +47,12 @@ async function platformFor(sessionId: string, fallback: Platform | null = 'slack
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
-  return channelOfSessionMetadata(session?.metadata) ?? (row ? 'slack' : fallback);
+  const channel = channelOfSessionMetadata(session?.metadata);
+  if (channel === 'slack' || channel === 'teams') return channel;
+  // A live Slack row renders in Slack whatever channel started the session: a
+  // Telegram session that bound a Slack thread (`slack send --channel`) streams there.
+  if (row) return 'slack';
+  return channel ? null : fallback;
 }
 
 /** Teams relays answer a bare boolean; carry a stable reason for the sandbox. */
@@ -57,6 +66,7 @@ export async function relayTurnStepDetailed(
   opts: StepOpts = {},
 ): Promise<slack.TurnRelayResult> {
   const platform = await platformFor(sessionId);
+  if (!platform) return { ok: false, reason: 'not_relayed' };
   return platform === 'teams'
     ? fromBoolean(await teams.relayTurnStep(sessionId, title, opts))
     : slack.relayTurnStepDetailed(sessionId, title, opts);
@@ -69,6 +79,7 @@ export async function relayTurnAnswerDetailed(
   card?: Record<string, unknown>,
 ): Promise<slack.TurnRelayResult> {
   const platform = await platformFor(sessionId);
+  if (!platform) return { ok: false, reason: 'not_relayed' };
   return platform === 'teams'
     ? fromBoolean(await teams.relayTurnAnswer(sessionId, text, card))
     : slack.relayTurnAnswerDetailed(sessionId, text, blocks);
@@ -91,11 +102,21 @@ export async function relayTurnEnd(
 export async function relayTurnQuestion(
   sessionId: string,
   questions: QuestionInfo[],
+  /** Post into the session's chat when no live turn renders it, as the agent `principal` would. Null: only a live turn may. */
+  chat: { pendingId: string; principal: ConnectorPrincipal } | null = null,
+  /** The stored question a Slack or Teams button answers (core/question-token.ts). Null: a button carries its label. */
+  buttonsFor: string | null = null,
 ): Promise<{ ok: boolean; answers?: string[][]; error?: string }> {
   const platform = await platformFor(sessionId);
+  if (!platform) {
+    const posted = chat ? await postSessionQuestion({ sessionId, questions, ...chat }) : null;
+    return posted
+      ? { ok: true, answers: questions.map(() => [questionReleaseSentinel(posted, true)]) }
+      : { ok: false, error: 'not_relayed' };
+  }
   return platform === 'teams'
-    ? teamsQuestions.postTeamsQuestion(sessionId, questions)
-    : slackQuestions.postQuestion(sessionId, questions);
+    ? teamsQuestions.postTeamsQuestion(sessionId, questions, buttonsFor ?? undefined)
+    : slackQuestions.postQuestion(sessionId, questions, buttonsFor ?? undefined);
 }
 
 export async function relayReviewCard(
@@ -103,6 +124,7 @@ export async function relayReviewCard(
   item: ReviewCardItem,
 ): Promise<{ ok: boolean; error?: string }> {
   const platform = await platformFor(sessionId);
+  if (!platform) return { ok: false, error: 'not_relayed' };
   return platform === 'teams'
     ? teamsReview.postTeamsReviewCard(sessionId, item)
     : slackReview.postReviewCard(sessionId, item);

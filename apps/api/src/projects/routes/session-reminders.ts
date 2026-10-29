@@ -200,7 +200,7 @@ export function registerSessionRemindersRoutes(): void {
 
       // Each fire re-prompts the session's own agent, so the caller must be
       // allowed to run it now, as with a prompt.
-      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
 
       // Fast refusal; the locked insert below is the authoritative cap.
       if ((await countActiveSessionReminders(projectId, sessionId)) >= REMINDER_MAX_ACTIVE_PER_SESSION) {
@@ -316,7 +316,7 @@ export function registerSessionRemindersRoutes(): void {
       const { projectId, loaded, visible, agentCaller } = access;
       const row = await getSessionReminder(projectId, access.sessionId, c.req.param('reminderId'));
       if (!row) return c.json({ error: 'Reminder not found' }, 404);
-      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
       const spec = row.scheduleSpec as unknown as GitTriggerSpec;
       const now = new Date();
       const result = await fireGitTrigger({

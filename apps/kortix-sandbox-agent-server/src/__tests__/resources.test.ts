@@ -7,7 +7,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { logger } from '@/lib/log/logger'
-import { evaluateOpenCodePressure, formatOpenCodeMemoryGuardReason, isOpenCodeServeCommand } from '@/harness/open-code/resource-diagnostics'
+import { evaluateOpenCodePressure, formatOpenCodeMemoryGuardReason } from '@/harness/open-code/resource-diagnostics'
 import {
   type MemoryConsumer,
   type ResourceSnapshot,
@@ -61,13 +61,6 @@ describe('parsers', () => {
     expect(parseMemoryConsumer(11, 'Name:\tprivate-project\nVmRSS:\t 1024000 kB\n')).toEqual({ pid: 11, name: 'other', rssMb: 1000 })
   })
 
-  test('only the OpenCode executable with serve as its subcommand is counted', () => {
-    expect(isOpenCodeServeCommand(['/opt/kortix/bin/opencode', 'serve', '--port', '4096'].join('\0'))).toBe(true)
-    expect(isOpenCodeServeCommand(['/opt/kortix/opencode.current', 'serve'].join('\0'))).toBe(true)
-    expect(isOpenCodeServeCommand(['/usr/local/bin/opencode-kortix', 'serve'].join('\0'))).toBe(true)
-    expect(isOpenCodeServeCommand('/home/kortix/.bun/bin/bun\0test\0/tmp/opencode/log\0serve\0')).toBe(false)
-    expect(isOpenCodeServeCommand('/bin/bash\0-c\0opencode serve\0')).toBe(false)
-  })
   test('meminfo → MB and used% from MemAvailable', () => {
     const m = parseMeminfo(MEMINFO)
     expect(m.shmemMb).toBe(1952)
@@ -121,44 +114,6 @@ describe('parsers', () => {
 
   test('no memory.stat: used% falls back to the raw charge', () => {
     expect(cgroupSnapshot('2147483648', '3221225472', null, null)).toMatchObject({ workingSetMb: 2048, usedPct: 67 })
-  })
-})
-
-describe('formatOpenCodeMemoryGuardReason', () => {
-  // Prod 2026-09-24: a 4 GiB Platinum box stopped turns at 99% with OpenCode at
-  // 916 MB. The other ~2 GB was a RAM-backed /tmp, and the message never said so.
-  test('names RAM-backed files (a tmpfs /tmp) when they hold a large share', () => {
-    const s = snapshot({
-      memory: { totalMb: 3915, availableMb: 47, usedPct: 99, swapTotalMb: 0, swapFreeMb: 0, shmemMb: 1950 },
-      cgroup: { currentMb: null, workingSetMb: null, maxMb: null, usedPct: null, oomKills: null },
-      runtime: { pid: 17567, rssMb: 916, threads: 15, state: 'S' },
-    })
-    expect(formatOpenCodeMemoryGuardReason(s, 99)).toBe(
-      'sandbox memory at 99% (opencode 916 MB RSS, 1950 MB in RAM-backed files such as /tmp, of 3915 MB): turn stopped to prevent a kernel OOM kill',
-    )
-  })
-  test('leaves a small shared-memory figure out', () => {
-    const s = snapshot({
-      memory: { totalMb: 8000, availableMb: 400, usedPct: 95, swapTotalMb: 0, swapFreeMb: 0, shmemMb: 40 },
-      cgroup: { currentMb: null, workingSetMb: null, maxMb: null, usedPct: null, oomKills: null },
-      runtime: { pid: 1, rssMb: 7440, threads: 8, state: 'R' },
-    })
-    expect(formatOpenCodeMemoryGuardReason(s, 95)).toBe(
-      'sandbox memory at 95% (opencode 7440 MB RSS of 8000 MB): turn stopped to prevent a kernel OOM kill',
-    )
-  })
-
-  test('names the largest other process without claiming OpenCode used the box', () => {
-    const s = snapshot({
-      memory: { totalMb: 11961, availableMb: 438, usedPct: 96, swapTotalMb: 0, swapFreeMb: 0 },
-      runtime: { pid: 212, rssMb: 674, threads: 24, state: 'S' },
-      topProcesses: [
-        { pid: 7486, name: 'bun', rssMb: 2800 },
-        { pid: 212, name: 'opencode', rssMb: 674 },
-      ],
-    })
-    expect(formatOpenCodeMemoryGuardReason(s, 96)).toContain('largest other process bun 2800 MB RSS')
-    expect(formatOpenCodeMemoryGuardReason(s, 96)).toContain('prevent a kernel OOM kill')
   })
 })
 

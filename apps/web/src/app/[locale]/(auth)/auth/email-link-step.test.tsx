@@ -156,7 +156,7 @@ test('every locale carries the confirmation copy with the address placeholder', 
 });
 
 for (const mode of ['signup', 'signin', 'unknown'] as const) {
-  test(`${mode}: code entry is optional when the delivered email only has a link`, () => {
+  test(`${mode}: the code input shows at once, beside the link`, () => {
     const markup = renderToStaticMarkup(
       <EmailLinkStep
         mode={mode}
@@ -178,10 +178,7 @@ for (const mode of ['signup', 'signin', 'unknown'] as const) {
     document.body.innerHTML = markup;
     const codeInput = document.querySelector('input[autocomplete="one-time-code"]');
     expect(codeInput).not.toBeNull();
-    const disclosure = codeInput?.closest('details');
-    expect(disclosure).not.toBeNull();
-    expect(disclosure?.hasAttribute('open')).toBe(false);
-    expect(disclosure?.querySelector('summary')?.textContent).toBe('Enter code');
+    expect(codeInput?.closest('details')).toBeNull();
     expect(markup).toContain(
       mode === 'signup' ? 'Confirm your email to continue' : 'Open it to continue',
     );

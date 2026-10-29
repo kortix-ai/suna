@@ -76,6 +76,15 @@ describe('list metadata trimming', () => {
     }
   });
 
+  test('the list ships a thread\'s first prompt once: the top-level field, not a metadata copy', () => {
+    const out = serializeSession(row({ metadata: { ...CLIENT_READ_METADATA, first_prompt: 'plan the launch' } }), {
+      trimListMetadata: true,
+    }) as Record<string, unknown>;
+
+    expect(out.first_prompt).toBe('plan the launch');
+    expect(out.metadata).not.toHaveProperty('first_prompt');
+  });
+
   test('the list keeps every key a client actually reads', () => {
     const out = serializeSession(row(), { trimListMetadata: true }) as Record<string, unknown>;
     const metadata = out.metadata as Record<string, unknown>;

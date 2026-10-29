@@ -22,9 +22,11 @@ export async function resolveAndAuthorizeAgent(
   requestedAgent?: unknown,
   sessionAgent?: unknown,
   action = 'project.session.start',
+  /** The session's channel. See `resolveAndAuthorizeAgentAs`. */
+  spaceId?: string | null,
 ): Promise<ResolvedAgentAccess> {
   const actor = await actorOf(c, loaded.row.accountId);
-  return resolveAndAuthorizeAgentAs(actor, requestOnBehalfOf(c), loaded, projectId, requestedAgent, sessionAgent, action);
+  return resolveAndAuthorizeAgentAs(actor, requestOnBehalfOf(c), loaded, projectId, requestedAgent, sessionAgent, action, spaceId);
 }
 
 /**

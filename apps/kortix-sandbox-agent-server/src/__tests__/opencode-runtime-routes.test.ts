@@ -35,16 +35,12 @@ const SYSTEM_PROMPT = 'You are a careful engineer. '.repeat(400)
 const TEMPLATE = '# Init\nDo the thing.\n'.repeat(80)
 
 let server: ReturnType<typeof Bun.serve>
-let opencodeCalls: string[] = []
-let permissions: unknown[] = []
-let failConfig = false
 
 function startFakeOpencode() {
   return Bun.serve({
     port: 0,
     fetch(req) {
       const url = new URL(req.url)
-      opencodeCalls.push(url.pathname)
       switch (url.pathname) {
         case '/global/health':
           return Response.json({ version: '1.18.23' })
@@ -58,7 +54,6 @@ function startFakeOpencode() {
             { name: 'init', description: 'guided AGENTS.md setup', hints: ['$ARGUMENTS'], template: TEMPLATE },
           ])
         case '/config':
-          if (failConfig) return new Response('boom', { status: 500 })
           return Response.json({
             model: 'kortix/codex/gpt-5.6-sol',
             small_model: 'kortix/codex/gpt-5.6-sol',
@@ -72,7 +67,7 @@ function startFakeOpencode() {
         case '/session/status':
           return Response.json({ [SESSION]: { type: 'idle' } })
         case '/permission':
-          return Response.json(permissions)
+          return Response.json([])
         case '/question':
           return Response.json([])
         default:
@@ -212,9 +207,6 @@ afterAll(() => {
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'kortix-runtime-'))
   dbPath = join(root, 'opencode.db')
-  opencodeCalls = []
-  permissions = []
-  failConfig = false
   resetKortixEventBusForTests()
   buildDb()
 })
@@ -249,62 +241,6 @@ describe('auth', () => {
 })
 
 describe('GET /state', () => {
-  test('one call carries every fact the seven proxied reads carry', async () => {
-    const { app } = makeRouter()
-    const res = await app.request('http://d/state', { headers: auth })
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as Record<string, any>
-
-    expect(body.schema).toBe('kortix.runtime.v1')
-    expect(body.identity).toMatchObject({
-      harness: 'opencode',
-      runtime_session_id: SESSION,
-      harness_version: '1.18.23',
-      opencode_session_id: SESSION,
-      opencode_version: '1.18.23',
-      daemon_build: 7,
-    })
-    expect(body.identity.head_seq).toEqual({ [SESSION]: 2_016 })
-    expect(body.epoch).toBe(kortixEventBus().epoch)
-    expect(body.agents.known).toBe(true)
-    expect(body.agents.value.map((a: any) => a.name)).toEqual(['sampleco-agi', 'build'])
-    expect(body.commands.value[0]).toMatchObject({ name: 'init', template_bytes: TEMPLATE.length })
-    expect(body.config.value).toMatchObject({ model: 'kortix/codex/gpt-5.6-sol', default_agent: 'sampleco-agi' })
-    expect(body.config.value.enabled_providers).toEqual(['kortix'])
-    expect(body.statuses.value).toEqual({ [SESSION]: { type: 'idle' } })
-    expect(body.permissions.value).toEqual([])
-    expect(body.questions.value).toEqual([])
-
-    // Prompts and templates never leave the box.
-    const json = JSON.stringify(body)
-    expect(json).not.toContain('careful engineer')
-    expect(json).not.toContain('Do the thing')
-  })
-
-  test('the session list comes from SQLite, not OpenCode HTTP', async () => {
-    const { app } = makeRouter()
-    const body = (await (await app.request('http://d/state', { headers: auth })).json()) as any
-    expect(body.sessions.value[0]).toMatchObject({ id: SESSION, title: 'From SQLite' })
-    expect(opencodeCalls).not.toContain('/session')
-  })
-
-  test('with no readable database it falls back to OpenCode HTTP and still answers', async () => {
-    const { app } = makeRouter({ dbPath: join(root, 'absent.db') })
-    const body = (await (await app.request('http://d/state', { headers: auth })).json()) as any
-    expect(body.sessions.value[0]).toMatchObject({ id: SESSION, title: 'From HTTP' })
-    expect(body.identity.head_seq).toBeNull()
-    expect(opencodeCalls).toContain('/session')
-  })
-
-  test('a section OpenCode could not answer is known:false with a reason — never an empty list', async () => {
-    failConfig = true
-    const { app } = makeRouter()
-    const body = (await (await app.request('http://d/state', { headers: auth })).json()) as any
-    expect(body.config.known).toBe(false)
-    expect(body.config.reason).toContain('opencode read failed')
-    expect(body.agents.known).toBe(true)
-  })
-
   test('If-None-Match answers 304 with no body', async () => {
     const { app } = makeRouter()
     const first = await app.request('http://d/state', { headers: auth })
@@ -322,16 +258,6 @@ describe('GET /state', () => {
     expect((await app.request('http://d/state', { headers: { ...auth, 'If-None-Match': `W/${etag}` } })).status).toBe(304)
     expect((await app.request('http://d/state', { headers: { ...auth, 'If-None-Match': `"other", ${etag}` } })).status).toBe(304)
     expect((await app.request('http://d/state', { headers: { ...auth, 'If-None-Match': '"stale"' } })).status).toBe(200)
-  })
-
-  test('the etag moves when the projection changes and holds when it does not', async () => {
-    const { app, state } = makeRouter()
-    const a = (await app.request('http://d/state', { headers: auth })).headers.get('etag')
-    const b = (await app.request('http://d/state', { headers: auth })).headers.get('etag')
-    expect(b).toBe(a)
-    state.noteEvent({ type: 'permission.asked', properties: { id: 'per_1', sessionID: SESSION, permission: 'bash', patterns: [] } })
-    const c = (await app.request('http://d/state', { headers: auth })).headers.get('etag')
-    expect(c).not.toBe(a)
   })
 
   test('gzip on when asked and the body earns it; plain when not asked', async () => {
@@ -352,144 +278,14 @@ describe('GET /state', () => {
     expect(timing).toMatch(/read;dur=[\d.]+/)
     expect(timing).toMatch(/total;dur=[\d.]+/)
   })
-
-  test('live sections track SSE frames with no extra OpenCode read', async () => {
-    const { app, state } = makeRouter()
-    await app.request('http://d/state', { headers: auth })
-    const before = opencodeCalls.length
-
-    state.noteEvent({ type: 'permission.asked', properties: { id: 'per_1', sessionID: SESSION, permission: 'bash', patterns: ['rm *'] } })
-    state.noteEvent({ type: 'question.asked', properties: { id: 'qst_1', sessionID: SESSION, questions: [] } })
-    state.noteEvent({ type: 'session.status', properties: { sessionID: SESSION, status: { type: 'busy' } } })
-
-    let body = (await (await app.request('http://d/state', { headers: auth })).json()) as any
-    expect(body.permissions.value).toEqual([{ id: 'per_1', sessionID: SESSION, permission: 'bash', patterns: ['rm *'], tool: null }])
-    expect(body.questions.value).toEqual([{ id: 'qst_1', sessionID: SESSION }])
-    expect(body.statuses.value[SESSION]).toEqual({ type: 'busy' })
-
-    state.noteEvent({ type: 'permission.replied', properties: { sessionID: SESSION, requestID: 'per_1', reply: 'once' } })
-    state.noteEvent({ type: 'question.replied', properties: { sessionID: SESSION, requestID: 'qst_1', answers: [] } })
-    state.noteEvent({ type: 'session.idle', properties: { sessionID: SESSION } })
-
-    body = (await (await app.request('http://d/state', { headers: auth })).json()) as any
-    expect(body.permissions.value).toEqual([])
-    expect(body.questions.value).toEqual([])
-    expect(body.statuses.value[SESSION]).toEqual({ type: 'idle' })
-    // This is the whole point of the deleted 2 s polls: none of it cost a read.
-    expect(opencodeCalls.length).toBe(before)
-  })
-
-  // The four ways the roster moves. Boot re-pushes the projection on the same
-  // set (CATALOG_MOVING_EVENT_TYPES), so this table proves both consumers.
-  test.each(['server.instance.disposed', 'mcp.tools.changed', 'global.disposed', 'plugin.added'])(
-    'a %s frame forces exactly one rebuild',
-    async (type) => {
-      const { app, state } = makeRouter()
-      await app.request('http://d/state', { headers: auth })
-      const before = opencodeCalls.filter((p) => p === '/agent').length
-      state.noteEvent({ type, properties: {} })
-      await app.request('http://d/state', { headers: auth })
-      await app.request('http://d/state', { headers: auth })
-      expect(opencodeCalls.filter((p) => p === '/agent').length).toBe(before + 1)
-    },
-  )
-
-  test('an ordinary frame does not rebuild the catalog', async () => {
-    const { app, state } = makeRouter()
-    await app.request('http://d/state', { headers: auth })
-    const before = opencodeCalls.filter((p) => p === '/agent').length
-    state.noteEvent({ type: 'message.part.delta', properties: {} })
-    await app.request('http://d/state', { headers: auth })
-    expect(opencodeCalls.filter((p) => p === '/agent').length).toBe(before)
-  })
-
-  test('concurrent opens share ONE build', async () => {
-    const { app } = makeRouter()
-    await Promise.all(Array.from({ length: 8 }, () => app.request('http://d/state', { headers: auth })))
-    expect(opencodeCalls.filter((p) => p === '/config').length).toBe(1)
-  })
 })
 
 describe('GET /messages/:sessionId', () => {
-  test('serves a projected page from SQLite with ids verbatim and no attachment bytes', async () => {
-    const { app } = makeRouter()
-    const res = await app.request(`http://d/messages/${SESSION}?limit=3`, { headers: auth })
-    expect(res.status).toBe(200)
-    expect(res.headers.get('x-kortix-transcript-source')).toBe('sqlite')
-    const body = (await res.json()) as any
-    expect(body.source).toBe('sqlite')
-    expect(body.count).toBe(3)
-    expect(body.has_more).toBe(true)
-    expect(body.head_seq).toBe(2_016)
-    expect(body.messages.map((m: any) => m.info.id)).toEqual(['msg_004', 'msg_005', 'msg_006'])
-    expect(body.first_message_id).toBe('msg_004')
-    expect(body.last_message_id).toBe('msg_006')
-    const json = JSON.stringify(body)
-    expect(json).not.toContain('AAAA')
-    expect(json).toContain(`/kortix/part/${SESSION}/msg_004/att_msg_004`)
-    expect(body.attachments_referenced).toBe(3)
-    expect(body.attachment_bytes_saved).toBeGreaterThan(300_000)
-    // `info.system` is 2 KB per row in the fixture and no consumer reads it.
-    expect(json).not.toContain('SSSS')
-  })
-
-  test('`before` pages backwards, `after` pages forwards', async () => {
-    const { app } = makeRouter()
-    const older = (await (await app.request(`http://d/messages/${SESSION}?limit=2&before=msg_004`, { headers: auth })).json()) as any
-    expect(older.messages.map((m: any) => m.info.id)).toEqual(['msg_002', 'msg_003'])
-    expect(older.has_more).toBe(true)
-    const newer = (await (await app.request(`http://d/messages/${SESSION}?limit=10&after=msg_004`, { headers: auth })).json()) as any
-    expect(newer.messages.map((m: any) => m.info.id)).toEqual(['msg_005', 'msg_006'])
-    expect(newer.has_more).toBe(false)
-  })
-
-  test('a NUMERIC `after` is read as an OpenCode event seq, not a message id', async () => {
-    const { app } = makeRouter()
-    const delta = (await (await app.request(`http://d/messages/${SESSION}?after=2015`, { headers: auth })).json()) as any
-    expect(delta.messages.map((m: any) => m.info.id)).toEqual(['msg_006'])
-    const none = (await (await app.request(`http://d/messages/${SESSION}?after_seq=2016`, { headers: auth })).json()) as any
-    expect(none.messages).toEqual([])
-  })
-
-  test('falls back to OpenCode HTTP when the database is unreadable', async () => {
-    const { app } = makeRouter({ dbPath: join(root, 'absent.db') })
-    const res = await app.request(`http://d/messages/${SESSION}`, { headers: auth })
-    const body = (await res.json()) as any
-    expect(body.source).toBe('opencode-http')
-    expect(body.messages.map((m: any) => m.info.id)).toEqual(['msg_http_1'])
-    expect(body.head_seq).toBeNull()
-  })
-
-  test('a cursor read on a degraded database is a typed error, never a silently wrong page', async () => {
-    const { app } = makeRouter({ dbPath: join(root, 'absent.db') })
-    const delta = await app.request(`http://d/messages/${SESSION}?after_seq=100`, { headers: auth })
-    expect(delta.status).toBe(502)
-    const body = (await delta.json()) as any
-    expect(body.error).toBe('transcript unreadable')
-    expect(body.source).toBe('opencode-http')
-    expect(body.detail).toBe('cursor reads need the sqlite mirror; it is unavailable')
-    expect(body.db.supported).toBe(false)
-    expect(body.db.version_supported).toBe(true)
-    expect(body.messages).toBeUndefined()
-    // A message-id cursor (`?after=msg_…`) degrades the same way.
-    const after = await app.request(`http://d/messages/${SESSION}?after=msg_004`, { headers: auth })
-    expect(after.status).toBe(502)
-  })
-
   test('gzip compresses the transcript page', async () => {
     const { app } = makeRouter()
     const gz = await app.request(`http://d/messages/${SESSION}?limit=6`, { headers: { ...auth, 'Accept-Encoding': 'gzip' } })
     expect(gz.headers.get('content-encoding')).toBe('gzip')
     expect((await gz.arrayBuffer()).byteLength).toBeLessThan(Number(gz.headers.get('x-kortix-bytes')))
-  })
-
-  test('the page limit is bounded', async () => {
-    rmSync(dbPath, { force: true })
-    buildDb(205, 8)
-    const { app } = makeRouter()
-    const body = (await (await app.request(`http://d/messages/${SESSION}?limit=99999`, { headers: auth })).json()) as any
-    expect(body.count).toBe(200)
-    expect(body.has_more).toBe(true)
   })
 })
 

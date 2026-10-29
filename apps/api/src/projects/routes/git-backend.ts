@@ -18,6 +18,7 @@ import { resolveGitBackend } from '../../platform/services/managed-git-backend';
 import { createInstallationToken, listOwnerRepositories } from '../github';
 import { projectsApp } from '../lib/app';
 import { serializeGitHubRepo } from '../lib/serializers';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 const GitBackendSchema = z
   .object({
@@ -125,6 +126,7 @@ export function registerGitBackendRoutes(): void {
         });
         return c.json({ owner: backend.owner, repositories: repos.map(serializeGitHubRepo) });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           { error: (error as Error).message || 'Failed to list instance backend repositories' },
           502,

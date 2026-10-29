@@ -1,0 +1,88 @@
+name: Session speed canary
+
+# Every hour, per target: one new session through the public API, then three
+# prompts (chat, one bash tool call, chat) on deepseek-v4.1-flash. The bench
+# (apps/api/scripts/prompt-latency-bench.ts) sends one `[session-speed]` event
+# per session to the Better Stack source "Kortix session speed canary": boot
+# (create → runtime ready), new session → first token, and prompt → first token
+# on a warm session. The Better Stack "Session speed" dashboard charts them next
+# to the real-user boot and prompt metrics. Fixed prompt and model: a change in
+# the chart is a change in Kortix or in the model, never in the traffic mix.
+#
+# kortix-ci-env holds CANARY_<TARGET>_TOKEN (a PAT of a synthetic canary
+# account on a paid tier), CANARY_<TARGET>_PROJECT and the source's
+# BETTERSTACK_CANARY_TOKEN / BETTERSTACK_CANARY_HOST. A target without a token
+# is skipped.
+
+on:
+  schedule:
+    - cron: '23 * * * *' # off the top of the hour, where GitHub delays or drops scheduled runs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: session-speed-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: Canary (${{ matrix.target }})
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: dev
+            key: DEV
+            api: https://dev-api.kortix.com/v1
+          - target: prod
+            key: PROD
+            api: https://api.kortix.com/v1
+    env:
+      BENCH_API: ${{ matrix.api }}
+      BENCH_LABEL: ${{ matrix.target }}
+      BENCH_SESSIONS: '1'
+      BENCH_TURNS: '3'
+      BENCH_MODEL: deepseek-v4.1-flash
+      BENCH_PROVIDER: platinum
+    steps:
+      - name: Check out the aws-env action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            BENCH_TOKEN=kortix-ci-env:CANARY_${{ matrix.key }}_TOKEN?
+            BENCH_PROJECT=kortix-ci-env:CANARY_${{ matrix.key }}_PROJECT?
+            BENCH_BETTERSTACK_TOKEN=kortix-ci-env:BETTERSTACK_CANARY_TOKEN
+            BENCH_BETTERSTACK_HOST=kortix-ci-env:BETTERSTACK_CANARY_HOST
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: env.BENCH_TOKEN != ''
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: env.BENCH_TOKEN != ''
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        if: env.BENCH_TOKEN != ''
+        with:
+          bun-version: 1.4.3
+      - name: Install the bench's dependencies
+        if: env.BENCH_TOKEN != ''
+        run: corepack enable pnpm && pnpm install --frozen-lockfile --filter kortix-api
+        env:
+          npm_config_engine_strict: "false"
+      - name: Run one canary session
+        if: env.BENCH_TOKEN != ''
+        run: bun apps/api/scripts/prompt-latency-bench.ts

@@ -315,7 +315,7 @@ describe('BashTool reports whether the command actually worked', () => {
     expect(html).toContain('No such file or directory');
   });
 
-  test('a failure the agent moved past keeps its verdict in the muted ink, never red', () => {
+  test('a failure keeps its verdict in the muted ink, never red, whether or not the agent moved past it', () => {
     const call = toolCallBlock(makePart('ls missing', 'ls: missing\n<exit_code>2</exit_code>'));
     const alarm = renderToStaticMarkup(withProviders(<BashTool call={call} defaultOpen />));
     const recovered = renderToStaticMarkup(
@@ -326,7 +326,8 @@ describe('BashTool reports whether the command actually worked', () => {
       ),
     );
 
-    expect(alarm).toContain('text-kortix-red');
+    expect(alarm).toContain('Command failed');
+    expect(alarm).not.toContain('text-kortix-red');
     expect(recovered).toContain('Command failed');
     expect(recovered).toContain('Exit code 2');
     expect(recovered).not.toContain('text-kortix-red');
@@ -439,7 +440,7 @@ describe('BashTool trigger renders the title the helper answers (W9)', () => {
     );
 
     expect(triggerTitle(html)).toBe(
-      '<span class="min-w-0 truncate text-kortix-red">Command failed</span>',
+      '<span class="min-w-0 truncate text-foreground">Command failed</span>',
     );
     // Neither as written nor sentence-cased.
     expect(html).not.toContain('run the unit suite');

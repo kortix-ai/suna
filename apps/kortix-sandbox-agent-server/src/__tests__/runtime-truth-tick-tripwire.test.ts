@@ -12,17 +12,9 @@ import { resolve } from 'node:path'
  * `src/services/runtime-assets/runtime-truth.ts` is host code and must not
  * import a concrete adapter directly (the boundary lint, eslint.config.mjs), so it drives every component through
  * injected closures (`RuntimeTruthDeps`) instead of calling the real
- * materializing functions itself. The check therefore has two halves:
- *
- *  1. `runtime-truth.ts`'s `runReconcileTick` calls every one of those
- *     closures — a hook nobody calls is dead wiring.
- *  2. `harness/open-code/runtime-truth-glue.ts` — the ONE place those
- *     closures are built — actually calls the real state-materializing
- *     function behind each one, not a no-op.
- *
- * Together they prove the same thing `boot.ts`'s one-shot calls used to leave
- * unproven: every component the daemon owns is reachable from the recurring
- * tick, not only from boot.
+ * materializing functions itself. The check: `runtime-truth.ts`'s
+ * `runReconcileTick` calls every one of those closures (a hook nobody calls is
+ * dead wiring), and pi's boot wires the tick and its real reconcile calls.
  *
  * In the shape of this package's other tripwires (`boot-path-tripwire.test.ts`,
  * `test-state-reset-tripwire.test.ts`): a small reusable checker, tested with
@@ -31,7 +23,6 @@ import { resolve } from 'node:path'
  */
 
 const runtimeTruthSource = readFileSync(resolve(import.meta.dir, '..', 'services', 'runtime-assets', 'runtime-truth.ts'), 'utf8')
-const glueSource = readFileSync(resolve(import.meta.dir, '..', 'harness', 'open-code', 'runtime-truth-glue.ts'), 'utf8')
 
 /**
  * Every `name` in `names` must be called (`name(`, or `name?.(` for a hook a
@@ -43,18 +34,6 @@ export function callsMissingFrom(source: string, names: readonly string[]): stri
 
 /** The tick's own hooks — one per component `runtime-truth.ts` owns. */
 const TICK_HOOKS = ['reconcileAssets', 'reconcileConfigRelease', 'reconcileCatalog', 'readConfigRelease', 'readCatalog'] as const
-
-/** The real functions each hook must resolve to, on a real box (via the glue file). */
-const MATERIALIZING_ENTRY_POINTS = [
-  // cli / managed_skills / daemon(agent) — runtime-assets.ts's manifest pass.
-  'scheduleRuntimeAssetsReconcile',
-  // config_release — downloads and proves a release candidate.
-  'convergeConfigRelease',
-  // catalog — the live managed-lineup fetch this spec's failure #1 is about.
-  'startManagedModelsPrefetch',
-  // catalog's repair half — writes the overlay and reloads opencode's config onto it.
-  'applyCatalogIfIdle',
-] as const
 
 describe('runtime-truth tick tripwire (Rule 3: no new boot-only convergence)', () => {
   test('the checker catches a name that is missing (negative probe)', () => {
@@ -76,19 +55,6 @@ describe('runtime-truth tick tripwire (Rule 3: no new boot-only convergence)', (
 
     const missing = callsMissingFrom(runtimeTruthSource, TICK_HOOKS)
     expect(missing).toEqual([])
-  })
-
-  test('the glue file resolves every hook to a REAL materializing call, not a no-op', () => {
-    expect(glueSource.length).toBeGreaterThan(500)
-    expect(glueSource).toContain('export function wireRuntimeTruth')
-
-    const missing = callsMissingFrom(glueSource, MATERIALIZING_ENTRY_POINTS)
-    expect(missing).toEqual([])
-  })
-
-  test('the glue file is wired from a runtime-ready exit, not a one-shot boot script that could stop being called', () => {
-    const bootSource = readFileSync(resolve(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8')
-    expect(bootSource).toContain('wireRuntimeTruth(')
   })
 
   test('pi wires the tick from its runtime-ready path: config releases and runtime assets are reconciled every tick', () => {

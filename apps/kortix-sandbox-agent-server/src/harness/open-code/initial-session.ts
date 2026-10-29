@@ -53,8 +53,7 @@ export function finalizeInitialSession(bootState: InitialSessionBootState, sessi
  * `finalize` exactly once. `maybeCreateInitialOpencodeSession` is idempotent
  * (it re-resolves the pinned root and keeps deferring while opencode has not
  * answered), so retrying is safe; without the root the runtime can never turn
- * ready, so the loop has no attempt cap — only a capped interval. Exported for
- * tests; see initial-session-retry.test.ts.
+ * ready, so the loop has no attempt cap — only a capped interval.
  * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function retryUntilInitialSessionEstablished(input: {

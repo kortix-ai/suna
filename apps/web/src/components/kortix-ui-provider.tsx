@@ -104,6 +104,10 @@ function useViewer(): UiViewer | undefined {
 // root bundle stays small. The wallpaper is static: it paints on first frame.
 const components: UiHostComponents = {
   Wallpaper: WallpaperBackground,
+  // The Artifacts viewer, in a session's side panel: loaded on first open only.
+  ArtifactViewer: lazyClient(() =>
+    import('@/features/artifacts/artifact-viewer').then((m) => m.ArtifactViewer),
+  ),
   // The project home's announcement: the Kortix mobile app.
   HomeAnnouncement: lazyClient(() =>
     import('@kortix/ui/workspace/home/mobile-app-promo').then((m) => m.MobileAppPromo),

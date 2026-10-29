@@ -76,6 +76,10 @@ export const PROJECT_ACTIONS = {
   PROJECT_ROOM_READ: 'project.room.read',
   /** Create a room, post, put a session in or take it out, set the topic. */
   PROJECT_ROOM_WRITE: 'project.room.write',
+  PROJECT_ARTIFACT_READ: 'project.artifact.read',
+  PROJECT_ARTIFACT_WRITE: 'project.artifact.write',
+  PROJECT_ARTIFACT_MANAGE: 'project.artifact.manage',
+  PROJECT_ARTIFACT_PUBLIC: 'project.artifact.public',
 
   /** Minting a project CLI token or a project-scoped PAT. */
   PROJECT_CREDENTIALS_ISSUE: 'project.credentials.issue',

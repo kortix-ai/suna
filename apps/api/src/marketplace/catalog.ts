@@ -28,6 +28,7 @@ import { parse as parseYaml } from "yaml";
 import {
   buildRegistry,
   describeRegistry,
+  isPrivateRegistryHost,
   loadItem,
   loadRegistry,
   parseRegistryAddress,
@@ -898,34 +899,13 @@ export const githubLoaderOptions: { fetchImpl: typeof fetch } = {
 // metadata, localhost, RFC-1918). `local` is dev-only behind an opt-in flag.
 const ALLOW_LOCAL_SOURCES = process.env.KORTIX_MARKETPLACE_ALLOW_LOCAL === "1";
 
-function isPrivateHost(host: string): boolean {
-  const h = host.toLowerCase().replace(/\.$/, "");
-  if (!h || h === "localhost" || h.endsWith(".localhost")) return true;
-  if (
-    h === "127.0.0.1" ||
-    h === "0.0.0.0" ||
-    h === "::1" ||
-    h.startsWith("127.")
-  )
-    return true;
-  if (h.startsWith("169.254.")) return true; // link-local incl. 169.254.169.254 cloud metadata
-  if (
-    /^10\./.test(h) ||
-    /^192\.168\./.test(h) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(h)
-  )
-    return true;
-  if (h.endsWith(".internal") || h.endsWith(".local")) return true;
-  return false;
-}
-
 function isAllowedSourceRef(ref: RegistryRef): boolean {
   if (ref.kind === "github" || ref.kind === "namespace") return true;
   if (ref.kind === "local") return ALLOW_LOCAL_SOURCES;
   if (ref.kind === "url") {
     try {
       const u = new URL(ref.url);
-      return u.protocol === "https:" && !isPrivateHost(u.hostname);
+      return u.protocol === "https:" && !isPrivateRegistryHost(u.hostname);
     } catch {
       return false;
     }
@@ -1028,7 +1008,7 @@ export function assertAllowedEndpointUrl(address: string): void {
       "Connector endpoints must use https on a public host.",
     );
   }
-  if (isPrivateHost(parsed.hostname)) {
+  if (isPrivateRegistryHost(parsed.hostname)) {
     throw new AllowedSourceValidationError(
       "Connector endpoints must use https on a public host.",
     );
@@ -1967,18 +1947,11 @@ function filterCatalogItems(
 }
 
 /** Maximum `limit` the `/marketplace/items` route accepts, once a caller opts
- *  into pagination. Bounds the payload/memory a single request can demand
- *  while leaving headroom above `MARKETPLACE_EXPLORE_LANDING_LIMIT` (120, in
- *  the web's `marketplace-public.ts`) so that SSR fetch is actually honored
- *  instead of silently truncated by this clamp. */
+ *  into pagination; a larger value answers 400. Bounds the payload/memory a
+ *  single request can demand while leaving headroom above
+ *  `MARKETPLACE_EXPLORE_LANDING_LIMIT` (120, in the web's
+ *  `marketplace-public.ts`). */
 export const MARKETPLACE_ITEMS_MAX_LIMIT = 200;
-
-/** Clamps a parsed `limit` query value into `[1, MARKETPLACE_ITEMS_MAX_LIMIT]`.
- *  Extracted from the route handler so the clamp boundary is unit-testable
- *  without spinning up an HTTP server or a catalog with 200+ real items. */
-export function clampMarketplaceItemsLimit(parsedLimit: number): number {
-  return Math.min(Math.max(parsedLimit, 1), MARKETPLACE_ITEMS_MAX_LIMIT);
-}
 
 /** Pure filter + optional slice — the sliceable core of `listCatalogItemsPage`,
  *  factored out so it can be unit-tested against an injected `CatalogItem[]`

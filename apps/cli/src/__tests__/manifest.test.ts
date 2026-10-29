@@ -190,6 +190,68 @@ describe('manifest-edit — TOML (existing text-surgery behavior, unchanged)', (
     rmSync(dir, { recursive: true, force: true });
   });
 
+  test('TOML mutations select the first identity and stop at nested or adjacent headers', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { setScalarInArrayBlock, removeArrayBlock, setTableScalar } = await import('../manifest-edit');
+    const file = join(dir, 'kortix.toml');
+    const original = `# root
+[[triggers]]
+slug = 'other'
+enabled = true
+# target
+[[triggers]]
+slug = 'nightly'
+  enabled = true # old
+[triggers.config]
+enabled = true
+[[triggers]]
+slug = "nightly"
+enabled = true`;
+    writeFileSync(file, original);
+    expect(setScalarInArrayBlock('triggers', 'slug', 'nightly', 'enabled', false, dir)).toBe(true);
+    expect(readFileSync(file, 'utf8')).toBe(original.replace('  enabled = true # old', '  enabled = false'));
+    writeFileSync(file, original);
+    expect(removeArrayBlock('triggers', 'slug', 'nightly', dir)).toBe(true);
+    expect(readFileSync(file, 'utf8')).toBe(`# root
+[[triggers]]
+slug = 'other'
+enabled = true
+[triggers.config]
+enabled = true
+[[triggers]]
+slug = "nightly"
+enabled = true`);
+    const tables = `# root
+[policy]
+  enabled = true # old
+[policy.nested]
+enabled = true
+[policy]
+enabled = true`;
+    writeFileSync(file, tables);
+    setTableScalar('policy', 'enabled', false, dir);
+    expect(readFileSync(file, 'utf8')).toBe(tables.replace('  enabled = true # old', '  enabled = false'));
+  });
+
+  test('TOML scalar insertion preserves EOF, comments and missing-identity files', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { setScalarInArrayBlock, removeArrayBlock, setTableScalar } = await import('../manifest-edit');
+    const file = join(dir, 'kortix.toml');
+    for (const ending of ['', '\n']) {
+      const original = `# root\n[[triggers]]\n# identity\nslug = "nightly"${ending}`;
+      writeFileSync(file, original);
+      expect(setScalarInArrayBlock('triggers', 'slug', 'absent', 'enabled', false, dir)).toBe(false);
+      expect(removeArrayBlock('triggers', 'slug', 'absent', dir)).toBe(false);
+      expect(readFileSync(file, 'utf8')).toBe(original);
+      expect(setScalarInArrayBlock('triggers', 'slug', 'nightly', 'enabled', false, dir)).toBe(true);
+      expect(readFileSync(file, 'utf8')).toBe(original.replace('[[triggers]]', '[[triggers]]\nenabled = false'));
+      const table = `# root\n[policy]\n# keep\nmode = 'ask'${ending}`;
+      writeFileSync(file, table);
+      setTableScalar('policy', 'enabled', false, dir);
+      expect(readFileSync(file, 'utf8')).toBe(table.replace('[policy]', '[policy]\nenabled = false'));
+    }
+  });
+
   test('appendArrayBlock adds a [[section]] block', async () => {
     const { appendArrayBlock, arrayEntryExists } = await import('../manifest-edit');
     writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);

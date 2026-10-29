@@ -213,7 +213,7 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.runtimeEnv).toContain('EMAIL_PROVIDER_ORDER=mailpit');
     expect(configured.runtimeEnv).toContain('MANAGED_GIT_PROVIDER=github');
     expect(configured.runtimeEnv).toContain('KORTIX_GITHUB_APP_PRIVATE_KEY=line-one\\nline-two');
-    expect(configured.runtimeEnv).not.toContain('E2E_AGENTMAIL_API_KEY');
+    expect(configured.runtimeEnv).not.toContain('E2E_RESEND_API_KEY');
     expect(configured.testEnv).toContain('KE2E_TARGET=preview');
     // Session-token fixtures use the token API; its signing secret stays private.
     expect(configured.testEnv).not.toContain('KE2E_API_KEY_SECRET');
@@ -225,7 +225,7 @@ describe('ephemeral self-host preview stack', () => {
     );
     expect(configured.testEnv).toContain('KE2E_CAP_SANDBOX=1');
     expect(configured.testEnv).toContain('KE2E_CAP_MANAGED_GIT_PUSH=1');
-    expect(configured.testEnv).toContain('E2E_AGENTMAIL_API_KEY=');
+    expect(configured.testEnv).toContain('E2E_RESEND_API_KEY=');
   });
 
   it('runs preview sessions on Platinum only, and never forwards an AWS identity', () => {

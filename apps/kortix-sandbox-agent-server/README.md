@@ -1,7 +1,6 @@
 # kortixd
 
-Thin sandbox-side daemon that runs inside every Kortix project-session sandbox
-— and, in a second boot mode, inside every project **monitor box**.
+Thin sandbox-side daemon that runs inside every Kortix project-session sandbox.
 
 The compiled binary is a single, installable app named **`kortixd`**. Running
 it with no arguments (or `kortixd serve`) starts the daemon described below.
@@ -14,22 +13,6 @@ It also manages its own lifecycle — see [Management CLI](#management-cli).
 > snapshot bake COPYs it, and the API serves it as the runtime-assets `/agent`
 > artifact for already-deployed boxes. Renaming that on-disk path is a fleet
 > migration, not a build change, so both names ship from one compile.
-
-**Boot modes** (decided by `KORTIX_WORKLOAD` at startup):
-
-- _(default)_ **session** — everything under "Scope" below.
-- **`monitor`** — the box supervises the project's monitor processes instead
-  of a session harness (`src/services/monitor/monitor-runner.ts`): it parses `KORTIX_MONITORS` (JSON
-  injected by the API — the daemon never parses `kortix.yaml` itself), spawns
-  one process per enabled monitor (`poll` on an interval / `stream`
-  long-running, restart budget + backoff), captures stdout line-by-line
-  (8 KiB truncation), batches ~200 ms, and POSTs batches to
-  `POST /projects/:id/monitors/ingest` with the box's sandbox token and
-  `KORTIX_MONITOR_BOX_EPOCH`. Lifecycle events (`exited`,
-  `restart_budget_exhausted`, `silent`) are synthesized into the same stream.
-  No harness starts; its routes 503 honestly. `GET /kortix/health`
-  reports `workload: "monitor"` — the API's reconciler uses that field to
-  detect (and recycle) a box whose baked agent binary predates monitor mode.
 
 **Scope:**
 

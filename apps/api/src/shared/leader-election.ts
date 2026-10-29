@@ -23,6 +23,7 @@
  */
 
 import os from 'node:os';
+import { requiresTls } from '@kortix/db';
 import postgres from 'postgres';
 import { config } from '../config';
 import { logger } from '../lib/logger';
@@ -333,6 +334,7 @@ export function startLeaderElection(
   // Dedicated 1-connection client so lease traffic never contends with the app
   // pool. prepare:false matches the Supabase-pooler app client.
   sql = postgres(config.DATABASE_URL, {
+    ...(requiresTls(config.DATABASE_URL) ? { ssl: 'require' as const } : {}),
     prepare: false,
     max: LEADER_ELECTION_POOL_MAX,
     idle_timeout: 30,

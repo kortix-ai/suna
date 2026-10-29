@@ -3,7 +3,7 @@ import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { commitMultipleFilesToBranch } from '../git/branches';
 import { isRemotePushPolicyRejection, isTransientGitMirrorError } from '../git/mirror';
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
-import { MANIFEST_FILENAME, type GitTriggerSpec, type ParsedManifest, manifestWrites, readManifest, synthesizeBlankManifest, triggerSpecToTomlEntry } from '../triggers';
+import { MANIFEST_FILENAME, type GitTriggerSpec, type ParsedManifest, manifestWrites, readManifest, synthesizeBlankManifest, triggerSpecToOnRunEntry, triggerSpecToTomlEntry } from '../triggers';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
 import type { ProjectRow } from './serializers';
 
@@ -91,7 +91,9 @@ export function upsertTriggerInManifest(
   const idx = current.findIndex(
     (entry) => typeof entry?.slug === 'string' && entry.slug === spec.slug,
   );
-  const entry = triggerSpecToTomlEntry(spec);
+  // A new trigger is written as `on:` / `run:`; an edit keeps the shape the entry has.
+  const existing = idx >= 0 ? current[idx] : null;
+  const entry = !existing || existing.on !== undefined ? triggerSpecToOnRunEntry(spec) : triggerSpecToTomlEntry(spec);
   const next = current.slice();
   if (idx >= 0) next[idx] = entry;
   else next.push(entry);

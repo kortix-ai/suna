@@ -1,4 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { privateSpaceMemberIds } from '../../shared/space-access';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import {
   DEFAULT_PREVIEW_CANDIDATES,
@@ -162,6 +164,11 @@ export function registerPublicSharesRoutes(): void {
       const guard = await guardSessionSharing(c, loaded, sessionId, 'mint');
       if (!guard.ok) return sessionAccessDenied(c, guard);
       const visible = guard.session;
+      // A member of a private channel may publish one of its threads; an
+      // agent does not decide that.
+      if (callerKortixSessionId(c) !== null && (await privateSpaceMemberIds(visible.row.spaceId)) !== null) {
+        return c.json({ error: 'An agent cannot publish a private channel\'s thread. A member must do it.', code: 'session_bound_caller' }, 403);
+      }
       const personal = await personalDataRefusal({ accountId: visible.row.accountId, projectId, sessionId });
       if (personal) return c.json(personal, 409);
 

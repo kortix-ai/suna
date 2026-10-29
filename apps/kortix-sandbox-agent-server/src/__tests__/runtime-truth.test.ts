@@ -26,7 +26,6 @@ import {
   configureRuntimeTruth,
   detectedResume,
   deriveAssetsSignal,
-  deriveCatalogSignal,
   deriveConfigReleaseSignal,
   fingerprintModelIds,
   isBlockedCause,
@@ -160,28 +159,6 @@ describe('runtime-truth: per-component classification (pure)', () => {
 
   test('assets: no outcome at all (component absent from this pass) -> unknown', () => {
     expect(deriveAssetsSignal(undefined, undefined).outcome).toBe('unknown')
-  })
-
-  test('catalog: config not built yet -> unknown', () => {
-    const signal = deriveCatalogSignal({ configuredIds: null, liveKnown: false, missingIds: [] })
-    expect(signal.outcome).toBe('unknown')
-  })
-
-  test('catalog: configured, but the live managed set was never fetched -> attempted (failure #1, never silently current)', () => {
-    const signal = deriveCatalogSignal({ configuredIds: ['glm-5.3-flash'], liveKnown: false, missingIds: [] })
-    expect(signal.outcome).toBe('attempted')
-    expect(signal.cause).toMatch(/bundled|baked/)
-  })
-
-  test('catalog: configured and live known, nothing missing -> current', () => {
-    const signal = deriveCatalogSignal({ configuredIds: ['glm-5.3-flash'], liveKnown: true, missingIds: [] })
-    expect(signal).toEqual({ outcome: 'current', cause: null })
-  })
-
-  test('catalog: a managed id the picker offers is missing from the provider map -> attempted, names the id', () => {
-    const signal = deriveCatalogSignal({ configuredIds: ['glm-5.3-flash'], liveKnown: true, missingIds: ['kimi-k3'] })
-    expect(signal.outcome).toBe('attempted')
-    expect(signal.cause).toContain('kimi-k3')
   })
 })
 

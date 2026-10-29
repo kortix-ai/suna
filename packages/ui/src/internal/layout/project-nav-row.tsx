@@ -3,17 +3,21 @@
 import { HoverPrefetchLink } from '../components/hover-prefetch-link';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '../../primitives/sidebar';
 import { useIsMobile } from '../hooks';
+import { cn } from '../lib/utils';
 import type { ComponentProps, ReactNode } from 'react';
 
 /** Keep the anchor's intent handlers and the caller's active-route semantics. */
 export function ProjectNavRow({
   active,
   label,
+  className,
   children,
   ...link
 }: ComponentProps<typeof HoverPrefetchLink> & {
   active: boolean;
   label: string;
+  /** Added to the row button's classes. */
+  className?: string;
   children: ReactNode;
 }) {
   const isMobile = useIsMobile();
@@ -24,7 +28,7 @@ export function ProjectNavRow({
         asChild
         isActive={active}
         tooltip={label}
-        className="group/menu-button text-sidebar-foreground relative"
+        className={cn('group/menu-button text-sidebar-foreground relative', className)}
       >
         <HoverPrefetchLink
           {...link}

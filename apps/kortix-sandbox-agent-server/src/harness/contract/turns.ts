@@ -18,6 +18,11 @@ export interface RuntimePromptInput {
   directory?: string
   /** Persist the message and start no turn. */
   noReply?: boolean
+  /**
+   * Text added to this turn's system prompt only (`project_channels`: the
+   * thread's memory file list). The next turn without it runs without it.
+   */
+  system?: string
 }
 
 /** The HTTP answer a verb produced; the route sends it as it is. */

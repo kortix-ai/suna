@@ -174,6 +174,17 @@ export const PROJECT_ACTIONS = {
   PROJECT_ROOM_READ: 'project.room.read',
   PROJECT_ROOM_WRITE: 'project.room.write',
 
+  // Artifacts (`artifacts` flag): Files folders shared as docs and pages.
+  // `read` = the gallery, open an artifact, its versions and files. `write` =
+  // publish, share a folder, save, restore, and rename / share / unshare your
+  // own. `manage` = change how anyone's artifact is shared. `public` = give an
+  // artifact a public link: the one outward step, so a custom role or an
+  // agent's `kortix_permissions` can withhold it on its own.
+  PROJECT_ARTIFACT_READ: 'project.artifact.read',
+  PROJECT_ARTIFACT_WRITE: 'project.artifact.write',
+  PROJECT_ARTIFACT_MANAGE: 'project.artifact.manage',
+  PROJECT_ARTIFACT_PUBLIC: 'project.artifact.public',
+
   // Issuing a project credential — a project CLI token (`POST|DELETE
   // /projects/:id/cli-token`) or a project-scoped PAT (`POST /accounts/tokens`
   // with a project_id). Its own leaf because a credential OUTLIVES the request

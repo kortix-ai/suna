@@ -26,7 +26,8 @@ import Hint from '../../primitives/hint';
 export interface SelectionBarAction {
   id: string;
   label: string;
-  tone?: 'default' | 'destructive';
+  /** `success` for an approving verb (Approve), `destructive` for a removing one. */
+  tone?: 'default' | 'success' | 'destructive';
   disabled?: boolean;
   onSelect: () => void;
 }
@@ -83,6 +84,7 @@ export function SelectionBar({
       className={cn(
         'h-8 shrink-0',
         a.tone === 'destructive' && 'text-destructive hover:text-destructive',
+        a.tone === 'success' && 'text-kortix-green hover:text-kortix-green',
       )}
     >
       {a.label}

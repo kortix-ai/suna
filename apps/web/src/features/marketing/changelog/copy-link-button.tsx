@@ -62,7 +62,7 @@ export function CopyLinkButton({
             transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
             className="absolute inset-0 inline-flex items-center justify-center"
           >
-            {copied ? <CheckIcon className="size-4" /> : <Copy className="size-4" />}
+            {copied ? <CheckIcon className="text-ring size-4" /> : <Copy className="size-4" />}
           </m.span>
         </AnimatePresence>
       </span>

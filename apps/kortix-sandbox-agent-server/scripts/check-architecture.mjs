@@ -54,7 +54,7 @@ const cases = [
   ['service to the harness resolver', 'src/services/static-web/static-web.ts', "import '@/harness/harness';", false],
   ['service to a harness type', 'src/services/runtime-assets/runtime-assets.ts', "import type { HarnessService } from '@/harness/harness';", false],
   ['service to a route', 'src/services/resources/resources.ts', "import '@/routes/kortix/health';", false],
-  ['service to app', 'src/services/monitor/monitor-runner.ts', "import '@/app/shutdown';", false],
+  ['service to app', 'src/services/static-web/static-web.ts', "import '@/app/shutdown';", false],
   ['service to hono', 'src/services/llm-proxy/llm-proxy.ts', "import { Hono } from 'hono';", false],
   ['egress-shim to the shared relay contract', 'src/services/egress-shim/relay-client.ts', "import '@kortix/api-contract/secret-relay';", true],
   ['another service to the shared relay contract', 'src/services/llm-proxy/llm-proxy.ts', "import '@kortix/api-contract/secret-relay';", false],
@@ -205,7 +205,7 @@ for (const [name, code, allowed] of typeOnlyCases) {
 const opencodeNameCases = [
   ['a new identifier in a route', 'src/routes/kortix/health.ts', 'const opencodePort = 1', ['opencodePort']],
   ['a string in lib', 'src/lib/log/logger.ts', "const name = 'opencode'", ['opencode']],
-  ['a template literal', 'src/services/monitor/monitor-runner.ts', "const path = `x-${1}/opt/opencode.current`", ['opencode.current']],
+  ['a template literal', 'src/services/static-web/static-web.ts', "const path = `x-${1}/opt/opencode.current`", ['opencode.current']],
   ['a type reference in the contract', 'src/harness/contract/diagnostics.ts', 'type Probe = OpencodeClient', ['OpencodeClient']],
   ['a word inside a sentence', 'src/app/server.ts', "const e = 'prompt_id and opencode_session_id are required'", ['opencode_session_id']],
   ['a comment', 'src/routes/kortix/health.ts', '// opencode\nexport {}', []],

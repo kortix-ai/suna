@@ -40,7 +40,7 @@ beforeAll(async () => {
     // Flag-gated routes in CASES (channels/email/*, channels/teams/*) reject
     // with 403 `feature_disabled` when off. Turn them on so this suite measures
     // the LEAF gate, not the flag.
-    metadata: { experimental: { agentmail_email: true, teams: true } },
+    metadata: { experimental: { teams: true } },
   });
   await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },

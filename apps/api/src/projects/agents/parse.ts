@@ -398,6 +398,8 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string, versi
   // `apps` (spec 2026-09-22 §2.5): same shape, deny-by-default.
   const appsResolved = resolveGrantSet(normalizedRow.apps, 'none');
 
+  const policySets = readAgentPolicySets(normalizedRow.policy_sets);
+
   return {
     ok: true,
     spec: {
@@ -406,6 +408,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string, versi
       enabled,
       connectors: toGrantSet(connectorsResolved),
       connectorsRequired,
+      ...(policySets ? { policySets } : {}),
       permissions: toGrantSet(kortixResolved),
       env: toGrantSet(secretsResolved),
       apps: toGrantSet(appsResolved),
@@ -416,6 +419,34 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string, versi
       legacyReadWorkspace,
     },
   };
+}
+
+/** The `*` key of a policy-set map: every connector, used when the whole
+ *  `policy_sets` value is malformed. Not a valid slug, so it never collides. */
+export const ALL_CONNECTORS_POLICY_SET_KEY = '*';
+
+/**
+ * `agents.<name>.policy_sets` → connector slug → set name, on a null
+ * prototype (a slug such as `constructor` must not read `Object.prototype`).
+ *
+ * Never invalidates the agent (an invalid agent loses every connector,
+ * channel included) and never drops an entry (no entry = base rules = looser).
+ * A malformed value becomes the set name `''`, which no connector defines, so
+ * the gateway blocks that connector for the agent. A malformed map blocks
+ * every connector (`*`). `kortix validate` and the CR gate name the problem.
+ */
+export function readAgentPolicySets(raw: unknown): Record<string, string> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const out: Record<string, string> = Object.create(null);
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    logger.warn('[agents] malformed policy_sets: every connector is blocked for this agent');
+    out[ALL_CONNECTORS_POLICY_SET_KEY] = '';
+    return out;
+  }
+  for (const [slug, value] of Object.entries(raw as Record<string, unknown>)) {
+    out[slug.trim()] = typeof value === 'string' ? value.trim() : '';
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /** `resolveGrantSet` returns `'none'` as its own sentinel; `AgentSpec`'s grant

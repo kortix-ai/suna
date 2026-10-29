@@ -825,12 +825,22 @@ audio, actions and policy state, the action spool summary, device info) as
 
 ## Updates
 
-This build has no self-updater. A new installer upgrades in place and keeps the
-configuration (MSI major upgrade, `installer -pkg` over the installed pkg,
-`dpkg -i`). Every Kortix release carries `capture-update.json` (version,
-channel and per-OS installer URL, SHA-256 and size; Ed25519 signature in
-`capture-update.json.sig` once the signing key exists). The release runbook
-(`release-runbook.md`) lists the URLs the updater will poll.
+The machine service updates the app by itself (`src/memory/managed/update.rs`).
+It checks at start and every 6 hours (jittered), on the channel the build came
+from: `stable` for `X.Y.Z`, `dev` for `X.Y.Z-dev.N`. Every Kortix release
+carries `capture-update.json` (version, channel and per-OS installer URL,
+SHA-256 and size) and its Ed25519 signature `capture-update.json.sig`. The
+service installs only a newer version whose signature verifies and whose
+installer matches the size and SHA-256. A new version that does not report
+healthy (recorder running, new frame) is rolled back and never tried again.
+
+IT turns updates off (`auto_update` / `AutoUpdate`) or pins the channel
+(`update_channel` / `UpdateChannel`) where the enrollment settings live.
+`kortix-capture --json machine status` shows `version` and `update`; the same
+`update` object goes into `status.json`. A new installer still upgrades in
+place and keeps the configuration (MSI major upgrade, `installer -pkg` over
+the installed pkg, `dpkg -i`). The rules, files and how to stop a bad release
+are in `release-runbook.md`, section "Updater".
 
 ## Privacy
 

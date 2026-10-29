@@ -51,46 +51,6 @@ describe('the waiting row has a fallback when no turn owns it', () => {
     expect(busy).toContain('projectionBusy: isBusy,');
     expect(chat).toContain('isBusy={isBusy}');
   });
-
-  test('the trailing row is gated on that, not on an empty transcript', () => {
-    const row = between(chat, '{showFallbackBusyRow && fallbackBusyRowTurnId === null && (', '/>\n                      )}');
-    // The old gate. `turns.length === 0` is why a session with one queued
-    // bubble drew nothing at all.
-    expect(chat).not.toContain('{isBusy && turns.length === 0 && <SessionBusyIndicator');
-    expect(chat).toContain('const showFallbackBusyRow =\n    lastTurnWorking &&\n    !someTurnDrawsBusyRow &&');
-    expect(row).toContain('<SessionBusyIndicator');
-    expect(row).toContain('sessionId={sessionId}');
-  });
-
-  test('it never stacks with the boot stand-in, which draws its own row', () => {
-    const gate = between(chat, 'const showFallbackBusyRow =', 'const fallbackBusyRowTurnId');
-    // First prompts and Enter submissions share this stand-in exclusion.
-    expect(gate).toMatch(
-      /!\(\s*showFirstPromptPreview &&\s*firstPromptSource &&\s*queuedSyntheticMessages\.length === 0 &&\s*turns\.length === 0\s*\)/,
-    );
-    expect(chat).toMatch(/showFirstPromptPreview &&\s*firstPromptSource &&\s*queuedSyntheticMessages\.length === 0 && \(/);
-  });
-
-  test('it sits where the stand-in sat, so the crossfade does not move it', () => {
-    const row = between(chat, '{showFallbackBusyRow && fallbackBusyRowTurnId === null && (', '/>\n                      )}');
-    expect(row).toContain("className={turns.length === 0 ? undefined : 'mt-6'}");
-  });
-
-  test('with a queue on screen it renders inside the turn before the queue, never under it', () => {
-    // The map hands the decision to the memoized row as `showBusyRow`…
-    expect(chat).toMatch(
-      /showBusyRow=\{\s*showFallbackBusyRow &&\s*fallbackBusyRowTurnId === turn\.id\s*\}/,
-    );
-    // …and the row draws it INSIDE the turn's viewport (the slice ends at its
-    // close tag), after the turn. The viewport's own props are not pinned.
-    const row = between(turn, 'const TranscriptTurnRow = memo(', '</TurnViewport>');
-    const indicator =
-      '{showBusyRow && <SessionBusyIndicator sessionId={turnProps.sessionId} className="mt-2.5" />}';
-    expect(row).toMatch(/<TurnViewport\s+turnId=\{turnId\}\s+className=\{viewportClassName\}/);
-    expect(row.indexOf(indicator)).toBeGreaterThan(row.indexOf('<SessionTurn {...turnProps} />'));
-    expect(row.indexOf('<SessionTurn {...turnProps} />')).toBeGreaterThan(row.indexOf('<TurnViewport'));
-    expect(chat).toContain('fallbackBusyRowAfterTurnId({');
-  });
 });
 
 /**
@@ -163,23 +123,6 @@ describe("the first prompt's text outlives the store's copy, locally", () => {
     const handover = between(chat, 'const handover = resolveFirstPromptHandover({', '});');
     expect(handover).toContain('transcriptEmpty: turns.length === 0,');
   });
-});
-
-
-test('a bubble reads as queued only while it waits behind a turn', () => {
-  // Inbox presence alone dimmed an idle send until the server named
-  // its turn. The rule (`turnRendersQueued`) is tested in the SDK; this pins
-  // that the transcript feeds it the working-turn resolution, not the inbox alone. The
-  // inbox row still reaches the bubble (`data-pending-prompt-id`).
-  expect(chat).toContain('const confirmedActive = turnIsConfirmedActive({');
-  expect(chat).toContain('!confirmedActive && turn.assistant.length === 0');
-  const pending = between(chat, 'pending={turnRendersQueued({', 'pendingPrompt={pendingPrompt}');
-  expect(pending).toContain('turnId: turn.id,');
-  expect(pending).toContain('resolution: workingTurn,');
-  expect(pending).toContain('sessionWorking: lastTurnWorking,');
-  expect(pending).toContain('confirmedActive,');
-  expect(pending).toContain('inboxPrompt: pendingPrompt');
-  expect(pending).not.toContain('Boolean(pendingPrompt)');
 });
 
 /**

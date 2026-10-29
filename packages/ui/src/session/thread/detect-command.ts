@@ -11,10 +11,28 @@ const foldBlankLines = (text: string) => text.replace(/\n{3,}/g, '\n\n');
  *
  * Extracted into its own (React-free) module so it can be unit-tested directly.
  */
+/**
+ * pi's `/skill` message: `<skill name="…" location="…">\n<SKILL.md>\n</skill>`, then
+ * `\n\n<args>` (`commandPrompt` in kortixd's pi runtime). pi lists a skill with an
+ * empty template, so only this envelope names it after a reload. A SKILL.md can
+ * hold its own `</skill>`, so the envelope closes at the last one.
+ */
+export function detectSkillEnvelope(rawText: string): { name: string; args?: string; source: 'skill' } | undefined {
+  const text = rawText.trim();
+  const open = /^<skill name="([^"]+)" location="[^"]*">\n/.exec(text);
+  if (!open) return undefined;
+  const close = text.lastIndexOf('\n</skill>');
+  if (close < open[0].length - 1) return undefined;
+  const args = text.slice(close + '\n</skill>'.length).trim();
+  return { name: open[1], args: args || undefined, source: 'skill' };
+}
+
 export function detectCommandFromText(
   rawText: string,
   commands?: Command[],
-): { name: string; args?: string } | undefined {
+): { name: string; args?: string; source?: 'skill' } | undefined {
+  const skill = rawText ? detectSkillEnvelope(rawText) : undefined;
+  if (skill) return skill;
   // `commands` is typed `Command[]`, but the runtime's `GET /command` has been
   // observed answering with a truthy NON-array (Better Stack, dev 2026-08-23:
   // "TypeError: t is not iterable" thrown from the `for…of` below, which took

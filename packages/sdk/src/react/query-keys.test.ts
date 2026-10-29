@@ -500,6 +500,39 @@ describe('qk.project.sessionsPaged label filter', () => {
   });
 });
 
+describe('qk.project.sessionsPaged space filter', () => {
+  test('each space gets its own cache slot; no space keeps the plain key', () => {
+    const plain = qk.project.sessionsPaged('P1');
+    const inSpace = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1' });
+    expect(inSpace).not.toEqual(plain);
+    expect(qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S2' })).not.toEqual(inSpace);
+    expect(qk.project.sessionsPaged('P1', 'visible', { spaceId: undefined })).toEqual(plain);
+    expect(inSpace.slice(0, plain.length)).toEqual([...plain]);
+  });
+});
+
+describe('qk.project.sessionsPaged thread filters', () => {
+  test('createdBy, agent and updatedAfter each get their own slot; unset keeps the space key', () => {
+    const inSpace = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1' });
+    const byPerson = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1', createdBy: 'U1' });
+    const byAgent = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1', agent: 'researcher' });
+    const recent = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1', updatedAfter: '2026-10-18T00:00:00.000Z' });
+    for (const key of [byPerson, byAgent, recent]) expect(key).not.toEqual(inSpace);
+    expect(new Set([byPerson, byAgent, recent].map((key) => JSON.stringify(key))).size).toBe(3);
+    expect(
+      qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1', createdBy: undefined, agent: undefined, updatedAfter: undefined }),
+    ).toEqual(inSpace);
+  });
+});
+
+describe('qk.project.spaces', () => {
+  test('nests under the project scope, so a project invalidation reaches it', () => {
+    const scope = qk.project.scope('P1');
+    expect(qk.project.spaces('P1').slice(0, scope.length)).toEqual([...scope]);
+    expect(qk.project.spaces('P1')).not.toEqual([...qk.project.spaces('P2')] as never);
+  });
+});
+
 // KRTX-1742. The inbox, the preference record and a session's watch state all
 // answer for the CALLER, so — like `qk.accounts` — the user id is a key
 // segment. Without it, an in-tab identity swap would show user B user A's

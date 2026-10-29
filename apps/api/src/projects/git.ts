@@ -88,6 +88,7 @@ export {
   previewMerge,
   MergeConflictError,
   mergeBranches,
+  headRefsLandedIn,
   resolveBranchAheadState,
 } from './git/merge';
 

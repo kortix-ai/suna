@@ -79,8 +79,6 @@ export type GitPrincipal =
       userId?: string | null;
       tokenId?: string | null;
     }
-  /** A monitor box's sandbox token — no session row by design. */
-  | { kind: 'monitor' }
   /**
    * A human credential: account API key, CLI PAT, dashboard. `tokenId` is
    * threaded so the agent-grant fold fires when a ref scope is resolved — a
@@ -167,11 +165,6 @@ function denyFor(
     case 'internal':
       return null;
 
-    case 'monitor':
-      // A monitor box has no session and no user behind it; there is no
-      // principal to hold a scope, so this is structural too.
-      return { reason: 'monitor sandboxes have read-only repository access' };
-
     case 'session': {
       const own = `${HEADS_PREFIX}${principal.branch}`;
       const outsideLane = update.ref !== own;
@@ -221,8 +214,6 @@ export function principalLabel(principal: GitPrincipal): string {
   switch (principal.kind) {
     case 'session':
       return `session:${principal.sessionId}`;
-    case 'monitor':
-      return 'monitor';
     case 'user':
       return principal.userId ? `user:${principal.userId}` : 'user';
     case 'internal':

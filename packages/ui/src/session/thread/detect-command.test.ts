@@ -107,4 +107,24 @@ describe('detectCommandFromText', () => {
     expect(PROMPT.length).toBeGreaterThan(200);
     expect(detectCommandFromText(sent, [cmd('kortix-genui', SKILL_TEMPLATE)])?.args).toBe(PROMPT.trim());
   });
+
+  // pi's `/skill` message after a reload: the envelope kortixd builds, then the prompt.
+  const PI_SKILL = '<skill name="content-creation" location="/opt/kortix/config/abc/skills/content-creation/SKILL.md">\nReferences are relative to /opt/kortix/config/abc/skills/content-creation.\n\n# Content Creation Skill\n\nWrite well.\n</skill>';
+
+  test('a pi skill envelope names the skill and keeps only the prompt', () => {
+    expect(detectCommandFromText(`${PI_SKILL}\n\nmake a 16 second launch video`, [cmd('content-creation', '', { source: 'skill' })])).toEqual({
+      name: 'content-creation',
+      args: 'make a 16 second launch video',
+      source: 'skill',
+    });
+  });
+
+  test('a pi skill envelope matches with no command list and no prompt', () => {
+    expect(detectCommandFromText(PI_SKILL)).toEqual({ name: 'content-creation', args: undefined, source: 'skill' });
+  });
+
+  test('a SKILL.md that holds its own </skill> closes at the last one', () => {
+    const nested = PI_SKILL.replace('Write well.', '<skill name="inner">body\n</skill>');
+    expect(detectCommandFromText(`${nested}\n\nhi`)?.args).toBe('hi');
+  });
 });

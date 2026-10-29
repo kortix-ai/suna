@@ -15,6 +15,8 @@
  */
 
 import {
+  imageDigestsShownByImageGen,
+  imagePathsShownByImageGen,
   sessionLogActivityText,
   sessionLogAnsweredQuestionCall,
   sessionLogOpenCall,
@@ -238,6 +240,20 @@ export function turnSegments(
   return sessionLogTurnSegments(blocks, { standaloneCallIds }).flatMap((segment): TurnSegment[] =>
     segment.kind === 'show-group' ? segment.blocks.map((block) => ({ kind: 'standalone', block })) : [segment],
   );
+}
+
+/**
+ * The image files this turn's `image_gen` calls drew (D5: a `show` of one draws nothing). Read
+ * from the segments, not the raw blocks: a script's nested call (a v2 `nested_part` block) is a
+ * real `image_gen` call there.
+ */
+export function imagePathsDrawnByImageGen(segments: ReadonlyArray<TurnSegment>): Set<string> {
+  return imagePathsShownByImageGen(segments.flatMap((s) => (s.kind === 'burst' ? s.blocks : [s.block])));
+}
+
+/** The sha256 of the images this turn's `image_gen` calls drew: a `show` of the same bytes at another path draws nothing either (R38). */
+export function imageDigestsDrawnByImageGen(segments: ReadonlyArray<TurnSegment>): Set<string> {
+  return imageDigestsShownByImageGen(segments.flatMap((s) => (s.kind === 'burst' ? s.blocks : [s.block])));
 }
 
 /**

@@ -23,7 +23,7 @@ import { resolveActiveConnectorConnection } from './db-deps-rows';
 import type { ConnectorPrincipal } from './router-contract';
 
 type CallRow = typeof connectorCalls.$inferSelect;
-export type PendingCall = Pick<
+type PendingCall = Pick<
   CallRow,
   | 'executionId'
   | 'accountId'

@@ -30,9 +30,6 @@ function baseConfig(workspace: string): Config {
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
     cloneDepth: 1,
-    workload: '',
-    monitorsJson: '',
-    monitorBoxEpoch: '',
   }
 }
 

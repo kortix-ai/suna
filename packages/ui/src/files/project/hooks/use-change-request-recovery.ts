@@ -3,19 +3,16 @@
 import { uiRoutes } from '../../../lib/routes';
 import { errorToast } from '../../../primitives/toast';
 import { useProjectContext } from '../context';
-import { createProjectSession, markSessionFresh } from '@kortix/sdk';
+import { recoverChangeRequest } from '@kortix/sdk';
 import { prefetchSessionStart, qk } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '../../../i18n';
 import { useUiRouter } from '../../../providers/ui-provider';
 import { useCallback, useState } from 'react';
 import {
-  buildChangeRequestRecoveryPrompt,
-  recoverySessionName,
   type ChangeRequestRecoveryBlocker,
   type ChangeRequestRecoveryTarget,
 } from '../change-request-recovery';
-import { randomUUID } from '../../../internal/lib/utils/random-uuid';
 
 export function useChangeRequestRecovery() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -33,24 +30,9 @@ export function useChangeRequestRecovery() {
       if (!projectId || startingCrId) return;
 
       setStartingCrId(target.crId);
-      const sessionId = randomUUID();
-      const href = uiRoutes().session(projectId, sessionId);
-      markSessionFresh(sessionId);
-      router.prefetch(href);
-
       try {
-        await createProjectSession(projectId, {
-          session_id: sessionId,
-          initial_prompt: buildChangeRequestRecoveryPrompt(target, blocker),
-          base_ref: target.headRef,
-          name: recoverySessionName(target, blocker),
-          metadata: {
-            kind: 'change-request-recovery',
-            change_request_id: target.crId,
-            change_request_number: target.number,
-            blocker: blocker.kind,
-          },
-        });
+        const sessionId = await recoverChangeRequest(projectId, target, blocker);
+        const href = uiRoutes().session(projectId, sessionId);
         prefetchSessionStart(queryClient, projectId, sessionId);
         queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
         onNavigate?.();

@@ -67,9 +67,10 @@ describe('customer trigger list', () => {
       trigger({ slug: 'incoming', type: 'webhook' }),
     ];
     expect(schedules.filter(isCustomerTrigger)).toEqual(schedules);
-    // The view's filter: kind first (monitors are not this screen), then owner.
+    // The view's filter: kind first (a legacy monitor entry is not this screen; an App event trigger is), then owner.
     const visible = (t: ProjectTrigger) => isTriggerKind(t.type) && isCustomerTrigger(t);
-    expect([trigger({ type: 'monitor' })].filter(visible)).toEqual([]);
+    expect([trigger({ type: 'monitor' as ProjectTrigger['type'] })].filter(visible)).toEqual([]);
+    expect([trigger({ type: 'app' })].filter(visible)).toHaveLength(1);
     // A customer's own trigger named the same stays visible: agent must match too.
     expect([trigger({ slug: 'harness-reflector' }), trigger()].filter(visible)).toHaveLength(2);
   });
@@ -427,5 +428,19 @@ describe('next run timezone and cron boundary', () => {
   test('labels a one-off or older API execution without inventing a cron boundary', () => {
     expect(describeNextRun(trigger({ next_fire_at: '2026-10-10T09:15:00.000Z' })))
       .toBe('Next run Oct 10, 09:15:00 AM UTC');
+  });
+});
+
+describe('App triggers and App targets', () => {
+  const base = { slug: 's', name: '', enabled: true, session_mode: 'new', agent: 'default' } as unknown as ProjectTrigger;
+  test('an App event trigger is listed and reads as what the App emits', () => {
+    expect(isTriggerKind('app')).toBe(true);
+    expect(describeWhen({ ...base, type: 'app', app: 'inbox-poller', filter: { 'event.name': 'reply.received' } } as ProjectTrigger)).toBe('When inbox-poller emits reply.received');
+    expect(describeWhen({ ...base, type: 'app', app: 'inbox-poller', filter: null } as unknown as ProjectTrigger)).toBe('When inbox-poller emits an event');
+  });
+  test('an every schedule reads as its period; a trigger that calls an App says so instead of naming a session', () => {
+    expect(describeWhen({ ...base, type: 'cron', cron: null, every_seconds: 300 } as unknown as ProjectTrigger)).toBe('Every 5 minutes');
+    expect(describeWhen({ ...base, type: 'cron', cron: null, every_seconds: 7200 } as unknown as ProjectTrigger)).toBe('Every 2 hours');
+    expect(describeRunLocation({ ...base, type: 'cron', target: { app: 'inbox-poller', path: '/tick' } } as unknown as ProjectTrigger)).toBe('Calls inbox-poller/tick');
   });
 });

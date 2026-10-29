@@ -10,7 +10,6 @@
 import { connectors, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { ExecutionRecord, GatewayDeps } from '../../connectors/gateway';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { enqueueJobs, registerJobHandler } from '../../shared/job-queue';
@@ -159,7 +158,6 @@ async function load(stream: PollStream, now: number): Promise<Loaded | null> {
     !project ||
     project.status !== 'active' ||
     !eventTriggersEnabled(project.metadata) ||
-    !resolveFeatureFlag(project.metadata, 'connectors_v2') ||
     // The project's pause, or the account's Pause all automations (KRTX-1721).
     (await automaticFirePauseReason(project)) !== null ||
     consumers.length === 0
@@ -171,7 +169,7 @@ async function load(stream: PollStream, now: number): Promise<Loaded | null> {
   // when the account no longer resolves to this stream, it re-decides every trigger on it.
   const specs = await triggerSpecs(stream.projectId, consumers.map((r) => r.slug));
   const spec = specs[0];
-  const resolved = spec?.event ? await resolveSource(stream.projectId, stream.accountId, spec.event, project.metadata) : null;
+  const resolved = spec?.event ? await resolveSource(stream.projectId, stream.accountId, spec.event) : null;
   if (!resolved || resolved.kind !== 'ok' || resolved.connection.connectionId !== stream.connectionId) {
     // Same resolveSource as the reconciler: it moves the triggers and drops or replaces this stream.
     await skip(stream, now, false);

@@ -119,7 +119,7 @@ capitalized only at the start of a sentence or as a UI label.
 | Fully autonomous | "Opens a change request you approve" | A person approves. |
 | Please (in UI) | Say what to do: "Try again." | Section 4. |
 | Source-available, Elastic License, Apache, MIT | open source | Never name a license. |
-| more powerful, fully extensible, seamless, revolutionary, unlock productivity, next-gen, AI-powered magic, transformative, AI transformation | A concrete mechanism | Banned hype. The old brand guide banned "AI transformation" by name (Q41). |
+| more powerful, fully extensible, seamless, revolutionary, unlock productivity, next-gen, AI-powered magic, transformative, AI transformation | A concrete mechanism | Banned hype. The old brand guide banned "AI transformation" by name (Q41). Exception: "AI Transformation" is the service name on `/services` (D15). |
 | preview, beta (for email) | experimental, per project | The claim word is "experimental" ([claims.md](claims.md)). The one exception is the sanctioned Companies pitch line in [positioning.md](positioning.md), word for word (Q41). |
 
 ### Capitalization and mechanics
@@ -169,7 +169,7 @@ named in each rule. A rule here applies to `apps/web`, `apps/mobile`, and Electr
 
 **Rule.** Do not blame the person and do not apologize. — *Why:* "Something went wrong" and "Sorry" give no fact. "The request failed before we could check your access." gives the fact (`en.json:2933`). — *Where:* app | mobile | email | CLI. — *When silent:* state the system event in the active voice.
 
-**Rule.** Write an empty state as one muted line, plus an optional hint. Describe the future state, not the absence: "Sessions you start will show up here". Layout (no icon tile, no card, the pixel mark): [layout.md](../visual/layout.md) section States. — *Why:* `en.json:1449` and mobile `design.md:115` ("No projects yet" plus one "Create project" button). — *Where:* app | mobile. — *When silent:* "{Plural noun you create} will show up here." plus, if the person can act, one button with the verb-first label.
+**Rule.** Write an empty state as one title and one sentence. Describe the future state, not the absence: "Sessions you start will show up here". Layout (`EmptyState` + `EmptyArt`, outline buttons with icons, D14): [layout.md](../visual/layout.md) section States. — *Why:* `en.json:1449` and mobile `design.md:115` ("No projects yet" plus one "Create project" button). — *Where:* app | mobile. — *When silent:* "{Plural noun you create} will show up here." plus, if the person can act, one button with the verb-first label.
 
 **Rule.** Write a toast as the result in past tense with the object first and no period when it is three words or fewer: "Secret saved", "Labels saved", "Prompt copied", "App access revoked", "Session deleted". — *Why:* A toast reports a finished action beside the page the person stays on (`en.json:74,1586,1693,921`; mobile `design.md:424`). — *Where:* app | mobile. — *When silent:* "{Object} {past participle}". A longer result gets a second line (description) and a period.
 

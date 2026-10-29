@@ -354,166 +354,11 @@ prompt = "Error sweep"
 
 // `type: monitor`. A monitor names a repo
 // command the platform supervises 24/7; its stdout lines are the events.
-describe('validateManifest — [[triggers]] type = "monitor"', () => {
-  test('a stream monitor with run + mode passes', () => {
-    const { valid } = summarize(`
-kortix_version = 1
-[[triggers]]
-slug = "checkout-errors"
-type = "monitor"
-run = "./monitors/checkout-errors.ts"
-mode = "stream"
-prompt = "Checkout monitor emitted: {{ line }}"
-`);
-    expect(valid).toBe(true);
-  });
-
-  test('a poll monitor with an interval passes', () => {
-    const { valid } = summarize(`
-kortix_version = 1
-[[triggers]]
-slug = "queue-depth"
-type = "monitor"
-run = "./monitors/queue-depth.ts"
-mode = "poll"
-interval = "60s"
-expect_event_within = "24h"
-prompt = "Queue: {{ line }}"
-`);
-    expect(valid).toBe(true);
-  });
-
-  test('monitor requires run and mode', () => {
-    const { errorPaths } = summarize(`
-kortix_version = 1
-[[triggers]]
-slug = "bare"
-type = "monitor"
-prompt = "go"
-`);
-    expect(errorPaths).toContain('triggers[0].run');
-    expect(errorPaths).toContain('triggers[0].mode');
-  });
-
-  test('mode = "poll" requires an interval', () => {
-    const { errorPaths } = summarize(`
-kortix_version = 1
-[[triggers]]
-slug = "poller"
-type = "monitor"
-run = "./m.ts"
-mode = "poll"
-prompt = "go"
-`);
-    expect(errorPaths).toContain('triggers[0].interval');
-  });
-
-  test('an interval below the 30s floor is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version = 1
-[[triggers]]
-slug = "poller"
-type = "monitor"
-run = "./m.ts"
-mode = "poll"
-interval = "5s"
-prompt = "go"
-`);
-    expect(errorPaths).toContain('triggers[0].interval');
-  });
-
-  test('an expect_event_within below the 5m floor is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version = 1
-[[triggers]]
-slug = "streamer"
-type = "monitor"
-run = "./m.ts"
-mode = "stream"
-expect_event_within = "60s"
-prompt = "go"
-`);
-    expect(errorPaths).toContain('triggers[0].expect_event_within');
-  });
-
-  test('a bare number is not a duration', () => {
-    const { errorPaths } = summarize({
-      kortix_version: 1,
-      triggers: [
-        {
-          slug: 'poller',
-          type: 'monitor',
-          run: './m.ts',
-          mode: 'poll',
-          interval: 60,
-          prompt: 'go',
-        },
-      ],
-    });
-    expect(errorPaths).toContain('triggers[0].interval');
-  });
-
-  test('interval on a stream monitor is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version = 1
-[[triggers]]
-slug = "streamer"
-type = "monitor"
-run = "./m.ts"
-mode = "stream"
-interval = "60s"
-prompt = "go"
-`);
-    expect(errorPaths).toContain('triggers[0].interval');
-  });
-
-  test('an unknown mode is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version = 1
-[[triggers]]
-slug = "streamer"
-type = "monitor"
-run = "./m.ts"
-mode = "tail"
-prompt = "go"
-`);
-    expect(errorPaths).toContain('triggers[0].mode');
-  });
-
-  // cron/webhook wiring on a monitor is a hard error: silently ignoring it
-  // would let a manifest claim a schedule the monitor runner never reads.
-  test('cron, run_at, timezone, and secret_env are rejected on a monitor', () => {
-    const { errorPaths } = summarize(`
-kortix_version = 1
-[[triggers]]
-slug = "mixed"
-type = "monitor"
-run = "./m.ts"
-mode = "stream"
-cron = "0 0 9 * * 1-5"
-run_at = "2026-06-01T09:00:00Z"
-timezone = "UTC"
-secret_env = "WEBHOOK_SECRET"
-prompt = "go"
-`);
-    expect(errorPaths).toContain('triggers[0].cron');
-    expect(errorPaths).toContain('triggers[0].run_at');
-    expect(errorPaths).toContain('triggers[0].timezone');
-    expect(errorPaths).toContain('triggers[0].secret_env');
-  });
-
-  test('a monitor still requires a prompt and a valid session_mode', () => {
-    const { errorPaths } = summarize(`
-kortix_version = 1
-[[triggers]]
-slug = "streamer"
-type = "monitor"
-run = "./m.ts"
-mode = "stream"
-session_mode = "sticky"
-`);
-    expect(errorPaths).toContain('triggers[0].prompt');
-    expect(errorPaths).toContain('triggers[0].session_mode');
+describe('validateManifest — [[triggers]] type = "monitor" (removed)', () => {
+  test('a monitor entry answers the removal error naming the App replacement', () => {
+    const result = validateManifest('kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    prompt: go\n', 'yaml');
+    expect(result.valid).toBe(false);
+    expect(result.issues.find((issue) => issue.path === 'triggers[0].type')?.message).toContain('monitor triggers were removed');
   });
 });
 
@@ -899,9 +744,9 @@ describe('validateManifest — [[triggers]] type = "event"', () => {
     );
   });
 
-  test('cron/monitor wiring is rejected on an event trigger', () => {
-    const p = paths(`${base}type = "event"\nconnector = "g"\nevent = "E"\ncron = "0 9 * * *"\nmode = "poll"\n`);
-    expect(p).toEqual(expect.arrayContaining(['triggers[0].cron', 'triggers[0].mode']));
+  test('cron wiring is rejected on an event trigger', () => {
+    const p = paths(`${base}type = "event"\nconnector = "g"\nevent = "E"\ncron = "0 9 * * *"\n`);
+    expect(p).toEqual(expect.arrayContaining(['triggers[0].cron']));
   });
 
   test('event keys are rejected on a cron trigger', () => {

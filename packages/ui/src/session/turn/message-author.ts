@@ -101,3 +101,30 @@ export function stoppedByName(
 export function awaitsAgent(prompt: { no_reply?: boolean }): boolean {
   return !prompt.no_reply;
 }
+
+/**
+ * The user messages the viewer may edit and rewind to: their own, with no
+ * other person's message after it (a rewind deletes everything after the
+ * target). An agent's message, or one with no recorded author, belongs to the
+ * thread's starter and never blocks a later rewind. The server applies the same
+ * rule (`rewind-authority.ts`). Null with no viewer id: nothing to filter on.
+ */
+export function rewindableMessageIds(
+  messageIds: readonly string[],
+  authors: ReadonlyMap<string, SessionMessageAuthor>,
+  viewerId: string | undefined,
+  starterId: string | null | undefined,
+): Set<string> | null {
+  if (viewerId === undefined) return null;
+  const allowed = new Set<string>();
+  for (let i = messageIds.length - 1; i >= 0; i--) {
+    const author = authors.get(messageIds[i]!);
+    if (author?.kind === 'member') {
+      if (author.user_id !== viewerId) break;
+      allowed.add(messageIds[i]!);
+    } else if (!starterId || starterId === viewerId) {
+      allowed.add(messageIds[i]!);
+    }
+  }
+  return allowed;
+}

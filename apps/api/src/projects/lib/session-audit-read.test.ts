@@ -43,6 +43,8 @@ mock.module('../../shared/db', () => ({ db: makeDbMock() }));
 mock.module('@kortix/db', () => ({
   connectorCalls: CONNECTOR_CALLS_MARKER,
   connectors: { connectorId: 'connectors.connector_id', slug: 'connectors.slug' },
+  // Imported by shared/pg-broadcast.ts (#10934); a stub without it breaks a later file in the same process.
+  requiresTls: () => false,
 }));
 mock.module('../lib/access', () => ({
   lookupEmailsByUserIds: async (ids: string[]) => {

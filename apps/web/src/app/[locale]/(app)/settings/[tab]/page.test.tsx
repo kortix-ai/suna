@@ -58,6 +58,10 @@ mock.module('@kortix/ui/button', uiButtonMock);
 mock.module('@/components/common/route-loading', () => ({
   RouteLoadingFallback: () => createElement('p', null, 'Loading'),
 }));
+mock.module('@/features/workspace/project-selector/project-selector', () => ({
+  ProjectSelector: ({ connectComputer }: { connectComputer?: boolean }) =>
+    createElement('main', null, connectComputer ? 'Choose a project for pairing' : 'Projects'),
+}));
 const { default: SettingsTabPage } = await import('./page');
 
 test('billing waits for accounts, then opens the account billing destination', async () => {
@@ -207,4 +211,17 @@ test('a project segment waits for the signed-in user before it reads the last pr
   await act(async () => {
     root?.unmount();
   });
+});
+
+test('computer without a remembered project keeps the pairing destination in the chooser', async () => {
+  segment = 'computer';
+  authLoading = false;
+  lastProjectId = null;
+  replacements.length = 0;
+  let root: ReturnType<typeof create> | undefined;
+  await act(async () => { root = create(createElement(SettingsTabPage)); });
+  if (!root) throw new Error('Settings route did not render');
+  expect(JSON.stringify(root.toJSON())).toContain('Choose a project for pairing');
+  expect(replacements).toEqual([]);
+  await act(async () => { root?.unmount(); });
 });

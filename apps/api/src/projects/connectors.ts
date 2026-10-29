@@ -43,7 +43,11 @@ import {
   RESERVED_SLUG_PROVIDERS,
   SLUG_RE,
   type ConnectorProvider as ManifestConnectorProvider,
+  MAX_POLICY_SETS_PER_CONNECTOR,
+  MAX_RULES_PER_POLICY_SET,
+  POLICY_SETS_UNSUPPORTED_PROVIDERS,
   parseConnectorHeaders,
+  policySetNameError,
 } from '@kortix/manifest-schema';
 import {
   type PolicyArgCondition,
@@ -200,6 +204,16 @@ export interface ConnectorSpec {
   headers: Record<string, string>;
   /** Omitted auth is auto-detected for direct providers; explicit none opts out. */
   authAuto?: boolean;
+  policies: ConnectorPolicySpec[];
+  /** Named rule sets an agent can be given (`policy_sets:`), in authoring
+   *  order. Absent or empty = none. A set's rules run before `policies` for
+   *  an agent that `agents.<name>.policy_sets` assigns it to. */
+  policySets?: ConnectorPolicySetSpec[];
+}
+
+export interface ConnectorPolicySetSpec {
+  name: string;
+  description: string | null;
   policies: ConnectorPolicySpec[];
 }
 
@@ -443,6 +457,9 @@ function parseConnectorEntry(
   const policiesParsed = parsePolicies(slug, row.policies, filename);
   if (!policiesParsed.ok) return policiesParsed;
 
+  const setsParsed = parsePolicySets(slug, provider as ConnectorProvider, row.policy_sets, filename);
+  if (!setsParsed.ok) return setsParsed;
+
   return {
     ok: true,
     spec: {
@@ -456,6 +473,7 @@ function parseConnectorEntry(
         provider !== 'channel' &&
         provider !== 'computer',
       policies: policiesParsed.value,
+      ...(setsParsed.value.length > 0 ? { policySets: setsParsed.value } : {}),
     },
   };
 }
@@ -661,30 +679,75 @@ function parseHeaders(
   return { ok: true, value: parsed.value };
 }
 
+/**
+ * `policy_sets:` — set name → `{ description?, policies? }`. A bad set fails
+ * the whole connector, like a bad base rule: a connector whose rules cannot be
+ * read is not materialized, never materialized with fewer rules.
+ */
+function parsePolicySets(
+  slug: string,
+  provider: ConnectorProvider,
+  raw: unknown,
+  filename: string = MANIFEST_FILENAME,
+): { ok: true; value: ConnectorPolicySetSpec[] } | ParseErr {
+  if (raw === undefined || raw === null) return { ok: true, value: [] };
+  if ((POLICY_SETS_UNSUPPORTED_PROVIDERS as readonly string[]).includes(provider)) {
+    return err(slug, `${provider} connectors cannot carry policy_sets`, filename);
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    return err(slug, 'policy_sets must be a map of set name → { description, policies }', filename);
+  }
+  const entries = Object.entries(raw as Record<string, unknown>);
+  if (entries.length > MAX_POLICY_SETS_PER_CONNECTOR) {
+    return err(slug, `policy_sets: at most ${MAX_POLICY_SETS_PER_CONNECTOR} sets per connector`, filename);
+  }
+  const out: ConnectorPolicySetSpec[] = [];
+  for (const [name, value] of entries) {
+    const nameError = policySetNameError(name);
+    if (nameError) return err(slug, `policy_sets.${name}: ${nameError}`, filename);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return err(slug, `policy_sets.${name} must be a table`, filename);
+    }
+    const set = value as Record<string, unknown>;
+    if (set.description !== undefined && set.description !== null && typeof set.description !== 'string') {
+      return err(slug, `policy_sets.${name}.description must be a string`, filename);
+    }
+    const policies = parsePolicies(slug, set.policies, filename, `policy_sets.${name}.policies`);
+    if (!policies.ok) return policies;
+    if (policies.value.length > MAX_RULES_PER_POLICY_SET) {
+      return err(slug, `policy_sets.${name}: at most ${MAX_RULES_PER_POLICY_SET} rules per set`, filename);
+    }
+    const description = typeof set.description === 'string' && set.description.trim() ? set.description.trim() : null;
+    out.push({ name, description, policies: policies.value });
+  }
+  return { ok: true, value: out };
+}
+
 function parsePolicies(
   slug: string,
   raw: unknown,
   filename: string = MANIFEST_FILENAME,
+  label = '[[connectors.policies]]',
 ): { ok: true; value: ConnectorPolicySpec[] } | ParseErr {
   if (raw === undefined || raw === null) return { ok: true, value: [] };
   if (!Array.isArray(raw)) {
-    return err(slug, '[[connectors.policies]] must be an array of tables', filename);
+    return err(slug, `${label} must be an array of tables`, filename);
   }
   const out: ConnectorPolicySpec[] = [];
   for (let i = 0; i < raw.length; i++) {
     const p = raw[i];
     if (!p || typeof p !== 'object' || Array.isArray(p)) {
-      return err(slug, `[[connectors.policies]] entry #${i + 1} is not a table`, filename);
+      return err(slug, `${label} entry #${i + 1} is not a table`, filename);
     }
     const prow = p as Record<string, unknown>;
     const match = typeof prow.match === 'string' && prow.match.trim() ? prow.match.trim() : '';
     if (!match)
-      return err(slug, `[[connectors.policies]] entry #${i + 1} is missing \`match\``, filename);
+      return err(slug, `${label} entry #${i + 1} is missing \`match\``, filename);
     const action = typeof prow.action === 'string' ? prow.action.trim().toLowerCase() : '';
     if (!POLICY_ACTIONS.includes(action as ConnectorPolicyAction)) {
       return err(
         slug,
-        `[[connectors.policies]] \`action\` must be one of ${POLICY_ACTIONS.join(', ')} (got "${action || 'unset'}")`,
+        `${label} \`action\` must be one of ${POLICY_ACTIONS.join(', ')} (got "${action || 'unset'}")`,
         filename,
       );
     }
@@ -694,7 +757,7 @@ function parsePolicies(
       if (!areValidConditions(prow.conditions)) {
         return err(
           slug,
-          `[[connectors.policies]] entry #${i + 1} has invalid \`conditions\``,
+          `${label} entry #${i + 1} has invalid \`conditions\``,
           filename,
         );
       }

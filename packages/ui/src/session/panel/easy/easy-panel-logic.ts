@@ -3,6 +3,7 @@
  * it is unit-testable without a DOM.
  */
 
+import { parseArtifactUrl } from '../../../artifacts/frame-policy';
 import { isKortixAppUrl } from '../../../apps/kortix-app-url';
 import { parseLocalhostUrl } from '@kortix/sdk';
 import type { BrowserRecent } from '../../../internal/stores/browser-recents-store';
@@ -56,6 +57,10 @@ export function quickBrowserOutput(
    */
   target?: { url?: string; title?: string },
 ): OutputItem {
+  // An artifact's app link opens as the artifact (the browser cannot frame the Kortix app).
+  if (target?.url && parseArtifactUrl(target.url)) {
+    return { callID: 'quick-browser', name: target.title || 'Artifact', kind: 'artifact', url: target.url };
+  }
   return {
     callID: 'quick-browser',
     name: target?.title || 'Browser',
@@ -114,7 +119,7 @@ export function sandboxRecents(recents: BrowserRecent[]): BrowserRecent[] {
  * - web pages (`.html/.htm` — same viewport assumption as apps).
  */
 export function isWideDeliverable(output: Pick<OutputItem, 'kind' | 'name'>): boolean {
-  if (output.kind === 'presentation' || output.kind === 'app') return true;
+  if (output.kind === 'presentation' || output.kind === 'app' || output.kind === 'artifact') return true;
   return /\.(pptx?|key|xlsx?|csv|tsv|html?)$/i.test(output.name);
 }
 
@@ -194,6 +199,7 @@ export function deriveIsRunning(stepsRunning: boolean, sessionBusy: boolean): bo
  *  "Apps"). */
 const KIND_GROUP_LABEL: Record<OutputItem['kind'], string> = {
   app: 'Apps',
+  artifact: 'Artifacts',
   presentation: 'Presentations',
   image: 'Images',
   video: 'Videos',

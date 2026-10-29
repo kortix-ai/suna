@@ -236,6 +236,18 @@ async function createAuthorizationRequest(
   return requestId;
 }
 
+function pendingAuthorizationRequest(row: typeof oauthAuthorizationRequests.$inferSelect): PendingAuthorizationRequest {
+  return {
+    id: row.id,
+    clientId: row.clientId,
+    redirectUri: row.redirectUri,
+    scopes: (row.scopes as string[] | null) ?? [],
+    state: row.state ?? '',
+    codeChallenge: row.codeChallenge,
+    codeChallengeMethod: row.codeChallengeMethod,
+  };
+}
+
 async function getAuthorizationRequest(
   requestId: string,
 ): Promise<PendingAuthorizationRequest | null> {
@@ -250,15 +262,7 @@ async function getAuthorizationRequest(
     )
     .limit(1);
   if (!row || row.expiresAt < new Date()) return null;
-  return {
-    id: row.id,
-    clientId: row.clientId,
-    redirectUri: row.redirectUri,
-    scopes: (row.scopes as string[] | null) ?? [],
-    state: row.state ?? '',
-    codeChallenge: row.codeChallenge,
-    codeChallengeMethod: row.codeChallengeMethod,
-  };
+  return pendingAuthorizationRequest(row);
 }
 
 /** Atomic consume: the row flips once, so a replayed decision is a 400. */
@@ -276,15 +280,7 @@ async function consumeAuthorizationRequest(
     )
     .returning();
   if (!row || row.expiresAt < new Date()) return null;
-  return {
-    id: row.id,
-    clientId: row.clientId,
-    redirectUri: row.redirectUri,
-    scopes: (row.scopes as string[] | null) ?? [],
-    state: row.state ?? '',
-    codeChallenge: row.codeChallenge,
-    codeChallengeMethod: row.codeChallengeMethod,
-  };
+  return pendingAuthorizationRequest(row);
 }
 
 /** Housekeeping: drop expired or consumed requests older than the TTL, at most `limit` per run. */

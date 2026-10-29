@@ -293,8 +293,8 @@ export function SettingsPanelView({
         }}
         // Full screen — the account settings shell (`/accounts/[id]`) as an
         // overlay, edge to edge (Jay, 2026-09-02: "make it full screen").
-        // Same recipe as the Apps modal (`apps/apps-view.tsx`) and the
-        // onboarding wizard: `side="fullscreen"` pins `inset-0`, and the
+        // Same recipe as the Apps modal (`apps/apps-view.tsx`):
+        // `side="fullscreen"` pins `inset-0`, and the
         // important-marked classes beat the centred-dialog defaults
         // `ModalVariants` adds at `lg:` (`top-1/2`, `-translate-x-1/2`,
         // `max-w-lg`, `rounded-xl`) plus the rounding `ModalContent` appends

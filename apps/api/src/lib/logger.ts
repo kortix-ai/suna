@@ -47,7 +47,7 @@ if (LOG_TOKEN) {
 const BASE_CONTEXT = {
   service: 'kortix-api',
   env: process.env.INTERNAL_KORTIX_ENV || 'dev',
-  version: process.env.SANDBOX_VERSION || 'dev',
+  version: process.env.KORTIX_VERSION || 'dev', // the release, as /health reports it
 };
 
 // ─── Ship to Better Stack ───────────────────────────────────────────────────

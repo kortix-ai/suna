@@ -108,6 +108,10 @@ export function createOpenCodeTurnService(
   // flight and one OpenCode has not listed yet; the message read covers a
   // daemon restart, because OpenCode persists the message.
   const recent = new Set<string>()
+  // replica-local: one daemon per box; the last prompt's `system` per session.
+  // OpenCode reads `system` from the latest user message, so a steer (a new
+  // user message) carries the turn's text again, or the rest of the turn runs without it.
+  const turnSystems = new Map<string, string>()
   let readFailureLogged = false
   const alreadyHeld = async (sessionId: string, messageId: string, directory: string): Promise<boolean> => {
     try {
@@ -144,6 +148,7 @@ export function createOpenCodeTurnService(
         ...(input.model ? { model: input.model } : {}),
         ...(input.variant ? { variant: input.variant } : {}),
         ...(input.noReply ? { noReply: true } : {}),
+        ...(input.system ? { system: input.system } : {}),
       })
     } catch (err) {
       if (key) recent.delete(key)
@@ -162,6 +167,10 @@ export function createOpenCodeTurnService(
     async prompt(sessionId, input): Promise<HarnessTurnResponse> {
       const directory = input.directory ?? workspace()
       if (await duplicate(sessionId, input, directory)) return { status: 200, body: { deduplicated: true } }
+      if (!input.noReply) {
+        if (input.system) turnSystems.set(sessionId, input.system)
+        else turnSystems.delete(sessionId)
+      }
       return send(sessionId, input, directory)
     },
 
@@ -181,7 +190,7 @@ export function createOpenCodeTurnService(
       // Recorded before the send: the answering assistant message can follow at once.
       unreadSteers.add(input.messageId!)
       if (unreadSteers.size > RECENT_PROMPT_IDS) unreadSteers.delete(unreadSteers.values().next().value!)
-      const result = await send(sessionId, input, directory).catch((err) => {
+      const result = await send(sessionId, { ...input, system: turnSystems.get(sessionId) }, directory).catch((err) => {
         unreadSteers.delete(input.messageId!)
         throw err
       })

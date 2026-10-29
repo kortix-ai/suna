@@ -52,6 +52,8 @@ describe('denial', () => {
     [['goals', 'ls']],
     [['rooms', 'watch', 'general']],
     [['rooms', 'chat', 'general']],
+    [['artifacts', 'publish', './deck']],
+    [['artifacts', 'pull', 'abc', './out']],
     [['apps', 'deploy', './x']],
     [['apps', 'exec', 'db', '--', 'ls']],
     [['apps', 'token', 'main']],

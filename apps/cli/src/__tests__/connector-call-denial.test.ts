@@ -259,3 +259,47 @@ describe('a denied connector call carries its remedy', () => {
     expect(captured).toEqual([]);
   });
 });
+
+describe('a call that did not do its job exits 1', () => {
+  test('CLI: a tool_error prints the tool error and exits 1', async () => {
+    respondWith = () =>
+      jsonResponse({ ok: false, status: 'tool_error', error: 'issue LIN-9 not found', result: { isError: true } });
+
+    const result = await runCli(['connectors', 'call', 'crm', 'get_issue', '{"id":"LIN-9"}', '--project', PROJECT_ID]);
+
+    expect(result.code).toBe(1);
+    expect(result.payload).toMatchObject({ ok: false, status: 'tool_error', error: 'issue LIN-9 not found' });
+  });
+
+  test('CLI: an upstream error inside a 2xx (older API) also exits 1', async () => {
+    respondWith = () => jsonResponse({ ok: true, status: 'ok', data: {}, upstream_error: 'GraphQL errors' });
+
+    const result = await runCli(['connectors', 'call', 'crm', 'query', '--project', PROJECT_ID]);
+
+    expect(result.code).toBe(1);
+    expect(result.payload).toMatchObject({ ok: false, status: 'tool_error', error: 'GraphQL errors' });
+  });
+
+  test('CLI: a rejected token says so in a sentence; --json keeps the payload', async () => {
+    respondWith = () => jsonResponse({ error: 'session token expired' }, 401);
+    const proc = Bun.spawn({
+      cmd: [process.execPath, CLI_ENTRY, 'connectors', 'call', 'crm', 'whoami', '--project', PROJECT_ID],
+      cwd: CLI_ROOT,
+      env: cliEnv(),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [code, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    expect(code).toBe(1);
+    expect(stdout).toBe('');
+    expect(stderr).toContain('Token rejected — session token expired. Run `kortix login`');
+
+    const json = await runCli(['connectors', 'call', 'crm', 'whoami', '--json', '--project', PROJECT_ID]);
+    expect(json.code).toBe(1);
+    expect(json.payload).toMatchObject({ ok: false, code: 'unauthorized' });
+  });
+});

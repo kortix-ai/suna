@@ -17,7 +17,7 @@ import {
 interface WorktreeMarker extends LocalWorktreeConfig {
   path: string;
   branch: string;
-  dbMode?: "shared" | "isolated";
+  dbMode?: "shared" | "isolated" | "branch";
 }
 
 interface RegistrySlot {
@@ -177,7 +177,47 @@ export async function readLocalSupabaseEnvironment(
   if (exitCode !== 0 && !hasRequiredLocalSupabaseEnvironment(environment)) {
     throw new Error("local Supabase is not running");
   }
-  return environment;
+  return withWorktreeDatabase(topology, environment);
+}
+
+/**
+ * A `--db` worktree (`dbMode: "branch"`) owns database `kortix_wt_<name>`
+ * inside the shared Postgres (scripts/worktree/lib/branch-db.ts). Migrations,
+ * the API under test, and flows must use it, never the primary `postgres`
+ * database every other session shares.
+ */
+export function withWorktreeDatabase(
+  topology: LocalTopology,
+  environment: LocalSupabaseEnvironment,
+): LocalSupabaseEnvironment {
+  if (topology.marker?.dbMode !== "branch" || !environment.DB_URL) {
+    return environment;
+  }
+  if (!topology.worktreeName) {
+    throw new Error("branch-database worktree is missing from the worktree registry");
+  }
+  const url = new URL(environment.DB_URL);
+  url.pathname = `/kortix_wt_${topology.worktreeName.replace(/-/g, "_")}`;
+  return { ...environment, DB_URL: url.toString() };
+}
+
+/**
+ * A branch database gets `auth.users` and `auth.sessions` from the primary
+ * through two triggers on the primary (`kortix_wt_push_user`,
+ * `kortix_wt_push_session`). With the sessions trigger missing, every token
+ * the runner mints fails the API's liveness check (`jwt_session-not-live`,
+ * 401) and no flow can sign in. `pnpm worktree start` reinstalls both and
+ * reconciles; the runner does the same before it starts the API. Null for any
+ * other database mode.
+ */
+export function branchAuthSyncTarget(
+  topology: LocalTopology,
+  environment: LocalSupabaseEnvironment,
+): { primaryUrl: string; worktreeName: string } | null {
+  if (topology.marker?.dbMode !== "branch" || !topology.worktreeName || !environment.DB_URL) return null;
+  const primary = new URL(environment.DB_URL);
+  primary.pathname = "/postgres";
+  return { primaryUrl: primary.toString(), worktreeName: topology.worktreeName };
 }
 
 function localSupabaseCommand(topology: LocalTopology): string[] {
@@ -347,6 +387,14 @@ export async function ensureLocalMigrations(
   const exitCode = await migrated.exited;
   if (exitCode !== 0) {
     throw new Error(`local database migration exited with code ${exitCode}`);
+  }
+  const branch = branchAuthSyncTarget(topology, supabase);
+  if (branch) {
+    const { primaryDb, syncBranchUsers } = await import("../../../scripts/worktree/lib/branch-db");
+    const db = primaryDb(branch.primaryUrl);
+    if (!db) throw new Error("no primary Supabase container for the branch database");
+    const error = syncBranchUsers(db, branch.worktreeName);
+    if (error) throw new Error(`branch database auth sync: ${error}`);
   }
   await waitForLocalPostgrest(supabase);
 }
@@ -677,6 +725,8 @@ export function localApiEnvironment(options: {
     EMAIL_FROM: "Kortix Local <noreply@kortix.local>",
     AUTH_EMAIL_HOOK_SECRET: LOCAL_AUTH_EMAIL_HOOK_SECRET,
     KORTIX_MARKETPLACE_EXTERNAL_ENABLED: "0",
+    // Private channels are per deployment; SPACE-24..29 run them, a skip fails the local run.
+    KORTIX_PRIVATE_CHANNELS_ENABLED: "true",
     KORTIX_MODEL_CATALOG_LIVE_ENABLED: "0",
     KORTIX_MODEL_PRICING_LIVE_ENABLED: "0",
   };

@@ -39,7 +39,7 @@ export interface ProjectRoster {
  * `foldProjectAccess` the screen folds with, so "who counts" cannot drift
  * between this list and the access screen.
  */
-export async function loadProjectRosterIds(loaded: AwaitedProjectAccessLoad): Promise<ProjectRoster> {
+export async function loadProjectRosterIds(loaded: { row: { accountId: string; projectId: string } }): Promise<ProjectRoster> {
   const [identityRows, accountRoles, grantRows, groupGrantRows] = await Promise.all([
     accountMemberJoinRows(loaded.row.accountId),
     accountRoleMap(loaded.row.accountId),

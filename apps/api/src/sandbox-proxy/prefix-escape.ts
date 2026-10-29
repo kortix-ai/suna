@@ -59,7 +59,7 @@ function refererPreviewPrefix(referer: string | null, requestUrl: URL): string |
   return `/v1/p/${match[1]}/${match[2]}`;
 }
 
-export interface PrefixEscapeRedirect {
+interface PrefixEscapeRedirect {
   location: string;
   /** 307 for non-GET/HEAD so a form POST keeps its method and body. */
   status: 302 | 307;

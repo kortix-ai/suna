@@ -32,7 +32,7 @@ It writes two blocks into `kortix.yaml` and two files, then:
 
 | App | What it is |
 | --- | --- |
-| `backend` | The Convex backend: data, server functions, realtime queries, files. `http` service (port 3210, `access: public`, a `/version` check): the Convex client URL and sync WebSocket. `site` service (port 3211, `access: public`): HTTP actions, on `<backend host>--site`. A `data` volume at `/convex/data`. Always on, 1 vCPU / 1 GB. `display: { preview: none }`: an icon card. |
+| `backend` | The Convex backend: data, server functions, realtime queries, files. `http` service (port 3210, `access: public`, a `/version` check): the Convex client URL and sync WebSocket. `site` service (port 3211, `access: public`): HTTP actions, on `<backend host>--site`. A `data` volume at `/convex/data`. Always on, 1 vCPU / 1 GB. `display: { preview: none }`: no live preview. Unlisted, so it sits under Background Apps with its Dashboard tab; add `listed: true` for a card. |
 | `backend-dashboard` | Convex's dashboard, a Dockerfile App in `apps/backend/dashboard`, `access: admins`. It `uses: [backend]` and reaches it through its own origin (`/_kortix/apps/backend`). `display: { parent: backend }`: the Dashboard tab of `backend`, no card of its own. `secrets: { NEXT_PUBLIC_ADMIN_KEY: BACKEND_ADMIN_KEY }`: it opens signed in. |
 
 The dashboard block holds no script and no shell:

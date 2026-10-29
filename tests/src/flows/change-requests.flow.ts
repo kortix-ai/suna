@@ -284,3 +284,95 @@ flow(
     });
   },
 );
+
+/**
+ * CR-14 — a merge that carries another open request's commits marks that
+ * request merged (KRTX-3371). Merging the top of a stack fast-forwards the
+ * base past every request below it; those used to stay `open` forever while
+ * `cr show` already said "Already at base".
+ */
+flow(
+  "CR-14",
+  {
+    domain: "change-requests",
+    requires: ["database"],
+    routes: [
+      "POST /v1/projects/:projectId/change-requests",
+      "POST /v1/projects/:projectId/change-requests/:crId/merge",
+      "GET /v1/projects/:projectId/change-requests/:crId",
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== "local") return; // the branches are pushed straight to the bare repository
+    const { execFileSync } = await import("node:child_process");
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { Client: PgClient } = await import("pg");
+    const project = await ctx.fixtures.project({ managedGit: true });
+    const params = { projectId: project.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const db = new PgClient({ connectionString: ctx.env.databaseUrl! });
+    await db.connect();
+    const work = mkdtempSync(join(tmpdir(), "ke2e-cr14-"));
+    const open = async (head: string) => {
+      const r = await owner.post("/v1/projects/:projectId/change-requests", { title: `ke2e ${head}`, head_ref: head }, { params });
+      r.status([200, 201]);
+      return r.json<{ change_request?: { cr_id: string; number: number }; cr_id?: string; number?: number }>();
+    };
+    const idOf = (created: Awaited<ReturnType<typeof open>>) => created.change_request ?? { cr_id: created.cr_id!, number: created.number! };
+    try {
+      let stackedLow = { cr_id: "", number: 0 };
+      let stackedTop = { cr_id: "", number: 0 };
+      let unrelated = { cr_id: "", number: 0 };
+      await ctx.step("push a, b on top of a, and an unrelated c; open a request for each", async () => {
+        const { rows } = await db.query("SELECT repo_url, default_branch FROM kortix.projects WHERE project_id = $1", [project.id]);
+        const base = String(rows[0]?.default_branch || "main");
+        const git = (...a: string[]) => execFileSync("git", a, { cwd: work, stdio: "pipe" });
+        const commit = (file: string) => {
+          writeFileSync(join(work, file), `${file}\n`);
+          git("add", "-A");
+          git("-c", "user.name=KE2E", "-c", "user.email=ke2e@kortix.invalid", "commit", "-qm", file);
+        };
+        git("clone", "-q", "--branch", base, String(rows[0]?.repo_url), ".");
+        git("checkout", "-q", "-b", "ke2e-cr14-a");
+        commit("a.txt");
+        git("push", "-q", "origin", "ke2e-cr14-a");
+        git("checkout", "-q", "-b", "ke2e-cr14-b");
+        commit("b.txt");
+        git("push", "-q", "origin", "ke2e-cr14-b");
+        git("checkout", "-q", base);
+        git("checkout", "-q", "-b", "ke2e-cr14-c");
+        commit("c.txt");
+        git("push", "-q", "origin", "ke2e-cr14-c");
+        stackedLow = idOf(await open("ke2e-cr14-a"));
+        stackedTop = idOf(await open("ke2e-cr14-b"));
+        unrelated = idOf(await open("ke2e-cr14-c"));
+      });
+
+      await ctx.step("merging b names a's request in also_merged; a reads merged, c stays open", async () => {
+        const merged = await owner.post(
+          "/v1/projects/:projectId/change-requests/:crId/merge",
+          {},
+          { params: { ...params, crId: stackedTop.cr_id } },
+        );
+        merged.status(200).body().has("$.change_request.status", "merged");
+        const result = merged.json<{ merge: { merge_commit_sha: string }; also_merged?: Array<{ number: number }> }>();
+        const also = result.also_merged ?? [];
+        if (JSON.stringify(also.map((cr) => cr.number)) !== JSON.stringify([stackedLow.number])) {
+          throw new Error(`also_merged ${JSON.stringify(also)}, expected only #${stackedLow.number}`);
+        }
+        const read = (crId: string) => owner.get("/v1/projects/:projectId/change-requests/:crId", { params: { ...params, crId } });
+        (await read(stackedLow.cr_id))
+          .status(200)
+          .body()
+          .has("$.change_request.status", "merged")
+          .has("$.change_request.merge_commit_sha", result.merge.merge_commit_sha);
+        (await read(unrelated.cr_id)).status(200).body().has("$.change_request.status", "open");
+      });
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+      await db.end();
+    }
+  },
+);

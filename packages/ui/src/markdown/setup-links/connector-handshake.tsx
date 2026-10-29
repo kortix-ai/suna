@@ -1,11 +1,11 @@
 'use client';
 
-import { EntityAvatar } from '../../primitives/entity-avatar';
+import { ConnectorLogo } from '../../internal/connector-logo/connector-logo';
 import { KortixLogo } from '../../primitives/kortix-logo';
 import { Skeleton } from '../../primitives/skeleton';
 import { cn } from '../../lib/utils';
 import { CheckIcon } from '@phosphor-icons/react';
-import React, { useState } from 'react';
+import React from 'react';
 
 /**
  * The logo tile is white in both themes. Catalogue logos are third-party art
@@ -14,6 +14,9 @@ import React, { useState } from 'react';
  * exception, kept here as a named constant rather than inline.
  */
 const LOGO_TILE_BACKGROUND = 'bg-white';
+
+/** The Kortix tile is the light variant in both themes: white ground, black mark, no edge. */
+const KORTIX_TILE_COLORS = 'bg-white text-black';
 
 const TILE_SIZE = {
   xl: 'size-14 rounded-xl',
@@ -64,34 +67,23 @@ function HandshakeTile({
  * (the card animates in), and the logo's square corners painted past the edge.
  */
 export function ConnectorAppMark({
-  name,
+  name: _name,
+  slug,
   iconUrl,
   size = 'md',
 }: {
   name: string;
+  /** The connector's slug, so a Kortix-built connector shows its own mark. */
+  slug?: string | null;
   iconUrl: string | null | undefined;
   size?: keyof typeof TILE_SIZE;
 }) {
-  const [broken, setBroken] = useState(false);
-  if (iconUrl === undefined) {
+  if (iconUrl === undefined && !slug) {
     return <Skeleton aria-hidden className={cn('shrink-0 py-0', TILE_SIZE[size])} />;
   }
-  if (!iconUrl || broken) {
-    return <EntityAvatar label={name} size={size} className={size === 'xl' ? 'rounded-xl' : undefined} />;
-  }
-  return (
-    <HandshakeTile size={size} className={LOGO_TILE_BACKGROUND}>
-      {/* eslint-disable-next-line @next/next/no-img-element -- third-party catalog logo on an arbitrary host */}
-      <img
-        src={iconUrl}
-        alt=""
-        referrerPolicy="no-referrer"
-        draggable={false}
-        onError={() => setBroken(true)}
-        className={cn('size-full object-contain select-none', TILE_SIZE[size])}
-      />
-    </HandshakeTile>
-  );
+  // The one connector logo (`ConnectorLogo`), so a connect card, an approval and the
+  // connector's own page show the same mark.
+  return <ConnectorLogo source={{ slug, icon: iconUrl ?? null }} size={size} />;
 }
 
 /** The Kortix glyph inside its tile, per tile size. */
@@ -145,7 +137,7 @@ export function ConnectorHandshake({
       <HandshakeTile
         size={size}
         className={cn(
-          'bg-background text-foreground ring-border ring-1 ring-inset',
+          KORTIX_TILE_COLORS,
           collapsible && 'hidden @md/connect:flex',
         )}
       >
@@ -179,7 +171,11 @@ export function ConnectorHandshake({
             {mark}
           </HandshakeTile>
         ) : (
-          <ConnectorAppMark name={name} iconUrl={iconUrl} size={size} />
+          // A white ground behind the bare logo, so a black glyph (GitHub,
+          // Notion) stays visible on a dark surface.
+          <span className={cn(iconUrl !== undefined && LOGO_TILE_BACKGROUND, 'flex', TILE_SIZE[size])}>
+            <ConnectorAppMark name={name} iconUrl={iconUrl} size={size} />
+          </span>
         )}
         {connected ? (
           <span className="bg-kortix-green ring-background absolute -right-1 -bottom-1 flex size-3.5 items-center justify-center rounded-full ring-2">

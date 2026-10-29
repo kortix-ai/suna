@@ -1,15 +1,14 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 
 /**
- * Characterization: the four one-sided runtime calls fail OPEN when the box is
+ * Characterization: the one-sided runtime calls fail OPEN when the box is
  * unreachable on the wire. A network throw must become their own default —
- * `false`, `false`, `false`, `'unreachable'` — and must never escape to the
- * caller. Pinned before the four copies of the resolve → build URL → fetch →
+ * `false`, `false`, `'unreachable'` — and must never escape to the caller.
+ * Pinned before the copies of the resolve → build URL → fetch →
  * bounded-timeout → catch scaffold became one shared helper.
  *
- * The four:
+ * The calls:
  *   - `retractStrandedMessage` (runtime-client)
- *   - `queuedContinueHasStagedRevert` (runtime-client)
  *   - `abortRuntimeTurn` (abort-runtime-turn)
  *   - `releaseRuntimeQuestion` (release-runtime-question)
  */
@@ -74,13 +73,6 @@ describe('one-sided runtime calls fail open on a network throw', () => {
       '../projects/session-lifecycle/runtime-client'
     );
     expect(await retractStrandedMessage(row, 'msg_0198f3a1b2c4AbCdEfGhIjKlMn')).toBe(false);
-  });
-
-  test('queuedContinueHasStagedRevert reports false', async () => {
-    const { queuedContinueHasStagedRevert } = await import(
-      '../projects/session-lifecycle/runtime-client'
-    );
-    expect(await queuedContinueHasStagedRevert(row)).toBe(false);
   });
 
   test('abortRuntimeTurn reports false', async () => {

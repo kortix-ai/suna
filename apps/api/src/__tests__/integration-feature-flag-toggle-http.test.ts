@@ -209,7 +209,7 @@ describe('PATCH /v1/projects/:projectId/features', () => {
     // the keys left the registry and the contract. A project manager — or
     // anyone with settings.write — PATCHing one gets the ordinary unknown-key
     // 400; the operator-only refusal is unreachable.
-    for (const feature of ['apps', 'llm_gateway', 'session_log']) {
+    for (const feature of ['apps', 'llm_gateway', 'session_log', 'connectors_v2', 'connectors_api_discover']) {
       for (const enabled of [true, false, null]) {
         const res = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature, enabled }));
         expect(res.status).toBe(400);
@@ -225,8 +225,18 @@ describe('PATCH /v1/projects/:projectId/features', () => {
     const res = await app.request(`/v1/projects/${PROJECT}`, { headers: { Authorization: `Bearer ${secret}` } });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.experimental).toMatchObject({ apps: true, llm_gateway: true, session_log: true });
+    // `connectors_v2` / `connectors_api_discover` (graduated 2026-10-24): older
+    // SDKs and hosts read false as "show the legacy catalog".
+    expect(body.experimental).toMatchObject({
+      apps: true,
+      llm_gateway: true,
+      session_log: true,
+      connectors_v2: true,
+      connectors_api_discover: true,
+    });
     const keys = body.experimental_features.map((f: { key: string }) => f.key);
+    expect(keys).not.toContain('connectors_v2');
+    expect(keys).not.toContain('connectors_api_discover');
     expect(keys).not.toContain('apps');
     expect(keys).not.toContain('llm_gateway');
     expect(keys).not.toContain('session_log');

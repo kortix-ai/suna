@@ -23,6 +23,8 @@ const EXCLUDED: Array<{ route: RegExp; reason: string }> = [
   { route: /^POST \/v1\/webhooks\/teams\//, reason: 'Microsoft Bot Framework activity webhook' },
   { route: /^(GET|PUT|POST|DELETE) \/v1\/projects\/:projectId\/sessions\/:sessionId\/drive-sync\//, reason: "the session box's drive-sync daemon; takes only that sandbox's credential" },
   { route: /^(GET|POST|DELETE) \/v1\/mcp$/, reason: 'MCP streamable-HTTP endpoint, described by the MCP protocol' },
+  { route: /^GET \/v1\/artifacts\/(s|p)\//, reason: 'artifact content server: the bytes of an artifact, capability-gated' },
+  { route: /^GET \/v1\/artifacts\/meta\/:artifactId$/, reason: "the public artifact page's chrome (title, type), read only by that page" },
 ];
 
 /** Retired routes are 410 stubs (routes/retired.ts): served, never documented. */

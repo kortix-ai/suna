@@ -665,19 +665,15 @@ export type CreateOrchestrationClient = {
   projectsCachedForAccount: (accountId: string) => KortixProject[] | undefined;
   /**
    * Stamp the created project onboarded — the same `PATCH /projects/:id/onboarding`
-   * the wizard's own exits run. A create that lands the user directly on the
-   * project page (see `enterProject`) is an implicit skip: the wizard must not
-   * mount full-screen over the workspace they just asked for. This is why the
+   * the onboarding chat's kickoff runs. A later project lands on the usual home,
+   * never on the onboarding chat. This is why the
    * stamp lives in the flow and not on the server's provision route: it reuses
    * an existing endpoint instead of growing the create contract.
    *
    * Only a LATER project is stamped. A fresh account's first project stays
-   * unstamped, so the shell's wizard opens on the landing and walks the new
-   * user through work, apps and models — the post-signup onboarding the
-   * signup journey expects (KRTX-2092). That mount is not the trap the
-   * implicit skip exists to prevent: the shell's wizard now carries the Skip
-   * control, and its exit opens the first chat in place. An experienced user
-   * creating project two never sees the wizard again (KRTX-1419).
+   * unstamped, so it opens on the onboarding chat, where the agent onboards
+   * the new user (KRTX-2092). An experienced user creating project two never
+   * sees onboarding again (KRTX-1419).
    */
   completeOnboarding: (projectId: string) => Promise<unknown>;
   /**
@@ -860,7 +856,7 @@ export async function runCreate(
  * target account (`resolveTargetAccountId`) without a second, page-specific
  * query.
  */
-export function useCreateWorkspace(): {
+export function useCreateWorkspace(options?: { enterProject?: (projectId: string) => void }): {
   create: (state: NewWorkspaceFormState) => Promise<void>;
   status: CreateStatus;
   error: string | null;
@@ -973,7 +969,8 @@ export function useCreateWorkspace(): {
         // decision reads `projectsCachedForAccount`), so its onboarding wizard
         // opens on the landing (KRTX-2092).
         completeOnboarding: (projectId) => setProjectOnboardingComplete(projectId, true),
-        enterProject: (projectId) => router.replace(uiRoutes().project(encodeURIComponent(projectId))),
+        enterProject: options?.enterProject ?? ((projectId) =>
+          router.replace(uiRoutes().project(encodeURIComponent(projectId)))),
         now: Date.now,
       });
 
@@ -983,7 +980,7 @@ export function useCreateWorkspace(): {
         setLastError(result.error);
       }
     },
-    [creatableAccounts, queryClient, router, viewerId],
+    [creatableAccounts, queryClient, router, viewerId, options?.enterProject],
   );
 
   const retry = useCallback(() => {

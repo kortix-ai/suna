@@ -35,6 +35,8 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     parentSessionId: null,
     initiatorType: null,
     initiatorId: null,
+    spaceId: null,
+    groupId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
@@ -68,7 +70,9 @@ mock.module('../shared/db', () => ({
   },
   hasDatabase: () => true,
 }));
+const realSessionLifecycle = await import('../projects/session-lifecycle');
 mock.module('../projects/session-lifecycle', () => ({
+  ...realSessionLifecycle,
   deliverThroughQueue: async () => 'delivered',
   createSession: async (input: { body: Record<string, unknown> }) => {
     lastBody = input.body;
@@ -149,6 +153,8 @@ mock.module('../channels/slack/turn', () => ({
 const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
   ...realInstallStore,
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   SLACK_BOT_TOKEN: 'SLACK_BOT_TOKEN',
   SLACK_SIGNING_SECRET: 'SLACK_SIGNING_SECRET',
   SLACK_TEAM_ID: 'SLACK_TEAM_ID',

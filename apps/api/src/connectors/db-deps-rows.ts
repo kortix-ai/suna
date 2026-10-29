@@ -1,19 +1,23 @@
 /** Connector row reads shared by the DB-backed deps: auth/headers/base URL of a row, its connected state, the active connection, and the policy loaders. */
 import {
+  connectorActions,
   connectorPolicies,
+  connectorPolicySets,
   connectors,
   connectorProjectPolicies,
   connectorProjectSettings,
 } from '@kortix/db';
 import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
-  loadAgentMailInstall,
+  hasEmailInboxes,
+  loadEmailInboxAccountForInbox,
   loadSlackInstall,
   loadTeamsInstall,
   loadTelegramInstall,
 } from '../channels/install-store';
-import { resolveSessionConnectorConnection } from '../projects/lib/session-connector-bindings';
+import { agentPolicySet } from '../iam/agent-scope';
+import { canonicalConnectorAlias, resolveSessionConnectorConnection } from '../projects/lib/session-connector-bindings';
 import { db } from '../shared/db';
 import {
   connectionIsEffectiveProjectDefault,
@@ -21,7 +25,8 @@ import {
   connectionCredentialExists,
 } from './credentials';
 import type { ConnectorAuth } from './call';
-import { type DefaultMode, type Policy, parseStoredConditions } from './policy';
+import { type DefaultMode, type Policy, type Risk, parseStoredConditions, resolveEffectiveAction } from './policy';
+import { principalMayUseConnector } from './principal-access';
 import type { ConnectorPrincipal } from './router-contract';
 
 const DEFAULT_AUTH: ConnectorAuth = {
@@ -115,8 +120,7 @@ async function channelInstalled(
   if (platform === 'slack') return (await loadSlackInstall(projectId).catch(() => null)) != null;
   if (platform === 'teams') return (await loadTeamsInstall(projectId).catch(() => null)) != null;
   if (platform === 'telegram') return (await loadTelegramInstall(projectId).catch(() => null)) != null;
-  if (platform === 'email')
-    return (await loadAgentMailInstall(projectId, slug).catch(() => null)) != null;
+  if (platform === 'email') return hasEmailInboxes(projectId).catch(() => false);
   return false;
 }
 
@@ -146,8 +150,12 @@ export async function connectorConnected(
       channelPlatform(row.config) === 'email' &&
       typeof connection?.metadata.inbox_id === 'string'
     ) {
-      const install = await loadAgentMailInstall(row.projectId, connectionSlug).catch(() => null);
-      return install?.inboxId === connection.metadata.inbox_id;
+      // An email account is connected while its inbox account is active.
+      const account = await loadEmailInboxAccountForInbox(
+        row.projectId,
+        connection.metadata.inbox_id,
+      ).catch(() => null);
+      return account?.connectionId === connection.connectionId;
     }
     return true;
   }
@@ -196,6 +204,60 @@ export async function resolveActiveConnectorConnection(principal: ConnectorPrinc
   return connection?.status === 'active' ? connection : null;
 }
 
+/**
+ * Whether the agent's own `<slug>.<actionPath>` call with these args would run
+ * without approval. `principal` is the one the agent's session token names
+ * (`resolveTokenPrincipal`). The gateway's checks, in its order: the connector
+ * is assigned to the agent, enabled, has an active account this session may
+ * use, and has the action. Then its policy layers (project, the agent's policy
+ * set, connector, `sensitive`, the default mode), with the exact args. For a
+ * server post that stands in for that call.
+ */
+export async function connectorActionAlwaysRuns(input: {
+  principal: ConnectorPrincipal;
+  slug: string;
+  actionPath: string;
+  args: Record<string, unknown>;
+}): Promise<boolean> {
+  const { principal } = input;
+  const alias = canonicalConnectorAlias(input.slug);
+  if (!principalMayUseConnector(principal, alias)) return false;
+  const [row] = await db
+    .select()
+    .from(connectors)
+    .where(and(eq(connectors.projectId, principal.projectId), eq(connectors.slug, input.slug)))
+    .limit(1);
+  if (!row?.enabled || !(await resolveActiveConnectorConnection(principal, row))) return false;
+  const setName = agentPolicySet(principal.agentGrant ?? null, alias);
+  const [[action], connectorPolicies, projectPolicies, defaultMode, setPolicies] = await Promise.all([
+    db
+      .select({ risk: connectorActions.risk })
+      .from(connectorActions)
+      .where(and(eq(connectorActions.connectorId, row.connectorId), eq(connectorActions.path, input.actionPath)))
+      .limit(1),
+    loadConnectorPoliciesFor(row.connectorId),
+    loadProjectPoliciesFor(principal.projectId),
+    loadDefaultModeFor(principal.projectId),
+    setName === null ? Promise.resolve(undefined) : loadConnectorPolicySetFor(row.connectorId, setName),
+  ]);
+  if (!action) return false;
+  return (
+    resolveEffectiveAction({
+      fullPath: `${input.slug}.${input.actionPath}`,
+      relPath: input.actionPath,
+      projectPolicies,
+      connectorPolicies,
+      setPolicies: setPolicies ?? undefined,
+      setMissing: setName !== null && !setPolicies,
+      risk: action.risk as Risk,
+      defaultMode,
+      sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
+      args: input.args,
+      argsAvailable: true,
+    }).action === 'always_run'
+  );
+}
+
 export async function loadConnectorPoliciesFor(connectorId: string): Promise<Policy[]> {
   const rows = await db
     .select()
@@ -231,6 +293,53 @@ export async function loadConnectorPoliciesForMany(
     const list = map.get(r.connectorId);
     if (list) list.push(policy);
     else map.set(r.connectorId, [policy]);
+  }
+  return map;
+}
+
+/** One stored set's rules → `Policy[]`, or null when the stored shape is not
+ *  a rule list (read as a missing set: the caller blocks). */
+export function policiesOfStoredSet(raw: unknown): Policy[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: Policy[] = [];
+  for (const [position, rule] of raw.entries()) {
+    if (!rule || typeof rule !== 'object') return null;
+    const { match, action, conditions } = rule as Record<string, unknown>;
+    if (typeof match !== 'string' || (action !== 'always_run' && action !== 'require_approval' && action !== 'block')) {
+      return null;
+    }
+    out.push({ match, action, position, ...parseStoredConditions(conditions) });
+  }
+  return out;
+}
+
+/**
+ * A connector's policy set by name. `null` = the connector defines no such set
+ * (or its stored rules are unreadable): the gateway blocks (`policy_set_missing`).
+ */
+export async function loadConnectorPolicySetFor(connectorId: string, name: string): Promise<Policy[] | null> {
+  const [row] = await db
+    .select({ policies: connectorPolicySets.policies })
+    .from(connectorPolicySets)
+    .where(and(eq(connectorPolicySets.connectorId, connectorId), eq(connectorPolicySets.name, name)))
+    .limit(1);
+  return row ? policiesOfStoredSet(row.policies) : null;
+}
+
+/** Every set of many connectors: connector id → set name → rules (null = unreadable). */
+export async function loadConnectorPolicySetsForMany(
+  connectorIds: readonly string[],
+): Promise<Map<string, Map<string, Policy[] | null>>> {
+  const map = new Map<string, Map<string, Policy[] | null>>();
+  if (connectorIds.length === 0) return map;
+  const rows = await db
+    .select()
+    .from(connectorPolicySets)
+    .where(inArray(connectorPolicySets.connectorId, connectorIds));
+  for (const r of rows) {
+    const sets = map.get(r.connectorId) ?? new Map<string, Policy[] | null>();
+    sets.set(r.name, policiesOfStoredSet(r.policies));
+    map.set(r.connectorId, sets);
   }
   return map;
 }

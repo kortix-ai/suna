@@ -18,6 +18,8 @@
 import { z } from 'zod';
 import { SessionLogPageSchema } from './session-log/wire';
 
+export * from './memory';
+
 /** Loose JSON object — jsonb metadata/config columns surfaced as-is. */
 export const JsonObjectSchema = z.record(z.string(), z.unknown());
 export type JsonObject = z.infer<typeof JsonObjectSchema>;
@@ -51,10 +53,7 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
  */
 export const FeatureFlagMapSchema = z.object({
   marketplace: z.boolean(),
-  connectors_api_discover: z.boolean(),
-  agentmail_email: z.boolean(),
   meta_agent: z.boolean(),
-  monitors: z.boolean(),
   reminders: z.boolean(),
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
@@ -66,10 +65,13 @@ export const FeatureFlagMapSchema = z.object({
   volumes: z.boolean(),
   drives: z.boolean(),
   session_log_restore: z.boolean(),
-  connectors_v2: z.boolean(),
+  project_channels: z.boolean(),
   agent_rooms: z.boolean(),
   goals: z.boolean(),
   workspace_volume: z.boolean(),
+  artifacts: z.boolean(),
+  email_channel: z.boolean(),
+  session_groups: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -190,6 +192,10 @@ export const ProjectSchema = z.object({
     session_log: z.literal(true).optional(),
     /** Not a flag (every new session runs pi; OpenCode is sunset); always `true` for older SDK, CLI and mobile clients. */
     pi_harness: z.literal(true).optional(),
+    /** Not a flag (the Kortix connectors catalog is the only connectors path); always `true` for older SDK and hosts. */
+    connectors_v2: z.literal(true).optional(),
+    /** Not a flag (integrations.sh is part of the one catalog); always `true` for older SDK and hosts. */
+    connectors_api_discover: z.literal(true).optional(),
   }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
@@ -999,6 +1005,7 @@ export const SessionCreateInputSchema = z
   .object({
     /** Copy the authorized platform session history into a new independent session. */
     fork_from_session_id: z.string().min(1).max(255).optional(),
+    parent_session_id: z.string().uuid().optional(),
     base_ref: z.string().min(1).optional(),
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
@@ -1025,6 +1032,12 @@ export const SessionCreateInputSchema = z
     opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
     labels: SessionLabelsSchema.optional(),
+    /**
+     * The space (channel or the caller's own DM) the session belongs to.
+     * Read only while the project's `project_channels` flag is on; ignored
+     * otherwise. Absent: the parent session's space, else `#general`.
+     */
+    space_id: z.string().uuid().optional(),
     session_id: z
       .string()
       .regex(
@@ -1166,6 +1179,12 @@ export const ProjectSessionSchema = z.object({
   origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),
   /** The session that spawned this one (a coordinator's worker); null for a top-level session. */
   parent_session_id: z.string().nullable().optional(),
+  /** The space (channel or DM) the session is filed in; null for a session in no space. */
+  space_id: z.string().uuid().nullable(),
+  /** The session group it is filed in (`session_groups`); null for a session in no group. */
+  group_id: z.string().uuid().nullable(),
+  /** The first 500 characters of the first prompt; stored for sessions created while `project_channels` is on, else null. */
+  first_prompt: z.string().nullable(),
   /** Who started the run this session belongs to (a child carries its parent's). Derived, never client-set. */
   initiator: z
     .object({
@@ -1175,6 +1194,12 @@ export const ProjectSessionSchema = z.object({
     })
     .nullable()
     .optional(),
+  /**
+   * A channel or DM thread list (`space_id`) only: the messages after the
+   * first prompt in the root conversation, from the stored transcript. Null on
+   * every other read.
+   */
+  reply_count: z.number().int().nullable(),
   /** List with `parent=root` only: the session's non-deleted children. */
   child_count: z.number().int().optional(),
   /** List with `parent=root&q=` only: the session matched itself, or only a child matched. */
@@ -1250,6 +1275,323 @@ export const ClaimWarmProjectSessionInputSchema = z
   })
   .strict();
 export type ClaimWarmProjectSessionInput = z.infer<typeof ClaimWarmProjectSessionInputSchema>;
+
+/**
+ * A project space: a channel (product word "Channel") or the caller's DM with
+ * one agent. `/projects/:id/spaces`, behind the `project_channels` flag.
+ */
+export const SPACE_KINDS = ['channel', 'dm'] as const;
+/** Who sees a channel: every project member (`public`) or only its members (`private`). */
+export const SPACE_VISIBILITIES = ['public', 'private'] as const;
+export const SpaceSchema = z
+  .object({
+    space_id: z.string(),
+    kind: z.enum(SPACE_KINDS),
+    /** Channels: lowercase `a-z0-9-`, 1–40 chars. Null for a DM. */
+    slug: z.string().nullable(),
+    name: z.string(),
+    description: z.string().nullable(),
+    is_default: z.boolean(),
+    dm_agent_name: z.string().nullable(),
+    archived_at: z.string().nullable(),
+    created_at: z.string(),
+    updated_at: z.string(),
+    /** The caller may rename, describe, archive and unarchive it: the channel's creator or a project manager. False for a DM. */
+    can_edit: z.boolean(),
+    /**
+     * The channel's agents, in order: the first is the channel's default for a
+     * new thread. Empty: no agent list, a new thread starts on the project's
+     * default. Always empty for a DM.
+     */
+    agents: z.array(z.string()),
+    /**
+     * The caller is in the channel: a member of `#general` always (every
+     * project member is), of another channel once added or joined. True for a
+     * DM. A non-member of a public channel still reads and posts.
+     */
+    is_member: z.boolean(),
+    /**
+     * `public`: every project member sees and opens it. `private`: only its
+     * members see the channel and everything in it; `#general` and a DM are
+     * always `public`.
+     */
+    visibility: z.enum(SPACE_VISIBILITIES),
+  })
+  .strict();
+export type Space = z.infer<typeof SpaceSchema>;
+
+/** At most this many people in one `POST /spaces/:spaceId/members` or one channel create. */
+export const SPACE_MEMBERS_ADD_MAX = 100;
+
+/**
+ * A person in a channel: `GET /projects/:id/spaces/:spaceId/members`. `name`
+ * is the display name (else the email's local part), never the email.
+ */
+export const SpaceMemberSchema = z
+  .object({
+    user_id: z.string(),
+    name: z.string(),
+    avatar_url: z.string().nullable(),
+    /** The channel's creator. */
+    is_creator: z.boolean(),
+    is_viewer: z.boolean(),
+    /** When they were added or joined; null for `#general` (implicit) and for rows the migration backfilled without a time. */
+    added_at: z.string().nullable(),
+    /**
+     * The caller may remove them: a project manager anyone, the creator anyone
+     * but themself, a member only themself (Leave). Nobody leaves the creator
+     * out except a manager. Always false in `#general`.
+     */
+    can_remove: z.boolean(),
+  })
+  .strict();
+export type SpaceMember = z.infer<typeof SpaceMemberSchema>;
+
+export const SpaceMemberListSchema = z
+  .object({
+    /** The caller first, then by name. */
+    members: z.array(SpaceMemberSchema),
+    /** `#general`: every project member is in it, no one is added, no one leaves. */
+    implicit: z.boolean(),
+    /** The caller may add people: a member of the channel, its creator or a project manager. False in `#general`. */
+    can_add: z.boolean(),
+  })
+  .strict();
+export type SpaceMemberList = z.infer<typeof SpaceMemberListSchema>;
+
+/** `POST /projects/:id/spaces/:spaceId/members`. Every id must be a member of the project; one already in the channel is skipped. */
+export const SpaceMembersAddInputSchema = z
+  .object({ user_ids: z.array(z.string().uuid()).min(1).max(SPACE_MEMBERS_ADD_MAX) })
+  .strict();
+export type SpaceMembersAddInput = z.infer<typeof SpaceMembersAddInputSchema>;
+
+/** At most this many agents in one channel's agent list. */
+export const SPACE_AGENTS_MAX = 50;
+
+/**
+ * `#general`'s "turned on again" line: `count` sessions started while Channels
+ * was off were filed into `#general` at `at`. Present for 7 days after the switch.
+ */
+export const SpaceGeneralNoticeSchema = z
+  .object({ kind: z.literal('reenabled'), at: z.string(), count: z.number().int().positive() })
+  .strict();
+export type SpaceGeneralNotice = z.infer<typeof SpaceGeneralNoticeSchema>;
+
+export const SpaceListSchema = z
+  .object({
+    spaces: z.array(SpaceSchema),
+    general_notice: SpaceGeneralNoticeSchema.optional(),
+    /** Whether this deployment lets a channel be private (`KORTIX_PRIVATE_CHANNELS_ENABLED`). */
+    private_channels_available: z.boolean(),
+  })
+  .strict();
+export type SpaceList = z.infer<typeof SpaceListSchema>;
+
+/**
+ * `GET /projects/:id/spaces/private`, project managers only: the private
+ * channels the manager is not in, archived ones included. Name, member count
+ * and creator; never content. The manager renames,
+ * archives, lists, adds and removes people from it, never reads it.
+ */
+export const PrivateChannelSummarySchema = z
+  .object({
+    space_id: z.string(),
+    name: z.string(),
+    slug: z.string(),
+    member_count: z.number().int(),
+    created_by: z.string().nullable(),
+    /** The creator's display name, null when unknown. */
+    created_by_name: z.string().nullable(),
+    created_at: z.string(),
+    archived_at: z.string().nullable(),
+  })
+  .strict();
+export type PrivateChannelSummary = z.infer<typeof PrivateChannelSummarySchema>;
+export const PrivateChannelListSchema = z.object({ channels: z.array(PrivateChannelSummarySchema) }).strict();
+export type PrivateChannelList = z.infer<typeof PrivateChannelListSchema>;
+
+/**
+ * Channels onboarding marks a member leaves once per project:
+ * `POST /projects/:id/onboarding/channels/marks`.
+ */
+export const CHANNELS_ONBOARDING_MARKS = [
+  'channels_intro',
+  'get_started.dismissed',
+  'get_started.channel',
+  'get_started.remember',
+  'get_started.dm',
+] as const;
+export type ChannelsOnboardingMark = (typeof CHANNELS_ONBOARDING_MARKS)[number];
+export const ChannelsOnboardingMarkInputSchema = z.object({ mark: z.enum(CHANNELS_ONBOARDING_MARKS) }).strict();
+export type ChannelsOnboardingMarkInput = z.infer<typeof ChannelsOnboardingMarkInputSchema>;
+
+/**
+ * The caller's Channels onboarding state. A "Get started" row is done when its
+ * mark is present or the fact is true (the caller created a channel, saved
+ * memory in `#general`, owns a DM). `visible`: not dismissed and not all done.
+ */
+export const ChannelsOnboardingSchema = z
+  .object({
+    intro_seen: z.boolean(),
+    get_started: z
+      .object({ visible: z.boolean(), create_channel: z.boolean(), remember: z.boolean(), open_dm: z.boolean() })
+      .strict(),
+  })
+  .strict();
+export type ChannelsOnboarding = z.infer<typeof ChannelsOnboardingSchema>;
+
+export const SpaceCreateInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    description: z.string().trim().max(500).optional(),
+    /** People added with the creator (who is always a member). Every id must be a member of the project. */
+    member_ids: z.array(z.string().uuid()).max(SPACE_MEMBERS_ADD_MAX).optional(),
+    /** Default `public`. `private`: only its members see it. */
+    visibility: z.enum(SPACE_VISIBILITIES).optional(),
+  })
+  .strict();
+export type SpaceCreateInput = z.infer<typeof SpaceCreateInputSchema>;
+
+export const SpaceUpdateInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80).optional(),
+    /** `null` clears the description. */
+    description: z.string().trim().max(500).nullable().optional(),
+    /** `true` archives the channel; `false` unarchives it. */
+    archived: z.boolean().optional(),
+    /**
+     * Replaces the channel's agent list, in order: the first is the default.
+     * Every name must be an agent of the project, each once. `[]` clears it.
+     */
+    agents: z.array(z.string().trim().min(1).max(200)).max(SPACE_AGENTS_MAX).optional(),
+    /**
+     * `private` makes a public channel private: the people who started a
+     * thread in it or added a link become members. One way only: a private
+     * channel never becomes public.
+     */
+    visibility: z.literal('private').optional(),
+  })
+  .strict();
+export type SpaceUpdateInput = z.infer<typeof SpaceUpdateInputSchema>;
+
+export const SpaceDmInputSchema = z.object({ agent_name: z.string().trim().min(1).max(200) }).strict();
+export type SpaceDmInput = z.infer<typeof SpaceDmInputSchema>;
+
+/** A link pinned to a channel: `/projects/:id/spaces/:spaceId/links`. */
+export const SpaceLinkSchema = z
+  .object({
+    link_id: z.string(),
+    space_id: z.string(),
+    url: z.string(),
+    title: z.string().nullable(),
+    created_by: z.string().nullable(),
+    /** The creator's display name or email; null when unknown. */
+    created_by_name: z.string().nullable(),
+    created_at: z.string(),
+    /** The caller may delete it: they added it, or they manage the project. */
+    can_delete: z.boolean(),
+    /** Agents in the channel read pinned links. Every link starts unpinned (added or shared in a thread) until a member pins it. */
+    pinned: z.boolean(),
+    /** Who pinned it and when; null while unpinned (or, for `pinned_by_name`, when unknown). */
+    pinned_by_name: z.string().nullable(),
+    pinned_at: z.string().nullable(),
+    /** `manual`: added with "Add link". `message`: collected from a person's message in a thread of the channel. */
+    source: z.enum(['manual', 'message']),
+    /** The latest thread that shared it; null for a link never shared in a thread (or whose thread is gone). */
+    session_id: z.string().nullable(),
+    last_shared_at: z.string(),
+    /** The row's name: the title a member gave, else the page's fetched title, else the decoded path, else the host. */
+    display_title: z.string(),
+    /** The page's `og:site_name`, fetched by the server; null until fetched or when the page has none. */
+    site_name: z.string().nullable(),
+    /** The page's icon URL, fetched by the server; null until fetched or when none passed the address check. A remote URL: load it only through an image proxy. */
+    icon_url: z.string().nullable(),
+  })
+  .strict();
+export type SpaceLink = z.infer<typeof SpaceLinkSchema>;
+
+/** `PATCH /projects/:id/spaces/:spaceId/links/:linkId`. Unpinning only clears the pin; the link stays listed. */
+export const SpaceLinkPinInputSchema = z.object({ pinned: z.boolean() }).strict();
+export type SpaceLinkPinInput = z.infer<typeof SpaceLinkPinInputSchema>;
+/** The link after the change. `link` stays nullable for clients of older servers, where unpinning an added link removed it. */
+export const SpaceLinkPinResultSchema = z.object({ link: SpaceLinkSchema.nullable() }).strict();
+export type SpaceLinkPinResult = z.infer<typeof SpaceLinkPinResultSchema>;
+
+export const SpaceLinkListSchema = z.object({ links: z.array(SpaceLinkSchema) }).strict();
+export type SpaceLinkList = z.infer<typeof SpaceLinkListSchema>;
+
+/** An http(s) URL whose normalized form, the one the API stores, is at most 2,048 characters. */
+function isStorableHttpUrl(value: string): boolean {
+  try {
+    const { protocol, href } = new URL(value);
+    return (protocol === 'http:' || protocol === 'https:') && href.length <= 2048;
+  } catch {
+    return false;
+  }
+}
+
+export const SpaceLinkCreateInputSchema = z
+  .object({
+    url: z.string().trim().min(1).max(2048).refine(isStorableHttpUrl, 'url must be an http(s) URL of at most 2,048 characters'),
+    title: z.string().trim().max(200).optional(),
+  })
+  .strict();
+export type SpaceLinkCreateInput = z.infer<typeof SpaceLinkCreateInputSchema>;
+
+/**
+ * A session group: a named folder of the project's sessions in the sidebar
+ * (`/projects/:id/session-groups`, behind the `session_groups` flag). Every
+ * project member sees the same groups in the same order. A session is in at
+ * most one group (`ProjectSession.group_id`).
+ */
+export const SESSION_GROUP_NAME_MAX = 80;
+/** The most groups one project may have. */
+export const SESSION_GROUPS_MAX = 50;
+
+export const SessionGroupSchema = z
+  .object({
+    group_id: z.string(),
+    name: z.string(),
+    /** 0-based place in the project's order; the list is sorted by it. */
+    position: z.number().int().nonnegative(),
+    created_by: z.string().nullable(),
+    created_at: z.string(),
+    updated_at: z.string(),
+  })
+  .strict();
+export type SessionGroup = z.infer<typeof SessionGroupSchema>;
+
+export const SessionGroupListSchema = z.object({ groups: z.array(SessionGroupSchema) }).strict();
+export type SessionGroupList = z.infer<typeof SessionGroupListSchema>;
+
+const SessionGroupNameSchema = z.string().trim().min(1).max(SESSION_GROUP_NAME_MAX);
+
+/** A new group goes last in the order. A name another group of the project has (any case) is refused. */
+export const SessionGroupCreateInputSchema = z.object({ name: SessionGroupNameSchema }).strict();
+export type SessionGroupCreateInput = z.infer<typeof SessionGroupCreateInputSchema>;
+
+export const SessionGroupUpdateInputSchema = z.object({ name: SessionGroupNameSchema }).strict();
+export type SessionGroupUpdateInput = z.infer<typeof SessionGroupUpdateInputSchema>;
+
+/** The project's groups in their new order: every group id, each once. */
+export const SessionGroupOrderInputSchema = z
+  .object({
+    group_ids: z
+      .array(z.string().uuid())
+      .max(SESSION_GROUPS_MAX)
+      .refine((ids) => new Set(ids).size === ids.length, 'group_ids must name each group once'),
+  })
+  .strict();
+export type SessionGroupOrderInput = z.infer<typeof SessionGroupOrderInputSchema>;
+
+/** File a session into a group of its project, or take it out of its group (`null`). */
+export const SessionGroupAssignInputSchema = z.object({ group_id: z.string().uuid().nullable() }).strict();
+export type SessionGroupAssignInput = z.infer<typeof SessionGroupAssignInputSchema>;
+
+export const SessionGroupAssignmentSchema = z
+  .object({ session_id: z.string(), group_id: z.string().nullable() })
+  .strict();
+export type SessionGroupAssignment = z.infer<typeof SessionGroupAssignmentSchema>;
 
 export const SESSION_SANDBOX_STATUSES = [
   'provisioning',
@@ -1515,7 +1857,7 @@ export const TriggerSchema = z.object({
   slug: z.string(),
   path: z.string(),
   name: z.string(),
-  type: z.enum(['cron', 'webhook', 'monitor', 'event']),
+  type: z.enum(['cron', 'webhook', 'monitor', 'event', 'app']),
   agent: z.string(),
   /** Wire-form model (`provider/model`) or null for "Default". */
   model: z.string().nullable(),
@@ -1532,6 +1874,12 @@ export const TriggerSchema = z.object({
   interval_seconds: z.number().nullable(),
   /** For type=monitor only — the silence watchdog, in whole seconds. */
   expect_event_within_seconds: z.number().nullable(),
+  /** For type=app only — the slug of the App whose emitted events fire the trigger. */
+  app: z.string().nullable().optional(),
+  /** A fire calls this App (method path) instead of running an agent. Null: an agent run. */
+  target: z.object({ app: z.string(), path: z.string(), method: z.enum(['POST', 'GET']), payload: z.record(z.string(), z.unknown()).optional() }).nullable().optional(),
+  /** For type=cron with `every` — the fixed period in whole seconds; null otherwise. */
+  every_seconds: z.number().nullable().optional(),
   /**
    * For type=event only. `pending` = declared but no subscription row yet.
    * Null for every other type.
@@ -1598,6 +1946,11 @@ export const TriggerSchema = z.object({
   overlap: z.enum(['skip', 'allow']).nullable().optional(),
   /** Account-local policy for sessions this trigger creates. */
   session_access: TriggerSessionAccessSchema,
+  /**
+   * The channel or DM its runs post to as threads; null = none (`#general`).
+   * Present only while the project's `project_channels` flag is on.
+   */
+  space_id: z.string().nullable().optional(),
   last_fired_at: z.string().nullable(),
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),
@@ -1632,7 +1985,7 @@ export type TriggerList = z.infer<typeof TriggerListSchema>;
 export const TriggerRunSchema = z.object({
   run_id: z.string(),
   slug: z.string(),
-  source: z.enum(['cron', 'webhook', 'manual', 'monitor', 'reminder', 'event']),
+  source: z.enum(['cron', 'webhook', 'manual', 'monitor', 'reminder', 'event', 'app']),
   /** The fire's outcome. `fired` = a session was started or prompted. */
   status: z.enum(['queued', 'running', 'fired', 'failed', 'skipped', 'rejected']),
   /** The agent turn's outcome; null when the run started no turn. */

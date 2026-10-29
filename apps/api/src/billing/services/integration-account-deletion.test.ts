@@ -397,6 +397,13 @@ describe('legacy basejump references to the auth user', () => {
         id uuid primary key default gen_random_uuid(),
         account_id uuid not null references basejump.accounts(id) on delete cascade,
         current_version_id uuid references public.agent_versions(id));
+      create table if not exists public.threads (
+        thread_id uuid primary key default gen_random_uuid(),
+        account_id uuid not null references basejump.accounts(id) on delete cascade);
+      create table if not exists public.agent_runs (
+        id uuid primary key default gen_random_uuid(),
+        thread_id uuid not null references public.threads(thread_id));
+      grant all on public.threads, public.agent_runs to postgres;
       create table if not exists public.legacy_audit (
         id uuid primary key default gen_random_uuid(),
         account_id uuid not null references basejump.accounts(id));
@@ -492,6 +499,33 @@ describe('legacy basejump references to the auth user', () => {
     expect(retained.rows).toEqual([{ created_by: null }]);
     await deleteAccountImmediately(userId, userId);
     expect((await superuser.query(`select id from public.agents where id = $1`, [agentId])).rows).toHaveLength(1);
+  });
+
+  test('deletes runs belonging to personal legacy threads and preserves another account’s runs on retry', async () => {
+    realAuthDelete();
+    const { userId, requestId } = await seed({ subscription: false });
+    const { personal, other } = await seedLegacy(userId);
+    const threads = await superuser.query(`
+      insert into public.threads (account_id)
+      select id from basejump.accounts where id = $1 or primary_owner_user_id = $2
+      returning thread_id, account_id`, [personal, other]);
+    for (const thread of threads.rows) {
+      await superuser.query(`insert into public.agent_runs (thread_id) values ($1)`, [thread.thread_id]);
+    }
+    const owned = threads.rows.find(thread => thread.account_id === personal);
+    const retained = threads.rows.find(thread => thread.account_id !== personal);
+    expect(owned).toBeDefined();
+    expect(retained).toBeDefined();
+
+    await deleteAccountImmediately(userId, userId);
+
+    expect(await authUserCount(userId)).toBe(0);
+    expect(await requestStatus(requestId)).toBe('completed');
+    expect((await superuser.query(`select thread_id from public.threads where thread_id = $1`, [owned?.thread_id])).rows).toHaveLength(0);
+    expect((await superuser.query(`select thread_id from public.agent_runs where thread_id = $1`, [owned?.thread_id])).rows).toHaveLength(0);
+    await deleteAccountImmediately(userId, userId);
+    expect((await superuser.query(`select thread_id from public.threads where thread_id = $1`, [retained?.thread_id])).rows).toHaveLength(1);
+    expect((await superuser.query(`select thread_id from public.agent_runs where thread_id = $1`, [retained?.thread_id])).rows).toHaveLength(1);
   });
 
   test('refuses unknown non-null account references instead of deleting their rows', async () => {
