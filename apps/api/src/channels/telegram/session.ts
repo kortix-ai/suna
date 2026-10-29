@@ -69,21 +69,23 @@ export interface TelegramMessage {
   media_group_id?: string;
 }
 
-/** Each kind of file, in the order read: the name and type Telegram leaves out, and the session-view label. */
+/** Each kind of file, in the order read: Kortix's word for it (also the session-view label) and the type Telegram leaves out. */
 const TELEGRAM_FILE_KINDS = [
-  { kind: 'photo', name: 'photo.jpg', mime: 'image/jpeg', label: 'photo' },
-  { kind: 'document', name: 'file', mime: 'application/octet-stream', label: 'file' },
-  { kind: 'audio', name: 'audio.mp3', mime: 'audio/mpeg', label: 'audio' },
-  { kind: 'voice', name: 'voice.ogg', mime: 'audio/ogg', label: 'voice message' },
-  { kind: 'video', name: 'video.mp4', mime: 'video/mp4', label: 'video' },
-  { kind: 'video_note', name: 'video_note.mp4', mime: 'video/mp4', label: 'video message' },
+  { kind: 'photo', noun: 'photo', mime: 'image/jpeg' },
+  { kind: 'document', noun: 'document', mime: 'application/octet-stream' },
+  { kind: 'audio', noun: 'audio', mime: 'audio/mpeg' },
+  { kind: 'voice', noun: 'voice message', mime: 'audio/ogg' },
+  { kind: 'video', noun: 'video', mime: 'video/mp4' },
+  { kind: 'video_note', noun: 'video message', mime: 'video/mp4' },
 ] as const;
 
 /**
  * The message's own file, never a quoted message's (`reply_to_message`). A photo comes in several
  * sizes: the largest by area, since the Bot API does not state their order. Null: no file.
  */
-export function telegramFileOf(message: TelegramMessage): { ref: TelegramFileRef; filename: string; mime: string; label: string } | null {
+export function telegramFileOf(
+  message: TelegramMessage,
+): { ref: TelegramFileRef; kind: string; name?: string; mime: string; label: string } | null {
   for (const k of TELEGRAM_FILE_KINDS) {
     const value = message[k.kind];
     const ref = Array.isArray(value)
@@ -91,9 +93,9 @@ export function telegramFileOf(message: TelegramMessage): { ref: TelegramFileRef
       : value;
     if (!ref?.file_id) continue;
     const label = k.kind === 'document' && ref.file_name ? `file ${ref.file_name}`
-      : ref.duration && (k.kind === 'voice' || k.kind === 'video_note') ? `${k.label}, ${ref.duration} s`
-      : k.label;
-    return { ref, filename: ref.file_name || k.name, mime: ref.mime_type || k.mime, label };
+      : ref.duration && (k.kind === 'voice' || k.kind === 'video_note') ? `${k.noun}, ${ref.duration} s`
+      : k.noun;
+    return { ref, kind: k.noun, ...(ref.file_name ? { name: ref.file_name } : {}), mime: ref.mime_type || k.mime, label };
   }
   return null;
 }
@@ -448,7 +450,8 @@ export async function handleTelegramEvent(
       followUp: { text: channelPromptText(telegramEnvelope(message)) },
       files: file
         ? [{
-            filename: file.filename,
+            kind: file.kind,
+            ...(file.name ? { name: file.name } : {}),
             mime: file.mime,
             ...(file.ref.file_size ? { size: file.ref.file_size } : {}),
             read: (maxBytes) => telegramFile(token, file.ref.file_id, maxBytes),

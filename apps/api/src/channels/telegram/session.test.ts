@@ -94,11 +94,11 @@ describe('telegram files', () => {
 
   test('an animation is read once, as its document; a missing name and type get the defaults', () => {
     const gif = { ...bare, animation: { file_id: 'a1', file_name: 'loop.mp4', mime_type: 'video/mp4' }, document: { file_id: 'a1', file_name: 'loop.mp4', mime_type: 'video/mp4' } };
-    expect(telegramFileOf(gif as TelegramMessage)).toEqual({ ref: gif.document, filename: 'loop.mp4', mime: 'video/mp4', label: 'file loop.mp4' });
-    expect(telegramFileOf(photo)).toMatchObject({ filename: 'photo.jpg', mime: 'image/jpeg', label: 'photo' });
-    expect(telegramFileOf({ ...bare, document: { file_id: 'd2' } })).toMatchObject({ filename: 'file', mime: 'application/octet-stream', label: 'file' });
-    expect(telegramFileOf({ ...bare, voice: { file_id: 'v2' } })).toMatchObject({ filename: 'voice.ogg', mime: 'audio/ogg', label: 'voice message' });
-    expect(telegramFileOf({ ...bare, video_note: { file_id: 'n1', duration: 3 } })).toMatchObject({ filename: 'video_note.mp4', mime: 'video/mp4', label: 'video message, 3 s' });
+    expect(telegramFileOf(gif as TelegramMessage)).toEqual({ ref: gif.document, kind: 'document', name: 'loop.mp4', mime: 'video/mp4', label: 'file loop.mp4' });
+    expect(telegramFileOf(photo)).toEqual({ ref: photo.photo![1], kind: 'photo', mime: 'image/jpeg', label: 'photo' });
+    expect(telegramFileOf({ ...bare, document: { file_id: 'd2' } })).toMatchObject({ kind: 'document', mime: 'application/octet-stream', label: 'document' });
+    expect(telegramFileOf({ ...bare, voice: { file_id: 'v2' } })).toMatchObject({ kind: 'voice message', mime: 'audio/ogg', label: 'voice message' });
+    expect(telegramFileOf({ ...bare, video_note: { file_id: 'n1', duration: 3 } })).toMatchObject({ kind: 'video message', mime: 'video/mp4', label: 'video message, 3 s' });
   });
 
   test('a message with no text reads as its file or sticker; a caption wins; an album item says so', () => {

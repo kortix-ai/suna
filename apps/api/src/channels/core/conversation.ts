@@ -167,8 +167,16 @@ export interface ChannelMessage {
 
 /** One file of an inbound message. The adapter lists it from the stored event, with no network call. */
 export interface ChannelFile {
-  /** The platform's name, or the adapter's (`photo.jpg`). The core keeps letters, digits, `.`, `_` and `-`. */
-  filename: string;
+  /**
+   * Kortix's word for the file (`photo`, `document`, `voice message`), never the sender's. A note
+   * names the file by it, and the file is called by it (`voice_message.ogg`).
+   */
+  kind: string;
+  /**
+   * The sender's name for the file. The core keeps only a plain extension of it (`report.pdf` →
+   * `document.pdf`): the name itself reaches the agent only in the message text, which it treats as untrusted.
+   */
+  name?: string;
   /** The declared type. The core keeps a valid bare `type/subtype`, else `application/octet-stream`. */
   mime: string;
   /** The size the platform states. Over the room left in the message, `read` never runs. */
@@ -440,9 +448,26 @@ const CAP_MB = CHANNEL_FILES_MAX_BYTES / (1024 * 1024);
 /** Nothing in the sandbox or the gateway turns speech into text yet. */
 const NO_SPEECH_NOTE = 'A recording is attached. No speech-to-text tool is installed here, so you cannot listen to it: tell the sender, and ask them to type the message.';
 
-/** Letters, digits, `.`, `_`, `-`: the name reaches a workspace path and the lines Kortix vouches for. */
-const fileName = (name: string) =>
-  Array.from(name.normalize('NFC').replace(/[^\p{L}\p{N}._-]/gu, '_')).slice(0, 100).join('') || 'file';
+/** The extension of a type, for a file whose name has none. */
+const MIME_EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'audio/mpeg': 'mp3',
+  'audio/ogg': 'ogg',
+  'video/mp4': 'mp4',
+  'application/pdf': 'pdf',
+};
+
+/**
+ * Kortix's name for a file: its kind and the extension of the sender's name, else of its type. The name
+ * becomes a workspace path and the `<file filename>` the agent reads after the lines Kortix vouches for.
+ */
+function fileName(file: ChannelFile, mime: string): string {
+  const extension = /\.([a-z0-9]{1,10})$/.exec(file.name?.toLowerCase() ?? '')?.[1] ?? MIME_EXTENSIONS[mime];
+  return `${file.kind.replaceAll(' ', '_')}${extension ? `.${extension}` : ''}`;
+}
 
 /** `type/subtype`, lower case, no parameters: `parseStagedPromptDataUrl` needs the URL's type and the part's to match. */
 function bareMime(mime: string): string {
@@ -478,7 +503,6 @@ async function readMessageFiles(target: ChannelTarget, files: readonly ChannelFi
   const read: MessageFiles = { parts: [], notes: [], hasImage: false, hasAudio: false };
   let room = CHANNEL_FILES_MAX_BYTES;
   for (const file of files) {
-    const filename = fileName(file.filename);
     const mime = bareMime(file.mime);
     let bytes: Awaited<ReturnType<ChannelFile['read']>> = 'too_large';
     if (file.size === undefined || file.size <= room) {
@@ -498,12 +522,12 @@ async function readMessageFiles(target: ChannelTarget, files: readonly ChannelFi
     if (typeof bytes !== 'string' && bytes.byteLength > room) bytes = 'too_large';
     if (typeof bytes === 'string') {
       read.notes.push(bytes === 'too_large'
-        ? `The file "${filename}" was not attached: a chat message brings at most ${CAP_MB} MB of files. Tell the sender, and ask for a smaller file or the text.`
-        : `The file "${filename}" was not attached: Kortix could not download it. Ask the sender to send it again.`);
+        ? `The ${file.kind} was not attached: a chat message brings at most ${CAP_MB} MB of files. Tell the sender, and ask for a smaller file or the text.`
+        : `The ${file.kind} was not attached: Kortix could not download it. Ask the sender to send it again.`);
       continue;
     }
     room -= bytes.byteLength;
-    read.parts.push({ type: 'file', mime, filename, url: `data:${mime};base64,${Buffer.from(bytes).toString('base64')}` });
+    read.parts.push({ type: 'file', mime, filename: fileName(file, mime), url: `data:${mime};base64,${Buffer.from(bytes).toString('base64')}` });
     read.hasImage ||= mime.startsWith('image/') && isModelNativeAttachmentMime(mime);
     read.hasAudio ||= mime.startsWith('audio/');
   }
