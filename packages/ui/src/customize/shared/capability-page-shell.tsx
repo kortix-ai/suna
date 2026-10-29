@@ -1,6 +1,7 @@
 'use client';
 
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
+import { useInCustomizeFrame } from './customize-tab-bar';
 import { cn } from '../../internal/lib/utils';
 import { createContext, type ReactNode, useContext } from 'react';
 
@@ -82,6 +83,7 @@ export function CapabilityPageShell({
 }: CapabilityPageShellProps) {
   const scrollRef = useCapabilityScrollRootRef();
   const embed = useCapabilityShellEmbed();
+  const framed = useInCustomizeFrame();
   if (embed?.titled) {
     // Beside the agent page's rail: the view's title left (no sentence under
     // it, the Settings dialect), its grant control (`filters`) right; search
@@ -148,9 +150,9 @@ export function CapabilityPageShell({
               reader (Agents 52 → 72px, Secrets 92 → 112px). */}
           <div className="space-y-1 sm:max-w-md">
             <div className="flex items-center gap-1">
-              {/* The page's own sidebar opener: Customize has no top bar. It
-                  hides itself while the sidebar is docked open. */}
-              <SidebarToggle className="-ml-2" />
+              {/* The page's own sidebar opener, only without the Customize bar
+                  above (which holds one). It hides while the sidebar is docked open. */}
+              {framed ? null : <SidebarToggle className="-ml-2" />}
               <h1 className="text-foreground text-xl font-medium text-balance">{title}</h1>
               {titleAddon}
             </div>

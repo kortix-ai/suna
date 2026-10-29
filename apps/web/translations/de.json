@@ -20928,7 +20928,7 @@
       "textce53edc1b757": "Sitzungsschleife jetzt ausgeführt",
       "textcf789cba73dc": "Trigger suchen",
       "text362ec1f12075": "Noch keine Trigger",
-      "text8fbb8c347fc0": "Agenten ausführen oder eine Sitzung wecken: per Zeitplan, App-Ereignis, Webhook oder zusammengeführter Änderungsanfrage.",
+      "text8fbb8c347fc0": "Agenten starten oder Sitzungen wecken, nach Zeitplan oder Ereignis.",
       "texte9acea9f91da": "Erstelle einen Trigger, und dein Agent läuft von selbst, ohne Prompt.",
       "text5ffd973e20ed": "Änderungsanfrage zusammengeführt",
       "text41bec5c0977c": "Zur Laufzeit erstellt",
@@ -23444,7 +23444,9 @@
       "requiredConnectorsHelp": "In kortix.yaml aufgeführt (connectors_required). Nicht durchgesetzt: Sitzungen starten auch ohne sie.",
       "models": "Modelle",
       "tabCapabilities": "Fähigkeiten",
-      "summaryExcept": "{all} except {list}"
+      "summaryExcept": "{all} except {list}",
+      "pinToSidebar": "An Seitenleiste anheften",
+      "unpinFromSidebar": "Von Seitenleiste lösen"
     },
     "myKortix": {
       "allowed": "Erlaubt",
@@ -23859,9 +23861,10 @@
     "skillsSearch": "Search skills",
     "toolsSearch": "Search tools",
     "extensionsSearch": "Search extensions",
-    "skillsProjectDescription": "Instructions agents load when a task matches. The project registers its own; Kortix ships the built-in ones.",
-    "toolsProjectDescription": "Every tool an agent of this project can call. An agent gets the ones its Access grants.",
-    "extensionsProjectDescription": "Code that runs inside sessions. The project registers its own; Kortix runs the platform ones."
+    "skillsProjectDescription": "Anweisungen, die Agenten laden, wenn eine Aufgabe passt.",
+    "toolsProjectDescription": "Jedes Tool, das ein Agent dieses Projekts aufrufen kann.",
+    "extensionsProjectDescription": "Code, der in jeder Sitzung läuft.",
+    "scopeAll": "Alle"
   },
   "spaces": {
     "memory": {
@@ -24366,7 +24369,7 @@
     "loadError": "Could not load this agent's mounts.",
     "retry": "Try again",
     "title": "Drives",
-    "projectLead": "Folders from Files that every new session of this project mounts. A change applies at once.",
+    "projectLead": "Files-Ordner, die jede neue Sitzung einbindet.",
     "unmountProjectDescription": "New sessions stop mounting this folder, and running ones lose it now. The files stay in Files.",
     "pickerProjectDescription": "Pick a folder in Files. Every session of this project sees it under /drives."
   },

@@ -65,6 +65,7 @@
     "./customize/shared/capability-access-gate",
     "./customize/shared/capability-page-shell",
     "./customize/shared/capability-skeleton",
+    "./customize/shared/customize-tab-bar",
     "./customize/shared/entity/entity-files",
     "./customize/shared/feature-gate-screen",
     "./customize/shared/use-customize-prefetch",

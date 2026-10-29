@@ -67,6 +67,7 @@ import { AgentCoverCard } from './agent-cover-card';
 import { agentInMode, filterAgents } from './agent-filter';
 import { AgentTabBody, CustomizeHeader } from './agent-page-chrome';
 import { CreateAgentModal } from './create-agent-modal';
+import { AgentPinButton } from './agent-pin-button';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -176,6 +177,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
       description={agent.description}
       badges={<AgentCardBadges agent={agent} />}
       coverLabel={cover}
+      action={<AgentPinButton projectId={projectId} agent={agent.name} onCard />}
       meta={
         <AgentCardFacts
           agent={agent}

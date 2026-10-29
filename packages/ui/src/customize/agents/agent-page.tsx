@@ -124,6 +124,7 @@ import {
 import { AgentModelView } from './agent-model-view';
 import { AgentApprovalRules } from './agent-approval-rules';
 import { AgentSectionRail, railGroupOf } from './agent-section-rail';
+import { AgentPinButton } from './agent-pin-button';
 import { AgentShareControl } from './agent-share-control';
 import {
   ACCESS_VIEWS,
@@ -589,6 +590,7 @@ function AgentActions({
 
   return (
     <>
+      <AgentPinButton projectId={projectId} agent={agent.name} />
       <AgentShareControl projectId={projectId} agentName={agent.name} open={share.open} onOpenChange={share.setOpen} />
       {startBlocked ? (
         <Hint label={startBlocked}>

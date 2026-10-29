@@ -3,18 +3,18 @@
 import { useParams } from 'next/navigation';
 
 import { CapabilityAccessGate } from '@kortix/ui/customize/shared/capability-access-gate';
+import { CustomizeFrame } from '@kortix/ui/customize/shared/customize-tab-bar';
 
 /**
  * Shared shell for /projects/[id]/customize/* (and the retired `members` and
  * `channels` redirects). The `(capabilities)` route group keeps the segment out
  * of the URL.
  *
- * Customize has no top bar (Marko, 2026-10-24: "remove the customize topbar and
- * give it space to edit"). Its navigation lives in the sidebar's Customize
- * group: My Kortix, the agents, New agent, Review and Settings (Project admin,
- * where Members also lives). Each page draws its own header and its own
- * sidebar opener: the agent page in its identity header, every other page in
- * `CapabilityPageShell`.
+ * The Customize bar is back on top (Jay, 2026-10-29: prod's layout): Agents,
+ * the libraries, Review, Members and Settings in one row of tabs
+ * (`CustomizeFrame`). Project admin renders the same bar, so it stays put
+ * between the two route trees. The bar holds the sidebar opener; the page
+ * headers below it drop theirs.
  *
  * **`h-svh` bounds the page.** Nothing above this box has a definite height
  * (`<body>` is `min-height: 100dvh`, the sidebar wrapper `min-h-svh`), so
@@ -31,7 +31,9 @@ export default function CapabilitiesLayout({ children }: { children: React.React
 
   return (
     <div className="flex h-svh flex-col overflow-hidden">
-      <CapabilityAccessGate projectId={projectId}>{children}</CapabilityAccessGate>
+      <CustomizeFrame projectId={projectId}>
+        <CapabilityAccessGate projectId={projectId}>{children}</CapabilityAccessGate>
+      </CustomizeFrame>
     </div>
   );
 }

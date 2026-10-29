@@ -2,27 +2,15 @@
 
 import { adminPath } from '../../lib/routes';
 
-import { useProjectAccountId, useProjectConfig } from '@kortix/sdk/react';
+import { useProjectConfig } from '@kortix/sdk/react';
 
-import {
-  ArrowUpRightIcon,
-  CheckCircleIcon,
-  CpuIcon,
-  GearSixIcon,
-  ListBulletsIcon,
-  PlusIcon,
-  UsersIcon,
-} from '@phosphor-icons/react';
+import { CpuIcon, GearSixIcon, ListIcon, TrayIcon } from '@phosphor-icons/react';
 import { createContext, type ReactNode, useCallback, useContext, useState } from 'react';
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
-import { HubLink } from '../account-hub/account-hub-location';
-import { agentDisplayName } from '../components/agent-mark';
-import { Slot } from '@radix-ui/react-slot';
+import { AgentMark, agentDisplayName } from '../components/agent-mark';
 import { CountBadge } from '../../primitives/count-badge';
-import { MENU_LABEL, menuRow } from '../../primitives/menu-recipe';
 import { cn } from '../../lib/utils';
-import { NavHoverCardList } from './nav-hover-card';
 import {
   SidebarMenuSub,
   SidebarMenuSubButton,
@@ -31,13 +19,14 @@ import {
 } from '../../primitives/sidebar';
 import { UiLink as Link, useUiPathname } from '../../providers/ui-provider';
 import { useIsMobile } from '../hooks';
-import { activeCapabilityTab, capabilityTabHref } from '../lib/capability-tab-routes';
+import { activeCapabilityTab, agentHref, capabilityTabHref } from '../lib/capability-tab-routes';
 import { useReviewSessionSummary } from '../hooks/use-review-session-summary';
-import { PROJECT_ACTIONS } from '../lib/project-actions';
-import { useProjectCan } from '../lib/use-project-can';
-import { hubTarget } from '../stores/account-panel-store';
+import { usePinnedAgents } from '../stores/pinned-agents-store';
 import { useCapabilityAccess } from './project-settings-nav';
 import { CreateAgentModal } from '../../customize/agents/create-agent-modal';
+
+/** Customize lists this many agents when none is pinned; All agents holds the rest. */
+const SIDEBAR_AGENT_LIMIT = 5;
 
 type Agent = NonNullable<ReturnType<typeof useProjectConfig>>['agents'][number];
 
@@ -100,127 +89,84 @@ function RowGlyph({ children }: { children: ReactNode }) {
 }
 
 /**
- * One Customize row: a sidebar sub-row, or a menu row inside the Customize
- * hover card. The child is the link; this gives it the row's classes.
+ * What Customize opens to, kept short on purpose: most configuration happens
+ * by asking an agent in a session, so the sidebar lists only the agents you
+ * pinned (none pinned: the first five) and All agents when more exist, then Review (with its "needs you" count), Models, and Settings
+ * (Project admin, whose top bar holds every library and Members).
+ * The header's + and All agents buttons sit on the Customize row itself.
  */
-function CapabilityRow({ card, active = false, children }: { card: boolean; active?: boolean; children: ReactNode }) {
-  if (card) {
-    return (
-      <li>
-        <Slot className={menuRow('sm', 'default', cn('cursor-pointer', active && 'bg-accent'))}>{children}</Slot>
-      </li>
-    );
-  }
-  return (
-    <SidebarMenuSubItem>
-      <SidebarMenuSubButton asChild isActive={active}>
-        {children}
-      </SidebarMenuSubButton>
-    </SidebarMenuSubItem>
-  );
-}
-
-/**
- * The points under Customize: All agents (the index, with the count), New
- * agent (the create modal), Review (with its "needs you" count), Members (the
- * account hub's project access, for anyone who may read members), Models and
- * Settings (Project admin). The agents themselves are the sidebar's Agents
- * section (`project-agents-section.tsx`). The active row follows the pathname.
- *
- * `card` draws the same rows as the Customize hover card's list; `onNavigate`
- * closes that card.
- */
-export function ProjectCapabilityNav({
-  projectId,
-  card = false,
-  onNavigate,
-}: {
-  projectId: string;
-  card?: boolean;
-  onNavigate?: () => void;
-}) {
+export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
   const pathname = useUiPathname();
   const config = useProjectConfig(projectId);
   const access = useCapabilityAccess(projectId);
-  const accountId = useProjectAccountId(projectId);
   const needsYou = useReviewSessionSummary(projectId, { enabled: true }).totalNeedsYou;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
   const tTabs = useI18nTranslations('agentEditor.tabs');
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const canCreate = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE).allowed === true;
-  const canReadMembers =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_READ, { accountId }).allowed === true;
-  const openNewAgent = useContext(NewAgentContext);
+  const pinned = usePinnedAgents(projectId);
 
   if (!access.settled) return null;
 
-  // My Kortix is not listed: the project home starts it, it has no page here.
-  const allAgents = sortCustomizeAgents((config?.agents ?? []).filter((agent) => !agent.platform));
-
-  const agentsIndex = capabilityTabHref(projectId, 'agent');
-  const onIndex = !!pathname && /\/customize\/agents\/?$/.test(pathname);
-  const hasAgents = access.tabs.includes('agent');
-  const hasReview = access.tabs.includes('review');
+  const allAgents = access.tabs.includes('agent')
+    ? sortCustomizeAgents((config?.agents ?? []).filter((agent) => !agent.platform))
+    : [];
+  // The agents you pinned, in pin order; none pinned, the first few. A
+  // project with a hundred agents keeps a short sidebar either way.
+  const pinnedAgents = pinned.flatMap((name) => allAgents.filter((agent) => agent.name === name));
+  const agents = pinnedAgents.length > 0 ? pinnedAgents : allAgents.slice(0, SIDEBAR_AGENT_LIMIT);
+  const moreAgents = allAgents.length > agents.length;
+  const showReview = access.tabs.includes('review');
   const onReview = pathname ? activeCapabilityTab(pathname) === 'review' : false;
-  const hasSettings = access.tabs.includes('config');
-  // Models is the one Project admin section people open often enough to keep
-  // a row of its own here; Settings opens the rest.
   const hasModels = access.tabs.includes('models');
   const onModels = !!pathname && /\/admin\/models(\/|$)/.test(pathname);
-  const onSettings = isProjectAdminPath(pathname) && !onModels;
-  const showMembers = canReadMembers && !!accountId;
+  const hasSettings = access.tabs.includes('config');
   const close = () => {
-    onNavigate?.();
     if (isMobile) setOpenMobile(false);
   };
 
-  if (allAgents.length === 0 && !hasReview && !hasSettings && !showMembers) return null;
+  if (agents.length === 0 && !showReview && !hasModels && !hasSettings) return null;
 
-  const List = card ? NavHoverCardList : SidebarMenuSub;
+  // `mr-0 pr-0`: the rows reach the sidebar's right edge like the rows above;
+  // the left indent and guide line stay.
   return (
-    <List>
-      {hasAgents ? (
-        <CapabilityRow card={card} active={onIndex}>
-            <Link href={agentsIndex} prefetch={false} onClick={close}>
+    <SidebarMenuSub className="mr-0 pr-0">
+      {agents.map((agent) => {
+        const href = agentHref(projectId, agent.name);
+        const active = !!pathname && (pathname === href || pathname.startsWith(`${href}/`));
+        return (
+          <SidebarMenuSubItem key={agent.name}>
+            <SidebarMenuSubButton asChild isActive={active}>
+              <Link href={href} prefetch={false} onClick={close}>
+                <RowGlyph>
+                  <AgentMark slug={agent.name} size={14} />
+                </RowGlyph>
+                <span className={cn('truncate', agent.hidden && 'text-muted-foreground')}>
+                  {agentDisplayName(agent.name)}
+                </span>
+              </Link>
+            </SidebarMenuSubButton>
+          </SidebarMenuSubItem>
+        );
+      })}
+      {moreAgents ? (
+        <SidebarMenuSubItem>
+          <SidebarMenuSubButton asChild isActive={!!pathname && pathname.endsWith('/customize/agents')}>
+            <Link href={capabilityTabHref(projectId, 'agent')} prefetch={false} onClick={close}>
               <RowGlyph>
-                <ListBulletsIcon className="size-3.5" />
+                <ListIcon className="size-3.5" />
               </RowGlyph>
               <span className="truncate">{tTabs('allAgents')}</span>
-              {allAgents.length > 0 ? (
-                <span className="text-muted-foreground ml-auto shrink-0 text-xs tabular-nums">
-                  {allAgents.length}
-                </span>
-              ) : null}
+              <span className="text-muted-foreground ml-auto shrink-0 text-xs tabular-nums">{allAgents.length}</span>
             </Link>
-          </CapabilityRow>
+          </SidebarMenuSubButton>
+        </SidebarMenuSubItem>
       ) : null}
-      {canCreate ? (
-        <CapabilityRow card={card}>
-            {/* The href (`?new=1`) stays for a modified click and a copied link. */}
-            <Link
-              href={`${agentsIndex}?new=1`}
-              prefetch={false}
-              onClick={(e) => {
-                // Without the provider the link goes to `?new=1`, where the Agents page opens it.
-                if (!openNewAgent || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-                e.preventDefault();
-                close();
-                openNewAgent();
-              }}
-            >
-              <RowGlyph>
-                <PlusIcon className="size-3.5" />
-              </RowGlyph>
-              <span className="truncate">{tTabs('newAgent')}</span>
-            </Link>
-          </CapabilityRow>
-      ) : null}
-      {hasReview ? (
-        <CapabilityRow card={card} active={onReview}>
+      {showReview ? (
+        <SidebarMenuSubItem>
+          <SidebarMenuSubButton asChild isActive={onReview}>
             <Link href={capabilityTabHref(projectId, 'review')} prefetch={false} onClick={close}>
               <RowGlyph>
-                <CheckCircleIcon className="size-3.5" />
+                <TrayIcon className="size-3.5" />
               </RowGlyph>
               <span className="truncate">{tTabs('review')}</span>
               {needsYou > 0 ? (
@@ -229,39 +175,33 @@ export function ProjectCapabilityNav({
                 </span>
               ) : null}
             </Link>
-          </CapabilityRow>
-      ) : null}
-      {showMembers && accountId ? (
-        <CapabilityRow card={card}>
-            <HubLink to={hubTarget(accountId, { tab: 'access-projects', project: projectId })} onClick={close}>
-              <RowGlyph>
-                <UsersIcon className="size-3.5" />
-              </RowGlyph>
-              <span className="truncate">{tI18nComplete.raw('text1044a4c056d0')}</span>
-              <ArrowUpRightIcon aria-hidden className="text-muted-foreground ml-auto size-3 shrink-0" />
-            </HubLink>
-          </CapabilityRow>
+          </SidebarMenuSubButton>
+        </SidebarMenuSubItem>
       ) : null}
       {hasModels ? (
-        <CapabilityRow card={card} active={onModels}>
+        <SidebarMenuSubItem>
+          <SidebarMenuSubButton asChild isActive={onModels}>
             <Link href={adminPath(projectId, 'models')} prefetch={false} onClick={close}>
               <RowGlyph>
                 <CpuIcon className="size-3.5" />
               </RowGlyph>
               <span className="truncate">{tTabs('models')}</span>
             </Link>
-          </CapabilityRow>
+          </SidebarMenuSubButton>
+        </SidebarMenuSubItem>
       ) : null}
       {hasSettings ? (
-        <CapabilityRow card={card} active={onSettings}>
+        <SidebarMenuSubItem>
+          <SidebarMenuSubButton asChild isActive={isProjectAdminPath(pathname) && !onModels}>
             <Link href={adminPath(projectId, 'general')} prefetch={false} onClick={close}>
               <RowGlyph>
                 <GearSixIcon className="size-3.5" />
               </RowGlyph>
               <span className="truncate">{tTabs('settings')}</span>
             </Link>
-          </CapabilityRow>
+          </SidebarMenuSubButton>
+        </SidebarMenuSubItem>
       ) : null}
-    </List>
+    </SidebarMenuSub>
   );
 }

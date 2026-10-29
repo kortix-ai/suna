@@ -28,16 +28,13 @@ const HOVER_CLOSE_DELAY_MS = 150;
  * It opens only where hover exists (the session list's gate) and only on the
  * expanded sidebar: the collapsed rail shows the row's tooltip there.
  * `holdRef` names an input that keeps the card open while it has focus.
- * `openDelay` is the rest before it opens: 0 opens it on hover (Customize).
  */
 export function useNavHoverCard({
   enabled,
   holdRef,
-  openDelay = HOVER_OPEN_DELAY_MS,
 }: {
   enabled: boolean;
   holdRef?: RefObject<HTMLElement | null>;
-  openDelay?: number;
 }) {
   const canHover = useMediaQuery('(min-width: 768px) and (hover: hover) and (pointer: fine)');
   const { state } = useSidebar();
@@ -59,8 +56,7 @@ export function useNavHoverCard({
     if (event.pointerType !== 'mouse' || !active) return;
     cancelTimers();
     if (open) return;
-    if (openDelay === 0) return setOpen(true);
-    openTimer.current = setTimeout(() => setOpen(true), openDelay);
+    openTimer.current = setTimeout(() => setOpen(true), HOVER_OPEN_DELAY_MS);
   };
   const hoverClose = (event: PointerEvent<HTMLElement>) => {
     if (event.pointerType !== 'mouse') return;
@@ -74,8 +70,6 @@ export function useNavHoverCard({
 
   return {
     open: open && active,
-    /** The card can open here: hover exists and the sidebar is expanded. */
-    available: active,
     setOpen,
     anchorRef: anchorRef as RefObject<HTMLElement>,
     rowProps: {

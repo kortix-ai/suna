@@ -25,6 +25,7 @@ import { type MouseEvent, type ReactNode, useCallback } from 'react';
 import { useTranslations as useI18nTranslations } from '../../i18n';
 import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
+import { useInCustomizeFrame } from '../shared/customize-tab-bar';
 import { cn } from '../../internal/lib/utils';
 import { Button } from '../../primitives/button';
 import { ButtonGroup } from '../../primitives/button-group';
@@ -81,18 +82,22 @@ export function CustomizeHeader({
   rule?: boolean;
 }) {
   const sidebar = useOptionalSidebar();
+  // Under the Customize bar, the bar is the title-bar row and holds the opener.
+  const framed = useInCustomizeFrame();
   return (
     <header
       className={cn(
-        'kx-titlebar-row flex shrink-0 items-center gap-3 px-4 pt-4 pb-3 md:px-8',
+        // The Customize tab bar's height and inset: a 48px row, 16px sides.
+        'flex min-h-12 shrink-0 items-center gap-3 px-4 py-2',
+        !framed && 'kx-titlebar-row',
         rule && 'border-b',
       )}
       data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
     >
-      <SidebarToggle />
-      {slug ? <AgentMark slug={slug} size={28} /> : null}
+      {framed ? null : <SidebarToggle />}
+      {slug ? <AgentMark slug={slug} size={21} /> : null}
       <div className="min-w-0 flex-1">
-        <h1 className="text-foreground truncate text-xl font-medium">{title}</h1>
+        <h1 className="text-foreground truncate text-base font-medium">{title}</h1>
         {description && !(facts && facts.length > 0) ? (
           <p className="text-muted-foreground truncate text-sm">{description}</p>
         ) : null}
@@ -155,7 +160,7 @@ export function AgentTabBar({
     <>
       <nav aria-label={t('tabsLabel')} className="shrink-0 border-b">
         <FadedScrollArea orientation="horizontal" fadeColor="from-background">
-          <div className="flex w-max items-center gap-1 px-4 md:px-8">
+          <div className="flex w-max items-center gap-1 px-2">
             {shown.map((group) => {
               const on = group === current;
               const single = group.items.length === 1 ? group.items[0] : null;
@@ -187,7 +192,7 @@ export function AgentTabBar({
         // Below `md` only: wider, the content's rail (`agent-section-rail.tsx`) lists the views.
         <div className="shrink-0 md:hidden">
           <FadedScrollArea orientation="horizontal" fadeColor="from-background">
-            <div className="flex w-max items-center gap-1 px-4 pt-4 md:px-8">
+            <div className="flex w-max items-center gap-1 px-2 pt-4">
               {current.items.map((item) => {
                 const on = item.key === active;
                 return (
@@ -252,19 +257,22 @@ export function AgentTabBody({ children, className }: { children: ReactNode; cla
  */
 export function AgentPageSkeleton() {
   const sidebar = useOptionalSidebar();
+  const framed = useInCustomizeFrame();
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col" aria-busy>
       <header
-        className="kx-titlebar-row flex shrink-0 items-center gap-3 px-4 pt-4 pb-3 md:px-8"
+        className={cn('flex min-h-12 shrink-0 items-center gap-3 px-4 py-2', !framed && 'kx-titlebar-row')}
         data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
       >
-        <SidebarToggle />
-        {/* The mark tile's literal 40px (`agent-mark.tsx` TILE[28]). */}
-        <Skeleton className="shrink-0 rounded-md py-0" style={{ width: 40, height: 40 }} />
-        <Skeleton className="h-5 w-40 rounded-sm py-0" />
+        {framed ? null : <SidebarToggle />}
+        {/* The mark tile's literal 28px (`agent-mark.tsx` TILE[21]). */}
+        <Skeleton className="shrink-0 rounded-md py-0" style={{ width: 28, height: 28 }} />
+        <Skeleton className="h-4 w-40 rounded-sm py-0" />
       </header>
-      <div className="shrink-0 border-b px-4 pb-3 md:px-8" aria-hidden>
-        <Skeleton className="h-4 w-80 max-w-full rounded-sm py-0" />
+      <div className="flex h-10 shrink-0 items-center gap-4 border-b px-4" aria-hidden>
+        <Skeleton className="h-3.5 w-16 rounded-sm py-0" />
+        <Skeleton className="h-3.5 w-16 rounded-sm py-0" />
+        <Skeleton className="h-3.5 w-16 rounded-sm py-0" />
       </div>
       <div className="min-h-0 flex-1 overflow-hidden px-4 pt-5 md:px-8" aria-hidden>
         <div className="mx-auto w-full max-w-3xl space-y-6">

@@ -40,7 +40,7 @@
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, type ComponentType, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUpRightIcon, UsersIcon, type Icon } from '@phosphor-icons/react';
+import { type Icon } from '@phosphor-icons/react';
 
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, invalidatePermissionProbes, qk, useFeatureFlag } from '@kortix/sdk/react';
@@ -56,7 +56,6 @@ import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { UiLink as Link, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import { CapabilitiesSkeleton } from '../../customize/shared/capability-skeleton';
 import { projectSettingsSections } from '../../customize/project-settings/project-settings-sections';
-import { HubLink } from '../../internal/account-hub/account-hub-location';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from '../../internal/account-hub/account-settings-shell';
 import { useIsMobile } from '../../internal/hooks';
 import { RAIL_HORIZONTAL_ROW_CLASS, RAIL_ROW_CLASS, RailGroup } from '../../internal/components/nav-rail';
@@ -71,13 +70,13 @@ import {
 } from '../../internal/lib/project-actions';
 import { useProjectCans, useProjectPageCans, type CanResult } from '../../internal/lib/use-project-can';
 import { cn } from '../../internal/lib/utils';
-import { hubTarget } from '../../internal/stores/account-panel-store';
 import { useSettingsPanelStore } from '../../internal/stores/settings-panel-store';
 
 import { buildProjectAdminNav } from './project-admin-nav';
 import {
   DEFAULT_PROJECT_ADMIN_SECTION,
   isProjectAdminResource,
+  RESOURCE_LABEL_KEYS,
   parseProjectAdminSection,
   PROJECT_ADMIN_RESOURCES,
   projectAdminHref,
@@ -117,18 +116,6 @@ const RESOURCE_PAGES: Partial<Record<ProjectAdminResourceKey, SectionPage>> = {
   repo: lazyPage(() => import('../layout/project-files-view'), (m) => m.ProjectFilesView),
 };
 
-/* Rail labels, keyed by section: the `hardcodedUi.i18nComplete` strings the
-   Customize bar and the sidebar already show for these libraries. */
-const RESOURCE_LABEL_KEYS: Partial<Record<ProjectAdminResourceKey, string>> = {
-  connectors: 'textc3d2e79ebdd0',
-  skills: 'text66d0f523a379',
-  // "Triggers": kortix.yaml triggers and loops are one page (2026-10-28).
-  triggers: 'texte62f2148a64d',
-  models: 'textd17d2d78d76e',
-  secrets: 'textd8707d411d99',
-  apps: 'text89dd748442c1',
-  repo: 'text91dba14806eb',
-};
 
 /* A host page owns a full-viewport root (`AppsView` is `h-svh`). Inside this
    pane that box would overflow by the header's height and clip its last row,
@@ -288,7 +275,6 @@ export function ProjectAdminDashboard({
     [settingsCans, settingsProbeFailed, tI18nComplete, upgradeAttention],
   );
 
-  const showMembers = !receivedDenial(pageCans[PROJECT_ACTIONS.PROJECT_MEMBERS_READ]);
   const rows = [...resourceRows, ...settingsRows];
 
   // A section named in the URL but not listed for this caller falls back to
@@ -347,20 +333,20 @@ export function ProjectAdminDashboard({
       ? (RESOURCE_PAGES[active] ?? hostSections[active as 'apps'] ?? null)
       : SETTINGS_PAGES[active];
 
-  const members =
-    showMembers && accountId ? (
-      <MembersLink projectId={projectId} accountId={accountId} horizontal={isMobile} />
-    ) : null;
   const title = tI18nComplete.raw('text73738b374f4b');
+  // The Customize bar above names every library and Settings, and holds Members.
+  // A library page runs full width; a settings section keeps a short sub-nav
+  // of the settings sections only (Jay, 2026-10-29: prod's layout).
+  const showRail = !!active && !isProjectAdminResource(active) && settingsRows.length > 1;
 
   return (
     <SettingsNavProvider value={settingsNav}>
       <div
-        className={cn('min-h-0 flex-1 overflow-hidden', isMobile ? 'flex flex-col' : 'grid')}
+        className={cn('min-h-0 flex-1 overflow-hidden', isMobile || !showRail ? 'flex flex-col' : 'grid')}
         // The Settings page's rail width, so the two settings surfaces are one shape.
-        style={isMobile ? undefined : { gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
+        style={isMobile || !showRail ? undefined : { gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
       >
-        {isMobile ? (
+        {!showRail ? null : isMobile ? (
           <nav aria-label={title} className="border-border/60 bg-background flex shrink-0 flex-col border-b">
             <h1 className="text-foreground px-4 pt-3 text-sm font-medium">{title}</h1>
             <FadedScrollArea orientation="horizontal" fadeColor="from-background" className="min-w-0 flex-1 py-2">
@@ -368,12 +354,11 @@ export function ProjectAdminDashboard({
                 <div className="flex w-fit items-center gap-2">
                   <Tabs value={active} className="w-fit">
                     <TabsList orientation="horizontal" className="w-fit">
-                      {rows.map((row) => (
+                      {settingsRows.map((row) => (
                         <RailTrigger key={row.key} projectId={projectId} row={row} horizontal />
                       ))}
                     </TabsList>
                   </Tabs>
-                  {members}
                 </div>
               ) : (
                 <Skeleton className="mx-3 h-7 w-64 rounded-md" />
@@ -386,28 +371,13 @@ export function ProjectAdminDashboard({
               aria-label={title}
               className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col gap-4 overflow-y-auto px-2 pt-4 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
-              <header className="space-y-1 px-2.5">
-                <h1 className="text-foreground text-base font-medium">{title}</h1>
-                <p className="text-muted-foreground text-xs text-balance">
-                  {tI18nComplete.raw('text2b8a7a0458b5')}
-                </p>
-              </header>
               {settled ? (
                 <Tabs value={active} orientation="vertical" className="gap-4">
-                  {resourceRows.length > 0 ? (
-                    <RailGroup label={tI18nComplete.raw('text4da7c2d25273')}>
-                      {resourceRows.map((row) => (
-                        <RailTrigger key={row.key} projectId={projectId} row={row} />
-                      ))}
-                    </RailGroup>
-                  ) : null}
-                  {settingsRows.length > 0 || members ? (
-                    <RailGroup label={tI18nComplete.raw('text74a883a037bc')} after={members}>
-                      {settingsRows.map((row) => (
-                        <RailTrigger key={row.key} projectId={projectId} row={row} />
-                      ))}
-                    </RailGroup>
-                  ) : null}
+                  <RailGroup label={tI18nComplete.raw('text74a883a037bc')}>
+                    {settingsRows.map((row) => (
+                      <RailTrigger key={row.key} projectId={projectId} row={row} />
+                    ))}
+                  </RailGroup>
                 </Tabs>
               ) : (
                 <RailSkeleton />
@@ -474,39 +444,6 @@ function RailTrigger({
         ) : null}
       </Link>
     </TabsTrigger>
-  );
-}
-
-/**
- * Members is the account hub's project panel, not a pane of this page, so it
- * is a plain link, not a tab. It opens the hub the way the Customize bar's
- * Members link does. Its classes copy a rail row's resting state.
- */
-const MEMBERS_LINK_CLASS = cn(
-  'text-foreground hover:bg-hover flex items-center gap-2 rounded-md px-2.5 text-sm',
-  'focus-visible:ring-kortix-blue focus-visible:ring-1 focus-visible:outline-none',
-  '[&_svg]:text-muted-foreground',
-);
-
-function MembersLink({
-  projectId,
-  accountId,
-  horizontal,
-}: {
-  projectId: string;
-  accountId: string;
-  horizontal: boolean;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  return (
-    <HubLink
-      to={hubTarget(accountId, { tab: 'access-projects', project: projectId })}
-      className={cn(MEMBERS_LINK_CLASS, horizontal ? 'h-8 shrink-0 whitespace-nowrap' : 'h-10 w-full')}
-    >
-      <UsersIcon aria-hidden className="size-4 shrink-0" />
-      <span className={cn(!horizontal && 'truncate')}>{tI18nComplete.raw('text1044a4c056d0')}</span>
-      <ArrowUpRightIcon aria-hidden className={cn('size-3 shrink-0', !horizontal && 'ml-auto')} />
-    </HubLink>
   );
 }
 

@@ -5906,7 +5906,7 @@ const catalog = {
       "textb24d48611918": "It needs {grant}. Anyone who manages this project can grant it.",
       "textcf789cba73dc": "Search triggers",
       "text362ec1f12075": "No triggers yet",
-      "text8fbb8c347fc0": "Run agents or wake a session on a schedule, an app event, a webhook, or a merged change request.",
+      "text8fbb8c347fc0": "Start agents or wake sessions on a schedule or an event.",
       "texte9acea9f91da": "Create a trigger and your agent runs on its own, no prompt needed.",
       "text5ffd973e20ed": "Change request merged",
       "text41bec5c0977c": "Created at runtime",
@@ -7803,7 +7803,9 @@ const catalog = {
       "requiredConnectors": "Required connectors",
       "requiredConnectorsHelp": "Listed in kortix.yaml (connectors_required). Not enforced: sessions start without them.",
       "models": "Models",
-      "tabCapabilities": "Capabilities"
+      "tabCapabilities": "Capabilities",
+      "pinToSidebar": "Pin to sidebar",
+      "unpinFromSidebar": "Unpin from sidebar"
     },
     "myKortix": {
       "allowed": "Allowed",
@@ -8818,9 +8820,10 @@ const catalog = {
     "skillsSearch": "Search skills",
     "toolsSearch": "Search tools",
     "extensionsSearch": "Search extensions",
-    "skillsProjectDescription": "Instructions agents load when a task matches. The project registers its own; Kortix ships the built-in ones.",
-    "toolsProjectDescription": "Every tool an agent of this project can call. An agent gets the ones its Access grants.",
-    "extensionsProjectDescription": "Code that runs inside sessions. The project registers its own; Kortix runs the platform ones."
+    "skillsProjectDescription": "Instructions agents load when a task matches.",
+    "toolsProjectDescription": "Every tool an agent of this project can call.",
+    "extensionsProjectDescription": "Code that runs inside every session.",
+    "scopeAll": "All"
   },
   "agentMounts": {
     "lead": "Folders from Files this agent's sessions mount. A change applies at once and reaches every new session.",
@@ -8851,7 +8854,7 @@ const catalog = {
     "loadError": "Could not load this agent's mounts.",
     "retry": "Try again",
     "title": "Drives",
-    "projectLead": "Folders from Files that every new session of this project mounts. A change applies at once.",
+    "projectLead": "Files folders every new session mounts.",
     "unmountProjectDescription": "New sessions stop mounting this folder, and running ones lose it now. The files stay in Files.",
     "pickerProjectDescription": "Pick a folder in Files. Every session of this project sees it under /drives."
   },

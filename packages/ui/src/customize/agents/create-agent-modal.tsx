@@ -215,7 +215,7 @@ export function CreateAgentModal({
                     value={description}
                     placeholder={start === 'describe' ? t('whatItDoesPlaceholder') : t('descriptionPlaceholderShort')}
                     onChange={(e) => setDescription(e.target.value)}
-                    rows={start === 'describe' ? 4 : 2}
+                    minHeight={start === 'describe' ? 90 : 52}
                   />
                 </div>
               </ModalBody>

@@ -139,3 +139,16 @@ export function projectAdminNavTarget(tab: string): ProjectAdminSectionKey | nul
   if (tab === 'snapshots') return 'sandbox';
   return null;
 }
+
+/* Rail labels, keyed by section: the `hardcodedUi.i18nComplete` strings the
+   Customize bar and the sidebar already show for these libraries. */
+export const RESOURCE_LABEL_KEYS: Partial<Record<ProjectAdminResourceKey, string>> = {
+  connectors: 'textc3d2e79ebdd0',
+  skills: 'text66d0f523a379',
+  // "Triggers": kortix.yaml triggers and loops are one page (2026-10-28).
+  triggers: 'texte62f2148a64d',
+  models: 'textd17d2d78d76e',
+  secrets: 'textd8707d411d99',
+  apps: 'text89dd748442c1',
+  repo: 'text91dba14806eb',
+};

@@ -37,7 +37,7 @@ export function ReviewPage({ projectId }: { projectId: string }) {
   const t = useTranslations('agentEditor.tabs');
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <CustomizeHeader title={t('review')} description={t('reviewLead')} rule />
+      <CustomizeHeader title={t('review')} rule />
       <ReviewView projectId={projectId} />
     </div>
   );

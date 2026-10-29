@@ -20928,7 +20928,7 @@
       "textce53edc1b757": "セッションのループを今すぐ実行しました",
       "textcf789cba73dc": "トリガーを検索",
       "text362ec1f12075": "トリガーはまだありません",
-      "text8fbb8c347fc0": "スケジュール、アプリイベント、Webhook、またはマージされた変更リクエストで、エージェントを実行するかセッションを再開します。",
+      "text8fbb8c347fc0": "スケジュールやイベントでエージェントを開始、またはセッションを起こします。",
       "texte9acea9f91da": "トリガーを作成すると、プロンプトなしでエージェントが自動で動きます。",
       "text5ffd973e20ed": "変更リクエストがマージされた",
       "text41bec5c0977c": "実行時に作成",
@@ -23444,7 +23444,9 @@
       "requiredConnectorsHelp": "kortix.yaml に記載（connectors_required）。適用されません。セッションはこれらなしで開始します。",
       "models": "モデル",
       "tabCapabilities": "機能",
-      "summaryExcept": "{all} except {list}"
+      "summaryExcept": "{all} except {list}",
+      "pinToSidebar": "サイドバーに固定",
+      "unpinFromSidebar": "サイドバーから固定解除"
     },
     "myKortix": {
       "allowed": "許可",
@@ -23859,9 +23861,10 @@
     "skillsSearch": "Search skills",
     "toolsSearch": "Search tools",
     "extensionsSearch": "Search extensions",
-    "skillsProjectDescription": "Instructions agents load when a task matches. The project registers its own; Kortix ships the built-in ones.",
-    "toolsProjectDescription": "Every tool an agent of this project can call. An agent gets the ones its Access grants.",
-    "extensionsProjectDescription": "Code that runs inside sessions. The project registers its own; Kortix runs the platform ones."
+    "skillsProjectDescription": "タスクに合うときにエージェントが読み込む指示。",
+    "toolsProjectDescription": "このプロジェクトのエージェントが呼び出せるすべてのツール。",
+    "extensionsProjectDescription": "すべてのセッション内で動くコード。",
+    "scopeAll": "すべて"
   },
   "spaces": {
     "memory": {
@@ -24366,7 +24369,7 @@
     "loadError": "Could not load this agent's mounts.",
     "retry": "Try again",
     "title": "Drives",
-    "projectLead": "Folders from Files that every new session of this project mounts. A change applies at once.",
+    "projectLead": "新しいセッションがマウントする Files のフォルダー。",
     "unmountProjectDescription": "New sessions stop mounting this folder, and running ones lose it now. The files stay in Files.",
     "pickerProjectDescription": "Pick a folder in Files. Every session of this project sees it under /drives."
   },

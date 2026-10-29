@@ -3,6 +3,7 @@
 import { Suspense, type ReactNode } from 'react';
 
 import { ConnectorsAppReturnBar } from '@kortix/ui/customize/connectors/connectors-app-return-bar';
+import { CustomizeFrame } from '@kortix/ui/customize/shared/customize-tab-bar';
 import {
   ProjectAdminDashboard,
   type ProjectAdminHostSections,
@@ -33,7 +34,10 @@ export function ProjectAdminRoute({
 }) {
   return (
     <div className="flex h-svh flex-col overflow-hidden">
-      <ProjectAdminDashboard projectId={projectId} section={section} content={content} hostSections={HOST_SECTIONS} />
+      {/* The Customize bar over Project admin too: one row of tabs for both trees. */}
+      <CustomizeFrame projectId={projectId}>
+        <ProjectAdminDashboard projectId={projectId} section={section} content={content} hostSections={HOST_SECTIONS} />
+      </CustomizeFrame>
       {section === 'connectors' ? (
         <Suspense fallback={null}>
           <ConnectorsAppReturnBar />

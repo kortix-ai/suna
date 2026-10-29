@@ -20928,7 +20928,7 @@
       "textce53edc1b757": "Петља сесије је одмах покренута",
       "textcf789cba73dc": "Претражи окидаче",
       "text362ec1f12075": "Још нема окидача",
-      "text8fbb8c347fc0": "Покрећи агенте или пробуди сесију по распореду, догађају апликације, вебхуку или спојеном захтеву за измену.",
+      "text8fbb8c347fc0": "Покрените агенте или пробудите сесије по распореду или догађају.",
       "texte9acea9f91da": "Направи окидач и твој агент ради сам, без упита.",
       "text5ffd973e20ed": "Захтев за измену спојен",
       "text41bec5c0977c": "Направљено током рада",
@@ -23444,7 +23444,9 @@
       "requiredConnectorsHelp": "Наведени у kortix.yaml (connectors_required). Не примењује се: сесије почињу без њих.",
       "models": "Модели",
       "tabCapabilities": "Mogućnosti",
-      "summaryExcept": "{all} except {list}"
+      "summaryExcept": "{all} except {list}",
+      "pinToSidebar": "Закачи на бочну траку",
+      "unpinFromSidebar": "Откачи са бочне траке"
     },
     "myKortix": {
       "allowed": "Дозвољено",
@@ -23859,9 +23861,10 @@
     "skillsSearch": "Search skills",
     "toolsSearch": "Search tools",
     "extensionsSearch": "Search extensions",
-    "skillsProjectDescription": "Instructions agents load when a task matches. The project registers its own; Kortix ships the built-in ones.",
-    "toolsProjectDescription": "Every tool an agent of this project can call. An agent gets the ones its Access grants.",
-    "extensionsProjectDescription": "Code that runs inside sessions. The project registers its own; Kortix runs the platform ones."
+    "skillsProjectDescription": "Упутства која агенти учитавају када задатак одговара.",
+    "toolsProjectDescription": "Сваки алат који агент овог пројекта може да позове.",
+    "extensionsProjectDescription": "Код који се извршава у свакој сесији.",
+    "scopeAll": "Све"
   },
   "spaces": {
     "memory": {
@@ -24366,7 +24369,7 @@
     "loadError": "Could not load this agent's mounts.",
     "retry": "Try again",
     "title": "Drives",
-    "projectLead": "Folders from Files that every new session of this project mounts. A change applies at once.",
+    "projectLead": "Files фасцикле које монтира свака нова сесија.",
     "unmountProjectDescription": "New sessions stop mounting this folder, and running ones lose it now. The files stay in Files.",
     "pickerProjectDescription": "Pick a folder in Files. Every session of this project sees it under /drives."
   },

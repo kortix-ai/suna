@@ -9,11 +9,13 @@ import {
   CustomizeGlyph,
   useCapabilityAccess,
 } from '../../internal/layout/project-settings-nav';
-import { isProjectAdminPath, ProjectCapabilityNav } from '../../internal/layout/project-capability-nav';
-import { NavHoverCardContent, useNavHoverCard } from '../../internal/layout/nav-hover-card';
-import { ProjectNavRow } from '../../internal/layout/project-nav-row';
+import { isProjectAdminPath, ProjectCapabilityNav, useOpenNewAgent } from '../../internal/layout/project-capability-nav';
 import { capabilityTabHref } from '../../internal/lib/capability-tab-routes';
-import { Popover, PopoverAnchor } from '../../primitives/popover';
+import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
+import { useProjectCan } from '../../internal/lib/use-project-can';
+import { Button } from '../../primitives/button';
+import { ButtonGroup } from '../../primitives/button-group';
+import Hint from '../../primitives/hint';
 import { cn } from '../../lib/utils';
 import {
   DropdownMenu,
@@ -33,7 +35,7 @@ import {
   useSidebarNavStore,
   type SidebarNavEntry,
 } from '../../internal/stores/sidebar-nav-store';
-import { CaretRightIcon, DotsThreeOutlineIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, DotsThreeOutlineIcon, ListIcon, PlusIcon } from '@phosphor-icons/react';
 import { UiLink as Link, useUiPathname } from '../../providers/ui-provider';
 import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent } from 'react';
 
@@ -172,76 +174,84 @@ function MoreNavItem({
 }
 
 /**
- * Customize: every capability point (the agents, All agents, New agent,
- * Review, Members, Models, Settings) behind one row. Where hover exists the
- * row works like Apps: it links to All agents, and a mouse on it opens the
- * hover card with every point at once, with no delay (`useNavHoverCard`). On a
- * touch screen or the collapsed rail there is no hover, so the row toggles
- * the same points as a submenu, open by itself on a Customize page. Absent
- * when the caller may open no capability page (same gate as the tab bar).
+ * Customize, for the people who may configure the project. Most configuring
+ * happens by asking an agent in a session, so this stays one disclosure: the
+ * row toggles the project's agents, Review, Models and Settings
+ * (`ProjectCapabilityNav`). On hover, its right edge holds
+ * + (New agent) and All agents. Open by itself on an agent or Customize page;
+ * a click overrides that until you cross between those contexts. Absent when
+ * the caller may open no capability page (same gate as the tab bar).
  */
 function CustomizeNavEntry({ projectId }: { projectId: string }) {
   const t = useTranslations('sidebar');
+  const tTabs = useTranslations('agentEditor.tabs');
   const pathname = useUiPathname();
   const access = useCapabilityAccess(projectId);
-  // No delay: the card opens as the pointer reaches the row.
-  const card = useNavHoverCard({ enabled: true, openDelay: 0 });
-  // `includes` tolerates the locale prefix the host may not strip. Project
-  // admin counts: the group's Settings row leads there.
+  const canCreate = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE).allowed === true;
+  const openNewAgent = useOpenNewAgent();
+  const isMobile = useIsMobile();
+  const { setOpenMobile } = useSidebar();
+  // `includes` tolerates the locale prefix the host may not strip.
   const onCustomizePage = !!pathname && (pathname.includes('/customize') || isProjectAdminPath(pathname));
-  // Submenu only: open on a Customize page, closed off it; a click overrides
-  // that until you cross between those contexts.
   const [override, setOverride] = useState<boolean | null>(null);
   useEffect(() => setOverride(null), [onCustomizePage]);
   const open = override ?? onCustomizePage;
 
   if (!access.settled || access.tabs.length === 0) return null;
-
-  const glyph = (
-    <span className="shrink-0">
-      <CustomizeGlyph />
-    </span>
-  );
-
-  if (card.available) {
-    return (
-      <Popover open={card.open} onOpenChange={card.setOpen}>
-        <PopoverAnchor virtualRef={card.anchorRef} />
-        <ProjectNavRow
-          active={onCustomizePage}
-          label={t('customize')}
-          href={capabilityTabHref(projectId, 'agent')}
-          prefetch
-          {...card.rowProps}
-        >
-          {glyph}
-          {t('customize')}
-        </ProjectNavRow>
-        <NavHoverCardContent {...card.contentProps}>
-          <ProjectCapabilityNav projectId={projectId} card onNavigate={() => card.setOpen(false)} />
-        </NavHoverCardContent>
-      </Popover>
-    );
-  }
+  const hasAgents = access.tabs.includes('agent');
+  const close = () => {
+    if (isMobile) setOpenMobile(false);
+  };
 
   return (
     <>
-      <SidebarMenuItem>
+      <SidebarMenuItem className="group/customize">
         <SidebarMenuButton
           onClick={() => setOverride(!open)}
           aria-expanded={open}
-          className="group/menu-button text-sidebar-foreground"
+          // The caret is the Sessions header's: 12px (beats the button's
+          // `[&_svg]:size-4!`), shown on hover, turned when open.
+          className="group/menu-button text-sidebar-foreground pr-14 [&>svg:last-child]:size-3!"
         >
-          {glyph}
+          <span className="shrink-0">
+            <CustomizeGlyph />
+          </span>
           <span className="truncate">{t('customize')}</span>
           <CaretRightIcon
-            weight="bold"
+            aria-hidden
             className={cn(
-              'text-muted-foreground ml-auto size-3.5 shrink-0 transition-transform',
+              'text-muted-foreground duration-normal size-3 shrink-0 opacity-0 transition-transform ease-out group-focus-within/customize:opacity-100 group-hover/customize:opacity-100',
               open && 'rotate-90',
             )}
           />
         </SidebarMenuButton>
+        {hasAgents ? (
+          <ButtonGroup className="absolute top-1/2 right-1 -translate-y-1/2 opacity-100 transition-opacity group-focus-within/customize:opacity-100 group-hover/customize:opacity-100 md:opacity-0">
+            {canCreate && openNewAgent ? (
+              <Hint side="top" label={tTabs('newAgent')}>
+                <Button
+                  variant="secondary"
+                  size="icon-xs"
+                  type="button"
+                  aria-label={tTabs('newAgent')}
+                  onClick={() => {
+                    close();
+                    openNewAgent();
+                  }}
+                >
+                  <PlusIcon className="size-4" />
+                </Button>
+              </Hint>
+            ) : null}
+            <Hint side="top" label={tTabs('allAgents')}>
+              <Button variant="secondary" size="icon-xs" asChild>
+                <Link href={capabilityTabHref(projectId, 'agent')} prefetch={false} aria-label={tTabs('allAgents')} onClick={close}>
+                  <ListIcon className="size-4" />
+                </Link>
+              </Button>
+            </Hint>
+          </ButtonGroup>
+        ) : null}
       </SidebarMenuItem>
       {open ? <ProjectCapabilityNav projectId={projectId} /> : null}
     </>

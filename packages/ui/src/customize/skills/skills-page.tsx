@@ -7,8 +7,8 @@ import { CapabilityLibrary, type CapabilityAgent } from '../shared/capability-li
 /**
  * Skills: the one component for Project admin → Skills and an agent's
  * Access → Skills (`CapabilityLibrary`). Without `agent` it is the project's
- * catalog with New, each skill's files and Remove; with it, the same list
- * with the agent's switches.
+ * catalog with New, each skill's files and Remove, filtered All / Project /
+ * Kortix; with it, the same list with the agent's switches.
  */
 export function SkillsPage({ projectId, agent }: { projectId: string; agent?: CapabilityAgent; footer?: ReactNode }) {
   return <CapabilityLibrary projectId={projectId} view="skills" agent={agent} />;

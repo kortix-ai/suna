@@ -20928,7 +20928,7 @@
       "textce53edc1b757": "Boucle de session exécutée maintenant",
       "textcf789cba73dc": "Rechercher des déclencheurs",
       "text362ec1f12075": "Aucun déclencheur pour l'instant",
-      "text8fbb8c347fc0": "Exécutez des agents ou réveillez une session selon un planning, un événement d'app, un webhook ou une demande de modification fusionnée.",
+      "text8fbb8c347fc0": "Lance des agents ou réveille des sessions selon un horaire ou un événement.",
       "texte9acea9f91da": "Créez un déclencheur et votre agent s'exécute seul, sans prompt.",
       "text5ffd973e20ed": "Demande de modification fusionnée",
       "text41bec5c0977c": "Créée à l'exécution",
@@ -23444,7 +23444,9 @@
       "requiredConnectorsHelp": "Listés dans kortix.yaml (connectors_required). Non appliqué : les sessions démarrent sans eux.",
       "models": "Modèles",
       "tabCapabilities": "Capacités",
-      "summaryExcept": "{all} except {list}"
+      "summaryExcept": "{all} except {list}",
+      "pinToSidebar": "Épingler dans la barre latérale",
+      "unpinFromSidebar": "Retirer de la barre latérale"
     },
     "myKortix": {
       "allowed": "Autorisé",
@@ -23859,9 +23861,10 @@
     "skillsSearch": "Search skills",
     "toolsSearch": "Search tools",
     "extensionsSearch": "Search extensions",
-    "skillsProjectDescription": "Instructions agents load when a task matches. The project registers its own; Kortix ships the built-in ones.",
-    "toolsProjectDescription": "Every tool an agent of this project can call. An agent gets the ones its Access grants.",
-    "extensionsProjectDescription": "Code that runs inside sessions. The project registers its own; Kortix runs the platform ones."
+    "skillsProjectDescription": "Instructions que les agents chargent quand une tâche correspond.",
+    "toolsProjectDescription": "Chaque outil qu’un agent de ce projet peut appeler.",
+    "extensionsProjectDescription": "Du code qui s’exécute dans chaque session.",
+    "scopeAll": "Tout"
   },
   "spaces": {
     "memory": {
@@ -24366,7 +24369,7 @@
     "loadError": "Could not load this agent's mounts.",
     "retry": "Try again",
     "title": "Drives",
-    "projectLead": "Folders from Files that every new session of this project mounts. A change applies at once.",
+    "projectLead": "Dossiers Files que monte chaque nouvelle session.",
     "unmountProjectDescription": "New sessions stop mounting this folder, and running ones lose it now. The files stay in Files.",
     "pickerProjectDescription": "Pick a folder in Files. Every session of this project sees it under /drives."
   },

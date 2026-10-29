@@ -463,7 +463,7 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
  */
 export const TRIGGERS_COPY = {
   title: 'Triggers',
-  description: 'Run agents or wake a session on a schedule, an app event, a webhook, or a merged change request.',
+  description: 'Start agents or wake sessions on a schedule or an event.',
   noun: 'trigger',
   createLabel: 'New trigger',
   searchPlaceholder: 'Search triggers',

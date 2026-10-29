@@ -20928,7 +20928,7 @@
       "textce53edc1b757": "已立即运行会话循环",
       "textcf789cba73dc": "搜索触发器",
       "text362ec1f12075": "还没有触发器",
-      "text8fbb8c347fc0": "按计划、应用事件、Webhook 或已合并的变更请求运行智能体或唤醒会话。",
+      "text8fbb8c347fc0": "按计划或事件启动智能体或唤醒会话。",
       "texte9acea9f91da": "创建触发器后，你的智能体会自动运行，无需提示。",
       "text5ffd973e20ed": "变更请求已合并",
       "text41bec5c0977c": "运行时创建",
@@ -23444,7 +23444,9 @@
       "requiredConnectorsHelp": "已在 kortix.yaml 中列出（connectors_required）。不强制执行：会话在没有它们的情况下启动。",
       "models": "模型",
       "tabCapabilities": "能力",
-      "summaryExcept": "{all} except {list}"
+      "summaryExcept": "{all} except {list}",
+      "pinToSidebar": "固定到侧边栏",
+      "unpinFromSidebar": "从侧边栏取消固定"
     },
     "myKortix": {
       "allowed": "已允许",
@@ -23859,9 +23861,10 @@
     "skillsSearch": "Search skills",
     "toolsSearch": "Search tools",
     "extensionsSearch": "Search extensions",
-    "skillsProjectDescription": "Instructions agents load when a task matches. The project registers its own; Kortix ships the built-in ones.",
-    "toolsProjectDescription": "Every tool an agent of this project can call. An agent gets the ones its Access grants.",
-    "extensionsProjectDescription": "Code that runs inside sessions. The project registers its own; Kortix runs the platform ones."
+    "skillsProjectDescription": "任务匹配时智能体加载的指令。",
+    "toolsProjectDescription": "此项目的智能体可调用的每个工具。",
+    "extensionsProjectDescription": "在每个会话中运行的代码。",
+    "scopeAll": "全部"
   },
   "spaces": {
     "memory": {
@@ -24366,7 +24369,7 @@
     "loadError": "Could not load this agent's mounts.",
     "retry": "Try again",
     "title": "Drives",
-    "projectLead": "Folders from Files that every new session of this project mounts. A change applies at once.",
+    "projectLead": "每个新会话挂载的 Files 文件夹。",
     "unmountProjectDescription": "New sessions stop mounting this folder, and running ones lose it now. The files stay in Files.",
     "pickerProjectDescription": "Pick a folder in Files. Every session of this project sees it under /drives."
   },

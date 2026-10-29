@@ -5,6 +5,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (built-in skills)
+- `getBuiltinSkill(name)` and the `BuiltinSkill` / `BuiltinSkillReference` types: one skill Kortix
+  ships (`GET /v1/skills/:name`), with its description, the full SKILL.md body, the feature flag
+  that gates it, and its reference files. A built-in skill is not a file in the project's repo.
+  `getBuiltinSkill(name, { full: true })` also inlines each reference file's `content`.
+
 ### Added (project catalog, project mounts)
 - `getProjectCapabilities(projectId)` and the `ProjectCapabilities` type: every tool, skill and
   extension any agent of the project can be given (`GET /projects/:id/capabilities`).

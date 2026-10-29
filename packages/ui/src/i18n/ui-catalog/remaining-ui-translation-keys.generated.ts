@@ -4,7 +4,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   "New trigger": 'texta38f4ea67a30',
   "Search triggers": 'textcf789cba73dc',
   "No triggers yet": 'text362ec1f12075',
-  "Run agents or wake a session on a schedule, an app event, a webhook, or a merged change request.": 'text8fbb8c347fc0',
+  "Start agents or wake sessions on a schedule or an event.": 'text8fbb8c347fc0',
   "Create a trigger and your agent runs on its own, no prompt needed.": 'texte9acea9f91da',
   "Have an agent run when a change request merges.": 'text0e8f0fa67e67',
   "change request trigger": 'text20c14db54300',
