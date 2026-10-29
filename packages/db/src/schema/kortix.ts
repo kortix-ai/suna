@@ -7626,6 +7626,10 @@ export const connectorHeldCalls = kortixSchema.table(
     index('idx_connector_held_calls_run_due')
       .on(table.state, table.runDeadline)
       .where(sql`${table.state} in ('queued', 'dispatched')`),
+    index('idx_connector_held_calls_project').on(table.projectId),
+    index('idx_connector_held_calls_input_age')
+      .on(table.createdAt)
+      .where(sql`${table.inputEnc} is not null`),
   ],
 );
 

@@ -49,6 +49,8 @@ const { APPROVAL_RERUN_RULE, heldCallRepeatInstructions, heldRunRule } = await i
 const { decideConnectorApproval, expireDueApprovals, loadApprovalRow } = await import(
   '../projects/lib/connector-approval-decision'
 );
+const { runApprovalExpiryTick } = await import('../workers/approval-expiry-worker');
+const { consumeApprovedExecution } = await import('../connectors/db-deps-gateway');
 const { createAccountToken } = await import('../repositories/account-tokens');
 const { ensureDefaultConnection, upsertConnectionCredential } = await import('../connectors/credentials');
 const { claimJobs, runJobBatch } = await import('../shared/job-queue');
@@ -483,5 +485,114 @@ describe('approve runs the held call once', () => {
     expect(repeat.status).toBe('ok');
     expect(providerHits).toBe(before + 1);
     expect((await gateRow(id)).resultSummary).toHaveProperty('consumed_at');
+  });
+});
+
+describe('the approval-expiry tick closes the held-call lifecycle', () => {
+  const DAY_MS = 24 * 3600_000;
+  const jobOf = (id: string) => and(eq(jobQueue.queue, HELD_CALL_QUEUE), eq(jobQueue.jobKey, id));
+  const killJob = (id: string) => db.update(jobQueue).set({ status: 'dead' }).where(jobOf(id));
+
+  test('a pending held gate past expires_at: the tick expires it and wipes the input', async () => {
+    const id = await gate({ amount: 1201 });
+    await db.update(connectorCalls).set({ expiresAt: new Date(Date.now() - 1_000) }).where(eq(connectorCalls.executionId, id));
+    await runApprovalExpiryTick();
+    expect((await gateRow(id)).status).toBe('expired');
+    expect(await held(id)).toMatchObject({ state: 'cancelled', inputEnc: null });
+  });
+
+  test('a dispatched row past the run ceiling with a dead job settles unknown once, never runs again', async () => {
+    const id = await gate({ amount: 1202 });
+    await decide(id, 'approve');
+    await killJob(id);
+    const fencedAt = new Date(Date.now() - HELD_RUN_CEILING_MS - 60_000);
+    await db
+      .update(connectorHeldCalls)
+      .set({ state: 'dispatched', dispatchedAt: fencedAt, updatedAt: fencedAt })
+      .where(eq(connectorHeldCalls.executionId, id));
+    const before = providerHits;
+    await runApprovalExpiryTick();
+    await runApprovalExpiryTick();
+    expect(providerHits).toBe(before);
+    const row = await held(id);
+    expect(row).toMatchObject({ state: 'unknown', inputEnc: null });
+    expect(row.outcome).toMatchObject({ status: 'unknown', reason: 'run_interrupted' });
+    expect(await resumes(`approval-run:${id}`)).toHaveLength(1);
+  });
+
+  test('a queued row past its run deadline settles refused/run_window_passed only when its job is dead', async () => {
+    const id = await gate({ amount: 1203 });
+    await decide(id, 'approve');
+    await db
+      .update(connectorHeldCalls)
+      .set({ runDeadline: new Date(Date.now() - 1_000), updatedAt: new Date() })
+      .where(eq(connectorHeldCalls.executionId, id));
+    // The job is still queued: the job, not the sweep, settles the row.
+    await runApprovalExpiryTick();
+    expect((await held(id)).state).toBe('queued');
+
+    await killJob(id);
+    const before = providerHits;
+    await runApprovalExpiryTick();
+    await runApprovalExpiryTick();
+    expect(providerHits).toBe(before);
+    const row = await held(id);
+    expect(row).toMatchObject({ state: 'refused', inputEnc: null });
+    expect(row.outcome).toMatchObject({ status: 'refused', reason: 'run_window_passed' });
+    expect(await resumes(`approval-run:${id}`)).toHaveLength(1);
+  });
+
+  test('the 31-day backstop wipes held input in every state; a held row ends cancelled', async () => {
+    const terminal = await gate({ amount: 1204 });
+    const stillHeld = await gate({ amount: 1205 });
+    const young = await gate({ amount: 1206 });
+    const old = new Date(Date.now() - 32 * DAY_MS);
+    // A terminal row that kept its input (no writer leaves one; the backstop must still wipe it).
+    await db
+      .update(connectorHeldCalls)
+      .set({ state: 'error', createdAt: old, updatedAt: old })
+      .where(eq(connectorHeldCalls.executionId, terminal));
+    await db.update(connectorHeldCalls).set({ createdAt: old }).where(eq(connectorHeldCalls.executionId, stillHeld));
+    await db
+      .update(connectorHeldCalls)
+      .set({ state: 'error', updatedAt: new Date() })
+      .where(eq(connectorHeldCalls.executionId, young));
+
+    await runApprovalExpiryTick();
+    expect(await held(terminal)).toMatchObject({ state: 'error', inputEnc: null });
+    const cancelled = await held(stillHeld);
+    expect(cancelled).toMatchObject({ state: 'cancelled', inputEnc: null });
+    expect(cancelled.finishedAt).toBeInstanceOf(Date);
+    // Younger than 31 days: untouched.
+    expect((await held(young)).inputEnc).not.toBeNull();
+  });
+
+  test('the audit projection of an approved gate reads success, not failure', async () => {
+    const id = await gate({ amount: 1208 });
+    await decide(id, 'approve');
+    const events = await db
+      .select({ phase: auditEvents.phase, outcome: auditEvents.outcome })
+      .from(auditEvents)
+      .where(and(eq(auditEvents.sourceLedger, 'connector_calls'), eq(auditEvents.sourceRecordId, id)));
+    expect(events).toContainEqual({ phase: 'approved', outcome: 'success' });
+  });
+
+  test('carry-over never claims a gate that has a held row', async () => {
+    const id = await gate({ amount: 1207 });
+    // A held row without its input: approve takes the carry-over branch and flips the gate to `ok`.
+    await db.update(connectorHeldCalls).set({ inputEnc: null }).where(eq(connectorHeldCalls.executionId, id));
+    await decide(id, 'approve');
+    const row = await gateRow(id);
+    expect(row.status).toBe('ok');
+    expect(
+      await consumeApprovedExecution({
+        sessionId: row.sessionId,
+        actingUserId: row.actingUserId!,
+        connectorId: row.connectorId!,
+        actionPath: row.actionPath,
+        requestDigest: row.requestDigest!,
+      }),
+    ).toBe(false);
+    expect((await gateRow(id)).resultSummary).not.toHaveProperty('consumed_at');
   });
 });

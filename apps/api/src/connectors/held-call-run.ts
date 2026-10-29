@@ -20,7 +20,7 @@
  * (≤ 500 chars) go to the outcome, the resume text and the audit event.
  */
 import { connectorCalls, connectorHeldCalls, sessionLifecycleCommands } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../projects/surface';
 import { recordAuditEvent } from '../shared/audit';
@@ -323,6 +323,70 @@ async function settle(
   void import('../channels/approval-card-relay')
     .then((relay) => relay.markApprovalCardRan(row.projectId, row.executionId))
     .catch((error) => logger.warn('[approvals] held run card update failed', { error: String(error) }));
+}
+
+const SWEEP_BATCH = 200;
+/** Held input never outlives this: approvals.ttl is at most 30 days. */
+const HELD_INPUT_MAX_AGE_DAYS = 31;
+
+/**
+ * The approval-expiry tick's backstop for held calls, in two steps.
+ *
+ *   1. A row stuck in the run: `dispatched` past the run ceiling, or `queued`
+ *      past its run deadline, whose job is no longer queued (dead after its
+ *      last attempt, or gone). `runHeldCall` settles it as the job would
+ *      (`unknown` or `refused/run_window_passed`): it never runs the call,
+ *      wipes the input, enqueues the one `approval-run:` resume and updates
+ *      the card. A row older than 31 days settles even with a queued job.
+ *   2. Held input older than 31 days is wiped in every state; a `held` row
+ *      also ends `cancelled`.
+ *
+ * Returns the number of rows settled or wiped.
+ */
+export async function sweepHeldCalls(): Promise<number> {
+  const old = sql`now() - make_interval(days => ${HELD_INPUT_MAX_AGE_DAYS})`;
+  const jobGoneOrOld = or(
+    sql`NOT EXISTS (SELECT 1 FROM kortix.job_queue j WHERE j.queue = ${HELD_CALL_QUEUE}
+      AND j.job_key = ${connectorHeldCalls.executionId}::text AND j.status = 'queued')`,
+    lt(connectorHeldCalls.createdAt, old),
+  );
+  const stuck = await db
+    .select({ id: connectorHeldCalls.executionId })
+    .from(connectorHeldCalls)
+    .where(
+      and(
+        or(
+          and(
+            eq(connectorHeldCalls.state, 'dispatched'),
+            lt(connectorHeldCalls.dispatchedAt, sql`now() - make_interval(secs => ${HELD_RUN_CEILING_MS / 1000})`),
+          ),
+          and(
+            eq(connectorHeldCalls.state, 'queued'),
+            or(isNull(connectorHeldCalls.runDeadline), lt(connectorHeldCalls.runDeadline, sql`now()`)),
+          ),
+        ),
+        jobGoneOrOld,
+      ),
+    )
+    .limit(SWEEP_BATCH);
+  for (const { id } of stuck) {
+    try {
+      await runHeldCall(id);
+    } catch (error) {
+      logger.warn('[approvals] stuck held call sweep failed', { executionId: id, error: String(error) });
+    }
+  }
+  const wiped = await db
+    .update(connectorHeldCalls)
+    .set({
+      inputEnc: null,
+      state: sql`CASE WHEN ${connectorHeldCalls.state} = 'held' THEN 'cancelled' ELSE ${connectorHeldCalls.state} END`,
+      finishedAt: sql`CASE WHEN ${connectorHeldCalls.state} = 'held' THEN now() ELSE ${connectorHeldCalls.finishedAt} END`,
+      updatedAt: sql`now()`,
+    })
+    .where(and(isNotNull(connectorHeldCalls.inputEnc), lt(connectorHeldCalls.createdAt, old)))
+    .returning({ id: connectorHeldCalls.executionId });
+  return stuck.length + wiped.length;
 }
 
 registerJobHandler(HELD_CALL_QUEUE, (job) => runHeldCall(job.jobKey), HELD_RUN_VISIBILITY_MS);

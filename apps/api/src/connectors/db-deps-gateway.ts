@@ -116,6 +116,8 @@ export async function consumeApprovedExecution(input: {
         gt(connectorCalls.resolvedAt, cutoff),
         sql`${connectorCalls.resultSummary} ->> 'decision' = 'approve'`,
         sql`${connectorCalls.resultSummary} ->> 'consumed_at' IS NULL`,
+        // A gate that held its input runs through the held run, never through a repeat.
+        sql`NOT EXISTS (SELECT 1 FROM kortix.connector_held_calls h WHERE h.execution_id = ${connectorCalls.executionId})`,
       ),
     )
     .orderBy(desc(connectorCalls.resolvedAt))
