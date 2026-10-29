@@ -265,6 +265,12 @@ export const TIERS: readonly CommandTier[] = [
             blurb: 'Re-prompt one session later or on repeat (kortix remind "…" --in 24h)',
           },
           {
+            name: 'chrome',
+            args: '<subcommand>',
+            blurb: "Drive the user's own Chrome from a session (use, release, ls, status)",
+            featureFlag: 'chrome',
+          },
+          {
             name: 'goals',
             args: '<subcommand>',
             blurb: 'Own an outcome until verified done: new, check, ls, status (in a session)',
@@ -273,7 +279,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'artifacts',
             args: '<subcommand>',
-            blurb: 'Share Files paths as docs and pages: publish, add, share, versions',
+            blurb: 'Share and review docs and pages: publish, comments, reply, activity',
             featureFlag: 'artifacts',
           },
           {

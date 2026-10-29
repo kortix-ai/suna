@@ -109,9 +109,17 @@ every write whose args are only ids (`send_draft`: who it goes to, the
 subject, the body; a delete: what goes). The approver sees it next to the
 args.
 
-A held call returns `approval_url`: share it, then stop the turn. The
-decision, and any message with it, arrives as your next prompt. A deny with
-a message is an instruction. In a Slack or Teams session Kortix posts the
+A held call returns `approval_url`: share it, then stop the turn. Approve
+runs the call once, as you, and your next prompt carries the result. Do not
+repeat the call: a repeat while it waits returns the same `execution_id`. A
+deny, and any message with it, also arrives as your next prompt. A deny with
+a message is an instruction. `kortix review show call:<execution_id>` shows
+the decision and `detail.run` (the run state and a redacted result).
+
+Read `approval_instructions` every time. When the response has no
+`runs_on_approval` (an older or unscoped token), approval alone does not run
+the call: when the prompt says approved, repeat the exact same call (same
+arguments and `--account`) within 15 minutes, and that call runs once. In a Slack or Teams session Kortix posts the
 approval card in the thread (`approval_instructions` says so): do not repost
 the link.
 </approvals>

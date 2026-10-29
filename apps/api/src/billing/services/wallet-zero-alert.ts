@@ -56,7 +56,6 @@ export async function alertWalletAtZero(accountId: string, balance: number): Pro
     subject: `${accountName} is out of credits`,
     category: 'billing-wallet-zero',
     html: renderEmail({
-      kicker: 'Billing',
       title,
       body: `
         <p style="${S.p}">

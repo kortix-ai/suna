@@ -63,54 +63,120 @@ It never changes a deal's stage, reassigns its owner, or edits its amount.
 ## How it works
 
 <Steps>
-<Step title="Run on a daily cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent once a day. Each firing spawns a fresh
-**session** in its own sandbox — one day, one run, nothing carried over. The
-pipeline is re-scanned from its current state every morning.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the pipeline-hygiene-rules skill and the daily
+trigger, and opens a change request for you to review. Prefer clicks? Choose
+**Use this template** instead.
 
-</Step>
-<Step title="Give the agent the hygiene rules">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a daily pipeline-hygiene agent in this project.
 
-What counts as stale, stalled, or overdue lives as a **skill** that travels
-with the agent: the no-activity window, the stage-stall window, what a
-missing next step or close date looks like, and how the day's worst offenders
-are chosen for escalation. When the team's definition of "stuck" changes, the
-rule changes, not the agent's judgment call.
+1. Create the agent agents/pipeline-hygiene.md. Its job is to find open HubSpot deals that need attention and nudge their owners. It may use the HubSpot and Slack connectors.
 
-</Step>
-<Step title="Connect HubSpot read-mostly">
+2. Create the skill skills/pipeline-hygiene-rules/SKILL.md with these rules:
+   - A deal is stale when it has no logged call, email, meeting or note in 7 days.
+   - A deal is incomplete when it has no next step or no close date.
+   - A deal is stalled when its stage has not changed in 21 days. A deal has an overdue task when an open task is past its due date.
+   - The only HubSpot write is an internal hygiene flag that names the rules a deal trips. Never change a deal's stage, owner or amount.
+   - Send each owning rep one Slack message that lists their flagged deals and the action each one needs.
+   - Post the day's worst deals to #sales-management once per run, ranked by rules tripped, then amount, then days since the last activity.
 
-Through a scoped **connector**, brokered server-side so no raw token reaches
-the model, the agent reads deals, stage history, activities, and tasks, and
-writes only a hygiene flag back onto the deal — no other field:
+3. Add a cron trigger daily-pipeline-hygiene-scan to kortix.yaml. It runs the pipeline-hygiene agent every day at 06:00 with the prompt "Load the pipeline-hygiene-rules skill and run one complete pipeline-hygiene scan."
 
-- **Deals and stage history** — current stage, amount, close date, next step,
-  and how long the deal has sat in its current stage.
-- **Activities** — calls, emails, meetings, and notes logged against each
-  deal, to determine staleness.
-- **Tasks** — open tasks tied to each deal and whether they're past due.
-- **Posts to Slack** — a nudge to the owning rep and an escalation to the
-  manager's channel.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent is **read-mostly**. The only write it ever makes to HubSpot is an
-internal hygiene flag on the deal — never the stage, never the owner, never
-the amount. It cannot reassign a deal, advance it, or touch the number tied to
-it, no matter what the data suggests. Credentials are encrypted in the secrets
-manager and injected at runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect your CRM and Slack. Credentials
+are brokered server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="HubSpot" domain="hubspot.com" tag="Required" alternatives={[['Salesforce', 'salesforce.com'], ['Pipedrive', 'pipedrive.com'], ['Attio', 'attio.com']]}>
+    Reads open deals and tasks, and sets the hygiene flag.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Nudges each owning rep and escalates the worst deals.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Nudge the rep, escalate the worst">
+<Step title="Run it once with this prompt">
 
-Each flagged deal gets a Slack nudge to its owning rep: what's wrong and what
-to do about it — log an activity, set a next step, move the deal, or clear the
-overdue task. At the end of the run, the deals in the worst shape — several
-rules tripped at once, largest amount at risk, longest gone quiet — get
-escalated to the sales manager's Slack channel. The rep and the manager decide
-what happens next; the agent only reports.
+Merge the change request, then start a session with the **pipeline-hygiene**
+agent and send this prompt. Check the flags and the nudges before you let the
+schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one pipeline-hygiene scan on HubSpot.
+
+1. Read every open deal with its stage, amount, close date, next step, time in stage, activities and open tasks.
+2. Flag each deal with no activity in 7 days, no next step or close date, no stage change in 21 days, or an overdue task.
+3. Write only the hygiene flag on each flagged deal. Do not change any stage, owner or amount.
+4. Send each owning rep one Slack message with their flagged deals and what to do about each one.
+5. Post the worst offenders to #sales-management: deal, owner, amount, rules tripped and days since the last activity.`}
+/>
+
+</Step>
+<Step title="Let the daily schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every day at 06:00, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: daily-pipeline-hygiene-scan
+    name: Daily pipeline-hygiene scan
+    on:
+      cron: "0 0 6 * * *"
+    run:
+      agent: pipeline-hygiene
+      prompt: Load the pipeline-hygiene-rules skill and run one complete pipeline-hygiene scan.`}
+/>
+
+</Step>
+<Step title="Write only the hygiene flag">
+
+The agent reads deals, activities and tasks. The only field it writes is the
+hygiene flag. It never moves a stage, reassigns an owner, edits an amount, logs
+an activity or closes a task. The rep and the sales manager decide what happens
+to each deal.
+
+</Step>
+<Step title="Read the nudges and the escalation">
+
+Each run ends with one nudge per rep and one escalation in the managers'
+channel. This is what a run looks like in the session:
+
+<ExampleRun
+  title="Daily pipeline-hygiene scan · 06:00"
+  message="Load the pipeline-hygiene-rules skill and run one complete pipeline-hygiene scan."
+  worked="Worked for 2m 41s"
+  tools={[
+    'hubspot · search deals',
+    'hubspot · list activities',
+    'hubspot · list tasks',
+    'hubspot · update deal × 23',
+    'slack · send message × 9',
+    'slack · post message → #sales-management',
+  ]}
+  note="Illustrative example. Your counts depend on your pipeline."
+>
+  Scanned **184** open deals and flagged **23**. **11** are stale, **7** have
+  no next step or close date, **4** are stalled and **5** have overdue tasks.
+  Sent nudges to **9** reps and escalated the top **5** deals to
+  #sales-management.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -121,6 +187,25 @@ what happens next; the agent only reports.
   incomplete, stalled, and overdue deals, nudges the rep, escalates the worst
   to the manager, and never changes a deal's stage, owner, or amount.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Weekly hygiene trend"
+  code="Every Monday, post to #sales-management how many deals tripped each rule in each of the last 4 weeks."
+/>
+
+<CopyBlock
+  title="Check before the forecast call"
+  code="The day before each forecast call, list every deal in the Commit forecast category that has a hygiene flag, and send the list to each owner."
+/>
+
+<CopyBlock
+  title="Cover reps who are away"
+  code="Keep a list in memory of reps who are out of office, and send their nudges to their manager until they are back."
+/>
 
 ## Guardrails
 

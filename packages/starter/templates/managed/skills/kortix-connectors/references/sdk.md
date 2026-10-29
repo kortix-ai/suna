@@ -69,7 +69,12 @@ for await (const page of crm.paginate('list_deals', { limit: 100 }, {
 `run` returns `output` and throws for everything else:
 
 - `ConnectorApprovalPendingError` (HTTP 202): `approvalUrl`, `executionId`.
-  Show the link to the human; do not loop.
+  Show the link to the human. Do not repeat the call. With a project-scoped
+  token, Approve runs the call once: the session resumes with the result, or
+  a script reads `GET /v1/projects/:id/review/items/call:<executionId>` until
+  `detail.run.state` is final. With any other token (no `runs_on_approval` in
+  the 202 body), repeat the identical call within 15 minutes after approval:
+  it runs once.
 - `ConnectorCallError` (extends `ApiError`): `status`, `code` (the machine
   reason: `connector_not_connected`, `account_required`, `upstream_timeout`,
   `upstream_429`, `upstream_error` for a failure inside a 2xx, …), `reason`,

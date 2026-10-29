@@ -43,6 +43,8 @@ describe('telegram inbox envelope', () => {
     expect(prompt).toContain('"chat_id":"-100123"');
     expect(prompt).toContain('"reply_parameters":{"message_id":7}');
     expect(prompt).toContain('status?');
+    // Every Kortix command, not only /new: the agent must not offer one it never receives.
+    expect(prompt).toContain('Kortix answers /new, /stop, /status, /model, /agent and /help in the chat itself; those commands never reach you.');
   });
 
   test("the session view reads the prompt back as the person's message (the shared channel parser)", () => {

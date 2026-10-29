@@ -35,6 +35,7 @@ import {
   changeRequests,
   connectorAttachments,
   connectorCalls,
+  connectorHeldCalls,
   connectorConnections,
   connectionOAuthApplications,
   connectionOAuthSessions,
@@ -66,14 +67,12 @@ import {
   sessionPendingQuestions,
   sessionRuntimeProjections,
   sessionSandboxes,
-  sessionTranscriptMirrors,
   sessionTurns,
 } from '@kortix/db';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
 import { maxProjectsForAccount } from '../../shared/account-limits';
-import { mirrorDrained } from '../session-log-capture';
 
 /**
  * Tables the transfer UPDATES (`account_id` → the target account) for the
@@ -101,7 +100,6 @@ export const PROJECT_TRANSFER_TABLES: readonly PgTable[] = [
   sessionLifecycleCommands,
   sessionSandboxes,
   sessionTurns,
-  sessionTranscriptMirrors,
   sessionLogs,
   sessionContentPurges,
   sessionRuntimeProjections,
@@ -122,6 +120,7 @@ export const PROJECT_TRANSFER_TABLES: readonly PgTable[] = [
   connectionOAuthApplications,
   connectionOAuthSessions,
   connectorCalls,
+  connectorHeldCalls,
   promptAttachments,
   connectorAttachments,
   drives,
@@ -157,6 +156,8 @@ export const PROJECT_TRANSFER_LEAVE_TABLES: Readonly<Record<string, string>> = {
   // Completed one-off migration runs — operations history, not live state.
   legacy_sandbox_migrations: 'completed ops migration run record',
   suna_account_migrations: 'completed ops migration run record',
+  // The retired v1 transcript mirror (P8.2): no code reads it since Release B2; Release B3 drops it.
+  session_transcript_mirrors: 'retired v1 mirror, read by no code, dropped by Release B3',
 };
 
 export type ProjectTransferErrorCode =
@@ -203,9 +204,6 @@ export async function transferProjectOwnership(
   if (fromAccountId === toAccountId) {
     throw new ProjectTransferError('same_account', 'Project is already in that account');
   }
-  // Drained: the v1 mirror rows stay as they are until the Release B2 migration drops them.
-  const mirrorDone = await mirrorDrained();
-
   return db.transaction(async (tx) => {
     // Lock the row: the CAS against a concurrent move happens under this lock.
     const [row] = await tx.select({ account_id: projects.accountId, status: projects.status })
@@ -265,7 +263,6 @@ export async function transferProjectOwnership(
       kortix.connection_oauth_applications_connection_tenant_fk DEFERRED`);
 
     for (const table of PROJECT_TRANSFER_TABLES) {
-      if (mirrorDone && table === sessionTranscriptMirrors) continue;
       await tx.execute(
         sql`UPDATE ${table} SET account_id = ${toAccountId}
              WHERE project_id = ${projectId} AND account_id = ${fromAccountId}`,

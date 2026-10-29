@@ -17,7 +17,9 @@
  * `project_sessions.metadata.source` — never from the request.
  */
 import type { AgentGrant } from '@kortix/db';
-import { agentMayUseConnector } from '../iam/agent-scope';
+import { agentMayUseConnector, agentPolicySet } from '../iam/agent-scope';
+import { canonicalConnectorAlias } from '../shared/connector-alias';
+import type { CallPolicySet } from './gateway';
 
 export interface ConnectorAccessPrincipal {
   agentGrant?: AgentGrant | null;
@@ -32,6 +34,24 @@ export function principalMayUseConnector(
 ): boolean {
   if (agentMayUseConnector(principal.agentGrant ?? null, slug)) return true;
   return principal.channelConnectorSlugs?.includes(slug) ?? false;
+}
+
+/**
+ * The policy set the caller's agent grant assigns on this connector. The grant
+ * is the reconciled session grant on the principal (session token, or a user
+ * token with a session header), so a subagent child session that shares the
+ * root session's token runs under the ROOT agent's set. A caller without a
+ * grant (PAT, dashboard, trigger poll) gets the base rules. The request body
+ * never selects a set. The `/call` route and the held-call run both use it.
+ */
+export function callPolicySetOf(
+  p: Pick<ConnectorAccessPrincipal, 'agentGrant'>,
+  connectorSlug: string,
+): CallPolicySet | null {
+  const grant = p.agentGrant ?? null;
+  const name = agentPolicySet(grant, canonicalConnectorAlias(connectorSlug));
+  if (name === null || !grant) return null;
+  return { name, agent: grant.agent, manifestCommit: grant.manifestCommit ?? null };
 }
 
 export type ConnectorDenialReason =

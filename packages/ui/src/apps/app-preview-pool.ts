@@ -10,7 +10,10 @@
  * parked off screen. A card or the big view CLAIMS it: the frame moves into
  * that slot with `Element.moveBefore`, which keeps the document alive. The
  * newest claim wins; releasing hands it back to the previous claim, else to
- * the parking lot. Without `moveBefore` (older browsers) the move reloads the
+ * the parking lot. A release lands at the end of the task: a release and a
+ * claim in one React commit (a Strict Mode remount, a page handing the frame
+ * to the next) leave the frame where it is or move it once, never through the
+ * parking lot, whose different size makes the page lay out (and flash) twice. Without `moveBefore` (older browsers) the move reloads the
  * frame — the old behavior — and nothing is preloaded.
  *
  * The frame's `src` is set once. A refetched access session mints a new URL
@@ -127,8 +130,22 @@ export function claimFrame(key: string, slot: HTMLElement, placement: FramePlace
   place(entry);
   return () => {
     entry.claims = entry.claims.filter((item) => item !== claim);
-    if (entries.get(key) === entry) place(entry);
+    if (entries.get(key) === entry) placeAfterTask(entry);
   };
+}
+
+// Entries whose claims changed by a release, placed once the current task ends.
+const releasing = new Set<Entry>();
+
+function placeAfterTask(entry: Entry) {
+  if (releasing.size === 0) {
+    queueMicrotask(() => {
+      const due = [...releasing];
+      releasing.clear();
+      for (const item of due) if (entries.get(item.frame.dataset.frameKey ?? '') === item) place(item);
+    });
+  }
+  releasing.add(entry);
 }
 
 /** Restyle the current claim of `slot` (a card's scale changes as it is measured). */

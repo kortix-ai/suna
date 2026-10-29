@@ -14,6 +14,11 @@
  *   5. Manifest: `bun run apps/api/scripts/dump-routes.ts`, commit tests/spec/routes.generated.json.
  *   6. Flow: a tests/src/flows case that sends a signed update and reads the reply.
  *   7. Lint: add `'../<platform>*'` to `NO_PLATFORM` in apps/api/eslint.config.mjs.
+ *   8. Commands: after the sender gate, `parseChannelCommand` (or the platform's native command) →
+ *      `runChannelCommand` with a renderer (channels/core/commands.ts) that records a sent reply with
+ *      buttons (`rememberCommandMenu`), and `runCommandPress` for a press on such a reply's button (a
+ *      `kc:` token, channels/core/command-press.ts); `turnModel` on the
+ *      port and `chatSessionStart` in `plan()` (channels/core/model-choice.ts); a menu registrar is optional.
  */
 import { timingSafeEqual } from 'node:crypto';
 import { emitIntegrationEvent, type IntegrationEvent } from '../../integrations/event-inbox';

@@ -2,28 +2,23 @@
  * Integration test (real PostgreSQL, fresh migrated database, real routes): the
  * reads over the session log (P4.2, P8.2).
  *
- * One synthetic OpenCode session is stored two ways: as an old session's v1 mirror
- * rows only (seeded: nothing writes them since P8.2), and as the journal ingest of
- * `fromV1` of those same rows under producer `opencode`, as the daemon's adapter
- * journals them. The first read of the mirror-only session converts it into the
- * log (`convertMirrorOnRead`); from then on every v1 read (`transcript?shape=sync`
- * paged to the end, the child read, `shape=compact`, the open bundle) answers it with the same body as the journaled one, apart from
- * `captured_at`. No read serves the mirror: the reads pass with both mirror tables
- * renamed away, a native (pi) thread is served through `toV1`, a drained mirror is
- * never read, and a mirror over the size cap answers 503 `session_log_converting`.
+ * One synthetic OpenCode session is stored as the journal ingest of `fromV1` of its v1 rows
+ * under producer `opencode`, as the daemon's adapter journals them. Every v1 read
+ * (`transcript?shape=sync` paged to the end, the child read, `shape=compact`, the open bundle)
+ * answers from the log, `captured_at` is the log's last write, and a native (pi) thread is
+ * served through `toV1`. A session with no log answers nothing saved.
  * One tool output is 150,000 three-byte characters (450 kB): the log stores it by
  * reference (F3, P2.3), and the v1 reads put it back. The Storage bucket is
  * `helpers/fake-session-storage.ts`.
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { fromV1, toV1, type SessionLog, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
-import { accountMembers, projectMembers, projectSessions, projects, sessionLogBackfillState, sessionLogs, sessionSandboxes } from '@kortix/db';
+import { accountMembers, projectMembers, projectSessions, projects, sessionLogs, sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
 import { fakeSessionStorage } from './helpers/fake-session-storage';
 import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
-import { seedV1Mirror } from './helpers/seed-v1-mirror';
 import { syntheticOpencodeSession } from './helpers/synthetic-opencode-session';
 
 const bucket = fakeSessionStorage();
@@ -33,7 +28,6 @@ mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => (
 const { app } = await import('../index');
 const { createAccountToken } = await import('../repositories/account-tokens');
 const { mirrorRowsFromOpencodePayload } = await import('../projects/lib/session-transcript-mirror');
-const { config } = await import('../config');
 const { ingestSessionLogJournal } = await import('../projects/session-log-ingest');
 
 const OWNER = crypto.randomUUID();
@@ -45,7 +39,6 @@ const WIDE_OUTPUT = '€'.repeat(150_000);
 
 let project: SeededProject;
 let session = '';
-let mirrorSession = '';
 let nativeSession = '';
 let ownerToken = '';
 let sandboxToken = '';
@@ -61,14 +54,7 @@ function history(turns: number) {
   return { root, child };
 }
 
-/** An old session: only its v1 mirror rows, no log. */
-async function storeMirrorOnly(sessionId: string, turns: number) {
-  const { root, child } = history(turns);
-  await db.update(projectSessions).set({ runtimeSessionId: ROOT }).where(eq(projectSessions.sessionId, sessionId));
-  await seedV1Mirror({ sessionId, projectId: project.project_id, accountId: project.account_id }, ROOT, root, [{ id: CHILD, payload: child }]);
-}
-
-/** Store one synthetic session in the log: the ingest of fromV1 of the rows a mirror would hold. */
+/** Store one synthetic session in the log: the ingest of fromV1 of its v1 rows. */
 async function storeInLog(sessionId: string, turns: number, options: { nativeThreads?: boolean } = {}) {
   const { root, child } = history(turns);
   await db.update(projectSessions).set({ runtimeSessionId: ROOT }).where(eq(projectSessions.sessionId, sessionId));
@@ -130,7 +116,6 @@ beforeAll(async () => {
   project = await seedProject('session-log-read');
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: project.account_id, accountRole: 'owner' });
   session = await seedSession(project, OWNER);
-  mirrorSession = await seedSession(project, OWNER);
   nativeSession = await seedSession(project, OWNER);
   ownerToken = (await createAccountToken({ accountId: project.account_id, userId: OWNER, name: 'session-log-read-owner' })).secretKey;
   await db.insert(sessionSandboxes).values({ sandboxId: session, sessionId: session, accountId: project.account_id, projectId: project.project_id, status: 'active', config: {}, metadata: {} });
@@ -145,27 +130,17 @@ afterAll(async () => {
 
 const logOf = (sessionId: string) => db.select().from(sessionLogs).where(eq(sessionLogs.sessionId, sessionId));
 
-describe('the v1 reads answer from the log; a mirror-only session is converted by its first read', () => {
-  test('sync pages, the child, compact and the open bundle of a converted mirror equal the journaled log apart from captured_at', async () => {
+describe('the v1 reads answer from the log', () => {
+  test('sync pages, the child, compact and the open bundle answer from the log; captured_at is its last write', async () => {
     const stored = await storeInLog(session, 70);
-    await storeMirrorOnly(mirrorSession, 70);
-    expect(await logOf(mirrorSession)).toHaveLength(0);
-
     const journaled = await v1Bodies(session);
-    const converted = await v1Bodies(mirrorSession);
-    // The first read wrote the log: `fromV1` of the mirror, no journal.
-    const [log] = await logOf(mirrorSession);
-    expect(log?.journalSeenAt).toBeNull();
-    expect(['converted', 'partial']).toContain(log!.restoreGrade);
 
     expect(journaled.pages.length).toBe(4); // 140+ messages in windows of 40
     expect((journaled.pages[0] as { total: number }).total).toBe(stored.messages - 1); // the root read leaves out the child's 2 messages; a compaction summary is a second row
-    expect(converted.pages).toEqual(journaled.pages);
-    expect(JSON.stringify(converted.pages)).toContain(WIDE_OUTPUT);
-    expect(converted.child).toEqual(journaled.child);
-    expect((converted.child as { message_count: number }).message_count).toBe(2);
-    expect(converted.compact).toEqual(journaled.compact);
-    expect(converted.bundle).toEqual(journaled.bundle);
+    expect(JSON.stringify(journaled.pages)).toContain(WIDE_OUTPUT);
+    expect((journaled.child as { message_count: number }).message_count).toBe(2);
+    expect(journaled.compact).toMatchObject({ available: true });
+    expect(journaled.bundle).toMatchObject({ available: true });
 
     // captured_at is the log's last write.
     const [written] = await db.select({ updatedAt: sql<Date>`greatest(${sessionLogs.updatedAt}, (select max(m.updated_at) from kortix.session_log_messages m where m.session_id = ${session}))` }).from(sessionLogs).where(eq(sessionLogs.sessionId, session));
@@ -218,58 +193,6 @@ describe('the v1 reads answer from the log; a mirror-only session is converted b
     expect(child.messages.every((m) => m.info.sessionID === CHILD)).toBe(true);
   });
 
-  test('a mirror over the size cap is not converted on a read: GET …/log answers 503 session_log_converting, the v1 read nothing saved', async () => {
-    const big = await seedSession(project, OWNER);
-    await storeMirrorOnly(big, 2);
-    const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
-    config.SESSION_LOG_RESTORE_MAX_BYTES = 2_000;
-    try {
-      const res = await get(`${base(big)}/log`);
-      expect(res.status).toBe(503);
-      expect(res.headers.get('retry-after')).toBe('60');
-      expect(await res.json()).toMatchObject({ code: 'session_log_converting' });
-      const sync = (await (await get(`${base(big)}/transcript?shape=sync`)).json()) as Record<string, unknown>;
-      expect(sync).toMatchObject({ available: false, source: 'none' });
-      expect(await logOf(big)).toHaveLength(0);
-    } finally {
-      config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
-    }
-    // Under the cap (the backfill's thread, here the read again): converted and served.
-    expect((await get(`${base(big)}/log`)).status).toBe(200);
-  });
-
-  test('a drained mirror is never read: a session without a log answers nothing saved and the mirror stays unread', async () => {
-    const late = await seedSession(project, OWNER);
-    await storeMirrorOnly(late, 2);
-    // Drained and merged (`mirrorDrained`).
-    await db.insert(sessionLogBackfillState).values({ id: 'pass', state: { drainedWithDeleted: true, mergedMissing: true }, rev: 1 })
-      .onConflictDoUpdate({ target: sessionLogBackfillState.id, set: { state: sql`${sessionLogBackfillState.state} || '{"drainedWithDeleted": true, "mergedMissing": true}'::jsonb` } });
-    try {
-      expect((await get(`${base(late)}/log`)).status).toBe(404);
-      const sync = (await (await get(`${base(late)}/transcript?shape=sync`)).json()) as Record<string, unknown>;
-      expect(sync).toMatchObject({ available: false, source: 'none' });
-      expect(await logOf(late)).toHaveLength(0);
-    } finally {
-      await db.delete(sessionLogBackfillState).where(eq(sessionLogBackfillState.id, 'pass'));
-    }
-    expect((await get(`${base(late)}/log`)).status).toBe(200);
-  });
-
-  test('every v1 read answers the same body with both mirror tables renamed away', async () => {
-    const visible = await v1Bodies();
-    await db.execute(sql`ALTER TABLE kortix.session_transcript_mirrors RENAME TO session_transcript_mirrors_hidden`);
-    await db.execute(sql`ALTER TABLE kortix.session_transcript_messages RENAME TO session_transcript_messages_hidden`);
-    try {
-      const hidden = await v1Bodies();
-      expect(hidden.pages).toEqual(visible.pages);
-      expect(hidden.child).toEqual(visible.child);
-      expect(hidden.compact).toEqual(visible.compact);
-      expect(hidden.bundle).toEqual(visible.bundle);
-    } finally {
-      await db.execute(sql`ALTER TABLE kortix.session_transcript_messages_hidden RENAME TO session_transcript_messages`);
-      await db.execute(sql`ALTER TABLE kortix.session_transcript_mirrors_hidden RENAME TO session_transcript_mirrors`);
-    }
-  });
 });
 
 describe('GET .../log', () => {
@@ -361,25 +284,6 @@ describe('GET .../log', () => {
     expect(await statuses(session, ownerToken)).toEqual([200, 200]);
   });
 
-  test('a mirror-only session whose conversion another read holds answers 404 with no code: the client reads v1, which converts it', async () => {
-    // The open's snapshot and its GET …/log both convert a mirror-only session; the second one
-    // finds the session's advisory lock taken, writes nothing, and must not claim "no log".
-    const busy = await seedSession(project, OWNER);
-    await storeMirrorOnly(busy, 2);
-    let held = false;
-    let res: Response | null = null;
-    await db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`session-log:${busy}`}))`);
-      held = true;
-      res = await get(`${base(busy)}/log`);
-    });
-    expect(held).toBe(true);
-    expect(res!.status).toBe(404);
-    expect(((await res!.json()) as { code?: string }).code).toBeUndefined();
-    // With the lock free the next read converts it.
-    expect((await get(`${base(busy)}/log`)).status).toBe(200);
-  });
-
   test('refuses a bad before_seq and limit; 404 for an unknown thread and without a log', async () => {
     expect((await get(`${base()}/log?before_seq=1.5`)).status).toBe(400);
     expect((await get(`${base()}/log?limit=501`)).status).toBe(400);
@@ -392,6 +296,8 @@ describe('GET .../log', () => {
     const missing = await get(`${base(empty)}/log`);
     expect(missing.status).toBe(404);
     expect(await missing.json()).toEqual({ error: 'No session log for this session', code: 'session_log_missing' });
+    // The v1 read of the same session: nothing saved.
+    expect(await (await get(`${base(empty)}/transcript?shape=sync`)).json()).toMatchObject({ available: false, source: 'none' });
     expect((await get(`${base()}/log`, null)).status).toBe(401);
   });
 });

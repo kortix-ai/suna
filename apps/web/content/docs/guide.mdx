@@ -480,11 +480,13 @@ Open **Review** → **Needs you**, follow the approval link, or use the approval
 The page shows what the app will receive, with private values hidden.
 </Step>
 <Step title="Decide">
-Choose **Approve** or **Deny**, with an optional note to the agent. The agent then continues.
+Choose **Approve** or **Deny**, with an optional note to the agent. Approve runs the action once, as the agent that asked, and Kortix resumes the agent with the result.
 </Step>
 </Steps>
 
 - An approval covers one exact action. A changed detail needs a new approval.
+- An approval runs the action once. The agent does not send it again. Kortix checks the project's rules again when it runs the action, and a **Block** rule still wins.
+- A script that signs in with a project token gets the same: Approve runs its call, and the script reads the outcome. A script with any other token must send the same call again within 15 minutes after approval.
 - A held action expires when nobody decides within 24 hours, unless your project sets another time.
 - A project manager, or the person who started the session, decides.
 - There is no "approve everything for this session". An action that must run unattended needs an **Allow** rule.
@@ -881,7 +883,17 @@ A message from an allowed user starts a session. Anyone else gets a reply that s
 </Steps>
 
 - **One chat is one session.** In a forum group, each topic is its own session. After `/new`, your next message starts a new session.
-- **Photos, files, voice notes and videos reach the agent.** Kortix downloads up to 8 MB of files per message into the session's workspace. The agent sees a photo when the project has a model that reads images. A larger file does not arrive, and the agent tells you. No speech-to-text tool is preinstalled, so a voice note takes the agent about a minute: it installs one to transcribe the recording. Each photo of an album arrives as its own message, and a sticker arrives as its emoji.
+- **Photos, files, voice notes and videos reach the agent.** Kortix downloads up to 8 MB of files per message into the session's workspace. In the session, the message shows each photo and file above its text, as a file you attach in Kortix shows. The agent sees a photo when the project has a model that reads images. A larger file does not arrive, and the agent tells you. No speech-to-text tool is preinstalled, so a voice note takes the agent about a minute: it installs one to transcribe the recording. Each photo of an album arrives as its own message, and a sticker arrives as its emoji.
+- **Commands run in Kortix, not in the agent.** `/help` (also `/start`) lists them. `/status` shows the chat's project, agent, model and session. `/stop` stops the agent's run. `/new` stops the run and starts a new conversation. `/model` lists the models, and `/model <id>` switches the chat to one. `/agent` lists the agents, and `/agent <name>` switches the chat to one. `/model default` and `/agent default` go back to the project default.
+- **Commands open menus.** `/model` and `/agent` without an argument list the choices as buttons, 8 per page, after **Project default** on the first page, with **More ›** and **‹ Back**. `/help` and `/status` add buttons that run a command, such as **New conversation**, **Stop** and **Change model**. A tap changes the menu message to the result.
+- **A menu works once.** A pick, **Stop** or **New conversation** takes the menu's buttons off. Only a menu Kortix sent takes taps. A tap on a used menu, on one whose option or session is gone, on a copy forwarded into another chat, or on a menu older than 30 days answers "This menu is out of date": send the command again.
+- **Kortix keeps 11 verbs:** `new`, `reset`, `stop`, `cancel`, `status`, `model`, `models`, `agent`, `agents`, `help` and `start`. Every other message goes to the agent, also one that starts with `/`, and a command for another bot, such as `/status@other_bot`.
+- **Any allowed user can run every command.** In a group, every member sees the reply, also members who are not allowed. A reply can show the project name, model ids and a link to the session; the link opens only for people with access to the project.
+- **`/stop` and `/new` stop the current run of the chat's session.** The exception is a run Kortix knows was started from the web or by an automation: it keeps going, and the reply links to it. A message sent before `/stop` can still run after it.
+- **`/model` and `/agent` apply to the whole chat.** The topics of a forum group share one model and one agent. A chat uses only models and provider keys the whole project shares, never one person's key or ChatGPT subscription. Messages you send after the reply use the new model. A new agent applies to the next session: send `/new`.
+- **A command in a photo's caption runs the command.** Kortix does not send the photo or file to the agent: send it again without the command.
+- **`/new` while the chat's session still starts** does not stop that session: it still answers your earlier message here. While Kortix is still creating it, it can also take your next message. The reply says so; send `/new` again.
+- **Kortix adds its commands to the bot's menu.** Connecting the bot puts them first and keeps every entry you set in @BotFather. When an entry of yours has the same name, or the menu would pass Telegram's 100 commands, Kortix leaves its own entry out. Disconnecting the bot, or connecting another bot in its place, removes only the entries Kortix added.
 - **Questions come with buttons.** When the agent asks one question with up to 6 options, Kortix posts one button per option. Several questions, a multi-select question or a longer list arrive as a numbered list. Tap a button, or reply with your own answer.
 - **A question follows the connector's rules.** Kortix posts it only where the agent may send a Telegram message without approval. Otherwise the agent asks in its own words, and that message waits for approval or is refused.
 - **Telegram has no account link.** The allowed-user list decides who may talk to the bot. Only an allowed user's tap counts.

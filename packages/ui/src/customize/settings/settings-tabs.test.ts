@@ -47,6 +47,7 @@ describe('SETTINGS_TABS', () => {
       'appearance',
       'sessions',
       'preferences',
+      'chrome',
       'tokens',
       // The Connect pages (KRTX-1997).
       'mcp',

@@ -140,6 +140,12 @@ export interface ChannelPort {
   questions?: QuestionPort;
   /** Runs before every follow-up into an existing session; absent = deliver. */
   prepareFollowUp?(target: ChannelTarget, thread: { sessionId: string; projectId: string }): Promise<FollowUpVerdict>;
+  /**
+   * The model a follow-up into `thread` runs on, and the model its image turn starts from:
+   * the chat's choice, else the session's pin, checked as the gateway runs it.
+   * Null or absent: no model is sent. A throw is logged, and no model is sent.
+   */
+  turnModel?(target: ChannelTarget, thread: { sessionId: string; projectId: string }): Promise<string | null>;
 }
 
 /** One verified, deduped, sender-gated inbound message. */
@@ -396,12 +402,20 @@ function createStarted(status: Awaited<ReturnType<typeof createCommandStatus>>):
   return status === 'queued' || status === 'running' || status === 'succeeded';
 }
 
-/** Forget a conversation (a `/new` command): the next message starts a new session. */
-export async function forgetChatThread(target: ChannelTarget, createClaim: string): Promise<void> {
-  await dropChatThread(target);
+/**
+ * Forget a conversation (a `/new` command): the next message starts a new session. `sessionId`: only
+ * while the thread still maps to it, so a session a racing message bound since stays. `claimHeld`: a
+ * create held the thread, and may still bind it.
+ */
+export async function forgetChatThread(target: ChannelTarget, createClaim: string, sessionId?: string): Promise<{ claimHeld: boolean }> {
+  await dropChatThread(target, sessionId);
   // Its create claim too, or the next message waits on it. A create still in
   // flight may then race that message: two sessions, for a reset the sender asked for.
-  await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, createClaim));
+  const claims = await db
+    .delete(chatEventDedup)
+    .where(eq(chatEventDedup.eventId, createClaim))
+    .returning({ expiresAt: chatEventDedup.expiresAt });
+  return { claimHeld: claims.some((c) => c.expiresAt.getTime() > Date.now()) };
 }
 
 async function followUp(
@@ -414,7 +428,18 @@ async function followUp(
   const verdict = port.prepareFollowUp ? await port.prepareFollowUp(target, thread) : 'deliver';
   if (verdict === 'refuse') return 'refused';
   if (verdict === 'restart') return 'no-session';
-  const prompt = await withFiles(text, await files(), () => sessionImageTurn(target.projectId, thread.sessionId));
+  // pi keeps a prompt's model for the prompts after it (harness/pi/runtime.ts), so every follow-up names one.
+  const model = port.turnModel
+    ? await port.turnModel(target, thread).catch((error) => {
+        logger.warn('[channel] the turn model was not read; the prompt goes without one', {
+          platform: target.platform,
+          projectId: target.projectId,
+          error: error instanceof Error ? error.name : 'unknown',
+        });
+        return null;
+      })
+    : null;
+  const prompt = await withFiles(text, await files(), () => sessionImageTurn(target.projectId, thread.sessionId, model), model);
   const outcome = await lifecycle.deliverThroughQueue({
     source: target.platform,
     idempotencyKey: keys.followUp,
@@ -555,8 +580,11 @@ async function readMessageFiles(target: ChannelTarget, files: readonly ChannelFi
   return read;
 }
 
-/** An existing session's image turn. Null: the session is gone (the delivery then answers `no-session`). */
-async function sessionImageTurn(projectId: string, sessionId: string): Promise<ImageTurn | null> {
+/**
+ * An existing session's image turn, from `model` (the port's turn model), else the session's pin.
+ * Null: the session is gone (the delivery then answers `no-session`).
+ */
+async function sessionImageTurn(projectId: string, sessionId: string, model: string | null): Promise<ImageTurn | null> {
   const [row] = await db
     .select({
       accountId: projectSessions.accountId,
@@ -574,7 +602,7 @@ async function sessionImageTurn(projectId: string, sessionId: string): Promise<I
     accountId: row.accountId,
     visibility: row.visibility,
     userId: row.createdBy ?? (await lifecycle.resolveProjectAutomationActor(row.accountId)),
-    currentModel: modelPin((row.metadata as Record<string, unknown> | null)?.opencode_model),
+    currentModel: model ?? modelPin((row.metadata as Record<string, unknown> | null)?.opencode_model),
   };
 }
 
@@ -582,11 +610,12 @@ async function sessionImageTurn(projectId: string, sessionId: string): Promise<I
  * The prompt for a message. With no file it is the text alone, as before. Otherwise the notes follow
  * the text, then one text part precedes the files. Text first: the session view reads the header at
  * the start. pi joins text parts with nothing between them (runtime.ts:188), so the part ends with a line break.
+ * `model`: the turn's model; an image turn's pick replaces it. The only writer of `overrides`.
  */
-async function withFiles(text: string, files: MessageFiles, turn: () => Promise<ImageTurn | null>): Promise<Prompt> {
-  if (!files.parts.length && !files.notes.length) return { text };
+async function withFiles(text: string, files: MessageFiles, turn: () => Promise<ImageTurn | null>, model: string | null = null): Promise<Prompt> {
+  let overrides: Prompt['overrides'] = model ? { model: promptModelOverride(model) } : undefined;
+  if (!files.parts.length && !files.notes.length) return overrides ? { text, overrides } : { text };
   const lines = [...files.notes, ...(files.hasAudio ? [NO_SPEECH_NOTE] : [])].map((note) => `- ${note}`);
-  let overrides: Prompt['overrides'];
   if (files.hasImage) {
     const imageTurn = await turn();
     const pick = imageTurn ? await lifecycle.imageTurnModel(imageTurn) : { model: null, blind: false };

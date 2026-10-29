@@ -1018,8 +1018,10 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'agent_rooms',
     'goals',
     'artifacts',
+    'artifact_comments',
     'email_channel',
     'session_groups',
+    'chrome',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
   expect(new Set(FEATURE_FLAG_KEYS).size).toBe(FEATURE_FLAG_KEYS.length);

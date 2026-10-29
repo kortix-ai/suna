@@ -60,7 +60,6 @@ import { projectsApp } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { findSessionLogBlob, storeSessionLogBlob } from '../session-log-blobs';
 import { ingestSessionLogJournal, readSessionLogManifest, sessionExists, type SessionLogScope } from '../session-log-ingest';
-import { SessionLogConvertingError } from '../session-log-backfill';
 import { readSessionLogPage } from '../session-log-read';
 import { claimSessionLog } from '../session-log-restore';
 import { sessionLogSwitchPreflight } from '../session-log-switch';
@@ -368,9 +367,7 @@ export function registerSessionLogRoutes(): void {
         '`thread` defaults to the root thread; `messages` are the newest `limit` (default 40, max 500) ' +
         'with `seq < before_seq`, ascending by seq, tombstoned messages left out. Session read permission, ' +
         'the same gate as `GET .../transcript`: a session-bound token reads the sessions that route serves it. ' +
-        '404 when the session has no stored log (`code: session_log_missing`) or no such thread. A session whose history is still only in the ' +
-        'v1 mirror is converted to the log before the read answers; one over the conversion size cap answers ' +
-        '503 `session_log_converting` with `Retry-After` while the backfill converts it.',
+        '404 when the session has no stored log (`code: session_log_missing`) or no such thread.',
       ...auth,
       request: {
         params,
@@ -378,7 +375,7 @@ export function registerSessionLogRoutes(): void {
       },
       responses: {
         200: json(SessionLogPageSchema, 'One page of the session log'),
-        ...errors(400, 403, 404, 503),
+        ...errors(400, 403, 404),
       },
     }),
     async (c) => {
@@ -397,19 +394,9 @@ export function registerSessionLogRoutes(): void {
       const gate = await sessionReadGate(c, projectId, sessionId);
       if (gate.denied) return gate.denied as never;
 
-      let page: Awaited<ReturnType<typeof readSessionLogPage>>;
-      try {
-        page = await readSessionLogPage({ sessionId, threadId: query.thread ?? null, beforeSeq, limit: limit.value });
-      } catch (err) {
-        if (!(err instanceof SessionLogConvertingError)) throw err;
-        c.header('Retry-After', '60');
-        return c.json({ error: err.message, code: err.code }, 503);
-      }
+      const page = await readSessionLogPage({ sessionId, threadId: query.thread ?? null, beforeSeq, limit: limit.value });
       // The code tells a client this API serves the log and the session has nothing saved (a new
-      // session): it stays on the log. A session whose v1 mirror another read is converting answers a
-      // bare 404: a current client keeps what it shows and reads `GET …/log` again with backoff
-      // (`useSessionLogSync`), and a later read converts it. An older client reads v1 for it.
-      if (page === 'mirror_unconverted') return c.json({ error: 'No session log for this session' }, 404);
+      // session): it stays on the log and reads it again at the next turn end (`useSessionLogSync`).
       if (!page) return c.json({ error: 'No session log for this session', code: 'session_log_missing' }, 404);
       if (page === 'unknown_thread') return c.json({ error: 'Unknown thread' }, 404);
       return c.json(page, 200);

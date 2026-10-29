@@ -1,6 +1,5 @@
 import { copySessionLog, withForkAttachmentCleanup } from '../session-log-fork';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
-import { writeSessionLogFromMirror } from '../session-log-capture';
 import { captureJournallessSessionLog } from './session-transcript-capture';
 import { randomUUID } from 'node:crypto';
 import { SESSION_INITIAL_CONTEXT_MAX_CHARS, SessionCreateInputSchema } from '@kortix/api-contract';
@@ -1825,10 +1824,6 @@ export async function createProjectSession(input: {
       return { error: { status: 409, body: { error: 'Source history capture is incomplete' } } };
     }
     input.forkCaptureComplete = capture?.head_complete === true;
-    const converted = await writeSessionLogFromMirror(body.fork_from_session_id);
-    if (converted.outcome === 'failed' || converted.outcome === 'invalid' || converted.outcome === 'too_large') {
-      return { error: { status: 409, body: { error: 'Source history capture is unavailable' } } };
-    }
   }
 
   const { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion } = identity;

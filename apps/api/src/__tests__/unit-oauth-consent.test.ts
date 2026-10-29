@@ -79,7 +79,7 @@ mock.module('../config', () => ({
 const realDb = await import('../shared/db');
 mock.module('../shared/db', () => ({ ...realDb, db: fake.db }));
 
-const { oauthApp } = await import('../oauth');
+const { oauthApp, isSelfRegistered, KORTIX_EXTENSION_REDIRECT_URI, SELF_REGISTERED_DESCRIPTION } = await import('../oauth');
 
 function createApp() {
   const app = new Hono();
@@ -180,6 +180,15 @@ describe('OAuth authorization request persistence + consent', () => {
       self_registered: false,
       redirect_to: 'client.example',
     });
+  });
+
+  test('the consent screen names the Kortix extension "Kortix in Chrome"', async () => {
+    const app = createApp();
+    const start = await app.request(authRequestUrl());
+    const requestId = new URL(start.headers.get('location')!).searchParams.get('request_id')!;
+    pendingRequests[0].redirectUri = KORTIX_EXTENSION_REDIRECT_URI;
+    const metadata = await app.request(`/oauth/authorize/consent/${requestId}`, { headers: authed });
+    expect((await metadata.json()).redirect_to).toBe('Kortix in Chrome');
   });
 
   test('approval mints a code from the STORED request, remembers the consent, and a replay is refused', async () => {
@@ -306,5 +315,19 @@ describe('OAuth authorization request persistence + consent', () => {
     const res = await createApp().request(authRequestUrl().replace('client.example', 'evil.example'));
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe('invalid_request');
+  });
+});
+
+describe('self-registered clients', () => {
+  const selfRegistered = { accountId: null, description: SELF_REGISTERED_DESCRIPTION };
+  test('an app that registered itself is shown as unverified', () => {
+    expect(isSelfRegistered({ ...selfRegistered, redirectUris: ['https://client.example/callback'] })).toBe(true);
+  });
+  test('the Kortix Chrome extension is not: only it serves its chrome-extension:// page', () => {
+    expect(isSelfRegistered({ ...selfRegistered, redirectUris: [KORTIX_EXTENSION_REDIRECT_URI] })).toBe(false);
+    // A second redirect target would let the code go elsewhere: unverified again.
+    expect(
+      isSelfRegistered({ ...selfRegistered, redirectUris: [KORTIX_EXTENSION_REDIRECT_URI, 'https://client.example/cb'] }),
+    ).toBe(true);
   });
 });

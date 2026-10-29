@@ -316,7 +316,7 @@ Tone: calm, short, safe. The reader did not expect it and may be anxious (securi
 
 **Rule.** Keep the HTML part of an email that shows the logo above 3,200 bytes. — *Why:* SpamAssassin's `html_image_only` scores an HTML part that contains an `<img>` by its raw length, markup included: 0.726 to 2.799 points between 2,400 and 2,800 bytes (`HTML_IMAGE_ONLY_28`). A dev seed test on 2026-10-02 found every Kortix email between 2,253 and 2,795 bytes. The logo must stay (`visual/brandmark.md`), so the content carries the length. `apps/api/src/__tests__/unit-notifications.test.ts` holds the invite above the window. — *Where:* email. — *When silent:* measure `html.length` of the shortest variant before you cut copy.
 
-**Rule.** End every email with the tagline footer "Kortix — The open-source AI Operating System". Never the retired line. — *Why:* D10. The shipped footer is `BRAND_FOOTER` (`apps/api/src/lib/email/template.ts`) and says the tagline since 2026-10-04. — *Where:* email. — *When silent:* the tagline.
+**Rule.** End every email with the tagline footer "Kortix — The open-source AI Operating System". Never the retired line. — *Why:* D10. The shipped footer is `BRAND_FOOTER` (`apps/api/src/lib/email/template.tsx`) and says the tagline since 2026-10-04. — *Where:* email. — *When silent:* the tagline.
 
 **Rule.** Do not write a kicker or a chip in uppercase. Write it in sentence case. — *Why:* Mono-uppercase is a Badge and deck exception (D4e), not an email style. — *Where:* email. — *When silent:* sentence case.
 
@@ -339,7 +339,7 @@ Tone: calm, specific, brief. The reader has an account and did not ask for this 
 
 **Rule.** Write the closing note of a launch email as the reason the reader gets it: "You get this email because you have a Kortix account." — *Why:* "If you did not request this" does not apply to mail nobody requests (Q18). — *Where:* email. — *When silent:* one sentence on why.
 
-**OPEN (Q19).** Whether a launch email carries an unsubscribe link and merge tags. No code in this repo sends launch mail: the shell in `apps/api/src/lib/email/template.ts` is transactional. The sending tool decides the tag syntax. Do not invent a tag. Mark `{{UNSUBSCRIBE_URL}}` as a placeholder under Guesses until a person names the tool. A button destination and a hosted logo URL that the request does not supply are placeholders too, named for the object (`{{CONNECT_COMPUTER_URL}}`). A launch email that mentions the computer feature names no machine class and no operating system (Q20).
+**OPEN (Q19).** Whether a launch email carries an unsubscribe link and merge tags. No code in this repo sends launch mail: the shell in `apps/api/src/lib/email/template.tsx` is transactional. The sending tool decides the tag syntax. Do not invent a tag. Mark `{{UNSUBSCRIBE_URL}}` as a placeholder under Guesses until a person names the tool. A button destination and a hosted logo URL that the request does not supply are placeholders too, named for the object (`{{CONNECT_COMPUTER_URL}}`). A launch email that mentions the computer feature names no machine class and no operating system (Q20).
 
 ### 5.6 Slack and Teams messages
 

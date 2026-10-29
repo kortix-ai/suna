@@ -398,3 +398,12 @@ describe('featureDisabledBody', () => {
     }
   });
 });
+
+
+describe('artifact comments require Artifacts', () => {
+  test('defaults off and cannot run when Artifacts is off', () => {
+    expect(resolveFeatureFlag({}, 'artifact_comments')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { artifacts: false, artifact_comments: true } }, 'artifact_comments')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { artifacts: true, artifact_comments: true } }, 'artifact_comments')).toBe(Boolean(config.PLATINUM_API_KEY));
+  });
+});

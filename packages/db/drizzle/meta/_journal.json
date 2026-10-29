@@ -1296,6 +1296,48 @@
       "when": 1793093398130,
       "tag": "20261027092958_project_session_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1793101077645,
+      "tag": "20261027113757_chrome_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1793288256822,
+      "tag": "20261029153736_artifact_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1793291783968,
+      "tag": "20261029163623_artifact_activity",
+      "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1793296200000,
+      "tag": "20261029175000_connector_call_status_approved",
+      "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1793296201000,
+      "tag": "20261029175001_connector_held_calls",
+      "breakpoints": true
+    },
+    {
+      "idx": 190,
+      "version": "7",
+      "when": 1793296202000,
+      "tag": "20261029175002_connector_held_calls_sweep_indexes",
+      "breakpoints": true
     }
   ]
 }
