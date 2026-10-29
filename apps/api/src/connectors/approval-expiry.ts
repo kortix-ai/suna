@@ -23,6 +23,10 @@ export const APPROVAL_RERUN_WINDOW_MS = 15 * 60 * 1000;
 // apps/cli/src/commands/connector-gateway.ts holds a copy for the CLI; change both together.
 export const APPROVAL_RERUN_RULE = `Approval alone does not run the call: after approval, repeat this exact call (same arguments and account) within ${APPROVAL_RERUN_WINDOW_MS / 60_000} minutes, and it runs once.`;
 
+/** The answer to a repeat of a call that is already held, queued or running. */
+export const HELD_CALL_REPEAT_INSTRUCTIONS =
+  'This exact call is already waiting for approval or running. Kortix runs it once a human approves and resumes you with the result. Do not repeat it. Stop this turn.';
+
 /**
  * `approvals.ttl` from kortix.yaml: an integer and a unit in {m,h,d} (`30m`,
  * `4h`, `7d`), clamped to [5m, 30d]. Absent → null (the 24 h default). Any

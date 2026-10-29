@@ -1,5 +1,5 @@
 import { logger } from '../lib/logger';
-import { APPROVAL_RERUN_RULE } from './approval-expiry';
+import { APPROVAL_RERUN_RULE, HELD_CALL_REPEAT_INSTRUCTIONS } from './approval-expiry';
 import {
   APPROVAL_ENRICHERS,
   type ApprovalEnricher,
@@ -291,6 +291,30 @@ export interface GatewayDeps {
      *  `result_summary.resolved_digest`, the content the human saw;
      *  `resolvedError` is true when that content could not be read. */
   }): Promise<boolean | { resolvedDigest: string | null; resolvedError?: boolean }>;
+  /**
+   * The approved held run only: the gate is `approved`, its held row is
+   * `dispatched`, and `requestDigest` (recomputed over the re-injected args)
+   * equals the gate's digest. `resolvedDigest` / `resolvedError` feed the
+   * content binding as a carry-over claim does. Absent = every held run refuses.
+   */
+  verifyHeldApproval?(input: {
+    executionId: string;
+    projectId: string;
+    requestDigest: string;
+  }): Promise<HeldApprovalVerdict>;
+  /**
+   * The open gate of this exact request whose held call is still held, queued
+   * or running: an agent repeat gets that execution id, never a second gate.
+   * Null when there is none.
+   */
+  findOpenHeldExecution?(input: {
+    projectId: string;
+    sessionId: string | null;
+    actingUserId: string;
+    connectorId: string;
+    actionPath: string;
+    requestDigest: string;
+  }): Promise<string | null>;
   /** Approval enrichers by `enricherKey` (approval-enrichers.ts). Absent =
    *  the production registry. */
   approvalEnrichers?: Readonly<Record<string, ApprovalEnricher>>;
@@ -433,7 +457,15 @@ export interface CallInput {
    *  agent grant (`AgentGrant.policySets`), resolved by the HTTP route. Never
    *  read from the request body. Absent/null = base rules. */
   policySet?: CallPolicySet | null;
+  /** The approved held run (connectors/held-call-run.ts) only. The route
+   *  builds `CallInput` field by field and never sets it. */
+  heldApproval?: { executionId: string; approvedBy: string | null } | null;
 }
+
+export type HeldApprovalVerdict =
+  | { ok: true; resolvedDigest: string | null; resolvedError: boolean }
+  /** `request_changed`: the re-injected args no longer give the approved digest. */
+  | { ok: false; reason: 'request_changed' | 'approval_not_found' };
 
 export interface CallPolicySet {
   name: string;
@@ -899,6 +931,23 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     },
   );
 
+  // The approved held run: the approval covers this exact request only. The
+  // check runs before policy, so a drifted request never runs on an `allow`.
+  let heldVerdict: HeldApprovalVerdict | null = null;
+  if (input.heldApproval) {
+    heldVerdict = deps.verifyHeldApproval
+      ? await deps.verifyHeldApproval({
+          executionId: input.heldApproval.executionId,
+          projectId: input.projectId,
+          requestDigest,
+        })
+      : { ok: false, reason: 'approval_not_found' };
+    if (!heldVerdict.ok) {
+      await audit(deps, input, connector, 'denied', action.risk, { reason: heldVerdict.reason }, requestDigest);
+      return { status: 'denied', reason: heldVerdict.reason };
+    }
+  }
+
   // Layered enforcement: project → connection → risk default.
   if (deps.enforcePolicies !== false) {
     const gated = await enforceCallPolicies(
@@ -909,6 +958,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       fullPath,
       executionArgs,
       requestDigest,
+      heldVerdict,
     );
     if (gated) return gated;
   }
@@ -964,6 +1014,7 @@ async function enforceCallPolicies(
   fullPath: string,
   executionArgs: Record<string, unknown>,
   requestDigest: string,
+  heldVerdict: Extract<HeldApprovalVerdict, { ok: true }> | null,
 ): Promise<CallResult | null> {
   const policySet = input.policySet ?? null;
   const [connectorPolicies, projectPolicies, defaultMode, setPolicies] = await Promise.all([
@@ -1079,8 +1130,11 @@ async function enforceCallPolicies(
     // runtime dependency can consult them for authorization.
     //
     // Approval carry-over claims one human approval for the exact request
-    // digest after the decision callback asks the session to continue.
-    const carriedOver = deps.consumeApprovedExecution
+    // digest after the decision callback asks the session to continue. The
+    // approved held run brings its own verified approval instead.
+    const carriedOver = heldVerdict
+      ? heldVerdict
+      : deps.consumeApprovedExecution
       ? await deps.consumeApprovedExecution({
           sessionId: input.sessionId ?? null,
           actingUserId: input.subject.userId,
@@ -1116,7 +1170,7 @@ async function enforceCallPolicies(
     }
     if (carriedOver && !contentChanged) {
       await audit(deps, input, connector, 'ok', action.risk, {
-        reason: 'approval_carryover',
+        reason: heldVerdict ? 'approved_hold' : 'approval_carryover',
         policy_source: decision.source,
         ...setDetails,
       });
@@ -1137,6 +1191,29 @@ async function enforceCallPolicies(
               requestDigest,
             })
           : false;
+      // An agent repeat of a call that is already held, queued or running
+      // gets that gate back: one human decision runs at most one call.
+      const openHeld =
+        !reuseExisting && !contentChanged && !input.heldApproval && deps.findOpenHeldExecution
+          ? await deps.findOpenHeldExecution({
+              projectId: input.projectId,
+              sessionId: input.sessionId ?? null,
+              actingUserId: input.subject.userId,
+              connectorId: connector.connectorId,
+              actionPath: `${input.connectorSlug}.${input.actionPath}`,
+              requestDigest,
+            })
+          : null;
+      if (openHeld) {
+        return {
+          status: 'pending_approval',
+          reason,
+          executionId: openHeld,
+          retryable: false,
+          ...(await approvalExtras(openHeld)),
+          approvalInstructions: HELD_CALL_REPEAT_INSTRUCTIONS,
+        };
+      }
       // Only a new row reads the content. Never blocks or fails the hold: a
       // slow or failed read is recorded as `resolved_error`. Only an action
       // with an enricher carries these keys.
@@ -1835,7 +1912,14 @@ async function audit(
       status,
       risk,
       requestDigest: requestDigest ?? null,
-      resultSummary: summary,
+      // Every row of an approved held run names the gate it ran for.
+      resultSummary: input.heldApproval
+        ? {
+            ...(summary ?? {}),
+            approved_execution_id: input.heldApproval.executionId,
+            approved_by: input.heldApproval.approvedBy,
+          }
+        : summary,
       ...(held ? { held } : {}),
     });
   } catch {

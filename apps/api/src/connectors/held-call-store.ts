@@ -13,6 +13,9 @@ import type { CallPolicySet } from './gateway';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+/** The job queue of approved held runs (held-call-run.ts). One job per execution id. */
+export const HELD_CALL_QUEUE = 'connector-held-call';
+
 /** Plaintext v1. The envelope has no AAD, so the ids and the digest are inside it and checked after decrypt. */
 export interface HeldCallInput {
   v: 1;

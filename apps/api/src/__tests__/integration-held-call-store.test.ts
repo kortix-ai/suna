@@ -4,7 +4,9 @@
  * `held` whose `input_enc` decrypts to the call input and the caller. The
  * plaintext carries the gate's ids and digest, so a ciphertext copied to
  * another gate is refused. A wipe sets `input_enc` to NULL. A failed held write
- * keeps the gate. No approvals or review read returns the held input.
+ * keeps the gate. Only a project-scoped token holds: a dashboard JWT or an
+ * unscoped PAT keeps the carry-over. No approvals or review read returns the
+ * held input.
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { accountMembers, connectorCalls, connectorConnections, connectorHeldCalls, connectors } from '@kortix/db';
@@ -17,7 +19,8 @@ import type { ApprovalCaller } from '../projects/lib/approval-authority';
 import { getInboxItem, listInboxItems } from '../projects/review-items';
 import { db } from '../shared/db';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
-import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
+import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
+import { createAccountToken } from '../repositories/account-tokens';
 
 const HUMAN_SESSION = 'held-call-store-human-session';
 const humanUserId = crypto.randomUUID();
@@ -37,8 +40,8 @@ const { handleCall } = await import('../connectors/gateway');
 const SENTINEL = 'held-call-sentinel-7f3a9c';
 const connectorId = crypto.randomUUID();
 const connectionId = crypto.randomUUID();
-const sessionId = crypto.randomUUID();
-const tokenId = crypto.randomUUID();
+let sessionId = '';
+let tokenId = '';
 let seeded: SeededProject;
 let principal: ConnectorPrincipal;
 let deps: GatewayDeps;
@@ -71,13 +74,13 @@ const asOwner = async (): Promise<ApprovalCaller> => ({
 const FULL_VIEW = { where: () => undefined, allows: async () => true };
 const authed = (path: string) => app.request(path, { headers: { Authorization: `Bearer ${HUMAN_SESSION}` } });
 
-async function gate(args: Record<string, unknown>): Promise<string> {
-  const result = await handleCall(deps, {
+async function gate(args: Record<string, unknown>, gateDeps: GatewayDeps = deps, actingTokenId: string | null = tokenId): Promise<string> {
+  const result = await handleCall(gateDeps, {
     projectId: seeded.project_id,
     accountId: seeded.account_id,
     subject: { userId: humanUserId, groupIds: [] },
     sessionId,
-    actingTokenId: tokenId,
+    actingTokenId,
     connectorSlug: 'billing',
     actionPath: 'charges.create',
     args,
@@ -86,6 +89,18 @@ async function gate(args: Record<string, unknown>): Promise<string> {
   if (result.status !== 'pending_approval' || !result.executionId) throw new Error(`not held: ${result.status}`);
   return result.executionId;
 }
+/** The suite's connector, action, credential and policy overrides, without the principal-bound writer. */
+const pick = (d: GatewayDeps): Partial<GatewayDeps> => ({
+  loadConnectorBySlug: d.loadConnectorBySlug,
+  loadAction: d.loadAction,
+  resolveCredential: d.resolveCredential,
+  loadPolicies: d.loadPolicies,
+  loadProjectPolicies: d.loadProjectPolicies,
+  loadDefaultMode: d.loadDefaultMode,
+  mintApprovalLink: undefined,
+  postApprovalCard: undefined,
+  approvalEnrichers: {},
+});
 const heldRows = (executionId: string) =>
   db.select().from(connectorHeldCalls).where(eq(connectorHeldCalls.executionId, executionId));
 
@@ -109,6 +124,16 @@ beforeAll(async () => {
     label: 'Default',
     isDefault: true,
   });
+  sessionId = await seedSession(seeded, humanUserId);
+  tokenId = (
+    await createAccountToken({
+      accountId: seeded.account_id,
+      userId: humanUserId,
+      projectId: seeded.project_id,
+      sessionId,
+      name: 'held-call-store',
+    })
+  ).tokenId;
   principal = {
     userId: humanUserId,
     accountId: seeded.account_id,
@@ -137,6 +162,8 @@ afterAll(async () => {
   await db.delete(connectorCalls).where(eq(connectorCalls.projectId, seeded.project_id));
   await db.delete(connectorConnections).where(eq(connectorConnections.projectId, seeded.project_id));
   await db.delete(connectors).where(eq(connectors.projectId, seeded.project_id));
+  await db.execute(sql`delete from kortix.account_tokens where account_id = ${seeded.account_id}`);
+  await db.execute(sql`delete from kortix.project_sessions where project_id = ${seeded.project_id}`);
   await deleteFromView(
     db,
     accountMembers,
@@ -245,6 +272,16 @@ describe('held call input', () => {
     const context = { connectionId, provider: 'channel', baseUrl: null, binding: reply.binding };
     expect(call.requestDigest).toBe(connectorRequestDigest('email', 'reply_message', injected, context));
     expect(held?.request_digest).toBe(call.requestDigest!);
+  });
+
+  test('a caller without a project-scoped token gets the gate but no held row', async () => {
+    const pat = await createAccountToken({ accountId: seeded.account_id, userId: humanUserId, name: 'held-call-store-pat' });
+    for (const actingTokenId of [null, pat.tokenId]) {
+      const executionId = await gate({ amount: 7 }, { ...makeDbGatewayDeps({ ...principal, tokenId: actingTokenId }), ...pick(deps) }, actingTokenId);
+      const [call] = await db.select().from(connectorCalls).where(eq(connectorCalls.executionId, executionId));
+      expect(call.status).toBe('pending_approval');
+      expect(await heldRows(executionId)).toHaveLength(0);
+    }
   });
 
   test('a wipe sets input_enc to NULL and keeps the row', async () => {

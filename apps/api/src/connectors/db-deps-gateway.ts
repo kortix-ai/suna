@@ -1,5 +1,6 @@
 /** DB-backed GatewayDeps for one principal (makeDbGatewayDeps) and the approval carry-over reads it uses. */
 import {
+  accountTokens,
   connectionCredentials,
   connectorConnections,
   connectorActions,
@@ -9,7 +10,7 @@ import {
   connectorProjectSettings,
 } from '@kortix/db';
 import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
-import { and, desc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { resolveEmailApiKey } from '../channels/resend-email-api';
 import { bindSlackThreadToSession } from '../channels/slack/binding';
 import { slackUserNames } from '../channels/slack/labels';
@@ -44,7 +45,7 @@ import { gateChannelWrite } from './channel-write-scope';
 import { resolveCredentialValue, resolveConnectionCredentialValue } from './credentials';
 import { connectorEgressFetch } from './egress';
 import { CredentialNotSharedError } from './gateway';
-import type { ExecutionRecord, GatewayAction, GatewayConnector, GatewayDeps } from './gateway';
+import type { ExecutionRecord, GatewayAction, GatewayConnector, GatewayDeps, HeldApprovalVerdict } from './gateway';
 import { sealHeldInput } from './held-call-store';
 import { graphToken } from '../channels/teams-auth';
 import { runPipedreamAction, runPipedreamProxy } from './pipedream';
@@ -185,6 +186,71 @@ export async function isPendingApprovalExecution(input: {
   return Boolean(row);
 }
 
+/**
+ * The approved held run's claim: the gate is `approved`, its held row is
+ * `dispatched` (the run's fence), and the re-computed digest is the gate's.
+ */
+export async function verifyHeldApproval(input: {
+  executionId: string;
+  projectId: string;
+  requestDigest: string;
+}): Promise<HeldApprovalVerdict> {
+  const [row] = await db
+    .select({
+      status: connectorCalls.status,
+      requestDigest: connectorCalls.requestDigest,
+      resultSummary: connectorCalls.resultSummary,
+      state: connectorHeldCalls.state,
+    })
+    .from(connectorCalls)
+    .innerJoin(connectorHeldCalls, eq(connectorHeldCalls.executionId, connectorCalls.executionId))
+    .where(and(eq(connectorCalls.executionId, input.executionId), eq(connectorCalls.projectId, input.projectId)))
+    .limit(1);
+  if (!row || row.status !== 'approved' || row.state !== 'dispatched') {
+    return { ok: false, reason: 'approval_not_found' };
+  }
+  if (row.requestDigest !== input.requestDigest) return { ok: false, reason: 'request_changed' };
+  const summary = (row.resultSummary ?? {}) as Record<string, unknown>;
+  return {
+    ok: true,
+    resolvedDigest: typeof summary.resolved_digest === 'string' ? summary.resolved_digest : null,
+    resolvedError: typeof summary.resolved_error === 'string',
+  };
+}
+
+/** The newest decidable or approved gate of this exact request whose held call has not finished. */
+export async function findOpenHeldExecution(input: {
+  projectId: string;
+  sessionId: string | null;
+  actingUserId: string;
+  connectorId: string;
+  actionPath: string;
+  requestDigest: string;
+}): Promise<string | null> {
+  const [row] = await db
+    .select({ executionId: connectorCalls.executionId })
+    .from(connectorCalls)
+    .innerJoin(connectorHeldCalls, eq(connectorHeldCalls.executionId, connectorCalls.executionId))
+    .where(
+      and(
+        eq(connectorCalls.projectId, input.projectId),
+        input.sessionId ? eq(connectorCalls.sessionId, input.sessionId) : isNull(connectorCalls.sessionId),
+        eq(connectorCalls.actingUserId, input.actingUserId),
+        eq(connectorCalls.connectorId, input.connectorId),
+        eq(connectorCalls.actionPath, input.actionPath),
+        eq(connectorCalls.requestDigest, input.requestDigest),
+        inArray(connectorHeldCalls.state, ['held', 'queued', 'dispatched']),
+        or(
+          eq(connectorCalls.status, 'approved'),
+          and(eq(connectorCalls.status, 'pending_approval'), approvalNotExpired),
+        ),
+      ),
+    )
+    .orderBy(desc(connectorCalls.createdAt))
+    .limit(1);
+  return row?.executionId ?? null;
+}
+
 async function channelToken(
   projectId: string,
   platform: string | null,
@@ -291,7 +357,8 @@ async function holdCallInput(
   rec: ExecutionRecord,
   executionId: string,
 ): Promise<void> {
-  if (!rec.held || !rec.requestDigest) return;
+  const tokenId = principal.tokenId;
+  if (!rec.held || !rec.requestDigest || !tokenId) return;
   try {
     const inputEnc = sealHeldInput({
       v: 1,
@@ -305,22 +372,30 @@ async function holdCallInput(
       connection_id: rec.connectionId,
       approval_context: rec.held.approvalContext,
       policy_set: rec.held.policySet,
-      acting_token_id: principal.tokenId ?? null,
+      acting_token_id: tokenId,
       session_id: principal.sessionId,
       user_id: principal.userId,
       agent_grant: principal.agentGrant ?? null,
       agent_principal: principal.agentPrincipal ?? null,
     });
-    await tx.transaction((sp) =>
-      sp.insert(connectorHeldCalls).values({
+    await tx.transaction(async (sp) => {
+      // Only a project-scoped token can be re-checked server-side at run
+      // time. A dashboard JWT or an unscoped PAT keeps the carry-over.
+      const [token] = await sp
+        .select({ tokenId: accountTokens.tokenId })
+        .from(accountTokens)
+        .where(and(eq(accountTokens.tokenId, tokenId), eq(accountTokens.projectId, rec.projectId)))
+        .limit(1);
+      if (!token) return;
+      await sp.insert(connectorHeldCalls).values({
         executionId,
         projectId: rec.projectId,
         accountId: rec.accountId,
         inputEnc,
         state: 'held',
         updatedAt: new Date(),
-      }),
-    );
+      });
+    });
   } catch (error) {
     logger.warn('[approvals] held input not stored; approve falls back to the carry-over', {
       executionId,
@@ -591,6 +666,8 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         : insertConnectorCall(db, rec),
     consumeApprovedExecution: consumeApprovedExecution,
     isPendingApprovalExecution: isPendingApprovalExecution,
+    verifyHeldApproval,
+    findOpenHeldExecution,
     executePipedream: ({ projectId, connectorSlug, app, actionKey, args, accountId, userId }) =>
       runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
     executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>

@@ -1,0 +1,308 @@
+/**
+ * The approved held call runs here, once, as its original caller. Approve
+ * (`decideConnectorApproval`) flips the gate to `approved`, the held row to
+ * `queued`, and enqueues one `connector-held-call` job keyed by the execution
+ * id, all in one commit. This handler:
+ *
+ *   1. ends a finished row; a `dispatched` row that outlived the run ceiling
+ *      settles `unknown` (it may have run; never run again); a row past its
+ *      `run_deadline` settles `refused/run_window_passed`;
+ *   2. decrypts the held input and rebuilds the caller (refusal = `refused`);
+ *   3. fences `queued` → `dispatched` (0 rows: another run owns it);
+ *   4. runs `handleCall` with `heldApproval`: policy is evaluated again, block
+ *      wins, and the re-injected request must give the approved digest;
+ *   5. settles the redacted outcome, wipes the input, and enqueues the
+ *      `approval-run:<id>` resume in the same commit.
+ *
+ * A crash between 3 and 5 is the only `unknown` window. The held input never
+ * leaves this module: only `output_preview` (≤ 4 KB, redacted) and error text
+ * (≤ 500 chars) go to the outcome, the resume text and the audit event.
+ */
+import { connectorCalls, connectorHeldCalls, sessionLifecycleCommands } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
+import { logger } from '../lib/logger';
+import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../projects/surface';
+import { recordAuditEvent } from '../shared/audit';
+import { db } from '../shared/db';
+import { registerJobHandler } from '../shared/job-queue';
+import { buildArgsPreviewDetails } from './args-preview';
+import { approvalRunAuditEvent } from './call-audit';
+import { rebuildHeldCallPrincipal } from './db-deps-principal';
+import { makeDbGatewayDeps } from './db-deps-gateway';
+import { type CallResult, type GatewayDeps, handleCall } from './gateway';
+import { HELD_CALL_QUEUE, HeldInputRefusedError, openHeldInput } from './held-call-store';
+import type { ConnectorPrincipal } from './router-contract';
+
+/** A `dispatched` row older than this ran or died: it settles `unknown`. Above the 60 s call deadline. */
+export const HELD_RUN_CEILING_MS = 15 * 60_000;
+const MAX_OUTPUT_PREVIEW = 4_096;
+const MAX_MESSAGE = 500;
+
+type FinalState = 'ok' | 'error' | 'refused' | 'unknown';
+
+/** Redacted run result, the only part of a held call that leaves its row. */
+export interface HeldRunOutcome {
+  status: FinalState;
+  reason?: string;
+  message?: string;
+  upstream_status?: number | null;
+  account?: { label: string; id: string };
+  output_preview?: string;
+  new_execution_id?: string | null;
+}
+
+interface HeldRunRow {
+  executionId: string;
+  state: string;
+  inputEnc: string | null;
+  dispatchedAt: Date | null;
+  runDeadline: Date | null;
+  projectId: string;
+  accountId: string;
+  sessionId: string | null;
+  connectorId: string | null;
+  actionPath: string;
+  requestDigest: string | null;
+  approvedBy: string | null;
+}
+
+const TERMINAL = new Set(['ok', 'error', 'refused', 'unknown', 'cancelled']);
+
+/**
+ * Run one approved held call. `makeDeps` is the gateway deps factory (tests
+ * wrap it). Throws only to retry later: a transient error before the fence, or
+ * a `dispatched` row still inside the run ceiling.
+ */
+export async function runHeldCall(
+  executionId: string,
+  makeDeps: (principal: ConnectorPrincipal) => GatewayDeps = makeDbGatewayDeps,
+): Promise<void> {
+  const row = await loadHeldRun(executionId);
+  if (!row || row.state === 'held' || TERMINAL.has(row.state)) return;
+  if (row.state === 'dispatched') {
+    if (row.dispatchedAt && Date.now() - row.dispatchedAt.getTime() < HELD_RUN_CEILING_MS) {
+      throw new Error('held call run in progress');
+    }
+    await settle(row, 'dispatched', { status: 'unknown', reason: 'run_interrupted' }, null);
+    return;
+  }
+  if (!row.runDeadline || Date.now() > row.runDeadline.getTime()) {
+    await settle(row, 'queued', { status: 'refused', reason: 'run_window_passed' }, null);
+    return;
+  }
+  if (!row.inputEnc) {
+    await settle(row, 'queued', { status: 'refused', reason: 'held_input_missing' }, null);
+    return;
+  }
+
+  let held: ReturnType<typeof openHeldInput>;
+  try {
+    held = openHeldInput(
+      { executionId, projectId: row.projectId, requestDigest: row.requestDigest },
+      row.inputEnc,
+    );
+  } catch (error) {
+    if (!(error instanceof HeldInputRefusedError)) throw error;
+    await settle(row, 'queued', { status: 'refused', reason: error.reason }, null);
+    return;
+  }
+  const caller = await rebuildHeldCallPrincipal(held);
+  if (!caller.ok) {
+    await settle(row, 'queued', { status: 'refused', reason: caller.reason }, null);
+    return;
+  }
+
+  // At-most-once fence: only the run that moves the row out of `queued` calls the provider.
+  const fenced = await db
+    .update(connectorHeldCalls)
+    .set({ state: 'dispatched', dispatchedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(connectorHeldCalls.executionId, executionId), eq(connectorHeldCalls.state, 'queued')))
+    .returning({ id: connectorHeldCalls.executionId });
+  if (fenced.length === 0) return;
+
+  const { principal, policySet } = caller;
+  const base = makeDeps(principal);
+  let lastRecorded: string | null = null;
+  const deps: GatewayDeps = {
+    ...base,
+    recordExecution: async (rec) => {
+      const id = await base.recordExecution(rec);
+      if (id) lastRecorded = id;
+      return id;
+    },
+  };
+  let result: CallResult;
+  try {
+    result = await handleCall(deps, {
+      projectId: held.project_id,
+      accountId: principal.accountId,
+      subject: principal.subject,
+      sessionId: principal.sessionId,
+      // The live token: after a re-mint it is not the token the call was held with.
+      actingTokenId: principal.tokenId ?? null,
+      connectorSlug: held.connector_slug,
+      actionPath: held.action_path,
+      args: held.args,
+      approvalContext: held.approval_context,
+      policySet,
+      heldApproval: { executionId, approvedBy: row.approvedBy },
+    });
+  } catch (error) {
+    logger.warn('[approvals] held call run threw after dispatch', {
+      executionId,
+      error: error instanceof Error ? error.name : 'unknown',
+    });
+    await settle(row, 'dispatched', { status: 'unknown', reason: 'run_failed' }, lastRecorded);
+    return;
+  }
+  const outcome = outcomeOf(result);
+  await settle(row, 'dispatched', outcome, result.status === 'pending_approval' ? null : lastRecorded);
+}
+
+async function loadHeldRun(executionId: string): Promise<HeldRunRow | null> {
+  const [row] = await db
+    .select({
+      executionId: connectorHeldCalls.executionId,
+      state: connectorHeldCalls.state,
+      inputEnc: connectorHeldCalls.inputEnc,
+      dispatchedAt: connectorHeldCalls.dispatchedAt,
+      runDeadline: connectorHeldCalls.runDeadline,
+      projectId: connectorCalls.projectId,
+      accountId: connectorCalls.accountId,
+      sessionId: connectorCalls.sessionId,
+      connectorId: connectorCalls.connectorId,
+      actionPath: connectorCalls.actionPath,
+      requestDigest: connectorCalls.requestDigest,
+      approvedBy: connectorCalls.approvedBy,
+    })
+    .from(connectorHeldCalls)
+    .innerJoin(connectorCalls, eq(connectorCalls.executionId, connectorHeldCalls.executionId))
+    .where(eq(connectorHeldCalls.executionId, executionId))
+    .limit(1);
+  return row ?? null;
+}
+
+/** The redacted outcome of one gateway result. */
+function outcomeOf(result: CallResult): HeldRunOutcome {
+  switch (result.status) {
+    case 'ok':
+      return {
+        status: result.upstreamError ? 'error' : 'ok',
+        ...(result.upstreamError ? { message: result.upstreamError.slice(0, MAX_MESSAGE) } : {}),
+        upstream_status: result.upstreamStatus,
+        ...(result.account ? { account: { label: result.account.label, id: result.account.connection_id } } : {}),
+        output_preview: outputPreview(result.output),
+      };
+    case 'error':
+      return {
+        status: 'error',
+        message: result.reason.slice(0, MAX_MESSAGE),
+        ...(result.upstreamStatus === undefined ? {} : { upstream_status: result.upstreamStatus }),
+      };
+    case 'denied':
+      return {
+        status: 'refused',
+        reason: result.reason.slice(0, MAX_MESSAGE),
+        ...(result.message ? { message: result.message.slice(0, MAX_MESSAGE) } : {}),
+      };
+    case 'pending_approval':
+      // The content changed after approval: a new gate asks a human again.
+      return { status: 'refused', reason: result.reason, new_execution_id: result.executionId ?? null };
+  }
+}
+
+/** The call output with credential-shaped fields redacted, as JSON, at most 4 KB. */
+function outputPreview(output: unknown): string {
+  const preview = buildArgsPreviewDetails({ output }).preview?.output ?? null;
+  const text = JSON.stringify(preview) ?? 'null';
+  return text.length > MAX_OUTPUT_PREVIEW ? `${text.slice(0, MAX_OUTPUT_PREVIEW)}… [truncated]` : text;
+}
+
+/** The prompt that tells the agent what its approved call did. */
+export function heldRunResumeText(actionPath: string, outcome: HeldRunOutcome): string {
+  switch (outcome.status) {
+    case 'ok':
+      return `Your approved call ${actionPath} ran once. Do not repeat it. Result:\n${outcome.output_preview ?? 'null'}`;
+    case 'error':
+      return `Your approved call ${actionPath} ran, but failed: ${outcome.message ?? 'unknown error'}. Check its effect before you repeat it.`;
+    case 'unknown':
+      return `Your approved call ${actionPath} may have run: Kortix lost track of it. Check its effect before you repeat it.`;
+    case 'refused':
+      return outcome.reason === 'content_changed'
+        ? `Your approved call ${actionPath} did not run: the content changed after approval. A new approval ${outcome.new_execution_id ?? ''} is waiting for a human. Do not repeat the call.`
+        : `Your approved call ${actionPath} did not run: ${outcome.message ?? outcome.reason ?? 'refused'}. Repeat the call to ask for approval again.`;
+  }
+}
+
+/**
+ * Settle the held row from `from` to the outcome's state, wipe its input, and
+ * enqueue the session resume in the same commit. A row another run already
+ * settled matches 0 rows: nothing else happens.
+ */
+async function settle(
+  row: HeldRunRow,
+  from: 'queued' | 'dispatched',
+  outcome: HeldRunOutcome,
+  runExecutionId: string | null,
+): Promise<void> {
+  const now = new Date();
+  const idempotencyKey = `approval-run:${row.executionId}`;
+  const settled = await db.transaction(async (tx) => {
+    const done = await tx
+      .update(connectorHeldCalls)
+      .set({
+        state: outcome.status,
+        outcome: outcome as unknown as Record<string, unknown>,
+        runExecutionId,
+        inputEnc: null,
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(and(eq(connectorHeldCalls.executionId, row.executionId), eq(connectorHeldCalls.state, from)))
+      .returning({ id: connectorHeldCalls.executionId });
+    if (done.length === 0) return false;
+    if (row.sessionId) {
+      await tx
+        .insert(sessionLifecycleCommands)
+        .values(
+          buildContinueSessionCommandValues({
+            source: 'system:approval-resume',
+            projectId: row.projectId,
+            accountId: row.accountId,
+            sessionId: row.sessionId,
+            actorUserId: row.approvedBy,
+            text: heldRunResumeText(row.actionPath, outcome),
+            executionId: row.executionId,
+            availableAt: now,
+            idempotencyKey,
+          }),
+        )
+        .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
+    }
+    return true;
+  });
+  if (!settled) return;
+
+  try {
+    await recordAuditEvent(
+      approvalRunAuditEvent({
+        accountId: row.accountId,
+        projectId: row.projectId,
+        sessionId: row.sessionId,
+        executionId: row.executionId,
+        actionPath: row.actionPath,
+        connectorId: row.connectorId,
+        approvedBy: row.approvedBy,
+        state: outcome.status,
+        reason: outcome.reason ?? null,
+        runExecutionId,
+      }),
+    );
+  } catch (error) {
+    logger.warn('[approvals] failed to record held run audit event', { error: String(error) });
+  }
+  // Best-effort immediate delivery; the durable command above is the resume.
+  if (row.sessionId) void drainSessionLifecycleQueue({ limit: 1, idempotencyKey }).catch(() => {});
+}
+
+registerJobHandler(HELD_CALL_QUEUE, (job) => runHeldCall(job.jobKey));

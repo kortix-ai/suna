@@ -73,6 +73,7 @@
 import {
   chatTurnStreams,
   connectorCalls,
+  connectorHeldCalls,
   gatewayRequestLogs,
   notifications,
   projectSessionPublicShares,
@@ -90,7 +91,7 @@ import {
   sessionTranscriptMirrors,
   voiceCallTurns,
 } from '@kortix/db';
-import { and, eq, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { logger } from '../lib/logger';
 import { deleteSessionWorkspaceVolume, WORKSPACE_VOLUME_SESSION_KEY } from '../platform/services/workspace-volume';
@@ -233,9 +234,10 @@ async function unshelledSessions(limit: number): Promise<DueSession[]> {
  *
  * Content is the conversation in both stores, and everything else that copies it: model
  * requests and responses, prompt commands, voice turns, questions and answers, runtime
- * projections and contexts, Slack stream state, notifications, share links and connector
- * result summaries. A row that usage, billing or audit counts (`gateway_request_logs`,
- * `session_lifecycle_commands`, `connector_calls`) stays without its content columns.
+ * projections and contexts, Slack stream state, notifications, share links, held connector
+ * call inputs and outcomes, and connector result summaries. A row that usage, billing or
+ * audit counts (`gateway_request_logs`, `session_lifecycle_commands`, `connector_calls`,
+ * `connector_held_calls`) stays without its content columns.
  * A deleted session's own row keeps only ids, dates and `SHELL_METADATA_KEYS`; a session
  * of a closed account keeps its row as it is (the account deletion erases it whole).
  */
@@ -261,6 +263,15 @@ async function purgeRows(row: DueSession, now: Date, drained: boolean): Promise<
     await tx.delete(notifications).where(and(eq(notifications.accountId, row.account_id), eq(notifications.sessionId, id)));
     await tx.update(gatewayRequestLogs).set({ request: null, response: null }).where(inProject(gatewayRequestLogs));
     await tx.update(connectorCalls).set({ resultSummary: null }).where(inProject(connectorCalls));
+    await tx
+      .update(connectorHeldCalls)
+      .set({ inputEnc: null, outcome: null, updatedAt: now })
+      .where(
+        inArray(
+          connectorHeldCalls.executionId,
+          tx.select({ id: connectorCalls.executionId }).from(connectorCalls).where(inProject(connectorCalls)),
+        ),
+      );
     await tx
       .update(sessionLifecycleCommands)
       .set({ payload: {}, result: {} })

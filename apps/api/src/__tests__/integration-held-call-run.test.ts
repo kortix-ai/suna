@@ -1,0 +1,417 @@
+/**
+ * Approve runs the held call once, as its caller (real Postgres, loopback
+ * provider stub). A gate from a project-scoped session token holds its input.
+ * Approve flips the gate to `approved` and queues one job; the job worker runs
+ * the call through the production gateway deps and resumes the session with
+ * one `approval-run:` command that carries the redacted result.
+ *
+ * The provider stub counts calls: every refusal path below asserts that the
+ * count did not move. A gate without a held row (a dashboard JWT caller) keeps
+ * the carry-over: approve, then repeat the call.
+ */
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import {
+  type AgentGrant,
+  accountMembers,
+  auditEvents,
+  connectorActions,
+  connectorCalls,
+  connectorHeldCalls,
+  connectorPolicies,
+  connectors,
+  jobQueue,
+  sessionLifecycleCommands,
+  sessionSandboxes,
+} from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
+import { config } from '../config';
+import type { ApprovalEnricher } from '../connectors/approval-enrichers';
+import type { CallResult, GatewayDeps } from '../connectors/gateway';
+import type { ConnectorPrincipal } from '../connectors/router-contract';
+import { db } from '../shared/db';
+import { insertIntoView } from './helpers/compat-views';
+import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
+
+// The grant reconcile reads the project manifest from git. The suite has no
+// upstream: keep the token's stored grant.
+const realGrant = await import('../projects/lib/session-token-grant');
+mock.module('../projects/lib/session-token-grant', () => ({
+  ...realGrant,
+  reconcileStoredSessionAgentGrant: async (input: { storedGrant?: AgentGrant | null }) => input.storedGrant ?? null,
+}));
+
+const { makeDbGatewayDeps } = await import('../connectors/db-deps-gateway');
+const { resolveTokenPrincipal } = await import('../connectors/db-deps-principal');
+const { handleCall } = await import('../connectors/gateway');
+const { HELD_CALL_QUEUE } = await import('../connectors/held-call-store');
+const { HELD_RUN_CEILING_MS, runHeldCall } = await import('../connectors/held-call-run');
+const { HELD_CALL_REPEAT_INSTRUCTIONS } = await import('../connectors/approval-expiry');
+const { decideConnectorApproval, expireDueApprovals, loadApprovalRow } = await import(
+  '../projects/lib/connector-approval-decision'
+);
+const { createAccountToken } = await import('../repositories/account-tokens');
+const { ensureDefaultConnection, upsertConnectionCredential } = await import('../connectors/credentials');
+const { runJobBatch } = await import('../shared/job-queue');
+
+/** Credential-shaped: redaction must keep it out of every surface. */
+const SENTINEL = 'held-run-sentinel-5d2e81';
+const OUTPUT_SECRET = 'held-run-output-secret-9a4c';
+
+let providerHits = 0;
+let stub: ReturnType<typeof Bun.serve>;
+let egressAllowHosts: readonly string[] = [];
+let seeded: SeededProject;
+const ownerId = crypto.randomUUID();
+let sessionId = '';
+let tokenSecret = '';
+let connectorId = '';
+let principal: ConnectorPrincipal;
+let enrichers: Record<string, ApprovalEnricher> = {};
+
+const depsFor = (p: ConnectorPrincipal): GatewayDeps => ({
+  ...makeDbGatewayDeps(p),
+  mintApprovalLink: undefined,
+  postApprovalCard: undefined,
+  approvalEnrichers: enrichers,
+});
+
+async function call(args: Record<string, unknown>, p: ConnectorPrincipal = principal): Promise<CallResult> {
+  return handleCall(depsFor(p), {
+    projectId: seeded.project_id,
+    accountId: seeded.account_id,
+    subject: p.subject,
+    sessionId: p.sessionId,
+    actingTokenId: p.tokenId ?? null,
+    connectorSlug: 'stub',
+    actionPath: 'charges.create',
+    args,
+  });
+}
+
+async function gate(args: Record<string, unknown>, p: ConnectorPrincipal = principal): Promise<string> {
+  const result = await call(args, p);
+  if (result.status !== 'pending_approval' || !result.executionId) {
+    throw new Error(`not held: ${JSON.stringify(result)}`);
+  }
+  return result.executionId;
+}
+
+async function decide(executionId: string, decision: 'approve' | 'deny') {
+  const row = await loadApprovalRow(seeded.project_id, executionId);
+  if (!row) throw new Error('no gate row');
+  return decideConnectorApproval({
+    projectId: seeded.project_id,
+    accountId: seeded.account_id,
+    row,
+    decision,
+    note: '',
+    actorUserId: ownerId,
+    auditSource: 'test',
+    resume: 'queue',
+  });
+}
+
+const run = (executionId: string) => runHeldCall(executionId, depsFor);
+const held = async (executionId: string) =>
+  (await db.select().from(connectorHeldCalls).where(eq(connectorHeldCalls.executionId, executionId)))[0];
+const gateRow = async (executionId: string) =>
+  (await db.select().from(connectorCalls).where(eq(connectorCalls.executionId, executionId)))[0];
+const resumes = (key: string) =>
+  db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.idempotencyKey, key));
+
+async function setPolicy(action: 'require_approval' | 'block'): Promise<void> {
+  await db.update(connectorPolicies).set({ action }).where(eq(connectorPolicies.connectorId, connectorId));
+}
+
+beforeAll(async () => {
+  egressAllowHosts = config.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS;
+  config.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS = ['127.0.0.1', 'localhost'];
+  stub = Bun.serve({
+    port: 0,
+    fetch(req) {
+      const url = new URL(req.url);
+      if (req.method === 'POST' && url.pathname === '/v1/charges') {
+        providerHits += 1;
+        return Response.json({ id: 'ch_test_1', client_secret: OUTPUT_SECRET }, { status: 201 });
+      }
+      return Response.json({ error: 'no route' }, { status: 404 });
+    },
+  });
+  const base = `http://127.0.0.1:${stub.port}`;
+
+  seeded = await seedProject('held-call-run');
+  await insertIntoView(db, accountMembers, { accountId: seeded.account_id, userId: ownerId, accountRole: 'owner' });
+  sessionId = await seedSession(seeded, ownerId);
+  await db.insert(sessionSandboxes).values({
+    sandboxId: crypto.randomUUID(),
+    sessionId,
+    accountId: seeded.account_id,
+    projectId: seeded.project_id,
+    status: 'active',
+  });
+  tokenSecret = (
+    await createAccountToken({
+      accountId: seeded.account_id,
+      userId: ownerId,
+      projectId: seeded.project_id,
+      sessionId,
+      name: 'held-call-run',
+    })
+  ).secretKey;
+
+  const [connector] = await db
+    .insert(connectors)
+    .values({
+      accountId: seeded.account_id,
+      projectId: seeded.project_id,
+      slug: 'stub',
+      name: 'Stub',
+      providerType: 'openapi',
+      enabled: true,
+      status: 'active',
+      config: { base_url: base, auth: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer' } },
+    })
+    .returning();
+  connectorId = connector.connectorId;
+  await db.insert(connectorActions).values({
+    connectorId,
+    path: 'charges.create',
+    name: 'Create charge',
+    description: 'test action',
+    inputSchema: { type: 'object' },
+    risk: 'write',
+    binding: { kind: 'openapi', method: 'POST', path: '/v1/charges', server: base },
+  });
+  const connectionId = await ensureDefaultConnection({ projectId: seeded.project_id, connectorId, createdBy: ownerId });
+  await upsertConnectionCredential({ projectId: seeded.project_id, connectorId, connectionId, value: 'sk_test_held_run' });
+  await db.insert(connectorPolicies).values({ connectorId, match: '*', action: 'require_approval' });
+
+  const resolved = await resolveTokenPrincipal(tokenSecret, null);
+  if (!resolved) throw new Error('session token did not resolve');
+  principal = resolved;
+}, 30_000);
+
+beforeEach(async () => {
+  enrichers = {};
+  await setPolicy('require_approval');
+});
+
+afterAll(async () => {
+  config.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS = [...egressAllowHosts];
+  stub?.stop(true);
+  await db.delete(jobQueue).where(eq(jobQueue.queue, HELD_CALL_QUEUE));
+  await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.projectId, seeded.project_id));
+  await db.delete(connectorCalls).where(eq(connectorCalls.projectId, seeded.project_id));
+  await db.delete(connectors).where(eq(connectors.projectId, seeded.project_id));
+  await db.execute(sql`delete from kortix.account_tokens where account_id = ${seeded.account_id}`);
+  await db.execute(sql`delete from kortix.session_sandboxes where account_id = ${seeded.account_id}`);
+  await db.execute(sql`delete from kortix.project_sessions where project_id = ${seeded.project_id}`);
+  await removeSeeded([seeded]);
+}, 30_000);
+
+describe('approve runs the held call once', () => {
+  test('approve queues one job; the worker calls the provider once and resumes the session with the result', async () => {
+    const id = await gate({ amount: 101, api_key: SENTINEL });
+    expect((await held(id)).state).toBe('held');
+
+    expect(await decide(id, 'approve')).toBe('resolved');
+    expect((await gateRow(id)).status).toBe('approved');
+    expect(await held(id)).toMatchObject({ state: 'queued' });
+    expect((await held(id)).runDeadline).toBeInstanceOf(Date);
+    const jobs = await db.select().from(jobQueue).where(and(eq(jobQueue.queue, HELD_CALL_QUEUE), eq(jobQueue.jobKey, id)));
+    expect(jobs).toHaveLength(1);
+    // The session is resumed after the run, not at decision time.
+    expect(await resumes(`approval-resume:${id}`)).toHaveLength(0);
+
+    const before = providerHits;
+    await runJobBatch(4);
+    expect(providerHits).toBe(before + 1);
+
+    const row = await held(id);
+    expect(row.state).toBe('ok');
+    expect(row.inputEnc).toBeNull();
+    expect(row.finishedAt).toBeInstanceOf(Date);
+    const outcome = row.outcome as Record<string, unknown>;
+    expect(outcome).toMatchObject({ status: 'ok', upstream_status: 201 });
+    expect(String(outcome.output_preview)).toContain('ch_test_1');
+    expect(String(outcome.output_preview)).not.toContain(OUTPUT_SECRET);
+
+    // The run's own audit row names the gate and who approved it.
+    const runRow = await gateRow(row.runExecutionId!);
+    expect(runRow.status).toBe('ok');
+    expect(runRow.resultSummary).toMatchObject({ approved_execution_id: id, approved_by: ownerId });
+    const tagged = await db
+      .select({ summary: connectorCalls.resultSummary })
+      .from(connectorCalls)
+      .where(sql`${connectorCalls.resultSummary} ->> 'approved_execution_id' = ${id}`);
+    expect(tagged.map((r) => (r.summary as Record<string, unknown>).reason)).toContain('approved_hold');
+
+    const commands = await resumes(`approval-run:${id}`);
+    expect(commands).toHaveLength(1);
+    expect(commands[0].source).toBe('system:approval-resume');
+    const text = String((commands[0].payload as Record<string, unknown>).text);
+    expect(text).toContain('ran once');
+    expect(text).toContain('ch_test_1');
+
+    const [event] = await db
+      .select()
+      .from(auditEvents)
+      .where(and(eq(auditEvents.action, 'connector.approval.run'), eq(auditEvents.resourceId, id)));
+    expect(event).toBeDefined();
+
+    // The held input reaches no surface.
+    for (const surface of [
+      JSON.stringify(outcome),
+      text,
+      JSON.stringify(event),
+      JSON.stringify(runRow.resultSummary),
+      JSON.stringify((await gateRow(id)).resultSummary),
+    ]) {
+      expect(surface).not.toContain(SENTINEL);
+      expect(surface).not.toContain(OUTPUT_SECRET);
+    }
+
+    // A second run of the same job is a no-op.
+    await run(id);
+    expect(providerHits).toBe(before + 1);
+  });
+
+  test('two runs of one job call the provider once', async () => {
+    const id = await gate({ amount: 202 });
+    await decide(id, 'approve');
+    const before = providerHits;
+    await Promise.allSettled([run(id), run(id)]);
+    await run(id).catch(() => {});
+    expect(providerHits).toBe(before + 1);
+    expect((await held(id)).state).toBe('ok');
+  });
+
+  test('a policy changed to block after the hold refuses the run', async () => {
+    const id = await gate({ amount: 303 });
+    await decide(id, 'approve');
+    await setPolicy('block');
+    const before = providerHits;
+    await run(id);
+    expect(providerHits).toBe(before);
+    const row = await held(id);
+    expect(row).toMatchObject({ state: 'refused', inputEnc: null });
+    expect(row.outcome).toMatchObject({ status: 'refused', reason: 'policy_block' });
+    const [command] = await resumes(`approval-run:${id}`);
+    expect(String((command.payload as Record<string, unknown>).text)).toContain('did not run');
+  });
+
+  test('content changed after approval asks again with a new gate and does not run', async () => {
+    let content = 'draft v1';
+    enrichers = { 'openapi:stub.charges.create': async () => ({ body: content }) };
+    const id = await gate({ amount: 404 });
+    expect((await gateRow(id)).resultSummary).toHaveProperty('resolved_digest');
+    await decide(id, 'approve');
+    content = 'draft v2';
+    const before = providerHits;
+    await run(id);
+    expect(providerHits).toBe(before);
+    const row = await held(id);
+    expect(row.state).toBe('refused');
+    const outcome = row.outcome as Record<string, unknown>;
+    expect(outcome.reason).toBe('content_changed');
+    const newId = String(outcome.new_execution_id);
+    expect(newId).not.toBe(id);
+    expect((await gateRow(newId)).status).toBe('pending_approval');
+    expect((await held(newId)).state).toBe('held');
+  });
+
+  test('a run that dispatched and never settled ends unknown and never runs again', async () => {
+    const id = await gate({ amount: 505 });
+    await decide(id, 'approve');
+    await db
+      .update(connectorHeldCalls)
+      .set({ state: 'dispatched', dispatchedAt: new Date(), updatedAt: new Date() })
+      .where(eq(connectorHeldCalls.executionId, id));
+    const before = providerHits;
+    // Inside the run ceiling the job backs off.
+    await expect(run(id)).rejects.toThrow('held call run in progress');
+    await db
+      .update(connectorHeldCalls)
+      .set({ dispatchedAt: new Date(Date.now() - HELD_RUN_CEILING_MS - 60_000) })
+      .where(eq(connectorHeldCalls.executionId, id));
+    await run(id);
+    await run(id);
+    expect(providerHits).toBe(before);
+    expect(await held(id)).toMatchObject({ state: 'unknown', inputEnc: null });
+    const [command] = await resumes(`approval-run:${id}`);
+    expect(String((command.payload as Record<string, unknown>).text)).toContain('may have run');
+  });
+
+  test('a request whose re-injected digest drifted is refused request_changed', async () => {
+    const id = await gate({ amount: 606 });
+    await decide(id, 'approve');
+    const [action] = await db.select().from(connectorActions).where(eq(connectorActions.connectorId, connectorId));
+    const binding = action.binding as Record<string, unknown>;
+    await db
+      .update(connectorActions)
+      .set({ binding: { ...binding, path: '/v1/charges/v2' } })
+      .where(eq(connectorActions.connectorId, connectorId));
+    const before = providerHits;
+    try {
+      await run(id);
+    } finally {
+      await db.update(connectorActions).set({ binding }).where(eq(connectorActions.connectorId, connectorId));
+    }
+    expect(providerHits).toBe(before);
+    expect((await held(id)).outcome).toMatchObject({ status: 'refused', reason: 'request_changed' });
+  });
+
+  test('deny wipes the held input and queues no run', async () => {
+    const id = await gate({ amount: 707 });
+    await decide(id, 'deny');
+    expect(await held(id)).toMatchObject({ state: 'cancelled', inputEnc: null });
+    expect(await db.select().from(jobQueue).where(eq(jobQueue.jobKey, id))).toHaveLength(0);
+    const before = providerHits;
+    await run(id);
+    expect(providerHits).toBe(before);
+  });
+
+  test('expiry wipes the held input', async () => {
+    const id = await gate({ amount: 808 });
+    await db
+      .update(connectorCalls)
+      .set({ expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(connectorCalls.executionId, id));
+    await expireDueApprovals();
+    expect((await gateRow(id)).status).toBe('expired');
+    expect(await held(id)).toMatchObject({ state: 'cancelled', inputEnc: null });
+  });
+
+  test('an agent repeat while held or queued gets the same execution id, no second gate', async () => {
+    const args = { amount: 909 };
+    const id = await gate(args);
+    const again = await call(args);
+    expect(again).toMatchObject({ status: 'pending_approval', executionId: id });
+    if (again.status === 'pending_approval') expect(again.approvalInstructions).toBe(HELD_CALL_REPEAT_INSTRUCTIONS);
+    await decide(id, 'approve');
+    expect(await call(args)).toMatchObject({ status: 'pending_approval', executionId: id });
+    const gates = await db
+      .select()
+      .from(connectorCalls)
+      .where(and(eq(connectorCalls.projectId, seeded.project_id), sql`${connectorCalls.resultSummary} -> 'args_preview' ->> 'amount' = '909'`));
+    expect(gates).toHaveLength(1);
+    const before = providerHits;
+    await run(id);
+    expect(providerHits).toBe(before + 1);
+  });
+
+  test('a gate with no held row (dashboard JWT caller) keeps the carry-over', async () => {
+    const jwtCaller: ConnectorPrincipal = { ...principal, tokenId: null, sessionId: null };
+    const args = { amount: 1001 };
+    const id = await gate(args, jwtCaller);
+    expect(await held(id)).toBeUndefined();
+    await decide(id, 'approve');
+    expect((await gateRow(id)).status).toBe('ok');
+    expect(await db.select().from(jobQueue).where(eq(jobQueue.jobKey, id))).toHaveLength(0);
+    const before = providerHits;
+    const repeat = await call(args, jwtCaller);
+    expect(repeat.status).toBe('ok');
+    expect(providerHits).toBe(before + 1);
+    expect((await gateRow(id)).resultSummary).toHaveProperty('consumed_at');
+  });
+});
