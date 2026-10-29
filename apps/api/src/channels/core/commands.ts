@@ -224,12 +224,15 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
     if (ctx.questions) await clearQuestionButtons(ctx.questions, ctx.target, 'new_conversation');
     // Whatever the abort answered: the sender asked for a new conversation.
     const { claimHeld } = await forgetChatThread(ctx.target, ctx.createClaim, session?.sessionId);
+    // A create in flight can still bind the chat: no promise about the next message.
+    const racing = !session && claimHeld;
     const text = [
       stop === 'stopped' && "Stopped the agent's run.",
-      'Started a new conversation. Your next message goes to a new session.',
+      racing ? 'Started a new conversation.' : 'Started a new conversation. Your next message goes to a new session.',
+      stop === 'starting' && 'The previous session is still starting, and it will still answer your earlier message here.',
       stop === 'unreachable' && 'Kortix could not reach the previous session to stop its run, so it may still post here.',
       stop === 'elsewhere' && 'The previous session is still running a task started outside this chat, and it may post here.',
-      !session && claimHeld && 'Kortix was still starting a session for this chat. That session may take your next message; if it does, send /new again.',
+      racing && 'Kortix was still starting a session for this chat. That session may take your next message; if it does, send /new again.',
       arg && 'The text after /new was not sent. Send it as your next message.',
       session && 'The previous session stays in Kortix:',
     ].filter(Boolean).join(' ');

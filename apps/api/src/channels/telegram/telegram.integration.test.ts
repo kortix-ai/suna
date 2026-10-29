@@ -435,7 +435,7 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     await handleTelegramEvent(update('second', ALLOWED, 910));
     expect(created).toHaveLength(2);
     expect(sleeps).toBe(0);
-    expect(replies().join('\n')).not.toContain('still starting');
+    expect(replies().join('\n')).not.toContain('still starting a session');
     expect((await threadRow(910))?.sessionId).toBe(createdSessions[1]);
   });
 
@@ -2079,6 +2079,22 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     );
     expect(created).toHaveLength(0);
     expect(delivered).toHaveLength(0);
+  });
+
+  test('/new while the previous session still starts says it answers the earlier message; during a create it promises no new session', async () => {
+    const queued = await chatSession(7052, 'queued');
+    await handleTelegramEvent(update('/new', ALLOWED, 7052));
+    expect(abortsOf(queued)).toEqual([]);
+    expect(await threadRow(7052)).toBeUndefined();
+    expect(replies().at(-1)).toBe(
+      `Started a new conversation. Your next message goes to a new session. The previous session is still starting, and it will still answer your earlier message here. The previous session stays in Kortix:\n${sessionWebUrl(appConfig.FRONTEND_URL, PROJECT, queued)}`,
+    );
+    await holdClaim(7053);
+    await handleTelegramEvent(update('/new', ALLOWED, 7053));
+    expect(await claimRows(7053)).toHaveLength(0);
+    expect(replies().at(-1)).toBe(
+      'Started a new conversation. Kortix was still starting a session for this chat. That session may take your next message; if it does, send /new again.',
+    );
   });
 
   test('/model lists the models the project shares, at most 25, and switches the chat to one', async () => {
