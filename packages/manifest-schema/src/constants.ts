@@ -175,17 +175,18 @@ export const CONNECTOR_AUTH_TYPES = [
 ] as const;
 /** The exclusive owner model for connections under one connector. */
 export const CONNECTOR_AUTHORIZATION_STRATEGIES = ['project', 'user'] as const;
-/** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
+/** Platforms a `channel` connector can target. */
 export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'telegram'] as const;
 /**
- * Platform-owned slugs and the only provider allowed to use each — mirrors
- * connectors.ts RESERVED_SLUG_PROVIDERS so a user app can't shadow the built-in
- * catalog (the bug that made `slack thread` 404; see KORTIX-206).
+ * Platform-owned slugs and the only provider allowed to use each, so a user
+ * app can't shadow the built-in catalog (the bug that made `slack thread` 404;
+ * see KORTIX-206). Every `kortix_<platform>` of CHANNEL_PLATFORMS is here.
  */
 export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, string>> = {
   kortix_slack: 'channel',
   kortix_teams: 'channel',
   kortix_email: 'channel',
+  kortix_telegram: 'channel',
   computer: 'computer',
 };
 export const CONNECTOR_POLICY_ACTIONS = ['always_run', 'require_approval', 'block'] as const;
