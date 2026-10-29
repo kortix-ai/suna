@@ -57,7 +57,7 @@ type Timing = Record<string, { dur: number; n?: number }>;
 interface Timeline { kind: string; id: string; total: number; marks: Record<string, number> }
 interface Turn {
   label: string; status: number; postMs: number; timing: Timing; promptId: string | null;
-  busyMs: number | null; firstTokenMs: number | null; idleMs: number | null; text: string; model: string | null; error?: string;
+  busyMs: number | null; firstTokenMs: number | null; idleMs: number | null; text: string; model: string | null; error?: string; timedOut?: boolean;
   deliver?: Timeline | null; proxy?: Timeline | null; forwardedMs?: number | null;
   /** Frame types this turn saw, kept only when it failed. */
   seen?: string[];
@@ -65,7 +65,7 @@ interface Turn {
 interface Session {
   label: string; at: string; sessionId: string | null; externalId: string | null; provider: string | null;
   harness: string | null; createStatus: number | null; createMs: number | null; createTiming: Timing;
-  readyMs: number | null; turns: Turn[]; error?: string;
+  readyMs: number | null; turns: Turn[]; error?: string; timedOut?: boolean;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -167,7 +167,7 @@ async function runTurn(sessionId: string, spec: { label: string; text: string },
     }
   }
   turn.text = [...texts.values()].filter((p) => assistant.has(p.messageId)).map((p) => p.text).join(' ').trim().slice(0, 80);
-  if (turn.idleMs === null) turn.error ??= 'no idle before timeout';
+  if (turn.idleMs === null) { turn.timedOut = true; turn.error ??= 'no idle before timeout'; }
   if (!turn.text) turn.error ??= 'idle with no assistant text';
   if (turn.error) turn.seen = frames.slice(from, i).map((f) => (f.type === 'session.status' ? `${f.type}:${f.payload.status?.type}` : f.type)).slice(0, 60);
   return turn;
@@ -190,7 +190,7 @@ async function runSession(round: number): Promise<Session> {
     if (!s.sessionId) throw new Error(`create ${created.status}: ${JSON.stringify(created.body).slice(0, 300)}`);
     let runtimeUrl: string | null = null;
     while (!s.externalId) {
-      if (performance.now() - t0 > BOOT_TIMEOUT_MS) throw new Error('start never reached ready');
+      if (performance.now() - t0 > BOOT_TIMEOUT_MS) throw new DOMException('start never reached ready', 'TimeoutError');
       const st = await api(`/projects/${PROJECT}/sessions/${s.sessionId}/start`, { method: 'POST' });
       if (st.body?.stage === 'ready') {
         s.externalId = st.body.sandbox?.external_id ?? null;
@@ -202,7 +202,7 @@ async function runSession(round: number): Promise<Session> {
     }
     const daemon = runtimeUrl ? runtimeUrl.replace(/^\/v1/, '') : `/p/${s.externalId}/8000`;
     while (s.readyMs === null) {
-      if (performance.now() - t0 > BOOT_TIMEOUT_MS) throw new Error('runtimeReady never true');
+      if (performance.now() - t0 > BOOT_TIMEOUT_MS) throw new DOMException('runtimeReady never true', 'TimeoutError');
       const h = await api(`${daemon}/kortix/health`).catch(() => null);
       if (h?.body?.runtimeReady === true) {
         s.readyMs = Math.round(performance.now() - t0);
@@ -221,6 +221,7 @@ async function runSession(round: number): Promise<Session> {
     }
   } catch (err) {
     s.error = err instanceof Error ? err.message : String(err);
+    s.timedOut = err instanceof Error && err.name === 'TimeoutError';
   } finally {
     events?.abort();
     if (s.sessionId && env.BENCH_KEEP !== '1') await api(`/projects/${PROJECT}/sessions/${s.sessionId}`, { method: 'DELETE' }).catch(() => {});
@@ -278,8 +279,8 @@ function pct(values: number[], p: number): number | null {
 }
 
 export function table(sessions: Session[]): string {
-  const ok = sessions.filter((s) => !s.error);
-  const turns = sessions.flatMap((s) => s.turns.filter((t) => !t.error));
+  const ok = sessions.filter((s) => canaryEvent(s).canary_boot_outcome === 'succeeded');
+  const turns = sessions.flatMap((s) => s.turns.filter((t) => !t.error && !t.timedOut && t.idleMs !== null && t.firstTokenMs !== null));
   const rows: Array<[string, number[]]> = [
     ['POST /sessions wall', ok.map((s) => s.createMs!)],
     ['POST /sessions server total', ok.map((s) => s.createTiming.total?.dur ?? NaN)],
@@ -319,30 +320,53 @@ export function table(sessions: Session[]): string {
   return lines.join('\n');
 }
 
-/** One `[session-speed]` event per session for the Better Stack "Session speed" dashboard. */
-async function ship(sessions: Session[]): Promise<void> {
-  const health = (await api('/health')).body ?? {};
-  const events = sessions.map((s) => ({
+/** Terminal canary observation, not proof that every production attempt was observed. */
+export function canaryEvent(s: Session) {
+  const boot = s.readyMs !== null ? 'succeeded' : s.timedOut ? 'timeout' : s.error ? 'failed' : 'unknown';
+  const outcome = s.timedOut || s.turns.some((t) => t.timedOut) ? 'timeout'
+    : s.error || s.turns.some((t) => t.error) ? 'failed'
+    : boot === 'succeeded' && s.turns.length > 0 && s.turns.every((t) => t.idleMs !== null && t.firstTokenMs !== null) ? 'succeeded' : 'unknown';
+  return {
     dt: s.at,
-    message: `[session-speed] ${LABEL} ${s.error ? 'failed' : 'ok'}`,
-    canary_target: LABEL,
-    canary_ok: !s.error && !s.turns.some((t) => t.error),
-    canary_error: s.error ?? s.turns.find((t) => t.error)?.error ?? null,
+    message: `[session-speed] ${s.label} ${outcome}`,
+    canary_schema: 2,
+    canary_target: s.label,
+    canary_ok: outcome === 'succeeded',
+    canary_outcome: outcome,
+    canary_timeout: outcome === 'timeout',
+    canary_boot_outcome: boot,
+    canary_boot_timeout_ms: BOOT_TIMEOUT_MS,
+    canary_turn_timeout_ms: TURN_TIMEOUT_MS,
+    canary_observed_at: new Date().toISOString(),
+    canary_provider: s.provider ?? env.BENCH_PROVIDER ?? 'unavailable',
+    canary_harness: s.harness ?? 'unavailable',
+    canary_resume: 'unavailable',
+    canary_region: 'unavailable',
     canary_ready_ms: s.readyMs,
     canary_cold_ttft_ms: s.readyMs !== null && s.turns[0]?.firstTokenMs != null ? s.readyMs + s.turns[0].firstTokenMs : null,
     canary_ttft_ms: s.turns[0]?.firstTokenMs ?? null,
-    // T3: a chat turn on a session that already answered twice.
     canary_warm_ttft_ms: s.turns[2]?.firstTokenMs ?? null,
     canary_model: s.turns[0]?.model ?? null,
-    api_version: health.version ?? null,
-    api_commit: health.commit ?? null,
-  }));
-  const res = await fetch(`https://${env.BENCH_BETTERSTACK_HOST}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${env.BENCH_BETTERSTACK_TOKEN}` },
-    body: JSON.stringify(events),
-  });
-  if (!res.ok) throw new Error(`Better Stack ingest ${res.status}: ${await res.text()}`);
+  };
+}
+
+/** Reuse the canary event path. Health/ingest failure never changes a session result. */
+export async function ship(sessions: Session[]): Promise<void> {
+  try {
+    const health = await api('/health').catch(() => null);
+    const events = sessions.map((s) => ({
+      ...canaryEvent(s),
+      api_version: health?.body?.version ?? null,
+      api_commit: health?.body?.commit ?? null,
+    }));
+    const res = await fetch(`https://${env.BENCH_BETTERSTACK_HOST}`, {
+      signal: AbortSignal.timeout(10_000),
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${env.BENCH_BETTERSTACK_TOKEN}` },
+      body: JSON.stringify(events),
+    });
+    if (!res.ok) throw new Error('Better Stack ingest failed');
+  } catch { console.error('canary telemetry unavailable; local results retained'); }
 }
 
 async function main(): Promise<void> {
