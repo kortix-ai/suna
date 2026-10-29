@@ -5,25 +5,25 @@ import { useChromeConnections, useDeleteChromeConnection, useUpdateChromeConnect
 import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
-import { Button } from '../../primitives/button';
-import { ConfirmDialog } from '../../primitives/confirm-dialog';
-import { InlineMeta } from '../../primitives/inline-meta';
-import { Input } from '../../primitives/input';
+import { Button } from '../../../primitives/button';
+import { ConfirmDialog } from '../../../primitives/confirm-dialog';
+import { InlineMeta } from '../../../primitives/inline-meta';
+import { Input } from '../../../primitives/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../primitives/select';
-import { SettingsRow, SettingsRowGroup } from '../../primitives/settings-row';
-import { SettingsSubsectionHeader } from '../../primitives/settings-subsection-header';
-import { Skeleton } from '../../primitives/skeleton';
-import { errorToast, successToast } from '../../primitives/toast';
-import { ErrorState } from '../../primitives/error-state';
-import { SettingsTabHeader } from '../../customize/settings/settings-tab-header';
-import { useLocale, useTranslations } from '../../i18n';
-import { relativeTime } from '../lib/relative-time';
+} from '../../../primitives/select';
+import { SettingsRow, SettingsRowGroup } from '../../../primitives/settings-row';
+import { SettingsSubsectionHeader } from '../../../primitives/settings-subsection-header';
+import { Skeleton } from '../../../primitives/skeleton';
+import { errorToast, successToast } from '../../../primitives/toast';
+import { ErrorState } from '../../../primitives/error-state';
+import { SettingsTabHeader } from '../settings-tab-header';
+import { useLocale, useTranslations } from '../../../i18n';
+import { relativeTime } from '../../../internal/lib/relative-time';
 import {
   ChromeButtonMark,
   ChromeConnectModal,
@@ -32,10 +32,10 @@ import {
   ChromeInstallActions,
   ChromeOnlineDot,
   useChromeConnect,
-} from './chrome-connect';
-import { BrowserLogoTile } from './browser-icon';
-import { chromeDisplayNames, offlineLongerThan } from './chrome-names';
-import { ChromeMock } from './chrome-mock';
+} from '../../../internal/chrome/chrome-connect';
+import { BrowserLogoTile } from '../../../internal/chrome/browser-icon';
+import { chromeDisplayNames, offlineLongerThan } from '../../../internal/chrome/chrome-names';
+import { ChromeMock } from '../../../internal/chrome/chrome-mock';
 
 const ACCESS_MODES: readonly ChromeAccessMode[] = ['always', 'ask', 'off'];
 // `all` first: it is the recommended default.
