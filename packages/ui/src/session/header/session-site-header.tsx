@@ -58,7 +58,6 @@ import { cn } from '../../lib/utils';
 import { useSessionHistoryViewStore } from '../../internal/stores/session-history-view-store';
 import {
   type QuickView,
-  type QuickViewTarget,
   useIsActionPanelOpen,
   useReadyChip,
   useToggleActionPanel,
@@ -105,12 +104,11 @@ const DEV_TOOLS: {
   view: QuickView;
   label: string;
   Icon: React.ComponentType<{ className?: string }>;
-  target?: QuickViewTarget;
 }[] = [
     { view: 'terminal', label: 'Terminal', Icon: TerminalIcon },
     { view: 'browser', label: 'Browser', Icon: GlobeSimpleIcon },
-    // The sandbox desktop: voxl streams it on port 6901 (apps/sandbox/entrypoint.sh).
-    { view: 'browser', label: 'Desktop', Icon: MonitorIcon, target: { url: 'http://localhost:6901/', title: 'Desktop' } },
+    // The computer's live screen (`session-desktop.tsx`).
+    { view: 'desktop', label: 'Desktop', Icon: MonitorIcon },
     { view: 'files', label: 'Files', Icon: FolderSimpleIcon },
   ];
 
@@ -686,13 +684,13 @@ export function SessionSiteHeader({
             )}
 
             <div className="hidden items-center gap-1.5 lg:flex">
-              {devTools.map(({ view, label, Icon, target }) => (
-                <Hint key={label} side="bottom" sideOffset={4} delayDuration={300} label={label}>
+              {devTools.map(({ view, label, Icon }) => (
+                <Hint key={view} side="bottom" sideOffset={4} delayDuration={300} label={label}>
                   <Button
                     variant="ghost"
                     size="icon"
                     aria-label={label}
-                    onClick={() => openSessionQuickView(view, 'header', target)}
+                    onClick={() => openSessionQuickView(view, 'header')}
                     className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
                   >
                     <Icon className="h-4 w-4" />
@@ -721,11 +719,11 @@ export function SessionSiteHeader({
               </Hint>
 
               <DropdownMenuContent align="end" className="w-44">
-                {devTools.map(({ view, label, Icon, target }) => (
+                {devTools.map(({ view, label, Icon }) => (
                   <DropdownMenuItem
-                    key={label}
+                    key={view}
                     className="cursor-pointer"
-                    onClick={() => openSessionQuickView(view, 'header', target)}
+                    onClick={() => openSessionQuickView(view, 'header')}
                   >
                     <Icon />
                     {label}
