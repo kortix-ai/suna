@@ -111,6 +111,9 @@ mock.module('../../projects/session-lifecycle/abort-runtime-turn', () => ({
 /** `bot: 'other'`: a call with OTHER_TOKEN. */
 type Call = { method: string; body: Record<string, unknown>; bot?: 'other' };
 const calls: Call[] = [];
+/** The id the fake gave each sent message: the next number, as Telegram numbers a chat's messages. */
+const sentIds = new WeakMap<Call, number>();
+let lastSentId = 0;
 const waiters: Array<(call: Call) => void> = [];
 /** The next Bot API call, for a send nothing awaits (the provisioning notifier fires and forgets). */
 const nextCall = () => new Promise<Call>((resolve) => waiters.push(resolve));
@@ -178,6 +181,10 @@ const fake = Bun.serve({
       if (file?.refuse) return Response.json({ ok: false, description: file.refuse }, { status: 400 });
       if (file) return Response.json({ ok: true, result: { file_id: id, file_path: `docs/${id}`, ...(file.hideSize ? {} : { file_size: file.bytes.length }) } });
       return Response.json({ ok: true, result: { file_id: id, file_path: `photos/${id}.jpg` } });
+    }
+    if (call.method === 'sendMessage') {
+      sentIds.set(call, ++lastSentId);
+      return Response.json({ ok: true, result: { message_id: sentIds.get(call) } });
     }
     return Response.json({ ok: true, result: call.method === 'getWebhookInfo' ? webhookInfo : { message_id: 1 } });
   },
@@ -1214,16 +1221,17 @@ describe('question buttons go when the chat answers another way — migrated Pos
     const sessionId = await askedSession(chat);
     const id = await pending(sessionId);
     expect((await relayTurnQuestion(sessionId, QUESTION as never, { pendingId: id, principal: await principalOf(sessionId) })).ok).toBe(true);
+    const message = sentIds.get(calls.find((c) => c.method === 'sendMessage')!)!;
     calls.length = 0;
-    return { sessionId, id };
+    return { sessionId, id, message };
   }
 
   test('a typed answer takes the buttons off and says it was answered in the chat; the words still reach the agent', async () => {
-    const { sessionId } = await posted('2101');
+    const { sessionId, message } = await posted('2101');
     expect(await remembered('2101')).toHaveLength(1);
     await handleTelegramEvent(update('Postgres', ALLOWED, 2101));
     expect(edits().map((c) => ({ chat_id: c.body.chat_id, message_id: c.body.message_id, reply_markup: c.body.reply_markup }))).toEqual([
-      { chat_id: 2101, message_id: 1, reply_markup: { inline_keyboard: [] } },
+      { chat_id: 2101, message_id: message, reply_markup: { inline_keyboard: [] } },
     ]);
     expect(String(edits()[0]!.body.text)).toBe('Pick: Which database?\n1. Postgres\n2. SQLite\n\nAnswered in the chat.');
     expect(await remembered('2101')).toHaveLength(0);
@@ -1238,8 +1246,8 @@ describe('question buttons go when the chat answers another way — migrated Pos
   });
 
   test("a tap's answer stays: a later message does not rewrite it", async () => {
-    const { id } = await posted('2103');
-    await handleTelegramPress(press(`kq:${id}:1`, { chat: 2103, messageId: 1 }));
+    const { id, message } = await posted('2103');
+    await handleTelegramPress(press(`kq:${id}:1`, { chat: 2103, messageId: message }));
     expect(String(edits().at(-1)!.body.text)).toEndWith('Answered: SQLite');
     calls.length = 0;
     await handleTelegramEvent(update('thanks', ALLOWED, 2103));
@@ -2427,11 +2435,13 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     });
 
     const OUT_OF_DATE = 'This menu is out of date. Send the command again for a new one.';
-    /** A press on the button `label` of a recorded message, which Telegram knows as `messageId`. */
-    const tap = (call: Call, label: string, opts: { messageId: number; chat?: number; from?: string; topic?: number }) => {
+    /** The Telegram id of a recorded menu: the id the fake gave the sent message, or the edited message's. */
+    const idOf = (call: Call) => sentIds.get(call) ?? Number(call.body.message_id);
+    /** A press on the button `label` of a recorded menu, on that message in its chat unless `opts` says otherwise. */
+    const tap = (call: Call, label: string, opts: { messageId?: number; chat?: number; from?: string; topic?: number } = {}) => {
       const data = keyboard(call).flat().find(([text]) => text === label)?.[1];
       if (!data) throw new Error(`no button ${label}`);
-      return press(data, { chat: Number(call.body.chat_id), ...opts });
+      return press(data, { chat: Number(call.body.chat_id), messageId: idOf(call), ...opts });
     };
     /** The claims of used menu messages in a conversation. */
     const pressClaims = (thread: string) =>
@@ -2447,17 +2457,17 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         await handleTelegramEvent(update('/models', ALLOWED, 7101));
         const menu = lastSent();
         calls.length = 0;
-        await handleTelegramPress(tap(menu, 'More ›', { messageId: 7101 }));
+        await handleTelegramPress(tap(menu, 'More ›'));
         expect(methods()).toEqual(['answerCallbackQuery', 'editMessageText']);
         expect(calls[0]!.body).not.toHaveProperty('text');
-        expect(calls[1]!.body).toMatchObject({ chat_id: 7101, message_id: 7101, text: `Models for this chat (page 2 of 26)\n${MODELS_USAGE}` });
+        expect(calls[1]!.body).toMatchObject({ chat_id: 7101, message_id: idOf(menu), text: `Models for this chat (page 2 of 26)\n${MODELS_USAGE}` });
         expect(keyboard(calls[1]!)).toEqual([
           ...Array.from({ length: 8 }, (_, i) => row(`Synthetic ${String(i + 7).padStart(3, '0')}`, `kc:model:=${choiceRef(`cmd-f${i + 7}`)}`)),
           [['‹ Back', 'kc:model:p0'], ['More ›', 'kc:model:p2']],
         ]);
 
         calls.length = 0;
-        await handleTelegramPress(press('kc:model:p99', { chat: 7101, messageId: 7101 }));
+        await handleTelegramPress(press('kc:model:p99', { chat: 7101, messageId: idOf(menu) }));
         expect(calls[1]!.body.text).toBe(`Models for this chat (page 26 of 26)\n${MODELS_USAGE}`);
         expect(keyboard(calls[1]!)).toEqual([row('Synthetic 199', `kc:model:=${choiceRef('cmd-f199')}`), [['‹ Back', 'kc:model:p24']]]);
         // Turning pages uses no menu: a pick on it still works.
@@ -2474,11 +2484,11 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         await handleTelegramEvent(update('/model', ALLOWED, 7105));
         const menu = lastSent();
         calls.length = 0;
-        const pick = tap(menu, 'Model One', { messageId: 7105 });
+        const pick = tap(menu, 'Model One');
         await handleTelegramPress(pick);
         expect(methods()).toEqual(['answerCallbackQuery', 'editMessageText']);
         expect(calls[0]!.body).not.toHaveProperty('text');
-        expect(calls[1]!.body).toMatchObject({ chat_id: 7105, message_id: 7105, reply_markup: { inline_keyboard: [] } });
+        expect(calls[1]!.body).toMatchObject({ chat_id: 7105, message_id: idOf(menu), reply_markup: { inline_keyboard: [] } });
         const picked = String(calls[1]!.body.text);
         // The stored press keeps no chat names, so the row has none.
         expect(await settingsRow('7105')).toMatchObject({ projectId: PROJECT, model: 'cmd-m1', channelName: null, channelType: 'private' });
@@ -2486,7 +2496,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         expect(replies().at(-1)).toBe(picked);
 
         calls.length = 0;
-        await handleTelegramPress(tap(menu, 'Synthetic 000', { messageId: 7105 }));
+        await handleTelegramPress(tap(menu, 'Synthetic 000'));
         await handleTelegramPress(pick);
         expect(methods()).toEqual(['answerCallbackQuery', 'answerCallbackQuery']);
         expect(calls.map((c) => c.body.text)).toEqual([OUT_OF_DATE, OUT_OF_DATE]);
@@ -2503,9 +2513,9 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       try {
         await handleTelegramEvent(update('/model', ALLOWED, 7160));
         const used = lastSent();
-        await handleTelegramPress(tap(used, 'Model One', { messageId: 7160 }));
+        await handleTelegramPress(tap(used, 'Model One'));
         calls.length = 0;
-        await handleTelegramPress(tap(used, 'More ›', { messageId: 7160 }));
+        await handleTelegramPress(tap(used, 'More ›'));
         expect(calls.map((c) => [c.method, c.body.text])).toEqual([['answerCallbackQuery', OUT_OF_DATE]]);
 
         await handleTelegramEvent(update('/model', ALLOWED, 7161));
@@ -2513,11 +2523,11 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         const catalog = await servableCatalog.servableProjectCatalog(undefined as never);
         // The pick runs to its edit while More reads the catalog for page 2.
         spies[0]!.mockImplementationOnce((async () => {
-          await handleTelegramPress(tap(menu, 'Model One', { messageId: 7161 }));
+          await handleTelegramPress(tap(menu, 'Model One'));
           return catalog;
         }) as never);
         calls.length = 0;
-        await handleTelegramPress(tap(menu, 'More ›', { messageId: 7161 }));
+        await handleTelegramPress(tap(menu, 'More ›'));
         expect(calls.map((c) => [c.method, c.body.text ?? null])).toEqual([
           ['answerCallbackQuery', null],
           ['editMessageText', 'Model for this chat set to cmd-m1. Messages you send after this reply use it.'],
@@ -2531,14 +2541,19 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     test('a press that cannot hold changes nothing: an option gone from the list, a sender not allowed, data Kortix did not post', async () => {
       const spies = modelSpies();
       try {
-        await handleTelegramPress(press(`kc:model:=${choiceRef('cmd-gone')}`, { chat: 7107, messageId: 7107 }));
+        await handleTelegramEvent(update('/model', ALLOWED, 7107));
+        const menu = lastSent();
+        calls.length = 0;
+        await handleTelegramPress(press(`kc:model:=${choiceRef('cmd-gone')}`, { chat: 7107, messageId: idOf(menu) }));
         expect(methods()).toEqual(['answerCallbackQuery']);
         expect(calls[0]!.body.text).toBe(OUT_OF_DATE);
         expect(await settingsRow('7107')).toBeUndefined();
         expect(await pressClaims('7107')).toEqual([]);
 
+        await handleTelegramEvent(update('/model', ALLOWED, 7108));
+        const shown = lastSent();
         calls.length = 0;
-        await handleTelegramPress(press(`kc:model:=${choiceRef('cmd-m1')}`, { chat: 7108, messageId: 7108, from: '999' }));
+        await handleTelegramPress(tap(shown, 'Model One', { from: '999' }));
         expect(methods()).toEqual(['answerCallbackQuery']);
         expect(calls[0]!.body).toMatchObject({ show_alert: true, text: expect.stringContaining('999') });
         expect(await settingsRow('7108')).toBeUndefined();
@@ -2561,12 +2576,12 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         await handleTelegramEvent(update('/agents', ALLOWED, 7111));
         const menu = lastSent();
         calls.length = 0;
-        await handleTelegramPress(press(`kc:agent:=${choiceRef('restricted')}`, { chat: 7111, messageId: 7111 }));
+        await handleTelegramPress(press(`kc:agent:=${choiceRef('restricted')}`, { chat: 7111, messageId: idOf(menu) }));
         expect(calls.map((c) => [c.method, c.body.text])).toEqual([['answerCallbackQuery', OUT_OF_DATE]]);
         expect(await settingsRow('7111')).toBeUndefined();
 
         calls.length = 0;
-        await handleTelegramPress(tap(menu, 'reviewer — Reviews changes', { messageId: 7111 }));
+        await handleTelegramPress(tap(menu, 'reviewer — Reviews changes'));
         expect(methods()).toEqual(['answerCallbackQuery', 'editMessageText']);
         expect(calls[1]!.body).toMatchObject({
           text: 'Agent for this chat set to reviewer. Your next message starts a session with it.',
@@ -2583,18 +2598,19 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       try {
         await handleTelegramEvent(update('/help', ALLOWED, 7112));
         let menu = lastSent();
+        const id = idOf(menu);
         calls.length = 0;
-        await handleTelegramPress(tap(menu, 'Status', { messageId: 7112 }));
+        await handleTelegramPress(tap(menu, 'Status'));
         menu = calls.at(-1)!;
         expect(menu.body.text).toStartWith('This chat in Kortix\nProject: telegram-v2\n');
         expect(keyboard(menu)).toEqual([[['New conversation', 'kc:new'], ['Change model', 'kc:model']], [['Change agent', 'kc:agent']]]);
-        await handleTelegramPress(tap(menu, 'Change model', { messageId: 7112 }));
+        await handleTelegramPress(tap(menu, 'Change model'));
         menu = calls.at(-1)!;
         expect(menu.body.text).toBe(`Models for this chat (page 1 of 26)\n${MODELS_USAGE}`);
-        await handleTelegramPress(tap(menu, '✓ Project default', { messageId: 7112 }));
+        await handleTelegramPress(tap(menu, '✓ Project default'));
         expect(calls.at(-1)!.body).toMatchObject({ text: 'Model for this chat reset to the project default.', reply_markup: { inline_keyboard: [] } });
         expect(methods()).toEqual(Array(3).fill(['answerCallbackQuery', 'editMessageText']).flat());
-        expect(calls.filter((c) => c.method === 'editMessageText').map((c) => [c.body.chat_id, c.body.message_id])).toEqual(Array(3).fill([7112, 7112]));
+        expect(calls.filter((c) => c.method === 'editMessageText').map((c) => [c.body.chat_id, c.body.message_id])).toEqual(Array(3).fill([7112, id]));
       } finally {
         restore(spies);
       }
@@ -2607,25 +2623,29 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       await handleTelegramEvent(update('/status', ALLOWED, 7110));
       const second = lastSent();
       calls.length = 0;
-      await handleTelegramPress(tap(first, 'Stop', { messageId: 71101 }));
+      await handleTelegramPress(tap(first, 'Stop'));
       expect(abortsOf(sessionId)).toEqual([[sessionId, { requestedStop: true, stoppedBy: null }]]);
-      expect(calls.at(-1)!.body).toMatchObject({ message_id: 71101, text: 'Stopped. The agent is no longer working on this.', reply_markup: { inline_keyboard: [] } });
+      expect(calls.at(-1)!.body).toMatchObject({ message_id: idOf(first), text: 'Stopped. The agent is no longer working on this.', reply_markup: { inline_keyboard: [] } });
 
       await handleTelegramEvent(update('/new', ALLOWED, 7110));
       const stops = abortsOf(sessionId).length;
       calls.length = 0;
-      await handleTelegramPress(tap(second, 'Stop', { messageId: 71102 }));
+      await handleTelegramPress(tap(second, 'Stop'));
       expect(calls.map((c) => [c.method, c.body.text])).toEqual([['answerCallbackQuery', OUT_OF_DATE]]);
       expect(abortsOf(sessionId)).toHaveLength(stops);
 
+      await handleTelegramEvent(update('/help', ALLOWED, 7110));
+      const help = lastSent();
       calls.length = 0;
-      await handleTelegramPress(press('kc:stop', { chat: 7110, messageId: 71103 }));
-      expect(calls.at(-1)!.body).toMatchObject({ message_id: 71103, text: 'Nothing is running in this chat.' });
+      await handleTelegramPress(tap(help, 'Stop'));
+      expect(calls.at(-1)!.body).toMatchObject({ message_id: idOf(help), text: 'Nothing is running in this chat.' });
     });
 
     test('a press that throws answers with the error notice, edits nothing and frees the menu; the same press then works', async () => {
+      await handleTelegramEvent(update('/help', ALLOWED, 7113));
+      const fresh = tap(lastSent(), 'New conversation');
+      calls.length = 0;
       const spy = spyOn(threads, 'findChatThreadSession').mockRejectedValue(new Error('synthetic read failure'));
-      const fresh = press('kc:new', { chat: 7113, messageId: 7113 });
       try {
         await handleTelegramPress(fresh);
         expect(calls.map((c) => [c.method, c.body.text])).toEqual([['answerCallbackQuery', 'Kortix could not do that just now. Try again in a minute.']]);
@@ -2639,7 +2659,24 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       expect(calls[1]!.body.text).toBe('Started a new conversation. Your next message goes to a new session.');
     });
 
-    test('a forum topic gets its menu in the topic, and a press acts on the chat it was pressed in, never the menu\'s first chat', async () => {
+    test('only a menu Kortix sent takes a press: a message the agent posted with kc: data is out of date and stops nothing', async () => {
+      const sessionId = await chatSession(7130, 'running', 'telegram');
+      // The agent's send_message can carry any button data on a message Kortix never sent as a menu.
+      await handleTelegramPress(press('kc:new', { chat: 7130, messageId: 9_000_001 }));
+      expect(calls.map((c) => [c.method, c.body.text])).toEqual([['answerCallbackQuery', OUT_OF_DATE]]);
+      expect(abortsOf(sessionId)).toEqual([]);
+      expect((await threadRow(7130))?.sessionId).toBe(sessionId);
+
+      await handleTelegramEvent(update('/help', ALLOWED, 7130));
+      const help = lastSent();
+      calls.length = 0;
+      await handleTelegramPress(tap(help, 'New conversation'));
+      expect(abortsOf(sessionId)).toHaveLength(1);
+      expect(calls.at(-1)!.body.text).toStartWith("Stopped the agent's run. Started a new conversation.");
+      expect(await threadRow(7130)).toBeUndefined();
+    });
+
+    test('a forum topic gets its menu in the topic; a copy of the menu in another chat is out of date there and changes no chat', async () => {
       const spies = modelSpies();
       try {
         await handleTelegramEvent(topicUpdate('/model', -1007120));
@@ -2647,20 +2684,20 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         expect(menu.body).toMatchObject({ chat_id: -1007120, message_thread_id: 5 });
         expect(keyboard(menu).length).toBeGreaterThan(0);
         calls.length = 0;
-        await handleTelegramPress(tap(menu, 'Model One', { messageId: 71201, topic: 5 }));
+        await handleTelegramPress(tap(menu, 'Model One', { topic: 5 }));
         expect(calls[1]!.body).toMatchObject({
           chat_id: -1007120,
-          message_id: 71201,
+          message_id: idOf(menu),
           text: 'Model for this chat set to cmd-m1. It applies to the whole chat, every thread in it included. Messages you send after this reply use it.',
         });
         const group = await settingsRow('-1007120');
         expect(group).toMatchObject({ model: 'cmd-m1', channelType: 'supergroup' });
 
-        // The same button in another chat (a forwarded menu): that chat's row changes.
+        // A forwarded copy is a new message in another chat: Kortix never sent it there.
         calls.length = 0;
         await handleTelegramPress(tap(menu, 'Model One', { chat: 7121, messageId: 71211 }));
-        expect(calls[1]!.body).toMatchObject({ chat_id: 7121, message_id: 71211 });
-        expect(await settingsRow('7121')).toMatchObject({ model: 'cmd-m1', channelType: 'private' });
+        expect(calls.map((c) => [c.method, c.body.text])).toEqual([['answerCallbackQuery', OUT_OF_DATE]]);
+        expect(await settingsRow('7121')).toBeUndefined();
         expect(await settingsRow('-1007120')).toEqual(group);
       } finally {
         restore(spies);

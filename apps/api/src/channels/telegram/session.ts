@@ -12,9 +12,9 @@
  *   anything else   → the core: a follow-up into the chat's session, or a new
  *                     project-visible session bound to the chat; the message's own
  *                     file (photo, document, audio, voice, video) goes with it
- *   a button press  → a command button (`kc:`) runs its command over the pressed
- *                     message (core/commands.ts `runCommandPress`); a question button
- *                     answers the agent's question (core/questions.ts)
+ *   a button press  → a command button (`kc:`) on a menu Kortix sent runs its command
+ *                     over the pressed message (core/commands.ts `runCommandPress`); a
+ *                     question button answers the agent's question (core/questions.ts)
  *
  * The agent answers through the `kortix_telegram` connector (connectors/channels.ts);
  * the bot token never enters the sandbox.
@@ -32,7 +32,7 @@ import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { gateSender, refusedPressText } from '../core/channel-access';
 import { CHANNEL_COMMANDS, parseChannelCommand } from '../core/command-list';
 import { type CommandPress, isCommandPressData, pressData } from '../core/command-press';
-import { type CommandReply, runChannelCommand, runCommandPress } from '../core/commands';
+import { type CommandReply, rememberCommandMenu, runChannelCommand, runCommandPress } from '../core/commands';
 import { type ChannelNotice, type ChannelPort, type ChannelTarget, routeChannelMessage } from '../core/conversation';
 import { chatSessionStart, chatTurnModel } from '../core/model-choice';
 import { connectorReply } from '../core/prompt';
@@ -458,7 +458,8 @@ export async function handleTelegramEvent(
       async (body) => {
         const m = telegramCommandMessage(body);
         if (m.keyboard.length) await ensureTelegramButtons(token, event.projectId, install.botId);
-        await sendTelegramReply(token, target, clip(m.text, CHANNELS.telegram.messageChars), m.keyboard);
+        const sent = await sendTelegramReply(token, target, clip(m.text, CHANNELS.telegram.messageChars), m.keyboard);
+        if (sent !== null && m.keyboard.length) await rememberCommandMenu(target, String(sent));
       },
     );
     return;
@@ -701,11 +702,12 @@ function telegramChatName(chat: TelegramMessage['chat']): string | null {
 /**
  * One reply path for commands and notices: the chat and topic come from the
  * target's thread id. A target found from a session has no message to answer,
- * so its notice is posted unanchored.
+ * so its notice is posted unanchored. Returns the sent message's id; null when
+ * Telegram refused it (logged).
  */
-async function sendTelegramReply(token: string, target: ChannelTarget, text: string, keyboard: InlineButton[][] = []): Promise<void> {
+async function sendTelegramReply(token: string, target: ChannelTarget, text: string, keyboard: InlineButton[][] = []): Promise<number | null> {
   const [chatId, topicId] = target.threadId.split(':');
-  await telegramCall(token, 'sendMessage', {
+  return telegramCall<{ message_id: number }>(token, 'sendMessage', {
     chat_id: Number(chatId),
     text,
     ...(target.messageId
@@ -713,7 +715,13 @@ async function sendTelegramReply(token: string, target: ChannelTarget, text: str
       : {}),
     ...(topicId ? { message_thread_id: Number(topicId) } : {}),
     ...(keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {}),
-  }).catch((error) => logger.warn('[telegram] reply failed', { error: String(error) }));
+  }).then(
+    (sent) => sent.message_id,
+    (error) => {
+      logger.warn('[telegram] reply failed', { error: String(error) });
+      return null;
+    },
+  );
 }
 
 /**

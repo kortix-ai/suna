@@ -62,6 +62,8 @@ const PAGE_SIZE = 8;
 const MAX_PAGES = 100;
 /** A used menu outlives a double tap, the job's retries and a failed edit; after this, a surviving button runs again. */
 const PRESS_CLAIM_TTL_MS = 24 * 60 * 60_000;
+/** A menu Kortix sent takes presses this long; after it, its buttons are out of date. */
+const MENU_TTL_MS = 30 * 24 * 60 * 60_000;
 export const OUT_OF_DATE = 'This menu is out of date. Send the command again for a new one.';
 
 /**
@@ -108,8 +110,29 @@ export async function runChannelCommand(ctx: CommandContext, command: ParsedComm
   await render(reply);
 }
 
+/** One row per menu message: `command-menu` while it takes presses, `command-press` once a terminal press used it. */
+const messageKey = (kind: 'command-menu' | 'command-press', { platform, projectId, workspaceId, threadId, messageId }: ChannelTarget) =>
+  `${platform}:${kind}:${projectId}:${workspaceId}:${threadId}|${messageId}`;
+
 /**
- * A press on a command button, from a sender the adapter admitted, on the message `ctx.target.messageId`.
+ * Record a command reply with buttons that the adapter sent as `messageId` into `target`'s conversation.
+ * Only such a message takes presses (`runCommandPress`): never a message the agent posted with `kc:`
+ * data, nor a copy forwarded into another chat. An edit keeps the id, so a menu turned in place stays
+ * valid. Never throws: a menu left unrecorded answers out of date.
+ */
+export async function rememberCommandMenu(target: ChannelTarget, messageId: string): Promise<void> {
+  await claimThreadCreate(messageKey('command-menu', { ...target, messageId }), MENU_TTL_MS).catch((error) =>
+    logger.warn('[channel] command menu not recorded', {
+      platform: target.platform,
+      projectId: target.projectId,
+      error: error instanceof Error ? error.name : 'unknown',
+    }),
+  );
+}
+
+/**
+ * A press on a command button, from a sender the adapter admitted, on the message `ctx.target.messageId`,
+ * which must be a menu `rememberCommandMenu` recorded in this conversation.
  * Runs the command the token names in `ctx.target`'s conversation with the typed command's checks,
  * settles the press, then draws the reply over the pressed message. A terminal press (a pick, Stop,
  * New conversation) runs once per message, and after it no press on that message draws anything.
@@ -119,10 +142,11 @@ export async function runChannelCommand(ctx: CommandContext, command: ParsedComm
 export async function runCommandPress(ctx: CommandContext, data: string, render: CommandRender, settle: PressSettle): Promise<void> {
   const press = parsePressData(data);
   if (!press) return settle(OUT_OF_DATE);
-  const { platform, projectId, workspaceId, threadId, messageId } = ctx.target;
-  const key = `${platform}:command-press:${projectId}:${workspaceId}:${threadId}|${messageId}`;
+  const { platform, projectId } = ctx.target;
+  const key = messageKey('command-press', ctx.target);
   let claim: Date | null = null;
   try {
+    if (!(await threadCreateHeld(messageKey('command-menu', ctx.target)))) return await settle(OUT_OF_DATE);
     if (press.pick !== undefined || press.name === 'new' || press.name === 'stop') {
       claim = await claimThreadCreate(key, PRESS_CLAIM_TTL_MS);
       if (!claim) return await settle(OUT_OF_DATE);
