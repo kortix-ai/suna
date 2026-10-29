@@ -184,7 +184,37 @@
     "noAgents": "Aucun agent"
   },
   "useCases": {
-    "headline": "Les boucles qui font fonctionner une entreprise"
+    "headline": "Les boucles qui font fonctionner une entreprise",
+    "covers": {
+      "slackDraftFor": "Brouillon pour <b>jeudi 10:00</b>, LinkedIn :",
+      "slackPost": "Nous avons lancé les connecteurs v2 : un seul catalogue pour MCP, OpenAPI et GraphQL. Voici ce qui change pour vos agents →",
+      "approve": "Approuver",
+      "edit": "Modifier",
+      "skip": "Passer",
+      "deny": "Refuser",
+      "crmTitle": "Nettoyage nocturne du CRM",
+      "crmMeta": "02:00 · a travaillé 3 min 12 s",
+      "crmSearchContacts": "hubspot · rechercher des contacts",
+      "crmMergeDuplicates": "hubspot · fusionner les doublons",
+      "crmEnrichCompany": "clearbit · enrichir l’entreprise",
+      "crmAskApproval": "slack · demander l’approbation de la mise à jour groupée",
+      "awaitingApproval": "En attente d’approbation",
+      "draftToOps": "À : responsable des opérations · brouillon",
+      "draftOps": "J’ai vu que votre équipe recrute trois SDR. Voici comment une équipe similaire a réduit son temps de recherche.",
+      "draftToSales": "À : VP Ventes · brouillon",
+      "draftSales": "Félicitations pour la série B. Un rapide coup d’œil à la façon dont vous répartissez les leads entrants ?",
+      "draftToRevOps": "À : responsable RevOps · aujourd’hui",
+      "draftRevOps": "Votre page de tarifs a changé la semaine dernière. Je peux vous montrer ce que des équipes comme la vôtre ont fait ensuite.",
+      "approvalAsks": "<name>{agent}</name> demande à exécuter un outil",
+      "approvalExpires": "Expire dans 58 min",
+      "approvalQuestion": "Rembourser 640 $ pour la commande #4821 ?",
+      "approvalTool": "Outil",
+      "approvalAmount": "Montant",
+      "approvalReason": "Motif",
+      "approvalCustomer": "Client",
+      "approvalReasonValue": "Article arrivé endommagé",
+      "approvalPolicy": "Règle : les remboursements de plus de 500 $ nécessitent une personne"
+    }
   },
   "developers": {
     "heroDescription": "Agents, compétences, outils, connecteurs et planifications sont de simples fichiers dans un dépôt. Modifiez-les dans votre IDE, exécutez-les en local et déployez-les dans le cloud avec une commande. Open source, auto-hébergeable et sous votre contrôle.",
@@ -20939,7 +20969,14 @@
       "textdbff0b6e128b": "Un framework backend et un serveur pour les agents.",
       "text615544b5a953": "Extensions pi",
       "text74bf85229fd2": "Étendez le harness avec TypeScript.",
-      "text152a04716eb3": "Les agents tournent sur pi"
+      "text152a04716eb3": "Les agents tournent sur pi",
+      "textb1e19e0edf15": "7 opportunités sans activité trouvées dans HubSpot",
+      "textd6320415db95": "Recherche des opportunités sans activité dans HubSpot",
+      "text850aad6d0dc3": "7 tâches de relance créées",
+      "textc5e0ccf193cb": "4 opportunités sans activité relancées",
+      "text1f60c85be705": "Relance des opportunités sans activité",
+      "text24c939b23dfe": "2 opportunités mises à jour dans HubSpot",
+      "text6cfe7973316d": "Mise à jour des opportunités dans HubSpot"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
