@@ -44,6 +44,7 @@ import {
   type PointerEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -212,6 +213,19 @@ export function Navbar() {
   }
 
   useEffect(() => () => window.clearTimeout(timerRef.current), []);
+
+  // The reveal height follows the open panel, so a short menu is not padded
+  // to the tallest one. Measured, so switching menus animates the height.
+  const [panelHeight, setPanelHeight] = useState(0);
+  useLayoutEffect(() => {
+    const panel = openMenu ? panelRefs.current[openMenu] : null;
+    if (!panel) return;
+    const measure = () => setPanelHeight(panel.offsetHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [openMenu]);
 
   // A keyboard open moves focus to the panel's first link once it is no longer inert.
   useEffect(() => {
@@ -583,12 +597,12 @@ export function Navbar() {
           </div>
         </header>
 
-        {/* The panel reveal: height from 0 to the tallest panel, ease-out.
-            All panels share one grid cell, so the height never changes while
-            switching menus; only the content cross-fades. */}
+        {/* The panel reveal: height from 0 to the open panel's own height,
+            ease-out. All panels share one grid cell and cross-fade in place;
+            switching menus eases the height to the new panel. */}
         <m.div
           initial={false}
-          animate={{ height: openMenu ? 'auto' : 0 }}
+          animate={{ height: openMenu ? panelHeight || 'auto' : 0 }}
           transition={panelTransition}
           className={cn(
             'absolute inset-x-0 top-full hidden overflow-hidden lg:block',
@@ -596,7 +610,7 @@ export function Navbar() {
             overBand && 'dark',
           )}
         >
-          <div className="bg-background grid border-b">
+          <div className="bg-background grid">
             {menus.map((menu) => (
               <MegaMenuPanel
                 key={menu.id}

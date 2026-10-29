@@ -237,7 +237,7 @@ export function WorkspaceFramework() {
                       >
                         <span
                           ref={bar}
-                          className="bg-foreground block size-full origin-left"
+                          className="bg-ring block size-full origin-left"
                           style={{ transform: reduced ? 'scaleX(1)' : 'scaleX(0)' }}
                         />
                       </span>
