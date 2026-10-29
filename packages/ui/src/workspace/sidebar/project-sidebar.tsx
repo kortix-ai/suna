@@ -24,6 +24,7 @@ import { ProjectManifestUpgradeAlert } from './footer/project-manifest-upgrade-a
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
 import { CustomizeSidebarModal } from './customize-sidebar-modal';
+import { ProjectAgentsSection } from './project-agents-section';
 import { NewAgentModalProvider } from '../../internal/layout/project-capability-nav';
 import { ProjectMemoryNavItem } from './footer/project-memory-nav';
 import { ProjectNavItems } from './project-nav-items';
@@ -313,6 +314,8 @@ export function ProjectSidebar({
           </SidebarGroup>
 
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
+            {/* The agents, above Sessions: the same disclosure header, + and ⋯. */}
+            <ProjectAgentsSection projectId={projectId} />
             {channels ? (
               <ProjectSpacesNav projectId={projectId} />
             ) : (

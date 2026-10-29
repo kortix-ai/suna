@@ -10,6 +10,10 @@ import {
   useCapabilityAccess,
 } from '../../internal/layout/project-settings-nav';
 import { isProjectAdminPath, ProjectCapabilityNav } from '../../internal/layout/project-capability-nav';
+import { NavHoverCardContent, useNavHoverCard } from '../../internal/layout/nav-hover-card';
+import { ProjectNavRow } from '../../internal/layout/project-nav-row';
+import { capabilityTabHref } from '../../internal/lib/capability-tab-routes';
+import { Popover, PopoverAnchor } from '../../primitives/popover';
 import { cn } from '../../lib/utils';
 import {
   DropdownMenu,
@@ -168,30 +172,57 @@ function MoreNavItem({
 }
 
 /**
- * Customize — one collapsible parent that holds every capability point (Agents,
- * Skills, Connectors, Triggers, Reminders, Models, Secrets, Repo, Review,
- * Settings) as nested sub-rows, so the config surfaces live under one row
- * instead of a scatter of standalone menu items. Clicking the row toggles the
- * submenu; the sub-rows navigate. The submenu auto-opens while you are on a
- * capability page so the active point is always visible. Absent when the caller
- * may open no capability page (same gate as the tab bar).
+ * Customize: every capability point (the agents, All agents, New agent,
+ * Review, Members, Models, Settings) behind one row. Where hover exists the
+ * row works like Apps: it links to All agents, and a mouse on it opens the
+ * hover card with every point at once, with no delay (`useNavHoverCard`). On a
+ * touch screen or the collapsed rail there is no hover, so the row toggles
+ * the same points as a submenu, open by itself on a Customize page. Absent
+ * when the caller may open no capability page (same gate as the tab bar).
  */
 function CustomizeNavEntry({ projectId }: { projectId: string }) {
   const t = useTranslations('sidebar');
   const pathname = useUiPathname();
   const access = useCapabilityAccess(projectId);
-  // Follow the page: the submenu is open on a Customize page and closed off it,
-  // so it does not sit expanded while you are in a session. A manual click
-  // overrides that until you cross between those contexts, then it follows the
-  // page again. `includes` tolerates the locale prefix the host may not strip.
-  // Project admin counts: the group's Settings row opened it, so the row stays
-  // in view and lit there.
+  // No delay: the card opens as the pointer reaches the row.
+  const card = useNavHoverCard({ enabled: true, openDelay: 0 });
+  // `includes` tolerates the locale prefix the host may not strip. Project
+  // admin counts: the group's Settings row leads there.
   const onCustomizePage = !!pathname && (pathname.includes('/customize') || isProjectAdminPath(pathname));
+  // Submenu only: open on a Customize page, closed off it; a click overrides
+  // that until you cross between those contexts.
   const [override, setOverride] = useState<boolean | null>(null);
   useEffect(() => setOverride(null), [onCustomizePage]);
   const open = override ?? onCustomizePage;
 
   if (!access.settled || access.tabs.length === 0) return null;
+
+  const glyph = (
+    <span className="shrink-0">
+      <CustomizeGlyph />
+    </span>
+  );
+
+  if (card.available) {
+    return (
+      <Popover open={card.open} onOpenChange={card.setOpen}>
+        <PopoverAnchor virtualRef={card.anchorRef} />
+        <ProjectNavRow
+          active={onCustomizePage}
+          label={t('customize')}
+          href={capabilityTabHref(projectId, 'agent')}
+          prefetch
+          {...card.rowProps}
+        >
+          {glyph}
+          {t('customize')}
+        </ProjectNavRow>
+        <NavHoverCardContent {...card.contentProps}>
+          <ProjectCapabilityNav projectId={projectId} card onNavigate={() => card.setOpen(false)} />
+        </NavHoverCardContent>
+      </Popover>
+    );
+  }
 
   return (
     <>
@@ -201,9 +232,7 @@ function CustomizeNavEntry({ projectId }: { projectId: string }) {
           aria-expanded={open}
           className="group/menu-button text-sidebar-foreground"
         >
-          <span className="shrink-0">
-            <CustomizeGlyph />
-          </span>
+          {glyph}
           <span className="truncate">{t('customize')}</span>
           <CaretRightIcon
             weight="bold"

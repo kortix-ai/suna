@@ -17,8 +17,12 @@ import { createContext, type ReactNode, useCallback, useContext, useState } from
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
 import { HubLink } from '../account-hub/account-hub-location';
-import { AgentMark, agentDisplayName } from '../components/agent-mark';
+import { agentDisplayName } from '../components/agent-mark';
+import { Slot } from '@radix-ui/react-slot';
 import { CountBadge } from '../../primitives/count-badge';
+import { MENU_LABEL, menuRow } from '../../primitives/menu-recipe';
+import { cn } from '../../lib/utils';
+import { NavHoverCardList } from './nav-hover-card';
 import {
   SidebarMenuSub,
   SidebarMenuSubButton,
@@ -27,7 +31,7 @@ import {
 } from '../../primitives/sidebar';
 import { UiLink as Link, useUiPathname } from '../../providers/ui-provider';
 import { useIsMobile } from '../hooks';
-import { activeCapabilityTab, agentHref, capabilityTabHref } from '../lib/capability-tab-routes';
+import { activeCapabilityTab, capabilityTabHref } from '../lib/capability-tab-routes';
 import { useReviewSessionSummary } from '../hooks/use-review-session-summary';
 import { PROJECT_ACTIONS } from '../lib/project-actions';
 import { useProjectCan } from '../lib/use-project-can';
@@ -38,6 +42,11 @@ import { CreateAgentModal } from '../../customize/agents/create-agent-modal';
 type Agent = NonNullable<ReturnType<typeof useProjectConfig>>['agents'][number];
 
 const NewAgentContext = createContext<(() => void) | null>(null);
+
+/** Opens the New agent modal mounted beside the sidebar; null outside `NewAgentModalProvider`. */
+export function useOpenNewAgent(): (() => void) | null {
+  return useContext(NewAgentContext);
+}
 
 /**
  * The sidebar's New agent opens the create modal in place, with no
@@ -76,22 +85,8 @@ export function isProjectAdminPath(pathname: string | null | undefined): boolean
   return !!pathname && /\/projects\/[^/]+\/admin(?:[/?#]|$)/.test(pathname);
 }
 
-/** The agent segment of the pathname, decoded like the agent page decodes it. */
-function decodeSegment(segment: string | undefined): string | null {
-  if (!segment) return null;
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return segment;
-  }
-}
-
-/** More agents than this collapse behind the All agents row, so the group
- *  never pushes Sessions below the fold. */
-const MAX_LISTED_AGENTS = 5;
-
-/** A utility row's glyph, in the same 20px box as an agent's mark (literal px
- *  for the same reason as `AgentMark`), so every label starts on one column. */
+/** A row's glyph in a 20px box (literal px, as the sidebar's agent marks), so
+ *  every label starts on one column. */
 function RowGlyph({ children }: { children: ReactNode }) {
   return (
     <span
@@ -105,18 +100,45 @@ function RowGlyph({ children }: { children: ReactNode }) {
 }
 
 /**
- * The points nested under Customize. Customize is agent-first: My Kortix
- * leads (the one agent a person talks to, marked Built-in), then every other
- * agent by display name (a hidden agent muted, last), each opening its own
- * page, where its Access and Runtime live. Then the utility rows, each with a
- * glyph in the agent mark's box: All agents (the index, always present, with
- * the count), New agent (the index's create modal), Review (with its "needs
- * you" count), Members (the account hub's project access, for anyone who may
- * read members) and Settings (Project admin). Customize has no top bar: this
- * group is its whole navigation. The active row follows the pathname; a
- * missing agent lights no row.
+ * One Customize row: a sidebar sub-row, or a menu row inside the Customize
+ * hover card. The child is the link; this gives it the row's classes.
  */
-export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
+function CapabilityRow({ card, active = false, children }: { card: boolean; active?: boolean; children: ReactNode }) {
+  if (card) {
+    return (
+      <li>
+        <Slot className={menuRow('sm', 'default', cn('cursor-pointer', active && 'bg-accent'))}>{children}</Slot>
+      </li>
+    );
+  }
+  return (
+    <SidebarMenuSubItem>
+      <SidebarMenuSubButton asChild isActive={active}>
+        {children}
+      </SidebarMenuSubButton>
+    </SidebarMenuSubItem>
+  );
+}
+
+/**
+ * The points under Customize: All agents (the index, with the count), New
+ * agent (the create modal), Review (with its "needs you" count), Members (the
+ * account hub's project access, for anyone who may read members), Models and
+ * Settings (Project admin). The agents themselves are the sidebar's Agents
+ * section (`project-agents-section.tsx`). The active row follows the pathname.
+ *
+ * `card` draws the same rows as the Customize hover card's list; `onNavigate`
+ * closes that card.
+ */
+export function ProjectCapabilityNav({
+  projectId,
+  card = false,
+  onNavigate,
+}: {
+  projectId: string;
+  card?: boolean;
+  onNavigate?: () => void;
+}) {
   const pathname = useUiPathname();
   const config = useProjectConfig(projectId);
   const access = useCapabilityAccess(projectId);
@@ -135,11 +157,6 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
 
   // My Kortix is not listed: the project home starts it, it has no page here.
   const allAgents = sortCustomizeAgents((config?.agents ?? []).filter((agent) => !agent.platform));
-  const activeName = decodeSegment(pathname?.match(/\/customize\/agents\/([^/?#]+)/)?.[1]);
-  // The first agents, plus the open one when it falls past the cut.
-  const listed = allAgents.slice(0, MAX_LISTED_AGENTS);
-  const open = allAgents.find((agent) => agent.name === activeName);
-  const agents = open && !listed.includes(open) ? [...listed, open] : listed;
 
   const agentsIndex = capabilityTabHref(projectId, 'agent');
   const onIndex = !!pathname && /\/customize\/agents\/?$/.test(pathname);
@@ -153,27 +170,18 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
   const onModels = !!pathname && /\/admin\/models(\/|$)/.test(pathname);
   const onSettings = isProjectAdminPath(pathname) && !onModels;
   const showMembers = canReadMembers && !!accountId;
-  const close = () => isMobile && setOpenMobile(false);
+  const close = () => {
+    onNavigate?.();
+    if (isMobile) setOpenMobile(false);
+  };
 
   if (allAgents.length === 0 && !hasReview && !hasSettings && !showMembers) return null;
 
+  const List = card ? NavHoverCardList : SidebarMenuSub;
   return (
-    <SidebarMenuSub>
-      {agents.map((agent) => (
-        <SidebarMenuSubItem key={agent.name}>
-          <SidebarMenuSubButton asChild isActive={activeName === agent.name}>
-            <Link href={agentHref(projectId, agent.name)} prefetch={false} onClick={close}>
-              <AgentMark slug={agent.name} size={14} />
-              <span className={agent.hidden ? 'text-muted-foreground truncate' : 'truncate'}>
-                {agentDisplayName(agent.name)}
-              </span>
-            </Link>
-          </SidebarMenuSubButton>
-        </SidebarMenuSubItem>
-      ))}
+    <List>
       {hasAgents ? (
-        <SidebarMenuSubItem>
-          <SidebarMenuSubButton asChild isActive={onIndex}>
+        <CapabilityRow card={card} active={onIndex}>
             <Link href={agentsIndex} prefetch={false} onClick={close}>
               <RowGlyph>
                 <ListBulletsIcon className="size-3.5" />
@@ -185,12 +193,10 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
                 </span>
               ) : null}
             </Link>
-          </SidebarMenuSubButton>
-        </SidebarMenuSubItem>
+          </CapabilityRow>
       ) : null}
       {canCreate ? (
-        <SidebarMenuSubItem>
-          <SidebarMenuSubButton asChild>
+        <CapabilityRow card={card}>
             {/* The href (`?new=1`) stays for a modified click and a copied link. */}
             <Link
               href={`${agentsIndex}?new=1`}
@@ -208,12 +214,10 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
               </RowGlyph>
               <span className="truncate">{tTabs('newAgent')}</span>
             </Link>
-          </SidebarMenuSubButton>
-        </SidebarMenuSubItem>
+          </CapabilityRow>
       ) : null}
       {hasReview ? (
-        <SidebarMenuSubItem>
-          <SidebarMenuSubButton asChild isActive={onReview}>
+        <CapabilityRow card={card} active={onReview}>
             <Link href={capabilityTabHref(projectId, 'review')} prefetch={false} onClick={close}>
               <RowGlyph>
                 <CheckCircleIcon className="size-3.5" />
@@ -225,12 +229,10 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
                 </span>
               ) : null}
             </Link>
-          </SidebarMenuSubButton>
-        </SidebarMenuSubItem>
+          </CapabilityRow>
       ) : null}
       {showMembers && accountId ? (
-        <SidebarMenuSubItem>
-          <SidebarMenuSubButton asChild>
+        <CapabilityRow card={card}>
             <HubLink to={hubTarget(accountId, { tab: 'access-projects', project: projectId })} onClick={close}>
               <RowGlyph>
                 <UsersIcon className="size-3.5" />
@@ -238,33 +240,28 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
               <span className="truncate">{tI18nComplete.raw('text1044a4c056d0')}</span>
               <ArrowUpRightIcon aria-hidden className="text-muted-foreground ml-auto size-3 shrink-0" />
             </HubLink>
-          </SidebarMenuSubButton>
-        </SidebarMenuSubItem>
+          </CapabilityRow>
       ) : null}
       {hasModels ? (
-        <SidebarMenuSubItem>
-          <SidebarMenuSubButton asChild isActive={onModels}>
+        <CapabilityRow card={card} active={onModels}>
             <Link href={adminPath(projectId, 'models')} prefetch={false} onClick={close}>
               <RowGlyph>
                 <CpuIcon className="size-3.5" />
               </RowGlyph>
               <span className="truncate">{tTabs('models')}</span>
             </Link>
-          </SidebarMenuSubButton>
-        </SidebarMenuSubItem>
+          </CapabilityRow>
       ) : null}
       {hasSettings ? (
-        <SidebarMenuSubItem>
-          <SidebarMenuSubButton asChild isActive={onSettings}>
+        <CapabilityRow card={card} active={onSettings}>
             <Link href={adminPath(projectId, 'general')} prefetch={false} onClick={close}>
               <RowGlyph>
                 <GearSixIcon className="size-3.5" />
               </RowGlyph>
               <span className="truncate">{tTabs('settings')}</span>
             </Link>
-          </SidebarMenuSubButton>
-        </SidebarMenuSubItem>
+          </CapabilityRow>
       ) : null}
-    </SidebarMenuSub>
+    </List>
   );
 }

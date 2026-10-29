@@ -42,6 +42,9 @@ import { useConfigureThread } from '../use-configure-thread';
 
 export type CreateAgentStart = 'describe' | 'blank' | 'duplicate';
 
+/** A phone's footer clears the home indicator: the device inset, at least the footer's own py-3. */
+const FOOTER_SAFE_AREA = 'max-lg:pb-[max(0.75rem,env(safe-area-inset-bottom))]'; // audit:allow device safe-area inset, not a spacing step
+
 /** The request My Kortix receives. English, like every configure prompt. */
 export function createAgentPrompt(input: {
   start: CreateAgentStart;
@@ -137,7 +140,7 @@ export function CreateAgentModal({
       {/* `space-y-0`: the modal's `space-y-4` puts a bottom margin on every
           child but the last (the absolute close button), so the form, footer
           included, sat 16px above the modal's edge. The header keeps its gap. */}
-      <ModalContent className="flex flex-col space-y-0 overflow-hidden lg:max-w-3xl">
+      <ModalContent className="flex flex-col space-y-0 overflow-hidden lg:max-w-4xl">
         <form
           className="flex min-h-0 flex-1 flex-col"
           onSubmit={(event) => {
@@ -219,7 +222,7 @@ export function CreateAgentModal({
             </div>
 
             {/* The agent this makes, as it will show: updates as the form changes. */}
-            <aside aria-label={t('preview')} className="bg-background hidden w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l p-5 lg:flex">
+            <aside aria-label={t('preview')} className="bg-background hidden w-96 shrink-0 flex-col gap-4 overflow-y-auto border-l p-5 lg:flex">
               <p className="text-muted-foreground text-sm font-medium">{t('preview')}</p>
               <div className="space-y-1">
                 <div className="pb-3">
@@ -247,7 +250,7 @@ export function CreateAgentModal({
           </div>
 
           {/* A phone: full-width buttons, and the footer clears the home indicator. */}
-          <ModalFooter className="shrink-0 border-t py-3 max-lg:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <ModalFooter className={cn('shrink-0 border-t py-3', FOOTER_SAFE_AREA)}>
             <p className="text-muted-foreground mr-auto hidden text-xs sm:block">{t('composerNote')}</p>
             <Button type="button" variant="ghost" size="sm" className="w-full sm:w-auto" onClick={() => onOpenChange(false)}>
               {tI18nComplete.raw('text19766ed6ccb2')}

@@ -277,8 +277,9 @@ export function AgentsPage({ projectId }: { projectId: string }) {
             </>
           }
         />
-        {/* A centered column: three cards across at most, never the whole window. */}
-        <AgentTabBody className="mx-auto max-w-6xl space-y-5">
+        {/* A centered column: three cards across at most, never the whole window.
+            Equal top and bottom inset: this page has no save bar to clear. */}
+        <AgentTabBody className="mx-auto max-w-6xl space-y-5 pb-5">
           <div className="md:hidden">{search()}</div>
           {body}
         </AgentTabBody>
