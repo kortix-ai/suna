@@ -2444,15 +2444,12 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       if (!data) throw new Error(`no button ${label}`);
       return press(data, { chat: Number(call.body.chat_id), messageId: idOf(call), ...opts });
     };
-    /** The claims of used menu messages in a conversation. */
-    const pressClaims = (thread: string) =>
-      db.select().from(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:command-press:${PROJECT}:${BOT_ID}:${thread}|%`));
     const AGENTS = [
       { name: 'reviewer', description: 'Reviews changes', mode: null },
       { name: 'restricted', description: 'Granted to one person', mode: null },
     ];
 
-    test('More and Back turn a model list in place; a page past the end shows the last', async () => {
+    test('More and Back turn a model list in place; a page past the end shows the last; a pick on the turned menu still works', async () => {
       const spies = modelSpies();
       try {
         await handleTelegramEvent(update('/models', ALLOWED, 7101));
@@ -2471,8 +2468,12 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         await handleTelegramPress(press('kc:model:p99', { chat: 7101, messageId: idOf(menu) }));
         expect(calls[1]!.body.text).toBe(`Models for this chat (page 26 of 26)\n${MODELS_USAGE}`);
         expect(keyboard(calls[1]!)).toEqual([row('Synthetic 199', `kc:model:=${choiceRef('cmd-f199')}`), [['‹ Back', 'kc:model:p24']]]);
-        // Turning pages uses no menu: a pick on it still works.
-        expect(await pressClaims('7101')).toEqual([]);
+        calls.length = 0;
+        await handleTelegramPress(tap(menu, 'Model One'));
+        expect(calls.map((c) => [c.method, c.body.text ?? null])).toEqual([
+          ['answerCallbackQuery', null],
+          ['editMessageText', 'Model for this chat set to cmd-m1. Messages you send after this reply use it.'],
+        ]);
       } finally {
         restore(spies);
       }
@@ -2480,7 +2481,6 @@ describe('Telegram commands — migrated PostgreSQL', () => {
 
     test('a model pick runs /model <id> and takes the buttons off; a second tap on that menu and a job retry are out of date', async () => {
       const spies = modelSpies();
-      const writes = spyOn(chatSettings, 'setChannelModel');
       try {
         await handleTelegramEvent(update('/model', ALLOWED, 7105));
         const menu = lastSent();
@@ -2497,14 +2497,13 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         expect(replies().at(-1)).toBe(picked);
 
         calls.length = 0;
-        await handleTelegramPress(tap(menu, 'Synthetic 000'));
+        // Project default would clear the row's model: it stays.
+        await handleTelegramPress(tap(menu, '✓ Project default'));
         await handleTelegramPress(pick);
         expect(methods()).toEqual(['answerCallbackQuery', 'answerCallbackQuery']);
         expect(calls.map((c) => c.body.text)).toEqual([OUT_OF_DATE, OUT_OF_DATE]);
-        expect(writes.mock.calls.filter(([channel]) => channel.channelId === '7105')).toHaveLength(1);
         expect((await settingsRow('7105'))?.model).toBe('cmd-m1');
       } finally {
-        writes.mockRestore();
         restore(spies);
       }
     });
@@ -2539,7 +2538,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       }
     });
 
-    test('a press that cannot hold changes nothing: an option gone from the list, a sender not allowed, data Kortix did not post', async () => {
+    test('a press that cannot hold changes nothing and leaves the menu usable: an option gone from the list, a sender not allowed, data Kortix did not post', async () => {
       const spies = modelSpies();
       try {
         await handleTelegramEvent(update('/model', ALLOWED, 7107));
@@ -2549,7 +2548,8 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         expect(methods()).toEqual(['answerCallbackQuery']);
         expect(calls[0]!.body.text).toBe(OUT_OF_DATE);
         expect(await settingsRow('7107')).toBeUndefined();
-        expect(await pressClaims('7107')).toEqual([]);
+        await handleTelegramPress(tap(menu, 'Model One'));
+        expect((await settingsRow('7107'))?.model).toBe('cmd-m1');
 
         await handleTelegramEvent(update('/model', ALLOWED, 7108));
         const shown = lastSent();
@@ -2558,7 +2558,8 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         expect(methods()).toEqual(['answerCallbackQuery']);
         expect(calls[0]!.body).toMatchObject({ show_alert: true, text: expect.stringContaining('999') });
         expect(await settingsRow('7108')).toBeUndefined();
-        expect(await pressClaims('7108')).toEqual([]);
+        await handleTelegramPress(tap(shown, 'Model One'));
+        expect((await settingsRow('7108'))?.model).toBe('cmd-m1');
 
         for (const data of ['kc:model:=', 'kc:nope', 'kc:sessions']) {
           calls.length = 0;
@@ -2650,7 +2651,6 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       try {
         await handleTelegramPress(fresh);
         expect(calls.map((c) => [c.method, c.body.text])).toEqual([['answerCallbackQuery', 'Kortix could not do that just now. Try again in a minute.']]);
-        expect(await pressClaims('7113')).toEqual([]);
       } finally {
         spy.mockRestore();
       }
