@@ -68,13 +68,14 @@ const WALLPAPER_W = 2560;
 const WALLPAPER_H = 1600;
 const SYMBOL_SCALE = (0.085 * WALLPAPER_W) / 164;
 const WALLPAPER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${WALLPAPER_W}" height="${WALLPAPER_H}" viewBox="0 0 ${WALLPAPER_W} ${WALLPAPER_H}"><rect width="100%" height="100%" fill="#FFFFFF"/><path fill="#0A0A0A" transform="translate(${(WALLPAPER_W - 164 * SYMBOL_SCALE) / 2} ${(WALLPAPER_H - 140 * SYMBOL_SCALE) / 2}) scale(${SYMBOL_SCALE})" d="${KORTIX_SYMBOL_PATH}"/></svg>`;
-// Stock Greybird, plus the dock: frosted white, rounded top corners, and
-// quiet grey hover and pressed states instead of Greybird's blue.
+// Stock Greybird, plus the dock: solid white with a hairline border, and
+// quiet grey hover and pressed states instead of Greybird's blue. Square
+// corners: with no compositor (see xfwm4 below) a rounded corner paints black.
 const THEME_CSS = `@import url("/usr/share/themes/Greybird/gtk-3.0/gtk.css");
-.xfce4-panel.background { border-radius: 18px 18px 0 0; background-color: rgba(255, 255, 255, 0.82); color: #0A0A0A; border: 1px solid rgba(10, 10, 10, 0.08); border-bottom: none; }
-.xfce4-panel.background button { border-radius: 12px; color: #0A0A0A; text-shadow: none; }
-.xfce4-panel.background button:hover, .xfce4-panel.background button:active:hover, .xfce4-panel.background button:checked:hover { background-image: none; background-color: rgba(10, 10, 10, 0.06); border-color: transparent; box-shadow: none; }
-.xfce4-panel.background button:active, .xfce4-panel.background button:checked { background-image: none; background-color: rgba(10, 10, 10, 0.1); border-color: transparent; box-shadow: none; }
+.xfce4-panel.background { background-color: #FFFFFF; color: #0A0A0A; border: 1px solid #E5E5E5; border-bottom: none; }
+.xfce4-panel.background button { border-radius: 10px; color: #0A0A0A; text-shadow: none; }
+.xfce4-panel.background button:hover, .xfce4-panel.background button:active:hover, .xfce4-panel.background button:checked:hover { background-image: none; background-color: #F0F0F0; border-color: transparent; box-shadow: none; }
+.xfce4-panel.background button:active, .xfce4-panel.background button:checked { background-image: none; background-color: #E5E5E5; border-color: transparent; box-shadow: none; }
 `;
 
 // voxl's MIT license, shipped with the binary as the license requires.
@@ -140,7 +141,16 @@ export const SANDBOX_DESKTOP_FILES: Record<string, string> = {
     Xft: { DPI: 144 },
     Gtk: { FontName: 'Inter Variable 10' },
   })),
-  [`${XFCONF}/xfwm4.xml`]: channel('xfwm4', props({ general: { theme: 'Greybird', workspace_count: 1, show_dock_shadow: false } })),
+  [`${XFCONF}/xfwm4.xml`]: channel('xfwm4', props({
+    general: {
+      theme: 'Greybird',
+      workspace_count: 1,
+      // Off on purpose. voxl re-encodes only the regions X reports as damaged,
+      // and under xfwm4's compositor those reports miss repaints: the stream
+      // smears and keeps stale regions until a keyframe.
+      use_compositing: false,
+    },
+  })),
   [`${XFCONF}/xfce4-desktop.xml`]: channel('xfce4-desktop', props({
     'desktop-icons': { style: 0 },
     backdrop: {
