@@ -5,6 +5,7 @@ import type { Actor } from '../iam/actor';
 import { db } from '../shared/db';
 import { canView, readArtifactFile, type ArtifactRow, type Viewer } from './service';
 import { recordArtifactEvent } from './events-store';
+import { hydrateCommentAuthors } from './comment-authors';
 
 export class ArtifactCommentError extends Error {
   constructor(readonly status: 400 | 403 | 404 | 409 | 429, message: string, readonly code: string, readonly retryAfterSeconds = 60) {
@@ -87,9 +88,16 @@ function threadView(row: Thread, comments: Comment[], text?: string) {
   };
 }
 
-export async function listArtifactCommentThreads(access: ArtifactCommentAccess, status: CommentStatus | 'all') {
+async function hydrateThreads(access: ArtifactCommentAccess, threads: ReturnType<typeof threadView>[]) {
+  const comments = await hydrateCommentAuthors(access.artifact, threads.flatMap((thread) => thread.comments));
+  const byId = new Map(comments.map((comment) => [comment.comment_id, comment]));
+  return threads.map((thread) => ({ ...thread, comments: thread.comments.map((comment) => byId.get(comment.comment_id)!) }));
+}
+
+async function readThreads(access: ArtifactCommentAccess, status: CommentStatus | 'all', threadId?: string) {
   const threads = await db.select().from(artifactCommentThreads)
-    .where(and(eq(artifactCommentThreads.artifactId, access.artifact.artifactId), status === 'all' ? undefined : eq(artifactCommentThreads.status, status)))
+    .where(and(eq(artifactCommentThreads.artifactId, access.artifact.artifactId), eq(artifactCommentThreads.projectId, access.artifact.projectId),
+      status === 'all' ? undefined : eq(artifactCommentThreads.status, status), threadId ? eq(artifactCommentThreads.threadId, threadId) : undefined))
     .orderBy(asc(artifactCommentThreads.createdAt), asc(artifactCommentThreads.threadId));
   if (!threads.length) return [];
   const comments = await db.select().from(artifactComments)
@@ -98,7 +106,24 @@ export async function listArtifactCommentThreads(access: ArtifactCommentAccess, 
   const text = access.artifact.type === 'doc' && threads.some((t) => (t.anchor as ArtifactCommentAnchor).type === 'text')
     ? await (await readArtifactFile(access.artifact, access.artifact.entry)).text()
     : undefined;
-  return threads.map((thread) => threadView(thread, comments.filter((c) => c.threadId === thread.threadId), text));
+  return hydrateThreads(access, threads.map((thread) => threadView(thread, comments.filter((c) => c.threadId === thread.threadId), text)));
+}
+
+export async function listArtifactCommentThreads(access: ArtifactCommentAccess, status: CommentStatus | 'all') {
+  return readThreads(access, status);
+}
+
+export async function getArtifactCommentThread(access: ArtifactCommentAccess, threadId: string) {
+  const [thread] = await readThreads(access, 'all', threadId);
+  if (!thread) throw new ArtifactCommentError(404, 'Comment thread not found', 'not_found');
+  return thread;
+}
+
+export async function artifactIdForCommentThread(projectId: string, threadId: string): Promise<string | null> {
+  const [thread] = await db.select({ artifactId: artifactCommentThreads.artifactId }).from(artifactCommentThreads)
+    .innerJoin(artifacts, and(eq(artifacts.artifactId, artifactCommentThreads.artifactId), eq(artifacts.projectId, artifactCommentThreads.projectId)))
+    .where(and(eq(artifactCommentThreads.projectId, projectId), eq(artifactCommentThreads.threadId, threadId)));
+  return thread?.artifactId ?? null;
 }
 
 async function writeQuota(tx: Transaction, actor: Actor, access: ArtifactCommentAccess): Promise<void> {
@@ -164,7 +189,7 @@ export async function createArtifactCommentThread(actor: Actor, access: Artifact
   }
   const body = bodyText(input.body);
   const who = author(actor, access);
-  return write(actor, access, async (tx) => {
+  const thread = await write(actor, access, async (tx) => {
     await sessionCommentQuota(tx, access);
     const [thread] = await tx.insert(artifactCommentThreads).values({
       artifactId: access.artifact.artifactId,
@@ -183,12 +208,13 @@ export async function createArtifactCommentThread(actor: Actor, access: Artifact
     await recordArtifactEvent(tx, access.artifact, who, 'thread_opened', { thread_id: thread!.threadId, comment_id: comment!.commentId });
     return threadView(thread!, [comment!]);
   });
+  return (await hydrateThreads(access, [thread]))[0]!;
 }
 
 export async function replyArtifactCommentThread(actor: Actor, access: ArtifactCommentAccess, threadId: string, body: string) {
   const text = bodyText(body);
   const who = author(actor, access);
-  return write(actor, access, async (tx) => {
+  const comment = await write(actor, access, async (tx) => {
     await loadThread(tx, access, threadId);
     await sessionCommentQuota(tx, access);
     const [comment] = await tx.insert(artifactComments).values({
@@ -198,10 +224,11 @@ export async function replyArtifactCommentThread(actor: Actor, access: ArtifactC
     await recordArtifactEvent(tx, access.artifact, who, 'replied', { thread_id: threadId, comment_id: comment!.commentId });
     return commentView(comment!);
   });
+  return (await hydrateCommentAuthors(access.artifact, [comment]))[0]!;
 }
 
 export async function setArtifactCommentThreadStatus(actor: Actor, access: ArtifactCommentAccess, threadId: string, status: CommentStatus) {
-  return write(actor, access, async (tx) => {
+  const thread = await write(actor, access, async (tx) => {
     const thread = await loadThread(tx, access, threadId);
     if (!own(actor, access, thread.createdByUserId, thread.createdBySessionId)
       && !access.viewer.manageAny && !(access.sessionId && thread.sentSessionId === access.sessionId)
@@ -222,11 +249,12 @@ export async function setArtifactCommentThreadStatus(actor: Actor, access: Artif
       .orderBy(asc(artifactComments.createdAt), asc(artifactComments.commentId));
     return threadView(thread, comments);
   });
+  return (await hydrateThreads(access, [thread]))[0]!;
 }
 
 export async function changeArtifactComment(actor: Actor, access: ArtifactCommentAccess, threadId: string, commentId: string, body: string | null) {
   const text = body === null ? null : bodyText(body);
-  return write(actor, access, async (tx) => {
+  const comment = await write(actor, access, async (tx) => {
     await loadThread(tx, access, threadId);
     const [comment] = await tx.select().from(artifactComments)
       .where(and(eq(artifactComments.threadId, threadId), eq(artifactComments.commentId, commentId)));
@@ -241,4 +269,5 @@ export async function changeArtifactComment(actor: Actor, access: ArtifactCommen
     if (text === null) await recordArtifactEvent(tx, access.artifact, author(actor, access), 'comment_deleted', { thread_id: threadId, comment_id: commentId });
     return commentView(updated!);
   });
+  return (await hydrateCommentAuthors(access.artifact, [comment]))[0]!;
 }
