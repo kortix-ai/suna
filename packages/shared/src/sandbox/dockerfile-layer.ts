@@ -43,6 +43,7 @@ import {
   UV_VERSION,
   assertPiSystemPackage,
 } from '../runtime-versions';
+import { SANDBOX_DESKTOP_INSTALL_COMMAND } from './desktop';
 import {
   SANDBOX_SHELL_TOOL_APT_LIST,
   SANDBOX_SHELL_TOOL_LINK_COMMAND,
@@ -485,6 +486,9 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     `        ${SANDBOX_SHELL_TOOL_APT_LIST} \\`,
     '    && rm -rf /var/lib/apt/lists/* \\',
     `    && ${SANDBOX_SHELL_TOOL_LINK_COMMAND}`,
+    '',
+    // The session desktop (Xvfb + XFCE + voxl on :6901). See desktop.ts.
+    `RUN ${SANDBOX_DESKTOP_INSTALL_COMMAND}`,
     '',
     'RUN useradd --create-home --shell /bin/bash --user-group kortix \\',
     // E2B's Dockerfile parser removes the backslash from a quoted `\\n`.

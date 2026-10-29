@@ -34,5 +34,8 @@
   "agentBrowser": "0.27.0",
   "playwright": "1.60.0",
   "anydoc": "0.1.6",
+  "voxl": "acdac72b79b37205d5019ae983655fcdc0c43c27",
+  "voxlSha256Amd64": "c921f2fabd7e142b2f75b3f9debf791e1c0673b6264110069a2e6dc8e63ce941",
+  "voxlSha256Arm64": "PENDING",
   "piSystemPackages": []
 }

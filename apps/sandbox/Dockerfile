@@ -106,6 +106,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && (command -v fd >/dev/null || ln -s "$(command -v fdfind)" /usr/local/bin/fd) && (command -v bat >/dev/null || ln -s "$(command -v batcat)" /usr/local/bin/bat) && rg --version >/dev/null && fd --version >/dev/null && bat --version >/dev/null && jq --version >/dev/null && fzf --version >/dev/null
 
+# The session desktop (Xvfb + XFCE + voxl on :6901). Verbatim copy of
+# SANDBOX_DESKTOP_INSTALL_COMMAND (packages/shared/src/sandbox/desktop.ts);
+# desktop.test.ts fails when the two differ.
+# hadolint ignore=DL3008,DL4006,SC2015
+RUN apt-get update && if apt-cache show libx264-164 libyuv0 >/dev/null 2>&1; then apt-get install -y --no-install-recommends adwaita-icon-theme dbus-x11 libopus0 libpulse0 libx264-164 libyuv0 pulseaudio thunar x11-xserver-utils xfce4-panel xfce4-session xfce4-settings xfce4-terminal xfdesktop4 xfwm4 xvfb && case "$(uname -m)" in x86_64) voxl_arch=amd64; voxl_sha=c921f2fabd7e142b2f75b3f9debf791e1c0673b6264110069a2e6dc8e63ce941 ;; aarch64|arm64) voxl_arch=arm64; voxl_sha=PENDING ;; *) echo "unsupported voxl architecture: $(uname -m)" >&2; exit 1 ;; esac && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/voxl.gz "https://github.com/kortix-ai/suna/releases/download/voxl-acdac72b79b3/voxl-linux-${voxl_arch}.gz" && echo "${voxl_sha}  /tmp/voxl.gz" | sha256sum -c - && gunzip -c /tmp/voxl.gz > /usr/local/bin/voxl && rm /tmp/voxl.gz && chmod 0755 /usr/local/bin/voxl && ! ldd /usr/local/bin/voxl | grep -q 'not found' && ln -sf /usr/local/bin/kortix-entrypoint /usr/local/bin/kortix-desktop && mkdir -p /usr/share/xfce4/helpers /etc/xdg/xfce4 && printf '[Desktop Entry]\nType=X-XFCE-Helper\nX-XFCE-Category=WebBrowser\nName=Chromium\nIcon=web-browser\nX-XFCE-Commands=/home/kortix/.local/bin/chromium --no-sandbox --no-first-run --no-default-browser-check\nX-XFCE-CommandsWithParameter=/home/kortix/.local/bin/chromium --no-sandbox --no-first-run --no-default-browser-check "%%s"\n' > /usr/share/xfce4/helpers/kortix-chromium.desktop && printf 'WebBrowser=kortix-chromium\n' > /etc/xdg/xfce4/helpers.rc; else echo "desktop: skipped, this base lacks the Ubuntu 24.04 libraries voxl links"; fi && rm -rf /var/lib/apt/lists/*
+
 RUN useradd --create-home --shell /bin/bash --user-group kortix \
     && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \
     && chmod 0440 /etc/sudoers.d/kortix \
