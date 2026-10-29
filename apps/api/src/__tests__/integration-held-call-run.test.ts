@@ -54,6 +54,15 @@ const { consumeApprovedExecution } = await import('../connectors/db-deps-gateway
 const { createAccountToken } = await import('../repositories/account-tokens');
 const { ensureDefaultConnection, upsertConnectionCredential } = await import('../connectors/credentials');
 const { claimJobs, runJobBatch } = await import('../shared/job-queue');
+const { getInboxItem } = await import('../projects/review-items');
+const asManager = async () => ({
+  isManager: true,
+  callerUserId: ownerId,
+  callerAuthType: 'supabase' as const,
+  callerCredentialKind: 'jwt' as const,
+  callerSessionId: null,
+});
+const FULL_VIEW = { where: () => undefined, allows: async () => true };
 
 /** Credential-shaped: redaction must keep it out of every surface. */
 const SENTINEL = 'held-run-sentinel-5d2e81';
@@ -276,6 +285,14 @@ describe('approve runs the held call once', () => {
       expect(surface).not.toContain(SENTINEL);
       expect(surface).not.toContain(OUTPUT_SECRET);
     }
+
+    // A manager in full view reads the item: the run carries status fields
+    // only; the output and the account stay in the session's resume.
+    const item = await getInboxItem(seeded.project_id, `call:${id}`, asManager, FULL_VIEW);
+    const readRun = (item?.detail as { run?: { state: string; outcome: Record<string, unknown> | null } }).run;
+    expect(readRun?.state).toBe('ok');
+    expect(readRun?.outcome).toEqual({ status: 'ok', upstream_status: 201 });
+    expect(JSON.stringify(item)).not.toContain('ch_test_1');
 
     // A second run of the same job is a no-op.
     await run(id);

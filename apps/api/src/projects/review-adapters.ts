@@ -169,10 +169,25 @@ export function decidedCallState(ex: ConnectorCallRow, now: Date, run?: HeldRun 
   };
 }
 
+/**
+ * The outcome fields a reader of the item sees. The item is readable beyond
+ * the session (a manager in full view), so a call with a session keeps only
+ * the status fields: the session's resume carries the output and the error
+ * text. A sessionless caller has no other read: it keeps `output_preview`
+ * and `message`. No reader sees the connected account.
+ */
+function visibleOutcome(ex: ConnectorCallRow, outcome: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!outcome) return null;
+  const keys = ex.sessionId
+    ? ['status', 'reason', 'upstream_status', 'new_execution_id']
+    : ['status', 'reason', 'upstream_status', 'new_execution_id', 'output_preview', 'message'];
+  return Object.fromEntries(keys.filter((k) => k in outcome).map((k) => [k, outcome[k]]));
+}
+
 /** An approved gate that held its input: what its run did, or that it runs. */
 function heldCallState(ex: ConnectorCallRow, decidedBy: string, resolvedAt: Date, run: HeldRun | null) {
   const decidedAt = resolvedAt.toISOString();
-  const outcome = isPlainRecord(run?.outcome) ? run.outcome : null;
+  const outcome = visibleOutcome(ex, isPlainRecord(run?.outcome) ? run.outcome : null);
   const finishedAt = run?.finishedAt?.toISOString() ?? null;
   const state = run?.state ?? 'queued';
   const text = (key: string) => (typeof outcome?.[key] === 'string' ? (outcome[key] as string) : null);
@@ -198,7 +213,7 @@ function heldCallState(ex: ConnectorCallRow, decidedBy: string, resolvedAt: Date
       decision: 'approve' as const,
       decided_by: decidedBy,
       decided_at: decidedAt,
-      // Only the redacted outcome (≤ 4 KB output preview); the held input never leaves its row.
+      // The held input never leaves its row. See `visibleOutcome` for the outcome fields.
       run: { state, finished_at: finishedAt, outcome },
       next_step: nextStep,
     },
