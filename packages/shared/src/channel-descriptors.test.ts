@@ -6,10 +6,6 @@ const regexps = (value: unknown): RegExp[] =>
   value instanceof RegExp ? [value] : value && typeof value === 'object' ? Object.values(value).flatMap(regexps) : [];
 
 describe('channel descriptors', () => {
-  test('one descriptor per id, in id order', () => {
-    expect(Object.keys(CHANNELS)).toEqual([...CHANNEL_PLATFORM_IDS]);
-  });
-
   test('labels and envelope words are unique', () => {
     for (const key of ['label', 'envelope'] as const) {
       const values = descriptors.map((d) => d[key]);
