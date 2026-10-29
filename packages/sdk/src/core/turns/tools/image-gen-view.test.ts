@@ -256,6 +256,14 @@ describe('imageGenView', () => {
     });
   });
 
+  test('a long run of spaces or quotes parses in linear time', () => {
+    const run = 100_000;
+    const started = performance.now();
+    imageGenView(call({ status: 'error', input: INPUT, error: `Image generation failed (500): x${' '.repeat(run)}y` }));
+    imageGenView(call({ status: 'completed', input: INPUT, output: `${'"'.repeat(run)}x${'"'.repeat(run)}y` }));
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   test('the [provider:<id>] token before the code names the failing provider (R37)', () => {
     const refused = (provider: string, code = 'provider_reauth_required') =>
       imageGenView(call({

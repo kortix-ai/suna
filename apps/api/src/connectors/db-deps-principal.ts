@@ -1,5 +1,6 @@
 /** Who is calling: resolve the connector principal from a token or a project path, and the admin/reader/manager authorization checks. */
 import { connectors, projectSessions } from '@kortix/db';
+import { CHANNEL_PLATFORM_IDS } from '@kortix/shared/channel-descriptors';
 import { and, eq } from 'drizzle-orm';
 import { reconcileStoredSessionAgentGrant } from '../projects/lib/session-token-grant';
 import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
@@ -89,7 +90,7 @@ export async function sessionChannelConnectorSlugs(
 }
 
 /** `project_sessions.metadata.source` values that name a channel platform. */
-const CHANNEL_SOURCES: ReadonlySet<string> = new Set(['slack', 'teams', 'email', 'telegram']);
+const CHANNEL_SOURCES: ReadonlySet<string> = new Set(CHANNEL_PLATFORM_IDS);
 
 /**
  * The connector principal a bearer token names, or null when there is no

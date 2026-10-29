@@ -99,12 +99,19 @@ type ImageGenFrame = ImageGenView['images'][number];
 
 const SQUARE = '1 / 1';
 const CONNECT_CODES = new Set(['image_model_unavailable', 'provider_not_connected', 'provider_reauth_required']);
-const TRAILING_CODE = /\s*\[([a-z][a-z0-9_]*)\]\s*$/;
-const TRAILING_PROVIDER = /\s*\[provider:([^\]\s]+)\]\s*$/;
+const TRAILING_CODE = /\[([a-z][a-z0-9_]*)\]$/;
+/** The trailing `[provider:<id>]` token, found without a regex (CodeQL js/polynomial-redos). */
+function trailingProvider(text: string): { index: number; id: string } | null {
+  if (!text.endsWith(']')) return null;
+  const index = text.lastIndexOf('[provider:');
+  if (index < 0) return null;
+  const id = text.slice(index + '[provider:'.length, -1);
+  return id && !/[\]\s]/.test(id) ? { index, id } : null;
+}
 /** Before the provider token: only ChatGPT's own texts named ChatGPT or Codex for these codes. */
 const LEGACY_CHATGPT_CODES = new Set(['provider_not_connected', 'provider_reauth_required']);
 const NAMES_CHATGPT = /\b(ChatGPT|Codex)\b/;
-const TRAILING_RETRY = /\s*Retry after (\d+) s\.\s*$/;
+const TRAILING_RETRY = /Retry after (\d+) s\.$/;
 const REFUSAL_PREFIX = /^Image generation failed \(\d+\):\s*/;
 /**
  * The exact texts a stop leaves on the call: pi's tool loop when the turn's
@@ -139,7 +146,7 @@ function imageOutput(text: string): { imagePath: string | null; directUrl: strin
   } catch {
     // not JSON
   }
-  const bare = text.replace(/^["'`]+|["'`]+$/g, '').trim();
+  const bare = stripQuotes(text).trim();
   if (IMAGE_EXT.test(bare) && !/\s/.test(bare)) {
     return { imagePath: bare.startsWith('workspace/') ? `/${bare}` : bare, directUrl: null };
   }
@@ -182,17 +189,29 @@ function inputOf(call: ToolCallBlock): Record<string, unknown> {
   return {};
 }
 
+/** `text` without its leading and trailing quotes and backticks, in linear time. */
+function stripQuotes(text: string): string {
+  const quote = (c: string | undefined) => c === '"' || c === "'" || c === '`';
+  let start = 0;
+  let end = text.length;
+  while (start < end && quote(text[start])) start++;
+  while (end > start && quote(text[end - 1])) end--;
+  return text.slice(start, end);
+}
+
 function failure(text: string): NonNullable<ImageGenView['error']> {
   let rest = text.trim();
   const code = TRAILING_CODE.exec(rest);
-  if (code) rest = rest.slice(0, code.index);
-  const named = code && TRAILING_PROVIDER.exec(rest);
-  if (named) rest = rest.slice(0, named.index);
+  // Each trailing pattern is anchored at the end with no leading `\s*`, and the
+  // whitespace is trimmed here: a leading `\s*` backtracks quadratically on long runs.
+  if (code) rest = rest.slice(0, code.index).trimEnd();
+  const named = code ? trailingProvider(rest) : null;
+  if (named) rest = rest.slice(0, named.index).trimEnd();
   const retry = TRAILING_RETRY.exec(rest);
-  if (retry) rest = rest.slice(0, retry.index);
+  if (retry) rest = rest.slice(0, retry.index).trimEnd();
   rest = rest.replace(REFUSAL_PREFIX, '').trim();
   const provider = named
-    ? named[1]
+    ? named.id
     : code && LEGACY_CHATGPT_CODES.has(code[1]!) && NAMES_CHATGPT.test(rest)
       ? 'openai-codex'
       : undefined;

@@ -109,11 +109,27 @@ commit already on `staging`.
 ### Step 4 — the release suite is the gate; fix forward
 
 Merge only when `full suite + quality gates` is green on the release PR's head
-SHA. A red suite is fixed **at the root, on `dev`** — never on the release or
-promotion branch, never by weakening a check (the fix-forward traps are in
-[references/fix-forward-traps.md](references/fix-forward-traps.md)). Then
-dispatch Promote again: one new tree, one new run. Nothing runs twice on the
-same tree.
+SHA. Never fix on the release or promotion branch, and never weaken a check
+(the fix-forward traps are in
+[references/fix-forward-traps.md](references/fix-forward-traps.md)).
+
+**The candidate is frozen on `staging`.** A red suite is fixed on the tree
+that was promoted, not on a newer `dev`: every re-promote from `dev` pulls in
+new merges, and on 2026-10-28 five cycles in a row each failed on new `dev`
+drift (Marko: "pin it to whatever got promoted to staging & fix it on staging
+until it's green"). Per fix:
+
+1. Merge the fix into `dev` through a PR, as usual, so `dev` keeps it.
+2. Cherry-pick that commit onto `staging` through a PR:
+   `git switch -c stage-fix/<slug> origin/staging && git cherry-pick <dev sha>`,
+   push, `gh pr create --base staging`, `gh pr merge <n> --merge`. The push to
+   `staging` starts Build Staging and Deploy Staging.
+3. When `/health` on the three staging surfaces serves the new staging SHA,
+   dispatch `promote.yml -f ref=staging` (no `dev` leg). It updates the
+   release branch, and the suite runs once on the new tree.
+
+The next normal Promote from `dev` merges cleanly: `dev` already holds every
+fix that `staging` got.
 
 ### Step 5 — cost every new migration against prod, before merging
 

@@ -320,9 +320,14 @@ function listAllPresentations(presRoot: string): Array<{ name: string; title: st
     });
 }
 
+/** Text safe inside HTML element content and a quoted attribute. */
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
+
 function buildIndexHtml(pres: Array<{ name: string; title: string; total_slides: number }>): string {
   const items = pres.map(p =>
-    `<li><a href="/presentations/${p.name}/"><span>${p.title}</span><span class="count">${p.total_slides} slides</span></a></li>`
+    `<li><a href="/presentations/${escapeHtml(encodeURIComponent(p.name))}/"><span>${escapeHtml(String(p.title))}</span><span class="count">${p.total_slides} slides</span></a></li>`
   ).join("");
   const empty = pres.length === 0 ? '<p class="empty">No presentations yet. Create one with the presentation CLI.</p>' : "";
   return `<!DOCTYPE html><html><head><title>Presentations</title>

@@ -10,7 +10,7 @@ import {
 } from '@kortix/manifest-schema';
 import { isDeepStrictEqual } from 'node:util';
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';
-import { type GitBackedProject, type MirrorRefresh, readManifestFromRepo } from './git';
+import { type GitBackedProject, type MirrorRefresh, readManifestFromRepo, resolveRemoteBranchTip } from './git';
 import type { ParsedManifest } from './trigger-types';
 
 /** Where the manifest lives. Same path the rest of the platform looks for.
@@ -49,6 +49,30 @@ export const MAX_SCHEMA_VERSION = 3;
 
 /* ─── Manifest IO ───────────────────────────────────────────────────────── */
 
+type ManifestRead = Awaited<ReturnType<typeof readManifestFromRepo>>;
+
+// replica-local: the connector sweep's last manifest read per project, keyed
+// by the default-branch tip it was read at. A new leader starts empty.
+const readsAtTip = new Map<string, { tip: string; candidates: string; found: ManifestRead }>();
+
+/**
+ * The connector sweep re-reads every project's manifest. Reading through the
+ * mirror forced a fetch per project, and a full clone once the mirror cache
+ * had evicted it: ~690 GB/day from GitHub on prod (2026-10-26). One
+ * `ls-remote` of the default branch proves an earlier read is still current.
+ */
+async function readManifestAtRemoteTip(project: GitBackedProject, candidates: string[]): Promise<ManifestRead> {
+  const tip = await resolveRemoteBranchTip(project, project.defaultBranch).catch(() => null);
+  const key = candidates.join('\u0000');
+  const hit = readsAtTip.get(project.projectId);
+  if (tip && hit?.tip === tip && hit.candidates === key) return hit.found;
+  const found = await readManifestFromRepo(project, candidates, project.defaultBranch, { forceRefresh: true });
+  // A push between the ls-remote and the read: keep nothing, the next sweep reads again.
+  if (tip && (found === null || found.commit === tip)) readsAtTip.set(project.projectId, { tip, candidates: key, found });
+  else readsAtTip.delete(project.projectId);
+  return found;
+}
+
 /**
  * Read + parse the project's manifest. Returns null if no manifest file is
  * present (so the caller can treat the repo as "not a Kortix project yet").
@@ -62,9 +86,14 @@ export const MAX_SCHEMA_VERSION = 3;
  */
 export async function readManifest(
   project: GitBackedProject,
-  opts?: { forceRefresh?: MirrorRefresh; rethrowReadErrors?: boolean },
+  opts?: {
+    forceRefresh?: MirrorRefresh;
+    rethrowReadErrors?: boolean;
+    /** Reuse this replica's last read while the default branch tip is unchanged. */
+    reuseAtTip?: boolean;
+  },
 ): Promise<ParsedManifest | null> {
-  let found: Awaited<ReturnType<typeof readManifestFromRepo>>;
+  let found: ManifestRead;
   try {
     // manifest_path can still say kortix.toml (an older project, or a stale
     // default) even when the file actually on disk is kortix.yaml — so we
@@ -73,10 +102,12 @@ export async function readManifest(
     // per-agent env/connector scoping ON for a yaml-only project (a missing
     // `agents:` read = grants resolve to null = unrestricted).
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    found = await readManifestFromRepo(project, candidates, project.defaultBranch, {
-      forceRefresh: opts?.forceRefresh,
-      strictRef: opts?.rethrowReadErrors,
-    });
+    found = opts?.reuseAtTip
+      ? await readManifestAtRemoteTip(project, candidates)
+      : await readManifestFromRepo(project, candidates, project.defaultBranch, {
+          forceRefresh: opts?.forceRefresh,
+          strictRef: opts?.rethrowReadErrors,
+        });
   } catch (err) {
     // `readManifestFromRepo` returns null for a genuinely ABSENT file and only
     // THROWS when the read itself failed (mirror refresh, git-proxy hop,
@@ -107,7 +138,7 @@ export async function readManifest(
 }
 
 /**
- * The agent name a synthesized (no-manifest-yet) v2 manifest declares as its
+ * The agent name a synthesized (no-manifest-yet) v3 manifest declares as its
  * default — same name `@kortix/starter`'s `base` template seeds (see
  * packages/starter/templates/base/kortix.yaml's `default_agent: kortix` +
  * `agents.kortix`). Keeping the two in sync means a blank managed-git project
@@ -126,8 +157,9 @@ export async function readManifest(
 export const SYNTHESIZED_DEFAULT_AGENT_NAME = 'kortix';
 
 /**
- * Build the synthesized v2 manifest for a project with no kortix.yaml/
- * kortix.toml committed yet. Pure (no I/O) — callers decide when a `null`
+ * Build the synthesized v3 manifest for a project with no kortix.yaml/
+ * kortix.toml committed yet: the starter's `kortix` agent, granted everything,
+ * with the project checkout. Pure (no I/O) — callers decide when a `null`
  * `readManifest` result should be treated as this shape.
  *
  * MUST embed `kortix_version` INSIDE `raw` (not just carry it on the
@@ -137,7 +169,7 @@ export const SYNTHESIZED_DEFAULT_AGENT_NAME = 'kortix';
  * re-injects `kortix_version` from `schemaVersion` on the way out). Without
  * the key present here, `validateRoot` reads the raw object as schema-version-
  * less and rejects it with "kortix_version is required" before ever reaching
- * the v2 body validators — the exact 400 a blank project's first
+ * the body validators — the exact 400 a blank project's first
  * PUT /default-agent hit.
  */
 export function synthesizeBlankManifest(project: {
@@ -148,18 +180,22 @@ export function synthesizeBlankManifest(project: {
     (candidate) => candidate.path,
   );
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     raw: {
-      kortix_version: 2,
+      kortix_version: 3,
       project: { name: project.name ?? '', description: '' },
-      env: { required: [], optional: [] },
       default_agent: SYNTHESIZED_DEFAULT_AGENT_NAME,
+      env: { required: [], optional: [] },
       agents: {
         [SYNTHESIZED_DEFAULT_AGENT_NAME]: {
+          mode: 'primary',
+          skills: 'all',
+          subagents: 'all',
+          commands: 'all',
+          extensions: 'all',
           connectors: 'all',
           secrets: 'all',
           kortix_permissions: 'all',
-          skills: 'all',
           // Nobody declared this agent, so it keeps the project checkout
           // (KRTX-165). Without it a blank project's first session boots with
           // no repo and fails to compile.

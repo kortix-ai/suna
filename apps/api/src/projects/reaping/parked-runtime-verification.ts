@@ -43,6 +43,7 @@ import { type InPlaceRecoveryStatus, getProvider } from '../../platform/provider
 import { db } from '../../shared/db';
 import {
   claimInPlaceRuntimeRecovery,
+  isKortixInitiatedRemoval,
   markInPlaceRuntimeRecoveryAccepted,
   preserveEstablishedRuntime,
 } from '../runtime-identity';
@@ -164,11 +165,12 @@ export async function recoverRemovedParkedRuntime(
   row: typeof sessionSandboxes.$inferSelect;
 }> {
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+  // Intentional teardown must never be undone by background recovery.
   // An identity already preserved as lost is not recoverable here — the same
   // skip `decideParkedRuntime` runs for the sweep. Re-running the gate on a
   // condemned row would resurrect a runtime the platform reported lost, and a
   // rescue that later fails re-reports the loss as a new occurrence.
-  if (metadata.runtimeIdentityState === 'unavailable') {
+  if (isKortixInitiatedRemoval(row) || metadata.runtimeIdentityState === 'unavailable') {
     return { outcome: 'preserve-lost', row };
   }
   const provider = getProvider(row.provider as SandboxProviderName);

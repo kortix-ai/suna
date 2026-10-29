@@ -894,7 +894,8 @@ describes.
   config root. Extensions load once per runtime start, so an agent switch
   later in the session keeps them.
 - **codemode.** `KORTIX_PI_CODEMODE`, else the session agent's compiled
-  `codemode`, else `on`. It is fixed at start, like the extensions.
+  `codemode`, else `on`. It is fixed at start, like the extensions. A subagent
+  gets codemode only from its own compiled `codemode` (`on` or `only`, v3).
 
 ### Config releases
 
@@ -1062,7 +1063,40 @@ default: the other tools stay declared), `only` (requests declare codemode alone
   in parallel with its siblings unless its tool is `sequential` (pi's `NestedToolCallRunner`):
   `Promise.all` over `tools.image_gen()` generates the images at the same time.
   A tool the agent's tool access turns off is not callable from a script either (pi offers
-  scripts only active tools). A subagent gets only the workspace tools, so no codemode.
+  scripts only active tools).
+- **Subagents.** A child is a bare `core.Agent`: no extension loads and no tool gets a session
+  context. When the subagent's own compiled agent sets `codemode: on` or `only` (v3; omitted:
+  none, whatever the session's mode), `spawnSession` adds
+  pi's tool (`childCodemodeTool`, reached by a relative path into pi's
+  `dist/extensions/codemode/tool.js`) with the context pi's executor reads: `tools`,
+  `executeTool` and `sessionManager.getBranch()`. Each script call runs pi-agent-core's
+  `runToolCall` with the child's own `beforeToolCall` and `afterToolCall`: validation, the
+  subagent's and the session's rules (`deny` blocks, `ask` asks), and the extension handlers,
+  one call at a time — as the child's own direct calls run. The permission checks are identical,
+  and a script's call now carries its parent `codemode` call id (`parentToolCallId`, derived from
+  pi's `<call>/<n>` nested id), so an extension `tool_call`/`tool_result` handler sees it as nested,
+  as on the root; the child's own gate already policed it (stricter than the root rule), so
+  `nestedCallGate` skips it (no double decision). An `ask` on a subagent call is not attached to the
+  codemode part (`attachToPart: false`), as on every subagent call. A script reaches only the child's
+  tools, so never `task` or `question`. `on` adds codemode beside the direct tools; `only` registers only
+  codemode (and `show`, when the child has it) as the child's model-visible tools, so every call goes
+  through a script, while scripts reach every other tool through the executor (no AgentSession loadout needed).
+  The child's OWN tool access that merely omits `codemode`/`show` (the implicit `{'*': false}`
+  default) still grants them — they are built-in controls, and denying an `only` child's codemode
+  would hide its direct tools and refuse every call. This exemption is the subagent's allowlist
+  only and NOT how the root behaves (the root denies a built-in its allowlist omits). The SESSION
+  (root) agent's allowlist is still enforced, so delegating never unlocks codemode/show the session
+  denies. To turn a subagent's codemode off, set its own `codemode: off`; a `deny` rule — a wildcard
+  `permission: { '*': deny }` matches codemode too, so list `codemode: allow` to keep it — also turns
+  them off, and `tools: none` (no tools at all) takes codemode with it. `codemode` is not a tool name,
+  so do not list it in a `tools` allowlist or `exclude` (validate warns it is unknown). The subagent's mode comes from
+  its OWN agent, independent of the session agent's codemode (`KORTIX_PI_CODEMODE`, which for a v3
+  project the API fills from the session agent): a lead set to `codemode: off` does not disable a
+  subagent's own `only`. When a built-in is off, wiring is skipped and the child keeps its direct
+  tools (a `log.warn` records it), never bricked. `show` stays a direct call: a script cannot call it.
+  Limits: `store()` writes last one script (nothing appends them); the session log's code block has no
+  `result.details` (pi's `nestedCalls` record is an AgentSession feature), only pi's live record in
+  `ext.pi.data.details`.
 - **Transcript.** A nested call is not a part, except a call to a native-part tool
   (`NATIVE_PART_TOOLS`: `show`, `image_gen`). pi emits a nested call's
   `tool_execution_start/update/end` on the session only, with `parentToolCallId`;
@@ -1088,7 +1122,8 @@ default: the other tools stay declared), `only` (requests declare codemode alone
   `store()` values fold into the root thread's `ext.pi.data.codemode_store`; the restore writes
   both back (`nestedCalls`, one `codemode-store` entry).
 - **Build.** The compiled daemon embeds `quickjs-wasi/quickjs.wasm` (`setEmbeddedQuickJSWasmPath`,
-  reached by a relative path into pi's `dist/config.js` because pi does not export it) and builds
+  reached by a relative path into pi's `dist/config.js` because pi does not export it; a child's
+  codemode sets it too, so it works with the session's codemode `off`) and builds
   `src/extensions/codemode/worker.ts` as a second entrypoint with `--root=.`: in a binary pi starts
   the worker as `./src/extensions/codemode/worker.ts`, resolved against the build root. Both fail
   only on the first script, never at boot: `pi-harness.test.ts` "pi codemode" runs scripts from
