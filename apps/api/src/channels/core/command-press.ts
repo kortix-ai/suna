@@ -16,8 +16,11 @@ export interface CommandPress {
   pick?: string;
 }
 
-/** At most 62 bytes: under Telegram's 64 (`CHANNELS.telegram.buttons.dataBytes`). */
-const PRESS = /^kc:([a-z]{1,16})(?::(?:p(\d{1,2})|=([A-Za-z0-9_-]{1,51})))?$/;
+/**
+ * At most 62 bytes with a command name of CHANNEL_COMMANDS: under Telegram's 64
+ * (`CHANNELS.telegram.buttons.dataBytes`). A page has up to 3 digits: 1,000 pages.
+ */
+const PRESS = /^kc:([a-z]{1,16})(?::(?:p(\d{1,3})|=([A-Za-z0-9_-]{1,51})))?$/;
 
 /** Null: not a well-formed Kortix command token. A `kc:` token that is null is a stale or forged one. */
 export function parsePressData(data: string): CommandPress | null {
@@ -30,7 +33,7 @@ export function parsePressData(data: string): CommandPress | null {
 /**
  * `kc:<name>`, `kc:<name>:p<page>` or `kc:<name>:=<pick>`, ASCII. The longest Kortix
  * posts is `kc:stop:=<uuid>`, 45 bytes. Throws for a press that would not parse back
- * (a page over 99, a pick over 51 characters or outside base64url): a bug.
+ * (a page over 999, a pick over 51 characters or outside base64url): a bug.
  */
 export function pressData(p: CommandPress): string {
   const data = `kc:${p.name}${p.page !== undefined ? `:p${p.page}` : p.pick !== undefined ? `:=${p.pick}` : ''}`;

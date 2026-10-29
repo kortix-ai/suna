@@ -11,6 +11,8 @@ describe('command button data', () => {
     const presses: CommandPress[] = [
       { name: 'help' },
       { name: 'model', page: 3 },
+      { name: 'model', page: 100 },
+      { name: 'agent', page: 999 },
       { name: 'model', pick: 'd' },
       { name: 'agent', pick: choiceRef('reviewer') },
       { name: 'stop', pick: SESSION },
@@ -31,7 +33,7 @@ describe('command button data', () => {
       'kc:',
       'kc:nope',
       'kc:sessions',
-      'kc:model:p100',
+      'kc:model:p1000',
       'kc:model:=',
       'kc:model:x1',
       'kc:model:=a b',

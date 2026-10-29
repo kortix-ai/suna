@@ -58,8 +58,6 @@ export type CommandReply = (
 
 /** Teams' button cap (teams/cards.ts); a Discord string select holds 25 (from memory, unverified). */
 const PAGE_SIZE = 8;
-/** A button names a page in two digits (command-press.ts): a longer list is reachable by its typed command only. */
-const MAX_PAGES = 100;
 /** A used menu outlives a double tap, the job's retries and a failed edit; after this, a surviving button runs again. */
 const PRESS_CLAIM_TTL_MS = 24 * 60 * 60_000;
 /** A menu Kortix sent takes presses this long; after it, its buttons are out of date. */
@@ -232,7 +230,7 @@ function clipped(text: string, max: number): string {
 
 /** One page of a list; a page past the end is the last. */
 function paged<T>(items: readonly T[], page: number): { shown: T[]; page: number; pages: number } {
-  const pages = Math.min(MAX_PAGES, Math.max(1, Math.ceil(items.length / PAGE_SIZE)));
+  const pages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
   const at = Math.min(Math.max(page, 0), pages - 1);
   return { shown: items.slice(at * PAGE_SIZE, (at + 1) * PAGE_SIZE), page: at, pages };
 }
