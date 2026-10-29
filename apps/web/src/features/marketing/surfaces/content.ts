@@ -90,7 +90,6 @@ export type SurfaceContent = {
 export const SURFACE_ORDER: readonly { id: SurfaceId; href: string; name: string; line: string }[] = [
   { id: 'desktop', href: '/desktop', name: 'Desktop', line: 'macOS, Windows and Linux, with Quick Entry.' },
   { id: 'mobile', href: '/mobile', name: 'Mobile', line: 'iPhone, iPad and Android.' },
-  { id: 'cli', href: '/cli', name: 'CLI', line: 'One binary for people, scripts and agents.' },
   { id: 'slack', href: '/slack', name: 'Slack', line: 'Mention it in a thread.' },
   { id: 'teams', href: '/teams', name: 'Microsoft Teams', line: 'Chats, group chats and channels.' },
 ];

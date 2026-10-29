@@ -69,12 +69,11 @@ const MARKETING_ROUTES = [
   '/mobile',
 ];
 
-// Marketing pages whose slug is ALSO an app prefix: /cli/authorize,
-// /slack/install, /slack/login/<token>, /teams/install and /teams/login/<token>
+// Marketing pages whose slug is ALSO an app prefix: /slack/install, /slack/login/<token>, /teams/install and /teams/login/<token>
 // are signed-in flows (PROTECTED_APP_PREFIXES). Every other list here matches
 // by prefix, which would make those flows public. These match the exact path
 // only, with or without a locale prefix, and nothing under it.
-const EXACT_MARKETING_ROUTES = ['/cli', '/slack', '/teams'];
+const EXACT_MARKETING_ROUTES = ['/slack', '/teams'];
 
 function isExactMarketingPath(pathname: string): boolean {
   if (EXACT_MARKETING_ROUTES.includes(pathname)) return true;
