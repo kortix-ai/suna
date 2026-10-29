@@ -200,8 +200,9 @@ export function registerReviewItemsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_REVIEW_READ,
       );
 
-      // A native id, `cr:<cr_id>` or a pending `call:<execution_id>`, in the
-      // list's shape: a link to an item does not depend on its page.
+      // A native id, `cr:<cr_id>` or a `call:<execution_id>`, in the list's
+      // shape: a link to an item does not depend on its page. A connector call
+      // reads pending, expired, or decided (approved / denied, with next_step).
       const item = await getInboxItem(
         projectId,
         c.req.param('reviewItemId'),

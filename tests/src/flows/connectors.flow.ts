@@ -4681,7 +4681,7 @@ flow(
         const r = await expectHeld('charges_create');
         r.body().has(
           '$.approval_instructions',
-          'Share approval_url with a human. Retry this exact call once they approve it. Next time pass approval_context (CLI: --reason) describing the effect, so the approver can judge it.',
+          'Share approval_url with a human. Approval alone does not run the call: after approval, repeat this exact call (same arguments and account) within 15 minutes, and it runs once. Next time pass approval_context (CLI: --reason) describing the effect, so the approver can judge it.',
         );
       });
 

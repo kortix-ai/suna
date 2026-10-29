@@ -7,7 +7,7 @@
 import { hiddenSpaceIds, sessionsInSpaces } from '../../shared/space-access';
 import { connectorCalls, projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
-import { approvalNotExpired, isApprovalExpired } from '../../connectors/approval-expiry';
+import { APPROVAL_RERUN_WINDOW_MS, approvalNotExpired, isApprovalExpired } from '../../connectors/approval-expiry';
 import { approvalPreviewReviewable } from '../../connectors/args-preview';
 import { approvalExpiredAuditEvent, approvalResolvedAuditEvent } from '../../connectors/call-audit';
 import { logger } from '../../lib/logger';
@@ -80,7 +80,7 @@ export async function approvalTargetSession(
 /** The prompt that tells the agent what the human decided — and what they said. */
 export function approvalResumeText(actionPath: string, decision: ApprovalDecision, note: string): string {
   if (decision === 'approve') {
-    return `Your pending approval to run ${actionPath} was approved — continue.${note ? `\n\nMessage from the approver:\n${note}` : ''}`;
+    return `Your pending approval to run ${actionPath} was approved. It has not run yet: repeat the exact same call now (same arguments and account), and it runs once. The approval lapses ${APPROVAL_RERUN_WINDOW_MS / 60_000} minutes after the decision.${note ? `\n\nMessage from the approver:\n${note}` : ''}`;
   }
   return note
     ? `Your request to run ${actionPath} was denied. Message from the approver:\n${note}`
