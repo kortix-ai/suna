@@ -501,7 +501,7 @@ Each adapter declares in its capabilities what its oracle suites passed against:
 `PI_CAPABILITIES` and `OPENCODE_CAPABILITIES` (`@kortix/api-contract/session-log`,
 `capabilities.ts`: apps/api reads the same manifests for the switch preflight,
 `POST /v1/projects/:p/sessions/:s/log/switch-preflight`), field `harness_versions` (a semver range, today
-`1.0.3 || 1.2.0` and `1.18.23`) and field `schema_minors` (today `[1]`). Both are written
+`1.0.3 || 1.2.0 || 1.4.0` and `1.18.23`) and field `schema_minors` (today `[1]`). Both are written
 by hand, never derived from the pin. `session-log-adapter-versions.test.ts`
 reads them and fails when a pin leaves them:
 
@@ -511,6 +511,11 @@ reads them and fails when a pin leaves them:
   worker and wasm, above): move them with the bump, and check that pi still resolves the
   worker as `./src/extensions/codemode/worker.ts` (`getCodemodeWorkerSpecifier`).
   `@silvia-odwyer/photon-node` (pi's image resizer, "Images" below) is pinned the same way.
+  `pi-host-modules.test.ts` fails when pi's `VIRTUAL_MODULES` gains a module: add it to
+  `PI_HOST_MODULES` (apps/api `pi-packages/prebuild.ts`) and to `hostModules()` (`pi/extensions/prebuilt.ts`).
+  It also fails when pi moves its `typebox` pin: move the daemon's `typebox` with it. A
+  different version puts three more TypeBox copies in the binary (pi 1.4.0, compiled
+  darwin-arm64: +1,328 modules, +1.0 MB, boot +20 ms, RSS +11 MB).
 - OpenCode: `opencode` in `packages/shared/src/runtime-versions.json` (the image
   installs it).
 - Both: `SESSION_LOG_MINOR` in `@kortix/api-contract/session-log`.
@@ -816,7 +821,7 @@ model call read it (its turn runs or ran), and it stays.
 > listed at the end of this section. When the last OpenCode session is gone,
 > `open-code/` and the `opencode` harness id are removed.
 
-pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.2.0) is bundled
+pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.4.0) is bundled
 into the daemon binary and runs INSIDE the daemon process. There is no child
 process, no port, no RPC and no second sandbox: pi-coding-agent's built-in
 `bash`/`read`/`write`/`edit` run on `/workspace` in this process, Kortix adds
@@ -1249,14 +1254,12 @@ turn: no model call, no turn relay. An auto compaction (threshold, overflow)
 runs inside its prompt turn, and an extension's `ctx.compact()` is not a
 `/summarize`: neither relays a turn.
 
-Reasoning is display only across models (C3, P7.3). pi-ai replays a thinking
-block that another model wrote as visible assistant text. `pi/reasoning.ts`
-removes the thinking of another model from each request, with pi-ai's own test
-(provider, api, model id): `withoutForeignReasoning` wraps the stream function
-of the root and every child agent. pi's summarizers (compaction, branch
-summary) send no thinking block of any model since pi 1.2.0
-(`serializeConversation`); `pi-session-log-restore.test.ts` fails if that
-changes. A model switch (a prompt's
+Reasoning is display only across models (C3, P7.3). Since pi 1.3.0, pi-ai's
+`transformMessages` drops the thinking another model wrote from each request
+(same model = provider, api, model id), for the root and every child agent.
+pi's summarizers (compaction, branch summary) send no thinking block of any
+model since pi 1.2.0 (`serializeConversation`). `pi-session-log-restore.test.ts`
+fails if either changes. A model switch (a prompt's
 `model`, `POST /kortix/env`) and a restored log written by another model or
 harness both go through it. The same model's thinking goes back unchanged, and
 the store and the session log keep every block.
