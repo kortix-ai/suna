@@ -7,12 +7,14 @@
  *                     in a private chat, also an access request an admin can allow
  *   a command       → `/help` (`/start`), `/status`, `/new`, `/stop`, `/model`, `/agent`,
  *                     also as `/<verb>@<this bot>` and as a caption, run in the core
- *                     (core/commands.ts) and answered in the chat; a caption's file is not read
+ *                     (core/commands.ts) and answered in the chat, with a menu of
+ *                     buttons where the reply offers one; a caption's file is not read
  *   anything else   → the core: a follow-up into the chat's session, or a new
  *                     project-visible session bound to the chat; the message's own
  *                     file (photo, document, audio, voice, video) goes with it
- *   a button press  → the answer to the agent's question (`handleTelegramPress`,
- *                     through core/questions.ts)
+ *   a button press  → a command button (`kc:`) runs its command over the pressed
+ *                     message (core/commands.ts `runCommandPress`); a question button
+ *                     answers the agent's question (core/questions.ts)
  *
  * The agent answers through the `kortix_telegram` connector (connectors/channels.ts);
  * the bot token never enters the sandbox.

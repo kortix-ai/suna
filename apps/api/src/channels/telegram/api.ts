@@ -2,8 +2,8 @@
  * Minimal Telegram Bot API client for the server side of the channel: install
  * (getMe, setWebhook, getWebhookInfo, deleteWebhook), the command menu
  * (getMyCommands, setMyCommands, deleteMyCommands), the pairing/typing
- * replies, and the agent's questions (sendMessage with buttons, then
- * answerCallbackQuery and the edit on a press), the allowed users' names
+ * replies, the agent's questions and the command menus (sendMessage with buttons,
+ * then answerCallbackQuery and the edit on a press), the allowed users' names
  * and photos, and a message's files (getChat, getFile and the file download). Agent-sent
  * messages go through the `kortix_telegram` connector instead (connectors/channels.ts).
  */
@@ -99,7 +99,7 @@ export interface TelegramBot {
   first_name?: string;
 }
 
-/** The updates the webhook receives: messages, and presses on question buttons. */
+/** The updates the webhook receives: messages, and presses on question and command buttons. */
 export const TELEGRAM_UPDATES = ['message', 'callback_query'];
 
 /** A bot token is `<bot id>:<secret>`; anything else never reaches the network. */
