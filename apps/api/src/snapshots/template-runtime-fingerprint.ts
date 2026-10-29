@@ -20,6 +20,8 @@ import {
   VOXL_VERSION,
 } from '@kortix/shared';
 import { SANDBOX_VERSION } from '../config';
+import { kortixArtifactLayer, kortixToolchainLayer } from './dockerfile-layer';
+import { createHash } from 'node:crypto';
 import {
   buildRuntimeArtifactFingerprint,
   cliConnectorRuntimeArtifacts,
@@ -71,9 +73,8 @@ const CLI_ROOT = resolve(REPO_ROOT, 'apps/cli');
 const STARTER_ROOT = resolve(REPO_ROOT, 'packages/starter');
 const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'] as const;
 
-// Bump when the rendered Kortix Dockerfile layer changes (the Dockerfile text
-// itself is not hashed into the snapshot fingerprint, so a layer change needs a
-// manual version bump to invalidate cached images). v2: bake OpenCode config
+// Bump when the image changes in a way the rendered layer text does not show
+// (RENDERED_LAYER_HASH below covers edits to the layer text itself). v2: bake OpenCode config
 // deps into /opt/kortix/opencode-config-deps for offline boot-time install.
 // v10: warm a real opencode project instance at build time (instance-warm) so the
 // one-time first-instance plugin/model/ripgrep cost is cached into the image
@@ -249,8 +250,19 @@ export const RUNTIME_ARTIFACTS = [...AGENT_RUNTIME_ARTIFACTS, ...NON_AGENT_RUNTI
 // binary), so they belong in BOTH fingerprints. The per-process cache re-walks the
 // actual files on every fresh deploy, so an agent-src change between deploys moves
 // the full fingerprint (drift) while leaving the non-agent fingerprint unchanged.
+// The rendered standard layer itself. Before this, a layer edit without a
+// RUNTIME_LAYER_VERSION bump rebuilt no image (2026-10-29: the desktop step).
+const RENDERED_LAYER_HASH = createHash('sha256')
+  .update(kortixToolchainLayer({ opencodeVersion: OPENCODE_VERSION }))
+  .update(kortixArtifactLayer({
+    agentBinaryPath: 'a', cliBinaryPath: 'c', entrypointScriptPath: 'e',
+    machineDocPath: 'm', slackCliPath: 's', managedSkillsPath: 'k',
+  }))
+  .digest('hex')
+  .slice(0, 16);
 const runtimeIntegrityKey = () =>
   [
+    RENDERED_LAYER_HASH,
     PNPM_SHA256_AMD64,
     PNPM_SHA256_ARM64,
     UV_SHA256_AMD64,
