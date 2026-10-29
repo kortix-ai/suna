@@ -13,6 +13,7 @@
  *   4. Audit label: the route's line in packages/shared/src/audit-route-labels.ts.
  *   5. Manifest: `bun run apps/api/scripts/dump-routes.ts`, commit tests/spec/routes.generated.json.
  *   6. Flow: a tests/src/flows case that sends a signed update and reads the reply.
+ *   7. Lint: add `'../<platform>*'` to `NO_PLATFORM` in apps/api/eslint.config.mjs.
  */
 import { timingSafeEqual } from 'node:crypto';
 import { emitIntegrationEvent, type IntegrationEvent } from '../../integrations/event-inbox';
