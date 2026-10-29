@@ -394,7 +394,7 @@ export async function runArtifactCommentAgentJob(job: Job): Promise<void> {
         }
         const [command] = await db.select({ status: sessionLifecycleCommands.status }).from(sessionLifecycleCommands)
           .where(and(eq(sessionLifecycleCommands.idempotencyKey, key), eq(sessionLifecycleCommands.projectId, loaded.artifact.projectId), eq(sessionLifecycleCommands.accountId, loaded.artifact.accountId)));
-        if (command && ['failed', 'cancelled'].includes(command.status)) throw invalid('The agent session could not be created');
+        if (command && ['failed', 'cancelled', 'dead_lettered'].includes(command.status)) throw invalid('The agent session could not be created');
         if (!session || command?.status !== 'succeeded') throw new Error('The agent session is still being created');
         if (target.created) { await db.transaction((tx) => markSent(tx, job, payload, target, loaded.artifact)); continue; }
       }

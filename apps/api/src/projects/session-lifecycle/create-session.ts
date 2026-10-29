@@ -351,6 +351,7 @@ export async function executeQueuedCreate(
   return executeCreateSession({
     attachmentSourceCommandId: row.commandId,
     createCommandId: row.commandId,
+    idempotencyKey: row.idempotencyKey,
     artifactId: row.artifactId ?? undefined,
     source: row.source as CreateSessionCommand['source'],
     project,

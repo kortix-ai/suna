@@ -86,6 +86,27 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
     return { first, second, firstJob, secondJob, command: (await commands())[0]! };
   }
 
+  test('a dead-lettered inherited create fails once without retrying or duplicating its target', async () => {
+    const source = await thread('Review the existing reservation.', true);
+    const claimed = await job(source);
+    const createKey = `artifact-comments:batch:${crypto.randomUUID()}`;
+    const payload = claimed.payload as import('./comment-delivery').ArtifactCommentAgentPayload;
+    payload.targets = [{ recipientKey: `session:${sessionId}`, sessionId, agentName: 'writer', created: false, initialized: true,
+      key: claimed.jobKey, createKey, implicit: true, status: 'pending' }];
+    await db.update(jobQueue).set({ payload }).where(eq(jobQueue.jobId, claimed.jobId));
+    await db.insert(sessionLifecycleCommands).values({ commandType: 'create_session', source: 'system:artifact-comment', status: 'dead_lettered',
+      accountId: artifact.accountId, projectId: artifact.projectId, artifactId: artifact.artifactId, actorUserId: actor.userId,
+      idempotencyKey: createKey, payload: {} });
+    await expect(runArtifactCommentAgentJob({ ...claimed, payload })).rejects.toThrow();
+    const [stored] = await db.select().from(jobQueue).where(eq(jobQueue.jobId, claimed.jobId));
+    expect((stored!.payload as import('./comment-delivery').ArtifactCommentAgentPayload).targets).toMatchObject([{ status: 'failed', sessionId, createKey }]);
+    const [read] = await db.select().from(artifactCommentThreads).where(eq(artifactCommentThreads.threadId, source.row.threadId));
+    expect(read).toMatchObject({ agentState: 'paused', agentError: expect.any(String) });
+    await expect(runArtifactCommentAgentJob(stored!)).rejects.toThrow();
+    expect(await commands()).toHaveLength(1);
+    expect(await events()).toHaveLength(0);
+  });
+
   test('plain human feedback writes an id-only people outbox and performs no Files stat', async () => {
     const source = await thread('Check the heading.');
     const key = await db.transaction((tx) => enqueueArtifactCommentRouting(tx, artifact, actor, null, source.row.threadId, source.comment.commentId, false));
