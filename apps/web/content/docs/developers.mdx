@@ -5540,7 +5540,7 @@ if (failed) await p.triggers.replay('daily-digest', failed.run_id);
 
 ### Resolve approvals
 
-A policy rule with `require_approval` holds a connector call until a person decides. Approval alone does not run the call. After approval, the caller repeats the identical call (same connector, action, arguments and account) within 15 minutes, and that call runs once. In a session, Kortix resumes the agent with that instruction. `p.approvals.list()` returns `{ count, approvals }`. Each approval carries `execution_id`, `action`, `session_id`, `requested_at` and `expires_at`.
+A policy rule with `require_approval` holds a connector call until a person decides. Approval alone does not run the call. After approval, the caller repeats the identical call (same connector, action, arguments and account) from the same session and user within 15 minutes, and that call runs once. In a session, Kortix resumes the agent with that instruction. `p.approvals.list()` returns `{ count, approvals }`. Each approval carries `execution_id`, `action`, `session_id`, `requested_at` and `expires_at`.
 
 `p.approvals.resolve(executionId, decision, { note? })` decides one call. `decision` is `'approve'` or `'deny'`. `note` goes to the agent as an instruction. A project manager or the person who started the session may decide. A decision covers that one call only. `GET /v1/projects/:id/review/items/call:<execution_id>` returns the decision, whether a repeat used the approval, and the deadline. To run a tool without approval, write an `always_run` rule.
 

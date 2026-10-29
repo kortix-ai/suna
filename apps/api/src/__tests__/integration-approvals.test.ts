@@ -1047,7 +1047,7 @@ describe('can_resolve is the resolve route verdict, per caller (KRTX-1724)', () 
   });
 });
 
-// KRTX-3654: a decided call stays readable by id, with what the agent does next.
+// A decided call stays readable by id, with what the agent does next.
 describe('the by-id read returns a decided connector call', () => {
   type DecidedItem = {
     status: string;
@@ -1109,7 +1109,10 @@ describe('the by-id read returns a decided connector call', () => {
     const { item } = await readItem(execId);
     expect(item!.status).toBe('approved');
     expect(typeof item!.detail.approval_used_at).toBe('string');
-    expect(item!.detail.next_step).toContain('used the approval');
+    const usedAt = item!.detail.approval_used_at as string;
+    expect(item!.detail.next_step).toBe(
+      `Approved at ${item!.detail.decided_at}. A repeated call claimed the approval at ${usedAt}. If the content changed after approval, that call asked for a new approval instead of running.`,
+    );
     await db.delete(connectorCalls).where(eq(connectorCalls.executionId, execId));
     await db.delete(connectors).where(eq(connectors.connectorId, connector!.connectorId));
   });

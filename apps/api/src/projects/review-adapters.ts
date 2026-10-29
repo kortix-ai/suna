@@ -152,7 +152,7 @@ export function decidedCallState(ex: ConnectorCallRow, now: Date) {
   const rerunBy = new Date(ex.resolvedAt.getTime() + APPROVAL_RERUN_WINDOW_MS);
   const rerunByIso = rerunBy.toISOString();
   const nextStep = usedAt
-    ? `Approved at ${decidedAt}. A repeated call used the approval at ${usedAt}.`
+    ? `Approved at ${decidedAt}. A repeated call claimed the approval at ${usedAt}. If the content changed after approval, that call asked for a new approval instead of running.`
     : now < rerunBy
       ? `Approved at ${decidedAt}. The call has not run. Repeat the exact same call (same arguments and account) before ${rerunByIso}, and it runs once.`
       : `Approved at ${decidedAt}, but the call was not repeated before ${rerunByIso} and did not run. Repeat it to ask for a new approval.`;

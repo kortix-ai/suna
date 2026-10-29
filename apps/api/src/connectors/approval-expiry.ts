@@ -14,9 +14,13 @@ const MIN_TTL_SECONDS = 5 * 60;
 const MAX_TTL_SECONDS = 30 * 24 * 60 * 60;
 const UNIT_SECONDS = { m: 60, h: 3_600, d: 86_400 } as const;
 
-/** How long an approve lets the identical call run once, counted from the decision. */
+/**
+ * How long an approve lets the identical call run once, counted from the decision.
+ * Long enough for the approve → resume → repeat round trip; short enough that a stale yes cannot authorize a much later call.
+ */
 export const APPROVAL_RERUN_WINDOW_MS = 15 * 60 * 1000;
 
+// apps/cli/src/commands/connector-gateway.ts holds a copy for the CLI; change both together.
 export const APPROVAL_RERUN_RULE = `Approval alone does not run the call: after approval, repeat this exact call (same arguments and account) within ${APPROVAL_RERUN_WINDOW_MS / 60_000} minutes, and it runs once.`;
 
 /**
