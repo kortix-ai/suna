@@ -21,6 +21,7 @@ describe('resolveConnectorLogo', () => {
     ]) {
       expect(resolveConnectorLogo(source)).toEqual({ kind: 'native', app: 'email' });
     }
+    expect(resolveConnectorLogo({ slug: 'kortix_telegram' })).toEqual({ kind: 'native', app: 'telegram' });
     expect(resolveConnectorLogo({ provider: 'computer', slug: 'computer' })).toEqual({
       kind: 'native',
       app: 'computer',
@@ -43,6 +44,11 @@ describe('resolveConnectorLogo', () => {
   });
 
   test("an app's own icon, then a public catalogue domain's favicon", () => {
+    // A Kortix-shaped slug or icon path of an app that is neither a Kortix channel nor Computer is not a native mark.
+    expect(resolveConnectorLogo({ slug: 'kortix_stripe', icon: '/connector-icons/stripe.svg' })).toEqual({
+      kind: 'image',
+      src: '/connector-icons/stripe.svg',
+    });
     expect(resolveConnectorLogo({ icon: 'https://logos.composio.dev/api/gmail' })).toEqual({
       kind: 'image',
       src: 'https://logos.composio.dev/api/gmail',

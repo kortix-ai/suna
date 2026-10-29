@@ -6,6 +6,7 @@
  * scoped to the bot id.
  */
 import { chatInstalls, projects } from '@kortix/db';
+import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { and, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
@@ -26,7 +27,7 @@ export const TELEGRAM_BOT_TOKEN = 'TELEGRAM_BOT_TOKEN';
 export const TELEGRAM_WEBHOOK_SECRET = 'TELEGRAM_WEBHOOK_SECRET';
 export const TELEGRAM_BOT_USERNAME = 'TELEGRAM_BOT_USERNAME';
 
-export const TELEGRAM_USER_ID = /^\d{1,20}$/;
+export const TELEGRAM_USER_ID = CHANNELS.telegram.access.userId;
 
 /** A sender's id and cleaned names (the port's `requester`). Null: `from` has no valid Telegram user id. */
 export function telegramRequester(from: unknown): ChannelAccessRequester | null {

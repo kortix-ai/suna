@@ -9,10 +9,11 @@
  *   `chat_installs.workspace_id`): a disconnect or another install's connect
  *   clears them.
  *
- * Add a platform: name it in CHANNEL_ACCESS_PLATFORMS
+ * Add a platform: give its channel descriptor `access`
+ * (@kortix/shared/channel-descriptors). That puts it in CHANNEL_ACCESS_PLATFORMS
  * (shared/channel-access-platforms.ts), which also hides its key from project
- * reads, record requests with its `chat_installs.workspace_id` as the scope,
- * give it a ChannelAccessPort for names, photos and the routes
+ * reads. Then record requests with its `chat_installs.workspace_id` as the
+ * scope, give it a ChannelAccessPort for names, photos and the routes
  * (telegram/access.ts is the reference), register its 5 access routes with
  * registerChannelAccessRoutes (projects/routes/channel-access.ts), each with
  * its line in packages/shared/src/audit-route-labels.ts, and gate its

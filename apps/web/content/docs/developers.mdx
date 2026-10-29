@@ -760,7 +760,7 @@ kortix validate --scopes                         # every grantable kortix_permis
 - an agent or command `prompt_file` that does not exist;
 - a `skills` folder with no `SKILL.md`, or a `SKILL.md` whose frontmatter `name:` is not the skill name;
 - a `tools` module or an `extensions.<name>.pi` repository path that does not exist;
-- an agent `connectors` or `connectors_required` slug that `connectors` does not declare (`kortix_slack`, `kortix_teams`, `kortix_email` and `computer` always count as declared);
+- an agent `connectors` or `connectors_required` slug that `connectors` does not declare (`kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_telegram` and `computer` always count as declared);
 - an agent `secrets` name or a trigger `secret_env` that `env` does not declare.
 
 They warn when the files in Git exceed 512 MiB, or when one file reaches 10 MiB.
@@ -1104,7 +1104,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `slug` | string | required | Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email` and `computer` are reserved for the built-in connectors. |
+| `slug` | string | required | Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_telegram` and `computer` are reserved for the built-in connectors. |
 | `name` | string | the slug | The label. |
 | `enabled` | boolean | `true` | `false`: the connector is off. |
 | `provider` | `pipedream`, `composio`, `mcp`, `openapi`, `postman`, `graphql`, `http`, `channel` | required | How Kortix reaches the app or API. Kortix writes the `channel` entry when you connect a channel. |
