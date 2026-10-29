@@ -36,7 +36,7 @@ import {
   resolveSessionAgentName,
 } from '../../projects/surface';
 import { db } from '../../shared/db';
-import { channelTurnModel, modelReadsImages, NO_VISION_NOTE, promptModelOverride } from '../vision-model';
+import { type ImageTurn, imageTurnModel, NO_VISION_NOTE, promptModelOverride } from '../vision-model';
 import type { RuntimeQuestion, TurnErrorCode } from '@kortix/api-contract/transcript';
 import type { ConnectorPrincipal } from '../../connectors/router-contract';
 import type { QuestionPort } from './questions';
@@ -435,8 +435,6 @@ async function waitForThreadSession(thread: ChatThreadKey): Promise<{ sessionId:
 type PromptPart = NonNullable<Parameters<typeof deliverThroughQueue>[0]['parts']>[number]; // PromptPartWire is not on projects/surface.ts
 type Prompt = Pick<Parameters<typeof deliverThroughQueue>[0], 'text' | 'parts' | 'overrides'>;
 interface MessageFiles { parts: PromptPart[]; notes: string[]; hasImage: boolean; hasAudio: boolean }
-/** Who an image turn runs as, and the model its session pins. */
-interface ImageTurn { projectId: string; accountId: string; userId: string | null; currentModel: string | null; visibility: string; sessionId?: string }
 
 const CAP_MB = CHANNEL_FILES_MAX_BYTES / (1024 * 1024);
 /** Nothing in the sandbox or the gateway turns speech into text yet. */
@@ -510,28 +508,6 @@ async function readMessageFiles(target: ChannelTarget, files: readonly ChannelFi
     read.hasAudio ||= mime.startsWith('audio/');
   }
   return read;
-}
-
-/**
- * The model of a turn whose message carries an image (vision-model.ts), and whether no model in reach
- * reads it. pi gives an image only to a model that reads images, so the gateway's image reroute never
- * sees one: the core picks before the turn.
- */
-async function imageTurnModel(turn: ImageTurn): Promise<{ model: string | null; blind: boolean }> {
-  const model = await channelTurnModel({
-    projectId: turn.projectId,
-    accountId: turn.accountId,
-    userId: turn.userId,
-    currentModel: turn.currentModel,
-    hasImage: true,
-    // A shared session counts no one's personal keys, as the gateway resolves it.
-    personalUserId: turn.visibility === 'private' ? turn.userId : null,
-    // ponytail: codex replacements fail closed. The agent-grant reader (model-access.ts
-    // `agentGrantEnvFor`) imports Slack code. Upgrade: move it into vision-model.ts.
-    agentGrantEnv: async () => [],
-    ...(turn.sessionId ? { sessionId: turn.sessionId } : {}),
-  });
-  return { model, blind: !model && !modelReadsImages(turn.projectId, turn.currentModel ?? platformDefaultModelId()) };
 }
 
 /** An existing session's image turn. Null: the session is gone (the delivery then answers `no-session`). */
