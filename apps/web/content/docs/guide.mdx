@@ -480,11 +480,12 @@ Open **Review** → **Needs you**, follow the approval link, or use the approval
 The page shows what the app will receive, with private values hidden.
 </Step>
 <Step title="Decide">
-Choose **Approve** or **Deny**, with an optional note to the agent. The agent then continues.
+Choose **Approve** or **Deny**, with an optional note to the agent. The agent then runs the action by sending it again within 15 minutes.
 </Step>
 </Steps>
 
 - An approval covers one exact action. A changed detail needs a new approval.
+- An approval runs the action only when the agent sends it again within 15 minutes. A script that calls connectors must send the same call again after approval.
 - A held action expires when nobody decides within 24 hours, unless your project sets another time.
 - A project manager, or the person who started the session, decides.
 - There is no "approve everything for this session". An action that must run unattended needs an **Allow** rule.
