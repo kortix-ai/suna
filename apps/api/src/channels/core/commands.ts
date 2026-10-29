@@ -11,6 +11,8 @@
  * The adapter parses the command, runs its sender gate, and renders the reply:
  * the core checks no person. A choice is stored per chat (`ctx.settings`); a
  * follow-up carries the model through the port's `turnModel` (conversation.ts).
+ * A reply's buttons carry `kc:` tokens (command-press.ts); a press runs its
+ * command as typed, in the pressed message's chat (`runCommandPress`).
  */
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
@@ -20,13 +22,13 @@ import { abortRuntimeTurn, readRunningTurn, turnPromptSource } from '../../proje
 import { agentGrantEnvFor, applyChannelSessionKeys, checkChannelModel, listChannelModels } from '../model-access';
 import { chatAgents } from '../scoped-agents';
 import { CHANNEL_COMMANDS, type ChannelCommandName, type ParsedCommand } from './command-list';
-import { type CommandPress, choiceRef } from './command-press';
+import { type CommandPress, choiceRef, parsePressData } from './command-press';
 import { type ChannelTarget, forgetChatThread } from './conversation';
 import { describeSession, projectWebUrl, sessionWebUrl } from './display';
 import { chatSelection, chatSessionStart, chatTurnModel, sharedChatScope, statusModel } from './model-choice';
 import { type QuestionPort, clearQuestionButtons } from './questions';
 import { type SettingsChannel, ensureChatBinding, setChannelAgent, setChannelModel } from './settings';
-import { type ChatThreadSession, findChatThreadSession, threadCreateHeld } from './threads';
+import { type ChatThreadSession, claimThreadCreate, findChatThreadSession, releaseThreadCreate, threadCreateHeld } from './threads';
 
 /** A button under a reply. */
 export interface CommandAction {
@@ -58,9 +60,17 @@ export type CommandReply = (
 const PAGE_SIZE = 8;
 /** A button names a page in two digits (command-press.ts): a longer list is reachable by its typed command only. */
 const MAX_PAGES = 100;
+/** A used menu outlives a double tap, the job's retries and a failed edit; after this, a surviving button runs again. */
+const PRESS_CLAIM_TTL_MS = 24 * 60 * 60_000;
+export const OUT_OF_DATE = 'This menu is out of date. Send the command again for a new one.';
 
-/** The platform's renderer for one inbound event: renders and sends one reply. Logs send errors; never throws. */
+/**
+ * Draws one reply: a new message for a typed command, the pressed message in place for a press.
+ * Logs its errors; never throws.
+ */
 export type CommandRender = (reply: CommandReply) => Promise<void>;
+/** Settles a press (Telegram: answerCallbackQuery). `text`: a short notice only the presser sees. Never throws. */
+export type PressSettle = (text?: string) => Promise<void>;
 
 /** One admitted command. The adapter already ran its sender gate: the core checks no person. */
 export interface CommandContext {
@@ -96,6 +106,65 @@ export async function runChannelCommand(ctx: CommandContext, command: ParsedComm
   }
   if (ctx.droppedFile) reply = { ...reply, note: `Your ${ctx.droppedFile} was not sent to the agent. Send it again without the command.` };
   await render(reply);
+}
+
+/**
+ * A press on a command button, from a sender the adapter admitted, on the message `ctx.target.messageId`.
+ * Runs the command the token names in `ctx.target`'s conversation with the typed command's checks,
+ * settles the press, then draws the reply over the pressed message. A terminal press (a pick, Stop,
+ * New conversation) runs once per message. A token that no longer holds settles with OUT_OF_DATE and
+ * changes nothing. Catches every error: a job retry would act twice.
+ */
+export async function runCommandPress(ctx: CommandContext, data: string, render: CommandRender, settle: PressSettle): Promise<void> {
+  const press = parsePressData(data);
+  if (!press) return settle(OUT_OF_DATE);
+  const { platform, projectId, workspaceId, threadId, messageId } = ctx.target;
+  const key = `${platform}:command-press:${projectId}:${workspaceId}:${threadId}|${messageId}`;
+  let claim: Date | null = null;
+  try {
+    if (press.pick !== undefined || press.name === 'new' || press.name === 'stop') {
+      claim = await claimThreadCreate(key, PRESS_CLAIM_TTL_MS);
+      if (!claim) return await settle(OUT_OF_DATE);
+    }
+    const reply = await pressReply(ctx, press);
+    if (reply === 'stale') {
+      if (claim) await releaseThreadCreate(key, claim);
+      return await settle(OUT_OF_DATE);
+    }
+    await settle();
+    await render(reply);
+  } catch (error) {
+    logger.warn('[channel] command press failed', {
+      platform,
+      projectId,
+      command: press.name,
+      error: error instanceof Error ? error.name : 'unknown',
+    });
+    if (claim) await releaseThreadCreate(key, claim).catch(() => undefined);
+    await settle('Kortix could not do that just now. Try again in a minute.');
+  }
+}
+
+/** The reply a press draws, or 'stale' when its option or session no longer holds. */
+async function pressReply(ctx: CommandContext, press: CommandPress): Promise<CommandReply | 'stale'> {
+  if (press.name === 'model' || press.name === 'agent') {
+    if (press.pick === undefined) return PICKERS[press.name](ctx, press.page ?? 0);
+    const value = await pickedValue(ctx, press.name, press.pick);
+    return value === null ? 'stale' : RUN[press.name](ctx, value);
+  }
+  // A Stop bound to a session: after /new, it stops nothing.
+  if (press.name === 'stop' && press.pick !== undefined && (await chatSession(ctx))?.sessionId !== press.pick) return 'stale';
+  return RUN[press.name](ctx, '');
+}
+
+/** The model or agent a ref names in today's list; 'default' for 'd'; null: none (stale). */
+async function pickedValue(ctx: CommandContext, name: 'model' | 'agent', ref: string): Promise<string | null> {
+  if (ref === choiceRef('default')) return 'default';
+  const values =
+    name === 'model'
+      ? (await listChannelModels(await sharedChatScope(ctx.project))).models.map((m) => m.id)
+      : (await chatAgents(ctx.project.projectId)).map((a) => a.name);
+  return values.find((v) => choiceRef(v) === ref) ?? null;
 }
 
 const notice = (text: string, url?: string): CommandReply => ({ kind: 'notice', text, ...(url ? { url } : {}) });

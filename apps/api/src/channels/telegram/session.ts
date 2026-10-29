@@ -29,8 +29,8 @@ import { db } from '../../shared/db';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { gateSender, refusedPressText } from '../core/channel-access';
 import { CHANNEL_COMMANDS, parseChannelCommand } from '../core/command-list';
-import { type CommandPress, pressData } from '../core/command-press';
-import { type CommandReply, runChannelCommand } from '../core/commands';
+import { type CommandPress, isCommandPressData, pressData } from '../core/command-press';
+import { type CommandReply, runChannelCommand, runCommandPress } from '../core/commands';
 import { type ChannelNotice, type ChannelPort, type ChannelTarget, routeChannelMessage } from '../core/conversation';
 import { chatSessionStart, chatTurnModel } from '../core/model-choice';
 import { connectorReply } from '../core/prompt';
@@ -524,9 +524,10 @@ export async function handleTelegramEvent(
 }
 
 /**
- * A tap on a question button. From an allowed user, the core answers the
- * question with it (core/questions.ts `handleQuestionTap`). A tap from anyone
- * else answers nothing.
+ * A tap on an inline button. From an allowed user, a command button (`kc:`)
+ * runs its command over the pressed message (`handleTelegramCommandPress`), and
+ * a question button answers the question (core/questions.ts `handleQuestionTap`).
+ * A tap from anyone else answers nothing.
  */
 export async function handleTelegramPress(
   event: IntegrationEvent,
@@ -545,6 +546,7 @@ export async function handleTelegramPress(
   const message = press.message;
   // No message to answer in (an inline-mode press, which Kortix never asks for).
   if (!message) return void (await answerPress(token, press.id));
+  if (isCommandPressData(press.data ?? '')) return handleTelegramCommandPress(event, install.botId, token, press, message);
   const ref = String(message.message_id);
   await handleQuestionTap(
     telegramPort,
@@ -574,6 +576,54 @@ export async function handleTelegramPress(
     },
     run,
   );
+}
+
+/** A tap on a command button: the core runs it in the pressed message's chat and topic (core/commands.ts `runCommandPress`). */
+async function handleTelegramCommandPress(
+  event: IntegrationEvent,
+  botId: string,
+  token: string,
+  press: TelegramCallbackQuery,
+  message: NonNullable<TelegramCallbackQuery['message']>,
+): Promise<void> {
+  const [project] = await db.select().from(projects).where(eq(projects.projectId, event.projectId)).limit(1);
+  if (!project) return void (await answerPress(token, press.id));
+  const target: ChannelTarget = {
+    platform: 'telegram',
+    workspaceId: botId,
+    threadId: telegramThreadId(message),
+    projectId: event.projectId,
+    messageId: String(message.message_id),
+  };
+  await runCommandPress(
+    {
+      target,
+      project,
+      settings: telegramSettings(target),
+      // The stored press keeps no chat names (telegramPressEvent): a row this press creates has none.
+      label: { name: null, type: message.chat.type },
+      createClaim: `telegram:threadcreate:${event.projectId}:${botId}:${target.threadId}`,
+      questions: telegramQuestions,
+    },
+    press.data!,
+    (reply) => editTelegramCommand(token, message, reply),
+    async (text) => void (await answerPress(token, press.id, text)),
+  );
+}
+
+/** Draw a command reply over the pressed message. An unchanged page ("message is not modified") is not logged. */
+async function editTelegramCommand(token: string, message: { message_id: number; chat: { id: number } }, reply: CommandReply): Promise<void> {
+  const m = telegramCommandMessage(reply);
+  await telegramCall(token, 'editMessageText', {
+    chat_id: message.chat.id,
+    message_id: message.message_id,
+    text: clip(m.text, CHANNELS.telegram.messageChars),
+    // Empty: the buttons go.
+    reply_markup: { inline_keyboard: m.keyboard },
+  }).catch((error) => {
+    // ponytail: a refused edit (message deleted or too old) leaves the menu; send the reply as a new message if that matters.
+    if (!String(error).includes('message is not modified')) logger.warn('[telegram] command reply not drawn', { error: String(error) });
+  });
 }
 
 /** The session's thread in this chat (the chat itself, or one of its forum topics), on this bot. */
