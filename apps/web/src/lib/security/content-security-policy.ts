@@ -4,7 +4,8 @@
  *
  * Two headers, on purpose:
  *
- * - `Content-Security-Policy` (enforced) holds `frame-ancestors 'self'`,
+ * - `Content-Security-Policy` (enforced) holds `frame-ancestors` (this origin
+ *   and the Kortix extension, whose side panel frames the app),
  *   `object-src 'none'`, `base-uri 'self'` and the `script-src` allowlist.
  *
  * - `Content-Security-Policy-Report-Only` carries the same `script-src`
@@ -27,6 +28,8 @@
  * (`apps/web/Dockerfile` sets `NODE_ENV=production`), so the deployed header is
  * unchanged.
  */
+
+import { KORTIX_EXTENSION_ID } from '@kortix/ui/internal/chrome/extension';
 
 export const CSP_REPORT_PATH = '/api/csp-report';
 
@@ -51,6 +54,11 @@ export const SCRIPT_SRC_HOSTS = [
   'https://vercel.live',
 ] as const;
 
+/** This origin and the Kortix extension's side panel, shared by both headers. */
+function frameAncestorsDirective(): string {
+  return `frame-ancestors 'self' chrome-extension://${KORTIX_EXTENSION_ID}`;
+}
+
 /** The complete `script-src` value, shared by the enforced and report-only headers. */
 function scriptSourceDirective(): string {
   const scriptSrc = [
@@ -69,10 +77,12 @@ function scriptSourceDirective(): string {
 }
 
 export function enforcedContentSecurityPolicy(): string {
+  // The Kortix Chrome extension frames the app in its side panel. X-Frame-Options
+  // cannot allowlist an origin, so the app sends no XFO and this directive is the only gate.
   return (
     [
       scriptSourceDirective(),
-      "frame-ancestors 'self'",
+      frameAncestorsDirective(),
       "object-src 'none'",
       "base-uri 'self'",
       `report-uri ${CSP_REPORT_PATH}`,
@@ -95,7 +105,7 @@ export function reportOnlyContentSecurityPolicy(): string {
   return (
     [
       scriptSourceDirective(),
-      "frame-ancestors 'self'",
+      frameAncestorsDirective(),
       "object-src 'none'",
       "base-uri 'self'",
       `report-uri ${CSP_REPORT_PATH}`,

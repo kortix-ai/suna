@@ -62,6 +62,7 @@ const COMMANDS = {
   env: ['Pull secret names into a `.env` file, or push a `.env` file as secrets.', '[Security](/docs/guide#security)'],
   channels: ['Slack and Microsoft Teams connections, and the agent each channel runs.', '[Channels](/docs/guide#channels)'],
   sandboxes: ['Sandbox templates, their builds and their health.', '[Computers](/docs/guide#computers)'],
+  chrome: ['Attach your connected Chrome to the session, and release it. The browser then answers on port 9333 for any DevTools Protocol client.', '[Kortix in Chrome](/docs/connect/chrome)'],
   apps: ['Deploy and manage Apps: sites and servers with stable Kortix URLs.', '[Apps reference](/docs/developers#apps-reference)'],
   marketplace: ['Search, show, install and uninstall marketplace skills.', '[Skills](/docs/guide#skills)'],
   files: ['Read the committed repository: files, history, branches, commits, diffs and a zip download.', '[Git](/docs/developers#git)'],
