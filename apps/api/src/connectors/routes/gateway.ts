@@ -9,10 +9,10 @@ import { auth, errors, json } from '../../openapi';
 import { canonicalConnectorAlias } from '../../projects/lib/session-connector-bindings';
 import { ATTACHMENT_REF_KEY } from '../attachment-inline';
 import { MAX_CONNECTOR_ATTACHMENT_BYTES, type StageConnectorAttachmentInput } from '../attachments';
-import { agentPolicySet } from '../../iam/agent-scope';
 import { handleCall } from '../gateway';
 import {
   type ConnectorDenialReason,
+  callPolicySetOf,
   connectorDenialBody,
   principalMayUseConnector,
 } from '../principal-access';
@@ -704,17 +704,3 @@ export function registerGatewayCallRoutes(app: OpenAPIHono, deps: ConnectorRoute
   );
 }
 
-/**
- * The policy set the caller's agent grant assigns on this connector. The grant
- * is the reconciled session grant on the principal (session token, or a user
- * token with a session header), so a subagent child session that shares the
- * root session's token runs under the ROOT agent's set. A caller without a
- * grant (PAT, dashboard, trigger poll) gets the base rules. The request body
- * never selects a set.
- */
-function callPolicySetOf(p: ConnectorPrincipal, connectorSlug: string) {
-  const grant = p.agentGrant ?? null;
-  const name = agentPolicySet(grant, canonicalConnectorAlias(connectorSlug));
-  if (name === null || !grant) return null;
-  return { name, agent: grant.agent, manifestCommit: grant.manifestCommit ?? null };
-}
