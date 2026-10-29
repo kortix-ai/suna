@@ -273,7 +273,8 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
       );
     }
     if (!(await ensureChatBinding(ctx.settings, projectId, ctx.label))) return notice(NOT_CONNECTED);
-    await setChannelModel(ctx.settings, verdict.model);
+    // No row to write: a disconnect dropped it after the check.
+    if (!(await setChannelModel(ctx.settings, verdict.model))) return notice(NOT_CONNECTED);
     if (session) await applyChannelSessionKeys({ sessionId: session.sessionId, keys: verdict.keys, replace: true });
     // A count, never the key names: in a group every member reads the reply.
     const keys = !verdict.keys

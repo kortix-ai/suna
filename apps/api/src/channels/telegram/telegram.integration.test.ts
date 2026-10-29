@@ -68,6 +68,8 @@ import * as servableCatalog from '../../llm-gateway/models/servable-catalog';
 import * as iam from '../../iam';
 import * as threads from '../core/threads';
 import * as selection from '../slack/selection';
+import * as chatSettings from '../core/settings';
+import * as modelAccess from '../model-access';
 import { projectWebUrl } from '../core/display';
 import { commandMenu } from '../core/command-list';
 import { mergeTelegramMenu, telegramMenuClaim } from './menu';
@@ -2172,6 +2174,30 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       );
       expect(await settingsRow('7049')).toMatchObject({ agentName: 'reviewer', model: null });
     } finally {
+      restore(spies);
+    }
+  });
+
+  test('/model <id> whose row is gone before the write (a disconnect) says the bot is not connected and points no session at keys', async () => {
+    const sessionId = await chatSession(7051, 'running');
+    const ensure = chatSettings.ensureChatBinding;
+    const spies: Array<{ mockRestore(): void }> = [
+      spyOn(defaultModel, 'isModelServableForAccount').mockResolvedValue(true),
+      spyOn(chatSettings, 'ensureChatBinding').mockImplementation(async (...args: Parameters<typeof ensure>) => {
+        const ok = await ensure(...args);
+        // A disconnect lands between the check and the write: deleteTelegramInstall drops the chat rows.
+        await db.delete(chatChannelBindings).where(and(eq(chatChannelBindings.platform, 'telegram'), eq(chatChannelBindings.channelId, '7051')));
+        return ok;
+      }),
+    ];
+    const keys = spyOn(modelAccess, 'applyChannelSessionKeys');
+    try {
+      await handleTelegramEvent(update('/model cmd-gone-row', ALLOWED, 7051));
+      expect(replies().at(-1)).toBe('This bot is no longer connected to this Kortix project.');
+      expect(keys.mock.calls.filter(([input]) => input.sessionId === sessionId)).toEqual([]);
+      expect(await settingsRow('7051')).toBeUndefined();
+    } finally {
+      keys.mockRestore();
       restore(spies);
     }
   });
