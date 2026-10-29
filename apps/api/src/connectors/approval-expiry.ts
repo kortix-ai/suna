@@ -14,6 +14,11 @@ const MIN_TTL_SECONDS = 5 * 60;
 const MAX_TTL_SECONDS = 30 * 24 * 60 * 60;
 const UNIT_SECONDS = { m: 60, h: 3_600, d: 86_400 } as const;
 
+/** How long an approve lets the identical call run once, counted from the decision. */
+export const APPROVAL_RERUN_WINDOW_MS = 15 * 60 * 1000;
+
+export const APPROVAL_RERUN_RULE = `Approval alone does not run the call: after approval, repeat this exact call (same arguments and account) within ${APPROVAL_RERUN_WINDOW_MS / 60_000} minutes, and it runs once.`;
+
 /**
  * `approvals.ttl` from kortix.yaml: an integer and a unit in {m,h,d} (`30m`,
  * `4h`, `7d`), clamped to [5m, 30d]. Absent → null (the 24 h default). Any
