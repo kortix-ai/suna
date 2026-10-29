@@ -1690,9 +1690,13 @@ jobs:
           # KORTIX_PUBLIC_VERSION is the server-only alias that public-env-server
           # exposes as VERSION. Vercel rejects NEXT_PUBLIC_* Production variables
           # because its CLI treats them as secrets by default.
-          npx --yes vercel@latest deploy --prod --yes --token="$VERCEL_TOKEN" \
+          # --archive=tgz: Vercel refuses a deploy of more than 15,000 files, and
+          # the tree passed that at v0.14.9 (15,077 files). The commit goes in
+          # explicitly because an archive deploy does not promise git metadata.
+          npx --yes vercel@latest deploy --prod --yes --archive=tgz --token="$VERCEL_TOKEN" \
             --env "KORTIX_PUBLIC_VERSION=${{ needs.version.outputs.version }}" \
-            --build-env "NEXT_PUBLIC_KORTIX_VERSION=${{ needs.version.outputs.version }}"
+            --build-env "NEXT_PUBLIC_KORTIX_VERSION=${{ needs.version.outputs.version }}" \
+            --build-env "NEXT_PUBLIC_KORTIX_COMMIT=${{ github.sha }}"
 
   frontend-note:
     name: Prod frontend paths active
