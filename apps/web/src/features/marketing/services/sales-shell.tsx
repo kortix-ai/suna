@@ -17,7 +17,7 @@ const BAR_LINK =
 
 /**
  * The standalone shell of the /services sales page: no site nav, no mega
- * menus. The logo, the AI OS | Services switcher, two anchors and the intro
+ * menus. The logo, the CompanyOS | Services switcher, two anchors and the intro
  * call on top; a one-line footer at the bottom.
  */
 export function SalesShell({ children }: { children: ReactNode }) {

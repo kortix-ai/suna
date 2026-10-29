@@ -1,6 +1,6 @@
 ---
 title: "Claude Tag adds a teammate. Open source adds a paper trail."
-description: "Claude Tag gives Slack a capable teammate, while Kortix, the open-source AI Operating System, keeps agent grants in a git file a colleague can review."
+description: "Claude Tag gives Slack a capable teammate, while Kortix CompanyOS keeps agent grants in a git file a colleague can review."
 date: "2026-10-23"
 canonical: "https://kortix.com/blog/claude-tag-open-source-paper-trail"
 author: "team"
@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-25"
 slug: "/claude-tag-open-source-paper-trail"
 ---
-Claude Tag puts a capable teammate inside Slack, and Kortix is the open-source AI Operating System: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. A pilot can still end with a busy Slack channel and nothing a second person can approve before the next run. Putting a capable agent in a channel is now the cheap part of the purchase, whoever sells it. The expensive part is the record of what that agent was allowed to do, and that is the part worth choosing on.
+Claude Tag puts a capable teammate inside Slack, and Kortix is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. A pilot can still end with a busy Slack channel and nothing a second person can approve before the next run. Putting a capable agent in a channel is now the cheap part of the purchase, whoever sells it. The expensive part is the record of what that agent was allowed to do, and that is the part worth choosing on.
 
 ## A capable teammate, one console away
 

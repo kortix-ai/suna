@@ -75,7 +75,7 @@ export function PillarsBand() {
     <section id="pillars" className="scroll-mt-16 py-14 lg:py-20">
       <Heading
         title={tMarketing('textbf8abe5b1667')}
-        titleMuted="The AI OS your whole company owns."
+        titleMuted="The CompanyOS you own."
       />
       <Band className="mt-12">
         <ul className="bg-border grid grid-cols-1 gap-px lg:grid-cols-3">

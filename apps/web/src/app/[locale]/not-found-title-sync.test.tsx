@@ -85,7 +85,7 @@ describe('NotFoundTitleSync', () => {
       expect(document.title).toBe('404 Page not found | Kortix');
       // The tree's own metadata commit re-asserts the previous page's title
       // after client effects run (session-tab-title-sync measured the race).
-      document.title = 'Kortix – The open-source AI Operating System';
+      document.title = 'Kortix CompanyOS – the open-source operating system for your company';
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(document.title).toBe('404 Page not found | Kortix');
     } finally {

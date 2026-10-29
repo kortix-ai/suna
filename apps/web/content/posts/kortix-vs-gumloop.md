@@ -1,6 +1,6 @@
 ---
 title: "Kortix vs Gumloop: a read-only export or an open-source repo you can run"
-description: "Gumloop offers a read-only export of an agent, while Kortix, the open-source AI Operating System, keeps that definition in a repo you can run."
+description: "Gumloop offers a read-only export of an agent, while Kortix CompanyOS keeps that definition in a repo you can run."
 date: "2026-10-05"
 canonical: "https://kortix.com/blog/kortix-vs-gumloop"
 author: "team"
@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/kortix-vs-gumloop"
 ---
-Gumloop is a strong no-code builder for a team that needs an agent this week, and Kortix is the open-source AI Operating System: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. The choice comes down to where the workflow definition lives, and whether you can run it somewhere the vendor does not control.
+Gumloop is a strong no-code builder for a team that needs an agent this week, and Kortix is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. The choice comes down to where the workflow definition lives, and whether you can run it somewhere the vendor does not control.
 
 ```logos
 label: 'Compared here:'

@@ -7,7 +7,7 @@
 
 # Kortix
 
-**The sovereign AI Operating System.**
+**The sovereign CompanyOS.**
 
 Multiplayer AI for your whole team. Your company as code. Sovereign and open source.<br />
 Hand it an outcome and agents run it 24/7.
@@ -21,13 +21,13 @@ Hand it an outcome and agents run it 24/7.
 
 <br />
 
-<img src="apps/web/public/media/showcase/kortix-readme.gif" alt="The Kortix home page: the sovereign AI Operating System, and an agent building a revenue dashboard for a sample company in its own session" width="880" />
+<img src="apps/web/public/media/showcase/kortix-readme.gif" alt="The Kortix home page: the sovereign CompanyOS, and an agent building a revenue dashboard for a sample company in its own session" width="880" />
 
 </div>
 
 ---
 
-Kortix is the open-source AI Operating System. Your agents, the skills they share, your company
+Kortix is the open-source CompanyOS. Your agents, the skills they share, your company
 memory and every connector live in **one git repo you own**. Every session runs on **its own cloud
 computer**, and work lands through a **change request a person approves**.
 

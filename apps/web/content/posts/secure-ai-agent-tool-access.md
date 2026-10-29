@@ -9,7 +9,7 @@ updated: "2026-10-21"
 slug: "/secure-ai-agent-tool-access"
 cover: "/banner.png"
 ---
-Handing an agent a Stripe key is a decision about where that key lives. The model's instructions are the least reliable part of the arrangement, since everything in a context window competes with them. Kortix is the open-source AI Operating System. Its position is simple: connector credentials stay outside the sandbox, and the rules that govern each call sit in the project repository, where a reviewer can read them.
+Handing an agent a Stripe key is a decision about where that key lives. The model's instructions are the least reliable part of the arrangement, since everything in a context window competes with them. Kortix is the open-source CompanyOS. Its position is simple: connector credentials stay outside the sandbox, and the rules that govern each call sit in the project repository, where a reviewer can read them.
 
 ## The blast radius belongs to the tools
 

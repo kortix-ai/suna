@@ -5,7 +5,7 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  * flat monthly membership. The idea: we map
  * your company (what people do, how they work), unify your data, automate the
  * work and build your custom apps. A standalone page with its own shell;
- * the AI OS site and this page link through `SiteSwitcher`.
+ * the CompanyOS site and this page link through `SiteSwitcher`.
  *
  * COMMERCIAL TERMS (founder, 2026-10-27, kortix-brand decisions.md D15):
  *  - The team is "we" / "our team". The roles (Deployment Strategists,
@@ -59,9 +59,9 @@ export const hero = {
 /** We build on our own product. Claims: claims.md rows Source, Connectors, Hosting. */
 export const platform = {
   title: 'Built on Kortix.',
-  titleMuted: 'The open-source AI Operating System we make.',
+  titleMuted: 'The open-source CompanyOS we make.',
   body: [
-    'Everything we build runs on **Kortix, our own AI Operating System**. Your agents, skills, company memory, connectors and apps live in **one git repo you own**.',
+    'Everything we build runs on **Kortix CompanyOS, our own operating system**. Your agents, skills, company memory, connectors and apps live in **one git repo you own**.',
     'When we step back, nothing leaves with us: **your team keeps running it on Kortix**, in our cloud, your VPC or your own on-prem network.',
   ],
   cells: [
@@ -70,7 +70,7 @@ export const platform = {
     { k: 'Connectors', v: '3,000+ apps, plus MCP, OpenAPI and raw HTTP.' },
     { k: 'Open source', v: 'Read it, fork it, audit it. No black box.' },
   ],
-  link: 'See the AI OS',
+  link: 'See the CompanyOS',
 } as const;
 
 export const caseCta = 'See what we would build for your company.';
@@ -147,7 +147,7 @@ export const stages = {
       id: 'build',
       n: '04',
       k: 'Build custom apps',
-      v: 'We build the internal apps, dashboards and tools your teams need on top of the unified data, on the Kortix AI Operating System.',
+      v: 'We build the internal apps, dashboards and tools your teams need on top of the unified data, on Kortix CompanyOS.',
       get: [
         'Internal apps your teams use every day',
         'Dashboards on live company data',
@@ -349,12 +349,12 @@ export const faq = {
     {
       id: 'platform',
       q: 'What do you build it on?',
-      a: 'On Kortix, the open-source AI Operating System we make. Every agent, skill, connector and app lives in a git repo you own, so your team can run and extend it without us.',
+      a: 'On Kortix CompanyOS the open-source operating system we make. Every agent, skill, connector and app lives in a git repo you own, so your team can run and extend it without us.',
     },
     {
       id: 'own',
       q: 'Who owns what you build?',
-      a: 'You do. Every agent, skill, connector and app lives in a git repo you own, on the open-source Kortix AI Operating System. Every session and file of context stays yours.',
+      a: 'You do. Every agent, skill, connector and app lives in a git repo you own, on the open-source Kortix CompanyOS. Every session and file of context stays yours.',
     },
     {
       id: 'host',

@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/open-source-manus-alternatives"
 ---
-The open-source alternatives to Manus are six products that do different jobs. What separates them shows up late, in what your team still holds once the trial is over. Manus is a capable hosted agent that runs a task in its own cloud and returns a finished file. The agents themselves, the memory they collect and the rules about which systems they may touch are what a company keeps or loses. Kortix, the open-source AI Operating System, keeps all three in a repository you control.
+The open-source alternatives to Manus are six products that do different jobs. What separates them shows up late, in what your team still holds once the trial is over. Manus is a capable hosted agent that runs a task in its own cloud and returns a finished file. The agents themselves, the memory they collect and the rules about which systems they may touch are what a company keeps or loses. Kortix CompanyOS keeps all three in a repository you control.
 
 ```logos
 label: 'Compared here:'

@@ -9,7 +9,7 @@ updated: "2026-10-24"
 slug: "/nvidia-nemoclaw-open-source-ai-agent-platform"
 coverLogos: [{"domain": "nvidia.com", "name": "NVIDIA"}]
 ---
-NVIDIA NemoClaw is the open-source reference stack NVIDIA ships for running supported agents safely on its own hardware. Kortix is the open-source AI Operating System for a whole agent workforce, on any infrastructure, with your keys. NemoClaw governs how an agent executes; Kortix governs how finished work lands. The choice turns on which layer your team actually needs.
+NVIDIA NemoClaw is the open-source reference stack NVIDIA ships for running supported agents safely on its own hardware. Kortix is the open-source CompanyOS for a whole agent workforce, on any infrastructure, with your keys. NemoClaw governs how an agent executes; Kortix governs how finished work lands. The choice turns on which layer your team actually needs.
 
 ## What NemoClaw is
 

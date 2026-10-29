@@ -7,7 +7,7 @@ canonical: "https://kortix.com/blog/agents-in-slack-grant-nobody-wrote-down"
 author: "team"
 tags: ["Field notes"]
 ---
-You can have an agent answering in a Slack thread by the end of the afternoon: connect the workspace, invite the bot, link an account, mention it with a task. Then a colleague asks what else it can reach while nobody is watching, and nobody wrote that down. Kortix is the open-source AI Operating System: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers.
+You can have an agent answering in a Slack thread by the end of the afternoon: connect the workspace, invite the bot, link an account, mention it with a task. Then a colleague asks what else it can reach while nobody is watching, and nobody wrote that down. Kortix is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers.
 
 The install settles which messages reach the agent. A second file settles what the agent may do once one arrives.
 

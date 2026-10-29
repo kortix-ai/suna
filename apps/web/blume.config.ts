@@ -9,7 +9,7 @@ const sidebar = OUTLINE;
 // content/docs may import an app component. Blume built-ins only.
 export default defineConfig({
   title: 'Kortix',
-  description: 'Open-source AI Operating System: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.',
+  description: 'Open-source CompanyOS: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.',
 
   // Content stays where it has always been. src/lib/seo/public-content.ts
   // reads these same files off disk for /llms.txt, /markdown/docs/*.md and

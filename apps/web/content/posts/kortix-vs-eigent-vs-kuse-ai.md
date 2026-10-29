@@ -9,7 +9,7 @@ updated: "2026-10-21"
 slug: "/kortix-vs-eigent-vs-kuse-ai"
 coverLogos: [{"domain": "eigent.ai", "name": "Eigent"}, {"domain": "kuse.ai", "name": "Kuse"}]
 ---
-Eigent is a strong local-first desktop cowork product and Kuse is a purpose-built workspace for workflow and document automation; Kortix is the open-source AI Operating System for teams that need to own the control plane. For those teams it is the pick: your agents and their skills, your company memory and every connector sit as files in one git repository you control, and agent work reaches main through a change request a person reviews, with merge default-deny for agents unless an admin grants the merge capability. Here is how the three compare on self-hosting, model choice, shared context, human review and price.
+Eigent is a strong local-first desktop cowork product and Kuse is a purpose-built workspace for workflow and document automation; Kortix is the open-source CompanyOS for teams that need to own the control plane. For those teams it is the pick: your agents and their skills, your company memory and every connector sit as files in one git repository you control, and agent work reaches main through a change request a person reviews, with merge default-deny for agents unless an admin grants the merge capability. Here is how the three compare on self-hosting, model choice, shared context, human review and price.
 
 ## Kortix keeps the setup as files you control
 
