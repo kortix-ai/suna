@@ -8804,3 +8804,46 @@ export const artifactCommentWriteLimits = kortixSchema.table('artifact_comment_w
   primaryKey({ columns: [table.artifactId, table.actorKey] }),
   check('artifact_comment_write_limits_writes_check', sql`${table.writes} >= 0`),
 ]);
+
+export const artifactEvents = kortixSchema.table('artifact_events', {
+  eventId: uuid('event_id').defaultRandom().primaryKey(),
+  artifactId: uuid('artifact_id').notNull(),
+  projectId: uuid('project_id').notNull(),
+  type: text('type').notNull(),
+  actorUserId: uuid('actor_user_id'),
+  actorSessionId: text('actor_session_id'),
+  data: jsonb('data').default({}).notNull().$type<Record<string, unknown>>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'artifact_events_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
+  foreignKey({ name: 'artifact_events_project_fk', columns: [table.projectId], foreignColumns: [projects.projectId] }).onDelete('cascade'),
+  index('idx_artifact_events_artifact_created').on(table.artifactId, table.createdAt.desc(), table.eventId.desc()),
+  index('idx_artifact_events_project').on(table.projectId),
+  check('artifact_events_actor_check', sql`${table.actorUserId} is null or ${table.actorSessionId} is null`),
+]);
+
+export const driveCommitAuthors = kortixSchema.table('drive_commit_authors', {
+  driveId: uuid('drive_id').notNull(),
+  commitId: text('commit_id').notNull(),
+  authorUserId: uuid('author_user_id'),
+  authorSessionId: text('author_session_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.driveId, table.commitId] }),
+  foreignKey({ name: 'drive_commit_authors_drive_fk', columns: [table.driveId], foreignColumns: [drives.driveId] }).onDelete('cascade'),
+  check('drive_commit_authors_author_check', sql`(${table.authorUserId} is not null) <> (${table.authorSessionId} is not null)`),
+]);
+
+export const sessionSandboxIdentities = kortixSchema.table('session_sandbox_identities', {
+  accountId: uuid('account_id').notNull(),
+  provider: text('provider').notNull(),
+  externalId: text('external_id').notNull(),
+  projectId: uuid('project_id').notNull(),
+  sessionId: text('session_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.accountId, table.provider, table.externalId] }),
+  foreignKey({ name: 'session_sandbox_identities_account_fk', columns: [table.accountId], foreignColumns: [accounts.accountId] }).onDelete('cascade'),
+  foreignKey({ name: 'session_sandbox_identities_project_fk', columns: [table.projectId], foreignColumns: [projects.projectId] }).onDelete('cascade'),
+  index('idx_session_sandbox_identities_project').on(table.projectId),
+]);

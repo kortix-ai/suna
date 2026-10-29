@@ -171,6 +171,9 @@ export {
   artifactCommentThreads,
   artifactComments,
   artifactCommentWriteLimits,
+  artifactEvents,
+  driveCommitAuthors,
+  sessionSandboxIdentities,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Kortix in Chrome (apps/api/src/chrome)
