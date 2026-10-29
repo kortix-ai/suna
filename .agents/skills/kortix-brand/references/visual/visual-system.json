@@ -380,17 +380,45 @@
     }
   },
   "email": {
-    "note": "Whole pixels, because mail clients cannot read CSS variables and round fractional pixels. Copies the shipped shell (apps/api/src/lib/email/template.ts, which consumes the generated EMAIL_LAYOUT). Ships light only: see decisions Q34. Colors come from color.semantic (EMAIL_COLORS, tokens.css hex).",
-    "container_width_px": 520,
-    "side_padding_px": 32,
-    "card_radius": "xl",
+    "note": "Whole pixels, because mail clients cannot read CSS variables and round fractional pixels. The frame copies the React Email demo template 01-Barebone: a grey page, a white frame with a header row (symbol left, label right), one grey card, and a white footer. Inside the card every block sits on one left edge (D26). The shell (apps/api/src/lib/email/template.tsx) consumes the generated EMAIL_LAYOUT. Ships light only: see decisions Q34. Colors come from color.semantic (EMAIL_COLORS, tokens.css hex).",
+    "container_width_px": 640,
+    "frame_padding": "16px 24px",
+    "card_padding": "40px",
+    "mobile_frame_padding": "16px 8px",
+    "mobile_card_padding": "32px 24px",
+    "card_radius": "md",
     "button_radius": "md",
-    "button_padding": "12px 28px",
-    "logo_height_px": 22,
-    "logo_url": "https://kortix.com/brandkit/Logo/Logomark/PNG/Logomark%20Black.png",
-    "font_size_px": { "title": 22, "body": 14, "kicker": 13, "small": 12 },
-    "line_height": { "title": 1.25, "body": 1.6 },
-    "gap_px": { "kicker_before": 24, "kicker_after": 8, "title_after": 12, "block_after": 24 }
+    "button_padding": "12px 20px",
+    "logo_url": "https://kortix.com/brandkit/Logo/Brandmark/PNG/Brandmark%20Black.png",
+    "logo_width_px": 20,
+    "font_size_px": {
+      "title": 24,
+      "body": 15,
+      "label": 13,
+      "small": 12
+    },
+    "font_weight": {
+      "title": 600,
+      "body": 400,
+      "strong": 500
+    },
+    "line_height": {
+      "title": 1.25,
+      "body": 1.6,
+      "label": 1.5
+    },
+    "letter_spacing_px": {
+      "title": -0.48,
+      "body": 0,
+      "label": 0,
+      "small": 0
+    },
+    "gap_px": {
+      "title_after": 12,
+      "block_after": 16,
+      "button_before": 8,
+      "note_before": 16
+    }
   },
   "mobile": {
     "spacing_base": "0.25rem",

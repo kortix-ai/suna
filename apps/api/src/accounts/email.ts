@@ -1,5 +1,5 @@
 // Account- and project-scoped invite / access-request email. Rendering uses the
-// shared Kortix email shell (lib/email/template.ts); delivery goes through the
+// shared Kortix email shell (lib/email/template.tsx); delivery goes through the
 // one platform transport (lib/email/transport.ts).
 import { config } from '../config';
 import { renderEmail, renderText, actionButton, S } from '../lib/email/template';
@@ -46,7 +46,7 @@ export function buildInviteUrl(inviteId: string): string {
 // share one transport + template; pass `projectName` to frame the copy around
 // a project instead of the whole account. Both create an `account_invitations`
 // row redeemed at the same /invites/:id link.
-export async function sendAccountInviteEmail(opts: {
+type InviteEmailInput = {
   email: string;
   accountName: string;
   inviterEmail: string | null;
@@ -57,7 +57,14 @@ export async function sendAccountInviteEmail(opts: {
   // When set, the invite is framed as joining this project rather than the
   // whole account/team (project-level /access/invite flow).
   projectName?: string | null;
-}): Promise<EmailDeliveryResult> {
+};
+
+export async function sendAccountInviteEmail(opts: InviteEmailInput): Promise<EmailDeliveryResult> {
+  return send({ to: opts.email, ...renderAccountInviteEmail(opts), category: 'account-invite' });
+}
+
+/** The invite email without sending it. */
+export function renderAccountInviteEmail(opts: InviteEmailInput): { subject: string; html: string; text: string } {
   const url = buildInviteUrl(opts.inviteId);
   // Brand voice 5.5: name the inviter. A request without a user email (a
   // service token) names the account that sent it instead.
@@ -95,7 +102,6 @@ export async function sendAccountInviteEmail(opts: {
     : `join "${opts.accountName}"`;
 
   const html = renderEmail({
-    kicker: "You're invited",
     title: opts.projectName
       ? `Join ${opts.projectName} on Kortix`
       : `Join ${opts.accountName} on Kortix`,
@@ -106,8 +112,7 @@ export async function sendAccountInviteEmail(opts: {
     ? `the ${opts.projectName} project`
     : `the ${opts.accountName} team`;
 
-  return send({
-    to: opts.email,
+  return {
     subject: `You're invited to ${subjectTarget} on Kortix`,
     html,
     text: renderText({
@@ -121,42 +126,50 @@ export async function sendAccountInviteEmail(opts: {
       cta: { url, label: 'Review invite' },
       note,
     }),
-    category: 'account-invite',
-  });
+  };
 }
 
-export async function sendProjectAddedEmail(opts: {
+type ProjectAddedEmailInput = {
   email: string;
   projectId: string;
   projectName: string;
   inviterEmail: string | null;
   role: string;
-}): Promise<EmailDeliveryResult> {
+};
+
+export async function sendProjectAddedEmail(opts: ProjectAddedEmailInput): Promise<EmailDeliveryResult> {
+  return send({ to: opts.email, ...renderProjectAddedEmail(opts), category: 'project-added' });
+}
+
+export function renderProjectAddedEmail(opts: ProjectAddedEmailInput): { subject: string; html: string; text: string } {
   const base = (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
   const url = `${base}/projects/${encodeURIComponent(opts.projectId)}`;
   const title = `Open ${opts.projectName} on Kortix`;
   const lead = `${opts.inviterEmail || 'A project manager'} added you to the ${opts.projectName} project as ${opts.role}.`;
   const note = `This access is for ${opts.email}. Sign in with that address to open the project. You already have access; no invitation acceptance is required. If you were not expecting this access, contact the project manager.`;
-  return send({
-    to: opts.email,
+  return {
     subject: `Open "${opts.projectName}" on Kortix`,
     html: renderEmail({
-      kicker: 'Project access',
       title,
       body: `<p style="${S.p}">${escapeHtml(lead)}</p>${actionButton(url, 'Open project')}<p style="${S.smallNote}">${escapeHtml(note)}</p>`,
     }),
     text: renderText({ title, paragraphs: [lead], cta: { url, label: 'Open project' }, note }),
-    category: 'project-added',
-  });
+  };
 }
 
-export async function sendProjectAccessRequestEmail(opts: {
+type AccessRequestEmailInput = {
   email: string;
   projectName: string | null;
   requesterEmail: string;
   reviewUrl: string;
   message?: string | null;
-}): Promise<EmailDeliveryResult> {
+};
+
+export async function sendProjectAccessRequestEmail(opts: AccessRequestEmailInput): Promise<EmailDeliveryResult> {
+  return send({ to: opts.email, ...renderProjectAccessRequestEmail(opts), category: 'project-access-request' });
+}
+
+export function renderProjectAccessRequestEmail(opts: AccessRequestEmailInput): { subject: string; html: string; text: string } {
   const projectName = opts.projectName?.trim() || 'a Kortix project';
   const message = opts.message?.trim();
   const messageBlock = message
@@ -176,13 +189,11 @@ export async function sendProjectAccessRequestEmail(opts: {
   `;
 
   const html = renderEmail({
-    kicker: 'Access request',
     title: 'Review project access',
     body,
   });
 
-  return send({
-    to: opts.email,
+  return {
     subject: `${opts.requesterEmail} requested access to ${projectName}`,
     html,
     text: renderText({
@@ -194,6 +205,5 @@ export async function sendProjectAccessRequestEmail(opts: {
       cta: { url: opts.reviewUrl, label: 'Review request' },
       note: 'Project managers can approve or decline this from Customize → Members.',
     }),
-    category: 'project-access-request',
-  });
+  };
 }

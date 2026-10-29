@@ -59,7 +59,6 @@ async function send(accountId: string, category: string, notice: (accountName: s
       subject: n.subject,
       category,
       html: renderEmail({
-        kicker: 'Billing',
         title: n.title,
         body: `${n.paragraphs.map((p) => `<p style="${S.p}">${escapeHtml(p)}</p>`).join('')}${actionButton(url, n.cta)}`,
       }),
@@ -75,7 +74,6 @@ async function send(accountId: string, category: string, notice: (accountName: s
       subject: `[Kortix billing] ${n.subject}`,
       category: `${category}-ops`,
       html: renderEmail({
-        kicker: 'Billing ops',
         title: n.title,
         body: `<p style="${S.p}">Account <span style="${S.strong}">${escapeHtml(accountLabel)}</span> (${escapeHtml(accountId)}).</p>${n.paragraphs.map((p) => `<p style="${S.p}">${escapeHtml(p)}</p>`).join('')}`,
       }),
