@@ -18,6 +18,7 @@ import { decideChatApproval } from '../core/approval-decision';
 import { chatUser } from '../core/identity';
 import { loadSlackTokenForProject } from '../install-store';
 import { openModal } from '../slack-api';
+import { HELD_RUN_CARD_TEXT, type HeldRunCardState } from '../core/held-run-card';
 import { spawnAgentTurn } from './dispatch';
 import { findSlackThread, inboundAllowsProject, inboundAllowsTeam, type SlackInbound } from './inbound';
 import type { SlackEnvelope, SlackEvent, SlackInteractionPayload } from './types';
@@ -206,12 +207,15 @@ export function buildApprovalOutcomeBlocks(outcome: {
   decidedBy: string;
   note: string;
   approvalContext: string | null;
+  /** An approved held call: where its run is. */
+  run?: HeldRunCardState;
 }): unknown[] {
   const action = `\`${escapeMrkdwn(outcome.actionPath)}\``;
+  const runText = outcome.decision === 'approve' && outcome.run ? `. ${HELD_RUN_CARD_TEXT[outcome.run]}` : '';
   const text =
     outcome.decision === 'expired'
       ? `:hourglass: *Expired* ${action} — This approval expired.`
-      : `${outcome.decision === 'approve' ? ':white_check_mark: *Approved*' : ':no_entry: *Denied*'} ${action} — by ${outcome.decidedBy}`;
+      : `${outcome.decision === 'approve' ? ':white_check_mark: *Approved*' : ':no_entry: *Denied*'} ${action} — by ${outcome.decidedBy}${runText}`;
   const blocks: unknown[] = [{ type: 'section', text: { type: 'mrkdwn', text } }];
   if (outcome.approvalContext) {
     blocks.push({
@@ -321,7 +325,10 @@ interface SlackDecisionInput {
 }
 
 /** Decide through the shared chat path, then resume the session as a Slack
- *  turn so the thread shows the agent picking it up. */
+ *  turn so the thread shows the agent picking it up. An approved held call
+ *  starts no turn here: the card shows "Running…", and the held-call worker
+ *  resumes the session once with the result (its answer reaches this thread
+ *  through `postAnswerWithoutTurnDetailed`, as a Kortix-side decision's does). */
 async function applySlackApprovalDecision(input: SlackDecisionInput): Promise<void> {
   const result = await decideChatApproval({
     user: chatUser('slack', input.teamId, input.slackUserId),
@@ -335,6 +342,7 @@ async function applySlackApprovalDecision(input: SlackDecisionInput): Promise<vo
     await input.respond(result.refusal);
     return;
   }
+  if (result.running) return;
   // Resume as an in-thread follow-up from the clicker (same path as a question
   // answer): spawnAgentTurn re-checks their access and streams the agent's
   // response into this thread.

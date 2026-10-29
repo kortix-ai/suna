@@ -12,7 +12,8 @@
  *   4. runs `handleCall` with `heldApproval`: policy is evaluated again, block
  *      wins, and the re-injected request must give the approved digest;
  *   5. settles the redacted outcome, wipes the input, and enqueues the
- *      `approval-run:<id>` resume in the same commit.
+ *      `approval-run:<id>` resume in the same commit; then updates the chat
+ *      card, if one was posted, with the run's status.
  *
  * A crash between 3 and 5 is the only `unknown` window. The held input never
  * leaves this module: only `output_preview` (≤ 4 KB, redacted) and error text
@@ -309,6 +310,11 @@ async function settle(
   }
   // Best-effort immediate delivery; the durable command above is the resume.
   if (row.sessionId) void drainSessionLifecycleQueue({ limit: 1, idempotencyKey }).catch(() => {});
+  // The chat card (Slack, Teams) shows how the run ended, status only. Lazy
+  // import: channels import connectors.
+  void import('../channels/approval-card-relay')
+    .then((relay) => relay.markApprovalCardRan(row.projectId, row.executionId))
+    .catch((error) => logger.warn('[approvals] held run card update failed', { error: String(error) }));
 }
 
 registerJobHandler(HELD_CALL_QUEUE, (job) => runHeldCall(job.jobKey), HELD_RUN_VISIBILITY_MS);

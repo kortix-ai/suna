@@ -10,8 +10,11 @@ import {
   chatThreads,
   chatUserIdentities,
   connectorCalls,
+  connectorHeldCalls,
+  jobQueue,
   projectMembers,
   projectSessions,
+  sessionLifecycleCommands,
 } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import * as realTeamsApi from '../channels/teams-api';
@@ -58,6 +61,8 @@ mock.module('../channels/teams/session', () => ({
 const { postApprovalCard, markApprovalCardDecided } = await import('../channels/approval-card-relay');
 const { handleAdaptiveCardAction } = await import('../channels/teams/interactivity');
 const { decideConnectorApproval, loadApprovalRow } = await import('../projects/lib/connector-approval-decision');
+const { runHeldCall } = await import('../connectors/held-call-run');
+const { HELD_CALL_QUEUE } = await import('../connectors/held-call-store');
 
 const MANAGER = crypto.randomUUID();
 const BYSTANDER = crypto.randomUUID();
@@ -86,7 +91,7 @@ const press = (executionId: string, decision: 'approve' | 'deny', aad: string, n
     name: 'adaptiveCard/action',
     id: 'act-1',
     serviceUrl: 'https://smba.example.test/teams/',
-    from: { id: `29:${aad}`, aadObjectId: aad },
+    from: { id: `29:${aad}`, aadObjectId: aad, name: `Teams ${aad}` },
     conversation: { id: CONVO, tenantId: TENANT },
     value: {
       action: {
@@ -140,6 +145,8 @@ beforeEach(() => {
 
 afterAll(async () => {
   await db.delete(chatUserIdentities).where(eq(chatUserIdentities.workspaceId, TENANT));
+  await db.delete(jobQueue).where(eq(jobQueue.queue, HELD_CALL_QUEUE));
+  await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.projectId, project.project_id));
   await db.delete(connectorCalls).where(eq(connectorCalls.projectId, project.project_id));
   await db.delete(chatThreads).where(eq(chatThreads.projectId, project.project_id));
   await db.delete(projectSessions).where(eq(projectSessions.projectId, project.project_id));
@@ -230,4 +237,56 @@ test('a decision made in Kortix updates the Teams card', async () => {
   expect(cardUpdates).toHaveLength(1);
   expect(cardUpdates[0].activityId).toBe('activity-7');
   expect(JSON.stringify(cardUpdates[0].card)).toContain('Approved: gmail.send_draft');
+});
+
+test('approve of a held call on the card: running, then the run; the session resumes once', async () => {
+  const executionId = await pending({
+    args_preview: { draft_id: 'r-1' },
+    args_preview_complete: true,
+    chat_card: { platform: 'teams', session_id: sessionId, activity_id: 'activity-held' },
+  });
+  // A stand-in input: the run below settles before it reads the input.
+  await db.insert(connectorHeldCalls).values({
+    executionId,
+    projectId: project.project_id,
+    accountId: project.account_id,
+    inputEnc: 'held-input-stand-in',
+    state: 'held',
+  });
+
+  const response = await press(executionId, 'approve', 'aad-manager');
+
+  expect(await loadApprovalRow(project.project_id, executionId)).toMatchObject({ status: 'approved', approvedBy: MANAGER });
+  // The card answers "running"; Teams starts no turn of its own.
+  expect(response.type).toBe('application/vnd.microsoft.card.adaptive');
+  expect(JSON.stringify(response.value)).toContain('by Teams aad-manager. Running…');
+  expect(resumed).toHaveLength(0);
+
+  await db
+    .update(connectorHeldCalls)
+    .set({ runDeadline: new Date(Date.now() - 1_000) })
+    .where(eq(connectorHeldCalls.executionId, executionId));
+  await runHeldCall(executionId);
+  await Bun.sleep(100);
+
+  const resumes = await db
+    .select()
+    .from(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.idempotencyKey, `approval-run:${executionId}`));
+  expect(resumes).toHaveLength(1);
+  expect(resumed).toHaveLength(0);
+  const ran = cardUpdates.filter((u) => u.activityId === 'activity-held').at(-1);
+  // The presser's name survives to the card update after the run.
+  expect(JSON.stringify(ran?.card)).toContain('by Teams aad-manager. Not run: Kortix refused it at run time.');
+});
+
+test('approve of a call with no held input keeps the repeat-the-call resume', async () => {
+  const executionId = await pending();
+
+  const response = await press(executionId, 'approve', 'aad-manager');
+
+  expect((await loadApprovalRow(project.project_id, executionId))?.status).toBe('ok');
+  expect(JSON.stringify(response.value)).not.toContain('Running…');
+  expect(resumed).toHaveLength(1);
+  expect(resumed[0]).toContain('repeat the exact same call now');
 });

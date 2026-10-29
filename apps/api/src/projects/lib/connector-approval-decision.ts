@@ -110,6 +110,9 @@ export async function decideConnectorApproval(input: {
   actorUserId: string;
   auditSource: string;
   resume: 'queue' | 'caller';
+  /** Who decided, as the chat card names them; kept on the held row so the
+   *  card update after the run names them again. */
+  chatDecider?: { label: string };
   /** Update any chat card this decision left stale — the surface above owns
    *  the presentation edge, so this module stays out of channels. Fire-and-
    *  forget: a failed card update never fails the decision. */
@@ -197,6 +200,7 @@ export async function decideConnectorApproval(input: {
         .update(connectorHeldCalls)
         .set({
           state: 'queued',
+          ...(input.chatDecider ? { chatDecider: input.chatDecider } : {}),
           runDeadline: sql`now() + make_interval(secs => ${APPROVAL_RERUN_WINDOW_MS / 1000})`,
           updatedAt: new Date(),
         })

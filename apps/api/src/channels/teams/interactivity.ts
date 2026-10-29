@@ -523,10 +523,21 @@ async function handleApproval(
     executionId,
     decision,
     note,
+    deciderLabel: activity.from?.name || undefined,
   });
   // A refusal is an answer to the presser, not the new state of the card: keep
   // the buttons for someone who may decide.
   if ('refusal' in result) return { statusCode: 200, type: 'application/vnd.microsoft.activity.message', value: result.refusal };
+  const outcomeCard = buildTeamsApprovalOutcomeCard({
+    actionPath: result.row.actionPath,
+    decision,
+    note,
+    decidedBy: activity.from?.name || undefined,
+    ...(result.running ? { run: 'running' as const } : {}),
+  });
+  // An approved held call: the held-call worker runs it and resumes the
+  // session once with the result; the card shows "Running…" until then.
+  if (result.running) return cardResponse(outcomeCard);
 
   const synthetic: TeamsActivity = {
     ...activity,
@@ -543,7 +554,7 @@ async function handleApproval(
     authorizedResume: true,
   }).catch((err) => console.error('[teams-webhook] approval resume failed', err));
 
-  return cardResponse(buildTeamsApprovalOutcomeCard({ actionPath: result.row.actionPath, decision, note, decidedBy: activity.from?.name || undefined }));
+  return cardResponse(outcomeCard);
 }
 
 async function handleThreadJoin(
