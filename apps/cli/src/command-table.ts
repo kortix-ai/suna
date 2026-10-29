@@ -269,6 +269,12 @@ export const TIERS: readonly CommandTier[] = [
             blurb: 'A schedule into one session — a loop, a trigger that wakes its session (kortix loop "…" --in 24h; alias: reminders)',
           },
           {
+            name: 'chrome',
+            args: '<subcommand>',
+            blurb: "Drive the user's own Chrome from a session (use, release, ls, status)",
+            featureFlag: 'chrome',
+          },
+          {
             name: 'goals',
             args: '<subcommand>',
             blurb: 'Work a goal until a verifier confirms it done: new, verify, verdict, handover, ls (in a session)',

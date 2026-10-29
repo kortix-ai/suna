@@ -52,6 +52,7 @@ describe('railGroups', () => {
       'appearance',
       'sessions',
       'preferences',
+      'chrome',
       'tokens',
       'mcp',
       'computer',

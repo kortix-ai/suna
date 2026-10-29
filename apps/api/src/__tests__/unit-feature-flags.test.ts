@@ -325,10 +325,10 @@ describe('catalogHidden', () => {
     expect(resolveFeatureFlag({}, 'workspace_volume')).toBe(false);
   });
 
-  test('session_log_restore is a behavioral flag that defaults off', () => {
+  test('session_log_restore is a behavioral flag that defaults on', () => {
     const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'session_log_restore');
     expect(def?.enforcement).toBe('behavioral');
-    expect(resolveFeatureFlag({}, 'session_log_restore')).toBe(false);
+    expect(resolveFeatureFlag({}, 'session_log_restore')).toBe(true);
   });
 
   for (const key of HIDDEN_KEYS) {

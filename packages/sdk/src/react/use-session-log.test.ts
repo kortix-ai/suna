@@ -330,14 +330,108 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     for (const t of p.threads) t.ext = { opencode: { version: 'kortix.transcript.v1', native_id: t.thread_id } };
     return p;
   };
+  // Timed retries the hook scheduled, run by hand: no test waits on the real clock.
+  let timers: Array<{ ms: number; run: () => void; cancelled: boolean }> = [];
+  const schedule = (run: () => void, ms: number) => {
+    const timer = { ms, run, cancelled: false };
+    timers.push(timer);
+    return () => { timer.cancelled = true; };
+  };
+  const runTimers = async () => {
+    const due = timers.filter((t) => !t.cancelled);
+    timers = [];
+    for (const t of due) act(() => t.run());
+    await flush();
+  };
+  beforeEach(() => {
+    timers = [];
+  });
   function mount(options: { enabled?: boolean; loader?: ((...a: unknown[]) => Promise<unknown>) | null }) {
     const state = { dialect: '' };
     render(() => {
-      state.dialect = useSessionLogSync(PROJECT, SESSION, { enabled: options.enabled ?? true, loader: options.loader as never, joinStream: joinStream as never });
+      state.dialect = useSessionLogSync(PROJECT, SESSION, { enabled: options.enabled ?? true, loader: options.loader as never, joinStream: joinStream as never, schedule });
       return null;
     });
     return state;
   }
+  const failure = (status: number, fields: { code?: string; retryAfter?: string } = {}) =>
+    Object.assign(new Error(`HTTP ${status}`), {
+      status,
+      code: fields.code ?? String(status),
+      response: new Response(null, { status, headers: fields.retryAfter ? { 'retry-after': fields.retryAfter } : {} }),
+    });
+  async function paintDeviceCopy() {
+    const data = new Map<string, string>();
+    const store = createSavedCopyStore({ storage: { getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v), removeItem: (k) => void data.delete(k) }, userId: 'u1' });
+    setSavedCopyStore(store);
+    const saved = v1Page();
+    saved.messages = saved.messages.slice(0, 3);
+    await savedSessionLogCopies(store)!.write(PROJECT, SESSION, saved);
+  }
+
+  test('a failed read (500, a bare 404, the network) keeps the device copy painted and retries after 2 s, 10 s and 30 s, then only at a turn end', async () => {
+    await paintDeviceCopy();
+    let calls = 0;
+    const errors = [failure(500), failure(404), new TypeError('Failed to fetch'), failure(500)];
+    const state = mount({ loader: async () => { throw errors[calls++] ?? failure(500); } });
+    await flush();
+    expect(calls).toBe(1);
+    // The copy on screen stays: a failed read is not "this session has no log".
+    expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(3);
+    expect(timers.map((t) => t.ms)).toEqual([2_000]);
+    await runTimers();
+    expect(calls).toBe(2);
+    expect(timers.map((t) => t.ms)).toEqual([10_000]);
+    await runTimers();
+    expect(calls).toBe(3);
+    expect(timers.map((t) => t.ms)).toEqual([30_000]);
+    await runTimers();
+    expect(calls).toBe(4);
+    // Bounded: no fourth timed retry. The copy is still painted.
+    expect(timers).toEqual([]);
+    expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(3);
+    expect(state.dialect).not.toBe('v1');
+  });
+
+  test('a timed retry that lands: the page replaces the copy and the stream switches to schema v2', async () => {
+    await paintDeviceCopy();
+    let calls = 0;
+    const state = mount({ loader: async () => { calls++; if (calls === 1) throw failure(500); return v1Page(); } });
+    await flush();
+    expect(joined.some((j) => j.options.schema === 'v2')).toBe(false);
+    await runTimers();
+    expect(calls).toBe(2);
+    expect(state.dialect).toBe('v2');
+    expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(log.threads[0]!.messages.length);
+    expect(joined.at(-1)!.options.schema).toBe('v2');
+  });
+
+  test('503 session_log_converting with Retry-After: the retry waits Retry-After, at most 60 s', async () => {
+    for (const [retryAfter, ms] of [['20', 20_000], ['600', 60_000]] as const) {
+      timers = [];
+      mount({ loader: async () => { throw failure(503, { code: 'session_log_converting', retryAfter }); } });
+      await flush();
+      expect(timers.map((t) => t.ms)).toEqual([ms]);
+      act(() => renderer?.unmount());
+      renderer = null;
+    }
+  });
+
+  test('404 session_log_missing (no log yet) starts no timed retry: the next turn end reads it', async () => {
+    const state = mount({ loader: async () => { throw failure(404, { code: 'session_log_missing' }); } });
+    await flush();
+    expect(state.dialect).toBe('missing');
+    expect(timers).toEqual([]);
+  });
+
+  test('unmount cancels a pending timed retry', async () => {
+    mount({ loader: async () => { throw failure(500); } });
+    await flush();
+    expect(timers).toHaveLength(1);
+    act(() => renderer?.unmount());
+    renderer = null;
+    expect(timers[0]!.cancelled).toBe(true);
+  });
 
   test('v2 on a fromV1 thread: the page goes in the store, the stream switches to schema v2, and unmount drops both', async () => {
     const calls: unknown[][] = [];
@@ -391,13 +485,14 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(log.threads[0]!.messages.length);
   });
 
-  test('a 404 (a new session whose journal has not posted yet) is retried at the next turn end and on a stream reconnect', async () => {
+  test('a 404 without a code (a mirror the API has not converted yet) stays on the log, and is retried at the next turn end and on a stream reconnect', async () => {
     let calls = 0;
     let stored = false;
     const turn = (token: string) => ({ type: 'kortix.control.turn', cseq: 1, cepoch: 'c', at: 1, payload: { known: true, turns: [], last_ended: { turn_token: token } } });
     const state = mount({ loader: async () => { calls++; if (!stored) throw new Error('404'); return v1Page(); } });
     await flush();
-    expect(state.dialect).toBe('v1');
+    // Never v1: a current client reads no v1 transcript (P8.3).
+    expect(state.dialect).toBe('missing');
     expect(calls).toBe(1);
     // It waits on the session stream without schema v2.
     expect(joined.map((j) => j.options.schema)).toEqual([undefined]);
@@ -481,13 +576,14 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(calls).toBe(2);
   });
 
-  test('a 404 (no stored log) or an invalid page: v1, no session log, no schema v2', async () => {
+  test('a 404 without a code, a failed read or an invalid page: missing (never v1), no session log, no schema v2', async () => {
     const bad = v1Page();
     (bad.messages[0] as Record<string, unknown>).seq = 'x';
-    for (const loader of [async () => { throw new Error('404'); }, async () => bad]) {
+    const failed = Object.assign(new Error('Internal Server Error'), { status: 500 });
+    for (const loader of [async () => { throw new Error('404'); }, async () => { throw failed; }, async () => bad]) {
       const state = mount({ loader });
       await flush();
-      expect(state.dialect).toBe('v1');
+      expect(state.dialect).toBe('missing');
       expect(useSyncStore.getState().sessionLogs).toEqual({});
       expect(joined.some((j) => j.options.schema === 'v2')).toBe(false);
       act(() => renderer?.unmount());

@@ -4143,6 +4143,47 @@ describe('pi session log on the v2 stream (P4.3)', () => {
     // No streaming record reaches the API.
     for (const p of batches.flatMap((b) => b.puts)) expect(p.message.status).not.toBe('streaming')
   })
+
+  test('mid-turn: the API holds the prompt, the finished step and the running step while the turn runs; the stream keeps its live puts', async () => {
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'echo step-one' } }, { tool: 'bash', args: { command: 'sleep 1' } }, { text: 'Both ran.' }] })
+    const rt = r.service.runtime()!
+    const root = rt.rootId
+    expect(startSessionLogJournal(createPiSessionLogPort(() => r.service.runtime()?.sessionLogSnapshot() ?? null), { generation: 0, midTurnMs: 20 })).not.toBeNull()
+    const stream = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
+    const puts = () => readdirSync(dump).flatMap((f) => (JSON.parse(readFileSync(join(dump, f), 'utf8')) as { puts: Array<{ rev: number; message: SessionLogMessage }> }).puts)
+    /** Each turn message as the API holds it: its highest posted rev. */
+    const held = () => [...new Map(puts().sort((a, b) => a.rev - b.rev).map((p) => [p.message.message_id, p])).values()].filter((p) => p.message.kind === 'turn').sort((a, b) => a.message.seq - b.message.seq)
+    const call = (m: SessionLogMessage) => m.blocks.find((b) => b.type === 'tool_call') as { status: string; input: unknown; result?: unknown } | undefined
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'run both commands' }] })).status).toBe(204)
+    await waitFor(() => held().some((p) => call(p.message)?.status === 'running'))
+
+    // A box that dies now leaves the API this: the prompt, the first step with its result, the second step running.
+    const midTurn = held()
+    expect(midTurn.map((p) => [p.message.role, p.message.status])).toEqual([['user', 'complete'], ['assistant', 'complete'], ['assistant', 'streaming']])
+    expect(midTurn[0]!.message.blocks).toMatchObject([{ type: 'text', text: 'run both commands' }])
+    expect(call(midTurn[1]!.message)).toMatchObject({ status: 'complete', input: { command: 'echo step-one' } })
+    expect(JSON.stringify(call(midTurn[1]!.message)!.result)).toContain('step-one')
+    expect(call(midTurn[2]!.message)).toMatchObject({ status: 'running', input: { command: 'sleep 1' } })
+    expect(midTurn[2]!.message.completed_at).toBeNull()
+
+    await waitFor(() => rt.idle())
+    expect(await flushSessionLogJournal()).toBe(true)
+    // The turn end's records replace the mid-turn ones.
+    const end = held()
+    expect(end.map((p) => [p.message.role, p.message.status])).toEqual([['user', 'complete'], ['assistant', 'complete'], ['assistant', 'complete'], ['assistant', 'complete']])
+    expect(end[2]!.rev).toBeGreaterThan(midTurn[2]!.rev)
+    // The running step went to the API only: its live puts went on, and the stream showed its call end before the record that ended it.
+    const posted = new Set(puts().map((p) => p.rev))
+    const frames = v2Frames(await readSse(stream, (t) => t.includes('Both ran.')))
+    const step = frames.filter((f) => f.type === 'log.message' && f.payload.message?.message_id === midTurn[2]!.message.message_id)
+    expect(step.some((f) => f.payload.rev === midTurn[2]!.rev)).toBe(false)
+    expect(step.some((f) => !posted.has(f.payload.rev) && f.payload.rev > midTurn[2]!.rev && call(f.payload.message)?.status === 'complete')).toBe(true)
+    expect(step.at(-1)!.payload).toEqual(end[2])
+    // Idle: no frame, no collection, no post.
+    const files = readdirSync(dump).length
+    await Bun.sleep(100)
+    expect(readdirSync(dump).length).toBe(files)
+  })
 })
 
 describe('pi codemode', () => {

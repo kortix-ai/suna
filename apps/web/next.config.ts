@@ -1028,6 +1028,11 @@ const nextConfig = (): NextConfig => ({
         { source: `/markdown${page}.md`, destination: '/markdown/index.md', permanent: true },
         { source: `/markdown${page}/:path*`, destination: '/markdown/index.md', permanent: true },
       ]),
+      // /cli was removed on 2026-10-29; the CLI is documented in the docs
+      // tree. Exact path only: /cli/authorize is the CLI sign-in flow.
+      { source: '/cli', destination: '/docs/developers#cli', permanent: true },
+      { source: `/:locale(${locales.join('|')})/cli`, destination: '/docs/developers#cli', permanent: true },
+      { source: '/markdown/cli.md', destination: '/markdown/index.md', permanent: true },
       // Removed pages that may live on in old links and search indexes.
       // /credits-explained became the credits guide in the docs tree; the
       // /compare section was retired with no direct replacement.
@@ -1190,10 +1195,8 @@ const nextConfig = (): NextConfig => ({
             key: 'Content-Security-Policy-Report-Only',
             value: reportOnlyContentSecurityPolicy(),
           },
-          {
-            key: 'X-Frame-Options',
-            value: 'SAMEORIGIN',
-          },
+          // No X-Frame-Options: it cannot allowlist the Kortix extension's side panel.
+          // CSP frame-ancestors above is the framing gate.
           {
             key: 'X-Content-Type-Options',
             value: 'nosniff',

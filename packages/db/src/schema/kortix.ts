@@ -8575,6 +8575,70 @@ export const feedback = kortixSchema.table('feedback', {
   check('feedback_kind', sql`${table.kind} in ('bug', 'idea', 'friction')`),
 ]);
 
+/**
+ * Kortix in Chrome: a person's own Chrome, connected to Kortix through the
+ * extension's control socket (apps/api/src/chrome). One row per browser
+ * profile. `last_seen_at` is the liveness clock: online means not revoked and
+ * seen in the last 75 s. Protocol: .agents/skills/kortix-chrome/references/protocol.md.
+ */
+export const chromeConnections = kortixSchema.table('chrome_connections', {
+  chromeId: uuid('chrome_id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  brand: text('brand').notNull(),
+  os: text('os').notNull(),
+  profileLabel: text('profile_label'),
+  extensionVersion: text('extension_version'),
+  /** always | ask | off */
+  accessMode: text('access_mode').default('always').notNull(),
+  /** own | all */
+  tabScope: text('tab_scope').default('all').notNull(),
+  relayOwnerId: text('relay_owner_id'),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_chrome_connections_user').on(table.userId),
+  check('chrome_connections_access_mode', sql`${table.accessMode} in ('always', 'ask', 'off')`),
+  check('chrome_connections_tab_scope', sql`${table.tabScope} in ('own', 'all')`),
+]);
+
+/** A remembered consent decision. `session_id` null means the whole project. */
+export const chromeGrants = kortixSchema.table('chrome_grants', {
+  grantId: uuid('grant_id').defaultRandom().primaryKey(),
+  chromeId: uuid('chrome_id').notNull(),
+  projectId: text('project_id').notNull(),
+  sessionId: text('session_id'),
+  /** allow | deny */
+  decision: text('decision').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'chrome_grants_chrome_fk', columns: [table.chromeId], foreignColumns: [chromeConnections.chromeId] }).onDelete('cascade'),
+  index('idx_chrome_grants_chrome').on(table.chromeId, table.sessionId),
+  check('chrome_grants_decision', sql`${table.decision} in ('allow', 'deny')`),
+]);
+
+/** One session's use of one browser. */
+export const chromeAttachments = kortixSchema.table('chrome_attachments', {
+  attachmentId: uuid('attachment_id').defaultRandom().primaryKey(),
+  chromeId: uuid('chrome_id').notNull(),
+  userId: uuid('user_id'),
+  projectId: text('project_id'),
+  sessionId: text('session_id').notNull(),
+  /** pending | granted | connected | denied | ended | failed */
+  status: text('status').notNull(),
+  endReason: text('end_reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'chrome_attachments_chrome_fk', columns: [table.chromeId], foreignColumns: [chromeConnections.chromeId] }).onDelete('cascade'),
+  index('idx_chrome_attachments_chrome').on(table.chromeId, table.status),
+  index('idx_chrome_attachments_session').on(table.sessionId),
+  check('chrome_attachments_status', sql`${table.status} in ('pending', 'granted', 'connected', 'denied', 'ended', 'failed')`),
+]);
+
 /** CLI login grants contain no credential: only the device secret's hash and
  * the approving identity. Polling atomically consumes approval and mints a PAT. */
 export const cliDeviceGrants = kortixSchema.table('cli_device_grants', {

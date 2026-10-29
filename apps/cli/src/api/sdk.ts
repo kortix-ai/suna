@@ -220,6 +220,27 @@ function sanitizeCloseCode(code: number | undefined): number {
   return 1000;
 }
 
+/**
+ * A request to the sandbox daemon on this machine (`kortix chrome` inside a
+ * session). The daemon is not the Kortix API, so it has no SDK client.
+ */
+export async function sandboxDaemonRequest(
+  base: string,
+  token: string,
+  method: 'GET' | 'POST',
+  path: string,
+  body: unknown,
+  timeoutMs: number,
+): Promise<{ status: number; text: string }> {
+  const res = await fetch(`${base}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  return { status: res.status, text: await res.text() };
+}
+
 /** Public device bootstrap cannot use the authenticated SDK transport: there
  * is deliberately no credential until approval. Keep it in the transport seam. */
 export async function cliDeviceRequest<T>(apiBase: string, path: 'start' | 'poll', body: unknown, signal: AbortSignal): Promise<T> {

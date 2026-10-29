@@ -1300,6 +1300,13 @@
     {
       "idx": 185,
       "version": "7",
+      "when": 1793101077645,
+      "tag": "20261027113757_chrome_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
       "when": 1793136925096,
       "tag": "20261027213525_artifact_bindings",
       "breakpoints": true

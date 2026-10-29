@@ -21,7 +21,11 @@ describe('content security policy', () => {
   test('the enforced policy keeps framing to this origin and blocks plugins and <base>', () => {
     const policy = directives(enforcedContentSecurityPolicy());
 
-    expect(policy.get('frame-ancestors')).toEqual(["'self'"]);
+    // Only this origin and the Kortix extension may frame the app. No wildcard, no other origin.
+    expect(policy.get('frame-ancestors')).toEqual([
+      "'self'",
+      'chrome-extension://gefbbnjgoiljpbnalgafbhbfdhikgjek',
+    ]);
     expect(policy.get('object-src')).toEqual(["'none'"]);
     expect(policy.get('base-uri')).toEqual(["'self'"]);
     // script-src is enforced (it was report-only for one release cycle), and it

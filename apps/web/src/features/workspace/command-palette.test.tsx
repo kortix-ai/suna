@@ -24,8 +24,10 @@ import {
 
 // No `flags` any more: the three flag-gated rail rows (Marketplace, Review,
 // Voice) moved to `/projects/<id>/config` with the rest of project
-// configuration, so nothing left in the derived list varies by flag.
-const IN_A_PROJECT: SettingsPaletteParams = { hasProject: true };
+// configuration. One row varies by platform instead: Kortix in Chrome, offered
+// only where the platform switch is on. These tests describe that platform.
+const IN_A_PROJECT: SettingsPaletteParams = { hasProject: true, chromeOffered: true };
+const NO_PROJECT: SettingsPaletteParams = { hasProject: false, chromeOffered: true };
 
 function tabsFor(params: SettingsPaletteParams): SettingsTab[] {
   return settingsPaletteGroups(params).flatMap((group) => group.items.map((item) => item.tab));
@@ -135,8 +137,7 @@ describe('offered tabs survive the panel filter', () => {
   });
 
   test('with NO project, every offered tab is allowed', () => {
-    const params: SettingsPaletteParams = { hasProject: false };
-    const offered = tabsFor(params);
+    const offered = tabsFor(NO_PROJECT);
     expect(offered.length).toBeGreaterThan(0);
     for (const tab of offered) {
       expect(isSettingsTabAllowed(tab, allowedParams(false))).toBe(true);
@@ -144,7 +145,7 @@ describe('offered tabs survive the panel filter', () => {
   });
 
   test('with NO project, every live tab but Computer is offered — all of them are personal', () => {
-    const offered = tabsFor({ hasProject: false });
+    const offered = tabsFor(NO_PROJECT);
     // Computer pairs a machine from a project, so it needs one open.
     expect([...offered].sort()).toEqual(SETTINGS_TABS.filter((tab) => tab !== 'computer').sort());
     for (const tab of offered) expect(ACCOUNT_SCOPED_SETTINGS_TABS).toContain(tab);
@@ -155,6 +156,15 @@ describe('offered tabs survive the panel filter', () => {
     for (const tab of ['general', 'secrets', 'repositories', 'sandbox', 'models']) {
       expect(offered).not.toContain(tab);
     }
+  });
+
+  test('Kortix in Chrome is offered only where the platform offers it', () => {
+    // Staging and prod until launch: the browser list answers 404, so no row
+    // leads to a page that cannot load.
+    expect(tabsFor({ hasProject: true })).not.toContain('chrome');
+    expect(tabsFor({ hasProject: false })).not.toContain('chrome');
+    expect(tabsFor(IN_A_PROJECT)).toContain('chrome');
+    expect(tabsFor(NO_PROJECT)).toContain('chrome');
   });
 
   // The "Billing disappears when billing is off" case is gone with the tab.

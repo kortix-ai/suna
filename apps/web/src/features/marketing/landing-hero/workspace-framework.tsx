@@ -142,7 +142,7 @@ export function WorkspaceFramework() {
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
-      {/* The mode switch, centred above the frame: the navbar's site-switcher pattern. */}
+      {/* The mode switch, centred above the frame: a segmented control, since it toggles a view. */}
       <div
         role="group"
         aria-label={tMarketing('textdcc839a4015c')}
@@ -237,7 +237,7 @@ export function WorkspaceFramework() {
                       >
                         <span
                           ref={bar}
-                          className="bg-foreground block size-full origin-left"
+                          className="bg-ring block size-full origin-left"
                           style={{ transform: reduced ? 'scaleX(1)' : 'scaleX(0)' }}
                         />
                       </span>

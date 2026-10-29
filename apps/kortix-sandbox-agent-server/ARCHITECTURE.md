@@ -39,6 +39,7 @@ provider, so neither service imports the other.
 | `src/services/workspace-provider/` | services | Provides `/workspace` on a boot. `provideWorkspace` (`workspace-provider.ts`) adopts a baked checkout or calls `acquire` (`acquire.ts`), which takes the `git` or S3 transport by mode (`git`, `prefer-s3`, `require-s3`). `git.ts` is the git transport and the warm-pool seeds; `checkout.ts` is the session checkout every transport ends with. |
 | `src/services/config-provider/` | services | Provides the config release a boot needs: the store outside the repository, its descriptor, notice and API calls. `obtain.ts` builds a release from the store, the checkout, the project snapshot (`src/lib/project-snapshot/`) or the API archive. `compiled-agent-config.ts` reads and writes the compiled agent config in env, raw or gzip-encoded, for every harness and route. |
 | `src/services/runtime-assets/` | services | CLI, agent, skill-overlay and harness-asset convergence (self-update); the runtime-truth ledger. `port.ts` is the contract a harness implements. |
+| `src/services/chrome/` | services | Kortix in Chrome, sandbox side: the bridge socket the user's Chrome extension dials through the preview proxy, and the loopback CDP endpoint `127.0.0.1:9333` it serves to `agent-browser --cdp 9333`. Protocol: `.agents/skills/kortix-chrome/references/protocol.md`. |
 | `src/services/egress-shim/` | services | The in-guest egress proxy that substitutes secret handles. |
 | `src/services/llm-proxy/` | services | Localhost credential-injecting proxies to the LLM gateway and connectors; the inline-image window. |
 | `src/services/sandbox-env/` | services | The project env store and the secret-capability instruction file. |
@@ -56,6 +57,7 @@ provider, so neither service imports the other.
 | `src/lib/shutdown-state.ts` | shared | The process-wide "shutting down" flag. |
 | `src/types/` | shared | Types two modules need that may not import each other: `control-plane.ts` (`InitialTurnClaim`), `config-release.ts` (`ConfigReleaseReport`). Type declarations only. |
 | `src/extensions/codemode/worker.ts` | none (own lint layer) | The codemode sandbox worker: a second `bun build --compile` entrypoint (`scripts/build.sh`). pi starts it by this exact path in a compiled binary. It imports `@earendil-works/pi-codemode/worker` only. |
+| `src/utils/image-resize-worker.ts` | none (own lint layer) | pi's image resize worker: an extra `bun build --compile` entrypoint (`scripts/build.sh`). pi starts it by this exact path in a compiled binary. It imports the photon wasm redirect (`src/harness/pi/images.ts`) and pi's own worker module only. |
 | `src/__tests__/` | none | Tests. They may import anything they exercise. |
 
 ## Import rules

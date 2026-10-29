@@ -54,6 +54,9 @@ export type SessionLifecyclePostCreateAction =
       source: SessionInvocationSource;
       text: string;
       userId?: string | null;
+      /** A channel message's files, and the model its image needs. Absent on older rows and on text. */
+      parts?: PromptPartWire[];
+      overrides?: PromptOverridesWire;
     }
   | {
       /** Resolve at execution time so queued creates never capture stale access. */

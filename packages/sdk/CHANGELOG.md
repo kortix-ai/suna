@@ -32,6 +32,23 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `spaceTabKey`, `spaceHeader`, and the constants `PROJECT_WIDE_SPACE`, `DEFAULT_SPACE_TABS`,
   `DEFAULT_SPACE_HEADER`.
 
+### Changed (no v1 transcript reads, P8.3)
+- No hook and no SDK read sends `GET …/transcript` any more. `useSession`, `useSessionSync`
+  (root, `savedChild`, turn end, older pages), `readSavedSessionCopy` and
+  `loadSessionExportMessages` read only the session log (`GET …/log`). A 404 with
+  `code: 'session_log_missing'` keeps the session on the log with nothing in it. A failed read (a
+  5xx, the network, a 404 without a code, an invalid page) keeps the copy on screen and re-reads
+  the page after 2 s, 10 s and 30 s, or after the API's `Retry-After` (at most 60 s). Without a log
+  in the store, `useSession().hasOlder` / `loadOlder` page the runtime. Before, a 404 without a
+  code or a failed read fell back to the v1 saved copy, and `useSessionSync` re-read the v1 copy
+  3 s after each turn end.
+- `readSavedSessionCopy` returns `envelope: null` always; `SavedSessionCopy.envelope` is
+  deprecated.
+- `loadSessionExportMessages` throws when the log answers no page and the runtime has no
+  messages, instead of reading the v1 copy.
+- The deprecated v1 reads (`getSessionTranscript`, `getSessionTranscriptSync`, `transcript`,
+  `transcriptSync`) stay exported for older code; nothing in the SDK calls them.
+
 ### Added (channel access for any chat platform)
 - `listChannelUsers`, `allowChannelUser`, `removeChannelUser`, `dismissChannelAccessRequest` and
   `getChannelUserPhoto`: the allowed users and access requests of a chat platform's bot, keyed by

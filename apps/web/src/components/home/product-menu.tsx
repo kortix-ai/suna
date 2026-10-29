@@ -65,7 +65,6 @@ export const MEGA_MENUS: MegaMenu[] = [
         links: [
           { label: 'Desktop', href: '/desktop' },
           { label: 'Mobile', href: '/mobile' },
-          { label: 'CLI', href: '/cli' },
           { label: 'Slack', href: '/slack' },
           { label: 'Microsoft Teams', href: '/teams' },
         ],
@@ -171,7 +170,8 @@ function OpenSourceCard({ stars, onNavigate }: { stars?: string | null; onNaviga
  * One full-width panel: up to four columns, each a muted group heading over
  * a plain list of links. An external link carries a small up-right arrow.
  * Every panel sits in one grid cell, so switching menus cross-fades in place;
- * a closed panel is inert.
+ * each keeps its own height (`self-start`) and draws its own bottom rule. A
+ * closed panel is inert.
  */
 export function MegaMenuPanel({ menu, open, ref, onNavigate, onKeyDown, stars }: MegaMenuPanelProps) {
   return (
@@ -181,7 +181,7 @@ export function MegaMenuPanel({ menu, open, ref, onNavigate, onKeyDown, stars }:
       inert={!open}
       onKeyDown={onKeyDown}
       className={cn(
-        'col-start-1 row-start-1 transition-[opacity,visibility] duration-normal ease-out',
+        'col-start-1 row-start-1 self-start border-b transition-[opacity,visibility] duration-normal ease-out',
         open ? 'opacity-100' : 'invisible opacity-0',
       )}
     >

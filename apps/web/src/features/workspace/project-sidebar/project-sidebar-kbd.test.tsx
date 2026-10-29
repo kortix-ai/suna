@@ -96,6 +96,8 @@ mock.module('@/features/workspace/project-sidebar/workspace-switcher', () => ({
 }));
 mock.module('@kortix/ui/internal/tunnel/computer-connect', () => ({
   ComputerConnectModal: () => null,
+  // The sidebar's Apps and extensions window reads it.
+  useOwnsPairedComputer: () => ({ isSuccess: true, owns: false, owned: [] }),
 }));
 mock.module('@kortix/ui/internal/layout/connect-mcp-modal', () => ({
   ConnectMcpModal: () => null,

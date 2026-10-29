@@ -62,6 +62,7 @@ export * from './drives';
 export * from './goals';
 export * from './goal-file';
 export * from './notifications';
+export * from './chrome';
 
 // Cross-cutting types that originally lived in this module. Re-exported
 // explicitly (not the internal `unwrap` helper) to keep the surface identical.

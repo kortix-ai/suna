@@ -36,6 +36,9 @@ import { useTranslations } from '../../i18n';
 import { cn } from '../../internal/lib/utils';
 import { useBillingAccountId } from '../../internal/stores/billing-account-context';
 import { useFeatureFlag } from '@kortix/sdk/react';
+import { AppsModal } from '../../internal/apps-and-extensions/apps-modal';
+import { useAppsModalStore } from '../../internal/stores/apps-modal-store';
+import { ProjectChromeNavItem } from './footer/project-chrome-nav';
 import {
   MagnifyingGlassIcon,
   NavigationArrowIcon,
@@ -82,6 +85,7 @@ export function ProjectSidebar({
   const accountId = useBillingAccountId();
   // Channels replace New session and the session list (fail-closed: off until the project answers).
   const channels = useFeatureFlag(projectId, 'project_channels').enabled;
+  const chrome = useFeatureFlag(projectId, 'chrome').enabled;
 
   // Open the project composer without creating a durable session.
   const newSession = useNewProjectSession(projectId);
@@ -342,6 +346,9 @@ export function ProjectSidebar({
                     projectId={projectId}
                     onOpenConnect={() => setComputerConnectOpen(true)}
                   />
+                  {chrome ? (
+                    <ProjectChromeNavItem onOpenConnect={() => useAppsModalStore.getState().setOpen(true)} />
+                  ) : null}
                 </SidebarMenu>
               </li>
               {/* Last (Jay, 2026-09-03). It is the only paid call to action in
@@ -359,6 +366,11 @@ export function ProjectSidebar({
       projectId={projectId}
       open={computerConnectOpen}
       onOpenChange={setComputerConnectOpen}
+    />
+    <AppsModal
+      chrome={chrome}
+      onOpenComputer={() => setComputerConnectOpen(true)}
+      onOpenMcp={() => setConnectMcpOpen(true)}
     />
     <ConnectMcpModal open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
     <CustomizeSidebarModal projectId={projectId} />
