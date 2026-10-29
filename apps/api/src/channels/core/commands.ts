@@ -56,7 +56,7 @@ export type CommandReply = (
   | { kind: 'help'; intro: string; commands: ReadonlyArray<{ usage: string; description: string }>; footer: string }
 ) & { note?: string; actions?: ReadonlyArray<CommandAction> };
 
-/** Teams' button cap (teams/cards.ts); a Discord string select holds 25 (from memory, unverified). */
+/** Options per page of a model or agent list; page 1 adds Project default above them. */
 const PAGE_SIZE = 8;
 /** A used menu outlives a double tap, the job's retries and a failed edit; after this, a surviving button runs again. */
 const PRESS_CLAIM_TTL_MS = 24 * 60 * 60_000;
