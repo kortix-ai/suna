@@ -1969,6 +1969,38 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     expect(delivered).toHaveLength(0);
   });
 
+  test('/status names the model the next message runs on, decided as the create and the follow-up decide it', async () => {
+    const catalog = (models: Record<string, unknown>) =>
+      spyOn(servableCatalog, 'servableProjectCatalog').mockResolvedValue({ models, modelOverrides: {}, defaultModel: undefined, usingDefaults: true } as never);
+    // No session, and the chat's model cannot run with nothing to replace it: the create refuses every message.
+    await db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: '7047', projectId: PROJECT, model: 'cmd-gone-s' });
+    let spies = [spyOn(defaultModel, 'isModelServableForAccount').mockResolvedValue(false), catalog({})];
+    try {
+      await handleTelegramEvent(update('/status', ALLOWED, 7047));
+      expect(replies().at(-1)).toContain("\nModel: cmd-gone-s — not available any more, so Kortix does not send this chat's messages. Send /model to pick another.\n");
+      await handleTelegramEvent(update('do the thing', ALLOWED, 7047));
+      expect(created).toHaveLength(0);
+      expect(replies().at(-1)).toStartWith('Kortix did not send your message');
+    } finally {
+      restore(spies);
+    }
+    // A session pinned to a model the shared keys cannot run: its follow-ups run a replacement, and /status names it.
+    const sessionId = await chatSession(7048, 'running');
+    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/codex/pin-s' } }).where(eq(projectSessions.sessionId, sessionId));
+    spies = [
+      spyOn(defaultModel, 'isModelServableForAccount').mockImplementation(async ({ model }) => model === 'repl-s'),
+      catalog({ 'repl-s': { name: 'Repl S', provider: 'kortix', enabled: true } }),
+    ];
+    try {
+      await handleTelegramEvent(update('carry on', ALLOWED, 7048));
+      expect(delivered[0]!.overrides).toEqual({ model: { providerID: 'kortix', modelID: 'repl-s' } });
+      await handleTelegramEvent(update('/status', ALLOWED, 7048));
+      expect(replies().at(-1)).toContain("\nModel: repl-s — this session's pin-s (ChatGPT) is not available here\n");
+    } finally {
+      restore(spies);
+    }
+  });
+
   test("/stop stops only a run this chat started, and says when there is nothing to stop", async () => {
     await handleTelegramEvent(update('/stop', ALLOWED, 7026));
     expect(replies().at(-1)).toBe('Nothing is running in this chat.');

@@ -22,7 +22,7 @@ import { chatAgents } from '../scoped-agents';
 import { CHANNEL_COMMANDS, type ChannelCommandName, type ParsedCommand } from './command-list';
 import { type ChannelTarget, forgetChatThread } from './conversation';
 import { describeSession, projectWebUrl, sessionWebUrl } from './display';
-import { chatSelection, sharedChatScope, statusModel } from './model-choice';
+import { chatSelection, chatSessionStart, chatTurnModel, sharedChatScope, statusModel } from './model-choice';
 import { type QuestionPort, clearQuestionButtons } from './questions';
 import { type SettingsChannel, ensureChatBinding, setChannelAgent, setChannelModel } from './settings';
 import { type ChatThreadSession, findChatThreadSession, threadCreateHeld } from './threads';
@@ -116,6 +116,28 @@ function choices(
   return { kind: 'choices', title, options: shown.map((i) => ({ ...i, current: i.value === current })), more: sorted.length - shown.length, usage };
 }
 
+/**
+ * The /status model row: the model the chat's next message runs on, decided as the follow-up
+ * (`chatTurnModel`) or the create (`chatSessionStart`) decides it, and the model it replaces.
+ */
+async function modelRow(ctx: CommandContext, session: ChatThreadSession | null, choice: string | null): Promise<string> {
+  const pin = pinOf(session);
+  const wanted = choice ?? pin;
+  if (!wanted) return 'project default';
+  const named = statusModel(choice, pin);
+  let runs: string | null;
+  if (session) {
+    runs = await chatTurnModel(ctx.settings, { sessionId: session.sessionId, projectId: ctx.project.projectId });
+  } else {
+    const start = await chatSessionStart(ctx.settings, ctx.project);
+    if (start.unavailableModel) return `${named} — not available any more, so Kortix does not send this chat's messages. Send /model to pick another.`;
+    runs = start.model ?? null;
+  }
+  if (!runs) return `${named} — not available here, and no other model replaces it. Send /model to pick another.`;
+  if (toWireModel(runs) === toWireModel(wanted)) return named;
+  return `${labelForModelRef(runs)} — ${choice ? "this chat's" : "this session's"} ${labelForModelRef(wanted)} is not available here`;
+}
+
 /** Shared by /stop and /new. */
 type TurnStop = 'none' | 'starting' | 'elsewhere' | 'stopped' | 'unreachable';
 
@@ -151,11 +173,7 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
       chatSelection(ctx.settings, ctx.project.projectId),
       session ? readRunningTurn(session.sessionId) : null,
     ]);
-    const choice = selection?.opencodeModel ?? null;
-    let model = statusModel(choice, pinOf(session));
-    if (choice && !(await checkChannelModel(await sharedChatScope(ctx.project), choice)).ok) {
-      model += ' — not available here, so runs use another model. Send /model to pick one.';
-    }
+    const model = await modelRow(ctx, session, selection?.opencodeModel ?? null);
     const sessionAgent = session?.agentName || 'default';
     const agent = !session
       ? selection?.agentName || 'project default'
