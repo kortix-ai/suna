@@ -12,7 +12,10 @@ export interface ChannelCommandSpec {
   aliases: readonly string[];
   /** The /help line's left side: '/model [id]'. */
   usage: string;
-  /** 3–100 characters: the menu line and the /help line. */
+  /**
+   * 3–100 characters: the menu line and the /help line. A Telegram menu knows Kortix's entry by its
+   * name and this text, so a changed text leaves the old entry in merged menus (telegram/menu.ts).
+   */
   description: string;
 }
 

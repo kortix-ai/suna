@@ -72,7 +72,7 @@ import * as chatSettings from '../core/settings';
 import * as modelAccess from '../model-access';
 import { projectWebUrl } from '../core/display';
 import { commandMenu } from '../core/command-list';
-import { mergeTelegramMenu, telegramMenuClaim } from './menu';
+import { mergeTelegramMenu, removeTelegramMenu, telegramMenuClaim } from './menu';
 
 const telegramWebhookApp = channelWebhookRoutes(telegramInbound);
 const ACCOUNT = crypto.randomUUID();
@@ -2312,6 +2312,40 @@ describe('the Telegram bot menu — migrated PostgreSQL', () => {
       calls.length = 0;
       await handleTelegramEvent(update('again', ALLOWED, 7050));
       expect(calls.map((c) => c.method)).toEqual(['sendChatAction']);
+    } finally {
+      await holdMenuClaim();
+    }
+  }, 10_000);
+
+  /** One allowed message with no menu claim held: Kortix merges the menu in the background; this waits for its write. */
+  async function mergeOnMessage(chat: number) {
+    await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:commands:${BOT_ID}:%`));
+    const written = (async () => {
+      while (!calls.some((c) => c.method === 'setMyCommands')) await nextCall();
+    })();
+    await handleTelegramEvent(update('hello', ALLOWED, chat));
+    await written;
+  }
+
+  test("an owner's entry with a Kortix name stays the owner's: the merge leaves Kortix's out, and the removal keeps it", async () => {
+    const help = { command: 'help', description: 'Synthetic owner help' };
+    botMenu = [help, WEATHER];
+    try {
+      await mergeOnMessage(7055);
+      expect(botMenu).toEqual([...commandMenu().filter((c) => c.command !== 'help'), help, WEATHER]);
+      await removeTelegramMenu(TOKEN);
+      expect(botMenu).toEqual([help, WEATHER]);
+    } finally {
+      await holdMenuClaim();
+    }
+  }, 10_000);
+
+  test("Kortix's entries go only where they fit under Telegram's 100: an owner's 99 entries all stay", async () => {
+    const owner = Array.from({ length: 99 }, (_, i) => ({ command: `own${i}`, description: 'Synthetic owner entry' }));
+    botMenu = owner;
+    try {
+      await mergeOnMessage(7056);
+      expect(botMenu).toEqual([commandMenu()[0], ...owner]);
     } finally {
       await holdMenuClaim();
     }
