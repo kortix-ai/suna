@@ -74,7 +74,7 @@ export const VOXL_VERSION = RUNTIME_VERSIONS.voxl;
 export const VOXL_SHA256_AMD64 = RUNTIME_VERSIONS.voxlSha256Amd64;
 export const VOXL_SHA256_ARM64 = RUNTIME_VERSIONS.voxlSha256Arm64;
 /** The GitHub release apps/sandbox/voxl/release.sh publishes for VOXL_VERSION. */
-export const VOXL_RELEASE_URL = `https://github.com/kortix-ai/suna/releases/download/voxl-${VOXL_VERSION.slice(0, 12)}-kortix`;
+export const VOXL_RELEASE_URL = `https://github.com/kortix-ai/suna/releases/download/voxl-${VOXL_VERSION.slice(0, 12)}-kortix.2`;
 
 // An exact npm pin. Each spec is inlined into the image's install RUN line, so
 // the pattern also keeps every shell metacharacter out.
