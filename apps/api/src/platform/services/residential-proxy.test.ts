@@ -1,6 +1,7 @@
 // `residential_proxy`: which hosts a proxied box still dials directly.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { config } from '../../config';
+import { featureFlagDef, resolveFeatureFlag } from '../../feature-flags/registry';
 import { bypassHost, resolveSessionResidentialProxy } from './residential-proxy';
 
 const ON = { experimental: { residential_proxy: true } };
@@ -9,6 +10,7 @@ const KEYS = [
   'KORTIX_URL',
   'LLM_GATEWAY_BASE_URL',
   'PLATINUM_API_KEY',
+  'KORTIX_PLATINUM_RESIDENTIAL_PROXY',
   'KORTIX_CONFIG_ARCHIVE_S3_BUCKET',
   'KORTIX_PROJECT_SNAPSHOT_S3_BUCKET',
 ] as const;
@@ -16,6 +18,7 @@ let saved: Partial<typeof config>;
 beforeEach(() => {
   saved = Object.fromEntries(KEYS.map((key) => [key, config[key]]));
   config.PLATINUM_API_KEY = 'pt_test_key';
+  config.KORTIX_PLATINUM_RESIDENTIAL_PROXY = true;
   config.KORTIX_URL = 'https://api.example.com';
   config.LLM_GATEWAY_BASE_URL = 'https://gateway.example.com:8443/v1';
   // No object store: each test that wants one configures it.
@@ -23,6 +26,20 @@ beforeEach(() => {
   config.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET = '';
 });
 afterEach(() => Object.assign(config, saved));
+
+describe('the residential_proxy operator gate', () => {
+  test('unavailable without KORTIX_PLATINUM_RESIDENTIAL_PROXY, available with it', async () => {
+    config.KORTIX_PLATINUM_RESIDENTIAL_PROXY = false;
+    expect(featureFlagDef('residential_proxy').available()).toBe(false);
+    // A project's stored choice cannot turn it on, and provisioning sends nothing.
+    expect(resolveFeatureFlag(ON, 'residential_proxy')).toBe(false);
+    expect(await resolveSessionResidentialProxy(ON)).toBeUndefined();
+
+    config.KORTIX_PLATINUM_RESIDENTIAL_PROXY = true;
+    expect(featureFlagDef('residential_proxy').available()).toBe(true);
+    expect(resolveFeatureFlag(ON, 'residential_proxy')).toBe(true);
+  });
+});
 
 describe('resolveSessionResidentialProxy', () => {
   test('flag off or unset ⇒ no option', async () => {

@@ -312,9 +312,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       "Send this project's sandbox web traffic through a residential IP address. Traffic is billed per GB from your credits. Kortix's own services and common package registries connect directly, and UDP is blocked so the sandbox's own address cannot leak. A change applies to new sessions; a running session keeps its setting.",
     stability: 'experimental',
-    // Platinum provides the residential IP. A Platinum deployment with no
-    // residential provider refuses the create (400 residential_proxy_unavailable).
-    available: () => Boolean(config.PLATINUM_API_KEY),
+    // Two operator gates: Platinum is the provider, and the environment turned
+    // on KORTIX_PLATINUM_RESIDENTIAL_PROXY after its Platinum began serving
+    // `network.residential_proxy`. An older Platinum drops the field silently.
+    available: () => Boolean(config.PLATINUM_API_KEY) && config.KORTIX_PLATINUM_RESIDENTIAL_PROXY,
     platformDefault: () => false,
     enforcement: 'behavioral',
     enforcementNote:

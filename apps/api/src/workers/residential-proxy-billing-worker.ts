@@ -12,9 +12,9 @@ const worker = leaderTimer(async () => {
   return INTERVAL_MS;
 }, { name: 'residential-proxy-billing' });
 
-/** Runs only where Kortix charges for usage and Platinum is the sandbox provider. */
+/** Runs only where Kortix charges for usage and the operator turned the residential proxy on. */
 export function startResidentialProxyBillingWorker(): void {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED || !config.PLATINUM_API_KEY) return;
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED || !config.PLATINUM_API_KEY || !config.KORTIX_PLATINUM_RESIDENTIAL_PROXY) return;
   worker.start();
 }
 

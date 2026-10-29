@@ -355,13 +355,17 @@ describe('warm sessions — residential proxy', () => {
   const on = { experimental: { residential_proxy: true } };
   const off = { experimental: { residential_proxy: false } };
   let originalKey: typeof config.PLATINUM_API_KEY;
+  let originalGate: typeof config.KORTIX_PLATINUM_RESIDENTIAL_PROXY;
   beforeEach(() => {
     originalKey = config.PLATINUM_API_KEY;
-    // The flag is available only where Platinum is configured.
+    originalGate = config.KORTIX_PLATINUM_RESIDENTIAL_PROXY;
+    // The flag is available only with Platinum and the operator switch on.
     config.PLATINUM_API_KEY = 'pt_test_residential_proxy';
+    config.KORTIX_PLATINUM_RESIDENTIAL_PROXY = true;
   });
   afterEach(() => {
     config.PLATINUM_API_KEY = originalKey;
+    config.KORTIX_PLATINUM_RESIDENTIAL_PROXY = originalGate;
   });
   const lookup = (projectMetadata: unknown, includeProvisioning = false) => findWarmProjectSession({
     accountId: ACCOUNT, projectId: PROJECT, userId: USER, projectMetadata, includeProvisioning,
