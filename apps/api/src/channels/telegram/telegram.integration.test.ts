@@ -72,6 +72,7 @@ import * as chatSettings from '../core/settings';
 import * as modelAccess from '../model-access';
 import { projectWebUrl } from '../core/display';
 import { commandMenu } from '../core/command-list';
+import { choiceRef } from '../core/command-press';
 import { removeTelegramMenu, telegramMenuClaim } from './menu';
 
 const telegramWebhookApp = channelWebhookRoutes(telegramInbound);
@@ -255,6 +256,10 @@ async function bindChat(chat: number) {
 const menuClaimRows = () => db.select().from(chatEventDedup).where(eq(chatEventDedup.eventId, telegramMenuClaim(BOT_ID)));
 const holdMenuClaim = () =>
   db.insert(chatEventDedup).values({ eventId: telegramMenuClaim(BOT_ID), expiresAt: new Date(Date.now() + 86_400_000) }).onConflictDoNothing();
+/** The bot's once-a-year check that it receives presses, as after its first menu. */
+const buttonsClaim = `telegram:buttons:${BOT_ID}`;
+const holdButtonsClaim = () =>
+  db.insert(chatEventDedup).values({ eventId: buttonsClaim, expiresAt: new Date(Date.now() + 86_400_000) }).onConflictDoNothing();
 
 async function allowSender() {
   await db
@@ -279,6 +284,8 @@ beforeAll(async () => {
   await allowSender();
   // The bot's menu already merged, as after its first message: no message below calls the menu methods.
   await holdMenuClaim();
+  // The bot already receives presses, as connect subscribes it: no menu below calls getWebhookInfo.
+  await holdButtonsClaim();
   // The channel connector a question post is checked against, as connect writes it.
   const [connector] = await db
     .insert(connectors)
@@ -358,6 +365,7 @@ afterAll(async () => {
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, 'channel:start-retrying:%'));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:question-buttons:${PROJECT}:%`));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:commands:${BOT_ID}:%`));
+  await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, buttonsClaim));
   await db.delete(jobQueue).where(like(jobQueue.jobKey, `telegram:${BOT_ID}:%`));
   await db.delete(sessionPendingQuestions).where(eq(sessionPendingQuestions.projectId, PROJECT));
   await db.delete(accountTokens).where(eq(accountTokens.projectId, PROJECT));
@@ -1938,6 +1946,15 @@ describe('Telegram commands — migrated PostgreSQL', () => {
   const restore = (spies: Array<{ mockRestore(): void }>) => {
     for (const spy of spies) spy.mockRestore();
   };
+  type Button = { text: string; callback_data?: string; url?: string };
+  /** A recorded message's buttons: [text, callback_data or url], row by row. */
+  const keyboard = (call: Call) =>
+    ((call.body.reply_markup as { inline_keyboard?: Button[][] } | undefined)?.inline_keyboard ?? []).map((r) =>
+      r.map((b) => [b.text, b.callback_data ?? b.url]));
+  /** A keyboard row of one button. */
+  const row = (text: string, data: string) => [[text, data]];
+  const lastSent = () => calls.filter((c) => c.method === 'sendMessage').at(-1)!;
+  const MODELS_USAGE = 'Tap a model to use it in this chat, or send /model <id>. Only models and keys the whole project shares work here.';
 
   test('/help, /start, /HELP and /help@<this bot> list the commands, and nothing reaches the agent', async () => {
     for (const text of ['/help', '/start', '/HELP', '/help@synthetic_bot']) {
@@ -2110,7 +2127,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     );
   });
 
-  test('/model lists the models the project shares, at most 25, and switches the chat to one', async () => {
+  test('/model lists the models the project shares as buttons, 8 a page, and switches the chat to one', async () => {
     const models = Object.fromEntries([
       ['cmd-m1', { name: 'Model One', provider: 'kortix', enabled: true }],
       ...Array.from({ length: 200 }, (_, i) => [`cmd-f${i}`, { name: `Synthetic ${String(i).padStart(3, '0')}`, provider: 'kortix', enabled: true }]),
@@ -2121,16 +2138,19 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     ];
     try {
       await handleTelegramEvent(update('/models', ALLOWED, 7034));
-      const list = replies().at(-1)!;
-      expect(list.length).toBeLessThanOrEqual(4096);
-      expect(list.split('\n').slice(0, 2)).toEqual(['Models for this chat', '- cmd-m1 — Model One']);
-      expect(list).toContain('\n…and 176 more.\nSend /model <id> to switch');
+      expect(replies().at(-1)).toBe(`Models for this chat (page 1 of 26)\n${MODELS_USAGE}`);
+      expect(keyboard(lastSent())).toEqual([
+        row('✓ Project default', 'kc:model:=d'),
+        row('Model One', `kc:model:=${choiceRef('cmd-m1')}`),
+        ...Array.from({ length: 7 }, (_, i) => row(`Synthetic 00${i}`, `kc:model:=${choiceRef(`cmd-f${i}`)}`)),
+        row('More ›', 'kc:model:p1'),
+      ]);
 
       await handleTelegramEvent(update('/model cmd-m1', ALLOWED, 7035));
       expect(replies().at(-1)).toBe('Model for this chat set to cmd-m1. Messages you send after this reply use it.');
       expect(await settingsRow('7035')).toMatchObject({ projectId: PROJECT, model: 'cmd-m1', agentName: null, channelType: 'private' });
       await handleTelegramEvent(update('/model', ALLOWED, 7035));
-      expect(replies().at(-1)!.split('\n')[1]).toBe('- cmd-m1 — Model One (current)');
+      expect(keyboard(lastSent()).slice(0, 2)).toEqual([row('Project default', 'kc:model:=d'), row('✓ Model One', `kc:model:=${choiceRef('cmd-m1')}`)]);
 
       await handleTelegramEvent(update('/model a b', ALLOWED, 7035));
       expect(replies().at(-1)).toBe('a b is not a model id. Send /model to see the list.');
@@ -2163,9 +2183,8 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     ];
     try {
       await handleTelegramEvent(update('/agents', ALLOWED, 7040));
-      expect(replies().at(-1)).toBe(
-        'Agents for this chat\n- reviewer — Reviews changes\nSend /agent <name> to switch, or /agent default for the project default. New sessions use it.',
-      );
+      expect(replies().at(-1)).toBe('Agents for this chat\nTap an agent to use it for new sessions in this chat, or send /agent <name>.');
+      expect(keyboard(lastSent())).toEqual([row('✓ Project default', 'kc:agent:=d'), row('reviewer — Reviews changes', `kc:agent:=${choiceRef('reviewer')}`)]);
       await handleTelegramEvent(update('/agent reviewer', ALLOWED, 7040));
       expect(replies().at(-1)).toBe('Agent for this chat set to reviewer. Your next message starts a session with it.');
       expect((await settingsRow('7040'))?.agentName).toBe('reviewer');
@@ -2339,6 +2358,68 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     } finally {
       await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
     }
+  });
+
+  describe('command buttons', () => {
+    test('/help lists the commands with buttons that run them', async () => {
+      await handleTelegramEvent(update('/help', ALLOWED, 7100));
+      expect(methods()).toEqual(['sendMessage']);
+      expect(calls[0]!.body).toMatchObject({ chat_id: 7100, text: HELP, reply_parameters: { message_id: expect.any(Number) } });
+      expect(keyboard(calls[0]!)).toEqual([
+        [['Status', 'kc:status'], ['New conversation', 'kc:new']],
+        [['Model', 'kc:model'], ['Agent', 'kc:agent']],
+        [['Stop', 'kc:stop']],
+      ]);
+    });
+
+    test('/status offers a new conversation and the pickers, Stop only while a run goes, and a link button only for https', async () => {
+      // The test stack's frontend is http, as every local stack's: the link stays a text line.
+      expect(appConfig.FRONTEND_URL).toStartWith('http://');
+      await handleTelegramEvent(update('/status', ALLOWED, 7102));
+      expect(lastSent().body.text).toEndWith(`\nSession: none yet: your next message starts one\n${projectWebUrl(appConfig.FRONTEND_URL, PROJECT)}`);
+      expect(keyboard(lastSent())).toEqual([
+        [['New conversation', 'kc:new'], ['Change model', 'kc:model']],
+        [['Change agent', 'kc:agent']],
+      ]);
+
+      const running = await chatSession(7103, 'running', 'telegram');
+      await handleTelegramEvent(update('/status', ALLOWED, 7103));
+      expect(keyboard(lastSent())).toEqual([
+        [['Stop', `kc:stop:=${running}`], ['New conversation', 'kc:new']],
+        [['Change model', 'kc:model'], ['Change agent', 'kc:agent']],
+      ]);
+
+      const frontend = appConfig.FRONTEND_URL;
+      (appConfig as { FRONTEND_URL: string }).FRONTEND_URL = 'https://kortix.example.test';
+      try {
+        await handleTelegramEvent(update('/status', ALLOWED, 7103));
+        const url = sessionWebUrl('https://kortix.example.test', PROJECT, running);
+        expect(String(lastSent().body.text)).not.toContain('https://');
+        expect(keyboard(lastSent()).at(-1)).toEqual([['Open in Kortix', url]]);
+      } finally {
+        (appConfig as { FRONTEND_URL: string }).FRONTEND_URL = frontend;
+      }
+    });
+
+    test('a bot connected before buttons is subscribed to presses once, before its first menu; a notice subscribes nothing', async () => {
+      await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, buttonsClaim));
+      // Connect before 2026-10-28 subscribed the webhook to messages only.
+      webhookInfo = { url: ownWebhook().url, allowed_updates: ['message'] };
+      try {
+        await handleTelegramEvent(update('/stop', ALLOWED, 7104));
+        expect(methods()).toEqual(['sendMessage']);
+        expect(lastSent().body).not.toHaveProperty('reply_markup');
+        calls.length = 0;
+        await handleTelegramEvent(update('/help', ALLOWED, 7104));
+        expect(methods()).toEqual(['getWebhookInfo', 'setWebhook', 'sendMessage']);
+        expect(calls[1]!.body).toMatchObject({ url: ownWebhook().url, allowed_updates: ['message', 'callback_query'] });
+        calls.length = 0;
+        await handleTelegramEvent(update('/help', ALLOWED, 7104));
+        expect(methods()).toEqual(['sendMessage']);
+      } finally {
+        await holdButtonsClaim();
+      }
+    });
   });
 });
 

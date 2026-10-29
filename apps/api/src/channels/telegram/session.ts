@@ -29,6 +29,7 @@ import { db } from '../../shared/db';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { gateSender, refusedPressText } from '../core/channel-access';
 import { CHANNEL_COMMANDS, parseChannelCommand } from '../core/command-list';
+import { type CommandPress, pressData } from '../core/command-press';
 import { type CommandReply, runChannelCommand } from '../core/commands';
 import { type ChannelNotice, type ChannelPort, type ChannelTarget, routeChannelMessage } from '../core/conversation';
 import { chatSessionStart, chatTurnModel } from '../core/model-choice';
@@ -42,6 +43,7 @@ import {
 } from '../core/questions';
 import { registerSessionPort } from '../core/session-notice';
 import type { SettingsChannel } from '../core/settings';
+import { claimThreadCreate, releaseThreadCreate } from '../core/threads';
 import { classifyTurnError } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
 import { startErrorMessage, TELEGRAM_START_ERROR_COMMANDS } from '../start-error';
@@ -451,7 +453,11 @@ export async function handleTelegramEvent(
         ...(file ? { droppedFile: file.kind } : {}),
       },
       command,
-      (body) => reply(clip(telegramCommandText(body), CHANNELS.telegram.messageChars)),
+      async (body) => {
+        const m = telegramCommandMessage(body);
+        if (m.keyboard.length) await ensureTelegramButtons(token, event.projectId, install.botId);
+        await sendTelegramReply(token, target, clip(m.text, CHANNELS.telegram.messageChars), m.keyboard);
+      },
     );
     return;
   }
@@ -587,9 +593,17 @@ async function telegramThreadOfSession(sessionId: string, botId: string, chatId:
   return row?.threadId ?? null;
 }
 
-/** A command's reply as chat text (core/commands.ts `CommandReply`): plain, with the link and the note last. */
-function telegramCommandText(reply: CommandReply): string {
+type InlineButton = { text: string; callback_data: string } | { text: string; url: string };
+
+/**
+ * A command's reply (core/commands.ts `CommandReply`) as plain chat text and an inline keyboard:
+ * one row per option, then the page row, then the actions in pairs, then a panel's https link.
+ * Any other link is the last text line: Telegram may refuse a URL button for a host such as localhost.
+ */
+function telegramCommandMessage(reply: CommandReply): { text: string; keyboard: InlineButton[][] } {
+  const button = (label: string, press: CommandPress): InlineButton => ({ text: clip(label, 60), callback_data: pressData(press) });
   const lines: string[] = [];
+  const keyboard: InlineButton[][] = [];
   switch (reply.kind) {
     case 'notice':
       lines.push(reply.text);
@@ -597,20 +611,34 @@ function telegramCommandText(reply: CommandReply): string {
     case 'panel':
       lines.push(reply.title, ...reply.rows.map((r) => `${r.label}: ${r.value}`));
       break;
-    case 'choices':
-      lines.push(
-        reply.title,
-        ...reply.options.map((o) => `- ${o.value}${o.label ? ` — ${o.label}` : ''}${o.current ? ' (current)' : ''}`),
-        ...(reply.more ? [`…and ${reply.more} more.`] : []),
-        reply.usage,
-      );
+    case 'choices': {
+      lines.push(`${reply.title}${reply.pages > 1 ? ` (page ${reply.page + 1} of ${reply.pages})` : ''}`, reply.usage);
+      keyboard.push(...reply.options.map((o) => [button(`${o.current ? '✓ ' : ''}${o.label}`, o.press)]));
+      const turn = [...(reply.back ? [button('‹ Back', reply.back)] : []), ...(reply.more ? [button('More ›', reply.more)] : [])];
+      if (turn.length) keyboard.push(turn);
       break;
+    }
     case 'help':
       lines.push(reply.intro, ...reply.commands.map((c) => `${c.usage} — ${c.description}`), reply.footer);
       break;
   }
-  if ('url' in reply && reply.url) lines.push(reply.url);
-  return reply.note ? `${lines.join('\n')}\n\n${reply.note}` : lines.join('\n');
+  const actions = (reply.actions ?? []).map((a) => button(a.label, a.press));
+  for (let i = 0; i < actions.length; i += 2) keyboard.push(actions.slice(i, i + 2));
+  const url = 'url' in reply ? reply.url : undefined;
+  if (url && reply.kind === 'panel' && url.startsWith('https://')) keyboard.push([{ text: 'Open in Kortix', url }]);
+  else if (url) lines.push(url);
+  return { text: reply.note ? `${lines.join('\n')}\n\n${reply.note}` : lines.join('\n'), keyboard };
+}
+
+/**
+ * Once per bot: a bot connected before #10994 (2026-10-28) receives messages only
+ * (`allowed_updates: ['message']`), so its buttons would never answer. Not
+ * subscribed: the claim goes, and the next menu tries again.
+ */
+async function ensureTelegramButtons(token: string, projectId: string, botId: string): Promise<void> {
+  const key = `telegram:buttons:${botId}`;
+  const claim = await claimThreadCreate(key, 365 * 24 * 60 * 60_000).catch(() => null);
+  if (claim && !(await subscribeToButtons(token, projectId))) await releaseThreadCreate(key, claim).catch(() => undefined);
 }
 
 /** What the Kortix Channels page calls a chat: its title, else the @username or the first name of a private chat. */
@@ -623,7 +651,7 @@ function telegramChatName(chat: TelegramMessage['chat']): string | null {
  * target's thread id. A target found from a session has no message to answer,
  * so its notice is posted unanchored.
  */
-async function sendTelegramReply(token: string, target: ChannelTarget, text: string): Promise<void> {
+async function sendTelegramReply(token: string, target: ChannelTarget, text: string, keyboard: InlineButton[][] = []): Promise<void> {
   const [chatId, topicId] = target.threadId.split(':');
   await telegramCall(token, 'sendMessage', {
     chat_id: Number(chatId),
@@ -632,6 +660,7 @@ async function sendTelegramReply(token: string, target: ChannelTarget, text: str
       ? { reply_parameters: { message_id: Number(target.messageId), allow_sending_without_reply: true } }
       : {}),
     ...(topicId ? { message_thread_id: Number(topicId) } : {}),
+    ...(keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {}),
   }).catch((error) => logger.warn('[telegram] reply failed', { error: String(error) }));
 }
 

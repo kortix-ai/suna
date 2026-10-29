@@ -20,6 +20,7 @@ import { abortRuntimeTurn, readRunningTurn, turnPromptSource } from '../../proje
 import { agentGrantEnvFor, applyChannelSessionKeys, checkChannelModel, listChannelModels } from '../model-access';
 import { chatAgents } from '../scoped-agents';
 import { CHANNEL_COMMANDS, type ChannelCommandName, type ParsedCommand } from './command-list';
+import { type CommandPress, choiceRef } from './command-press';
 import { type ChannelTarget, forgetChatThread } from './conversation';
 import { describeSession, projectWebUrl, sessionWebUrl } from './display';
 import { chatSelection, chatSessionStart, chatTurnModel, sharedChatScope, statusModel } from './model-choice';
@@ -27,16 +28,36 @@ import { type QuestionPort, clearQuestionButtons } from './questions';
 import { type SettingsChannel, ensureChatBinding, setChannelAgent, setChannelModel } from './settings';
 import { type ChatThreadSession, findChatThreadSession, threadCreateHeld } from './threads';
 
-/** Semantic, never markup: each platform renders it. `note` comes last. */
+/** A button under a reply. */
+export interface CommandAction {
+  label: string;
+  press: CommandPress;
+}
+
+/** Semantic, never markup: each platform renders it. `note` comes last; `actions` are buttons, in order. */
 export type CommandReply = (
   | { kind: 'notice'; text: string; url?: string }
   | { kind: 'panel'; title: string; rows: ReadonlyArray<{ label: string; value: string }>; url?: string }
-  | { kind: 'choices'; title: string; options: ReadonlyArray<{ value: string; label: string; current: boolean }>; more: number; usage: string }
+  | {
+      kind: 'choices';
+      title: string;
+      /** One button each. */
+      options: ReadonlyArray<{ label: string; current: boolean; press: CommandPress }>;
+      /** 0-based page of `pages` (≥ 1). */
+      page: number;
+      pages: number;
+      /** The presses that turn the page; absent on the first or last page. */
+      back?: CommandPress;
+      more?: CommandPress;
+      usage: string;
+    }
   | { kind: 'help'; intro: string; commands: ReadonlyArray<{ usage: string; description: string }>; footer: string }
-) & { note?: string };
+) & { note?: string; actions?: ReadonlyArray<CommandAction> };
 
-/** A Discord string select holds 25 options (from memory, unverified); every platform lists at most this many. */
-const CHOICES_MAX = 25;
+/** Teams' button cap (teams/cards.ts); a Discord string select holds 25 (from memory, unverified). */
+const PAGE_SIZE = 8;
+/** A button names a page in two digits (command-press.ts): a longer list is reachable by its typed command only. */
+const MAX_PAGES = 100;
 
 /** The platform's renderer for one inbound event: renders and sends one reply. Logs send errors; never throws. */
 export type CommandRender = (reply: CommandReply) => Promise<void>;
@@ -111,17 +132,83 @@ function clipped(text: string, max: number): string {
   return `${/[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut}…`;
 }
 
-/** The current option first, then the rest, at most `CHOICES_MAX`. */
+/** One page of a list; a page past the end is the last. */
+function paged<T>(items: readonly T[], page: number): { shown: T[]; page: number; pages: number } {
+  const pages = Math.min(MAX_PAGES, Math.max(1, Math.ceil(items.length / PAGE_SIZE)));
+  const at = Math.min(Math.max(page, 0), pages - 1);
+  return { shown: items.slice(at * PAGE_SIZE, (at + 1) * PAGE_SIZE), page: at, pages };
+}
+
+/**
+ * One page of a model or agent list: the project default heads page 1, then the current option,
+ * then the rest. `current`: the chosen value; null (or 'default') is the project default.
+ */
 function choices(
+  name: 'model' | 'agent',
   title: string,
   items: ReadonlyArray<{ value: string; label: string }>,
   current: string | null,
+  page: number,
   usage: string,
+  defaultLabel = 'Project default',
 ): CommandReply {
-  const sorted = [...items.filter((i) => i.value === current), ...items.filter((i) => i.value !== current)];
-  const shown = sorted.slice(0, CHOICES_MAX);
-  return { kind: 'choices', title, options: shown.map((i) => ({ ...i, current: i.value === current })), more: sorted.length - shown.length, usage };
+  const chosen = current === 'default' ? null : current;
+  const sorted = [...items.filter((i) => i.value === chosen), ...items.filter((i) => i.value !== chosen)];
+  const at = paged(sorted, page);
+  const option = (value: string, label: string, isCurrent: boolean) => ({ label, current: isCurrent, press: { name, pick: choiceRef(value) } });
+  return {
+    kind: 'choices',
+    title,
+    options: [
+      ...(at.page === 0 ? [option('default', defaultLabel, chosen === null)] : []),
+      ...at.shown.map((i) => option(i.value, i.label, i.value === chosen)),
+    ],
+    page: at.page,
+    pages: at.pages,
+    ...(at.page > 0 ? { back: { name, page: at.page - 1 } } : {}),
+    ...(at.page < at.pages - 1 ? { more: { name, page: at.page + 1 } } : {}),
+    usage,
+  };
 }
+
+/** A list page per command; `RUN.model(ctx, '')` is page 0. */
+const PICKERS: Record<'model' | 'agent', (ctx: CommandContext, page: number) => Promise<CommandReply>> = {
+  async model(ctx, page) {
+    const [session, selection, { models, defaultModel }] = await Promise.all([
+      chatSession(ctx),
+      chatSelection(ctx.settings, ctx.project.projectId),
+      sharedChatScope(ctx.project).then(listChannelModels),
+    ]);
+    if (!models.length) return notice('No model is available to this chat. A project admin can share a provider key with the whole project in Kortix.');
+    const current = selection?.opencodeModel ?? pinOf(session);
+    const labels = new Map<string, number>();
+    for (const m of models) labels.set(m.label, (labels.get(m.label) ?? 0) + 1);
+    const defaultName = defaultModel && (models.find((m) => m.id === defaultModel)?.label ?? labelForModelRef(defaultModel));
+    return choices(
+      'model',
+      'Models for this chat',
+      models.map((m) => ({ value: m.id, label: labels.get(m.label)! > 1 ? `${m.label} · ${m.providerLabel}` : m.label })),
+      current ? toWireModel(current) : null,
+      page,
+      'Tap a model to use it in this chat, or send /model <id>. Only models and keys the whole project shares work here.',
+      defaultName ? `Project default · ${defaultName}` : 'Project default',
+    );
+  },
+
+  async agent(ctx, page) {
+    const { projectId } = ctx.project;
+    const [agents, session, selection] = await Promise.all([chatAgents(projectId), chatSession(ctx), chatSelection(ctx.settings, projectId)]);
+    if (!agents.length) return notice('This project lists no agents this chat can use. New sessions run the project default agent.');
+    return choices(
+      'agent',
+      'Agents for this chat',
+      agents.map((a) => ({ value: a.name, label: clipped(a.description ? `${a.name} — ${a.description}` : a.name, 60) })),
+      selection?.agentName ?? session?.agentName ?? null,
+      page,
+      'Tap an agent to use it for new sessions in this chat, or send /agent <name>.',
+    );
+  },
+};
 
 /**
  * The /status model row: the model the chat's next message runs on, decided as the follow-up
@@ -170,6 +257,13 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
       intro: `Kortix project ${ctx.project.name}. The agent answers in this chat.`,
       commands: CHANNEL_COMMANDS.map((c) => ({ usage: c.usage, description: c.description })),
       footer: 'Every other message goes to the agent, also one that starts with /.',
+      actions: [
+        { label: 'Status', press: { name: 'status' } },
+        { label: 'New conversation', press: { name: 'new' } },
+        { label: 'Model', press: { name: 'model' } },
+        { label: 'Agent', press: { name: 'agent' } },
+        { label: 'Stop', press: { name: 'stop' } },
+      ],
     };
   },
 
@@ -204,6 +298,13 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
         },
       ],
       url: session ? sessionUrl(ctx, session.sessionId) : projectWebUrl(config.FRONTEND_URL, ctx.project.projectId),
+      actions: [
+        // Bound to the session: a Stop pressed after /new stops nothing.
+        ...(session && running ? [{ label: 'Stop', press: { name: 'stop', pick: session.sessionId } } satisfies CommandAction] : []),
+        { label: 'New conversation', press: { name: 'new' } },
+        { label: 'Change model', press: { name: 'model' } },
+        { label: 'Change agent', press: { name: 'agent' } },
+      ],
     };
   },
 
@@ -245,19 +346,9 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
   },
 
   async model(ctx, arg) {
+    if (!arg) return PICKERS.model(ctx, 0);
     const { projectId } = ctx.project;
     const [session, selection] = await Promise.all([chatSession(ctx), chatSelection(ctx.settings, projectId)]);
-    if (!arg) {
-      const { models } = await listChannelModels(await sharedChatScope(ctx.project));
-      if (!models.length) return notice('No model is available to this chat. A project admin can share a provider key with the whole project in Kortix.');
-      const current = selection?.opencodeModel ?? pinOf(session);
-      return choices(
-        'Models for this chat',
-        models.map((m) => ({ value: m.id, label: m.label })),
-        current ? toWireModel(current) : null,
-        'Send /model <id> to switch, or /model default for the project default. Only models and keys the whole project shares work in this chat.',
-      );
-    }
     if (/\s/.test(arg)) return notice(`${clipped(arg, 64)} is not a model id. Send /model to see the list.`);
     if (arg.toLowerCase() === 'default') {
       if (selection) await setChannelModel(ctx.settings, null);
@@ -296,18 +387,9 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
   },
 
   async agent(ctx, arg) {
+    if (!arg) return PICKERS.agent(ctx, 0);
     const { projectId } = ctx.project;
     const refusal = notice(`${clipped(arg, 64)} is not an agent this chat can use. Send /agent to see them.`);
-    if (!arg) {
-      const [agents, session, selection] = await Promise.all([chatAgents(projectId), chatSession(ctx), chatSelection(ctx.settings, projectId)]);
-      if (!agents.length) return notice('This project lists no agents this chat can use. New sessions run the project default agent.');
-      return choices(
-        'Agents for this chat',
-        agents.map((a) => ({ value: a.name, label: clipped(a.description ?? '', 80) })),
-        selection?.agentName ?? session?.agentName ?? null,
-        'Send /agent <name> to switch, or /agent default for the project default. New sessions use it.',
-      );
-    }
     if (arg.toLowerCase() === 'default') {
       if (await chatSelection(ctx.settings, projectId)) await setChannelAgent(ctx.settings, null);
       return notice('Agent for this chat reset to the project default.');
