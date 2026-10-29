@@ -578,6 +578,8 @@ const catalog = {
         "entrypoint": "Entrypoint",
         "optional": "optional",
         "entrypointPlaceholder": "Leave blank to use the Kortix default (recommended).",
+        "residentialIp": "Residential IP",
+        "residentialIpHint": "Send this sandbox's web traffic through a residential IP address, billed per GB from your credits. Sessions start only where the deployment offers it.",
         "cancel": "Cancel",
         "save": "Save changes",
         "create": "Create template",
@@ -791,10 +793,6 @@ const catalog = {
         "us_region": {
           "name": "US Region",
           "description": "Run this project's new sessions in the US East region. A running session keeps its region until it restarts."
-        },
-        "residential_proxy": {
-          "name": "Residential Proxy",
-          "description": "Send the web traffic of this project's sandboxes through a residential IP address, billed per GB from your credits. Kortix services and package registries connect directly, and UDP is blocked. Applies to new sessions."
         },
         "notification_center": {
           "name": "Notification Center",

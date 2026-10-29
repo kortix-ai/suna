@@ -163,7 +163,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       email_channel: false,
       session_groups: false,
       chrome: false,
-      residential_proxy: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -906,7 +905,6 @@ describe('envelopes', () => {
       'email_channel',
       'session_groups',
       'chrome',
-      'residential_proxy',
     ]);
   });
 

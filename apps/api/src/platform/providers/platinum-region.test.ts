@@ -168,7 +168,7 @@ describe('us_region: region on the Platinum create', () => {
   });
 });
 
-// `residential_proxy`: the same create, with the project's network option.
+// `residential_proxy`: the same create, with the sandbox template's network option.
 describe('residential_proxy: network on the Platinum create', () => {
   test('no option ⇒ no network field, and the box records the proxy off', async () => {
     const result = await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1 });
@@ -185,6 +185,13 @@ describe('residential_proxy: network on the Platinum create', () => {
     expect(result.metadata?.residentialProxy).toBe(true);
   });
 
+  test('a country ⇒ network.residential_proxy.country', async () => {
+    const bypass = ['api.example.com'];
+    await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1, residentialProxy: { bypass, country: 'us' } });
+
+    expect(createCalls()[0].body?.network).toEqual({ residential_proxy: { bypass, country: 'us' } });
+  });
+
   test('a Platinum with no residential provider fails the session with a configuration message', async () => {
     const { classifySandboxProvisioningFailure } = await import('../services/sandbox-provisioning-error');
     createSequence = [{
@@ -199,8 +206,9 @@ describe('residential_proxy: network on the Platinum create', () => {
     expect(error).toBeInstanceOf(Error);
     const failure = classifySandboxProvisioningFailure(error);
     expect(failure).toMatchObject({ category: 'sandbox-provider', transient: false, isCapacity: false });
-    expect(failure.userMessage).toStartWith('This project sends sandbox web traffic through a residential IP address');
-    expect(failure.userMessage).toContain('Turn off Residential Proxy');
+    expect(failure.userMessage).toStartWith(
+      'This sandbox template asks for a residential IP, which this deployment does not offer',
+    );
   });
 });
 

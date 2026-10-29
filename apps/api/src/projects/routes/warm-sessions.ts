@@ -11,7 +11,7 @@ import { db } from '../../shared/db';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sandboxTemplates, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser } from '../lib/access';
 import { canUseAnyAgent } from '../lib/agent-access';
@@ -31,8 +31,8 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { warmClaimFiling } from '../lib/project-spaces';
 import { GitOperationError } from '../git/mirror';
-import { resolveSessionSandboxRegion, warmSandboxIntent } from '../../platform/services/sandbox-region';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
+import { storedResidentialProxy } from '../../snapshots/templates';
 
 /**
  * Warming is SPECULATIVE. The browser fires it on every project view and
@@ -62,18 +62,30 @@ const PLATINUM_HOME_REGION = 'eu-west';
 const WARM_PROVISIONING_STATUSES = ['queued', 'branching', 'provisioning'] as const;
 
 /**
+ * The session's sandbox template asks for a residential IP (its row's
+ * `metadata.residentialProxy`), as a correlated SQL predicate on the outer
+ * session row. Compared with the box's own `residentialProxy` (platinum.ts
+ * records it on every Platinum box), so a box never serves a session whose
+ * template now says otherwise.
+ */
+const TEMPLATE_WANTS_RESIDENTIAL_PROXY = sql`EXISTS (
+  SELECT 1 FROM ${sandboxTemplates} AS tpl
+  WHERE tpl.project_id = ${qualifiedColumn(projectSessions.projectId)}
+    AND tpl.slug = ${qualifiedColumn(projectSessions.metadata)}->>'sandbox_slug'
+    AND jsonb_typeof(tpl.metadata->'residentialProxy') = 'object'
+)`;
+
+/**
  * Actual provider placement, never a requested location or a readiness cache.
  * Unknown placement while provisioning is pending, not proof of a US box.
- * Placement includes the residential proxy: a box created without it never
- * serves a project that has it on, and the reverse (platinum.ts records
- * `residentialProxy` on every Platinum box).
+ * Placement includes the residential IP: the box's must match what the
+ * session's sandbox template asks for now.
  */
 export async function warmSessionPlacement(
   sessionId: string,
   projectMetadata: unknown,
 ): Promise<'compatible' | 'pending' | 'mismatch'> {
   const region = resolveSessionSandboxRegion(projectMetadata);
-  const proxy = resolveFeatureFlag(projectMetadata, 'residential_proxy');
   const [row] = await db
     .select({
       sessionStatus: projectSessions.status,
@@ -81,13 +93,22 @@ export async function warmSessionPlacement(
       provider: sessionSandboxes.provider,
       status: sessionSandboxes.status,
       metadata: sessionSandboxes.metadata,
+      templateMetadata: sandboxTemplates.metadata,
     })
     .from(projectSessions)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, projectSessions.sessionId))
+    .leftJoin(
+      sandboxTemplates,
+      and(
+        eq(sandboxTemplates.projectId, projectSessions.projectId),
+        sql`${sandboxTemplates.slug} = ${projectSessions.metadata}->>'sandbox_slug'`,
+      ),
+    )
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   if (!row) return 'mismatch';
   const actualRegion = row.metadata?.platinumRegion;
+  const proxy = storedResidentialProxy(row.templateMetadata) !== null;
   if (
     row.provider === 'platinum' &&
     actualRegion === (region ?? PLATINUM_HOME_REGION) &&
@@ -98,7 +119,7 @@ export async function warmSessionPlacement(
   if (!actualRegion && (!row.provider || row.provider === 'platinum') &&
       WARM_PROVISIONING_STATUSES.includes(row.sessionStatus as typeof WARM_PROVISIONING_STATUSES[number]) &&
       (!row.status || row.status === 'provisioning') &&
-      intent === warmSandboxIntent(projectMetadata)) return 'pending';
+      intent === (region ?? 'home')) return 'pending';
   return 'mismatch';
 }
 
@@ -131,7 +152,6 @@ export async function findWarmProjectSession(scope: {
 }) {
   const instanceId = currentInstanceId();
   const region = resolveSessionSandboxRegion(scope.projectMetadata);
-  const proxy = resolveFeatureFlag(scope.projectMetadata, 'residential_proxy');
   const [row] = await db
     .select()
     .from(projectSessions)
@@ -148,15 +168,15 @@ export async function findWarmProjectSession(scope: {
             SELECT 1 FROM ${sessionSandboxes} AS box
             WHERE box.session_id = ${qualifiedColumn(projectSessions.sessionId)}
               AND (
-                (box.provider = 'platinum' AND box.metadata->>'platinumRegion' = ${region ?? PLATINUM_HOME_REGION}
-                  AND coalesce(box.metadata->>'residentialProxy', 'false') = ${proxy ? 'true' : 'false'})
-                ${region || proxy ? sql`` : sql`OR box.provider <> 'platinum'`}
+                (box.provider = 'platinum' AND box.metadata->>'platinumRegion' = ${region ?? PLATINUM_HOME_REGION})
+                ${region ? sql`` : sql`OR box.provider <> 'platinum'`}
               )
+              AND (coalesce(box.metadata->>'residentialProxy', 'false') = 'true') = ${TEMPLATE_WANTS_RESIDENTIAL_PROXY}
           )`,
           scope.includeProvisioning
             ? and(
                 inArray(projectSessions.status, [...WARM_PROVISIONING_STATUSES]),
-                sql`${projectSessions.metadata}->>${WARM_SESSION_LOCATION_KEY}::text = ${warmSandboxIntent(scope.projectMetadata)}`,
+                sql`${projectSessions.metadata}->>${WARM_SESSION_LOCATION_KEY}::text = ${region ?? 'home'}`,
                 sql`NOT EXISTS (
                   SELECT 1 FROM ${sessionSandboxes} AS box
                   WHERE box.session_id = ${qualifiedColumn(projectSessions.sessionId)}

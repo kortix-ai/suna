@@ -19,6 +19,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
 import { Button } from '../../../primitives/button';
+import { Checkbox } from '../../../primitives/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -81,6 +82,7 @@ export function SandboxTemplateForm({
   const [cpu, setCpu] = useState<string>('2');
   const [memoryGb, setMemoryGb] = useState<string>('4');
   const [diskGb, setDiskGb] = useState<string>('20');
+  const [residentialProxy, setResidentialProxy] = useState(false);
 
   // Reset / hydrate when opening
   const [hydratedFor, setHydratedFor] = useState<
@@ -105,6 +107,7 @@ export function SandboxTemplateForm({
       setCpu(String(template.cpu));
       setMemoryGb(String(template.memory_gb));
       setDiskGb(String(template.disk_gb));
+      setResidentialProxy(!!template.residential_proxy);
     } else if (open) {
       setName('');
       setSlug('');
@@ -116,6 +119,7 @@ export function SandboxTemplateForm({
       setCpu('2');
       setMemoryGb('6');
       setDiskGb('20');
+      setResidentialProxy(false);
     }
   }
 
@@ -152,6 +156,7 @@ export function SandboxTemplateForm({
         cpu: parsePosInt(cpu),
         memory_gb: parsePosInt(memoryGb),
         disk_gb: parsePosInt(diskGb),
+        ...(residentialProxy ? { residential_proxy: true } : {}),
       }),
     onSuccess: () => {
       successToast(t('toasts.created'));
@@ -172,6 +177,8 @@ export function SandboxTemplateForm({
         cpu: parsePosInt(cpu) ?? null,
         memory_gb: parsePosInt(memoryGb) ?? null,
         disk_gb: parsePosInt(diskGb) ?? null,
+        // Keep a country set through kortix.yaml or the API while it stays on.
+        residential_proxy: residentialProxy ? (template?.residential_proxy ?? true) : null,
       }),
     onSuccess: () => {
       successToast(t('toasts.updated'));
@@ -329,6 +336,19 @@ export function SandboxTemplateForm({
               className="font-mono text-xs"
               rows={2}
             />
+          </div>
+
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id="tpl-residential-ip"
+              className="mt-0.5"
+              checked={residentialProxy}
+              onCheckedChange={(checked) => setResidentialProxy(checked === true)}
+            />
+            <div>
+              <Label htmlFor="tpl-residential-ip">{t('residentialIp')}</Label>
+              <p className="text-muted-foreground mt-1 text-xs">{t('residentialIpHint')}</p>
+            </div>
           </div>
         </div>
 

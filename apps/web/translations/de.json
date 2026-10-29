@@ -1037,6 +1037,8 @@
         "entrypoint": "Startbefehl",
         "optional": "optional",
         "entrypointPlaceholder": "Leer lassen, um den Kortix-Standard zu verwenden (empfohlen).",
+        "residentialIp": "Residential-IP",
+        "residentialIpHint": "Leiten Sie den Webverkehr dieser Sandbox über eine private (Residential) IP-Adresse, abgerechnet pro GB aus Ihren Credits. Sitzungen starten nur, wo das Deployment sie anbietet.",
         "cancel": "Abbrechen",
         "save": "Änderungen speichern",
         "create": "Vorlage erstellen",
@@ -1250,10 +1252,6 @@
         "us_region": {
           "name": "US-Region",
           "description": "Neue Sitzungen dieses Projekts in der Region US-Ost ausführen. Eine laufende Sitzung behält ihre Region bis zum Neustart."
-        },
-        "residential_proxy": {
-          "name": "Residential-Proxy",
-          "description": "Leiten Sie den Webverkehr der Sandboxen dieses Projekts über eine private (Residential) IP-Adresse, abgerechnet pro GB aus Ihren Credits. Kortix-Dienste und Paket-Registries verbinden sich direkt, und UDP ist gesperrt. Gilt für neue Sitzungen."
         },
         "notification_center": {
           "name": "Benachrichtigungszentrale",

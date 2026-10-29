@@ -1,10 +1,9 @@
-// `residential_proxy`: which hosts a proxied box still dials directly.
+// A sandbox template's `residential_proxy`: the create option a session gets,
+// which hosts it still dials directly, and the fail-closed refusals.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { config } from '../../config';
-import { featureFlagDef, resolveFeatureFlag } from '../../feature-flags/registry';
-import { bypassHost, resolveSessionResidentialProxy } from './residential-proxy';
-
-const ON = { experimental: { residential_proxy: true } };
+import { bypassHost, residentialProxyOffered, resolveSessionResidentialProxy } from './residential-proxy';
+import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 
 const KEYS = [
   'KORTIX_URL',
@@ -27,49 +26,72 @@ beforeEach(() => {
 });
 afterEach(() => Object.assign(config, saved));
 
-describe('the residential_proxy operator gate', () => {
-  test('unavailable without KORTIX_PLATINUM_RESIDENTIAL_PROXY, available with it', async () => {
-    config.KORTIX_PLATINUM_RESIDENTIAL_PROXY = false;
-    expect(featureFlagDef('residential_proxy').available()).toBe(false);
-    // A project's stored choice cannot turn it on, and provisioning sends nothing.
-    expect(resolveFeatureFlag(ON, 'residential_proxy')).toBe(false);
-    expect(await resolveSessionResidentialProxy(ON)).toBeUndefined();
+async function refusal(run: () => Promise<unknown>) {
+  const error = await run().then(() => null, (err: unknown) => err);
+  expect(error).toBeInstanceOf(Error);
+  return classifySandboxProvisioningFailure(error);
+}
 
+describe('the KORTIX_PLATINUM_RESIDENTIAL_PROXY operator gate', () => {
+  test('not offered without the switch, offered with it and Platinum', () => {
+    config.KORTIX_PLATINUM_RESIDENTIAL_PROXY = false;
+    expect(residentialProxyOffered()).toBe(false);
     config.KORTIX_PLATINUM_RESIDENTIAL_PROXY = true;
-    expect(featureFlagDef('residential_proxy').available()).toBe(true);
-    expect(resolveFeatureFlag(ON, 'residential_proxy')).toBe(true);
+    expect(residentialProxyOffered()).toBe(true);
+    config.PLATINUM_API_KEY = '';
+    expect(residentialProxyOffered()).toBe(false);
   });
 });
 
 describe('resolveSessionResidentialProxy', () => {
-  test('flag off or unset ⇒ no option', async () => {
-    expect(await resolveSessionResidentialProxy({ experimental: { residential_proxy: false } })).toBeUndefined();
-    expect(await resolveSessionResidentialProxy({})).toBeUndefined();
+  test('a template that does not ask ⇒ no option, on any deployment and provider', async () => {
+    config.KORTIX_PLATINUM_RESIDENTIAL_PROXY = false;
+    expect(await resolveSessionResidentialProxy(null, 'platinum')).toBeUndefined();
+    expect(await resolveSessionResidentialProxy(undefined, 'daytona')).toBeUndefined();
   });
 
-  test('flag on ⇒ the API and gateway hosts bypass the proxy; an unconfigured object store adds none', async () => {
-    expect(await resolveSessionResidentialProxy(ON)).toEqual({ bypass: ['api.example.com', 'gateway.example.com'] });
+  test('a template that asks ⇒ the API and gateway hosts bypass the proxy; an unconfigured object store adds none', async () => {
+    expect(await resolveSessionResidentialProxy({}, 'platinum')).toEqual({
+      bypass: ['api.example.com', 'gateway.example.com'],
+    });
+  });
+
+  test('a country rides along', async () => {
+    expect(await resolveSessionResidentialProxy({ country: 'us' }, 'platinum')).toEqual({
+      bypass: ['api.example.com', 'gateway.example.com'],
+      country: 'us',
+    });
   });
 
   test('the object store a box downloads its boot files from bypasses the proxy, at the host it signs for', async () => {
     // The signing client is built once per process; the region is the one scripts/test.env sets.
     config.KORTIX_CONFIG_ARCHIVE_S3_BUCKET = 'boot-files';
-    expect((await resolveSessionResidentialProxy(ON))?.bypass).toEqual([
+    expect((await resolveSessionResidentialProxy({}, 'platinum'))?.bypass).toEqual([
       'api.example.com',
       'gateway.example.com',
       'boot-files.s3.us-east-1.amazonaws.com',
     ]);
   });
 
-  test('without Platinum the flag is unavailable ⇒ no option', async () => {
-    config.PLATINUM_API_KEY = '';
-    expect(await resolveSessionResidentialProxy(ON)).toBeUndefined();
-  });
-
   test('a local API on localhost is never sent as a bypass host', async () => {
     config.KORTIX_URL = 'http://localhost:8008';
     config.LLM_GATEWAY_BASE_URL = '';
-    expect(await resolveSessionResidentialProxy(ON)).toEqual({ bypass: [] });
+    expect(await resolveSessionResidentialProxy({}, 'platinum')).toEqual({ bypass: [] });
+  });
+
+  test('fail closed: a deployment without the switch refuses the session with one configuration message', async () => {
+    config.KORTIX_PLATINUM_RESIDENTIAL_PROXY = false;
+    const failure = await refusal(() => resolveSessionResidentialProxy({ country: 'us' }, 'platinum'));
+    expect(failure).toMatchObject({ category: 'sandbox-provider', transient: false, isCapacity: false });
+    expect(failure.userMessage).toStartWith(
+      'This sandbox template asks for a residential IP, which this deployment does not offer',
+    );
+  });
+
+  test('fail closed: another provider refuses the session', async () => {
+    const failure = await refusal(() => resolveSessionResidentialProxy({}, 'daytona'));
+    expect(failure).toMatchObject({ category: 'sandbox-provider', transient: false });
+    expect(failure.userMessage).toContain("this session's sandbox provider is not Platinum");
   });
 });
 

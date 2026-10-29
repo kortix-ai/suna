@@ -307,26 +307,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'behavioral',
   },
   {
-    key: 'residential_proxy',
-    name: 'Residential Proxy',
-    description:
-      "Send this project's sandbox web traffic through a residential IP address. Traffic is billed per GB from your credits. Kortix's own services and common package registries connect directly, and UDP is blocked so the sandbox's own address cannot leak. A change applies to new sessions; a running session keeps its setting.",
-    stability: 'experimental',
-    // Two operator gates: Platinum is the provider, and the environment turned
-    // on KORTIX_PLATINUM_RESIDENTIAL_PROXY after its Platinum began serving
-    // `network.residential_proxy`. An older Platinum drops the field silently.
-    available: () => Boolean(config.PLATINUM_API_KEY) && config.KORTIX_PLATINUM_RESIDENTIAL_PROXY,
-    platformDefault: () => false,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'BEHAVIORAL only. Read at provisioning (platform/services/residential-proxy.ts): on, the Platinum create carries ' +
-      '`network.residential_proxy` with the Kortix hosts the box reaches directly as `bypass`, and the box row records ' +
-      '`residentialProxy: true`. A box with the other value is never adopted from the warm pool ' +
-      '(projects/routes/warm-sessions.ts). On another provider the session does not start, and provider failover is off ' +
-      'for it. An existing box keeps its network on stop and resume; a new box reads the current value. Billing: ' +
-      'workers/residential-proxy-billing-worker.ts debits each Platinum charge from the account wallet (`proxy_debit`).',
-  },
-  {
     key: 'event_triggers',
     name: 'Composio event triggers',
     description:

@@ -50,7 +50,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const workspaceVolume = useFeatureFlag(projectId, 'workspace_volume');
   const sessionGroups = useFeatureFlag(projectId, 'session_groups');
   const chrome = useFeatureFlag(projectId, 'chrome');
-  const residentialProxy = useFeatureFlag(projectId, 'residential_proxy');
 
   return {
     flags: {
@@ -77,9 +76,8 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       workspace_volume: workspaceVolume.enabled,
       session_groups: sessionGroups.enabled,
       chrome: chrome.enabled,
-      residential_proxy: residentialProxy.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: residentialProxy.isLoading,
+    isLoading: chrome.isLoading,
   };
 }

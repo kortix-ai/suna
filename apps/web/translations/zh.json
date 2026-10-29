@@ -1037,6 +1037,8 @@
         "entrypoint": "入口命令",
         "optional": "可选",
         "entrypointPlaceholder": "留空以使用 Kortix 默认值（推荐）。",
+        "residentialIp": "住宅 IP",
+        "residentialIpHint": "通过住宅 IP 地址发送此沙盒的网络流量，按 GB 从你的积分中计费。仅在部署提供该功能时会话才会启动。",
         "cancel": "取消",
         "save": "保存更改",
         "create": "创建模板",
@@ -1250,10 +1252,6 @@
         "us_region": {
           "name": "美国区域",
           "description": "在美国东部区域运行此项目的新会话。正在运行的会话在重启前保持其当前区域。"
-        },
-        "residential_proxy": {
-          "name": "住宅代理",
-          "description": "通过住宅 IP 地址发送此项目沙盒的网络流量，按 GB 从你的积分中计费。Kortix 服务和软件包仓库直接连接，UDP 被阻止。适用于新会话。"
         },
         "notification_center": {
           "name": "通知中心",

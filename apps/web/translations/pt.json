@@ -1037,6 +1037,8 @@
         "entrypoint": "Ponto de entrada",
         "optional": "opcional",
         "entrypointPlaceholder": "Deixe em branco para usar o padrão da Kortix (recomendado).",
+        "residentialIp": "IP residencial",
+        "residentialIpHint": "Envie o tráfego web deste sandbox por um endereço IP residencial, cobrado por GB dos seus créditos. As sessões só iniciam onde a implantação oferece esse recurso.",
         "cancel": "Cancelar",
         "save": "Salvar alterações",
         "create": "Criar modelo",
@@ -1250,10 +1252,6 @@
         "us_region": {
           "name": "Região dos EUA",
           "description": "Execute as novas sessões deste projeto na região Leste dos EUA. Uma sessão em andamento mantém a região até reiniciar."
-        },
-        "residential_proxy": {
-          "name": "Proxy residencial",
-          "description": "Envie o tráfego web dos sandboxes deste projeto por um endereço IP residencial, cobrado por GB dos seus créditos. Os serviços da Kortix e os registros de pacotes se conectam diretamente, e o UDP fica bloqueado. Vale para novas sessões."
         },
         "notification_center": {
           "name": "Central de notificações",
