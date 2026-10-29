@@ -523,6 +523,8 @@ const SESSION_TABLES: Record<string, 'purged' | 'scrubbed' | `kept: ${string}`> 
   'connector_attachments.session_id': 'kept: expires on its own (cleanupExpiredConnectorAttachments)',
   'legacy_sandbox_migrations.session_id': 'kept: migration bookkeeping',
   'chat_threads.session_id': 'kept: ids only',
+  'chrome_attachments.session_id': 'kept: ids, a status and an end reason, no content',
+  'chrome_grants.session_id': 'kept: ids and an allow/deny decision, no content',
   'chat_thread_participants.session_id': 'kept: ids only',
   'room_members.session_id': 'kept: ids only',
   'notification_watchers.session_id': 'kept: ids only',

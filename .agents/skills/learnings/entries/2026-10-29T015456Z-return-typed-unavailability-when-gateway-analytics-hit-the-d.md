@@ -1,5 +1,5 @@
 ---
-recorded: 2026-10-29T015456Z
+recorded: 2026-10-29T01:54:56Z
 incident_date: 2026-10-28
 ---
 # Return typed unavailability when gateway analytics hit the database statement budget

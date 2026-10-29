@@ -72,7 +72,6 @@ export const STATIC_PUBLIC_ROUTES = [
   '/compliance',
   '/use-cases',
   '/white-label',
-  '/cli',
   '/desktop',
   '/mobile',
   '/slack',
@@ -277,14 +276,6 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     description:
       'Start, steer and approve Kortix sessions from your phone: live streaming, dictation, attachments, tool approvals, change-request review and push notifications. On the App Store and Google Play.',
     htmlPath: '/mobile',
-  },
-  {
-    kind: 'marketing',
-    slug: 'cli',
-    title: 'Kortix CLI: your company from the terminal',
-    description:
-      'One kortix binary for people and agents: init, ship and chat with projects, script access and audit, and self-host the whole stack. macOS and Linux, x86_64 and arm64, WSL on Windows.',
-    htmlPath: '/cli',
   },
   {
     kind: 'marketing',

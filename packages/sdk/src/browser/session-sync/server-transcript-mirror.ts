@@ -1,6 +1,7 @@
 /**
- * Painting a session's history from the SERVER's transcript mirror while its
- * sandbox is still waking.
+ * Painting a saved v1 copy (the device's, or one a host hands in) while the
+ * session's sandbox is still waking. Nothing here reads the network: the
+ * session log is the only saved copy a client reads (`GET …/log`, P8.3).
  *
  * WHAT THIS REPLACES. An IndexedDB mirror used to do this and was deleted
  * (`5a7a43517f`) because its freshness test read the transcript's SHAPE —
@@ -32,17 +33,7 @@
  */
 
 import type { Message, Part } from "../../core/runtime/runtime-types";
-import {
-	type SessionTranscriptSyncEnvelope,
-	getSessionTranscriptSync,
-} from "../../core/rest/projects-client/sessions";
-import type { SavedCopyStore } from "../../core/session-sync/saved-copy-store";
-import { loadSavedTranscript } from "../../core/session-sync/saved-transcript";
-
-/** How many mirrored messages a first paint asks for. Matches the sync
- *  controller's own initial tail, so the mirror and the read that replaces it
- *  cover the same window. */
-export const MIRROR_HYDRATE_LIMIT = 40;
+import type { SessionTranscriptSyncEnvelope } from "../../core/rest/projects-client/sessions";
 
 export interface MirrorHydrateDecision {
 	envelope: SessionTranscriptSyncEnvelope | null;
@@ -123,140 +114,4 @@ export function parseKortixSessionScope(
 	const sessionId = scope.slice(slash + 1);
 	if (!projectId || !sessionId || sessionId.includes("/")) return null;
 	return { projectId, sessionId };
-}
-
-/**
- * Fetch the saved copy for a host that passed `useSessionSync` no `mirror`.
- * Never throws and never surfaces an error toast: a session that has never
- * been captured is an ordinary answer, not a failure, and this read is an
- * accelerator whose absence costs only the old blank wake.
- *
- * The conversation's window is THE saved-history read
- * (`loadSavedTranscript`): the session-open snapshot's window when one is in
- * flight or just answered, else the route. `useSession` passes its answer in,
- * so for a session it owns this never runs. A sub-agent's window is read here,
- * by `child`: the snapshot carries only the conversation's.
- *
- * @deprecated Reads the v1 saved copy. `useSessionSync` reads the session log first and calls this only when the log answers 404. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
- */
-export async function loadSessionTranscriptMirror(input: {
-	kortixSessionScope: string | undefined;
-	signal?: AbortSignal;
-	/** A sub-agent's OpenCode session inside the scope: its own saved window. */
-	child?: string;
-}): Promise<SessionTranscriptSyncEnvelope | null> {
-	const scope = parseKortixSessionScope(input.kortixSessionScope);
-	if (!scope) return null;
-	try {
-		return input.child
-			? await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
-					limit: MIRROR_HYDRATE_LIMIT,
-					signal: input.signal,
-					child: input.child,
-				})
-			: await loadSavedTranscript(scope.projectId, scope.sessionId, { signal: input.signal });
-	} catch {
-		return null;
-	}
-}
-
-/**
- * The mirror window OLDER than `before`.
- *
- * Deliberately NOT `loadSessionTranscriptMirror` with an extra argument: that
- * function can answer from the session-open snapshot, which holds the FIRST
- * window and must never be handed back for an older one. This is always a
- * fresh read.
- *
- * `history: true` is not sent. It only adds the server's current-root check,
- * and `shouldHydrateFromMirror` already applies that guard client-side — the
- * rows are the same either way.
- *
- * Never throws, for the same reason the first window does not: paging further
- * back is an accelerator, and its absence costs only the page the user cannot
- * see yet.
- *
- * @deprecated Reads the v1 saved copy. Older log pages: `useSessionLogOlder` (`GET …/log?before_seq=`). Removed in the next major.
- */
-export async function loadOlderSessionTranscriptMirror(input: {
-	kortixSessionScope: string | undefined;
-	before: string;
-	limit?: number;
-	signal?: AbortSignal;
-	/** A sub-agent's OpenCode session inside the scope. */
-	child?: string;
-}): Promise<SessionTranscriptSyncEnvelope | null> {
-	const scope = parseKortixSessionScope(input.kortixSessionScope);
-	if (!scope) return null;
-	try {
-		return await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
-			limit: input.limit ?? MIRROR_HYDRATE_LIMIT,
-			before: input.before,
-			signal: input.signal,
-			child: input.child,
-		});
-	} catch {
-		return null;
-	}
-}
-
-/** The route's largest window: an export walks the whole saved copy. */
-const SAVED_EXPORT_WINDOW = 500;
-
-/**
- * Every message of the saved copy, oldest first: each window back from the
- * newest, until the server leaves no cursor. For an export, which needs the
- * whole conversation while the computer cannot answer. Unlike the reads above
- * it throws on a failed read: a partial export must not pass for a whole one.
- *
- * @deprecated Reads the v1 saved copy. `loadSessionExportMessages` reads the session log first. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
- */
-export async function loadSavedSessionTranscriptMessages(
-	scope: { projectId: string; sessionId: string },
-	signal?: AbortSignal,
-): Promise<Array<{ info: Message; parts: Part[] }>> {
-	const windows: Array<Array<{ info: Message; parts: Part[] }>> = [];
-	const seen = new Set<string>();
-	let before: string | null = null;
-	do {
-		const envelope = await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
-			limit: SAVED_EXPORT_WINDOW,
-			history: true,
-			before,
-			signal,
-		});
-		if (!envelope.available) break;
-		windows.unshift(mirrorMessagesForHydrate(envelope));
-		before = envelope.next_cursor ?? null;
-		// A cursor the server already gave is a server that is not advancing.
-		if (before !== null && seen.has(before)) break;
-		if (before !== null) seen.add(before);
-	} while (before !== null);
-	return windows.flat();
-}
-
-/**
- * How long after a turn ends the device's copy is re-read. The server writes
- * its saved copy on the turn-end relay, a moment after the runtime goes idle;
- * reading at once would return the copy from the turn before.
- */
-export const SAVED_COPY_REFRESH_DELAY_MS = 3_000;
-
-/**
- * Replace the device's copy of one session with the server's current one.
- * Never throws: a failed read leaves the kept copy as it was.
- */
-export async function refreshSavedCopy(
-	store: SavedCopyStore,
-	projectId: string,
-	sessionId: string,
-): Promise<void> {
-	try {
-		const envelope = await getSessionTranscriptSync(projectId, sessionId, {
-			limit: MIRROR_HYDRATE_LIMIT,
-		});
-		if (envelope) await store.write(projectId, sessionId, envelope);
-	} catch {
-		// The kept copy stays; the next open reconciles anyway.
-	}
 }

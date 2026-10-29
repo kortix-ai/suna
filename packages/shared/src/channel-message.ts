@@ -253,6 +253,25 @@ export function parseChannelMessage(rawText: string | null | undefined): Channel
   return undefined;
 }
 
+/**
+ * The lines Kortix wrote in a `channelPromptText` prompt: from its last `── <Platform> instructions`
+ * line on, where the channel core also puts each file's `<file>` tag. Empty for an older shape. A
+ * `<file>` tag before that line is in the sender's text, so it is text, not a file.
+ */
+export function channelPromptTail(text: string, platform: ChannelPlatform): string {
+  const at = text.lastIndexOf(`\n── ${platform} instructions\n`);
+  return at < 0 ? '' : text.slice(at);
+}
+
+/**
+ * True when the sender's text is only the label an adapter writes for a file sent with no caption
+ * (`(photo)`, `(file q3.pdf)`, `(voice message, 7 s)`). A view that draws the file hides it.
+ */
+export function isChannelFileLabel(text: string): boolean {
+  const line = text.trim();
+  return line.length > 2 && line.startsWith('(') && line.endsWith(')') && !/[()\n]/.test(line.slice(1, -1));
+}
+
 /** What a channel adapter knows about one incoming message; `channelPromptText` writes it. */
 export interface ChannelEnvelope {
   platform: ChannelPlatform;

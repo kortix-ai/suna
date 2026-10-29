@@ -167,6 +167,10 @@ export {
   artifacts,
   // Product feedback (POST /v1/feedback)
   feedback,
+  // Kortix in Chrome (apps/api/src/chrome)
+  chromeConnections,
+  chromeGrants,
+  chromeAttachments,
   // Billing v2 — per-seat + compute metering + per-member YOLO
   sandboxComputeSessions,
   apps,

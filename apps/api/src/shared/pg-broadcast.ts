@@ -109,6 +109,13 @@ export const SPACE_ACCESS_BUST_CHANNEL = 'kortix_space_access_bust';
  */
 export const SESSION_LIST_BUST_CHANNEL = 'kortix_session_list_bust';
 
+/**
+ * A tenth channel: "send this frame to a Kortix in Chrome extension". The
+ * payload is `{"chromeId","frame"}`, always under 8 KB. The replica that holds
+ * the extension's control socket delivers it; see `chrome/registry.ts`.
+ */
+export const CHROME_COMMAND_CHANNEL = 'kortix_chrome_cmd';
+
 type Handler = (projectId: string) => void;
 
 let listener: postgres.Sql | null = null;
@@ -121,6 +128,7 @@ let publish: ((projectId: string) => void) | null = null;
 let tunnelForwardHandler: ((payload: string) => void) | null = null;
 let commandDueHandler: ((dueAtMs: number) => void) | null = null;
 let promptsChangedHandler: ((sessionId: string) => void) | null = null;
+let chromeCommandHandler: ((payload: string) => void) | null = null;
 // replica-local: subscribers in this process; the NOTIFY reaches every replica.
 const sessionChangedHandlers = new Set<(sessionId: string) => void>();
 let iamCacheBustHandler: ((payload: string) => void) | null = null;
@@ -189,6 +197,11 @@ function deliverPromptsChanged(payload: string): void {
   } catch {
     // A subscriber must not take the listener down.
   }
+}
+
+/** The chrome registry registers once, at import. Kept across stop/start. */
+export function onChromeCommand(handler: ((payload: string) => void) | null): void {
+  chromeCommandHandler = handler;
 }
 
 /** Subscribe to `kortix_session_changed`. Returns the unsubscribe. Kept across stop/start. */
@@ -370,6 +383,13 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
         // A subscriber must not take the listener down.
       }
     });
+    await sql.listen(CHROME_COMMAND_CHANNEL, (payload) => {
+      try {
+        chromeCommandHandler?.(payload);
+      } catch {
+        // A subscriber must not take the listener down.
+      }
+    });
     await sql.listen(SPACE_ACCESS_BUST_CHANNEL, deliverSpaceAccessBust);
     await sql.listen(SESSION_LIST_BUST_CHANNEL, deliverSessionListBust);
     listener = sql;
@@ -380,7 +400,7 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       void sql.notify(BASE_MOVE_CHANNEL, projectId).catch(() => {});
     };
     console.log(
-      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}, ${SESSION_PROMPTS_CHANGED_CHANNEL}, ${SESSION_CHANGED_CHANNEL}, ${IAM_CACHE_BUST_CHANNEL}, ${SPACE_ACCESS_BUST_CHANNEL}, ${SESSION_LIST_BUST_CHANNEL}`,
+      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}, ${SESSION_PROMPTS_CHANGED_CHANNEL}, ${SESSION_CHANGED_CHANNEL}, ${IAM_CACHE_BUST_CHANNEL}, ${SPACE_ACCESS_BUST_CHANNEL}, ${SESSION_LIST_BUST_CHANNEL}, ${CHROME_COMMAND_CHANNEL}`,
     );
     return true;
   } catch (error) {

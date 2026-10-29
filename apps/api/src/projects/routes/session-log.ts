@@ -396,7 +396,7 @@ export function registerSessionLogRoutes(): void {
 
       const page = await readSessionLogPage({ sessionId, threadId: query.thread ?? null, beforeSeq, limit: limit.value });
       // The code tells a client this API serves the log and the session has nothing saved (a new
-      // session): it stays on the log. An API without this route answers a bare 404.
+      // session): it stays on the log and reads it again at the next turn end (`useSessionLogSync`).
       if (!page) return c.json({ error: 'No session log for this session', code: 'session_log_missing' }, 404);
       if (page === 'unknown_thread') return c.json({ error: 'Unknown thread' }, 404);
       return c.json(page, 200);
