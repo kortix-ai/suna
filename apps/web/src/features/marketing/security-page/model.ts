@@ -1,8 +1,10 @@
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 /**
  * `/security` copy, laid out like the home page: hero with one walkthrough,
  * pillars, one tab per layer, the enforcement table, trust band, FAQ.
  *
- * English only. `content.ts` keeps the older, translated copy that the
+ * Localized. `content.ts` keeps the older, translated copy that the
  * security deck (`presentations/decks/security.tsx`) still imports.
  *
  * Every line was checked on 2026-10-28 against the source named above its
@@ -98,25 +100,41 @@ export const pillars = {
       id: 'computer',
       name: 'Its own computer',
       line: 'Every session runs isolated.',
-      facts: ['One cloud computer per session', 'Its own branch of the repository', 'Nothing shared with another session'],
+      facts: [
+        'One cloud computer per session',
+        'Its own branch of the repository',
+        'Nothing shared with another session',
+      ],
     },
     {
       id: 'identity',
       name: 'Its own identity',
       line: 'An agent never borrows your role.',
-      facts: ['Grants are deny-by-default', 'It cannot grant itself more', 'You choose who may run it'],
+      facts: [
+        'Grants are deny-by-default',
+        'It cannot grant itself more',
+        'You choose who may run it',
+      ],
     },
     {
       id: 'credentials',
       name: 'Logins stay out',
       line: 'Connector logins never enter the computer.',
-      facts: ['Kortix makes each app call', 'Secrets encrypted per project', 'Enforced secrets swapped outside'],
+      facts: [
+        'Kortix makes each app call',
+        'Secrets encrypted per project',
+        'Enforced secrets swapped outside',
+      ],
     },
     {
       id: 'record',
       name: 'Checked and recorded',
       line: 'Rules first, then the audit log.',
-      facts: ['Allow, Ask or Block per action', 'One approval per exact call', 'Every action on record'],
+      facts: [
+        'Allow, Ask or Block per action',
+        'One approval per exact call',
+        'Every action on record',
+      ],
     },
   ],
 } as const;
@@ -236,7 +254,11 @@ export const agentYaml = {
 } as const;
 
 export const computerBox = {
-  holds: ['The project on its own branch', 'KORTIX_TOKEN, for this agent only', 'Secrets granted to it'],
+  holds: [
+    'The project on its own branch',
+    'KORTIX_TOKEN, for this agent only',
+    'Secrets granted to it',
+  ],
   never: ['Connector logins', 'Kortix’s model provider keys', 'Enforced secret values'],
 } as const;
 
@@ -252,7 +274,11 @@ export const approval = {
 } as const;
 
 export const secretModes = [
-  { k: 'Environment variable', v: 'The real value. Code in the session can read it.', tag: 'default' },
+  {
+    k: 'Environment variable',
+    v: 'The real value. Code in the session can read it.',
+    tag: 'default',
+  },
   { k: 'Enforced', v: 'A stand-in. Swapped outside, for listed hosts only.', tag: 'experimental' },
   { k: 'Disabled', v: 'Kept on file. Reaches no session.', tag: '' },
 ] as const;
@@ -374,3 +400,26 @@ export const faqItems = [
       'The web app, API and database run on your server. Sessions still run on Platinum cloud computers, which call back to your server, so it must be reachable from the internet.',
   },
 ] as const;
+
+export function localizeMarketingContent(tMarketing: import('@/i18n/translator').UiTranslator) {
+  return localizeUiCatalog(
+    {
+      hero,
+      gates,
+      pillars,
+      layers,
+      roles,
+      agentYaml,
+      computerBox,
+      approval,
+      secretModes,
+      modelPath,
+      changePath,
+      enforcement,
+      trust,
+      faqItems,
+    },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+}

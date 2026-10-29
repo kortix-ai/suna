@@ -1,14 +1,16 @@
 'use client';
 
-import { cn } from '@kortix/ui';
+import { useTranslations } from '@/i18n/use-translations';
+
 import Link from '@/components/site-link';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { cn } from '@kortix/ui';
 import { FolderSimpleIcon, ShieldCheckIcon } from '@phosphor-icons/react/dist/ssr';
 import { useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
-import { driveLine, governedLine, hero, steps, teams, type StepId } from './content';
+import { localizeMarketingContent as localizeContent, type StepId } from './content';
 import { Status, Window } from './parts';
 
 /*
@@ -24,9 +26,12 @@ const STEP_MS = 4000;
 
 /** One card per team. A team not rolled out yet shows as a dashed outline. */
 function CompanyView({ step }: { step: StepId }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { driveLine, governedLine, teams } = localizeContent(tMarketing);
+
   const fade = 'animate-in fade-in duration-slower ease-out';
   return (
-    <Window title="Arcadia · Agents">
+    <Window title={tMarketing('textf33f48537342')}>
       <ul className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 sm:p-4">
         {teams.map((t) => {
           const state = t.states[step];
@@ -39,7 +44,9 @@ function CompanyView({ step }: { step: StepId }) {
               )}
             >
               <div className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground font-mono text-xs tracking-wide uppercase">{t.team}</span>
+                <span className="text-muted-foreground font-mono text-xs tracking-wide uppercase">
+                  {t.team}
+                </span>
                 {state ? (
                   <span key={`${step}-${t.team}`} className={fade}>
                     <Status tone={state.tone}>{state.chip}</Status>
@@ -49,12 +56,17 @@ function CompanyView({ step }: { step: StepId }) {
               {state ? (
                 <>
                   <code className="text-foreground font-mono text-sm font-medium">{t.agent}</code>
-                  <span key={`${step}-${t.team}-line`} className={cn('text-muted-foreground text-sm text-pretty', fade)}>
+                  <span
+                    key={`${step}-${t.team}-line`}
+                    className={cn('text-muted-foreground text-sm text-pretty', fade)}
+                  >
                     {state.line}
                   </span>
                 </>
               ) : (
-                <span className="text-muted-foreground text-sm">Next team</span>
+                <span className="text-muted-foreground text-sm">
+                  {tMarketing('text054b3c503be1')}
+                </span>
               )}
             </li>
           );
@@ -63,14 +75,20 @@ function CompanyView({ step }: { step: StepId }) {
       {/* The rows below appear as the rollout grows; a fixed slot keeps the window still. */}
       <div className="flex min-h-12 flex-col justify-center border-t px-4 py-3 sm:px-6">
         {step === 'one' ? (
-          <span className="text-muted-foreground text-sm">One project, one agent, one team.</span>
+          <span className="text-muted-foreground text-sm">{tMarketing('textc63c5f5bb2bb')}</span>
         ) : step === 'governed' ? (
-          <span key="governed" className={cn('text-foreground flex items-center gap-2 text-sm', fade)}>
+          <span
+            key="governed"
+            className={cn('text-foreground flex items-center gap-2 text-sm', fade)}
+          >
             <ShieldCheckIcon className="size-4 shrink-0" aria-hidden />
             {governedLine}
           </span>
         ) : (
-          <span key="drive" className={cn('text-foreground flex flex-wrap items-center gap-x-2 text-sm', fade)}>
+          <span
+            key="drive"
+            className={cn('text-foreground flex flex-wrap items-center gap-x-2 text-sm', fade)}
+          >
             <FolderSimpleIcon className="size-4 shrink-0" aria-hidden />
             {driveLine.k}
             <span className="text-muted-foreground">· {driveLine.v}</span>
@@ -82,6 +100,9 @@ function CompanyView({ step }: { step: StepId }) {
 }
 
 function Walkthrough() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { steps } = localizeContent(tMarketing);
+
   const reduced = Boolean(useReducedMotion());
   const [selected, setSelected] = useState(0);
   const [held, setHeld] = useState(false);
@@ -114,7 +135,7 @@ function Walkthrough() {
     <div className="flex w-full flex-col items-center gap-8 lg:gap-10">
       <div
         role="tablist"
-        aria-label="How Kortix rolls out across a company"
+        aria-label={tMarketing('text09583d356624')}
         onKeyDown={onKeyDown}
         className="flex flex-wrap justify-center gap-2"
       >
@@ -146,7 +167,10 @@ function Walkthrough() {
         className="flex w-full max-w-3xl flex-col gap-6"
       >
         <CompanyView step={step.id} />
-        <p key={`line-${step.id}`} className={cn('text-foreground px-4 text-center text-base text-balance', fade)}>
+        <p
+          key={`line-${step.id}`}
+          className={cn('text-foreground px-4 text-center text-base text-balance', fade)}
+        >
           {step.line}
         </p>
       </div>
@@ -155,6 +179,9 @@ function Walkthrough() {
 }
 
 export function EnterpriseHero() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { hero } = localizeContent(tMarketing);
+
   const openDemo = useRequestDemo();
   return (
     <section id="hero" className="relative">
@@ -164,14 +191,20 @@ export function EnterpriseHero() {
             <span className="text-foreground block">{hero.title}</span>
             <span className="text-muted-foreground block">{hero.titleMuted}</span>
           </h1>
-          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">{hero.sub}</p>
+          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
+            {hero.sub}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2.5 pt-2">
           <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>
-            <Link href="/pricing">Compare plans</Link>
+            <Link href="/pricing">{tMarketing('text30d9abfd7c7a')}</Link>
           </MarketingButton>
-          <MarketingButton size="md" className="hit-area-y-1" onClick={() => openDemo({ source: 'enterprise-hero' })}>
-            Talk to sales
+          <MarketingButton
+            size="md"
+            className="hit-area-y-1"
+            onClick={() => openDemo({ source: 'enterprise-hero' })}
+          >
+            {tMarketing('textcfd0b0225710')}
           </MarketingButton>
         </div>
       </div>

@@ -134,7 +134,7 @@ export interface AgentBlockV3 {
   permission?: PermissionConfigV2;
   /** Default `true`. */
   enabled?: boolean;
-  /** pi's codemode tool. Default `on`. */
+  /** pi's codemode tool. The session agent defaults to `on`; a subagent has none unless its own agent sets this. */
   codemode?: CodemodeV3;
   tools?: AgentToolsV3;
   skills?: ExcludableGrantSetV3;

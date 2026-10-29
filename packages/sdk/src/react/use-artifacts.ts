@@ -131,6 +131,8 @@ export function useArtifactMutations(projectId: string) {
     share: useMutation({ mutationFn: (input: ShareArtifactPathInput) => shareArtifactPath(projectId, input), ...opts }),
     save: useMutation({
       mutationFn: ({ artifactId, ...input }: SaveArtifactInput & { artifactId: string }) => saveArtifact(projectId, artifactId, input),
+      // The editor owns save errors (status line, conflict actions): no second, generic toast.
+      onError: () => {},
       onSuccess: (saved, input) => {
         seedSavedText(qc, projectId, saved, input);
         return refresh();

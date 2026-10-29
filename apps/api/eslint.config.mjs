@@ -188,7 +188,10 @@ export default tseslint.config(
     // and their sibling files (`telegram-webhook.ts`, `resend-email-api.ts`, …).
     // The other files in channels/core are shared Slack/Teams helpers.
     files: [
+      'src/channels/core/channel-access.ts',
+      'src/channels/core/channel-access-profiles.ts',
       'src/channels/core/conversation.ts',
+      'src/channels/core/prompt.ts',
       'src/channels/core/questions.ts',
       'src/channels/core/session-notice.ts',
       'src/channels/core/threads.ts',
