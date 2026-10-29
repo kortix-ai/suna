@@ -2838,6 +2838,9 @@ export const sessionTurns = kortixSchema.table(
 );
 
 /**
+ * RETIRED (P8.2): no code reads or writes the two v1 mirror tables below since Release B2. The
+ * Release B3 migration drops them. The rest of this comment describes them as they were.
+ *
  * Durable transcript mirror — the server-side copy of a session's message
  * envelope, so the control plane can answer "what was said in this session"
  * for a session whose sandbox is STOPPED.
@@ -2977,7 +2980,7 @@ export const sessionTranscriptMessages = kortixSchema.table(
  * Every table is read per session, so every index leads with `session_id`
  * (the policy is written out in the creating migration). Each table cascades
  * from `project_sessions`: a deleted session deletes its log. Only the service
- * role reads them (REVOKE + RLS with no policy, like the transcript mirror).
+ * role reads them (REVOKE + RLS with no policy).
  */
 export const sessionLogs = kortixSchema.table(
   'session_logs',
@@ -2998,7 +3001,7 @@ export const sessionLogs = kortixSchema.table(
     // When the daemon's journal first committed a batch for this session. Null:
     // no journal has written (an old daemon, a dump-dir daemon, or posts that
     // have not succeeded yet), so the API's transcript capture writes the log
-    // from the v1 mirror (P2.7). Set: the journal owns the rows; capture stops.
+    // from its read of the box (P8). Set: the journal owns the rows; capture stops.
     journalSeenAt: timestamp('journal_seen_at', { withTimezone: true }),
     // Row time. The session's own `created_at` lives in `record`.
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -3116,8 +3119,8 @@ export const sessionLogBlobs = kortixSchema.table(
 /**
  * One row per session whose content the retention purge (P2.8,
  * `apps/api/src/projects/session-log-purge.ts`) removed. It says WHEN the rows
- * went (`rows_purged_at`: the v2 `session_log*` rows and the v1
- * `session_transcript_*` rows) and when the session's `session-attachments`
+ * went (`rows_purged_at`: the `session_log*` rows and every other content
+ * row) and when the session's `session-attachments`
  * objects went (`objects_purged_at`, 7 days after the rows, null until then).
  * The row stays after both: it is the "done" marker that stops the purge from
  * selecting the session again. No content: ids, a reason and two timestamps.
@@ -3148,10 +3151,9 @@ export const sessionContentPurges = kortixSchema.table(
 );
 
 /**
- * The pass of the session-log backfill (P3.1, `apps/api/src/projects/session-log-backfill.ts`):
- * one row (`id` = 'pass') with the mode, the keyset cursor and the running totals as JSON, so a
- * new leader resumes the pass instead of starting over. `rev` fences a save: a tick saves only
- * over the rev it loaded. No content: counts, the mode and the cursor's (created_at, session_id).
+ * The pass of the removed session-log backfill (P3.1): one row (`id` = 'pass') with the mode, the
+ * cursor and the running totals as JSON. No content. No code reads or writes it since Release B2
+ * (P8.2). The Release B3 migration reads it once as its guard, then drops it with the v1 mirror.
  */
 export const sessionLogBackfillState = kortixSchema.table('session_log_backfill_state', {
   id: text('id').primaryKey(),
