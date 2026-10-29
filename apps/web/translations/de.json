@@ -1067,6 +1067,8 @@
         "entrypoint": "Startbefehl",
         "optional": "optional",
         "entrypointPlaceholder": "Leer lassen, um den Kortix-Standard zu verwenden (empfohlen).",
+        "residentialIp": "Residential-IP",
+        "residentialIpHint": "Leiten Sie den Webverkehr dieser Sandbox über eine private (Residential) IP-Adresse, abgerechnet pro GB aus Ihren Credits. Sitzungen starten nur, wo das Deployment sie anbietet.",
         "cancel": "Abbrechen",
         "save": "Änderungen speichern",
         "create": "Vorlage erstellen",

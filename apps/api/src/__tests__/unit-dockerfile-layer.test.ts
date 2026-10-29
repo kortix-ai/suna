@@ -465,6 +465,43 @@ describe('container_runtime', () => {
   });
 });
 
+// kortix.yaml `residential_proxy: true | { country }`: a boot setting on the
+// template, never an image input. A template that asks never loses the ask to
+// a typo (fail closed): a bad country is dropped, the proxy stays on.
+describe('residential_proxy', () => {
+  test('extractSandboxTemplates reads true, a country, and off', () => {
+    const out = extractSandboxTemplates({
+      sandbox: {
+        templates: [
+          { slug: 'on', residential_proxy: true },
+          { slug: 'country', image: 'python:3.12-slim', residential_proxy: { country: 'US' } },
+          { slug: 'bad-country', image: 'python:3.12-slim', residential_proxy: { country: 'usa' } },
+          { slug: 'empty-table', image: 'python:3.12-slim', residential_proxy: {} },
+          { slug: 'off', image: 'python:3.12-slim', residential_proxy: false },
+          { slug: 'absent', image: 'python:3.12-slim' },
+          { slug: 'string', image: 'python:3.12-slim', residential_proxy: 'yes' },
+        ],
+      },
+    });
+    expect(out.map((t) => [t.slug, t.residentialProxy])).toEqual([
+      ['on', {}],
+      ['country', { country: 'us' }],
+      ['bad-country', {}],
+      ['empty-table', {}],
+      ['off', undefined],
+      ['absent', undefined],
+      ['string', undefined],
+    ]);
+  });
+
+  test('an entry with neither image nor dockerfile parses: the platform base image', () => {
+    const [tpl] = extractSandboxTemplates({ sandbox: { templates: [{ slug: 'web', residential_proxy: true }] } });
+    expect(tpl).toMatchObject({ slug: 'web', residentialProxy: {} });
+    expect(tpl?.image).toBeUndefined();
+    expect(tpl?.dockerfile).toBeUndefined();
+  });
+});
+
 describe('sandbox.templates entrypoint', () => {
   test('a declared entrypoint is parsed, so the sync applies it; none stays absent', () => {
     const [withEntry, without] = extractSandboxTemplates({

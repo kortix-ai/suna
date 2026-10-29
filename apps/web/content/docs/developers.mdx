@@ -1047,12 +1047,13 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `sandbox.templates[].slug` | string | required | Unique. Lowercase letters, digits, `-` and `_`, at most 64 characters. `default` is reserved. |
 | `sandbox.templates[].name` | string | the slug | The label in the template picker. |
 | `sandbox.templates[].entrypoint` | string | the image's | Overrides the container entrypoint. |
-| `sandbox.templates[].image` | string | — | An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both. |
+| `sandbox.templates[].image` | string | — | An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both. Neither: the platform base image. |
 | `sandbox.templates[].dockerfile` | string | — | A repository path to a Dockerfile. `kortix validate` lints it: no `COPY` from the repository, no `RUN` heredoc, a Debian-family base image. |
 | `sandbox.templates[].cpu` | integer, 1 or more | the platform default | vCPU cores. Above 32 is a warning, and Kortix uses 32. |
 | `sandbox.templates[].memory` | integer, 1 or more | the platform default | GiB of memory. Above 128 is a warning, and Kortix uses 128. |
 | `sandbox.templates[].disk` | integer, 1 or more | the platform default | GiB of disk. Above 500 is a warning, and Kortix uses 500. |
 | `sandbox.templates[].container_runtime` | boolean | `false` | `true`: Docker runs inside the sandbox. |
+| `sandbox.templates[].residential_proxy` | boolean or map | — | `true`, or `{ country: us }`: the sandbox's web traffic leaves through a residential IP address, billed per GB from credits. Kortix hosts and package registries connect directly. Sessions start only where the deployment offers it. Not part of the image. |
 | `sandbox.default` | string | `default` | A slug from `sandbox.templates`, or `default` for the platform image. |
 
 #### triggers keys
@@ -1211,6 +1212,30 @@ A session picks its sandbox template in this order:
 4. The platform image.
 
 A hardware value below 1 is an error. A value above the maximum is a warning, and Kortix clamps it. `gpu` is a warning and does nothing. An image key set directly on `sandbox` (`image`, `dockerfile`, `slug`, `cpu`, `memory`, `disk`, `entrypoint`, `context`, `context_dir`, `gpu`) is an error: put it in a template.
+
+A template with neither `image` nor `dockerfile` builds the platform image with its own size and settings. Its first session waits for that build, like any template.
+
+#### Residential IP
+
+`residential_proxy` on a template sends the sandbox's web traffic through a residential IP address. `country` is an ISO 3166-1 alpha-2 code; without it, the address can be in any country.
+
+```yaml
+sandbox:
+  default: web
+  templates:
+    - slug: web
+      residential_proxy: true
+    - slug: shop-us
+      image: python:3.12-slim
+      residential_proxy: { country: us }
+```
+
+1. Traffic through the residential address is billed per GB from your credits.
+2. Kortix's own hosts (the API, the model gateway, the storage of boot files) and common package registries connect directly.
+3. UDP is blocked while it is on, so QUIC and WebRTC cannot reveal the sandbox's own address.
+4. A session on the template starts only where the deployment offers a residential IP. Elsewhere it does not start, with the message "This sandbox template asks for a residential IP, which this deployment does not offer". It never falls back to the sandbox's own address. `kortix validate` prints a warning for every template that asks.
+5. It is a boot setting, not part of the image: changing it rebuilds nothing. A new sandbox uses the current value; a running one keeps its own.
+6. A template created in **Customize** → **Settings** → **Sandbox templates** has the same setting as the **Residential IP** box.
 
 What each place on the sandbox keeps:
 
