@@ -25,7 +25,7 @@ export function UseTemplateButton({
     <>
       <MarketingButton size="md" className={className} onClick={() => setOpen(true)}>
         {label}
-        <ArrowRightIcon aria-hidden />
+        <ArrowRightIcon weight="fill" aria-hidden />
       </MarketingButton>
       <TemplateSessionInstallDialog
         templateId={templateId}
