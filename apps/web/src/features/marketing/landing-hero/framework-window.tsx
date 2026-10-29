@@ -1,4 +1,5 @@
 'use client';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { YamlLine } from '@/features/marketing/code-panel';
 import { FILES, TREE } from '@/features/marketing/framework/content';
@@ -77,6 +78,8 @@ export function FrameworkWindow({
   focus?: FrameworkFocus;
   shipped?: boolean;
 }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   const frame = useRef<HTMLDivElement>(null);
   const scale = useFitScale(frame);
   const code = useRef<HTMLOListElement>(null);
@@ -123,7 +126,7 @@ export function FrameworkWindow({
         <div className="flex size-full">
           <div className="bg-background text-foreground flex size-full flex-col overflow-hidden">
             <div className="flex h-12 shrink-0 items-center gap-3 border-b px-5 text-sm">
-              <span className="font-medium">arcadia</span>
+              <span className="font-medium">{tMarketing('text3259138318d8')}</span>
               <span className="text-muted-foreground flex items-center gap-1.5 font-mono text-xs">
                 <GitBranchIcon className="size-3.5" aria-hidden />
                 main
@@ -132,7 +135,7 @@ export function FrameworkWindow({
             <div className="grid min-h-0 flex-1 grid-cols-[20rem_1fr]">
               <ul
                 className="bg-sidebar overflow-hidden border-r py-3 text-sm"
-                aria-label="Repository files"
+                aria-label={tMarketing('textd823584806aa')}
               >
                 {TREE.map((node) =>
                   node.path ? (
@@ -197,7 +200,7 @@ export function FrameworkWindow({
                   <div className="flex items-center gap-2">
                     <TerminalIcon className="text-muted-foreground size-4" aria-hidden />
                     <span className="text-muted-foreground select-none">$</span>
-                    <span>kortix ship</span>
+                    <span>{tMarketing('text6e99ce07a056')}</span>
                   </div>
                   {shipped ? <ShipOutput /> : null}
                 </div>

@@ -104,6 +104,8 @@ export async function relayTurnQuestion(
   questions: QuestionInfo[],
   /** Post into the session's chat when no live turn renders it, as the agent `principal` would. Null: only a live turn may. */
   chat: { pendingId: string; principal: ConnectorPrincipal } | null = null,
+  /** The stored question a Slack or Teams button answers (core/question-token.ts). Null: a button carries its label. */
+  buttonsFor: string | null = null,
 ): Promise<{ ok: boolean; answers?: string[][]; error?: string }> {
   const platform = await platformFor(sessionId);
   if (!platform) {
@@ -113,8 +115,8 @@ export async function relayTurnQuestion(
       : { ok: false, error: 'not_relayed' };
   }
   return platform === 'teams'
-    ? teamsQuestions.postTeamsQuestion(sessionId, questions)
-    : slackQuestions.postQuestion(sessionId, questions);
+    ? teamsQuestions.postTeamsQuestion(sessionId, questions, buttonsFor ?? undefined)
+    : slackQuestions.postQuestion(sessionId, questions, buttonsFor ?? undefined);
 }
 
 export async function relayReviewCard(

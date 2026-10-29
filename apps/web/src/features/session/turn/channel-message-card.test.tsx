@@ -4,6 +4,7 @@ import { parseChannelMessage } from '@kortix/ui/session/turn/channel-message';
 import { ChannelMessage } from '@kortix/ui/session/turn/user-message';
 import { ChannelOrigin } from '@kortix/ui/session';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { channelPromptText } from '@kortix/shared';
 
 const slack = (text: string) =>
   parseChannelMessage(
@@ -53,5 +54,27 @@ describe('a Slack channel message', () => {
     const html = renderToStaticMarkup(<ChannelMessage info={slack('mail ops@example.com')} />);
     expect(chips(html)).toEqual([]);
     expect(html).toContain('ops@example.com');
+  });
+});
+
+// An email turn drew a Slack pill: every header word but Teams and Telegram read as Slack.
+describe('an email channel message', () => {
+  test('wears the Email pill and shows the body without the instructions', () => {
+    const prompt = channelPromptText({
+      platform: 'Email',
+      sender: 'a@b.example',
+      where: 'Q3 report',
+      text: 'The numbers are attached.',
+      reply: `kortix connectors call email.reply_message '{"text":"<reply>"}'`,
+      notes: ['Inbox <inbox_id>, thread <thread_id>.'],
+    });
+    const html = renderToStaticMarkup(<ChannelMessage info={parseChannelMessage(prompt)!} />);
+    expect(html).toContain('>Email<');
+    expect(html).toContain('a@b.example');
+    expect(html).toContain('The numbers are attached.');
+    expect(html).not.toContain('kortix connectors call');
+    // Neither Slack's four colors nor the Telegram plane.
+    expect(html).not.toContain('#36C5F0');
+    expect(html).not.toContain('#29B6F6');
   });
 });

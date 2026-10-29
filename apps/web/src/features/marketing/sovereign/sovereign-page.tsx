@@ -1,7 +1,10 @@
 import Link from '@/components/site-link';
-import { Band, Heading } from '@/features/marketing/kit/page-frame';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { Band, Heading } from '@/features/marketing/kit/page-frame';
 import { FaqSection } from '@/features/marketing/landing-sections/faq-section';
+
+import { useTranslations } from '@/i18n/use-translations';
+
 import {
   BrainIcon,
   CheckIcon,
@@ -13,7 +16,7 @@ import {
 } from '@phosphor-icons/react/dist/ssr';
 import type { ComponentType, ReactNode } from 'react';
 
-import { faqItems, lockIn, pillars } from './content';
+import { localizeMarketingContent as localizeContent } from './content';
 import { SovereignHero } from './sovereign-hero';
 import { TopicTabs } from './topic-tabs';
 
@@ -35,6 +38,9 @@ const PILLAR_ICONS: Record<string, Glyph> = {
 const LOCK_IN_ICONS: Glyph[] = [CodeIcon, HardDrivesIcon, CpuIcon, GitBranchIcon];
 
 function Pillars() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { pillars } = localizeContent(tMarketing);
+
   return (
     <section id="pillars" className="scroll-mt-16 py-14 lg:py-20">
       <Heading title={pillars.title} titleMuted={pillars.titleMuted} />
@@ -47,7 +53,9 @@ function Pillars() {
                 <Icon className="text-foreground size-6" aria-hidden />
                 <h3 className="text-foreground text-2xl font-medium tracking-tight text-balance">
                   {name}
-                  <span className="text-muted-foreground mt-1 block text-lg leading-snug">{line}</span>
+                  <span className="text-muted-foreground mt-1 block text-lg leading-snug">
+                    {line}
+                  </span>
                 </h3>
                 <ul className="mt-auto flex flex-col gap-2 text-sm">
                   {facts.map((fact) => (
@@ -68,6 +76,9 @@ function Pillars() {
 
 /** The home page's trust band shape: dark in both themes. */
 function LockIn() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { lockIn } = localizeContent(tMarketing);
+
   return (
     <section id="no-lock-in" className="scroll-mt-16 py-14 lg:py-20">
       <div className="kx-rail-fade border-y px-4 lg:px-17">
@@ -94,10 +105,10 @@ function LockIn() {
               </div>
               <div className="flex flex-wrap gap-2.5">
                 <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>
-                  <Link href="/self-hosted">The self-hosting guide</Link>
+                  <Link href="/self-hosted">{tMarketing('text57eb8520e834')}</Link>
                 </MarketingButton>
                 <MarketingButton size="md" className="hit-area-y-1" asChild>
-                  <Link href="/contact">Talk to us</Link>
+                  <Link href="/contact">{tMarketing('text1d1d94fb5397')}</Link>
                 </MarketingButton>
               </div>
             </li>
@@ -109,15 +120,28 @@ function LockIn() {
 }
 
 export function SovereignPage(): ReactNode {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { faqItems } = localizeContent(tMarketing);
+
   return (
     <main className="bg-background relative mx-auto w-full max-w-[1440px]">
-      <div aria-hidden className="bg-border pointer-events-none absolute inset-y-0 left-4 z-10 w-px lg:left-17" />
-      <div aria-hidden className="bg-border pointer-events-none absolute inset-y-0 right-4 z-10 w-px lg:right-17" />
+      <div
+        aria-hidden
+        className="bg-border pointer-events-none absolute inset-y-0 left-4 z-10 w-px lg:left-17"
+      />
+      <div
+        aria-hidden
+        className="bg-border pointer-events-none absolute inset-y-0 right-4 z-10 w-px lg:right-17"
+      />
       <SovereignHero />
       <Pillars />
       <TopicTabs />
       <LockIn />
-      <FaqSection title="Sovereign and open, answered." titleMuted="From the code and the docs." items={faqItems} />
+      <FaqSection
+        title={tMarketing('text5c7379ce0dce')}
+        titleMuted="From the code and the docs."
+        items={faqItems}
+      />
     </main>
   );
 }

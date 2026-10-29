@@ -1,5 +1,7 @@
 import { Band, Heading } from '@/features/marketing/kit/page-frame';
-import Link from 'next/link';
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { useTranslations } from '@/i18n/use-translations';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -7,13 +9,14 @@ import {
   ShieldCheckIcon,
   UsersThreeIcon,
 } from '@phosphor-icons/react/dist/ssr';
+import Link from 'next/link';
 
 // The three pillars, in the founder's order and words (kortix-brand D16):
 // Multiplayer AI; Company as code (extensible); Sovereign and
 // open ("own your data and run on your own infra"). Every fact is a claims.md
 // row: Channels, Permissions, Path to `main`, Connectors, Source, Hosting,
 // Models, Secrets. No "pi" in this copy (D20).
-const PILLARS = [
+const sourcePILLARS = [
   {
     id: 'multiplayer',
     href: '/multiplayer',
@@ -60,10 +63,17 @@ const PILLARS = [
 
 /** The three pillars: each name is the cell's headline, its meaning under it. */
 export function PillarsBand() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { PILLARS } = localizeUiCatalog(
+    { PILLARS: sourcePILLARS },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
   return (
     <section id="pillars" className="scroll-mt-16 py-14 lg:py-20">
       <Heading
-        title="Multiplayer. Company as code. Sovereign."
+        title={tMarketing('textbf8abe5b1667')}
         titleMuted="The AI OS your whole company owns."
       />
       <Band className="mt-12">
@@ -92,9 +102,11 @@ export function PillarsBand() {
                 href={href}
                 className="text-foreground hover:text-muted-foreground outline-ring duration-normal inline-flex w-fit items-center gap-1.5 rounded-sm text-sm font-medium transition-colors ease-out focus-visible:outline-2 focus-visible:outline-offset-2"
               >
-                Learn more
+                {tMarketing('text1445799c033a')}
                 <ArrowRightIcon className="size-3.5" aria-hidden />
-                <span className="sr-only">about {name}</span>
+                <span className="sr-only">
+                  {tMarketing('texta4262e1c9bcb')} {name}
+                </span>
               </Link>
             </li>
           ))}

@@ -213,7 +213,8 @@ describe('an output opens in a modal over the inbox, like a connector approval',
     } as ReviewItem;
     search = `id=${bare.id}`;
     mount([bare], MANAGER);
-    expect(dialog()?.textContent).toContain(OUTPUT.detail.note);
+    const { note } = OUTPUT.detail as Extract<ReviewItem['detail'], { note: string }>;
+    expect(dialog()?.textContent).toContain(note);
     expect(dialog()?.querySelectorAll('section')).toHaveLength(0);
   });
 

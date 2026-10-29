@@ -4397,6 +4397,314 @@ describe('pi codemode', () => {
     const parts = await run(restored)
     expect(parts.at(-1)!.state.output).toContain('loaded:7')
   })
+
+  describe('in a subagent', () => {
+    const TASK = { tool: 'task', args: { description: 'Delegate', prompt: 'do it', subagent_type: 'worker' } }
+    /** A v3 set: the session agent `build` delegates to the subagent `worker`. */
+    const agents = (worker: Record<string, unknown>, build: Record<string, unknown> = { permission: 'allow' }) =>
+      JSON.stringify({ schema: 3, default_agent: 'build', agent: { build: { mode: 'primary', ...build }, worker: { mode: 'subagent', description: 'Works', permission: 'allow', ...worker } } })
+    /** The child the root's task call started, and its tool parts. */
+    const child = async (r: Rig): Promise<{ id: string; parts: Part[] }> => {
+      const root = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      const id = toolParts(root, 'task')[0]!.state.metadata.sessionId as string
+      const page = (await r.bearer(`/kortix/runtime/messages/${id}`).then((res) => res.json())) as WirePage
+      return { id, parts: page.messages.flatMap((m) => m.parts).filter((p) => p.type === 'tool') }
+    }
+
+    test('a subagent gets codemode only when its own agent sets it, and its script runs its tools', async () => {
+      const plain = await boot({ script: [TASK, { text: 'child done' }, { text: 'parent done' }], env: { KORTIX_COMPILED_AGENT_CONFIG: agents({}) } })
+      let first = gateway.sampling.length
+      await promptAndSettle(plain, 'go')
+      // The root has codemode (its default); the child's request declares none.
+      expect(gateway.sampling[first]!.toolNames).toContain('codemode')
+      expect(gateway.sampling[first + 1]!.toolNames).toContain('bash')
+      expect(gateway.sampling[first + 1]!.toolNames).not.toContain('codemode')
+
+      const r = await boot({
+        script: [TASK, script("const a = await tools.bash({ command: 'echo one' }); const b = await tools.bash({ command: 'echo two' }); return a.trim() + '+' + b.trim()"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'on' }) },
+      })
+      first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      expect(gateway.sampling[first + 1]!.toolNames).toEqual(expect.arrayContaining(['bash', 'codemode']))
+      expect(String(gateway.sent[first + 1]!.find((m) => m.role === 'system')?.content)).toContain('Use codemode to batch independent tool calls')
+      const { parts } = await child(r)
+      expect(parts.map((p) => p.tool)).toEqual(['codemode'])
+      expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('one+two') })
+      expect(parts[0]!.state.metadata.calls.map((c: Part) => [c.name, c.status])).toEqual([['bash', 'ok'], ['bash', 'ok']])
+      // The child's next request carries one tool result: the script's output.
+      const results = gateway.sent[first + 2]!.filter((m) => m.role === 'tool')
+      expect(results).toHaveLength(1)
+      expect(String(results[0]!.content)).toContain('one+two')
+      // The session log exports the child's script as one code call.
+      const { log } = piSessionLog(r.service.runtime()!.sessionLogSnapshot()!)
+      expect(() => upcastSessionLog(log)).not.toThrow()
+      expect(log.threads.flatMap((t) => t.messages.flatMap((m) => m.blocks)).filter((b) => b.type === 'tool_call' && b.name === 'codemode')).toHaveLength(1)
+    })
+
+    test("a subagent's script call reaches extension tool_call handlers as nested (parentToolCallId)", async () => {
+      // A child has no AgentSession, so childExtensionGate forwards its calls to the runner's tool_call
+      // handlers by hand. Each nested script call must carry parentToolCallId (the codemode call), as the
+      // root's nested calls do, so an extension can tell a script call from a direct one. The child's own
+      // gate already policed the call (stricter than rootRule), so nestedCallGate skips it — no double decision.
+      let logPath = ''
+      const r = await boot({
+        script: [TASK, script("return (await tools.bash({ command: 'echo nested' })).trim()"), { text: 'child done' }, { text: 'parent done' }],
+        // v3 discovers no `.pi/extensions`: register the extension as a project package.
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'on' }), KORTIX_PI_PACKAGES: JSON.stringify(['./.pi/extensions/watch.ts']) },
+        prepare: (workspace) => {
+          logPath = join(workspace, 'calls.log')
+          repoExtension(
+            workspace,
+            'watch',
+            `import { appendFileSync } from 'node:fs'
+export default function (pi) {
+  pi.on('tool_call', (event) => {
+    appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ name: event.toolName, id: event.toolCallId, parent: event.parentToolCallId ?? null }) + '\\n')
+  })
+}
+`,
+          )
+        },
+      })
+      await promptAndSettle(r, 'go')
+      const events = readFileSync(logPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line) as { name: string; id: string; parent: string | null })
+      const codemode = events.find((e) => e.name === 'codemode')
+      const bash = events.find((e) => e.name === 'bash')
+      expect(codemode?.parent).toBeNull() // the child's direct codemode call has no parent
+      expect(bash?.parent).toBe(codemode!.id) // the nested script call is parented to the codemode call
+      expect(bash!.id.startsWith(codemode!.id + '/')).toBe(true)
+    })
+
+    test("a subagent in 'only' sees codemode alone, and its script still reaches the direct tools", async () => {
+      const r = await boot({
+        script: [TASK, script("return (await tools.bash({ command: 'echo only' })).trim()"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only' }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      // The child's request offers codemode but NOT the direct tools: `only` forces scripts.
+      expect(gateway.sampling[first + 1]!.toolNames).toContain('codemode')
+      expect(gateway.sampling[first + 1]!.toolNames).not.toContain('bash')
+      expect(String(gateway.sent[first + 1]!.find((m) => m.role === 'system')?.content)).toContain('Every other tool runs from a codemode script')
+      // The script still reaches bash through the executor, and only its output returns.
+      const { parts } = await child(r)
+      expect(parts.map((p) => p.tool)).toEqual(['codemode'])
+      expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('only') })
+      expect(parts[0]!.state.metadata.calls.map((c: Part) => [c.name, c.status])).toEqual([['bash', 'ok']])
+    })
+
+    test("a subagent in 'only' calls show directly: its scripts cannot hide presentation", async () => {
+      const r = await boot({
+        script: [TASK, script("return await tools.show({ action: 'show', type: 'text', content: 'Hidden' })"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only' }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      expect(gateway.sampling[first + 1]!.toolNames.sort()).toEqual(['codemode', 'show'])
+      const [part] = (await child(r)).parts
+      expect(part!.state.status).toBe('error')
+      expect(part!.state.error).toContain('show')
+    })
+
+    test("a subagent in 'only' whose show is denied is not told to call show directly", async () => {
+      // Finding C: the only-mode guideline must not say "Call show directly" when the agent has no show.
+      const r = await boot({
+        script: [TASK, script("return (await tools.bash({ command: 'echo noshow' })).trim()"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only', permission: { '*': 'allow', show: 'deny' } }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      const offered = gateway.sampling[first + 1]!.toolNames
+      expect(offered).toContain('codemode')
+      expect(offered).not.toContain('show')
+      const system = String(gateway.sent[first + 1]!.find((m) => m.role === 'system')?.content)
+      expect(system).toContain('Every tool call runs from a codemode script')
+      expect(system).not.toContain('Call show directly')
+    })
+
+    test("a subagent in 'only' with a strict tool allowlist still gets codemode and runs its script", async () => {
+      // The worker's tools are the COMPILED allowlist record the API produces from `tools: ['bash']`
+      // (resolveAgentTools → {'*': false, bash: true}), NOT a raw array — a raw array has no '*' key,
+      // so `toolAllowed` would wrongly allow codemode and hide this bug. `only` must wire codemode AND
+      // let the codemode call through the per-call gate; the allowlist still gates bash et al.
+      // Regression (2f61b78): the gate denied the codemode call itself, bricking the worker — it saw
+      // codemode and show but every call was refused, worse than falling through to the direct tools.
+      const r = await boot({
+        script: [TASK, script("return (await tools.bash({ command: 'echo locked' })).trim()"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only', tools: { '*': false, bash: true } }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      // The child sees codemode and show (show from baseTools, not the allowlist), never bash.
+      const offered = gateway.sampling[first + 1]!.toolNames
+      expect(offered).toEqual(expect.arrayContaining(['codemode', 'show']))
+      expect(offered).not.toContain('bash')
+      expect(String(gateway.sent[first + 1]!.find((m) => m.role === 'system')?.content)).toContain('Every other tool runs from a codemode script')
+      // The codemode call is NOT denied by the allowlist, and its script reaches bash (allowlisted).
+      const { parts } = await child(r)
+      expect(parts.map((p) => p.tool)).toEqual(['codemode'])
+      expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('locked') })
+      expect(parts[0]!.state.metadata.calls.map((c: Part) => [c.name, c.status])).toEqual([['bash', 'ok']])
+    })
+
+    test("a subagent in 'only' whose policy denies codemode keeps its direct tools, not bricked", async () => {
+      // A deny rule on codemode (here the subagent's own; a session-level deny behaves the same) must
+      // skip codemode wiring entirely. Otherwise `only` would hide the direct tools and then refuse
+      // every codemode call — the same brick the allowlist exemption removed. The child keeps its
+      // direct tools instead.
+      const r = await boot({
+        script: [TASK, { tool: 'bash', args: { command: 'echo nocode' } }, { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only', permission: { '*': 'allow', codemode: 'deny' } }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      // codemode is not wired: the child sees its direct tools, not codemode.
+      const offered = gateway.sampling[first + 1]!.toolNames
+      expect(offered).toContain('bash')
+      expect(offered).not.toContain('codemode')
+      // The direct bash call runs — the child is functional, not bricked.
+      const { parts } = await child(r)
+      expect(parts.map((p) => p.tool)).toEqual(['bash'])
+      expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('nocode') })
+    })
+
+    test("a subagent in 'only' does not get codemode the SESSION agent's allowlist denies", async () => {
+      // The exemption covers the subagent's OWN allowlist, not the session (root) agent's: delegating
+      // must not unlock codemode the session denies. Here the root (build) allows only bash.
+      const r = await boot({
+        script: [TASK, { tool: 'bash', args: { command: 'echo rootgate' } }, { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only' }, { permission: 'allow', tools: { '*': false, bash: true } }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      const offered = gateway.sampling[first + 1]!.toolNames
+      expect(offered).not.toContain('codemode')
+      expect(offered).toContain('bash')
+    })
+
+    test("a session agent set to codemode off does not disable a subagent's own only", async () => {
+      // For v3 the API fills KORTIX_PI_CODEMODE from the SESSION agent's codemode, so it is not an
+      // operator kill-switch. A lead with `codemode: off` must not turn codemode off for a subagent
+      // that sets `only` itself — the subagent's mode comes from its own agent.
+      const r = await boot({
+        script: [TASK, script("return (await tools.bash({ command: 'echo leadoff' })).trim()"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_PI_CODEMODE: 'off', KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only' }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      // The subagent still gets codemode despite the session-level off.
+      const offered = gateway.sampling[first + 1]!.toolNames
+      expect(offered).toContain('codemode')
+      expect(offered).not.toContain('bash')
+      const { parts } = await child(r)
+      expect(parts.map((p) => p.tool)).toEqual(['codemode'])
+      expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('leadoff') })
+    })
+
+    test("a subagent in 'on' with a strict tool allowlist gets codemode beside its tools", async () => {
+      // The allowlist exemption applies in `on` too: a strict `{'*': false, bash: true}` omits codemode,
+      // but the subagent still gets it alongside its direct tools (not instead of them).
+      const r = await boot({
+        script: [TASK, script("return (await tools.bash({ command: 'echo onmode' })).trim()"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'on', tools: { '*': false, bash: true } }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      expect(gateway.sampling[first + 1]!.toolNames).toEqual(expect.arrayContaining(['codemode', 'bash']))
+      const { parts } = await child(r)
+      expect(parts.map((p) => p.tool)).toEqual(['codemode'])
+      expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('onmode') })
+    })
+
+    test("a subagent with tools: none gets no codemode or show (the author wants no tools)", async () => {
+      // `tools: none` compiles to `{'*': false}` with nothing allowed — distinct from an allowlist,
+      // which always has a `true`. The exemption must NOT slip codemode (nothing to call) or show in.
+      const r = await boot({
+        script: [TASK, { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only', tools: { '*': false } }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      const offered = gateway.sampling[first + 1]!.toolNames
+      expect(offered).not.toContain('codemode')
+      expect(offered).not.toContain('show')
+    })
+
+    test("a subagent whose permission wildcard-denies codemode does not get it (matches the root)", async () => {
+      // `permission: { '*': deny, bash: allow }` matches codemode through '*', so codemode is not wired —
+      // consistent with the root. The exemption covers the tool allowlist default, never a permission deny.
+      const r = await boot({
+        script: [TASK, { tool: 'bash', args: { command: 'echo wild' } }, { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only', permission: { '*': 'deny', bash: 'allow' } }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      const offered = gateway.sampling[first + 1]!.toolNames
+      expect(offered).not.toContain('codemode')
+      expect(offered).toContain('bash')
+    })
+
+    test("a subagent's script call is denied by the subagent's rules and by the session's", async () => {
+      const r = await boot({
+        script: [
+          TASK,
+          script("const out = await Promise.allSettled([tools.bash({ command: 'rm -rf session-keep' }), tools.bash({ command: 'rm -rf own-keep' })]); return out.map((o) => o.status + ':' + (o.reason?.message ?? '')).join('\\n')"),
+          { text: 'child done' },
+          { text: 'parent done' },
+        ],
+        env: {
+          KORTIX_COMPILED_AGENT_CONFIG: agents(
+            { codemode: 'on', permission: { '*': 'allow', bash: { 'rm -rf own*': 'deny', '*': 'allow' } } },
+            { permission: { '*': 'allow', bash: { 'rm -rf session*': 'deny', '*': 'allow' } } },
+          ),
+        },
+        prepare: (workspace) => {
+          for (const dir of ['session-keep', 'own-keep']) {
+            mkdirSync(join(workspace, dir))
+            writeFileSync(join(workspace, dir, 'file'), 'x')
+          }
+        },
+      })
+      await promptAndSettle(r, 'clean up')
+      for (const dir of ['session-keep', 'own-keep']) expect(existsSync(join(r.workspace, dir, 'file'))).toBe(true)
+      const [part] = (await child(r)).parts
+      expect(part!.state.output.match(/rejected:The project policy denies this bash call\./g)).toHaveLength(2)
+    })
+
+    test("an ask rule holds a subagent's script call until the product replies", async () => {
+      const r = await boot({
+        script: [TASK, script("return await tools.bash({ command: 'printf ran > gated.txt && cat gated.txt' })"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'on', permission: { '*': 'allow', bash: 'ask' } }) },
+      })
+      const rt = r.service.runtime()!
+      expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+      await waitFor(() => rt.permissions.list().length === 1)
+      const [pending] = (await r.user('/permission').then((res) => res.json())) as Array<Record<string, any>>
+      expect(pending).toMatchObject({ permission: 'bash' })
+      expect(existsSync(join(r.workspace, 'gated.txt'))).toBe(false)
+      expect((await r.user(`/permission/${pending!.id}/reply`, { method: 'POST', body: JSON.stringify({ reply: 'once' }) })).status).toBe(200)
+      await waitFor(() => !rt.busy())
+      expect(readFileSync(join(r.workspace, 'gated.txt'), 'utf8')).toBe('ran')
+      expect((await child(r)).parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('ran') })
+    })
+
+    test("a subagent's script cannot start another subagent", async () => {
+      const r = await boot({
+        script: [
+          TASK,
+          script("try { await tools.task({ description: 'x', prompt: 'x', subagent_type: 'worker' }); return 'started' } catch (e) { return 'refused: ' + e.message }"),
+          { text: 'child done' },
+          { text: 'parent done' },
+        ],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'on' }) },
+      })
+      await promptAndSettle(r, 'go')
+      const { id, parts } = await child(r)
+      expect(parts[0]!.state.output).toContain('refused: ')
+      expect(((await r.user('/session').then((res) => res.json())) as Array<{ id: string }>).map((s) => s.id)).toEqual([r.service.runtime()!.rootId, id])
+    })
+  })
 })
 
 // kortix.yaml v3: the compiled set (`schema: 3`) is the only config input. Every

@@ -1,4 +1,7 @@
 'use client';
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { useTranslations } from '@/i18n/use-translations';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
@@ -18,24 +21,33 @@ type Filter = TeamId | 'all' | 'other';
 /** Four use cases a first-time reader should open, one per kind of team. */
 const START_HERE = ['ar-chaser', 'error-triage', 'churn-risk', 'contract-review'];
 
-const OTHER = { id: 'other' as const, label: 'More' };
+const sourceOTHER = { id: 'other' as const, label: 'More' };
 
 function teamOf(post: Post): TeamId | 'other' {
   return TAG_TO_TEAM[post.data.tags[0] ?? ''] ?? 'other';
 }
 
-function labelOf(team: TeamId | 'other'): string {
+function labelOf(
+  team: TeamId | 'other',
+  tMarketing: import('@/i18n/translator').UiTranslator,
+): string {
+  const { OTHER } = localizeUiCatalog(
+    { OTHER: sourceOTHER },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
   return team === 'other' ? OTHER.label : (TEAMS.find((t) => t.id === team)?.label ?? OTHER.label);
 }
 
 /** One use case as a text card: team, the title, two lines of description. */
 function UseCaseTile({ post }: { post: Post }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Link
       href={post.url}
       className="group bg-background outline-ring flex h-full flex-col gap-3 p-6 focus-visible:outline-2 focus-visible:-outline-offset-2"
     >
-      <span className="text-muted-foreground text-xs">{labelOf(teamOf(post))}</span>
+      <span className="text-muted-foreground text-xs">{labelOf(teamOf(post), tMarketing)}</span>
       <h3 className="text-foreground group-hover:text-muted-foreground duration-normal text-base font-medium text-pretty transition-colors ease-out">
         {post.data.title}
       </h3>
@@ -75,6 +87,13 @@ function TileGrid({
  * grouped by team.
  */
 export function UseCasesBrowser({ posts }: { posts: Post[] }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { OTHER } = localizeUiCatalog(
+    { OTHER: sourceOTHER },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
 
@@ -133,14 +152,14 @@ export function UseCasesBrowser({ posts }: { posts: Post[] }) {
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search use cases"
-            aria-label="Search use cases"
+            placeholder={tMarketing('textb84315d486a8')}
+            aria-label={tMarketing('textb84315d486a8')}
             className="placeholder:text-muted-foreground w-full bg-transparent text-sm outline-none"
           />
         </label>
-        <p className="text-muted-foreground mt-8 px-3 text-xs">Team</p>
-        <ul className="mt-2 flex flex-col" aria-label="Filter by team">
-          {filterButton('all', 'All use cases', posts.length)}
+        <p className="text-muted-foreground mt-8 px-3 text-xs">{tMarketing('text5985039f106d')}</p>
+        <ul className="mt-2 flex flex-col" aria-label={tMarketing('text29ec8e9091cf')}>
+          {filterButton('all', tMarketing('texta6a0a46ebeee'), posts.length)}
           {teams.map((t) => filterButton(t.id, t.label, counts.get(t.id) ?? 0))}
         </ul>
       </aside>
@@ -150,11 +169,9 @@ export function UseCasesBrowser({ posts }: { posts: Post[] }) {
           <div className="flex flex-col gap-16">
             <section aria-labelledby="start-here">
               <h2 id="start-here" className="text-foreground text-lg font-medium tracking-tight">
-                Start here
+                {tMarketing('text2adc964c0847')}
               </h2>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Four use cases that show what agents on Kortix do.
-              </p>
+              <p className="text-muted-foreground mt-1 text-sm">{tMarketing('textdc8df43d2f44')}</p>
               <div className="mt-6">
                 <TileGrid posts={starters} cols="sm:grid-cols-2 xl:grid-cols-4" />
               </div>
@@ -162,7 +179,7 @@ export function UseCasesBrowser({ posts }: { posts: Post[] }) {
 
             <section aria-labelledby="by-team">
               <h2 id="by-team" className="text-foreground text-lg font-medium tracking-tight">
-                Browse by team
+                {tMarketing('textb37b0def3a13')}
               </h2>
               <ul className="mt-6 grid grid-cols-2 border-t border-l sm:grid-cols-3 xl:grid-cols-4">
                 {teams.map((t) => (
@@ -177,7 +194,8 @@ export function UseCasesBrowser({ posts }: { posts: Post[] }) {
                         <ArrowRightIcon className="size-3.5" aria-hidden />
                       </span>
                       <span className="text-muted-foreground text-xs tabular-nums">
-                        {counts.get(t.id)} use {counts.get(t.id) === 1 ? 'case' : 'cases'}
+                        {counts.get(t.id)} {tMarketing('texta3b142af6e97')}
+                        {counts.get(t.id) === 1 ? 'case' : 'cases'}
                       </span>
                     </button>
                   </li>
@@ -206,8 +224,9 @@ export function UseCasesBrowser({ posts }: { posts: Post[] }) {
         ) : visible.length > 0 ? (
           <section aria-live="polite">
             <p className="text-muted-foreground text-sm tabular-nums">
-              {visible.length} use {visible.length === 1 ? 'case' : 'cases'}
-              {filter !== 'all' ? ` in ${labelOf(filter)}` : ''}
+              {visible.length} {tMarketing('texta3b142af6e97')}
+              {visible.length === 1 ? 'case' : 'cases'}
+              {filter !== 'all' ? ` in ${labelOf(filter, tMarketing)}` : ''}
             </p>
             <div className="mt-6">
               <TileGrid posts={visible} />
@@ -215,8 +234,8 @@ export function UseCasesBrowser({ posts }: { posts: Post[] }) {
           </section>
         ) : (
           <EmptyState
-            title="No use case matches"
-            description="Try another word, or clear the team filter."
+            title={tMarketing('texta43f1924db10')}
+            description={tMarketing('text9f4a8be5c188')}
           />
         )}
       </div>

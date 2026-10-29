@@ -1,10 +1,12 @@
 'use client';
 
 /**
- * Who may talk to a project's Telegram bot, as cards: the people who messaged
+ * Who may talk to a project's chat bot, as cards: the people who messaged
  * the bot and wait to be allowed, the allowed users, and an add-by-ID field.
  * Every action saves at once. The API adds or removes one id per call, so two
- * admins never overwrite each other's list.
+ * admins never overwrite each other's list. `CHANNEL_ACCESS` holds what differs
+ * per platform. Its copy keys stay in this file, which binds `connectorPages`,
+ * so scripts/gen-i18n-catalog.mjs copies them into the bundled catalog.
  */
 import { AccessRow, type AccessRowProps } from '../../../access/access/access-row';
 import { Button } from '../../../primitives/button';
@@ -20,56 +22,93 @@ import { Skeleton } from '../../../primitives/skeleton';
 import { errorToast } from '../../../primitives/toast';
 import { UserAvatar } from '../../../primitives/user-avatar';
 import {
-  useAllowTelegramUser,
-  useDismissTelegramAccessRequest,
-  useRemoveTelegramUser,
-  useTelegramUserPhoto,
-  useTelegramUsers,
-  type TelegramUser,
+  useAllowChannelUser,
+  useChannelUserPhoto,
+  useChannelUsers,
+  useDismissChannelAccessRequest,
+  useRemoveChannelUser,
+  type ChannelAccessPlatform,
+  type ChannelUser,
 } from '../../../internal/hooks/channels/use-channels-installations';
 import { useTranslations } from '../../../i18n';
 import { UsersIcon } from '@phosphor-icons/react';
 import { useEffect, useId, useRef, useState } from 'react';
 
-/** First and last name, else @username, else the numeric id. */
-export function telegramUserName(
-  user: Pick<TelegramUser, 'user_id' | 'username' | 'first_name' | 'last_name'>,
+/** What differs per platform. The `copy` values are `connectorPages` keys. */
+export const CHANNEL_ACCESS: Record<
+  ChannelAccessPlatform,
+  {
+    /** One typed user id, trimmed. Null for anything else. */
+    parseUserId: (raw: string) => string | null;
+    idPlaceholder: string;
+    idInputMode: 'numeric' | 'text';
+    copy: Record<
+      'descriptionKey' | 'emptyDescription' | 'loadError' | 'addByIdHint' | 'addByIdInvalid' | 'removeDescription',
+      string
+    >;
+  }
+> = {
+  telegram: {
+    // Digits only.
+    parseUserId: (raw) => {
+      const id = raw.trim();
+      return /^\d{1,20}$/.test(id) ? id : null;
+    },
+    idPlaceholder: '123456789',
+    idInputMode: 'numeric',
+    copy: {
+      descriptionKey: 'telegramUsersDescription',
+      emptyDescription: 'telegramUsersEmptyDescription',
+      loadError: 'telegramUsersLoadError',
+      addByIdHint: 'telegramAddByIdHint',
+      addByIdInvalid: 'telegramAddByIdInvalid',
+      removeDescription: 'telegramRemoveDescription',
+    },
+  },
+};
+
+/** First and last name, else @username, else the id. */
+export function channelUserName(
+  user: Pick<ChannelUser, 'user_id' | 'username' | 'first_name' | 'last_name'>,
 ): string {
   const full = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
   return full || (user.username ? `@${user.username}` : user.user_id);
 }
 
-/** One typed Telegram user id: digits only. Null for anything else. */
-export function parseTelegramUserId(raw: string): string | null {
-  const id = raw.trim();
-  return /^\d{1,20}$/.test(id) ? id : null;
-}
-
 const onError = (error: Error) => errorToast(error.message);
 
-export function TelegramUsersPanel({ projectId, onDone }: { projectId: string; onDone: () => void }) {
+export function ChannelAccessPanel({
+  projectId,
+  platform,
+  onDone,
+}: {
+  projectId: string;
+  platform: ChannelAccessPlatform;
+  onDone: () => void;
+}) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const tPages = useTranslations('connectorPages');
-  const users = useTelegramUsers(projectId, true);
-  const remove = useRemoveTelegramUser();
-  const [removing, setRemoving] = useState<TelegramUser | null>(null);
+  const { copy } = CHANNEL_ACCESS[platform];
+  const users = useChannelUsers(projectId, platform, true);
+  const remove = useRemoveChannelUser(platform);
+  const [removing, setRemoving] = useState<ChannelUser | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const allowedHeading = useRef<HTMLHeadingElement>(null);
   const requests = users.data?.requests ?? [];
   const allowed = users.data?.allowed ?? [];
-  const removingName = removing ? telegramUserName(removing) : '';
+  const removingName = removing ? channelUserName(removing) : '';
 
   return (
     <>
       <ModalHeader>
         <ModalTitle>{t.raw('text2c3059c25723')}</ModalTitle>
-        <ModalDescription>{tPages('telegramUsersDescription')}</ModalDescription>
+        <ModalDescription>{tPages(copy.descriptionKey)}</ModalDescription>
       </ModalHeader>
       <ModalBody>
         {users.isError && !users.data ? (
           <ErrorState
             size="sm"
-            title={tPages('telegramUsersLoadError')}
+            title={tPages(copy.loadError)}
             action={
               <Button variant="outline" size="sm" onClick={() => void users.refetch()}>
                 {t.raw('textd8b8392e2c54')}
@@ -84,12 +123,12 @@ export function TelegramUsersPanel({ projectId, onDone }: { projectId: string; o
             {requests.length > 0 ? (
               <section className="space-y-2">
                 <h3 className="text-muted-foreground flex items-center gap-2 px-1 text-xs font-medium">
-                  {tPages('telegramRequestsTitle')}
+                  {tPages('channelAccessRequestsTitle')}
                   <CountBadge count={requests.length} tone="waiting" />
                 </h3>
                 <ul className="space-y-2">
                   {requests.map((user) => (
-                    <RequestRow key={user.user_id} projectId={projectId} user={user} />
+                    <RequestRow key={user.user_id} projectId={projectId} platform={platform} user={user} />
                   ))}
                 </ul>
               </section>
@@ -101,7 +140,7 @@ export function TelegramUsersPanel({ projectId, onDone }: { projectId: string; o
                 tabIndex={-1}
                 className="text-muted-foreground flex items-center gap-2 px-1 text-xs font-medium outline-none"
               >
-                {tPages('telegramAllowedTitle')}
+                {tPages('channelAccessAllowedTitle')}
                 {allowed.length > 0 ? <CountBadge count={allowed.length} /> : null}
               </h3>
               {users.isPending ? (
@@ -113,17 +152,18 @@ export function TelegramUsersPanel({ projectId, onDone }: { projectId: string; o
                 <EmptyState
                   size="sm"
                   media={<EmptyArt icon={UsersIcon} />}
-                  title={tPages('telegramUsersEmptyTitle')}
-                  description={tPages('telegramUsersEmptyDescription')}
+                  title={tPages('channelAccessEmptyTitle')}
+                  description={tPages(copy.emptyDescription)}
                 />
               ) : (
                 <ul className="space-y-2">
                   {allowed.map((user) => {
-                    const name = telegramUserName(user);
+                    const name = channelUserName(user);
                     return (
-                      <TelegramUserRow
+                      <ChannelUserRow
                         key={user.user_id}
                         projectId={projectId}
+                        platform={platform}
                         user={user}
                         pending={remove.isPending && remove.variables?.userId === user.user_id}
                         kebabLabel={t('text33da220b1a34', { value0: name })}
@@ -145,7 +185,7 @@ export function TelegramUsersPanel({ projectId, onDone }: { projectId: string; o
             </section>
           </div>
         )}
-        <AddByIdField projectId={projectId} />
+        <AddByIdField projectId={projectId} platform={platform} />
       </ModalBody>
       <ModalFooter className="pt-2 pb-5">
         <Button type="button" variant="outline-ghost" onClick={onDone}>
@@ -155,8 +195,8 @@ export function TelegramUsersPanel({ projectId, onDone }: { projectId: string; o
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        title={tPages('telegramRemoveTitle', { name: removingName })}
-        description={tPages('telegramRemoveDescription', { name: removingName })}
+        title={tPages('channelAccessRemoveTitle', { name: removingName })}
+        description={tPages(copy.removeDescription, { name: removingName })}
         confirmLabel={t.raw('textc3812fc4acb8')}
         confirmVariant="destructive"
         isPending={remove.isPending}
@@ -178,18 +218,27 @@ export function TelegramUsersPanel({ projectId, onDone }: { projectId: string; o
   );
 }
 
-function RequestRow({ projectId, user }: { projectId: string; user: TelegramUser }) {
+function RequestRow({
+  projectId,
+  platform,
+  user,
+}: {
+  projectId: string;
+  platform: ChannelAccessPlatform;
+  user: ChannelUser;
+}) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const tPages = useTranslations('connectorPages');
-  const allow = useAllowTelegramUser();
-  const dismiss = useDismissTelegramAccessRequest();
-  const name = telegramUserName(user);
+  const allow = useAllowChannelUser(platform);
+  const dismiss = useDismissChannelAccessRequest(platform);
+  const name = channelUserName(user);
   const busy = allow.isPending || dismiss.isPending;
   const vars = { projectId, userId: user.user_id };
 
   return (
-    <TelegramUserRow
+    <ChannelUserRow
       projectId={projectId}
+      platform={platform}
       user={user}
       pending={busy}
       actions={
@@ -197,7 +246,7 @@ function RequestRow({ projectId, user }: { projectId: string; user: TelegramUser
           size="sm"
           disabled={busy}
           aria-busy={allow.isPending}
-          aria-label={tPages('telegramAllowAria', { name })}
+          aria-label={tPages('channelAccessAllowAria', { name })}
           onClick={() => allow.mutate(vars, { onError })}
         >
           {t.raw('texte213c161d5ce')}
@@ -210,21 +259,22 @@ function RequestRow({ projectId, user }: { projectId: string; user: TelegramUser
 }
 
 /** One person as an access card: photo or initials, name, @username, the id in mono. */
-function TelegramUserRow({
+function ChannelUserRow({
   projectId,
+  platform,
   user,
   ...row
-}: { projectId: string; user: TelegramUser } & Pick<
+}: { projectId: string; platform: ChannelAccessPlatform; user: ChannelUser } & Pick<
   AccessRowProps,
   'actions' | 'kebab' | 'kebabLabel' | 'pending'
 >) {
-  const name = telegramUserName(user);
+  const name = channelUserName(user);
   const nameIsId = name === user.user_id;
   const handle = user.username ? `@${user.username}` : null;
 
   return (
     <AccessRow
-      leading={<TelegramUserAvatar projectId={projectId} user={user} name={name} />}
+      leading={<ChannelUserAvatar projectId={projectId} platform={platform} user={user} name={name} />}
       title={nameIsId ? <span className="font-mono tabular-nums">{name}</span> : name}
       metaParts={[
         handle && handle !== name ? handle : null,
@@ -235,8 +285,18 @@ function TelegramUserRow({
   );
 }
 
-function TelegramUserAvatar({ projectId, user, name }: { projectId: string; user: TelegramUser; name: string }) {
-  const { data: photo } = useTelegramUserPhoto(projectId, user.user_id, user.photo_version, true);
+function ChannelUserAvatar({
+  projectId,
+  platform,
+  user,
+  name,
+}: {
+  projectId: string;
+  platform: ChannelAccessPlatform;
+  user: ChannelUser;
+  name: string;
+}) {
+  const { data: photo } = useChannelUserPhoto(projectId, platform, user.user_id, user.photo_version, true);
   const [url, setUrl] = useState<string | null>(null);
   // The object URL lives as long as this blob: a new photo or an unmount revokes it.
   useEffect(() => {
@@ -253,13 +313,14 @@ function TelegramUserAvatar({ projectId, user, name }: { projectId: string; user
   return <UserAvatar email={user.user_id} name={name} avatarUrl={url} size="md" />;
 }
 
-function AddByIdField({ projectId }: { projectId: string }) {
+function AddByIdField({ projectId, platform }: { projectId: string; platform: ChannelAccessPlatform }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const tPages = useTranslations('connectorPages');
-  const allow = useAllowTelegramUser();
+  const { parseUserId, idPlaceholder, idInputMode, copy } = CHANNEL_ACCESS[platform];
+  const allow = useAllowChannelUser(platform);
   const inputId = useId();
   const [value, setValue] = useState('');
-  const id = parseTelegramUserId(value);
+  const id = parseUserId(value);
   const invalid = value.trim() !== '' && !id;
 
   return (
@@ -271,14 +332,14 @@ function AddByIdField({ projectId }: { projectId: string }) {
       }}
     >
       <Field>
-        <FieldLabel htmlFor={inputId}>{tPages('telegramAddByIdLabel')}</FieldLabel>
+        <FieldLabel htmlFor={inputId}>{tPages('channelAccessAddByIdLabel')}</FieldLabel>
         <div className="flex gap-2">
           <Input
             id={inputId}
             size="sm"
-            inputMode="numeric"
+            inputMode={idInputMode}
             autoComplete="off"
-            placeholder="123456789"
+            placeholder={idPlaceholder}
             value={value}
             onChange={(event) => setValue(event.target.value)}
             aria-invalid={invalid}
@@ -288,7 +349,7 @@ function AddByIdField({ projectId }: { projectId: string }) {
           </Button>
         </div>
         <FieldDescription>
-          {invalid ? tPages('telegramAddByIdInvalid') : tPages('telegramAddByIdHint')}
+          {invalid ? tPages(copy.addByIdInvalid) : tPages(copy.addByIdHint)}
         </FieldDescription>
       </Field>
     </form>

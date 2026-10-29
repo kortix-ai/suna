@@ -1,8 +1,10 @@
 'use client';
 
-import { cn } from '@kortix/ui';
+import { useTranslations } from '@/i18n/use-translations';
+
 import Link from '@/components/site-link';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { cn } from '@kortix/ui';
 import {
   CloudIcon,
   CodeIcon,
@@ -11,9 +13,16 @@ import {
   PlugIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import { useReducedMotion } from 'motion/react';
-import { useEffect, useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 
-import { cloneLines, hero, modelSources, repoTree, startLines, steps, type Step } from './content';
+import { localizeMarketingContent as localizeContent, type Step } from './content';
 import { Terminal, Window } from './parts';
 
 /*
@@ -27,11 +36,17 @@ import { Terminal, Window } from './parts';
 const STEP_MS = 4000;
 
 function RepoStep() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { repoTree } = localizeContent(tMarketing);
+
   return (
-    <Window title="github.com/kortix-ai/suna">
+    <Window title={tMarketing('text70d13140dd29')}>
       <ul className="flex flex-col divide-y">
         {repoTree.map((row) => (
-          <li key={row.path} className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 py-3 sm:px-6">
+          <li
+            key={row.path}
+            className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 py-3 sm:px-6"
+          >
             <code className="text-foreground font-mono text-sm">{row.path}</code>
             <span className="text-muted-foreground text-sm">{row.note}</span>
           </li>
@@ -49,8 +64,11 @@ const SOURCE_ICONS: Record<string, ComponentType<{ className?: string }>> = {
 };
 
 function ModelsStep() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { modelSources } = localizeContent(tMarketing);
+
   return (
-    <Window title="Customize → Models → Providers">
+    <Window title={tMarketing('text541a2ff8599c')}>
       <ul className="flex flex-col divide-y">
         {modelSources.map((source) => {
           const Icon = SOURCE_ICONS[source.id];
@@ -76,24 +94,35 @@ function ModelsStep() {
 
 const STEP_VIEWS: Record<Step['id'], () => ReactNode> = {
   code: () => <RepoStep />,
-  server: () => (
-    <Window title="Terminal: your server">
-      <Terminal lines={startLines} className="px-4 py-4 sm:px-6" />
-    </Window>
-  ),
+  server: function ServerPanel() {
+    const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+    const { startLines } = localizeContent(tMarketing);
+    return (
+      <Window title={tMarketing('texte6a39a255b29')}>
+        <Terminal lines={startLines} className="px-4 py-4 sm:px-6" />
+      </Window>
+    );
+  },
   models: () => <ModelsStep />,
-  files: () => (
-    <Window title="Terminal: your laptop">
-      <Terminal lines={cloneLines} className="px-4 py-4 sm:px-6" />
-      <div className="text-muted-foreground flex items-center gap-2 border-t px-4 py-3 text-sm sm:px-6">
-        <GitBranchIcon className="size-4 shrink-0" aria-hidden />
-        Every agent, skill and memory file, with its history.
-      </div>
-    </Window>
-  ),
+  files: function FilesPanel() {
+    const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+    const { cloneLines } = localizeContent(tMarketing);
+    return (
+      <Window title={tMarketing('textcc59c4ac4977')}>
+        <Terminal lines={cloneLines} className="px-4 py-4 sm:px-6" />
+        <div className="text-muted-foreground flex items-center gap-2 border-t px-4 py-3 text-sm sm:px-6">
+          <GitBranchIcon className="size-4 shrink-0" aria-hidden />
+          {tMarketing('text0749a8e92dda')}
+        </div>
+      </Window>
+    );
+  },
 };
 
 function Walkthrough() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { steps } = localizeContent(tMarketing);
+
   const reduced = Boolean(useReducedMotion());
   const [selected, setSelected] = useState(0);
   const [held, setHeld] = useState(false);
@@ -126,7 +155,7 @@ function Walkthrough() {
     <div className="flex w-full flex-col items-center gap-8 lg:gap-10">
       <div
         role="tablist"
-        aria-label="What stays yours"
+        aria-label={tMarketing('texta3df7e7a4b22')}
         onKeyDown={onKeyDown}
         className="flex flex-wrap justify-center gap-2"
       >
@@ -161,7 +190,10 @@ function Walkthrough() {
         <div key={step.id} className={cn('flex min-h-80 flex-col', fade)}>
           {STEP_VIEWS[step.id]()}
         </div>
-        <p key={`line-${step.id}`} className={cn('text-foreground px-4 text-center text-base text-balance', fade)}>
+        <p
+          key={`line-${step.id}`}
+          className={cn('text-foreground px-4 text-center text-base text-balance', fade)}
+        >
           {step.line}
         </p>
       </div>
@@ -170,6 +202,9 @@ function Walkthrough() {
 }
 
 export function SovereignHero() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { hero } = localizeContent(tMarketing);
+
   return (
     <section id="hero" className="relative">
       <div className="relative flex flex-col gap-7.5 px-8 pt-32 pb-18 lg:px-28 lg:pt-40">
@@ -178,7 +213,9 @@ export function SovereignHero() {
             <span className="text-foreground block">{hero.title}</span>
             <span className="text-muted-foreground block">{hero.titleMuted}</span>
           </h1>
-          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">{hero.sub}</p>
+          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
+            {hero.sub}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2.5 pt-2">
           <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>
