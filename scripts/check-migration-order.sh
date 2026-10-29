@@ -50,6 +50,9 @@ out=$(while read -r _ local_sha remote_ref _; do
   git diff --no-renames --diff-filter=A --name-only "$base...$local_sha" -- \
     "$dir/*.sql" "$dir/*.concurrent.ts"
 done | sort -u | while read -r f; do
+  # origin/dev already runs this exact file (migrations are immutable): a
+  # stage-fix branch that cherry-picks a dev fix onto staging adds nothing new.
+  git cat-file -e "$base:$f" 2>/dev/null && continue
   ts=$(basename "$f" | sed -En 's#^([0-9]{17})_.*#\1#p')
   [ -n "$ts" ] && [ "$ts" -le "$base_max" ] && echo "  $f"
 done || true)

@@ -54,7 +54,7 @@ import { SessionsTab } from './tabs/sessions-tab';
 import { SnapshotsTab } from '@kortix/ui/customize/settings/tabs/snapshots-tab';
 import { TokensTab } from '@kortix/ui/customize/settings/tabs/tokens-tab';
 import type { RailGroup, RailItem } from '@kortix/ui/customize/settings/type';
-import { ChromeConnectionsTab } from '@kortix/ui/internal/chrome/chrome-connections-tab';
+import { ChromeConnectionsTab } from '@kortix/ui/customize/settings/tabs/chrome-connections-tab';
 import { useChromeOffered } from '@kortix/ui/internal/chrome/use-chrome-offered';
 import { useSettingsAccountId } from './use-settings-account-id';
 

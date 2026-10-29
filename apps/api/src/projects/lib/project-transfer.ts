@@ -22,6 +22,7 @@ import { eq, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import {
   artifacts,
+  sessionSandboxIdentities,
   projectSessionGroups,
   projectSpaces,
   rooms,
@@ -98,6 +99,8 @@ export const PROJECT_TRANSFER_TABLES: readonly PgTable[] = [
   rooms,
   sessionIdleWatches,
   sessionLifecycleCommands,
+  // Before sessionSandboxes: its UPDATE trigger records the destination identity.
+  sessionSandboxIdentities,
   sessionSandboxes,
   sessionTurns,
   sessionLogs,

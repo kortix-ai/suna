@@ -3466,6 +3466,9 @@ export function SessionChat({
           isComposing: e.isComposing,
         })
       ) {
+        // A press something else consumed breaks the run: three Escapes
+        // that each closed a viewer must never add up to a stop.
+        clearEscHint();
         return;
       }
 
@@ -3503,11 +3506,20 @@ export function SessionChat({
       }
     };
 
+    // A click anywhere also breaks the run. Esc, click an image, Esc, click
+    // the next, Esc is three separate intents, not one stop request — and it
+    // covers any layer whose Escape handler forgets to preventDefault.
+    const onPointerDown = () => {
+      if (escDeadlineRef.current) clearEscHint();
+    };
+
     window.addEventListener('keydown', onKeyDownCapture, true);
     window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('pointerdown', onPointerDown, true);
     return () => {
       window.removeEventListener('keydown', onKeyDownCapture, true);
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('pointerdown', onPointerDown, true);
     };
   }, [isActiveSessionTab, readOnly, isBusy, canStop, handleStop, clearEscHint, escCount]);
 
