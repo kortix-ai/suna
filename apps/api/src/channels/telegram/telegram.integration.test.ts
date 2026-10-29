@@ -1994,6 +1994,34 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     expect(delivered).toHaveLength(0);
   });
 
+  test("/stop stops a real Telegram run, whose prompt rows name no wire message id, so its source reads as unknown", async () => {
+    // The shape a real pi session records: the turn names its own message id, and the chat's
+    // continue_session row carries neither `payload.wireMessageId` nor `result.forwarded_message_id`.
+    const sessionId = await chatSession(7046, 'running');
+    await db.insert(sessionSandboxes).values({
+      sandboxId: sessionId,
+      sessionId,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      status: 'active',
+      metadata: { activeTurns: { t1: { token: 't1', state: 'active', messageId: 'msg_pi_synthetic' } } },
+    });
+    await db.insert(sessionLifecycleCommands).values({
+      commandType: 'continue_session',
+      source: 'telegram',
+      status: 'succeeded',
+      projectId: PROJECT,
+      accountId: ACCOUNT,
+      sessionId,
+      payload: { text: 'synthetic task' },
+      result: { status: 'delivered' },
+    });
+    expect(await turnPromptSource(sessionId, 'msg_pi_synthetic')).toBeNull();
+    await handleTelegramEvent(update('/stop', ALLOWED, 7046));
+    expect(abortsOf(sessionId)).toEqual([[sessionId, { requestedStop: true, stoppedBy: null }]]);
+    expect(replies().at(-1)).toBe('Stopped. The agent is no longer working on this.');
+  });
+
   test('/new stops a run this chat started, takes the buttons off and forgets the chat; a run started elsewhere keeps going', async () => {
     const ours = await chatSession(7031, 'running', 'telegram');
     await db.insert(chatEventDedup).values({ eventId: `telegram:question-buttons:${PROJECT}:${BOT_ID}:7031|50|q-synthetic`, expiresAt: new Date(Date.now() + 60_000) });

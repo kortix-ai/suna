@@ -128,6 +128,8 @@ async function stopChatTurn(ctx: CommandContext, session: ChatThreadSession | nu
   const running = await readRunningTurn(session.sessionId);
   if (!running) return STARTING.has(session.status ?? '') ? 'starting' : 'none';
   const source = await turnPromptSource(session.sessionId, running.messageId);
+  // Null is stoppable: a channel prompt carries no wire message id (its `continue_session` row has no
+  // `wireMessageId` and no `forwarded_message_id`), so the chat's own run reads as unknown.
   if (source !== null && source !== ctx.target.platform) return 'elsewhere';
   return (await abortRuntimeTurn(session.sessionId, { requestedStop: true, stoppedBy: null })) ? 'stopped' : 'unreachable';
 }
