@@ -2154,6 +2154,28 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     }
   });
 
+  test('/agent and /model default while Kortix still creates the chat\'s session say that session keeps its own', async () => {
+    await db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: '7049', projectId: PROJECT, model: 'cmd-held' });
+    await holdClaim(7049);
+    const spies: Array<{ mockRestore(): void }> = [
+      spyOn(selection, 'listProjectAgents').mockResolvedValue([{ name: 'reviewer', description: 'Reviews changes', mode: null }]),
+      spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer']),
+    ];
+    try {
+      await handleTelegramEvent(update('/agent reviewer', ALLOWED, 7049));
+      expect(replies().at(-1)).toBe(
+        "Agent for this chat set to reviewer. Kortix is still creating this chat's session, which keeps its own agent; send /new after it answers to start a session with reviewer.",
+      );
+      await handleTelegramEvent(update('/model default', ALLOWED, 7049));
+      expect(replies().at(-1)).toBe(
+        "Model for this chat reset to the project default for new sessions. Kortix is still creating this chat's session, which keeps its own model; send /new after it answers to start on the default.",
+      );
+      expect(await settingsRow('7049')).toMatchObject({ agentName: 'reviewer', model: null });
+    } finally {
+      restore(spies);
+    }
+  });
+
   test('a photo captioned with a command runs the command, and its file is not read', async () => {
     stored.set('ph-cmd', { bytes: JPEG });
     await handleTelegramEvent(mediaUpdate({ photo: [{ file_id: 'ph-cmd', width: 64, height: 64 }] }, { caption: '/status', chat: 7043 }));

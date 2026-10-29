@@ -80,6 +80,8 @@ export async function runChannelCommand(ctx: CommandContext, command: ParsedComm
 const notice = (text: string, url?: string): CommandReply => ({ kind: 'notice', text, ...(url ? { url } : {}) });
 
 const NOT_CONNECTED = 'This bot is no longer connected to this Kortix project.';
+/** A create holds the chat: the session it binds was planned before the choice changed. */
+const CREATING = "Kortix is still creating this chat's session, which keeps its own";
 /** A queued session has no sandbox yet: its turn cannot run, or be stopped. */
 const STARTING = new Set(['queued', 'branching', 'provisioning']);
 
@@ -252,9 +254,12 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
     if (arg.toLowerCase() === 'default') {
       if (selection) await setChannelModel(ctx.settings, null);
       const pin = pinOf(session);
+      if (pin) {
+        return notice(`Model for this chat reset to the project default for new sessions. This chat's session keeps ${labelForModelRef(pin)}; send /new to start on the default.`);
+      }
       return notice(
-        pin
-          ? `Model for this chat reset to the project default for new sessions. This chat's session keeps ${labelForModelRef(pin)}; send /new to start on the default.`
+        !session && (await threadCreateHeld(ctx.createClaim))
+          ? `Model for this chat reset to the project default for new sessions. ${CREATING} model; send /new after it answers to start on the default.`
           : 'Model for this chat reset to the project default.',
       );
     }
@@ -303,7 +308,13 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
     const set = await setChannelAgent(ctx.settings, arg);
     if (!set.ok) return set.reason === 'unknown_agent' ? refusal : notice(NOT_CONNECTED);
     const session = await chatSession(ctx);
-    if (!session) return notice(`Agent for this chat set to ${arg}. Your next message starts a session with it.`);
+    if (!session) {
+      return notice(
+        (await threadCreateHeld(ctx.createClaim))
+          ? `Agent for this chat set to ${arg}. ${CREATING} agent; send /new after it answers to start a session with ${arg}.`
+          : `Agent for this chat set to ${arg}. Your next message starts a session with it.`,
+      );
+    }
     const running = session.agentName || 'default';
     return notice(
       running === arg
