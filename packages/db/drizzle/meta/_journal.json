@@ -1310,6 +1310,13 @@
       "when": 1793288256822,
       "tag": "20261029153736_artifact_comments",
       "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1793291783968,
+      "tag": "20261029163623_artifact_activity",
+      "breakpoints": true
     }
   ]
 }

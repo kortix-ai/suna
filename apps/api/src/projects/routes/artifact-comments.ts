@@ -9,7 +9,9 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { privateChannelFoldersFor, sessionPrivateChannelFolder } from '../../drives/service';
 import { DriveStorageError } from '../../drives/volumes';
-import { canView, getArtifact, mayWrite, type Viewer } from '../../artifacts/service';
+import { ArtifactError, canView, getArtifact, mayWrite, type Viewer } from '../../artifacts/service';
+import { readArtifactActivity } from '../../artifacts/activity-service';
+import { ArtifactActivityQueryError } from '../../artifacts/activity-query';
 import {
   ArtifactCommentError,
   changeArtifactComment,
@@ -76,7 +78,7 @@ async function authorizeComments(c: Context, projectId: string, artifactId: stri
 }
 
 function failure(c: Context, error: unknown) {
-  if (error instanceof ArtifactCommentError || error instanceof DriveStorageError) {
+  if (error instanceof ArtifactError || error instanceof ArtifactCommentError || error instanceof ArtifactActivityQueryError || error instanceof DriveStorageError) {
     if (error instanceof ArtifactCommentError && error.status === 429) c.header('Retry-After', String(error.retryAfterSeconds));
     return c.json({ error: error.message, code: error.code }, error.status);
   }
@@ -84,6 +86,24 @@ function failure(c: Context, error: unknown) {
 }
 
 export function registerArtifactCommentRoutes(): void {
+  projectsApp.openapi(createRoute({
+    method: 'get', path: '/{projectId}/artifacts/{artifactId}/activity', tags: ['artifacts'],
+    summary: 'Read Artifact activity and saves from Files history', ...auth,
+    request: { params: ArtifactParams, query: z.object({ limit: z.string().optional(), cursor: z.string().optional() }) },
+    responses: { 200: json(z.object({
+      items: z.array(z.object({ id: z.string(), type: z.string(), at: z.string(), data: z.record(z.unknown()),
+        actor: z.object({ kind: z.enum(['user', 'session', 'system']), id: nullableId, name: z.string() }),
+      })), next_cursor: nullableId, older_versions: z.boolean(),
+    }), 'The activity page'), ...responses },
+  }), async (c) => {
+    const { projectId, artifactId } = c.req.valid('param');
+    const access = await authorizeComments(c, projectId, artifactId, false);
+    if (!access.ok) return access.response;
+    try {
+      return c.json(await readArtifactActivity(access.scope.artifact, c.req.valid('query')), 200);
+    } catch (error) { return failure(c, error); }
+  });
+
   projectsApp.use('/:projectId/artifacts/:artifactId/comments*', bodyLimit({
     maxSize: 64 * 1024,
     onError: (c) => c.json({ error: 'A comment request cannot exceed 64 KiB', code: 'comment_too_large' }, 413),

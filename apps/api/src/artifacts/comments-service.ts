@@ -4,6 +4,7 @@ import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { Actor } from '../iam/actor';
 import { db } from '../shared/db';
 import { canView, readArtifactFile, type ArtifactRow, type Viewer } from './service';
+import { recordArtifactEvent } from './events-store';
 
 export class ArtifactCommentError extends Error {
   constructor(readonly status: 400 | 403 | 404 | 409 | 429, message: string, readonly code: string, readonly retryAfterSeconds = 60) {
@@ -179,6 +180,7 @@ export async function createArtifactCommentThread(actor: Actor, access: Artifact
       authorSessionId: who.sessionId,
       body,
     }).returning();
+    await recordArtifactEvent(tx, access.artifact, who, 'thread_opened', { thread_id: thread!.threadId, comment_id: comment!.commentId });
     return threadView(thread!, [comment!]);
   });
 }
@@ -193,6 +195,7 @@ export async function replyArtifactCommentThread(actor: Actor, access: ArtifactC
       threadId, body: text, authorUserId: who.userId, authorSessionId: who.sessionId,
     }).returning();
     await tx.update(artifactCommentThreads).set({ updatedAt: sql`now()` }).where(eq(artifactCommentThreads.threadId, threadId));
+    await recordArtifactEvent(tx, access.artifact, who, 'replied', { thread_id: threadId, comment_id: comment!.commentId });
     return commentView(comment!);
   });
 }
@@ -213,6 +216,7 @@ export async function setArtifactCommentThreadStatus(actor: Actor, access: Artif
         updatedAt: sql`now()`,
       }).where(eq(artifactCommentThreads.threadId, threadId)).returning();
       Object.assign(thread, updated!);
+      await recordArtifactEvent(tx, access.artifact, who, status === 'resolved' ? 'resolved' : 'reopened', { thread_id: threadId });
     }
     const comments = await tx.select().from(artifactComments).where(eq(artifactComments.threadId, threadId))
       .orderBy(asc(artifactComments.createdAt), asc(artifactComments.commentId));
@@ -234,6 +238,7 @@ export async function changeArtifactComment(actor: Actor, access: ArtifactCommen
       : { body: text, editedAt: sql`now()` })
       .where(eq(artifactComments.commentId, commentId)).returning();
     await tx.update(artifactCommentThreads).set({ updatedAt: sql`now()` }).where(eq(artifactCommentThreads.threadId, threadId));
+    if (text === null) await recordArtifactEvent(tx, access.artifact, author(actor, access), 'comment_deleted', { thread_id: threadId, comment_id: commentId });
     return commentView(updated!);
   });
 }
