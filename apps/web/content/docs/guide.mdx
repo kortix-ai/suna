@@ -607,6 +607,12 @@ A sandbox template sets what is installed on the cloud computer and how large it
 
 Any website or tool that the agent starts on its computer is reachable from outside it. The session page's preview panel offers common ports, such as **App preview** and **Frontend preview**, plus any other port. A preview asks you to sign in to Kortix first. To show it to someone outside Kortix, the session owner creates a public link.
 
+#### Desktop
+
+Every cloud computer has a desktop. Select the **Desktop** button in the session header to watch it live. The browser the agent uses opens there, so you see each page it visits. Kortix has control by default. Select **Take over** to click and type yourself, for example in the browser, the terminal, or the file manager on the dock. Select **Return control** to hand it back. The desktop resizes to fit the panel.
+
+A session on a custom sandbox template gets the desktop when the template's base image is Ubuntu 24.04.
+
 #### Residential IP address
 
 Some websites block or limit traffic from data centers. A sandbox template can send its web traffic through a residential IP address instead of the cloud computer's own address: set `residential_proxy: true` on the template in `kortix.yaml`, or check **Residential IP** on a template in **Customize** → **Settings** → **Sandbox templates**. Sessions on that template use it.

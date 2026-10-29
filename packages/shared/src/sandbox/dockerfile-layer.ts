@@ -43,6 +43,7 @@ import {
   UV_VERSION,
   assertPiSystemPackage,
 } from '../runtime-versions';
+import { SANDBOX_DESKTOP_INSTALL_COMMAND } from './desktop';
 import {
   SANDBOX_SHELL_TOOL_APT_LIST,
   SANDBOX_SHELL_TOOL_LINK_COMMAND,
@@ -486,6 +487,9 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && rm -rf /var/lib/apt/lists/* \\',
     `    && ${SANDBOX_SHELL_TOOL_LINK_COMMAND}`,
     '',
+    // The session desktop (Xvfb + XFCE + voxl on :6901). See desktop.ts.
+    `RUN ${SANDBOX_DESKTOP_INSTALL_COMMAND}`,
+    '',
     'RUN useradd --create-home --shell /bin/bash --user-group kortix \\',
     // E2B's Dockerfile parser removes the backslash from a quoted `\\n`.
     // Use echo so every provider writes the same valid sudoers line.
@@ -618,7 +622,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // loop + 30-min timeout below are the SAFETY NET for that one cold fetch.
     'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\',
     '    AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \\',
-    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\',
+    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage,--test-type,--disable-infobars \\',
     // Playwright's browser download defaults to a 30s socket timeout
     // (NET_DEFAULT_TIMEOUT in playwright-core), which a ~150MB Chrome-for-Testing
     // fetch can miss under any network hiccup / contended CDN — observed live as
