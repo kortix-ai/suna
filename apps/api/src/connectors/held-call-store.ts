@@ -16,6 +16,17 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 /** The job queue of approved held runs (held-call-run.ts). One job per execution id. */
 export const HELD_CALL_QUEUE = 'connector-held-call';
 
+/**
+ * How long one held run may own its `dispatched` row. A job is claimed again
+ * only after its visibility (`HELD_RUN_VISIBILITY_MS`), and the fence comes
+ * after the claim, so the first re-claim of a crashed run finds the row older
+ * than this ceiling and settles it `unknown`. It must stay above the call
+ * deadline (`KORTIX_CONNECTOR_CALL_TIMEOUT_MS`, kept below Cloudflare's
+ * 100 s) and below the visibility minus the work before the fence.
+ */
+export const HELD_RUN_CEILING_MS = 3 * 60_000;
+export const HELD_RUN_VISIBILITY_MS = 5 * 60_000;
+
 /** Plaintext v1. The envelope has no AAD, so the ids and the digest are inside it and checked after decrypt. */
 export interface HeldCallInput {
   v: 1;

@@ -30,11 +30,15 @@ import { approvalRunAuditEvent } from './call-audit';
 import { rebuildHeldCallPrincipal } from './db-deps-principal';
 import { makeDbGatewayDeps } from './db-deps-gateway';
 import { type CallResult, type GatewayDeps, handleCall } from './gateway';
-import { HELD_CALL_QUEUE, HeldInputRefusedError, openHeldInput } from './held-call-store';
+import {
+  HELD_CALL_QUEUE,
+  HELD_RUN_CEILING_MS,
+  HELD_RUN_VISIBILITY_MS,
+  HeldInputRefusedError,
+  openHeldInput,
+} from './held-call-store';
 import type { ConnectorPrincipal } from './router-contract';
 
-/** A `dispatched` row older than this ran or died: it settles `unknown`. Above the 60 s call deadline. */
-export const HELD_RUN_CEILING_MS = 15 * 60_000;
 const MAX_OUTPUT_PREVIEW = 4_096;
 const MAX_MESSAGE = 500;
 
@@ -80,6 +84,8 @@ export async function runHeldCall(
   const row = await loadHeldRun(executionId);
   if (!row || row.state === 'held' || TERMINAL.has(row.state)) return;
   if (row.state === 'dispatched') {
+    // Only a concurrent direct call lands here: a queue re-claim comes after
+    // the visibility, when the row is already past the ceiling.
     if (row.dispatchedAt && Date.now() - row.dispatchedAt.getTime() < HELD_RUN_CEILING_MS) {
       throw new Error('held call run in progress');
     }
@@ -305,4 +311,4 @@ async function settle(
   if (row.sessionId) void drainSessionLifecycleQueue({ limit: 1, idempotencyKey }).catch(() => {});
 }
 
-registerJobHandler(HELD_CALL_QUEUE, (job) => runHeldCall(job.jobKey));
+registerJobHandler(HELD_CALL_QUEUE, (job) => runHeldCall(job.jobKey), HELD_RUN_VISIBILITY_MS);

@@ -43,15 +43,15 @@ mock.module('../projects/lib/session-token-grant', () => ({
 const { makeDbGatewayDeps } = await import('../connectors/db-deps-gateway');
 const { resolveTokenPrincipal } = await import('../connectors/db-deps-principal');
 const { handleCall } = await import('../connectors/gateway');
-const { HELD_CALL_QUEUE } = await import('../connectors/held-call-store');
-const { HELD_RUN_CEILING_MS, runHeldCall } = await import('../connectors/held-call-run');
+const { HELD_CALL_QUEUE, HELD_RUN_CEILING_MS, HELD_RUN_VISIBILITY_MS } = await import('../connectors/held-call-store');
+const { runHeldCall } = await import('../connectors/held-call-run');
 const { HELD_CALL_REPEAT_INSTRUCTIONS } = await import('../connectors/approval-expiry');
 const { decideConnectorApproval, expireDueApprovals, loadApprovalRow } = await import(
   '../projects/lib/connector-approval-decision'
 );
 const { createAccountToken } = await import('../repositories/account-tokens');
 const { ensureDefaultConnection, upsertConnectionCredential } = await import('../connectors/credentials');
-const { runJobBatch } = await import('../shared/job-queue');
+const { claimJobs, runJobBatch } = await import('../shared/job-queue');
 
 /** Credential-shaped: redaction must keep it out of every surface. */
 const SENTINEL = 'held-run-sentinel-5d2e81';
@@ -340,6 +340,52 @@ describe('approve runs the held call once', () => {
     expect(await held(id)).toMatchObject({ state: 'unknown', inputEnc: null });
     const [command] = await resumes(`approval-run:${id}`);
     expect(String((command.payload as Record<string, unknown>).text)).toContain('may have run');
+  });
+
+  test('a replica that dies after the fence: the queue re-claim settles unknown, the job ends done', async () => {
+    const id = await gate({ amount: 515 });
+    await decide(id, 'approve');
+    // Earlier tests ran their jobs directly; only this job may be claimed.
+    await db.delete(jobQueue).where(and(eq(jobQueue.queue, HELD_CALL_QUEUE), sql`${jobQueue.jobKey} <> ${id}`));
+    // The dead replica claimed the job and fenced the row, then died. The
+    // queue claims a job again only after its visibility.
+    expect(HELD_RUN_CEILING_MS).toBeLessThan(HELD_RUN_VISIBILITY_MS);
+    const [claimed] = await claimJobs([HELD_CALL_QUEUE], 1, HELD_RUN_VISIBILITY_MS);
+    expect(claimed.jobKey).toBe(id);
+    const fencedAt = new Date(Date.now() - HELD_RUN_VISIBILITY_MS + 5_000);
+    await db
+      .update(connectorHeldCalls)
+      .set({ state: 'dispatched', dispatchedAt: fencedAt, updatedAt: fencedAt })
+      .where(eq(connectorHeldCalls.executionId, id));
+    await db
+      .update(jobQueue)
+      .set({ lockedUntil: new Date(Date.now() - 1_000) })
+      .where(eq(jobQueue.jobId, claimed.jobId));
+
+    const before = providerHits;
+    for (let i = 0; i < 5 && (await held(id)).state === 'dispatched'; i++) await runJobBatch(4);
+    expect(providerHits).toBe(before);
+    expect(await held(id)).toMatchObject({ state: 'unknown', inputEnc: null });
+    const [job] = await db.select().from(jobQueue).where(eq(jobQueue.jobId, claimed.jobId));
+    expect(job).toMatchObject({ status: 'done', attempts: 2 });
+    expect(await resumes(`approval-run:${id}`)).toHaveLength(1);
+  });
+
+  test('a repeat after the run window passed opens a new gate', async () => {
+    const args = { amount: 616 };
+    const id = await gate(args);
+    await decide(id, 'approve');
+    // The job died before the fence: the row stays queued past its deadline.
+    await db
+      .update(connectorHeldCalls)
+      .set({ runDeadline: new Date(Date.now() - 1_000) })
+      .where(eq(connectorHeldCalls.executionId, id));
+    const repeat = await call(args);
+    expect(repeat.status).toBe('pending_approval');
+    if (repeat.status !== 'pending_approval') return;
+    expect(repeat.executionId).not.toBe(id);
+    expect(repeat.approvalInstructions).not.toBe(HELD_CALL_REPEAT_INSTRUCTIONS);
+    expect((await held(repeat.executionId!)).state).toBe('held');
   });
 
   test('a request whose re-injected digest drifted is refused request_changed', async () => {

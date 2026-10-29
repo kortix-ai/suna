@@ -10,7 +10,7 @@ import {
   connectorProjectSettings,
 } from '@kortix/db';
 import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
-import { and, desc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { resolveEmailApiKey } from '../channels/resend-email-api';
 import { bindSlackThreadToSession } from '../channels/slack/binding';
 import { slackUserNames } from '../channels/slack/labels';
@@ -46,7 +46,7 @@ import { resolveCredentialValue, resolveConnectionCredentialValue } from './cred
 import { connectorEgressFetch } from './egress';
 import { CredentialNotSharedError } from './gateway';
 import type { ExecutionRecord, GatewayAction, GatewayConnector, GatewayDeps, HeldApprovalVerdict } from './gateway';
-import { sealHeldInput } from './held-call-store';
+import { HELD_RUN_CEILING_MS, sealHeldInput } from './held-call-store';
 import { graphToken } from '../channels/teams-auth';
 import { runPipedreamAction, runPipedreamProxy } from './pipedream';
 import type { ConnectorPrincipal } from './router-contract';
@@ -218,7 +218,12 @@ export async function verifyHeldApproval(input: {
   };
 }
 
-/** The newest decidable or approved gate of this exact request whose held call has not finished. */
+/**
+ * The newest gate of this exact request whose held call can still finish: held
+ * and decidable, queued inside its run window, or dispatched inside the run
+ * ceiling. A queued row whose job died, or a run that never settled, no
+ * longer matches: the repeat opens a new gate instead of waiting forever.
+ */
 export async function findOpenHeldExecution(input: {
   projectId: string;
   sessionId: string | null;
@@ -239,10 +244,22 @@ export async function findOpenHeldExecution(input: {
         eq(connectorCalls.connectorId, input.connectorId),
         eq(connectorCalls.actionPath, input.actionPath),
         eq(connectorCalls.requestDigest, input.requestDigest),
-        inArray(connectorHeldCalls.state, ['held', 'queued', 'dispatched']),
         or(
-          eq(connectorCalls.status, 'approved'),
-          and(eq(connectorCalls.status, 'pending_approval'), approvalNotExpired),
+          and(
+            eq(connectorHeldCalls.state, 'held'),
+            eq(connectorCalls.status, 'pending_approval'),
+            approvalNotExpired,
+          ),
+          and(
+            eq(connectorCalls.status, 'approved'),
+            eq(connectorHeldCalls.state, 'queued'),
+            gt(connectorHeldCalls.runDeadline, sql`now()`),
+          ),
+          and(
+            eq(connectorCalls.status, 'approved'),
+            eq(connectorHeldCalls.state, 'dispatched'),
+            gt(connectorHeldCalls.dispatchedAt, sql`now() - make_interval(secs => ${HELD_RUN_CEILING_MS / 1000})`),
+          ),
         ),
       ),
     )
