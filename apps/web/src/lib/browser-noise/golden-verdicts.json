@@ -1949,5 +1949,6 @@
 {"input":{"message":"ReferenceError: googletag is not defined","filename":"<anonymous>"},"runtime":true,"sentry":true},
 {"input":{"exception":{"values":[{"type":"ReferenceError","value":"Can't find variable: googletag","stacktrace":{"frames":[{"filename":"https://www.googletagmanager.com/gtm.js","function":"?"}]}}]}},"runtime":false,"sentry":true},
 {"input":{"exception":{"values":[{"type":"ReferenceError","value":"googletag is not defined","stacktrace":{"frames":[{"filename":"app:///apps/web/src/components/analytics/google-tag-manager.tsx","function":"GoogleTagManager"}]}}]}},"runtime":false,"sentry":false},
-{"input":{"exception":{"values":[{"type":"ReferenceError","value":"projectId is not defined","stacktrace":{"frames":[{"filename":"<anonymous>","function":"?"}]}}]}},"runtime":false,"sentry":false}
+{"input":{"exception":{"values":[{"type":"ReferenceError","value":"projectId is not defined","stacktrace":{"frames":[{"filename":"<anonymous>","function":"?"}]}}]}},"runtime":false,"sentry":false},
+{"input":{"exception":{"values":[{"value":"Talisman extension has not been configured yet. Please continue with onboarding.","stacktrace":{"frames":[{"filename":"app:///_next/static/immutable/chunks/synthetic.js","function":"r"},{"filename":"app:///page.js","function":"ne.handleResponse"}]}}]}},"runtime":false,"sentry":true}
 ]
