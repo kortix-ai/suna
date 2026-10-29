@@ -5,13 +5,16 @@
  *
  *   unknown sender  → a pairing reply naming their user id, no session (fail closed);
  *                     in a private chat, also an access request an admin can allow
- *   `/start`        → a welcome reply
- *   `/new`          → forget the chat's session; the next message starts a new one
+ *   a command       → `/help` (`/start`), `/status`, `/new`, `/stop`, `/model`, `/agent`,
+ *                     also as `/<verb>@<this bot>` and as a caption, run in the core
+ *                     (core/commands.ts) and answered in the chat, with a menu of
+ *                     buttons where the reply offers one; a caption's file is not read
  *   anything else   → the core: a follow-up into the chat's session, or a new
  *                     project-visible session bound to the chat; the message's own
  *                     file (photo, document, audio, voice, video) goes with it
- *   a button press  → the answer to the agent's question (`handleTelegramPress`,
- *                     through core/questions.ts)
+ *   a button press  → a command button (`kc:`) on a menu Kortix sent runs its command
+ *                     over the pressed message (core/commands.ts `runCommandPress`); a
+ *                     question button answers the agent's question (core/questions.ts)
  *
  * The agent answers through the `kortix_telegram` connector (connectors/channels.ts);
  * the bot token never enters the sandbox.
@@ -27,7 +30,11 @@ import { config } from '../../config';
 import { db } from '../../shared/db';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { gateSender, refusedPressText } from '../core/channel-access';
-import { type ChannelNotice, type ChannelPort, type ChannelTarget, forgetChatThread, routeChannelMessage } from '../core/conversation';
+import { CHANNEL_COMMANDS, parseChannelCommand } from '../core/command-list';
+import { type CommandPress, isCommandPressData, pressData } from '../core/command-press';
+import { type CommandReply, rememberCommandMenu, runChannelCommand, runCommandPress } from '../core/commands';
+import { type ChannelNotice, type ChannelPort, type ChannelTarget, routeChannelMessage } from '../core/conversation';
+import { chatSessionStart, chatTurnModel } from '../core/model-choice';
 import { connectorReply } from '../core/prompt';
 import {
   clearQuestionButtons,
@@ -37,12 +44,15 @@ import {
   type QuestionPort,
 } from '../core/questions';
 import { registerSessionPort } from '../core/session-notice';
+import type { SettingsChannel } from '../core/settings';
+import { claimThreadCreate, releaseThreadCreate } from '../core/threads';
 import { classifyTurnError } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
 import { startErrorMessage, TELEGRAM_START_ERROR_COMMANDS } from '../start-error';
 import { telegramAccessPort } from './access';
 import { TELEGRAM_UPDATES, telegramCall, telegramFile } from './api';
 import { loadTelegramBotToken, loadTelegramInstall, loadTelegramWebhookSecret } from './installs';
+import { repairTelegramMenu } from './menu';
 
 export const TELEGRAM_MESSAGE_EVENT = 'telegram.message.created';
 
@@ -52,7 +62,7 @@ interface TelegramFileRef { file_id: string; file_size?: number; file_name?: str
 export interface TelegramMessage {
   message_id: number;
   date?: number;
-  chat: { id: number; type: string; title?: string };
+  chat: { id: number; type: string; title?: string; username?: string; first_name?: string };
   from?: { id?: number; username?: string; first_name?: string; last_name?: string; is_bot?: boolean };
   text?: string;
   caption?: string;
@@ -306,14 +316,21 @@ const RUN_ERROR_ADVICE: Partial<Record<string, string>> = {
   'Usage limit reached': 'Wait, then send your message again. A project admin can also pick another model in Kortix.',
   'Response too long': 'Ask the agent to continue, or narrow the request.',
   'Conversation too long': 'Send /new to start a new conversation.',
-  'Agent unavailable': 'A project admin can fix the agent in Kortix. Then send /new and your message again.',
-  'Model unavailable': 'A project admin can pick another model in Kortix. Then send /new and your message again.',
+  'Agent unavailable': 'Send /agent to pick another agent, then /new and your message again. A project admin can also fix the agent in Kortix.',
+  'Model unavailable': 'Send /model to pick another model, then send your message again.',
   'ChatGPT login needs reconnection': 'Whoever connected the ChatGPT account must reconnect it in Kortix. Then send your message again.',
   'Provider rejected the request': 'A workspace admin can check the model provider settings in Kortix. Then send your message again.',
   'Provider unavailable': 'Send your message again to retry.',
   'Request blocked': 'Rephrase the request, then send it again.',
 };
 const RUN_ERROR_FALLBACK_ADVICE = 'Send your message again, or send /new to start a new conversation.';
+
+/** The chat's settings row key (`chat_channel_bindings`): the chat, so a forum's topics share one. */
+const telegramSettings = (target: ChannelTarget): SettingsChannel => ({
+  platform: 'telegram',
+  teamId: target.workspaceId,
+  channelId: target.threadId.split(':')[0]!,
+});
 
 export const telegramPort: ChannelPort & { questions: QuestionPort } = {
   async notify(target, notice) {
@@ -323,6 +340,7 @@ export const telegramPort: ChannelPort & { questions: QuestionPort } = {
     if (token) await sendTelegramReply(token, target, text);
   },
   questions: telegramQuestions,
+  turnModel: (target, thread) => chatTurnModel(telegramSettings(target), thread),
 };
 
 /**
@@ -421,20 +439,32 @@ export async function handleTelegramEvent(
     await reply(refusal);
     return;
   }
+  await repairTelegramMenu(token, install.botId);
   const createClaim = `telegram:threadcreate:${event.projectId}:${install.botId}:${target.threadId}`;
-  const startingOver = /^\/new(@\w+)?\b/.test(text);
-  if (!/^\/start(@\w+)?\b/.test(text)) {
-    await clearQuestionButtons(telegramQuestions, target, startingOver ? 'new_conversation' : 'answered_in_chat');
-  }
-  if (/^\/start(@\w+)?\b/.test(text)) {
-    await reply('Connected to Kortix. Send a message to start working with the agent. /new starts a new conversation.');
+  const file = telegramFileOf(message);
+  const command = parseChannelCommand(text, install.username);
+  if (command) {
+    await runChannelCommand(
+      {
+        target,
+        project,
+        settings: telegramSettings(target),
+        label: { name: telegramChatName(message.chat), type: message.chat.type },
+        createClaim,
+        questions: telegramQuestions,
+        ...(file ? { droppedFile: file.kind } : {}),
+      },
+      command,
+      async (body) => {
+        const m = telegramCommandMessage(body);
+        if (m.keyboard.length) await ensureTelegramButtons(token, event.projectId, install.botId);
+        const sent = await sendTelegramReply(token, target, clip(m.text, CHANNELS.telegram.messageChars), m.keyboard);
+        if (sent !== null && m.keyboard.length) await rememberCommandMenu(target, String(sent));
+      },
+    );
     return;
   }
-  if (startingOver) {
-    await forgetChatThread(target, createClaim);
-    await reply('Started a new conversation. Your next message goes to a new session.');
-    return;
-  }
+  await clearQuestionButtons(telegramQuestions, target, 'answered_in_chat');
 
   await telegramCall(token, 'sendChatAction', {
     chat_id: message.chat.id,
@@ -442,7 +472,6 @@ export async function handleTelegramEvent(
     ...(message.is_topic_message ? { message_thread_id: message.message_thread_id } : {}),
   }).catch(() => undefined);
 
-  const file = telegramFileOf(message);
   await routeChannelMessage(
     telegramPort,
     {
@@ -462,30 +491,46 @@ export async function handleTelegramEvent(
             read: (maxBytes) => telegramFile(token, file.ref.file_id, maxBytes),
           }]
         : [],
-      plan: async (revived) => ({
-        project,
-        visibility: 'project',
-        body: { agent_name: 'default', title_source: text || null },
-        metadata: {
-          telegram: {
-            bot_id: install.botId,
-            chat_id: message.chat.id,
-            chat_type: message.chat.type,
-            from_id: message.from?.id,
-            message_id: message.message_id,
+      plan: async (revived) => {
+        const start = await chatSessionStart(telegramSettings(target), project).catch((error) => {
+          logger.warn('[telegram] chat settings unreadable; the session starts on the defaults', { projectId: event.projectId, error: String(error) });
+          return { agentName: 'default' } as Awaited<ReturnType<typeof chatSessionStart>>;
+        });
+        if (start.unavailableModel) {
+          await reply(`Kortix did not send your message: this chat's model ${start.unavailableModel} is not available any more. Pick another with /model, then send your message again.`);
+          return null;
+        }
+        return {
+          project,
+          visibility: 'project',
+          body: {
+            agent_name: start.agentName,
+            ...(start.model ? { opencode_model: start.model } : {}),
+            ...(start.pools ? { provider_secret_pools: start.pools } : {}),
+            title_source: text || null,
           },
-        },
-        prompt: channelPromptText(telegramEnvelope(message), { revived }),
-      }),
+          metadata: {
+            telegram: {
+              bot_id: install.botId,
+              chat_id: message.chat.id,
+              chat_type: message.chat.type,
+              from_id: message.from?.id,
+              message_id: message.message_id,
+            },
+          },
+          prompt: channelPromptText(telegramEnvelope(message), { revived }),
+        };
+      },
     },
     run,
   );
 }
 
 /**
- * A tap on a question button. From an allowed user, the core answers the
- * question with it (core/questions.ts `handleQuestionTap`). A tap from anyone
- * else answers nothing.
+ * A tap on an inline button. From an allowed user, a command button (`kc:`)
+ * runs its command over the pressed message (`handleTelegramCommandPress`), and
+ * a question button answers the question (core/questions.ts `handleQuestionTap`).
+ * A tap from anyone else answers nothing.
  */
 export async function handleTelegramPress(
   event: IntegrationEvent,
@@ -504,6 +549,7 @@ export async function handleTelegramPress(
   const message = press.message;
   // No message to answer in (an inline-mode press, which Kortix never asks for).
   if (!message) return void (await answerPress(token, press.id));
+  if (isCommandPressData(press.data ?? '')) return handleTelegramCommandPress(event, install.botId, token, press, message);
   const ref = String(message.message_id);
   await handleQuestionTap(
     telegramPort,
@@ -535,6 +581,54 @@ export async function handleTelegramPress(
   );
 }
 
+/** A tap on a command button: the core runs it in the pressed message's chat and topic (core/commands.ts `runCommandPress`). */
+async function handleTelegramCommandPress(
+  event: IntegrationEvent,
+  botId: string,
+  token: string,
+  press: TelegramCallbackQuery,
+  message: NonNullable<TelegramCallbackQuery['message']>,
+): Promise<void> {
+  const [project] = await db.select().from(projects).where(eq(projects.projectId, event.projectId)).limit(1);
+  if (!project) return void (await answerPress(token, press.id));
+  const target: ChannelTarget = {
+    platform: 'telegram',
+    workspaceId: botId,
+    threadId: telegramThreadId(message),
+    projectId: event.projectId,
+    messageId: String(message.message_id),
+  };
+  await runCommandPress(
+    {
+      target,
+      project,
+      settings: telegramSettings(target),
+      // The stored press keeps no chat names (telegramPressEvent): a row this press creates asks Telegram.
+      label: { name: null, type: message.chat.type, lookupName: () => fetchTelegramChatName(token, message.chat.id) },
+      createClaim: `telegram:threadcreate:${event.projectId}:${botId}:${target.threadId}`,
+      questions: telegramQuestions,
+    },
+    press.data!,
+    (reply) => editTelegramCommand(token, message, reply),
+    async (text) => void (await answerPress(token, press.id, text)),
+  );
+}
+
+/** Draw a command reply over the pressed message. An unchanged page ("message is not modified") is not logged. */
+async function editTelegramCommand(token: string, message: { message_id: number; chat: { id: number } }, reply: CommandReply): Promise<void> {
+  const m = telegramCommandMessage(reply);
+  await telegramCall(token, 'editMessageText', {
+    chat_id: message.chat.id,
+    message_id: message.message_id,
+    text: clip(m.text, CHANNELS.telegram.messageChars),
+    // Empty: the buttons go.
+    reply_markup: { inline_keyboard: m.keyboard },
+  }).catch((error) => {
+    // ponytail: a refused edit (message deleted or too old) leaves the menu; send the reply as a new message if that matters.
+    if (!String(error).includes('message is not modified')) logger.warn('[telegram] command reply not drawn', { error: String(error) });
+  });
+}
+
 /** The session's thread in this chat (the chat itself, or one of its forum topics), on this bot. */
 async function telegramThreadOfSession(sessionId: string, botId: string, chatId: string): Promise<string | null> {
   const [row] = await db
@@ -552,21 +646,88 @@ async function telegramThreadOfSession(sessionId: string, botId: string, chatId:
   return row?.threadId ?? null;
 }
 
+type InlineButton = { text: string; callback_data: string } | { text: string; url: string };
+
+/**
+ * A command's reply (core/commands.ts `CommandReply`) as plain chat text and an inline keyboard:
+ * one row per option, then the page row, then the actions in pairs, then a panel's https link.
+ * Any other link is the last text line: Telegram may refuse a URL button for a host such as localhost.
+ */
+function telegramCommandMessage(reply: CommandReply): { text: string; keyboard: InlineButton[][] } {
+  const button = (label: string, press: CommandPress): InlineButton => ({ text: clip(label, 60), callback_data: pressData(press) });
+  const lines: string[] = [];
+  const keyboard: InlineButton[][] = [];
+  switch (reply.kind) {
+    case 'notice':
+      lines.push(reply.text);
+      break;
+    case 'panel':
+      lines.push(reply.title, ...reply.rows.map((r) => `${r.label}: ${r.value}`));
+      break;
+    case 'choices': {
+      lines.push(`${reply.title}${reply.pages > 1 ? ` (page ${reply.page + 1} of ${reply.pages})` : ''}`, reply.usage);
+      keyboard.push(...reply.options.map((o) => [button(`${o.current ? '✓ ' : ''}${o.label}`, o.press)]));
+      const turn = [...(reply.back ? [button('‹ Back', reply.back)] : []), ...(reply.more ? [button('More ›', reply.more)] : [])];
+      if (turn.length) keyboard.push(turn);
+      break;
+    }
+    case 'help':
+      lines.push(reply.intro, ...reply.commands.map((c) => `${c.usage} — ${c.description}`), reply.footer);
+      break;
+  }
+  const actions = (reply.actions ?? []).map((a) => button(a.label, a.press));
+  for (let i = 0; i < actions.length; i += 2) keyboard.push(actions.slice(i, i + 2));
+  const url = 'url' in reply ? reply.url : undefined;
+  if (url && reply.kind === 'panel' && url.startsWith('https://')) keyboard.push([{ text: 'Open in Kortix', url }]);
+  else if (url) lines.push(url);
+  return { text: reply.note ? `${lines.join('\n')}\n\n${reply.note}` : lines.join('\n'), keyboard };
+}
+
+/**
+ * Once per bot: a bot connected before #10994 (2026-10-28) receives messages only
+ * (`allowed_updates: ['message']`), so its buttons would never answer. Not
+ * subscribed: the claim goes, and the next menu tries again.
+ */
+async function ensureTelegramButtons(token: string, projectId: string, botId: string): Promise<void> {
+  const key = `telegram:buttons:${botId}`;
+  const claim = await claimThreadCreate(key, 365 * 24 * 60 * 60_000).catch(() => null);
+  if (claim && !(await subscribeToButtons(token, projectId))) await releaseThreadCreate(key, claim).catch(() => undefined);
+}
+
+/** What the Kortix Channels page calls a chat: its title, else the @username or the first name of a private chat. */
+function telegramChatName(chat: TelegramMessage['chat']): string | null {
+  return chat.title || (chat.username ? `@${chat.username}` : chat.first_name) || null;
+}
+
+/** A chat's name from `getChat`, within 3 s. Null when Telegram does not answer or refuses: the row goes unnamed. */
+async function fetchTelegramChatName(token: string, chatId: number): Promise<string | null> {
+  const chat = await telegramCall<TelegramMessage['chat']>(token, 'getChat', { chat_id: chatId }, 3_000).catch(() => null);
+  return chat && telegramChatName(chat);
+}
+
 /**
  * One reply path for commands and notices: the chat and topic come from the
  * target's thread id. A target found from a session has no message to answer,
- * so its notice is posted unanchored.
+ * so its notice is posted unanchored. Returns the sent message's id; null when
+ * Telegram refused it (logged).
  */
-async function sendTelegramReply(token: string, target: ChannelTarget, text: string): Promise<void> {
+async function sendTelegramReply(token: string, target: ChannelTarget, text: string, keyboard: InlineButton[][] = []): Promise<number | null> {
   const [chatId, topicId] = target.threadId.split(':');
-  await telegramCall(token, 'sendMessage', {
+  return telegramCall<{ message_id: number }>(token, 'sendMessage', {
     chat_id: Number(chatId),
     text,
     ...(target.messageId
       ? { reply_parameters: { message_id: Number(target.messageId), allow_sending_without_reply: true } }
       : {}),
     ...(topicId ? { message_thread_id: Number(topicId) } : {}),
-  }).catch((error) => logger.warn('[telegram] reply failed', { error: String(error) }));
+    ...(keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+  }).then(
+    (sent) => sent.message_id,
+    (error) => {
+      logger.warn('[telegram] reply failed', { error: String(error) });
+      return null;
+    },
+  );
 }
 
 /**
@@ -574,6 +735,10 @@ async function sendTelegramReply(token: string, target: ChannelTarget, text: str
  * button press keeps no names (`telegramPressEvent`), so its sender is the
  * username or the id.
  */
+/** "/new, /stop, … and /help": the commands the agent never receives. */
+const COMMAND_NAMES = CHANNEL_COMMANDS.map((c) => `/${c.name}`);
+const KORTIX_COMMANDS = `${COMMAND_NAMES.slice(0, -1).join(', ')} and ${COMMAND_NAMES.at(-1)}`;
+
 export function telegramEnvelope(message: TelegramMessage): ChannelEnvelope {
   const { chat, from } = message;
   const name = [from?.first_name, from?.last_name].filter(Boolean).join(' ');
@@ -599,7 +764,7 @@ export function telegramEnvelope(message: TelegramMessage): ChannelEnvelope {
       `While you work on a long task, show typing: ${connectorReply(TELEGRAM_CHANNEL_CONNECTOR_SLUG, 'send_chat_action', { chat_id: String(chat.id) })}.`,
       'For bold or code, add `"parse_mode":"HTML"` and use <b>, <i>, <code>, <pre>; otherwise send plain text.',
       'The bot token is resolved server-side. Do not look for it in the sandbox.',
-      'The next message in this chat continues this session; /new in Telegram starts a fresh one.',
+      `The next message in this chat continues this session. Kortix answers ${KORTIX_COMMANDS} in the chat itself; those commands never reach you.`,
     ],
   };
 }

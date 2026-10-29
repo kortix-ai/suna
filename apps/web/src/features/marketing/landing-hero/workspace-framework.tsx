@@ -156,7 +156,7 @@ export function WorkspaceFramework() {
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
-      {/* The mode switch, centred above the frame: the navbar's site-switcher pattern. */}
+      {/* The mode switch, centred above the frame: a segmented control, since it toggles a view. */}
       <div
         role="group"
         aria-label={tMarketing('textdcc839a4015c')}

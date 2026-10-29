@@ -44,6 +44,11 @@ function turndown(): TurndownService {
   td.remove(['label']);
   // A video stays an HTML tag inside the Markdown: Markdown has none.
   td.keep(['video']);
+  // A link card stays one line of HTML (doc-embed.ts): a Markdown HTML block, served as written.
+  td.addRule('linkEmbed', {
+    filter: (node) => node.nodeName === 'DIV' && (node as HTMLElement).classList.contains('kx-embed'),
+    replacement: (_content, node) => `\n\n${(node as HTMLElement).outerHTML.replace(/\s*\n\s*/g, ' ')}\n\n`,
+  });
   service = td;
   return td;
 }
@@ -55,5 +60,7 @@ export function htmlToMarkdown(html: string): string {
   // A list item with one paragraph is one line: unwrap it, so the list stays tight.
   doc.querySelectorAll('li > p:only-of-type').forEach((p) => p.replaceWith(...Array.from(p.childNodes)));
   doc.querySelectorAll('colgroup').forEach((c) => c.remove());
+  // Media still uploading is a local preview: the file gets it once the upload lands.
+  doc.querySelectorAll('[data-uploading]').forEach((el) => el.remove());
   return `${turndown().turndown(doc.body.innerHTML).trim()}\n`;
 }

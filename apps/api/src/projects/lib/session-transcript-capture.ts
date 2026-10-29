@@ -33,7 +33,7 @@ import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { resolveSessionOpencodeEndpoint } from '../session-lifecycle/runtime-client';
 import { logger } from '../../lib/logger';
 import { config } from '../../config';
-import { mirrorStoredCap, readCapturedSessionLog, writeSessionLogFromRead } from '../session-log-capture';
+import { storedLogCap, readCapturedSessionLog, writeSessionLogFromRead } from '../session-log-capture';
 import { threadRoom } from './thread-memory';
 import {
   MIRROR_CAPTURE_LIMIT,
@@ -118,7 +118,7 @@ const MAX_CAPTURE_CHAIN = 8;
  * `fromV1`, `toV1` and the schema parse are synchronous over the whole history. Measured on a
  * 2026-10-23 Mac in the API process (many small tool parts): 50 MB stalls the event loop 273 ms,
  * 100 MB 533 ms, 200 MB 1.1 s (`fromV1` 1.07 s, `toV1` 1.01 s). A capture whose stored log or box
- * read is over `SESSION_LOG_RESTORE_MAX_BYTES` of JSON (stored: over `mirrorStoredCap` by
+ * read is over `SESSION_LOG_RESTORE_MAX_BYTES` of JSON (stored: over `storedLogCap` by
  * `pg_column_size`) runs in a Worker instead: one at a time per process (a second waits), and only
  * with room for it (`threadRoom`, the backfill's guard: RSS + 12x its JSON under 75 % of the limit).
  * No room: one WARN, nothing stored, and the next turn end tries again.
@@ -355,7 +355,7 @@ async function captureIntoSessionLog(
   const capture = async (): Promise<CaptureResult | null | typeof IN_THREAD> => {
     if (handOff) {
       const stored = await storedLogBytes(sessionId);
-      if (stored > mirrorStoredCap()) return ((threadJsonBytes = stored * 4), IN_THREAD);
+      if (stored > storedLogCap()) return ((threadJsonBytes = stored * 4), IN_THREAD);
     }
     const before = await readCapturedSessionLog(sessionId);
     const read = await deps.readMessages(sessionId, { fullHistory, projectId, actorUserId: options?.actorUserId, stored: before.rows });

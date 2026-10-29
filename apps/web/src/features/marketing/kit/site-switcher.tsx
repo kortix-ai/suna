@@ -7,6 +7,7 @@ import Link from '@/components/site-link';
 import { isServicesPagesEnabled } from '@/lib/config';
 import { cn } from '@kortix/ui';
 import { usePathname } from 'next/navigation';
+import { Fragment } from 'react';
 
 /** The site's two halves: the product and the done-for-you service. */
 const sourceSITES = [
@@ -15,8 +16,10 @@ const sourceSITES = [
 ] as const;
 
 /**
- * A segmented pair of links between the CompanyOS site and the /services sales
- * page. The current half is filled. Sits next to the logo in both headers.
+ * Two plain text links between the CompanyOS site and the /services sales page,
+ * split by a muted slash: the current half in ink, the other muted. No
+ * segmented control: on marketing pages, links are text, never pills.
+ * Sits next to the logo in both headers.
  */
 export function SiteSwitcher({ className }: { className?: string }) {
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
@@ -32,17 +35,23 @@ export function SiteSwitcher({ className }: { className?: string }) {
   return (
     <nav
       aria-label={tMarketing('textfa7955814e32')}
-      className={cn('bg-muted flex items-center rounded-md p-0.5', className)}
+      className={cn('flex items-center gap-1 text-sm', className)}
     >
-      {SITES.map((site) => (
-        <Link
-          key={site.id}
-          href={site.href}
-          aria-current={site.id === current ? 'page' : undefined}
-          className="text-muted-foreground hover:text-foreground aria-[current=page]:bg-background aria-[current=page]:text-foreground outline-ring duration-moderate flex h-7 items-center rounded-sm px-2.5 text-xs font-medium whitespace-nowrap transition-colors focus-visible:outline-2"
-        >
-          {site.label}
-        </Link>
+      {SITES.map((site, i) => (
+        <Fragment key={site.id}>
+          {i > 0 ? (
+            <span aria-hidden className="text-muted-foreground/50 select-none">
+              /
+            </span>
+          ) : null}
+          <Link
+            href={site.href}
+            aria-current={site.id === current ? 'page' : undefined}
+            className="text-muted-foreground hover:text-foreground aria-[current=page]:text-foreground outline-ring duration-moderate flex h-8 items-center rounded-sm px-1.5 whitespace-nowrap transition-colors focus-visible:outline-2"
+          >
+            {site.label}
+          </Link>
+        </Fragment>
       ))}
     </nav>
   );

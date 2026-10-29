@@ -70,8 +70,10 @@ export const FeatureFlagMapSchema = z.object({
   goals: z.boolean(),
   workspace_volume: z.boolean(),
   artifacts: z.boolean(),
+  artifact_comments: z.boolean(),
   email_channel: z.boolean(),
   session_groups: z.boolean(),
+  chrome: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 

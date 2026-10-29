@@ -201,6 +201,10 @@ const envSchema = z.object({
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
+  // True runs the durable job queue even when KORTIX_WORKERS_ENABLED is false.
+  // The deterministic test stack sets it: held connector calls and Capture
+  // ingest run only as queued jobs.
+  KORTIX_JOB_WORKER_ENABLED: optBoolFalse,
   // Kill switch for the scheduled account-deletion sweep. True skips every
   // scheduled run; immediate deletion is unaffected. Default off (sweep runs).
   ACCOUNT_DELETION_SWEEP_PAUSED: optBoolFalse,
@@ -303,21 +307,10 @@ const envSchema = z.object({
   // rows 30 days after a delete, 80 days after a subscription end (inert until decision D6b), their files 7 days later.
   // On by default. Off stops the worker's tick; nothing it has not yet purged is touched.
   SESSION_LOG_PURGE_ENABLED: optBoolTrue,
-  // The backfill of old sessions (P3.1, `projects/session-log-backfill.ts`): each session with
-  // history only in the v1 mirror gets its v2 log. `write` (default since P8.2: no read serves the
-  // mirror, so a self-hosted upgrade converts its own history) writes the logs (it also needs
-  // SESSION_LOG_INGEST_ENABLED). `dry` converts in memory, writes nothing, and logs counts per
-  // tick and per pass. `off` runs nothing. Leader only. The pass resumes across leaders
-  // (`kortix.session_log_backfill_state`). A dry pass runs once per build (KORTIX_COMMIT): a new
-  // build runs it again; on the same build, `DELETE FROM kortix.session_log_backfill_state`.
-  // A mirror over the capture's size cap (~SESSION_LOG_RESTORE_MAX_BYTES of JSON) converts in a
-  // Worker thread, only while the process has room for it (SESSION_LOG_BACKFILL_MEMORY_MB).
-  SESSION_LOG_BACKFILL: z.enum(['off', 'dry', 'write']).optional().default('write'),
-  // The API task's memory in MiB (prod and dev ECS tasks: 4096). The backfill starts a conversion
-  // thread only while RSS plus its estimate stays under 75 % of this, or of cgroup memory.max when lower.
-  SESSION_LOG_BACKFILL_MEMORY_MB: optInt(4096),
-  // The source commit the image was built from (Dockerfile ARG, kept across the prod retag). 'unknown' locally.
-  KORTIX_COMMIT: optStrDefault('unknown'),
+  // The API task's memory in MiB (prod and dev ECS tasks: 4096). The journal-less capture starts a
+  // conversion thread only while RSS plus its estimate stays under 75 % of this, or of cgroup
+  // memory.max when lower (`projects/lib/thread-memory.ts`).
+  SESSION_LOG_THREAD_MEMORY_MB: optInt(4096),
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
@@ -811,6 +804,12 @@ const envSchema = z.object({
   // Exported collection JSON and Postman-managed Git repositories need no key.
   POSTMAN_API_KEY: optStr,
 
+  // ── Kortix in Chrome ─────────────────────────────────────────────────────
+  // Master switch until launch: on in local and dev only. Off, /v1/chrome/* and
+  // the extension's control socket answer 404 and the `chrome` project flag is
+  // unavailable (feature-flags/registry.ts).
+  KORTIX_CHROME_ENABLED: optBoolFalse,
+
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
   TUNNEL_SIGNING_SECRET: optStr,
   TUNNEL_ENABLED: optBoolTrue,
@@ -913,6 +912,14 @@ const envSchema = z.object({
     .optional()
     .default('true')
     .transform((v) => !['0', 'false'].includes(v.trim().toLowerCase())),
+  // Kill switch for running a held connector call on approve. On by default;
+  // `0`, `false` or `off` writes no new held row, so a new gate asks the agent
+  // to repeat the call. Rows already held or queued still run, expire and wipe.
+  KORTIX_APPROVAL_RUNS_HELD_CALL: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((v) => !['0', 'false', 'off'].includes(v.trim().toLowerCase())),
   // Local-only HTTP capture. The deterministic test profile points this at
   // Supabase Mailpit. Deployed environments leave it unset.
   MAILPIT_API_URL: optStr,
@@ -1272,6 +1279,7 @@ export const config = {
   KORTIX_APPS_DEFAULT_ALWAYS_ON: env.KORTIX_APPS_DEFAULT_ALWAYS_ON,
   KORTIX_APPS_WORKER_ENABLED: env.KORTIX_APPS_WORKER_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
+  KORTIX_JOB_WORKER_ENABLED: env.KORTIX_JOB_WORKER_ENABLED,
   ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS.split(',')
@@ -1293,9 +1301,7 @@ export const config = {
   SESSION_LOG_RESTORE_MAX_BYTES: env.SESSION_LOG_RESTORE_MAX_BYTES,
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
-  SESSION_LOG_BACKFILL: env.SESSION_LOG_BACKFILL,
-  SESSION_LOG_BACKFILL_MEMORY_MB: env.SESSION_LOG_BACKFILL_MEMORY_MB,
-  KORTIX_COMMIT: env.KORTIX_COMMIT,
+  SESSION_LOG_THREAD_MEMORY_MB: env.SESSION_LOG_THREAD_MEMORY_MB,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
   MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,
@@ -1539,6 +1545,7 @@ export const config = {
 
   // ─── Tunnel (Reverse-Tunnel to Local Machine) ──────────────────────────────
   TUNNEL_SIGNING_SECRET: env.TUNNEL_SIGNING_SECRET,
+  KORTIX_CHROME_ENABLED: env.KORTIX_CHROME_ENABLED,
   TUNNEL_ENABLED: env.TUNNEL_ENABLED,
   TUNNEL_HEARTBEAT_INTERVAL_MS: env.TUNNEL_HEARTBEAT_INTERVAL_MS,
   TUNNEL_HEARTBEAT_MAX_MISSED: env.TUNNEL_HEARTBEAT_MAX_MISSED,
@@ -1588,6 +1595,7 @@ export const config = {
   EXPO_ACCESS_TOKEN: env.EXPO_ACCESS_TOKEN,
   EXPO_PUSH_ENABLED: env.EXPO_PUSH_ENABLED ?? !env.KORTIX_INSTANCE_ID,
   PUSH_NOTIFICATIONS_ENABLED: env.PUSH_NOTIFICATIONS_ENABLED,
+  KORTIX_APPROVAL_RUNS_HELD_CALL: env.KORTIX_APPROVAL_RUNS_HELD_CALL,
   MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,

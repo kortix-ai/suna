@@ -15,7 +15,7 @@ import Link from 'next/link';
 // Multiplayer AI; Company as code (extensible); Sovereign and
 // open ("own your data and run on your own infra"). Every fact is a claims.md
 // row: Channels, Permissions, Path to `main`, Connectors, Source, Hosting,
-// Models, Secrets. Company as code names pi and pi extensions (D25,
+// Models, Secrets. Company as code names pi and pi extensions (D27,
 // which narrows D20); the other pillars do not name pi.
 const sourcePILLARS = [
   {

@@ -1,14 +1,17 @@
+import { MagnifyingGlassIcon } from '@phosphor-icons/react';
+
 import { useTranslations } from '../../../i18n';
+import { EmptyState } from '../../../primitives/empty-state';
 import type { ReactNode } from 'react';
 
 /**
- * The "nothing here" line every catalog uses, so five hand-typed copies of one
- * class string cannot drift into five different-looking messages. `CatalogGrid`
- * owns loading/error/empty; this is what callers put IN the empty slot when the
+ * The "nothing here" state every catalog uses: the shared `EmptyState`, so a
+ * catalog's empty slot looks like every other empty view. `CatalogGrid` owns
+ * loading/error/empty; this is what callers put IN the empty slot when the
  * cause is the search box rather than an empty project.
  */
 export function CatalogEmptyNote({ children }: { children: ReactNode }) {
-  return <p className="text-muted-foreground px-3 py-6 text-center text-xs">{children}</p>;
+  return <EmptyState size="sm" icon={MagnifyingGlassIcon} title={children} />;
 }
 
 /**

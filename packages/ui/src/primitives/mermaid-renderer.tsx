@@ -375,25 +375,11 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           <div className="absolute top-2 right-2 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             <ButtonGroup>
               {actions}
-              {enableFullscreen && (
-                <Hint label="Fullscreen" side="top">
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    onClick={handleFullscreenOpen}
-                    className="bg-background/90 backdrop-blur-sm"
-                    aria-label="Open diagram fullscreen"
-                  >
-                    <Maximize2 className="size-3.5" />
-                  </Button>
-                </Hint>
-              )}
               <Hint label={copied ? 'Copied' : 'Copy source'} side="top">
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="icon-sm"
                   onClick={handleCopySource}
-                  className="bg-background/90 backdrop-blur-sm"
                   aria-label="Copy diagram source"
                 >
                   {copied ? (
@@ -403,6 +389,19 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
                   )}
                 </Button>
               </Hint>
+              {/* Last: edit (a host action), copy, then fullscreen. */}
+              {enableFullscreen && (
+                <Hint label="Fullscreen" side="top">
+                  <Button
+                    variant="secondary"
+                    size="icon-sm"
+                    onClick={handleFullscreenOpen}
+                    aria-label="Open diagram fullscreen"
+                  >
+                    <Maximize2 className="size-3.5" />
+                  </Button>
+                </Hint>
+              )}
             </ButtonGroup>
           </div>
 

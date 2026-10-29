@@ -550,6 +550,10 @@
         "connected": {
           "label": "Contas conectadas"
         },
+        "chrome": {
+          "label": "Kortix no Chrome",
+          "description": "Suas sessões usam o Chrome com os seus logins. Você vê cada passo."
+        },
         "tokens": {
           "label": "Chaves de acesso pessoais",
           "description": "Chaves de API que agem em seu nome — para a CLI, um script ou uma tarefa de CI."
@@ -1294,6 +1298,14 @@
         "session_groups": {
           "name": "Grupos de sessões",
           "description": "Agrupe as sessões da barra lateral em pastas com nome compartilhadas por todo o projeto, por exemplo uma por loja ou cliente. Mova uma sessão para um grupo pelo menu dela ou arrastando; reordene e recolha os grupos."
+        },
+        "artifact_comments": {
+          "name": "Comentários em artefatos",
+          "description": "Discuta documentos e páginas em conversas com pessoas e agentes. Requer Artefatos."
+        },
+        "chrome": {
+          "name": "Kortix no Chrome",
+          "description": "Permita que uma sessão use seu navegador Chrome conectado. Você pode assumir o controle ou interrompê-la a qualquer momento."
         }
       },
       "channelsSwitch": {
@@ -1652,7 +1664,8 @@
       "account": "Conta",
       "loadError": "Não foi possível carregar os projetos",
       "createIn": "Criar um projeto em {account}",
-      "localComputer": "Seu computador"
+      "localComputer": "Seu computador",
+      "appsAndExtensions": "Apps e extensões"
     },
     "manifestUpgrade": {
       "title": "Atualizar para v3",
@@ -2944,6 +2957,13 @@
         "updateFailed": "Não foi possível atualizar a senha",
         "unexpected": "Ocorreu um erro inesperado"
       }
+    },
+    "panel": {
+      "waitingTitle": "A iniciar sessão",
+      "waitingBody": "A ligar este painel à tua conta Kortix.",
+      "errorTitle": "Não foi possível iniciar sessão",
+      "errorBody": "Inicia sessão no Kortix num separador do navegador e volta a abrir este painel.",
+      "signIn": "Entrar"
     }
   },
   "onboarding": {
@@ -20397,6 +20417,8 @@
       "text59e5965495d9": "Correções",
       "text724b09397472": "Adicionando {name} a {project}",
       "text1e007c47254d": "A configuração acontece em segundo plano. Você receberá uma notificação quando terminar.",
+      "text18e8185e96b0": "Copiar prompt",
+      "text0c62d1af38c5": "Ou use",
       "text57f57edb6f16": "A solicitação de alteração #{number} está pronta para revisão.",
       "texta8597db6f24b": "Remover habilidade",
       "text5f6ba69d66d1": "Habilidade removida",
@@ -20784,7 +20806,7 @@
       "texte91810d67487": "Chat pessoal · salvo no seu OneDrive quando você aceitar",
       "text89713b9c9c1b": "Aceitar",
       "text871efeb0931c": "weekly-report.pdf",
-      "textdc8df43d2f44": "Quatro casos de uso que mostram o que os agentes no Kortix fazem.",
+      "textdc8df43d2f44": "Três casos de uso que mostram o que os agentes no Kortix fazem.",
       "textb37b0def3a13": "Navegar por equipe",
       "texta3b142af6e97": "usar",
       "texta43f1924db10": "Nenhum caso de uso corresponde",
@@ -21899,6 +21921,127 @@
     "calendarFailed": "Falhou",
     "calendarEstimatedSr": "Disparo passado, estimado a partir do agendamento",
     "calendarUpcomingSr": "Próximo"
+  },
+  "chrome": {
+    "pill": "Kortix no Chrome",
+    "connectTitle": "Adicionar o Kortix ao Chrome",
+    "connectDescription": "Deixe suas sessões usarem o Chrome, com seus logins. Você vê o que elas fazem e pode pará-las a qualquer momento.",
+    "promoLabel": "Kortix no Chrome",
+    "dismissPromo": "Dispensar",
+    "steps": {
+      "install": {
+        "title": "Adicione a extensão",
+        "description": "Pela Chrome Web Store.",
+        "done": "O Kortix está no Chrome.",
+        "descriptionUnlisted": "Carregue-a no Chrome."
+      },
+      "connect": {
+        "title": "Entrar",
+        "description": "Entre no Kortix pela extensão.",
+        "done": "Login feito."
+      },
+      "done": {
+        "title": "Conectado",
+        "description": "Seu navegador aparece aqui."
+      }
+    },
+    "addToChrome": "Adicionar ao Chrome",
+    "finishInChrome": "O Chrome abriu uma aba do Kortix. Clique em Conectar nela.",
+    "connect": "Conectar",
+    "connecting": "Conectando…",
+    "done": "Pronto",
+    "unsupported": "Abra o Kortix no Chrome, Edge, Brave ou Arc para conectá-lo. Copie o link para abri-lo lá.",
+    "connectFailed": "Não foi possível conectar o navegador. Tente novamente.",
+    "online": "Online",
+    "offline": "Offline",
+    "lastSeen": "Visto por último {time}",
+    "usedBy": "{count, plural, one {Em uso por # sessão agora} other {Em uso por # sessões agora}}",
+    "connectAnother": "Adicionar outro navegador",
+    "listTitle": "Navegadores conectados",
+    "rename": "Renomear {name}",
+    "renameLabel": "Nome do navegador",
+    "disconnect": "Desconectar",
+    "disconnectTitle": "Desconectar {name}?",
+    "disconnectDescription": "As sessões que o usam são interrompidas. Para usá-lo de novo, conecte-o pelo Chrome.",
+    "disconnected": "Navegador desconectado",
+    "disconnectFailed": "Não foi possível desconectar o navegador. Tente novamente.",
+    "updateFailed": "Não foi possível salvar a alteração. Tente novamente.",
+    "loadFailed": "Não foi possível carregar seus navegadores.",
+    "retry": "Tentar de novo",
+    "access": {
+      "label": "Acesso",
+      "always": "Sem perguntar",
+      "ask": "Perguntar sempre",
+      "off": "Desativado",
+      "description": "Se uma sessão pergunta antes."
+    },
+    "scope": {
+      "label": "Abas",
+      "own": "Só as abas que ela abre",
+      "all": "Todas as abas",
+      "description": "Quais guias uma sessão pode ver."
+    },
+    "how": {
+      "title": "Como funciona",
+      "group": "Cada sessão trabalha em seu próprio grupo de guias, com um brilho na página.",
+      "control": "Assumir ou Parar pela barra na página, a qualquer momento.",
+      "own": "Somente as suas próprias sessões podem usar o seu navegador."
+    },
+    "howToInstall": "Como instalar",
+    "copyLink": "Copiar link",
+    "linkCopied": "Link copiado",
+    "copyFailed": "Não foi possível copiar o link. Tente novamente.",
+    "extensionMissing": "O Kortix não encontrou a extensão. Adicione-a e recarregue esta página.",
+    "another": {
+      "title": "Outro navegador",
+      "waiting": "Aguardando o novo navegador se conectar.",
+      "description": "Abra o Kortix no outro navegador ou perfil do Chrome e adicione lá o Kortix ao Chrome. Copie o link para abri-lo."
+    },
+    "panel": {
+      "project": "Projeto",
+      "title": "Pergunte sobre esta página",
+      "body": "O Kortix lê o separador quando envia. Antes disso, nada sai deste navegador.",
+      "selectionTitle": "Pergunte sobre a sua seleção",
+      "selectionBody": "O Kortix recebe a citação, o título da página e o endereço. O resto da página fica neste navegador, a menos que o adicione.",
+      "actions": {
+        "summarize": "Resumir esta página",
+        "tables": "Extrair as tabelas",
+        "compare": "Comparar com outro separador",
+        "email": "Redigir um e-mail sobre isto"
+      },
+      "prompts": {
+        "summarize": "Resume esta página.",
+        "tables": "Extrai as tabelas desta página em CSV.",
+        "compare": "Compara estas páginas.",
+        "email": "Redige um e-mail sobre esta página."
+      },
+      "recent": "Recentes em {project}",
+      "noProjects": "Crie um projeto para iniciar uma conversa.",
+      "createProject": "Criar um projeto",
+      "addTab": "Separador",
+      "addTabsTitle": "Adicionar separadores",
+      "addTabsHint": "Só são enviados os separadores que marcar.",
+      "addTabs": "{count, plural, =0 {Adicionar separadores} one {Adicionar # separador} other {Adicionar # separadores}}",
+      "noTabs": "Não há outros separadores nesta janela.",
+      "tabsFailed": "Não foi possível listar os separadores. Tente novamente.",
+      "cancel": "Cancelar",
+      "removeTab": "Remover {title}",
+      "removeQuote": "Remover a citação",
+      "wholePage": "Página inteira",
+      "unreadable": "O Kortix não consegue ler esta página.",
+      "message": "Mensagem",
+      "placeholder": "Pergunte o que quiser sobre este separador",
+      "placeholderNoTab": "Pergunte o que quiser ao Kortix",
+      "modeLabel": "Como o Kortix usa o separador",
+      "read": "Ler",
+      "act": "Agir",
+      "readHint": "Ler envia o texto desta página. Agir deixa o Kortix clicar e escrever neste separador.",
+      "actHint": "O Kortix coloca este separador no seu grupo de separadores e pode clicar e escrever aí. Pare-o na barra da página.",
+      "send": "Enviar",
+      "readFailed": "O Kortix não conseguiu ler o separador. Recarregue a página e tente novamente.",
+      "screenshot": "Captura de ecrã",
+      "captureFailed": "O Kortix não conseguiu fazer uma captura de ecrã deste separador."
+    }
   },
   "computers": {
     "connectYourComputer": "Conectar seu computador",
@@ -23189,10 +23332,10 @@
     "link": "Link",
     "linkPrompt": "URL do link",
     "fullScreen": "Tela cheia",
-    "askAgent": "Perguntar ao agente",
+    "askAgent": "Perguntar à IA",
     "askAgentTitle": "Peça a um agente para alterar este artefato",
+    "askAgentHint": "Inicia uma sessão que edita “{title}” em Arquivos e responde com o link.",
     "askAgentPlaceholder": "O que deve mudar?",
-    "askAgentSend": "Iniciar sessão",
     "notFoundTitle": "Este artefato não está disponível",
     "notFoundHint": "Ele foi excluído, ou o proprietário parou de compartilhá-lo.",
     "busyTitle": "O Kortix está ocupado",
@@ -23204,7 +23347,7 @@
       "error": "Não salvo. Tentando de novo…",
       "conflict": "Alterado em outro lugar"
     },
-    "placeholder": "Escreva, ou digite # para um título, - para uma lista, [ ] para uma tarefa",
+    "placeholder": "Escreva ou digite / para blocos",
     "placeholderHeading": "Título",
     "strike": "Tachado",
     "inlineCode": "Código",
@@ -23246,7 +23389,29 @@
     "openFullPage": "Abrir em página inteira",
     "close": "Fechar",
     "conflictReload": "Carregar a deles",
-    "conflictKeepMine": "Manter a minha"
+    "conflictKeepMine": "Manter a minha",
+    "insertMedia": "Imagem ou vídeo…",
+    "diagram": "Diagrama",
+    "blockMenu": "Blocos",
+    "blockMenuEmpty": "Nenhum bloco corresponde",
+    "embedOffer": "Colar link como",
+    "keepAsLink": "Manter como link",
+    "showEmbed": "Mostrar incorporação",
+    "openSession": "Abrir sessão",
+    "newChat": "Novo chat",
+    "askAgentReply": "Responder ao agente",
+    "uploading": "Enviando…",
+    "creating": "Criando…",
+    "askAgentNoFiles": "Envie a primeira mensagem como texto. Adicione arquivos no chat quando o agente responder.",
+    "askAgentHistory": "Histórico",
+    "askAgentHistoryEmpty": "Nenhum chat sobre este artefato ainda.",
+    "peopleWithAccess": "Pessoas com acesso: {names}",
+    "docCreated": "Documento criado",
+    "open": "Abrir",
+    "embedOpen": "Abrir link",
+    "embedConvert": "Converter em link",
+    "embedCopy": "Copiar link",
+    "embedDelete": "Excluir"
   },
   "emailConnect": {
     "homeTitle": "Onde a caixa fica",
@@ -23856,5 +24021,53 @@
     "unavailable": "Imagem indisponível",
     "tryAgain": "Tentar novamente",
     "details": "Detalhes da imagem"
+  },
+  "appsModal": {
+    "title": "Apps e extensões",
+    "subtitle": "Use o Kortix no seu navegador, no seu computador e nas suas ferramentas.",
+    "mock": {
+      "group": "Kortix · Devolver meu pedido",
+      "button": "Iniciar devolução",
+      "working": "O Kortix está trabalhando",
+      "takeOver": "Assumir",
+      "stop": "Parar"
+    },
+    "chrome": {
+      "name": "Kortix no Chrome",
+      "description": "O Kortix abre páginas, clica e preenche formulários no seu próprio navegador, com os seus logins. Você vê cada passo.",
+      "connect": "Conectar",
+      "connecting": "Conectando…",
+      "manage": "Gerenciar",
+      "unsupported": "Abra o Kortix no Chrome, Edge, Brave ou Arc para adicioná-la. Copie o link para abri-lo lá.",
+      "group": "Navegador",
+      "manageLabel": "Gerenciar o Kortix no Chrome",
+      "summary": "{count, plural, one {# navegador} other {# navegadores}} · {online} online"
+    },
+    "computer": {
+      "title": "Seu computador",
+      "thisComputer": "Este computador",
+      "thisComputerDescription": "As sessões usam seus arquivos e seu terminal.",
+      "connected": "Conectado",
+      "connect": "Conectar",
+      "manage": "Gerenciar",
+      "desktop": "App para desktop",
+      "desktopDescription": "O Kortix como app no seu computador.",
+      "desktopRunning": "Você está usando.",
+      "download": "Baixar",
+      "manageLabel": "Gerenciar este computador",
+      "connectLabel": "Conectar este computador"
+    },
+    "developers": {
+      "title": "Desenvolvedores",
+      "cli": "Terminal (CLI)",
+      "cliDescription": "macOS e Linux, WSL no Windows",
+      "copy": "Copiar comando",
+      "copied": "Copiado",
+      "mcp": "MCP",
+      "mcpDescription": "Use o Kortix no Claude, Cursor ou Codex.",
+      "connect": "Conectar",
+      "connectLabel": "Conectar MCP",
+      "copyFailed": "Não foi possível copiar o comando. Tente novamente."
+    }
   }
 }

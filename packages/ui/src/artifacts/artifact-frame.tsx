@@ -6,10 +6,14 @@ import { claimFrame, ensureFrame } from '../apps/app-preview-pool';
 import { ARTIFACT_FRAME_ALLOW, ARTIFACT_IFRAME_SANDBOX } from './frame-policy';
 
 /**
- * The frame's canvas: a third-party page with no background of its own reads
- * as a white page, as it would in a browser tab, in both themes.
+ * The frame's canvas: what shows where the page has not painted yet. Open, a
+ * third-party page with no background of its own reads as a white page, as it
+ * would in a browser tab, in both themes. As a card preview it is the app's
+ * background: a preview that is still painting (on load, on a tab switch)
+ * must not flash white in the dark theme.
  */
 const ARTIFACT_CANVAS = 'bg-white';
+const PREVIEW_CANVAS = 'bg-background';
 
 /**
  * An artifact page. The frame lives in the project's frame pool
@@ -24,7 +28,7 @@ export const ArtifactFrame = forwardRef<
 >(function ArtifactFrame({ frameKey, src, title, className, preview }, ref) {
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
   const interactive = !preview;
-  const frameClass = `${className ?? ''} ${ARTIFACT_CANVAS}`;
+  const frameClass = `${className ?? ''} ${preview ? PREVIEW_CANVAS : ARTIFACT_CANVAS}`;
 
   useLayoutEffect(() => {
     if (!slot) return;

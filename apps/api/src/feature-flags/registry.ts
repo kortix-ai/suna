@@ -423,6 +423,16 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'IAM: project.artifact.* leave the account permission catalog until a project of the account has it on.',
   },
   {
+    key: 'artifact_comments',
+    name: 'Artifact comments',
+    description: 'Discuss docs and pages in threads with people and agents. Requires Artifacts.',
+    stability: 'experimental',
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    enforcement: 'routes',
+    iamActions: ['project.artifact.comment'],
+  },
+  {
     key: 'email_channel',
     name: 'Email channel',
     description:
@@ -535,6 +545,23 @@ const FLAGS: readonly FeatureFlagDef[] = [
       "so the sidebar lists every session again. Turning it off deletes nothing: the groups and each session's " +
       '`group_id` stay and come back when it is turned on. WEB: no group sections, no New group and no Move to group.',
   },
+  {
+    key: 'chrome',
+    name: 'Kortix in Chrome',
+    description:
+      "Let a session drive your own Chrome, with your logins, through the Kortix in Chrome extension: it opens its tabs in a group named after the session, and you can take over or stop it at any time.",
+    stability: 'experimental',
+    // Off on staging and prod until the Chrome Web Store listing is public.
+    available: () => config.KORTIX_CHROME_ENABLED,
+    platformDefault: () => true,
+    enforcement: 'routes',
+    enforcementNote:
+      'ROUTES: POST /v1/chrome/attach answers 403 `feature_disabled` when the calling session\'s project has it ' +
+      'off (chrome/routes.ts); release stays open so a session can always let go. The browsers a person ' +
+      'connected are account-level and gated only by KORTIX_CHROME_ENABLED (404 when off). BOX: off, the ' +
+      'session has no kortix-chrome skill and its CLI hides and refuses `kortix chrome` (KORTIX_FEATURE_FLAGS). ' +
+      'WEB: no sidebar row, no Chrome card in Apps and extensions, no Settings page.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(
@@ -577,6 +604,7 @@ export function resolveFeatureFlag(metadata: unknown, key: FeatureFlagKey): bool
   const def = FLAG_BY_KEY[key];
   if (!def || !def.available()) return false;
   if (def.derivedFrom) return resolveFeatureFlag(metadata, def.derivedFrom);
+  if (key === 'artifact_comments' && !resolveFeatureFlag(metadata, 'artifacts')) return false;
   return explicitOverride(metadata, key) ?? def.platformDefault();
 }
 

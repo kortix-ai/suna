@@ -24,6 +24,7 @@ type Detail = {
   can_edit: boolean; can_manage: boolean; pinned: boolean; entry_version: string | null;
   view_url: string; public_url: string | null; public_content_url: string | null;
   version: { id: string | null; files: { path: string }[]; view_url: string };
+  participants?: { participants: { user_id: string; is_viewer: boolean }[]; total: number; multi_user: boolean };
 };
 
 /** A 1×1 PNG: binary bytes must survive the CLI's base64 upload unchanged. */
@@ -56,6 +57,7 @@ flow(
     timeoutMs: 300_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
+      'GET /v1/projects/:projectId/link-preview',
       `GET ${TYPES}`, `GET ${LIST}`, `POST ${LIST}`, `POST ${SHARE}`, `GET ${ONE}`, `PUT ${ONE}`, `PATCH ${ONE}`, `DELETE ${ONE}`,
       `PUT ${PIN}`, `DELETE ${PIN}`, `GET ${VERSIONS}`, `POST ${RESTORE}`, `GET ${CONTENT}`,
       'GET /v1/artifacts/s/:token', 'GET /v1/artifacts/s/:token/*', 'GET /v1/artifacts/p/:artifactId', 'GET /v1/artifacts/p/:artifactId/*', 'GET /v1/artifacts/meta/:artifactId',
@@ -154,10 +156,21 @@ flow(
       (await ctx.client.as(ctx.P.NONMEMBER).get(ONE, one())).status([403, 404]);
     });
 
+    await ctx.step("link preview (a doc's link card): ANON → 401, a non-http URL → 400, a private address is refused and answers nulls", async () => {
+      const PREVIEW = '/v1/projects/:projectId/link-preview';
+      (await ctx.client.as(ctx.P.ANON).get(PREVIEW, { params: p, query: { url: 'https://example.com/' } })).status(401);
+      (await owner.get(PREVIEW, { params: p, query: { url: 'javascript:alert(1)' } })).status(400);
+      const r = (await owner.get(PREVIEW, { params: p, query: { url: 'http://127.0.0.1:1/' } })).status(200).json<Record<string, unknown>>();
+      if (r.url !== 'http://127.0.0.1:1/' || r.title !== null || r.description !== null || r.image_url !== null) throw new Error(JSON.stringify(r));
+    });
+
     await ctx.step("shared with the member: they read it, but saving (its file is in OWNER's own folder) and resharing → 403 artifact_read_only", async () => {
       (await owner.patch(ONE, { shared_with_user_ids: [member.userId] }, one())).status(200);
       const a = (await asMember.get(ONE, one())).status(200).json<Detail>();
       if (a.can_edit || a.can_manage) throw new Error(JSON.stringify({ can_edit: a.can_edit, can_manage: a.can_manage }));
+      // Who can open it, as a session lists its people: the owner first, then the member (the viewer).
+      const people = a.participants?.participants.map((p) => [p.user_id, p.is_viewer]);
+      if (JSON.stringify(people) !== JSON.stringify([[ctx.P.OWNER.userId, false], [member.userId, true]]) || a.participants?.total !== 2) throw new Error(JSON.stringify(a.participants));
       (await asMember.put(ONE, { files: { 'index.md': { content: 'x' } } }, one())).status(403).body().has('$.code', 'artifact_read_only');
       (await asMember.patch(ONE, { visibility: 'public' }, one())).status(403);
     });

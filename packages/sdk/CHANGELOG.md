@@ -140,9 +140,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the feature-flag catalog. The API sends `experimental.session_log: true` for every project, so
   `useFeatureFlag(id, 'session_log')` reports `true` once the project detail loads, as before.
   `KortixProject.experimental.session_log` is optional in the type.
-- `GET …/sessions/:id/log` answers `503` `{ code: 'session_log_converting' }` with `Retry-After: 60`
-  for an old session whose history is still only in the v1 mirror and over the conversion size cap;
-  retry after the delay.
+- `GET …/sessions/:id/log` no longer answers `503` `{ code: 'session_log_converting' }`: the API
+  stopped converting the v1 mirror on a read (Session Log Plan P8.2, Release B2). A session with no
+  stored log answers `404` `{ code: 'session_log_missing' }`. A client that still retries a `503`
+  after `Retry-After` keeps working.
 
 ### Added (custom LLM providers)
 - `listCustomLlmProviders(projectId)`, `putCustomLlmProvider(projectId, providerId, input)` and

@@ -88,7 +88,11 @@ const DRAWER_ROW =
 const firstLink = (panel: HTMLElement | null | undefined) =>
   panel?.querySelector<HTMLElement>('a[href]') ?? null;
 
-export function Navbar() {
+/**
+ * `solidAtTop`: the bar shows its background and bottom hairline before any
+ * scroll, for a page whose hero art runs under the bar (/services).
+ */
+export function Navbar({ solidAtTop = false }: { solidAtTop?: boolean } = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { user } = useAuth();
@@ -154,7 +158,7 @@ export function Navbar() {
     SITE_CONFIG_TRANSLATION_KEYS,
   ).filter((link) => USE_CASES_ENABLED || link.href !== '/use-cases');
 
-  const solid = scrolled || openMenu !== null || isDrawerOpen;
+  const solid = solidAtTop || scrolled || openMenu !== null || isDrawerOpen;
 
   const clearTimer = () => window.clearTimeout(timerRef.current);
 
@@ -458,11 +462,11 @@ export function Navbar() {
             // the page, so it needs its own surface and edge from the start.
             'max-lg:border-border max-lg:bg-background/90 duration-slow relative w-full border-b border-transparent transition-[background-color,backdrop-filter,border-color] ease-out max-lg:backdrop-blur-md',
             solid && 'bg-background/90 backdrop-blur-md',
-            scrolled && 'border-border',
+            (scrolled || solidAtTop) && 'border-border',
             overBand && 'dark',
           )}
         >
-          <div className={cn(MARKETING_CONTAINER, 'flex h-16 items-center justify-between')}>
+          <div className={cn(MARKETING_CONTAINER, 'relative flex h-16 items-center justify-between')}>
             <ContextMenu>
               <ContextMenuTrigger asChild className="group/kortix-logo">
                 <Link
@@ -506,7 +510,9 @@ export function Navbar() {
               </ContextMenuContent>
             </ContextMenu>
 
-            <SiteSwitcher className="mr-auto ml-4 lg:mr-0" />
+            {/* The CompanyOS / Services switcher: centred in the bar on desktop,
+                after the logo on smaller screens. */}
+            <SiteSwitcher className="mr-auto ml-4 lg:absolute lg:left-1/2 lg:m-0 lg:-translate-x-1/2" />
 
             {/* The links sit right after the logo; `mr-auto` pushes the actions to the end. */}
             <nav className="hidden items-center gap-1 lg:mr-auto lg:ml-8 lg:flex">

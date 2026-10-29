@@ -17,9 +17,8 @@
  *  - the fresh box gets the conversation back: `restoredAt` on the session
  *    turns the session-log restore at boot on for its boxes
  *    (`session-sandbox-env-build.ts`, as `lostRecoveredAt` does for a lost
- *    session), and a v1 mirror is converted to the session log first
- *    (`writeSessionLogFromMirror`). Without both, the box booted an empty
- *    conversation and the session showed none of its history.
+ *    session). Without it, the box booted an empty conversation and the
+ *    session showed none of its history.
  *
  * Public links and connector tokens the delete revoked stay revoked.
  */
@@ -34,7 +33,6 @@ import {
   PROVIDER_REMOVED_KEY,
   attemptArchivedBoxRemoval,
 } from '../reaping/archived-box-removal';
-import { writeSessionLogFromMirror } from '../session-log-capture';
 import { SESSION_DELETE_ROWS_DAYS, sessionRestoreUntil } from '../session-log-purge';
 import { STALE_PENDING_PROVISIONING_MS } from '../session-open/stopped-wake-result';
 import { type SessionSandboxRow, transitionSandbox, transitionSession } from './status-transitions';
@@ -143,13 +141,6 @@ export async function restoreSession(input: {
     .where(eq(sessionSandboxes.sessionId, sessionId))
     .limit(1);
   if (sandbox?.status === 'archived' && (await archivedBoxRemains(sandbox, now))) return REMOVAL_PENDING;
-
-  // The log the fresh box restores from: the journal's, or the v1 mirror
-  // converted now (a no-op when a journal or the backfill already wrote the
-  // log). One that does not convert here (over the cap, or a failure) stays in
-  // the backfill's selection, restorable deleted sessions included, so the
-  // backfill is not drained and its next pass converts it.
-  await writeSessionLogFromMirror(sessionId);
 
   try {
     await db.transaction(async (tx) => {

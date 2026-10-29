@@ -7,6 +7,8 @@
 import { logger } from '../lib/logger';
 import { runWorkerTick } from '../shared/audit-scope';
 import { runJobBatch } from '../shared/job-queue';
+// Registers the approved held-call run handler on this replica.
+import '../connectors/held-call-run';
 
 const IDLE_MS = 2_000;
 let timer: ReturnType<typeof setTimeout> | null = null;

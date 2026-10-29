@@ -12,15 +12,15 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-29
 
-### D27 Kortix CompanyOS is the product name on every identity surface; the Promise says "AI agents"
+### D29 Kortix CompanyOS is the product name on every identity surface; the Promise says "AI agents"
 - **Date:** 2026-10-29
 - **Decision:** Every surface that names the product says "Kortix CompanyOS": the page-title suffix (`<page> | Kortix CompanyOS`), the session tab title, Open Graph `siteName`, the PWA manifest `name`, the docs title, the MCP server title, the OAuth resource name, the agent-discovery title, the desktop window title, the sign-in and trial welcome screens, the README, the GitHub repo description and topics, and the GitHub org description. "AI Operating System" and "AI OS" leave the structured data (`alternateName`), the keywords, the launch film and the test fixtures too. Running text keeps "Kortix" as the short name ("Sign in with Kortix", "Connect Slack to Kortix"). Four names stay "Kortix" because a longer name truncates or breaks: the PWA `short_name`, the mobile home-screen name (`app.json`), the desktop `productName` (it names the user-data folder and the installer files), and the Slack and Teams bot mention name (`@Kortix`); the Slack app name and the Teams full name are "Kortix CompanyOS". The agent is still named Kortix. The Promise line reads "Hand it an outcome, AI agents run it 24/7".
 - **Why:** founder, 2026-10-29: "lets call it CompanyOS everywhere-- lets rename everywhere lets rename the entire product into Kortix CompanyOS hardcore", "even the README of the repo & the git repo itself we will rename to company-os or similar, dont do rename yet there but like all GH descriptions, the readme itself etc.", and on the hero subhead: "say Ai Agents".
 - **Where:** `packages/ui/src/internal/lib/site-metadata.ts`, `apps/web/src/app/[locale]/layout.tsx`, `apps/web/public/manifest.json`, `apps/web/blume.config.ts`, `apps/api/src/mcp/index.ts`, `apps/api/src/oauth/discovery.ts`, `apps/web/src/lib/agent-discovery.ts`, `apps/desktop-electron/src/main.js`, the `welcome` strings in every locale catalog, `apps/mobile/locales/en.json`, the Slack and Teams manifests, `README.md`, the hero subhead (`sand-band-hero.tsx`), [positioning.md](verbal/positioning.md) Promise row. The repository is still `kortix-ai/suna`; renaming it is a later step.
-- **Supersedes:** D26's "old names kept in `alternateName` and keywords" and its launch-film exclusion; D18's Promise wording ("agents" becomes "AI agents").
+- **Supersedes:** D28's "old names kept in `alternateName` and keywords" and its launch-film exclusion; D18's Promise wording ("agents" becomes "AI agents").
 - **Source:** the `framework-pi` branch.
 
-### D26 The category is CompanyOS; the product is Kortix CompanyOS
+### D28 The category is CompanyOS; the product is Kortix CompanyOS
 - **Date:** 2026-10-29
 - **Decision:** "AI Operating System" and "AI OS" are retired as the category. The category is **CompanyOS** (one word, capital C, capital OS). The product name is **Kortix CompanyOS**. The tagline is "The open-source CompanyOS". Page titles read "Kortix CompanyOS – the open-source operating system for your company". The site switcher reads "CompanyOS | Services". The hero keeps its shape: "The sovereign CompanyOS", "The <word> CompanyOS". The company stays Kortix (`Organization` name). Structured data keeps "Kortix AI Operating System" and "Kortix AI OS" as `alternateName`, and the meta keywords keep "AI Operating System", so existing search traffic still finds the site. Sentences about other vendors "becoming AI operating systems" keep the generic phrase. Blog post slugs do not change.
 - **Why:** founder, 2026-10-29: "let's rebrand everywhere and call it company os", then "Kortix CompanyOS".
@@ -28,13 +28,31 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 - **Supersedes:** D10's category name ("AI Operating System") and the category noun in the D16 and D21 hero lines. D19 ("the Operating System for SuperIntelligence" on `/about`) is not affected. D10's idea (an operating system is the layer everything runs on) stays.
 - **Source:** the `framework-pi` branch.
 
-### D25 Company as code names pi: custom pi agents, pi extensions, deployed to the cloud
+### D27 Company as code names pi: custom pi agents, pi extensions, deployed to the cloud
 - **Date:** 2026-10-29
 - **Decision:** The framework surfaces lead with pi as the minimal agent harness Kortix runs on. Every agent you declare is a custom pi agent. You extend it with pi extensions: TypeScript in the repository or a pi package pinned from npm, registered under `extensions` in `kortix.yaml` and enabled per agent. Kortix deploys the agents to the cloud, one computer per session. `/framework` carries this in the hero sub, the pillar "Custom pi agents", the tab "pi extensions" (with a real extension file in the Arcadia sample) and the FAQ. The home Company as code pillar now names pi and pi extensions too. The home hero's Framework mode has a "pi extensions" step that opens the extension file, and its window header reads "Agents run on pi". The hero headline and the Multiplayer and Sovereign pillars still do not name pi.
 - **Why:** founder, 2026-10-29: "https://kortix.com/framework should definetly reference PI & explain that u write custom PI agents that get deployed to the cloud, with pi extensions & all like very imp piece", and on the home Company as code pillar: "also in here like saying that wouldnt be bad I guess", then: "also in the framework tab on the homepage, show the pi extensions and whatnot or indications of pi and that pi is used. make the kortix yaml as legit as possible in the example thing".
 - **Where:** `apps/web/src/features/marketing/framework/` (`model.ts`, `content.ts`, `framework-panels.tsx`), `landing-hero/workspace-framework.tsx`, `landing-hero/framework-window.tsx`, `landing-sections/pillars-band.tsx`, `landing-sections/framework-band.tsx`, [claims.md](verbal/claims.md) row "Extensions".
 - **Supersedes:** D20 for the Company as code pillar.
 - **Source:** the `framework-pi` branch.
+
+### D26 Email card: one logo, one left edge, one type scale
+- **Date:** 2026-10-29
+- **Decision:** The symbol shows once, 20 px wide, in the header row; the card has no logo. The header carries no label: no email names its type ("Sign in", "Password reset", "Billing") anywhere above the title, and `renderEmail` has no `kicker` input. Every block inside the card sits on one left edge with a 40 px inset (24 px on mobile). The type scale has four steps: title 24 px / 600 / line height 1.25 / tracking −0.48 px, body 15 px / 400 / 1.6, label 13 px, small 12 px; emphasis is 500. The one-time code uses the sans face with tabular digits, never the mono face. The footer is centered: tagline, social icons, `kortix.com`.
+- **Why:** founder, 2026-10-29: the logo twice "looks a bit weird", the code must not be mono, and the title and description hierarchy was "not proper".
+- **Where:** `visual/visual-system.json` (`email`), `scripts/generate-tokens.ts`, `apps/api/src/lib/email/template.tsx`.
+- **Supersedes:** D25 for the card logo, the centered card and the 28/16 sizes. The Barebone frame stands.
+- **Source:** the `email-redesign` branch.
+
+### D25 Transactional email uses the React Email Barebone layout
+- **Date:** 2026-10-29
+- **Decision:** The email shell copies the React Email demo template 01-Barebone (activation / password-reset), built with `@react-email/components` and rendered with `renderToStaticMarkup`. A grey page (`--card`), a 640 px white frame (`--background`) with a header row (the symbol 23 px wide on the left, the kicker on the right), one grey card with radius 8 holding the symbol (48 px wide), a 28 px title, 16 px body text in a 380 px column, the button and the note, then a white footer with the tagline, three social icons (X, LinkedIn, GitHub, served from `apps/web/public/email`) and a `kortix.com` link. The `mobile:` variants ship as one `<style>` media query at 600 px. The logo is the Brandmark PNG (the symbol), not the lockup. Colors stay on the token roles: Barebone's three text greys collapse onto `--foreground` and `--muted-foreground`; the font stays the system stack (D8a), not Inter. The copy-paste link under the button is gone; the plain-text part keeps the URL.
+- **Why:** founder, 2026-10-29: the shipped email was "not good UI-wise"; use React Email and make it "exactly the same" as the Barebone templates.
+- **Where:** `visual/visual-system.json` (`email`), `scripts/generate-tokens.ts`, `apps/api/src/lib/email/template.tsx`, `visual/layout.md` Email layout, `visual/brandmark.md` email logo.
+- **Supersedes:** the layout numbers and the lockup logo of the 2026-10-01 email entries (Q27, Q51); the light-only and color-role rules stand.
+- **Source:** the `email-redesign` branch.
+
+---
 
 ## 2026-10-27
 

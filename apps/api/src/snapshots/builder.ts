@@ -648,7 +648,7 @@ let startupPreBuildKicked = false;
 export function kickStartupPreBuild(): void {
   // Focused acceptance runs can skip the multi-gigabyte session and meta
   // images. Production keeps the pre-build enabled by default.
-  if (process.env.KORTIX_SKIP_STARTUP_PREBUILD === 'true') return;
+  if (!config.KORTIX_WORKERS_ENABLED || process.env.KORTIX_SKIP_STARTUP_PREBUILD === 'true') return;
   if (startupPreBuildKicked) return;
   startupPreBuildKicked = true;
   void runWorkerTick('startup-prebuild', startupPreBuild);

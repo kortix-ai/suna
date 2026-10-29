@@ -59,53 +59,121 @@ docs repo. Nothing publishes without a human merge.
 ## How it works
 
 <Steps>
-<Step title="Run on a weekly reusable session">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires once a week and resumes the same persistent
-**session** rather than starting fresh. The session reads its own ledger first
-— which topics already have an article, which are mid-review in an open PR,
-and which clusters were seen before but didn't yet have enough volume to
-justify a draft — so a topic already covered or already in flight never gets
-redrafted.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the mining skill and the weekly trigger, and opens a change request for you to review. Prefer
+clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Give the agent the clustering and drafting rules">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a weekly ticket-to-KB agent in this project.
 
-How we group tickets into a topic, how we decide a topic is a real KB gap
-rather than noise, and the article structure we want live as **skills** and
-**memory** that travel with the agent. When a draft gets merged as-is versus
-reworked heavily in review, we feed that back so the next batch of drafts gets
-closer to publishable.
+1. Create the agent agents/ticket-to-kb.md. Its job is to turn resolved support tickets into draft knowledge-base articles. It may use the PLAIN_API_KEY and GH_TOKEN secrets.
 
-</Step>
-<Step title="Connect the ticket source and the KB repo">
+2. Create the skill skills/kb-gap-mining/SKILL.md with these rules:
+   - Read memory/kb-gap-mining-log.md first. Skip topics already covered or already in an open KB pull request.
+   - Read resolved threads from Plain, read-only, and cluster them into topics by intent, not wording.
+   - A topic is a gap only when it recurs and has no article under content/kb in owner/docs. A single ticket never justifies a draft.
+   - Draft the top 3 to 5 gaps from the real resolutions only. Strip every customer name and account detail.
+   - Open one pull request against owner/docs with the ticket count per article. Never merge it and never publish.
+   - Write only under content/kb, and add this run's topics to the ledger.
 
-Through a scoped connection, the agent works with:
+3. Add a cron trigger weekly-kb-gap-mining to kortix.yaml. It runs the ticket-to-kb agent every Monday at 08:00 with the prompt "Load the kb-gap-mining skill and run one complete ticket-to-KB mining pass."
 
-- **Resolved tickets from Plain** — read-only, via a raw API key injected at
-  runtime, scoped to the agents you grant them to.
-- **The docs/KB repo on GitHub** — read to see which topics already have an
-  article, and write only as a pull request on an isolated branch, via a
-  scoped GitHub token used by the `gh` CLI.
+4. Tell me which of these secrets are not set yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent never publishes an article and never merges its own PR. It can only
-open a pull request against an isolated branch; a human reviews the drafts,
-edits them, and decides what actually ships to the help center. Both
-credentials are encrypted in the Secrets Manager and injected at runtime,
-scoped to the agents you grant them to.
+Add a read-only Plain API key and a GitHub token for your docs repo as project
+secrets. Both are encrypted and injected into the session at runtime, scoped to
+this agent.
+
+<ToolList>
+  <ToolNeed name="Plain" domain="plain.com" tag="Required" alternatives={[['Zendesk', 'zendesk.com'], ['Intercom', 'intercom.com']]}>
+    Reads recently resolved support threads, read-only.
+  </ToolNeed>
+  <ToolNeed name="GitHub" domain="github.com" tag="Required" alternatives={[['Notion', 'notion.so'], ['Confluence', 'atlassian.com']]}>
+    Checks the KB repo for coverage and opens a draft PR.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Open one PR of drafted articles">
+<Step title="Run it once with this prompt">
 
-With that in place, each week brings one PR: a small batch of KB article
-drafts, each one built from the real resolutions of the tickets that raised
-the question, with the ticket volume and the topic's history noted for the
-reviewer. The support lead reads the PR, edits what needs editing, and merges
-what's ready. The ledger advances either way, so next week starts from what's
-still uncovered.
+Merge the change request, then start a session with the **ticket-to-kb** agent
+and send this prompt. Read the drafted articles in the pull request before you
+let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one ticket-to-KB pass.
+
+1. Read memory/kb-gap-mining-log.md and any open KB pull request in owner/docs.
+2. Read the threads resolved in Plain in the last 7 days. Do not change any thread.
+3. Cluster them into topics, and find the topics that recur and have no article under content/kb.
+4. Draft up to 5 articles from the real resolutions, with every customer detail removed.
+5. Open one pull request against owner/docs with the ticket count per article. Do not merge it.
+6. Update the ledger.`}
+/>
+
+</Step>
+<Step title="Let the weekly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every Monday at 08:00. It reads its ledger in memory first, so a topic
+already drafted is never drafted again. To change the time, edit the cron line,
+or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: weekly-kb-gap-mining
+    name: Weekly ticket-to-KB mining
+    on:
+      cron: "0 0 8 * * 1"
+    run:
+      agent: ticket-to-kb
+      prompt: Load the kb-gap-mining skill and run one complete ticket-to-KB mining pass.`}
+/>
+
+</Step>
+<Step title="A person merges every article">
+
+The agent opens one pull request on its own branch and stops. It never pushes to
+the live docs branch, never merges and never publishes. A person reviews the
+drafts, edits them and merges what is ready. Plain stays read-only, so the agent
+cannot reply to or close a ticket.
+
+</Step>
+<Step title="Read the weekly pull request">
+
+Each run ends with one pull request and an updated ledger. This is what a run looks like
+in the session:
+
+<ExampleRun
+  title="Weekly ticket-to-KB mining · Mon 08:00"
+  message="Load the kb-gap-mining skill and run one complete ticket-to-KB mining pass."
+  worked="Worked for 7m 52s"
+  tools={[
+    'memory · read kb-gap-mining-log.md',
+    'github · gh pr list',
+    'plain · list resolved threads',
+    'github · git clone owner/docs',
+    'github · gh pr create',
+    'memory · update kb-gap-mining-log.md',
+  ]}
+  note="Illustrative example. Your counts depend on your ticket volume."
+>
+  Read **214** resolved threads and found **17** recurring topics. **4** had
+  enough volume and no article, so I drafted them in one pull request. **3**
+  topics stay in the ledger below the bar.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -116,6 +184,25 @@ still uncovered.
   opens a single GitHub **pull request** of drafted articles — never publishing
   and never merging on its own.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Find stale articles"
+  code="In a separate section of the pull request, list existing articles under content/kb whose steps no longer match how recent tickets were resolved."
+/>
+
+<CopyBlock
+  title="Separate product gaps"
+  code="When a topic is a bug or a missing feature, not a how-to, list it in the pull request description instead of drafting an article."
+/>
+
+<CopyBlock
+  title="Learn from review"
+  code="After a KB pull request merges, compare the merged articles to your drafts and write the edits into the drafting rules in memory."
+/>
 
 ## Guardrails
 

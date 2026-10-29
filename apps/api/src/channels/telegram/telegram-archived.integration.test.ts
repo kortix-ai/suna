@@ -225,7 +225,8 @@ for (const f of [fixture('tombstone'), fixture('deleted')]) {
           .from(projectSecrets)
           .where(and(eq(projectSecrets.projectId, f.project), inArray(projectSecrets.name, TELEGRAM_SECRETS)));
         expect({ deleteCalls: f.deleteCalls, installs: installs.length, secrets: secrets.map((s) => s.name) }).toEqual({
-          deleteCalls: ['getWebhookInfo', 'deleteWebhook'],
+          // The fake's menu is not a list (`true`), so nothing is written.
+          deleteCalls: ['getWebhookInfo', 'deleteWebhook', 'getMyCommands'],
           installs: 0,
           secrets: [],
         });

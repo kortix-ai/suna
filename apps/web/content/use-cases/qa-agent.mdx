@@ -49,53 +49,125 @@ deploy, and posts a pass/fail result on the PR.
 ## How it works
 
 <Steps>
-<Step title="Connect GitHub as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-A signed GitHub webhook points at the project. Every PR opened or updated fires
-it, and each firing spawns a fresh **session** in its own sandbox, seeded with
-the branch under test. One PR maps to one session on one disposable machine, so
-nothing carries over between runs and concurrent PRs run in parallel.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the pr-qa skill and the 5-minute trigger, and
+opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent the branch and the test playbook">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a PR QA agent in this project.
 
-The session checks out the branch and installs it clean. Our QA conventions live
-as **skills** and **memory** that travel with the agent: how to run the suite,
-which flows are critical, edge cases that have caused problems before, and what a
-result should contain. When a bug slips through, we write it down and the agent
-picks it up on the next run.
+1. Create the agent agents/qa-agent.md. Its job is to QA every new pull request revision on owner/repo against the test environment and post a pass or fail result. It uses the gh CLI with the GH_TOKEN secret, and deploys with the TEST_ENV_DEPLOY_TOKEN secret.
 
-</Step>
-<Step title="Connect the systems QA needs">
+2. Create the skill skills/pr-qa/SKILL.md with these rules:
+   - Skip any PR whose current head commit already has a qa-agent check. QA each other PR in its own clean clone, and never let a failure on one PR block the others.
+   - Run the unit, integration and end-to-end suites, and keep the full failure output.
+   - Deploy the branch to the test environment and wait until it is healthy. Then exercise the changed endpoint or page directly, and again through the edge.
+   - A test that fails and then passes on an isolated re-run is flaky. Report it with both logs. Never retry until it passes.
+   - Post exactly one result per revision as a qa-agent status check and a PR comment: what you exercised on a pass, or the failing command, the logs and repro steps on a fail.
+   - Test environment only: no production access, no production deploy, and never merge. Tear down each test deploy when you are done.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger pr-qa-sweep to kortix.yaml. It runs the qa-agent agent every 5 minutes with the prompt "Load the pr-qa skill and QA every PR on owner/repo whose current head has no QA result yet."
 
-- **Run the full suite** — unit, integration, and e2e inside the sandbox, with the
-  failure output captured in full.
-- **Deploy to the test environment** — it stands the change up on an ephemeral
-  deploy and exercises it end-to-end against the new paths.
-- **Reach the edge via Cloudflare** — it checks behavior through the edge
-  (routing, headers, caching, redirects), not just localhost.
-- **Report on GitHub** — the pass/fail result and any reproduction post as a check
-  and a comment on the PR.
+4. Tell me which of these connectors are not connected yet. Tell me if the GH_TOKEN or TEST_ENV_DEPLOY_TOKEN secret is missing.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent operates against the **test environment only**; production is out of
-scope. It does not merge or deploy to prod. Its output is a result, and a human
-owns the merge. Credentials are encrypted in the Secrets Manager and injected at
-runtime, scoped to the agents you grant them to.
+Add a GitHub token as the `GH_TOKEN` secret and your test-environment deploy
+token as `TEST_ENV_DEPLOY_TOKEN`. Both are injected at runtime and scoped to
+this agent. The edge check is a public HTTPS request and needs no credential.
+
+<ToolList>
+  <ToolNeed name="GitHub" domain="github.com" tag="Required" alternatives={[['GitLab', 'gitlab.com']]}>
+    Checks out each new PR and posts a pass or fail result.
+  </ToolNeed>
+  <ToolNeed name="Vercel" domain="vercel.com" tag="Required" alternatives={[['Netlify', 'netlify.com'], ['Fly.io', 'fly.io'], ['Render', 'render.com']]}>
+    Deploys each PR branch to the test environment.
+  </ToolNeed>
+  <ToolNeed name="Cloudflare" domain="cloudflare.com" tag="Optional" alternatives={[['Fastly', 'fastly.com']]}>
+    Serves the edge the agent re-checks each change through.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Let each PR arrive pre-QA'd">
+<Step title="Run it once with this prompt">
 
-With that in place, a new PR checks itself out, runs the suite, deploys to the
-test environment, exercises the change through Cloudflare, and posts a result:
-green when it passes, or a red check with the failing command, the logs, and
-steps to reproduce. A flaky test is flagged with the evidence. A broken edge
-route is caught before staging.
+Merge the change request, then start a session with the **qa-agent** agent and
+send this prompt. Replace owner/repo with your repository. Read the first
+results on the PRs before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`QA the open PRs on owner/repo.
+
+1. List open PRs with gh pr list, and skip any whose current head commit already has a qa-agent check.
+2. For each other PR, clone it clean, install it, and run the unit, integration and end-to-end suites.
+3. Deploy the branch to the test environment, wait until it is healthy, and exercise the changed behavior directly and through the edge.
+4. Post one qa-agent status check and one comment per PR: what you exercised on a pass, or the failing command, the logs and repro steps on a fail.
+5. Tear down each test deploy. Do not touch production and do not merge anything.`}
+/>
+
+</Step>
+<Step title="Let the 5-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every 5 minutes, each run on its own cloud computer. It QAs only the PR
+revisions that have no result yet. To change the time, edit the cron line, or
+open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: pr-qa-sweep
+    name: PR QA sweep
+    on:
+      cron: "0 */5 * * * *"
+    run:
+      agent: qa-agent
+      prompt: Load the pr-qa skill and QA every PR on owner/repo whose current head has no QA result yet.`}
+/>
+
+</Step>
+<Step title="Stay on the test environment">
+
+The agent has no production credential. It deploys only to the test
+environment, tears each deploy down, and never merges. Its output is a check
+and a comment on the PR. A person reads the result and merges.
+
+</Step>
+<Step title="Read the result on the PR">
+
+Each PR revision gets one check and one comment. This is what a sweep looks
+like in the session:
+
+<ExampleRun
+  title="PR QA sweep · 14:05"
+  message="Load the pr-qa skill and QA every PR on owner/repo whose current head has no QA result yet."
+  worked="Worked for 6m 52s"
+  tools={[
+    'gh · pr list',
+    'git · clone × 2',
+    'shell · run test suites × 2',
+    'shell · deploy to test × 2',
+    'http · check changed path × 4',
+    'gh · create status × 2',
+    'gh · pr comment × 2',
+  ]}
+  note="Illustrative example. Your results depend on your test suite and environment."
+>
+  QA'd **2** new PR revisions. **1** passed: **412** tests green, and the new
+  endpoint returned 200 direct and through the edge. **1** failed: a redirect
+  works direct to the origin but returns **404** through the edge. Its comment
+  has the failing request and the repro steps.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -106,6 +178,25 @@ route is caught before staging.
   encoded as **skills** and **memory**. The agent stays on the test environment
   and a human owns the merge.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Record new edge cases"
+  code="When a run finds a new edge case, add it to memory/qa-known-issues.md with the PR link, and open a change request for that file only."
+/>
+
+<CopyBlock
+  title="Screenshot changed pages"
+  code="For each PR that changes a page, add a screenshot of that page on the test deploy to the PR comment."
+/>
+
+<CopyBlock
+  title="Daily failure list"
+  code="Every day at 17:00, post to #eng a list of the PRs that failed QA that day, with the failing command for each one."
+/>
 
 ## Guardrails
 

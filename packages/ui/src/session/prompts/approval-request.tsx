@@ -181,6 +181,7 @@ export function resolvedLabel(
   const decision = outcome ?? request.resolution;
   if (decision === 'approve') return 'Approved';
   if (decision === 'deny') return 'Denied';
+  if (request.status === 'approved') return 'Approved';
   if (request.status === 'denied') return 'Denied';
   if (request.status === 'error') return 'Failed';
   if (request.status === 'expired') return 'Expired';

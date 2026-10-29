@@ -6,21 +6,15 @@ import { CliSandbox, throwIfCliInfraFailure } from "../fixtures/cli";
 import { createDatabaseSession } from "../fixtures/database-project";
 import { seedSessionTranscript } from "../fixtures/session-transcript";
 
-type Store = "mirror" | "log";
-
 /**
- * Registers `<id>` with the saved history only in the v1 mirror (an old session from before the
- * journal: the first read converts it into the session log, P8.2) and `<id>-log` with it in the
- * session log, written through the journal (Session Log Plan P5.7). Both implement spec `<id>`,
- * and both answer from the session log.
+ * Registers `<id>` with the saved history in the session log, written through the journal
+ * (Session Log Plan P5.7). Its v1 mirror twin went with the mirror (P8.2 Release B2).
  */
-function storeFlow(id: string, meta: FlowMeta, fn: (ctx: FlowContext, store: Store) => Promise<void>): void {
-  flow(id, meta, (ctx) => fn(ctx, "mirror"));
+function storeFlow(id: string, meta: FlowMeta, fn: (ctx: FlowContext) => Promise<void>): void {
   flow(
-    `${id}-log`,
+    id,
     {
       ...meta,
-      specId: id,
       routes: [
         ...(meta.routes ?? []),
         "POST /v1/accounts/tokens",
@@ -28,16 +22,15 @@ function storeFlow(id: string, meta: FlowMeta, fn: (ctx: FlowContext, store: Sto
         "POST /v1/projects/:projectId/sessions/:sessionId/log/journal",
       ],
     },
-    (ctx) => fn(ctx, "log"),
+    fn,
   );
 }
 
-/** The fixture's `log` option for `store`: the owner's current token mints the journal credential. */
-async function logOption(store: Store, owner: Principal) {
-  if (store === "mirror") return {};
-  if (owner.auth.mode !== "bearer") throw new Error(`the -log twin needs a bearer owner to journal, got auth mode ${owner.auth.mode}`);
+/** The fixture's `bearer`: the owner's current token mints the journal credential. */
+async function ownerBearer(owner: Principal) {
+  if (owner.auth.mode !== "bearer") throw new Error(`journaling needs a bearer owner, got auth mode ${owner.auth.mode}`);
   await owner.auth.ensureFresh?.();
-  return { log: { bearer: owner.auth.token } };
+  return owner.auth.token;
 }
 
 storeFlow(
@@ -60,7 +53,7 @@ storeFlow(
       "GET /v1/projects/:projectId/detail",
     ],
   },
-  async (ctx, store) => {
+  async (ctx) => {
     const project = await ctx.fixtures.project();
     const sessionId = await createDatabaseSession(ctx.env, {
       projectId: project.id,
@@ -92,7 +85,7 @@ storeFlow(
           parts: [{ id: "prt_subagent", sessionID: child, messageID: "msg_subagent_000000000000001", type: "text", text: "List the files." }],
         },
       ],
-      ...(await logOption(store, ctx.P.OWNER)),
+      bearer: await ownerBearer(ctx.P.OWNER),
     });
     const route = "/v1/projects/:projectId/sessions/:sessionId/transcript";
     const options = {
@@ -296,8 +289,8 @@ storeFlow(
             throw new Error(
               `stopped session reported no transcript: ${JSON.stringify(digest.transcript)}`,
             );
-          // The CLI reads the stored session log (`GET …/log`; a mirror-only session is converted
-          // by that read), never the v1 transcript route, and says so.
+          // The CLI reads the stored session log (`GET …/log`), never the v1 transcript route,
+          // and says so.
           const source = "log";
           if (digest.transcript.source !== source)
             throw new Error(`expected source '${source}', got '${digest.transcript.source}'`);
@@ -336,8 +329,8 @@ storeFlow(
           throwIfCliInfraFailure(run, "kortix sessions log");
           if (run.exitCode !== 0)
             throw new Error(`kortix sessions log exited ${run.exitCode}: ${run.all}`);
-          // The stored session log, every thread (a mirror-only session is converted by the
-          // read). The source is reported on stderr so it cannot break scripts.
+          // The stored session log, every thread. The source is reported on stderr so it cannot
+          // break scripts.
           const expected = { source: "log", threads: [fixture.root, child], stderr: "Stored session log" };
           const log = JSON.parse(run.stdout) as {
             schema: string;
@@ -432,7 +425,7 @@ storeFlow(
       "GET /v1/projects/:projectId/sessions/:sessionId/log",
     ],
   },
-  async (ctx, store) => {
+  async (ctx) => {
     const project = await ctx.fixtures.project();
     const sessionId = await createDatabaseSession(ctx.env, {
       projectId: project.id,
@@ -579,7 +572,7 @@ storeFlow(
               ],
             },
           ],
-          ...(await logOption(store, ctx.P.OWNER)),
+          bearer: await ownerBearer(ctx.P.OWNER),
         });
         const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-attachments") });
         const cli = new CliSandbox("attachments");
