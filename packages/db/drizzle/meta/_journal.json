@@ -1303,6 +1303,13 @@
       "when": 1793101077645,
       "tag": "20261027113757_chrome_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1793288256822,
+      "tag": "20261029153736_artifact_comments",
+      "breakpoints": true
     }
   ]
 }

@@ -1298,6 +1298,14 @@
         "session_groups": {
           "name": "会话分组",
           "description": "将侧边栏中的会话整理到全项目共享的命名文件夹中，例如每个店铺或客户一个。可通过菜单或拖动将会话移入分组，并对分组排序和折叠。"
+        },
+        "artifact_comments": {
+          "name": "工件评论",
+          "description": "与成员和代理在讨论串中讨论文档和页面。需要启用工件。"
+        },
+        "chrome": {
+          "name": "Chrome 中的 Kortix",
+          "description": "允许会话使用已连接的 Chrome 浏览器。你可以随时接管或停止。"
         }
       },
       "channelsSwitch": {

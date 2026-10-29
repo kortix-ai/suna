@@ -1298,6 +1298,14 @@
         "session_groups": {
           "name": "Gruppi di sessioni",
           "description": "Raggruppa le sessioni della barra laterale in cartelle con nome condivise da tutto il progetto, ad esempio una per negozio o cliente. Sposta una sessione in un gruppo dal suo menu o trascinandola; riordina e comprimi i gruppi."
+        },
+        "artifact_comments": {
+          "name": "Commenti agli artefatti",
+          "description": "Discuti documenti e pagine in discussioni con persone e agenti. Richiede Artefatti."
+        },
+        "chrome": {
+          "name": "Kortix in Chrome",
+          "description": "Consenti a una sessione di usare il browser Chrome collegato. Puoi riprendere il controllo o interromperla in qualsiasi momento."
         }
       },
       "channelsSwitch": {

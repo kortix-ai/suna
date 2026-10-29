@@ -1298,6 +1298,14 @@
         "session_groups": {
           "name": "Grupos de sesiones",
           "description": "Agrupa las sesiones de la barra lateral en carpetas con nombre que comparte todo el proyecto, por ejemplo una por tienda o cliente. Mueve una sesión a un grupo desde su menú o arrastrándola; reordena y contrae los grupos."
+        },
+        "artifact_comments": {
+          "name": "Comentarios de artefactos",
+          "description": "Comenta documentos y páginas en hilos con personas y agentes. Requiere Artefactos."
+        },
+        "chrome": {
+          "name": "Kortix en Chrome",
+          "description": "Permite que una sesión use tu navegador Chrome conectado. Puedes tomar el control o detenerla en cualquier momento."
         }
       },
       "channelsSwitch": {
