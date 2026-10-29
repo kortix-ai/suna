@@ -236,6 +236,14 @@ function usePanelGlide(input: PanelGlideInput) {
     prevSideSizeRef.current = sideSize;
 
     const skipAnimation = consumeSkipNextExpandAnimation();
+    // Full screen is a layer OVER the chat (`SessionPanelSide`), not a split
+    // at 100%: the split stays exactly where it was, so the chat never
+    // squeezes to zero under the opening viewer. Leaving full screen falls
+    // through below as an `expandChanged` glide to the split it now wants.
+    if (isExpanded) {
+      disablePanelTransition();
+      return;
+    }
     const changed = expandChanged || splitChanged || aspectChanged;
     const shouldAnimate = changed && shouldShowPanel && !skipAnimation;
 
