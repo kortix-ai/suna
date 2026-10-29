@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
+  APP_SETUP_TIMEOUT_MS,
   type AppInstance,
   createTestKortix,
   loginUser,
@@ -63,7 +64,9 @@ describe('starting a session with overrides', () => {
         label: 'My inbox',
       }),
     ]);
-  }, 60_000);
+    // startApp can run the one cold `next build` every file shares; a shorter
+    // hook kills it (exit 143) and fails every later file.
+  }, APP_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await app?.stop();
