@@ -30,6 +30,9 @@ const { createAccountToken, revokeAccountToken, revokeSessionConnectorTokens } =
   '../repositories/account-tokens'
 );
 const { offboardMember } = await import('../accounts/core/offboard-member');
+const { createServiceAccount, deleteServiceAccount, disableServiceAccount } = await import(
+  '../repositories/service-accounts'
+);
 const { SYSTEM_ACTOR } = await import('../iam/assignments');
 
 const GRANT: AgentGrant = {
@@ -39,7 +42,7 @@ const GRANT: AgentGrant = {
   policySets: { billing: 'strict' },
 };
 let seeded: SeededProject;
-const userId = crypto.randomUUID();
+const userId: string = crypto.randomUUID();
 
 interface Caller {
   sessionId: string;
@@ -101,6 +104,7 @@ afterAll(async () => {
   await db.execute(sql`delete from kortix.account_tokens where account_id = ${seeded.account_id}`);
   await db.execute(sql`delete from kortix.session_sandboxes where account_id = ${seeded.account_id}`);
   await db.execute(sql`delete from kortix.project_sessions where project_id = ${seeded.project_id}`);
+  await db.execute(sql`delete from kortix.service_accounts where account_id = ${seeded.account_id}`);
   await removeSeeded([seeded]);
 });
 
@@ -202,6 +206,32 @@ describe('rebuildHeldCallPrincipal', () => {
     expect((await rebuildHeldCallPrincipal(heldFor(c, {}, member))).ok).toBe(true);
     await offboardMember(SYSTEM_ACTOR as Writer, seeded.account_id, member, 'left');
     expect(await rebuildHeldCallPrincipal(heldFor(c, {}, member))).toEqual({ ok: false, reason: 'caller_revoked' });
+  });
+
+  test('a service-account caller (a trigger session re-minted from created_by) runs while the account is active', async () => {
+    currentGrant = undefined;
+    const sa = await createServiceAccount({ accountId: seeded.account_id, name: 'held-call-sa-disable', createdBy: userId });
+    const c = await caller(GRANT, sa.serviceAccountId);
+    const rebuilt = await rebuildHeldCallPrincipal(heldFor(c, {}, sa.serviceAccountId));
+    expect(rebuilt.ok).toBe(true);
+    if (rebuilt.ok) expect(rebuilt.principal.userId).toBe(sa.serviceAccountId);
+    await disableServiceAccount({ accountId: seeded.account_id, serviceAccountId: sa.serviceAccountId, disabledBy: userId });
+    expect(await rebuildHeldCallPrincipal(heldFor(c, {}, sa.serviceAccountId))).toEqual({
+      ok: false,
+      reason: 'caller_revoked',
+    });
+  });
+
+  test('a deleted service-account caller refuses caller_revoked', async () => {
+    currentGrant = undefined;
+    const sa = await createServiceAccount({ accountId: seeded.account_id, name: 'held-call-sa-delete', createdBy: userId });
+    const c = await caller(GRANT, sa.serviceAccountId);
+    expect((await rebuildHeldCallPrincipal(heldFor(c, {}, sa.serviceAccountId))).ok).toBe(true);
+    await deleteServiceAccount(seeded.account_id, sa.serviceAccountId);
+    expect(await rebuildHeldCallPrincipal(heldFor(c, {}, sa.serviceAccountId))).toEqual({
+      ok: false,
+      reason: 'caller_revoked',
+    });
   });
 
   test('a grant that no longer allows the connector refuses grant_narrowed', async () => {

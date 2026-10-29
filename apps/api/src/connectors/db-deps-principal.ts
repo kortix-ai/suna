@@ -11,6 +11,7 @@ import {
   validateAccountTokenByIdForHeldRun,
 } from '../repositories/account-tokens';
 import { accountMemberRow } from '../iam/membership-read';
+import { isServiceAccountActive } from '../repositories/service-accounts';
 import { db } from '../shared/db';
 import { tokenAgentPrincipalScope } from '../projects/lib/personal-resources';
 import type { CallPolicySet } from './gateway';
@@ -195,14 +196,17 @@ export async function rebuildHeldCallPrincipal(held: HeldCallInput): Promise<Hel
   const userId = held.user_id;
   const sessionId = held.session_id;
 
-  const [[project], [member]] = await Promise.all([
+  const [[project], [member], serviceAccountActive] = await Promise.all([
     db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, projectId)).limit(1),
     accountMemberRow(accountId, userId),
+    isServiceAccountActive(accountId, userId),
   ]);
   if (!project || project.accountId !== accountId) return { ok: false, reason: 'caller_mismatch' };
-  // Offboarding revokes the tokens, and logs when that fails. The membership
-  // read closes that gap for a held run.
-  if (!member) return { ok: false, reason: 'caller_revoked' };
+  // The caller must still exist in the account: a human as a member, a service
+  // account (a trigger session re-minted from `created_by`) as active.
+  // Offboarding revokes the tokens and only logs a failure; this read closes
+  // that gap for a held run.
+  if (!member && !serviceAccountActive) return { ok: false, reason: 'caller_revoked' };
 
   const [agentGrant, channelConnectorSlugs] = await Promise.all([
     sessionId

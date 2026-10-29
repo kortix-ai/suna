@@ -3,7 +3,7 @@
 // via principal_type='token' with principal_id = service_account_id so
 // the existing IAM engine token-path handles authorisation unchanged.
 
-import { and, asc, eq, inArray, isNull, isNotNull } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, isNotNull, or } from 'drizzle-orm';
 import { serviceAccounts, roleAssignments } from '@kortix/db';
 import { notAnAudienceGrant } from '../iam/audience-grants';
 import { db } from '../shared/db';
@@ -125,6 +125,23 @@ export async function createServiceAccount(args: {
 /** Auto-provisioned AGENT identities (agent_name set), for the policy
  *  principal picker — an admin binds a role to one to promote that agent to a
  *  standing teammate. Distinct from listServiceAccounts (human bearer SAs). */
+/** True when `serviceAccountId` is a service account of `accountId` that is active and not expired. */
+export async function isServiceAccountActive(accountId: string, serviceAccountId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: serviceAccounts.serviceAccountId })
+    .from(serviceAccounts)
+    .where(
+      and(
+        eq(serviceAccounts.accountId, accountId),
+        eq(serviceAccounts.serviceAccountId, serviceAccountId),
+        eq(serviceAccounts.status, 'active'),
+        or(isNull(serviceAccounts.expiresAt), gt(serviceAccounts.expiresAt, new Date())),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
 export async function listAgentServiceAccounts(
   accountId: string,
 ): Promise<Array<{ serviceAccountId: string; name: string; projectId: string | null; agentName: string | null }>> {
