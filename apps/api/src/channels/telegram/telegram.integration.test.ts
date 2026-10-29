@@ -2269,6 +2269,40 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     }
   });
 
+  describe('one settings row per chat', () => {
+    let spies: Array<{ mockRestore(): void }> = [];
+    beforeEach(() => {
+      spies = [
+        spyOn(selection, 'listProjectAgents').mockResolvedValue([{ name: 'reviewer', description: 'Reviews changes', mode: null }]),
+        spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer']),
+        spyOn(defaultModel, 'isModelServableForAccount').mockResolvedValue(true),
+      ];
+    });
+    afterEach(() => restore(spies));
+
+    test('/agent then /model on one chat keep both choices', async () => {
+      await handleTelegramEvent(update('/agent reviewer', ALLOWED, 7057));
+      await handleTelegramEvent(update('/model cmd-both', ALLOWED, 7057));
+      expect(await settingsRow('7057')).toMatchObject({ projectId: PROJECT, agentName: 'reviewer', model: 'cmd-both' });
+    });
+
+    test("a row another project left on the chat (a bot reused across projects) is taken over with both of its choices cleared", async () => {
+      const other = crypto.randomUUID();
+      await db.insert(projects).values({ projectId: other, accountId: ACCOUNT, name: 'telegram-other', repoUrl: 'file:///nonexistent/telegram-other.git' });
+      const left = { platform: 'telegram', workspaceId: BOT_ID, projectId: other, agentName: 'other-agent', model: 'other-model' };
+      await db.insert(chatChannelBindings).values([{ ...left, channelId: '7058' }, { ...left, channelId: '7059' }]);
+      try {
+        await handleTelegramEvent(update('/model cmd-taken', ALLOWED, 7058));
+        expect(await settingsRow('7058')).toMatchObject({ projectId: PROJECT, agentName: null, model: 'cmd-taken' });
+        await handleTelegramEvent(update('/agent reviewer', ALLOWED, 7059));
+        expect(await settingsRow('7059')).toMatchObject({ projectId: PROJECT, agentName: 'reviewer', model: null });
+      } finally {
+        await db.delete(chatChannelBindings).where(eq(chatChannelBindings.projectId, other));
+        await db.delete(projects).where(eq(projects.projectId, other));
+      }
+    });
+  });
+
   test('a photo captioned with a command runs the command, and its file is not read', async () => {
     stored.set('ph-cmd', { bytes: JPEG });
     await handleTelegramEvent(mediaUpdate({ photo: [{ file_id: 'ph-cmd', width: 64, height: 64 }] }, { caption: '/status', chat: 7043 }));
