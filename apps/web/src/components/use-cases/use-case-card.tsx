@@ -26,14 +26,14 @@ export function UseCaseCover({
   const Custom = USE_CASE_COVERS[post.slug];
   if (Custom) {
     return (
-      <div className={cn('bg-muted relative overflow-hidden', className)}>
+      <div className={cn('bg-muted border-border relative overflow-hidden border', className)}>
         <Custom post={post} featured={featured} />
       </div>
     );
   }
   if (post.data.cover) {
     return (
-      <div className={cn('bg-muted relative overflow-hidden', className)}>
+      <div className={cn('bg-muted border-border relative overflow-hidden border', className)}>
         <Image
           src={post.data.cover}
           alt={post.data.title}
@@ -45,7 +45,7 @@ export function UseCaseCover({
     );
   }
   return (
-    <div className={cn('bg-muted relative flex items-center justify-center', className)}>
+    <div className={cn('bg-muted border-border relative flex items-center justify-center border', className)}>
       <KortixAsterisk index={0} parentClass="size-10" />
     </div>
   );
