@@ -34,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from '@kortix/ui/dropdown-menu';
 import { Hint } from '@kortix/ui/hint';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { readLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
 import { useComposerPrefillStore } from '@kortix/ui/internal/stores/composer-prefill-store';
 import { cn } from '@kortix/ui/lib/utils';
@@ -132,7 +133,7 @@ export function ChromePanelHome() {
   useEffect(() => {
     // Outside the side panel there is no tab to talk about: /panel is not a page of its own.
     // nav-contract: prefetch-only — a stray visit leaves at once
-    if (!isInExtensionPanel()) router.replace('/projects');
+    if (!isInExtensionPanel()) router.replace(PROJECT_LANDING_PATH);
     else input.current?.focus();
   }, [router]);
 
