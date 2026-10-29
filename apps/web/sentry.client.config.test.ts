@@ -17,6 +17,7 @@ test('client beforeSend drops injected Talisman onboarding but sends application
     ...options,
     dsn: 'https://public@example.test/1',
     enabled: true,
+    stackParser: Sentry.defaultStackParser,
     sendClientReports: false,
     integrations: [],
     transport: () => ({
