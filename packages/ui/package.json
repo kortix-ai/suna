@@ -106,6 +106,7 @@
     "./customize/settings/rail-copy-context": "./src/customize/settings/rail-copy-context.tsx",
     "./customize/settings/settings-tab-header": "./src/customize/settings/settings-tab-header.tsx",
     "./customize/settings/settings-tabs": "./src/customize/settings/settings-tabs.ts",
+    "./customize/settings/tabs/chrome-connections-tab": "./src/customize/settings/tabs/chrome-connections-tab.tsx",
     "./customize/settings/tabs/connected-apps": "./src/customize/settings/tabs/connected-apps.tsx",
     "./customize/settings/tabs/experimental-tab": "./src/customize/settings/tabs/experimental-tab.tsx",
     "./customize/settings/tabs/general-tab": "./src/customize/settings/tabs/general-tab.tsx",
@@ -248,7 +249,6 @@
     "./internal/billing/use-transactions": "./src/internal/billing/use-transactions.ts",
     "./internal/branding/branding-provider": "./src/internal/branding/branding-provider.tsx",
     "./internal/capture/use-capture-area": "./src/internal/capture/use-capture-area.ts",
-    "./internal/chrome/chrome-connections-tab": "./src/internal/chrome/chrome-connections-tab.tsx",
     "./internal/chrome/extension": "./src/internal/chrome/extension.ts",
     "./internal/chrome/use-chrome-offered": "./src/internal/chrome/use-chrome-offered.ts",
     "./internal/components/agent-mark": "./src/internal/components/agent-mark.tsx",
@@ -896,6 +896,10 @@
         "types": "./dist/customize/settings/settings-tabs.d.ts",
         "import": "./dist/customize/settings/settings-tabs.js"
       },
+      "./customize/settings/tabs/chrome-connections-tab": {
+        "types": "./dist/customize/settings/tabs/chrome-connections-tab.d.ts",
+        "import": "./dist/customize/settings/tabs/chrome-connections-tab.js"
+      },
       "./customize/settings/tabs/connected-apps": {
         "types": "./dist/customize/settings/tabs/connected-apps.d.ts",
         "import": "./dist/customize/settings/tabs/connected-apps.js"
@@ -1457,10 +1461,6 @@
       "./internal/capture/use-capture-area": {
         "types": "./dist/internal/capture/use-capture-area.d.ts",
         "import": "./dist/internal/capture/use-capture-area.js"
-      },
-      "./internal/chrome/chrome-connections-tab": {
-        "types": "./dist/internal/chrome/chrome-connections-tab.d.ts",
-        "import": "./dist/internal/chrome/chrome-connections-tab.js"
       },
       "./internal/chrome/extension": {
         "types": "./dist/internal/chrome/extension.d.ts",

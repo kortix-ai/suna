@@ -695,26 +695,31 @@ function SceneCover({ children }: { children: ReactNode }) {
   );
 }
 
+function CrmHygieneCover() {
+  const t = useTranslations('useCases.covers');
+  return (
+    <SceneCover>
+      <RunTimelineScene
+        title={t('crmTitle')}
+        meta={t('crmMeta')}
+        steps={[
+          { domain: 'hubspot.com', label: t('crmSearchContacts') },
+          { domain: 'hubspot.com', label: t('crmMergeDuplicates') },
+          { domain: 'clearbit.com', label: t('crmEnrichCompany') },
+          { domain: 'slack.com', label: t('crmAskApproval'), waiting: true },
+        ]}
+      />
+    </SceneCover>
+  );
+}
+
 const SCENE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> = {
   'social-scheduler': () => (
     <SceneCover>
       <SlackApprovalScene />
     </SceneCover>
   ),
-  'crm-hygiene': () => (
-    <SceneCover>
-      <RunTimelineScene
-        title="Nightly CRM hygiene"
-        meta="02:00 · worked 3m 12s"
-        steps={[
-          { domain: 'hubspot.com', label: 'hubspot · search contacts' },
-          { domain: 'hubspot.com', label: 'hubspot · merge duplicates' },
-          { domain: 'clearbit.com', label: 'clearbit · enrich company' },
-          { domain: 'slack.com', label: 'slack · ask approval for bulk update', waiting: true },
-        ]}
-      />
-    </SceneCover>
-  ),
+  'crm-hygiene': CrmHygieneCover,
   'outbound-outreach': () => (
     <SceneCover>
       <FannedDraftsScene />

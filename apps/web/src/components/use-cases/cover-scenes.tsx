@@ -2,6 +2,8 @@
 import { cn, faviconUrlForHostname } from '@kortix/ui';
 import type { ReactNode } from 'react';
 
+import { useTranslations } from '@/i18n/use-translations';
+
 /**
  * Product-scene covers (Paper "Use-case covers": 01 Slack approval, 03 Run
  * timeline, 10 Fanned drafts, 19 Approval card). Each scene is laid out on a
@@ -12,6 +14,12 @@ import type { ReactNode } from 'react';
 
 const CARD = 'bg-background border-border rounded-lg border';
 const GMAIL = 'https://ssl.gstatic.com/images/branding/product/2x/gmail_2020q4_48dp.png';
+
+/** Names the scenes show verbatim in every locale: an app, a channel, an agent and a tool. */
+const SLACK_APP = 'social-scheduler';
+const SLACK_CHANNEL = '#marketing';
+const SUPPORT_AGENT = 'support-agent';
+const REFUND_TOOL = 'stripe.refunds.create';
 
 export function SceneCanvas({ children }: { children: ReactNode }) {
   return (
@@ -47,31 +55,31 @@ const logo = (domain: string) => faviconUrlForHostname(domain);
 
 /** 01 · A Slack message from the agent with a draft and Approve / Edit / Skip. */
 export function SlackApprovalScene() {
+  const t = useTranslations('useCases.covers');
   return (
     <div className={cn(CARD, 'flex w-[440px] -rotate-[1.5deg] flex-col gap-3 px-5 py-4')}>
       <div className="flex items-center gap-2.5">
         <AgentMark className="size-8" />
         <div className="flex flex-col">
           <span className="text-foreground flex items-center gap-1.5 text-sm font-semibold">
-            social-scheduler
+            {SLACK_APP}
             <span className="bg-muted text-muted-foreground rounded-xs px-1 text-xs font-semibold">
               APP
             </span>
           </span>
-          <span className="text-muted-foreground text-xs">#marketing · 07:02</span>
+          <span className="text-muted-foreground text-xs">{SLACK_CHANNEL} · 07:02</span>
         </div>
       </div>
       <p className="text-foreground text-sm">
-        Draft for <b>Thursday 10:00</b>, LinkedIn:
+        {t.rich('slackDraftFor', { b: (chunks) => <b>{chunks}</b> })}
       </p>
       <div className="border-kortix-purple bg-muted/60 text-foreground rounded-sm border-l-[3px] px-3 py-2.5 text-xs leading-5">
-        We shipped connectors v2: one catalog for MCP, OpenAPI and GraphQL. Here is what changed
-        for your agents →
+        {t('slackPost')}
       </div>
       <div className="flex gap-2 text-xs font-semibold">
-        <span className="bg-kortix-green rounded-md px-3.5 py-1.5 text-background">Approve</span>
-        <span className="border-border text-foreground rounded-md border px-3.5 py-1.5">Edit</span>
-        <span className="border-border text-foreground rounded-md border px-3.5 py-1.5">Skip</span>
+        <span className="bg-kortix-green rounded-md px-3.5 py-1.5 text-background">{t('approve')}</span>
+        <span className="border-border text-foreground rounded-md border px-3.5 py-1.5">{t('edit')}</span>
+        <span className="border-border text-foreground rounded-md border px-3.5 py-1.5">{t('skip')}</span>
       </div>
     </div>
   );
@@ -137,6 +145,7 @@ function Draft({
   children: ReactNode;
   waiting?: boolean;
 }) {
+  const t = useTranslations('useCases.covers');
   return (
     <div className={cn(CARD, 'absolute flex w-[230px] flex-col p-4', className)}>
       <div className="text-muted-foreground flex items-center gap-1.5 pb-2 text-xs">
@@ -147,7 +156,7 @@ function Draft({
       {waiting ? (
         <div className="text-kortix-yellow flex items-center gap-1.5 pt-3 text-xs">
           <span className="bg-kortix-yellow size-1.5 rounded-full" />
-          Awaiting approval
+          {t('awaitingApproval')}
         </div>
       ) : null}
     </div>
@@ -156,16 +165,17 @@ function Draft({
 
 /** 10 · Three outreach emails fanned out; the front one waits for approval. */
 export function FannedDraftsScene() {
+  const t = useTranslations('useCases.covers');
   return (
     <div className="relative h-[250px] w-[520px]">
-      <Draft className="top-10 left-5 -rotate-[8deg]" icon={GMAIL} meta="To: Head of Ops · draft">
-        Saw your team is hiring three SDRs. Here is how a similar team cut their research time.
+      <Draft className="top-10 left-5 -rotate-[8deg]" icon={GMAIL} meta={t('draftToOps')}>
+        {t('draftOps')}
       </Draft>
-      <Draft className="top-10 left-[270px] rotate-[7deg]" icon={GMAIL} meta="To: VP Sales · draft">
-        Congrats on the Series B. Worth a quick look at how you route inbound leads?
+      <Draft className="top-10 left-[270px] rotate-[7deg]" icon={GMAIL} meta={t('draftToSales')}>
+        {t('draftSales')}
       </Draft>
-      <Draft className="top-2.5 left-[145px] w-[240px]" icon={GMAIL} meta="To: RevOps lead · today" waiting>
-        Your pricing page changed last week. Happy to share what we saw teams like yours do next.
+      <Draft className="top-2.5 left-[145px] w-[240px]" icon={GMAIL} meta={t('draftToRevOps')} waiting>
+        {t('draftRevOps')}
       </Draft>
     </div>
   );
@@ -173,17 +183,18 @@ export function FannedDraftsScene() {
 
 /** 19 · A review-center approval card for one held tool call. */
 export function ApprovalCardScene() {
+  const t = useTranslations('useCases.covers');
   const rows: Array<[string, ReactNode]> = [
     [
-      'Tool',
+      t('approvalTool'),
       <span key="t" className="flex items-center gap-1.5 font-mono">
         <img src={logo('stripe.com')} alt="" className="size-3.5 rounded-xs" />
-        stripe.refunds.create
+        {REFUND_TOOL}
       </span>,
     ],
-    ['Amount', '640.00 USD'],
-    ['Reason', 'Item arrived damaged'],
-    ['Customer', 'Maya Lindqvist'],
+    [t('approvalAmount'), '640.00 USD'],
+    [t('approvalReason'), t('approvalReasonValue')],
+    [t('approvalCustomer'), 'Maya Lindqvist'],
   ];
   return (
     <div className={cn(CARD, 'flex w-[420px] flex-col overflow-hidden')}>
@@ -192,15 +203,18 @@ export function ApprovalCardScene() {
           <span className="text-muted-foreground flex items-center gap-2 text-xs">
             <AgentMark className="size-5" />
             <span>
-              <span className="text-foreground font-medium">support-agent</span> asks to run a tool
+              {t.rich('approvalAsks', {
+                agent: SUPPORT_AGENT,
+                name: (chunks) => <span className="text-foreground font-medium">{chunks}</span>,
+              })}
             </span>
           </span>
           <span className="bg-kortix-yellow/15 text-kortix-yellow rounded-full px-2 py-0.5 text-xs font-medium">
-            Expires in 58m
+            {t('approvalExpires')}
           </span>
         </div>
         <span className="text-foreground text-xl font-semibold tracking-tight">
-          Refund $640 to order #4821?
+          {t('approvalQuestion')}
         </span>
       </div>
       <div className="border-border bg-muted/50 flex flex-col gap-2 border-y px-5 py-3 text-xs">
@@ -212,10 +226,10 @@ export function ApprovalCardScene() {
         ))}
       </div>
       <div className="flex items-center justify-between px-5 pt-3.5 pb-4">
-        <span className="text-muted-foreground text-xs">Policy: refunds over $500 need a person</span>
+        <span className="text-muted-foreground text-xs">{t('approvalPolicy')}</span>
         <span className="flex gap-2 text-xs font-medium">
-          <span className="border-border text-foreground rounded-md border px-3.5 py-1.5">Deny</span>
-          <span className="bg-foreground text-background rounded-md px-3.5 py-1.5">Approve</span>
+          <span className="border-border text-foreground rounded-md border px-3.5 py-1.5">{t('deny')}</span>
+          <span className="bg-foreground text-background rounded-md px-3.5 py-1.5">{t('approve')}</span>
         </span>
       </div>
     </div>

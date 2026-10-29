@@ -184,7 +184,37 @@
     "noAgents": "无代理"
   },
   "useCases": {
-    "headline": "驱动公司运转的循环"
+    "headline": "驱动公司运转的循环",
+    "covers": {
+      "slackDraftFor": "<b>周四 10:00</b> 的草稿，LinkedIn：",
+      "slackPost": "我们发布了连接器 v2：MCP、OpenAPI 和 GraphQL 共用一个目录。看看你的代理有哪些变化 →",
+      "approve": "批准",
+      "edit": "编辑",
+      "skip": "跳过",
+      "deny": "拒绝",
+      "crmTitle": "每晚 CRM 数据清理",
+      "crmMeta": "02:00 · 运行 3 分 12 秒",
+      "crmSearchContacts": "hubspot · 搜索联系人",
+      "crmMergeDuplicates": "hubspot · 合并重复项",
+      "crmEnrichCompany": "clearbit · 补全公司信息",
+      "crmAskApproval": "slack · 请求批准批量更新",
+      "awaitingApproval": "等待批准",
+      "draftToOps": "收件人：运营负责人 · 草稿",
+      "draftOps": "看到贵团队正在招聘三名 SDR。这是一个类似团队缩短调研时间的做法。",
+      "draftToSales": "收件人：销售副总裁 · 草稿",
+      "draftSales": "恭喜完成 B 轮融资。要不要快速看看你们如何分配入站线索？",
+      "draftToRevOps": "收件人：RevOps 负责人 · 今天",
+      "draftRevOps": "你们的定价页面上周有变化。很乐意分享与你们类似的团队接下来是怎么做的。",
+      "approvalAsks": "<name>{agent}</name> 请求运行一个工具",
+      "approvalExpires": "58 分钟后过期",
+      "approvalQuestion": "为订单 #4821 退款 $640？",
+      "approvalTool": "工具",
+      "approvalAmount": "金额",
+      "approvalReason": "原因",
+      "approvalCustomer": "客户",
+      "approvalReasonValue": "商品到货时已损坏",
+      "approvalPolicy": "策略：超过 $500 的退款需要人工审批"
+    }
   },
   "developers": {
     "heroDescription": "代理、技能、工具、连接器和计划全都是仓库中的文件。你可以在 IDE 中编辑它们，在本地运行，并用一条命令部署到云端。开源、可自行托管，并完全由你掌控。",
@@ -20937,7 +20967,14 @@
       "text8484a27f54b0": "企业级，有问必答。",
       "texte4d812fc9db4": "Arcadia · Drive",
       "text9218ded06bfa": "自定义 → 模型 → 成本",
-      "textdbff0b6e128b": "面向智能体的后端框架和服务器。"
+      "textdbff0b6e128b": "面向智能体的后端框架和服务器。",
+      "textb1e19e0edf15": "在 HubSpot 中找到 7 笔沉寂的交易",
+      "textd6320415db95": "正在 HubSpot 中查找沉寂的交易",
+      "text850aad6d0dc3": "已创建 7 个跟进任务",
+      "textc5e0ccf193cb": "已跟进 4 笔沉寂的交易",
+      "text1f60c85be705": "正在跟进沉寂的交易",
+      "text24c939b23dfe": "已在 HubSpot 中更新 2 笔交易",
+      "text6cfe7973316d": "正在更新 HubSpot 中的交易"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

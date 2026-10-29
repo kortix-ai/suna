@@ -226,7 +226,7 @@ function Connect({ at, enter }: { at: At; enter?: string }) {
       {at('call') ? (
         <WorkGroup
           className={enter}
-          label={at('deals') ? 'Found 7 quiet deals in HubSpot' : 'Looking for quiet deals in HubSpot'}
+          label={at('deals') ? tMarketing('textb1e19e0edf15') : tMarketing('textd6320415db95')}
           running={!at('deals')}
           steps={[{ icon: PlugIcon, verb: 'Searched deals', object: 'hubspot.search_deals', result: '7 deals' }]}
         />
@@ -246,7 +246,7 @@ function Connect({ at, enter }: { at: At; enter?: string }) {
       {at('done') ? (
         <WorkGroup
           className={enter}
-          label="Created 7 follow-up tasks"
+          label={tMarketing('text850aad6d0dc3')}
           steps={[{ icon: PencilSimpleIcon, verb: 'Created tasks', object: 'hubspot.create_task', result: '7 tasks' }]}
         />
       ) : null}
@@ -285,12 +285,12 @@ function ConnectCard({
       ) : state === 'connecting' ? (
         <span className={cn('text-muted-foreground flex items-center gap-1.5 text-xs', ENTER)}>
           <Loading className="size-3" />
-          Connecting
+          {tMarketing('textd403c686f6a1')}
         </span>
       ) : (
         <Badge variant="outline" className={ENTER}>
           <span data-slot="status-dot" aria-hidden className="bg-kortix-green rounded-full" />
-          Connected
+          {tMarketing('text22965568d22a')}
         </Badge>
       )}
     </div>
@@ -390,7 +390,7 @@ function Automate({ at, enter }: { at: At; enter?: string }) {
       {at('run') ? (
         <WorkGroup
           className={cn('mt-3', enter)}
-          label={at('ran') ? 'Followed up on 4 quiet deals' : 'Following up on quiet deals'}
+          label={at('ran') ? tMarketing('textc5e0ccf193cb') : tMarketing('text1f60c85be705')}
           running={!at('ran')}
           steps={[
             { icon: PlugIcon, verb: 'Searched deals', object: 'hubspot.search_deals', result: '4 deals' },
@@ -451,7 +451,7 @@ function Share({ at, enter }: { at: At; enter?: string }) {
       {at('update') ? (
         <WorkGroup
           className={cn('mt-3', enter)}
-          label={at('reply') ? 'Updated 2 deals in HubSpot' : 'Updating deals in HubSpot'}
+          label={at('reply') ? tMarketing('text24c939b23dfe') : tMarketing('text6cfe7973316d')}
           running={!at('reply')}
           steps={[{ icon: PlugIcon, verb: 'Updated deals', object: 'hubspot.update_deal', result: '2 deals' }]}
         />
