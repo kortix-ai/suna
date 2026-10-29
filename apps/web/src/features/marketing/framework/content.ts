@@ -5,7 +5,8 @@
  * "kortix.yaml reference" (content/docs/developers.mdx): composio connectors
  * with an approval rule, the skills and tools registries, agents grouped by
  * department (agents/<department>/*.md) that enable tools, connectors,
- * skills and a pi extension (a repository .ts file) by name, the built-in kortix_slack and kortix_email channels, and
+ * skills, a command and pi extensions (a repository .ts file and an npm
+ * pin) by name, the built-in kortix_slack and kortix_email channels, and
  * webhook and cron triggers. No channels: block (channels are connectors).
  * `kortix validate` passes on a scratch repo written from FILES, and fails
  * when a registered skill folder is missing. Every new session runs the
@@ -15,6 +16,7 @@
  */
 
 export const MANIFEST = [
+  "# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json",
   "kortix_version: 3",
   "default_agent: kortix",
   "",
@@ -48,16 +50,27 @@ export const MANIFEST = [
   "tools:",
   "  lookup_account: tools/lookup_account.ts",
   "",
-  "# A pi extension: TypeScript that hooks into the agent harness.",
+  "commands:",
+  "  draft-post:",
+  "    description: Draft a LinkedIn post about one change.",
+  "    prompt: \"Draft a LinkedIn post about $ARGUMENTS. Follow the write-post skill.\"",
+  "",
+  "# pi extensions: TypeScript that pi loads into the agent's session.",
   "extensions:",
   "  block-secrets:",
   "    pi: extensions/block-secrets.ts",
+  "  web-access:",
+  "    pi: npm:pi-web-access@0.30.0",
   "",
+  "# Every agent is a pi agent. It gets only what its block lists.",
   "agents:",
   "  kortix:",
+  "    description: The general agent for Arcadia.",
+  "    mode: primary",
   "    prompt_file: agents/kortix.md",
   "    connectors: all",
   "    skills: all",
+  "    extensions: all",
   "    workspace: { project_repository: true }",
   "",
   "  # Engineering",
@@ -77,6 +90,8 @@ export const MANIFEST = [
   "    tools: [read, web_search]",
   "    connectors: [linkedin, kortix_slack]",
   "    skills: [write-post]",
+  "    commands: [draft-post]",
+  "    extensions: [web-access]",
   "",
   "  # Sales",
   "  sales-inbound:",
@@ -85,19 +100,23 @@ export const MANIFEST = [
   "    tools: [web_search, lookup_account]",
   "    connectors: [hubspot, linkedin, kortix_email]",
   "    skills: [qualify-lead]",
+  "    extensions: [web-access]",
   "",
   "triggers:",
   "  - slug: new-issue",
+  "    name: Triage new issues",
   "    on: { webhook: { secret: GITHUB_WEBHOOK_SECRET } }",
   "    run:",
   "      agent: eng-triage",
   "      prompt: \"Triage issue #{{ body.issue.number }}: label it, find the owner, post in #eng.\"",
   "  - slug: inbound-lead",
+  "    name: Qualify inbound leads",
   "    on: { webhook: { secret: LEADS_WEBHOOK_SECRET } }",
   "    run:",
   "      agent: sales-inbound",
   "      prompt: \"Qualify {{ body.email }}, look them up on LinkedIn and log them in HubSpot.\"",
   "  - slug: weekly-post",
+  "    name: Weekly LinkedIn post",
   "    on: { cron: \"0 0 10 * * 2\", timezone: Europe/Berlin }",
   "    run:",
   "      agent: marketing",
@@ -186,7 +205,8 @@ export const FILES: Record<string, readonly string[]> = {
     '};',
   ],
   'extensions/block-secrets.ts': [
-    '// extensions/block-secrets.ts: a pi extension',
+    '// extensions/block-secrets.ts',
+    '// A pi extension. pi loads it into every session of an agent that lists it.',
     "import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';",
     '',
     'export default function (pi: ExtensionAPI) {',

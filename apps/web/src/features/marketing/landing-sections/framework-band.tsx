@@ -16,7 +16,10 @@ const sourceFRAMEWORK = {
   ],
   cells: [
     { k: 'kortix.yaml', v: 'Agents, access, tools and triggers in one versioned file.' },
-    { k: 'pi coding agent', v: 'The open-source harness every agent runs on. Extend it with pi extensions.' },
+    {
+      k: 'pi coding agent',
+      v: 'The open-source harness every agent runs on. Extend it with pi extensions.',
+    },
     { k: '@kortix/sdk', v: 'One typed client for projects, sessions and live events.' },
     { k: '@kortix/ui', v: 'The React components the Kortix workspace is built from.' },
   ],

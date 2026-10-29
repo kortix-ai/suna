@@ -281,9 +281,9 @@ export const tabs = {
 
 /* Tab visuals. */
 export const agentFiles = {
-  yaml: excerpt('  # Marketing', '    skills: [write-post]', [
+  yaml: excerpt('  # Marketing', '    extensions: [web-access]', [
     '  marketing:',
-    '    skills: [write-post]',
+    '    extensions: [web-access]',
   ]),
   promptPath: 'agents/marketing/content.md',
 } as const;

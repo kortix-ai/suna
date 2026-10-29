@@ -20917,7 +20917,8 @@
       "text34fc3101b82d": "connectors: [helpdesk]",
       "textdbff0b6e128b": "エージェント向けのバックエンドフレームワークとサーバー。",
       "text615544b5a953": "pi 拡張機能",
-      "text74bf85229fd2": "TypeScriptでハーネスを拡張します。"
+      "text74bf85229fd2": "TypeScriptでハーネスを拡張します。",
+      "text152a04716eb3": "エージェントは pi で動作"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

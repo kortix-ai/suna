@@ -20917,7 +20917,8 @@
       "text9218ded06bfa": "自定义 → 模型 → 成本",
       "textdbff0b6e128b": "面向智能体的后端框架和服务器。",
       "text615544b5a953": "pi 扩展",
-      "text74bf85229fd2": "用 TypeScript 扩展运行框架。"
+      "text74bf85229fd2": "用 TypeScript 扩展运行框架。",
+      "text152a04716eb3": "代理运行在 pi 上"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
