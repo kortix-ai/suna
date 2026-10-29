@@ -105,6 +105,8 @@ export type FeatureFlagKey =
   | 'session_groups'
   /** Kortix in Chrome: a session drives its owner's own Chrome through the extension. Experimental; on where the platform offers it. */
   | 'chrome'
+  /** Residential proxy: a session sandbox's web traffic leaves through a residential IP address, billed per GB from credits. Experimental, off by default. */
+  | 'residential_proxy'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -159,6 +161,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'email_channel',
   'session_groups',
   'chrome',
+  'residential_proxy',
 ] as const;
 
 /**

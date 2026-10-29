@@ -1251,6 +1251,10 @@
           "name": "Région États-Unis",
           "description": "Exécutez les nouvelles sessions de ce projet dans la région Est des États-Unis. Une session en cours garde sa région jusqu’à son redémarrage."
         },
+        "residential_proxy": {
+          "name": "Proxy résidentiel",
+          "description": "Faites passer le trafic web des sandboxes de ce projet par une adresse IP résidentielle, facturé par Go sur vos crédits. Les services Kortix et les registres de paquets se connectent directement, et l’UDP est bloqué. S’applique aux nouvelles sessions."
+        },
         "notification_center": {
           "name": "Centre de notifications",
           "description": "Prévient les personnes concernées par une session (l'auteur du prompt, son créateur et ses abonnés) par une boîte de réception avec cloche, des notifications push du navigateur et des e-mails, et signale les déclencheurs et rappels en échec. Désactivé : seul le téléphone du créateur de la session reçoit son push, et le téléphone d'un propriétaire du compte en reçoit un quand un déclencheur commence à échouer."

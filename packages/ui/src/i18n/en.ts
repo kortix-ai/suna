@@ -792,6 +792,10 @@ const catalog = {
           "name": "US Region",
           "description": "Run this project's new sessions in the US East region. A running session keeps its region until it restarts."
         },
+        "residential_proxy": {
+          "name": "Residential Proxy",
+          "description": "Send the web traffic of this project's sandboxes through a residential IP address, billed per GB from your credits. Kortix services and package registries connect directly, and UDP is blocked. Applies to new sessions."
+        },
         "notification_center": {
           "name": "Notification Center",
           "description": "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and reminders. Off: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing."
@@ -839,6 +843,14 @@ const catalog = {
         "session_groups": {
           "name": "Session groups",
           "description": "Group the sidebar's sessions into named folders that everyone in the project shares, for example one per store or client. Move a session into a group from its menu or by dragging it; reorder and collapse the groups."
+        },
+        "artifact_comments": {
+          "name": "Artifact comments",
+          "description": "Discuss docs and pages in threads with people and agents. Requires Artifacts."
+        },
+        "chrome": {
+          "name": "Kortix in Chrome",
+          "description": "Let a session use your connected Chrome browser. You can take over or stop it at any time."
         }
       },
       "channelsSwitch": {

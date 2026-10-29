@@ -74,6 +74,7 @@ export const FeatureFlagMapSchema = z.object({
   email_channel: z.boolean(),
   session_groups: z.boolean(),
   chrome: z.boolean(),
+  residential_proxy: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 

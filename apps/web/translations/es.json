@@ -1251,6 +1251,10 @@
           "name": "Región de EE. UU.",
           "description": "Ejecuta las nuevas sesiones de este proyecto en la región Este de EE. UU. Una sesión en curso conserva su región hasta que se reinicia."
         },
+        "residential_proxy": {
+          "name": "Proxy residencial",
+          "description": "Envía el tráfico web de los sandboxes de este proyecto a través de una dirección IP residencial, facturado por GB de tus créditos. Los servicios de Kortix y los registros de paquetes se conectan directamente, y UDP está bloqueado. Se aplica a las sesiones nuevas."
+        },
         "notification_center": {
           "name": "Centro de notificaciones",
           "description": "Avisa a las personas a las que concierne una sesión (quien envió el prompt, quien la creó y quien la sigue) con una bandeja con campana, notificaciones push del navegador y correo, y alerta cuando fallan disparadores y recordatorios. Desactivado: solo el teléfono de quien creó la sesión recibe su push, y el teléfono de un propietario de la cuenta recibe uno cuando un disparador empieza a fallar."

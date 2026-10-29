@@ -1251,6 +1251,10 @@
           "name": "Regione USA",
           "description": "Esegui le nuove sessioni di questo progetto nella regione USA Est. Una sessione in corso mantiene la sua regione fino al riavvio."
         },
+        "residential_proxy": {
+          "name": "Proxy residenziale",
+          "description": "Instrada il traffico web delle sandbox di questo progetto attraverso un indirizzo IP residenziale, addebitato per GB dai tuoi crediti. I servizi Kortix e i registri dei pacchetti si connettono direttamente e UDP è bloccato. Vale per le nuove sessioni."
+        },
         "notification_center": {
           "name": "Centro notifiche",
           "description": "Avvisa le persone a cui una sessione interessa (chi ha inviato il prompt, chi l’ha creata e chi la segue) con una casella con campanella, notifiche push del browser ed email, e segnala trigger e promemoria che falliscono. Disattivato: solo il telefono di chi ha creato la sessione riceve il suo push, e il telefono di un proprietario dell’account ne riceve uno quando un trigger inizia a fallire."
