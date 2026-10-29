@@ -192,7 +192,8 @@ export const pillars = {
      packages; omitted means none; the merge builds npm packages; a session
      loads them when its runtime starts), "extensions entries" (npm pin with an
      exact version, or a repository path); pi docs/extensions.md (a TypeScript
-     module; `pi.on('tool_call')` can block a call); pi/extensions/host.ts
+     module; `pi.registerTool` adds a tool the model can call, and
+     `pi.on('tool_call')` can block a call); pi/extensions/host.ts
      (pi's own loader and ExtensionRunner run inside the session).
    rules: developers.mdx "Permission rules" (allow, ask, deny; omitted is
      allow), "Connector rules and approvals", "policy keys" (default_mode
@@ -293,17 +294,19 @@ export const agentFiles = {
    An excerpt, not a whole file. */
 export const extensionsYaml = [
   'extensions:',
-  '  block-secrets:',
-  '    pi: extensions/block-secrets.ts',
+  '  triage-policy:',
+  '    pi: extensions/triage-policy.ts',
   '  web-access:',
   '    pi: npm:pi-web-access@0.30.0',
   '',
   'agents:',
   '  eng-triage:',
-  '    extensions: [block-secrets, web-access]',
+  '    extensions: [triage-policy]',
+  '  marketing:',
+  '    extensions: [web-access]',
 ] as const;
 
-export const extensionPath = 'extensions/block-secrets.ts';
+export const extensionPath = 'extensions/triage-policy.ts';
 
 /* developers.mdx "Permission rules" (the bash globs) and the MANIFEST
    linkedin rule. An excerpt, not a whole file. */
@@ -437,7 +440,7 @@ export const faqItems = [
     id: 'faq-extensions',
     question: 'Can I extend the agent harness?',
     answer:
-      'Yes. Write a pi extension in TypeScript, or pin a pi package from npm, and register it under extensions in kortix.yaml. Each agent loads only the extensions it lists. An extension can add tools and react to events, such as a check before every tool call.',
+      'Yes. Write a pi extension in TypeScript, or pin a pi package from npm, and register it under extensions in kortix.yaml. Each agent loads only the extensions it lists. An extension can add tools, such as your own policy as code, and react to events, such as a check before every tool call.',
   },
   {
     id: 'faq-secrets',
