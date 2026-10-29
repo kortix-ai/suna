@@ -33,7 +33,7 @@ export const MEGA_MENUS: MegaMenu[] = [
     // blocks open their Guide sections.
     groups: [
       {
-        title: 'The AI OS',
+        title: 'The CompanyOS',
         links: [
           { label: 'Multiplayer AI', href: '/multiplayer' },
           { label: 'Company as code', href: '/framework' },

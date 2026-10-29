@@ -66,6 +66,6 @@ export function mcpProtectedResourceMetadata(fallbackOrigin?: string) {
     authorization_servers: [oauthIssuer(fallbackOrigin)],
     scopes_supported: [OAUTH_SCOPE_KORTIX],
     bearer_methods_supported: ['header'],
-    resource_name: 'Kortix',
+    resource_name: 'Kortix CompanyOS',
   } as const;
 }

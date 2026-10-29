@@ -16,7 +16,7 @@ The writing here is about the work that decides whether an agent is useful: maki
 
 ## The system behind the writing
 
-The blog describes one system because that is the one we run. Kortix is the open-source AI Operating System. The agents, the skills they share, the memory they keep and the connectors they use are files in one git repository ([Kortix on GitHub](https://github.com/kortix-ai/suna)). A single repo makes the whole company searchable and every change a diff. You can read a proposed change, roll a bad one back, or copy the part that works into your own project.
+The blog describes one system because that is the one we run. Kortix is the open-source CompanyOS. The agents, the skills they share, the memory they keep and the connectors they use are files in one git repository ([Kortix on GitHub](https://github.com/kortix-ai/suna)). A single repo makes the whole company searchable and every change a diff. You can read a proposed change, roll a bad one back, or copy the part that works into your own project.
 
 How the work lands matters as much as how it runs. Each session gets its own isolated machine and its own branch. An agent can install, run and break things there. Nobody else's work is touched. The commits reach the default branch through a change request. A person reads it first ([product docs](https://kortix.com/docs)). You can run one session or many in parallel. The review step stays the same.
 

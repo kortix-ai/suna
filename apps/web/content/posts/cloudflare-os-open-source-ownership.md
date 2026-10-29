@@ -7,7 +7,7 @@ canonical: "https://kortix.com/blog/cloudflare-os-open-source-ownership"
 author: "team"
 tags: ["Comparisons"]
 ---
-Cloudflare OS is an open-source agent workspace for every person in a company; Kortix is the open-source AI Operating System that a company runs from a git repo it owns. You can fork the Cloudflare core repository, change it, and deploy it. Cloudflare says any organization can connect it to internal systems and make it their own. A company weighing it should ask one more question: whose account the finished system runs in, and how much of the company's own context stays there.
+Cloudflare OS is an open-source agent workspace for every person in a company; Kortix is the open-source CompanyOS that a company runs from a git repo it owns. You can fork the Cloudflare core repository, change it, and deploy it. Cloudflare says any organization can connect it to internal systems and make it their own. A company weighing it should ask one more question: whose account the finished system runs in, and how much of the company's own context stays there.
 
 Kortix keeps its agents, skills, memory and connector config as files in that repo. The same stack runs on Kortix Cloud, in your VPC, or on your own on-prem network.
 

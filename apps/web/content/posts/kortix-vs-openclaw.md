@@ -1,6 +1,6 @@
 ---
 title: "Kortix vs OpenClaw: what a review gate should cover"
-description: "OpenClaw reviews a repository change; Kortix, the open-source AI Operating System, reviews the repo that defines the company, with merges gated by grant."
+description: "OpenClaw reviews a repository change; Kortix CompanyOS reviews the repo that defines the company, with merges gated by grant."
 date: "2026-10-04"
 canonical: "https://kortix.com/blog/kortix-vs-openclaw"
 author: "team"
@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/kortix-vs-openclaw"
 ---
-OpenClaw is a strong open-source personal assistant, and Kortix is the open-source AI Operating System: your agents, their skills, your company memory, and every connector in one git repo you own. OpenClaw now ships shared sessions, managed worktrees, a checkout diff, Publish PR and an audit ledger, so the question is no longer whether an assistant can be reviewed. It is what the review covers, and who may pass it.
+OpenClaw is a strong open-source personal assistant, and Kortix is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own. OpenClaw now ships shared sessions, managed worktrees, a checkout diff, Publish PR and an audit ledger, so the question is no longer whether an assistant can be reviewed. It is what the review covers, and who may pass it.
 
 ```logos
 label: 'Compared here:'
