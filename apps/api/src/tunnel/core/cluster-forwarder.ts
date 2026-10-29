@@ -335,7 +335,7 @@ async function runForwarderTick(): Promise<void> {
   try {
     const rows = await claimPendingForwards();
     await Promise.all(rows.map(processForward));
-    if (Date.now() - lastExpirySweepAt >= FORWARD_EXPIRY_SWEEP_MS) {
+    if (config.KORTIX_WORKERS_ENABLED && Date.now() - lastExpirySweepAt >= FORWARD_EXPIRY_SWEEP_MS) {
       lastExpirySweepAt = Date.now();
       await expireOldForwards();
     }

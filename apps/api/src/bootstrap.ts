@@ -1,4 +1,5 @@
 import { logger as appLogger, isLoggingTransportError } from './lib/logger';
+import { config } from './config';
 import { captureException, flushSentry } from './lib/sentry';
 import { stopModelPricing } from './router/config/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
@@ -141,7 +142,7 @@ async function startReplicaServices() {
   warnIfPreviewOriginsMissing(appLogger);
   startEventLoopLagSampler();
   startAccessControlCache();
-  startManagedLineupRefresh();
+  if (config.KORTIX_WORKERS_ENABLED) startManagedLineupRefresh();
   startTunnelService();
   // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
   // toggles (warm_snapshot / provider_fallback) are honored from
@@ -168,23 +169,26 @@ async function startReplicaServices() {
   // Every replica stages snapshot/session-boot build contexts in tmpdir and can
   // leak them on error paths; sweep stale ones so they don't fill node disk and
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
-  startTmpReaper();
-  startSessionLifecycleWorker();
-  // The durable job queue (Kortix Capture ingest): every replica runs jobs.
-  startJobWorker();
-  // Kortix-polled app events: every replica checks due streams.
-  startTriggerEventPollWorker();
-  // Keep the shared Teams bot token warm so the first message after a deploy
-  // does not wait on login.microsoftonline.com before its live card is posted.
-  startTeamsBotTokenRefresh();
+  if (config.KORTIX_WORKERS_ENABLED) {
+    startTmpReaper();
+    startSessionLifecycleWorker();
+    // The durable job queue (Kortix Capture ingest): every replica runs jobs.
+    startJobWorker();
+    // Kortix-polled app events: every replica checks due streams.
+    startTriggerEventPollWorker();
+    // Keep the shared Teams bot token warm before the first message.
+    startTeamsBotTokenRefresh();
+  }
   // Fill the Composio catalogue snapshot, the hidden-toolkit list, the toolkit
   // metadata and the first discovery page in the background, so the first
   // Customize → Connectors view on a fresh replica reads memory instead of
   // waiting ~2 s on Composio round trips. Not awaited: boot never waits on a
   // third party.
-  void import('./connectors/composio')
-    .then((composio) => composio.warmComposioDiscovery())
-    .catch(() => {});
+  if (config.KORTIX_WORKERS_ENABLED) {
+    void import('./connectors/composio')
+      .then((composio) => composio.warmComposioDiscovery())
+      .catch(() => {});
+  }
   // Every api process must learn that a base branch moved, not just the one
   // that handled the push — otherwise the turn-start gate answers `current`
   // from a memo resolved before it (shared/pg-broadcast.ts). Awaited because it
@@ -214,7 +218,7 @@ let singletonWorkersRunning = false;
 // stop before its first await.
 const lazyStops: Array<() => void> = [];
 async function startSingletonWorkers() {
-  if (singletonWorkersRunning) return;
+  if (!config.KORTIX_WORKERS_ENABLED || singletonWorkersRunning) return;
   singletonWorkersRunning = true;
   startActiveTurnRenewal();
   startProjectMaintenance();
@@ -322,10 +326,12 @@ export async function bootServices() {
   // Only pods that actually run singleton workers join the election. An API-only
   // pod (workers disabled) that won the lease would become a dead-weight leader,
   // holding it while running nothing and starving the scheduler fleet-wide.
-  const eligible = runsSingletonWorkers();
+  const eligible = config.KORTIX_WORKERS_ENABLED && runsSingletonWorkers();
   if (!eligible) {
     appLogger.info(
-      '[workers] API-only pod — singleton workers disabled; not joining leader election',
+      config.KORTIX_WORKERS_ENABLED
+        ? '[workers] Singleton workers disabled; not joining leader election'
+        : '[workers] API-only pod — background workers disabled; not joining leader election',
     );
   }
   startLeaderElection(
@@ -340,7 +346,7 @@ export async function bootServices() {
   // a third party. Until it lands, the catalogue routes answer from the live
   // paged API (`indexReady: false`), so a cold pod serves correct results the
   // whole time — just without category facets.
-  warmPipedreamCatalog();
+  if (config.KORTIX_WORKERS_ENABLED) warmPipedreamCatalog();
   // Hash the sandbox runtime binaries off the request path.
   //
   // `/v1/runtime-assets/manifest` sha256s the CLI (~104 MB) and the agent

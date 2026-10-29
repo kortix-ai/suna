@@ -97,6 +97,11 @@ worktrees share (allocators before 2026-10-15 could hand one out twice).
   write. `nuke` drops the database. `create --db` on an old `--full-supabase`
   worktree moves it to a branch database and deletes its containers and volumes.
   Code: `lib/branch-db.ts`.
+- **Branch workers** — branch database APIs default to `KORTIX_WORKERS_ENABLED=false`.
+  Request serving stays active. Queue consumers, scheduled work, and startup
+  snapshot builds stay off, so copied rows cannot trigger provider writes.
+  Enable workers only for a controlled database with
+  `KORTIX_WORKERS_ENABLED=true pnpm worktree start <name>`.
 - **node_modules** — git worktrees have separate working trees, so each worktree
   gets its own isolated `node_modules` (and `node_modules/.pnpm` virtual layer) —
   a sibling's `pnpm install` can never touch it. Package **content** comes from
