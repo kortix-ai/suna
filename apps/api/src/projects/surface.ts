@@ -143,6 +143,9 @@ export type { GitBackedProject } from './git/types';
 // Who may stop a running turn (consumed by channels/core/turn-stop.ts and
 // sandbox-proxy/forward/abort-authority.ts).
 export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './session-lifecycle/turn-stop-authority';
+// A chat's /stop and /new: the source of the running turn's prompt, and the abort (consumed by channels/core/commands.ts).
+export { turnPromptSource } from './lib/notification-recipients';
+export { abortRuntimeTurn } from './session-lifecycle/abort-runtime-turn';
 // Who may rewind a session (consumed by sandbox-proxy/forward/forward-to-sandbox.ts).
 export { mayRewindSession } from './session-lifecycle/rewind-authority';
 

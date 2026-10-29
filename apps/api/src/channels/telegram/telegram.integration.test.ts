@@ -400,6 +400,16 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     expect((await threadRow(910))?.sessionId).toBe(createdSessions[1]);
   });
 
+  test('forgetting a chat for one session keeps a session a racing message bound since, and says whether a create held the chat', async () => {
+    const target = { platform: 'telegram' as const, workspaceId: BOT_ID, threadId: '7001', projectId: PROJECT };
+    const bound = await bindChat(7001);
+    await holdClaim(7001);
+    expect(await forgetChatThread(target, claimKey(7001), crypto.randomUUID())).toEqual({ claimHeld: true });
+    expect((await threadRow(7001))?.sessionId).toBe(bound);
+    expect(await forgetChatThread(target, claimKey(7001), bound)).toEqual({ claimHeld: false });
+    expect(await threadRow(7001)).toBeUndefined();
+  });
+
   test('a chat whose session is gone starts a new session and rebinds the chat', async () => {
     const old = await bindChat(914);
     deliverResult = 'no-session';

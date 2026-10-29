@@ -396,12 +396,20 @@ function createStarted(status: Awaited<ReturnType<typeof createCommandStatus>>):
   return status === 'queued' || status === 'running' || status === 'succeeded';
 }
 
-/** Forget a conversation (a `/new` command): the next message starts a new session. */
-export async function forgetChatThread(target: ChannelTarget, createClaim: string): Promise<void> {
-  await dropChatThread(target);
+/**
+ * Forget a conversation (a `/new` command): the next message starts a new session. `sessionId`: only
+ * while the thread still maps to it, so a session a racing message bound since stays. `claimHeld`: a
+ * create held the thread, and may still bind it.
+ */
+export async function forgetChatThread(target: ChannelTarget, createClaim: string, sessionId?: string): Promise<{ claimHeld: boolean }> {
+  await dropChatThread(target, sessionId);
   // Its create claim too, or the next message waits on it. A create still in
   // flight may then race that message: two sessions, for a reset the sender asked for.
-  await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, createClaim));
+  const claims = await db
+    .delete(chatEventDedup)
+    .where(eq(chatEventDedup.eventId, createClaim))
+    .returning({ expiresAt: chatEventDedup.expiresAt });
+  return { claimHeld: claims.some((c) => c.expiresAt.getTime() > Date.now()) };
 }
 
 async function followUp(
