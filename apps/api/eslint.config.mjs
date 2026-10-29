@@ -194,6 +194,7 @@ export default tseslint.config(
       'src/channels/core/channel-access.ts',
       'src/channels/core/channel-access-profiles.ts',
       'src/channels/core/command-list.ts',
+      'src/channels/core/command-press.ts',
       'src/channels/core/commands.ts',
       'src/channels/core/conversation.ts',
       'src/channels/core/display.ts',
