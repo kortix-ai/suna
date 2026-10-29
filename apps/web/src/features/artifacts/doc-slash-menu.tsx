@@ -115,7 +115,8 @@ function keyLabel(key: string, mac: boolean): string {
   return key;
 }
 
-const MENU_HEIGHT = 360;
+/** First-frame guess of the full list's height, before it is measured. */
+const MENU_HEIGHT = 440;
 const GAP = 6;
 
 /**
@@ -138,6 +139,7 @@ export function SlashMenu({
   const [active, setActive] = useState(0);
   const [mac] = useState(isMac);
   const list = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(MENU_HEIGHT);
   const query = state.query.trim().toLowerCase();
   const groups = GROUPS.map((group) =>
     group.filter((item) => !query || `${t(item.label)} ${item.aliases}`.toLowerCase().includes(query)),
@@ -176,12 +178,13 @@ export function SlashMenu({
     };
   });
 
+  // The list shows every row with no scroll, so placement uses its real height.
   useLayoutEffect(() => {
-    list.current?.querySelector('[data-active=true]')?.scrollIntoView({ block: 'nearest' });
-  }, [active]);
+    if (list.current) setHeight(list.current.offsetHeight);
+  }, [items.length]);
 
   if (!state.rect) return null;
-  const below = state.rect.bottom + GAP + MENU_HEIGHT <= window.innerHeight;
+  const below = state.rect.bottom + GAP + height <= window.innerHeight;
   const style: React.CSSProperties = below
     ? { top: state.rect.bottom + GAP, left: state.rect.left }
     : { bottom: window.innerHeight - state.rect.top + GAP, left: state.rect.left };
@@ -195,7 +198,7 @@ export function SlashMenu({
       aria-label={t('blockMenu')}
       style={style}
       onMouseDown={(e) => e.preventDefault()}
-      className={`${MENU_PANEL_STATIC} fixed z-50 max-h-90 w-64 overflow-y-auto`}
+      className={`${MENU_PANEL_STATIC} fixed z-50 w-64 overflow-hidden`}
     >
       {items.length === 0 ? (
         <p className="text-muted-foreground px-2 py-1.5 text-sm">{t('blockMenuEmpty')}</p>
