@@ -14,7 +14,7 @@ items:
   - { name: NanoClaw, domain: nanoclaw.dev }
 ```
 
-NanoClaw is a lightweight personal AI agent that runs every session in its own Docker container and meets you in the chat apps you already use; Kortix is the open-source AI Operating System a team owns. Work an agent does reaches `main` through a change request a person merges, and merge is default-deny for agents. Both are open source, and both let you bring your own model. The separation between them is what each is built to hold: one person's private agent, or a workforce a company governs.
+NanoClaw is a lightweight personal AI agent that runs every session in its own Docker container and meets you in the chat apps you already use; Kortix is the open-source CompanyOS a team owns. Work an agent does reaches `main` through a change request a person merges, and merge is default-deny for agents. Both are open source, and both let you bring your own model. The separation between them is what each is built to hold: one person's private agent, or a workforce a company governs.
 
 ## What NanoClaw is good at
 

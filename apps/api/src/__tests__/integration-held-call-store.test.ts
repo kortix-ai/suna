@@ -148,7 +148,7 @@ beforeAll(async () => {
     ...makeDbGatewayDeps(principal),
     loadConnectorBySlug: async () => CONNECTOR(),
     loadAction: async () => ACTION,
-    resolveCredential: async () => 'sk_test_credential',
+    resolveCredential: async () => 'test-credential',
     loadPolicies: async () => [{ match: '*', action: 'require_approval' }],
     loadProjectPolicies: async () => [],
     loadDefaultMode: async () => 'allow_all',

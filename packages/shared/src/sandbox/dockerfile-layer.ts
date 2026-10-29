@@ -883,9 +883,38 @@ export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
 }
 
 /**
+ * kortix.yaml `residential_proxy`: the session sandbox's web traffic leaves
+ * through a residential IP address. `country` is an ISO 3166-1 alpha-2 code,
+ * lowercase. A boot setting, not part of the image.
+ */
+export interface SandboxResidentialProxy {
+  country?: string;
+}
+
+const COUNTRY_RE = /^[a-z]{2}$/i;
+
+/**
+ * Read `residential_proxy`: `true` → on; a table → on, with its `country` when
+ * that is a valid code (an invalid one is dropped with a warning, the proxy
+ * stays on: a template that asks for a residential IP never boots without one
+ * because of a typo). `false`, absent or any other value → off.
+ */
+export function parseResidentialProxy(value: unknown, slug = ''): SandboxResidentialProxy | undefined {
+  if (value === true) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const country = (value as Record<string, unknown>).country;
+  if (country === undefined) return {};
+  if (typeof country === 'string' && COUNTRY_RE.test(country.trim())) return { country: country.trim().toLowerCase() };
+  console.warn(`[sandbox-templates] "${slug}" residential_proxy.country is not an ISO 3166-1 alpha-2 code — ignored`);
+  return {};
+}
+
+/**
  * A sandbox template defines one bootable image. Projects can declare multiple
  * via `sandbox.templates` in kortix.yaml; sessions pick one by slug. The platform
- * default template is always available without any config.
+ * default template is always available without any config. An entry with
+ * neither `dockerfile` nor `image` builds the platform base
+ * (`PLATFORM_DEFAULT_USER_DOCKERFILE`) with its own size and settings.
  */
 export interface SandboxTemplate {
   /** Stable identifier the session creator references. Unique per project. */
@@ -909,6 +938,8 @@ export interface SandboxTemplate {
   containerRuntime?: boolean;
   /** kortix.yaml `entrypoint`: the command the sandbox image starts with. */
   entrypoint?: string;
+  /** kortix.yaml `residential_proxy`. Not part of the image identity. */
+  residentialProxy?: SandboxResidentialProxy;
   /**
    * True iff this is the platform default (no user customization). Never
    * declared in kortix.yaml — the platform synthesizes one of these.
@@ -1074,7 +1105,12 @@ function parseSandboxTemplate(row: Record<string, unknown>): SandboxTemplate | n
     spec,
     ...(row.container_runtime === true ? { containerRuntime: true } : {}),
     ...(typeof row.entrypoint === 'string' && row.entrypoint.trim() ? { entrypoint: row.entrypoint.trim() } : {}),
+    ...withResidentialProxy(parseResidentialProxy(row.residential_proxy, slugRaw)),
   };
+}
+
+function withResidentialProxy(value: SandboxResidentialProxy | undefined): { residentialProxy?: SandboxResidentialProxy } {
+  return value ? { residentialProxy: value } : {};
 }
 
 function sanitizeRelPath(value: string): string {

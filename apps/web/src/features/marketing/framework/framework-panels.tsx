@@ -7,7 +7,7 @@ import { ArrowDownIcon } from '@phosphor-icons/react/dist/ssr';
 import type { ReactNode } from 'react';
 
 import { FILES } from './content';
-import { localizeMarketingContent as localizeModel, type Excerpt } from './model';
+import { extensionPath, localizeMarketingContent as localizeModel, type Excerpt } from './model';
 
 /*
  * One focused visual per How it works tab. Each fits the tab's panel at
@@ -126,6 +126,16 @@ function ComputerPanel() {
 
 export const FRAMEWORK_PANELS: Record<string, () => ReactNode> = {
   agents: () => <AgentsPanel />,
+  extensions: function ExtensionsPanel() {
+    const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+    const { extensionsYaml } = localizeModel(tMarketing);
+    return (
+      <div className="flex flex-col gap-3">
+        <FilePanel title={tMarketing('text1965f383021e')} lang="yaml" lines={extensionsYaml} />
+        <FilePanel title={extensionPath} lines={FILES[extensionPath] ?? []} />
+      </div>
+    );
+  },
   rules: function RulesPanel() {
     const tMarketing = useTranslations('hardcodedUi.i18nComplete');
     const { rulesYaml } = localizeModel(tMarketing);

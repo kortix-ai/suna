@@ -1,9 +1,9 @@
 ---
 title: Guide
-description: "A plain-language guide to Kortix, the open-source AI Operating System: every part of it, how it works and how to set it up."
+description: "A plain-language guide to Kortix CompanyOS: every part of it, how it works and how to set it up."
 ---
 
-Kortix is an open-source AI Operating System. It is two things:
+Kortix is an open-source CompanyOS. It is two things:
 
 1. **A backend framework and server for agents.** Your agents, their skills and their access are code in one git repo. Kortix runs them.
 2. **A workspace and command center for people.** Your team starts work, reviews and approves what agents do, and manages the agents from the Kortix apps.
@@ -609,9 +609,27 @@ Any website or tool that the agent starts on its computer is reachable from outs
 
 #### Desktop
 
-Every cloud computer has a desktop. Select the **Desktop** button in the session header to watch it live. The browser the agent uses opens there, so you see each page it visits. You can also take over: click, type, and open the terminal or the file manager. The desktop resizes to fit the panel.
+Every cloud computer has a desktop. Select the **Desktop** button in the session header to watch it live. The browser the agent uses opens there, so you see each page it visits. Kortix has control by default. Select **Take over** to click and type yourself, for example in the browser, the terminal, or the file manager on the dock. Select **Return control** to hand it back. The desktop resizes to fit the panel.
 
 A session on a custom sandbox template gets the desktop when the template's base image is Ubuntu 24.04.
+
+#### Residential IP address
+
+Some websites block or limit traffic from data centers. A sandbox template can send its web traffic through a residential IP address instead of the cloud computer's own address: set `residential_proxy: true` on the template in `kortix.yaml`, or check **Residential IP** on a template in **Customize** → **Settings** → **Sandbox templates**. Sessions on that template use it.
+
+```yaml
+sandbox:
+  default: web
+  templates:
+    - slug: web
+      residential_proxy: true
+```
+
+- Traffic through the residential address is billed per GB from your credits. It shows as **Residential proxy** in the credit history.
+- Kortix's own services and common package registries connect directly. That traffic is not billed as proxy traffic.
+- UDP is blocked while it is on, so QUIC and WebRTC cannot reveal the computer's own address. Browsers and tools fall back to TCP.
+- Sessions start only where your deployment offers a residential IP. Elsewhere they do not start; they never use the computer's own address instead.
+- `{ country: us }` instead of `true` picks the country of the address. The details are in the [kortix.yaml reference](/docs/developers#residential-ip).
 
 #### When you delete a session
 
@@ -1199,6 +1217,7 @@ Enterprise is not a plan. It turns on extra features on either plan: single sign
 | Models on your own key | Nothing for the first $1,000 of usage a month. After that, 5% of each request's list price. A ChatGPT subscription is never charged. With an Enterprise license, there is no fee. |
 | Session machines | The size the machine reserves, for the seconds it runs. App machines count too. |
 | Web tools | Each web search, image search or web scraping request that goes through Kortix. |
+| Residential proxy | The data a session sends and receives through a residential IP address, per GB. Only for sandbox templates that ask for it. See [Residential IP address](/docs/guide#residential-ip-address). |
 
 A stopped or sleeping machine costs nothing. The default machine costs about $0.11 an hour, about 11 credits.
 

@@ -2,15 +2,16 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/brandkit/Logo/Brandmark/SVG/Brandmark%20White.svg">
-  <img src="apps/web/public/brandkit/Logo/Brandmark/SVG/Brandmark%20Black.svg" alt="Kortix" width="80" />
+  <img src="apps/web/public/brandkit/Logo/Brandmark/SVG/Brandmark%20Black.svg" alt="Kortix CompanyOS" width="80" />
 </picture>
 
-# Kortix
+# Kortix CompanyOS
 
-**The sovereign AI Operating System.**
+**The open-source CompanyOS: the operating system for your company.**
 
-Multiplayer AI for your whole team. Your company as code. Sovereign and open source.<br />
-Hand it an outcome and agents run it 24/7.
+Hand it an outcome and AI agents run it 24/7.<br />
+Connect your company's tools, share agents and context across your whole team,<br />
+and own all of it as code: open source, on your infrastructure or ours.
 
 [![GitHub stars](https://img.shields.io/github/stars/kortix-ai/suna?style=flat&color=111111&label=Stars)](https://github.com/kortix-ai/suna/stargazers)
 [![Release](https://img.shields.io/github/v/release/kortix-ai/suna?style=flat&color=111111&label=Release)](https://github.com/kortix-ai/suna/releases/latest)
@@ -21,17 +22,37 @@ Hand it an outcome and agents run it 24/7.
 
 <br />
 
-<img src="apps/web/public/media/showcase/kortix-readme.gif" alt="The Kortix home page: the sovereign AI Operating System, and an agent building a revenue dashboard for a sample company in its own session" width="880" />
+<img src="apps/web/public/media/showcase/kortix-readme.gif" alt="The Kortix CompanyOS home page: the sovereign CompanyOS, and an agent building a revenue dashboard for a sample company in its own session" width="880" />
 
 </div>
 
 ---
 
-Kortix is the open-source AI Operating System. Your agents, the skills they share, your company
-memory and every connector live in **one git repo you own**. Every session runs on **its own cloud
+Kortix CompanyOS is the open-source operating system for your company. Your agents, the skills
+they share, your company memory and every connector live in **one git repo you own**. Every session runs on **its own cloud
 computer**, and work lands through a **change request a person approves**.
 
 Any model, your own keys, on Kortix Cloud, in your VPC or on your own on-prem network.
+
+---
+
+## What is a CompanyOS?
+
+An operating system is the layer everything on a computer runs on. A CompanyOS is that layer for
+a company: the place its AI agents do the work, and the rules they work under.
+
+| A computer's OS | Kortix CompanyOS |
+| --- | --- |
+| Programs | **Agents**: a job, a model and a set of permissions each |
+| Libraries | **Skills**: written playbooks every agent shares |
+| File system | **Drive**: shared folders, with company memory as Markdown files |
+| Drivers | **Connectors**: 3,000+ apps, plus MCP, OpenAPI and raw HTTP |
+| Processes | **Sessions**: each one on its own isolated cloud computer |
+| Scheduler | **Triggers**: schedules, webhooks and app events, 24/7 |
+| Users and permissions | **Roles, groups and approvals**: a person approves what reaches `main` |
+
+`kortix.yaml` declares all of it, and every agent, skill and rule is a file in one repo you own.
+That is your company as code.
 
 ---
 
@@ -45,7 +66,7 @@ Any model, your own keys, on Kortix Cloud, in your VPC or on your own on-prem ne
 
 ---
 
-## Give it an outcome. Agents run it 24/7.
+## Give it an outcome. AI agents run it 24/7.
 
 ```
 Outcome ──> Plan ──> Work ──> Verify ──> Learn ──┐
@@ -87,7 +108,7 @@ kortix chat           # talk to a session's agent from your terminal
 ```
 
 No setup: sign up at **[kortix.com](https://kortix.com)**, create a project and start a session.
-The **[Guide](https://kortix.com/docs/guide)** walks you through Kortix from A to Z.
+The **[Guide](https://kortix.com/docs/guide)** walks you through Kortix CompanyOS from A to Z.
 
 ---
 
@@ -108,7 +129,7 @@ The **[Guide](https://kortix.com/docs/guide)** walks you through Kortix from A t
 
 ---
 
-## What runs on Kortix
+## What runs on Kortix CompanyOS
 
 - **SciencePal**, the AI research assistant of the Hong Kong Institute of AI for Science at City University of Hong Kong, built from Kortix's open-source code.
 - **Platinum**, a sandbox cloud for AI agents, built and tested by agents on Kortix.
@@ -125,7 +146,7 @@ The **[Guide](https://kortix.com/docs/guide)** walks you through Kortix from A t
 
 ## How it compares
 
-| | Claude Cowork | ChatGPT Work | **Kortix** |
+| | Claude Cowork | ChatGPT Work | **Kortix CompanyOS** |
 | --- | --- | --- | --- |
 | **Source** | Closed | Closed | **Open source: read it, fork it, audit it** |
 | **Models** | Anthropic only | OpenAI only | **Any provider, your own API keys** |
@@ -134,7 +155,7 @@ The **[Guide](https://kortix.com/docs/guide)** walks you through Kortix from A t
 
 Competitor rows reflect publicly documented behavior as of July 2026.
 
-| If you are looking at… | Pick it when | Pick Kortix when |
+| If you are looking at… | Pick it when | Pick Kortix CompanyOS when |
 | --- | --- | --- |
 | **n8n** (workflow automation) | The job is a fixed flowchart: the same steps, in the same order, every time. | The job is open-ended work an agent does on its own computer, with the configuration in git and a person approving what it changes. |
 | **OpenHands** (coding agents) | You want a coding-agent control center for an engineering team. | Coding is one of many jobs: the same agents also work in Slack, on schedules and across 3,000+ apps. |
@@ -145,7 +166,7 @@ Competitor rows reflect publicly documented behavior as of July 2026.
 
 ## Self-host
 
-Kortix is self-hosting native: one Docker Compose stack in your cloud account, your VPC or on your
+Kortix CompanyOS is self-hosting native: one Docker Compose stack in your cloud account, your VPC or on your
 own servers, from the same images the managed cloud runs.
 
 ```bash
@@ -174,7 +195,7 @@ rules you set · Kortix Cloud, your VPC or on-prem. **SOC 2 Type I verified.**
 ## AI Transformation, done for you
 
 Don't want to build it yourself? Our team maps your company, unifies your data, automates the work
-with agents, builds your custom apps and trains your team, all on Kortix, in a repo you own.
+with agents, builds your custom apps and trains your team, all on Kortix CompanyOS, in a repo you own.
 **[kortix.com/services](https://kortix.com/services)**
 
 ---

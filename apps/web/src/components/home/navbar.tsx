@@ -510,7 +510,7 @@ export function Navbar({ solidAtTop = false }: { solidAtTop?: boolean } = {}) {
               </ContextMenuContent>
             </ContextMenu>
 
-            {/* The AI OS / Services switcher: centred in the bar on desktop,
+            {/* The CompanyOS / Services switcher: centred in the bar on desktop,
                 after the logo on smaller screens. */}
             <SiteSwitcher className="mr-auto ml-4 lg:absolute lg:left-1/2 lg:m-0 lg:-translate-x-1/2" />
 

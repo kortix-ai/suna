@@ -1132,7 +1132,7 @@ async function handleRpc(ctx: ToolContext, method: string, params: Record<string
       const requested = String(params.protocolVersion ?? '');
       return {
         protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : SUPPORTED_PROTOCOL_VERSIONS[0]!,
-        serverInfo: { name: 'kortix', title: 'Kortix', version: process.env.KORTIX_VERSION ?? 'dev' },
+        serverInfo: { name: 'kortix', title: 'Kortix CompanyOS', version: process.env.KORTIX_VERSION ?? 'dev' },
         capabilities: { tools: {} },
         instructions: instructions(),
       };

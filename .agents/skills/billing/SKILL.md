@@ -23,7 +23,8 @@ Change the code and the spec together.
 - **Prices live in code once.** Credits: `billing/services/tiers.ts`. Compute:
   `platform/providers/compute-rates.ts`, mirrored by
   `packages/ui/src/internal/billing/compute-pricing.ts`. Model fee:
-  `LLM_PLATFORM_FEE_PERCENT`.
+  `LLM_PLATFORM_FEE_PERCENT`. Residential proxy: Platinum's charge, passed
+  through (`billing/services/residential-proxy-charges.ts`).
 - **Customers always see their state.** A new plan state needs an
   account-state field and a visible label.
 

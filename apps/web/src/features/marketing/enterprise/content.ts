@@ -23,12 +23,12 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    people are initials or "Member N".
  */
 
-/* Hero. Sources: guide.mdx intro ("open-source AI Operating System"),
+/* Hero. Sources: guide.mdx intro ("open-source CompanyOS"),
    "A backend for agents" (triggers run agents 24/7), "A workspace for
    people" (web, desktop, mobile, Slack, Microsoft Teams); claims.md Hosting
    and Models rows. */
 export const hero = {
-  title: 'One AI Operating System for the whole company.',
+  title: 'One CompanyOS for every team.',
   titleMuted: 'Every team’s agents and memory, in one place you own.',
   sub: 'Roll Kortix out team by team. Agents run around the clock on schedules and webhooks, on Kortix Cloud or your own infrastructure, with any model.',
   caption: 'One account for every team.',

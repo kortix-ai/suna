@@ -578,6 +578,8 @@ const catalog = {
         "entrypoint": "Entrypoint",
         "optional": "optional",
         "entrypointPlaceholder": "Leave blank to use the Kortix default (recommended).",
+        "residentialIp": "Residential IP",
+        "residentialIpHint": "Send this sandbox's web traffic through a residential IP address, billed per GB from your credits. Sessions start only where the deployment offers it.",
         "cancel": "Cancel",
         "save": "Save changes",
         "create": "Create template",
@@ -839,6 +841,14 @@ const catalog = {
         "session_groups": {
           "name": "Session groups",
           "description": "Group the sidebar's sessions into named folders that everyone in the project shares, for example one per store or client. Move a session into a group from its menu or by dragging it; reorder and collapse the groups."
+        },
+        "artifact_comments": {
+          "name": "Artifact comments",
+          "description": "Discuss docs and pages in threads with people and agents. Requires Artifacts."
+        },
+        "chrome": {
+          "name": "Kortix in Chrome",
+          "description": "Let a session use your connected Chrome browser. You can take over or stop it at any time."
         }
       },
       "channelsSwitch": {
@@ -1668,8 +1678,8 @@ const catalog = {
       "sending": "Sending..."
     },
     "unified": {
-      "welcome": "Welcome to Kortix",
-      "tagline": "The open-source AI Operating System",
+      "welcome": "Welcome to Kortix CompanyOS",
+      "tagline": "The open-source CompanyOS",
       "email": "Email",
       "emailPlaceholder": "Your email address",
       "password": "Password",
@@ -2712,7 +2722,7 @@ const catalog = {
       "text18885f27b5af": "Python",
       "text1898b198a7e6": "Nobody present",
       "text18a4e711991b": "Enriches leads from the CRM, researches each account and drafts tailored outreach.",
-      "text18f31a325716": "About Kortix – The open-source AI Operating System",
+      "text18f31a325716": "About Kortix CompanyOS – the open-source operating system for your company",
       "text18fb4a5618b9": "The same parameter view used for live approvals.",
       "text18fdd549b2ed": "New",
       "text192173c3beda": "billed to your own provider keys",
@@ -2752,7 +2762,7 @@ const catalog = {
       "text1d55ff7c387c": "View options",
       "text1d59a5e09714": "Approval rules",
       "text1d6d3a460fb1": "DOCX document",
-      "text1d7a4d1f09bb": "We are building the open-source AI Operating System. Every company should own all of it.",
+      "text1d7a4d1f09bb": "We are building the open-source CompanyOS. Every company should own all of it.",
       "text1d826553e961": "Review changes proposed by your agents",
       "text1d96669797aa": "sentBody",
       "text1de222b90941": "Add another project",
@@ -2918,7 +2928,7 @@ const catalog = {
       "text2bcb43cbc8f6": "view",
       "text2bd873d6c734": "Breadcrumb",
       "text2bdb956493fd": "Read the webhook handler",
-      "text2bf70270bfde": "Open-source AI Operating System: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.",
+      "text2bf70270bfde": "Open-source CompanyOS: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.",
       "text2bfc3471571e": "Approvals",
       "text2c014f8f8986": "Cursor",
       "text2c063e7ab5f6": "The recipe for the machine a session runs on, and the record of every time Kortix prepared one.",
@@ -3205,7 +3215,7 @@ const catalog = {
       "text44160e26b787": "Not connected yet — the agent and your triggers cannot call this connector.",
       "text442e47369852": "List Kortix public documentation and marketing pages.",
       "text44368adad746": "Postgres",
-      "text445cf0a2abfa": "Kortix is building the open-source AI Operating System. A company owns all of it — every agent, all of their data, every skill, every connector, the memory, the whole configuration, on their own infrastructure.",
+      "text445cf0a2abfa": "Kortix is building the open-source CompanyOS. A company owns all of it — every agent, all of their data, every skill, every connector, the memory, the whole configuration, on their own infrastructure.",
       "text446f4eabf99f": "What this agent is for",
       "text44dedd0f97fe": "New file",
       "text44dfa6d7ebf7": "Could not revoke",
@@ -4864,7 +4874,7 @@ const catalog = {
       "textce0faee27592": "billing payment credit card subscription manage wallet tier plan limits overview spend",
       "textce18e358bf01": "Try a different term.",
       "textce1e609b7bf5": "Sandbox ports only",
-      "textce34af36d804": "Kortix – The open-source AI Operating System",
+      "textce34af36d804": "Kortix CompanyOS – the open-source operating system for your company",
       "textce4683e7013a": "Channel",
       "textce49e021df99": "The session owner or a project manager can reload it.",
       "textce4c96225f63": "1 attempt",
@@ -5627,7 +5637,7 @@ const catalog = {
       "text2bbd1ec2197d": "Connected app",
       "textda3d3fb8f598": "Agent session",
       "text4dcb7e3b10a9": "SCIM token",
-      "text5f58426c214e": "We are building the open-source AI Operating System. Every company should own all of it.",
+      "text5f58426c214e": "We are building the open-source CompanyOS. Every company should own all of it.",
       "text80043b03898d": "Update the Kortix app in Teams",
       "textdf757dbe33eb": "Your Teams catalog has version {value0} of the Kortix app. Version {value1} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
       "textcd2c4b26eedd": "Kortix has no record of the app version in your Teams catalog. Version {value0} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
@@ -6277,7 +6287,7 @@ const catalog = {
     "createProjectInstead": "Create a new project instead"
   },
   "projectSelector": {
-    "welcome": "Welcome to Kortix",
+    "welcome": "Welcome to Kortix CompanyOS",
     "welcomeBack": "Welcome back",
     "descriptionNew": "Create your first project, or join one your team shared.",
     "descriptionReturning": "Open a project, or create a new one.",

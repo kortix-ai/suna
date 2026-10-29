@@ -370,9 +370,9 @@ describe('imageGenView', () => {
     });
   });
 
-  test('a tool refusal with no gateway code stays a plain failure', () => {
+  test('a tool cap refusal has no gateway code and no connect fix; it names its cap', () => {
     const view = imageGenView(call({ status: 'error', input: INPUT, error: 'Image limit for this turn reached (10).' }));
-    expect(view.error).toEqual({ message: 'Image limit for this turn reached (10).', connectModel: false });
+    expect(view.error).toEqual({ message: 'Image limit for this turn reached (10).', connectModel: false, limit: 'turn' });
   });
 
   test('an aborted call maps to stopped', () => {
@@ -576,6 +576,44 @@ describe('R38: digests, one grid per turn', () => {
       9: [3, 3, 3], 10: [3, 3, 2, 2], 11: [3, 3, 3, 2], 12: [3, 3, 3, 3],
     });
     expect('imageGenGridRows' in root).toBe(false);
+    expect(imageGenGrid([imageGenView(gen('g', ['a', 'b', 'c']))]).strip).toBe(false);
+  });
+
+  test('portrait tiles: a strip, every row side by side, up to four, rows as even as they split', () => {
+    const portrait = (id: string, n: number, aspect = '9:16') =>
+      ({ ...call({ status: 'running', input: { aspect_ratio: aspect, prompts: Array.from({ length: n }, (_, i) => `p${i}`) } }), id, call_id: id }) as ToolCallBlock;
+    const rowsOf = (n: number) => imageGenGrid([imageGenView(portrait('g', n))]);
+    expect(rowsOf(3).strip).toBe(true);
+    const rows = Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14].map((n) => [n, rowsOf(n).rows]));
+    expect(rows).toEqual({
+      2: [2], 3: [3], 4: [4], 5: [3, 2], 6: [3, 3], 7: [4, 3], 8: [4, 4],
+      9: [3, 3, 3], 10: [4, 3, 3], 12: [4, 4, 4], 14: [4, 4, 3, 3],
+    });
+    // The run's first call decides: a square or landscape first call keeps the bento.
+    expect(imageGenGrid([imageGenView(portrait('g1', 3, '1:1')), imageGenView(portrait('g2', 2))]).strip).toBe(false);
+    expect(imageGenGrid([imageGenView(portrait('g1', 3, '16:9'))]).strip).toBe(false);
+    // The run from a prod session: four 9:16 calls (3 + 2 + 3 + 2) are one strip of 4 + 3 + 3.
+    const run = [3, 2, 3, 2].map((n, i) => imageGenView(portrait(`g${i}`, n)));
+    expect(imageGenGrid(run)).toMatchObject({ strip: true, rows: [4, 3, 3] });
+  });
+
+  test('a call the image cap refused is marked and takes no slot: nothing was asked of a model', () => {
+    const refused = (id: string, error: string) =>
+      ({ ...call({ status: 'error', input: { prompts: ['x', 'y', 'z'] }, error }), id, call_id: id }) as ToolCallBlock;
+    const turnCap = imageGenView(refused('r1', 'Image limit for this turn reached (10 images; 10 used, 3 asked).'));
+    const sessionCap = imageGenView(refused('r2', 'Image limit for this session reached (50 images; 48 used, 3 asked).'));
+    expect([turnCap.phase, turnCap.error?.limit, sessionCap.error?.limit]).toEqual(['failed', 'turn', 'session']);
+    // Any other failure keeps its slots and has no `limit`.
+    const upstream = imageGenView(refused('f1', 'Image generation failed (500): Upstream error.'));
+    expect(upstream.error?.limit).toBeUndefined();
+    // The prod run: 3 + 2 + 3 + 2 images, then two refused calls (3 + 2): ten tiles, no failure slots.
+    const done = [3, 2, 3, 2].map((n, i) => imageGenView(gen(`g${i}`, Array.from({ length: n }, (_, j) => `p${j}`))));
+    const grid = imageGenGrid([...done, turnCap, sessionCap]);
+    expect(grid.tiles).toHaveLength(10);
+    expect(grid.tiles.every((tile) => tile.image.phase !== 'failed')).toBe(true);
+    expect(grid.rows).toEqual([3, 3, 2, 2]);
+    expect(imageGenGrid([turnCap, sessionCap])).toEqual({ tiles: [], rows: [], strip: false });
+    expect(imageGenGrid([upstream]).tiles).toHaveLength(3);
   });
 
   test('two consecutive image_gen calls render one grid of five', () => {

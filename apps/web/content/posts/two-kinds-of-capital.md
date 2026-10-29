@@ -59,5 +59,5 @@ Human capital and token capital. Build both. They compound.
 
 ```cta
 title: Start building your token capital
-body: Kortix is the open-source AI OS where your company’s knowledge compounds. Free to start, free to self-host, free to own your learning loop.
+body: Kortix is the open-source CompanyOS where your company’s knowledge compounds. Free to start, free to self-host, free to own your learning loop.
 ```
