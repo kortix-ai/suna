@@ -62,6 +62,7 @@ import { telegramInbound } from './inbound';
 import { runJobBatch } from '../../shared/job-queue';
 import { parseStagedPromptDataUrl } from '../../projects/session-lifecycle/prompt-attachment-materializer';
 import { NO_VISION_NOTE } from '../vision-model';
+import * as defaultModel from '../../llm-gateway/resolution/default-model';
 
 const telegramWebhookApp = channelWebhookRoutes(telegramInbound);
 const ACCOUNT = crypto.randomUUID();
@@ -1519,6 +1520,23 @@ describe('Telegram files — migrated PostgreSQL', () => {
     expect(imageTurns).toHaveLength(1);
     expect(imageTurns[0]).not.toHaveProperty('sessionId');
     expect(imageTurns[0]!.visibility).toBe('project');
+  });
+
+  test("a new chat's first photo is judged against the model its session starts with", async () => {
+    // The project's default agent, as the default-agent route mirrors it; allowSender() writes it back.
+    await db.update(projects).set({ metadata: { telegram: { allowedUserIds: [ALLOWED] }, default_agent: 'helper' } }).where(eq(projects.projectId, PROJECT));
+    const resolve = spyOn(defaultModel, 'resolveEffectiveModel').mockResolvedValue({ model: 'project-vision', source: 'project' });
+    try {
+      stored.set('ph-start', { bytes: JPEG });
+      await handleTelegramEvent(mediaUpdate(photo('ph-start'), { chat: 6013 }));
+      expect(resolve.mock.calls).toEqual([[expect.objectContaining({ userId: ACTOR, accountId: ACCOUNT, projectId: PROJECT, agentName: 'helper', explicit: null })]]);
+      expect(imageTurns).toEqual([{ projectId: PROJECT, accountId: ACCOUNT, userId: ACTOR, visibility: 'project', currentModel: 'project-vision' }]);
+      await handleTelegramEvent(update('no file, no model lookup', ALLOWED, 6013));
+      expect(resolve).toHaveBeenCalledTimes(1);
+    } finally {
+      resolve.mockRestore();
+      await allowSender();
+    }
   });
 
   test('no model in reach reads the image: the file still arrives, and the agent is told it cannot see it', async () => {

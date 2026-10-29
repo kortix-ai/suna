@@ -24,9 +24,17 @@ import { chatEventDedup, projectSessions } from '@kortix/db';
 import type { CHANNEL_PLATFORMS } from '@kortix/manifest-schema';
 import { isModelNativeAttachmentMime } from '@kortix/shared';
 import { eq } from 'drizzle-orm';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { logger } from '../../lib/logger';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
-import { createCommandStatus, createSession, deliverThroughQueue, resolveProjectAutomationActor } from '../../projects/surface';
+import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
+import {
+  createCommandStatus,
+  createSession,
+  deliverThroughQueue,
+  resolveProjectAutomationActor,
+  resolveSessionAgentName,
+} from '../../projects/surface';
 import { db } from '../../shared/db';
 import { channelTurnModel, modelReadsImages, NO_VISION_NOTE, promptModelOverride } from '../vision-model';
 import type { RuntimeQuestion, TurnErrorCode } from '@kortix/api-contract/transcript';
@@ -265,7 +273,7 @@ export async function routeChannelMessage(
     projectId: target.projectId,
     accountId: plan.project.accountId,
     userId,
-    currentModel: modelPin(plan.body.opencode_model),
+    currentModel: await startModel(plan, userId),
     visibility: plan.visibility,
   }));
 
@@ -445,6 +453,27 @@ function bareMime(mime: string): string {
 }
 
 const modelPin = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+/**
+ * The model a new session starts with, resolved as createSession resolves it (session-create.ts
+ * `resolveSessionModel`): the requested model, else the agent's, project's or account's default,
+ * else the platform default for an account that may use managed models.
+ */
+// ponytail: the agent is the request's, else the project's mirrored default (`metadata.default_agent`);
+// createSession reads the manifest's first. Upgrade: pass the manifest default when a channel names none.
+async function startModel(plan: ChannelSessionPlan, userId: string): Promise<string | null> {
+  const requested = modelPin(plan.body.opencode_model);
+  if (requested) return requested;
+  const { accountId, projectId } = plan.project;
+  const freeModelsOnly = !(await accountMayUseManagedModels(accountId).catch(() => false));
+  const agentName = resolveSessionAgentName({
+    requestedAgent: modelPin(plan.body.agent_name),
+    manifestDefaultAgent: null,
+    mirroredDefaultAgent: modelPin((plan.project.metadata as Record<string, unknown> | null)?.default_agent),
+  });
+  const resolved = await resolveEffectiveModel({ userId, accountId, projectId, agentName, explicit: null, freeModelsOnly }).catch(() => null);
+  return resolved?.model ?? (freeModelsOnly ? null : platformDefaultModelId() || null);
+}
 
 /** Each file as a `data:` part, or a note that says why it is missing. Throws to retry when a platform does not answer. */
 async function readMessageFiles(target: ChannelTarget, files: readonly ChannelFile[], run: { finalAttempt: boolean }): Promise<MessageFiles> {

@@ -26,6 +26,7 @@ export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/sessio
 export {
   buildSessionSandboxEnvVars,
   createProjectSession,
+  resolveSessionAgentName,
 } from './lib/sessions';
 
 export {
