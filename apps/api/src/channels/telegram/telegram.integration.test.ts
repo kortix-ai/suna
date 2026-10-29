@@ -69,6 +69,8 @@ import * as iam from '../../iam';
 import * as threads from '../core/threads';
 import * as selection from '../slack/selection';
 import { projectWebUrl } from '../core/display';
+import { commandMenu } from '../core/command-list';
+import { mergeTelegramMenu, telegramMenuClaim } from './menu';
 
 const telegramWebhookApp = channelWebhookRoutes(telegramInbound);
 const ACCOUNT = crypto.randomUUID();
@@ -110,8 +112,11 @@ let onCall: ((call: Call) => Promise<void>) | null = null;
 /** This project's webhook, subscribed to both update types, as connect sets it. */
 const ownWebhook = () => ({ url: `https://example.test/v1/webhooks/telegram/${PROJECT}`, allowed_updates: ['message', 'callback_query'] });
 let webhookInfo: Record<string, unknown> = ownWebhook();
-/** A Bot API method the fake fails with a 500. */
+/** A Bot API method the fake fails, with `failingStatus` (500: Telegram could not answer; 400: a refusal). */
 let failing: string | null = null;
+let failingStatus = 500;
+/** The bot's command menu: getMyCommands reads it, setMyCommands and deleteMyCommands write it. */
+let botMenu: unknown = [];
 /** getChat per user id: a profile, or 'fail' for a 500. Any other id: Telegram's "chat not found". */
 const chats = new Map<string, Record<string, unknown> | 'fail'>();
 /** Synthetic JPEG bytes the fake serves for every file it does not store. */
@@ -140,7 +145,12 @@ const fake = Bun.serve({
     calls.push(call);
     await onCall?.(call);
     waiters.splice(0).forEach((resolve) => resolve(call));
-    if (call.method === failing) return Response.json({ ok: false, description: 'synthetic failure' }, { status: 500 });
+    if (call.method === failing) return Response.json({ ok: false, description: 'synthetic failure' }, { status: failingStatus });
+    if (call.method === 'getMyCommands') return Response.json({ ok: true, result: botMenu });
+    if (call.method === 'setMyCommands' || call.method === 'deleteMyCommands') {
+      botMenu = call.method === 'setMyCommands' ? call.body.commands : [];
+      return Response.json({ ok: true, result: true });
+    }
     if (call.method === 'getChat') {
       const chat = chats.get(String(call.body.chat_id));
       if (chat === 'fail') return Response.json({ ok: false, description: 'synthetic failure' }, { status: 500 });
@@ -228,6 +238,10 @@ async function bindChat(chat: number) {
   return sessionId;
 }
 
+const menuClaimRows = () => db.select().from(chatEventDedup).where(eq(chatEventDedup.eventId, telegramMenuClaim(BOT_ID)));
+const holdMenuClaim = () =>
+  db.insert(chatEventDedup).values({ eventId: telegramMenuClaim(BOT_ID), expiresAt: new Date(Date.now() + 86_400_000) }).onConflictDoNothing();
+
 async function allowSender() {
   await db
     .update(projects)
@@ -249,6 +263,8 @@ beforeAll(async () => {
   });
   await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
   await allowSender();
+  // The bot's menu already merged, as after its first message: no message below calls the menu methods.
+  await holdMenuClaim();
   // The channel connector a question post is checked against, as connect writes it.
   const [connector] = await db
     .insert(connectors)
@@ -306,6 +322,8 @@ beforeEach(() => {
   onCall = null;
   webhookInfo = ownWebhook();
   failing = null;
+  failingStatus = 500;
+  botMenu = [];
   releaseOutcome = 'unreachable';
   releases.length = 0;
   abortOutcome = true;
@@ -324,6 +342,7 @@ afterAll(async () => {
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:threadcreate:${PROJECT}:%`));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, 'channel:start-retrying:%'));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:question-buttons:${PROJECT}:%`));
+  await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:commands:${BOT_ID}:%`));
   await db.delete(jobQueue).where(like(jobQueue.jobKey, `telegram:${BOT_ID}:%`));
   await db.delete(sessionPendingQuestions).where(eq(sessionPendingQuestions.projectId, PROJECT));
   await db.delete(accountTokens).where(eq(accountTokens.projectId, PROJECT));
@@ -2114,6 +2133,47 @@ describe('Telegram commands — migrated PostgreSQL', () => {
   });
 });
 
+describe('the Telegram bot menu — migrated PostgreSQL', () => {
+  const WEATHER = { command: 'weather', description: 'Synthetic BotFather entry' };
+
+  test("the first message after a deploy merges Kortix's commands into the bot menu once, and keeps the bot's own", async () => {
+    await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:commands:${BOT_ID}:%`));
+    botMenu = [WEATHER];
+    try {
+      const merged = (async () => {
+        while (!calls.some((c) => c.method === 'setMyCommands')) await nextCall();
+      })();
+      await handleTelegramEvent(update('hello', ALLOWED, 7050));
+      await merged;
+      expect(botMenu).toEqual([...commandMenu(), WEATHER]);
+      expect(await menuClaimRows()).toHaveLength(1);
+      calls.length = 0;
+      await handleTelegramEvent(update('again', ALLOWED, 7050));
+      expect(calls.map((c) => c.method)).toEqual(['sendChatAction']);
+    } finally {
+      await holdMenuClaim();
+    }
+  }, 10_000);
+
+  test('a menu write Telegram could not answer frees the claim, so a later message retries; a refusal keeps it', async () => {
+    failing = 'setMyCommands';
+    await mergeTelegramMenu(TOKEN, BOT_ID);
+    expect(await menuClaimRows()).toHaveLength(0);
+    await holdMenuClaim();
+    failingStatus = 400;
+    await mergeTelegramMenu(TOKEN, BOT_ID);
+    expect(calls.map((c) => c.method)).toEqual(['getMyCommands', 'setMyCommands', 'getMyCommands', 'setMyCommands']);
+    expect(await menuClaimRows()).toHaveLength(1);
+  });
+
+  test('a menu that is not a list is left alone', async () => {
+    botMenu = { synthetic: 'not a list' };
+    await mergeTelegramMenu(TOKEN, BOT_ID);
+    expect(calls.map((c) => c.method)).toEqual(['getMyCommands']);
+    expect(botMenu).toEqual({ synthetic: 'not a list' });
+  });
+});
+
 describe('Telegram allowed users and access requests — migrated PostgreSQL', () => {
   registerChannelTelegramRoutes();
   const ADMIN = crypto.randomUUID();
@@ -2410,24 +2470,32 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
   });
 
   // Last in the file: the disconnect reconciles the connectors in the background.
-  test('disconnect deletes the webhook only while it points at this project; a bot connected to another project since keeps its webhook', async () => {
+  test("disconnect deletes the webhook and Kortix's menu entries only while the webhook points at this project; the chats' settings always go", async () => {
     const moved = { url: `https://example.test/v1/webhooks/telegram/${crypto.randomUUID()}`, allowed_updates: ['message', 'callback_query'] };
-    for (const [webhook, methods] of [
-      [ownWebhook(), ['getWebhookInfo', 'deleteWebhook']],
-      [moved, ['getWebhookInfo']],
+    const weather = { command: 'weather', description: 'Synthetic BotFather entry' };
+    const kortixAndOwn = [...commandMenu(), weather];
+    for (const [webhook, methods, menu] of [
+      [ownWebhook(), ['getWebhookInfo', 'deleteWebhook', 'getMyCommands', 'setMyCommands'], [weather]],
+      [moved, ['getWebhookInfo'], kortixAndOwn],
     ] as const) {
       webhookInfo = webhook;
+      botMenu = kortixAndOwn;
       calls.length = 0;
+      await db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: '7091', projectId: PROJECT, model: 'cmd-m1' });
       try {
         const res = await api('DELETE', '');
-        expect({ status: res.status, methods: calls.map((c) => c.method), install: await loadTelegramInstall(PROJECT) }).toEqual({
+        const settings = await db.select().from(chatChannelBindings).where(and(eq(chatChannelBindings.platform, 'telegram'), eq(chatChannelBindings.projectId, PROJECT)));
+        expect({ status: res.status, methods: calls.map((c) => c.method), install: await loadTelegramInstall(PROJECT), menu: botMenu, settings }).toEqual({
           status: 200,
           methods: [...methods],
           install: null,
+          menu: [...menu],
+          settings: [],
         });
       } finally {
         await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
       }
     }
+    expect(await db.select().from(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:commands:${BOT_ID}:%`))).toEqual([]);
   });
 });

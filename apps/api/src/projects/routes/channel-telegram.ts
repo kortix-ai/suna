@@ -16,6 +16,7 @@ import {
   TELEGRAM_USER_ID,
 } from '../../channels/telegram/installs';
 import { telegramAccessPort } from '../../channels/telegram/access';
+import { repairTelegramMenu } from '../../channels/telegram/menu';
 import { config } from '../../config';
 import { reconcileChannelConnectors } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -111,6 +112,8 @@ export function registerChannelTelegramRoutes(): void {
         webhookSecret,
       });
       if (allowed?.success) await setTelegramAllowedUserIds(ctx.projectId, allowed.data);
+      // Not awaited, as the reconcile: Telegram may take up to 6 s.
+      void repairTelegramMenu(token, String(bot.id), { force: true });
       reconcileInBackground(ctx.projectId);
       return c.json(await telegramAccessPort.installation(ctx.projectId));
     },

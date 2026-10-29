@@ -11,6 +11,7 @@ import { and, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { telegramCall } from './api';
+import { removeTelegramMenu } from './menu';
 import {
   type ChannelAccessEntry,
   type ChannelAccessRequester,
@@ -124,9 +125,9 @@ export async function deleteTelegramInstall(projectId: string): Promise<void> {
 }
 
 /**
- * Disconnect and the project delete release the bot: the webhook, only while
- * it points at this project (the bot may serve another project since), then
- * the install and its secrets. Telegram is best effort and never blocks either;
+ * Disconnect and the project delete release the bot: the webhook and Kortix's
+ * menu entries, only while the webhook points at this project (the bot may
+ * serve another project since), then the install and its secrets. Telegram is best effort and never blocks either;
  * an update that still arrives finds no secret and gets the webhook's 404.
  */
 export async function releaseTelegramBot(projectId: string): Promise<void> {
@@ -134,7 +135,12 @@ export async function releaseTelegramBot(projectId: string): Promise<void> {
   if (token) {
     try {
       const info = await telegramCall<{ url?: string }>(token, 'getWebhookInfo', {}, 5_000);
-      if (info.url?.endsWith(`/v1/webhooks/telegram/${projectId}`)) await telegramCall(token, 'deleteWebhook', {}, 5_000);
+      if (info.url?.endsWith(`/v1/webhooks/telegram/${projectId}`)) {
+        await telegramCall(token, 'deleteWebhook', {}, 5_000);
+        // The bot is this project's: its menu loses Kortix's commands and keeps the owner's.
+        await removeTelegramMenu(token).catch((error) =>
+          logger.warn('[telegram] the released bot kept its Kortix commands', { projectId, error: String(error) }));
+      }
     } catch (error) {
       logger.warn('[telegram] the released bot kept its webhook', { projectId, error: String(error) });
     }

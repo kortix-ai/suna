@@ -48,6 +48,7 @@ import { startErrorMessage, TELEGRAM_START_ERROR_COMMANDS } from '../start-error
 import { telegramAccessPort } from './access';
 import { TELEGRAM_UPDATES, telegramCall, telegramFile } from './api';
 import { loadTelegramBotToken, loadTelegramInstall, loadTelegramWebhookSecret } from './installs';
+import { repairTelegramMenu } from './menu';
 
 export const TELEGRAM_MESSAGE_EVENT = 'telegram.message.created';
 
@@ -434,6 +435,7 @@ export async function handleTelegramEvent(
     await reply(refusal);
     return;
   }
+  await repairTelegramMenu(token, install.botId);
   const createClaim = `telegram:threadcreate:${event.projectId}:${install.botId}:${target.threadId}`;
   const file = telegramFileOf(message);
   const command = parseChannelCommand(text, install.username);
