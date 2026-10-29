@@ -27,6 +27,8 @@ import { AgentMark, agentDisplayName } from '../../internal/components/agent-mar
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { cn } from '../../internal/lib/utils';
 import { Button } from '../../primitives/button';
+import { ButtonGroup } from '../../primitives/button-group';
+import { SessionDotMatrix } from '../../primitives/dot-matrix/session-dot-matrix';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -41,7 +43,7 @@ import { useOptionalSidebar } from '../../primitives/sidebar';
 import { Skeleton } from '../../primitives/skeleton';
 import { StatusDot, type StatusTone } from '../../primitives/status';
 import { UiLink as Link, useUiShallowNavigate } from '../../providers/ui-provider';
-import { AnimatePresence, m } from 'motion/react';
+import { m, useReducedMotion } from 'motion/react';
 
 import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 
@@ -312,8 +314,11 @@ export function AgentStatePage({ title, children }: { title: ReactNode; children
 }
 
 /**
- * The save bar: only while the draft differs from what is saved. It names the
- * tabs that hold the edits. Centred over the content, full width under `md`.
+ * The unsaved-edits bar, in the shape of the select-mode bar every list uses
+ * (`SelectionBar`, the Triggers bulk bar): one popover card, the state on the
+ * left with the changed tabs muted after it, then one secondary ButtonGroup of
+ * text buttons (Discard, Save ⌘S). It rises in like that bar and leaves at
+ * once. While the save runs, the session dot matrix leads and both disable.
  */
 export function SaveBar({
   dirty,
@@ -330,38 +335,39 @@ export function SaveBar({
   onSave: () => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const reduceMotion = useReducedMotion();
+  if (!dirty) return null;
   return (
-    <AnimatePresence initial={false}>
-      {dirty ? (
-        <m.div
-          key="save-bar"
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 8 }}
-          transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-          className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center px-4"
-        >
-          <div className="bg-popover text-popover-foreground border-border pointer-events-auto flex w-full items-center gap-3 rounded-lg border p-2 pl-3.5 shadow-lg md:w-auto md:max-w-full">
-            <div className="flex min-w-0 flex-1 items-center gap-2" aria-live="polite">
-              <span aria-hidden className="bg-foreground size-1.5 shrink-0 rounded-full" />
-              <span className="text-foreground shrink-0 text-sm font-medium">
-                {tI18nComplete.raw('textefa5855ff509')}
-              </span>
-              <span className="text-muted-foreground min-w-0 truncate text-sm">{changed}</span>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={onDiscard} disabled={pending}>
-                {tI18nComplete.raw('texteb1a70e39274')}
-              </Button>
-              <Button size="sm" className="gap-1.5" onClick={onSave} disabled={pending} aria-busy={pending || undefined}>
-                {tI18nComplete.raw('text1509f561f241')}
-                <Kbd>{tI18nComplete.raw('text8cd003e6301b')}</Kbd>
-              </Button>
-            </div>
-          </div>
-        </m.div>
-      ) : null}
-    </AnimatePresence>
+    <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center px-4">
+      <m.div
+        initial={{ opacity: 0, transform: reduceMotion ? 'translateY(0px)' : 'translateY(8px)' }}
+        animate={{ opacity: 1, transform: 'translateY(0px)', transition: { duration: 0.18, ease: [0.23, 1, 0.32, 1] } }}
+        className="bg-popover text-popover-foreground border-border pointer-events-auto flex w-full items-center gap-3 rounded-lg border p-2 pl-3.5 shadow-md md:w-auto md:min-w-md md:max-w-full"
+      >
+        <span className="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium" aria-live="polite">
+          {pending ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
+          <span className="shrink-0">{tI18nComplete.raw('textefa5855ff509')}</span>
+          <span className="text-muted-foreground min-w-0 truncate font-normal">{changed}</span>
+        </span>
+        <ButtonGroup className="shrink-0">
+          <Button type="button" variant="secondary" size="sm" className="h-8 shrink-0" onClick={onDiscard} disabled={pending}>
+            {tI18nComplete.raw('texteb1a70e39274')}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="h-8 shrink-0 gap-1.5"
+            onClick={onSave}
+            disabled={pending}
+            aria-busy={pending || undefined}
+          >
+            {tI18nComplete.raw('text1509f561f241')}
+            <Kbd>{tI18nComplete.raw('text8cd003e6301b')}</Kbd>
+          </Button>
+        </ButtonGroup>
+      </m.div>
+    </div>
   );
 }
 
