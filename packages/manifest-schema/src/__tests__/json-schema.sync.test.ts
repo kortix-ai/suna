@@ -25,3 +25,7 @@ describe('apps/web/public/schema/*.json — committed files match the generated 
     });
   }
 });
+
+test('a RegExp pattern renders as its source string, never as {}', () => {
+  expect(renderSchemaFile({ pattern: /^\s*(?:a|b)\s*$/ })).toBe('{\n  "pattern": "^\\\\s*(?:a|b)\\\\s*$"\n}\n');
+});
