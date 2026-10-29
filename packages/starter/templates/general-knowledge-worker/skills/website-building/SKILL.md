@@ -9,6 +9,8 @@ defaultProjectInstallOrder: 80
 
 Build distinctive, production-grade websites where every site looks DIFFERENT. Every choice — type, color, motion, layout — must be derived from the subject matter. Run the palette generator (`bun run shared/generate-palette.ts "keywords"`) to create a unique color scheme for each project. NEVER reuse the same palette across sites.
 
+**Load the `kortix-design` skill first.** It owns the design loop (brief, token plan, swap test, slop sweep, screenshot check), the craft rules and the motion rules. When a file here disagrees with it on a visual choice, `kortix-design` wins. This skill owns the scaffolds, the palette generator, preview and QA mechanics.
+
 **This skill covers everything for web projects.** Read the sub-files in this directory as needed based on your project type. For web applications, also read `skills/webapp/SKILL.md`.
 
 **Universal design principles** (color philosophy, default palette, font selection) are shared with other skills via `design-foundations`. This skill's shared files extend those foundations with web-specific implementation (CSS variables, responsive tokens, base stylesheets). You don't need to load `design-foundations` separately — the web-specific versions in `shared/` are comprehensive.
@@ -118,7 +120,7 @@ Then `show(type: "url", url: "http://localhost:3000/")`. The platform auto-detec
 ## Use Every Tool
 
 - **Research first.** Search the web for reference sites, trends, and competitor examples before designing. Browse award-winning examples of the specific site type. Fetch any URLs the user provides.
-- **Generate real assets — generously.** Generate images for heroes, section illustrations, editorial feature visuals, atmospheric backgrounds — not just one hero image. Every long page should have visual rhythm with generated images that match the site's art direction. No placeholders. Generate a custom SVG logo for every project (see below) — SVG is for logos only unless the user specifically requests SVG output. Save web reference images that inform direction.
+- **Use real assets.** Prefer a real product artifact (a working component, real output, the user's data). Generate an image only where the subject is visual (a hero for a physical product, an editorial feature), matched to the art direction. No placeholders and no decorative filler images. Generate a custom SVG logo for every project (see below) — SVG is for logos only unless the user specifically requests SVG output. Save web reference images that inform direction.
 - **Screenshot via Playwright.** Read `skills/website-building/shared/12-playwright-interactive.md` to screenshot at desktop (1280px+) and mobile (375px). Compare against references. This is mandatory, not optional. See Visual QA below.
 - **Write production code directly.** HTML, CSS, JS, SVG. Use bash for build tools and file processing.
 

@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { parseChannelMessage } from '@kortix/shared';
+import { channelPromptText, parseChannelMessage } from '@kortix/shared';
 import { config } from '../../config';
 import type { TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
-import { renderTelegramPrompt, telegramMessageEvent, telegramNotice, telegramQuestionText, telegramThreadId, type TelegramMessage } from './session';
+import { telegramEnvelope, telegramMessageEvent, telegramNotice, telegramQuestionText, telegramThreadId, type TelegramMessage } from './session';
 
 const message: TelegramMessage = {
   message_id: 7,
@@ -38,7 +38,7 @@ describe('telegram inbox envelope', () => {
   });
 
   test('the prompt tells the agent to answer through the connector, with the chat and reply target', () => {
-    const prompt = renderTelegramPrompt(message, 'new');
+    const prompt = channelPromptText(telegramEnvelope(message));
     expect(prompt).toContain('kortix connectors call kortix_telegram.send_message');
     expect(prompt).toContain('"chat_id":"-100123"');
     expect(prompt).toContain('"reply_parameters":{"message_id":7}');
@@ -46,19 +46,19 @@ describe('telegram inbox envelope', () => {
   });
 
   test("the session view reads the prompt back as the person's message (the shared channel parser)", () => {
-    expect(parseChannelMessage(renderTelegramPrompt(message, 'new'))).toEqual({
+    expect(parseChannelMessage(channelPromptText(telegramEnvelope(message)))).toEqual({
       platform: 'Telegram',
-      context: '',
+      context: 'chat -100123',
       userName: '@synthetic_user',
       messageText: 'status?',
       followUp: false,
     });
-    expect(parseChannelMessage(renderTelegramPrompt({ ...message, text: 'next\n\nline' }, 'follow-up'))).toEqual({
+    expect(parseChannelMessage(channelPromptText(telegramEnvelope({ ...message, text: 'next\n\nline' })))).toEqual({
       platform: 'Telegram',
-      context: '',
+      context: 'chat -100123',
       userName: '@synthetic_user',
       messageText: 'next\n\nline',
-      followUp: true,
+      followUp: false,
     });
   });
 });

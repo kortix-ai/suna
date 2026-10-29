@@ -6,7 +6,7 @@ import { TelegramChatMock } from './channel-mocks';
  * Telegram as a channel row: connect a bot
  * by its BotFather token, pick who may talk to it, disconnect. The token goes
  * to the API once and never comes back to the browser. The allowed users
- * dialog is `TelegramUsersPanel`.
+ * dialog is `ChannelAccessPanel`.
  */
 import { Button } from '../../../primitives/button';
 import { CountBadge } from '../../../primitives/count-badge';
@@ -27,19 +27,22 @@ import {
   ChannelDisconnectButton,
   ChannelRow,
 } from './channel-row';
-import { TelegramUsersPanel } from './telegram-users-panel';
+import { ChannelAccessPanel } from './channel-access-panel';
 import {
   useConnectTelegram,
   useDisconnectTelegram,
   useTelegramInstall,
 } from '../../../internal/hooks/channels/use-channels-installations';
 import { useTranslations } from '../../../i18n';
+import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { useState } from 'react';
+
+const TELEGRAM = CHANNELS.telegram;
 
 /** "1, 2 3" → ["1","2","3"]; null when any entry is not a number. */
 export function parseTelegramUserIds(raw: string): string[] | null {
   const ids = raw.split(/[\s,]+/).filter(Boolean);
-  return ids.every((id) => /^\d{1,20}$/.test(id)) ? ids : null;
+  return ids.every((id) => TELEGRAM.access.userId.test(id)) ? ids : null;
 }
 
 export function TelegramChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
@@ -53,12 +56,12 @@ export function TelegramChannelRow({ projectId, canWrite }: { projectId: string;
     <>
       <ChannelRow
         app="telegram"
-        name="Telegram"
+        name={TELEGRAM.label}
         connected={Boolean(install)}
         detail={install?.username ? `@${install.username}` : null}
         hero={{
           title: tPages('telegramHeroTitle'),
-          connectedTitle: tPages('channelConnectedTitle', { name: 'Telegram' }),
+          connectedTitle: tPages('channelConnectedTitle', { name: TELEGRAM.label }),
           ...(install ? {} : { lede: tPages('telegramHeroLede') }),
           preview: <TelegramChatMock />,
         }}
@@ -97,7 +100,7 @@ export function TelegramChannelRow({ projectId, canWrite }: { projectId: string;
           {dialog === 'connect' ? (
             <TelegramConnectForm projectId={projectId} onDone={() => setDialog(null)} />
           ) : dialog === 'users' ? (
-            <TelegramUsersPanel projectId={projectId} onDone={() => setDialog(null)} />
+            <ChannelAccessPanel projectId={projectId} platform="telegram" onDone={() => setDialog(null)} />
           ) : null}
         </ModalContent>
       </Modal>
@@ -141,7 +144,7 @@ function TelegramConnectForm({ projectId, onDone }: { projectId: string; onDone:
             <Input
               type="password"
               autoComplete="off"
-              placeholder="123456789:…"
+              placeholder={TELEGRAM.connect.tokenPlaceholder}
               value={token}
               onChange={(event) => setToken(event.target.value)}
             />
@@ -176,8 +179,8 @@ function TelegramUsersField({
     <Field>
       <FieldTitle>{t.raw('text71552d197b53')}</FieldTitle>
       <Input
-        inputMode="numeric"
-        placeholder="123456789, 987654321"
+        inputMode={TELEGRAM.access.idInputMode}
+        placeholder={TELEGRAM.access.idsPlaceholder}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         aria-invalid={invalid}

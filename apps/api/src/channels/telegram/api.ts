@@ -6,6 +6,7 @@
  * and photos (getChat, getFile and the file download). Agent-sent
  * messages go through the `kortix_telegram` connector instead (connectors/channels.ts).
  */
+import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { config } from '../../config';
 
 export class TelegramApiError extends Error {
@@ -79,4 +80,4 @@ export interface TelegramBot {
 export const TELEGRAM_UPDATES = ['message', 'callback_query'];
 
 /** A bot token is `<bot id>:<secret>`; anything else never reaches the network. */
-export const TELEGRAM_TOKEN_PATTERN = /^\d{5,15}:[A-Za-z0-9_-]{30,64}$/;
+export const TELEGRAM_TOKEN_PATTERN = CHANNELS.telegram.connect.tokenPattern;

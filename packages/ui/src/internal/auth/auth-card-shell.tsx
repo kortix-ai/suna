@@ -65,8 +65,6 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFo
               termsOfService: () => terms,
               privacyPolicy: () => privacy,
             })}
-      {/* Terms section 10 (Marks and publicity), said where people accept the Terms. */}
-      {variant !== 'default' && <p className="mt-2">{t('customerLogoNotice')}</p>}
     </footer>
   );
 }

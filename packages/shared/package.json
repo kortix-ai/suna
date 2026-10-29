@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./audit-labels": "./src/audit-labels.ts",
+    "./channel-descriptors": "./src/channel-descriptors.ts",
     "./artifact-doc": "./src/artifact-doc.ts",
     "./brand-css": "./src/brand-css.generated.ts",
     "./tools": "./src/tools/index.ts",

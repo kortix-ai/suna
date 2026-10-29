@@ -290,6 +290,16 @@ flow("PROJ-8", {
       );
     r.status(200).body().has("$.ok", true);
   });
+  await ctx.step("OWNER cannot add a connector under the built-in Telegram slug → 400, nothing written", async () => {
+    const r = await ctx.client
+      .as(ctx.P.OWNER)
+      .post(
+        "/v1/connectors/projects/:projectId/connectors",
+        { slug: "kortix_telegram", provider: "http", baseUrl: "https://fixture.example.test", auth: { type: "none" } },
+        { params: { projectId: id } },
+      );
+    r.status(400).body().has("$.error", '"kortix_telegram" is reserved for a built-in channel connection. Pick a different slug.');
+  });
   await ctx.step("the project lists exactly its one connector", async () => {
     const r = await ctx.client
       .as(ctx.P.OWNER)

@@ -21,6 +21,8 @@ function renderQuestionsPlain(questions: QuestionInfo[]): string {
 export async function postTeamsQuestion(
   sessionId: string,
   questions: QuestionInfo[],
+  /** The stored question its card answers (`buildQuestionCard`). */
+  pendingId?: string,
 ): Promise<{ ok: boolean; answers?: string[][]; error?: string }> {
   const handle = await loadTurn(sessionId);
   let ref: TeamsConversationRef | null;
@@ -48,10 +50,14 @@ export async function postTeamsQuestion(
     if (!ref) return { ok: false, error: 'No active Teams turn for this session.' };
   }
 
-  const posted = await sendCard(ref, buildQuestionCard(questions));
+  const posted = await sendCard(ref, buildQuestionCard(questions, pendingId));
   if (!posted) {
     const plain = await sendText(ref, renderQuestionsPlain(questions));
     if (!plain) return { ok: false, error: 'Failed to post the question to Teams.' };
+  } else if (pendingId && ref.projectId && ref.tenantId) {
+    // A press finds its card by this id when Teams does not name it (question-press.ts).
+    const { rememberQuestionMessage } = await import('../core/questions');
+    await rememberQuestionMessage({ platform: 'teams', projectId: ref.projectId, workspaceId: ref.tenantId, threadId: ref.conversationId }, posted, pendingId);
   }
   return { ok: true, answers: questions.map(() => [QUESTION_SENTINEL]) };
 }

@@ -1,10 +1,10 @@
 'use client';
 
-import type { ArtifactDetail } from '@kortix/sdk';
+import { getArtifact, readArtifactFile, type ArtifactDetail } from '@kortix/sdk';
 import { useArtifactMutations, useArtifactText } from '@kortix/sdk/react';
 import { ARTIFACT_DOC_CSS } from '@kortix/shared/artifact-doc';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { errorToast } from '@kortix/ui/toast';
+import { dismissToast, errorToast } from '@kortix/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@kortix/ui/tooltip';
 import {
   CheckSquareIcon,
@@ -36,83 +36,91 @@ import { BubbleMenu, FloatingMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import { useEffect, useRef, useState } from 'react';
 
+import { createDocSaver, pendingSave, type DocSaveStatus, type DocSaver, type Known } from './doc-autosave';
 import { DocCodeBlock, Video, fileBase64, isMedia, mediaPath, mediaUrls, tooLarge } from './doc-media';
 import { htmlToMarkdown, markdownToHtml } from './markdown';
 
 import { useTranslations } from '@/i18n/use-translations';
 
-export type DocSaveStatus = 'saved' | 'unsaved' | 'saving' | 'error';
+export type { DocSaveStatus };
 
-/** The doc stylesheet's colors from the app's theme, so the doc follows light and dark. */
-
-const AUTOSAVE_MS = 2_000;
+const isConflict = (err: unknown) => (err as { status?: number }).status === 409 && (err as { code?: string }).code === 'version_conflict';
 
 /**
  * A doc artifact, edited in place: its Markdown file in Files, shown with the
  * same stylesheet the published page uses. Markdown shortcuts (`# `, `- `,
  * `1. `, `[ ] `, `> `, ``` ```), a menu on selected text, a `+` menu on an
- * empty line, tables, task lists, links and images. Changes save themselves
- * back to the file; each save is a commit of the Files volume.
+ * empty line, tables, task lists, links and images.
+ *
+ * Changes save themselves back to the file; each save is a commit of the Files
+ * volume (`doc-autosave.ts` has the rules).
  */
 export function DocEditor({
   projectId,
   artifact,
   editable,
   onStatus,
+  onReload,
 }: {
   projectId: string;
   artifact: ArtifactDetail;
   editable: boolean;
   onStatus: (status: DocSaveStatus) => void;
+  /** Open the doc again at its current version (the conflict's Reload). */
+  onReload: () => void;
 }) {
   const t = useTranslations('artifacts');
   const { save: saveMutation } = useArtifactMutations(projectId);
-  const [loaded, setLoaded] = useState<string | null>(null);
-  const base = useRef(artifact.entry_version);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saving = useRef<Promise<unknown> | null>(null);
-  const stopped = useRef(false);
-  const latest = useRef({ save: saveMutation, onStatus, artifact });
+  const [loaded, setLoaded] = useState<{ html: string; start: Known } | null>(null);
+  const saver = useRef<DocSaver | null>(null);
+  const latest = useRef({ save: saveMutation, onStatus, onReload, artifact, t });
   useEffect(() => {
-    latest.current = { save: saveMutation, onStatus, artifact };
+    latest.current = { save: saveMutation, onStatus, onReload, artifact, t };
   });
   // Relative media paths in the Markdown ↔ absolute URLs in the editor (the page URL of this version).
   const [media] = useState(() => mediaUrls(artifact.version.view_url));
   /** Single-file docs serve only themselves: their media must be absolute URLs. */
   const holdsMedia = !artifact.path.endsWith(`/${artifact.entry}`);
 
+  // A save from a closed editor of this doc still on its way: wait for it (undefined), then open on it.
+  const [handoff, setHandoff] = useState<Known | null | undefined>(() => (pendingSave(artifact.artifact_id) ? undefined : null));
+  useEffect(() => {
+    const pending = pendingSave(artifact.artifact_id);
+    if (!pending) return;
+    let live = true;
+    void pending.then((result) => live && setHandoff(result));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Usually already in the cache (prefetched by the project preloader or a hover).
   // Pinned to the version opened: our own saves move `entry_version` and must not refetch.
   const [opened] = useState(artifact);
-  const text = useArtifactText(projectId, opened);
-  if (loaded === null && text.data !== undefined) setLoaded(media.resolveHtml(markdownToHtml(text.data)));
-  // One load per mount: our own saves (which move the version) never reload the editor.
+  const text = useArtifactText(projectId, handoff === null ? opened : null);
+  const start: Known | null = handoff ?? (handoff === null && text.data !== undefined ? { version: opened.entry_version, text: text.data } : null);
+  if (loaded === null && start) setLoaded({ html: media.resolveHtml(markdownToHtml(start.text)), start });
   useEffect(() => {
     if (text.error) errorToast(text.error.message);
   }, [text.error]);
 
-  const save = async (editor: Editor) => {
-    if (stopped.current || loaded === null) return;
-    const { save: run, onStatus: report, artifact: current } = latest.current;
-    report('saving');
-    const attempt = run.mutateAsync({
-      artifactId: current.artifact_id,
-      ...(base.current ? { base_version: base.current } : {}),
-      files: { [current.entry]: { content: htmlToMarkdown(media.restore(editor.getHTML())) } },
+  const markdownOf = (editor: Editor) => htmlToMarkdown(media.restore(editor.getHTML()));
+  const readNow = async (current: ArtifactDetail): Promise<Known> => {
+    const [detail, file] = await Promise.all([getArtifact(projectId, current.artifact_id), readArtifactFile(projectId, current.artifact_id)]);
+    return { version: detail.entry_version, text: await file.text() };
+  };
+
+  const showConflict = () => {
+    const { t: t, artifact: current } = latest.current;
+    errorToast(t('conflict'), {
+      id: `artifact-conflict-${current.artifact_id}`,
+      duration: Infinity,
+      actions: [
+        { label: t('conflictReload'), onClick: () => latest.current.onReload() },
+        { label: t('conflictKeepMine'), onClick: () => saver.current?.keepMine() },
+      ],
     });
-    saving.current = attempt;
-    try {
-      const next = await attempt;
-      base.current = next.entry_version;
-      report(timer.current ? 'unsaved' : 'saved');
-    } catch (err) {
-      const conflict = (err as { status?: number }).status === 409;
-      if (conflict) stopped.current = true;
-      report('error');
-      errorToast(conflict ? t('conflict') : (err as Error).message);
-    } finally {
-      saving.current = null;
-    }
   };
 
   /** Pasted, dropped or picked images and videos: written next to the doc in Files (`media/…`), then placed in it. */
@@ -130,9 +138,9 @@ export function DocEditor({
       report('saving');
       try {
         await run.mutateAsync({ artifactId: current.artifact_id, files: { [path]: { content_base64: await fileBase64(file) } } });
-      } catch (err) {
-        report('error');
-        errorToast((err as Error).message);
+      } catch {
+        // The API client toasts the error; the doc's own text is unaffected.
+        report(saver.current?.busy() ? 'unsaved' : 'saved');
         continue;
       }
       const node = { type: kind, attrs: { src: media.absolute(path) } };
@@ -160,7 +168,7 @@ export function DocEditor({
           placeholder: ({ node }) => (node.type.name === 'heading' ? t('placeholderHeading') : t('placeholder')),
         }),
       ],
-      content: loaded ?? '',
+      content: loaded?.html ?? '',
       editorProps: {
         handlePaste: (view, event) => {
           const files = Array.from(event.clipboardData?.files ?? []).filter(isMedia);
@@ -179,14 +187,8 @@ export function DocEditor({
           return true;
         },
       },
-      onUpdate: ({ editor: e }) => {
-        if (!editable) return;
-        latest.current.onStatus('unsaved');
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(() => {
-          timer.current = null;
-          void save(e);
-        }, AUTOSAVE_MS);
+      onUpdate: () => {
+        if (editable) saver.current?.edited();
       },
     },
     [loaded, editable],
@@ -196,33 +198,48 @@ export function DocEditor({
     editorRef.current = editor;
   }, [editor]);
 
-  // Save now on ⌘S, and before the page goes away.
+  // One saver per editor; save now on ⌘S, warn before the page goes away with changes not in the file.
   useEffect(() => {
-    if (!editor || !editable) return;
-    const flush = () => {
-      if (!timer.current) return;
-      clearTimeout(timer.current);
-      timer.current = null;
-      void save(editor);
-    };
+    if (!editor || !editable || !loaded) return;
+    const current = latest.current.artifact;
+    const docSaver = createDocSaver(loaded.start, {
+      artifactId: current.artifact_id,
+      write: async (markdown, base) => {
+        const next = await latest.current.save.mutateAsync({
+          artifactId: current.artifact_id,
+          ...(base ? { base_version: base } : {}),
+          files: { [current.entry]: { content: markdown } },
+        });
+        return next.entry_version;
+      },
+      read: () => readNow(current),
+      text: () => markdownOf(editor),
+      onStatus: (status) => latest.current.onStatus(status),
+      onConflict: showConflict,
+      isConflict,
+    });
+    saver.current = docSaver;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 's' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        flush();
+        docSaver.flush();
       }
     };
     const onLeave = (e: BeforeUnloadEvent) => {
-      if (timer.current || saving.current) e.preventDefault();
+      if (docSaver.busy()) e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('beforeunload', onLeave);
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('beforeunload', onLeave);
-      flush();
+      const conflictToastId = `artifact-conflict-${current.artifact_id}`;
+      dismissToast(conflictToastId);
+      docSaver.close();
+      if (saver.current === docSaver) saver.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, editable]);
+  }, [editor, editable, loaded]);
 
   return (
     <div className="kx-doc min-h-full">

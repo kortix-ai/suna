@@ -299,6 +299,46 @@ describe('mapApiReviewItem', () => {
     const item = mapApiReviewItem({ ...row, kind: 'batch', detail: {} });
     expect(item.detail).toEqual({ note: 'Built from the brief', children: [] });
   });
+
+  test("an output reads the files an agent names in its own keys: artifact first, then each path-valued key", () => {
+    const item = mapApiReviewItem({
+      ...row,
+      detail: {
+        title: 'Demo video',
+        videoId: 'vid-1',
+        contentHash: 'abc123',
+        artifact: '/drives/videos/demo/demo.mp4',
+        sources: '/drives/videos/demo/sources.json',
+        claimLedger: '/drives/videos/demo/claim-ledger.json',
+        judge_report: '/workspace/out/judge-report.md',
+        folder: '/drives/videos/demo',
+        description: 'The final cut, with sources.',
+      },
+    });
+    const detail = (item as Extract<ReviewItem, { kind: 'output' }>).detail;
+    expect(detail.files).toEqual([
+      { path: '/drives/videos/demo/demo.mp4' },
+      { path: '/drives/videos/demo/sources.json', note: 'Sources' },
+      { path: '/drives/videos/demo/claim-ledger.json', note: 'Claim ledger' },
+      { path: '/workspace/out/judge-report.md', note: 'Judge report' },
+    ]);
+    expect(detail.preview).toBe('The final cut, with sources.');
+    expect(detail.note).toBe('Built from the brief');
+  });
+
+  test('an output accepts files as plain paths and drops an entry with no path or a repeat', () => {
+    const item = mapApiReviewItem({
+      ...row,
+      detail: {
+        artifacts: ['/drives/out/a.png'],
+        files: ['/drives/out/a.png', { path: '/drives/out/b.csv', note: 'Raw data' }, { note: 'no path' }],
+      },
+    });
+    expect((item as Extract<ReviewItem, { kind: 'output' }>).detail.files).toEqual([
+      { path: '/drives/out/a.png' },
+      { path: '/drives/out/b.csv', note: 'Raw data' },
+    ]);
+  });
 });
 
 describe('humanizeReviewActionPath', () => {
