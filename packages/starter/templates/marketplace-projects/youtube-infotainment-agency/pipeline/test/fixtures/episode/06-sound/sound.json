@@ -1,0 +1,5 @@
+{
+  "music": [
+    { "id": "m01", "prompt": "Gentle wonder-filled ambient pad with soft celesta, slow, curious, 80 bpm, no vocals", "from_beat": "b01", "to_beat": "b03", "volume": 0.3 }
+  ]
+}

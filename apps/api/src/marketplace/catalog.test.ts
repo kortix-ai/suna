@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   createMarketplaceFetch,
   compareCatalogItems,
+  getCatalogEntry,
   getCatalogItemDetail,
   pageCatalogItems,
   type CatalogItem,
@@ -60,6 +61,19 @@ describe('template + agent resolution (decoupled from browse)', () => {
     const agent = await getCatalogItemDetail('kortix-starter:support-agent');
     expect(agent).not.toBeNull();
     expect(agent!.type).toBe('registry:agent');
+  });
+
+  test('a project template lists its kortix.yaml env.required as required secrets', async () => {
+    const entry = await getCatalogEntry('kortix-projects:youtube-infotainment-agency');
+    expect(entry?.capabilities.secrets).toEqual(['ELEVENLABS_API_KEY', 'OPENAI_API_KEY']);
+  });
+
+  test('a kortix_version 3 project template shows each agent description from its kortix.yaml block', async () => {
+    const detail = await getCatalogItemDetail('kortix-projects:youtube-infotainment-agency');
+    const agents = detail?.projectAgents ?? [];
+    expect(agents.length).toBe(13);
+    expect(agents.filter((a) => !a.description).map((a) => a.name)).toEqual([]);
+    expect(agents.find((a) => a.name === 'showrunner')?.description).toStartWith('Showrunner — runs edutainment episodes');
   });
 });
 

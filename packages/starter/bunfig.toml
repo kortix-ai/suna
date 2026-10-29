@@ -1,0 +1,5 @@
+[test]
+# `templates/` is scaffolded into users' projects. A bundled project template may carry its own
+# test suite (marketplace-projects/youtube-infotainment-agency/pipeline/test); it runs in the
+# project it is cloned into, with that project's dependencies, never as part of this package.
+pathIgnorePatterns = ["templates/**"]

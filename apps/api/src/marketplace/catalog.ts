@@ -23,7 +23,7 @@ import {
   getStarterFiles,
   isKortixManagedSkillName,
 } from "@kortix/starter";
-import { AGENTS_DIR, agentFileCandidates, SKILLS_DIR } from "@kortix/manifest-schema";
+import { AGENTS_DIR, agentFileCandidates, ENV_NAME_RE, SKILLS_DIR } from "@kortix/manifest-schema";
 import { parse as parseYaml } from "yaml";
 import {
   buildRegistry,
@@ -156,11 +156,13 @@ function projectAgentsAndTriggers(
     const md = candidates
       .map((candidate) => files.find((f) => pathOf(f) === candidate))
       .find((file) => file !== undefined);
-    // Parse the agent's own `.md` frontmatter with the YAML parser (not a
+    // kortix_version 3 keeps the description in the agent's kortix.yaml block;
+    // v1/v2 keep it in the `.md` frontmatter, parsed with the YAML parser (not a
     // line-based one) so folded block scalars (`description: >-`) resolve to the
-    // real text, and collapse it to a single line for the card.
-    const fm = frontmatterOf(md?.content);
-    const desc = typeof fm.description === "string" ? fm.description.replace(/\s+/g, " ").trim() : null;
+    // real text. Either way, collapse it to a single line for the card.
+    const block = (m.agents?.[name] ?? {}) as { description?: unknown };
+    const raw = typeof block.description === "string" ? block.description : frontmatterOf(md?.content).description;
+    const desc = typeof raw === "string" ? raw.replace(/\s+/g, " ").trim() : null;
     return { name, title: name, description: desc || null };
   });
 
@@ -461,6 +463,21 @@ function buildProjectTemplateRegistry(): RegistryItem[] {
         continue;
       }
     }
+    // The add-to-project modal shows `capabilities.secrets` as "This item requires".
+    let requiredSecrets: string[] = [];
+    try {
+      const env = parseYaml(files.find((f) => f.path === "kortix.yaml")?.content ?? "")?.env;
+      // Read env.required the way the platform does (projects/git/config.ts
+      // asStringArray): names only, trimmed, upper-cased; capabilitiesOf dedupes.
+      if (Array.isArray(env?.required)) {
+        requiredSecrets = env.required
+          .filter((s: unknown): s is string => typeof s === "string")
+          .map((s: string) => s.trim().toUpperCase())
+          .filter((s: string) => ENV_NAME_RE.test(s));
+      }
+    } catch {
+      // An unparseable kortix.yaml just lists no requirements.
+    }
     items.push({
       name: slug,
       type: "registry:project",
@@ -471,7 +488,12 @@ function buildProjectTemplateRegistry(): RegistryItem[] {
       files: files
         .filter((f) => f.path !== "project.json")
         .map((f) => ({ path: f.path, type: "registry:file" as const, content: f.content })),
-      meta: { source: "kortix", visibility: "global", ...(meta.hidden ? { hidden: true } : {}) },
+      meta: {
+        source: "kortix",
+        visibility: "global",
+        capabilities: { secrets: requiredSecrets },
+        ...(meta.hidden ? { hidden: true } : {}),
+      },
     });
   }
   return items;

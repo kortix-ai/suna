@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# The pipeline CLI. Installs pipeline deps on first use (fresh sandboxes start without node_modules).
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ ! -d "$ROOT/pipeline/node_modules/hyperframes" ]; then
+  (cd "$ROOT/pipeline" && bun install --frozen-lockfile >/dev/null 2>&1 || bun install >/dev/null)
+fi
+exec bun "$ROOT/pipeline/src/cli.ts" "$@"

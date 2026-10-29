@@ -1,0 +1,34 @@
+# Sandbox template "video" (kortix.yaml → sandbox.templates). Kortix adds its runtime layer on top
+# (git, ffmpeg, fonts, bun, uv, agent-browser…). Rules: FROM Debian/Ubuntu, no ENTRYPOINT/CMD,
+# no COPY (empty build context), nothing on port 8000, no credentials.
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ffmpeg and the shared libraries headless Chrome needs.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg python3 \
+      libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libdrm2 libxkbcommon0 libxcomposite1 \
+      libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libpango-1.0-0 libcairo2 libxshmfence1 \
+      fonts-noto-color-emoji fonts-noto-core \
+ && rm -rf /var/lib/apt/lists/*
+
+# Node 22 (HyperFrames needs ≥22) from the official release tarball, checked against its SHA-256 in
+# https://nodejs.org/dist/v22.23.1/SHASUMS256.txt (signed by a Node.js release key). It is the
+# version the Kortix runtime layer serves in sessions; this copy installs HyperFrames below.
+RUN case "$(dpkg --print-architecture)" in \
+      amd64) arch=x64;   sha=7a8cb04b4a1df4eaf432125324b81b29a088e73570a23259a8de1c65d07fc129 ;; \
+      arm64) arch=arm64; sha=543fa39e57d4c07855939459a323f4deb9a79dd1bb45e6e99458b0f2de10db8d ;; \
+      *) echo "no pinned Node build for $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac \
+ && curl -fsSLo /tmp/node.tar.gz "https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-$arch.tar.gz" \
+ && echo "$sha  /tmp/node.tar.gz" | sha256sum -c - \
+ && tar -xzf /tmp/node.tar.gz -C /usr/local --strip-components=1 --no-same-owner \
+ && rm /tmp/node.tar.gz \
+ && node --version
+
+# Pin the renderer and pre-fetch its Chrome so the first render in a session doesn't download it.
+# The braces keep `|| true` on chmod only: a failed install or Chrome fetch fails the build.
+RUN npm install -g hyperframes@0.8.151 \
+ && hyperframes browser ensure \
+ && { chmod -R a+rX /root/.cache 2>/dev/null || true; }

@@ -1,0 +1,88 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   House style kit — flat-vector science explainers.
+   Every scene links this file; `yt scene build` copies it (plus fonts and GSAP
+   into kit/vendor/) next to the scene so renders never touch the network.
+   Palette and type are the channel identity: change them in channel/design.md
+   first, then here.
+   ───────────────────────────────────────────────────────────────────────────── */
+@font-face { font-family: "Fredoka"; src: url("vendor/fredoka.woff2") format("woff2"); font-weight: 300 700; }
+@font-face { font-family: "Inter"; src: url("vendor/inter.woff2") format("woff2"); font-weight: 100 900; }
+
+:root {
+  --ink: #0e1b3d;      /* night background */
+  --deep: #162a5c;     /* panels on night */
+  --dusk: #24407f;     /* far layers */
+  --sky: #3fa7f5;      /* primary accent, "science blue" */
+  --sky-deep: #1554b8; /* the same blue for text on light backgrounds (contrast ≥ 3:1) */
+  --mint: #3fe0b0;     /* positive / living things */
+  --sun: #ffc94a;      /* energy, light, Mote */
+  --coral: #ff6b5e;    /* warnings, heat, misconceptions */
+  --violet: #8e6cf0;   /* the unseen: fields, quantum, abstractions */
+  --paper: #f6f1e7;    /* text on dark */
+  --muted: #9fb0d6;    /* secondary text */
+  --shadow: rgba(4, 10, 30, 0.35);
+
+  --font-display: "Fredoka", "Nunito", sans-serif;
+  --font-body: "Inter", sans-serif;
+
+  --safe-x: 120px;     /* keep text inside the action-safe area */
+  --safe-y: 90px;
+  --radius: 28px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--ink); }
+body { font-family: var(--font-body); color: var(--paper); -webkit-font-smoothing: antialiased; }
+
+.k-stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+.k-layer { position: absolute; inset: 0; }
+.k-abs { position: absolute; }
+.k-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+
+/* Backgrounds */
+.bg-night { background: radial-gradient(120% 90% at 50% 110%, var(--dusk) 0%, var(--deep) 40%, var(--ink) 100%); }
+.bg-day { background: linear-gradient(180deg, #7cc8ff 0%, #bfe6ff 70%, #e9f6ff 100%); color: var(--ink); }
+.bg-deep { background: var(--deep); }
+.bg-paper { background: var(--paper); color: var(--ink); }
+
+/* Type */
+.k-title { font-family: var(--font-display); font-weight: 650; font-size: 104px; line-height: 1.02; letter-spacing: -0.01em; }
+.k-h2 { font-family: var(--font-display); font-weight: 600; font-size: 72px; line-height: 1.08; }
+.k-sub { font-size: 40px; font-weight: 500; color: var(--muted); line-height: 1.3; }
+.k-label { font-family: var(--font-display); font-weight: 600; font-size: 38px; letter-spacing: 0.01em; }
+.k-small { font-size: 28px; font-weight: 500; color: var(--muted); }
+.k-stat { font-family: var(--font-display); font-weight: 700; font-size: 180px; line-height: 1; font-variant-numeric: tabular-nums; }
+.k-accent { color: var(--sun); }
+.k-cool { color: var(--sky); }
+.k-warn { color: var(--coral); }
+
+/* Components */
+.k-card { background: var(--deep); border-radius: var(--radius); padding: 40px 48px; box-shadow: 0 18px 0 var(--shadow); }
+.k-chip { display: inline-flex; align-items: center; gap: 14px; padding: 14px 28px; border-radius: 999px;
+  background: var(--paper); color: var(--ink); font-family: var(--font-display); font-weight: 600; font-size: 34px; }
+.k-chip::before { content: ""; width: 18px; height: 18px; border-radius: 50%; background: currentColor; opacity: 0.85; }
+.k-callout { position: absolute; font-family: var(--font-display); font-weight: 600; font-size: 36px; color: var(--paper); white-space: nowrap; }
+.k-line { fill: none; stroke: var(--paper); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+.k-lower-third { position: absolute; left: var(--safe-x); bottom: var(--safe-y); display: flex; flex-direction: column; gap: 8px; }
+.k-lower-third .k-label { background: var(--sun); color: var(--ink); padding: 10px 22px; border-radius: 14px; align-self: flex-start; }
+
+/* Texture: subtle print grain + vignette, the "illustrated" finish */
+.k-grain { position: absolute; inset: 0; pointer-events: none; opacity: 0.11; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.k-vignette { position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(3, 8, 24, 0.55) 100%); }
+
+/* Mote, the channel mascot (see Kit.mascot) */
+.mote { overflow: visible; }
+.mote .m-body { fill: var(--sun); }
+.mote .m-shade { fill: #f2a93b; }
+.mote .m-cheek { fill: var(--coral); opacity: 0.55; }
+.mote .m-eye { fill: #fff; }
+.mote .m-pupil { fill: var(--ink); }
+.mote .m-mouth { fill: none; stroke: var(--ink); stroke-width: 6; stroke-linecap: round; }
+.mote .m-mouth-o { fill: var(--ink); }
+.mote .m-arm { fill: none; stroke: #f2a93b; stroke-width: 12; stroke-linecap: round; }
+.mote .m-spark { fill: var(--paper); }
+
+/* Full-frame wipe used by Kit.wipe */
+.k-wipe { position: absolute; inset: 0; background: var(--sun); transform: scaleX(0); transform-origin: left center; z-index: 50; }

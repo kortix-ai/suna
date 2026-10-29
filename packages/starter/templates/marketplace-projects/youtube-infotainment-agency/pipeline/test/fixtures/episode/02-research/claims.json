@@ -1,0 +1,12 @@
+{
+  "sources": [
+    { "id": "s01", "url": "https://spaceplace.nasa.gov/blue-sky/en/", "title": "Why Is the Sky Blue?", "publisher": "NASA Space Place", "authors": [], "tier": "tertiary", "type": "institution", "accessed_at": "2026-10-13T00:00:00Z" },
+    { "id": "s02", "url": "https://www.britannica.com/science/Rayleigh-scattering", "title": "Rayleigh scattering", "publisher": "Encyclopaedia Britannica", "authors": [], "tier": "secondary", "type": "encyclopedia", "accessed_at": "2026-10-13T00:00:00Z" },
+    { "id": "s03", "url": "https://doi.org/10.1080/14786447108640452", "title": "On the light from the sky, its polarization and colour", "publisher": "Philosophical Magazine", "authors": ["J. W. Strutt (Lord Rayleigh)"], "published": "1871", "tier": "primary", "type": "paper", "accessed_at": "2026-10-13T00:00:00Z" }
+  ],
+  "claims": [
+    { "id": "c01", "text": "Sunlight contains all the colours of visible light.", "source_ids": ["s01"], "quotes": [{ "source_id": "s01", "quote": "FIXTURE: sunlight is made of all the colours of the rainbow" }], "confidence": "high", "status": "unverified" },
+    { "id": "c02", "text": "Air molecules scatter short (blue) wavelengths far more strongly than long (red) ones.", "source_ids": ["s02", "s03"], "quotes": [{ "source_id": "s02", "quote": "FIXTURE: scattering intensity is inversely proportional to the fourth power of the wavelength" }], "confidence": "high", "status": "unverified" },
+    { "id": "c03", "text": "Blue light (~450 nm) is scattered roughly 5–6 times more than red light (~700 nm).", "source_ids": ["s02"], "quotes": [{ "source_id": "s02", "quote": "FIXTURE: (700/450)^4 ≈ 5.9" }], "confidence": "high", "status": "unverified" }
+  ]
+}
