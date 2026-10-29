@@ -294,9 +294,10 @@ root. No turn runs at either point.
   sends the batch again, so the session log keeps the old history and the new
   turns after it. The offsets persist in `session-log-restore.json` for a
   restarted daemon; a restore writes the store at the log's seqs and clears
-  them. Prod runs with the flag off unless a project sets
-  `session_log_restore` (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` is on only on
-  dev).
+  them. This path runs only where `session_log_restore` is off: a project
+  that stores `false`, or a deployment that sets
+  `SESSION_LOG_RESTORE_DEFAULT_ENABLED=false` (the default is on since
+  2026-10-28).
 - **Unsent work never reads as behind.** Only ids are compared, one way: a
   message the store holds that the log lacks (a turn not yet journaled), a
   newer version of a stored message, and a message OpenCode deleted after the
@@ -426,9 +427,9 @@ store a box already holds: a box with a large store loads it at boot (`held()`)
 before any restore. A fresh box drops only an attachment whose record still
 says `blob:` (P2.13 uploads the bytes). Precondition for prod default-on: a
 release whose kortixd handles the 413 (an older kortixd boots without the
-restore and its journal stops at 409). Dev turns `session_log_restore` on for
-every project without a stored value (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` in
-`deploy-dev.yml`, 2026-10-15); prod does not yet.
+restore and its journal stops at 409). `session_log_restore` is on for every
+project without a stored value: dev since 2026-10-15, every deployment since
+2026-10-28 (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` defaults to true).
 
 Known limits of the boot reconcile:
 - Losing `session-log-restore.json` (or OpenCode's `opencode-session-log.json`)
@@ -510,7 +511,9 @@ reads them and fails when a pin leaves them:
   `quickjs-wasi` are pinned beside them at the versions pi-coding-agent depends on (codemode's
   worker and wasm, above): move them with the bump, and check that pi still resolves the
   worker as `./src/extensions/codemode/worker.ts` (`getCodemodeWorkerSpecifier`).
-  `@silvia-odwyer/photon-node` (pi's image resizer, "Images" below) is pinned the same way.
+  `@silvia-odwyer/photon-node` (pi's image resizer, "Images" below) is pinned the same way;
+  pi's `resizeImage` must still start its worker as `./src/utils/image-resize-worker.ts`
+  (`pi-images.test.ts` fails when it does not).
   `pi-host-modules.test.ts` fails when pi's `VIRTUAL_MODULES` gains a module: add it to
   `PI_HOST_MODULES` (apps/api `pi-packages/prebuild.ts`) and to `hostModules()` (`pi/extensions/prebuilt.ts`).
   It also fails when pi moves its `typebox` pin: move the daemon's `typebox` with it. A
@@ -587,7 +590,8 @@ The journal publishes the first three in `collectOnce`, from the same records
 it posts (same ids, seqs and revs), in that order. It collects when it starts
 (the store is at rest: the stream gets the session and its threads before the
 first turn streams), at each turn end, when pi stores a compaction between
-turns, and at the daemon stop. The delta frames
+turns, at the daemon stop, and on pi at most 5 s after each `message.*` frame
+of a turn (below). The delta frames
 come from the v1 bus: both harnesses stream text with the v1 session, message
 and part ids, which are the thread, message and block ids of the records.
 
@@ -600,8 +604,9 @@ put replace the whole record.
 
 The journal folds the v1 frames of each message it has not collected. It
 publishes a live put of a message on the v2 bus only, never into the dirty
-set: apps/api receives the turn end's record alone (its `log_durable_at`
-reacts to a non-streaming assistant message or compaction). A live put is published:
+set: apps/api receives only the records a collection exports from the native
+store (its `log_durable_at` reacts to a non-streaming assistant message or
+compaction). A live put is published:
 - on the first `message.updated` of a message: the prompt (complete) and each
   assistant message (`streaming`, no blocks yet, `reply_to` the prompt);
 - on each `message.part.updated` of a part the message did not have: a new
@@ -641,7 +646,36 @@ the fields the frames do not carry, so a live put carries the `message_id`,
   first assistant `message.updated` of that turn, not at accept.
 
 The collection's put of a message has a higher rev than its live puts, and a
-message the journal has collected gets no live put again.
+message the journal has collected gets no live put again (except a streaming
+record of a mid-turn collection, below).
+
+#### Mid-turn collection (pi)
+
+A box can die mid-turn (the provider deletes it, the daemon crashes). Before
+2026-10-28 the journal collected only at turn end, so such a box lost the whole
+turn from the session log, the prompt included. On pi (`midTurnMs`,
+`JOURNAL_MID_TURN_MS` = 5 s, set in `pi/boot.ts`), each `message.*` frame on
+the v1 bus schedules one collection and send at most 5 s later. So within 5 s
+apps/api holds what pi stored of the turn:
+- the prompt: pi appends its entry when the turn starts;
+- each finished step, with its call results: a `complete` record, and the first
+  one marks the turn `log_durable_at`;
+- the step whose calls run: pi exports it `streaming`, calls `running`, no
+  `completed_at`. This record goes to apps/api only: the journal marks its
+  cursor hash `~`, publishes no `log.message`, and its live puts go on, so the
+  stream keeps their v1 metadata (a running task's `sessionId`). A later record
+  has a higher rev and replaces it. A box that dies leaves it `streaming`, as
+  the stop path always did. A restore hands pi the open calls, and pi-ai sends
+  "No result provided" for each. The record stays `streaming` in the log until
+  the restored box's next turn: once pi appends that turn's reply, the step
+  exports closed (C2: the call `error`, a synthetic "No result provided"
+  result) and its record is replaced.
+
+The reply pi streams has no entry before its `message_end` and is not sent: its
+text lives on the stream only. An idle session has no frames and sends nothing.
+A collection that finds nothing changed sends nothing. OpenCode stays at turn
+end only: its `fromV1` closes open calls at rest, so a mid-turn collection
+would mark running calls interrupted.
 
 A live message the harness removes before the journal collects it (pi
 retracts a queued prompt, OpenCode reverts) leaves no ghost: on
@@ -1186,12 +1220,18 @@ runs in order. A codemode script's nested calls follow the same per-tool mode
   A compiled daemon bakes the build machine's path there, so before 2026-10-16 photon never
   loaded on a box and pi dropped every image ("[Image omitted: could not be resized below the
   inline image size limit.]"). `pi/images.ts` embeds the wasm in the binary and redirects that
-  one file name to the embedded copy. In a binary pi's resize worker does not load, so pi
-  resizes in-process (about 0.65 s for an 18 MB 3000x2000 PNG on an M-series laptop; at most
-  20 per prompt). Follow-up: build the worker path pi's `resizeImage` asks for in a binary as a
-  second entrypoint, as codemode's worker (`scripts/build.sh`); it must install the wasm redirect itself.
-  `pi-images.test.ts` builds a binary against a copy of photon-node, deletes the copy, and runs
-  pi's `read` and `promptImages` in it.
+  one file name to the embedded copy.
+- **Resize worker.** pi resizes each image in a worker thread that it starts per image. In a binary
+  it starts `./src/utils/image-resize-worker.ts`, an extra entrypoint (`scripts/build.sh`, as
+  codemode's worker). That worker is its own module graph, so it imports `pi/images.ts` for the wasm
+  redirect, then pi's worker module. Before 2026-10-28 the binary had no such entrypoint, and pi
+  resized on the daemon's event loop: a 6000x4000 PNG held `/kortix/health` and every SSE stream for
+  about 0.9 s. In the worker the loop stays free, a worker costs about 12 ms to start, and its photon
+  memory is freed when it exits. A worker that fails to start makes pi resize on the loop, as before. Built-in tools run one at a time, so a turn resizes one image at a time;
+  parallel subagents or a codemode script can run several workers at once (about 450 MB peak each
+  for a 6000x4000 PNG).
+  `pi-images.test.ts` builds a binary with that worker against a copy of photon-node, deletes the
+  copy, and runs pi's `read` and `promptImages` in it; photon must not load on the main thread.
 
 ### The conversation, compaction and slash commands
 
