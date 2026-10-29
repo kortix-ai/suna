@@ -3,7 +3,12 @@
  * Each keeps its lists in `projects.metadata.<platform>`, and project reads hide every
  * key named here (projects/lib/serializers.ts).
  */
-import type { CHANNEL_PLATFORMS } from '@kortix/manifest-schema';
+import { CHANNEL_PLATFORM_IDS, CHANNELS, type ChannelPlatformId } from '@kortix/shared/channel-descriptors';
 
-export const CHANNEL_ACCESS_PLATFORMS = ['telegram'] as const satisfies readonly (typeof CHANNEL_PLATFORMS)[number][];
-export type ChannelAccessPlatform = (typeof CHANNEL_ACCESS_PLATFORMS)[number];
+/** The ids whose descriptor has `access`. */
+export type ChannelAccessPlatform = {
+  [P in ChannelPlatformId]: (typeof CHANNELS)[P] extends { access: object } ? P : never;
+}[ChannelPlatformId];
+export const CHANNEL_ACCESS_PLATFORMS: readonly ChannelAccessPlatform[] = CHANNEL_PLATFORM_IDS.filter(
+  (p): p is ChannelAccessPlatform => 'access' in CHANNELS[p],
+);
