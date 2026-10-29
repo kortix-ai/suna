@@ -252,6 +252,11 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
         return <EmailHero projectId={projectId} canWrite={canWrite} />;
       case 'telegram':
         return <TelegramChannelRow projectId={projectId} canWrite={canWrite} />;
+      default: {
+        // A new channel id fails here until it has a hero.
+        const _exhaustive: never = pf;
+        return _exhaustive;
+      }
     }
   };
 

@@ -44,7 +44,7 @@ describe('resolveConnectorLogo', () => {
   });
 
   test("an app's own icon, then a public catalogue domain's favicon", () => {
-    // A Kortix-shaped slug or icon path of an app that is not a Kortix channel is not a native mark.
+    // A Kortix-shaped slug or icon path of an app that is neither a Kortix channel nor Computer is not a native mark.
     expect(resolveConnectorLogo({ slug: 'kortix_stripe', icon: '/connector-icons/stripe.svg' })).toEqual({
       kind: 'image',
       src: '/connector-icons/stripe.svg',
