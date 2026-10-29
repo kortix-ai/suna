@@ -745,6 +745,16 @@ function isWalletProviderDisconnectedRejectionNoise(input: {
 
 export const EXTENSION_RULES: readonly NoiseRule[] = [
   {
+    // Talisman's injected page.js rejects before wallet onboarding (KRTX-3678).
+    // Require its exact message and response frame; page.js alone is ambiguous.
+    id: 'talisman-onboarding',
+    appliesTo: 'sentry',
+    match: ({ message, frames }) =>
+      normalizeString(message) === 'Talisman extension has not been configured yet. Please continue with onboarding.' &&
+      !frames.some((frame) => isFirstPartyResolvedSource(frame.filename)) &&
+      frames.some((frame) => frame.filename === 'app:///page.js' && frame.function === 'ne.handleResponse'),
+  },
+  {
     id: 'injected-app-source',
     appliesTo: 'both',
     match: (evidence) => sourcesOf(evidence).some(isInjectedAppSource),
