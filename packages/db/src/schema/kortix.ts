@@ -8691,3 +8691,58 @@ export const artifacts = kortixSchema.table('artifacts', {
   check('artifacts_type_check', sql`${table.type} in ('doc', 'html')`),
   check('artifacts_visibility_check', sql`${table.visibility} in ('private', 'project', 'public')`),
 ]);
+
+export const artifactCommentThreads = kortixSchema.table('artifact_comment_threads', {
+  threadId: uuid('thread_id').defaultRandom().primaryKey(),
+  artifactId: uuid('artifact_id').notNull().references(() => artifacts.artifactId, { onDelete: 'cascade' }),
+  projectId: uuid('project_id').notNull().references(() => projects.projectId, { onDelete: 'cascade' }),
+  anchor: jsonb('anchor').notNull().$type<Record<string, unknown>>(),
+  anchorVersion: text('anchor_version').notNull(),
+  createdByUserId: uuid('created_by_user_id'),
+  createdBySessionId: text('created_by_session_id'),
+  status: text('status').$type<'open' | 'resolved'>().default('open').notNull(),
+  resolvedByUserId: uuid('resolved_by_user_id'),
+  resolvedBySessionId: text('resolved_by_session_id'),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  agentState: text('agent_state').$type<'none' | 'pending' | 'sent' | 'paused'>().default('none').notNull(),
+  sentSessionId: text('sent_session_id'),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_artifact_comment_threads_artifact_status_updated').on(table.artifactId, table.status, table.updatedAt),
+  index('idx_artifact_comment_threads_project').on(table.projectId),
+  check('artifact_comment_threads_author_check', sql`(${table.createdByUserId} is not null) <> (${table.createdBySessionId} is not null)`),
+  check('artifact_comment_threads_status_check', sql`${table.status} in ('open', 'resolved')`),
+  check('artifact_comment_threads_agent_state_check', sql`${table.agentState} in ('none', 'pending', 'sent', 'paused')`),
+]);
+
+export const artifactComments = kortixSchema.table('artifact_comments', {
+  commentId: uuid('comment_id').defaultRandom().primaryKey(),
+  threadId: uuid('thread_id').notNull(),
+  authorUserId: uuid('author_user_id'),
+  authorSessionId: text('author_session_id'),
+  body: text('body').notNull(),
+  mentions: jsonb('mentions').default([]).notNull().$type<string[]>(),
+  marks: jsonb('marks').default([]).notNull().$type<unknown[]>(),
+  screenshotKey: text('screenshot_key'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  editedAt: timestamp('edited_at', { withTimezone: true }),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => [
+  foreignKey({ name: 'artifact_comments_thread_fk', columns: [table.threadId], foreignColumns: [artifactCommentThreads.threadId] }).onDelete('cascade'),
+  index('idx_artifact_comments_thread_created').on(table.threadId, table.createdAt),
+  check('artifact_comments_author_check', sql`(${table.authorUserId} is not null) <> (${table.authorSessionId} is not null)`),
+  check('artifact_comments_body_check', sql`char_length(${table.body}) <= 10000 and (${table.deletedAt} is not null or char_length(${table.body}) >= 1)`),
+]);
+
+export const artifactCommentWriteLimits = kortixSchema.table('artifact_comment_write_limits', {
+  artifactId: uuid('artifact_id').notNull(),
+  actorKey: text('actor_key').notNull(),
+  windowStartedAt: timestamp('window_started_at', { withTimezone: true }).defaultNow().notNull(),
+  writes: integer('writes').default(0).notNull(),
+}, (table) => [
+  foreignKey({ name: 'artifact_comment_write_limits_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
+  primaryKey({ columns: [table.artifactId, table.actorKey] }),
+  check('artifact_comment_write_limits_writes_check', sql`${table.writes} >= 0`),
+]);

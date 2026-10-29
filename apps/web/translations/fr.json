@@ -1298,6 +1298,14 @@
         "session_groups": {
           "name": "Groupes de sessions",
           "description": "Regroupez les sessions de la barre latérale dans des dossiers nommés partagés par tout le projet, par exemple un par boutique ou par client. Déplacez une session dans un groupe depuis son menu ou par glisser-déposer ; réordonnez et repliez les groupes."
+        },
+        "artifact_comments": {
+          "name": "Commentaires sur les artefacts",
+          "description": "Discutez des documents et des pages dans des fils avec des personnes et des agents. Nécessite Artefacts."
+        },
+        "chrome": {
+          "name": "Kortix dans Chrome",
+          "description": "Autorisez une session à utiliser votre navigateur Chrome connecté. Vous pouvez reprendre le contrôle ou l’arrêter à tout moment."
         }
       },
       "channelsSwitch": {

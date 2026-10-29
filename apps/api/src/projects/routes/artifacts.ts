@@ -178,10 +178,13 @@ async function authorize(c: Context, projectId: string, mode: 'read' | 'write') 
   if (!loaded) return { ok: false as const, response: c.json({ error: 'Not found' }, 404) };
   const disabled = requireFeatureFlag(c, loaded.row.metadata, ARTIFACTS_FLAG);
   if (disabled) return { ok: false as const, response: disabled };
-  const action = mode === 'read' ? PROJECT_ACTIONS.PROJECT_ARTIFACT_READ : PROJECT_ACTIONS.PROJECT_ARTIFACT_WRITE;
+  const can = async (leaf: string) => agentMayPerform(getAgentGrant(c), leaf) && projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, leaf);
+  let action: string = mode === 'read' ? PROJECT_ACTIONS.PROJECT_ARTIFACT_READ : PROJECT_ACTIONS.PROJECT_ARTIFACT_WRITE;
+  if (mode === 'read' && !(await can(action)) && await can(PROJECT_ACTIONS.PROJECT_ARTIFACT_COMMENT)) {
+    action = PROJECT_ACTIONS.PROJECT_ARTIFACT_COMMENT;
+  }
   assertAgentScope(c, action);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
-  const can = async (leaf: string) => agentMayPerform(getAgentGrant(c), leaf) && projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, leaf);
   const [projectWrite, manageAny] = await Promise.all([can(PROJECT_ACTIONS.PROJECT_WRITE), can(PROJECT_ACTIONS.PROJECT_ARTIFACT_MANAGE)]);
   // A private channel's files: only its members, and a session token only from its own thread (the one Drive rule).
   const bound = callerKortixSessionId(c);

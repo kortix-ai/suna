@@ -1298,6 +1298,14 @@
         "session_groups": {
           "name": "Sitzungsgruppen",
           "description": "Ordne die Sitzungen der Seitenleiste in benannte Ordner, die alle im Projekt teilen, zum Beispiel einen pro Shop oder Kunde. Verschiebe eine Sitzung über ihr Menü oder per Ziehen in eine Gruppe; sortiere die Gruppen und klappe sie ein."
+        },
+        "artifact_comments": {
+          "name": "Artefakt-Kommentare",
+          "description": "Besprich Dokumente und Seiten in Threads mit Personen und Agenten. Erfordert Artefakte."
+        },
+        "chrome": {
+          "name": "Kortix in Chrome",
+          "description": "Lass eine Session deinen verbundenen Chrome-Browser nutzen. Du kannst jederzeit übernehmen oder sie stoppen."
         }
       },
       "channelsSwitch": {
