@@ -9,14 +9,14 @@ import { savedSessionLogCopies } from '../core/session-log/saved-log';
 import { sessionLogOfV1Rows, sessionLogThreadWithV1Rows } from '../core/session-log/v1-view';
 import {
   fetchSessionLogPage,
-  readFirstSessionLogAnswer,
+  readSessionLog,
   loadSessionLogPage,
   SESSION_LOG_FIRST_PAGE_LIMIT,
   SESSION_LOG_OLDER_PAGE_LIMIT,
   type LoadSessionLogPage,
   type SessionLogDialect,
   type SessionLogSyncState,
-  type SessionLogPage,
+  type SessionLogRead,
 } from '../core/session-log/source';
 import { currentSavedCopyStore } from '../core/session-sync/saved-copy-store';
 import { selectSessionLog, selectSessionLogThread } from '../core/session-log/store';
@@ -203,7 +203,7 @@ export function useSessionLogOlder(
 /**
  * Internal (`useSession` mounts it). Negotiates the session's dialect from the API's answer
  * alone: no project flag, no runtime. `'v2'` from the first render, while the first page is
- * read; `useSession` reads no v1 saved copy then. On v2:
+ * read. On v2:
  *  1. the device's saved v2 copy paints first;
  *  2. the newest page of the root thread replaces it and is saved (the v1 copy goes);
  *  3. the session stream switches to `schema=v2` (`log.*` frames in place of the `message.*`
@@ -212,12 +212,15 @@ export function useSessionLogOlder(
  *     the tab becomes visible again.
  * Both kinds of thread read v2: a `fromV1` one (OpenCode) and a native one (pi). Hosts render
  * the blocks (`sessionLogTurns`); the v1 hooks read a native thread through `toV1`.
- * A 404 coded `session_log_missing` (a new session whose journal has not posted yet) answers
- * `'missing'`: still v2, with no log yet, so `useSession` reads no v1 saved copy and has nothing
- * saved to wait for. A 404 without that code (an API older than the log) or an invalid page
- * leaves the session on v1: no session log, no `schema=v2`. Either is retried at the next turn end
- * and after a stream reconnect (on the session stream without `schema=v2`), one request at a time.
- * Leaving v2 (or unmounting) drops the log, so the v1 hooks read the v1 store again.
+ * Any answer without a page answers `'missing'`, and the stream stays without `schema=v2`;
+ * `useSession` reads no v1 saved copy (`GET …/transcript`, P8.3). Two kinds:
+ *  - a 404 coded `session_log_missing` (a new session whose journal has not posted yet): the
+ *    session has no log, so a copy the device kept is dropped;
+ *  - a failed read (a 5xx, the network, a 404 without that code, an invalid page): the copy on
+ *    screen stays, and the page is read again after 2 s, 10 s and 30 s, or after the API's
+ *    `Retry-After` (503 `session_log_converting`), at most 60 s.
+ * Both are read again at the next turn end and after a stream reconnect, one request at a time.
+ * Unmounting drops the log and cancels a pending retry.
  */
 export function useSessionLogSync(
   projectId: string,
@@ -227,19 +230,19 @@ export function useSessionLogSync(
     loader?: LoadSessionLogPage | null;
     /** Test seam: joins the session stream. */
     joinStream?: (options: SessionControlStreamOptions) => { close: () => void };
+    /** Test seam: runs a timed retry after `ms`; returns its cancel. */
+    schedule?: (run: () => void, ms: number) => () => void;
   },
 ): SessionLogSyncState {
   const loader = options.loader === undefined ? loadSessionLogPage : options.loader;
   const joinStream = options.joinStream ?? openSessionStream;
+  const schedule = options.schedule ?? scheduleRetry;
   const active = options.enabled && !!loader && !!projectId && !!sessionId;
   const key = `${projectId}/${sessionId}`;
   const negotiated: SessionLogDialect = active ? 'v2' : 'v1';
-  // The page answered that this session cannot read v2 (404 without a code, invalid): v1 from then on.
-  const [refusedKey, setRefusedKey] = useState<string | null>(null);
-  // The API serves the log and this session has none yet (404 `session_log_missing`).
+  // The last read answered no page: the session has no log to show yet.
   const [missingKey, setMissingKey] = useState<string | null>(null);
-  const state: SessionLogSyncState =
-    negotiated !== 'v2' || refusedKey === key ? 'v1' : missingKey === key ? 'missing' : 'v2';
+  const state: SessionLogSyncState = negotiated !== 'v2' ? 'v1' : missingKey === key ? 'missing' : 'v2';
 
   useEffect(() => {
     if (negotiated !== 'v2' || !loader) return;
@@ -253,18 +256,22 @@ export function useSessionLogSync(
     let lastEnded: string | null | undefined;
     // The page answered: the stream is on `schema=v2`.
     let onV2 = false;
+    // Failed reads since the last answer, and the pending timed retry.
+    let failures = 0;
+    let cancelRetry: (() => void) | null = null;
     const join = (options: Omit<SessionControlStreamOptions, 'projectId' | 'sessionId'>) => {
       stream?.close();
       stream = joinStream({ projectId, sessionId, ...options });
     };
-    const load = async (): Promise<SessionLogPage | 'missing' | null> => {
-      const answer = await readFirstSessionLogAnswer(loader, projectId, sessionId, controller.signal);
-      if (stopped) return null;
+    const load = async (): Promise<SessionLogRead> => {
+      const read = await readSessionLog(loader, projectId, sessionId, { limit: SESSION_LOG_FIRST_PAGE_LIMIT }, controller.signal);
+      if (stopped) return { answer: null, retryAfterMs: null };
+      const { answer } = read;
       if (answer && answer !== 'missing') {
         store().applySessionLogPage(sessionId, answer);
         void copies?.write(projectId, sessionId, answer);
       }
-      return answer;
+      return read;
     };
     // Re-read after a reconnect (`up` after a drop); the first report is the connection already up.
     const onReconnect = (run: () => void) => {
@@ -276,26 +283,35 @@ export function useSessionLogSync(
     };
     const attempt = async (): Promise<void> => {
       if (busy || stopped) return;
+      cancelRetry?.();
+      cancelRetry = null;
       busy = true;
-      const answer = await load();
+      const { answer, retryAfterMs } = await load();
       busy = false;
       if (stopped) return;
       const page = answer === 'missing' ? null : answer;
       onV2 = !!page;
       if (page) {
-        setRefusedKey(null);
+        failures = 0;
         setMissingKey(null);
         // A v2 connection resumes at the v1 cursor; a server on another epoch answers
         // `kortix.resync` and replays nothing, so the page is read again then, as after a reconnect.
         join({ schema: 'v2', onConnectionChange: onReconnect(() => void load()), onRuntimeResync: () => void load() });
         return;
       }
-      store().dropSessionLog(sessionId);
-      if (answer === 'missing') setMissingKey(`${projectId}/${sessionId}`);
-      else setRefusedKey(`${projectId}/${sessionId}`);
-      // A missing log (a new session whose journal has not posted yet) or an invalid page is
-      // retried at the next turn end and after a stream reconnect, on the session stream
-      // without `schema=v2`.
+      setMissingKey(`${projectId}/${sessionId}`);
+      if (answer === 'missing') {
+        // The API holds no log for this session: a copy kept on the device is not its history.
+        failures = 0;
+        store().dropSessionLog(sessionId);
+      } else if (failures < SESSION_LOG_RETRY_DELAYS_MS.length) {
+        // A failed read is not "no log": the copy on screen stays, and the page is read again.
+        const ms = Math.min(retryAfterMs ?? SESSION_LOG_RETRY_DELAYS_MS[failures]!, SESSION_LOG_RETRY_MAX_MS);
+        failures += 1;
+        cancelRetry = schedule(() => void attempt(), ms);
+      }
+      // No page is also read again at the next turn end and after a stream reconnect, on the
+      // session stream without `schema=v2`.
       join({
         onControl: (frame) => {
           if (frame.type !== 'kortix.control.turn') return;
@@ -322,11 +338,22 @@ export function useSessionLogSync(
     return () => {
       stopVisible();
       stopped = true;
+      cancelRetry?.();
       controller.abort();
       stream?.close();
       store().dropSessionLog(sessionId);
     };
-  }, [negotiated, loader, joinStream, projectId, sessionId]);
+  }, [negotiated, loader, joinStream, schedule, projectId, sessionId]);
 
   return state;
+}
+
+/** The waits before the timed re-reads of a page that failed: three tries in about 42 s. */
+const SESSION_LOG_RETRY_DELAYS_MS = [2_000, 10_000, 30_000];
+/** The longest wait a `Retry-After` can set. */
+const SESSION_LOG_RETRY_MAX_MS = 60_000;
+
+function scheduleRetry(run: () => void, ms: number): () => void {
+  const timer = setTimeout(run, ms);
+  return () => clearTimeout(timer);
 }
