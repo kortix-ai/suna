@@ -655,8 +655,17 @@ describe('the boot reconcile on pi (P6.4)', () => {
       // A daemon restart: the store holds the log and the turn; nothing is restored.
       await service.lifecycle.stop()
       resetSessionLogJournalForTests()
-      expect(await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 })).toEqual({ generation: 1, cursors: [], harness: boot.harness })
+      const restarted = (await reconcileSessionLog(probe(box, log.session_id), { retryMs: 1 }))!
+      expect(restarted).toEqual({ generation: 1, cursors: [], harness: boot.harness, acked: expect.any(Object) })
       expect(restores(api)).toBe(1)
+      // Every message the store holds is acknowledged at generation 1: the restarted journal sends none of them again.
+      expect(Object.keys(restarted.acked!).sort()).toEqual([...(await probe(box, log.session_id).held())!].sort())
+      await service.lifecycle.start()
+      const before = api.journal.length
+      startSessionLogJournal(createPiSessionLogPort(() => service.runtime()!.sessionLogSnapshot()), restarted)
+      expect(await flushSessionLogJournal()).toBe(true)
+      expect(api.journal.slice(before).flatMap((b) => b.puts.map((p) => p.message.message_id))).toEqual([])
+      await service.lifecycle.stop()
     } finally {
       api.stop()
     }

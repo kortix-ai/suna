@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { createHash, randomBytes } from 'node:crypto'
-import { rmSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fromV1, SessionLogJournalRequestSchema, toV1 } from '@kortix/api-contract/session-log'
@@ -1025,7 +1025,11 @@ function storeApi(held: Array<[id: string, seq: number]> = [], caps = { gzip: 2 
     statuses.push(status)
     return Response.json(body, { status })
   }
+  /** Answers a journal POST before the store does when it returns a response. */
+  const control = { gate: null as null | (() => Response | null) }
   const api = fakeApi((body, n) => {
+    const gated = control.gate?.()
+    if (gated) return gated
     const raw = Buffer.byteLength(JSON.stringify(body))
     if (api.received[n - 1]!.gzippedBytes > caps.gzip || raw > caps.raw) return answer(413, { error: 'Journal body exceeds the cap' })
     const parsed = SessionLogJournalRequestSchema.safeParse(body)
@@ -1047,7 +1051,7 @@ function storeApi(held: Array<[id: string, seq: number]> = [], caps = { gzip: 2 
   })
   /** The stored ids in seq order: what `GET …/log` serves. */
   const order = () => [...rows].sort((a, b) => a[1].seq - b[1].seq).map(([id]) => id)
-  return { ...api, rows, statuses, order }
+  return Object.assign(control, { ...api, rows, statuses, order })
 }
 
 describe('no batch is dropped', () => {
@@ -1176,6 +1180,83 @@ describe('no batch is dropped', () => {
     const restarted = new SessionLogJournal(fake.port, (await reconcileSessionLog(fake.port))!)
     expect(await restarted.flush(5_000)).toBe(true)
     expect(api.order()).toEqual(['old1', 'old2', 'new1'])
+  })
+
+  test('restart on the same store: the first collection sends only what changed since the last acknowledged batch', async () => {
+    const api = storeApi()
+    const fake = fakeAdapter()
+    for (let i = 1; i <= 40; i++) fake.put(`m${i}`, i, `message ${i}`)
+    const first = new SessionLogJournal(fake.port, (await reconcileSessionLog(fake.port))!)
+    expect(await first.flush()).toBe(true)
+    await first.stop(0)
+    expect(api.received).toHaveLength(1)
+
+    // The daemon restarts (a release, a crash) on the same native store, restore off.
+    fake.put('m40', 40, 'message 40, edited')
+    fake.put('m41', 41, 'message 41')
+    const restarted = new SessionLogJournal(fake.port, (await reconcileSessionLog(fake.port))!)
+    expect(await restarted.flush()).toBe(true)
+
+    const after = api.received.slice(1)
+    expect(after).toHaveLength(1)
+    expect(putIds(after)).toEqual(['m40', 'm41'])
+    expect(after[0]!.body.tombstones).toEqual([])
+    expect(api.rows.get('m40')!.text).toBe('message 40, edited')
+    // An unchanged store sends no message at the next restart either.
+    const again = new SessionLogJournal(fake.port, (await reconcileSessionLog(fake.port))!)
+    expect(await again.flush()).toBe(true)
+    expect(putIds(api.received.slice(2))).toEqual([])
+  })
+
+  test('restart on the same store: a message the API never acknowledged (a 503 at the stop, a 400 drop) goes again', async () => {
+    let down = false
+    const api = storeApi()
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'one')
+    fake.put('bad', 1.5, 'a seq the schema rejects')
+    const first = new SessionLogJournal(fake.port, { ...(await reconcileSessionLog(fake.port))!, retryMs: 10 })
+    expect(await first.flush()).toBe(true)
+    expect(api.order()).toEqual(['m1'])
+    // The API is down at the stop: m2 is collected, never acknowledged.
+    api.gate = () => (down ? new Response('unavailable', { status: 503 }) : null)
+    down = true
+    fake.put('m2', 2, 'two')
+    await first.stop(200)
+
+    down = false
+    // The same native message (the fake hashes its text), at a seq the schema takes: a drop is no acknowledgement.
+    fake.put('bad', 3, 'a seq the schema rejects')
+    const restarted = new SessionLogJournal(fake.port, (await reconcileSessionLog(fake.port))!)
+    expect(await restarted.flush()).toBe(true)
+    expect(putIds(api.received.slice(-1))).toEqual(['bad', 'm2'])
+    expect(api.order()).toEqual(['m1', 'm2', 'bad'])
+  })
+
+  test('recovery: acknowledgements of another generation (a restore since) or of another store (lost, restore off) send everything, and tombstone nothing', async () => {
+    const api = storeApi()
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'one')
+    fake.put('m2', 2, 'two')
+    const first = new SessionLogJournal(fake.port, (await reconcileSessionLog(fake.port))!)
+    expect(await first.flush()).toBe(true)
+    await first.stop(0)
+
+    // A restore claimed generation 1 and wrote a store with nothing to resume.
+    mkdirSync(stateDir, { recursive: true })
+    writeFileSync(join(stateDir, 'session-log-restore.json'), JSON.stringify({ version: 1, generation: 1, unwritten: [] }))
+    const restored = new SessionLogJournal(fake.port, (await reconcileSessionLog(fake.port))!)
+    expect(await restored.flush()).toBe(true)
+    expect(putIds(api.received.slice(1))).toEqual(['m1', 'm2'])
+    await restored.stop(0)
+
+    // The native store is gone (a new store), the state file is not: the new messages go, the old ids are not tombstoned.
+    const other = fakeAdapter()
+    other.put('n1', 3, 'three')
+    const lost = new SessionLogJournal(other.port, (await reconcileSessionLog(other.port))!)
+    expect(await lost.flush()).toBe(true)
+    const last = api.received.at(-1)!.body
+    expect(last.puts.map((p) => p.message.message_id)).toEqual(['n1'])
+    expect(last.tombstones).toEqual([])
   })
 
   test('400: the batch minus the invalid put is saved, and the invalid put is not posted again', async () => {
