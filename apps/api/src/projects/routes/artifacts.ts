@@ -404,7 +404,7 @@ export function registerArtifactRoutes(): void {
     const loaded = await loadArtifact(c, projectId, artifactId, 'write');
     if (!loaded.ok) return loaded.response;
     try {
-      const row = await publishChanges(loaded.row, c.req.valid('json'));
+      const row = await publishChanges(loaded.row, c.req.valid('json'), author(c, loaded.viewer.userId));
       return c.json(await detail(row, loaded.viewer), 200);
     } catch (err) {
       return failure(c, err);
@@ -426,7 +426,7 @@ export function registerArtifactRoutes(): void {
     if (refused) return refused;
     let updated: ArtifactRow;
     try {
-      updated = await updateArtifactMeta(loaded.row, c.req.valid('json'));
+      updated = await updateArtifactMeta(loaded.row, c.req.valid('json'), author(c, loaded.viewer.userId));
     } catch (err) {
       // 403 `private_channel`: a private channel's artifact stays private.
       if (err instanceof ArtifactError && err.status === 403) return c.json({ error: err.message, code: err.code }, 403);
@@ -497,7 +497,7 @@ export function registerArtifactRoutes(): void {
     const loaded = await loadArtifact(c, projectId, artifactId, 'write');
     if (!loaded.ok) return loaded.response;
     try {
-      const row = await restoreVersion(loaded.row, c.req.valid('json').version);
+      const row = await restoreVersion(loaded.row, c.req.valid('json').version, author(c, loaded.viewer.userId));
       return c.json(await detail(row, loaded.viewer), 200);
     } catch (err) {
       return failure(c, err);

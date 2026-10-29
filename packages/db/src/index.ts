@@ -171,6 +171,9 @@ export {
   artifactCommentThreads,
   artifactComments,
   artifactCommentWriteLimits,
+  artifactEvents,
+  driveCommitAuthors,
+  sessionSandboxIdentities,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Kortix in Chrome (apps/api/src/chrome)
@@ -298,6 +301,7 @@ export {
   connectorProjectSettings,
   connectorSyncFences,
   connectorCalls,
+  connectorHeldCalls,
   connectorAttachments,
   promptAttachments,
   jobQueue,

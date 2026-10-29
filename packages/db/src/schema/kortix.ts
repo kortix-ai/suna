@@ -6953,6 +6953,8 @@ export const connectorCallStatusEnum = kortixSchema.enum('connector_call_status'
   'denied',
   'pending_approval',
   'expired',
+  // A person approved the gate; the held call runs on its own audit row.
+  'approved',
 ]);
 
 /**
@@ -7574,6 +7576,62 @@ export const connectorCalls = kortixSchema.table(
     index('idx_connector_calls_connection').on(table.connectionId),
     index('idx_connector_calls_status').on(table.status),
     index('idx_connector_calls_account').on(table.accountId),
+  ],
+);
+
+/**
+ * The full input of a connector call held for approval, so Approve can run it
+ * once, as the original caller. One row per `pending_approval` gate.
+ *
+ * `input_enc` is ciphertext from `encryptProjectSecret(project_id, …)`. No API
+ * returns it, no log or export carries it, and every terminal state sets it to
+ * NULL. Only the redacted `outcome` leaves this table.
+ *
+ * `state`: `held` until a decision; Approve sets `queued` and `run_deadline`;
+ * the worker sets `dispatched` before the provider call, then one of `ok`,
+ * `error`, `refused` or `unknown`. Deny and expiry set `cancelled`.
+ */
+export const connectorHeldCalls = kortixSchema.table(
+  'connector_held_calls',
+  {
+    executionId: uuid('execution_id').primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    /** Encrypted held input; NULL once wiped. */
+    inputEnc: text('input_enc'),
+    state: text('state').notNull(),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    /** Set at approve: the run must start before this time. */
+    runDeadline: timestamp('run_deadline', { withTimezone: true }),
+    /** The `connector_calls` row of the real run. */
+    runExecutionId: uuid('run_execution_id'),
+    /** Redacted run result: status, reason, short message, output preview. */
+    outcome: jsonb('outcome').$type<Record<string, unknown> | null>(),
+    /** The chat approver and the card location, for the card update. */
+    chatDecider: jsonb('chat_decider').$type<Record<string, unknown> | null>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.executionId],
+      foreignColumns: [connectorCalls.executionId],
+      name: 'connector_held_calls_execution_fk',
+    }).onDelete('cascade'),
+    check(
+      'connector_held_calls_state_check',
+      sql`${table.state} in ('held', 'queued', 'dispatched', 'ok', 'error', 'refused', 'unknown', 'cancelled')`,
+    ),
+    index('idx_connector_held_calls_run_due')
+      .on(table.state, table.runDeadline)
+      .where(sql`${table.state} in ('queued', 'dispatched')`),
+    index('idx_connector_held_calls_project').on(table.projectId),
+    index('idx_connector_held_calls_input_age')
+      .on(table.createdAt)
+      .where(sql`${table.inputEnc} is not null`),
   ],
 );
 
@@ -8745,4 +8803,47 @@ export const artifactCommentWriteLimits = kortixSchema.table('artifact_comment_w
   foreignKey({ name: 'artifact_comment_write_limits_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
   primaryKey({ columns: [table.artifactId, table.actorKey] }),
   check('artifact_comment_write_limits_writes_check', sql`${table.writes} >= 0`),
+]);
+
+export const artifactEvents = kortixSchema.table('artifact_events', {
+  eventId: uuid('event_id').defaultRandom().primaryKey(),
+  artifactId: uuid('artifact_id').notNull(),
+  projectId: uuid('project_id').notNull(),
+  type: text('type').notNull(),
+  actorUserId: uuid('actor_user_id'),
+  actorSessionId: text('actor_session_id'),
+  data: jsonb('data').default({}).notNull().$type<Record<string, unknown>>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'artifact_events_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
+  foreignKey({ name: 'artifact_events_project_fk', columns: [table.projectId], foreignColumns: [projects.projectId] }).onDelete('cascade'),
+  index('idx_artifact_events_artifact_created').on(table.artifactId, table.createdAt.desc(), table.eventId.desc()),
+  index('idx_artifact_events_project').on(table.projectId),
+  check('artifact_events_actor_check', sql`${table.actorUserId} is null or ${table.actorSessionId} is null`),
+]);
+
+export const driveCommitAuthors = kortixSchema.table('drive_commit_authors', {
+  driveId: uuid('drive_id').notNull(),
+  commitId: text('commit_id').notNull(),
+  authorUserId: uuid('author_user_id'),
+  authorSessionId: text('author_session_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.driveId, table.commitId] }),
+  foreignKey({ name: 'drive_commit_authors_drive_fk', columns: [table.driveId], foreignColumns: [drives.driveId] }).onDelete('cascade'),
+  check('drive_commit_authors_author_check', sql`(${table.authorUserId} is not null) <> (${table.authorSessionId} is not null)`),
+]);
+
+export const sessionSandboxIdentities = kortixSchema.table('session_sandbox_identities', {
+  accountId: uuid('account_id').notNull(),
+  provider: text('provider').notNull(),
+  externalId: text('external_id').notNull(),
+  projectId: uuid('project_id').notNull(),
+  sessionId: text('session_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.accountId, table.provider, table.externalId] }),
+  foreignKey({ name: 'session_sandbox_identities_account_fk', columns: [table.accountId], foreignColumns: [accounts.accountId] }).onDelete('cascade'),
+  foreignKey({ name: 'session_sandbox_identities_project_fk', columns: [table.projectId], foreignColumns: [projects.projectId] }).onDelete('cascade'),
+  index('idx_session_sandbox_identities_project').on(table.projectId),
 ]);

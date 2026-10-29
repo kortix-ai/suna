@@ -9,11 +9,15 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { privateChannelFoldersFor, sessionPrivateChannelFolder } from '../../drives/service';
 import { DriveStorageError } from '../../drives/volumes';
-import { canView, getArtifact, mayWrite, type Viewer } from '../../artifacts/service';
+import { ArtifactError, canView, getArtifact, mayWrite, type Viewer } from '../../artifacts/service';
+import { readArtifactActivity } from '../../artifacts/activity-service';
+import { ArtifactActivityQueryError } from '../../artifacts/activity-query';
 import {
   ArtifactCommentError,
+  artifactIdForCommentThread,
   changeArtifactComment,
   createArtifactCommentThread,
+  getArtifactCommentThread,
   listArtifactCommentThreads,
   replyArtifactCommentThread,
   setArtifactCommentThreadStatus,
@@ -24,12 +28,17 @@ import { projectsApp } from '../lib/app';
 const ArtifactParams = z.object({ projectId: z.string().uuid(), artifactId: z.string().uuid() });
 const ThreadParams = ArtifactParams.extend({ threadId: z.string().uuid() });
 const CommentParams = ThreadParams.extend({ commentId: z.string().uuid() });
+const ThreadLookupParams = z.object({ projectId: z.string().uuid(), threadId: z.string().uuid() });
 const Status = z.enum(['open', 'resolved']);
 const Body = z.string().min(1).max(10_000).refine((value) => value.trim().length > 0 && !value.includes('\0'));
 const nullableId = z.string().nullable();
 const nullableDate = z.string().nullable();
 const CommentSchema = z.object({
   comment_id: z.string(), thread_id: z.string(), author_user_id: nullableId, author_session_id: nullableId,
+  author: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('user'), user_id: z.string(), name: z.string() }),
+    z.object({ kind: z.literal('session'), session_id: z.string(), agent_name: z.string(), title: z.string().nullable() }),
+  ]),
   body: z.string(), mentions: z.unknown(), marks: z.unknown(), screenshot_key: nullableId,
   created_at: z.string(), edited_at: nullableDate, deleted_at: nullableDate,
 }).openapi('ArtifactComment');
@@ -44,7 +53,7 @@ const ThreadSchema = z.object({
 const body = <T extends z.ZodTypeAny>(schema: T) => ({ required: true, content: { 'application/json': { schema } } });
 const responses = errors(400, 401, 403, 404, 409, 413, 429, 503);
 
-async function authorizeComments(c: Context, projectId: string, artifactId: string, write: boolean) {
+async function authorizeComments(c: Context, projectId: string, target: string | { threadId: string }, write: boolean) {
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return { ok: false as const, response: c.json({ error: 'Artifact not found' }, 404) };
   for (const key of ['artifacts', 'artifact_comments'] as const) {
@@ -56,8 +65,9 @@ async function authorizeComments(c: Context, projectId: string, artifactId: stri
   const forbidden = () => ({ ok: false as const, response: c.json({ error: 'You cannot comment on this Artifact', code: 'artifact_comment_forbidden' }, 403) });
   const canComment = await can(PROJECT_ACTIONS.PROJECT_ARTIFACT_COMMENT);
   const sessionId = callerKortixSessionId(c);
+  const artifactId = typeof target === 'string' ? target : await artifactIdForCommentThread(projectId, target.threadId);
   const [artifact, folders, channelFolder, projectWrite, manageAny, artifactWrite] = await Promise.all([
-    getArtifact(projectId, artifactId),
+    artifactId ? getArtifact(projectId, artifactId) : Promise.resolve(null),
     privateChannelFoldersFor(projectId, loaded.userId, sessionId),
     sessionId ? sessionPrivateChannelFolder(sessionId) : Promise.resolve(null),
     can(PROJECT_ACTIONS.PROJECT_WRITE),
@@ -76,7 +86,7 @@ async function authorizeComments(c: Context, projectId: string, artifactId: stri
 }
 
 function failure(c: Context, error: unknown) {
-  if (error instanceof ArtifactCommentError || error instanceof DriveStorageError) {
+  if (error instanceof ArtifactError || error instanceof ArtifactCommentError || error instanceof ArtifactActivityQueryError || error instanceof DriveStorageError) {
     if (error instanceof ArtifactCommentError && error.status === 429) c.header('Retry-After', String(error.retryAfterSeconds));
     return c.json({ error: error.message, code: error.code }, error.status);
   }
@@ -84,6 +94,38 @@ function failure(c: Context, error: unknown) {
 }
 
 export function registerArtifactCommentRoutes(): void {
+  projectsApp.openapi(createRoute({
+    method: 'get', path: '/{projectId}/artifact-comment-threads/{threadId}', tags: ['artifacts'],
+    summary: 'Read a visible Artifact comment thread by its project-scoped id', ...auth,
+    request: { params: ThreadLookupParams },
+    responses: { 200: json(z.object({ thread: ThreadSchema }), 'The thread and comments'), ...responses },
+  }), async (c) => {
+    const { projectId, threadId } = c.req.valid('param');
+    const access = await authorizeComments(c, projectId, { threadId }, false);
+    if (!access.ok) return access.response;
+    try {
+      return c.json({ thread: await getArtifactCommentThread(access.scope, threadId) }, 200);
+    } catch (error) { return failure(c, error); }
+  });
+
+  projectsApp.openapi(createRoute({
+    method: 'get', path: '/{projectId}/artifacts/{artifactId}/activity', tags: ['artifacts'],
+    summary: 'Read Artifact activity and saves from Files history', ...auth,
+    request: { params: ArtifactParams, query: z.object({ limit: z.string().optional(), cursor: z.string().optional() }) },
+    responses: { 200: json(z.object({
+      items: z.array(z.object({ id: z.string(), type: z.string(), at: z.string(), data: z.record(z.unknown()),
+        actor: z.object({ kind: z.enum(['user', 'session', 'system']), id: nullableId, name: z.string() }),
+      })), next_cursor: nullableId, older_versions: z.boolean(),
+    }), 'The activity page'), ...responses },
+  }), async (c) => {
+    const { projectId, artifactId } = c.req.valid('param');
+    const access = await authorizeComments(c, projectId, artifactId, false);
+    if (!access.ok) return access.response;
+    try {
+      return c.json(await readArtifactActivity(access.scope.artifact, c.req.valid('query')), 200);
+    } catch (error) { return failure(c, error); }
+  });
+
   projectsApp.use('/:projectId/artifacts/:artifactId/comments*', bodyLimit({
     maxSize: 64 * 1024,
     onError: (c) => c.json({ error: 'A comment request cannot exceed 64 KiB', code: 'comment_too_large' }, 413),

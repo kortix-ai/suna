@@ -59,3 +59,38 @@ export function approvalExpiredAuditEvent(input: {
     metadata: { action_path: input.actionPath, connector_id: input.connectorId },
   };
 }
+
+/** The approved held call ran, or ended without running (the held-call worker). */
+export function approvalRunAuditEvent(input: {
+  accountId: string;
+  projectId: string;
+  sessionId: string | null;
+  executionId: string;
+  actionPath: string;
+  connectorId: string | null;
+  approvedBy: string | null;
+  state: string;
+  reason: string | null;
+  runExecutionId: string | null;
+}): AuditEventInput {
+  return {
+    accountId: input.accountId,
+    projectId: input.projectId,
+    sessionId: input.sessionId,
+    actorType: 'system',
+    source: 'system',
+    outcome: input.state === 'ok' ? 'success' : input.state === 'refused' ? 'denied' : 'failure',
+    action: 'connector.approval.run',
+    resourceType: 'connector_approval',
+    resourceId: input.executionId,
+    correlationId: input.executionId,
+    metadata: {
+      action_path: input.actionPath,
+      connector_id: input.connectorId,
+      approved_by: input.approvedBy,
+      state: input.state,
+      reason: input.reason,
+      run_execution_id: input.runExecutionId,
+    },
+  };
+}

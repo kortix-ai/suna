@@ -30,6 +30,7 @@ export {
 } from './lib/sessions';
 
 export {
+  buildContinueSessionCommandValues,
   createCommandStatus,
   createSession,
   startSession,

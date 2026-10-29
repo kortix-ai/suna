@@ -3,18 +3,28 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
   createArtifact,
+  createArtifactComment,
   deleteArtifact,
+  deleteArtifactComment,
+  editArtifactComment,
   getArtifact,
   listArtifactTypes,
+  listArtifactComments,
+  listArtifactActivity,
   listArtifactVersions,
   listArtifacts,
   readArtifactFile,
+  replyArtifactComment,
   saveArtifact,
   shareArtifactPath,
   restoreArtifactVersion,
   setArtifactPinned,
+  setArtifactCommentStatus,
   updateArtifact,
   type ArtifactDetail,
+  type ArtifactCommentStatus,
+  type ArtifactCommentBodyInput,
+  type CreateArtifactCommentInput,
   type ArtifactListScope,
   type ArtifactType,
   type PublishArtifactInput,
@@ -24,6 +34,83 @@ import {
 } from '../core/rest/projects-client';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
+
+function commentScope(projectId: string | null | undefined, artifactId: string | null | undefined): [string, string] {
+  if (!projectId || !artifactId) throw new Error('An Artifact comment needs a project and Artifact id');
+  return [projectId, artifactId];
+}
+
+/** Threads and their writes. Each successful write refreshes both mounted tabs. */
+export function useArtifactComments(
+  projectId: string | null | undefined,
+  artifactId: string | null | undefined,
+  options: { status?: ArtifactCommentStatus | 'all'; enabled?: boolean } = {},
+) {
+  const client = useQueryClient();
+  const status = options.status ?? 'open';
+  const query = useQuery({
+    queryKey: qk.project.artifactComments(projectId ?? '', artifactId ?? '', status),
+    queryFn: () => listArtifactComments(...commentScope(projectId, artifactId), { status }),
+    enabled: options.enabled !== false && !!projectId && !!artifactId,
+    ...contract('inventory'),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+  });
+  const refresh = () => Promise.all([
+    client.invalidateQueries({ queryKey: qk.project.artifactComments(projectId ?? '', artifactId ?? '') }),
+    client.invalidateQueries({ queryKey: qk.project.artifactActivity(projectId ?? '', artifactId ?? '') }),
+  ]);
+  const create = useMutation({
+    mutationFn: (input: CreateArtifactCommentInput) => createArtifactComment(...commentScope(projectId, artifactId), input),
+    onSuccess: refresh,
+  });
+  const reply = useMutation({
+    mutationFn: ({ threadId, input }: { threadId: string; input: ArtifactCommentBodyInput }) =>
+      replyArtifactComment(...commentScope(projectId, artifactId), threadId, input),
+    onSuccess: refresh,
+  });
+  const setStatus = useMutation({
+    mutationFn: ({ threadId, status }: { threadId: string; status: ArtifactCommentStatus }) =>
+      setArtifactCommentStatus(...commentScope(projectId, artifactId), threadId, status),
+    onSuccess: refresh,
+  });
+  const edit = useMutation({
+    mutationFn: ({ threadId, commentId, input }: { threadId: string; commentId: string; input: ArtifactCommentBodyInput }) =>
+      editArtifactComment(...commentScope(projectId, artifactId), threadId, commentId, input),
+    onSuccess: refresh,
+  });
+  const remove = useMutation({
+    mutationFn: ({ threadId, commentId }: { threadId: string; commentId: string }) =>
+      deleteArtifactComment(...commentScope(projectId, artifactId), threadId, commentId),
+    onSuccess: refresh,
+  });
+  return {
+    ...query,
+    create: create.mutateAsync,
+    reply: (threadId: string, input: ArtifactCommentBodyInput) => reply.mutateAsync({ threadId, input }),
+    setStatus: (threadId: string, status: ArtifactCommentStatus) => setStatus.mutateAsync({ threadId, status }),
+    edit: (threadId: string, commentId: string, input: ArtifactCommentBodyInput) => edit.mutateAsync({ threadId, commentId, input }),
+    remove: (threadId: string, commentId: string) => remove.mutateAsync({ threadId, commentId }),
+    isWriting: create.isPending || reply.isPending || setStatus.isPending || edit.isPending || remove.isPending,
+  };
+}
+
+/** One page of activity. Polls while mounted until realtime change pings are available. */
+export function useArtifactActivity(
+  projectId: string | null | undefined,
+  artifactId: string | null | undefined,
+  options: { limit?: number; cursor?: string; enabled?: boolean } = {},
+) {
+  const page = { ...(options.limit === undefined ? {} : { limit: options.limit }), ...(options.cursor === undefined ? {} : { cursor: options.cursor }) };
+  return useQuery({
+    queryKey: qk.project.artifactActivity(projectId ?? '', artifactId ?? '', page),
+    queryFn: () => listArtifactActivity(...commentScope(projectId, artifactId), page),
+    enabled: options.enabled !== false && !!projectId && !!artifactId,
+    ...contract('inventory'),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+  });
+}
 
 /** The project's artifacts the caller may view (flag `artifacts`), newest change first. */
 export function useArtifacts(
