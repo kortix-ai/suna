@@ -1,5 +1,6 @@
 'use client';
 
+import { CalendarBlankIcon } from '@phosphor-icons/react';
 import { Button } from '@kortix/ui/button';
 import { FLOATING_PANEL_SURFACE } from '@kortix/ui/menu-recipe';
 import { EmptyState } from '@kortix/ui/empty-state';
@@ -308,6 +309,7 @@ function CalendarEmpty({
     >
       <EmptyState
         size="sm"
+        icon={CalendarBlankIcon}
         title={t(EMPTY_TITLE[range])}
         action={
           nearest !== null ? (

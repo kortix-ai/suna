@@ -24,6 +24,8 @@ import { requireFeatureFlag } from '../../feature-flags/gate';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed, resolveUserIdentities } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import { loadProjectRosterIds } from '../lib/project-access-view';
+import { buildSessionParticipants, sessionAudienceIds } from '../lib/session-audience';
 import { DriveStorageError } from '../../drives/volumes';
 import { privateChannelFoldersFor, sessionPrivateChannelFolder } from '../../drives/service';
 import { ARTIFACT_TYPES, ARTIFACT_TYPE_KEYS } from '../../artifacts/formats';
@@ -127,6 +129,14 @@ const VersionSchema = z.object({
   created_at: z.string(),
 }).openapi('ArtifactVersion');
 
+const ParticipantsSchema = z.object({
+  participants: z.array(PersonSchema.extend({ is_viewer: z.boolean() })),
+  total: z.number(),
+  multi_user: z.boolean(),
+}).openapi('ArtifactParticipants', {
+  description: 'Who can open it, owner first (at most 20; see total), as a session lists its participants. GET only.',
+});
+
 const ArtifactDetailSchema = ArtifactSchema.extend({
   can_edit: z.boolean().openapi({ description: 'May write its files: write access to its path in Files.' }),
   entry_version: z.string().nullable().openapi({ description: 'The entry file version now. Pass it as base_version when you save.' }),
@@ -135,6 +145,7 @@ const ArtifactDetailSchema = ArtifactSchema.extend({
     files: z.array(z.object({ path: z.string(), size: z.number(), content_type: z.string() })),
     view_url: z.string(),
   }),
+  participants: ParticipantsSchema.optional(),
 }).openapi('ArtifactDetail');
 
 function frontendBase(): string {
@@ -143,8 +154,11 @@ function frontendBase(): string {
 
 async function serialize(rows: ArtifactRow[], viewer: Viewer) {
   const people = await resolveUserIdentities(rows.map((r) => r.createdByUserId));
+  const person = (userId: string) => {
+    const who = people.get(userId);
+    return { user_id: userId, name: who?.displayName ?? null, email: who?.email ?? null, avatar_url: who?.avatarUrl ?? null };
+  };
   return rows.map((row) => {
-    const who = people.get(row.createdByUserId);
     const isPublic = row.visibility === 'public';
     return {
       artifact_id: row.artifactId,
@@ -157,7 +171,7 @@ async function serialize(rows: ArtifactRow[], viewer: Viewer) {
       visibility: row.visibility as z.infer<typeof VisibilityEnum>,
       shared_with_user_ids: row.sharedWithUserIds,
       pinned: row.pinnedByUserIds.includes(viewer.userId),
-      created_by: { user_id: row.createdByUserId, name: who?.displayName ?? null, email: who?.email ?? null, avatar_url: who?.avatarUrl ?? null },
+      created_by: person(row.createdByUserId),
       created_by_session_id: row.createdBySessionId,
       can_manage: canManage(row, viewer),
       view_url: artifactViewUrl(row.artifactId, null),
@@ -236,6 +250,26 @@ function failure(c: Context, err: unknown) {
   if (err instanceof ArtifactError) return c.json({ error: err.message, code: err.code }, err.status);
   if (err instanceof DriveStorageError) return c.json({ error: err.message, code: err.code }, err.status);
   throw err;
+}
+
+/**
+ * Who can open the artifact, owner first, in the session participants' shape
+ * (the header's avatar stack): a private one is its creator and the people it
+ * is shared with; a project or public one, everyone with access to the project.
+ */
+async function participants(c: Context, access: { loaded: { userId: string | null; row: { accountId: string; projectId: string } }; viewer: Viewer; row: ArtifactRow }) {
+  const { loaded, viewer, row } = access;
+  const ownerId = row.createdByUserId;
+  const isPrivate = row.visibility === 'private';
+  const [canReadMembers, roster] = await Promise.all([
+    projectCapabilityAllowed(c, viewer.userId, loaded.row.accountId, row.projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_READ),
+    isPrivate ? Promise.resolve(null) : loadProjectRosterIds(loaded),
+  ]);
+  const audienceIds = isPrivate
+    ? [ownerId, ...row.sharedWithUserIds.filter((id) => id !== ownerId)]
+    : sessionAudienceIds({ ownerId, visibility: 'project', grants: [], rosterIds: roster?.ids ?? [], groupMembers: new Map() });
+  const identities = await resolveUserIdentities([...audienceIds, viewer.userId]);
+  return buildSessionParticipants({ viewerId: viewer.userId, ownerId, audienceIds, identities, canReadMembers });
 }
 
 /** The artifact now, or at one commit: its files and a signed URL that shows exactly that. */
@@ -350,7 +384,8 @@ export function registerArtifactRoutes(): void {
     const loaded = await loadArtifact(c, projectId, artifactId, 'read');
     if (!loaded.ok) return loaded.response;
     try {
-      return c.json(await detail(loaded.row, loaded.viewer, c.req.valid('query').version), 200);
+      const [body, people] = await Promise.all([detail(loaded.row, loaded.viewer, c.req.valid('query').version), participants(c, loaded)]);
+      return c.json({ ...body, participants: people }, 200);
     } catch (err) {
       return failure(c, err);
     }

@@ -277,6 +277,7 @@
     "./internal/hooks/use-copy": "./src/internal/hooks/use-copy.ts",
     "./internal/hooks/use-debounced-value": "./src/internal/hooks/use-debounced-value.ts",
     "./internal/hooks/use-notification-center": "./src/internal/hooks/use-notification-center.ts",
+    "./internal/hooks/use-slash-focus": "./src/internal/hooks/use-slash-focus.ts",
     "./internal/icons/claude": "./src/internal/icons/claude.tsx",
     "./internal/icons/download": "./src/internal/icons/download.tsx",
     "./internal/icons/edge": "./src/internal/icons/edge.tsx",
@@ -315,6 +316,7 @@
     "./internal/lib/onboarding/last-project-cookie": "./src/internal/lib/onboarding/last-project-cookie.ts",
     "./internal/lib/onboarding/provision-errors": "./src/internal/lib/onboarding/provision-errors.ts",
     "./internal/lib/onboarding/use-app-home": "./src/internal/lib/onboarding/use-app-home.ts",
+    "./internal/lib/project-preamble": "./src/internal/lib/project-preamble.ts",
     "./internal/lib/promo-art": "./src/internal/lib/promo-art.ts",
     "./internal/lib/provider-branding": "./src/internal/lib/provider-branding.tsx",
     "./internal/lib/query-client-singleton": "./src/internal/lib/query-client-singleton.ts",
@@ -382,6 +384,7 @@
     "./kortix-loader": "./src/primitives/kortix-loader.tsx",
     "./kortix-logo": "./src/primitives/kortix-logo.tsx",
     "./label": "./src/primitives/label.tsx",
+    "./lib/favicon": "./src/lib/favicon.ts",
     "./lib/host-env": "./src/lib/host-env.ts",
     "./lib/icon-config": "./src/lib/icon-config.ts",
     "./lib/telemetry": "./src/lib/telemetry.ts",
@@ -442,6 +445,7 @@
     "./session/models/model-selector": "./src/session/models/model-selector.tsx",
     "./session/panel/audit/audit-credential-label": "./src/session/panel/audit/audit-credential-label.ts",
     "./session/panel/easy/detail-view": "./src/session/panel/easy/detail-view.tsx",
+    "./session/participants/session-participants": "./src/session/participants/session-participants.tsx",
     "./session/prompts/session-approval-review": "./src/session/prompts/session-approval-review.ts",
     "./session/status/agent-git-reconciliation": "./src/session/status/agent-git-reconciliation.ts",
     "./session/status/previous-repository-session": "./src/session/status/previous-repository-session.tsx",
@@ -1570,6 +1574,10 @@
         "types": "./dist/internal/hooks/use-notification-center.d.ts",
         "import": "./dist/internal/hooks/use-notification-center.js"
       },
+      "./internal/hooks/use-slash-focus": {
+        "types": "./dist/internal/hooks/use-slash-focus.d.ts",
+        "import": "./dist/internal/hooks/use-slash-focus.js"
+      },
       "./internal/icons/claude": {
         "types": "./dist/internal/icons/claude.d.ts",
         "import": "./dist/internal/icons/claude.js"
@@ -1721,6 +1729,10 @@
       "./internal/lib/onboarding/use-app-home": {
         "types": "./dist/internal/lib/onboarding/use-app-home.d.ts",
         "import": "./dist/internal/lib/onboarding/use-app-home.js"
+      },
+      "./internal/lib/project-preamble": {
+        "types": "./dist/internal/lib/project-preamble.d.ts",
+        "import": "./dist/internal/lib/project-preamble.js"
       },
       "./internal/lib/promo-art": {
         "types": "./dist/internal/lib/promo-art.d.ts",
@@ -1990,6 +2002,10 @@
         "types": "./dist/primitives/label.d.ts",
         "import": "./dist/primitives/label.js"
       },
+      "./lib/favicon": {
+        "types": "./dist/lib/favicon.d.ts",
+        "import": "./dist/lib/favicon.js"
+      },
       "./lib/host-env": {
         "types": "./dist/lib/host-env.d.ts",
         "import": "./dist/lib/host-env.js"
@@ -2223,6 +2239,10 @@
       "./session/panel/easy/detail-view": {
         "types": "./dist/session/panel/easy/detail-view.d.ts",
         "import": "./dist/session/panel/easy/detail-view.js"
+      },
+      "./session/participants/session-participants": {
+        "types": "./dist/session/participants/session-participants.d.ts",
+        "import": "./dist/session/participants/session-participants.js"
       },
       "./session/prompts/session-approval-review": {
         "types": "./dist/session/prompts/session-approval-review.d.ts",

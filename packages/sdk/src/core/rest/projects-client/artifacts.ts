@@ -11,6 +11,7 @@ import { ApiError, backendApi } from '../../http/api-client';
 import { authenticatedFetch } from '../../http/auth';
 import { platformConfig } from '../../http/config';
 import { stripTrailingSlashes } from '../../../platform/strings';
+import type { SessionParticipants } from './sessions';
 import { unwrap } from './shared';
 
 /** `doc`: a document Kortix styles and people edit in place. `html`: any page or bundle, served as written. */
@@ -76,6 +77,8 @@ export interface ArtifactDetail extends Artifact {
   /** The entry file's version now: pass it as `base_version` when you save. */
   entry_version: string | null;
   version: { id: string | null; files: ArtifactFile[]; view_url: string };
+  /** Who can open it, owner first, in a session's participants shape. Only on a read (`getArtifact`). */
+  participants?: SessionParticipants;
 }
 
 export interface ArtifactTypeInfo {
@@ -146,6 +149,25 @@ export async function listArtifacts(
   options: { scope?: ArtifactListScope; type?: ArtifactType; q?: string; limit?: number } = {},
 ) {
   return unwrap(await backendApi.get<{ artifacts: Artifact[] }>(`${base(projectId)}${query(options)}`)).artifacts;
+}
+
+/** A web page as a doc's link card shows it. Nulls where the page says nothing (or could not be read). */
+export interface LinkPreview {
+  url: string;
+  title: string | null;
+  description: string | null;
+  site_name: string | null;
+  /** The page's og:image, https only. */
+  image_url: string | null;
+}
+
+/**
+ * Read a web page's title, description and image, through the API (a browser
+ * cannot read another site's page). Public addresses only; a page that cannot
+ * be read answers nulls.
+ */
+export async function getLinkPreview(projectId: string, url: string) {
+  return unwrap(await backendApi.get<LinkPreview>(`/projects/${projectId}/link-preview?url=${encodeURIComponent(url)}`));
 }
 
 export async function getArtifact(projectId: string, artifactId: string, options: { version?: string } = {}) {
