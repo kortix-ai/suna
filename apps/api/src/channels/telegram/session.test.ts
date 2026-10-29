@@ -101,13 +101,15 @@ describe('telegram files', () => {
     expect(telegramFileOf({ ...bare, video_note: { file_id: 'n1', duration: 3 } })).toMatchObject({ kind: 'video message', mime: 'video/mp4', label: 'video message, 3 s' });
   });
 
-  test('a message with no text reads as its file or sticker; a caption wins; an album item says so', () => {
+  test('a message with no text reads as its file or sticker; a caption leads; an album item says so', () => {
     const text = (m: TelegramMessage) => telegramEnvelope(m).text;
     expect(text(photo)).toBe('(photo)');
     expect(text(report)).toBe('(file report.pdf)');
     expect(text(voice)).toBe('(voice message, 7 s)');
     expect(text(sticker)).toBe('(sticker 👍)');
     expect(text({ ...photo, caption: 'what is this?' })).toBe('what is this?');
+    // A named file keeps its name under the caption: the agent may need it, and it stays in the sender's text.
+    expect(text({ ...report, caption: 'which year is this?' })).toBe('which year is this?\n(file report.pdf)');
     const album = 'This message is one item of an album. Telegram sends each item as its own message, and usually only the first carries the caption.';
     expect(telegramEnvelope({ ...photo, media_group_id: 'g1' }).notes).toContain(album);
     expect(telegramEnvelope(photo).notes).not.toContain(album);

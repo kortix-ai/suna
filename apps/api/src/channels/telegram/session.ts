@@ -100,9 +100,14 @@ export function telegramFileOf(
   return null;
 }
 
-/** What the session view shows for a message with no text or caption. */
-function telegramLabel(message: TelegramMessage): string {
+/**
+ * The sender's words: the text, else the caption, else a label for the file or sticker. A named file keeps
+ * its label under a caption, so its name reaches the agent in the sender's own (untrusted) text.
+ */
+function telegramText(message: TelegramMessage): string {
+  if (message.text !== undefined) return message.text;
   const file = telegramFileOf(message);
+  if (message.caption !== undefined) return file?.name ? `${message.caption}\n(${file.label})` : message.caption;
   if (file) return `(${file.label})`;
   if (message.sticker) return message.sticker.emoji ? `(sticker ${message.sticker.emoji})` : '(sticker)';
   return '(no text)';
@@ -577,7 +582,7 @@ export function telegramEnvelope(message: TelegramMessage): ChannelEnvelope {
     platform: CHANNELS.telegram.envelope,
     sender: from?.username ? `@${from.username}` : name || `user ${from?.id ?? 'unknown'}`,
     where: chat.type === 'private' ? 'direct message' : chat.title || `chat ${chat.id}`,
-    text: message.text ?? message.caption ?? telegramLabel(message),
+    text: telegramText(message),
     reply: connectorReply(TELEGRAM_CHANNEL_CONNECTOR_SLUG, 'send_message', {
       chat_id: String(chat.id),
       text: '<reply>',

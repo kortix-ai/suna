@@ -174,10 +174,10 @@ export interface ChannelFile {
   kind: string;
   /**
    * The sender's name for the file. The core keeps only a plain extension of it (`report.pdf` →
-   * `document.pdf`): the name itself reaches the agent only in the message text, which it treats as untrusted.
+   * `document.pdf`). The adapter puts the name itself in the message text, which the agent treats as untrusted.
    */
   name?: string;
-  /** The declared type. The core keeps a valid bare `type/subtype`, else `application/octet-stream`. */
+  /** The declared type. The core keeps a known bare `type/subtype`, else `application/octet-stream`. */
   mime: string;
   /** The size the platform states. Over the room left in the message, `read` never runs. */
   size?: number;
@@ -445,10 +445,13 @@ type Prompt = Pick<Parameters<typeof deliverThroughQueue>[0], 'text' | 'parts' |
 interface MessageFiles { parts: PromptPart[]; notes: string[]; hasImage: boolean; hasAudio: boolean }
 
 const CAP_MB = CHANNEL_FILES_MAX_BYTES / (1024 * 1024);
-/** Nothing in the sandbox or the gateway turns speech into text yet. */
-const NO_SPEECH_NOTE = 'A recording is attached. No speech-to-text tool is installed here, so you cannot listen to it: tell the sender, and ask them to type the message.';
+/** Nothing in the sandbox image or the gateway turns speech into text; an agent can install a tool for one turn. */
+const NO_SPEECH_NOTE = 'A recording is attached. No speech-to-text tool is preinstalled: transcribe it with one you install (for example faster-whisper), or tell the sender you cannot listen to it and ask them to type the message.';
 
-/** The extension of a type, for a file whose name has none. */
+/**
+ * The types Kortix passes on, each with its extension for a file whose name has none. Telegram reports
+ * the type the sender's app declared, so any other type becomes `application/octet-stream`.
+ */
 const MIME_EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -456,8 +459,22 @@ const MIME_EXTENSIONS: Record<string, string> = {
   'image/webp': 'webp',
   'audio/mpeg': 'mp3',
   'audio/ogg': 'ogg',
+  'audio/mp4': 'm4a',
+  'audio/wav': 'wav',
   'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+  'video/webm': 'webm',
   'application/pdf': 'pdf',
+  'application/json': 'json',
+  'application/zip': 'zip',
+  'text/plain': 'txt',
+  'text/csv': 'csv',
+  'text/markdown': 'md',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
 };
 
 /**
@@ -469,10 +486,14 @@ function fileName(file: ChannelFile, mime: string): string {
   return `${file.kind.replaceAll(' ', '_')}${extension ? `.${extension}` : ''}`;
 }
 
-/** `type/subtype`, lower case, no parameters: `parseStagedPromptDataUrl` needs the URL's type and the part's to match. */
+/**
+ * A known `type/subtype`, lower case, no parameters, else `application/octet-stream`. The type reaches the
+ * `<file mime>` the agent reads after the lines Kortix vouches for, and `parseStagedPromptDataUrl` needs
+ * the URL's type and the part's to match.
+ */
 function bareMime(mime: string): string {
   const bare = mime.split(';')[0]!.trim().toLowerCase();
-  return /^[a-z0-9][\w.+-]*\/[\w.+-]+$/.test(bare) ? bare : 'application/octet-stream';
+  return bare in MIME_EXTENSIONS ? bare : 'application/octet-stream';
 }
 
 const modelPin = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null);
