@@ -125,27 +125,42 @@ export async function deleteTelegramInstall(projectId: string): Promise<void> {
 }
 
 /**
- * Disconnect and the project delete release the bot: the webhook and Kortix's
- * menu entries, only while the webhook points at this project (the bot may
- * serve another project since), then the install and its secrets. Telegram is best effort and never blocks either;
- * an update that still arrives finds no secret and gets the webhook's 404.
+ * Disconnect and the project delete release the bot (`releaseTelegramWebhook`),
+ * then delete the install and its secrets. An update that still arrives finds
+ * no secret and gets the webhook's 404.
  */
 export async function releaseTelegramBot(projectId: string): Promise<void> {
   const token = await loadTelegramBotToken(projectId);
-  if (token) {
-    try {
-      const info = await telegramCall<{ url?: string }>(token, 'getWebhookInfo', {}, 5_000);
-      if (info.url?.endsWith(`/v1/webhooks/telegram/${projectId}`)) {
-        await telegramCall(token, 'deleteWebhook', {}, 5_000);
-        // The bot is this project's: its menu loses Kortix's commands and keeps the owner's.
-        await removeTelegramMenu(token).catch((error) =>
-          logger.warn('[telegram] the released bot kept its Kortix commands', { projectId, error: String(error) }));
-      }
-    } catch (error) {
-      logger.warn('[telegram] the released bot kept its webhook', { projectId, error: String(error) });
-    }
-  }
+  if (token) await releaseTelegramWebhook(projectId, token);
   await deleteTelegramInstall(projectId);
+}
+
+/**
+ * The bot's webhook and Kortix's menu entries go, only while the webhook
+ * points at this project: the bot may serve another project since. Telegram
+ * is best effort; never throws.
+ */
+export async function releaseTelegramWebhook(projectId: string, token: string): Promise<void> {
+  try {
+    const info = await telegramCall<{ url?: string }>(token, 'getWebhookInfo', {}, 5_000);
+    if (!info.url?.endsWith(`/v1/webhooks/telegram/${projectId}`)) return;
+    await telegramCall(token, 'deleteWebhook', {}, 5_000);
+    // The bot is this project's: its menu loses Kortix's commands and keeps the owner's.
+    await removeTelegramMenu(token).catch((error) =>
+      logger.warn('[telegram] the released bot kept its Kortix commands', { projectId, error: String(error) }));
+  } catch (error) {
+    logger.warn('[telegram] the released bot kept its webhook', { projectId, error: String(error) });
+  }
+}
+
+/** The token of the project's bot when a connect replaces it with `botId`; read it before the save overwrites it. */
+export async function replacedTelegramBotToken(projectId: string, botId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ botId: chatInstalls.workspaceId })
+    .from(chatInstalls)
+    .where(and(eq(chatInstalls.platform, 'telegram'), eq(chatInstalls.projectId, projectId)))
+    .limit(1);
+  return row && row.botId !== botId ? loadTelegramBotToken(projectId) : null;
 }
 
 /** Replace the allowed sender list; drops the requests of the ids it allows. */

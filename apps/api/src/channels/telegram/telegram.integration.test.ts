@@ -80,6 +80,9 @@ const PROJECT = crypto.randomUUID();
 const ACTOR = crypto.randomUUID();
 const BOT_ID = String(5_000_000_000 + Math.floor(Math.random() * 1_000_000));
 const TOKEN = `${BOT_ID}:${'A'.repeat(35)}`;
+/** A second bot the fake serves: a connect replaces this project's bot with it. */
+const OTHER_BOT_ID = String(Number(BOT_ID) + 7);
+const OTHER_TOKEN = `${OTHER_BOT_ID}:${'C'.repeat(35)}`;
 const ALLOWED = '111';
 let CONNECTOR = '';
 let CONNECTION = '';
@@ -104,7 +107,8 @@ mock.module('../../projects/session-lifecycle/abort-runtime-turn', () => ({
   },
 }));
 
-type Call = { method: string; body: Record<string, unknown> };
+/** `bot: 'other'`: a call with OTHER_TOKEN. */
+type Call = { method: string; body: Record<string, unknown>; bot?: 'other' };
 const calls: Call[] = [];
 const waiters: Array<(call: Call) => void> = [];
 /** The next Bot API call, for a send nothing awaits (the provisioning notifier fires and forgets). */
@@ -119,6 +123,8 @@ let failing: string | null = null;
 let failingStatus = 500;
 /** The bot's command menu: getMyCommands reads it, setMyCommands and deleteMyCommands write it. */
 let botMenu: unknown = [];
+/** The same for the other bot. */
+let otherMenu: unknown = [];
 /** getChat per user id: a profile, or 'fail' for a 500. Any other id: Telegram's "chat not found". */
 const chats = new Map<string, Record<string, unknown> | 'fail'>();
 /** Synthetic JPEG bytes the fake serves for every file it does not store. */
@@ -142,16 +148,21 @@ const fake = Bun.serve({
       return new Response(file?.bytes ?? JPEG, { headers: { 'content-type': 'image/jpeg' } });
     }
     const [, botToken, method] = path.split('/');
-    if (botToken !== `bot${TOKEN}`) return Response.json({ ok: false, description: 'Unauthorized' }, { status: 401 });
-    const call = { method: method ?? '', body: (await req.json().catch(() => ({}))) as Record<string, unknown> };
+    const other = botToken === `bot${OTHER_TOKEN}`;
+    if (botToken !== `bot${TOKEN}` && !other) return Response.json({ ok: false, description: 'Unauthorized' }, { status: 401 });
+    const call: Call = { method: method ?? '', body: (await req.json().catch(() => ({}))) as Record<string, unknown>, ...(other ? { bot: 'other' as const } : {}) };
     calls.push(call);
     await onCall?.(call);
     waiters.splice(0).forEach((resolve) => resolve(call));
     if (call.method === failing) return Response.json({ ok: false, description: 'synthetic failure' }, { status: failingStatus });
-    if (call.method === 'getMe') return Response.json({ ok: true, result: { id: Number(BOT_ID), is_bot: true, username: 'synthetic_bot' } });
-    if (call.method === 'getMyCommands') return Response.json({ ok: true, result: botMenu });
+    if (call.method === 'getMe') {
+      return Response.json({ ok: true, result: other ? { id: Number(OTHER_BOT_ID), is_bot: true, username: 'other_bot' } : { id: Number(BOT_ID), is_bot: true, username: 'synthetic_bot' } });
+    }
+    if (call.method === 'getMyCommands') return Response.json({ ok: true, result: other ? otherMenu : botMenu });
     if (call.method === 'setMyCommands' || call.method === 'deleteMyCommands') {
-      botMenu = call.method === 'setMyCommands' ? call.body.commands : [];
+      const menu = call.method === 'setMyCommands' ? call.body.commands : [];
+      if (other) otherMenu = menu;
+      else botMenu = menu;
       return Response.json({ ok: true, result: true });
     }
     if (call.method === 'getChat') {
@@ -327,6 +338,7 @@ beforeEach(() => {
   failing = null;
   failingStatus = 500;
   botMenu = [];
+  otherMenu = [];
   releaseOutcome = 'unreachable';
   releases.length = 0;
   abortOutcome = true;
@@ -2680,6 +2692,31 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
     await written;
     expect(calls.map((c) => c.method)).toEqual(['getMe', 'setWebhook', 'getMyCommands', 'setMyCommands']);
     expect(botMenu).toEqual([...commandMenu(), weather]);
+  }, 10_000);
+
+  test("connect with another bot releases the old one with its token, as a disconnect does: its webhook and Kortix's menu entries go, the owner's stay", async () => {
+    const weather = { command: 'weather', description: 'Synthetic BotFather entry' };
+    botMenu = [...commandMenu(), weather];
+    const done = (bot: Call['bot'], method: string) =>
+      (async () => {
+        while (!calls.some((c) => c.bot === bot && c.method === method)) await nextCall();
+      })();
+    const released = done(undefined, 'setMyCommands');
+    const merged = done('other', 'setMyCommands');
+    try {
+      const res = await api('POST', '/connect', { bot_token: OTHER_TOKEN });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ bot_id: OTHER_BOT_ID, username: 'other_bot' });
+      await Promise.all([released, merged]);
+      expect(calls.filter((c) => !c.bot).map((c) => c.method)).toEqual(['getWebhookInfo', 'deleteWebhook', 'getMyCommands', 'setMyCommands']);
+      expect(botMenu).toEqual([weather]);
+      expect(otherMenu).toEqual(commandMenu());
+      expect(await menuClaimRows()).toEqual([]);
+    } finally {
+      await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
+      await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:commands:${OTHER_BOT_ID}:%`));
+      await holdMenuClaim();
+    }
   }, 10_000);
 
   // Last in the file: the disconnect reconciles the connectors in the background.

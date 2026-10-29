@@ -11,6 +11,8 @@ import { CHANNEL_MAX_ALLOWED_USERS } from '../../channels/core/channel-access';
 import {
   loadTelegramInstall,
   releaseTelegramBot,
+  releaseTelegramWebhook,
+  replacedTelegramBotToken,
   saveTelegramInstall,
   setTelegramAllowedUserIds,
   TELEGRAM_USER_ID,
@@ -104,6 +106,8 @@ export function registerChannelTelegramRoutes(): void {
         );
       }
 
+      // Another bot replaces this project's: the save overwrites the old bot's token, so read it first.
+      const replaced = await replacedTelegramBotToken(ctx.projectId, String(bot.id));
       await saveTelegramInstall({
         projectId: ctx.projectId,
         botId: String(bot.id),
@@ -112,7 +116,9 @@ export function registerChannelTelegramRoutes(): void {
         webhookSecret,
       });
       if (allowed?.success) await setTelegramAllowedUserIds(ctx.projectId, allowed.data);
-      // Not awaited, as the reconcile: Telegram may take up to 6 s.
+      // Not awaited, as the reconcile: Telegram may take up to 16 s for the old bot and 6 s for the new one.
+      // The old bot is released as a disconnect releases it: its webhook and Kortix's menu entries.
+      if (replaced) void releaseTelegramWebhook(ctx.projectId, replaced);
       void repairTelegramMenu(token, String(bot.id), { force: true });
       reconcileInBackground(ctx.projectId);
       return c.json(await telegramAccessPort.installation(ctx.projectId));
