@@ -10,6 +10,16 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-29
+
+### D25 Company as code names pi: custom pi agents, pi extensions, deployed to the cloud
+- **Date:** 2026-10-29
+- **Decision:** The framework surfaces lead with pi as the minimal agent harness Kortix runs on. Every agent you declare is a custom pi agent. You extend it with pi extensions: TypeScript in the repository or a pi package pinned from npm, registered under `extensions` in `kortix.yaml` and enabled per agent. Kortix deploys the agents to the cloud, one computer per session. `/framework` carries this in the hero sub, the pillar "Custom pi agents", the tab "pi extensions" (with a real extension file in the Arcadia sample) and the FAQ. The home Company as code pillar now names pi and pi extensions too. The hero headline and the Multiplayer and Sovereign pillars still do not name pi.
+- **Why:** founder, 2026-10-29: "https://kortix.com/framework should definetly reference PI & explain that u write custom PI agents that get deployed to the cloud, with pi extensions & all like very imp piece", and on the home Company as code pillar: "also in here like saying that wouldnt be bad I guess".
+- **Where:** `apps/web/src/features/marketing/framework/` (`model.ts`, `content.ts`, `framework-panels.tsx`), `landing-sections/pillars-band.tsx`, `landing-sections/framework-band.tsx`, [claims.md](verbal/claims.md) row "Extensions".
+- **Supersedes:** D20 for the Company as code pillar.
+- **Source:** the `framework-pi` branch.
+
 ## 2026-10-27
 
 ### D24 The framework surfaces explain Kortix as a backend framework and name pi

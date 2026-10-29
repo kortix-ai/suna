@@ -20620,7 +20620,7 @@
       "text2e9f6a751196": "chat.tsx",
       "text75a6752caf95": "How the Kortix framework works",
       "text54202672e6dc": "Company as code.",
-      "textaa6353a6496a": "A project is a git repo. kortix.yaml declares its agents, connectors, triggers and rules. Kortix runs every session on its own cloud computer, and you build your own experience with @kortix/sdk and @kortix/ui.",
+      "textc4f9c303bb96": "A project is a git repo. Every agent in it is a custom pi agent: a minimal open-source harness you extend with pi extensions. kortix.yaml declares the agents, connectors, triggers and rules. Kortix deploys them to the cloud and runs every session on its own computer. Build your own experience with @kortix/sdk and @kortix/ui.",
       "texte3eadbf1c440": "One file in one repo.",
       "text55aafe971acb": "Declare an agent",
       "text07f32aa699ad": "Add a trigger",
@@ -20687,7 +20687,7 @@
       "texte09094c1111d": "A workspace for your team.",
       "text95b74a4f4d4b": "See the architecture",
       "textcdd1c348fade": "Everyone works with the same agents, skills, memory and connectors. Start a session in the web app, in Slack or in Microsoft Teams.",
-      "text26cae676d911": "We treat your whole company like code. Every agent, skill, rule, connector and piece of context is a file in one git repo, and the agents and their harness are open source, so you can extend anything.",
+      "text77ece565fe55": "We treat your whole company like code. Every agent, skill, rule, connector and piece of context is a file in one git repo. Every agent is a custom pi agent on a minimal open-source harness, so you can extend anything with pi extensions.",
       "textc61528adb57c": "Kortix is open source. Run it on Kortix Cloud, in your VPC or on your own on-prem network, with any model and your own keys.",
       "textbf8abe5b1667": "Multiplayer. Company as code. Sovereign.",
       "text1445799c033a": "Learn more",
@@ -20926,7 +20926,9 @@
       "text40fc6fb80433": "telegramUsersDescription",
       "text94a8aad616b5": "Kortix {mode}: {step}",
       "text64354af1e35e": "Arcadia · {project} → Access",
-      "textdbff0b6e128b": "A backend framework and server for agents."
+      "textdbff0b6e128b": "A backend framework and server for agents.",
+      "text615544b5a953": "pi extensions",
+      "text74bf85229fd2": "Extend the harness with TypeScript."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

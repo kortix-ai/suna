@@ -20761,7 +20761,7 @@
       "text6ed247d4d18f": "Todos trabalham com os mesmos agentes, competências, memória e conectores. Partilhe uma sessão, escreva nela em conjunto e aprove o que o agente faz.",
       "textf38d736ed09f": "Uma sessão, várias pessoas.",
       "text906c2d65c492": "Escrever em conjunto",
-      "text26cae676d911": "Tratamos a sua empresa inteira como código. Cada agente, habilidade, regra, conector e peça de contexto é um arquivo em um único repositório git, e os agentes e o harness deles são open source, para que você possa estender qualquer coisa.",
+      "text77ece565fe55": "Tratamos a sua empresa inteira como código. Cada agente, habilidade, regra, conector e peça de contexto é um arquivo em um único repositório git. Cada agente é um agente pi personalizado sobre um harness mínimo e open source, para que você possa estender qualquer coisa com extensões do pi.",
       "textc61528adb57c": "O Kortix é open source. Execute-o no Kortix Cloud, na sua VPC ou na sua própria rede on-prem, com qualquer modelo e as suas próprias chaves.",
       "textbf8abe5b1667": "Multiplayer. Empresa como código. Soberano.",
       "text1445799c033a": "Saiba mais",
@@ -20841,7 +20841,7 @@
       "text185d1ba951b2": "Leia a página de segurança",
       "text11a07d2830be": "Compliance, respondido.",
       "textb414a4822ca9": "Compliance e controle.",
-      "textaa6353a6496a": "Um projeto é um repositório git. kortix.yaml declara seus agentes, conectores, gatilhos e regras. O Kortix executa cada sessão em seu próprio computador na nuvem, e você cria sua própria experiência com @kortix/sdk e @kortix/ui.",
+      "textc4f9c303bb96": "Um projeto é um repositório git. Cada agente é um agente pi personalizado: um harness mínimo e open source que você estende com extensões do pi. kortix.yaml declara os agentes, conectores, gatilhos e regras. O Kortix os implanta na nuvem e executa cada sessão em seu próprio computador. Crie sua própria experiência com @kortix/sdk e @kortix/ui.",
       "texte3eadbf1c440": "Um arquivo em um repositório.",
       "text55aafe971acb": "Declarar um agente",
       "text07f32aa699ad": "Adicionar um gatilho",
@@ -20915,7 +20915,9 @@
       "texta04bce7e92b4": "Permitido para esta sessão",
       "text9928dd82f38f": "Aprovação necessária",
       "texta423f5bc1b99": "por Membro 1",
-      "textdbff0b6e128b": "Um framework de backend e um servidor para agentes."
+      "textdbff0b6e128b": "Um framework de backend e um servidor para agentes.",
+      "text615544b5a953": "Extensões do pi",
+      "text74bf85229fd2": "Estenda o harness com TypeScript."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

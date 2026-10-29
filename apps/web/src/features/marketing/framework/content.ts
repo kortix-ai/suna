@@ -4,8 +4,8 @@
  * ACCURACY GATE: a valid kortix_version 3 project built only from keys in the
  * "kortix.yaml reference" (content/docs/developers.mdx): composio connectors
  * with an approval rule, the skills and tools registries, agents grouped by
- * department (agents/<department>/*.md) that enable tools, connectors and
- * skills by name, the built-in kortix_slack and kortix_email channels, and
+ * department (agents/<department>/*.md) that enable tools, connectors,
+ * skills and a pi extension (a repository .ts file) by name, the built-in kortix_slack and kortix_email channels, and
  * webhook and cron triggers. No channels: block (channels are connectors).
  * `kortix validate` passes on a scratch repo written from FILES, and fails
  * when a registered skill folder is missing. Every new session runs the
@@ -48,6 +48,11 @@ export const MANIFEST = [
   "tools:",
   "  lookup_account: tools/lookup_account.ts",
   "",
+  "# A pi extension: TypeScript that hooks into the agent harness.",
+  "extensions:",
+  "  block-secrets:",
+  "    pi: extensions/block-secrets.ts",
+  "",
   "agents:",
   "  kortix:",
   "    prompt_file: agents/kortix.md",
@@ -62,6 +67,7 @@ export const MANIFEST = [
   "    tools: [read, grep, glob, web_search]",
   "    connectors: [github, kortix_slack]",
   "    skills: [triage-issue]",
+  "    extensions: [block-secrets]",
   "    workspace: { project_repository: true }",
   "",
   "  # Marketing",
@@ -179,6 +185,18 @@ export const FILES: Record<string, readonly string[]> = {
     '  },',
     '};',
   ],
+  'extensions/block-secrets.ts': [
+    '// extensions/block-secrets.ts: a pi extension',
+    "import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';",
+    '',
+    'export default function (pi: ExtensionAPI) {',
+    "  pi.on('tool_call', async (event) => {",
+    "    if (event.toolName !== 'write') return;",
+    '    if (/sk_live_|ghp_/.test(String(event.input.content)))',
+    "      return { block: true, reason: 'The file holds a secret.' };",
+    '  });',
+    '}',
+  ],
   'README.md': [
     '# Arcadia',
     '',
@@ -242,6 +260,8 @@ export const TREE: readonly { name: string; depth: number; path?: string }[] = [
   { name: 'qualify-lead/SKILL.md', depth: 1, path: 'skills/qualify-lead/SKILL.md' },
   { name: 'tools', depth: 0 },
   { name: 'lookup_account.ts', depth: 1, path: 'tools/lookup_account.ts' },
+  { name: 'extensions', depth: 0 },
+  { name: 'block-secrets.ts', depth: 1, path: 'extensions/block-secrets.ts' },
   { name: 'memory', depth: 0 },
   { name: 'MEMORY.md', depth: 1, path: 'memory/MEMORY.md' },
   { name: 'company.md', depth: 1, path: 'memory/company.md' },

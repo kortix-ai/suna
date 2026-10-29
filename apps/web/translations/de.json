@@ -20546,7 +20546,7 @@
       "textee013f8a517e": "Konnektoren und Freigaben",
       "text879cd41ad2ed": "Kortix behält das Login und entscheidet über jeden Aufruf.",
       "text2a89f9cd52c9": "Pro Projekt verschlüsselt, Auslieferung nur dort, wo erlaubt.",
-      "textaa6353a6496a": "Ein Projekt ist ein Git-Repository. kortix.yaml deklariert seine Agenten, Konnektoren, Trigger und Regeln. Kortix führt jede Sitzung auf einem eigenen Cloud-Computer aus, und du baust dein eigenes Erlebnis mit @kortix/sdk und @kortix/ui.",
+      "textc4f9c303bb96": "Ein Projekt ist ein Git-Repository. Jeder Agent darin ist ein eigener pi-Agent: ein minimaler Open-Source-Harness, den du mit pi-Erweiterungen erweiterst. kortix.yaml deklariert die Agenten, Konnektoren, Trigger und Regeln. Kortix stellt sie in der Cloud bereit und führt jede Sitzung auf einem eigenen Computer aus. Bau dein eigenes Erlebnis mit @kortix/sdk und @kortix/ui.",
       "texte3eadbf1c440": "Eine Datei in einem Repo.",
       "text55aafe971acb": "Agenten deklarieren",
       "text07f32aa699ad": "Trigger hinzufügen",
@@ -20696,7 +20696,7 @@
       "text04df836cf828": "Jede Funktion.",
       "text6fa799b6dcc6": "Besser als einzustellen.",
       "textefc30d1611b5": "Mitgliedschaftsvorteile.",
-      "text26cae676d911": "Wir behandeln Ihr gesamtes Unternehmen wie Code. Jeder Agent, jede Skill, jede Regel, jeder Connector und jedes Stück Kontext ist eine Datei in einem einzigen Git-Repository, und die Agenten und ihr Harness sind Open Source, sodass Sie alles erweitern können.",
+      "text77ece565fe55": "Wir behandeln Ihr gesamtes Unternehmen wie Code. Jeder Agent, jede Skill, jede Regel, jeder Connector und jedes Stück Kontext ist eine Datei in einem einzigen Git-Repository. Jeder Agent ist ein eigener pi-Agent auf einem minimalen Open-Source-Harness, sodass Sie alles mit pi-Erweiterungen erweitern können.",
       "textc61528adb57c": "Kortix ist Open Source. Betreiben Sie es auf Kortix Cloud, in Ihrer VPC oder in Ihrem eigenen On-Premise-Netzwerk, mit jedem Modell und Ihren eigenen Schlüsseln.",
       "textbf8abe5b1667": "Multiplayer. Unternehmen als Code. Souverän.",
       "text1445799c033a": "Mehr erfahren",
@@ -20915,7 +20915,9 @@
       "texta3b142af6e97": "Anwendung",
       "texta43f1924db10": "Kein passender Anwendungsfall",
       "text9f4a8be5c188": "Versuchen Sie ein anderes Wort oder setzen Sie den Teamfilter zurück.",
-      "textdbff0b6e128b": "Ein Backend-Framework und Server für Agenten."
+      "textdbff0b6e128b": "Ein Backend-Framework und Server für Agenten.",
+      "text615544b5a953": "pi-Erweiterungen",
+      "text74bf85229fd2": "Erweitere den Harness mit TypeScript."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

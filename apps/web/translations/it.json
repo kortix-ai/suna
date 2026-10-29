@@ -20677,7 +20677,7 @@
       "text3a7060153ff0": "Connettori e policy",
       "text315128961804": "Trigger attivi 24/7",
       "text01ef136831c0": "Rilascia e revisiona",
-      "text26cae676d911": "Trattiamo tutta la tua azienda come codice. Ogni agente, competenza, regola, connettore e elemento di contesto è un file in un unico repository git, e gli agenti e il loro harness sono open source, così puoi estendere qualsiasi cosa.",
+      "text77ece565fe55": "Trattiamo tutta la tua azienda come codice. Ogni agente, competenza, regola, connettore e elemento di contesto è un file in un unico repository git. Ogni agente è un agente pi personalizzato su un harness minimale open source, così puoi estendere qualsiasi cosa con le estensioni pi.",
       "textc61528adb57c": "Kortix è open source. Eseguilo su Kortix Cloud, nella tua VPC o sulla tua rete on-premise, con qualsiasi modello e le tue chiavi.",
       "textbf8abe5b1667": "Multiplayer. Azienda come codice. Sovrano.",
       "text1445799c033a": "Scopri di più",
@@ -20897,7 +20897,7 @@
       "text5da7f20a76af": "L'architettura di Kortix",
       "textac99bcb21f10": "Domande sul framework.",
       "text33fdae079088": "Computer della sessione",
-      "textaa6353a6496a": "Un progetto è un repository git. kortix.yaml dichiara i suoi agenti, connettori, trigger e regole. Kortix esegue ogni sessione sul proprio computer cloud e tu costruisci la tua esperienza con @kortix/sdk e @kortix/ui.",
+      "textc4f9c303bb96": "Un progetto è un repository git. Ogni agente è un agente pi personalizzato: un harness minimale open source che estendi con le estensioni pi. kortix.yaml dichiara agenti, connettori, trigger e regole. Kortix li distribuisce nel cloud ed esegue ogni sessione sul proprio computer. Costruisci la tua esperienza con @kortix/sdk e @kortix/ui.",
       "texte3eadbf1c440": "Un file in un repository.",
       "text55aafe971acb": "Dichiara un agente",
       "text07f32aa699ad": "Aggiungi un trigger",
@@ -20915,7 +20915,9 @@
       "textc6ea096aec0c": "Avviato da pianificazione",
       "text1a9d4ff40228": "Follow-up sulle trattative silenziose",
       "textd44914710143": "Trova le trattative che si sono fermate e prepara un follow-up per ciascun responsabile.",
-      "textdbff0b6e128b": "Un framework backend e un server per gli agenti."
+      "textdbff0b6e128b": "Un framework backend e un server per gli agenti.",
+      "text615544b5a953": "Estensioni pi",
+      "text74bf85229fd2": "Estendi l’harness con TypeScript."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

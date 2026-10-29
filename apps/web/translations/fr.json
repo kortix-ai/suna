@@ -20733,7 +20733,7 @@
       "textab604a360777": "Rejeter",
       "text40fc6fb80433": "telegramUsersDescription",
       "text94a8aad616b5": "Kortix {mode} : {step}",
-      "textaa6353a6496a": "Un projet est un dépôt git. kortix.yaml déclare ses agents, connecteurs, déclencheurs et règles. Kortix exécute chaque session sur son propre ordinateur cloud, et vous créez votre propre expérience avec @kortix/sdk et @kortix/ui.",
+      "textc4f9c303bb96": "Un projet est un dépôt git. Chaque agent est un agent pi personnalisé : un harness minimal open source que vous étendez avec des extensions pi. kortix.yaml déclare les agents, connecteurs, déclencheurs et règles. Kortix les déploie dans le cloud et exécute chaque session sur son propre ordinateur. Créez votre propre expérience avec @kortix/sdk et @kortix/ui.",
       "texte3eadbf1c440": "Un fichier dans un dépôt.",
       "text55aafe971acb": "Déclarer un agent",
       "text07f32aa699ad": "Ajouter un déclencheur",
@@ -20856,7 +20856,7 @@
       "text3a7060153ff0": "Connecteurs et politiques",
       "text315128961804": "Déclencheurs actifs 24h/24 et 7j/7",
       "text01ef136831c0": "Livrer et réviser",
-      "text26cae676d911": "Nous traitons toute votre entreprise comme du code. Chaque agent, compétence, règle, connecteur et élément de contexte est un fichier dans un seul dépôt git, et les agents ainsi que leur harness sont open source, vous pouvez donc tout étendre.",
+      "text77ece565fe55": "Nous traitons toute votre entreprise comme du code. Chaque agent, compétence, règle, connecteur et élément de contexte est un fichier dans un seul dépôt git. Chaque agent est un agent pi personnalisé sur un harness minimal open source, vous pouvez donc tout étendre avec des extensions pi.",
       "textc61528adb57c": "Kortix est open source. Exécutez-le sur Kortix Cloud, dans votre VPC ou sur votre propre réseau on-prem, avec n'importe quel modèle et vos propres clés.",
       "textbf8abe5b1667": "Multijoueur. L'entreprise comme code. Souverain.",
       "text1445799c033a": "En savoir plus",
@@ -20915,7 +20915,9 @@
       "text5da7f20a76af": "L'architecture Kortix",
       "textac99bcb21f10": "Questions sur le framework.",
       "text33fdae079088": "Ordinateur de session",
-      "textdbff0b6e128b": "Un framework backend et un serveur pour les agents."
+      "textdbff0b6e128b": "Un framework backend et un serveur pour les agents.",
+      "text615544b5a953": "Extensions pi",
+      "text74bf85229fd2": "Étendez le harness avec TypeScript."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

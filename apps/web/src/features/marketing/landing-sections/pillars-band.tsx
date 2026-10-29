@@ -15,7 +15,8 @@ import Link from 'next/link';
 // Multiplayer AI; Company as code (extensible); Sovereign and
 // open ("own your data and run on your own infra"). Every fact is a claims.md
 // row: Channels, Permissions, Path to `main`, Connectors, Source, Hosting,
-// Models, Secrets. No "pi" in this copy (D20).
+// Models, Secrets. Company as code names pi and pi extensions (D25,
+// which narrows D20); the other pillars do not name pi.
 const sourcePILLARS = [
   {
     id: 'multiplayer',
@@ -37,10 +38,10 @@ const sourcePILLARS = [
     icon: CodeIcon,
     name: 'Company as code',
     line: 'Extensible to the core.',
-    body: 'We treat your whole company like code. Every agent, skill, rule, connector and piece of context is a file in one git repo, and the agents and their harness are open source, so you can extend anything.',
+    body: 'We treat your whole company like code. Every agent, skill, rule, connector and piece of context is a file in one git repo. Every agent is a custom pi agent on a minimal open-source harness, so you can extend anything with pi extensions.',
     facts: [
       'Every agent and skill a file in git',
-      'An open-source agent harness',
+      'Custom pi agents and pi extensions',
       '3,000+ apps, plus MCP, OpenAPI and raw HTTP',
       'A CLI and a TypeScript SDK',
     ],

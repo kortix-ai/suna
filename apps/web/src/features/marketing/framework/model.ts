@@ -20,11 +20,13 @@ import { MANIFEST } from './content';
 /* Hero. Sources: guide.mdx "A backend for agents" (a project is a git repo,
    kortix.yaml declares agents, skills, tools, connectors and triggers, every
    session runs on its own computer, triggers run agents 24/7, the SDK and
-   UI reach every project and session). */
+   UI reach every project and session); developers.mdx "Registries and
+   grants" (extensions: pi packages, enabled per agent) and "extensions
+   entries" (an npm pin or a repository path). */
 export const hero = {
   title: 'Company as code.',
   titleMuted: 'A backend framework and server for agents.',
-  sub: 'A project is a git repo. kortix.yaml declares its agents, connectors, triggers and rules. Kortix runs every session on its own cloud computer, and you build your own experience with @kortix/sdk and @kortix/ui.',
+  sub: 'A project is a git repo. Every agent in it is a custom pi agent: a minimal open-source harness you extend with pi extensions. kortix.yaml declares the agents, connectors, triggers and rules. Kortix deploys them to the cloud and runs every session on its own computer. Build your own experience with @kortix/sdk and @kortix/ui.',
   caption: 'One file in one repo.',
   captionMuted: 'Kortix runs what it declares.',
 } as const;
@@ -132,8 +134,8 @@ export const shipped = [
 /* Pillars. Sources: guide.mdx "A backend for agents"; developers.mdx
    "Quickstart" (Kortix hosts the repository or links GitHub), "File and
    schema" (kortix validate; the merge runs the schema check, 422),
-   "Registries and grants" (omitted means none); harness/README.md (every new
-   session runs pi); developers.mdx "Permission rules", "SDK", "Kortix UI",
+   "Registries and grants" (omitted means none; extensions are pi packages);
+   harness/README.md (every new session runs pi); developers.mdx "Permission rules", "SDK", "Kortix UI",
    "CLI", "REST API". */
 export const pillars = {
   title: 'Four ideas.',
@@ -161,12 +163,12 @@ export const pillars = {
     },
     {
       id: 'computer',
-      name: 'A computer per session',
-      line: 'Where the agent works and the rules hold.',
+      name: 'Custom pi agents',
+      line: 'A minimal harness, deployed to the cloud.',
       facts: [
-        'pi runs every new session',
-        'Tool rules checked before each call',
-        'Its own branch in /workspace',
+        'pi, an open-source agent harness',
+        'pi extensions from npm or the repo',
+        'A computer and a branch per session',
       ],
     },
     {
@@ -186,6 +188,12 @@ export const pillars = {
    agents: guide.mdx "What an agent is made of" (behavior and access,
      deny-by-default); developers.mdx "Agent keys" (prompt_file: the whole file
      is the system prompt); claims.md Frontmatter row (v3 prompts have none).
+   extensions: developers.mdx "Registries and grants" (extensions are pi
+     packages; omitted means none; the merge builds npm packages; a session
+     loads them when its runtime starts), "extensions entries" (npm pin with an
+     exact version, or a repository path); pi docs/extensions.md (a TypeScript
+     module; `pi.on('tool_call')` can block a call); pi/extensions/host.ts
+     (pi's own loader and ExtensionRunner run inside the session).
    rules: developers.mdx "Permission rules" (allow, ask, deny; omitted is
      allow), "Connector rules and approvals", "policy keys" (default_mode
      allow_all); guide.mdx "Connector credentials stay with Kortix".
@@ -212,6 +220,15 @@ export const tabs = {
       body: [
         'An agent is a block in kortix.yaml and a Markdown prompt. The block names its model, tools, connectors and skills.',
         'Access is deny-by-default. An agent gets no connector, secret or skill the block does not list.',
+      ],
+    },
+    {
+      id: 'extensions',
+      title: 'pi extensions',
+      description: 'Extend the harness with TypeScript.',
+      body: [
+        'Every agent runs on pi, a minimal open-source agent harness. A pi extension is a TypeScript module that adds tools or hooks into every turn and tool call.',
+        'Register one from npm or as a file in the repo, then enable it per agent. Each new session loads it on its own cloud computer.',
       ],
     },
     {
@@ -271,6 +288,23 @@ export const agentFiles = {
   promptPath: 'agents/marketing/content.md',
 } as const;
 
+/* developers.mdx "extensions entries" (a repository path; an npm pin with
+   an exact version, as in its "Example project") and "Registries and grants".
+   An excerpt, not a whole file. */
+export const extensionsYaml = [
+  'extensions:',
+  '  block-secrets:',
+  '    pi: extensions/block-secrets.ts',
+  '  web-access:',
+  '    pi: npm:pi-web-access@0.30.0',
+  '',
+  'agents:',
+  '  eng-triage:',
+  '    extensions: [block-secrets, web-access]',
+] as const;
+
+export const extensionPath = 'extensions/block-secrets.ts';
+
 /* developers.mdx "Permission rules" (the bash globs) and the MANIFEST
    linkedin rule. An excerpt, not a whole file. */
 export const rulesYaml = [
@@ -302,7 +336,7 @@ export const triggerFiles = excerpt(
 
 export const computer = {
   inside: [
-    { k: 'pi', v: 'The agent harness' },
+    { k: 'pi', v: 'The agent harness, with your extensions' },
     { k: '/workspace', v: 'The project, on the session’s branch' },
     { k: '/drives', v: 'The Drive folders it may open' },
     { k: 'Terminal, browser', v: 'Python, Node.js, document tools' },
@@ -356,7 +390,7 @@ export const architecture = {
   },
   computer: {
     k: 'Session computer',
-    v: 'One per session. pi works here, on the session’s own branch.',
+    v: 'One per session. Your pi agent and its extensions work here, on the session’s own branch.',
   },
   gateway: { k: 'LLM gateway', v: 'Every model call. Kortix-managed models or your own keys.' },
   drive: { k: 'Kortix Drive', v: 'Shared folders and company memory, open at /drives.' },
@@ -397,7 +431,13 @@ export const faqItems = [
     id: 'faq-pi',
     question: 'What runs inside a session?',
     answer:
-      'pi, an open-source agent harness. Every new session runs it on its own cloud computer, and it calls models only through the Kortix LLM gateway.',
+      'pi, a minimal open-source agent harness. Every agent you declare is a pi agent, and every new session runs it on its own cloud computer. It calls models only through the Kortix LLM gateway.',
+  },
+  {
+    id: 'faq-extensions',
+    question: 'Can I extend the agent harness?',
+    answer:
+      'Yes. Write a pi extension in TypeScript, or pin a pi package from npm, and register it under extensions in kortix.yaml. Each agent loads only the extensions it lists. An extension can add tools and react to events, such as a check before every tool call.',
   },
   {
     id: 'faq-secrets',
@@ -425,6 +465,7 @@ export function localizeMarketingContent(tMarketing: import('@/i18n/translator')
       tabs,
       agentFiles,
       rulesYaml,
+      extensionsYaml,
       triggerFiles,
       computer,
       reviewTerminal,

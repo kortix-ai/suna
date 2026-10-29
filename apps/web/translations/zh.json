@@ -20600,7 +20600,7 @@
       "text31fd5145f2e2": "每人发送 /login",
       "text22ce6aa00218": "只需一次，以便 Kortix 知道是谁发起的请求。",
       "textf667acf9ff30": "需要权限 ·",
-      "textaa6353a6496a": "项目就是一个 git 仓库。kortix.yaml 声明其代理、连接器、触发器和规则。Kortix 在独立的云计算机上运行每个会话，你可使用 @kortix/sdk 和 @kortix/ui 构建自己的体验。",
+      "textc4f9c303bb96": "项目就是一个 git 仓库。其中每个代理都是自定义的 pi 代理：pi 是一个极简的开源运行框架，你可以用 pi 扩展来扩展它。kortix.yaml 声明代理、连接器、触发器和规则。Kortix 将它们部署到云端，并在独立的计算机上运行每个会话。使用 @kortix/sdk 和 @kortix/ui 构建自己的体验。",
       "texte3eadbf1c440": "一个仓库中的一个文件。",
       "text55aafe971acb": "声明代理",
       "text07f32aa699ad": "添加触发器",
@@ -20898,7 +20898,7 @@
       "text6a7c277bdc6e": "正在处理…",
       "text26b1626299d7": "grep -rn retry apps/api/src/billing",
       "text55f1539602e0": "edit webhook-retry.ts",
-      "text26cae676d911": "我们将整个公司视为代码。每个智能体、技能、规则、连接器和上下文片段都是一个 git 仓库中的文件，智能体及其运行框架均为开源，因此你可以扩展任何内容。",
+      "text77ece565fe55": "我们将整个公司视为代码。每个智能体、技能、规则、连接器和上下文片段都是一个 git 仓库中的文件。每个智能体都是运行在极简开源运行框架上的自定义 pi 智能体，因此你可以用 pi 扩展来扩展任何内容。",
       "textc61528adb57c": "Kortix 是开源的。可在 Kortix Cloud、你的 VPC 或你自己的本地网络中运行，支持任意模型和你自己的密钥。",
       "textbf8abe5b1667": "多人协作。公司即代码。自主可控。",
       "text1445799c033a": "了解更多",
@@ -20915,7 +20915,9 @@
       "text8484a27f54b0": "企业级，有问必答。",
       "texte4d812fc9db4": "Arcadia · Drive",
       "text9218ded06bfa": "自定义 → 模型 → 成本",
-      "textdbff0b6e128b": "面向智能体的后端框架和服务器。"
+      "textdbff0b6e128b": "面向智能体的后端框架和服务器。",
+      "text615544b5a953": "pi 扩展",
+      "text74bf85229fd2": "用 TypeScript 扩展运行框架。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
