@@ -275,7 +275,10 @@ export async function runArtifacts(argv: string[]): Promise<number> {
           if (f.json) return out(threads, '');
           if (!threads.length) return out(null, 'No matching comment threads.');
           for (const thread of threads) {
-            process.stdout.write(`${thread.thread_id}  ${thread.status}${thread.agent_state === 'paused' ? ' · Waiting for a person' : ''}\n`);
+            const delivery = thread.agent_state === 'paused'
+              ? thread.agent_error ? ` · Delivery failed: ${thread.agent_error}` : ' · Waiting for a person'
+              : '';
+            process.stdout.write(`${thread.thread_id}  ${thread.status}${delivery}\n`);
             for (const comment of thread.comments) process.stdout.write(`  ${commentAuthor(comment.author)}: ${comment.deleted_at ? '[deleted]' : comment.body}\n`);
           }
           return 0;

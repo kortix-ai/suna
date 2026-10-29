@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 979,
+  "count": 980,
   "routes": [
     {
       "method": "GET",
@@ -2137,6 +2137,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/replies"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/send"
     },
     {
       "method": "GET",

@@ -16,8 +16,11 @@
 // A recipient is also always a person: a member of the account
 // (`personsAmong`). A service account or any other non-person id that the IAM
 // lets in is never told.
-import { projectSessions } from '@kortix/db';
-import { inArray } from 'drizzle-orm';
+import { artifacts, projects, projectSessions } from '@kortix/db';
+import { and, eq, inArray } from 'drizzle-orm';
+import { canView, type ArtifactRow } from '../artifacts/service';
+import { privateChannelFoldersFor } from '../drives/service';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 import { PROJECT_ACTIONS } from '../iam/actions';
 import { listAccessible, type Accessible } from '../iam/authorize';
 import { groupIdsOfUser } from '../iam/group-read';
@@ -32,6 +35,69 @@ import { hiddenSpaceIds, spaceVisibleFor } from '../shared/space-access';
 
 /** Recipient checks in flight at once: one check is up to ~7 queries on a 5-connection pool. */
 const RECIPIENT_CHECK_CONCURRENCY = 4;
+
+export type ArtifactAccessRow = ArtifactRow & { projectMetadata: unknown };
+
+export async function loadArtifactAccessRows(artifactIds: readonly string[]): Promise<Map<string, ArtifactAccessRow>> {
+  const ids = [...new Set(artifactIds)].filter(isUuid);
+  if (!ids.length) return new Map();
+  const rows = await db.select({ artifact: artifacts, projectMetadata: projects.metadata }).from(artifacts)
+    .innerJoin(projects, and(eq(projects.projectId, artifacts.projectId), eq(projects.accountId, artifacts.accountId)))
+    .where(inArray(artifacts.artifactId, ids));
+  return new Map(rows.map((row) => [row.artifact.artifactId, { ...row.artifact, projectMetadata: row.projectMetadata }]));
+}
+
+/** Current Artifact permission and folder visibility, also used before a digest. */
+export async function maySeeArtifacts(userId: string, rows: readonly ArtifactAccessRow[], strict = false): Promise<Set<string>> {
+  const visible = new Set<string>();
+  if (!userId || !rows.length) return visible;
+  try {
+    const live = rows.filter((row) => resolveFeatureFlag(row.projectMetadata, 'artifacts') && resolveFeatureFlag(row.projectMetadata, 'artifact_comments'));
+    const permissions = new Map<string, { read: Accessible; comment: Accessible }>();
+    const access = (accountId: string, action: string) => strict
+      ? listAccessible({ userId, accountId, credential: { kind: 'jwt' }, ctx: {} }, action, 'project')
+      : projectAccess(userId, accountId, action);
+    await Promise.all([...new Set(live.map((row) => row.accountId))].map(async (accountId) => {
+      const [read, comment] = await Promise.all([
+        access(accountId, PROJECT_ACTIONS.PROJECT_ARTIFACT_READ),
+        access(accountId, PROJECT_ACTIONS.PROJECT_ARTIFACT_COMMENT),
+      ]);
+      permissions.set(accountId, { read, comment });
+    }));
+    const folders = new Map<string, Awaited<ReturnType<typeof privateChannelFoldersFor>>>();
+    for (const row of live) {
+      const permission = permissions.get(row.accountId)!;
+      if (!allows(permission.read, row.projectId) && !allows(permission.comment, row.projectId)) continue;
+      if (!folders.has(row.projectId)) folders.set(row.projectId, await privateChannelFoldersFor(row.projectId, userId, null));
+      const paths = folders.get(row.projectId)!;
+      if (canView(row, { userId, privateFolders: paths.visible, allPrivateFolders: paths.all })) visible.add(row.artifactId);
+    }
+  } catch (error) {
+    if (strict) throw error;
+    logger.warn('[notify] Artifact access check failed', { error: error instanceof Error ? error.message : String(error) });
+  }
+  return visible;
+}
+
+export async function filterArtifactRecipients(artifact: ArtifactRow, userIds: readonly string[]): Promise<string[]> {
+  const current = (await loadArtifactAccessRows([artifact.artifactId])).get(artifact.artifactId);
+  if (!current || current.accountId !== artifact.accountId || current.projectId !== artifact.projectId) return [];
+  const candidates = [...new Set(userIds)].filter(isUuid);
+  if (!candidates.length) return [];
+  const members = new Set((await accountMembersAmong(current.accountId, candidates)).map((row) => row.userId));
+  const people = candidates.filter((id) => members.has(id));
+  const permitted = await mapWithConcurrency(people, RECIPIENT_CHECK_CONCURRENCY, async (userId) =>
+    (await maySeeArtifacts(userId, [current], true)).has(current.artifactId));
+  return people.filter((_, index) => permitted[index]);
+}
+
+export async function mayReadProjectArtifacts(userId: string, accountId: string, projectIds: readonly string[]): Promise<Set<string>> {
+  const [read, comment] = await Promise.all([
+    projectAccess(userId, accountId, PROJECT_ACTIONS.PROJECT_ARTIFACT_READ),
+    projectAccess(userId, accountId, PROJECT_ACTIONS.PROJECT_ARTIFACT_COMMENT),
+  ]);
+  return new Set(projectIds.filter((id) => allows(read, id) || allows(comment, id)));
+}
 
 export interface SessionAccessRow {
   sessionId: string;

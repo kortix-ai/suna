@@ -83,6 +83,11 @@ export type ArtifactCommentAuthor =
   | { kind: 'user'; user_id: string; name: string }
   | { kind: 'session'; session_id: string; agent_name: string; title: string | null };
 
+export type ArtifactCommentMention =
+  | { kind: 'user'; user_id: string }
+  | { kind: 'session'; session_id: string; agent_name: string }
+  | { kind: 'agent'; agent_name: string };
+
 export type ArtifactCommentAnchor =
   | { type: 'none'; version: string }
   | { type: 'text'; version: string; quote: string; prefix: string; suffix: string }
@@ -102,7 +107,7 @@ export interface ArtifactComment {
   author_session_id: string | null;
   author: ArtifactCommentAuthor;
   body: string;
-  mentions: unknown[];
+  mentions: ArtifactCommentMention[];
   marks: unknown[];
   screenshot_key: string | null;
   created_at: string;
@@ -123,6 +128,8 @@ export interface ArtifactCommentThread {
   resolved_by_session_id: string | null;
   resolved_at: string | null;
   agent_state: 'none' | 'pending' | 'sent' | 'paused';
+  /** A bounded delivery failure; null for the loop guard. Absent from older APIs. */
+  agent_error?: string | null;
   sent_session_id: string | null;
   sent_at: string | null;
   created_at: string;
@@ -139,6 +146,18 @@ export interface CreateArtifactCommentInput {
 }
 
 export interface ArtifactCommentBodyInput { body: string }
+
+export interface SendArtifactCommentsInput {
+  thread_ids: string[];
+  /** Reuse this id when retrying one handoff. The SDK generates it when omitted. */
+  batch_id?: string;
+  agent?: string;
+}
+
+export interface SendArtifactCommentsResult {
+  session_id: string;
+  created: boolean;
+}
 
 export interface ArtifactActivityItem {
   id: string;
@@ -239,6 +258,12 @@ export async function deleteArtifactComment(projectId: string, artifactId: strin
 
 export async function listArtifactActivity(projectId: string, artifactId: string, options: { limit?: number; cursor?: string } = {}) {
   return unwrap(await backendApi.get<ArtifactActivityPage>(`${base(projectId)}/${artifactId}/activity${query(options)}`));
+}
+
+/** Send selected threads. A newly reserved session stays pending until its queued creation completes. */
+export async function sendArtifactComments(projectId: string, artifactId: string, input: SendArtifactCommentsInput) {
+  const body = { ...input, batch_id: input.batch_id ?? crypto.randomUUID() };
+  return unwrap(await backendApi.post<SendArtifactCommentsResult>(`${base(projectId)}/${artifactId}/comments/send`, body));
 }
 
 function query(params: Record<string, string | number | undefined>): string {

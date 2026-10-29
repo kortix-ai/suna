@@ -3137,7 +3137,8 @@
       "automation_recovered": "Avviso di ripristino",
       "capture_device_down": "Computer Capture fermo",
       "capture_device_recovered": "Computer Capture di nuovo in registrazione",
-      "message": "Messaggio"
+      "message": "Messaggio",
+      "artifact_comment": "Commenti agli artefatti"
     },
     "kindDescription": {
       "turn_done": "Un turno termina.",
@@ -3149,7 +3150,8 @@
       "automation_recovered": "Un trigger o un promemoria che falliva torna a funzionare.",
       "capture_device_down": "Un computer Kortix Capture non registra. Inviato a chi gestisce Capture.",
       "capture_device_recovered": "Un computer Kortix Capture che si era fermato registra di nuovo.",
-      "message": "Qualcuno ti menziona con @, o risponde in un thread in cui hai scritto, in una stanza."
+      "message": "Qualcuno ti menziona con @, o risponde in un thread in cui hai scritto, in una stanza.",
+      "artifact_comment": "Feedback, menzioni e risposte sugli artefatti che puoi visualizzare."
     },
     "bell": {
       "label": "Notifiche",
@@ -3173,7 +3175,8 @@
       "openSession": "Apri sessione",
       "openReminders": "Apri promemoria",
       "openTriggers": "Apri trigger",
-      "openConversation": "Apri conversazione"
+      "openConversation": "Apri conversazione",
+      "openArtifact": "Apri artefatto"
     },
     "session": {
       "mute": "Silenzia notifiche",

@@ -1317,6 +1317,20 @@
       "when": 1793291783968,
       "tag": "20261029163623_artifact_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1793296518071,
+      "tag": "20261029175518_artifact_comment_routing",
+      "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1793298184688,
+      "tag": "20261029182304_artifact_comment_delivery_scope",
+      "breakpoints": true
     }
   ]
 }

@@ -38,6 +38,8 @@ import { shortRelative } from '@/lib/session/session-list';
 import { cn } from '@/lib/utils/index';
 import { THEME } from '@/lib/utils/theme';
 import { usePushStore } from '@/stores/push-store';
+import { KORTIX_WEB_URL } from '@/lib/kortix-web';
+import { openLink } from '@/lib/utils/open-link';
 
 /** The unread marker, the "needs-you" blue (`SessionStatusMark`). A read row keeps the slot, so titles align. */
 function UnreadDot({ unread }: { unread: boolean }) {
@@ -75,6 +77,10 @@ export function InboxPage() {
     // Fire and forget: a failed write leaves the row unread, and opening a session marks it read too.
     if (!row.read) inbox.markRead([row.id]).catch(() => {});
     const target = inboxOpenTarget(row);
+    if (target?.artifactPath) {
+      void openLink(new URL(target.artifactPath, KORTIX_WEB_URL).toString()).catch(() => toast.error('Unable to open the Artifact. Try again.'));
+      return;
+    }
     if (target) usePushStore.getState().requestOpen(target.projectId, target.sessionId);
   };
 
@@ -115,7 +121,7 @@ export function InboxPage() {
                 right={null}
                 onPress={() => open(row)}
                 accessibilityLabel={inboxRowLabel(row, now)}
-                accessibilityHint={row.session_id ? 'Opens the session' : 'Opens the project'}
+                accessibilityHint={row.kind === 'artifact_comment' ? 'Opens the Artifact' : row.session_id ? 'Opens the session' : 'Opens the project'}
               />
             ))}
           </SettingsGroup>

@@ -3137,7 +3137,8 @@
       "automation_recovered": "Обавештење о опоравку",
       "capture_device_down": "Capture рачунар је стао",
       "capture_device_recovered": "Capture рачунар поново снима",
-      "message": "Poruka"
+      "message": "Poruka",
+      "artifact_comment": "Komentari na artefakte"
     },
     "kindDescription": {
       "turn_done": "Потез се завршава.",
@@ -3149,7 +3150,8 @@
       "automation_recovered": "Окидач или подсетник који није успевао поново ради.",
       "capture_device_down": "Kortix Capture рачунар не снима. Шаље се људима који управљају Capture-ом.",
       "capture_device_recovered": "Kortix Capture рачунар који је стао поново снима.",
-      "message": "Neko vas pomene sa @ ili odgovori u niti u kojoj ste pisali, u sobi."
+      "message": "Neko vas pomene sa @ ili odgovori u niti u kojoj ste pisali, u sobi.",
+      "artifact_comment": "Povratne informacije, pominjanja i odgovori na artefakte koje možete da vidite."
     },
     "bell": {
       "label": "Обавештења",
@@ -3173,7 +3175,8 @@
       "openSession": "Отвори сесију",
       "openReminders": "Отвори подсетнике",
       "openTriggers": "Отвори окидаче",
-      "openConversation": "Otvori razgovor"
+      "openConversation": "Otvori razgovor",
+      "openArtifact": "Otvori artefakt"
     },
     "session": {
       "mute": "Утишај обавештења",

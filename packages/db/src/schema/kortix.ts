@@ -2293,6 +2293,7 @@ export const sessionLifecycleCommands = kortixSchema.table(
     commandId: uuid('command_id').defaultRandom().primaryKey(),
     commandType: varchar('command_type', { length: 64 }).notNull(),
     source: varchar('source', { length: 64 }).notNull(),
+    artifactId: uuid('artifact_id'),
     status: sessionLifecycleCommandStatusEnum('status').default('queued').notNull(),
     projectId: uuid('project_id')
       .notNull()
@@ -2316,6 +2317,8 @@ export const sessionLifecycleCommands = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    foreignKey({ columns: [table.artifactId], foreignColumns: [artifacts.artifactId], name: 'session_lifecycle_commands_artifact_fk' }).onDelete('cascade'),
+    index('idx_session_lifecycle_commands_artifact').on(table.artifactId).where(sql`${table.artifactId} is not null`),
     uniqueIndex('idx_session_lifecycle_commands_idempotency').on(table.idempotencyKey),
     index('idx_session_lifecycle_commands_due').on(table.status, table.availableAt),
     index('idx_session_lifecycle_commands_project').on(table.projectId),
@@ -7869,6 +7872,7 @@ export const jobQueue = kortixSchema.table(
     jobId: uuid('job_id').default(sql`kortix.uuid_v7()`).primaryKey(),
     queue: text('queue').notNull(),
     jobKey: text('job_key').notNull(),
+    artifactId: uuid('artifact_id'),
     payload: jsonb('payload').$type<Record<string, unknown>>().default({}).notNull(),
     status: text('status').default('queued').notNull(),
     runAt: timestamp('run_at', { withTimezone: true }).defaultNow().notNull(),
@@ -7880,6 +7884,8 @@ export const jobQueue = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    foreignKey({ columns: [table.artifactId], foreignColumns: [artifacts.artifactId], name: 'job_queue_artifact_fk' }).onDelete('cascade'),
+    index('idx_job_queue_artifact').on(table.artifactId).where(sql`${table.artifactId} is not null`),
     uniqueIndex('idx_job_queue_key').on(table.queue, table.jobKey),
     index('idx_job_queue_due').on(table.queue, table.runAt).where(sql`${table.status} = 'queued'`),
     index('idx_job_queue_finished').on(table.updatedAt).where(sql`${table.status} <> 'queued'`),
@@ -8359,6 +8365,8 @@ export const notifications = kortixSchema.table('notifications', {
   roomId: uuid('room_id'),
   // A thread reply: the thread's root seq, so the link opens the thread.
   roomThreadSeq: bigint('room_thread_seq', { mode: 'number' }),
+  artifactId: uuid('artifact_id'),
+  artifactThreadId: uuid('artifact_thread_id'),
   kind: text('kind').notNull(),
   title: text('title').notNull(),
   body: text('body').default('').notNull(),
@@ -8372,6 +8380,8 @@ export const notifications = kortixSchema.table('notifications', {
 }, (table) => [
   foreignKey({ columns: [table.accountId], foreignColumns: [accounts.accountId], name: 'notifications_account_fk' }).onDelete('cascade'),
   foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'notifications_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.artifactId], foreignColumns: [artifacts.artifactId], name: 'notifications_artifact_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.artifactThreadId], foreignColumns: [artifactCommentThreads.threadId], name: 'notifications_artifact_thread_fk' }).onDelete('cascade'),
   unique('notifications_user_dedupe').on(table.userId, table.dedupeKey),
   index('idx_notifications_user_id').on(table.userId, table.notificationId.desc()),
   index('idx_notifications_user_unread').on(table.userId).where(sql`${table.readAt} IS NULL`),
@@ -8380,8 +8390,10 @@ export const notifications = kortixSchema.table('notifications', {
   index('idx_notifications_digested').on(table.emailedAt, table.userId).where(sql`${table.emailDueAt} IS NOT NULL AND ${table.emailedAt} IS NOT NULL`),
   index('idx_notifications_account').on(table.accountId),
   index('idx_notifications_project').on(table.projectId),
+  index('idx_notifications_artifact').on(table.artifactId).where(sql`${table.artifactId} IS NOT NULL`),
+  index('idx_notifications_artifact_thread').on(table.artifactThreadId).where(sql`${table.artifactThreadId} IS NOT NULL`),
   index('idx_notifications_created').on(table.createdAt),
-  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message')`),
+  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message', 'artifact_comment')`),
 ]);
 
 /** One record per user: partial overrides of the default notification preferences. */
@@ -8705,6 +8717,7 @@ export const artifactCommentThreads = kortixSchema.table('artifact_comment_threa
   resolvedBySessionId: text('resolved_by_session_id'),
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),
   agentState: text('agent_state').$type<'none' | 'pending' | 'sent' | 'paused'>().default('none').notNull(),
+  agentError: text('agent_error'),
   sentSessionId: text('sent_session_id'),
   sentAt: timestamp('sent_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -8717,13 +8730,18 @@ export const artifactCommentThreads = kortixSchema.table('artifact_comment_threa
   check('artifact_comment_threads_agent_state_check', sql`${table.agentState} in ('none', 'pending', 'sent', 'paused')`),
 ]);
 
+export type ArtifactCommentMention =
+  | { kind: 'user'; user_id: string }
+  | { kind: 'session'; session_id: string; agent_name: string }
+  | { kind: 'agent'; agent_name: string };
+
 export const artifactComments = kortixSchema.table('artifact_comments', {
   commentId: uuid('comment_id').defaultRandom().primaryKey(),
   threadId: uuid('thread_id').notNull(),
   authorUserId: uuid('author_user_id'),
   authorSessionId: text('author_session_id'),
   body: text('body').notNull(),
-  mentions: jsonb('mentions').default([]).notNull().$type<string[]>(),
+  mentions: jsonb('mentions').default([]).notNull().$type<ArtifactCommentMention[]>(),
   marks: jsonb('marks').default([]).notNull().$type<unknown[]>(),
   screenshotKey: text('screenshot_key'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

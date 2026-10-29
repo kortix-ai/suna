@@ -39,6 +39,8 @@ export {
   resolveProjectAutomationActor,
   retireWarmProjectSessions,
 } from './session-lifecycle';
+export type { CreateSessionCommand } from './session-lifecycle';
+export { sessionIsTombstoned } from './lib/session-visibility';
 
 // The shutdown hand-back of lifecycle claims (consumed by bootstrap.ts).
 export { handBackClaims } from './session-lifecycle/claim-handover';
@@ -56,7 +58,12 @@ export {
 } from './lib/triggers';
 
 // Every declared agent's grant (consumed by the connectors rules matrix).
-export { extractAgents, grantsByAgent } from './agents';
+export { extractAgents, grantsByAgent, loadProjectAgents } from './agents';
+export { mentionTokens, mentionsMember } from './rooms/envelope';
+export { resolveAndAuthorizeAgentAs } from './lib/agent-access';
+export { loadVisibleSession } from './lib/session-visibility';
+export { buildContinueSessionCommandValues } from './session-lifecycle';
+export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
 
 // Project access, the route app and the secret envelope.
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
