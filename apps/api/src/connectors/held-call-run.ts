@@ -368,7 +368,7 @@ export async function settleStuckHeldCall(executionId: string): Promise<void> {
 }
 
 /**
- * The approval-expiry tick's backstop for held calls, in two steps.
+ * The approval-expiry tick's backstop for held calls, in three steps.
  *
  *   1. A row stuck in the run: `dispatched` past the run ceiling, or `queued`
  *      past its run deadline, whose job is no longer queued (dead after its
@@ -376,7 +376,10 @@ export async function settleStuckHeldCall(executionId: string): Promise<void> {
  *      or `refused/run_window_passed`) and never runs the call. The row is
  *      selected by database time only. A row older than 31 days settles
  *      even with a queued job.
- *   2. Held input older than 31 days is wiped in every state; a `held` row
+ *   2. A `held` row whose gate is no longer `pending_approval` ends
+ *      `cancelled` with its input wiped: an old replica decided, denied or
+ *      expired the gate without touching the row (and already resumed).
+ *   3. Held input older than 31 days is wiped in every state; a `held` row
  *      also ends `cancelled`.
  *
  * Returns the number of rows settled or wiped.
@@ -414,6 +417,18 @@ export async function sweepHeldCalls(): Promise<number> {
       logger.warn('[approvals] stuck held call sweep failed', { executionId: id, error: String(error) });
     }
   }
+  // A gate an old replica decided, denied or expired never touched its held row.
+  const orphaned = await db
+    .update(connectorHeldCalls)
+    .set({ state: 'cancelled', inputEnc: null, finishedAt: sql`now()`, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(connectorHeldCalls.state, 'held'),
+        sql`EXISTS (SELECT 1 FROM kortix.connector_calls c
+          WHERE c.execution_id = kortix.connector_held_calls.execution_id AND c.status <> 'pending_approval')`,
+      ),
+    )
+    .returning({ id: connectorHeldCalls.executionId });
   const wiped = await db
     .update(connectorHeldCalls)
     .set({
@@ -424,7 +439,7 @@ export async function sweepHeldCalls(): Promise<number> {
     })
     .where(and(isNotNull(connectorHeldCalls.inputEnc), lt(connectorHeldCalls.createdAt, old)))
     .returning({ id: connectorHeldCalls.executionId });
-  return stuck.length + wiped.length;
+  return stuck.length + orphaned.length + wiped.length;
 }
 
 registerJobHandler(HELD_CALL_QUEUE, (job) => runHeldCall(job.jobKey), HELD_RUN_VISIBILITY_MS);

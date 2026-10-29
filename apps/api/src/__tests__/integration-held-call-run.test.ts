@@ -668,6 +668,30 @@ describe('the approval-expiry tick closes the held-call lifecycle', () => {
     expect((await held(young)).inputEnc).not.toBeNull();
   });
 
+  test('a held row whose gate an old replica closed ends cancelled with its input wiped, no resume', async () => {
+    const decidedOk = await gate({ amount: 1210 });
+    const denied = await gate({ amount: 1211 });
+    const expired = await gate({ amount: 1212 });
+    const pending = await gate({ amount: 1213 });
+    // An old replica writes the gate only; the held row stays `held` with its input.
+    await db.update(connectorCalls).set({ status: 'ok' }).where(eq(connectorCalls.executionId, decidedOk));
+    await db.update(connectorCalls).set({ status: 'denied' }).where(eq(connectorCalls.executionId, denied));
+    await db.update(connectorCalls).set({ status: 'expired' }).where(eq(connectorCalls.executionId, expired));
+
+    const before = providerHits;
+    await runApprovalExpiryTick();
+    expect(providerHits).toBe(before);
+    for (const id of [decidedOk, denied, expired]) {
+      const row = await held(id);
+      expect(row).toMatchObject({ state: 'cancelled', inputEnc: null });
+      expect(row.finishedAt).toBeInstanceOf(Date);
+      expect(await resumes(`approval-run:${id}`)).toHaveLength(0);
+    }
+    // A gate still pending keeps its held row.
+    expect(await held(pending)).toMatchObject({ state: 'held' });
+    expect((await held(pending)).inputEnc).not.toBeNull();
+  });
+
   test('the audit projection of an approved gate reads success, not failure', async () => {
     const id = await gate({ amount: 1208 });
     await decide(id, 'approve');
