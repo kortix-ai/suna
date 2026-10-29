@@ -128,14 +128,15 @@ export async function switchChannelProject(
  * Give a chat a settings row in `projectId`, for a platform whose admitted senders change settings
  * with no Kortix login (Telegram's allowed users). False: the platform has no install of this
  * workspace in the project. A row of this project stays as it is; a row another project left (a
- * bot reused across projects) is taken over with its agent and model cleared.
+ * bot reused across projects) is taken over with its agent and model cleared. `lookupName` runs
+ * only for a row this call writes and a `name` that is null; it never throws.
  */
 // ponytail: a reconnect with another bot between the check and the write leaves at most one row on
 // the old bot id, which no read keys on. Upgrade: one INSERT … SELECT … WHERE EXISTS.
 export async function ensureChatBinding(
   settings: SettingsChannel,
   projectId: string,
-  label: { name: string | null; type: string | null },
+  label: { name: string | null; type: string | null; lookupName?: () => Promise<string | null> },
 ): Promise<boolean> {
   const platform = settings.platform ?? 'slack';
   const [install] = await db
@@ -144,12 +145,14 @@ export async function ensureChatBinding(
     .where(and(eq(chatInstalls.platform, platform), eq(chatInstalls.workspaceId, settings.teamId), eq(chatInstalls.projectId, projectId)))
     .limit(1);
   if (!install) return false;
+  const name =
+    label.name ?? (label.lookupName && (await currentChannelSelection(settings))?.projectId !== projectId ? await label.lookupName() : null);
   await db
     .insert(chatChannelBindings)
-    .values({ platform, workspaceId: settings.teamId, channelId: settings.channelId, projectId, channelName: label.name, channelType: label.type })
+    .values({ platform, workspaceId: settings.teamId, channelId: settings.channelId, projectId, channelName: name, channelType: label.type })
     .onConflictDoUpdate({
       target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
-      set: { projectId, agentName: null, model: null, channelName: label.name, channelType: label.type },
+      set: { projectId, agentName: null, model: null, channelName: name, channelType: label.type },
       setWhere: sql`${chatChannelBindings.projectId} IS DISTINCT FROM ${projectId}`,
     });
   return true;
