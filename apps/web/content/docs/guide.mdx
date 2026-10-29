@@ -875,6 +875,7 @@ A message from an allowed user starts a session. Anyone else gets a reply that s
 </Steps>
 
 - **One chat is one session.** In a forum group, each topic is its own session. After `/new`, your next message starts a new session.
+- **Photos, files, voice notes and videos reach the agent.** Kortix downloads up to 8 MB of files per message into the session's workspace. The agent sees a photo when the project has a model that reads images. A larger file does not arrive, and the agent tells you. The agent cannot transcribe a voice note yet. Each photo of an album arrives as its own message, and a sticker arrives as its emoji.
 - **Questions come with buttons.** When the agent asks one question with up to 6 options, Kortix posts one button per option. Several questions, a multi-select question or a longer list arrive as a numbered list. Tap a button, or reply with your own answer.
 - **A question follows the connector's rules.** Kortix posts it only where the agent may send a Telegram message without approval. Otherwise the agent asks in its own words, and that message waits for approval or is refused.
 - **Telegram has no account link.** The allowed-user list decides who may talk to the bot. Only an allowed user's tap counts.
