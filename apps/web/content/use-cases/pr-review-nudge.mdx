@@ -61,47 +61,116 @@ summary of what's actually blocking it.
 ## How it works
 
 <Steps>
-<Step title="Run on a daily cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent once a day. Each firing spawns a fresh
-**session** in its own sandbox. One day maps to one run, so the review state is
-recomputed from GitHub's current state every time — nothing carries over from
-yesterday's nudges.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the pr-review-sla skill and the daily trigger,
+and opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent the SLA rules">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a daily PR review nudge agent in this project.
 
-What counts as "past SLA," "stale," and "unaddressed" lives as a **skill** that
-travels with the agent: the review-SLA clock, the staleness window, how to tell
-a requested-changes review has actually been addressed versus just sitting
-there, and who to nudge for each case.
+1. Create the agent agents/pr-review-nudge.md. Its job is to find stuck pull requests on owner/repo and nudge the person who owns the next move. It reads GitHub with the gh CLI and the GH_TOKEN secret, and it may use the Slack connector.
 
-</Step>
-<Step title="Connect to GitHub read-only">
+2. Create the skill skills/pr-review-sla/SKILL.md with these rules:
+   - A PR is overdue for review when a requested reviewer has not reviewed it 24 hours after the request. Nudge the reviewer.
+   - A PR is stale when it has no commit, comment or review in 3 days. Nudge the author.
+   - A PR has unaddressed changes when its latest review requests changes and the author has not pushed or replied since. Nudge the author.
+   - A PR that trips more than one rule gets one entry that lists every rule it trips.
+   - Post exactly one summary to #eng-reviews per sweep, grouped by rule, and tag each person you nudge.
+   - Every GitHub call is a read. Never merge, close, approve or comment on a PR, and never dismiss a review.
 
-Through the `gh` CLI, authenticated with a scoped **GH_TOKEN** secret injected
-at runtime, the agent reads:
+3. Add a cron trigger daily-pr-review-sweep to kortix.yaml. It runs the pr-review-nudge agent every day at 08:00 with the prompt "Load the pr-review-sla skill and run one complete review sweep on owner/repo."
 
-- **Open pull requests** across the configured repos — age, author, requested
-  reviewers, and current state.
-- **Reviews and comments** on each PR — whether a review was submitted, what it
-  said, and whether the author has pushed or replied since.
-- **Posts to Slack** — the nudge, with the PR link and what's blocking it.
+4. Tell me which of these connectors are not connected yet. Tell me if the GH_TOKEN secret is missing.
 
-</Step>
-<Step title="Set the guardrails">
-
-The agent has **no write access to GitHub**. It cannot merge a PR, close it,
-approve it, or dismiss a review. Its only output is the Slack nudge. Credentials
-are encrypted in the Secrets Manager and injected at runtime, scoped to the agents you grant them to.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Nudge the right person">
+<Step title="Connect your tools">
 
-With that in place, each morning brings a Slack nudge for every PR that's stuck:
-who it's nudging, why (overdue for review, stale, or unaddressed changes), how
-long it's been that way, and a link straight to the PR. The team decides what to
-do next — review it, ping the reviewer directly, or close it themselves.
+Add a GitHub token with read access as the `GH_TOKEN` secret. It is injected at
+runtime and scoped to this agent. Then open **Connectors** and connect Slack.
+Credentials are brokered server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="GitHub" domain="github.com" tag="Required" alternatives={[['GitLab', 'gitlab.com'], ['Bitbucket', 'bitbucket.org']]}>
+    Reads open PRs, review requests and activity, read-only.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Nudges the reviewer or author about what blocks each PR.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the **pr-review-nudge**
+agent and send this prompt. Replace owner/repo with your repository. Check who
+it nudges before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one review sweep on owner/repo.
+
+1. List every open PR with gh pr list, and read its review requests, reviews, comments and commits.
+2. Flag PRs that wait more than 24 hours for a requested review, PRs with no activity in 3 days, and PRs whose latest review requests changes that the author has not addressed.
+3. Write one line per flagged PR: title, link, every rule it trips, for how long, and who owns the next move.
+4. Post one summary to #eng-reviews, grouped by rule.
+5. Do not merge, close, approve or comment on any PR.`}
+/>
+
+</Step>
+<Step title="Let the daily schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every day at 08:00, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: daily-pr-review-sweep
+    name: Daily PR review SLA sweep
+    on:
+      cron: "0 0 8 * * *"
+    run:
+      agent: pr-review-nudge
+      prompt: Load the pr-review-sla skill and run one complete review sweep on owner/repo.`}
+/>
+
+</Step>
+<Step title="Read GitHub, write only to Slack">
+
+Every GitHub call is a read. The agent never merges, closes or approves a PR,
+and never dismisses or resolves a review. The Slack summary is its only output.
+People decide what happens to each PR.
+
+</Step>
+<Step title="Read the morning summary">
+
+Each run ends with one summary in the channel. This is what a run looks like in
+the session:
+
+<ExampleRun
+  title="Daily PR review SLA sweep · 08:00"
+  message="Load the pr-review-sla skill and run one complete review sweep on owner/repo."
+  worked="Worked for 1m 06s"
+  tools={[
+    'gh · pr list',
+    'gh · pr view × 17',
+    'slack · post message → #eng-reviews',
+  ]}
+  note="Illustrative example. Your counts depend on your repositories."
+>
+  Checked **17** open PRs and flagged **6**. **3** wait on a review past the
+  24-hour SLA, **2** have had no activity for 3 days, and **1** has requested
+  changes that the author has not addressed for **4** days.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -112,6 +181,25 @@ do next — review it, ping the reviewer directly, or close it themselves.
   rules live as a **skill**. The agent reads everything and writes nothing but
   the Slack nudge.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Skip drafts"
+  code="Ignore draft PRs and PRs labeled wip, and say how many you skipped at the end of the summary."
+/>
+
+<CopyBlock
+  title="Weekly review-time trend"
+  code="Every Friday, post to #eng-reviews the median hours to first review for the PRs merged that week."
+/>
+
+<CopyBlock
+  title="Cover more repositories"
+  code="Also sweep owner/other-repo in the same run, and group the summary by repository."
+/>
 
 ## Guardrails
 

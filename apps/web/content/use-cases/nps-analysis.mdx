@@ -58,51 +58,115 @@ writes nothing back to the sheet.
 ## How it works
 
 <Steps>
-<Step title="Run on a weekly cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent once a week. Each firing spawns a fresh
-**session** in its own sandbox. There's no memory carried between runs — the
-sheet itself is the record, so the agent recomputes themes, sentiment, and the
-score trend from the full response history every time.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the theme analysis skill and the weekly trigger, and
+opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent the analysis rules">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a weekly NPS analysis agent in this project.
 
-How we cluster feedback and read the score lives as **skills** and **memory**
-that travel with the agent: what counts as a detractor driver versus a one-off
-complaint, how to pick a representative quote for a theme, where the promoter,
-passive, and detractor bands sit, and how to describe a week-over-week move. When
-we refine what a theme should look like, we write it down and the next run
-follows it.
+1. Create the agent agents/nps-analysis.md. Its job is to turn NPS and CSAT survey responses into themes, detractor drivers and a score trend. It may use the Google Sheets connector and post to Slack.
 
-</Step>
-<Step title="Connect the survey sheet and Slack">
+2. Create the skill skills/nps-theme-analysis/SKILL.md with these rules:
+   - Read the full response history in the NPS responses sheet every run. Never write to the sheet.
+   - Band NPS scores as promoter 9 to 10, passive 7 to 8 and detractor 0 to 6. Tag the sentiment of each comment from its text.
+   - Cluster comments into themes by meaning, not wording, and pick one or two representative quotes for each theme.
+   - Rank this week's detractor themes by count, and flag any driver that is new or growing against prior weeks.
+   - Post one summary to #customer-success. Never contact a respondent and never open a ticket.
 
-Through a scoped **connector**, brokered server-side so no raw token reaches the
-model, the agent reads:
+3. Add a cron trigger weekly-nps-analysis to kortix.yaml. It runs the nps-analysis agent every Monday at 09:00 with the prompt "Load the nps-theme-analysis skill and run one complete NPS/CSAT analysis sweep."
 
-- **Survey responses from Google Sheets** — the full export of NPS/CSAT scores,
-  comments, and timestamps, read-only.
-- **Posts to Slack** — one weekly summary: the score and its trend, the top
-  themes with quotes and counts, and the leading detractor drivers.
+4. Tell me which of these connectors are not connected yet.
 
-</Step>
-<Step title="Set the guardrails">
-
-The agent is **read-only** on the survey sheet — it never edits a row, adds a
-column, or writes back a score. It never contacts a respondent. Its only output
-is the Slack post, and that post is a report, not an action. Credentials are
-encrypted in the Secrets Manager and injected at runtime, scoped to the agents you grant them to
-or written to logs.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Post the weekly summary">
+<Step title="Connect your tools">
 
-With that in place, each Monday brings one Slack post: the current NPS/CSAT
-score and how it moved since last week, the themes behind the comments with a
-representative quote and count for each, and the drivers pulling detractors down
-this week. The customer-success team reads it and decides what, if anything, to
-act on.
+Open **Connectors** in your project and connect the sheet your survey tool
+exports into, and Slack. Credentials are brokered server-side and never enter
+the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Google Sheets" domain="sheets.google.com" tag="Required" alternatives={[['Typeform', 'typeform.com'], ['SurveyMonkey', 'surveymonkey.com'], ['Qualtrics', 'qualtrics.com']]}>
+    Reads the week's survey responses, read-only.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Posts the theme summary with representative quotes.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the **nps-analysis** agent
+and send this prompt. Check the themes against a sample of comments before you let
+the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one NPS analysis on the NPS responses sheet.
+
+1. Read every response in the sheet. Do not write to it.
+2. Band each score as promoter, passive or detractor, and tag the sentiment of each comment.
+3. Cluster the comments into themes across the full history, with a count and a quote for each.
+4. List this week's top detractor drivers and say which are new or growing.
+5. Compute this week's score and its move since last week, and post the summary to #customer-success.`}
+/>
+
+</Step>
+<Step title="Let the weekly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every Monday at 09:00, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: weekly-nps-analysis
+    name: Weekly NPS/CSAT analysis
+    on:
+      cron: "0 0 9 * * 1"
+    run:
+      agent: nps-analysis
+      prompt: Load the nps-theme-analysis skill and run one complete NPS/CSAT analysis sweep.`}
+/>
+
+</Step>
+<Step title="Report only, never act">
+
+The agent reads the sheet and writes one Slack post. It never edits a row,
+never contacts a respondent and never opens a ticket. What to do about a theme
+stays with the customer-success team.
+
+</Step>
+<Step title="Read the weekly report">
+
+Each run ends with one report in the channel. This is what a run looks like
+in the session:
+
+<ExampleRun
+  title="Weekly NPS/CSAT analysis · Mon 09:00"
+  message="Load the nps-theme-analysis skill and run one complete NPS/CSAT analysis sweep."
+  worked="Worked for 2m 18s"
+  tools={[
+    'google sheets · read sheet',
+    'slack · post message → #customer-success',
+  ]}
+  note="Illustrative example. Your score and themes depend on your survey responses."
+>
+  NPS is **41**, down **6** points from last week, because of more detractors
+  rather than fewer promoters. The top detractor driver is slow support replies,
+  with **9** mentions this week, up from **3**. Onboarding friction is a new
+  theme with **4** mentions.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -113,6 +177,25 @@ act on.
   **memory**. The agent reads the full history every time and writes nothing but
   the Slack post.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Split the score by plan"
+  code="When the sheet has a plan or segment column, add this week's score and top themes per segment to the summary."
+/>
+
+<CopyBlock
+  title="Monthly theme review"
+  code="On the first Monday of each month, post the top five themes of the last month and how each one moved to #customer-success."
+/>
+
+<CopyBlock
+  title="Name the right owner"
+  code="Next to each theme that names a product area, mention the owner of that area from memory so the right person sees it."
+/>
 
 ## Guardrails
 

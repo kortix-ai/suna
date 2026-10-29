@@ -28,8 +28,6 @@ import {
   sessionLogs,
   sessionLogThreads,
   sessionTurns,
-  sessionTranscriptMessages,
-  sessionTranscriptMirrors,
   voiceCallTurns,
 } from '@kortix/db';
 import { eq, inArray, sql } from 'drizzle-orm';
@@ -68,8 +66,7 @@ async function seedContent(project: SeededProject, opts: { deletedAt?: Date } = 
   if (opts.deletedAt) await markDeleted(sessionId, opts.deletedAt);
   const scope = { sessionId, projectId: project.project_id, accountId: project.account_id };
   const t = BASE;
-  // A journal's log, as the box writes it: a restore leaves it alone (its
-  // mirror conversion runs only for a log no journal owns).
+  // A journal's log, as the box writes it.
   await db.insert(sessionLogs).values({ ...scope, v: 1, harnessCurrent: 'opencode', restoreGrade: 'A', record: {}, journalSeenAt: new Date() });
   await db.insert(sessionLogThreads).values({ sessionId, threadId: 'main', v: 1, record: {} });
   await db.insert(sessionLogMessages).values({
@@ -78,8 +75,6 @@ async function seedContent(project: SeededProject, opts: { deletedAt?: Date } = 
   });
   const object = `${project.project_id}/${sessionId}/00000000-0000-4000-8000-000000000001`;
   await db.insert(sessionLogBlobs).values({ sessionId, sha256: 'a'.repeat(64), objectKey: object, bytes: 3, mime: 'text/plain' });
-  await db.insert(sessionTranscriptMirrors).values(scope);
-  await db.insert(sessionTranscriptMessages).values({ sessionId, messageId: 'msg_1', role: 'user', info: {}, parts: [] });
   // Copies of the conversation outside the log.
   await db.insert(gatewayRequestLogs).values({
     requestId: crypto.randomUUID(), ...scope, requestedModel: 'm', resolvedModel: 'm', provider: 'p', status: 200, ok: true,
@@ -100,15 +95,13 @@ const markDeleted = (sessionId: string, at: Date) =>
 const markUndeleted = (sessionId: string) =>
   db.update(projectSessions).set({ metadata: sql`metadata - 'deletedAt'` }).where(eq(projectSessions.sessionId, sessionId));
 
-const count = async (table: typeof sessionLogs | typeof sessionLogThreads | typeof sessionLogMessages | typeof sessionLogBlobs | typeof sessionTranscriptMirrors | typeof sessionTranscriptMessages, sessionId: string) =>
+const count = async (table: typeof sessionLogs | typeof sessionLogThreads | typeof sessionLogMessages | typeof sessionLogBlobs, sessionId: string) =>
   Number((await db.execute(sql`select count(*)::int as n from ${table} where session_id = ${sessionId}`))[0]!.n);
 const rowsOf = async (sessionId: string) => ({
   logs: await count(sessionLogs, sessionId),
   threads: await count(sessionLogThreads, sessionId),
   messages: await count(sessionLogMessages, sessionId),
   blobs: await count(sessionLogBlobs, sessionId),
-  mirrors: await count(sessionTranscriptMirrors, sessionId),
-  v1: await count(sessionTranscriptMessages, sessionId),
   ...(await copiesOf(sessionId)),
 });
 /** The content of the copies: rows that billing or audit counts stay, without it. */
@@ -122,8 +115,8 @@ const copiesOf = async (sessionId: string) => {
   return row as { modelBodies: number; prompts: number; voice: number; notifications: number; connectorResults: number };
 };
 const COPIES = { modelBodies: 1, prompts: 1, voice: 1, notifications: 1, connectorResults: 1 };
-const ALL = { logs: 1, threads: 1, messages: 1, blobs: 1, mirrors: 1, v1: 1, ...COPIES };
-const NONE = { logs: 0, threads: 0, messages: 0, blobs: 0, mirrors: 0, v1: 0, modelBodies: 0, prompts: 0, voice: 0, notifications: 0, connectorResults: 0 };
+const ALL = { logs: 1, threads: 1, messages: 1, blobs: 1, ...COPIES };
+const NONE = { logs: 0, threads: 0, messages: 0, blobs: 0, modelBodies: 0, prompts: 0, voice: 0, notifications: 0, connectorResults: 0 };
 const objectsOf = (c: { projectId: string; sessionId: string }) => [...bucket.objects.keys()].filter((k) => k.startsWith(`${c.projectId}/${c.sessionId}/`)).length;
 const bookkeeping = async (sessionId: string) => (await db.select().from(sessionContentPurges).where(eq(sessionContentPurges.sessionId, sessionId)))[0];
 
@@ -495,8 +488,9 @@ const SESSION_TABLES: Record<string, 'purged' | 'scrubbed' | `kept: ${string}`> 
   'session_log_threads.session_id': 'purged',
   'session_log_messages.session_id': 'purged',
   'session_log_blobs.session_id': 'purged',
-  'session_transcript_messages.session_id': 'purged',
-  'session_transcript_mirrors.session_id': 'purged',
+  // The retired v1 mirror (P8.2): no code reads it since Release B2; Release B3 drops it with every row.
+  'session_transcript_messages.session_id': 'kept: the retired v1 mirror, dropped by Release B3',
+  'session_transcript_mirrors.session_id': 'kept: the retired v1 mirror, dropped by Release B3',
   'voice_call_turns.session_id': 'purged',
   'session_pending_questions.session_id': 'purged',
   'session_runtime_projections.session_id': 'purged',
@@ -532,6 +526,8 @@ const SESSION_TABLES: Record<string, 'purged' | 'scrubbed' | `kept: ${string}`> 
   'connector_attachments.session_id': 'kept: expires on its own (cleanupExpiredConnectorAttachments)',
   'legacy_sandbox_migrations.session_id': 'kept: migration bookkeeping',
   'chat_threads.session_id': 'kept: ids only',
+  'chrome_attachments.session_id': 'kept: ids, a status and an end reason, no content',
+  'chrome_grants.session_id': 'kept: ids and an allow/deny decision, no content',
   'chat_thread_participants.session_id': 'kept: ids only',
   'room_members.session_id': 'kept: ids only',
   'notification_watchers.session_id': 'kept: ids only',

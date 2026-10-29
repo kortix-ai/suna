@@ -1,0 +1,23 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Kortix Smoke Form</title></head>
+<body>
+<h1>Smoke form</h1>
+<label>Name <input id="name" type="text" aria-label="Name"></label>
+<button id="go" type="button" onclick="document.getElementById('out').textContent='Hello ' + document.getElementById('name').value">Greet</button>
+<button id="ask" type="button" onclick="document.getElementById('out').textContent = confirm('Delete it?') ? 'confirmed' : 'cancelled'">Delete</button>
+<input id="file" type="file" aria-label="File" onchange="const f=this.files[0];document.getElementById('picked').textContent=f.name+':'+f.size">
+<p id="picked">none</p>
+<p id="out">waiting</p>
+<div style="height: 3000px"></div>
+<script>
+  // Where the Kortix cursor was when the page got the agent's input (protocol.md §7, read by smoke.ts).
+  const cursorAt = () => {
+    const r = document.getElementById('kortix-overlay-host')?.shadowRoot;
+    const m = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(r?.querySelector('.cursor')?.style.transform ?? '');
+    return { at: m ? [+m[1], +m[2]] : null, on: !!r?.querySelector('.cursor.on'), label: r?.querySelector('.label')?.textContent ?? null };
+  };
+  addEventListener('mousedown', (e) => { window.__down = { ...cursorAt(), x: e.clientX, y: e.clientY }; }, true);
+  addEventListener('input', (e) => { window.__typed = { ...cursorAt(), box: e.target.getBoundingClientRect().toJSON() }; }, true);
+  addEventListener('scroll', () => setTimeout(() => { window.__scrolled = cursorAt(); }, 50), { passive: true });
+</script>
+</body></html>

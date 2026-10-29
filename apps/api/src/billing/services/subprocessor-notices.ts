@@ -62,7 +62,6 @@ function compose(notice: SubprocessorNotice, accountName: string) {
     category: 'legal-subprocessor-notice',
     replyTo: PRIVACY_EMAIL,
     html: renderEmail({
-      kicker: 'Legal',
       title,
       body: `<p style="${S.p}">${escapeHtml(intro)}</p>${items.map((item) => `<p style="${S.p}">${escapeHtml(item)}</p>`).join('')}<p style="${S.p}">${escapeHtml(outro)}</p>${actionButton(url, 'View all subprocessors')}`,
     }),
@@ -140,7 +139,6 @@ async function reportToPrivacy(notice: SubprocessorNotice, accounts: number, now
     subject: `[Kortix compliance] ${title}`,
     category: 'legal-subprocessor-notice-report',
     html: renderEmail({
-      kicker: 'Compliance',
       title,
       body: paragraphs.map((p) => `<p style="${S.p}">${escapeHtml(p)}</p>`).join(''),
     }),

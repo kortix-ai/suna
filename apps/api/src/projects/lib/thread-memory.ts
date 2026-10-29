@@ -1,8 +1,6 @@
 /**
  * Room for a conversion thread (a Bun `Worker` that holds a whole session in memory): the
- * session-log backfill's thread (`session-log-backfill.ts`) and the journal-less capture's
- * (`captureInThread`, `session-transcript-capture.ts`) share this one guard. The mirror merge
- * (`mergeMirrorIntoLog`, `session-log-capture.ts`) uses the same estimate for its in-process rows.
+ * journal-less capture's (`captureInThread`, `session-transcript-capture.ts`).
  */
 import { readFileSync } from 'node:fs';
 import { config } from '../../config';
@@ -15,9 +13,9 @@ export const THREAD_BYTES_PER_JSON_BYTE = 12;
 /** The share of the memory limit RSS plus the thread's estimate must stay under. */
 const THREAD_MEMORY_SHARE = 0.75;
 
-/** The process's memory limit in bytes: cgroup v2 `memory.max` when set, capped by `SESSION_LOG_BACKFILL_MEMORY_MB`. */
+/** The process's memory limit in bytes: cgroup v2 `memory.max` when set, capped by `SESSION_LOG_THREAD_MEMORY_MB`. */
 function memoryLimit(): number {
-  const configured = config.SESSION_LOG_BACKFILL_MEMORY_MB * 1024 * 1024;
+  const configured = config.SESSION_LOG_THREAD_MEMORY_MB * 1024 * 1024;
   try {
     const max = readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim();
     if (/^\d+$/.test(max)) return Math.min(Number(max), configured);

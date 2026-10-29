@@ -13,13 +13,14 @@ import {
 } from '@/features/marketing/landing-sections/use-case-teams';
 import type { Post } from '@/lib/blog';
 import { cn } from '@kortix/ui';
+import { UseCaseCover } from './use-case-card';
 import { EmptyState } from '@kortix/ui/empty-state';
-import { ArrowRightIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
+import { MagnifyingGlassIcon } from '@phosphor-icons/react';
 
 type Filter = TeamId | 'all' | 'other';
 
-/** Four use cases a first-time reader should open, one per kind of team. */
-const START_HERE = ['ar-chaser', 'error-triage', 'churn-risk', 'contract-review'];
+/** Three use cases a first-time reader should open, one per kind of team. */
+const START_HERE = ['ar-chaser', 'error-triage', 'churn-risk'];
 
 const sourceOTHER = { id: 'other' as const, label: 'More' };
 
@@ -39,20 +40,24 @@ function labelOf(
   return team === 'other' ? OTHER.label : (TEAMS.find((t) => t.id === team)?.label ?? OTHER.label);
 }
 
-/** One use case as a text card: team, the title, two lines of description. */
+/**
+ * One use case as a blog-style card (as on /blog): a wide cover, then team,
+ * the title and two lines of description. The whole card is the link.
+ */
 function UseCaseTile({ post }: { post: Post }) {
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Link
       href={post.url}
-      className="group bg-background outline-ring flex h-full flex-col gap-3 p-6 focus-visible:outline-2 focus-visible:-outline-offset-2"
+      className="group outline-ring flex h-full flex-col rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4"
     >
-      <span className="text-muted-foreground text-xs">{labelOf(teamOf(post), tMarketing)}</span>
-      <h3 className="text-foreground group-hover:text-muted-foreground duration-normal text-base font-medium text-pretty transition-colors ease-out">
+      <UseCaseCover post={post} className="aspect-video w-full shrink-0" />
+      <span className="text-muted-foreground mt-5 text-xs">{labelOf(teamOf(post), tMarketing)}</span>
+      <h3 className="text-foreground group-hover:text-muted-foreground duration-normal mt-2 text-base font-medium text-pretty transition-colors ease-out">
         {post.data.title}
       </h3>
       {post.data.description ? (
-        <p className="text-muted-foreground line-clamp-2 text-sm text-pretty">
+        <p className="text-muted-foreground mt-2 line-clamp-2 text-sm text-pretty">
           {post.data.description}
         </p>
       ) : null}
@@ -67,12 +72,10 @@ function TileGrid({
   posts: Post[];
   cols?: string;
 }) {
-  // Hairlines per card (top and left on the grid, right and bottom on each
-  // card), so a short last row leaves blank space instead of a grey block.
   return (
-    <ul className={cn('grid grid-cols-1 border-t border-l', cols)}>
+    <ul className={cn('grid grid-cols-1 gap-x-6 gap-y-16', cols)}>
       {posts.map((post) => (
-        <li key={post.slug} className="border-r border-b">
+        <li key={post.slug}>
           <UseCaseTile post={post} />
         </li>
       ))}
@@ -83,8 +86,7 @@ function TileGrid({
 /**
  * The use-case catalog as a marketplace: filters on the left (search, then
  * every team with its count), the results on the right. With no filter the
- * right side opens with four picks, then a tile per team, then every use case
- * grouped by team.
+ * right side opens with three picks, then every use case grouped by team.
  */
 export function UseCasesBrowser({ posts }: { posts: Post[] }) {
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
@@ -173,35 +175,10 @@ export function UseCasesBrowser({ posts }: { posts: Post[] }) {
               </h2>
               <p className="text-muted-foreground mt-1 text-sm">{tMarketing('textdc8df43d2f44')}</p>
               <div className="mt-6">
-                <TileGrid posts={starters} cols="sm:grid-cols-2 xl:grid-cols-4" />
+                <TileGrid posts={starters} cols="sm:grid-cols-2 xl:grid-cols-3" />
               </div>
             </section>
 
-            <section aria-labelledby="by-team">
-              <h2 id="by-team" className="text-foreground text-lg font-medium tracking-tight">
-                {tMarketing('textb37b0def3a13')}
-              </h2>
-              <ul className="mt-6 grid grid-cols-2 border-t border-l sm:grid-cols-3 xl:grid-cols-4">
-                {teams.map((t) => (
-                  <li key={t.id} className="border-r border-b">
-                    <button
-                      type="button"
-                      onClick={() => setFilter(t.id)}
-                      className="group bg-background outline-ring flex w-full flex-col gap-1 p-5 text-left focus-visible:outline-2 focus-visible:-outline-offset-2"
-                    >
-                      <span className="text-foreground group-hover:text-muted-foreground duration-normal flex items-center gap-1.5 text-sm font-medium transition-colors ease-out">
-                        {t.label}
-                        <ArrowRightIcon className="size-3.5" aria-hidden />
-                      </span>
-                      <span className="text-muted-foreground text-xs tabular-nums">
-                        {counts.get(t.id)} {tMarketing('texta3b142af6e97')}
-                        {counts.get(t.id) === 1 ? 'case' : 'cases'}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
 
             {teams.map((t) => {
               const group = posts.filter((post) => teamOf(post) === t.id);

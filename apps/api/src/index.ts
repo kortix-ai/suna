@@ -20,6 +20,7 @@ import { dispatchInbound } from './inbound-dispatch';
 import { bootServices, markSchemaReady, shutdown } from './bootstrap';
 import { appWsHandlers } from './apps/ws-proxy';
 import { wsHandlers as tunnelWsHandlers } from './tunnel';
+import { chromeWsHandlers } from './chrome/ws';
 import { previewWsHandlers } from './sandbox-proxy/ws-proxy';
 
 // The assembled app; the server entry below only serves it.
@@ -185,6 +186,10 @@ export default {
         tunnelWsHandlers.onOpen(ws.data.tunnelId, ws as any);
         return;
       }
+      if (ws.data?.type === 'chrome-extension') {
+        chromeWsHandlers.open(ws as any);
+        return;
+      }
       if (ws.data?.type === 'preview-ws') {
         previewWsHandlers.open(ws as any);
         return;
@@ -207,6 +212,10 @@ export default {
         tunnelWsHandlers.onMessage(ws.data.tunnelId, ws as any, message);
         return;
       }
+      if (ws.data?.type === 'chrome-extension') {
+        chromeWsHandlers.message(ws as any, message);
+        return;
+      }
       if (ws.data?.type === 'preview-ws') {
         previewWsHandlers.message(ws as any, message);
         return;
@@ -220,6 +229,10 @@ export default {
     close(ws: { data: any }) {
       if (ws.data?.type === 'tunnel-agent') {
         tunnelWsHandlers.onClose(ws.data.tunnelId, ws as any);
+        return;
+      }
+      if (ws.data?.type === 'chrome-extension') {
+        chromeWsHandlers.close(ws as any);
         return;
       }
       if (ws.data?.type === 'preview-ws') {
