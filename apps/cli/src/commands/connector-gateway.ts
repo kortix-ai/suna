@@ -46,6 +46,10 @@ import { tokenRejectedLine } from '../command-helpers.ts';
 
 const PROVIDERS = ['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
 
+// Mirrors APPROVAL_RERUN_RULE in apps/api/src/connectors/approval-expiry.ts.
+const APPROVAL_RERUN_RULE =
+  'Approval alone does not run the call: after approval, repeat this exact call (same arguments and account) within 15 minutes, and it runs once.';
+
 // Built-in channels are never added/connected through the connector — the
 // platform materializes their connectors automatically after the channel is
 // wired up. Catch the slugs client-side so an agent gets pointed at the ONE
@@ -300,8 +304,8 @@ async function call({ args, flags, repeated }: Invocation): Promise<void> {
     const projectId = resolveProjectId(stringValue(flags.project));
     const scope = projectId ? ` --project ${projectId}` : '';
     result.approval_instructions = result.execution_id
-      ? `Have an authorized human review the call and use their personal CLI credentials to run kortix review act call:${result.execution_id} approve${scope} or kortix review act call:${result.execution_id} reject${scope}.`
-      : 'Ask a human to review the pending call in the project Review Center.';
+      ? `Have an authorized human review the call and use their personal CLI credentials to run kortix review act call:${result.execution_id} approve${scope} or kortix review act call:${result.execution_id} reject${scope}. ${APPROVAL_RERUN_RULE}`
+      : `Ask a human to review the pending call in the project Review Center. ${APPROVAL_RERUN_RULE}`;
   }
   // `--out <file>`: the full result goes to the file, a summary to stdout
   // (bytes, the shape of `data`, the path). Large results stay out of the

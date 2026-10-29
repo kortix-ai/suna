@@ -9,6 +9,7 @@
  */
 
 import type { changeRequests, connectorCalls } from '@kortix/db';
+import { APPROVAL_RERUN_WINDOW_MS } from '../connectors/approval-expiry';
 import { isPlainRecord } from '../connectors/args-preview';
 import type { serializeReviewItem } from './review-items';
 import type { ApprovalResolvers } from './lib/approval-authority';
@@ -115,6 +116,50 @@ export function connectorCallToReviewItem(
     updated_at: ex.createdAt.toISOString(),
     /** When the approval stops being decidable; null = never. */
     expires_at: ex.expiresAt?.toISOString() ?? null,
+  };
+}
+
+/**
+ * A decided approval gate (approved or denied by a human), as the by-id read
+ * shows it: the decision, whether a repeated call used the approval, the
+ * deadline to repeat it, and one `next_step` sentence. Null for a row that is
+ * not a decided gate (still pending, expired, or a real run with no approver).
+ */
+export function decidedCallState(ex: ConnectorCallRow, now: Date) {
+  if (!ex.approvedBy || !ex.resolvedAt || (ex.status !== 'ok' && ex.status !== 'denied')) return null;
+  const summary = isPlainRecord(ex.resultSummary) ? ex.resultSummary : {};
+  // Gates approved before `decision` was written read it from the status.
+  const decision =
+    summary.decision === 'approve' || summary.decision === 'deny'
+      ? summary.decision
+      : ex.status === 'ok'
+        ? 'approve'
+        : 'deny';
+  const decidedAt = ex.resolvedAt.toISOString();
+  const decided = { decision, decided_by: ex.approvedBy, decided_at: decidedAt };
+  if (decision === 'deny') {
+    const note =
+      typeof summary.decision_note === 'string' && summary.decision_note
+        ? ` Message from the approver: ${summary.decision_note}`
+        : '';
+    return {
+      status: 'rejected' as const,
+      summary: `${ex.actionPath} · denied`,
+      detail: { ...decided, next_step: `Denied at ${decidedAt}.${note}` },
+    };
+  }
+  const usedAt = typeof summary.consumed_at === 'string' ? summary.consumed_at : null;
+  const rerunBy = new Date(ex.resolvedAt.getTime() + APPROVAL_RERUN_WINDOW_MS);
+  const rerunByIso = rerunBy.toISOString();
+  const nextStep = usedAt
+    ? `Approved at ${decidedAt}. A repeated call claimed the approval at ${usedAt}. If the content changed after approval, that call asked for a new approval instead of running.`
+    : now < rerunBy
+      ? `Approved at ${decidedAt}. The call has not run. Repeat the exact same call (same arguments and account) before ${rerunByIso}, and it runs once.`
+      : `Approved at ${decidedAt}, but the call was not repeated before ${rerunByIso} and did not run. Repeat it to ask for a new approval.`;
+  return {
+    status: 'approved' as const,
+    summary: `${ex.actionPath} · approved`,
+    detail: { ...decided, approval_used_at: usedAt, rerun_by: rerunByIso, next_step: nextStep },
   };
 }
 

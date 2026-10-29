@@ -60,52 +60,120 @@ not attempt an answer.
 ## How it works
 
 <Steps>
-<Step title="Run every 15 minutes, fresh each time">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires every 15 minutes. Each firing spawns a fresh
-**session** in its own sandbox with no memory of the last run. The agent relies
-on Gmail's own labels — not its own memory — to know which threads it has
-already handled, so nothing is reprocessed and nothing is missed between runs.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the policy-qa skill and the
+15-minute trigger, and opens a change request for you to review.
+Prefer clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Give the agent the triage and answering rules">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up an HR policy question agent in this project.
 
-How to tell a documented question from one that needs HR lives as a **skill**
-that travels with the agent: what counts as "answerable from policy," the exact
-bar for escalating (ambiguous, legal, personal, or compensation-related), and
-how to draft a reply that quotes or closely paraphrases the source text instead
-of paraphrasing loosely.
+1. Create the agent agents/hr-policy-qa.md. Its job is to answer documented policy questions in the HR inbox and escalate the rest. It may use the Gmail and Notion connectors and the Slack channel.
 
-</Step>
-<Step title="Connect the inbox, the library, and the escalation channel">
+2. Create the skill skills/policy-qa/SKILL.md with these rules:
+   - Only work Gmail threads with no hr-qa label. Labels are the only state between runs.
+   - Answer only from the policy library in Notion, and quote or closely paraphrase the policy section you used.
+   - Escalate anything ambiguous, legal, personal or about compensation, and anything the library does not clearly cover. When in doubt, escalate.
+   - Save every answer as a Gmail draft and label the thread hr-qa/drafted. Never send an email.
+   - Post each escalation to #hr-team with the question and the reason, and label the thread hr-qa/escalated. Never grant a policy exception.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent reads and writes:
+3. Add a cron trigger hr-inbox-check to kortix.yaml. It runs the hr-policy-qa agent every 15 minutes with the prompt "Load the policy-qa skill and run one complete pass over the HR inbox."
 
-- **New questions from Gmail** — the HR inbox, read for unlabeled threads and
-  written to only as a draft, never a send.
-- **Policy from Notion** — the documented policy library, read-only, searched
-  for the specific page that answers each question.
-- **Escalations to Slack** — the HR channel, where anything outside documented
-  policy gets posted with the question and the reason it needs a person.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent answers **only** what the policy library documents — it never
-infers, extends, or guesses at a policy that isn't written down, and it never
-makes an exception. It never sends an email; every answer is a Gmail draft
-for HR to review and send. Anything legal, personal, or compensation-related is
-escalated to Slack without an attempted answer, every time.
+Open **Connectors** in your project and connect Gmail and Notion, then
+connect Slack under **Channels**. Credentials are brokered server-side and
+never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Gmail" domain="gmail.com" tag="Required" alternatives={[['Outlook', 'outlook.com']]}>
+    Reads new questions and drafts grounded replies.
+  </ToolNeed>
+  <ToolNeed name="Notion" domain="notion.so" tag="Required" alternatives={[['Confluence', 'atlassian.com'], ['Google Docs', 'docs.google.com']]}>
+    Looks up the documented policy behind each answer.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Escalates questions that need HR's judgment.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Draft, escalate, and label">
+<Step title="Run it once with this prompt">
 
-With that in place, every 15 minutes the inbox gets worked: documented questions
-get a cited, drafted reply waiting in Gmail; everything else lands in the HR
-Slack channel with the question and why it was escalated. Each thread is labeled
-so the next run leaves it alone. HR reviews the drafts, sends what's right, and
-handles the escalations directly.
+Merge the change request, then start a session with the **hr-policy-qa** agent
+and send this prompt. Read the drafts and the escalations before you
+let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one pass over the HR inbox.
+
+1. Find threads with no hr-qa label.
+2. Classify each question as answerable from policy or as one to escalate. When in doubt, escalate.
+3. For each answerable question, find the policy section in Notion and save a Gmail draft that quotes it. Label the thread hr-qa/drafted.
+4. Post each escalation to #hr-team with the question and the reason. Label the thread hr-qa/escalated.
+5. Never send an email and never make a policy exception.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every 15 minutes, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: hr-inbox-check
+    name: HR inbox check
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: hr-policy-qa
+      prompt: Load the policy-qa skill and run one complete pass over the HR inbox.`}
+/>
+
+</Step>
+<Step title="Escalate anything legal, personal or about pay">
+
+A question that is ambiguous, legal, personal or about compensation goes to
+the HR channel with no attempted answer, every time. So does any question
+the library does not clearly cover. The agent never sends an email: HR reads
+each draft and sends it or not. It never edits the policy library.
+
+</Step>
+<Step title="Read the drafts and escalations">
+
+Each pass ends with drafts in Gmail and escalations in the channel. This is what a run looks like in the session:
+
+<ExampleRun
+  title="HR inbox check · 10:15"
+  message="Load the policy-qa skill and run one complete pass over the HR inbox."
+  worked="Worked for 1m 32s"
+  tools={[
+    'gmail · search threads',
+    'notion · search pages × 4',
+    'gmail · create draft × 3',
+    'gmail · add label × 4',
+    'slack · post message → #hr-team',
+  ]}
+  note="Illustrative example. Your counts depend on your inbox."
+>
+  Worked **4** new questions. Drafted **3** replies from the policy library,
+  on PTO carryover, the holiday schedule and remote work. Escalated **1**
+  question about a bonus to #hr-team.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -116,6 +184,25 @@ handles the escalations directly.
   **skill**. The agent drafts from documented policy or escalates — it never
   sends and it never makes a policy call the library hasn't already made.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Find policy gaps"
+  code="Every Friday, post to #hr-team the topics that were escalated as not covered by the library this week, with a count for each."
+/>
+
+<CopyBlock
+  title="Remind on old drafts"
+  code="When a draft has waited more than 24 hours without being sent, post its thread link to #hr-team."
+/>
+
+<CopyBlock
+  title="Answer in the employee's language"
+  code="When a question is not in English, draft the reply in the language of the question and quote the policy in English below it."
+/>
 
 ## Guardrails
 

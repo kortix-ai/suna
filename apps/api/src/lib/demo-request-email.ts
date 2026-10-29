@@ -57,7 +57,6 @@ function renderHtml(lead: DemoRequestLead): string {
       ${row('Source', lead.source)}
     </table>`;
   return renderEmail({
-    kicker: 'New demo request',
     title: lead.company_name?.trim() || lead.name?.trim() || lead.email,
     body,
   });

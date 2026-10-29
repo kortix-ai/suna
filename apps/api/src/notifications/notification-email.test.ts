@@ -37,11 +37,9 @@ describe('notification emails follow the transactional email rules', () => {
     }
   });
 
-  test('no exclamation marks, no uppercase kicker', () => {
+  test('no exclamation marks', () => {
     for (const email of variants()) {
       expect(`${email.subject}\n${email.text}`).not.toContain('!');
-      const kicker = /font-weight:500;[^"]*">([^<]+)<\/div>/.exec(email.html)?.[1] ?? '';
-      expect(kicker).not.toBe(kicker.toUpperCase());
     }
   });
 

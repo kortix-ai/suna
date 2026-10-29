@@ -22,7 +22,7 @@ checks the cross-key rules. Unknown keys are errors.
 | `connectors` | List of connectors (the `kortix-connectors` skill). |
 | `apps` | Map of Apps and their settings (the `kortix-apps` skill). |
 | `triggers` | List of triggers (below). |
-| `policy`, `policies`, `approvals` | Connector call policies and how long a held call waits (`approvals.ttl`: `30m`, `4h`, `7d`; default 24h). |
+| `policy`, `policies`, `approvals` | Connector call policies and how long a held call stays decidable (`approvals.ttl`: `30m`, `4h`, `7d`; default 24h). Approval alone does not run the call: the agent repeats it within 15 minutes. |
 | `agents` | Map of agent name → agent block. At least one. |
 
 ## Agent block

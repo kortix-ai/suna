@@ -110,7 +110,12 @@ subject, the body; a delete: what goes). The approver sees it next to the
 args.
 
 A held call returns `approval_url`: share it, then stop the turn. The
-decision, and any message with it, arrives as your next prompt. A deny with
+decision, and any message with it, arrives as your next prompt. Approval
+alone does not run the call. When the prompt says approved, repeat the exact
+same call (same arguments and `--account`) within 15 minutes: that call runs
+once. A script does the same: keep the `execution_id`, and after approval
+send the identical call again. `kortix review show call:<execution_id>` shows
+the decision, whether a repeat used the approval, and the deadline. A deny with
 a message is an instruction. In a Slack or Teams session Kortix posts the
 approval card in the thread (`approval_instructions` says so): do not repost
 the link.
