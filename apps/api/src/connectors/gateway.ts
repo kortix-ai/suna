@@ -1168,7 +1168,9 @@ async function enforceCallPolicies(
           {
             connectorSlug: input.connectorSlug,
             actionPath: input.actionPath,
-            args: executionArgs,
+            // The caller's own args. handleCall injects the email context
+            // again on the approved run; stored server ids could be stale.
+            args: input.args ?? {},
             approvalContext,
             policySet,
           },

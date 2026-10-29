@@ -11,6 +11,7 @@ import { accountMembers, connectorCalls, connectorConnections, connectorHeldCall
 import { eq, sql } from 'drizzle-orm';
 import type { GatewayAction, GatewayConnector, GatewayDeps } from '../connectors/gateway';
 import { HeldInputRefusedError, readHeldInput, wipeHeldInput } from '../connectors/held-call-store';
+import { connectorRequestDigest } from '../connectors/request-digest';
 import type { ConnectorPrincipal } from '../connectors/router-contract';
 import type { ApprovalCaller } from '../projects/lib/approval-authority';
 import { getInboxItem, listInboxItems } from '../projects/review-items';
@@ -192,6 +193,58 @@ describe('held call input', () => {
     await db.update(connectorHeldCalls).set({ inputEnc: flipped }).where(eq(connectorHeldCalls.executionId, b));
     const damaged = await readHeldInput(b).catch((error: unknown) => error);
     expect((damaged as HeldInputRefusedError).reason).toBe('held_input_undecryptable');
+  });
+
+  test('an email gate holds the caller args without the injected inbox, thread or message ids', async () => {
+    const email: GatewayConnector = {
+      ...CONNECTOR(),
+      slug: 'email',
+      provider: 'channel',
+      platform: 'email',
+      baseUrl: null,
+      connectionMetadata: { inbox_id: 'inbox-synthetic' },
+    };
+    const reply: GatewayAction = {
+      path: 'email.reply_message',
+      relPath: 'reply_message',
+      inputSchema: null,
+      risk: 'write',
+      binding: { kind: 'http', method: 'POST', path: 'inboxes/{inbox_id}/threads/{thread_id}/emails/{message_id}/reply' },
+    };
+    const emailDeps: GatewayDeps = {
+      ...deps,
+      loadConnectorBySlug: async () => email,
+      loadAction: async () => reply,
+      loadEmailSessionContext: async () => ({ threadId: 'thread-synthetic', messageId: 'message-synthetic' }),
+      resolveEmailCredentialForInbox: async () => 'resend_test_key',
+      gateChannelRead: undefined,
+      gateChannelWrite: undefined,
+    };
+    const callerArgs = { text: 'Thanks, confirmed.' };
+    const result = await handleCall(emailDeps, {
+      projectId: seeded.project_id,
+      accountId: seeded.account_id,
+      subject: { userId: humanUserId, groupIds: [] },
+      sessionId,
+      actingTokenId: tokenId,
+      connectorSlug: 'email',
+      actionPath: 'reply_message',
+      args: callerArgs,
+    });
+    if (result.status !== 'pending_approval' || !result.executionId) throw new Error(`not held: ${result.status}`);
+    const held = await readHeldInput(result.executionId);
+    expect(held?.args).toEqual(callerArgs);
+    // The digest still binds the injected execution args.
+    const [call] = await db.select().from(connectorCalls).where(eq(connectorCalls.executionId, result.executionId));
+    const injected = {
+      ...callerArgs,
+      inbox_id: 'inbox-synthetic',
+      thread_id: 'thread-synthetic',
+      message_id: 'message-synthetic',
+    };
+    const context = { connectionId, provider: 'channel', baseUrl: null, binding: reply.binding };
+    expect(call.requestDigest).toBe(connectorRequestDigest('email', 'reply_message', injected, context));
+    expect(held?.request_digest).toBe(call.requestDigest!);
   });
 
   test('a wipe sets input_enc to NULL and keeps the row', async () => {
