@@ -20,6 +20,7 @@ import { loadSlackTokenForProject } from '../install-store';
 import { openModal } from '../slack-api';
 import { HELD_RUN_CARD_TEXT, type HeldRunCardState } from '../core/held-run-card';
 import { spawnAgentTurn } from './dispatch';
+import { slackReplyCommand } from './session';
 import { findSlackThread, inboundAllowsProject, inboundAllowsTeam, type SlackInbound } from './inbound';
 import type { SlackEnvelope, SlackEvent, SlackInteractionPayload } from './types';
 import { escapeMrkdwn, respondViaUrl } from './util';
@@ -327,8 +328,8 @@ interface SlackDecisionInput {
 /** Decide through the shared chat path, then resume the session as a Slack
  *  turn so the thread shows the agent picking it up. An approved held call
  *  starts no turn here: the card shows "Running…", and the held-call worker
- *  resumes the session once with the result (its answer reaches this thread
- *  through `postAnswerWithoutTurnDetailed`, as a Kortix-side decision's does). */
+ *  resumes the session once with the result, and the resume names this
+ *  thread as the reply target (`replyTo`). */
 async function applySlackApprovalDecision(input: SlackDecisionInput): Promise<void> {
   const result = await decideChatApproval({
     user: chatUser('slack', input.teamId, input.slackUserId),
@@ -337,6 +338,9 @@ async function applySlackApprovalDecision(input: SlackDecisionInput): Promise<vo
     executionId: input.executionId,
     decision: input.decision,
     note: input.note,
+    // The card's thread can be a follow-up thread, not the session's first
+    // one: an approved held call's resume answers here, where it was decided.
+    replyTo: `This session may serve several threads. Answer in the Slack thread where the approval was decided:\n${slackReplyCommand(input.channelId, input.threadTs)}`,
   });
   if ('refusal' in result) {
     await input.respond(result.refusal);

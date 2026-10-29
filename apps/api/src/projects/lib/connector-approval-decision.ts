@@ -110,9 +110,10 @@ export async function decideConnectorApproval(input: {
   actorUserId: string;
   auditSource: string;
   resume: 'queue' | 'caller';
-  /** Who decided, as the chat card names them; kept on the held row so the
-   *  card update after the run names them again. */
-  chatDecider?: { label: string };
+  /** A decision pressed on a chat card, kept on the held row: `label` names
+   *  the presser on the card update after the run; `reply_to` tells the
+   *  resumed agent where to answer (the card's own thread). */
+  chatDecider?: { label?: string; reply_to?: string };
   /** Update any chat card this decision left stale — the surface above owns
    *  the presentation edge, so this module stays out of channels. Fire-and-
    *  forget: a failed card update never fails the decision. */

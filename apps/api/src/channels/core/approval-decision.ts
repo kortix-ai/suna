@@ -36,6 +36,9 @@ export async function decideChatApproval(input: {
   note: string;
   /** The presser's name as the card shows it (Teams). */
   deciderLabel?: string;
+  /** Where the resumed agent answers, for a session that may serve several
+   *  threads (Slack): the run's resume carries it. */
+  replyTo?: string;
 }): Promise<{ row: PendingApprovalRow; running: boolean } | { refusal: string }> {
   const row = await loadApprovalRow(input.projectId, input.executionId);
   // The card must belong to the session behind this thread: an execution id
@@ -95,7 +98,14 @@ export async function decideChatApproval(input: {
     actorUserId: actor.userId,
     auditSource: 'human',
     resume: 'caller',
-    ...(input.deciderLabel ? { chatDecider: { label: input.deciderLabel } } : {}),
+    ...(input.deciderLabel || input.replyTo
+      ? {
+          chatDecider: {
+            ...(input.deciderLabel ? { label: input.deciderLabel } : {}),
+            ...(input.replyTo ? { reply_to: input.replyTo } : {}),
+          },
+        }
+      : {}),
     updateStaleCard: () =>
       markApprovalCardDecided({
         projectId: input.projectId,

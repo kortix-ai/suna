@@ -492,3 +492,52 @@ test('approve of a call with no held input keeps the repeat-the-call turn in the
   await Bun.sleep(100);
   expect(JSON.stringify(updated[0].blocks)).not.toContain('Running…');
 });
+
+test('a held call approved from a follow-up thread resumes the agent with that thread as its reply target', async () => {
+  // The session serves a second thread; the card was posted into it.
+  const FOLLOW_UP = '400.0001';
+  await db.insert(chatThreads).values({
+    projectId: project.project_id,
+    platform: 'slack',
+    workspaceId: TEAM,
+    threadId: FOLLOW_UP,
+    sessionId,
+  });
+  const executionId = await pendingHeld('400.0002');
+
+  await click('approve', executionId, SLACK.owner, FOLLOW_UP);
+  expect((await loadApprovalRow(project.project_id, executionId))?.status).toBe('approved');
+  await db
+    .update(connectorHeldCalls)
+    .set({ runDeadline: new Date(Date.now() - 1_000) })
+    .where(eq(connectorHeldCalls.executionId, executionId));
+  await runHeldCall(executionId);
+
+  const [resume] = await resumesOf(`approval-run:${executionId}`);
+  const text = String((resume?.payload as Record<string, unknown>).text);
+  expect(text).toContain(`slack send --channel ${CHANNEL} --thread ${FOLLOW_UP} --text "<answer>"`);
+  expect(text).not.toContain(`--thread ${THREAD}`);
+});
+
+test('a held call approved in Kortix resumes with the plain text, no chat reply target', async () => {
+  const executionId = await pendingHeld('200.0023');
+  const row = await loadApprovalRow(project.project_id, executionId);
+  await decideConnectorApproval({
+    projectId: project.project_id,
+    accountId: project.account_id,
+    row: row!,
+    decision: 'approve',
+    note: '',
+    actorUserId: OWNER,
+    auditSource: 'human',
+    resume: 'queue',
+  });
+  await db
+    .update(connectorHeldCalls)
+    .set({ runDeadline: new Date(Date.now() - 1_000) })
+    .where(eq(connectorHeldCalls.executionId, executionId));
+  await runHeldCall(executionId);
+
+  const [resume] = await resumesOf(`approval-run:${executionId}`);
+  expect(String((resume?.payload as Record<string, unknown>).text)).not.toContain('slack send');
+});

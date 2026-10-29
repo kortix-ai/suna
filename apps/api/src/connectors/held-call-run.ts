@@ -69,6 +69,7 @@ interface HeldRunRow {
   actionPath: string;
   requestDigest: string | null;
   approvedBy: string | null;
+  chatDecider: Record<string, unknown> | null;
 }
 
 const TERMINAL = new Set(['ok', 'error', 'refused', 'unknown', 'cancelled']);
@@ -181,6 +182,7 @@ async function loadHeldRun(executionId: string): Promise<HeldRunRow | null> {
       actionPath: connectorCalls.actionPath,
       requestDigest: connectorCalls.requestDigest,
       approvedBy: connectorCalls.approvedBy,
+      chatDecider: connectorHeldCalls.chatDecider,
     })
     .from(connectorHeldCalls)
     .innerJoin(connectorCalls, eq(connectorCalls.executionId, connectorHeldCalls.executionId))
@@ -241,6 +243,12 @@ export function heldRunResumeText(actionPath: string, outcome: HeldRunOutcome): 
   }
 }
 
+/** A decision pressed on a chat card names the thread to answer in (server-written at decide time). */
+function withReplyTarget(text: string, chatDecider: Record<string, unknown> | null): string {
+  const replyTo = chatDecider?.reply_to;
+  return typeof replyTo === 'string' && replyTo ? `${text}\n\n${replyTo}` : text;
+}
+
 /**
  * Settle the held row from `from` to the outcome's state, wipe its input, and
  * enqueue the session resume in the same commit. A row another run already
@@ -278,7 +286,7 @@ async function settle(
             accountId: row.accountId,
             sessionId: row.sessionId,
             actorUserId: row.approvedBy,
-            text: heldRunResumeText(row.actionPath, outcome),
+            text: withReplyTarget(heldRunResumeText(row.actionPath, outcome), row.chatDecider),
             executionId: row.executionId,
             availableAt: now,
             idempotencyKey,
