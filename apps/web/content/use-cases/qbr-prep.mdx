@@ -59,53 +59,123 @@ presented, or sent — the CSM reviews both and takes it from there.
 ## How it works
 
 <Steps>
-<Step title="Run on a weekly cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent once a week. Each firing spawns a fresh
-**session** in its own sandbox — this run doesn't remember last week's, so it
-recomputes who's due and what their numbers look like from the current state
-of the data every time.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the qbr-deck-assembly skill and the weekly
+trigger, and opens a change request for you to review. Prefer clicks? Choose
+**Use this template** instead.
 
-</Step>
-<Step title="Give the agent the QBR structure">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a weekly QBR-prep agent in this project.
 
-What goes in a QBR deck, and in what order, lives as a **skill** that travels
-with the agent: how we define a usage trend, what "value delivered" means for
-our product, how account health rolls up, how to summarize a quarter of
-support activity without burying the one issue that matters, and what counts
-as a credible expansion signal versus a guess.
+1. Create the agent agents/qbr-prep.md. Its job is to draft a QBR deck and a briefing doc for every account with a QBR coming up. It may use the PostgreSQL, HubSpot, Google Slides and Google Docs connectors. PostgreSQL and HubSpot are read-only.
 
-</Step>
-<Step title="Connect the sources read-only, and the deck read-write">
+2. Create the skill skills/qbr-deck-assembly/SKILL.md with these rules:
+   - An account is due when its HubSpot next_qbr_date falls in the next 10 days. Skip an account with no date, and list it in the summary.
+   - Read usage, adoption and the quarter-over-quarter trend for the current and two prior quarters from PostgreSQL. Call out a declining trend.
+   - Read health, support tickets, CSM notes and expansion signals from HubSpot. List an expansion opportunity only when a specific data point backs it.
+   - Build the deck in this order: title, usage trends, value delivered, account health, support summary, expansion opportunities, discussion topics. Trace every number to its source.
+   - Write a matching briefing doc with the backup detail. Save both in the QBR Decks folder, named for the account and the quarter.
+   - Never write to PostgreSQL or HubSpot, and never share, present or send the deck or the doc.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches
-the model, the agent:
+3. Add a cron trigger weekly-qbr-prep to kortix.yaml. It runs the qbr-prep agent every Monday at 06:00 with the prompt "Load the qbr-deck-assembly skill and run one complete QBR-prep sweep."
 
-- **Reads usage trends from Postgres** — activity and adoption over the
-  quarter, per account.
-- **Reads account and CSM data from HubSpot** — health score, CSM notes,
-  support ticket history, and the deal record, to find who's due and why.
-- **Writes the draft deck to Google Slides** — the QBR deck itself, one per
-  due account.
-- **Writes the briefing doc to Google Docs** — the backup detail behind every
-  slide, for the CSM to reference when a question goes deeper than the deck.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-Postgres and HubSpot are **read-only** — the agent cannot change a usage
-record, a health score, a note, or a deal, even though it reads deeply from
-all of them. Its only writes are the new deck and the new doc it creates.
-Credentials are encrypted in the Secrets Manager and injected at runtime,
-scoped to the agents you grant them to.
+Open **Connectors** in your project and connect your product database, your
+CRM, Google Slides and Google Docs. Give the database connector a read-only
+user. Credentials are brokered server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="PostgreSQL" domain="postgresql.org" tag="Required" alternatives={[['Snowflake', 'snowflake.com'], ['BigQuery', 'cloud.google.com']]}>
+    Pulls usage trends for each account due a QBR.
+  </ToolNeed>
+  <ToolNeed name="HubSpot" domain="hubspot.com" tag="Required" alternatives={[['Salesforce', 'salesforce.com']]}>
+    Finds accounts due a QBR and reads their health signals.
+  </ToolNeed>
+  <ToolNeed name="Google Slides" domain="slides.google.com" tag="Required" alternatives={[['Google Docs', 'docs.google.com'], ['Google Drive', 'drive.google.com']]}>
+    Holds the draft deck and briefing doc for each account.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Land the draft, stop there">
+<Step title="Run it once with this prompt">
 
-Each due account ends the run with a draft deck and a briefing doc under a
-shared folder, named for the account and the quarter. The agent reports where
-each one landed and stops. The CSM reviews the story, edits the commentary,
-and is the one who opens the meeting and presents it.
+Merge the change request, then start a session with the **qbr-prep** agent and
+send this prompt. Open one deck and check its numbers before you let the
+schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one QBR-prep sweep.
+
+1. Find every HubSpot account whose next_qbr_date falls in the next 10 days. List each account that has no date.
+2. For each due account, read usage and adoption for the last three quarters from PostgreSQL, and health, support tickets, CSM notes and expansion signals from HubSpot.
+3. Create a draft deck in Google Slides in the QBR Decks folder, in the skill's section order, with every number traced to its source.
+4. Create a matching briefing doc in Google Docs with the backup detail.
+5. Tell me where each deck and doc landed. Do not share or send anything.`}
+/>
+
+</Step>
+<Step title="Let the weekly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every Monday at 06:00, each run in a new session on its own cloud
+computer. To change the time, edit the cron line, or open **Triggers** in the
+project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: weekly-qbr-prep
+    name: Weekly QBR-prep sweep
+    on:
+      cron: "0 0 6 * * 1"
+    run:
+      agent: qbr-prep
+      prompt: Load the qbr-deck-assembly skill and run one complete QBR-prep sweep.`}
+/>
+
+</Step>
+<Step title="Draft only, the CSM presents">
+
+PostgreSQL and HubSpot are read-only. The only things the agent writes are the
+new deck and the new doc. It never shares, presents or emails either one. The
+CSM reviews the draft and runs the meeting.
+
+</Step>
+<Step title="Read the weekly summary">
+
+Each run ends with a list of the decks and docs it created. This is what a run
+looks like in the session:
+
+<ExampleRun
+  title="Weekly QBR-prep sweep · Mon 06:00"
+  message="Load the qbr-deck-assembly skill and run one complete QBR-prep sweep."
+  worked="Worked for 7m 30s"
+  tools={[
+    'hubspot · search companies',
+    'postgresql · run query × 12',
+    'hubspot · get tickets × 4',
+    'google slides · create presentation × 4',
+    'google docs · create document × 4',
+  ]}
+  note="Illustrative example. Your accounts and figures depend on your data."
+>
+  **4** accounts have a QBR in the next 10 days. Drafted **4** decks and **4**
+  briefing docs in QBR Decks. One account shows usage down **18%** quarter over
+  quarter, called out on its usage slide. **2** accounts were skipped because
+  they have no QBR date.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -116,6 +186,25 @@ and is the one who opens the meeting and presents it.
   reads the account's quarter and writes exactly two drafts — a deck and a
   briefing doc — then stops for the CSM.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Tell the CSM"
+  code="When a deck is ready, send its CSM a Slack DM with links to the deck and the briefing doc."
+/>
+
+<CopyBlock
+  title="Compare with the last QBR"
+  code="Add a slide that lists the goals from the account's previous QBR and whether the data shows each one met."
+/>
+
+<CopyBlock
+  title="Put at-risk accounts first"
+  code="At the top of the run summary, list the accounts with a declining usage trend or a falling health score, with the reason for each."
+/>
 
 ## Guardrails
 

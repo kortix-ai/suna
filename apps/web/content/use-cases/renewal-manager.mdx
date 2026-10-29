@@ -59,64 +59,123 @@ nothing goes out on its own.
 ## How it works
 
 <Steps>
-<Step title="Run on a daily cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent once a day. Each firing spawns a fresh
-**session** in its own sandbox with no memory of yesterday's run — the deal
-list and every signal are re-read from HubSpot itself, and a property on each
-deal record marks which renewal window it's already been surfaced for, so the
-same account doesn't get a duplicate packet every day it sits inside 90 days.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the renewal-prep skill and the daily trigger,
+and opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent the renewal playbook">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a daily renewal manager agent in this project.
 
-What belongs in a renewal packet, how to read usage and engagement as a
-health signal, what counts as at-risk, and how the team phrases renewal
-outreach live as a **skill** that travels with the agent. When we learn what
-actually moves a renewal, we update the skill and every account benefits from
-it the next day.
+1. Create the agent agents/renewal-manager.md. Its job is to prepare every renewal that is 90, 60 or 30 days out and draft the outreach for the account owner. It may use the HubSpot, Google Calendar, Slack and Gmail connectors. Google Calendar is read-only.
 
-</Step>
-<Step title="Connect HubSpot and Google Calendar">
+2. Create the skill skills/renewal-prep/SKILL.md with these rules:
+   - Read renewal_date on every open HubSpot deal and put it in the 90, 60 or 30 day window. Skip a deal whose kortix_renewal_stage_alerted already matches its window.
+   - Build a renewal packet: the value delivered since the last renewal, one or two specific expansion ideas, and the current contract terms.
+   - Look in Google Calendar for a renewal or QBR meeting near the date, and reference it. Never create, move or accept an event.
+   - Flag a deal as at-risk when its stage has stalled, its value is trending down, it has gone quiet, or its notes mention a competitor, a budget freeze or churn.
+   - Write the outreach as an unsent Gmail draft for the owner. Never send it, and never put a discount, credit or price change in it.
+   - Post the new renewals and the at-risk list to #renewals. The only HubSpot write is kortix_renewal_stage_alerted.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches
-the model, the agent:
+3. Add a cron trigger daily-renewals to kortix.yaml. It runs the renewal-manager agent every day at 08:00 with the prompt "Load the renewal-prep skill and run today's renewal check."
 
-- **Reads deals from HubSpot** — renewal dates, contract value, stage history,
-  notes, and past activity, to find every account crossing a 90/60/30-day
-  window and to spot the ones going quiet.
-- **Reads Google Calendar** — read-only, to check whether a renewal or QBR
-  conversation is already scheduled near the renewal date, so the outreach can
-  reference it instead of duplicating it.
-- **Writes back to HubSpot** only the window it last surfaced for each deal —
-  never the stage, the amount, or anything a rep would use to track the actual
-  negotiation.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Post to Slack, draft to email">
+<Step title="Connect your tools">
 
-Two channels, two purposes: a **Slack** post to the account owner with the
-day's renewal radar and any at-risk flags, and an **email** draft — the
-renewal packet and the outreach copy — held for that owner to open, edit, and
-send.
+Open **Connectors** in your project and connect your CRM, your calendar, Slack
+and the mailbox where drafts go. Credentials are brokered server-side and never
+enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="HubSpot" domain="hubspot.com" tag="Required" alternatives={[['Salesforce', 'salesforce.com']]}>
+    Reads renewal dates, deal history and account activity.
+  </ToolNeed>
+  <ToolNeed name="Google Calendar" domain="calendar.google.com" tag="Required" alternatives={[['Microsoft Outlook', 'outlook.com']]}>
+    Checks for an existing renewal call before drafting outreach.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Gmail', 'gmail.com'], ['Microsoft Teams', 'teams.microsoft.com']]}>
+    Posts the renewal packet, at-risk flags and the outreach draft.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Run it once with this prompt">
 
-The agent preps and drafts; it never contacts a customer and never touches
-price. It cannot send the outreach email, and it cannot apply, offer, or even
-suggest a specific discount — pricing conversations stay with the account
-owner. Credentials are encrypted in the Secrets Manager and injected at
-runtime, scoped to the agents you grant them to.
+Merge the change request, then start a session with the **renewal-manager**
+agent and send this prompt. Read the first drafts before you let the schedule
+take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run today's renewal check.
+
+1. Find open HubSpot deals whose renewal_date is 90, 60 or 30 days out and that are not yet surfaced for that window.
+2. For each one, build a renewal packet: value delivered, one or two expansion ideas, and the contract terms.
+3. Look in Google Calendar for a renewal or QBR meeting near the date.
+4. Write the outreach as an unsent Gmail draft for the owner. No discounts, credits or price changes.
+5. Post the new renewals and every at-risk deal with its signal to #renewals. Then set kortix_renewal_stage_alerted on each deal you prepared.`}
+/>
 
 </Step>
-<Step title="Hand off the packet">
+<Step title="Let the daily schedule take over">
 
-With that in place, an account owner opens Slack to a ranked list of what's
-coming up and what looks at-risk, and opens their inbox to a drafted email
-already carrying the usage story, what's been delivered, and an expansion idea
-worth raising. They read it, edit it to fit the relationship, and send it
-themselves.
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every day at 08:00, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: daily-renewals
+    name: Daily renewal check
+    on:
+      cron: "0 0 8 * * *"
+    run:
+      agent: renewal-manager
+      prompt: Load the renewal-prep skill and run today's renewal check.`}
+/>
+
+</Step>
+<Step title="Draft only, the owner sends">
+
+The agent never sends outreach and never offers a discount. The calendar is
+read-only, and the only HubSpot write is the window marker. The account owner
+edits each draft and sends it.
+
+</Step>
+<Step title="Read the renewal radar">
+
+Each run ends with one post in the channel and a draft for each renewal. This
+is what a run looks like in the session:
+
+<ExampleRun
+  title="Daily renewal check · 08:00"
+  message="Load the renewal-prep skill and run today's renewal check."
+  worked="Worked for 4m 18s"
+  tools={[
+    'hubspot · search deals',
+    'hubspot · get notes × 5',
+    'google calendar · list events × 5',
+    'gmail · create draft × 5',
+    'slack · post message → #renewals',
+    'hubspot · update deal × 5',
+  ]}
+  note="Illustrative example. Your renewals depend on your CRM."
+>
+  **5** renewals crossed a window today: **2** at 90 days, **2** at 60 and
+  **1** at 30. Five outreach drafts wait for their owners. **2** deals are
+  at-risk: one has had no activity in **45** days, and one has notes that
+  mention a budget freeze.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -127,6 +186,25 @@ themselves.
   the packet and drafts the outreach; the account owner reviews, edits, and
   sends.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Weekly renewal forecast"
+  code="Every Monday, post to #renewals the total contract value that renews in the next 90 days, split into on-track and at-risk."
+/>
+
+<CopyBlock
+  title="Suggest a meeting"
+  code="When no renewal meeting is on the calendar 30 days out, add three times from the owner's free slots to the draft."
+/>
+
+<CopyBlock
+  title="Brief each owner"
+  code="Send each account owner a Slack DM with their renewals this week and a link to each draft."
+/>
 
 ## Guardrails
 

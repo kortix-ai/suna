@@ -71,47 +71,44 @@ export type UseCaseCoverProps = { post: Post; featured?: boolean };
 
 // ── shared surface + building blocks ────────────────────────────────────────
 
+// The pixel field (Paper "Use-case covers · 20 Pixel field"): a sparse 24px
+// grid of 3px squares, a few darker, faded out around the centre so the logo
+// tiles sit on clear ground. The squares are masks over `bg-foreground`, so
+// they follow the theme.
+const PIXELS_LIGHT = `url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><rect x='10' y='10' width='3' height='3'/><rect x='34' y='10' width='3' height='3'/><rect x='82' y='10' width='3' height='3'/><rect x='130' y='10' width='3' height='3'/><rect x='154' y='10' width='3' height='3'/><rect x='202' y='10' width='3' height='3'/><rect x='10' y='34' width='3' height='3'/><rect x='34' y='34' width='3' height='3'/><rect x='106' y='34' width='3' height='3'/><rect x='130' y='34' width='3' height='3'/><rect x='226' y='34' width='3' height='3'/><rect x='34' y='58' width='3' height='3'/><rect x='82' y='58' width='3' height='3'/><rect x='106' y='58' width='3' height='3'/><rect x='130' y='58' width='3' height='3'/><rect x='154' y='58' width='3' height='3'/><rect x='202' y='58' width='3' height='3'/><rect x='34' y='82' width='3' height='3'/><rect x='82' y='82' width='3' height='3'/><rect x='106' y='82' width='3' height='3'/><rect x='130' y='82' width='3' height='3'/><rect x='202' y='82' width='3' height='3'/><rect x='34' y='106' width='3' height='3'/><rect x='106' y='106' width='3' height='3'/><rect x='226' y='106' width='3' height='3'/><rect x='34' y='130' width='3' height='3'/><rect x='58' y='130' width='3' height='3'/><rect x='106' y='130' width='3' height='3'/><rect x='154' y='130' width='3' height='3'/><rect x='34' y='154' width='3' height='3'/><rect x='10' y='178' width='3' height='3'/><rect x='130' y='178' width='3' height='3'/><rect x='154' y='178' width='3' height='3'/><rect x='202' y='178' width='3' height='3'/><rect x='10' y='202' width='3' height='3'/><rect x='34' y='202' width='3' height='3'/><rect x='58' y='202' width='3' height='3'/><rect x='106' y='202' width='3' height='3'/><rect x='130' y='202' width='3' height='3'/><rect x='154' y='202' width='3' height='3'/><rect x='202' y='202' width='3' height='3'/><rect x='106' y='226' width='3' height='3'/><rect x='130' y='226' width='3' height='3'/><rect x='154' y='226' width='3' height='3'/><rect x='226' y='226' width='3' height='3'/></svg>")`;
+const PIXELS_DARK = `url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><rect x='154' y='10' width='3' height='3'/><rect x='130' y='34' width='3' height='3'/><rect x='106' y='58' width='3' height='3'/><rect x='130' y='58' width='3' height='3'/><rect x='226' y='58' width='3' height='3'/><rect x='10' y='82' width='3' height='3'/><rect x='106' y='82' width='3' height='3'/><rect x='58' y='130' width='3' height='3'/><rect x='178' y='130' width='3' height='3'/><rect x='226' y='178' width='3' height='3'/><rect x='10' y='202' width='3' height='3'/></svg>")`;
+const CLEAR_CENTRE = 'radial-gradient(ellipse 34% 46% at 50% 50%, transparent 55%, #000 100%)';
+
+function PixelLayer({ pixels, className }: { pixels: string; className: string }) {
+  return (
+    <div
+      aria-hidden
+      className={cn('bg-foreground absolute inset-0', className)}
+      style={{ maskImage: pixels, WebkitMaskImage: pixels, maskSize: '240px', WebkitMaskSize: '240px' }}
+    />
+  );
+}
+
 function CoverBackdrop({ children }: { children: ReactNode }) {
   return (
-    <div className="from-muted/60 via-background to-primary/[0.08] absolute inset-0 overflow-hidden bg-gradient-to-br">
-      <div className="absolute inset-0 bg-[url('/grain-texture.png')] bg-repeat opacity-[0.1]" />
+    <div className="bg-background absolute inset-0 overflow-hidden">
+      <div
+        aria-hidden
+        className="absolute inset-0"
+        style={{ maskImage: CLEAR_CENTRE, WebkitMaskImage: CLEAR_CENTRE }}
+      >
+        <PixelLayer pixels={PIXELS_LIGHT} className="opacity-15" />
+        <PixelLayer pixels={PIXELS_DARK} className="opacity-40" />
+      </div>
       {children}
     </div>
   );
 }
 
 const TILE =
-  'relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl shadow-md shadow-black/10 ring-1 ring-black/5 dark:ring-white/10 sm:size-14';
+  'border-border relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border sm:size-14';
 const ROW =
-  'absolute inset-0 flex items-center justify-center gap-3 transition-transform duration-500 group-hover:scale-[1.03] sm:gap-4';
-const CONNECTOR =
-  'via-border absolute top-1/2 left-1/2 h-px w-[180px] -translate-x-1/2 -translate-y-1/2 bg-gradient-to-r from-transparent to-transparent';
-
-function Rings({ sizes }: { sizes: number[] }) {
-  return (
-    <>
-      {sizes.map((d) => (
-        <div
-          key={d}
-          className="border-border/70 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border"
-          style={{ width: d, height: d }}
-        />
-      ))}
-    </>
-  );
-}
-
-function Glow({ className }: { className: string }) {
-  return (
-    <div
-      className={cn(
-        'absolute top-1/2 left-1/2 size-32 -translate-x-1/2 -translate-y-1/2 rounded-full blur-3xl',
-        className,
-      )}
-    />
-  );
-}
-
+  'absolute inset-0 flex items-center justify-center gap-3 transition-transform duration-slow ease-out group-hover:scale-[1.03] sm:gap-4';
 // Logo tiles: avatar logos fill the tile; mark logos sit on a white chip.
 function Avatar({ src, alt }: { src: string; alt: string }) {
   return (
@@ -142,7 +139,6 @@ const Linear = () => <Avatar src="/usecases/logos/linear.png" alt="Linear" />;
 function RowCover({ children }: { children: ReactNode }) {
   return (
     <CoverBackdrop>
-      <div className={CONNECTOR} />
       <div className={ROW}>{children}</div>
     </CoverBackdrop>
   );
@@ -151,7 +147,7 @@ function RowCover({ children }: { children: ReactNode }) {
 function DuoCover({ a, b }: { a: ReactNode; b: ReactNode }) {
   return (
     <CoverBackdrop>
-      <div className="absolute inset-0 flex items-center justify-center gap-3 transition-transform duration-500 group-hover:scale-[1.03] sm:gap-4">
+      <div className="absolute inset-0 flex items-center justify-center gap-3 transition-transform duration-slow ease-out group-hover:scale-[1.03] sm:gap-4">
         {a}
         <span className="text-muted-foreground/40 text-lg font-light">×</span>
         {b}
@@ -160,12 +156,12 @@ function DuoCover({ a, b }: { a: ReactNode; b: ReactNode }) {
   );
 }
 
-function FeatureCover({ children, glow }: { children: ReactNode; glow: string }) {
+// `glow` is kept for the registry entries that pass it; the pixel field has no glow.
+function FeatureCover({ children }: { children: ReactNode; glow?: string }) {
   return (
     <CoverBackdrop>
-      <Glow className={glow} />
-      <div className="absolute inset-0 flex items-center justify-center transition-transform duration-500 group-hover:scale-[1.03]">
-        <div className="bg-card flex size-16 items-center justify-center rounded-2xl shadow-lg ring-1 shadow-black/10 ring-black/5 sm:size-20 dark:ring-white/10">
+      <div className="absolute inset-0 flex items-center justify-center transition-transform duration-slow ease-out group-hover:scale-[1.03]">
+        <div className="bg-card border-border flex size-16 items-center justify-center rounded-md border sm:size-20">
           {children}
         </div>
       </div>
@@ -177,14 +173,12 @@ function HeroCover({ children }: { children: ReactNode }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <CoverBackdrop>
-      <Rings sizes={[110, 175, 240]} />
-      <Glow className="bg-primary/10" />
-      <div className="absolute inset-0 flex items-center justify-center transition-transform duration-500 group-hover:scale-[1.03]">
+      <div className="absolute inset-0 flex items-center justify-center transition-transform duration-slow ease-out group-hover:scale-[1.03]">
         <div className="relative">
-          <div className="grid size-16 place-items-center rounded-2xl bg-white shadow-lg ring-1 shadow-black/10 ring-black/5 sm:size-20">
+          <div className="border-border grid size-16 place-items-center rounded-md border bg-white sm:size-20">
             {children}
           </div>
-          <div className="absolute -right-1.5 -bottom-1.5 overflow-hidden rounded-lg shadow-md ring-[3px] ring-white">
+          <div className="border-border absolute -right-1.5 -bottom-1.5 overflow-hidden rounded-sm border bg-white">
             <img
               src="/usecases/logos/kortix.png"
               alt={tI18nComplete.raw('textab54cf5e1d9d')}
@@ -200,7 +194,6 @@ function HeroCover({ children }: { children: ReactNode }) {
 function OrbitCover({ center, satellites }: { center: ReactNode; satellites: ReactNode[] }) {
   return (
     <CoverBackdrop>
-      <Rings sizes={[120, 188]} />
       {satellites.map((node, i) => {
         const angle = (i / satellites.length) * 360 + 45;
         return (

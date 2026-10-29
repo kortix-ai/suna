@@ -53,54 +53,122 @@ Anything sensitive stops at a human approval gate before it sends.
 ## How it works
 
 <Steps>
-<Step title="Trigger the run on a daily cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires once a day and spawns a fresh **session** in its own
-sandbox. Each run works the full receivables list from scratch, so nothing carries
-over between days and a missed morning is just the next run picking up where it
-left off. One run maps to one session on one disposable machine.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the invoice-math skill and the weekday
+trigger, and opens a change request for you to review. Prefer clicks? Choose
+**Use this template** instead.
 
-</Step>
-<Step title="Give the agent the collections playbook">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up an overdue-invoice chaser agent in this project.
 
-Our collections policy lives as **skills** and **memory** that travel with the
-agent: the reminder cadence by days overdue, the escalating tone from a first
-notice to a final notice, the balance thresholds that change the approach, and
-which accounts are flagged as disputed or sensitive. When we adjust the policy, we
-write it down and the agent applies it on the next run.
+1. Create the agent agents/ar-chaser.md. Its job is to chase overdue Stripe invoices with email reminders and post a daily summary. It may use the Stripe and Slack connectors. It only reads Stripe.
 
-</Step>
-<Step title="Connect Stripe, email, and the ledger">
+2. Create the skill skills/invoice-math/SKILL.md with these rules:
+   - Measure age from the due date. Send a courtesy notice in the 7 days before it, a first reminder at 1 to 7 days overdue, a second reminder at 8 to 30, and a final notice at 31 to 60.
+   - Hold anything 61 or more days overdue for a person. Do not send.
+   - Send at most one reminder per invoice per run, and never two to the same invoice within 72 hours.
+   - Hold any balance over the approval threshold, anything disputed, and anything marked for collections or legal. Ask me for the threshold.
+   - Stop chasing an invoice as soon as it is paid, and note it in the summary in #finance.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger daily-check to kortix.yaml. It runs the ar-chaser agent every weekday at 09:00 with the prompt "Review overdue and soon-due Stripe invoices with the invoice-math skill, send the right reminder for each, and post the summary to #finance."
 
-- **Read invoices from Stripe** — which are overdue, which are coming due, the
-  balance and age of each.
-- **Send reminders by email** — the right escalating notice for each invoice,
-  from the agent's own address.
-- **Read the accounting ledger** — to confirm balances and reconcile against
-  what Stripe reports.
-- **Log every touch and status note** — each reminder and reconciliation recorded
-  against the invoice.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent is **read-mostly**: it reads Stripe and the ledger, and the only writes
-it makes are reminder emails and status notes. Anything sensitive — a large
-balance, a disputed invoice, or an account heading to legal — stops at a **human
-approval gate** before it sends. Credentials are encrypted in the Secrets Manager
-and injected at runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect Stripe, the mailbox the
+reminders come from and Slack. Credentials are brokered server-side and never enter the
+agent's machine.
+
+<ToolList>
+  <ToolNeed name="Stripe" domain="stripe.com" tag="Required" alternatives={[['Chargebee', 'chargebee.com'], ['QuickBooks', 'quickbooks.intuit.com'], ['Xero', 'xero.com']]}>
+    Reads overdue invoices and reconciles payments, read-only.
+  </ToolNeed>
+  <ToolNeed name="Gmail" domain="gmail.com" tag="Required" alternatives={[['Outlook', 'outlook.office.com']]}>
+    Sends the courtesy notice, reminders and final notice.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Posts the daily summary and the invoices held for a person.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Let the list work itself each morning">
+<Step title="Run it once with this prompt">
 
-With that in place, the daily run finds the overdue and soon-due invoices, sends
-each account the reminder its timing and balance call for, and logs the touch. A
-routine day-three nudge goes out on its own. A large or disputed balance is held
-for a person to approve. When a payment lands, the agent matches it to the invoice
-and marks it settled.
+Merge the change request, then start a session with the **ar-chaser** agent
+and send this prompt. Check the reminders it sent and the invoices it held
+before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one invoice check on Stripe.
+
+1. List open invoices that are overdue or due in the next 7 days, with amount, due date and payment status.
+2. Pick the reminder tier for each from the invoice-math skill. Skip any invoice reminded in the last 72 hours.
+3. Send each reminder by email and log the touch.
+4. Do not send for balances over the approval threshold, disputed invoices, or invoices marked for collections or legal. List them for me instead.
+5. Post a summary to #finance: reminders sent, invoices paid since the last run, and anything held.`}
+/>
+
+</Step>
+<Step title="Let the weekday schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every weekday at 09:00, each run in a new session on its own cloud computer. To change the time, edit the cron line, or open
+**Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: daily-check
+    name: Daily invoice check
+    on:
+      cron: "0 0 9 * * 1-5"
+    run:
+      agent: ar-chaser
+      prompt: Review overdue and soon-due Stripe invoices with the invoice-math skill, send the right reminder for each, and post the summary to #finance.`}
+/>
+
+</Step>
+<Step title="Hold large or disputed balances for a person">
+
+Routine reminders go out on their own. A balance over the threshold, a
+disputed invoice, or an account marked for collections or legal gets no
+email. The agent lists it in the summary with the reason, and a person decides
+the next step. The agent never issues a refund, changes a plan or edits an
+invoice.
+
+</Step>
+<Step title="Read the summary">
+
+Each run ends with one message in the channel. This is what a run looks like
+in the session:
+
+<ExampleRun
+  title="Daily invoice check · 09:00"
+  message="Review overdue and soon-due Stripe invoices with the invoice-math skill, send the right reminder for each, and post the summary to #finance."
+  worked="Worked for 2m 21s"
+  tools={[
+    'stripe · list invoices',
+    'stripe · list payments',
+    'email · send reminder × 9',
+    'slack · post message → #finance',
+  ]}
+  note="Illustrative example. Your counts depend on your open invoices."
+>
+  Sent **9** reminders: **4** first reminders, **3** second reminders and **2**
+  final notices. **3** invoices were paid since the last run and are off the
+  list. **2** are held for you: one disputed invoice and one balance over the
+  approval threshold.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -111,6 +179,25 @@ and marks it settled.
   The agent stays read-mostly, sensitive accounts wait for a human, and every
   touch is logged.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Track promised payment dates"
+  code="When a customer replies with a payment date, log it and skip reminders for that invoice until the date passes."
+/>
+
+<CopyBlock
+  title="Weekly aging report"
+  code="Every Monday, post the open balance in each aging bucket to #finance, with the change since last week."
+/>
+
+<CopyBlock
+  title="Escalate final notices"
+  code="For each invoice that reaches a final notice, send its account owner a Slack DM with the balance and the days overdue."
+/>
 
 ## Guardrails
 
