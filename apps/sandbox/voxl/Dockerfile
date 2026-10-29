@@ -6,6 +6,10 @@
 # The web client voxl serves is user-facing: its tab title and favicon are
 # rebranded to Kortix Computer before the build embeds them, and the build
 # fails if "Tembo" is left anywhere in the served web files.
+#
+# voxl paces every viewer to the slowest one and drops a viewer from that
+# pacing only after 4 s without acks; one stalled tab froze every viewer at
+# ~1 fps. The patch cuts that to 1 s, and the build fails if the line moved.
 FROM ubuntu:24.04
 ARG VOXL_REV
 ENV DEBIAN_FRONTEND=noninteractive
@@ -23,5 +27,7 @@ COPY --from=brand favicon.ico /src/web/favicon.ico
 RUN sed -i -e 's/Tembo Computer/Kortix Computer/g' -e '/\/\*.*Tembo.*\*\//d' /src/web/index.html \
     && sed -i 's/Icons from the Tembo UI package.s icon set/Icons/' /src/web/src/client/files.ts \
     && ! grep -rqi tembo /src/web \
+    && grep -q 'if age > 4000 {' /src/src/video.rs \
+    && sed -i 's/if age > 4000 {/if age > 1000 {/' /src/src/video.rs \
     && /root/.cargo/bin/cargo install --path /src --locked --root /out \
     && strip /out/bin/voxl

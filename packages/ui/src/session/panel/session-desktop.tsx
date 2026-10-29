@@ -12,6 +12,11 @@
  * scrolls or clicks past the panel never moves the agent's mouse. "Take over"
  * (or a click on the screen) drops the shield, rings the screen and focuses
  * it; "Return control" puts the shield back.
+ *
+ * The frame unmounts while this browser tab is hidden. voxl paces every
+ * viewer to the slowest one, and a background tab stops acking frames, so a
+ * forgotten tab would slow the stream for everyone watching. It reconnects,
+ * on a fresh keyframe, when the tab is shown again.
  */
 
 import { Button } from '../../primitives/button';
@@ -26,9 +31,15 @@ import { CloseButton, DetailSidebarToggle } from '../../files/viewer/viewer-chro
 import { cn } from '../../lib/utils';
 import { probePreviewPort } from '@kortix/sdk';
 import { ArrowSquareOutIcon, MonitorIcon } from '@phosphor-icons/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 export const DESKTOP_URL = 'http://localhost:6901/';
+
+const subscribeVisibility = (onChange: () => void) => {
+  document.addEventListener('visibilitychange', onChange);
+  return () => document.removeEventListener('visibilitychange', onChange);
+};
+const tabVisible = () => document.visibilityState === 'visible';
 
 export function SessionDesktop({
   projectId,
@@ -50,6 +61,7 @@ export function SessionDesktop({
   // 'off' = the proxy answered 502/503/504: nothing listens on 6901.
   const [state, setState] = useState<'probing' | 'on' | 'off'>('probing');
   const [attempt, setAttempt] = useState(0);
+  const visible = useSyncExternalStore(subscribeVisibility, tabVisible, () => true);
   const live = !!src && state === 'on';
 
   useEffect(() => {
@@ -116,7 +128,7 @@ export function SessionDesktop({
                 Retry
               </Button>
             </div>
-          ) : !live ? (
+          ) : !live || !visible ? (
             <div className="flex h-full items-center justify-center">
               <Loading className="size-4" />
             </div>
