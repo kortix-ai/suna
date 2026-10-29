@@ -192,7 +192,7 @@ function resolve(msg: EmailMessage, from: EmailAddress): ResolvedEmailMessage {
     ...msg,
     from: msg.from ?? from,
     // Every Kortix template supplies its own plain-text alternative, rendered
-    // from the same structured content as the HTML (see template.ts). There is
+    // from the same structured content as the HTML (see template.tsx). There is
     // deliberately no HTML-to-text fallback.
     text: msg.text ?? '',
   };
