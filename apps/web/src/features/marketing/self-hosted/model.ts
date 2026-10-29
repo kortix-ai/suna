@@ -1,3 +1,5 @@
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 /**
  * `/self-hosted` copy: how to run Kortix on your own server. /sovereign says
  * why; this page says how. English only for now.
@@ -105,19 +107,31 @@ export const pillars = {
       id: 'cli',
       name: 'One CLI',
       line: 'Install, configure, update, check.',
-      facts: ['kortix self-host does all of it', 'Questions on the first run', 'Every setting in one .env'],
+      facts: [
+        'kortix self-host does all of it',
+        'Questions on the first run',
+        'Every setting in one .env',
+      ],
     },
     {
       id: 'stack',
       name: 'One stack',
       line: 'Docker Compose on your server.',
-      facts: ['Web app, API and LLM gateway', 'Postgres and file storage', 'TLS from Caddy on your domain'],
+      facts: [
+        'Web app, API and LLM gateway',
+        'Postgres and file storage',
+        'TLS from Caddy on your domain',
+      ],
     },
     {
       id: 'updates',
       name: 'Daily updates',
       line: 'Or pin one exact version.',
-      facts: ['Track stable or latest', 'The database migrates first', 'Roll back with one command'],
+      facts: [
+        'Track stable or latest',
+        'The database migrates first',
+        'Roll back with one command',
+      ],
     },
     {
       id: 'enterprise',
@@ -226,8 +240,18 @@ export const whereGroups = [
 
 /** developers.mdx "Reachability modes". */
 export const reachModes = [
-  { k: 'domain', flag: '--domain <domain>', v: 'Production. HTTPS on your domain and api.<domain>.', sessions: true },
-  { k: 'tunnel', flag: '--tunnel cloudflare', v: 'Evaluation. The API gets a public tunnel URL.', sessions: true },
+  {
+    k: 'domain',
+    flag: '--domain <domain>',
+    v: 'Production. HTTPS on your domain and api.<domain>.',
+    sessions: true,
+  },
+  {
+    k: 'tunnel',
+    flag: '--tunnel cloudflare',
+    v: 'Evaluation. The API gets a public tunnel URL.',
+    sessions: true,
+  },
   { k: 'local', flag: 'neither flag', v: 'Every port binds 127.0.0.1.', sessions: false },
 ] as const;
 
@@ -326,3 +350,24 @@ export const faqItems = [
       'Yes. Pass --instance <name> to every command. Only one instance per server can use domain mode, because Caddy binds ports 80 and 443.',
   },
 ] as const;
+
+export function localizeMarketingContent(tMarketing: import('@/i18n/translator').UiTranslator) {
+  return localizeUiCatalog(
+    {
+      hero,
+      steps,
+      pillars,
+      topics,
+      whereGroups,
+      reachModes,
+      setupSteps,
+      updateLines,
+      enterpriseLines,
+      enterpriseFeatures,
+      needs,
+      faqItems,
+    },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+}

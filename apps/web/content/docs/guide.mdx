@@ -828,6 +828,15 @@ Each channel has a join policy. It decides who may join a session that started t
 
 When an agent asks for a decision, the card shows the title, a summary, a risk note and buttons, such as **Approve** and **Deny**. Every card also has **View in Kortix**. When an agent wants to use a connected tool that needs approval, the card shows what it will do. A project manager, or the person who started the session, selects **Approve** or **Deny**.
 
+#### Questions in the thread
+
+When the agent asks a question, Kortix posts it with one button per option. In Teams, several questions or a multi-select question arrive as one form. You can also reply with your own answer.
+
+- Every click and every form submit reaches the agent, also when several people answer.
+- The message then shows the answer and who gave it, in place of the buttons.
+- A button on a question whose session was deleted, or whose chat started a new session with `/new`, answers nothing and starts no session.
+- A button you press before you link your account does not run after you link. Press it again.
+
 ### Set it up
 
 <Steps>
@@ -846,6 +855,8 @@ The agent replies in the thread, with live progress.
 </Steps>
 
 When one Slack workspace or Teams tenant serves several projects, the first message in a new channel shows a project picker. The choice binds the channel to that project.
+
+Deleting a project disconnects Slack and Teams from it. Its channels go to the one project still connected, or show the picker again. A reply in one of its Slack threads gets no answer.
 
 #### Telegram
 
@@ -868,6 +879,7 @@ A message from an allowed user starts a session. Anyone else gets a reply that s
 - **A question follows the connector's rules.** Kortix posts it only where the agent may send a Telegram message without approval. Otherwise the agent asks in its own words, and that message waits for approval or is refused.
 - **Telegram has no account link.** The allowed-user list decides who may talk to the bot. Only an allowed user's tap counts.
 - **An access request keeps only who asked:** the user ID, the username, the name and when they last wrote, never the message. Kortix keeps the newest 20 requests for 30 days. Disconnecting the bot deletes them.
+- **Deleting the project disconnects the bot.** The bot answers no one: Kortix deletes its token, and removes its webhook unless that webhook now points at another project.
 - **In a group, the bot reads only commands, replies to it and mentions.** To let it read every message, send `/setprivacy` to @BotFather, or make the bot a group admin.
 
 ## Everywhere

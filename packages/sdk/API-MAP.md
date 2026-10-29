@@ -293,6 +293,15 @@ Telegram: facade `project(id).channels.telegram.*`; hooks live in `@kortix/ui` (
 | `dismissAccessRequest` | `dismissTelegramAccessRequest` | `DELETE .../channels/telegram/access-requests/:userId` |
 | `userPhoto` (JPEG `Blob`, 404 → `null`) | `getTelegramUserPhoto` | `GET .../channels/telegram/users/:userId/photo?v=` |
 
+Channel access (any platform): the same five routes, keyed by `platform: ChannelAccessPlatform` (`'telegram'` today). No facade; a platform's facade keeps its own methods (`project(id).channels.telegram.*` above). The edits return `ChannelAccessList` (`allowed_user_ids?`, `access_request_count?`).
+| function | REST |
+|---|---|
+| `listChannelUsers(projectId, platform)` (`{allowed, requests}`) | `GET /v1/projects/:id/channels/:platform/users` |
+| `allowChannelUser(projectId, platform, userId)` | `POST .../channels/:platform/allowed-users` `{user_id}` |
+| `removeChannelUser(projectId, platform, userId)` | `DELETE .../channels/:platform/allowed-users/:userId` |
+| `dismissChannelAccessRequest(projectId, platform, userId)` | `DELETE .../channels/:platform/access-requests/:userId` |
+| `getChannelUserPhoto(projectId, platform, userId, version?, signal?)` (`Blob`, 404 → `null`) | `GET .../channels/:platform/users/:userId/photo?v=` |
+
 ### 18. Account audit log (Enterprise)  ✅ (client + facade) / 🟡 (hooks)
 Event list + CSV/JSONL export + outbound SIEM webhook CRUD, gated server-side on `audit.read`/`account.write` + the account's `auditAccess` entitlement. `projects-client/audit.ts` ✅; facade `kortix.accounts.audit.{log, export, webhooks: {list,create,update,remove}}` ✅ (accountId-first, like the rest of `kortix.accounts.*`); no hooks yet (this is an admin-console surface, low priority for the agent-product hooks):
 | op | REST |

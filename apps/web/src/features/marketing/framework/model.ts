@@ -1,10 +1,12 @@
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { MANIFEST } from './content';
 
 /**
  * `/framework` copy, laid out like the home page: hero with one walkthrough,
  * four pillars, one tab per part, the architecture, then the FAQ.
  *
- * English only. Every line was checked on 2026-10-28 against the source named
+ * Localized. Every line was checked on 2026-10-28 against the source named
  * above its block. Standing rules (kortix-brand `claims.md`, D24):
  *  - This surface may name pi. Name no license. Never name kortixd in copy.
  *  - Approval rules are off until you set them: an omitted `permission` is
@@ -410,3 +412,27 @@ export const faqItems = [
       'Yes. Kortix is open source. Run it on Kortix Cloud, in your VPC, or on your own on-prem network.',
   },
 ] as const;
+
+export function localizeMarketingContent(tMarketing: import('@/i18n/translator').UiTranslator) {
+  return localizeUiCatalog(
+    {
+      hero,
+      walk,
+      walkFiles,
+      shipTerminal,
+      shipped,
+      pillars,
+      tabs,
+      agentFiles,
+      rulesYaml,
+      triggerFiles,
+      computer,
+      reviewTerminal,
+      uiSample,
+      architecture,
+      faqItems,
+    },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+}

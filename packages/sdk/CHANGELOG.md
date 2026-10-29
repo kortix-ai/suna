@@ -5,6 +5,14 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (channel access for any chat platform)
+- `listChannelUsers`, `allowChannelUser`, `removeChannelUser`, `dismissChannelAccessRequest` and
+  `getChannelUserPhoto`: the allowed users and access requests of a chat platform's bot, keyed by
+  `platform: ChannelAccessPlatform` (`'telegram'` today). They call the same routes as the Telegram
+  functions, which keep their signatures and error texts.
+- The types `ChannelAccessPlatform`, `ChannelUser`, `ChannelAccessRequest`, `ChannelUsers` and
+  `ChannelAccessList` (`allowed_user_ids?`, `access_request_count?`: what an edit returns).
+
 ### Added (image generation card)
 - `imageGenView(call, live?)` and the `ImageGenView` / `ImageGenPhase` types: what an `image_gen`
   card draws from its `ToolCallBlock`, for any image model and for one to four images per call.

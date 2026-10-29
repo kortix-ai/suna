@@ -1,11 +1,19 @@
-import { FaqSection } from '@/features/marketing/landing-sections/faq-section';
-import { Band, Heading } from '@/features/marketing/kit/page-frame';
-import { MarketingButton } from '@/features/marketing/kit/marketing-button';
-import { Seal } from '@/features/marketing/kit/seal';
-import { LayerTabs } from '@/features/marketing/security-page/layer-tabs';
-import { enforcement, faqItems, pillars, trust } from '@/features/marketing/security-page/model';
-import { SecurityHero } from '@/features/marketing/security-page/security-hero';
 import Link from '@/components/site-link';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { Band, Heading } from '@/features/marketing/kit/page-frame';
+import { Seal } from '@/features/marketing/kit/seal';
+import { FaqSection } from '@/features/marketing/landing-sections/faq-section';
+import { LayerTabs } from '@/features/marketing/security-page/layer-tabs';
+import {
+  enforcement as sourceenforcement,
+  faqItems as sourcefaqItems,
+  pillars as sourcepillars,
+  trust as sourcetrust,
+} from '@/features/marketing/security-page/model';
+import { SecurityHero } from '@/features/marketing/security-page/security-hero';
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { useTranslations } from '@/i18n/use-translations';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import {
   BuildingsIcon,
   CheckIcon,
@@ -38,9 +46,23 @@ const PILLAR_ICONS: Record<string, Glyph> = {
   record: ListChecksIcon,
 };
 
-const TRUST_ICONS: Glyph[] = [CloudIcon, HardDrivesIcon, BuildingsIcon, CodeIcon, UsersThreeIcon, CpuIcon];
+const TRUST_ICONS: Glyph[] = [
+  CloudIcon,
+  HardDrivesIcon,
+  BuildingsIcon,
+  CodeIcon,
+  UsersThreeIcon,
+  CpuIcon,
+];
 
 function Pillars() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { pillars } = localizeUiCatalog(
+    { pillars: sourcepillars },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
   return (
     <section id="pillars" className="scroll-mt-16 py-14 lg:py-20">
       <Heading title={pillars.title} titleMuted={pillars.titleMuted} />
@@ -53,7 +75,9 @@ function Pillars() {
                 <Icon className="text-foreground size-6" aria-hidden />
                 <h3 className="text-foreground text-2xl font-medium tracking-tight text-balance">
                   {name}
-                  <span className="text-muted-foreground mt-1 block text-lg leading-snug">{line}</span>
+                  <span className="text-muted-foreground mt-1 block text-lg leading-snug">
+                    {line}
+                  </span>
                 </h3>
                 <ul className="mt-auto flex flex-col gap-2 text-sm">
                   {facts.map((fact) => (
@@ -92,6 +116,13 @@ function Deny({ text }: { text: string }): ReactNode {
 }
 
 function Enforcement() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { enforcement } = localizeUiCatalog(
+    { enforcement: sourceenforcement },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
   const [rule, by, deny] = enforcement.head;
   return (
     <section id="enforcement" className="scroll-mt-16 py-14 lg:py-20">
@@ -102,10 +133,16 @@ function Enforcement() {
             <caption className="sr-only">{enforcement.title}</caption>
             <thead>
               <tr className="border-b">
-                <th scope="col" className="text-muted-foreground w-5/12 py-3 pr-4 text-sm font-normal">
+                <th
+                  scope="col"
+                  className="text-muted-foreground w-5/12 py-3 pr-4 text-sm font-normal"
+                >
                   {rule}
                 </th>
-                <th scope="col" className="text-muted-foreground w-4/12 px-4 py-3 text-sm font-normal">
+                <th
+                  scope="col"
+                  className="text-muted-foreground w-4/12 px-4 py-3 text-sm font-normal"
+                >
                   {by}
                 </th>
                 <th scope="col" className="text-muted-foreground px-4 py-3 text-sm font-normal">
@@ -148,6 +185,13 @@ function Enforcement() {
 
 /** The home page's trust band, for hosting and compliance: dark in both themes. */
 function Trust() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { trust } = localizeUiCatalog(
+    { trust: sourcetrust },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
   return (
     <section id="trust" className="scroll-mt-16 py-14 lg:py-20">
       <div className="kx-rail-fade border-y px-4 lg:px-17">
@@ -193,16 +237,33 @@ function Trust() {
 }
 
 export default function SecurityPage(): ReactNode {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { faqItems } = localizeUiCatalog(
+    { faqItems: sourcefaqItems },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
   return (
     <main className="bg-background relative mx-auto w-full max-w-[1440px]">
-      <div aria-hidden className="bg-border pointer-events-none absolute inset-y-0 left-4 z-10 w-px lg:left-17" />
-      <div aria-hidden className="bg-border pointer-events-none absolute inset-y-0 right-4 z-10 w-px lg:right-17" />
+      <div
+        aria-hidden
+        className="bg-border pointer-events-none absolute inset-y-0 left-4 z-10 w-px lg:left-17"
+      />
+      <div
+        aria-hidden
+        className="bg-border pointer-events-none absolute inset-y-0 right-4 z-10 w-px lg:right-17"
+      />
       <SecurityHero />
       <Pillars />
       <LayerTabs />
       <Enforcement />
       <Trust />
-      <FaqSection title="Security questions." titleMuted="Answered from the code." items={faqItems} />
+      <FaqSection
+        title="Security questions."
+        titleMuted="Answered from the code."
+        items={faqItems}
+      />
     </main>
   );
 }

@@ -1,3 +1,4 @@
+import { CHANNEL_PLATFORM_IDS, type ChannelPlatformId } from '@kortix/shared/channel-descriptors';
 import { faviconUrlForHostname } from '../../lib/favicon';
 
 /**
@@ -19,9 +20,9 @@ import { faviconUrlForHostname } from '../../lib/favicon';
  * 4. Else the neutral fallback glyph.
  */
 
-export type NativeConnectorApp = 'slack' | 'teams' | 'email' | 'telegram' | 'computer';
+export type NativeConnectorApp = ChannelPlatformId | 'computer';
 
-const NATIVE_APPS: readonly NativeConnectorApp[] = ['slack', 'teams', 'email', 'telegram', 'computer'];
+const NATIVE_APPS: readonly NativeConnectorApp[] = [...CHANNEL_PLATFORM_IDS, 'computer'];
 
 function isNative(value: string | null | undefined): value is NativeConnectorApp {
   return !!value && (NATIVE_APPS as readonly string[]).includes(value);
@@ -53,11 +54,11 @@ export function nativeConnectorApp(source: ConnectorLogoSource): NativeConnector
   if (source.provider === 'computer') return 'computer';
   if (source.provider === 'channel' && isNative(source.platform)) return source.platform;
   const slug = (source.slug ?? '').toLowerCase();
-  const match = /^(?:native:|kortix_)(slack|teams|email|telegram|computer)$/.exec(slug);
-  if (match) return match[1] as NativeConnectorApp;
+  const named = /^(?:native:|kortix_)([a-z]+)$/.exec(slug)?.[1];
+  if (isNative(named)) return named;
   if (slug === 'computer' || slug === 'computers') return 'computer';
-  const file = /\/connector-icons\/(slack|teams|email|telegram|computer)\.svg$/.exec(source.icon ?? '');
-  return file ? (file[1] as NativeConnectorApp) : null;
+  const file = /\/connector-icons\/([a-z]+)\.svg$/.exec(source.icon ?? '')?.[1];
+  return isNative(file) ? file : null;
 }
 
 export function resolveConnectorLogo(source: ConnectorLogoSource): ConnectorLogoKind {

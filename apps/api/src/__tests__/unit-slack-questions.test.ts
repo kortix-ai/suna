@@ -77,7 +77,8 @@ mock.module('../shared/db', () => ({
 // No real network for respondViaUrl's fetch.
 globalThis.fetch = (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
 
-const { postQuestion } = await import('../channels/slack/questions');
+const { buildQuestionBlocks, postQuestion } = await import('../channels/slack/questions');
+const { parseQuestionButton } = await import('../channels/core/question-token');
 const { handleBlockAction } = await import('../channels/slack/interactivity');
 
 beforeEach(() => {
@@ -180,6 +181,46 @@ describe('postQuestion → interactive buttons', () => {
     const res = await postQuestion('sess-1', [{ question: 'Q?', options: [{ label: 'A' }] }] as any);
     expect(res.ok).toBe(false);
   });
+
+  test('without a stored question the blocks are byte-identical to before', () => {
+    // Built by the code before the stored question existed (6f0112a86c).
+    const before = [
+      {"type":"section","text":{"type":"mrkdwn","text":"*Merge?*"}},
+      {"type":"section","text":{"type":"mrkdwn","text":"\u2022  *Yes* \u2014 squash"}},
+      {"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"Yes","emoji":true},"action_id":"qa_0_0","value":"{\"q\":\"Merge?\",\"a\":\"Yes\"}"},{"type":"button","text":{"type":"plain_text","text":"No","emoji":true},"action_id":"qa_0_1","value":"{\"q\":\"Merge?\",\"a\":\"No\"}"}]},
+      {"type":"context","elements":[{"type":"mrkdwn","text":"\u21a9\ufe0e  Click an option, or @mention me in this thread to answer."}]},
+    ];
+    const blocks = buildQuestionBlocks([{ question: 'Merge?', options: [{ label: 'Yes', description: 'squash' }, { label: 'No' }] }] as any);
+    expect(JSON.stringify(blocks)).toBe(JSON.stringify(before));
+  });
+
+  test('with a stored question each button names it, its question and its option; nothing else changes', async () => {
+    const pendingId = crypto.randomUUID();
+    const questions = [
+      { question: 'Q1?', options: [{ label: 'A' }, { label: 'B' }] },
+      { question: 'Q2?', options: [{ label: 'C' }] },
+    ] as any;
+    await postQuestion('sess-1', questions, pendingId);
+
+    const blocks = slackCalls.find((c) => c.fn === 'postBlocks')!.args[3] as Array<Record<string, any>>;
+    const actions = blocks.filter((b) => b.type === 'actions');
+    expect(actions.map((b) => b.block_id)).toEqual(['kq0', 'kq1']);
+    const buttons = actions.flatMap((b) => b.elements as Array<Record<string, any>>);
+    expect(buttons.map((e) => [e.action_id, e.value])).toEqual([
+      ['qa_0_0', `kq:${pendingId}:0`],
+      ['qa_0_1', `kq:${pendingId}:1`],
+      ['qa_1_0', `kq:${pendingId}:1.0`],
+    ]);
+    expect(buttons.map((e) => parseQuestionButton(e.value))).toEqual([
+      { pendingId, question: 0, index: 0 },
+      { pendingId, question: 0, index: 1 },
+      { pendingId, question: 1, index: 0 },
+    ]);
+    // Less the block ids and the values, it is the message posted without one.
+    const bare = (bs: Array<Record<string, any>>) =>
+      bs.map(({ block_id, ...b }) => (b.type === 'actions' ? { ...b, elements: b.elements.map(({ value, ...e }: Record<string, any>) => e) } : b));
+    expect(JSON.stringify(bare(blocks))).toBe(JSON.stringify(bare(buildQuestionBlocks(questions))));
+  });
 });
 
 describe('handleBlockAction → question answer click resumes the session', () => {
@@ -191,6 +232,7 @@ describe('handleBlockAction → question answer click resumes the session', () =
       team: { id: 'T1' },
       channel: { id: 'C1' },
       user: { id: 'U1' },
+      trigger_id: 'trig-1',
       message: { ts: '50.0', thread_ts: '10.0' },
       response_url: 'https://hooks.slack.com/x',
       actions: [
@@ -218,6 +260,7 @@ describe('handleBlockAction → question answer click resumes the session', () =
       team: { id: 'T1' },
       channel: { id: 'C1' },
       user: { id: 'U1' },
+      trigger_id: 'trig-1',
       message: { ts: '50.0', thread_ts: '10.0' },
       response_url: 'https://hooks.slack.com/x',
       actions: [{ action_id: 'qa_0_0', text: { type: 'plain_text', text: 'A' }, value: '{"q":"Q?","a":"A"}' }],
