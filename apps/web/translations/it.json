@@ -184,7 +184,37 @@
     "noAgents": "Nessun agente"
   },
   "useCases": {
-    "headline": "I processi che fanno funzionare un'azienda"
+    "headline": "I processi che fanno funzionare un'azienda",
+    "covers": {
+      "slackDraftFor": "Bozza per <b>giovedì alle 10:00</b>, LinkedIn:",
+      "slackPost": "Abbiamo rilasciato i connettori v2: un unico catalogo per MCP, OpenAPI e GraphQL. Ecco cosa cambia per i tuoi agenti →",
+      "approve": "Approva",
+      "edit": "Modifica",
+      "skip": "Salta",
+      "deny": "Nega",
+      "crmTitle": "Pulizia notturna del CRM",
+      "crmMeta": "02:00 · ha lavorato 3 min 12 s",
+      "crmSearchContacts": "hubspot · cerca contatti",
+      "crmMergeDuplicates": "hubspot · unisci i duplicati",
+      "crmEnrichCompany": "clearbit · arricchisci l’azienda",
+      "crmAskApproval": "slack · chiedi l’approvazione per l’aggiornamento massivo",
+      "awaitingApproval": "In attesa di approvazione",
+      "draftToOps": "A: responsabile Operations · bozza",
+      "draftOps": "Ho visto che il tuo team sta assumendo tre SDR. Ecco come un team simile ha ridotto i tempi di ricerca.",
+      "draftToSales": "A: VP Sales · bozza",
+      "draftSales": "Congratulazioni per il round di Serie B. Vale la pena dare un’occhiata a come smistate i lead in entrata?",
+      "draftToRevOps": "A: responsabile RevOps · oggi",
+      "draftRevOps": "La tua pagina dei prezzi è cambiata la settimana scorsa. Posso mostrarti cosa hanno fatto dopo team come il tuo.",
+      "approvalAsks": "<name>{agent}</name> chiede di eseguire uno strumento",
+      "approvalExpires": "Scade tra 58 min",
+      "approvalQuestion": "Rimborsare 640 $ per l’ordine #4821?",
+      "approvalTool": "Strumento",
+      "approvalAmount": "Importo",
+      "approvalReason": "Motivo",
+      "approvalCustomer": "Cliente",
+      "approvalReasonValue": "Articolo arrivato danneggiato",
+      "approvalPolicy": "Policy: i rimborsi oltre 500 $ richiedono una persona"
+    }
   },
   "developers": {
     "heroDescription": "Agenti, skill, strumenti, connettori e pianificazioni sono tutti file in un repository. Modificali nel tuo IDE, eseguili in locale e distribuiscili nel cloud con un solo comando. Open source, self-hosted e sotto il tuo controllo.",
@@ -20942,7 +20972,14 @@
       "textdbff0b6e128b": "Un framework backend e un server per gli agenti.",
       "text615544b5a953": "Estensioni pi",
       "text74bf85229fd2": "Estendi l’harness con TypeScript.",
-      "text152a04716eb3": "Gli agenti girano su pi"
+      "text152a04716eb3": "Gli agenti girano su pi",
+      "textb1e19e0edf15": "Trovate 7 trattative inattive in HubSpot",
+      "textd6320415db95": "Ricerca delle trattative inattive in HubSpot",
+      "text850aad6d0dc3": "Create 7 attività di follow-up",
+      "textc5e0ccf193cb": "Follow-up inviato per 4 trattative inattive",
+      "text1f60c85be705": "Follow-up delle trattative inattive in corso",
+      "text24c939b23dfe": "Aggiornate 2 trattative in HubSpot",
+      "text6cfe7973316d": "Aggiornamento delle trattative in HubSpot"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

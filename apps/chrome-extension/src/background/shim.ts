@@ -258,7 +258,7 @@ export class Shim {
     if (!this.tabUse.get(tabId)) await this.host.attach(tabId);
     this.host.touched(tabId);
     this.tabUse.set(tabId, (this.tabUse.get(tabId) ?? 0) + 1);
-    const sessionId = `K${++this.seq}${Math.random().toString(16).slice(2, 10).toUpperCase()}`;
+    const sessionId = `K${++this.seq}${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
     cl.sessions.set(sessionId, tabId);
     const tab = await this.host.getTab(tabId);
     const [info] = tab ? await this.infos(cl, [tab], true) : [];

@@ -1342,22 +1342,29 @@
     {
       "idx": 191,
       "version": "7",
-      "when": 1793296518071,
-      "tag": "20261029175518_artifact_comment_routing",
+      "when": 1793309438986,
+      "tag": "20261029213038_artifact_activity_tables_rls",
       "breakpoints": true
     },
     {
       "idx": 192,
       "version": "7",
-      "when": 1793298184688,
-      "tag": "20261029182304_artifact_comment_delivery_scope",
+      "when": 1793312793000,
+      "tag": "20261029222633_artifact_comment_routing",
       "breakpoints": true
     },
     {
       "idx": 193,
       "version": "7",
-      "when": 1793306473758,
-      "tag": "20261029204113_artifact_comment_tables_rls",
+      "when": 1793312797000,
+      "tag": "20261029222637_artifact_comment_delivery_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "7",
+      "when": 1793312801000,
+      "tag": "20261029222641_artifact_comment_tables_rls",
       "breakpoints": true
     }
   ]
