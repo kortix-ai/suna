@@ -26,6 +26,7 @@ import {
   type MiddlewareUser,
 } from '@/lib/supabase/middleware-identity';
 import { readUnverifiedSession } from '@/lib/supabase/session-cookie';
+import { authCookieOptions, hasPanelMarker, panelAuthUrl } from '@/lib/supabase/panel-cookies';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
@@ -69,12 +70,11 @@ const MARKETING_ROUTES = [
   '/mobile',
 ];
 
-// Marketing pages whose slug is ALSO an app prefix: /cli/authorize,
-// /slack/install, /slack/login/<token>, /teams/install and /teams/login/<token>
+// Marketing pages whose slug is ALSO an app prefix: /slack/install, /slack/login/<token>, /teams/install and /teams/login/<token>
 // are signed-in flows (PROTECTED_APP_PREFIXES). Every other list here matches
 // by prefix, which would make those flows public. These match the exact path
 // only, with or without a locale prefix, and nothing under it.
-const EXACT_MARKETING_ROUTES = ['/cli', '/slack', '/teams'];
+const EXACT_MARKETING_ROUTES = ['/slack', '/teams'];
 
 function isExactMarketingPath(pathname: string): boolean {
   if (EXACT_MARKETING_ROUTES.includes(pathname)) return true;
@@ -141,6 +141,8 @@ const PROTECTED_APP_PREFIXES = [
   '/maintenance',
   '/new',
   '/p',
+  // The Kortix in Chrome side panel's new chat (features/chrome/panel).
+  '/panel',
   '/presentations',
   '/projects',
   '/rauch',
@@ -657,6 +659,18 @@ export async function middleware(request: NextRequest) {
     isExactMarketingPath(pathname) ||
     PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'));
 
+  // The Kortix in Chrome side panel keeps its session in partitioned cookies
+  // and has no password form: `/auth` there hands over to `/auth/panel`, which
+  // asks the extension for a session.
+  const panelRequest = hasPanelMarker(request.cookies);
+  if (panelRequest && pathname === '/auth') {
+    const target = new URL(
+      panelAuthUrl(request.nextUrl.searchParams.get('redirect')),
+      request.url,
+    );
+    return finalizeEnvironmentAccess(NextResponse.redirect(target));
+  }
+
   // Identity only where it changes the response: protected routes, `/` (a
   // signed-in visitor goes to a project), and marketing pages a self-host has
   // disabled (the bounce target depends on the session). Every other public
@@ -730,13 +744,12 @@ export async function middleware(request: NextRequest) {
     );
     if (plan === 'fresh') {
       const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+        // `@supabase/ssr` never sets `secure` itself — see the doc comment in
+        // `lib/supabase/client.ts`. A Kortix in Chrome side panel request gets
+        // partitioned cookies (`lib/supabase/panel-cookies.ts`).
         cookieOptions: {
           name: KORTIX_SUPABASE_AUTH_COOKIE,
-          path: '/',
-          sameSite: 'lax',
-          // `@supabase/ssr` never sets this itself — see the doc comment in
-          // `lib/supabase/client.ts`.
-          secure: process.env.NODE_ENV === 'production',
+          ...authCookieOptions(panelRequest, process.env.NODE_ENV === 'production'),
         },
         cookies: {
           getAll() {
@@ -804,7 +817,11 @@ export async function middleware(request: NextRequest) {
         name === KORTIX_SUPABASE_AUTH_COOKIE ||
         name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`)
       ) {
-        supabaseResponse.cookies.delete(name);
+        // Deleting a partitioned cookie needs the same attributes it was set with.
+        supabaseResponse.cookies.set(name, '', {
+          ...authCookieOptions(panelRequest, process.env.NODE_ENV === 'production'),
+          maxAge: 0,
+        });
       }
     }
     user = null;

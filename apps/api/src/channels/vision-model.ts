@@ -336,3 +336,35 @@ export async function channelTurnModel(input: {
 export function promptModelOverride(model: string): { providerID: string; modelID: string } {
   return { providerID: 'kortix', modelID: wireModelId(model) };
 }
+
+/** Who a channel image turn runs as, and the model its session runs (null: the platform default). */
+export interface ImageTurn {
+  projectId: string;
+  accountId: string;
+  userId: string | null;
+  currentModel: string | null;
+  visibility: string;
+  sessionId?: string;
+}
+
+/**
+ * The model of a channel turn whose message carries an image, and whether no model in reach reads
+ * it. pi gives an image only to a model that reads images, so the gateway's image reroute never
+ * sees one: the channel picks before the turn (channels/core/conversation.ts).
+ */
+export async function imageTurnModel(turn: ImageTurn): Promise<{ model: string | null; blind: boolean }> {
+  const model = await channelTurnModel({
+    projectId: turn.projectId,
+    accountId: turn.accountId,
+    userId: turn.userId,
+    currentModel: turn.currentModel,
+    hasImage: true,
+    // A shared session counts no one's personal keys, as the gateway resolves it.
+    personalUserId: turn.visibility === 'private' ? turn.userId : null,
+    // ponytail: codex replacements fail closed. The agent-grant reader (model-access.ts
+    // `agentGrantEnvFor`) imports Slack code. Upgrade: move it into this file.
+    agentGrantEnv: async () => [],
+    ...(turn.sessionId ? { sessionId: turn.sessionId } : {}),
+  });
+  return { model, blind: !model && !modelReadsImages(turn.projectId, turn.currentModel ?? platformDefaultModelId()) };
+}

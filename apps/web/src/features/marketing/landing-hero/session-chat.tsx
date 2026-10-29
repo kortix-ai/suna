@@ -3,11 +3,14 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { BrandGlyph } from '@/features/marketing/kit/brand-glyph';
 import { cn } from '@kortix/ui';
+import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import Loading from '@kortix/ui/loading';
 import { Switch } from '@kortix/ui/switch';
 import {
   CalendarDotsIcon,
+  CaretDownIcon,
   CheckIcon,
   ClockIcon,
   FilesIcon,
@@ -221,16 +224,12 @@ function Connect({ at, enter }: { at: At; enter?: string }) {
   return (
     <>
       {at('call') ? (
-        <Chain>
-          <StepRow
-            className={enter}
-            icon={PlugIcon}
-            verb={at('deals') ? 'Searched deals' : 'Calling'}
-            object="hubspot.search_deals"
-            result={at('deals') ? '7 deals' : undefined}
-            running={!at('deals')}
-          />
-        </Chain>
+        <WorkGroup
+          className={enter}
+          label={at('deals') ? 'Found 7 quiet deals in HubSpot' : 'Looking for quiet deals in HubSpot'}
+          running={!at('deals')}
+          steps={[{ icon: PlugIcon, verb: 'Searched deals', object: 'hubspot.search_deals', result: '7 deals' }]}
+        />
       ) : null}
       {at('connect') ? (
         <ConnectCard
@@ -245,20 +244,19 @@ function Connect({ at, enter }: { at: At; enter?: string }) {
         />
       ) : null}
       {at('done') ? (
-        <Chain>
-          <StepRow
-            className={enter}
-            icon={PencilSimpleIcon}
-            verb="Created tasks"
-            object="hubspot.create_task"
-            result="7 tasks"
-          />
-        </Chain>
+        <WorkGroup
+          className={enter}
+          label="Created 7 follow-up tasks"
+          steps={[{ icon: PencilSimpleIcon, verb: 'Created tasks', object: 'hubspot.create_task', result: '7 tasks' }]}
+        />
       ) : null}
       {at('summary') ? <Reply className={enter}>{tMarketing('text3677cb6d7d0e')}</Reply> : null}
     </>
   );
 }
+
+/** A third-party logo is drawn for a white ground: white in both themes (color.md, logo tile rule). */
+const LOGO_TILE = 'bg-white';
 
 function ConnectCard({
   state,
@@ -270,40 +268,39 @@ function ConnectCard({
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
 
   return (
-    <div className={cn('bg-card flex items-center gap-3 rounded-lg border px-4 py-3', className)}>
-      <span className="bg-background flex size-9 items-center justify-center rounded-md border">
+    <div className={cn('bg-card flex items-center gap-3.5 rounded-lg border p-4', className)}>
+      <span className={`flex size-10 shrink-0 items-center justify-center rounded-md border ${LOGO_TILE}`}>
         <BrandGlyph slug="hubspot" />
       </span>
-      <span className="flex min-w-0 flex-col">
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="text-sm font-medium">{tMarketing('text5f5f6ddd5dbf')}</span>
-        <span className="text-muted-foreground text-xs">
+        <span className="text-muted-foreground truncate text-xs">
           {state === 'connected' ? tMarketing('text2e2c3d4fb3f5') : tMarketing('textf668c1eac45f')}
         </span>
       </span>
       {state === 'idle' ? (
-        <Button size="xs" className="ml-auto" tabIndex={-1}>
+        <Button size="sm" tabIndex={-1}>
           {tMarketing('text1a2303ede074')}
         </Button>
-      ) : (
-        <span
-          key={state}
-          className={cn('text-muted-foreground ml-auto flex items-center gap-1.5 text-xs', ENTER)}
-        >
-          {state === 'connecting' ? (
-            <Loading className="size-3" />
-          ) : (
-            <span aria-hidden className="bg-kortix-green size-1.5 rounded-full" />
-          )}
-          {state === 'connecting' ? 'Connecting' : 'Connected'}
+      ) : state === 'connecting' ? (
+        <span className={cn('text-muted-foreground flex items-center gap-1.5 text-xs', ENTER)}>
+          <Loading className="size-3" />
+          Connecting
         </span>
+      ) : (
+        <Badge variant="outline" className={ENTER}>
+          <span data-slot="status-dot" aria-hidden className="bg-kortix-green rounded-full" />
+          Connected
+        </Badge>
       )}
     </div>
   );
 }
 
 /**
- * The inline permission prompt: the call, then Deny / Allow once / Allow for
- * session. Answered, it stays in the thread as the record of who allowed what.
+ * The inline permission prompt: what the agent wants to do, in words, with
+ * the call under it, then Deny / Allow once / Allow for session. Answered, it
+ * folds to one line: the record of who allowed what.
  */
 function ApprovalCard({
   state,
@@ -314,41 +311,41 @@ function ApprovalCard({
 }) {
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
 
-  const allowed = state === 'allowed';
+  if (state === 'allowed') {
+    return (
+      <div className={cn('flex items-center gap-2 text-sm', className)}>
+        <ShieldCheckIcon className="text-ring size-4 shrink-0" aria-hidden />
+        <span>{tMarketing('texta04bce7e92b4')}</span>
+        <span className="text-muted-foreground">{tMarketing('texta423f5bc1b99')}</span>
+      </div>
+    );
+  }
   return (
-    <div className={cn('bg-popover overflow-hidden rounded-md border', className)}>
-      <div className="flex items-center gap-2 border-b px-3 py-2">
-        {allowed ? (
-          <ShieldCheckIcon className="text-kortix-green size-4" aria-hidden />
-        ) : (
-          <ShieldWarningIcon className="text-kortix-orange size-4" aria-hidden />
-        )}
-        <span className="text-xs font-medium">
-          {allowed ? tMarketing('texta04bce7e92b4') : tMarketing('text9928dd82f38f')}
+    <div className={cn('bg-card overflow-hidden rounded-lg border', className)}>
+      <div className="flex items-start gap-3 p-4">
+        <span className="bg-kortix-orange/15 text-kortix-orange flex size-8 shrink-0 items-center justify-center rounded-md">
+          <ShieldWarningIcon className="size-4" aria-hidden />
         </span>
-        <span className="text-muted-foreground text-xs">
-          {allowed ? tMarketing('texta423f5bc1b99') : tMarketing('text4a86400223cc')}
+        <span className="flex min-w-0 flex-col gap-1">
+          <span className="flex items-baseline gap-2">
+            <span className="text-sm font-medium">{tMarketing('text9928dd82f38f')}</span>
+            <span className="text-muted-foreground text-xs">{tMarketing('text4a86400223cc')}</span>
+          </span>
+          <span className="text-sm">{tMarketing('textdcb9b0684259')}</span>
+          <span className="text-muted-foreground font-mono text-xs">{tMarketing('text622bdac4d5b2')}</span>
         </span>
       </div>
-      <div className="flex items-center gap-3 px-3 py-2.5">
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="font-mono text-xs">{tMarketing('text622bdac4d5b2')}</span>
-          <span className="text-muted-foreground text-xs">{tMarketing('textdcb9b0684259')}</span>
-        </span>
-        {allowed ? null : (
-          <>
-            <Button size="xs" variant="ghost" tabIndex={-1}>
-              {tMarketing('text05a2d7332eb9')}
-            </Button>
-            <Button size="xs" variant="outline" tabIndex={-1}>
-              {tMarketing('text168511d24d9e')}
-            </Button>
-            <Button size="xs" tabIndex={-1}>
-              {state === 'allowing' ? <Loading className="size-3" /> : null}
-              {tMarketing('textec9f8a9109ec')}
-            </Button>
-          </>
-        )}
+      <div className="bg-muted/40 flex items-center justify-end gap-2 border-t px-4 py-2.5">
+        <Button size="xs" variant="ghost" className="mr-auto" tabIndex={-1}>
+          {tMarketing('text05a2d7332eb9')}
+        </Button>
+        <Button size="xs" variant="outline" tabIndex={-1}>
+          {tMarketing('text168511d24d9e')}
+        </Button>
+        <Button size="xs" tabIndex={-1}>
+          {state === 'allowing' ? <Loading className="size-3" /> : null}
+          {tMarketing('textec9f8a9109ec')}
+        </Button>
       </div>
     </div>
   );
@@ -391,23 +388,15 @@ function Automate({ at, enter }: { at: At; enter?: string }) {
         </Prompt>
       ) : null}
       {at('run') ? (
-        <Chain>
-          <StepRow
-            className={cn('mt-3', enter)}
-            icon={PlugIcon}
-            verb="Searched deals"
-            object="hubspot.search_deals"
-            result="4 deals"
-          />
-          <StepRow
-            className={enter}
-            icon={PencilSimpleIcon}
-            verb={at('ran') ? 'Created tasks' : 'Creating tasks'}
-            object="hubspot.create_task"
-            result={at('ran') ? '4 tasks' : undefined}
-            running={!at('ran')}
-          />
-        </Chain>
+        <WorkGroup
+          className={cn('mt-3', enter)}
+          label={at('ran') ? 'Followed up on 4 quiet deals' : 'Following up on quiet deals'}
+          running={!at('ran')}
+          steps={[
+            { icon: PlugIcon, verb: 'Searched deals', object: 'hubspot.search_deals', result: '4 deals' },
+            { icon: PencilSimpleIcon, verb: 'Created tasks', object: 'hubspot.create_task', result: '4 tasks' },
+          ]}
+        />
       ) : null}
       {at('report') ? <Reply className={enter}>{tMarketing('text1283f8047db5')}</Reply> : null}
     </>
@@ -460,16 +449,12 @@ function Share({ at, enter }: { at: At; enter?: string }) {
         </Prompt>
       ) : null}
       {at('update') ? (
-        <Chain>
-          <StepRow
-            className={cn('mt-3', enter)}
-            icon={PlugIcon}
-            verb={at('reply') ? 'Updated deals' : 'Updating deals'}
-            object="hubspot.update_deal"
-            result={at('reply') ? '2 deals' : undefined}
-            running={!at('reply')}
-          />
-        </Chain>
+        <WorkGroup
+          className={cn('mt-3', enter)}
+          label={at('reply') ? 'Updated 2 deals in HubSpot' : 'Updating deals in HubSpot'}
+          running={!at('reply')}
+          steps={[{ icon: PlugIcon, verb: 'Updated deals', object: 'hubspot.update_deal', result: '2 deals' }]}
+        />
       ) : null}
       {at('reply') ? <Reply className={enter}>{tMarketing('texted18f67bfab0')}</Reply> : null}
     </>
@@ -561,6 +546,68 @@ function Divider({ children, className }: { children: ReactNode; className?: str
       <span className="bg-border h-px flex-1" />
       {children}
       <span className="bg-border h-px flex-1" />
+    </div>
+  );
+}
+
+type WorkStep = { icon: Icon; verb: string; object: string; result?: string };
+
+/**
+ * One line that says what the agent did, in words; the tool calls behind it
+ * fold under it. Closed by default, like the app's turn fold: the reader sees
+ * the outcome, and opens it for the calls.
+ */
+function WorkGroup({
+  label,
+  steps,
+  running,
+  className,
+}: {
+  label: string;
+  steps: readonly WorkStep[];
+  running?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={cn('flex flex-col', className)}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="group/work hover:text-foreground flex w-fit items-center gap-2.5 text-sm"
+      >
+        <span className="flex size-4 flex-none items-center justify-center">
+          {running ? <Loading className="size-3.5" /> : <SolidCheckIcon className="text-ring" />}
+        </span>
+        <span>{label}</span>
+        <span className="text-muted-foreground text-xs">
+          {steps.length} {steps.length === 1 ? 'step' : 'steps'}
+        </span>
+        <CaretDownIcon
+          aria-hidden
+          className={cn(
+            'text-muted-foreground group-hover/work:text-foreground duration-normal size-3 transition-transform ease-out',
+            open && 'rotate-180',
+          )}
+        />
+      </button>
+      <div
+        className={cn(
+          'duration-normal grid transition-[grid-template-rows] ease-out motion-reduce:transition-none',
+          open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+        )}
+      >
+        <div className="min-h-0 overflow-hidden" inert={!open}>
+          <div className="pt-2.5 pl-6.5">
+            <Chain>
+              {steps.map((step) => (
+                <StepRow key={step.object} {...step} />
+              ))}
+            </Chain>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

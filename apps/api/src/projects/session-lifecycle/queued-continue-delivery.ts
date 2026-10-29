@@ -107,8 +107,9 @@ export async function continuationOverrides(
   own: PromptOverridesWire | undefined,
 ): Promise<PromptOverridesWire | undefined> {
   if (own?.model) return own;
+  // Only the overrides: the newest row that names a model can hold megabytes of file parts.
   const [last] = await db
-    .select({ payload: sessionLifecycleCommands.payload })
+    .select({ overrides: sql<PromptOverridesWire | null>`${sessionLifecycleCommands.payload}->'overrides'` })
     .from(sessionLifecycleCommands)
     .where(and(
       eq(sessionLifecycleCommands.sessionId, sessionId),
@@ -118,7 +119,7 @@ export async function continuationOverrides(
     ))
     .orderBy(desc(sessionLifecycleCommands.createdAt))
     .limit(1);
-  const picked = (last?.payload as { overrides?: PromptOverridesWire } | undefined)?.overrides;
+  const picked = last?.overrides ?? undefined;
   if (!picked?.model) return own;
   return {
     ...(picked.agent ? { agent: picked.agent } : {}),

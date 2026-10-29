@@ -44,6 +44,7 @@ import {
   type PointerEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -87,7 +88,11 @@ const DRAWER_ROW =
 const firstLink = (panel: HTMLElement | null | undefined) =>
   panel?.querySelector<HTMLElement>('a[href]') ?? null;
 
-export function Navbar() {
+/**
+ * `solidAtTop`: the bar shows its background and bottom hairline before any
+ * scroll, for a page whose hero art runs under the bar (/services).
+ */
+export function Navbar({ solidAtTop = false }: { solidAtTop?: boolean } = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { user } = useAuth();
@@ -153,7 +158,7 @@ export function Navbar() {
     SITE_CONFIG_TRANSLATION_KEYS,
   ).filter((link) => USE_CASES_ENABLED || link.href !== '/use-cases');
 
-  const solid = scrolled || openMenu !== null || isDrawerOpen;
+  const solid = solidAtTop || scrolled || openMenu !== null || isDrawerOpen;
 
   const clearTimer = () => window.clearTimeout(timerRef.current);
 
@@ -212,6 +217,19 @@ export function Navbar() {
   }
 
   useEffect(() => () => window.clearTimeout(timerRef.current), []);
+
+  // The reveal height follows the open panel, so a short menu is not padded
+  // to the tallest one. Measured, so switching menus animates the height.
+  const [panelHeight, setPanelHeight] = useState(0);
+  useLayoutEffect(() => {
+    const panel = openMenu ? panelRefs.current[openMenu] : null;
+    if (!panel) return;
+    const measure = () => setPanelHeight(panel.offsetHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [openMenu]);
 
   // A keyboard open moves focus to the panel's first link once it is no longer inert.
   useEffect(() => {
@@ -444,11 +462,11 @@ export function Navbar() {
             // the page, so it needs its own surface and edge from the start.
             'max-lg:border-border max-lg:bg-background/90 duration-slow relative w-full border-b border-transparent transition-[background-color,backdrop-filter,border-color] ease-out max-lg:backdrop-blur-md',
             solid && 'bg-background/90 backdrop-blur-md',
-            scrolled && 'border-border',
+            (scrolled || solidAtTop) && 'border-border',
             overBand && 'dark',
           )}
         >
-          <div className={cn(MARKETING_CONTAINER, 'flex h-16 items-center justify-between')}>
+          <div className={cn(MARKETING_CONTAINER, 'relative flex h-16 items-center justify-between')}>
             <ContextMenu>
               <ContextMenuTrigger asChild className="group/kortix-logo">
                 <Link
@@ -492,7 +510,9 @@ export function Navbar() {
               </ContextMenuContent>
             </ContextMenu>
 
-            <SiteSwitcher className="mr-auto ml-4 lg:mr-0" />
+            {/* The AI OS / Services switcher: centred in the bar on desktop,
+                after the logo on smaller screens. */}
+            <SiteSwitcher className="mr-auto ml-4 lg:absolute lg:left-1/2 lg:m-0 lg:-translate-x-1/2" />
 
             {/* The links sit right after the logo; `mr-auto` pushes the actions to the end. */}
             <nav className="hidden items-center gap-1 lg:mr-auto lg:ml-8 lg:flex">
@@ -583,12 +603,12 @@ export function Navbar() {
           </div>
         </header>
 
-        {/* The panel reveal: height from 0 to the tallest panel, ease-out.
-            All panels share one grid cell, so the height never changes while
-            switching menus; only the content cross-fades. */}
+        {/* The panel reveal: height from 0 to the open panel's own height,
+            ease-out. All panels share one grid cell and cross-fade in place;
+            switching menus eases the height to the new panel. */}
         <m.div
           initial={false}
-          animate={{ height: openMenu ? 'auto' : 0 }}
+          animate={{ height: openMenu ? panelHeight || 'auto' : 0 }}
           transition={panelTransition}
           className={cn(
             'absolute inset-x-0 top-full hidden overflow-hidden lg:block',
@@ -596,7 +616,7 @@ export function Navbar() {
             overBand && 'dark',
           )}
         >
-          <div className="bg-background grid border-b">
+          <div className="bg-background grid">
             {menus.map((menu) => (
               <MegaMenuPanel
                 key={menu.id}
