@@ -22,6 +22,7 @@ import { eq, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import {
   artifacts,
+  sessionSandboxIdentities,
   projectSessionGroups,
   projectSpaces,
   rooms,
@@ -66,7 +67,6 @@ import {
   sessionLogs,
   sessionPendingQuestions,
   sessionRuntimeProjections,
-  sessionSandboxIdentities,
   sessionSandboxes,
   sessionTurns,
 } from '@kortix/db';
@@ -99,8 +99,7 @@ export const PROJECT_TRANSFER_TABLES: readonly PgTable[] = [
   rooms,
   sessionIdleWatches,
   sessionLifecycleCommands,
-  // Before session_sandboxes: moving a live box's row fires its trigger, which inserts the box's
-  // identity in the target account; an identity still in the source would then collide on the key.
+  // Before sessionSandboxes: its UPDATE trigger records the destination identity.
   sessionSandboxIdentities,
   sessionSandboxes,
   sessionTurns,

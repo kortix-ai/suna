@@ -464,7 +464,8 @@ flow(
         ...["session.rewind", "session.fork", "session.mcp", "session.todo", "session.shell", "session.attach", "session.config"].map((feature) => ({ feature, status: "lost" })),
       ];
 
-      await ctx.step("restore off (operator): preflight to pi → 200 available without a restore, and the whole history (4 live messages) is the first loss", async () => {
+      await ctx.step("restore off: preflight to pi → 200 available without a restore, and the whole history (4 live messages) is the first loss", async () => {
+        // Restore is on by default (#11032), so this step turns it off first.
         await setFeatureAsOperator(ctx, project.id, "session_log_restore", false);
         (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
           session_id: sessionId, from: "opencode", to: "pi", available: true, reason: null, restores: false,
@@ -472,8 +473,8 @@ flow(
         });
       });
 
-      await ctx.step("restore on (the default, no operator override): preflight to pi → 200 available; losses: the PDF, the todos, the rewind, the MCP tool (the sub-agent is native on pi); unsupported adds what was never used (fork, shell, attach, config)", async () => {
-        await setFeatureAsOperator(ctx, project.id, "session_log_restore", null);
+      await ctx.step("restore on: preflight to pi → 200 available; losses: the PDF, the todos, the rewind, the MCP tool (the sub-agent is native on pi); unsupported adds what was never used (fork, shell, attach, config)", async () => {
+        await setFeatureAsOperator(ctx, project.id, "session_log_restore", true);
         (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
           session_id: sessionId, from: "opencode", to: "pi", available: true, reason: null, restores: true, losses, unsupported,
         });

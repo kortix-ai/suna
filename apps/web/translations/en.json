@@ -184,7 +184,37 @@
     "noAgents": "No agents"
   },
   "useCases": {
-    "headline": "The loops that run a company"
+    "headline": "The loops that run a company",
+    "covers": {
+      "slackDraftFor": "Draft for <b>Thursday 10:00</b>, LinkedIn:",
+      "slackPost": "We shipped connectors v2: one catalog for MCP, OpenAPI and GraphQL. Here is what changed for your agents →",
+      "approve": "Approve",
+      "edit": "Edit",
+      "skip": "Skip",
+      "deny": "Deny",
+      "crmTitle": "Nightly CRM hygiene",
+      "crmMeta": "02:00 · worked 3m 12s",
+      "crmSearchContacts": "hubspot · search contacts",
+      "crmMergeDuplicates": "hubspot · merge duplicates",
+      "crmEnrichCompany": "clearbit · enrich company",
+      "crmAskApproval": "slack · ask approval for bulk update",
+      "awaitingApproval": "Awaiting approval",
+      "draftToOps": "To: Head of Ops · draft",
+      "draftOps": "Saw your team is hiring three SDRs. Here is how a similar team cut their research time.",
+      "draftToSales": "To: VP Sales · draft",
+      "draftSales": "Congrats on the Series B. Worth a quick look at how you route inbound leads?",
+      "draftToRevOps": "To: RevOps lead · today",
+      "draftRevOps": "Your pricing page changed last week. Happy to share what we saw teams like yours do next.",
+      "approvalAsks": "<name>{agent}</name> asks to run a tool",
+      "approvalExpires": "Expires in 58m",
+      "approvalQuestion": "Refund $640 to order #4821?",
+      "approvalTool": "Tool",
+      "approvalAmount": "Amount",
+      "approvalReason": "Reason",
+      "approvalCustomer": "Customer",
+      "approvalReasonValue": "Item arrived damaged",
+      "approvalPolicy": "Policy: refunds over $500 need a person"
+    }
   },
   "developers": {
     "heroDescription": "Agents, skills, tools, connectors, schedules — all just files in a repo. Edit them in your IDE, run them locally, ship to the cloud with one command. Open source, self-hostable, yours.",
@@ -20950,7 +20980,14 @@
       "textdbff0b6e128b": "A backend framework and server for agents.",
       "text615544b5a953": "pi extensions",
       "text74bf85229fd2": "Extend the harness with TypeScript.",
-      "text152a04716eb3": "Agents run on pi"
+      "text152a04716eb3": "Agents run on pi",
+      "textb1e19e0edf15": "Found 7 quiet deals in HubSpot",
+      "textd6320415db95": "Looking for quiet deals in HubSpot",
+      "text850aad6d0dc3": "Created 7 follow-up tasks",
+      "textc5e0ccf193cb": "Followed up on 4 quiet deals",
+      "text1f60c85be705": "Following up on quiet deals",
+      "text24c939b23dfe": "Updated 2 deals in HubSpot",
+      "text6cfe7973316d": "Updating deals in HubSpot"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

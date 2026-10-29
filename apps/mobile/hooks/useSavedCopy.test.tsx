@@ -40,11 +40,11 @@ function serve(route: (url: string) => unknown) {
 const reads = () => urls.filter((url) => !url.endsWith('/detail'));
 /** No project detail is read: the `session_log` flag decides nothing. */
 const details = () => urls.filter((url) => url.endsWith('/projects/p1/detail'));
-/** No stored log (a new session, or a server older than the log): `GET …/log` answers 404. */
+/** A server older than the session log: `GET …/log` answers 404. */
 const noLog = (route: (url: string) => unknown) => (url: string) =>
   url.includes('/log?') ? Response.json({ error: 'Not found' }, { status: 404 }) : route(url);
 
-function copy(rootId: string, count: number) {
+function copy(rootId: string, count: number, fields: Record<string, unknown> = {}) {
   return {
     available: true,
     reason: null,
@@ -57,6 +57,7 @@ function copy(rootId: string, count: number) {
       info: { id: `msg_${rootId}_${i + 1}`, sessionID: rootId, role: 'assistant', time: { created: i + 1, completed: i + 2 } },
       parts: [{ id: `prt_${rootId}_${i + 1}`, type: 'text', text: `message ${i + 1}` }],
     })),
+    ...fields,
   };
 }
 
@@ -103,8 +104,9 @@ afterEach(async () => {
   resetIdentityState();
 });
 
-describe('useSavedCopy when `GET …/log` answers 404: no v1 copy (P8.3)', () => {
-  test('the root reads the log once, no /transcript: nothing paints and nothing is claimed', async () => {
+// #11034: no build reads the v1 transcript (`GET …/transcript`), whatever the log answers.
+describe('useSavedCopy when the session log answers 404: no v1 copy', () => {
+  test('the root reads only the log, paints nothing from the network, and claims nothing', async () => {
     serve(noLog(() => copy(ROOT, 2)));
     const view = await mount(target());
     expect(view).toEqual({ thread: undefined, empty: false });
@@ -112,12 +114,19 @@ describe('useSavedCopy when `GET …/log` answers 404: no v1 copy (P8.3)', () =>
     expect(details()).toHaveLength(0);
   });
 
-  test('a sub-agent reads the log, no /transcript: nothing paints and nothing is claimed', async () => {
+  test('a sub-agent reads only the log, paints nothing, and never claims emptiness', async () => {
     serve(noLog(() => copy(CHILD, 1)));
     const view = await mount(target({ rootId: CHILD, child: true }));
     expect(view).toEqual({ thread: undefined, empty: false });
-    expect(reads()[0]).toBe('http://test.local/v1/projects/p1/sessions/s1/log?limit=40');
-    expect(reads().filter((url) => url.includes('/transcript'))).toEqual([]);
+    expect(reads()).toEqual(['http://test.local/v1/projects/p1/sessions/s1/log?limit=40']);
+  });
+
+  test('an empty v1 copy no longer proves the root empty: no /transcript read, no composer claim', async () => {
+    serve(noLog((url) => (url.includes('/turn') ? { turns: [] } : copy(ROOT, 0, { total: 0 }))));
+    const view = await mount(target());
+    expect(view.empty).toBe(false);
+    expect(view.thread).toBeUndefined();
+    expect(reads().some((url) => url.includes('/transcript'))).toBe(false);
   });
 
   test('a failed read paints nothing and claims nothing', async () => {
@@ -182,6 +191,12 @@ describe('useSavedCopy reads the session log first (P8)', () => {
     expect(reads().some((url) => url.includes('/transcript'))).toBe(false);
   });
 
+  test('no stored log (404): nothing paints, and no v1 window is read', async () => {
+    serve((url) => (url.includes('/log') ? Response.json({ error: 'No session log for this session' }, { status: 404 }) : copy(root!.thread_id, 2)));
+    const view = await mount(target({ sessionId: 's-log-none', rootId: root!.thread_id }));
+    expect(view.thread).toBeUndefined();
+    expect(reads()).toEqual(['http://test.local/v1/projects/p1/sessions/s-log-none/log?limit=40']);
+  });
 });
 
 describe('connect → thread: the window is downloaded once per open (KRTX-189)', () => {
@@ -273,7 +288,7 @@ describe('connect → thread: the window is downloaded once per open (KRTX-189)'
   });
 
   for (const order of ['bound with the thread', 'thread before the bind'] as const) {
-    test(`no log (404), ${order}: no window read, nothing paints before the computer answers, and the snapshot asks for the pointer only`, async () => {
+    test(`no log (404), ${order}: no window read, and the snapshot asks for the pointer only`, async () => {
       const sessionId = order === 'bound with the thread' ? '11111111-1111-4111-8111-111111111189' : '22222222-2222-4222-8222-222222222189';
       serveOpen(sessionId, { log: false });
       const connecting = await mount(target({ sessionId, rootId: OPEN_ROOT }));
@@ -291,9 +306,9 @@ describe('connect → thread: the window is downloaded once per open (KRTX-189)'
         await settle();
       }
 
-      expect(thread?.messages).toEqual([]);
+      expect(thread?.messages ?? []).toEqual([]);
       // This session's reads only: a retry of an earlier test can land late.
-      const windows = urls.filter((url) => url.includes(`/sessions/${sessionId}/transcript`));
+      const windows = urls.filter((url) => url.includes(`/sessions/${sessionId}/transcript?`));
       const snapshots = urls.filter((url) => url.includes(`/sessions/${sessionId}/snapshot`));
       expect(windows).toEqual([]);
       expect(snapshots.length).toBeGreaterThan(0);

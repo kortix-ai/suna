@@ -35,6 +35,8 @@ globals.location = win.location;
 globals.history = win.history;
 globals.requestAnimationFrame = (cb: () => void) => setTimeout(cb, 0);
 globals.cancelAnimationFrame = (id: number) => clearTimeout(id);
+// The mega menu measures its open panel (#11092).
+globals.ResizeObserver = win.ResizeObserver;
 
 let authUser: { id: string } | null = null;
 let pathname = '/';

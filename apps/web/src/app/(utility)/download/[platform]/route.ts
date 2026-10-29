@@ -7,7 +7,7 @@ import {
   detectPlatform,
   isMobilePlatform,
   normalizePlatform,
-} from '@/features/marketing/download/detect-os';
+} from '@kortix/ui/internal/lib/detect-os';
 import {
   deploymentChannel,
   desktopReleasesPage,
