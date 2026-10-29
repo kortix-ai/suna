@@ -48,12 +48,17 @@ export async function repairTelegramMenu(token: string, botId: string, opts: { f
 
 /**
  * Kortix's commands first, then every entry of the owner's. Writes only a change. When Telegram does
- * not answer, the claim goes, so a later message retries; a refusal keeps it. Never throws.
+ * not answer, the claim goes, so a later message retries; a refusal, or a menu that is not a list,
+ * keeps it. A merge that writes nothing ends with one log line. Never throws.
  */
-export async function mergeTelegramMenu(token: string, botId: string): Promise<void> {
+async function mergeTelegramMenu(token: string, botId: string): Promise<void> {
   try {
     const current = await telegramCall<unknown>(token, 'getMyCommands', {}, MENU_CALL_TIMEOUT_MS);
-    if (!Array.isArray(current)) return;
+    if (!Array.isArray(current)) {
+      // Writing a menu Kortix could not read would drop the owner's entries.
+      logger.warn('[telegram] bot menu not merged', { botId, retry: false, error: 'getMyCommands answered no list' });
+      return;
+    }
     const owner = (current as MenuEntry[]).filter((c) => !ours(c));
     const taken = new Set(owner.map((c) => c.command));
     const next = [...MENU.filter((c) => !taken.has(c.command)).slice(0, Math.max(0, MENU_MAX - owner.length)), ...owner];
@@ -61,10 +66,9 @@ export async function mergeTelegramMenu(token: string, botId: string): Promise<v
       await telegramCall(token, 'setMyCommands', { commands: next }, MENU_CALL_TIMEOUT_MS);
     }
   } catch (error) {
-    logger.warn('[telegram] bot menu not merged', { botId, error: String(error) });
-    if (telegramUnreachable(error)) {
-      await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, telegramMenuClaim(botId))).catch(() => undefined);
-    }
+    const retry = telegramUnreachable(error);
+    if (retry) await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, telegramMenuClaim(botId))).catch(() => undefined);
+    logger.warn('[telegram] bot menu not merged', { botId, retry, error: String(error) });
   }
 }
 

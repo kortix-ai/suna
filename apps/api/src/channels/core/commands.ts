@@ -36,7 +36,7 @@ export type CommandReply = (
 ) & { note?: string };
 
 /** A Discord string select holds 25 options (from memory, unverified); every platform lists at most this many. */
-export const CHOICES_MAX = 25;
+const CHOICES_MAX = 25;
 
 /** The platform's renderer for one inbound event: renders and sends one reply. Logs send errors; never throws. */
 export type CommandRender = (reply: CommandReply) => Promise<void>;

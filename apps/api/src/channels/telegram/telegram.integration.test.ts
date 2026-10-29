@@ -72,7 +72,7 @@ import * as chatSettings from '../core/settings';
 import * as modelAccess from '../model-access';
 import { projectWebUrl } from '../core/display';
 import { commandMenu } from '../core/command-list';
-import { mergeTelegramMenu, removeTelegramMenu, telegramMenuClaim } from './menu';
+import { removeTelegramMenu, telegramMenuClaim } from './menu';
 
 const telegramWebhookApp = channelWebhookRoutes(telegramInbound);
 const ACCOUNT = crypto.randomUUID();
@@ -2364,15 +2364,29 @@ describe('the Telegram bot menu — migrated PostgreSQL', () => {
     }
   }, 10_000);
 
-  /** One allowed message with no menu claim held: Kortix merges the menu in the background; this waits for its write. */
-  async function mergeOnMessage(chat: number) {
+  /** Drop the bot's menu claim and send one allowed message: Kortix merges the menu in the background. */
+  async function messageWithoutClaim(chat: number) {
     await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:commands:${BOT_ID}:%`));
+    await handleTelegramEvent(update('hello', ALLOWED, chat));
+  }
+  /** The same, and wait for the merge's write: its last step. */
+  async function mergeOnMessage(chat: number) {
     const written = (async () => {
       while (!calls.some((c) => c.method === 'setMyCommands')) await nextCall();
     })();
-    await handleTelegramEvent(update('hello', ALLOWED, chat));
+    await messageWithoutClaim(chat);
     await written;
   }
+  /** The log line of a merge that wrote nothing: its last step. */
+  const mergeFailed = () =>
+    new Promise<Record<string, unknown>>((resolve) => {
+      const spy = spyOn(logger, 'warn').mockImplementation(((message: string, meta: Record<string, unknown>) => {
+        if (message !== '[telegram] bot menu not merged') return;
+        spy.mockRestore();
+        resolve(meta);
+      }) as never);
+    });
+  const menuMethods = () => calls.map((c) => c.method).filter((m) => m.endsWith('MyCommands'));
 
   test("an owner's entry with a Kortix name stays the owner's: the merge leaves Kortix's out, and the removal keeps it", async () => {
     const help = { command: 'help', description: 'Synthetic owner help' };
@@ -2400,21 +2414,35 @@ describe('the Telegram bot menu — migrated PostgreSQL', () => {
 
   test('a menu write Telegram could not answer frees the claim, so a later message retries; a refusal keeps it', async () => {
     failing = 'setMyCommands';
-    await mergeTelegramMenu(TOKEN, BOT_ID);
-    expect(await menuClaimRows()).toHaveLength(0);
-    await holdMenuClaim();
-    failingStatus = 400;
-    await mergeTelegramMenu(TOKEN, BOT_ID);
-    expect(calls.map((c) => c.method)).toEqual(['getMyCommands', 'setMyCommands', 'getMyCommands', 'setMyCommands']);
-    expect(await menuClaimRows()).toHaveLength(1);
-  });
+    try {
+      let failed = mergeFailed();
+      await messageWithoutClaim(7060);
+      expect(await failed).toMatchObject({ retry: true });
+      expect(await menuClaimRows()).toHaveLength(0);
+      failingStatus = 400;
+      failed = mergeFailed();
+      await handleTelegramEvent(update('again', ALLOWED, 7060));
+      expect(await failed).toMatchObject({ retry: false });
+      expect(await menuClaimRows()).toHaveLength(1);
+      expect(menuMethods()).toEqual(['getMyCommands', 'setMyCommands', 'getMyCommands', 'setMyCommands']);
+    } finally {
+      await holdMenuClaim();
+    }
+  }, 10_000);
 
-  test('a menu that is not a list is left alone', async () => {
+  test('a menu that is not a list is left alone, and its claim stays', async () => {
     botMenu = { synthetic: 'not a list' };
-    await mergeTelegramMenu(TOKEN, BOT_ID);
-    expect(calls.map((c) => c.method)).toEqual(['getMyCommands']);
-    expect(botMenu).toEqual({ synthetic: 'not a list' });
-  });
+    try {
+      const failed = mergeFailed();
+      await messageWithoutClaim(7061);
+      expect(await failed).toMatchObject({ retry: false });
+      expect(menuMethods()).toEqual(['getMyCommands']);
+      expect(botMenu).toEqual({ synthetic: 'not a list' });
+      expect(await menuClaimRows()).toHaveLength(1);
+    } finally {
+      await holdMenuClaim();
+    }
+  }, 10_000);
 });
 
 describe('Telegram allowed users and access requests — migrated PostgreSQL', () => {
