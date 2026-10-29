@@ -1,4 +1,5 @@
 import { markApprovalCardDecided } from '../channels/approval-card-relay';
+import { sweepHeldCalls } from '../connectors/held-call-run';
 import { logger } from '../lib/logger';
 import { expireDueApprovals } from '../projects/surface';
 import { runWorkerTick } from '../shared/audit-scope';
@@ -6,11 +7,15 @@ import { leaderTimer } from '../shared/leader-timer';
 
 const TICK_MS = 60_000;
 
-/** One sweep: close every pending approval past `expires_at` and replace its chat card. */
-export function runApprovalExpiryTick(): Promise<number> {
-  return expireDueApprovals((projectId, row) =>
+/**
+ * One sweep: close every pending approval past `expires_at` and replace its
+ * chat card, then settle stuck held runs and wipe held input older than 31 days.
+ */
+export async function runApprovalExpiryTick(): Promise<number> {
+  const expired = await expireDueApprovals((projectId, row) =>
     markApprovalCardDecided({ projectId, row, decision: 'expired', note: '', actorUserId: '' }),
   );
+  return expired + (await sweepHeldCalls());
 }
 
 // Serial ticks, one chain per leadership term (shared/leader-timer.ts). Fires

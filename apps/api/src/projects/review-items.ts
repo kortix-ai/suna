@@ -8,7 +8,7 @@
  * core module (./change-requests.ts).
  */
 
-import { changeRequests, connectorCalls, connectors, projectSessions, reviewItems } from '@kortix/db';
+import { changeRequests, connectorCalls, connectorHeldCalls, connectors, projectSessions, reviewItems } from '@kortix/db';
 import { type AnyColumn, type SQL, and, desc, eq, getTableColumns, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { enrichPendingCallOnce } from '../connectors/approval-enrich-pending';
 import { approvalNotExpired, isApprovalExpired } from '../connectors/approval-expiry';
@@ -409,7 +409,7 @@ async function pendingConnectorCalls(
                 // A decided gate; a real run never has an approver.
                 and(
                   isNotNull(connectorCalls.approvedBy),
-                  inArray(connectorCalls.status, ['ok', 'denied']),
+                  inArray(connectorCalls.status, ['ok', 'denied', 'approved']),
                 ),
               ),
             )
@@ -534,7 +534,8 @@ export async function listInboxItems(
  * bounded, so a link to an item (a change request's `?id=cr:…`) must not
  * depend on that item being on a loaded page. A connector call is in the
  * inbox while it is pending, reads `expired` once its window closed, and reads
- * `approved` / `rejected` once a human decided it; null for anything else, and
+ * `approved` / `rejected` once a human decided it (with `detail.run` when
+ * Kortix runs the held call); null for anything else, and
  * for an id that is not a uuid.
  */
 export async function getInboxItem(
@@ -560,7 +561,20 @@ export async function getInboxItem(
     if (!call) return null;
     const verdict = await connectorCallVerdicts([call], resolveCaller);
     const options = verdict(call);
-    const decided = decidedCallState(call, new Date());
+    // An `approved` gate held its input: its run says what happened.
+    const [run] =
+      call.status === 'approved'
+        ? await db
+            .select({
+              state: connectorHeldCalls.state,
+              finishedAt: connectorHeldCalls.finishedAt,
+              outcome: connectorHeldCalls.outcome,
+            })
+            .from(connectorHeldCalls)
+            .where(eq(connectorHeldCalls.executionId, call.executionId))
+            .limit(1)
+        : [];
+    const decided = decidedCallState(call, new Date(), run);
     if (decided) {
       const item = connectorCallToReviewItem(call, options);
       return {

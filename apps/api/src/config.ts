@@ -201,6 +201,10 @@ const envSchema = z.object({
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
+  // True runs the durable job queue even when KORTIX_WORKERS_ENABLED is false.
+  // The deterministic test stack sets it: held connector calls and Capture
+  // ingest run only as queued jobs.
+  KORTIX_JOB_WORKER_ENABLED: optBoolFalse,
   // Kill switch for the scheduled account-deletion sweep. True skips every
   // scheduled run; immediate deletion is unaffected. Default off (sweep runs).
   ACCOUNT_DELETION_SWEEP_PAUSED: optBoolFalse,
@@ -908,6 +912,14 @@ const envSchema = z.object({
     .optional()
     .default('true')
     .transform((v) => !['0', 'false'].includes(v.trim().toLowerCase())),
+  // Kill switch for running a held connector call on approve. On by default;
+  // `0`, `false` or `off` writes no new held row, so a new gate asks the agent
+  // to repeat the call. Rows already held or queued still run, expire and wipe.
+  KORTIX_APPROVAL_RUNS_HELD_CALL: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((v) => !['0', 'false', 'off'].includes(v.trim().toLowerCase())),
   // Local-only HTTP capture. The deterministic test profile points this at
   // Supabase Mailpit. Deployed environments leave it unset.
   MAILPIT_API_URL: optStr,
@@ -1267,6 +1279,7 @@ export const config = {
   KORTIX_APPS_DEFAULT_ALWAYS_ON: env.KORTIX_APPS_DEFAULT_ALWAYS_ON,
   KORTIX_APPS_WORKER_ENABLED: env.KORTIX_APPS_WORKER_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
+  KORTIX_JOB_WORKER_ENABLED: env.KORTIX_JOB_WORKER_ENABLED,
   ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS.split(',')
@@ -1582,6 +1595,7 @@ export const config = {
   EXPO_ACCESS_TOKEN: env.EXPO_ACCESS_TOKEN,
   EXPO_PUSH_ENABLED: env.EXPO_PUSH_ENABLED ?? !env.KORTIX_INSTANCE_ID,
   PUSH_NOTIFICATIONS_ENABLED: env.PUSH_NOTIFICATIONS_ENABLED,
+  KORTIX_APPROVAL_RUNS_HELD_CALL: env.KORTIX_APPROVAL_RUNS_HELD_CALL,
   MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
