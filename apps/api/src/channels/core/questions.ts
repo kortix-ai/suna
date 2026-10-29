@@ -288,6 +288,7 @@ export async function handleQuestionTap(
           gone = true;
           return 'refuse';
         },
+        ...(port.turnModel ? { turnModel: (target, thread) => port.turnModel!(target, thread) } : {}),
       },
       {
         target: { ...tap.target, threadId: a.threadId },
