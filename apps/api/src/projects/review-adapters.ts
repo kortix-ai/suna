@@ -192,11 +192,16 @@ function heldCallState(ex: ConnectorCallRow, decidedBy: string, resolvedAt: Date
   const state = run?.state ?? 'queued';
   const text = (key: string) => (typeof outcome?.[key] === 'string' ? (outcome[key] as string) : null);
   const approved = `Approved at ${decidedAt}.`;
+  // A call with a session hides `message`: name the failure from the fields it keeps.
+  const upstream = typeof outcome?.upstream_status === 'number' ? `upstream ${outcome.upstream_status}` : null;
+  const failure = ex.sessionId
+    ? ` (${text('reason') ?? upstream ?? 'unknown error'})`
+    : `: ${text('message') ?? 'unknown error'}`;
   const nextStep =
     state === 'ok'
       ? `${approved} The call ran once at ${finishedAt} and succeeded. Do not repeat it.`
       : state === 'error'
-        ? `${approved} The call ran at ${finishedAt}, but failed: ${text('message') ?? 'unknown error'}. Check its effect before you repeat it.`
+        ? `${approved} The call ran at ${finishedAt}, but failed${failure}. Check its effect before you repeat it.`
         : state === 'unknown'
           ? `${approved} The call may have run: Kortix lost track of it. Check its effect before you repeat it.`
           : state === 'refused'

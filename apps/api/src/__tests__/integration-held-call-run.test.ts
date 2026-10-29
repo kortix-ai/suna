@@ -359,6 +359,25 @@ describe('approve runs the held call once', () => {
     }
   });
 
+  test('a failed run with a session: the item names the failure from its status fields, never the hidden message', async () => {
+    const id = await gate({ amount: 506 });
+    await decide(id, 'approve');
+    await db
+      .update(connectorHeldCalls)
+      .set({
+        state: 'error',
+        outcome: { status: 'error', upstream_status: 500, message: 'upstream said ch_test_1' },
+        finishedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(connectorHeldCalls.executionId, id));
+    const item = await getInboxItem(seeded.project_id, `call:${id}`, asManager, FULL_VIEW);
+    const detail = item?.detail as { run?: { outcome: Record<string, unknown> | null }; next_step?: string };
+    expect(detail.run?.outcome).toEqual({ status: 'error', upstream_status: 500 });
+    expect(detail.next_step).toContain('but failed (upstream 500).');
+    expect(JSON.stringify(item)).not.toContain('ch_test_1');
+  });
+
   test('two runs of one job call the provider once', async () => {
     const id = await gate({ amount: 202 });
     await decide(id, 'approve');
