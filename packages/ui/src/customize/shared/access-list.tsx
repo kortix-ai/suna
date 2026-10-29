@@ -22,6 +22,7 @@ import { cn } from '../../internal/lib/utils';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../primitives/disclosure';
 import { Switch } from '../../primitives/switch';
 import { EditorList } from '../sections/view/agent-editor-primitives';
+import { useCapabilityShellEmbed } from './capability-page-shell';
 
 export { plainGrantSwitch } from './agent-resource-scope';
 
@@ -35,6 +36,8 @@ export interface AccessItem {
   description?: ReactNode;
   /** An exception only (Needs auth, Not set). The normal state carries none. */
   status?: ReactNode;
+  /** The row's rule beside its switch, in the agent page's rail layout: Ask, Allow, a policy set. */
+  control?: ReactNode;
   /** Opens the item (a skill's files, a connector's page): the name becomes a link-like button. */
   onOpen?: () => void;
   /** Absent: the row has no switch (an always-on extension). */
@@ -70,8 +73,59 @@ function AccessText({ item, quiet }: { item: AccessItem; quiet: boolean }) {
   );
 }
 
+/**
+ * The agent page's rail layout: one filled card, a divider between rows; a row that is
+ * switched off reads muted; the row's rule sits left of its switch.
+ */
+function CardAccessList({ items }: { items: AccessItem[] }) {
+  const t = useI18nTranslations('agentCapabilities');
+  return (
+    <ul className="bg-popover divide-border divide-y overflow-hidden rounded-lg">
+      {items.map((item) => {
+        const off = item.onCheckedChange !== undefined && !item.checked;
+        return (
+          <li
+            key={item.id}
+            data-capability={item.id}
+            className={cn('flex min-h-12 items-center gap-3 px-4 py-2.5', item.disabled && 'opacity-60')}
+          >
+            {item.leading}
+            {item.onOpen ? (
+              <button
+                type="button"
+                onClick={item.onOpen}
+                className="group/open focus-visible:ring-ring min-w-0 flex-1 rounded-sm text-left focus-visible:ring-2 focus-visible:outline-none"
+              >
+                <AccessText item={item} quiet={off} />
+              </button>
+            ) : (
+              <span className="min-w-0 flex-1">
+                <AccessText item={item} quiet={off} />
+              </span>
+            )}
+            {item.status ? <span className="flex shrink-0 items-center gap-2">{item.status}</span> : null}
+            {item.control !== undefined ? (
+              <span className="text-muted-foreground flex shrink-0 justify-end text-xs">{item.control}</span>
+            ) : null}
+            {item.onCheckedChange ? (
+              <Switch
+                checked={item.checked ?? false}
+                disabled={item.disabled}
+                onCheckedChange={item.onCheckedChange}
+                aria-label={t('toggle', { name: typeof item.title === 'string' ? item.title : item.id })}
+              />
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export function AccessList({ items, quiet = false }: { items: AccessItem[]; quiet?: boolean }) {
   const t = useI18nTranslations('agentCapabilities');
+  const embed = useCapabilityShellEmbed();
+  if (embed?.titled) return <CardAccessList items={items} />;
   return (
     <EditorList>
       {items.map((item) => (

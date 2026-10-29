@@ -4,6 +4,7 @@ import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { cn } from '../../internal/lib/utils';
 import { createContext, type ReactNode, useContext } from 'react';
 
+import { SettingsSectionHeader } from '../../primitives/settings-section-header';
 import { CapabilityScrollRootProvider, useCapabilityScrollRootRef } from './capability-scroll-root';
 
 interface CapabilityPageShellProps {
@@ -43,6 +44,8 @@ export interface CapabilityShellEmbed {
   lead?: ReactNode;
   /** The column class, so every Access and Runtime view shares one width. */
   className?: string;
+  /** Show the screen's title over its description: the view sits beside a rail that does not name it. */
+  titled?: boolean;
 }
 const CapabilityShellEmbedContext = createContext<CapabilityShellEmbed | null>(null);
 export const CapabilityShellEmbedProvider = CapabilityShellEmbedContext.Provider;
@@ -79,6 +82,29 @@ export function CapabilityPageShell({
 }: CapabilityPageShellProps) {
   const scrollRef = useCapabilityScrollRootRef();
   const embed = useCapabilityShellEmbed();
+  if (embed?.titled) {
+    // Beside the agent page's rail: the view's title left (no sentence under
+    // it, the Settings dialect), its grant control (`filters`) right; search
+    // and the view's own action in one row under them.
+    return (
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto" data-capability-embed="">
+        <div className={cn('w-full space-y-5 px-4 pt-5 pb-24 md:px-8', embed.className)}>
+          {embed.lead}
+          <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <SettingsSectionHeader title={title} className="min-w-0" />
+            {filters ? <div className="shrink-0">{filters}</div> : null}
+          </header>
+          {search || action ? (
+            <div className="flex items-center gap-2">
+              {search ? <div className="min-w-0 flex-1">{search}</div> : null}
+              {action}
+            </div>
+          ) : null}
+          <CapabilityScrollRootProvider scrollRef={scrollRef}>{children}</CapabilityScrollRootProvider>
+        </div>
+      </div>
+    );
+  }
   if (embed) {
     return (
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto" data-capability-embed="">

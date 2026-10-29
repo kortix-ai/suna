@@ -2,15 +2,16 @@
 
 /**
  * The agent page's frame: one identity header, one row of tabs under it, and
- * the content below, all on one left edge. No rail beside the content: the
- * app sidebar is the only column (2026-10-28).
+ * the content below, all on one left edge. A tab with several views
+ * (Capabilities, Access) lists them in a rail left of its content.
  *
  *   ┌ ▣ researcher                         [Share] [Start session] [⋯] ┐
  *   │   ● Enabled · Space: workspace · People start it                 │
  *   │ Overview  Model  Capabilities  Access  Workspace  Triggers 1     │
  *   ├──────────────────────────────────────────────────────────────────┤
- *   │ [Tools All] [Skills All] [Agents None] [Commands 6] …            │
- *   │ content (the one scroller)                                       │
+ *   │ Tools   All but 2 │ content (the one scroller)                   │
+ *   │ Skills     4 of 9 │   (a tab with several views: the rail;      │
+ *   │ …                 │    below `md`, a row of pills instead)       │
  *   └──────────────────────── [ ● Unsaved changes  Skills  Discard  Save ⌘S ]
  *
  * The header echoes the Space channel header (`space-page.tsx`): a tile, the
@@ -19,7 +20,7 @@
  * desktop drag band: the page adds no bar for either.
  */
 
-import { type ReactNode } from 'react';
+import { type MouseEvent, type ReactNode, useCallback } from 'react';
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
 import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
@@ -39,7 +40,7 @@ import { Kbd } from '../../primitives/kbd';
 import { useOptionalSidebar } from '../../primitives/sidebar';
 import { Skeleton } from '../../primitives/skeleton';
 import { StatusDot, type StatusTone } from '../../primitives/status';
-import { UiLink as Link } from '../../providers/ui-provider';
+import { UiLink as Link, useUiShallowNavigate } from '../../providers/ui-provider';
 import { AnimatePresence, m } from 'motion/react';
 
 import { FadedScrollArea } from '../../primitives/faded-scroll-area';
@@ -144,6 +145,7 @@ export function AgentTabBar({
   dirty?: readonly AgentRailKey[];
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
+  const go = useInPageNavigate();
   const shown = groups.filter((group) => group.items.length > 0);
   const current = shown.find((group) => group.items.some((item) => item.key === active)) ?? shown[0];
   const dot = <span role="img" aria-label={t('unsavedTab')} className="bg-foreground size-1.5 shrink-0 rounded-full" />;
@@ -160,6 +162,7 @@ export function AgentTabBar({
                   key={group.key}
                   href={group.items[0].href}
                   prefetch={false}
+                  onClick={(e) => go(e, group.items[0].href)}
                   aria-current={on ? 'page' : undefined}
                   data-testid={`agent-tab-${group.key}`}
                   className={cn(
@@ -179,7 +182,8 @@ export function AgentTabBar({
         </FadedScrollArea>
       </nav>
       {current && current.items.length > 1 ? (
-        <div className="shrink-0">
+        // Below `md` only: wider, the content's rail (`agent-section-rail.tsx`) lists the views.
+        <div className="shrink-0 md:hidden">
           <FadedScrollArea orientation="horizontal" fadeColor="from-background">
             <div className="flex w-max items-center gap-1 px-4 pt-4 md:px-8">
               {current.items.map((item) => {
@@ -189,6 +193,7 @@ export function AgentTabBar({
                     key={item.key}
                     href={item.href}
                     prefetch={false}
+                    onClick={(e) => go(e, item.href)}
                     aria-current={on ? 'page' : undefined}
                     data-testid={`agent-view-${item.key}`}
                     className={cn(
@@ -207,6 +212,25 @@ export function AgentTabBar({
         </div>
       ) : null}
     </>
+  );
+}
+
+/**
+ * A tab, view or rail link on the agent page only changes the query
+ * (`?tab=&view=`): the page and its draft stay mounted. A plain click writes
+ * the URL to history (`useUiShallowNavigate`) instead of a router navigation,
+ * which in Next.js waits on a server round trip for the same route. A
+ * modified or middle click keeps the link's own behavior (a new tab).
+ */
+export function useInPageNavigate(): (event: MouseEvent<HTMLAnchorElement>, href: string) => void {
+  const navigate = useUiShallowNavigate();
+  return useCallback(
+    (event, href) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      navigate(href);
+    },
+    [navigate],
   );
 }
 

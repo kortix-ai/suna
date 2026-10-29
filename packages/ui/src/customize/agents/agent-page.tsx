@@ -34,7 +34,8 @@ import { adminPath } from '../../lib/routes';
  *    route, which commits it to the project repo.
  *  - **Read-only**: a v1 project or a caller without write. The same tabs and
  *    the same Overview, with values in place of controls and a lock banner.
- * My Kortix (a platform agent) has its own Overview and no editor.
+ * My Kortix (a platform agent) has no page here: the project home starts it,
+ * and its route reads as not found.
  *
  * The page is keyed on the agent name by its route, so switching agents
  * remounts every draft.
@@ -49,12 +50,12 @@ import {
   readProjectFile,
 } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useProjectAccountId, useUnifiedTriggers } from '@kortix/sdk/react';
-import { DotsThreeIcon, LockSimpleIcon, PlayIcon, SparkleIcon, StarIcon, TrashIcon } from '@phosphor-icons/react';
+import { DotsThreeIcon, LockSimpleIcon, PlayIcon, StarIcon, TrashIcon } from '@phosphor-icons/react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useLocale, useTranslations as useI18nTranslations } from '../../i18n';
-import { agentDisplayName } from '../../internal/components/agent-mark';
+import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
 import {
   agentConfigNeedsUpgrade,
   useAgentConfig,
@@ -92,7 +93,6 @@ import {
   useLocalizedAgentConfigCatalog,
 } from '../sections/view/agent-editor';
 import { EditorSectionStyleProvider } from '../sections/view/agent-editor-primitives';
-import { ModelSection } from '../sections/view/agent-editor-basics-fields';
 import { ToolsSection } from '../sections/view/permission-editor';
 import { type AgentGrant, useAgentGrant } from '../shared/agent-resource-scope';
 import { CapabilityShellEmbedProvider } from '../shared/capability-page-shell';
@@ -121,6 +121,9 @@ import {
   LeaveDialog,
   SaveBar,
 } from './agent-page-chrome';
+import { AgentModelView } from './agent-model-view';
+import { AgentApprovalRules } from './agent-approval-rules';
+import { AgentSectionRail, railGroupOf } from './agent-section-rail';
 import { AgentShareControl } from './agent-share-control';
 import {
   ACCESS_VIEWS,
@@ -134,11 +137,9 @@ import {
   railKeyOf,
   sectionLocationHref,
 } from './agent-tabs';
-import { PlatformAgentOverview } from './platform-agent-overview';
-import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { useSpacesEnabled } from '../../internal/lib/space-scope';
 import { connectorPolicySetOptions } from './agent-policy-sets';
-import { AgentPolicySetsPanel } from './agent-policy-sets-section';
+import { AgentPolicySetsPanel, useAgentPolicySetControls } from './agent-policy-sets-section';
 import { useDefaultAgent } from './use-default-agent';
 
 /**
@@ -170,8 +171,8 @@ export function AgentPage({
     ...contract('config'),
   });
   const config = detailQuery.data?.config ?? null;
-  const agent = toArray(config?.agents).find((a) => a.name === agentName) ?? null;
-  const isPlatform = agent?.platform === true;
+  // A platform agent (My Kortix) has nothing to edit here: not found.
+  const agent = toArray(config?.agents).find((a) => a.name === agentName && !a.platform) ?? null;
 
   // Every read starts on the first render, in parallel: the skeleton lasts as
   // long as the slowest single read, not three in a row.
@@ -183,7 +184,7 @@ export function AgentPage({
     ),
   });
 
-  if (detailQuery.isLoading || (agent && !isPlatform && configQuery.isLoading)) {
+  if (detailQuery.isLoading || (agent && configQuery.isLoading)) {
     return <AgentPageSkeleton />;
   }
 
@@ -249,7 +250,7 @@ export function AgentPage({
 
   // A writer whose agent-config read failed would otherwise land on the
   // read-only page with no word on why: say what failed, offer the retry.
-  if (!isPlatform && canWrite && configQuery.isError) {
+  if (canWrite && configQuery.isError) {
     return (
       <AgentStatePage title={agentDisplayName(agent.name)}>
         <ErrorState
@@ -265,8 +266,6 @@ export function AgentPage({
       </AgentStatePage>
     );
   }
-
-  if (isPlatform) return <PlatformAgentPage projectId={projectId} agent={agent} config={config} canWrite={canWrite} />;
 
   const editable = canWrite && configQuery.data?.editable === true;
   return editable ? (
@@ -530,9 +529,8 @@ function TabLayout({ tabs, children }: { tabs: ReactNode; children: ReactNode })
 
 /**
  * Share, Start session, and the ⋯ menu. Share renders for everyone and gates
- * itself on `project.members.manage`. The ⋯ menu needs `project.agent.write`;
- * on a platform agent (My Kortix) it holds only Make default, so a project
- * can always make My Kortix its default again. Start session boots a session
+ * itself on `project.members.manage`. The ⋯ menu needs `project.agent.write`.
+ * Start session boots a session
  * on THIS agent through the sidebar's New session hook. A subagent is called
  * by other agents, never picked for a session, so its button is disabled with
  * the reason. Below `sm` Start session is an icon button.
@@ -578,7 +576,7 @@ function AgentActions({
         {startLabel}
       </Button>
       <Button
-        size="icon-sm"
+        size="icon-base"
         aria-label={startLabel}
         disabled={startBlocked !== null}
         onClick={() => startSession({ create: { agent_name: agent.name } })}
@@ -602,7 +600,7 @@ function AgentActions({
       {canWrite ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label={tI18nComplete.raw('textf8d46c2570e7')}>
+            <Button variant="ghost" size="icon-base" aria-label={tI18nComplete.raw('textf8d46c2570e7')}>
               <DotsThreeIcon className="size-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -614,19 +612,15 @@ function AgentActions({
               <StarIcon className="size-4" />
               {isDefault ? tI18nComplete.raw('texte8cb80e5c5cb') : tI18nComplete.raw('texte8f43f910a4e')}
             </DropdownMenuItem>
-            {agent.platform ? null : (
-              <>
-                <DropdownMenuItem disabled={configure.pending} onSelect={() => setConfirm('edit')}>
-                  <SparkleIcon className="size-4" />
-                  {t('askToEditAgent')}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" disabled={configure.pending} onSelect={() => setConfirm('delete')}>
-                  <TrashIcon className="size-4" />
-                  {t('deleteAgent', { name: agentDisplayName(agent.name) })}
-                </DropdownMenuItem>
-              </>
-            )}
+            <DropdownMenuItem disabled={configure.pending} onSelect={() => setConfirm('edit')}>
+              <AgentMark slug="meta" />
+              {t('askToEditAgent')}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" disabled={configure.pending} onSelect={() => setConfirm('delete')}>
+              <TrashIcon className="size-4" />
+              {t('deleteAgent', { name: agentDisplayName(agent.name) })}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
@@ -665,7 +659,10 @@ function AgentActions({
  * Triggers is not a view: it keeps the full width its list
  * and detail split needs.
  */
-const VIEW_COLUMN = 'max-w-5xl';
+/** A view beside the Capabilities or Access rail: the rail takes the width the wider column would. */
+const RAIL_COLUMN = 'max-w-3xl';
+/** A one-view tab (Workspace, Model): centered, the Overview's column. */
+const CENTER_COLUMN = 'mx-auto max-w-3xl';
 
 /** Frames a full resource screen in agent scope, with `lead` atop its scroller. */
 function Embedded({
@@ -676,12 +673,13 @@ function Embedded({
 }: {
   agentName: string;
   lead?: ReactNode;
-  /** The view column (`VIEW_COLUMN`); omitted for Triggers. */
+  /** The view column (`RAIL_COLUMN`); omitted for Triggers. */
   column?: string;
   children: ReactNode;
 }) {
   return (
-    <CapabilityShellEmbedProvider value={{ agentName, lead, className: column }}>
+    // A view in a column sits beside the rail, which names no view: the screen shows its own title.
+    <CapabilityShellEmbedProvider value={{ agentName, lead, className: column, titled: column !== undefined }}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
     </CapabilityShellEmbedProvider>
   );
@@ -761,6 +759,7 @@ function EditableAgentPage({
     () => connectorPolicySetOptions(config.manifest_raw),
     [config.manifest_raw],
   );
+  const policySetControl = useAgentPolicySetControls(projectId, editor, policySetOptions);
   const surface = { kind: 'agent', agentName: agent.name } as const;
   const defaultAgent = config.default_agent ?? config.open_code_default_agent;
   const name = agentDisplayName(agent.name);
@@ -799,7 +798,6 @@ function EditableAgentPage({
   const leaveGuard = useUnsavedChangesGuard(editor.isDirty, pathname);
   useSaveShortcut(editor.isDirty, saveNow);
 
-  const viewHref = (view: AgentConfigSectionKey) => sectionLocationHref(pathname, view);
   const grantLabel = useGrantLabel();
   // A tool's aliases go off with it (`agent` takes `task`): the tab counts tools, not names.
   const toolAliases = new Set((capabilities.data?.tools ?? []).flatMap((tool) => tool.aliases));
@@ -852,9 +850,7 @@ function EditableAgentPage({
               config={config}
               block={draft}
               prompt={editor.oc.prompt ?? ''}
-              views={overviewViews}
               editor={editor}
-              hrefFor={viewHref}
               sourcePath={sourcePath}
               showSpace={spacesOn}
               onAskMyKortix={() => configure.start(editConfigPrompt('agent', agent.name, agent.path))}
@@ -871,19 +867,25 @@ function EditableAgentPage({
         if (view === 'skills' || view === 'tools' || view === 'extensions') {
           const Page = view === 'skills' ? SkillsPage : view === 'tools' ? ToolsPage : ExtensionsPage;
           return (
-            <Embedded agentName={agent.name} column={VIEW_COLUMN}>
+            <Embedded agentName={agent.name} column={RAIL_COLUMN}>
               <Page
                 projectId={projectId}
                 agent={{ name: agent.name, editor }}
                 footer={
                   view === 'tools' ? (
-                    <EditorSectionStyleProvider value="panel">
-                      <ToolsSection
-                        permission={editor.oc.permission}
-                        onChange={(next) => editor.setOc('permission', next)}
-                        title={tCapabilities('rulesTitle')}
-                      />
-                    </EditorSectionStyleProvider>
+                    <AgentApprovalRules
+                      projectId={projectId}
+                      editor={editor}
+                      rules={
+                        <EditorSectionStyleProvider value="panel">
+                          <ToolsSection
+                            permission={editor.oc.permission}
+                            onChange={(next) => editor.setOc('permission', next)}
+                            title={tCapabilities('rulesTitle')}
+                          />
+                        </EditorSectionStyleProvider>
+                      }
+                    />
                   ) : undefined
                 }
               />
@@ -892,14 +894,15 @@ function EditableAgentPage({
         }
         if (view === 'connectors')
           return (
-            <Embedded agentName={agent.name} column={VIEW_COLUMN}>
+            <Embedded agentName={agent.name} column={RAIL_COLUMN}>
               <ConnectorsPage
                 projectId={projectId}
                 surface={surface}
                 grant={connectorsGrant}
+                rowControl={policySetControl}
                 agentPanel={
                   <>
-                    <AgentPolicySetsPanel projectId={projectId} editor={editor} catalog={policySetOptions} />
+                    <AgentPolicySetsPanel projectId={projectId} editor={editor} catalog={policySetOptions} unlistedOnly />
                     <RequiredConnectorsNote names={draft.connectors_required} />
                   </>
                 }
@@ -908,19 +911,19 @@ function EditableAgentPage({
           );
         if (view === 'secrets')
           return (
-            <Embedded agentName={agent.name} column={VIEW_COLUMN}>
+            <Embedded agentName={agent.name} column={RAIL_COLUMN}>
               <SecretsPage projectId={projectId} surface={surface} grant={secretsGrant} />
             </Embedded>
           );
         if (view === 'apps' && renderApps)
           return (
-            <Embedded agentName={agent.name} column={VIEW_COLUMN}>
+            <Embedded agentName={agent.name} column={RAIL_COLUMN}>
               {renderApps({ agentName: agent.name, grant: appsGrant, needsAppRead: !grantsAppRead(draft.kortix_permissions ?? draft.kortix_cli) })}
             </Embedded>
           );
         if (view === 'drives')
           return (
-            <Embedded agentName={agent.name} column={VIEW_COLUMN}>
+            <Embedded agentName={agent.name} column={RAIL_COLUMN}>
               <AgentDrivesSection projectId={projectId} agentName={agent.name} repositoryAccess={draft.repository_access !== false} />
             </Embedded>
           );
@@ -928,17 +931,12 @@ function EditableAgentPage({
         // (providers, routing, costs, logs) live once, in Project admin.
         if (view === 'model')
           return (
-            <AgentTabBody className={`${VIEW_COLUMN} space-y-5`}>
-              <EditorSectionStyleProvider value="tab">
-                <div className="space-y-8">
-                  <ModelSection oc={editor.oc} setOc={editor.setOc} showPrompt={false} lead />
-                </div>
-              </EditorSectionStyleProvider>
-              <ProjectModelsLink projectId={projectId} />
+            <AgentTabBody>
+              <AgentModelView oc={editor.oc} setOc={editor.setOc} footer={<ProjectModelsLink projectId={projectId} />} />
             </AgentTabBody>
           );
         return (
-          <AgentTabBody className={`${VIEW_COLUMN} space-y-5`}>
+          <AgentTabBody className={`${view === 'workspace' ? CENTER_COLUMN : RAIL_COLUMN} space-y-5`}>
             <CapabilityShellEmbedProvider value={{ agentName: agent.name }}>{editorSection(view)}</CapabilityShellEmbedProvider>
           </AgentTabBody>
         );
@@ -972,7 +970,9 @@ function EditableAgentPage({
           }
         />
         <TabLayout tabs={<AgentTabBar groups={tabGroups} active={railKeyOf(location)} dirty={dirtyItems} />}>
-          {body}
+          <AgentSectionRail group={railGroupOf(tabGroups, railKeyOf(location))} active={railKeyOf(location)} dirty={dirtyItems}>
+            {body}
+          </AgentSectionRail>
         </TabLayout>
         <SaveBar
           dirty={editor.isDirty}
@@ -1061,9 +1061,6 @@ function ReadOnlyAgentPage({
   const name = agentDisplayName(agent.name);
   // A reader has a page for Kortix permissions and Model only. Every other
   // Access row shows its grant by name on the Overview and links nowhere.
-  const viewHref = (view: AgentConfigSectionKey) =>
-    READ_ONLY_VIEWS.includes(view) ? sectionLocationHref(pathname, view) : null;
-
   const banner = (
     <div className="space-y-3">
       <InfoBanner tone="neutral" icon={LockSimpleIcon} title={t('readOnlyTitle')}>
@@ -1088,8 +1085,6 @@ function ReadOnlyAgentPage({
               config={config}
               block={block}
               prompt={prompt}
-              views={views}
-              hrefFor={viewHref}
               sourcePath={sourcePath}
               showSpace={spacesOn}
             />
@@ -1098,7 +1093,7 @@ function ReadOnlyAgentPage({
       case 'access':
       case 'runtime':
         return (
-          <AgentTabBody className="max-w-4xl space-y-6">
+          <AgentTabBody className={`${location.view === 'model' || location.view === 'workspace' ? CENTER_COLUMN : RAIL_COLUMN} space-y-6`}>
             {banner}
             <EditorSectionStyleProvider value="panel">
               {location.view === 'model' ? (
@@ -1152,7 +1147,9 @@ function ReadOnlyAgentPage({
         }
       />
       <TabLayout tabs={<AgentTabBar groups={tabGroups} active={railKeyOf(location)} />}>
-        {body}
+        <AgentSectionRail group={railGroupOf(tabGroups, railKeyOf(location))} active={railKeyOf(location)}>
+          {body}
+        </AgentSectionRail>
       </TabLayout>
     </div>
   );
@@ -1161,31 +1158,6 @@ function ReadOnlyAgentPage({
 /** A markdown file's body without its frontmatter. */
 function stripFrontmatter(content: string): string {
   return content.replace(/^---\n[\s\S]*?\n---\n?/, '');
-}
-
-// ─── My Kortix ───────────────────────────────────────────────────────────────
-
-/**
- * My Kortix: no header and no tabs, one centred block (Marko, 2026-10-28).
- * The floating opener keeps the collapsed sidebar reachable.
- */
-function PlatformAgentPage({
-  projectId,
-  config,
-}: {
-  projectId: string;
-  agent: Agent;
-  config: ProjectConfigSummary;
-  canWrite: boolean;
-}) {
-  return (
-    <div className="relative flex h-full min-h-0 flex-1 flex-col">
-      <SidebarToggle placement="floating" />
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-10">
-        <PlatformAgentOverview projectId={projectId} config={config} />
-      </div>
-    </div>
-  );
 }
 
 /** Whether a Kortix permissions grant lets the agent open project Apps. */

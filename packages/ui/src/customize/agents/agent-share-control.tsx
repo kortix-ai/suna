@@ -42,7 +42,7 @@ function GrantAvatar({ grant, size }: { grant: Grant; size: 'sm' | 'md' }) {
       <EntityAvatar
         icon={grant.principal_type === 'group' ? UsersIcon : UsersThreeIcon}
         size={size}
-        className="ring-background ring-2"
+        className="ring-secondary ring-2"
       />
     );
   }
@@ -96,13 +96,14 @@ export function AgentShareControl({
               onClick={() => onOpenChange(true)}
               aria-label={label}
               className={cn(
-                'hover:bg-secondary flex h-7 items-center rounded-md p-0.5',
+                // The header's control height (h-8, Share's `sm` button) and its fill.
+                'bg-secondary hover:bg-secondary/90 flex h-8 items-center rounded-md px-1 transition-colors duration-fast',
                 'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',
               )}
             >
               {/* The session header's stack (`SessionParticipantStack`): the
                   same group, overlap, count tile and hover card. */}
-              <AvatarGroup className="-space-x-1.5">
+              <AvatarGroup className="*:data-[slot=avatar]:ring-secondary -space-x-1.5">
                 {shown.map((g) => (
                   <GrantAvatar key={g.grant_id} grant={g} size="sm" />
                 ))}

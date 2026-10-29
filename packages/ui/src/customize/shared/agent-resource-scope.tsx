@@ -20,7 +20,7 @@ import { useState } from 'react';
 
 import { useTranslations } from '../../i18n';
 import { agentDisplayName } from '../../internal/components/agent-mark';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../primitives/select';
+import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { useCapabilityShellEmbed } from './capability-page-shell';
 
 /** Which surface a resource catalog renders for. */
@@ -121,11 +121,11 @@ const GRANT_MODE_TABS: ReadonlyArray<{ value: GrantMode; labelKey: string }> = [
 
 /**
  * The agent's grant-mode selector, the catalog's primary control in `agent`
- * scope. A select inside one sentence ("researcher can use [Specific]"), then
- * one muted line that says what the mode means, so the decision never reads
- * as a list filter. It takes its own row: a catalog's list filters (All |
- * Connected) sit with the list they filter, never beside it. `agentName`
- * names the agent outside an embedded resource screen (Kortix permissions).
+ * scope: one All · Specific · None segmented control, then one muted line
+ * that says what the mode means, so the decision never reads as a list
+ * filter. It takes its own row: a catalog's list filters (All | Connected)
+ * sit with the list they filter, never beside it. `agentName` names the agent
+ * in the control's label outside an embedded resource screen.
  */
 export function GrantModeTabs({
   grant,
@@ -146,27 +146,26 @@ export function GrantModeTabs({
       : grant.mode === 'specific'
         ? tTabs('grantSpecificHint')
         : tTabs('grantNoneHint');
+  const control = (
+    <Tabs value={grant.mode} onValueChange={(next) => grant.setMode(next as GrantMode)} title={embed?.titled ? hint : undefined}>
+      <TabsList
+        variant="segmented"
+        size="sm"
+        aria-label={name ? `${tTabs('canUse', { name: agentDisplayName(name) })} ${label}` : label}
+      >
+        {GRANT_MODE_TABS.map((tab) => (
+          <TabsTrigger key={tab.value} value={tab.value}>
+            {t(tab.labelKey)}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
+  );
+  // Beside the view's title (the rail layout): the control alone, its meaning on hover.
+  if (embed?.titled) return control;
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-      <div className="flex min-w-0 items-center gap-2">
-        {name ? (
-          <span className="text-foreground shrink-0 truncate text-sm">
-            {tTabs('canUse', { name: agentDisplayName(name) })}
-          </span>
-        ) : null}
-        <Select value={grant.mode} onValueChange={(next) => grant.setMode(next as GrantMode)}>
-          <SelectTrigger aria-label={label} size="sm" className="w-36 shrink-0">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent align="start">
-            {GRANT_MODE_TABS.map((tab) => (
-              <SelectItem key={tab.value} value={tab.value}>
-                {t(tab.labelKey)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {control}
       <p className="text-muted-foreground min-w-0 text-sm text-pretty">{hint}</p>
     </div>
   );

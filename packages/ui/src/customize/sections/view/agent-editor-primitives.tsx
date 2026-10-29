@@ -81,20 +81,7 @@ export function EditorSection({
   if (style === 'panel' || style === 'tab') {
     return (
       <section className={lead ? (style === 'tab' ? 'space-y-5' : 'space-y-6') : 'space-y-3'}>
-        {lead && style === 'tab' ? (
-          // A view of the agent page's Access or Runtime tab: the switcher
-          // above already names the view, so the title is for screen readers
-          // only and the action keeps its place at the right edge.
-          // The one muted description line and the action, laid out like an
-          // embedded resource screen's header (`CapabilityPageShell`).
-          <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <h2 className="sr-only">{title}</h2>
-            {description ? (
-              <p className="text-muted-foreground min-w-0 text-sm text-pretty md:max-w-xl">{description}</p>
-            ) : null}
-            {trailing ? <div className="flex shrink-0 items-center gap-2">{trailing}</div> : null}
-          </header>
-        ) : lead ? (
+        {lead ? (
           // Headings stand alone (Jay, 2026-10-20): a sentence under every
           // title made the page read as prose.
           <SettingsSectionHeader title={title} action={trailing} className="pb-1" />

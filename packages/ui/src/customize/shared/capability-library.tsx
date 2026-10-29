@@ -44,16 +44,17 @@ import {
 } from '../../primitives/input-group';
 import { Skeleton } from '../../primitives/skeleton';
 import { UiLink as Link } from '../../providers/ui-provider';
-import { AccessGroup, type AccessItem, BuiltinGroup } from './access-list';
+import { AccessGroup, type AccessItem, AccessList, BuiltinGroup } from './access-list';
 import type { AgentDraft } from '../sections/view/agent-editor';
 import { EditorList } from '../sections/view/agent-editor-primitives';
 import { NewSkillModal } from '../skills/new-skill-modal';
 import { newConfigPrompt, useConfigureThread } from '../use-configure-thread';
 import { type AgentGrant, type GrantMode, GrantModeTabs } from './agent-resource-scope';
-import { CapabilityPageShell } from './capability-page-shell';
+import { CapabilityPageShell, useCapabilityShellEmbed } from './capability-page-shell';
 import { detailSelection } from './detail-selection';
 import { EntityDetailModal } from './entity/entity-modal';
 import { NewEntityMenu } from './new-entity-menu';
+import { type ToolRule, toolRule } from './tool-rules';
 
 export type CapabilityView = 'skills' | 'tools' | 'extensions';
 
@@ -210,6 +211,8 @@ export function CapabilityLibrary({
   footer?: ReactNode;
 }) {
   const t = useI18nTranslations('agentCapabilities');
+  const tTabs = useI18nTranslations('agentEditor.tabs');
+  const embed = useCapabilityShellEmbed();
   const query = useProjectCapabilities(projectId);
   const catalog = query.data;
   const [search, setSearch] = useState('');
@@ -260,7 +263,27 @@ export function CapabilityLibrary({
       : null;
 
   const empty = view === 'skills' ? t('emptyProjectSkills') : view === 'tools' ? t('emptyProjectTools') : t('emptyProjectExtensions');
-  const body = catalog ? (
+  // The agent page's rail layout: one card of every row, the project's first;
+  // each tool carries its approval rule, an off one a dash.
+  const railCard = !!agent && !!embed?.titled;
+  const ruleLabel = (rule: ToolRule | undefined) =>
+    rule === 'allow' ? tTabs('ruleAllow') : rule === 'ask' ? tTabs('ruleAsk') : rule === 'deny' ? tTabs('ruleDeny') : rule === 'custom' ? tTabs('ruleCustom') : '';
+  const cardRows = railCard
+    ? [...project, ...builtin].map((row) =>
+        view === 'tools' && agent
+          ? { ...row, control: row.checked ? ruleLabel(toolRule(agent.editor.oc.permission, row.id)) : '—' }
+          : row,
+      )
+    : [];
+  const body = catalog && railCard ? (
+    <div data-testid={`capability-library-${view}`} data-grant={JSON.stringify(agent?.editor.draft[view] ?? null)}>
+      {cardRows.length > 0 ? (
+        <AccessList items={cardRows} />
+      ) : (
+        <p className="text-muted-foreground text-sm text-pretty">{search ? t('noMatch') : empty}</p>
+      )}
+    </div>
+  ) : catalog ? (
     <div className="space-y-6" data-testid={`capability-library-${view}`} data-grant={agent ? JSON.stringify(agent.editor.draft[view] ?? null) : undefined}>
       {view !== 'extensions' || extensionGrant ? <AccessGroup title={t('groups.project')} items={project} empty={search ? t('noMatch') : empty} /> : null}
       <BuiltinGroup items={builtin} defaultOpen={project.length === 0 || !!search.trim()} />

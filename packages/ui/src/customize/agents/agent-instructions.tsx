@@ -9,12 +9,13 @@
  * the same (`doc-round-trip.test.ts`).
  *
  * Edits go to the page's draft on every change; the save bar, ⌘S and the
- * leave guard save them. A long document opens folded under a fade, and
- * clicking into it unfolds it. Escape leaves the editor.
+ * leave guard save them. A long document opens folded under a fade that runs
+ * to the block's bottom edge; Show more or a click into it unfolds it, for
+ * good. Escape leaves the editor.
  */
 
 import { ARTIFACT_DOC_CSS } from '@kortix/shared/artifact-doc';
-import { SparkleIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, PencilSimpleIcon } from '@phosphor-icons/react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
@@ -116,33 +117,36 @@ export function AgentInstructions({
   }, [editor, unfolded]);
 
   const words = wordCount(value ?? '');
+  const folded = long && !unfolded;
 
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-foreground text-sm font-medium">
+        <h2 className="text-muted-foreground text-sm font-medium">
           {t('instructions')}
           {words > 0 ? (
             <span className="text-muted-foreground ml-2 font-normal tabular-nums">{t('words', { count: words })}</span>
           ) : null}
         </h2>
         {onAskMyKortix ? (
-          <Button variant="ghost" size="sm" onClick={onAskMyKortix}>
-            <SparkleIcon className="size-4" />
+          <Button variant="outline" size="sm" onClick={onAskMyKortix}>
+            <PencilSimpleIcon className="size-3.5" />
             {tTabs('askToEdit')}
           </Button>
         ) : null}
       </div>
       <div
         className={cn(
-          'bg-background relative rounded-md border px-4 py-3',
-          editable && 'hover:border-foreground/20 focus-within:border-foreground/20 cursor-text transition-colors',
+          // A filled block, no border. Folded, it has no bottom inset: the fade meets the edge.
+          'bg-popover relative overflow-hidden rounded-lg px-5 pt-4',
+          folded ? 'pb-0' : 'pb-4',
+          editable && 'cursor-text',
         )}
       >
         <style>{ARTIFACT_DOC_CSS}</style>
         <div
           ref={frame}
-          className={cn('kx-doc kx-doc-inline', !unfolded && 'max-h-96 overflow-hidden')}
+          className={cn('kx-doc kx-doc-inline', !unfolded && 'max-h-80 overflow-hidden')}
         >
           {value === null || !editor ? (
             <div className="space-y-2">
@@ -156,21 +160,15 @@ export function AgentInstructions({
             </>
           )}
         </div>
-        {long && !unfolded ? (
-          <div className="from-background absolute inset-x-0 bottom-0 flex h-24 items-end justify-center rounded-b-md bg-gradient-to-t to-transparent pb-3">
+        {folded ? (
+          <div className="to-popover absolute inset-x-0 bottom-0 flex h-32 items-end justify-center bg-gradient-to-b from-transparent to-80% pb-4">
             <Button variant="secondary" size="sm" onClick={() => setUnfolded(true)}>
               {tI18nComplete.raw('textf5c9bd131486')}
+              <CaretDownIcon className="size-3" />
             </Button>
           </div>
         ) : null}
       </div>
-      {long && unfolded ? (
-        <div className="flex justify-center">
-          <Button variant="ghost" size="sm" onClick={() => setUnfolded(false)}>
-            {tI18nComplete.raw('text94ea9b1d33a0')}
-          </Button>
-        </div>
-      ) : null}
     </section>
   );
 }

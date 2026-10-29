@@ -9,8 +9,9 @@
  * its model, workspace and triggers are rail rows, and who may use it is the
  * header's Share: the Overview repeats none of them. The description and the
  * instructions write the page's draft in place; there is no separate editor.
- * The 20rem aside holds the switches a person flips most (Availability).
- * Below `lg` the aside stacks under the main column.
+ * The inspector beside it runs the page's full height behind one hairline:
+ * Properties (the switches a person flips most), how the agent shows in the
+ * picker, and where it is saved. Below `lg` it stacks under the document.
  *
  * One component for the editable and the read-only page. With `editor` the
  * aside's switches and selects write the shared draft; without it they show
@@ -23,12 +24,14 @@ import {
   CommandIcon,
   CpuIcon,
   CubeIcon,
+  EyedropperIcon,
   FileTextIcon,
   GlobeIcon,
   HardDriveIcon,
   type Icon,
   KeyIcon,
   PlugsConnectedIcon,
+  PencilSimpleIcon,
   PuzzlePieceIcon,
   SlidersHorizontalIcon,
   SquaresFourIcon,
@@ -38,10 +41,10 @@ import {
   UsersIcon,
   WrenchIcon,
 } from '@phosphor-icons/react';
-import { Fragment, type ReactNode, useState } from 'react';
+import { useState } from 'react';
 
-import { useLocale, useTranslations as useI18nTranslations } from '../../i18n';
-import { agentDisplayName } from '../../internal/components/agent-mark';
+import { useTranslations as useI18nTranslations } from '../../i18n';
+import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
 import { cn } from '../../internal/lib/utils';
 import { Input } from '../../primitives/input';
 import {
@@ -54,9 +57,8 @@ import {
 } from '../../primitives/select';
 import { StatusDot } from '../../primitives/status';
 import { Switch } from '../../primitives/switch';
-import { Textarea } from '../../primitives/textarea';
-import { UiLink as Link } from '../../providers/ui-provider';
 import { AGENT_MODE_LABEL, AGENT_MODES } from '../sections/view/agent-editor-catalog';
+import { EditorSection, EditorSectionStyleProvider, SettingRow } from '../sections/view/agent-editor-primitives';
 import {
   type AgentConfigSectionKey,
   type AgentDraft,
@@ -136,10 +138,17 @@ export interface OverviewFacts {
 
 // ─── Main column ─────────────────────────────────────────────────────────────
 
+/** Grows a textarea to its text: one line or ten, never a scrollbar. */
+function fitHeight(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
+}
+
 /**
- * The description, edited in place: the text is the control. Click it (or
- * the empty line) and it becomes a field; Enter or leaving keeps the edit in
- * the draft, Escape puts back what was there.
+ * The description, edited in place: a filled box with a pencil. Click it and
+ * it becomes a field in the same box; Enter or leaving keeps the edit in the
+ * draft, Escape puts back what was there.
  */
 function AboutDescription({
   value,
@@ -153,9 +162,10 @@ function AboutDescription({
   const t = useI18nTranslations('agentEditor.page');
   const tTabs = useI18nTranslations('agentEditor.tabs');
   const [editing, setEditing] = useState<string | null>(null);
+  const box = 'bg-popover block w-full rounded-md border px-3 py-2.5 text-left text-sm text-pretty';
   if (!onChange) {
     return value ? (
-      <p className="text-foreground max-w-3xl text-base text-pretty">{value}</p>
+      <p className={cn(box, 'text-foreground')}>{value}</p>
     ) : (
       <p className="text-muted-foreground text-sm">{tTabs('noDescription')}</p>
     );
@@ -166,16 +176,24 @@ function AboutDescription({
       setEditing(null);
     };
     return (
-      // The field takes the text's box: the same inset and line, so nothing moves.
-      <div className="-mx-3 max-w-3xl space-y-1.5">
-        <Textarea
+      // The field takes the box: the same inset, line and fill, so nothing moves.
+      <div className="space-y-1.5">
+        <textarea
+          ref={fitHeight}
           autoFocus
+          rows={1}
           aria-label={t('description')}
           value={value}
           placeholder={t('descriptionPlaceholder')}
-          minHeight={44}
-          className="text-base font-normal"
-          onChange={(e) => onChange(e.target.value.replace(/\n/g, ' '))}
+          className={cn(
+            box,
+            'text-foreground placeholder:text-muted-foreground focus-visible:ring-ring/50 resize-none overflow-hidden outline-none focus-visible:ring-2',
+          )}
+          onFocus={(e) => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
+          onChange={(e) => {
+            onChange(e.target.value.replace(/\n/g, ' '));
+            fitHeight(e.target);
+          }}
           onBlur={() => finish(true)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -199,76 +217,14 @@ function AboutDescription({
       onClick={() => setEditing(value)}
       aria-label={t('description')}
       className={cn(
-        'hover:bg-hover focus-visible:bg-hover -mx-3 block max-w-3xl rounded-md border border-transparent px-3 py-2 text-left text-pretty transition-colors duration-fast focus-visible:outline-none',
-        value ? 'text-foreground text-base' : 'text-muted-foreground text-sm',
+        box,
+        'group/about hover:border-foreground/20 focus-visible:ring-ring/50 flex items-start gap-3 transition-colors duration-fast focus-visible:ring-2 focus-visible:outline-none',
+        value ? 'text-foreground' : 'text-muted-foreground',
       )}
     >
-      {value || t('descriptionPlaceholder')}
+      <span className="min-w-0 flex-1">{value || t('descriptionPlaceholder')}</span>
+      <PencilSimpleIcon className="text-muted-foreground group-hover/about:text-foreground mt-1.5 size-3.5 shrink-0 transition-colors duration-fast" />
     </button>
-  );
-}
-
-/**
- * "researcher can use 6 skills, 3 connectors and 2 secrets." Each noun links
- * to its Access view. The fastest way to read an agent.
- */
-function SummarySentence({
-  name,
-  block,
-  views,
-  hrefFor,
-}: {
-  name: string;
-  block: AgentConfigBlock;
-  views: readonly AgentConfigSectionKey[];
-  hrefFor: (view: AgentConfigSectionKey) => string | null;
-}) {
-  const t = useI18nTranslations('agentEditor.tabs');
-  const locale = useLocale();
-  const parts = views
-    .filter((view) => view !== 'drives')
-    .map((view) => ({ view, count: grantCount(grantOf(block, view)), excluded: grantExcluded(grantOf(block, view)) }))
-    .filter((part) => part.count !== 0);
-  if (parts.length === 0) {
-    return <p className="text-muted-foreground text-sm text-pretty">{t('summaryNone', { name })}</p>;
-  }
-  const words = parts.map((part) =>
-    part.count !== 'all'
-      ? t(`summaryCount.${part.view}`, { count: part.count })
-      : part.excluded.length > 0
-        ? t('summaryExcept', { all: t(`summaryAll.${part.view}`), list: part.excluded.join(', ') })
-        : t(`summaryAll.${part.view}`),
-  );
-  // Format with placeholders, then swap each one for its link.
-  const formatted = new Intl.ListFormat(locale, { type: 'conjunction' }).format(words.map((_, i) => `\u0000${i}\u0000`));
-  const pieces = formatted.split(/\u0000(\d+)\u0000/);
-  return (
-    <p className="text-muted-foreground text-sm text-pretty">
-      {t('summaryLead', { name })}{' '}
-      {pieces.map((piece, i) =>
-        i % 2 === 1 ? (
-          (() => {
-            const href = hrefFor(parts[Number(piece)].view);
-            return href ? (
-              <Link
-                key={i}
-                href={href}
-                className="text-foreground decoration-border hover:decoration-foreground underline underline-offset-4 transition-colors"
-              >
-                {words[Number(piece)]}
-              </Link>
-            ) : (
-              <span key={i} className="text-foreground">
-                {words[Number(piece)]}
-              </span>
-            );
-          })()
-        ) : (
-          <Fragment key={i}>{piece}</Fragment>
-        ),
-      )}
-      .
-    </p>
   );
 }
 
@@ -318,38 +274,127 @@ function NewSpaceInput({ onDone }: { onDone: (slug: string | null) => void }) {
   );
 }
 
-/** A headed section of the aside: one heading, then divided rows. */
-function AsideSection({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
-  return (
-    <section>
-      <div className="flex h-10 items-center justify-between gap-2 px-4">
-        <h2 className="text-foreground text-sm font-medium">{title}</h2>
-        {action}
-      </div>
-      <div className="divide-border divide-y border-t">{children}</div>
-    </section>
-  );
+/**
+ * The agent's color: the brand accents as swatches, none, or any hex typed or
+ * picked with the system picker. kortix.yaml stores a hex, so each swatch
+ * carries the hex of its token (`visual-system.json` `color.accents`).
+ */
+const AGENT_COLORS = [
+  { name: 'colorBlue', token: 'bg-kortix-blue', hex: '#2b91f7' }, // audit:allow stored value, the token's hex
+  { name: 'colorGreen', token: 'bg-kortix-green', hex: '#199338' }, // audit:allow stored value, the token's hex
+  { name: 'colorYellow', token: 'bg-kortix-yellow', hex: '#cca300' }, // audit:allow stored value, the token's hex
+  { name: 'colorOrange', token: 'bg-kortix-orange', hex: '#d18b19' }, // audit:allow stored value, the token's hex
+  { name: 'colorRed', token: 'bg-kortix-red', hex: '#f14b4c' }, // audit:allow stored value, the token's hex
+  { name: 'colorPurple', token: 'bg-kortix-purple', hex: '#ab80d6' }, // audit:allow stored value, the token's hex
+] as const;
+
+const HEX = /^#[0-9a-f]{6}$/;
+
+const SWATCH = cn(
+  'size-5 shrink-0 cursor-pointer rounded-sm',
+  'ring-offset-background transition-[scale,box-shadow] duration-fast active:scale-[0.96]',
+  'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',
+);
+const SELECTED = 'ring-foreground ring-[1.5px] ring-offset-2';
+
+/** The color's swatch and name: the value of the Color row. */
+function colorFace(value: string | undefined, t: ReturnType<typeof useI18nTranslations>) {
+  const current = value?.toLowerCase();
+  const named = AGENT_COLORS.find((c) => c.hex === current);
+  return {
+    swatch: named ? named.token : current ? undefined : 'bg-muted-foreground',
+    style: current && !named ? { backgroundColor: current } : undefined,
+    label: named ? t(named.name) : current ? t('colorCustom') : t('colorNone'),
+  };
 }
 
-/** One aside row: label (and help) left, a control or value right. */
-function AsideRow({ label, help, children }: { label: string; help?: string; children?: ReactNode }) {
+/** Swatches, then a hex field whose eyedropper opens the system picker. */
+function AgentColorField({ value, onChange }: { value: string | undefined; onChange: (next: string | undefined) => void }) {
+  const t = useI18nTranslations('agentEditor.tabs');
+  const current = value?.toLowerCase();
+  const [typed, setTyped] = useState<string | null>(null);
+  const commit = (raw: string) => {
+    const hex = `#${raw.replace(/^#/, '').trim().toLowerCase()}`;
+    if (raw.trim() === '') onChange(undefined);
+    else if (HEX.test(hex)) onChange(hex);
+    setTyped(null);
+  };
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-      <div className="min-w-0">
-        <p className="text-foreground truncate text-sm">{label}</p>
-        {help ? <p className="text-muted-foreground text-xs text-pretty">{help}</p> : null}
+    <div className="space-y-2">
+      <div role="radiogroup" aria-label={t('color')} className="flex items-center gap-1.5">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!current}
+          aria-label={t('colorNone')}
+          onClick={() => onChange(undefined)}
+          className={cn(SWATCH, 'bg-muted-foreground', !current && SELECTED)}
+        />
+        {AGENT_COLORS.map((c) => (
+          <button
+            key={c.hex}
+            type="button"
+            role="radio"
+            aria-checked={current === c.hex}
+            aria-label={t(c.name)}
+            onClick={() => onChange(c.hex)}
+            className={cn(SWATCH, c.token, current === c.hex && SELECTED)}
+          />
+        ))}
       </div>
-      {children ? <div className="flex shrink-0 items-center">{children}</div> : null}
+      <div className="bg-secondary flex h-7 items-center gap-1.5 rounded-md px-2">
+        <span className="text-muted-foreground font-mono text-xs">#</span>
+        <input
+          aria-label={t('color')}
+          value={typed ?? current?.slice(1).toUpperCase() ?? ''}
+          placeholder="—"
+          maxLength={7}
+          spellCheck={false}
+          className="text-foreground placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent font-mono text-xs outline-none"
+          onChange={(e) => setTyped(e.target.value)}
+          onBlur={(e) => commit(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit(e.currentTarget.value);
+            else if (e.key === 'Escape') setTyped(null);
+          }}
+        />
+        {/* Any other color: the system picker, behind the eyedropper. */}
+        <label aria-label={t('colorCustom')} className="text-muted-foreground hover:text-foreground relative flex size-4 cursor-pointer items-center justify-center transition-colors duration-fast">
+          <EyedropperIcon className="size-3.5" />
+          <input
+            type="color"
+            value={current && HEX.test(current) ? current : AGENT_COLORS[0].hex}
+            onChange={(e) => onChange(e.target.value)}
+            className="absolute inset-0 cursor-pointer opacity-0"
+          />
+        </label>
+      </div>
     </div>
   );
 }
 
-function OverviewAside({
+/** The value side of a Source row: a mono path, right-aligned. */
+function SourceValue({ value }: { value: string }) {
+  return (
+    <p className="text-foreground truncate font-mono text-xs sm:text-right" title={value}>
+      {value}
+    </p>
+  );
+}
+
+/**
+ * Below the instructions, in the Settings dialect (`EditorSection`, `panel`
+ * style): Properties (the switches a person flips most), how the agent shows
+ * in the picker, and where it is saved. A title per group, rows in one
+ * bordered group, no sentence under a title.
+ */
+function OverviewSettings({
   agent,
   config,
   block,
   editor,
   showSpace,
+  sourcePath,
 }: {
   agent: Agent;
   config: ProjectConfigSummary;
@@ -357,6 +402,7 @@ function OverviewAside({
   editor?: AgentDraft;
   /** The Space row: only with spaces on (`project_channels`, Work in progress). */
   showSpace: boolean;
+  sourcePath: string;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const behavior = block.behavior ?? {};
@@ -369,40 +415,25 @@ function OverviewAside({
   const [addingSpace, setAddingSpace] = useState(false);
   const spaces = config.spaces ?? [];
   const spaceNames = new Set(spaces.map((s) => s.name));
-  const yesNo = (on: boolean) => (
-    <span className="text-foreground flex items-center gap-1.5 text-sm">
-      <StatusDot tone={on ? 'success' : 'neutral'} />
-      {on ? t('on') : t('off')}
-    </span>
-  );
   const modeLabel = behavior.mode ? AGENT_MODE_LABEL[behavior.mode] : t('modeDefault');
+  const face = colorFace(behavior.color, t);
+  const value = (text: string) => <p className="text-foreground text-sm sm:text-right">{text}</p>;
   return (
-    <div className="bg-background divide-border divide-y overflow-hidden rounded-md border">
-      <AsideSection title={t('availability')}>
-        <AsideRow label={t('enabled')} help={t('enabledHelp', { name: agentDisplayName(agent.name) })}>
-          {editor ? (
-            <Switch
-              aria-label={t('enabled')}
-              checked={enabled}
-              onCheckedChange={(v) => editor.set('enabled', v ? undefined : false)}
-            />
-          ) : (
-            yesNo(enabled)
-          )}
-        </AsideRow>
-        <AsideRow label={t('showInPickers')} help={t('showInPickersHelp')}>
-          {editor ? (
-            <Switch
-              aria-label={t('showInPickers')}
-              checked={shown}
-              onCheckedChange={(v) => editor.setOc('hidden', v ? undefined : true)}
-            />
-          ) : (
-            yesNo(shown)
-          )}
-        </AsideRow>
-        <div className="space-y-2 px-4 py-2.5">
-          <p className="text-foreground text-sm">{t('whoStarts')}</p>
+    <>
+      <EditorSection title={t('properties')}>
+        <SettingRow label={t('enabled')} help={t('enabledHelp', { name: agentDisplayName(agent.name) })}>
+          <div className="flex sm:justify-end">
+            {editor ? (
+              <Switch aria-label={t('enabled')} checked={enabled} onCheckedChange={(v) => editor.set('enabled', v ? undefined : false)} />
+            ) : (
+              <span className="text-foreground flex items-center gap-1.5 text-sm">
+                <StatusDot tone={enabled ? 'success' : 'neutral'} />
+                {enabled ? t('statusEnabled') : t('statusDisabled')}
+              </span>
+            )}
+          </div>
+        </SettingRow>
+        <SettingRow label={t('whoStarts')}>
           {editor ? (
             <Select
               value={behavior.mode ?? INHERIT}
@@ -421,69 +452,89 @@ function OverviewAside({
               </SelectContent>
             </Select>
           ) : (
-            <p className="text-muted-foreground text-sm">{modeLabel}</p>
+            value(modeLabel)
           )}
-        </div>
-        {showSpace ? (
-        <div className="space-y-2 px-4 py-2.5">
-          <p className="text-foreground text-sm">{t('space')}</p>
-          {editor ? (
-            addingSpace ? (
-              <NewSpaceInput
-                onDone={(slug) => {
-                  setAddingSpace(false);
-                  if (slug) editor.set('space', slug);
-                }}
-              />
+        </SettingRow>
+        <SettingRow label={t('showInPickers')} help={t('showInPickersHelp')}>
+          <div className="flex sm:justify-end">
+            {editor ? (
+              <Switch aria-label={t('showInPickers')} checked={shown} onCheckedChange={(v) => editor.setOc('hidden', v ? undefined : true)} />
             ) : (
-            <Select
-              value={space ?? PROJECT_WIDE}
-              onValueChange={(v) => {
-                if (v === NEW_SPACE) return setAddingSpace(true);
-                editor.set('space', v === PROJECT_WIDE ? undefined : v);
-              }}
-            >
-              <SelectTrigger aria-label={t('space')} size="sm" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={PROJECT_WIDE}>{t('projectWide')}</SelectItem>
-                {spaces.map((s) => (
-                  <SelectItem key={s.name} value={s.name}>
-                    # {s.label || s.name}
-                  </SelectItem>
-                ))}
-                {space && !spaceNames.has(space) ? (
-                  <SelectItem value={space}># {space}</SelectItem>
-                ) : null}
-                <SelectSeparator />
-                <SelectItem value={NEW_SPACE}>{t('newSpace')}</SelectItem>
-              </SelectContent>
-            </Select>
-            )
-          ) : (
-            <p className="text-muted-foreground text-sm">{space ? `# ${space}` : t('projectWide')}</p>
-          )}
-        </div>
+              value(shown ? t('pickerShown') : t('pickerHidden'))
+            )}
+          </div>
+        </SettingRow>
+        {showSpace ? (
+          <SettingRow label={t('space')}>
+            {editor ? (
+              addingSpace ? (
+                <NewSpaceInput
+                  onDone={(slug) => {
+                    setAddingSpace(false);
+                    if (slug) editor.set('space', slug);
+                  }}
+                />
+              ) : (
+                <Select
+                  value={space ?? PROJECT_WIDE}
+                  onValueChange={(v) => {
+                    if (v === NEW_SPACE) return setAddingSpace(true);
+                    editor.set('space', v === PROJECT_WIDE ? undefined : v);
+                  }}
+                >
+                  <SelectTrigger aria-label={t('space')} size="sm" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={PROJECT_WIDE}>{t('projectWide')}</SelectItem>
+                    {spaces.map((s) => (
+                      <SelectItem key={s.name} value={s.name}>
+                        # {s.label || s.name}
+                      </SelectItem>
+                    ))}
+                    {space && !spaceNames.has(space) ? <SelectItem value={space}># {space}</SelectItem> : null}
+                    <SelectSeparator />
+                    <SelectItem value={NEW_SPACE}>{t('newSpace')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )
+            ) : (
+              value(space ? `# ${space}` : t('projectWide'))
+            )}
+          </SettingRow>
         ) : null}
-        <div className="space-y-2 px-4 py-2.5">
-          <p className="text-foreground text-sm">{t('color')}</p>
+        <SettingRow label={t('color')} help={t('colorHelp')}>
           {editor ? (
-            <Input
-              aria-label={t('color')}
-              value={behavior.color ?? ''}
-              placeholder="#RRGGBB"
-              className="h-8 font-mono text-sm"
-              onChange={(e) => editor.setOc('color', e.target.value.trim() || undefined)}
-            />
+            <AgentColorField value={behavior.color} onChange={(next) => editor.setOc('color', next)} />
           ) : (
-            <p className="text-muted-foreground font-mono text-sm">{behavior.color ?? '—'}</p>
+            <span className="text-foreground flex items-center gap-2 text-sm sm:justify-end">
+              <span className={cn('size-3.5 shrink-0 rounded-sm', face.swatch)} style={face.style} />
+              {face.label}
+            </span>
           )}
-          <p className="text-muted-foreground text-xs text-pretty">{t('colorHelp')}</p>
-        </div>
-      </AsideSection>
+        </SettingRow>
+      </EditorSection>
 
-    </div>
+      <EditorSection title={t('inThePicker')}>
+        <div className="flex items-center gap-2.5 px-4 py-3">
+          <AgentMark slug={agent.name} />
+          <span className="text-foreground min-w-0 flex-1 truncate text-sm">{agentDisplayName(agent.name)}</span>
+          <span className="text-muted-foreground text-xs">{modeLabel}</span>
+        </div>
+      </EditorSection>
+
+      <EditorSection title={t('source')}>
+        <SettingRow label={t('sourceConfig')}>
+          <SourceValue value="kortix.yaml" />
+        </SettingRow>
+        <SettingRow label={t('sourceKey')}>
+          <SourceValue value={`agents.${agent.name}`} />
+        </SettingRow>
+        <SettingRow label={t('sourceInstructions')}>
+          <SourceValue value={sourcePath} />
+        </SettingRow>
+      </EditorSection>
+    </>
   );
 }
 
@@ -494,9 +545,7 @@ export function AgentOverview({
   config,
   block,
   prompt,
-  views,
   editor,
-  hrefFor,
   sourcePath,
   onAskMyKortix,
   focusInstructions = false,
@@ -508,9 +557,7 @@ export function AgentOverview({
   block: AgentConfigBlock;
   /** The instructions; null while a reader's source file loads. */
   prompt: string | null;
-  views: readonly AgentConfigSectionKey[];
   editor?: AgentDraft;
-  hrefFor: (view: AgentConfigSectionKey) => string | null;
   sourcePath: string;
   onAskMyKortix?: () => void;
   /** Unfold the instructions with the cursor in them (the old Instructions tab link). */
@@ -519,44 +566,39 @@ export function AgentOverview({
   showSpace?: boolean;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
-  const name = agentDisplayName(agent.name);
+  const tPage = useI18nTranslations('agentEditor.page');
   // Editable: the draft alone, so clearing the description shows it cleared.
   const description = (editor ? editor.oc.description : (block.behavior?.description ?? agent.description)) ?? '';
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <div className="min-w-0 space-y-8">
-        <section className="space-y-2">
-          <h2 className="text-foreground text-sm font-medium">{t('about')}</h2>
-          <AboutDescription
-            value={description}
-            onChange={editor ? (next) => editor.setOc('description', next) : undefined}
-            subagent={(editor?.oc.mode ?? block.behavior?.mode) === 'subagent'}
-          />
-          <SummarySentence name={name} block={block} views={views} hrefFor={hrefFor} />
-        </section>
+    // One centered column, the Settings page's shape: the description and the
+    // instructions, then the settings below them.
+    <EditorSectionStyleProvider value="panel">
+      <div className="mx-auto w-full max-w-3xl space-y-8">
+        <EditorSection title={t('tabOverview')} lead bare>
+          <div className="space-y-2">
+            <h3 className="text-foreground text-sm font-medium">{tPage('description')}</h3>
+            <AboutDescription
+              value={description}
+              onChange={editor ? (next) => editor.setOc('description', next) : undefined}
+              subagent={(editor?.oc.mode ?? block.behavior?.mode) === 'subagent'}
+            />
+          </div>
+        </EditorSection>
         <AgentInstructions
           value={prompt}
           onChange={editor ? (next) => editor.setOc('prompt', next) : undefined}
           onAskMyKortix={onAskMyKortix}
           autoFocus={focusInstructions}
         />
-      </div>
-      <div className="min-w-0 space-y-3">
-        <OverviewAside
+        <OverviewSettings
           agent={agent}
           config={config}
           block={block}
           editor={editor}
           showSpace={showSpace}
+          sourcePath={sourcePath}
         />
-        <p className="text-muted-foreground px-1 text-xs text-pretty">
-          {t.rich('savedIn', {
-            file: () => <span className="font-mono">kortix.yaml</span>,
-            key: () => <span className="font-mono">agents.{agent.name}</span>,
-            source: () => <span className="font-mono">{sourcePath}</span>,
-          })}
-        </p>
       </div>
-    </div>
+    </EditorSectionStyleProvider>
   );
 }

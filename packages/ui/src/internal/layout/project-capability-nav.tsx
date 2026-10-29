@@ -3,7 +3,6 @@
 import { adminPath } from '../../lib/routes';
 
 import { useProjectAccountId, useProjectConfig } from '@kortix/sdk/react';
-import { isMetaAgentName } from '@kortix/shared';
 
 import {
   ArrowUpRightIcon,
@@ -14,7 +13,7 @@ import {
   PlusIcon,
   UsersIcon,
 } from '@phosphor-icons/react';
-import type { ReactNode } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useState } from 'react';
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
 import { HubLink } from '../account-hub/account-hub-location';
@@ -34,18 +33,40 @@ import { PROJECT_ACTIONS } from '../lib/project-actions';
 import { useProjectCan } from '../lib/use-project-can';
 import { hubTarget } from '../stores/account-panel-store';
 import { useCapabilityAccess } from './project-settings-nav';
+import { CreateAgentModal } from '../../customize/agents/create-agent-modal';
 
 type Agent = NonNullable<ReturnType<typeof useProjectConfig>>['agents'][number];
 
-/** My Kortix first (the agent a person talks to), then every other agent by
- *  display name, hidden agents last. */
+const NewAgentContext = createContext<(() => void) | null>(null);
+
+/**
+ * The sidebar's New agent opens the create modal in place, with no
+ * navigation. The modal is mounted here, beside `<Sidebar>`, never inside it:
+ * on mobile the sidebar is a sheet that unmounts its content when it closes,
+ * and New agent closes it, so a modal inside it shut the moment it opened.
+ * `null` until the first click, so the modal and its hooks mount only when used.
+ */
+export function NewAgentModalProvider({ projectId, children }: { projectId: string; children: ReactNode }) {
+  const config = useProjectConfig(projectId);
+  const [open, setOpen] = useState<boolean | null>(null);
+  const openModal = useCallback(() => setOpen(true), []);
+  return (
+    <NewAgentContext.Provider value={openModal}>
+      {children}
+      {open !== null ? (
+        <CreateAgentModal open={open} onOpenChange={setOpen} projectId={projectId} config={config ?? null} />
+      ) : null}
+    </NewAgentContext.Provider>
+  );
+}
+
+/** Every agent by display name, hidden agents last. */
 export function sortCustomizeAgents<T extends Pick<Agent, 'name'> & { hidden?: boolean | null }>(
   agents: readonly T[],
 ): T[] {
   return [...agents].sort((a, b) => {
-    const meta = Number(isMetaAgentName(b.name)) - Number(isMetaAgentName(a.name));
     const hidden = Number(a.hidden === true) - Number(b.hidden === true);
-    return meta || hidden || agentDisplayName(a.name).localeCompare(agentDisplayName(b.name));
+    return hidden || agentDisplayName(a.name).localeCompare(agentDisplayName(b.name));
   });
 }
 
@@ -103,16 +124,17 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
   const needsYou = useReviewSessionSummary(projectId, { enabled: true }).totalNeedsYou;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  const t = useI18nTranslations('agentEditor.page');
   const tTabs = useI18nTranslations('agentEditor.tabs');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const canCreate = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE).allowed === true;
   const canReadMembers =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_READ, { accountId }).allowed === true;
+  const openNewAgent = useContext(NewAgentContext);
 
   if (!access.settled) return null;
 
-  const allAgents = sortCustomizeAgents(config?.agents ?? []);
+  // My Kortix is not listed: the project home starts it, it has no page here.
+  const allAgents = sortCustomizeAgents((config?.agents ?? []).filter((agent) => !agent.platform));
   const activeName = decodeSegment(pathname?.match(/\/customize\/agents\/([^/?#]+)/)?.[1]);
   // The first agents, plus the open one when it falls past the cut.
   const listed = allAgents.slice(0, MAX_LISTED_AGENTS);
@@ -145,9 +167,6 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
               <span className={agent.hidden ? 'text-muted-foreground truncate' : 'truncate'}>
                 {agentDisplayName(agent.name)}
               </span>
-              {agent.platform ? (
-                <span className="text-muted-foreground ml-auto shrink-0 text-xs">{t('builtIn')}</span>
-              ) : null}
             </Link>
           </SidebarMenuSubButton>
         </SidebarMenuSubItem>
@@ -172,7 +191,18 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
       {canCreate ? (
         <SidebarMenuSubItem>
           <SidebarMenuSubButton asChild>
-            <Link href={`${agentsIndex}?new=1`} prefetch={false} onClick={close}>
+            {/* The href (`?new=1`) stays for a modified click and a copied link. */}
+            <Link
+              href={`${agentsIndex}?new=1`}
+              prefetch={false}
+              onClick={(e) => {
+                // Without the provider the link goes to `?new=1`, where the Agents page opens it.
+                if (!openNewAgent || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                e.preventDefault();
+                close();
+                openNewAgent();
+              }}
+            >
               <RowGlyph>
                 <PlusIcon className="size-3.5" />
               </RowGlyph>
