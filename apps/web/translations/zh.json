@@ -23542,7 +23542,7 @@
       "hidePanel": "隐藏评论",
       "panelTitle": "评论和动态",
       "resizePanel": "调整评论面板大小",
-      "unshareComments": "将删除 {count} 条评论。",
+      "unshareComments": "{count, plural, other {将删除 # 条评论。}}",
       "systemActor": "系统"
     }
   },

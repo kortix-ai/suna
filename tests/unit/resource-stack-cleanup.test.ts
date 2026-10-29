@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vitest";
 import type { Client } from "../src/core/client";
 import { ResourceStack } from "../src/fixtures/registry";
 

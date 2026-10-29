@@ -23542,7 +23542,7 @@
       "hidePanel": "コメントを非表示",
       "panelTitle": "コメントとアクティビティ",
       "resizePanel": "コメントパネルのサイズを変更",
-      "unshareComments": "{count} 件のコメントが削除されます。",
+      "unshareComments": "{count, plural, other {# 件のコメントが削除されます。}}",
       "systemActor": "システム"
     }
   },
