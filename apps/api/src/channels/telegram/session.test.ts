@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { channelPromptText, parseChannelMessage } from '@kortix/shared';
 import { config } from '../../config';
 import type { TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
-import { renderTelegramPrompt, telegramMessageEvent, telegramNotice, telegramThreadId, type TelegramMessage } from './session';
+import { telegramEnvelope, telegramFileOf, telegramMessageEvent, telegramNotice, telegramQuestionText, telegramThreadId, type TelegramMessage } from './session';
 
 const message: TelegramMessage = {
   message_id: 7,
@@ -37,11 +38,82 @@ describe('telegram inbox envelope', () => {
   });
 
   test('the prompt tells the agent to answer through the connector, with the chat and reply target', () => {
-    const prompt = renderTelegramPrompt(message, 'new');
+    const prompt = channelPromptText(telegramEnvelope(message));
     expect(prompt).toContain('kortix connectors call kortix_telegram.send_message');
     expect(prompt).toContain('"chat_id":"-100123"');
     expect(prompt).toContain('"reply_parameters":{"message_id":7}');
     expect(prompt).toContain('status?');
+  });
+
+  test("the session view reads the prompt back as the person's message (the shared channel parser)", () => {
+    expect(parseChannelMessage(channelPromptText(telegramEnvelope(message)))).toEqual({
+      platform: 'Telegram',
+      context: 'chat -100123',
+      userName: '@synthetic_user',
+      messageText: 'status?',
+      followUp: false,
+    });
+    expect(parseChannelMessage(channelPromptText(telegramEnvelope({ ...message, text: 'next\n\nline' })))).toEqual({
+      platform: 'Telegram',
+      context: 'chat -100123',
+      userName: '@synthetic_user',
+      messageText: 'next\n\nline',
+      followUp: false,
+    });
+  });
+});
+
+describe('telegram files', () => {
+  const { text: _text, ...bare } = message;
+  const photo: TelegramMessage = {
+    ...bare,
+    photo: [
+      { file_id: 'ph-small', width: 90, height: 90 },
+      { file_id: 'ph-big', width: 1280, height: 960, file_size: 120_000 },
+    ],
+  };
+  const voice: TelegramMessage = { ...bare, voice: { file_id: 'v1', duration: 7, mime_type: 'audio/ogg; codecs=opus' } };
+  const report: TelegramMessage = { ...bare, document: { file_id: 'd1', file_name: 'report.pdf', mime_type: 'application/pdf' } };
+  const sticker: TelegramMessage = { ...bare, sticker: { emoji: '👍' } };
+  const event = (m: object) => telegramMessageEvent('p1', '555', { update_id: 9, message: m as TelegramMessage });
+
+  test('a photo or a sticker with no text is stored; a join, a pin and a location store nothing', () => {
+    expect(event(photo)?.data.message).toEqual(photo as unknown as Record<string, unknown>);
+    expect(event(sticker)).not.toBeNull();
+    expect(event({ ...bare, new_chat_members: [{ id: 5 }] })).toBeNull();
+    expect(event({ ...bare, pinned_message: { message_id: 3 } })).toBeNull();
+    expect(event({ ...bare, location: { latitude: 1, longitude: 2 } })).toBeNull();
+  });
+
+  test("the largest photo by area, in either order; the message's own file, never a quoted one", () => {
+    expect(telegramFileOf(photo)?.ref.file_id).toBe('ph-big');
+    expect(telegramFileOf({ ...photo, photo: [...photo.photo!].reverse() })?.ref.file_id).toBe('ph-big');
+    expect(telegramFileOf({ ...message, reply_to_message: photo } as TelegramMessage)).toBeNull();
+    expect(telegramFileOf(sticker)).toBeNull();
+  });
+
+  test('an animation is read once, as its document; a missing name and type get the defaults', () => {
+    const gif = { ...bare, animation: { file_id: 'a1', file_name: 'loop.mp4', mime_type: 'video/mp4' }, document: { file_id: 'a1', file_name: 'loop.mp4', mime_type: 'video/mp4' } };
+    expect(telegramFileOf(gif as TelegramMessage)).toEqual({ ref: gif.document, kind: 'document', name: 'loop.mp4', mime: 'video/mp4', label: 'file loop.mp4' });
+    expect(telegramFileOf(photo)).toEqual({ ref: photo.photo![1], kind: 'photo', mime: 'image/jpeg', label: 'photo' });
+    expect(telegramFileOf({ ...bare, document: { file_id: 'd2' } })).toMatchObject({ kind: 'document', mime: 'application/octet-stream', label: 'document' });
+    expect(telegramFileOf({ ...bare, voice: { file_id: 'v2' } })).toMatchObject({ kind: 'voice message', mime: 'audio/ogg', label: 'voice message' });
+    expect(telegramFileOf({ ...bare, video_note: { file_id: 'n1', duration: 3 } })).toMatchObject({ kind: 'video message', mime: 'video/mp4', label: 'video message, 3 s' });
+  });
+
+  test('a message with no text reads as its file or sticker; a caption leads; an album item says so', () => {
+    const text = (m: TelegramMessage) => telegramEnvelope(m).text;
+    expect(text(photo)).toBe('(photo)');
+    expect(text(report)).toBe('(file report.pdf)');
+    expect(text(voice)).toBe('(voice message, 7 s)');
+    expect(text(sticker)).toBe('(sticker 👍)');
+    expect(text({ ...photo, caption: 'what is this?' })).toBe('what is this?');
+    // A named file keeps its name under the caption: the agent may need it, and it stays in the sender's text.
+    expect(text({ ...report, caption: 'which year is this?' })).toBe('which year is this?\n(file report.pdf)');
+    const album = 'This message is one item of an album. Telegram sends each item as its own message, and usually only the first carries the caption.';
+    expect(telegramEnvelope({ ...photo, media_group_id: 'g1' }).notes).toContain(album);
+    expect(telegramEnvelope(photo).notes).not.toContain(album);
+    expect(parseChannelMessage(channelPromptText(telegramEnvelope(photo)))?.messageText).toBe('(photo)');
   });
 });
 
@@ -96,5 +168,24 @@ describe('telegram notices for a session (run errors)', () => {
     const inbound = { ...target, messageId: '7' };
     expect(telegramNotice(inbound, { kind: 'create_pending' })).toBe('Kortix is still starting a session for this chat. The agent replies here when it is ready.');
     expect(telegramNotice(inbound, { kind: 'follow_up_failed' })).toBe("This chat's Kortix session cannot take new messages. Send /new to start a new conversation, then send your message again.");
+  });
+});
+
+describe('telegram question text', () => {
+  test('a question shows its header, its numbered options and the footer, and always fits one message', () => {
+    const text = telegramQuestionText(
+      [{ header: 'Pick', question: 'Which database?', options: [{ label: 'Postgres', description: 'managed' }, { label: 'SQLite', description: '' }] }],
+      'Tap an option.',
+    );
+    expect(text).toBe('Pick: Which database?\n1. Postgres — managed\n2. SQLite\n\nTap an option.');
+    const long = telegramQuestionText(
+      [{ header: '', question: 'q'.repeat(10_000), options: [{ label: 'l'.repeat(300), description: '' }] }],
+      'f'.repeat(300),
+    );
+    expect(long.length).toBeLessThanOrEqual(4096);
+    expect(long).toEndWith('f'.repeat(190));
+    // An emoji across the limit is dropped whole: a lone surrogate fails the Bot API call.
+    const emoji = telegramQuestionText([{ header: '', question: `${'q'.repeat(3_899)}😀`, options: [] }], `${'f'.repeat(189)}😀`);
+    expect(emoji).toBe(`${'q'.repeat(3_899)}\n\n${'f'.repeat(189)}`);
   });
 });

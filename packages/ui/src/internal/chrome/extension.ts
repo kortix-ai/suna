@@ -20,7 +20,7 @@ export const KORTIX_EXTENSION_STORE_URL = `https://chromewebstore.google.com/det
 export const CHROME_STORE_LISTED = false;
 
 /** Where "How to install" points: the docs page that explains Load unpacked. */
-export const CHROME_INSTALL_DOCS_PATH = '/docs/connect/chrome';
+export const CHROME_INSTALL_DOCS_PATH = '/docs/guide#kortix-in-chrome';
 
 /** Opens Settings → Kortix in Chrome. The link a person copies to open it in Chrome. */
 export function chromeSettingsLink(origin: string): string {

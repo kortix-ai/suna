@@ -5,8 +5,10 @@
  * import the other (a `index.ts` ⇄ `json-schema.ts` cycle broke bun's
  * bundler: circular top-level `const` access threw "Cannot access before
  * initialization"). `index.ts` re-exports everything here for backward
- * compatibility with existing consumers of `@kortix/manifest-schema`.
+ * compatibility with existing consumers of `@kortix/manifest-schema`. Its one
+ * import, the channel descriptor, has no imports of its own.
  */
+import { CHANNEL_PLATFORM_IDS, channelConnectorSlug } from '@kortix/shared/channel-descriptors';
 
 /** The slug reserved for the platform-shared default sandbox template. */
 export const RESERVED_SANDBOX_SLUG = 'default';
@@ -175,17 +177,16 @@ export const CONNECTOR_AUTH_TYPES = [
 ] as const;
 /** The exclusive owner model for connections under one connector. */
 export const CONNECTOR_AUTHORIZATION_STRATEGIES = ['project', 'user'] as const;
-/** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
-export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'telegram'] as const;
+/** Platforms a `channel` connector can target: the channel descriptor's ids (`@kortix/shared/channel-descriptors`). */
+export const CHANNEL_PLATFORMS = CHANNEL_PLATFORM_IDS;
 /**
- * Platform-owned slugs and the only provider allowed to use each — mirrors
- * connectors.ts RESERVED_SLUG_PROVIDERS so a user app can't shadow the built-in
- * catalog (the bug that made `slack thread` 404; see KORTIX-206).
+ * Platform-owned slugs and the only provider allowed to use each, so a user
+ * app can't shadow the built-in catalog (the bug that made `slack thread` 404;
+ * see KORTIX-206). Every `kortix_<platform>` of CHANNEL_PLATFORMS is here, in
+ * that order: the key order is the published JSON schema's order.
  */
 export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, string>> = {
-  kortix_slack: 'channel',
-  kortix_teams: 'channel',
-  kortix_email: 'channel',
+  ...Object.fromEntries(CHANNEL_PLATFORMS.map((platform) => [channelConnectorSlug(platform), 'channel'])),
   computer: 'computer',
 };
 export const CONNECTOR_POLICY_ACTIONS = ['always_run', 'require_approval', 'block'] as const;
@@ -428,7 +429,13 @@ export const HARNESS_TOOL_NAMES = [
  * MCP-era `kortix-connectors_call` / `kortix-connectors_describe` meta-tools
  * were re-added once (#9902) and removed again; a test pins them out.
  */
-export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show'] as const;
+export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show'] as const;
+/** Kortix tools a manifest's `tools:` list loads unless it names the key. */
+export const DEFAULT_ON_KORTIX_TOOLS = ['image_gen'] as const;
+/** True for a `DEFAULT_ON_KORTIX_TOOLS` name. */
+export function isDefaultOnKortixTool(name: string): boolean {
+  return (DEFAULT_ON_KORTIX_TOOLS as readonly string[]).includes(name);
+}
 /**
  * Kortix tools that no longer exist. Manifests written while #9902 was live
  * still name them (the v2 starter, v3 agent excludes). Naming one is
@@ -446,13 +453,14 @@ export function kortixToolRef(value: unknown): string | null {
 /**
  * The Kortix tools a project's sessions get. With no `tools` key (`undefined`):
  * all of them, so a project that never lists them keeps them. With a `tools`
- * key, even an empty one: only the ones it lists, as `kortix:<name>` or as a
- * module that replaces the tool.
+ * key, even an empty one: the ones it lists, as `kortix:<name>` or as a
+ * module that replaces the tool, plus each `DEFAULT_ON_KORTIX_TOOLS` name it
+ * does not name.
  */
 export function selectedKortixTools(tools: unknown): string[] {
   if (tools === undefined) return [...KORTIX_TOOL_NAMES];
   const listed = tools && typeof tools === 'object' && !Array.isArray(tools) ? tools : {};
-  return KORTIX_TOOL_NAMES.filter((name) => Object.hasOwn(listed, name));
+  return KORTIX_TOOL_NAMES.filter((name) => Object.hasOwn(listed, name) || isDefaultOnKortixTool(name));
 }
 
 // ─── kortix_version 3 registries ────────────────────────────────────────────
@@ -472,6 +480,7 @@ export const KORTIX_SKILL_NAMES = [
   'kortix-channel-memory',
   'kortix-computer',
   'kortix-connectors',
+  'kortix-design',
   'kortix-drives',
   'kortix-genui',
   'kortix-goals',

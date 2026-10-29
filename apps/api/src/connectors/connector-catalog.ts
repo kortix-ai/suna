@@ -1,3 +1,4 @@
+import type { ChannelPlatformId } from '@kortix/shared/channel-descriptors';
 import { appNameKey } from './connect-direct-twins';
 import {
   groupIntoSections,
@@ -145,7 +146,7 @@ export function canonicalCatalogId(id: string): string {
 }
 
 /** What Kortix built itself: four channels people message the agent in, and the computer it works on. */
-export type KortixApp = 'slack' | 'teams' | 'email' | 'telegram' | 'computer';
+export type KortixApp = ChannelPlatformId | 'computer';
 
 /** A way to connect, best first: a one-click MCP server, the managed toolkit,
  *  any MCP server, the APIs; a surface Kortix cannot install comes last. */

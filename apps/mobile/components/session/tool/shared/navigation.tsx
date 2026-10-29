@@ -53,7 +53,7 @@ export const ToolNavigationContext = createContext(true);
 // The store lives in `stores/` so markdown can open a preview without importing
 // this file (which imports the sheet, which imports markdown: a require cycle).
 export { useToolFilePreviewStore } from '@/stores/tool-file-preview-store';
-import { useToolFilePreviewStore } from '@/stores/tool-file-preview-store';
+import { type FileCaption, useToolFilePreviewStore } from '@/stores/tool-file-preview-store';
 
 /**
  * The one file preview the transcript opens files into — tool rows, message
@@ -68,6 +68,7 @@ import { useToolFilePreviewStore } from '@/stores/tool-file-preview-store';
  */
 export function ToolFilePreviewHost() {
   const path = useToolFilePreviewStore((s) => s.path);
+  const caption = useToolFilePreviewStore((s) => s.caption);
   const closePreview = useToolFilePreviewStore((s) => s.closePreview);
   const addToChat = useToolFilePreviewStore((s) => s.addToChat);
   const { sandboxUrl } = useSandboxContext();
@@ -75,8 +76,8 @@ export function ToolFilePreviewHost() {
   const file = useMemo<PreviewFile | null>(() => {
     if (!path) return null;
     const fullPath = path.startsWith('/') ? path : `/workspace/${path}`;
-    return { name: fullPath.split('/').pop() || fullPath, path: fullPath };
-  }, [path]);
+    return { name: fullPath.split('/').pop() || fullPath, path: fullPath, ...(caption ? { caption } : {}) };
+  }, [path, caption]);
 
   // The store is the source of truth: a row's tap sets the path, which opens
   // the sheet; the sheet's close clears it.
@@ -108,9 +109,9 @@ export function useToolNavigation() {
   const enabled = useContext(ToolNavigationContext);
 
   const openFile = useCallback(
-    (path: string, line?: number) => {
+    (path: string, line?: number, caption?: FileCaption) => {
       if (!enabled || !path) return;
-      useToolFilePreviewStore.getState().openPreview(path, line);
+      useToolFilePreviewStore.getState().openPreview(path, line, caption);
     },
     [enabled],
   );

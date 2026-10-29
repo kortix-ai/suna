@@ -97,7 +97,7 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
         tab: 'chrome',
         label: 'Kortix in Chrome',
         description: 'Your sessions use Chrome with your logins. You see every step.',
-        docsHref: '/docs/connect/chrome',
+        docsHref: '/docs/guide#kortix-in-chrome',
         // Monochrome like its neighbours; `ChromeRailIcon` takes only `className`.
         icon: ChromeRailIcon as unknown as Icon,
       },

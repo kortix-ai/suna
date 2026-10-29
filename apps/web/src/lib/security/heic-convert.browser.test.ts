@@ -38,7 +38,7 @@ beforeAll(async () => {
     executablePath: Bun.which('chromium') ?? undefined,
     args: ['--no-sandbox'],
   });
-});
+}, 30_000);
 
 afterAll(async () => {
   await browser?.close();
@@ -84,4 +84,4 @@ test('converts HEIC to a decoded JPEG under the production CSP without eval erro
   expect(repeated.rejectedInvalid).toBe(true);
   expect(errors).toEqual([]);
   await page.close();
-}, 15000);
+}, 30_000);

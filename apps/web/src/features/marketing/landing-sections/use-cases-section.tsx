@@ -3,9 +3,9 @@
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import Link from '@/components/site-link';
 import { DitherField } from '@/features/marketing/kit/dither-field';
+import { cn } from '@kortix/ui';
 import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { ArrowUpRightIcon } from '@phosphor-icons/react';
-import { cn } from '@kortix/ui';
 import { m, useReducedMotion, type Transition } from 'motion/react';
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 
@@ -25,9 +25,9 @@ export type UseCaseItem = { slug: string; url: string; title: string; team: Team
  */
 
 const COPY = {
-  eyebrow: 'Use cases',
-  title: 'Who it’s for,',
-  titleMuted: 'and what they get.',
+  eyebrow: 'Outcomes',
+  title: 'Give it an outcome. Agents run it 24/7.',
+  titleMuted: 'End to end, for every team.',
   you: 'You',
 };
 
@@ -74,7 +74,10 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
   // A team with nothing in the library has nothing to show.
   const teams = allTeams.filter((t) => items.some((item) => item.team === t.id));
   const [selected, setSelected] = useState(() =>
-    Math.max(0, teams.findIndex((t) => t.id === 'engineering')),
+    Math.max(
+      0,
+      teams.findIndex((t) => t.id === 'marketing'),
+    ),
   );
   /** Pointer position along the rule, 0–1; null when the pointer is away. */
   const [pointer, setPointer] = useState<number | null>(null);
@@ -101,7 +104,8 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
   // Idle, the glow sits under the selection; under the pointer it follows it.
   const focusAt = pointer ?? selectedAt;
   const focusTick = Math.round(focusAt * (TICKS - 1));
-  const hoveredColumn = pointer === null ? null : start + Math.min(shown - 1, Math.floor(pointer * shown));
+  const hoveredColumn =
+    pointer === null ? null : start + Math.min(shown - 1, Math.floor(pointer * shown));
 
   const fractionOf = (event: MouseEvent<HTMLDivElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
@@ -128,10 +132,20 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
   };
 
   return (
-    <section id="use-cases" className="bg-background text-foreground relative z-20 border-y py-12 lg:py-16">
-      {/* The page rails, redrawn above this band's background. */}
-      <div aria-hidden className="bg-border pointer-events-none absolute inset-y-0 left-4 w-px lg:left-17" />
-      <div aria-hidden className="bg-border pointer-events-none absolute inset-y-0 right-4 w-px lg:right-17" />
+    <section
+      id="use-cases"
+      className="kx-rail-fade bg-background text-foreground relative z-20 border-y py-12 lg:py-16"
+    >
+      {/* The page rails, redrawn above this band's background. Its top and
+          bottom hairlines fade out past them (`kx-rail-fade`). */}
+      <div
+        aria-hidden
+        className="bg-border pointer-events-none absolute inset-y-0 left-4 w-px lg:left-17"
+      />
+      <div
+        aria-hidden
+        className="bg-border pointer-events-none absolute inset-y-0 right-4 w-px lg:right-17"
+      />
 
       <div className="flex flex-col items-center gap-5 px-8 pb-14 text-center">
         <p className="bg-foreground/8 text-foreground w-fit rounded-sm px-2 py-1 font-mono text-xs font-medium uppercase">
@@ -187,7 +201,7 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
                       tabIndex={i === selected ? 0 : -1}
                       onClick={() => select(i)}
                       className={cn(
-                        'outline-ring cursor-pointer truncate rounded-sm px-2 py-1 text-sm transition-colors duration-moderate focus-visible:outline-2',
+                        'outline-ring duration-moderate cursor-pointer truncate rounded-sm px-2 py-1 text-sm transition-colors focus-visible:outline-2',
                         lit ? 'text-foreground' : 'text-muted-foreground',
                       )}
                     >
@@ -210,7 +224,7 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
                     transform: `scaleY(${tickScale(distance)})`,
                   }}
                   className={cn(
-                    'h-8 w-px origin-bottom transition-[opacity,transform] duration-fast ease-out motion-reduce:transition-[opacity]',
+                    'duration-fast h-8 w-px origin-bottom transition-[opacity,transform] ease-out motion-reduce:transition-[opacity]',
                     distance === 0 ? 'bg-foreground' : 'bg-muted-foreground',
                   )}
                 />
@@ -220,35 +234,47 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
         </div>
       </div>
 
+      {/* One fixed height for every team (lg: the row; below lg: the copy
+          column), sized for the longest headline, body and four links, so
+          switching teams never moves the page. */}
       <div
         role="tabpanel"
         id="use-case-panel"
         aria-labelledby={`use-case-tab-${team.id}`}
-        className="grid grid-cols-1 gap-10 px-8 pt-8 lg:grid-cols-2 lg:gap-16 lg:px-28"
+        className="grid grid-cols-1 gap-10 px-8 pt-8 lg:h-128 lg:grid-cols-2 lg:gap-16 lg:px-28"
       >
-        <div className="relative py-2">
+        <div className="relative min-h-132 py-2 lg:min-h-0">
           {/* The copy swaps in place when the team changes: no fade, slide
               or blur, so the headline reads at once. */}
           <div className="flex h-full flex-col justify-between gap-8">
-              <div className="flex flex-col gap-4">
-                <h3 className="text-foreground text-2xl font-medium tracking-tight text-balance lg:text-3xl">
-                  {team.headline}
-                </h3>
-                <p className="text-muted-foreground max-w-md text-base leading-relaxed">{team.body}</p>
-              </div>
+            <div className="flex flex-col gap-4">
+              <h3 className="text-foreground text-2xl font-medium tracking-tight text-balance lg:text-3xl">
+                {team.headline}
+              </h3>
+              <p className="text-muted-foreground max-w-md text-base leading-relaxed">
+                {team.body}
+              </p>
+            </div>
 
-              {/* The team's real use cases, from the library. Never chips or
+            {/* The team's real use cases, from the library. Never chips or
                   pills: plain text links. */}
-              <div className="flex max-w-md flex-col items-start gap-5">
-                <UseCaseLinks items={teamItems.slice(0, LISTED)} linkable={linkable} variant={linksVariant} />
-              </div>
+            <div className="flex max-w-md flex-col items-start gap-5">
+              <UseCaseLinks
+                items={teamItems.slice(0, LISTED)}
+                linkable={linkable}
+                variant={linksVariant}
+              />
+            </div>
           </div>
         </div>
 
         {/* One finished exchange on a dithered field: what you asked, and
             what Kortix came back with on which model. */}
-        <div className="border-border bg-card relative flex h-96 items-center justify-center self-start overflow-hidden border p-6 sm:p-10">
-          <div aria-hidden className="text-foreground pointer-events-none absolute inset-0 opacity-40">
+        <div className="border-border bg-card relative flex h-96 items-center justify-center overflow-hidden border p-6 sm:p-10 lg:h-full">
+          <div
+            aria-hidden
+            className="text-foreground pointer-events-none absolute inset-0 opacity-40"
+          >
             <DitherField />
           </div>
           {/* Static on purpose: switching team swaps the text in place, with
@@ -256,15 +282,21 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
           <div className="relative flex w-full max-w-md flex-col gap-3">
             <div className="bg-background/95 border-border rounded-md border px-5 py-4">
               <p className="text-foreground text-sm font-medium">{copy.you}</p>
-              <p className="text-muted-foreground mt-1 text-base leading-snug text-pretty">{team.prompt}</p>
+              <p className="text-muted-foreground mt-1 text-base leading-snug text-pretty">
+                {team.prompt}
+              </p>
             </div>
             <div className="bg-background/95 border-border flex items-center gap-4 rounded-md border px-5 py-4">
               <span className="bg-foreground text-background flex size-10 shrink-0 items-center justify-center rounded-md">
                 <KortixLogo size={16} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="text-foreground block truncate text-base font-medium">{team.result}</span>
-                <span className="text-muted-foreground mt-0.5 block truncate text-sm">{team.detail}</span>
+                <span className="text-foreground block truncate text-base font-medium">
+                  {team.result}
+                </span>
+                <span className="text-muted-foreground mt-0.5 block truncate text-sm">
+                  {team.detail}
+                </span>
               </span>
               <span className="bg-foreground/8 text-foreground shrink-0 rounded-sm px-2 py-1 font-mono text-xs font-medium uppercase">
                 {team.model}
@@ -306,7 +338,7 @@ function UseCaseLinks({
             {linkable ? (
               <Link
                 href={item.url}
-                className="text-muted-foreground hover:text-foreground outline-ring rounded-sm text-sm transition-colors duration-moderate focus-visible:outline-2"
+                className="text-muted-foreground hover:text-foreground outline-ring duration-moderate rounded-sm text-sm transition-colors focus-visible:outline-2"
               >
                 {label(item)}
               </Link>
@@ -326,12 +358,12 @@ function UseCaseLinks({
           {linkable ? (
             <Link
               href={item.url}
-              className="text-muted-foreground hover:text-foreground outline-ring group/row flex items-center justify-between gap-4 py-3 text-sm transition-colors duration-moderate focus-visible:outline-2"
+              className="text-muted-foreground hover:text-foreground outline-ring group/row duration-moderate flex items-center justify-between gap-4 py-3 text-sm transition-colors focus-visible:outline-2"
             >
               {label(item)}
               <ArrowUpRightIcon
                 aria-hidden
-                className="size-3.5 shrink-0 opacity-0 transition-opacity duration-moderate group-hover/row:opacity-100 group-focus-visible/row:opacity-100"
+                className="duration-moderate size-3.5 shrink-0 opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-visible/row:opacity-100"
               />
             </Link>
           ) : (

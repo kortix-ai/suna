@@ -629,6 +629,16 @@ export class PlatinumProvider implements SandboxProvider {
           `[drives] This session’s drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
         );
       }
+      const refusal = platinumHttp(err);
+      if (refusal.status === 503 && refusal.code === 'unavailable' && refusal.body) {
+        const body: unknown = JSON.parse(refusal.body);
+        if (body && typeof body === 'object' && 'error' in body &&
+          body.error === 'the sub_path image is still being derived; retry shortly') {
+          throw new SnapshotStillBuildingError(
+            `Sandbox image snapshot ${template} is building: Platinum is deriving the sub_path image`,
+          );
+        }
+      }
       const regional = regionalTemplateRefusal(err);
       if (regional?.state === 'replicating') {
         // sandbox-init-state.ts waits this class out (~5 min).

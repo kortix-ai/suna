@@ -444,6 +444,24 @@ function handleDatabaseOrUnknownError(
   // Database / postgres.js errors — extract the useful info, not the full SQL dump
   const databaseError = inspectDatabaseError(err);
   if (databaseError) {
+    // The statement timer can beat the HTTP deadline on long analytics reads.
+    // Keep the same typed unavailability contract whichever timer wins.
+    if (
+      databaseError.pgCode === '57014'
+      && method === 'GET'
+      && /^\/v1\/projects\/[^/]+\/gateway\/(overview|series|breakdown|sessions)\/?$/.test(path)
+    ) {
+      appLogger.warn(`${method} ${path} -> 503 [gateway-analytics-timeout]`, {
+        method, path, pgCode: databaseError.pgCode,
+      });
+      c.header('Retry-After', '10');
+      return c.json({
+        error: true,
+        message: 'Gateway analytics are temporarily unavailable. Retry shortly.',
+        status: 503,
+        code: 'analytics_unavailable',
+      }, 503);
+    }
     // Pool-exhaustion (Supabase pooler / PgBouncer session-mode saturation on
     // the us-east-2 shadow deployment) is a TRANSIENT infra/pooler-capacity
     // class, NOT a code bug — `(EMAXCONNSESSION) max clients reached in

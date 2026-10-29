@@ -23,6 +23,7 @@ import {
   KORTIX_TOOL_NAMES,
   REGISTRY_NAME_RE,
   kortixToolRef,
+  selectedKortixTools,
   serializeManifestObject,
   validateManifest,
   type ManifestIssue,
@@ -292,7 +293,7 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
   // Tools: project modules stay; the Kortix tools v2 left out become a per-agent exclude.
   const toolMap = table(raw.tools);
   const tools = toolMap ? Object.fromEntries(Object.entries(toolMap).filter(([, value]) => kortixToolRef(value) === null)) : {};
-  const removedTools = toolMap ? KORTIX_TOOL_NAMES.filter((name) => !Object.hasOwn(toolMap, name)) : [];
+  const removedTools = toolMap ? KORTIX_TOOL_NAMES.filter((name) => !selectedKortixTools(toolMap).includes(name)) : [];
 
   // Agents.
   const codemodeTop = table(harnesses.pi)?.codemode;
@@ -356,7 +357,7 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
     TOP_LEVEL_ORDER,
   );
   const manifest = renderManifest(next);
-  changes.unshift({ path: manifestPath, action: 'rewrite', note: 'kortix_version 2 → 3: agents inline, registries, per-agent grants', content: manifest });
+  changes.unshift({ path: manifestPath, action: 'rewrite', note: 'kortix_version 3: agents inline, registries, per-agent grants', content: manifest });
   const issues = validateManifest(manifest, 'yaml').issues;
   return { manifest, next, changes, dropped, issues, valid: !issues.some((issue) => issue.severity === 'error') };
 }

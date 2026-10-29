@@ -1,10 +1,21 @@
 /** Easy-connect routes: start and finalize an authorization, session connect requests, the Pipedream webhook. */
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { parseConnectorConnectOwner } from '../../projects/lib/connection-access';
 import { reconcileEventSubscriptionsFromCatalog } from '../../projects/surface';
 import type { ConnectorRouterDeps } from '../router';
 import { OkSchema, OpaqueSchema, ProjectSlugParam, featureNotSupportedResponse } from './shared';
+
+/**
+ * Connecting an account the whole project uses is a person's choice, and the
+ * shared default it lands on may be one a person revoked. An agent session
+ * connects its own account (owner `me`) instead.
+ */
+const AGENT_PROJECT_CONNECT_REFUSAL = {
+  error: 'An agent cannot connect an account the whole project uses. A person connects it in Customize → Connectors; the agent can connect its own with owner "me".',
+  code: 'agent_session_forbidden',
+} as const;
 
 export function registerConnectRoutes(app: OpenAPIHono, deps: ConnectorRouterDeps): void {
   // ── Pipedream 1-click connect (admin) ────────────────────────────────────
@@ -55,6 +66,7 @@ export function registerConnectRoutes(app: OpenAPIHono, deps: ConnectorRouterDep
       // Connecting an account the whole project can then use is administration.
       // `me` — the default — is self-service and needs nothing beyond the
       // connector-write gate already asserted above.
+      if (owner === 'project' && isProjectSessionPrincipal(c)) return c.json(AGENT_PROJECT_CONNECT_REFUSAL, 403);
       if (owner === 'project' && deps.resolveConnectionsManager) {
         const manager = await deps.resolveConnectionsManager(c, projectId);
         if (!manager) return c.json({ error: 'forbidden' }, 403);
@@ -122,6 +134,7 @@ export function registerConnectRoutes(app: OpenAPIHono, deps: ConnectorRouterDep
       // STARTING a project-owned connection and still allowed to FINISH one —
       // sibling routes on one resource disagreeing about who may act (CWE-862).
       // `me` stays self-service on both routes.
+      if (owner === 'project' && isProjectSessionPrincipal(c)) return c.json(AGENT_PROJECT_CONNECT_REFUSAL, 403);
       if (owner === 'project' && deps.resolveConnectionsManager) {
         const manager = await deps.resolveConnectionsManager(c, projectId);
         if (!manager) return c.json({ error: 'forbidden' }, 403);

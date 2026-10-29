@@ -41,7 +41,6 @@ import { MarketplaceAvatar } from './marketplace-avatar';
 import { displayCompanyLabel } from './marketplace-company-filter';
 import { MarketplaceExploreCard } from './marketplace-explore-card';
 import { MarketplaceFileView } from './marketplace-file-view';
-import { groupMarketplaceItemsByType } from './marketplace-grid';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
 import {
   emptyDescriptionCopy,
@@ -49,6 +48,7 @@ import {
   groupCapabilities,
   marketplaceFileNodes,
   resolveBundleMembers,
+  projectContentGroups,
   totalCapabilityCount,
 } from './marketplace-item-view';
 import { TypeTile, typeMeta } from './marketplace-meta';
@@ -597,94 +597,7 @@ export function MarketplaceDetail({
         hrefForId: (id) => id,
       })
     : [];
-  // A project shows its README first, then its contents rendered as the SAME
-  // marketplace cards, in the SAME typed grid, as the main gallery — so a skill
-  // inside the project looks exactly like a skill listed on the marketplace.
-  // Each content item is a full catalog id, so we synthesize a MarketplaceItem
-  // from the resolved dependency metadata + the project's own source identity.
-  const memberItemGroups = useMemo(() => {
-    if (!isProject) return [];
-    const byName = new Map(data.dependencyItems.map((d) => [d.name, d]));
-    const items: MarketplaceItem[] = data.dependencies
-      .map((name) => byName.get(name))
-      .filter((d): d is MarketplaceItemDetail['dependencyItems'][number] => Boolean(d))
-      .map((d) => ({
-        id: d.id,
-        registry: data.registry,
-        name: d.name,
-        type: d.type,
-        title: d.title,
-        description: d.description,
-        categories: [],
-        capabilities: { secrets: [], connectors: [], tools: [], network: [] },
-        dependencies: [],
-        fileCount: 0,
-        external: data.external,
-        marketplaceId: data.marketplaceId,
-        marketplaceLabel: data.marketplaceLabel,
-        owner: data.owner,
-        sourceUrl: data.sourceUrl,
-      }));
-    return groupMarketplaceItemsByType(items);
-  }, [isProject, data]);
-  // A project's agents + triggers (parsed from kortix.yaml) rendered with the
-  // SAME card + name-based icon heuristic as its skills — just non-navigable,
-  // since they aren't their own catalog items.
-  const projectExtraGroups = useMemo(() => {
-    if (!isProject) return [] as { label: string; items: MarketplaceItem[] }[];
-    const toItem = (
-      name: string,
-      title: string,
-      description: string | null,
-      type: string,
-      prefix: string,
-    ): MarketplaceItem => ({
-      id: `${prefix}:${name}`,
-      registry: data.registry,
-      name,
-      type,
-      title,
-      description,
-      categories: [],
-      capabilities: { secrets: [], connectors: [], tools: [], network: [] },
-      dependencies: [],
-      fileCount: 0,
-      external: data.external,
-      marketplaceId: data.marketplaceId,
-      marketplaceLabel: data.marketplaceLabel,
-      owner: data.owner,
-      sourceUrl: data.sourceUrl,
-    });
-    const groups: { label: string; items: MarketplaceItem[] }[] = [];
-    if (data.projectAgents?.length) {
-      groups.push({
-        label: tI18nComplete.raw('text279b44d2ab4b'),
-        items: data.projectAgents.map((a) =>
-          toItem(a.name, a.title.replaceAll('-', ' '), a.description, 'registry:agent', 'agent'),
-        ),
-      });
-    }
-    if (data.projectTriggers?.length) {
-      groups.push({
-        label: tI18nComplete.raw('texte62f2148a64d'),
-        items: data.projectTriggers.map((t) =>
-          toItem(t.slug, t.slug.replaceAll('-', ' '), t.description, 'registry:trigger', 'trigger'),
-        ),
-      });
-    }
-    return groups;
-  }, [
-    isProject,
-    data.projectAgents,
-    data.projectTriggers,
-    data.registry,
-    data.external,
-    data.marketplaceId,
-    data.marketplaceLabel,
-    data.owner,
-    data.sourceUrl,
-    tI18nComplete,
-  ]);
+  const projectGroups = useMemo(() => projectContentGroups(data, tI18nComplete), [data, tI18nComplete]);
   const readme = data.readme ? stripFrontmatter(data.readme) : '';
   const itemTitle = data.title.replaceAll('-', ' ');
   const companyLabel = displayCompanyLabel(data.marketplaceId, data.marketplaceLabel);
@@ -772,22 +685,12 @@ export function MarketplaceDetail({
   // the gallery. Shared by both layouts; `columns` follows the surface width.
   const projectSections = (gridClassName: string) => (
     <>
-      {memberItemGroups.map((g) => (
+      {projectGroups.map((g) => (
         <section key={g.label}>
           <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
           <div className={cn('grid gap-3', gridClassName)}>
             {g.items.map((it) => (
-              <MarketplaceExploreCard key={it.id} item={it} showSource={false} />
-            ))}
-          </div>
-        </section>
-      ))}
-      {projectExtraGroups.map((g) => (
-        <section key={g.label}>
-          <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
-          <div className={cn('grid gap-3', gridClassName)}>
-            {g.items.map((it) => (
-              <MarketplaceExploreCard key={it.id} item={it} showSource={false} navigable={false} />
+              <MarketplaceExploreCard key={it.id} item={it} showSource={false} navigable={g.navigable} />
             ))}
           </div>
         </section>

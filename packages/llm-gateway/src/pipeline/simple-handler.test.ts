@@ -1114,6 +1114,9 @@ describe('model fallback chains (route.fallbackModels)', () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('from fallback');
     expect(resolved).toEqual(['primary-model', 'fallback-model']);
+    // KRTX-3369: the answer names what the client asked for and what served it.
+    expect(response.headers.get('x-kortix-requested-model')).toBe('requested-model');
+    expect(response.headers.get('x-kortix-model')).toBe('fallback-model');
     // Each model gets its own generation defaults; a client value wins on every attempt.
     expect(calls.map((c) => [new URL(c.url).host, c.body.model, c.body.temperature, c.body.max_tokens, c.body.top_p])).toEqual([
       ['primary.example', 'primary-model', 0.9, 100, 0.5],
@@ -1137,6 +1140,7 @@ describe('model fallback chains (route.fallbackModels)', () => {
   test('a request its own model answers names that model and no fallback', async () => {
     const { response, traces } = await run({ respond: () => ok('from primary') });
     expect(response.status).toBe(200);
+    expect(response.headers.get('x-kortix-model')).toBe('primary-model');
     expect(traces.at(-1)).toMatchObject({ ok: true, servedModel: 'primary-model' });
     expect(traces.at(-1)).not.toHaveProperty('fallbackFrom');
   });

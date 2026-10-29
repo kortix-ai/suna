@@ -46,6 +46,36 @@ export async function getMergeBase(
   }
 }
 
+/**
+ * The head refs whose tip is now part of `tipSha`, each with that tip: their
+ * work landed through another merge (KRTX-3371). Reads the mirror's refs as
+ * they stand, so a head pushed after the last fetch reads as not landed and its
+ * request stays open.
+ */
+export async function headRefsLandedIn(
+  project: GitBackedProject,
+  tipSha: string,
+  headRefs: readonly string[],
+): Promise<Map<string, string>> {
+  validateSha(tipSha);
+  const landed = new Map<string, string>();
+  if (headRefs.length === 0) return landed;
+  const repoPath = await refreshMirror(project);
+  for (const ref of headRefs) {
+    try {
+      validateRef(ref);
+    } catch {
+      continue;
+    }
+    const head = await runGitCapture(['rev-parse', '--verify', '--quiet', `refs/heads/${ref}^{commit}`], repoPath);
+    const sha = head.stdout.trim();
+    if (head.exitCode !== 0 || !/^[0-9a-f]{40}$/.test(sha)) continue;
+    const ancestor = await runGitCapture(['merge-base', '--is-ancestor', sha, tipSha], repoPath);
+    if (ancestor.exitCode === 0) landed.set(ref, sha);
+  }
+  return landed;
+}
+
 export interface BranchAheadState {
   /** True when headRef carries at least one commit baseRef doesn't — i.e. a
    *  CR from head into base would be non-empty. False covers BOTH failure

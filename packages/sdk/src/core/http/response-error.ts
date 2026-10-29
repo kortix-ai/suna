@@ -133,6 +133,8 @@ function isExpectedResponse(status: number, data: any, message: string): boolean
       (data?.code === MODEL_NOT_SERVABLE_CODE ||
         data?.code === PROVISION_IN_FLIGHT_CODE ||
         data?.code === SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE ||
+        // A stale save: the editor that sent it shows the conflict.
+        data?.code === 'version_conflict' ||
         // A state a GitHub owner fixes, not a defect: the host shows the fix.
         data?.code === REPOSITORY_DISCONNECTED_CODE)) ||
     (status === 503 &&

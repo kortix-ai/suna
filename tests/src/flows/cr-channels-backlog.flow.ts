@@ -18,7 +18,7 @@
  *   asserted on a disposable project() fixture (soft archive, repeatable).
  *
  * CHN-9 — Bad/missing signature on ANY channel webhook (verified against
- *   apps/api/src/channels/{slack-webhook,slack-oauth,telegram-webhook}.ts):
+ *   apps/api/src/channels/{slack-webhook,slack-oauth,telegram/inbound}.ts):
  *   - Shared Slack OAuth-mode webhooks (`/webhooks/slack`, `/commands`,
  *     `/interactivity`) and the OAuth callback gate on slackOauthMode().available
  *     FIRST → unconfigured server returns 503 before the signature check; a

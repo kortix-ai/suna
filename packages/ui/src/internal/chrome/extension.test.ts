@@ -33,7 +33,7 @@ afterEach(() => {
 describe('store listing', () => {
   test('the listing is not public: no surface offers Add to Chrome', () => {
     expect(CHROME_STORE_LISTED).toBe(false);
-    expect(CHROME_INSTALL_DOCS_PATH).toBe('/docs/connect/chrome');
+    expect(CHROME_INSTALL_DOCS_PATH).toBe('/docs/guide#kortix-in-chrome');
   });
   test('the link to copy opens Settings → Kortix in Chrome', () => {
     expect(chromeSettingsLink('https://app.example.com')).toBe('https://app.example.com/settings/chrome');

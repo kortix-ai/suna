@@ -1003,6 +1003,21 @@ describe('setActiveSession — boot quick-view replant', () => {
     expect(after._bootQuickView).toBeNull();
   });
 
+  test('a tool closed during boot is not replanted for the real layout', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('kortix-1', { projectSessionId: 'kortix-1', transient: true });
+    useKortixComputerStore.getState().requestQuickView('terminal');
+    useKortixComputerStore.getState().consumeQuickView('kortix-1');
+    // The person closes the Terminal card while the computer still boots.
+    useKortixComputerStore.getState().setIsSidePanelOpen(false);
+    useKortixComputerStore
+      .getState()
+      .setActiveSession('oc-1', { projectSessionId: 'kortix-1', transient: false });
+    const after = useKortixComputerStore.getState();
+    expect(after.isSidePanelOpen).toBe(false);
+    expect(after.pendingQuickView).toBeNull();
+  });
+
   test('the remembered boot view dies with a real session change', () => {
     const s = useKortixComputerStore.getState();
     s.setActiveSession('kortix-1', { projectSessionId: 'kortix-1', transient: true });

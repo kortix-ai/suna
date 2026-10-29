@@ -456,9 +456,9 @@ The modules compose at any depth (`modules.md` has every entry with its props an
   composed screens need the two scopes those screens mount: `KortixProjectProvider` (`@kortix/sdk/react`)
   and `SessionIdsProvider` (`@kortix/ui`) with the project and session ids.
 - To draw every part yourself: `useChatTurns` and `renderParts` from `@kortix/sdk/react`
-  (https://kortix.com/docs/sdk/react#build-a-chat-ui).
+  (https://kortix.com/docs/developers#react).
 - Other data for a dashboard: `useProjectApps`, `useProjectTriggers`, `useChangeRequests`,
-  `useGatewayOverview`, `useCan` (https://kortix.com/docs/sdk/react#hooks).
+  `useGatewayOverview`, `useCan` (https://kortix.com/docs/developers#react-hooks).
 
 ## 10. Verify
 

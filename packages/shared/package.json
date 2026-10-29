@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./audit-labels": "./src/audit-labels.ts",
+    "./channel-descriptors": "./src/channel-descriptors.ts",
     "./artifact-doc": "./src/artifact-doc.ts",
     "./brand-css": "./src/brand-css.generated.ts",
     "./tools": "./src/tools/index.ts",
@@ -36,6 +37,7 @@
     "./sandbox-env": "./src/host-config/sandbox-env.ts",
     "./test-sandbox-env": "./src/host-config/test-sandbox-env.ts",
     "./subprocessors": "./src/subprocessors.ts",
+    "./terms": "./src/terms.ts",
     "./ssrf-guard": "./src/ssrf-guard.ts",
     "./well-known": "./src/well-known.ts"
   },

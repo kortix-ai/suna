@@ -19,11 +19,11 @@ function text() {
   return renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}><GatewayOverview projectId="synthetic" /></QueryClientProvider>).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 }
 test('retail estimate is visible and separate from charges', () => {
-  expect(text()).toContain('LLM estimated usage value (not a bill): $0.0021 USD');
+  expect(text()).toContain('LLM estimated usage value (not a bill): $0.0021 · 1 priced requests');
   expect(text()).toContain('Estimates are never added to charges.');
 });
 test('missing pricing is Unknown, not a zero estimate', () => {
   estimate = null;
-  expect(text()).toContain('LLM estimated usage value (not a bill): Unknown USD');
+  expect(text()).toContain('LLM estimated usage value (not a bill): Unknown · 0 priced requests');
   expect(text()).toContain('1 unpriced requests');
 });

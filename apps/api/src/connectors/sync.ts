@@ -51,7 +51,7 @@ import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
 import { synthesizeChannelConnectors } from './channel-materialize';
-import { channelApiBase, channelCatalog, channelDefaultSlug } from './channels';
+import { channelApiBase, channelCatalog } from './channels';
 import {
   COMPUTER_CONNECTOR_NAME,
   COMPUTER_SLUG,
@@ -436,6 +436,9 @@ export interface SyncOptions {
    *  syncs that one. The rest of the reconcile (removals, triggers, Apps)
    *  still runs: it reads the database, not the network. */
   onlySlugs?: ReadonlySet<string>;
+  /** The periodic sweep: reuse the last manifest read while the default
+   *  branch has not moved (see `readManifest`). */
+  reuseManifestAtTip?: boolean;
 }
 
 /** Connectors whose catalogs load at once: a project with many MCP servers
@@ -501,7 +504,7 @@ async function syncProjectConnectorsFenced(
   let manifest: Awaited<ReturnType<typeof readManifest>> = null;
   try {
     manifest = await withTimeout(
-      readManifest(gitProject),
+      readManifest(gitProject, { reuseAtTip: opts.reuseManifestAtTip }),
       connectorManifestTimeoutMs(),
       `read manifest ${projectId}`,
     );

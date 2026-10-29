@@ -7,7 +7,7 @@
  * names and semantics (`partInput`, `partOutput`, `partStatus`,
  * `partStreamingInput`, `partMetadata`, `firstMeaningfulLine`,
  * `getAgentCardLabel`, `isLocalSandboxFilePath`), plus web's
- * `lib/markdown-detect.ts` `looksLikeMarkdown` and
+ * `looksLikeMarkdown` (`@kortix/shared/tool-output`) and
  * `components/markdown/markdown-frontmatter.tsx` `parseFrontmatter`.
  *
  * The verdict helpers (`isErrorOutput`, `looksLikeError`, `parseJsonFailure`,
@@ -180,7 +180,7 @@ export function isLocalSandboxFilePath(value: string): boolean {
   return value.startsWith('/');
 }
 
-// ─── Markdown detection (web lib/markdown-detect.ts) ─────────────────────────
+// ─── Markdown detection (@kortix/shared/tool-output) ─────────────────────────
 
 /** Conservative: only unambiguous markdown syntax counts. */
 export { looksLikeMarkdown } from '@kortix/shared/tool-output';

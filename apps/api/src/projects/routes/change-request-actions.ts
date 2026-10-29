@@ -15,8 +15,9 @@ import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { kickPiPackageBundle } from '../../pi-packages/bundle';
 import { resolveManifestPiPackageLists } from '../lib/compile-agent-config';
-import { getCrById, serializeChangeRequest } from '../change-requests';
+import { getCrById, markChangeRequestsLanded, serializeChangeRequest } from '../change-requests';
 import {
+  headRefsLandedIn,
   invalidateProjectMirror,
   MergeConflictError,
   mergeBranches,
@@ -48,7 +49,7 @@ export function registerChangeRequestActionsRoutes(): void {
           }) } } },
       },
       responses: {
-        200: json(z.any(), 'OK'),
+        200: json(z.any(), '`{change_request, merge, also_merged}`. `also_merged` lists the other open requests on the same base whose commits the merge carried; each is now merged.'),
         ...errors(404, 409, 422, 502),
       },
     }),
@@ -263,6 +264,24 @@ export function registerChangeRequestActionsRoutes(): void {
         .where(eq(changeRequests.crId, cr.crId))
         .returning();
 
+      // The merge can carry other open requests' commits (the requests below
+      // it in a stack, or a second request on the same branch): they landed
+      // too (KRTX-3371). The merge is durable, so a failure here only logs.
+      const alsoMerged = await markChangeRequestsLanded({
+        projectId,
+        baseRef: cr.baseRef,
+        exceptCrId: cr.crId,
+        mergedBy: loaded.userId,
+        merge: result,
+        resolveLanded: (headRefs) => headRefsLandedIn(projectForGit, result.base_sha_after, headRefs),
+      }).catch((error: unknown) => {
+        logger.warn('[cr-merge] could not mark the requests the merge carried', {
+          projectId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return [];
+      });
+
       invalidateProjectMirror(projectId);
       // The merge moved the CR's base branch. Sessions on it converge.
       void import('../lib/config-convergence-triggers')
@@ -310,6 +329,7 @@ export function registerChangeRequestActionsRoutes(): void {
       return c.json({
         change_request: serializeChangeRequest(row),
         merge: result,
+        also_merged: alsoMerged,
       });
     },
   );

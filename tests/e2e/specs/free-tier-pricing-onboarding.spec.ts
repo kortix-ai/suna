@@ -7,16 +7,18 @@ test.describe('free-tier pricing and onboarding surface', () => {
     await page.goto('/pricing', { waitUntil: 'domcontentloaded' });
 
     await expect(
-      page.getByRole('heading', { level: 1, name: 'Start free. Pay only for what your agents use.' }),
+      page.getByRole('heading', { level: 1, name: /^Put agents to work across your company\./ }),
     ).toBeVisible();
-    await expect(page.getByText('Free', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Credits', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Enterprise', { exact: true }).first()).toBeVisible();
+    // The plan names inside the plans section: the navbar holds hidden links with the same words.
+    const plans = page.locator('#plans');
+    await expect(plans.getByText('Free', { exact: true }).first()).toBeVisible();
+    await expect(plans.getByText('Credits', { exact: true }).first()).toBeVisible();
+    await expect(plans.getByText('Enterprise', { exact: true }).first()).toBeVisible();
 
     await expect(page.getByText('500 credits / month, no card needed').first()).toBeVisible();
     await expect(page.getByText('1 project', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Bring your own API key for any premium model')).toBeVisible();
-    // The hero and the Credits card both state the shared pool.
+    // The Credits card states the shared pool.
     await expect(page.getByText('Unlimited members, one shared credit pool')).toBeVisible();
     await expect(page.getByText('Unused credits roll over one month')).toBeVisible();
     await expect(

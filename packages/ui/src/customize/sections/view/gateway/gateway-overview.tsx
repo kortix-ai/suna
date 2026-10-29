@@ -33,6 +33,10 @@ import {
 import { displayModel } from './_shared';
 import { GatewayBudgetSection } from './gateway-budgets';
 
+/** An LLM usage estimate in US dollars, to 4 decimals. */
+const usd4 = (value: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 4, maximumFractionDigits: 4 }).format(value);
+
 type MetricKey = 'cost' | 'traffic' | 'tokens' | 'latency';
 
 const METRICS: {
@@ -222,19 +226,18 @@ export function GatewayOverview({
               {tabs.find((m) => m.key === metric)?.sub}
             </p>
             <p className="text-muted-foreground text-xs tabular-nums">
-              LLM estimated usage value (not a bill):{' '}
+              {t('estimatedUsageValueLabel')}{' '}
               {overview?.estimated_usage_value == null
-                ? 'Unknown'
-                : `$${overview.estimated_usage_value.toFixed(4)}`}{' '}
-              USD
+                ? t('unknownValue')
+                : usd4(overview.estimated_usage_value)}
               {' · '}
-              {overview?.priced_requests ?? 0} priced requests
+              {t('pricedRequests', { count: overview?.priced_requests ?? 0 })}
               {' · '}
-              {overview?.unpriced_requests ?? 0} unpriced requests
+              {t('unpricedRequests', { count: overview?.unpriced_requests ?? 0 })}
             </p>
             <p className="text-muted-foreground text-xs">
-              {overview?.valuation?.coverage ?? 'Estimate coverage unavailable.'} Actual spend above
-              is separate. Estimates are never added to charges. {overview?.valuation?.rate_version}
+              {overview?.valuation?.coverage ?? t('estimateCoverageUnavailable')} {t('estimatesSeparate')}{' '}
+              {overview?.valuation?.rate_version}
             </p>
             <UsageChart
               data={series}
@@ -312,10 +315,10 @@ export function GatewayOverview({
                             cost: credits(s.compute_cost),
                           })}{' '}
                           · {s.requests.toLocaleString()} {tI18nComplete.raw('textc3f7bdf537c4')}
-                          {' · '}LLM estimate:{' '}
+                          {' · '}{t('llmEstimateLabel')}{' '}
                           {s.estimated_usage_value == null
-                            ? 'Unknown'
-                            : `$${s.estimated_usage_value.toFixed(4)} USD`}
+                            ? t('unknownValue')
+                            : usd4(s.estimated_usage_value)}
                         </span>
                       </div>
                       <ShareBar

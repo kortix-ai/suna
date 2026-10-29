@@ -356,7 +356,7 @@ test('every mega-menu link points at a route, and a panel link click closes the 
 test('the drawer docs row stays a plain anchor: the tap marks it pending and leaves the document load to the browser', async () => {
   await openDrawer();
   const drawer = () => container!.querySelector('.bg-background.fixed.inset-0');
-  const row = drawer()!.querySelector<HTMLAnchorElement>('a[href="/docs"]');
+  const row = drawer()!.querySelector<HTMLAnchorElement>('a[href="/docs/guide"]');
   expect(row).not.toBeNull();
   // `/docs` is the static Astro build under `public/docs` (KRTX-1592): the row
   // renders a plain anchor — no soft-link marker, no new-tab target, nothing

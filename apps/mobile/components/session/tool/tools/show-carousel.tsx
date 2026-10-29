@@ -90,6 +90,7 @@ export function ShowCarousel({
           content={currentItem.content}
           language={currentItem.language}
           aspectRatio={currentItem.aspect_ratio}
+          sha256={currentItem.sha256}
           LocalhostPreview={LocalhostPreview}
           toolbarActions={toolbarActions}
           fill={fill}

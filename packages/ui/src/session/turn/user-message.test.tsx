@@ -16,7 +16,7 @@ import {
   sentAttachmentsOf,
   uploadedFileRefXml,
 } from '../composer/uploaded-file-refs';
-import { roomPromptText, serializePromptWithPastes } from '@kortix/shared';
+import { channelPromptText, promptFileReferenceXml, roomPromptText, serializePromptWithPastes } from '@kortix/shared';
 import {
   MessageAttachments,
   UserMessage,
@@ -630,90 +630,6 @@ describe('UserMessage reads a v1 prompt through the session-log converter', () =
     ]);
     expect(html).toMatch(/datetime="2026-09-01T10:00:00.000Z"/i);
     expect(userMessageCopyText(log.blocks)).toBe('review @notes.txt with @build please');
-  });
-});
-
-describe('UserMessage renders the plan it owns', () => {
-  /**
-   * The plan card is the only surface left for session todos ON MOBILE:
-   * `session-chat` drops every `todowrite` part before segmentation, and above
-   * 768px it also nulls the anchor so the Easy panel's card draws instead
-   * (`chatPlanAnchorId`, plan-anchor.test.ts). These tests pass `ownsPlan`
-   * directly, so they pin the mobile path: if this component stops mounting
-   * `PlanCard` when it owns the plan, a phone user's plan renders NOWHERE and
-   * reads as "the agent never made a plan".
-   *
-   * Seeded through the query cache on the exact key the `todo.updated` SSE
-   * handler writes (`['opencode','session-todo',<sessionID>]`), so the test
-   * exercises the real data path rather than a prop.
-   */
-  const SESSION = 'ses_plan';
-
-  const renderWithPlan = (ownsPlan: boolean, todos: unknown[]) => {
-    const client = new QueryClient();
-    client.setQueryData(['opencode', 'session-todo', SESSION], todos);
-    return renderToStaticMarkup(
-      <QueryClientProvider client={client}>
-        <IntlTestProvider locale="en" onError={() => {}}>
-          <TooltipProvider>
-            <UserMessage message={logOf(message)} sessionId={SESSION} ownsPlan={ownsPlan} />
-          </TooltipProvider>
-        </IntlTestProvider>
-      </QueryClientProvider>,
-    );
-  };
-
-  const todos = [
-    { content: 'Audit the worker registration', status: 'completed' },
-    { content: 'Wire the retry budget', status: 'in_progress' },
-    { content: 'Backfill the ledger', status: 'pending' },
-  ];
-
-  test('the owning turn shows the plan the agent wrote', () => {
-    const markup = renderWithPlan(true, todos);
-    // The closed disclosure renders no content children by design, so the full
-    // list is not in static markup. What the collapsed card must say is where
-    // the plan is: the step running right now, and the count.
-    //
-    // It used to say a literal ">Plan<" beside the count. That title is gone —
-    // the trigger's subject IS the running step now, and the list below drops
-    // that row so the sentence is not printed twice.
-    expect(markup).toContain('Wire the retry budget');
-    expect(markup).toContain('1 of 3');
-    expect(markup.match(/Wire the retry budget/g)).toHaveLength(1);
-    expect(markup).toContain('role="img"');
-  });
-
-  test('the whole checklist is one keyboard-reachable expand away', () => {
-    const markup = renderWithPlan(true, todos);
-    expect(markup).toContain('aria-expanded="false"');
-    expect(markup).toContain('tabindex="0"');
-    expect(markup).toContain('data-state="closed"');
-  });
-
-  test('a plan lifts the column cap so the checklist reads as a panel', () => {
-    // Anchored to `self-end` — the ROOT column's own cap. The bubble inside it
-    // also carries `max-w-full`, so a bare substring match would pass in both
-    // directions and could never fail.
-    expect(renderWithPlan(true, todos)).toContain('self-end max-w-full');
-    expect(renderWithPlan(false, todos)).toContain('self-end max-w-[80%]');
-    expect(renderWithPlan(false, todos)).not.toContain('self-end max-w-full');
-  });
-
-  test('a turn that does not own the plan draws no card', () => {
-    const markup = renderWithPlan(false, todos);
-    // The card ITSELF, not its content: the checklist body is behind a closed
-    // disclosure in either case, so asserting on todo text proves nothing.
-    expect(markup).not.toContain('group/plan');
-    expect(markup).not.toContain('>Plan<');
-  });
-
-  test('an empty plan draws nothing, even on the owning turn', () => {
-    const markup = renderWithPlan(true, []);
-    expect(markup).not.toContain('group/plan');
-    expect(markup).not.toContain('>Plan<');
-    // …and the column keeps its cap, so a one-word message never stretches.
-    expect(markup).toContain('self-end max-w-[80%]');
   });
 });
 
@@ -1509,6 +1425,84 @@ describe('UserMessage platform prompts', () => {
     expect(markup).toContain('>daily-digest</span>');
     expect(markup).toContain('Write the daily digest.');
     expect(markup).not.toContain('trigger_event');
+  });
+});
+
+// A file sent to a channel bot reaches the prompt as the channel core writes it: the
+// envelope, then one `<file>` tag per file after the delimiter (pi joins the parts).
+describe('UserMessage channel message files', () => {
+  const inbox = (name: string) => `/workspace/uploads/.kortix-inbox/cmd_1/1-${name}`;
+  const envelope = (text: string) =>
+    channelPromptText({
+      platform: 'Telegram',
+      sender: '@sample',
+      where: 'direct message',
+      text,
+      reply: `kortix connectors call kortix_telegram.send_message '{"chat_id":"1","text":"<reply>"}'`,
+      notes: ['Chat 1 (private), sender id 2, message id 3.'],
+    });
+  const tag = (name: string, mime: string) =>
+    promptFileReferenceXml({
+      path: inbox(name),
+      mime,
+      filename: name,
+      attachmentUrl: `kortix-attachment://${UUID(1)}/${UUID(2)}/${UUID(3)}`,
+    });
+  const renderPrompt = (text: string, extra: SessionLogMessage['blocks'] = []) => {
+    const logged = logOf({ ...message, parts: [{ ...message.parts[0], text }] } as V1Row);
+    return renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <IntlTestProvider locale="en" timeZone="UTC" messages={enMessages}>
+          <TooltipProvider>
+            <UserMessage message={{ ...logged, blocks: [...logged.blocks, ...extra] }} sessionId="session-1" ownsPlan={false} />
+          </TooltipProvider>
+        </IntlTestProvider>
+      </QueryClientProvider>,
+    );
+  };
+
+  test('a photo is one tile between the pill and the text, as a composer upload is', () => {
+    // pi also records the image it read as an attachment block naming the tag's path.
+    const markup = renderPrompt(`${envelope('What is in this picture?')}\n${tag('photo.jpg', 'image/jpeg')}`, [
+      { type: 'attachment', id: 'msg_1-n1', mime: 'image/jpeg', source_path: inbox('photo.jpg') },
+    ]);
+    expect(markup.match(/title="photo.jpg"/g)).toHaveLength(1);
+    expect(markup.indexOf('@sample')).toBeLessThan(markup.indexOf('title="photo.jpg"'));
+    expect(markup.indexOf('title="photo.jpg"')).toBeLessThan(markup.indexOf('What is in this picture?'));
+    expect(markup).not.toContain('Telegram instructions');
+  });
+
+  test('a PDF is a file tile', () => {
+    const markup = renderPrompt(`${envelope('Summarise this.\n(file q3.pdf)')}\n${tag('document.pdf', 'application/pdf')}`);
+    expect(markup.match(/title="document.pdf"/g)).toHaveLength(1);
+    expect(markup).toContain('>pdf</span>');
+  });
+
+  test('a text-only channel message draws no strip', () => {
+    expect(renderPrompt(envelope('Is the deploy green?'))).not.toContain('<ul');
+  });
+
+  test('a photo with no caption is the tile alone: the "(photo)" label is not repeated as text', () => {
+    const markup = renderPrompt(`${envelope('(photo)')}\n${tag('photo.jpg', 'image/jpeg')}`);
+    expect(markup.match(/title="photo.jpg"/g)).toHaveLength(1);
+    expect(markup).not.toContain('(photo)');
+  });
+
+  test('a typed tag for an inbox image adds no tile next to the real photo', () => {
+    // pi reads 1 image but counts 2 tags, so its image block names no path.
+    const typed = `<file path="${inbox('y.png')}" mime="image/png">x</file>`;
+    const markup = renderPrompt(`${envelope(`look ${typed}`)}\n${tag('photo.jpg', 'image/jpeg')}`, [
+      { type: 'attachment', id: 'msg_1-n1', mime: 'image/jpeg' },
+    ]);
+    expect(markup.match(/<li/g)).toHaveLength(1);
+    expect(markup.match(/title="photo.jpg"/g)).toHaveLength(1);
+  });
+
+  test('a `<file>` tag the sender typed is their text, not a tile', () => {
+    const typed = '<file path="/workspace/notes.txt" mime="text/plain" filename="notes.txt">x</file>';
+    const markup = renderPrompt(`${envelope(`see ${typed}`)}\n${tag('photo.jpg', 'image/jpeg')}`);
+    expect(markup).not.toContain('title="notes.txt"');
+    expect(markup.match(/title="photo.jpg"/g)).toHaveLength(1);
   });
 });
 

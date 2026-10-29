@@ -16,7 +16,11 @@ import {
   getSlackManifest,
   getSlackMode,
   getTelegramInstallation,
-  setTelegramAllowedUsers,
+  getChannelUserPhoto,
+  listChannelUsers,
+  allowChannelUser,
+  removeChannelUser,
+  dismissChannelAccessRequest,
   updateEmailPolicy,
   type EmailDomain,
   type EmailDomainList,
@@ -28,6 +32,9 @@ import {
   type SlackMode,
   type ConnectTelegramInput,
   type TelegramInstallation,
+  type ChannelAccessList,
+  type ChannelAccessPlatform,
+  type ChannelUser,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -42,6 +49,8 @@ export type {
   SlackInstallation,
   SlackMode,
   TelegramInstallation,
+  ChannelAccessPlatform,
+  ChannelUser,
 };
 
 const key = (projectId: string | null) =>
@@ -222,8 +231,12 @@ export function useUpdateEmailPolicy() {
   });
 }
 
-const telegramKey = (projectId: string | null) =>
-  ['channels', 'telegram-install', projectId ?? 'none'] as const;
+const installKey = (platform: ChannelAccessPlatform, projectId: string | null) =>
+  ['channels', `${platform}-install`, projectId ?? 'none'] as const;
+const usersKey = (platform: ChannelAccessPlatform, projectId: string) =>
+  ['channels', `${platform}-users`, projectId] as const;
+const telegramKey = (projectId: string | null) => installKey('telegram', projectId);
+const telegramUsersKey = (projectId: string) => usersKey('telegram', projectId);
 
 /** The project's Telegram bot. Pass null to keep the query off. */
 export function useTelegramInstall(projectId: string | null) {
@@ -242,19 +255,63 @@ export function useConnectTelegram() {
       connectTelegram(projectId, body),
     onSuccess: (_data, { projectId }) => {
       qc.invalidateQueries({ queryKey: telegramKey(projectId) });
+      // Another bot sees other users: never show the old bot's list.
+      qc.removeQueries({ queryKey: telegramUsersKey(projectId) });
       qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
   });
 }
 
-export function useSetTelegramAllowedUsers() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ projectId, userIds }: { projectId: string; userIds: string[] }) =>
-      setTelegramAllowedUsers(projectId, userIds),
-    onSuccess: (_data, { projectId }) => qc.invalidateQueries({ queryKey: telegramKey(projectId) }),
+/** Allowed users and access requests, with their names on the platform. Each fetch can call the platform, so enable it only on demand. */
+export function useChannelUsers(projectId: string, platform: ChannelAccessPlatform, enabled: boolean) {
+  return useQuery({
+    queryKey: usersKey(platform, projectId),
+    enabled,
+    queryFn: () => listChannelUsers(projectId, platform),
   });
 }
+
+/** One user's profile photo. Off without a `version`: that user has no photo. */
+export function useChannelUserPhoto(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+  version: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ['channels', `${platform}-photo`, projectId, userId, version],
+    enabled: enabled && !!version,
+    // The version is in the key: a new photo is a new key.
+    staleTime: Infinity,
+    retry: false,
+    queryFn: ({ signal }) => getChannelUserPhoto(projectId, platform, userId, version, signal),
+  });
+}
+
+function useChannelUserMutation(
+  platform: ChannelAccessPlatform,
+  action: (projectId: string, platform: ChannelAccessPlatform, userId: string) => Promise<ChannelAccessList>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, userId }: { projectId: string; userId: string }) =>
+      action(projectId, platform, userId),
+    // Returned so the mutation stays pending until the list shows the change.
+    onSuccess: (_data, { projectId }) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: installKey(platform, projectId) }),
+        qc.invalidateQueries({ queryKey: usersKey(platform, projectId) }),
+      ]),
+  });
+}
+
+export const useAllowChannelUser = (platform: ChannelAccessPlatform) =>
+  useChannelUserMutation(platform, allowChannelUser);
+export const useRemoveChannelUser = (platform: ChannelAccessPlatform) =>
+  useChannelUserMutation(platform, removeChannelUser);
+export const useDismissChannelAccessRequest = (platform: ChannelAccessPlatform) =>
+  useChannelUserMutation(platform, dismissChannelAccessRequest);
 
 export function useDisconnectTelegram() {
   const qc = useQueryClient();
@@ -262,6 +319,7 @@ export function useDisconnectTelegram() {
     mutationFn: (projectId: string) => disconnectTelegram(projectId),
     onSuccess: (_data, projectId) => {
       qc.invalidateQueries({ queryKey: telegramKey(projectId) });
+      qc.removeQueries({ queryKey: telegramUsersKey(projectId) });
       qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
   });

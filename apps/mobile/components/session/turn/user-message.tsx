@@ -31,6 +31,7 @@ import {
   ChatCircleIcon,
   CheckIcon,
   CopyIcon,
+  EnvelopeIcon,
   LightningIcon,
   PencilIcon,
   TextTIcon,
@@ -40,7 +41,7 @@ import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import type { Command } from '@/lib/session/runtime-data';
 import type { SessionLogTurn } from '@kortix/sdk';
 import { recordTimeMs } from '@/lib/session/turn-meta';
-import { type ChannelPlatform, parseChannelMessage } from '@kortix/shared';
+import { type ChannelPlatform, channelPromptTail, isChannelFileLabel, parseChannelMessage } from '@kortix/shared';
 import { parseReminderPrompt, parseRoomDigest, parseRoomPrompt, parseTriggerEvent, type ChannelMessageInfo } from '@kortix/shared';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { SourcePill } from './source-pill';
@@ -58,7 +59,9 @@ import {
 } from '@/lib/session/attachment-tile';
 import {
   commandMessageText,
+  messageAttachments,
   parseUserMessageBlocks,
+  parseUserMessageText,
   type MessageAttachment,
   queuedPromptStatusLabel,
   quoteMarginBottom,
@@ -117,23 +120,28 @@ const META_TEXT_STYLE = { fontSize: 13, lineHeight: 16 } as const;
 // A channel card's mark and label, as web draws them (`channel-brand.tsx`). The
 // label colors are the platforms' fixed brand colors, never the app theme. Slack
 // has no hue to tint with: its mark is four colors and its name reads like
-// Slack's wordmark, in the text color.
+// Slack's wordmark, in the text color. Email is no brand: its envelope and its
+// label take the text color too.
 const TELEGRAM_BRAND_COLOR = 'hsl(198.7 91.9% 56.3%)'; // hex-allowlist: Telegram blue, web CHANNEL_BRAND_COLOR.Telegram hsl(198.7 91.9% 56.3%)
 const CHANNEL_LABEL_COLOR: Record<ChannelPlatform, string | undefined> = {
   Slack: undefined,
   Teams: '#5B5FC7', // hex-allowlist: Microsoft Teams purple #5B5FC7, web CHANNEL_BRAND_COLOR.Teams
   Telegram: TELEGRAM_BRAND_COLOR,
+  Email: undefined,
 };
 const CHANNEL_LABEL: Record<ChannelPlatform, string> = {
   Slack: 'Slack',
   Teams: 'Microsoft Teams',
   Telegram: 'Telegram',
+  Email: 'Email',
 };
 
-function ChannelMark({ platform, size }: { platform: ChannelPlatform; size: number }) {
+/** `className` colors only the glyphs with no brand: Email's envelope, and the neutral chat glyph of a platform this build does not know. */
+function ChannelMark({ platform, size, className }: { platform: ChannelPlatform; size: number; className?: string }) {
   if (platform === 'Teams') return <TeamsIcon size={size} />;
   if (platform === 'Slack') return <SlackIcon size={size} />;
-  return <TelegramIcon size={size} />;
+  if (platform === 'Telegram') return <TelegramIcon size={size} />;
+  return <Icon as={platform === 'Email' ? EnvelopeIcon : ChatCircleIcon} size={size} className={className} />;
 }
 
 /** `isDark` is passed down from SessionTurn. */
@@ -185,14 +193,14 @@ export interface SessionSourceAuthor {
   agent?: string;
 }
 
-/** Slack / Teams / Telegram: mark · platform · sender; the sheet names the channel and sender. */
+/** Slack / Teams / Telegram / Email: mark · platform · sender; the sheet names the channel and sender. */
 function ChannelSourcePill({ info }: { info: ChannelMessageInfo }) {
   const platform = CHANNEL_LABEL[info.platform];
   // A Teams conversation id names nothing a person reads: no channel row.
   const channel = info.platform === 'Teams' ? null : info.context;
   return (
     <SourcePill
-      mark={<ChannelMark platform={info.platform} size={12} />}
+      mark={<ChannelMark platform={info.platform} size={12} className="text-muted-foreground" />}
       sheetMark={<ChannelMark platform={info.platform} size={22} />}
       source={platform}
       sourceColor={CHANNEL_LABEL_COLOR[info.platform]}
@@ -354,6 +362,15 @@ function UserMessageImpl({
   // Both parsers are linear in the prompt: a channel or a webhook chooses this
   // text, and a regex version of each froze the JS thread on a crafted prompt.
   const channelMessageInfo = useMemo(() => parseChannelMessage(rawText), [rawText]);
+  // Its files: the `<file>` tags Kortix wrote after the sender's text, and nothing else. A tag the sender
+  // typed is text; the image block pi records for a tag repeats it, and names no path when the sender typed one.
+  const channelAttachments = useMemo(
+    () =>
+      channelMessageInfo
+        ? messageAttachments([], parseUserMessageText(channelPromptTail(rawText, channelMessageInfo.platform)))
+        : [],
+    [channelMessageInfo, rawText],
+  );
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
   // A reminder fire: platform-written `[REMINDER …]` header + the reminder text.
   const reminderInfo = useMemo(() => parseReminderPrompt(rawText), [rawText]);
@@ -436,12 +453,14 @@ function UserMessageImpl({
   }
 
   // A prompt a person did not type here (Slack / Teams / Telegram, a reminder,
-  // a trigger): the source pill over the same bubble a typed message uses,
-  // web's `ChannelMessage` / `PlatformPromptMessage`. Long press keeps Copy.
-  const platformMessage = (pill: React.ReactNode, body: React.ReactNode, fullText?: string) => (
+  // a trigger): the source pill over the files a channel sender sent and the
+  // same bubble a typed message uses, web's `ChannelMessage` /
+  // `PlatformPromptMessage`. Long press keeps Copy.
+  const platformMessage = (pill: React.ReactNode, body: React.ReactNode, fullText?: string, files?: MessageAttachment[]) => (
     <Reanimated.View className="px-4" style={dimStyle}>
       <View className="items-end self-end" style={{ maxWidth: '80%', gap: webSpace(1.5) }}>
         {pill}
+        {files?.length ? <MessageAttachments attachments={files} onOpenPath={onFileMention} /> : null}
         {body ? (
           <MessageMenu {...menuProps}>
             <View className="items-end">
@@ -459,8 +478,11 @@ function UserMessageImpl({
   if (channelMessageInfo) {
     return platformMessage(
       <ChannelSourcePill info={channelMessageInfo} />,
-      channelMessageInfo.messageText ? <ChannelMessageText text={channelMessageInfo.messageText} /> : null,
+      channelMessageInfo.messageText && !(channelAttachments.length > 0 && isChannelFileLabel(channelMessageInfo.messageText))
+        ? <ChannelMessageText text={channelMessageInfo.messageText} />
+        : null,
       channelMessageInfo.messageText,
+      channelAttachments,
     );
   }
 

@@ -857,6 +857,16 @@ describe('connectors: — runtime parser ⇄ schema gate provider agreement', ()
     }
   });
 
+  // A user connector under a channel's built-in slug stops that channel's
+  // connector from materializing (channel-materialize.ts channelAlreadyDeclared).
+  describe('every CHANNEL_PLATFORMS value reserves its built-in slug for the channel provider', () => {
+    for (const platform of SCHEMA_CHANNEL_PLATFORMS) {
+      test(`kortix_${platform}`, () => {
+        expect(SCHEMA_RESERVED_SLUG_PROVIDERS[`kortix_${platform}`]).toBe('channel');
+      });
+    }
+  });
+
   describe('every RESERVED_SLUG_PROVIDERS pair: the matching provider is accepted, a mismatched one is rejected on both sides', () => {
     for (const [slug, provider] of Object.entries(SCHEMA_RESERVED_SLUG_PROVIDERS)) {
       const matchingBody =

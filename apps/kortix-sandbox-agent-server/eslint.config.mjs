@@ -76,9 +76,18 @@ const SERVICE_EXTERNALS = {
 /** Harness adapters and the packages only they may load. @type {Record<string, string[]>} */
 export const ADAPTERS = {
   'open-code': ['bun:sqlite'],
-  // quickjs-wasi: codemode's VM, embedded as a file. The pi-coding-agent dist path: a setter pi does not export (pi/codemode.ts).
+  // quickjs-wasi: codemode's VM, embedded as a file. The pi-coding-agent dist paths: a setter and the codemode tool
+  // (for a subagent) pi does not export (pi/codemode.ts).
   // photon-node: pi's image resizer wasm, embedded as a file (pi/images.ts).
-  pi: [...pkg('@earendil-works/*'), ...pkg('typebox'), ...pkg('quickjs-wasi'), ...pkg('@silvia-odwyer/photon-node'), at('node_modules/@earendil-works/pi-coding-agent/dist/config.*'), ...SDK_WIRE_MESSAGE_ID],
+  pi: [
+    ...pkg('@earendil-works/*'),
+    ...pkg('typebox'),
+    ...pkg('quickjs-wasi'),
+    ...pkg('@silvia-odwyer/photon-node'),
+    at('node_modules/@earendil-works/pi-coding-agent/dist/config.*'),
+    at('node_modules/@earendil-works/pi-coding-agent/dist/extensions/codemode/tool.*'),
+    ...SDK_WIRE_MESSAGE_ID,
+  ],
 }
 
 const lib = at('src/lib/**')
@@ -181,6 +190,13 @@ const independentModules = createIndependentModules({
       [],
       pkg('@earendil-works/pi-codemode'),
       'The codemode worker entrypoint (scripts/build.sh) imports pi-codemode only.',
+    ),
+    layer(
+      'image-resize-worker',
+      at('src/utils/image-resize-worker.ts'),
+      [at('src/harness/pi/images.ts')],
+      [at('node_modules/@earendil-works/pi-coding-agent/dist/utils/image-resize-worker.*')],
+      "The image resize worker entrypoint (scripts/build.sh) imports the photon wasm redirect (harness/pi/images.ts) and pi's resize worker only.",
     ),
     // Last: a file no layer above matched is in no layer at all (a new
     // top-level folder, an unregistered service or adapter).

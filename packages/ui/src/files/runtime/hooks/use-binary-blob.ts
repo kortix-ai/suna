@@ -7,7 +7,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { readRuntimeFileWithRetry } from '../../../internal/files/runtime-file-read';
 import { readFileAsBlob } from '../../../internal/files/runtime-files';
 import { keepBlobIfUnchanged } from './blob-identity';
-import { sandboxWakingRefetchInterval } from '../../../internal/files/file-read-retry';
+import {
+  imageWaitedOut,
+  imageWakingRefetchInterval,
+  sandboxWakingRefetchInterval,
+} from '../../../internal/files/file-read-retry';
 import { useServerHealth } from './use-server-health';
 
 // ── Query keys ─────────────────────────────────────────────────────────────
@@ -39,12 +43,25 @@ export { binaryBlobKeys };
  * renders its bytes instead of waiting on a box that is not coming. A stored
  * copy is immutable, so it is never refetched and never polled.
  */
-export function useBinaryBlob(filePath: string | null): {
+export function useBinaryBlob(
+  filePath: string | null,
+  options?: {
+    /**
+     * An image tile's wait (R38): a runtime still starting is polled with a
+     * backoff and given up after about 2 min (`imageWakingRefetchInterval`),
+     * instead of the viewer's open-ended waking poll.
+     */
+    imageWait?: boolean;
+  },
+): {
   blobUrl: string | null;
   blob: Blob | null;
   isLoading: boolean;
   error: string | null;
+  /** The image wait gave up (`options.imageWait`): show it unavailable, with Try again. */
+  waitedOut: boolean;
 } {
+  const imageWait = !!options?.imageWait;
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   // Asleep, not booting — the re-read below takes the slow lane.
   const { parked } = useServerHealth();
@@ -90,7 +107,11 @@ export function useBinaryBlob(filePath: string | null): {
     // fast cadence; a parked one is watched slowly. See the helper. A stored
     // copy has no box to wait for.
     refetchInterval: (query) =>
-      stored ? false : sandboxWakingRefetchInterval(query.state.error, parked),
+      stored
+        ? false
+        : imageWait
+          ? imageWakingRefetchInterval(query.state.error, query.state.errorUpdateCount)
+          : sandboxWakingRefetchInterval(query.state.error, parked),
   });
 
   const cachedBlob = query.data ?? null;
@@ -122,7 +143,8 @@ export function useBinaryBlob(filePath: string | null): {
       blob: cachedBlob,
       isLoading: query.isLoading,
       error: query.error?.message ?? null,
+      waitedOut: imageWait && imageWaitedOut(query.error, query.errorUpdateCount),
     }),
-    [blobUrl, cachedBlob, query.isLoading, query.error?.message],
+    [blobUrl, cachedBlob, query.isLoading, query.error, query.errorUpdateCount, imageWait],
   );
 }
