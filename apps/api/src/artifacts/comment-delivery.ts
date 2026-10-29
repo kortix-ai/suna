@@ -457,27 +457,36 @@ export async function dispatchArtifactCommentJobs(key: string): Promise<void> {
   }
 }
 
+export async function resolveArtifactCommentSendTarget(artifact: ArtifactRow, actor: Actor, callerSessionId: string | null, requestedAgent?: string) {
+  const [project] = await db.select().from(projects).where(and(eq(projects.projectId, artifact.projectId), eq(projects.accountId, artifact.accountId)));
+  if (!project) throw new ArtifactCommentDeliveryError(404, 'Project not found', 'not_found');
+  let session = artifact.createdBySessionId ? (await db.select().from(projectSessions).where(and(eq(projectSessions.accountId, artifact.accountId),
+    eq(projectSessions.projectId, artifact.projectId), eq(projectSessions.sessionId, artifact.createdBySessionId))))[0] : undefined;
+  let agentName = requestedAgent ?? session?.agentName;
+  if (!agentName) {
+    const { loadProjectAgents } = await import('../projects/surface');
+    const agents = await loadProjectAgents(project, { rethrowReadErrors: true });
+    agentName = agents.defaultAgent ?? 'kortix';
+  }
+  if (!agentName) throw new ArtifactCommentDeliveryError(400, 'Choose an agent for this comment batch', 'artifact_comment_agent_required');
+  if (session?.agentName !== agentName) session = undefined;
+  const { ArtifactCommentAuthorityError, authorizeArtifactCommentAgent, assertArtifactCommentDeliveryAccess } = await import('./comment-authority');
+  const authority = await authorizeArtifactCommentAgent(actor, project, agentName, session);
+  if (authority.callerSessionId !== callerSessionId) throw new ArtifactCommentAuthorityError();
+  await assertArtifactCommentDeliveryAccess(authority.actor, artifact, authority.callerSessionId);
+  return { agentName, session, authority,
+    descriptor: { kind: authority.canPromptExisting && session ? 'session' as const : 'new' as const,
+      session_id: authority.canPromptExisting && session ? session.sessionId : null, agent_name: agentName } };
+}
+
 export async function sendArtifactCommentThreads(artifact: ArtifactRow, actor: Actor, callerSessionId: string | null,
   input: { thread_ids: string[]; batch_id?: string; agent?: string }) {
   const batch = input.batch_id ?? randomUUID();
   const key = `artifact-comments:batch:${batch}`;
   const threadIds = [...new Set(input.thread_ids)].sort();
   const payload: ArtifactCommentAgentPayload = { artifactId: artifact.artifactId, threadIds, actor, callerSessionId, recipients: [], manual: true };
-  const loaded = await source(payload);
-  let session = artifact.createdBySessionId ? (await db.select().from(projectSessions).where(and(eq(projectSessions.accountId, artifact.accountId),
-    eq(projectSessions.projectId, artifact.projectId), eq(projectSessions.sessionId, artifact.createdBySessionId))))[0] : undefined;
-  let agentName = input.agent ?? session?.agentName;
-  if (!agentName) {
-    const { loadProjectAgents } = await import('../projects/surface');
-    const agents = await loadProjectAgents(loaded.project, { rethrowReadErrors: true });
-    agentName = agents.defaultAgent ?? 'kortix';
-  }
-  if (!agentName) throw new ArtifactCommentDeliveryError(400, 'Choose an agent for this comment batch', 'artifact_comment_agent_required');
-  if (session?.agentName !== agentName) session = undefined;
-  const { ArtifactCommentAuthorityError, authorizeArtifactCommentAgent, assertArtifactCommentDeliveryAccess } = await import('./comment-authority');
-  const authority = await authorizeArtifactCommentAgent(actor, loaded.project, agentName, session);
-  if (authority.callerSessionId !== callerSessionId) throw new ArtifactCommentAuthorityError();
-  await assertArtifactCommentDeliveryAccess(authority.actor, artifact, authority.callerSessionId);
+  await source(payload);
+  const { agentName, session } = await resolveArtifactCommentSendTarget(artifact, actor, callerSessionId, input.agent);
   payload.recipients = [{ recipientKey: session ? `session:${session.sessionId}` : `agent:${agentName}`, ...(session ? { sessionId: session.sessionId } : {}), agentName, implicit: true }];
   await db.transaction(async (tx) => {
     const [locked] = await tx.select({ id: artifacts.artifactId }).from(artifacts).where(eq(artifacts.artifactId, artifact.artifactId)).for('update');
