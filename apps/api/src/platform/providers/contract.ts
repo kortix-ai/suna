@@ -93,6 +93,12 @@ export interface CreateSandboxOpts {
    * always fails: a box never boots without them.)
    */
   volumesRequired?: boolean;
+  /**
+   * The project's `residential_proxy` flag (platform/services/residential-proxy.ts):
+   * the box's web traffic leaves through a residential IP, except to the
+   * `bypass` hosts. Platinum only; a session with it does not start elsewhere.
+   */
+  residentialProxy?: { bypass: string[] };
 }
 
 export function sandboxWorkloadType(opts: CreateSandboxOpts): SandboxWorkloadType {

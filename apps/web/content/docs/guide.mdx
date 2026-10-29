@@ -607,6 +607,15 @@ A sandbox template sets what is installed on the cloud computer and how large it
 
 Any website or tool that the agent starts on its computer is reachable from outside it. The session page's preview panel offers common ports, such as **App preview** and **Frontend preview**, plus any other port. A preview asks you to sign in to Kortix first. To show it to someone outside Kortix, the session owner creates a public link.
 
+#### Residential IP address
+
+Some websites block or limit traffic from data centers. Turn on **Residential Proxy** in **Customize** → **Settings** → **Feature flags**, and the project's new sessions send their web traffic through a residential IP address instead of the cloud computer's own address.
+
+- Traffic through the residential address is billed per GB from your credits. It shows as **Residential proxy** in the credit history.
+- Kortix's own services and common package registries connect directly. That traffic is not billed as proxy traffic.
+- UDP is blocked while it is on, so QUIC and WebRTC cannot reveal the computer's own address. Browsers and tools fall back to TCP.
+- The change applies to new sessions. A session that already runs keeps its setting, also after it sleeps and wakes. Start a new session to use the new setting.
+
 #### When you delete a session
 
 A deleted session stays restorable for 30 days. Open **Recently deleted** on the Sessions page and select **Restore session**. Work that the agent saved to its branch or to Drive survives. Unsaved files on the computer are gone.
@@ -1193,6 +1202,7 @@ Enterprise is not a plan. It turns on extra features on either plan: single sign
 | Models on your own key | Nothing for the first $1,000 of usage a month. After that, 5% of each request's list price. A ChatGPT subscription is never charged. With an Enterprise license, there is no fee. |
 | Session machines | The size the machine reserves, for the seconds it runs. App machines count too. |
 | Web tools | Each web search, image search or web scraping request that goes through Kortix. |
+| Residential proxy | The data a session sends and receives through a residential IP address, per GB. Only in projects that turn it on. See [Residential IP address](/docs/guide#residential-ip-address). |
 
 A stopped or sleeping machine costs nothing. The default machine costs about $0.11 an hour, about 11 credits.
 

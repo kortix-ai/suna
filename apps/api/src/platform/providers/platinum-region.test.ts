@@ -168,6 +168,42 @@ describe('us_region: region on the Platinum create', () => {
   });
 });
 
+// `residential_proxy`: the same create, with the project's network option.
+describe('residential_proxy: network on the Platinum create', () => {
+  test('no option ⇒ no network field, and the box records the proxy off', async () => {
+    const result = await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1 });
+
+    expect(createCalls()[0].body && 'network' in createCalls()[0].body!).toBe(false);
+    expect(result.metadata?.residentialProxy).toBe(false);
+  });
+
+  test('the option ⇒ network.residential_proxy with its bypass hosts, and the box records the proxy on', async () => {
+    const bypass = ['api.example.com', 'gateway.example.com'];
+    const result = await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1, residentialProxy: { bypass } });
+
+    expect(createCalls()[0].body?.network).toEqual({ residential_proxy: { bypass } });
+    expect(result.metadata?.residentialProxy).toBe(true);
+  });
+
+  test('a Platinum with no residential provider fails the session with a configuration message', async () => {
+    const { classifySandboxProvisioningFailure } = await import('../services/sandbox-provisioning-error');
+    createSequence = [{
+      error: platinumHttpError(
+        'platinum POST /v1/sandboxes -> 400 {"error":"no residential proxy provider","code":"residential_proxy_unavailable"}',
+      ),
+    }];
+    const error = await new PlatinumProvider()
+      .create({ ...baseOpts, residentialProxy: { bypass: [] } })
+      .catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(Error);
+    const failure = classifySandboxProvisioningFailure(error);
+    expect(failure).toMatchObject({ category: 'sandbox-provider', transient: false, isCapacity: false });
+    expect(failure.userMessage).toStartWith('This project sends sandbox web traffic through a residential IP address');
+    expect(failure.userMessage).toContain('Turn off Residential Proxy');
+  });
+});
+
 describe('sub_path image derivation', () => {
   test('provisioning survives more than three derivation responses without changing create identity', async () => {
     const { retrySandboxProvisionCreate } = await import('../services/sandbox-init-state');

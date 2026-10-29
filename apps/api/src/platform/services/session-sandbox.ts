@@ -68,7 +68,7 @@ import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-er
 import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { instanceStampMetadata } from '../../projects/instance-scope';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
-import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
+import { RESIDENTIAL_PROXY_PLATINUM_ONLY_MESSAGE, classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
 import { resolveSessionOnBehalfOf } from '../../projects/lib/on-behalf-of';
 import { agentPrincipalModeFor } from '../../iam/agent-principal';
@@ -78,6 +78,7 @@ import {
   initialSandboxTurnMetadata,
 } from '../../projects/session-turn-ledger';
 import { resolveSessionSandboxRegion } from './sandbox-region';
+import { resolveSessionResidentialProxy } from './residential-proxy';
 import type { WorkspaceVolume } from './workspace-volume';
 import { logger } from '../../lib/logger';
 
@@ -521,6 +522,9 @@ export async function provisionSessionSandbox(opts: {
   // An explicit caller location wins; otherwise the project's `us_region`
   // flag decides (sandbox-region.ts). Only Platinum reads it.
   const location = opts.location ?? resolveSessionSandboxRegion(opts.projectMetadata);
+  // The project's `residential_proxy` flag (residential-proxy.ts). Never
+  // rejects; awaited where the provider input is built.
+  const residentialProxyRead = resolveSessionResidentialProxy(opts.projectMetadata);
   const providerWasExplicitlySelected = opts.providerLocked ?? opts.provider !== undefined;
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a
@@ -687,6 +691,7 @@ export async function provisionSessionSandbox(opts: {
     throw error;
   });
 
+  const residentialProxy = await residentialProxyRead;
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
     userId,
@@ -701,6 +706,7 @@ export async function provisionSessionSandbox(opts: {
     // A warm (speculative) box never leaves its project's region: the warm
     // marker of projects/sandbox-deadline-policy.ts isWarmPoolBox.
     locationRequired: sandbox.metadata?.warm === true,
+    ...(residentialProxy ? { residentialProxy } : {}),
     envVars: {
       ...extraEnvVars,
       // One sandbox, one session-scoped Kortix credential. Provider, connector,
@@ -1263,6 +1269,11 @@ async function runProvisionAttempt(
 ): Promise<'done' | 'retry'> {
   const { opts, sandbox, tl } = ctx;
   const branch = opts.baseRef || opts.gitProject.defaultBranch;
+  // Only Platinum serves a residential IP. A box elsewhere would send the
+  // traffic from its own address: refuse it.
+  if (ctx.providerCreateInput.residentialProxy && state.providerName !== 'platinum') {
+    throw new Error(RESIDENTIAL_PROXY_PLATINUM_ONLY_MESSAGE);
+  }
   // Resolved for its VALIDATION only: it re-reads the agent grant and
   // throws on a policy no session could serve, which is what turns a broken
   // secret config into `invalid-secret-boundary-policy` instead of a
@@ -1357,7 +1368,12 @@ async function failOverToNextProvider(
   // sync on, any provider can carry the drives.)
   const next = nextFailoverProvider({
     // A session whose /workspace is a Platinum volume runs on Platinum only.
-    providerLocked: providerWasExplicitlySelected || (drivesRequirePlatinum && !drivesSyncAllowed) || !!state.workspaceVolume,
+    // So does a session whose web traffic leaves through a residential IP.
+    providerLocked:
+      providerWasExplicitlySelected ||
+      (drivesRequirePlatinum && !drivesSyncAllowed) ||
+      !!state.workspaceVolume ||
+      !!providerCreateInput.residentialProxy,
     fallbackAttempted: state.fallbackAttempted,
     fallbackEnabled: providerFallbackSetting().enabled,
     current: providerName,

@@ -34,7 +34,7 @@ import {
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
-import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
+import { resolveSessionSandboxRegion, warmSandboxIntent } from '../../platform/services/sandbox-region';
 import { startWorkspaceVolume, WORKSPACE_VOLUME_SESSION_KEY, type WorkspaceVolume } from '../../platform/services/workspace-volume';
 import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from './warm-sessions';
 
@@ -1149,7 +1149,7 @@ function buildSessionCreateMetadata(params: {
     ...(input.metadata ?? {}),
     // Server-owned creation intent, never caller metadata or actual placement.
     ...((input.metadata?.[WARM_SESSION_METADATA_KEY] ?? requestMetadata[WARM_SESSION_METADATA_KEY]) === true
-      ? { [WARM_SESSION_LOCATION_KEY]: resolveSessionSandboxRegion(project.metadata) ?? 'home' }
+      ? { [WARM_SESSION_LOCATION_KEY]: warmSandboxIntent(project.metadata) }
       : {}),
     // Persist the coordinator→worker link. The sidebar badges child sessions
     // with it, and the turn-end deadline shortener stops child sandboxes on a

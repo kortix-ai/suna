@@ -43,6 +43,8 @@ async function seedWarmSession(
     boxRegion?: string | null;
     boxStatus?: 'active' | 'provisioning';
     boxProvider?: 'platinum' | 'daytona';
+    /** `residentialProxy` on the box row, as platinum.ts records it; absent = a box from before the flag. */
+    boxResidentialProxy?: boolean;
     requestedLocation?: string;
     noSandbox?: boolean;
   } = {},
@@ -72,6 +74,7 @@ async function seedWarmSession(
       status: overrides.boxStatus ?? 'active',
       metadata: {
         ...(overrides.boxInstanceId ? { instanceId: overrides.boxInstanceId } : {}),
+        ...(overrides.boxResidentialProxy === undefined ? {} : { residentialProxy: overrides.boxResidentialProxy }),
         ...((overrides.boxRegion === undefined ? 'eu-west' : overrides.boxRegion)
           ? { platinumRegion: overrides.boxRegion ?? 'eu-west' }
           : {}),
@@ -348,6 +351,68 @@ describe('warm sessions — compute placement', () => {
   });
 });
 
+describe('warm sessions — residential proxy', () => {
+  const on = { experimental: { residential_proxy: true } };
+  const off = { experimental: { residential_proxy: false } };
+  let originalKey: typeof config.PLATINUM_API_KEY;
+  beforeEach(() => {
+    originalKey = config.PLATINUM_API_KEY;
+    // The flag is available only where Platinum is configured.
+    config.PLATINUM_API_KEY = 'pt_test_residential_proxy';
+  });
+  afterEach(() => {
+    config.PLATINUM_API_KEY = originalKey;
+  });
+  const lookup = (projectMetadata: unknown, includeProvisioning = false) => findWarmProjectSession({
+    accountId: ACCOUNT, projectId: PROJECT, userId: USER, projectMetadata, includeProvisioning,
+  });
+
+  test('a box created without the proxy is never handed to a project that has it on', async () => {
+    const legacy = await seedWarmSession();
+    const plain = await seedWarmSession({ boxResidentialProxy: false });
+    expect(await lookup(on)).toBeNull();
+    expect(await lookup(on, true)).toBeNull();
+    expect(await warmSessionPlacement(legacy, on)).toBe('mismatch');
+    expect(await warmSessionPlacement(plain, on)).toBe('mismatch');
+    // Off, both still serve: nothing changes for a project without the flag.
+    expect(await warmSessionPlacement(legacy, off)).toBe('compatible');
+    expect(await warmSessionPlacement(plain, {})).toBe('compatible');
+  });
+
+  test('a proxied box serves only while the flag is on', async () => {
+    const proxied = await seedWarmSession({ boxResidentialProxy: true });
+    expect((await lookup(on))?.sessionId).toBe(proxied);
+    expect(await warmSessionPlacement(proxied, on)).toBe('compatible');
+    for (const metadata of [off, {}]) {
+      expect(await lookup(metadata)).toBeNull();
+      expect(await warmSessionPlacement(proxied, metadata)).toBe('mismatch');
+    }
+  });
+
+  test('a box on another provider never serves a proxied project', async () => {
+    const daytona = await seedWarmSession({ boxProvider: 'daytona', boxRegion: null });
+    expect(await lookup(on)).toBeNull();
+    expect(await warmSessionPlacement(daytona, on)).toBe('mismatch');
+    expect((await lookup(off))?.sessionId).toBe(daytona);
+  });
+
+  test('an in-flight warm create is reused only for the same proxy intent', async () => {
+    const plain = await seedWarmSession({
+      status: 'provisioning', boxStatus: 'provisioning', boxRegion: null, requestedLocation: 'home',
+    });
+    expect(await lookup(on, true)).toBeNull();
+    expect(await warmSessionPlacement(plain, on)).toBe('mismatch');
+    expect((await lookup(off, true))?.sessionId).toBe(plain);
+
+    const proxied = await seedWarmSession({
+      status: 'provisioning', boxStatus: 'provisioning', boxRegion: null, requestedLocation: 'home+residential-proxy',
+    });
+    expect((await lookup(on, true))?.sessionId).toBe(proxied);
+    expect(await warmSessionPlacement(proxied, on)).toBe('pending');
+    expect(await warmSessionPlacement(proxied, off)).toBe('mismatch');
+  });
+});
+
 // Every flag is boot-only env (KORTIX_FEATURE_FLAGS, KORTIX_GENUI; projects/lib/feature-flag-env.ts).
 // A warm box provisioned before a flag change carries the old value, so any
 // change retires every unclaimed warm session of the project.
@@ -358,7 +423,7 @@ describe('a flag change — retires warm sessions', () => {
     return { metadata: (row?.metadata ?? {}) as Record<string, unknown>, status: row?.status, boxStatus: box?.status };
   }
 
-  test.each(['genui', 'agent_rooms'] as const)('%s: every unclaimed warm session of the project (all users) is deleted; a claimed one is kept', async (key) => {
+  test.each(['genui', 'agent_rooms', 'residential_proxy'] as const)('%s: every unclaimed warm session of the project (all users) is deleted; a claimed one is kept', async (key) => {
     const mine = await seedWarmSession();
     const theirs = await seedWarmSession({ createdBy: OTHER_USER });
     const claimed = await seedWarmSession({ warm: false });
