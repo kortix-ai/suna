@@ -51,9 +51,10 @@ export const SANDBOX_DESKTOP_INSTALL_COMMAND =
   ' && gunzip -c /tmp/voxl.gz > /usr/local/bin/voxl && rm /tmp/voxl.gz && chmod 0755 /usr/local/bin/voxl' +
   " && ! ldd /usr/local/bin/voxl | grep -q 'not found'" +
   ' && ln -sf /usr/local/bin/kortix-entrypoint /usr/local/bin/kortix-desktop' +
-  // The panel's Web Browser launcher opens the image's Chromium.
+  // The panel's Web Browser and Terminal launchers open Chromium and
+  // xfce4-terminal without asking which one to use.
   ' && mkdir -p /usr/share/xfce4/helpers /etc/xdg/xfce4' +
   ` && printf '[Desktop Entry]\\nType=X-XFCE-Helper\\nX-XFCE-Category=WebBrowser\\nName=Chromium\\nIcon=web-browser\\nX-XFCE-Commands=${CHROMIUM}\\nX-XFCE-CommandsWithParameter=${CHROMIUM} "%%s"\\n' > /usr/share/xfce4/helpers/kortix-chromium.desktop` +
-  " && printf 'WebBrowser=kortix-chromium\\n' > /etc/xdg/xfce4/helpers.rc;" +
+  " && printf 'WebBrowser=kortix-chromium\\nTerminalEmulator=xfce4-terminal\\n' > /etc/xdg/xfce4/helpers.rc;" +
   ' else echo "desktop: skipped, this base lacks the Ubuntu 24.04 libraries voxl links"; fi' +
   ' && rm -rf /var/lib/apt/lists/*';
