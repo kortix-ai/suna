@@ -7,7 +7,7 @@ settings:
 overrides:
   shell-quote@<1.11.0: 1.11.0
   re2js@>=2.2.0 <2.8.7: 2.8.7
-  systeminformation@<5.33.13: 5.33.13
+  systeminformation@<5.33.16: 5.33.16
   '@icons-pack/react-simple-icons@>=13.11.2 <14': 13.11.1
   import-in-the-middle: 3.0.0
   next@>=15.0.0 <16.4.2: 16.4.2
@@ -5187,7 +5187,7 @@ packages:
       object-treeify: 1.1.33
       open: 8.4.2
       picomatch: 4.0.7
-      systeminformation: 5.33.13
+      systeminformation: 5.33.16
       undici: 7.30.1
       which: 4.0.0
       yocto-spinner: 1.2.2
@@ -31044,8 +31044,8 @@ packages:
       sax: 1.6.1
     dev: false
 
-  /systeminformation@5.33.13:
-    resolution: {integrity: sha512-GtyakkchTQKymM1WeAB652zi3rM1q00RKdc+jZe9KGstuc/mWUwAnQGN/RE5gVYvHIR8xYOUIUD9irVKDtA0wA==}
+  /systeminformation@5.33.16:
+    resolution: {integrity: sha512-R+Lh69IJXfJj6bfyH1In5cIR9FTr4hBS39YvlZHZjsK1p9cuELPq7hplZZIb56ZESMMb+DzdKqqE6Iomi01Mvg==}
     engines: {node: '>=10.0.0'}
     os: [darwin, linux, win32, freebsd, openbsd, netbsd, sunos, android]
     hasBin: true
