@@ -1,5 +1,5 @@
 import { logger } from '../lib/logger';
-import { APPROVAL_RERUN_RULE, HELD_CALL_REPEAT_INSTRUCTIONS } from './approval-expiry';
+import { APPROVAL_RERUN_RULE, heldCallRepeatInstructions, heldRunRule } from './approval-expiry';
 import {
   APPROVAL_ENRICHERS,
   type ApprovalEnricher,
@@ -519,6 +519,9 @@ export type CallResult =
       approvalSummary?: string | null;
       /** Agent instruction for the asynchronous handoff. */
       approvalInstructions?: string | null;
+      /** True when the gate holds the input: Kortix runs the call once after
+       *  approval and the caller must not repeat it. Absent: the caller repeats it. */
+      runsOnApproval?: boolean;
     }
   | {
       status: 'error';
@@ -603,9 +606,8 @@ export function callOutput(
 
 const MAX_APPROVAL_CONTEXT = 4_000;
 const CARD_POST_BUDGET_MS = 5_000;
-const CARD_POSTED_INSTRUCTIONS =
-  'An approval card with Approve / Deny / Reply buttons was posted in the chat thread; the human decides there. Do not repost approval_url. Stop this turn — Kortix resumes the session after approve or deny. ' +
-  APPROVAL_RERUN_RULE;
+const CARD_POSTED =
+  'An approval card with Approve / Deny / Reply buttons was posted in the chat thread; the human decides there. Do not repost approval_url. Stop this turn';
 
 /** A card that is slow or fails must never fail or stall the gated call. */
 async function postCardWithin(ms: number, post: () => Promise<{ posted: boolean }>): Promise<boolean> {
@@ -1038,7 +1040,9 @@ async function enforceCallPolicies(
   // Keys are OMITTED when empty rather than set to null: the pending_approval
   // result is a wire shape other code compares against, and a key that carries
   // no information shouldn't change it.
-  const approvalExtras = async (executionId: string | null | undefined) => {
+  // `held`: the gate stored the input, so Kortix runs the call after
+  // approval. Otherwise the caller repeats it (APPROVAL_RERUN_RULE).
+  const approvalExtras = async (executionId: string | null | undefined, held: boolean) => {
     const url =
       executionId && deps.mintApprovalLink
         ? await deps.mintApprovalLink({
@@ -1053,9 +1057,12 @@ async function enforceCallPolicies(
       ...(summary ? { approvalSummary: summary } : {}),
       ...(url
         ? {
-            approvalInstructions: input.sessionId
-              ? `Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny. ${APPROVAL_RERUN_RULE}${approvalContext ? '' : CONTEXT_HINT}`
-              : `Share approval_url with a human. ${APPROVAL_RERUN_RULE}${approvalContext ? '' : CONTEXT_HINT}`,
+            approvalInstructions:
+              held && executionId
+                ? `Share approval_url with a human${input.sessionId ? ', then stop this turn' : ''}. ${heldRunRule({ projectId: input.projectId, executionId, sessionId: input.sessionId ?? null })}${approvalContext ? '' : CONTEXT_HINT}`
+                : input.sessionId
+                  ? `Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny. ${APPROVAL_RERUN_RULE}${approvalContext ? '' : CONTEXT_HINT}`
+                  : `Share approval_url with a human. ${APPROVAL_RERUN_RULE}${approvalContext ? '' : CONTEXT_HINT}`,
           }
         : {}),
     };
@@ -1193,9 +1200,9 @@ async function enforceCallPolicies(
           : false;
       // An agent repeat of a call that is already held, queued or running
       // gets that gate back: one human decision runs at most one call.
-      const openHeld =
-        !reuseExisting && !contentChanged && !input.heldApproval && deps.findOpenHeldExecution
-          ? await deps.findOpenHeldExecution({
+      const findOpenHeld = () =>
+        deps.findOpenHeldExecution
+          ? deps.findOpenHeldExecution({
               projectId: input.projectId,
               sessionId: input.sessionId ?? null,
               actingUserId: input.subject.userId,
@@ -1203,15 +1210,21 @@ async function enforceCallPolicies(
               actionPath: `${input.connectorSlug}.${input.actionPath}`,
               requestDigest,
             })
-          : null;
+          : Promise.resolve(null);
+      const openHeld = !reuseExisting && !contentChanged && !input.heldApproval ? await findOpenHeld() : null;
       if (openHeld) {
         return {
           status: 'pending_approval',
           reason,
           executionId: openHeld,
           retryable: false,
-          ...(await approvalExtras(openHeld)),
-          approvalInstructions: HELD_CALL_REPEAT_INSTRUCTIONS,
+          ...(await approvalExtras(openHeld, true)),
+          approvalInstructions: heldCallRepeatInstructions({
+            projectId: input.projectId,
+            executionId: openHeld,
+            sessionId: input.sessionId ?? null,
+          }),
+          runsOnApproval: true,
         };
       }
       // Only a new row reads the content. Never blocks or fails the hold: a
@@ -1252,7 +1265,10 @@ async function enforceCallPolicies(
             policySet,
           },
         ));
-      const extras = await approvalExtras(executionId);
+      // The held insert is best-effort (db-deps-gateway.ts holdCallInput): ask
+      // whether THIS gate holds its input, so the instructions match it.
+      const held = !!executionId && (await findOpenHeld()) === executionId;
+      const extras = await approvalExtras(executionId, held);
       const cardPosted =
         !reuseExisting && executionId && input.sessionId && deps.postApprovalCard
           ? await postCardWithin(CARD_POST_BUDGET_MS, () =>
@@ -1284,8 +1300,15 @@ async function enforceCallPolicies(
         // The human decides on the card in their thread; a pasted link next
         // to it would only duplicate the request.
         ...(cardPosted
-          ? { approvalInstructions: `${CARD_POSTED_INSTRUCTIONS}${approvalContext ? '' : CONTEXT_HINT}` }
+          ? {
+              approvalInstructions: `${CARD_POSTED}${
+                held
+                  ? `. ${heldRunRule({ projectId: input.projectId, executionId: executionId!, sessionId: input.sessionId ?? null })}`
+                  : ` — Kortix resumes the session after approve or deny. ${APPROVAL_RERUN_RULE}`
+              }${approvalContext ? '' : CONTEXT_HINT}`,
+            }
           : {}),
+        ...(held ? { runsOnApproval: true } : {}),
       };
     }
   }

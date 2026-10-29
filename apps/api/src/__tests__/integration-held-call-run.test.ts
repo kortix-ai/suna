@@ -45,7 +45,7 @@ const { resolveTokenPrincipal } = await import('../connectors/db-deps-principal'
 const { handleCall } = await import('../connectors/gateway');
 const { HELD_CALL_QUEUE, HELD_RUN_CEILING_MS, HELD_RUN_VISIBILITY_MS } = await import('../connectors/held-call-store');
 const { runHeldCall } = await import('../connectors/held-call-run');
-const { HELD_CALL_REPEAT_INSTRUCTIONS } = await import('../connectors/approval-expiry');
+const { APPROVAL_RERUN_RULE, heldCallRepeatInstructions, heldRunRule } = await import('../connectors/approval-expiry');
 const { decideConnectorApproval, expireDueApprovals, loadApprovalRow } = await import(
   '../projects/lib/connector-approval-decision'
 );
@@ -75,8 +75,12 @@ const depsFor = (p: ConnectorPrincipal): GatewayDeps => ({
   approvalEnrichers: enrichers,
 });
 
-async function call(args: Record<string, unknown>, p: ConnectorPrincipal = principal): Promise<CallResult> {
-  return handleCall(depsFor(p), {
+async function call(
+  args: Record<string, unknown>,
+  p: ConnectorPrincipal = principal,
+  extra: Partial<GatewayDeps> = {},
+): Promise<CallResult> {
+  return handleCall({ ...depsFor(p), ...extra }, {
     projectId: seeded.project_id,
     accountId: seeded.account_id,
     subject: p.subject,
@@ -384,7 +388,7 @@ describe('approve runs the held call once', () => {
     expect(repeat.status).toBe('pending_approval');
     if (repeat.status !== 'pending_approval') return;
     expect(repeat.executionId).not.toBe(id);
-    expect(repeat.approvalInstructions).not.toBe(HELD_CALL_REPEAT_INSTRUCTIONS);
+    expect(repeat.approvalInstructions ?? '').not.toContain('already waiting');
     expect((await held(repeat.executionId!)).state).toBe('held');
   });
 
@@ -433,7 +437,10 @@ describe('approve runs the held call once', () => {
     const id = await gate(args);
     const again = await call(args);
     expect(again).toMatchObject({ status: 'pending_approval', executionId: id });
-    if (again.status === 'pending_approval') expect(again.approvalInstructions).toBe(HELD_CALL_REPEAT_INSTRUCTIONS);
+    if (again.status === 'pending_approval')
+      expect(again.approvalInstructions).toBe(
+        heldCallRepeatInstructions({ projectId: seeded.project_id, executionId: id, sessionId }),
+      );
     await decide(id, 'approve');
     expect(await call(args)).toMatchObject({ status: 'pending_approval', executionId: id });
     const gates = await db
@@ -444,6 +451,23 @@ describe('approve runs the held call once', () => {
     const before = providerHits;
     await run(id);
     expect(providerHits).toBe(before + 1);
+  });
+
+  test('gate-time instructions match the gate: a held call runs on approval, a JWT caller repeats it', async () => {
+    const withLink = { mintApprovalLink: async () => 'https://app.kortix.test/approve/synthetic' };
+    const heldGate = await call({ amount: 1101 }, principal, withLink);
+    expect(heldGate).toMatchObject({ status: 'pending_approval', runsOnApproval: true });
+    if (heldGate.status !== 'pending_approval') return;
+    expect(heldGate.approvalInstructions).toStartWith(
+      `Share approval_url with a human, then stop this turn. ${heldRunRule({ projectId: seeded.project_id, executionId: heldGate.executionId!, sessionId })}`,
+    );
+    expect(heldGate.approvalInstructions).not.toContain(APPROVAL_RERUN_RULE);
+
+    const jwtGate = await call({ amount: 1102 }, { ...principal, tokenId: null, sessionId: null }, withLink);
+    expect(jwtGate.status).toBe('pending_approval');
+    if (jwtGate.status !== 'pending_approval') return;
+    expect(jwtGate.runsOnApproval).toBeUndefined();
+    expect(jwtGate.approvalInstructions).toStartWith(`Share approval_url with a human. ${APPROVAL_RERUN_RULE}`);
   });
 
   test('a gate with no held row (dashboard JWT caller) keeps the carry-over', async () => {

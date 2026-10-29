@@ -5540,9 +5540,13 @@ if (failed) await p.triggers.replay('daily-digest', failed.run_id);
 
 ### Resolve approvals
 
-A policy rule with `require_approval` holds a connector call until a person decides. Approval alone does not run the call. After approval, the caller repeats the identical call (same connector, action, arguments and account) from the same session and user within 15 minutes, and that call runs once. In a session, Kortix resumes the agent with that instruction. `p.approvals.list()` returns `{ count, approvals }`. Each approval carries `execution_id`, `action`, `session_id`, `requested_at` and `expires_at`.
+A policy rule with `require_approval` holds a connector call until a person decides. When the caller uses a project-scoped token (a session token, or a PAT created with `project_id`), Kortix keeps the call. Approve runs it once, as the original caller, and policy is checked again at run time. Do not repeat the call: a repeat while it waits or runs returns the same `execution_id`. The held response carries `runs_on_approval: true`. In a session, Kortix resumes the agent with the result. Without a session, read the outcome by id (below).
 
-`p.approvals.resolve(executionId, decision, { note? })` decides one call. `decision` is `'approve'` or `'deny'`. `note` goes to the agent as an instruction. A project manager or the person who started the session may decide. A decision covers that one call only. `GET /v1/projects/:id/review/items/call:<execution_id>` returns the decision, whether a repeat used the approval, and the deadline. To run a tool without approval, write an `always_run` rule.
+A caller with any other token (a dashboard sign-in, a PAT without a project) gets no `runs_on_approval`. Approval alone does not run that call: the caller repeats the identical call (same connector, action, arguments and account) from the same session and user within 15 minutes, and that call runs once.
+
+`p.approvals.list()` returns `{ count, approvals }`. Each approval carries `execution_id`, `action`, `session_id`, `requested_at` and `expires_at`.
+
+`p.approvals.resolve(executionId, decision, { note? })` decides one call. `decision` is `'approve'` or `'deny'`. `note` goes to the agent as an instruction. A project manager or the person who started the session may decide. A decision covers that one call only. `GET /v1/projects/:id/review/items/call:<execution_id>` returns the decision and `detail.next_step`. A call that Kortix runs adds `detail.run`: `state` (`queued`, `dispatched`, `ok`, `error`, `refused` or `unknown`), `finished_at`, and `outcome` with a redacted `output_preview` of at most 4 KB. A call that the caller repeats adds whether a repeat used the approval (`approval_used_at`) and the deadline (`rerun_by`). To run a tool without approval, write an `always_run` rule.
 
 ```ts
 const { approvals } = await p.approvals.list();
@@ -5555,7 +5559,7 @@ for (const approval of approvals) {
 await p.approvals.resolve('<execution_id>', 'deny', { note: 'Send it to the ops list only.' });
 ```
 
-The `executionId` of a held call from code is `ConnectorApprovalPendingError.executionId`. After approval, repeat the identical `run`. `p.approvals.sessionsNeedingInput()` returns `{ total, sessions }`: the count of held calls per session. The Review inbox (`p.review.*`) is in [SDK reference > The project handle](/docs/developers#sdk-reference).
+The `executionId` of a held call from code is `ConnectorApprovalPendingError.executionId`. With a project-scoped token, poll the by-id read until `detail.run.state` is final; do not repeat the `run`. With any other token, repeat the identical `run` after approval. `p.approvals.sessionsNeedingInput()` returns `{ total, sessions }`: the count of held calls per session. The Review inbox (`p.review.*`) is in [SDK reference > The project handle](/docs/developers#sdk-reference).
 
 ### Deploy and operate Apps
 

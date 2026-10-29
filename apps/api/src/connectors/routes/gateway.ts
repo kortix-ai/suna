@@ -265,6 +265,8 @@ const callResponse = async (deps: ConnectorRouterDeps, c: any, p: ConnectorPrinc
           approval_url: result.approvalUrl ?? null,
           approval_summary: result.approvalSummary ?? null,
           approval_instructions: result.approvalInstructions ?? null,
+          // Kortix runs the call after approval; the caller must not repeat it.
+          ...(result.runsOnApproval ? { runs_on_approval: true } : {}),
         },
         202,
       );
