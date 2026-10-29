@@ -287,7 +287,7 @@ test('the launcher replies with a message: approve plus note reaches the agent',
   expect((row?.resultSummary as Record<string, unknown>).decision_note).toBe('Send it, then tell me when she answers.');
   expect(spawned).toEqual([
     {
-      text: 'Your pending approval to run gmail.send_draft was approved — continue.\n\nMessage from the approver:\nSend it, then tell me when she answers.',
+      text: 'Your pending approval to run gmail.send_draft was approved. It has not run yet: repeat the exact same call now (same arguments and account), and it runs once. The approval lapses 15 minutes after the decision.\n\nMessage from the approver:\nSend it, then tell me when she answers.',
       user: SLACK.launcher,
     },
   ]);

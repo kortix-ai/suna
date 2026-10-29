@@ -1,4 +1,5 @@
 import { logger } from '../lib/logger';
+import { APPROVAL_RERUN_RULE } from './approval-expiry';
 import {
   APPROVAL_ENRICHERS,
   type ApprovalEnricher,
@@ -558,7 +559,8 @@ export function callOutput(
 const MAX_APPROVAL_CONTEXT = 4_000;
 const CARD_POST_BUDGET_MS = 5_000;
 const CARD_POSTED_INSTRUCTIONS =
-  'An approval card with Approve / Deny / Reply buttons was posted in the chat thread; the human decides there. Do not repost approval_url. Stop this turn — Kortix resumes the session after approve or deny.';
+  'An approval card with Approve / Deny / Reply buttons was posted in the chat thread; the human decides there. Do not repost approval_url. Stop this turn — Kortix resumes the session after approve or deny. ' +
+  APPROVAL_RERUN_RULE;
 
 /** A card that is slow or fails must never fail or stall the gated call. */
 async function postCardWithin(ms: number, post: () => Promise<{ posted: boolean }>): Promise<boolean> {
@@ -988,8 +990,8 @@ async function enforceCallPolicies(
       ...(url
         ? {
             approvalInstructions: input.sessionId
-              ? `Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.${approvalContext ? '' : CONTEXT_HINT}`
-              : `Share approval_url with a human. Retry this exact call once they approve it.${approvalContext ? '' : CONTEXT_HINT}`,
+              ? `Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny. ${APPROVAL_RERUN_RULE}${approvalContext ? '' : CONTEXT_HINT}`
+              : `Share approval_url with a human. ${APPROVAL_RERUN_RULE}${approvalContext ? '' : CONTEXT_HINT}`,
           }
         : {}),
     };

@@ -36,7 +36,7 @@ import {
 } from '../projects/lib/session-connector-bindings';
 import { db } from '../shared/db';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
-import { DEFAULT_APPROVAL_TTL_SECONDS, approvalNotExpired } from './approval-expiry';
+import { APPROVAL_RERUN_WINDOW_MS, DEFAULT_APPROVAL_TTL_SECONDS, approvalNotExpired } from './approval-expiry';
 import { connectorAttachmentStore } from './attachments';
 import { gateChannelRead } from './channel-read-scope';
 import { gateChannelWrite } from './channel-write-scope';
@@ -66,12 +66,6 @@ import {
   resolveActiveConnectorConnection,
 } from './db-deps-rows';
 
-/** How long an unconsumed human approve stays claimable by a fresh call. Long
- *  enough for the "agent gave up → approve lands → nudge/`continue` retries"
- *  round-trip, short enough that a stale yes can't silently authorize a much
- *  later call. */
-const APPROVAL_CARRYOVER_WINDOW_MS = 15 * 60 * 1000;
-
 /**
  * The call path reads connector/project policies and the project's default
  * mode on EVERY /call — through these loaders directly. A TTL memo here
@@ -96,7 +90,7 @@ export async function consumeApprovedExecution(input: {
   actionPath: string;
   requestDigest: string;
 }): Promise<false | { resolvedDigest: string | null; resolvedError: boolean }> {
-  const cutoff = new Date(Date.now() - APPROVAL_CARRYOVER_WINDOW_MS);
+  const cutoff = new Date(Date.now() - APPROVAL_RERUN_WINDOW_MS);
   const candidates = await db
     .select({
       executionId: connectorCalls.executionId,

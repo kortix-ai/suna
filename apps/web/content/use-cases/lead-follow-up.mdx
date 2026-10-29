@@ -50,54 +50,121 @@ before it sends.
 ## How it works
 
 <Steps>
-<Step title="Connect HubSpot as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-A scheduled **trigger** sweeps HubSpot every 15 minutes for new leads, and each
-firing spawns a fresh **session** in its own sandbox. A sweep that turns up
-several new leads at once still runs as a single session, but each lead is
-handled as an independent unit — a research or drafting failure on one lead
-never blocks or corrupts the others. Sessions don't share state between
-sweeps: the marker written back onto each HubSpot record is what carries
-forward.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the follow-up skill and the 15-minute trigger, and
+opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent our playbook">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a lead follow-up agent in this project.
 
-How we follow up lives as **skills** and **memory** loaded into every session:
-our positioning, the tone we write in, what a good qualifying question looks
-like, and follow-ups that landed before. The agent writes to that standard rather
-than inventing one, and the memory updates as deals move.
+1. Create the agent agents/lead-follow-up.md. Its job is to turn each new HubSpot lead into a researched follow-up draft with one proposed call slot. It may use the HubSpot and Google Calendar connectors.
 
-</Step>
-<Step title="Connect what a follow-up can touch">
+2. Create the skill skills/lead-followup/SKILL.md with these rules:
+   - A new lead is a contact on lifecycle stage lead without the kortix_followup_drafted property. Skip every contact that has it.
+   - Research the company's public site first. Each draft references one specific fact from that research and asks exactly one qualifying question.
+   - Check Google Calendar for the next open 30-minute slot and propose that one time. Never create, move or accept an event.
+   - Write the research notes back to the HubSpot record. Never change deal stage, pipeline or lifecycle stage.
+   - Never send. Hold every draft in the email channel for a rep to review, edit and send, then set kortix_followup_drafted on the contact.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger new-lead-followup-sweep to kortix.yaml. It runs the lead-follow-up agent every 15 minutes with the prompt "Load the lead-followup skill and run one new-lead sweep."
 
-- **Research the company** — it reads the lead's site and public information to
-  understand what they do and why they signed up.
-- **Read and update HubSpot** — full lead context in, research notes back on the
-  record.
-- **Draft the email** — a personalized follow-up written to our playbook, ready
-  to send.
-- **Offer a slot on Google Calendar** — it checks real availability and proposes
-  a specific time to talk.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent researches and drafts freely, but nothing goes out on its own: every
-follow-up stops at a **human approval gate** as a draft for a person to review
-and send. Credentials are encrypted in the secrets manager and injected at
-runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect your CRM and your calendar.
+Connect the email account that holds the drafts under **Settings → Channels**.
+Credentials are brokered server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="HubSpot" domain="hubspot.com" tag="Required" alternatives={[['Salesforce', 'salesforce.com'], ['Pipedrive', 'pipedrive.com']]}>
+    Reads new leads and logs the follow-up on the record.
+  </ToolNeed>
+  <ToolNeed name="Google Calendar" domain="calendar.google.com" tag="Required" alternatives={[['Calendly', 'calendly.com']]}>
+    Finds open slots to propose for a call.
+  </ToolNeed>
+  <ToolNeed name="Gmail" domain="gmail.com" tag="Required" alternatives={[['Microsoft Outlook', 'outlook.com']]}>
+    Drafts the personalized follow-up email for approval.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Let each lead run">
+<Step title="Run it once with this prompt">
 
-With that in place, a new lead arrives already worked: the company researched,
-the record updated, a personalized email drafted, and a call slot proposed
-against real availability. The person on sales reviews the draft, adjusts if they
-want, and sends — instead of starting each follow-up from a blank page.
+Merge the change request, then start a session with the **lead-follow-up** agent
+and send this prompt. Read the drafts and the proposed slots before you let the
+schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one new-lead follow-up sweep on HubSpot.
+
+1. Find contacts on lifecycle stage lead that do not have the kortix_followup_drafted property.
+2. For each lead, read the company's public site and note one specific fact about what they do.
+3. Draft a follow-up to our sales playbook that uses that fact and asks one qualifying question.
+4. Check Google Calendar for the next open 30-minute slot and propose that one time. Do not create the event.
+5. Write the research notes to the HubSpot record, hold the draft in the email channel, and set kortix_followup_drafted. Do not send anything.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every 15 minutes, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: new-lead-followup-sweep
+    name: New lead follow-up sweep
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: lead-follow-up
+      prompt: Load the lead-followup skill and run one new-lead sweep.`}
+/>
+
+</Step>
+<Step title="Hold every follow-up as a draft">
+
+The agent researches, drafts and updates HubSpot on its own. It never sends
+an email and never books the call. Every follow-up waits in the email channel
+until a rep reviews, edits and sends it. When research fails on one lead, the
+agent logs it and moves on to the next.
+
+</Step>
+<Step title="Read the drafts">
+
+Each sweep ends with drafts in the email channel. This is what a run looks
+like in the session:
+
+<ExampleRun
+  title="New lead follow-up sweep · 10:15"
+  message="Load the lead-followup skill and run one new-lead sweep."
+  worked="Worked for 2m 41s"
+  tools={[
+    'hubspot · search contacts',
+    'web · read company site × 4',
+    'google calendar · find free slot × 4',
+    'hubspot · update contact × 4',
+    'email · save draft × 4',
+  ]}
+  note="Illustrative example. Your counts depend on how many leads arrive."
+>
+  Found **4** new leads and drafted **4** follow-ups, each with one qualifying
+  question and a proposed 30-minute slot. Research notes are on all **4**
+  HubSpot records. The drafts are waiting in the email channel for a rep to send.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -107,6 +174,25 @@ want, and sends — instead of starting each follow-up from a blank page.
   **connectors** into HubSpot, email, and the calendar, encode the sales playbook
   as **skills** and **memory**, and gate every send behind a human.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Follow up on silent leads"
+  code="Three business days after a rep sends a follow-up with no reply, draft one short second follow-up on the same thread and hold it for review."
+/>
+
+<CopyBlock
+  title="Daily unsent-drafts digest"
+  code="Every weekday at 17:00, post a list of the follow-up drafts that no rep has sent yet to #sales."
+/>
+
+<CopyBlock
+  title="Match the lead source"
+  code="Read each lead's source and UTM fields, and open the draft with a line that matches how they found us, such as a webinar or a pricing page visit."
+/>
 
 ## Guardrails
 

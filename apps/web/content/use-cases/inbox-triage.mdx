@@ -51,49 +51,119 @@ in Linear. Anything customer-facing waits for a person before it sends.
 ## How it works
 
 <Steps>
-<Step title="Connect Gmail as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-A signed webhook from Gmail points at the project. Every new inbound message
-fires it, and each firing spawns a fresh **session** in its own sandbox, seeded
-with the email. One message, one session, one disposable machine. Sessions don't
-share state, and a busy inbox means more sessions running in parallel.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the email-triage skill and the
+15-minute trigger, and opens a change request for you to review.
+Prefer clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Give the agent our knowledge">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a shared inbox triage agent in this project.
 
-How we handle the inbox lives as **skills** and **memory** loaded into every
-session: our help doc, the categories we sort into, the reply tone, and answers
-that worked before. The agent triages to that standard rather than inventing one,
-and the memory updates as threads are resolved.
+1. Create the agent agents/inbox-triage.md. Its job is to label every new message in the shared Gmail inbox, draft replies from the help doc and file tickets in Linear. It may use the Gmail, Linear and Notion connectors.
 
-</Step>
-<Step title="Connect what triage can touch">
+2. Create the skill skills/email-triage/SKILL.md with these rules:
+   - Give every new thread exactly one label: triage/support, triage/bug, triage/sales, triage/billing or triage/other.
+   - For support questions, search the Help Center page in Notion first. Draft a reply only when the doc answers the question. If it does not, label only.
+   - Save every reply as a Gmail draft on the thread. Never send.
+   - File bug reports and follow-ups in the Support Linear team with a link to the thread. Mark a ticket urgent only for a full outage or data loss.
+   - Leave triage/other threads with the label and nothing else.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger inbox-triage-check to kortix.yaml. It runs the inbox-triage agent every 15 minutes with the prompt "Load the email-triage skill and run one complete triage pass over the shared Gmail inbox."
 
-- **Read the help doc** — it looks up the answer to a common question instead of
-  guessing.
-- **Label and draft in Gmail** — it applies the right label and, where a reply
-  fits, writes a draft on the thread.
-- **File a task in Linear** — a bug report or a request that needs follow-up
-  becomes a ticket with the context attached.
+4. Tell me which of these connectors are not connected yet.
 
-</Step>
-<Step title="Set the guardrails">
-
-The agent labels and drafts freely, but nothing sends on its own: every
-customer-facing reply stops at a **human approval gate** as a draft for a person
-to review and send. Credentials are encrypted in the secrets manager and injected
-at runtime, scoped to the agents you grant them to.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Let each email run">
+<Step title="Connect your tools">
 
-With that in place, an inbound email triages itself: it gets a label, and either
-a draft reply waiting for approval or a Linear ticket already filed. A common
-support question becomes a drafted answer pulled from the help doc. A bug report
-becomes a ticket. A sales ping becomes a label the right person can pick up.
+Open **Connectors** in your project and connect Gmail, Linear and Notion.
+Credentials are brokered server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Gmail" domain="gmail.com" tag="Required" alternatives={[['Outlook', 'outlook.com'], ['Front', 'front.com']]}>
+    Reads and labels new email and drafts replies.
+  </ToolNeed>
+  <ToolNeed name="Linear" domain="linear.app" tag="Required" alternatives={[['Jira', 'atlassian.com'], ['Zendesk', 'zendesk.com']]}>
+    Files a ticket for requests that need follow-up work.
+  </ToolNeed>
+  <ToolNeed name="Notion" domain="notion.so" tag="Required" alternatives={[['Google Docs', 'docs.google.com'], ['Intercom', 'intercom.com']]}>
+    Looks up the help doc for a standard answer.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the **inbox-triage** agent
+and send this prompt. Read the drafts and the tickets before you let
+the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one triage pass over the shared Gmail inbox.
+
+1. Find new threads with no triage label and read each one in full.
+2. Give each thread exactly one label: support, bug, sales, billing or other.
+3. For support questions, search the Help Center page in Notion. Save a Gmail draft only when the doc answers the question.
+4. File each bug report or follow-up in the Support Linear team with a link to the thread.
+5. Never send a reply. Every draft waits for a person.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every 15 minutes, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: inbox-triage-check
+    name: Inbox triage check
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: inbox-triage
+      prompt: Load the email-triage skill and run one complete triage pass over the shared Gmail inbox.`}
+/>
+
+</Step>
+<Step title="Hold every reply as a draft">
+
+The agent labels, drafts and files tickets on its own. It never sends a
+reply, however close the help doc match is. Every customer-facing answer
+waits in Gmail as a draft for a person to review and send. When the help doc
+does not answer a question, the agent labels the thread and leaves it.
+
+</Step>
+<Step title="Read the triaged inbox">
+
+Each pass ends with labels, drafts and tickets in place. This is what a run looks like in the session:
+
+<ExampleRun
+  title="Inbox triage check · 14:30"
+  message="Load the email-triage skill and run one complete triage pass over the shared Gmail inbox."
+  worked="Worked for 1m 54s"
+  tools={[
+    'gmail · search threads',
+    'gmail · add label × 9',
+    'notion · search pages × 4',
+    'gmail · create draft × 3',
+    'linear · create issue × 2',
+  ]}
+  note="Illustrative example. Your counts depend on your inbox."
+>
+  Triaged **9** new threads. Drafted **3** replies from the Help Center and
+  filed **2** bugs in the Support team. **1** support question had no match in
+  the doc, so it has a label and no draft.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -103,6 +173,25 @@ becomes a ticket. A sales ping becomes a label the right person can pick up.
   **connectors** into the help doc, Gmail, and Linear, encode how we triage as
   **skills** and **memory**, and gate every customer-facing reply behind a human.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Route sales leads"
+  code="For each thread labeled triage/sales, post the sender's company and a one-line summary to #sales."
+/>
+
+<CopyBlock
+  title="Find help doc gaps"
+  code="Every Friday, list the support questions this week that had no match in the Help Center and propose a heading for each."
+/>
+
+<CopyBlock
+  title="Flag angry customers"
+  code="When a thread reads as frustrated or mentions cancelling, add the label triage/urgent and post its link to #support."
+/>
 
 ## Guardrails
 

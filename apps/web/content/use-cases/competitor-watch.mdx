@@ -49,48 +49,118 @@ filtered out; pricing moves, new features, and messaging changes are called out.
 ## How it works
 
 <Steps>
-<Step title="Run it on a daily cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the project once a day. Each firing spawns a fresh
-**session** in its own isolated sandbox with web access. One run, one sandbox,
-torn down when it's done.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the competitor-diff skill and the daily
+trigger, and opens a change request for you to review. Prefer clicks? Choose
+**Use this template** instead.
 
-</Step>
-<Step title="Give the agent the watch list and what matters">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a daily competitor watch agent in this project.
 
-The list of competitors, the specific pages to check, and what counts as a
-meaningful change live as **skills** and **memory**. Each run also reads the
-previous run's snapshot from memory so it can diff against it rather than
-re-reporting the same state. The list is updated as the market shifts.
+1. Create the agent agents/competitor-watch.md. Its job is to check competitor pages for real changes and post a daily summary. It may fetch public web pages and use the Slack connector.
 
-</Step>
-<Step title="Connect the web and Slack">
+2. Create the skill skills/competitor-diff/SKILL.md with these rules:
+   - Track only the pages on the watch list I give you, one competitor, page and URL per line.
+   - Store a normalized snapshot of each page in memory/competitor-watch-log.md and diff each run against it.
+   - Strip navigation, footers, timestamps and whitespace before you compare.
+   - Report price and plan changes, new changelog entries and rewritten headlines. Drop typo fixes, layout changes and reordering.
+   - Post one summary to #growth per run, or one short line when nothing changed. Never log in to a site or write anywhere else.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger daily-competitor-watch to kortix.yaml. It runs the competitor-watch agent every day at 06:00 with the prompt "Load the competitor-diff skill and run today's competitor-watch sweep."
 
-- **Fetch competitor pages** — sites, changelogs, and pricing pages on the watch
-  list.
-- **Compare against the last run** — diff today's content against the stored
-  snapshot to find what actually changed.
-- **Post to Slack** — a short summary in the growth channel, or nothing when
-  nothing moved.
+4. Tell me which of these connectors are not connected yet.
 
-</Step>
-<Step title="Set the guardrails">
-
-The agent only reads public pages and writes to one Slack channel, so its scope
-is narrow by design. It has no access to internal systems and takes no action
-beyond posting. Any credentials it needs are encrypted in the secrets manager and
-injected at runtime, scoped to the agents you grant them to.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Let each run report">
+<Step title="Connect your tools">
 
-A run fetches the tracked pages, diffs them against yesterday, and posts what
-changed: a pricing tier that moved, a feature that shipped, a rewritten homepage.
-On a quiet day it says so briefly. The team reads one message instead of visiting
-a dozen sites.
+The agent reads public pages with its built-in fetch, so the watch list needs
+no connector. Open **Connectors** in your project and connect Slack for the
+summary. Credentials are brokered server-side and never enter the
+agent's machine.
+
+<ToolList>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com'], ['Gmail', 'gmail.com']]}>
+    Posts the daily summary of real competitor changes.
+  </ToolNeed>
+  <ToolNeed name="Notion" domain="notion.so" tag="Optional" alternatives={[['Google Docs', 'docs.google.com'], ['Confluence', 'atlassian.com']]}>
+    Stores the competitor research you want to keep.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the **competitor-watch**
+agent and send this prompt. The first run only stores snapshots, so run it a
+second time to see a diff before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one competitor-watch sweep.
+
+1. Read memory/competitor-watch-log.md for the last snapshot of each tracked page.
+2. Fetch every page on the watch list and normalize it.
+3. Diff each page against its snapshot and drop cosmetic edits.
+4. Post a short summary of real changes to #growth: competitor, what changed, and the page. If nothing changed, post one line.
+5. Save today's snapshots to the ledger.`}
+/>
+
+</Step>
+<Step title="Let the daily schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every day at 06:00 and picks up from its ledger in `memory/`. To change the time, edit the cron line, or open
+**Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: daily-competitor-watch
+    name: Daily competitor watch
+    on:
+      cron: "0 0 6 * * *"
+    run:
+      agent: competitor-watch
+      prompt: Load the competitor-diff skill and run today's competitor-watch sweep.`}
+/>
+
+</Step>
+<Step title="Read public pages only">
+
+The agent sends plain GET requests to public pages and writes only to one
+Slack channel. It never logs in to a site and has no access to internal
+systems. The watch list changes only through a reviewed change request.
+
+</Step>
+<Step title="Read the summary">
+
+Each run ends with one message in the channel. This is what a run looks like
+in the session:
+
+<ExampleRun
+  title="Daily competitor watch · 06:00"
+  message="Load the competitor-diff skill and run today's competitor-watch sweep."
+  worked="Worked for 1m 57s"
+  tools={[
+    'memory · read competitor-watch-log',
+    'web · fetch page × 12',
+    'memory · update competitor-watch-log',
+    'slack · post message → #growth',
+  ]}
+  note="Illustrative example. Your changes depend on your watch list."
+>
+  Checked **12** tracked pages and found **2** real changes. One competitor
+  raised its team plan by **$5** per seat, and another shipped **1** new
+  changelog entry for an API feature. The other **10** pages had no meaningful
+  change.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -101,6 +171,25 @@ a dozen sites.
   Slack, and let each run diff and report. The team reads a summary instead of
   browsing.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Watch review pages"
+  code="Also track each competitor public review page, and report new reviews that mention pricing or a missing feature."
+/>
+
+<CopyBlock
+  title="Monthly battlecard update"
+  code="On the first of each month, draft updates to our battlecards from the changes you reported, and open a change request for review."
+/>
+
+<CopyBlock
+  title="Tell sales about price moves"
+  code="When a competitor changes a price, post the change to #sales as well as #growth."
+/>
 
 ## Guardrails
 
