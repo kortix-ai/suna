@@ -271,7 +271,6 @@ export default function PhoneVerificationPage() {
                 onRemovePhone={handleUnenrollFactor}
                 isLoading={isLoading}
                 error={error}
-                showExistingOptions={hasExistingFactor}
                 challengeId={challengeId}
               />
             )}
