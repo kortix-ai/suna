@@ -148,6 +148,7 @@ const fake = Bun.serve({
     await onCall?.(call);
     waiters.splice(0).forEach((resolve) => resolve(call));
     if (call.method === failing) return Response.json({ ok: false, description: 'synthetic failure' }, { status: failingStatus });
+    if (call.method === 'getMe') return Response.json({ ok: true, result: { id: Number(BOT_ID), is_bot: true, username: 'synthetic_bot' } });
     if (call.method === 'getMyCommands') return Response.json({ ok: true, result: botMenu });
     if (call.method === 'setMyCommands' || call.method === 'deleteMyCommands') {
       botMenu = call.method === 'setMyCommands' ? call.body.commands : [];
@@ -2664,6 +2665,22 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
     expect(await telegramMetadata()).toEqual({ allowedUserIds: ['4040'] });
     await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
   });
+
+  // Near the end of the file: connect and disconnect reconcile the connectors in the background.
+  test("connect merges Kortix's commands into the bot menu at once, though the bot's merge was claimed, and keeps the owner's", async () => {
+    const weather = { command: 'weather', description: 'Synthetic BotFather entry' };
+    botMenu = [weather];
+    // Held since beforeAll: a message merges nothing, so only the connect's forced merge writes.
+    expect(await menuClaimRows()).toHaveLength(1);
+    const written = (async () => {
+      while (!calls.some((c) => c.method === 'setMyCommands')) await nextCall();
+    })();
+    const res = await api('POST', '/connect', { bot_token: TOKEN });
+    expect(res.status).toBe(200);
+    await written;
+    expect(calls.map((c) => c.method)).toEqual(['getMe', 'setWebhook', 'getMyCommands', 'setMyCommands']);
+    expect(botMenu).toEqual([...commandMenu(), weather]);
+  }, 10_000);
 
   // Last in the file: the disconnect reconciles the connectors in the background.
   test("disconnect deletes the webhook and Kortix's menu entries only while the webhook points at this project; the chats' settings always go", async () => {
