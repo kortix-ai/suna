@@ -2498,6 +2498,36 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       }
     });
 
+    test('a page turn on a menu a pick used is out of date and draws nothing, also when the pick lands while the page is read', async () => {
+      const spies = modelSpies();
+      try {
+        await handleTelegramEvent(update('/model', ALLOWED, 7160));
+        const used = lastSent();
+        await handleTelegramPress(tap(used, 'Model One', { messageId: 7160 }));
+        calls.length = 0;
+        await handleTelegramPress(tap(used, 'More ›', { messageId: 7160 }));
+        expect(calls.map((c) => [c.method, c.body.text])).toEqual([['answerCallbackQuery', OUT_OF_DATE]]);
+
+        await handleTelegramEvent(update('/model', ALLOWED, 7161));
+        const menu = lastSent();
+        const catalog = await servableCatalog.servableProjectCatalog(undefined as never);
+        // The pick runs to its edit while More reads the catalog for page 2.
+        spies[0]!.mockImplementationOnce((async () => {
+          await handleTelegramPress(tap(menu, 'Model One', { messageId: 7161 }));
+          return catalog;
+        }) as never);
+        calls.length = 0;
+        await handleTelegramPress(tap(menu, 'More ›', { messageId: 7161 }));
+        expect(calls.map((c) => [c.method, c.body.text ?? null])).toEqual([
+          ['answerCallbackQuery', null],
+          ['editMessageText', 'Model for this chat set to cmd-m1. Messages you send after this reply use it.'],
+          ['answerCallbackQuery', OUT_OF_DATE],
+        ]);
+      } finally {
+        restore(spies);
+      }
+    });
+
     test('a press that cannot hold changes nothing: an option gone from the list, a sender not allowed, data Kortix did not post', async () => {
       const spies = modelSpies();
       try {

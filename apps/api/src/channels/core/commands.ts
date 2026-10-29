@@ -112,8 +112,9 @@ export async function runChannelCommand(ctx: CommandContext, command: ParsedComm
  * A press on a command button, from a sender the adapter admitted, on the message `ctx.target.messageId`.
  * Runs the command the token names in `ctx.target`'s conversation with the typed command's checks,
  * settles the press, then draws the reply over the pressed message. A terminal press (a pick, Stop,
- * New conversation) runs once per message. A token that no longer holds settles with OUT_OF_DATE and
- * changes nothing. Catches every error: a job retry would act twice.
+ * New conversation) runs once per message, and after it no press on that message draws anything.
+ * A token that no longer holds settles with OUT_OF_DATE and changes nothing. Catches every error:
+ * a job retry would act twice.
  */
 export async function runCommandPress(ctx: CommandContext, data: string, render: CommandRender, settle: PressSettle): Promise<void> {
   const press = parsePressData(data);
@@ -131,6 +132,10 @@ export async function runCommandPress(ctx: CommandContext, data: string, render:
       if (claim) await releaseThreadCreate(key, claim);
       return await settle(OUT_OF_DATE);
     }
+    // A page turn on a menu that a pick, Stop or New conversation used, also while this page was read,
+    // draws nothing over the result. ponytail: a terminal press that lands during the settle call still
+    // loses its result to this page; a lock across the edit closes that.
+    if (!claim && (await threadCreateHeld(key))) return await settle(OUT_OF_DATE);
     await settle();
     await render(reply);
   } catch (error) {
