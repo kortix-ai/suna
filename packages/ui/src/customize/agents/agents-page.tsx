@@ -268,7 +268,6 @@ export function AgentsPage({ projectId }: { projectId: string }) {
       <div className="flex h-full min-h-0 flex-1 flex-col">
         <CustomizeHeader
           title={tI18nComplete.raw('text279b44d2ab4b')}
-          description={t('agentsLead')}
           rule
           actions={
             <>

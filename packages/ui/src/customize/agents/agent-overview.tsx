@@ -3,18 +3,16 @@
 /**
  * The agent page's Overview tab: the agent at a glance.
  *
- * Main column, in reading order: who it is (the description and one generated
- * sentence whose nouns link to their Access view), what it does (its
- * instructions, edited in place as a formatted document). What it may touch,
- * its model, workspace and triggers are rail rows, and who may use it is the
- * header's Share: the Overview repeats none of them. The description and the
- * instructions write the page's draft in place; there is no separate editor.
- * The inspector beside it runs the page's full height behind one hairline:
- * Properties (the switches a person flips most), how the agent shows in the
- * picker, and where it is saved. Below `lg` it stacks under the document.
+ * One centered column, in reading order: the description, then the
+ * instructions (edited in place as a formatted document), then Properties
+ * (the switches a person flips most) and Source (where the agent is saved).
+ * What it may touch, its model, workspace and triggers are tabs, and who may
+ * use it is the header's Share: the Overview repeats none of them. The
+ * description and the instructions write the page's draft in place; there is
+ * no separate editor.
  *
  * One component for the editable and the read-only page. With `editor` the
- * aside's switches and selects write the shared draft; without it they show
+ * Properties switches and selects write the shared draft; without it they show
  * their values.
  */
 
@@ -44,7 +42,7 @@ import {
 import { useState } from 'react';
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
-import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
+import { agentDisplayName } from '../../internal/components/agent-mark';
 import { cn } from '../../internal/lib/utils';
 import { Input } from '../../primitives/input';
 import {
@@ -384,8 +382,8 @@ function SourceValue({ value }: { value: string }) {
 
 /**
  * Below the instructions, in the Settings dialect (`EditorSection`, `panel`
- * style): Properties (the switches a person flips most), how the agent shows
- * in the picker, and where it is saved. A title per group, rows in one
+ * style): Properties (the switches a person flips most) and where the agent
+ * is saved. A title per group, rows in one
  * bordered group, no sentence under a title.
  */
 function OverviewSettings({
@@ -513,14 +511,6 @@ function OverviewSettings({
             </span>
           )}
         </SettingRow>
-      </EditorSection>
-
-      <EditorSection title={t('inThePicker')}>
-        <div className="flex items-center gap-2.5 px-4 py-3">
-          <AgentMark slug={agent.name} />
-          <span className="text-foreground min-w-0 flex-1 truncate text-sm">{agentDisplayName(agent.name)}</span>
-          <span className="text-muted-foreground text-xs">{modeLabel}</span>
-        </div>
       </EditorSection>
 
       <EditorSection title={t('source')}>

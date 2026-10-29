@@ -25,6 +25,8 @@ import { docExtensions } from '../../markdown/doc-editor/doc-extensions';
 import { DocMenus } from '../../markdown/doc-editor/doc-menus';
 import { htmlToMarkdown, markdownToHtml } from '../../markdown/doc-editor/markdown';
 import { Button } from '../../primitives/button';
+import { ConfirmDialog } from '../../primitives/confirm-dialog';
+import Hint from '../../primitives/hint';
 import { Skeleton } from '../../primitives/skeleton';
 
 export function wordCount(text: string): number {
@@ -116,6 +118,7 @@ export function AgentInstructions({
     return () => observer.disconnect();
   }, [editor, unfolded]);
 
+  const [confirmEdit, setConfirmEdit] = useState(false);
   const words = wordCount(value ?? '');
   const folded = long && !unfolded;
 
@@ -128,22 +131,34 @@ export function AgentInstructions({
             <span className="text-muted-foreground ml-2 font-normal tabular-nums">{t('words', { count: words })}</span>
           ) : null}
         </h2>
-        {onAskMyKortix ? (
-          <Button variant="outline" size="sm" onClick={onAskMyKortix}>
-            <PencilSimpleIcon className="size-3.5" />
-            {tTabs('askToEdit')}
-          </Button>
-        ) : null}
       </div>
       <div
         className={cn(
           // A filled block, no border. Folded, it has no bottom inset: the fade meets the edge.
           'bg-popover relative overflow-hidden rounded-lg px-5 pt-4',
+          // Room for the pencil in the top-right corner.
+          onAskMyKortix && 'pr-12',
           folded ? 'pb-0' : 'pb-4',
           editable && 'cursor-text',
         )}
       >
         <style>{ARTIFACT_DOC_CSS}</style>
+        {onAskMyKortix ? (
+          // The Description box's pencil, in the same corner. My Kortix edits the
+          // instructions in a new session, so a click asks first.
+          <Hint label={tTabs('askToEdit')} side="top">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={tTabs('askToEdit')}
+              onClick={() => setConfirmEdit(true)}
+              className="text-muted-foreground hover:text-foreground absolute top-3 right-3 z-10"
+            >
+              <PencilSimpleIcon className="size-3.5" />
+            </Button>
+          </Hint>
+        ) : null}
         <div
           ref={frame}
           className={cn('kx-doc kx-doc-inline', !unfolded && 'max-h-80 overflow-hidden')}
@@ -169,6 +184,19 @@ export function AgentInstructions({
           </div>
         ) : null}
       </div>
+      {onAskMyKortix ? (
+        <ConfirmDialog
+          open={confirmEdit}
+          onOpenChange={setConfirmEdit}
+          title={tTabs('editInstructionsConfirmTitle')}
+          description={tTabs('editInstructionsConfirmBody')}
+          confirmLabel={tTabs('askToEdit')}
+          onConfirm={() => {
+            setConfirmEdit(false);
+            onAskMyKortix();
+          }}
+        />
+      ) : null}
     </section>
   );
 }

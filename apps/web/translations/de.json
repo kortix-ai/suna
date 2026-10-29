@@ -23431,6 +23431,8 @@
       "previewCopied": "Kopiert",
       "previewAccessScoped": "Nur was die Arbeit braucht",
       "previewAccessNone": "Keiner",
+      "editInstructionsConfirmTitle": "Bitte bestätigen",
+      "editInstructionsConfirmBody": "Möchtest du die Anweisungen wirklich bearbeiten? My Kortix startet dafür eine neue Sitzung.",
       "colorHelp": "Die Farbe des Agenten in Auswahllisten. In kortix.yaml gespeichert; die pi-Laufzeit nutzt sie noch nicht.",
       "providerOptions": "Provider-Optionen",
       "providerOptionsHelp": "Zusätzliche Einstellungen für den Modell-Provider als JSON. In kortix.yaml gespeichert; die pi-Laufzeit wendet sie noch nicht an.",

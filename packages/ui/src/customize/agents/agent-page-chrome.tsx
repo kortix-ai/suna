@@ -246,8 +246,9 @@ export function AgentTabBody({ children, className }: { children: ReactNode; cla
 }
 
 /**
- * The page before its reads land: the header, the rail and the Overview's
- * two columns, in the boxes the loaded page draws, so nothing moves.
+ * The page before its reads land: the header, the tab row, and the Overview's
+ * centered column as three grouped blocks (description, instructions,
+ * properties). Grouped on purpose: a line per field reads as noise.
  */
 export function AgentPageSkeleton() {
   const sidebar = useOptionalSidebar();
@@ -258,39 +259,18 @@ export function AgentPageSkeleton() {
         data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
       >
         <SidebarToggle />
-        <Skeleton className="size-10 shrink-0 rounded-md" />
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <Skeleton className="h-5 w-36 rounded-sm" />
-          <Skeleton className="h-3.5 w-64 max-w-full rounded-sm" />
-        </div>
-        <Skeleton className="hidden h-8 w-48 shrink-0 rounded-md sm:block" />
+        {/* The mark tile's literal 40px (`agent-mark.tsx` TILE[28]). */}
+        <Skeleton className="shrink-0 rounded-md py-0" style={{ width: 40, height: 40 }} />
+        <Skeleton className="h-5 w-40 rounded-sm py-0" />
       </header>
-      <div className="flex min-h-0 flex-1 overflow-hidden border-t">
-        <div className="hidden w-56 shrink-0 space-y-1 border-r px-2 pt-3 md:block" aria-hidden>
-          {['w-16', 'w-14', 'w-12', 'w-20', 'w-16', 'w-12', 'w-12', 'w-20', 'w-14'].map((w, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
-            <div key={i} className="flex h-8 items-center px-2.5">
-              <Skeleton className={cn('h-3.5 rounded-sm', w)} />
-            </div>
-          ))}
-        </div>
-        <div className="grid min-h-0 flex-1 gap-8 overflow-hidden px-4 pt-5 md:px-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="space-y-6">
-            <Skeleton className="h-4 w-3/4 rounded-sm" />
-            <Skeleton className="h-40 w-full rounded-md" />
-            <div className="divide-border divide-y rounded-md border">
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="flex items-center gap-3 px-4 py-3">
-                  <Skeleton className="size-6 rounded-sm" />
-                  <Skeleton className="h-4 w-40 rounded-sm" />
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="hidden space-y-3 lg:block">
-            <Skeleton className="h-48 w-full rounded-md" />
-            <Skeleton className="h-28 w-full rounded-md" />
-          </div>
+      <div className="shrink-0 border-b px-4 pb-3 md:px-8" aria-hidden>
+        <Skeleton className="h-4 w-80 max-w-full rounded-sm py-0" />
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden px-4 pt-5 md:px-8" aria-hidden>
+        <div className="mx-auto w-full max-w-3xl space-y-6">
+          <Skeleton className="h-20 w-full rounded-md py-0" />
+          <Skeleton className="h-80 w-full rounded-lg py-0" />
+          <Skeleton className="h-48 w-full rounded-md py-0" />
         </div>
       </div>
     </div>

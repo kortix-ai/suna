@@ -23431,6 +23431,8 @@
       "previewCopied": "コピー済み",
       "previewAccessScoped": "作業に必要なものだけ",
       "previewAccessNone": "なし",
+      "editInstructionsConfirmTitle": "確認してください",
+      "editInstructionsConfirmBody": "指示を編集しますか？My Kortix が変更のために新しいセッションを開始します。",
       "colorHelp": "ピッカーでのエージェントの色。kortix.yaml に保存されます。pi ランタイムはまだ使用しません。",
       "providerOptions": "プロバイダーオプション",
       "providerOptionsHelp": "モデルプロバイダー向けの追加設定（JSON）。kortix.yaml に保存されます。pi ランタイムはまだ適用しません。",

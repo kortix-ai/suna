@@ -8,7 +8,7 @@ import {
 import { useTranslations } from '../../i18n';
 import { ConnectorLogo } from '../../internal/connector-logo/connector-logo';
 import type { ConnectorLogoSource } from '../../internal/connector-logo/connector-logo-source';
-import { STATUS_DOT, STATUS_WORD, connectorStatusTone, type ConnectorStatusTone } from './detail/connector-status';
+import { STATUS_DOT, STATUS_WORD, connectorStatusTone } from './detail/connector-status';
 import { ConnectorStatusBadge as ToneBadge } from './detail/status-badge';
 import { cn } from '../../internal/lib/utils';
 
@@ -60,26 +60,12 @@ export function ConnectorStatusBadge({
   return tone === 'connected' ? null : <ToneBadge tone={tone} />;
 }
 
-const STATUS_TEXT: Record<ConnectorStatusTone, string> = {
-  connected: 'text-kortix-green',
-  account: 'text-kortix-orange',
-  error: 'text-kortix-red',
-};
-
-/**
- * Where the status colour reaches on the tile's border: solid near the dot on
- * the bottom-right corner, faded out by mid-tile. The toast's badge reflection
- * (`REFLECTION_MASK` in `primitives/toast.tsx`), scaled from its 20px icon to
- * this 36px tile.
- */
-const RIM_MASK = 'radial-gradient(circle 26px at 100% 100%, #000 35%, transparent 100%)';
 
 /**
  * A project connector's logo with its state on it, the way a Slack or Teams
  * app tile shows one: a dot on the bottom-right corner (green Connected,
- * orange Needs account, red Error), and the tile's border lit in that colour
- * from the dot, fading back to the plain border. The word is for screen
- * readers; the dot carries it on screen.
+ * orange Needs account, red Error). The word is for screen readers; the dot
+ * carries it on screen.
  */
 export function ConnectorStatusLogo({
   connector,
@@ -95,12 +81,6 @@ export function ConnectorStatusLogo({
   return (
     <span className="relative flex shrink-0">
       <ConnectorLogo source={source} size="lg" />
-      {/* 1.5px: a 1px rim reads as grey at this size, 2px as a frame. */}
-      <span
-        aria-hidden
-        className={cn('pointer-events-none absolute inset-0 rounded-md border-[1.5px] border-current', STATUS_TEXT[tone])}
-        style={{ maskImage: RIM_MASK, WebkitMaskImage: RIM_MASK }}
-      />
       <span aria-hidden className="bg-background absolute -right-1 -bottom-1 flex size-3 items-center justify-center rounded-full">
         <span className={cn('size-2 rounded-full', STATUS_DOT[tone])} />
       </span>

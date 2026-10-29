@@ -23431,6 +23431,8 @@
       "previewCopied": "已复制",
       "previewAccessScoped": "仅限工作所需",
       "previewAccessNone": "无",
+      "editInstructionsConfirmTitle": "请确认",
+      "editInstructionsConfirmBody": "确定要编辑指令吗？My Kortix 会启动一个新会话来进行修改。",
       "colorHelp": "智能体在选择器中的颜色。保存在 kortix.yaml 中；pi 运行时暂不使用。",
       "providerOptions": "提供方选项",
       "providerOptionsHelp": "模型提供方的额外设置（JSON）。保存在 kortix.yaml 中；pi 运行时暂不应用。",

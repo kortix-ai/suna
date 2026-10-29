@@ -23431,6 +23431,8 @@
       "previewCopied": "Copié",
       "previewAccessScoped": "Seulement ce dont le travail a besoin",
       "previewAccessNone": "Aucun",
+      "editInstructionsConfirmTitle": "Veuillez confirmer",
+      "editInstructionsConfirmBody": "Voulez-vous vraiment modifier les instructions ? My Kortix démarre une nouvelle session pour faire la modification.",
       "colorHelp": "La couleur de l’agent dans les sélecteurs. Enregistrée dans kortix.yaml ; le runtime pi ne l’utilise pas encore.",
       "providerOptions": "Options du fournisseur",
       "providerOptionsHelp": "Réglages supplémentaires pour le fournisseur du modèle, en JSON. Enregistrés dans kortix.yaml ; le runtime pi ne les applique pas encore.",

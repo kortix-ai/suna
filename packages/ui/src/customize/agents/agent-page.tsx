@@ -659,8 +659,8 @@ function AgentActions({
  * Triggers is not a view: it keeps the full width its list
  * and detail split needs.
  */
-/** A view beside the Capabilities or Access rail: the rail takes the width the wider column would. */
-const RAIL_COLUMN = 'max-w-3xl';
+/** A view beside the Capabilities or Access rail, centered in the space right of the rail. */
+const RAIL_COLUMN = 'mx-auto max-w-3xl';
 /** A one-view tab (Workspace, Model): centered, the Overview's column. */
 const CENTER_COLUMN = 'mx-auto max-w-3xl';
 

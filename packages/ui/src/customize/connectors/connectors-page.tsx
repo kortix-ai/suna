@@ -79,7 +79,7 @@ import { ConnectorBrowse } from './catalog/connector-browse';
 import { useCatalog } from './catalog/use-catalog';
 import { type AgentGrant, GrantModeTabs, withCatalog, type ResourceScope } from '../shared/agent-resource-scope';
 import { CapabilityPageShell, useCapabilityShellEmbed } from '../shared/capability-page-shell';
-import { AccessList, type AccessItem, plainGrantSwitch } from '../shared/access-list';
+import { type AccessItem, plainGrantSwitch } from '../shared/access-list';
 import { EditorList } from '../sections/view/agent-editor-primitives';
 import { ErrorState } from '../../primitives/error-state';
 import { EmptyArt } from '../../primitives/empty-art';
@@ -473,26 +473,45 @@ export function ConnectorsPage({
 
   // The project's own connectors, the way All apps shows the catalogue: logo
   // tiles in a grid, the state as a dot on the logo (`ConnectorStatusLogo`)
-  // instead of a pill. An agent's view keeps rows: each row carries its switch.
-  const ownConnectors = (list: typeof connectors) =>
-    agentScoped ? (
-      <AccessList items={connectorRows(list)} />
-    ) : (
+  // instead of a pill. In an agent's view each tile also carries the grant
+  // switch and, while granted, its policy set, beside the link.
+  const ownConnectors = (list: typeof connectors) => {
+    const rows = new Map(connectorRows(list).map((row) => [row.id, row]));
+    return (
       <div className={DENSE_GRID_CONTAINER_CLASSNAME}>
         <div className={DENSE_GRID_CLASSNAME}>
-          {list.map((connector) => (
-            <CatalogCard
-              key={connector.slug}
-              variant="plain"
-              href={connectorHref(projectId, connector.slug)}
-              leading={<ConnectorStatusLogo connector={connector} source={installedConnectorLogoSource(connector)} />}
-              title={connectorDisplayName(connector)}
-              subtitle={<span className="text-muted-foreground truncate text-xs">{describeConnector(connector)}</span>}
-            />
-          ))}
+          {list.map((connector) => {
+            const row = rows.get(connector.slug);
+            const toggle =
+              agentScoped && row?.onCheckedChange ? (
+                <span className="flex items-center gap-2">
+                  {row.checked && row.control && row.control !== '—' ? row.control : null}
+                  <Switch
+                    aria-label={connectorDisplayName(connector)}
+                    checked={row.checked === true}
+                    onCheckedChange={row.onCheckedChange}
+                    disabled={row.disabled}
+                  />
+                </span>
+              ) : undefined;
+            return (
+              <CatalogCard
+                key={connector.slug}
+                variant="plain"
+                href={connectorHref(projectId, connector.slug)}
+                leading={<ConnectorStatusLogo connector={connector} source={installedConnectorLogoSource(connector)} />}
+                title={connectorDisplayName(connector)}
+                subtitle={<span className="text-muted-foreground truncate text-xs">{describeConnector(connector)}</span>}
+                trailing={toggle}
+                trailingInteractive={toggle !== undefined}
+                className={cn(agentScoped && row?.checked === false && 'opacity-60 hover:opacity-100')}
+              />
+            );
+          })}
         </div>
       </div>
     );
+  };
 
   // Quiet on purpose: a filter, not a second tab strip.
   const catalogFilters = (

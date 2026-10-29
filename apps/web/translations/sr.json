@@ -23431,6 +23431,8 @@
       "previewCopied": "Копирано",
       "previewAccessScoped": "Само оно што посао захтева",
       "previewAccessNone": "Ништа",
+      "editInstructionsConfirmTitle": "Потврдите",
+      "editInstructionsConfirmBody": "Да ли сте сигурни да желите да измените упутства? My Kortix покреће нову сесију за ову измену.",
       "colorHelp": "Боја агента у изборницима. Чува се у kortix.yaml; pi окружење је још не користи.",
       "providerOptions": "Опције провајдера",
       "providerOptionsHelp": "Додатна подешавања за провајдера модела, као JSON. Чувају се у kortix.yaml; pi окружење их још не примењује.",

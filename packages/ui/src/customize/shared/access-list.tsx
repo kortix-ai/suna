@@ -52,18 +52,20 @@ const plain = (text: string) => text.replace(/`([^`]*)`/g, '$1');
 function AccessText({ item, quiet }: { item: AccessItem; quiet: boolean }) {
   return (
     <>
+      {/* The id is mono at normal tracking: the global `.font-mono` rule pulls it
+          to -0.025em and a 1.2 line height, which crowds a name and squeezes the
+          line under it. The block keeps the body line box (`leading-5`). */}
       <span
         className={cn(
-          'block truncate text-sm underline-offset-4 group-hover/open:underline',
-          item.title === undefined && 'font-mono',
+          'block truncate text-sm leading-5 underline-offset-4 group-hover/open:underline',
           quiet ? 'text-muted-foreground' : 'text-foreground',
         )}
       >
-        {item.title ?? item.id}
+        {item.title ?? <span className="font-mono !tracking-normal">{item.id}</span>}
       </span>
       {item.description ? (
         <span
-          className="text-muted-foreground block truncate text-xs"
+          className="text-muted-foreground mt-1 block truncate text-xs"
           title={typeof item.description === 'string' ? plain(item.description) : undefined}
         >
           {typeof item.description === 'string' ? plain(item.description) : item.description}
@@ -74,13 +76,13 @@ function AccessText({ item, quiet }: { item: AccessItem; quiet: boolean }) {
 }
 
 /**
- * The agent page's rail layout: one filled card, a divider between rows; a row that is
+ * The agent page's rail layout: one filled, bordered card, a divider between rows; a row that is
  * switched off reads muted; the row's rule sits left of its switch.
  */
 function CardAccessList({ items }: { items: AccessItem[] }) {
   const t = useI18nTranslations('agentCapabilities');
   return (
-    <ul className="bg-popover divide-border divide-y overflow-hidden rounded-lg">
+    <ul className="bg-popover divide-border divide-y overflow-hidden rounded-lg border">
       {items.map((item) => {
         const off = item.onCheckedChange !== undefined && !item.checked;
         return (

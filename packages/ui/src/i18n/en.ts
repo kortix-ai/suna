@@ -7791,6 +7791,8 @@ const catalog = {
       "previewCopied": "Copied",
       "previewAccessScoped": "Only what the work needs",
       "previewAccessNone": "None",
+      "editInstructionsConfirmTitle": "Please confirm",
+      "editInstructionsConfirmBody": "Are you sure you want to edit the instructions? My Kortix starts a new session to make the change.",
       "colorHelp": "The agent's color in pickers. Saved in kortix.yaml; the pi runtime does not use it yet.",
       "providerOptions": "Provider options",
       "providerOptionsHelp": "Extra settings for the model provider, as JSON. Saved in kortix.yaml; the pi runtime does not apply them yet.",
