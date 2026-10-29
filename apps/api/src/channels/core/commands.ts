@@ -31,7 +31,7 @@ import { type SettingsChannel, ensureChatBinding, setChannelAgent, setChannelMod
 import { type ChatThreadSession, claimThreadCreate, findChatThreadSession, releaseThreadCreate, threadCreateHeld } from './threads';
 
 /** A button under a reply. */
-export interface CommandAction {
+interface CommandAction {
   label: string;
   press: CommandPress;
 }
@@ -62,7 +62,7 @@ const PAGE_SIZE = 8;
 const PRESS_CLAIM_TTL_MS = 24 * 60 * 60_000;
 /** A menu Kortix sent takes presses this long; after it, its buttons are out of date. */
 const MENU_TTL_MS = 30 * 24 * 60 * 60_000;
-export const OUT_OF_DATE = 'This menu is out of date. Send the command again for a new one.';
+const OUT_OF_DATE = 'This menu is out of date. Send the command again for a new one.';
 
 /**
  * Draws one reply: a new message for a typed command, the pressed message in place for a press.
@@ -70,7 +70,7 @@ export const OUT_OF_DATE = 'This menu is out of date. Send the command again for
  */
 export type CommandRender = (reply: CommandReply) => Promise<void>;
 /** Settles a press (Telegram: answerCallbackQuery). `text`: a short notice only the presser sees. Never throws. */
-export type PressSettle = (text?: string) => Promise<void>;
+type PressSettle = (text?: string) => Promise<void>;
 
 /** One admitted command. The adapter already ran its sender gate: the core checks no person. */
 export interface CommandContext {
@@ -231,16 +231,10 @@ function clipped(text: string, max: number): string {
   return `${/[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut}…`;
 }
 
-/** One page of a list; a page past the end is the last. */
-function paged<T>(items: readonly T[], page: number): { shown: T[]; page: number; pages: number } {
-  const pages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
-  const at = Math.min(Math.max(page, 0), pages - 1);
-  return { shown: items.slice(at * PAGE_SIZE, (at + 1) * PAGE_SIZE), page: at, pages };
-}
-
 /**
  * One page of a model or agent list: the project default heads page 1, then the current option,
- * then the rest. `current`: the chosen value; null (or 'default') is the project default.
+ * then the rest. `current`: the chosen value; null (or 'default') is the project default. A page
+ * past the end is the last.
  */
 function choices(
   name: 'model' | 'agent',
@@ -253,19 +247,20 @@ function choices(
 ): CommandReply {
   const chosen = current === 'default' ? null : current;
   const sorted = [...items.filter((i) => i.value === chosen), ...items.filter((i) => i.value !== chosen)];
-  const at = paged(sorted, page);
+  const pages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const at = Math.min(Math.max(page, 0), pages - 1);
   const option = (value: string, label: string, isCurrent: boolean) => ({ label, current: isCurrent, press: { name, pick: choiceRef(value) } });
   return {
     kind: 'choices',
     title,
     options: [
-      ...(at.page === 0 ? [option('default', defaultLabel, chosen === null)] : []),
-      ...at.shown.map((i) => option(i.value, i.label, i.value === chosen)),
+      ...(at === 0 ? [option('default', defaultLabel, chosen === null)] : []),
+      ...sorted.slice(at * PAGE_SIZE, (at + 1) * PAGE_SIZE).map((i) => option(i.value, i.label, i.value === chosen)),
     ],
-    page: at.page,
-    pages: at.pages,
-    ...(at.page > 0 ? { back: { name, page: at.page - 1 } } : {}),
-    ...(at.page < at.pages - 1 ? { more: { name, page: at.page + 1 } } : {}),
+    page: at,
+    pages,
+    ...(at > 0 ? { back: { name, page: at - 1 } } : {}),
+    ...(at < pages - 1 ? { more: { name, page: at + 1 } } : {}),
     usage,
   };
 }
