@@ -3,7 +3,7 @@ import { channelPromptText, parseChannelMessage } from '@kortix/shared';
 import { config } from '../../config';
 import type { TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
-import { telegramEnvelope, telegramMessageEvent, telegramNotice, telegramQuestionText, telegramThreadId, type TelegramMessage } from './session';
+import { telegramEnvelope, telegramFileOf, telegramMessageEvent, telegramNotice, telegramQuestionText, telegramThreadId, type TelegramMessage } from './session';
 
 const message: TelegramMessage = {
   message_id: 7,
@@ -60,6 +60,58 @@ describe('telegram inbox envelope', () => {
       messageText: 'next\n\nline',
       followUp: false,
     });
+  });
+});
+
+describe('telegram files', () => {
+  const { text: _text, ...bare } = message;
+  const photo: TelegramMessage = {
+    ...bare,
+    photo: [
+      { file_id: 'ph-small', width: 90, height: 90 },
+      { file_id: 'ph-big', width: 1280, height: 960, file_size: 120_000 },
+    ],
+  };
+  const voice: TelegramMessage = { ...bare, voice: { file_id: 'v1', duration: 7, mime_type: 'audio/ogg; codecs=opus' } };
+  const report: TelegramMessage = { ...bare, document: { file_id: 'd1', file_name: 'report.pdf', mime_type: 'application/pdf' } };
+  const sticker: TelegramMessage = { ...bare, sticker: { emoji: '👍' } };
+  const event = (m: object) => telegramMessageEvent('p1', '555', { update_id: 9, message: m as TelegramMessage });
+
+  test('a photo or a sticker with no text is stored; a join, a pin and a location store nothing', () => {
+    expect(event(photo)?.data.message).toEqual(photo as unknown as Record<string, unknown>);
+    expect(event(sticker)).not.toBeNull();
+    expect(event({ ...bare, new_chat_members: [{ id: 5 }] })).toBeNull();
+    expect(event({ ...bare, pinned_message: { message_id: 3 } })).toBeNull();
+    expect(event({ ...bare, location: { latitude: 1, longitude: 2 } })).toBeNull();
+  });
+
+  test("the largest photo by area, in either order; the message's own file, never a quoted one", () => {
+    expect(telegramFileOf(photo)?.ref.file_id).toBe('ph-big');
+    expect(telegramFileOf({ ...photo, photo: [...photo.photo!].reverse() })?.ref.file_id).toBe('ph-big');
+    expect(telegramFileOf({ ...message, reply_to_message: photo } as TelegramMessage)).toBeNull();
+    expect(telegramFileOf(sticker)).toBeNull();
+  });
+
+  test('an animation is read once, as its document; a missing name and type get the defaults', () => {
+    const gif = { ...bare, animation: { file_id: 'a1', file_name: 'loop.mp4', mime_type: 'video/mp4' }, document: { file_id: 'a1', file_name: 'loop.mp4', mime_type: 'video/mp4' } };
+    expect(telegramFileOf(gif as TelegramMessage)).toEqual({ ref: gif.document, filename: 'loop.mp4', mime: 'video/mp4', label: 'file loop.mp4' });
+    expect(telegramFileOf(photo)).toMatchObject({ filename: 'photo.jpg', mime: 'image/jpeg', label: 'photo' });
+    expect(telegramFileOf({ ...bare, document: { file_id: 'd2' } })).toMatchObject({ filename: 'file', mime: 'application/octet-stream', label: 'file' });
+    expect(telegramFileOf({ ...bare, voice: { file_id: 'v2' } })).toMatchObject({ filename: 'voice.ogg', mime: 'audio/ogg', label: 'voice message' });
+    expect(telegramFileOf({ ...bare, video_note: { file_id: 'n1', duration: 3 } })).toMatchObject({ filename: 'video_note.mp4', mime: 'video/mp4', label: 'video message, 3 s' });
+  });
+
+  test('a message with no text reads as its file or sticker; a caption wins; an album item says so', () => {
+    const text = (m: TelegramMessage) => telegramEnvelope(m).text;
+    expect(text(photo)).toBe('(photo)');
+    expect(text(report)).toBe('(file report.pdf)');
+    expect(text(voice)).toBe('(voice message, 7 s)');
+    expect(text(sticker)).toBe('(sticker 👍)');
+    expect(text({ ...photo, caption: 'what is this?' })).toBe('what is this?');
+    const album = 'This message is one item of an album. Telegram sends each item as its own message, and usually only the first carries the caption.';
+    expect(telegramEnvelope({ ...photo, media_group_id: 'g1' }).notes).toContain(album);
+    expect(telegramEnvelope(photo).notes).not.toContain(album);
+    expect(parseChannelMessage(channelPromptText(telegramEnvelope(photo)))?.messageText).toBe('(photo)');
   });
 });
 

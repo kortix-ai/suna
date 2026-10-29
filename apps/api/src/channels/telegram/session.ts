@@ -8,7 +8,8 @@
  *   `/start`        → a welcome reply
  *   `/new`          → forget the chat's session; the next message starts a new one
  *   anything else   → the core: a follow-up into the chat's session, or a new
- *                     project-visible session bound to the chat
+ *                     project-visible session bound to the chat; the message's own
+ *                     file (photo, document, audio, voice, video) goes with it
  *   a button press  → the answer to the agent's question (`handleTelegramPress`,
  *                     through core/questions.ts)
  *
@@ -40,10 +41,13 @@ import { classifyTurnError } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
 import { startErrorMessage, TELEGRAM_START_ERROR_COMMANDS } from '../start-error';
 import { telegramAccessPort } from './access';
-import { TELEGRAM_UPDATES, telegramCall } from './api';
+import { TELEGRAM_UPDATES, telegramCall, telegramFile } from './api';
 import { loadTelegramBotToken, loadTelegramInstall, loadTelegramWebhookSecret } from './installs';
 
 export const TELEGRAM_MESSAGE_EVENT = 'telegram.message.created';
+
+/** A file a message carries: the id `getFile` takes, and what Telegram states about it. */
+interface TelegramFileRef { file_id: string; file_size?: number; file_name?: string; mime_type?: string; duration?: number }
 
 export interface TelegramMessage {
   message_id: number;
@@ -54,6 +58,52 @@ export interface TelegramMessage {
   caption?: string;
   message_thread_id?: number;
   is_topic_message?: boolean;
+  photo?: Array<TelegramFileRef & { width: number; height: number }>;
+  /** Also set for an animation, so an animation is read once, as this. */
+  document?: TelegramFileRef;
+  audio?: TelegramFileRef;
+  voice?: TelegramFileRef;
+  video?: TelegramFileRef;
+  video_note?: TelegramFileRef;
+  sticker?: { emoji?: string };
+  media_group_id?: string;
+}
+
+/** Each kind of file, in the order read: the name and type Telegram leaves out, and the session-view label. */
+const TELEGRAM_FILE_KINDS = [
+  { kind: 'photo', name: 'photo.jpg', mime: 'image/jpeg', label: 'photo' },
+  { kind: 'document', name: 'file', mime: 'application/octet-stream', label: 'file' },
+  { kind: 'audio', name: 'audio.mp3', mime: 'audio/mpeg', label: 'audio' },
+  { kind: 'voice', name: 'voice.ogg', mime: 'audio/ogg', label: 'voice message' },
+  { kind: 'video', name: 'video.mp4', mime: 'video/mp4', label: 'video' },
+  { kind: 'video_note', name: 'video_note.mp4', mime: 'video/mp4', label: 'video message' },
+] as const;
+
+/**
+ * The message's own file, never a quoted message's (`reply_to_message`). A photo comes in several
+ * sizes: the largest by area, since the Bot API does not state their order. Null: no file.
+ */
+export function telegramFileOf(message: TelegramMessage): { ref: TelegramFileRef; filename: string; mime: string; label: string } | null {
+  for (const k of TELEGRAM_FILE_KINDS) {
+    const value = message[k.kind];
+    const ref = Array.isArray(value)
+      ? value.reduce<(typeof value)[number] | undefined>((best, size) => (!best || size.width * size.height > best.width * best.height ? size : best), undefined)
+      : value;
+    if (!ref?.file_id) continue;
+    const label = k.kind === 'document' && ref.file_name ? `file ${ref.file_name}`
+      : ref.duration && (k.kind === 'voice' || k.kind === 'video_note') ? `${k.label}, ${ref.duration} s`
+      : k.label;
+    return { ref, filename: ref.file_name || k.name, mime: ref.mime_type || k.mime, label };
+  }
+  return null;
+}
+
+/** What the session view shows for a message with no text or caption. */
+function telegramLabel(message: TelegramMessage): string {
+  const file = telegramFileOf(message);
+  if (file) return `(${file.label})`;
+  if (message.sticker) return message.sticker.emoji ? `(sticker ${message.sticker.emoji})` : '(sticker)';
+  return '(no text)';
 }
 
 /** A tap on an inline button. */
@@ -79,7 +129,10 @@ export function telegramThreadId(message: TelegramMessage): string {
     : String(message.chat.id);
 }
 
-/** The inbox envelope for an update, or null when it carries nothing to answer. Edits are skipped. */
+/**
+ * The inbox envelope for an update, or null when it carries nothing to answer. Edits are skipped, and so
+ * is a message with no text, caption, file or sticker: a join, a pin, a location, a contact or a poll.
+ */
 export function telegramMessageEvent(
   projectId: string,
   botId: string,
@@ -87,6 +140,7 @@ export function telegramMessageEvent(
 ): IntegrationEvent | null {
   const message = update.message;
   if (!message?.chat || message.from?.is_bot) return null;
+  if (message.text === undefined && message.caption === undefined && !message.sticker && !telegramFileOf(message)) return null;
   return {
     id: String(update.update_id),
     source: `telegram:${botId}`,
@@ -381,6 +435,7 @@ export async function handleTelegramEvent(
     ...(message.is_topic_message ? { message_thread_id: message.message_thread_id } : {}),
   }).catch(() => undefined);
 
+  const file = telegramFileOf(message);
   await routeChannelMessage(
     telegramPort,
     {
@@ -391,6 +446,14 @@ export async function handleTelegramEvent(
         createClaim,
       },
       followUp: { text: channelPromptText(telegramEnvelope(message)) },
+      files: file
+        ? [{
+            filename: file.filename,
+            mime: file.mime,
+            ...(file.ref.file_size ? { size: file.ref.file_size } : {}),
+            read: (maxBytes) => telegramFile(token, file.ref.file_id, maxBytes),
+          }]
+        : [],
       plan: async (revived) => ({
         project,
         visibility: 'project',
@@ -511,7 +574,7 @@ export function telegramEnvelope(message: TelegramMessage): ChannelEnvelope {
     platform: CHANNELS.telegram.envelope,
     sender: from?.username ? `@${from.username}` : name || `user ${from?.id ?? 'unknown'}`,
     where: chat.type === 'private' ? 'direct message' : chat.title || `chat ${chat.id}`,
-    text: message.text ?? message.caption ?? '(no text: a photo, file or sticker)',
+    text: message.text ?? message.caption ?? telegramLabel(message),
     reply: connectorReply(TELEGRAM_CHANNEL_CONNECTOR_SLUG, 'send_message', {
       chat_id: String(chat.id),
       text: '<reply>',
@@ -520,6 +583,9 @@ export function telegramEnvelope(message: TelegramMessage): ChannelEnvelope {
     }),
     notes: [
       `Chat ${chat.id} (${chat.type})${topic ? `, topic ${topic}` : ''}, sender id ${from?.id ?? 'unknown'}, message id ${message.message_id}.`,
+      ...(message.media_group_id
+        ? ['This message is one item of an album. Telegram sends each item as its own message, and usually only the first carries the caption.']
+        : []),
       `One message holds at most ${CHANNELS.telegram.messageChars} characters; send a longer answer as several messages.`,
       'To let the user choose between options, call your question tool: Kortix posts it in this chat when it can, with buttons for a single choice; otherwise its result says how to ask.',
       `While you work on a long task, show typing: ${connectorReply(TELEGRAM_CHANNEL_CONNECTOR_SLUG, 'send_chat_action', { chat_id: String(chat.id) })}.`,

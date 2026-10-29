@@ -57,6 +57,17 @@ const press = (updateId: number) =>
   });
 
 const GLOBAL_500 = { error: true, message: 'Internal server error', status: 500 };
+/** A photo with no caption, in two sizes: only file ids, as Telegram sends it. */
+const PHOTO = {
+  message_id: 1006,
+  date: DATE,
+  chat: { id: 777, type: 'private' },
+  from: { id: 111, username: 'synthetic' },
+  photo: [
+    { file_id: 'ph-small', file_unique_id: 'u-small', file_size: 1500, width: 90, height: 90 },
+    { file_id: 'ph-big', file_unique_id: 'u-big', file_size: 120000, width: 1280, height: 960 },
+  ],
+};
 
 interface Case {
   name: string;
@@ -262,6 +273,39 @@ const CASES: Case[] = [
     response: GLOBAL_500,
     stored: [1001, 1002, 1003],
     errorLine: `POST /v1/webhooks/telegram/${LIVE} -> 500 [DB ERROR P0001]`,
+  },
+  {
+    name: 'a photo with no text gets 200 and is stored as sent, its sizes included',
+    projectId: LIVE,
+    headers: SIGNED,
+    body: JSON.stringify({ update_id: 1006, message: PHOTO }),
+    status: 200,
+    response: { ok: true },
+    stored: [1001, 1002, 1003, 1006],
+    payload: {
+      updateId: 1006,
+      value: {
+        id: '1006',
+        source: `telegram:${BOT}`,
+        type: 'telegram.message.created',
+        time: new Date(DATE * 1000).toISOString(),
+        subject: '777',
+        projectId: LIVE,
+        data: { message: PHOTO },
+      },
+    },
+  },
+  {
+    name: 'a service message (a member joins) gets 200 and stores nothing',
+    projectId: LIVE,
+    headers: SIGNED,
+    body: JSON.stringify({
+      update_id: 1007,
+      message: { message_id: 1007, date: DATE, chat: { id: 777, type: 'group' }, from: { id: 111 }, new_chat_members: [{ id: 5 }] },
+    }),
+    status: 200,
+    response: { ok: true },
+    stored: [1001, 1002, 1003, 1006],
   },
 ];
 
