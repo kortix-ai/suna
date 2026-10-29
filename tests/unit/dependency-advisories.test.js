@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 // KRTX-3420: every resolved release of these packages includes its advisory fix.
 // Lockfiles are the shipped dependency inventory, including transitive copies.
 const FIXED = {
+  // GHSA-3f7j-7jwc-fxfj (Windows services command injection through Unicode quotes)
+  systeminformation: '>=5.33.16',
   // GHSA-85x2-q946-cp5h, GHSA-8c8m-p3m8-cjg8, GHSA-m943-m63m-w62w (address parsing misdelivery)
   nodemailer: '>=10.1.4',
   // GHSA-mrhx-c7xc-m3w5 (unbounded issue accumulation). zod 3 is affected too but has
