@@ -403,6 +403,10 @@
         "connected": {
           "label": "Повезани налози"
         },
+        "chrome": {
+          "label": "Kortix у Chrome-у",
+          "description": "Твоје сесије користе Chrome са твојим пријавама. Видиш сваки корак."
+        },
         "tokens": {
           "label": "Лични приступни кључеви",
           "description": "API кључеви који делују у ваше име — за CLI, скрипту или CI задатак."
@@ -1294,6 +1298,14 @@
         "session_groups": {
           "name": "Групе сесија",
           "description": "Груписање сесија у бочној траци у именоване фасцикле које дели цео пројекат, на пример једну по продавници или клијенту. Премести сесију у групу из њеног менија или превлачењем; преуреди и скупи групе."
+        },
+        "artifact_comments": {
+          "name": "Коментари на артефакте",
+          "description": "Разговарајте о документима и страницама у нитима са особама и агентима. Захтева Артефакте."
+        },
+        "chrome": {
+          "name": "Kortix у Chrome-у",
+          "description": "Дозволите сесији да користи повезани Chrome прегледач. Можете преузети контролу или је зауставити у сваком тренутку."
         }
       },
       "channelsSwitch": {
@@ -1652,7 +1664,8 @@
       "account": "Налог",
       "loadError": "Учитавање пројеката није успело",
       "createIn": "Направи пројекат у {account}",
-      "localComputer": "Ваш рачунар"
+      "localComputer": "Ваш рачунар",
+      "appsAndExtensions": "Апликације и проширења"
     },
     "manifestUpgrade": {
       "title": "Надогради на v3",
@@ -2944,6 +2957,13 @@
         "updateFailed": "Ажурирање лозинке није успело",
         "unexpected": "Дошло је до неочекиване грешке"
       }
+    },
+    "panel": {
+      "waitingTitle": "Пријављивање у току",
+      "waitingBody": "Повезујемо ову таблу са вашим Kortix налогом.",
+      "errorTitle": "Пријава није успела",
+      "errorBody": "Пријавите се на Kortix у картици прегледача, па поново отворите ову таблу.",
+      "signIn": "Пријавите се"
     }
   },
   "onboarding": {
@@ -20398,6 +20418,8 @@
       "text59e5965495d9": "Исправке",
       "text724b09397472": "Dodavanje {name} u {project}",
       "text1e007c47254d": "Podešavanje radi u pozadini. Dobićete obaveštenje kada bude gotovo.",
+      "text18e8185e96b0": "Kopiraj prompt",
+      "text0c62d1af38c5": "Ili koristite",
       "text57f57edb6f16": "Zahtev za izmenu #{number} je spreman za pregled.",
       "texta8597db6f24b": "Уклони вештину",
       "text5f6ba69d66d1": "Вештина је уклоњена",
@@ -20852,7 +20874,7 @@
       "textd44914710143": "Пронађите послове који су утихнули и саставите наставак за сваког власника.",
       "texte12dba91f111": "Радите тамо где већ јесте.",
       "text1265287db3a9": "Аркадија",
-      "textdc8df43d2f44": "Четири случаја употребе који показују шта агенти на Kortix раде.",
+      "textdc8df43d2f44": "Три случаја употребе који показују шта агенти на Kortix раде.",
       "textb37b0def3a13": "Прегледај по тиму",
       "texta3b142af6e97": "употреба",
       "texta43f1924db10": "Ниједан случај употребе се не поклапа",
@@ -21897,6 +21919,127 @@
     "calendarFailed": "Neuspešno",
     "calendarEstimatedSr": "Прошло активирање, процењено на основу распореда",
     "calendarUpcomingSr": "Предстојеће"
+  },
+  "chrome": {
+    "pill": "Kortix у Chrome-у",
+    "connectTitle": "Додај Kortix у Chrome",
+    "connectDescription": "Дозволи да твоје сесије користе Chrome, са твојим пријавама. Видиш шта раде и можеш да их зауставиш кад год хоћеш.",
+    "promoLabel": "Kortix у Chrome-у",
+    "dismissPromo": "Одбаци",
+    "steps": {
+      "install": {
+        "title": "Додај проширење",
+        "description": "Из Chrome Web Store-а.",
+        "done": "Kortix је у Chrome-у.",
+        "descriptionUnlisted": "Учитај га у Chrome."
+      },
+      "connect": {
+        "title": "Пријави се",
+        "description": "Пријави се на Kortix из проширења.",
+        "done": "Пријављен си."
+      },
+      "done": {
+        "title": "Повезано",
+        "description": "Твој прегледач се појављује овде."
+      }
+    },
+    "addToChrome": "Додај у Chrome",
+    "finishInChrome": "Chrome је отворио Kortix картицу. Тамо кликни Повежи.",
+    "connect": "Повежи",
+    "connecting": "Повезивање…",
+    "done": "Готово",
+    "unsupported": "Отвори Kortix у Chrome-у, Edge-у, Brave-у или Arc-у да га повежеш. Копирај везу да га тамо отвориш.",
+    "connectFailed": "Повезивање прегледача није успело. Покушајте поново.",
+    "online": "На мрежи",
+    "offline": "Ван мреже",
+    "lastSeen": "Последњи пут виђен {time}",
+    "usedBy": "{count, plural, one {Тренутно га користи # сесија} other {Тренутно га користи # сесија}}",
+    "connectAnother": "Додај други прегледач",
+    "listTitle": "Повезани прегледачи",
+    "rename": "Преименуј {name}",
+    "renameLabel": "Назив прегледача",
+    "disconnect": "Прекини везу",
+    "disconnectTitle": "Прекинути везу са {name}?",
+    "disconnectDescription": "Сесије које га користе се заустављају. Да би га поново користио, повежи га из Chrome-а.",
+    "disconnected": "Веза са прегледачем је прекинута",
+    "disconnectFailed": "Није могуће прекинути везу са прегледачем. Покушајте поново.",
+    "updateFailed": "Није могуће сачувати измену. Покушајте поново.",
+    "loadFailed": "Није могуће учитати твоје прегледаче.",
+    "retry": "Покушајте поново",
+    "access": {
+      "label": "Приступ",
+      "always": "Без питања",
+      "ask": "Питај сваки пут",
+      "off": "Искључено",
+      "description": "Да ли те сесија прво пита."
+    },
+    "scope": {
+      "label": "Картице",
+      "own": "Само картице које отвара",
+      "all": "Све картице",
+      "description": "Које картице сесија може да види."
+    },
+    "how": {
+      "title": "Како функционише",
+      "group": "Свака сесија ради у својој групи картица, са сјајем на страници.",
+      "control": "Преузми контролу или Заустави са траке на страници, у било ком тренутку.",
+      "own": "Само твоје сесије могу да користе твој претраживач."
+    },
+    "howToInstall": "Како да инсталираш",
+    "copyLink": "Копирај везу",
+    "linkCopied": "Веза је копирана",
+    "copyFailed": "Веза није копирана. Покушај поново.",
+    "extensionMissing": "Kortix није пронашао проширење. Додај га, па поново учитај ову страницу.",
+    "another": {
+      "title": "Други прегледач",
+      "waiting": "Чека се да се нови прегледач повеже.",
+      "description": "Отвори Kortix у другом прегледачу или Chrome профилу, па тамо додај Kortix у Chrome. Копирај везу да га отвориш."
+    },
+    "panel": {
+      "project": "Пројекат",
+      "title": "Питај о овој страници",
+      "body": "Kortix чита картицу када пошаљеш. Пре тога ништа не напушта овај прегледач.",
+      "selectionTitle": "Питај о свом избору",
+      "selectionBody": "Kortix добија цитат, наслов странице и адресу. Остатак странице остаје у овом прегледачу, осим ако га не додаш.",
+      "actions": {
+        "summarize": "Сажми ову страницу",
+        "tables": "Извуци табеле",
+        "compare": "Упореди са другом картицом",
+        "email": "Напиши нацрт имејла о овоме"
+      },
+      "prompts": {
+        "summarize": "Сажми ову страницу.",
+        "tables": "Извуци табеле са ове странице као CSV.",
+        "compare": "Упореди ове странице.",
+        "email": "Напиши нацрт имејла о овој страници."
+      },
+      "recent": "Недавно у пројекту {project}",
+      "noProjects": "Направи пројекат да започнеш разговор.",
+      "createProject": "Направи пројекат",
+      "addTab": "Картица",
+      "addTabsTitle": "Додај картице",
+      "addTabsHint": "Шаљу се само картице које означиш.",
+      "addTabs": "{count, plural, =0 {Додај картице} one {Додај # картицу} few {Додај # картице} other {Додај # картица}}",
+      "noTabs": "Нема других картица у овом прозору.",
+      "tabsFailed": "Није могуће приказати твоје картице. Покушај поново.",
+      "cancel": "Откажи",
+      "removeTab": "Уклони {title}",
+      "removeQuote": "Уклони цитат",
+      "wholePage": "Цела страница",
+      "unreadable": "Kortix не може да прочита ову страницу.",
+      "message": "Порука",
+      "placeholder": "Питај било шта о овој картици",
+      "placeholderNoTab": "Питај Kortix било шта",
+      "modeLabel": "Како Kortix користи картицу",
+      "read": "Читај",
+      "act": "Делуј",
+      "readHint": "Читај шаље текст ове странице. Делуј дозвољава да Kortix клика и куца у овој картици.",
+      "actHint": "Kortix ставља ову картицу у своју групу картица и може тамо да клика и куца. Заустави га траком на страници.",
+      "send": "Пошаљи",
+      "readFailed": "Kortix није успео да прочита картицу. Поново учитај страницу и покушај поново.",
+      "screenshot": "Снимак екрана",
+      "captureFailed": "Kortix није успео да сними екран ове картице."
+    }
   },
   "computers": {
     "connectYourComputer": "Повежите свој рачунар",
@@ -23187,10 +23330,10 @@
     "link": "Линк",
     "linkPrompt": "URL линка",
     "fullScreen": "Цео екран",
-    "askAgent": "Питај агента",
+    "askAgent": "Pitaj AI",
     "askAgentTitle": "Затражи од агента да измени овај артефакт",
+    "askAgentHint": "Pokreće sesiju koja menja „{title}“ u Fajlovima i odgovara linkom.",
     "askAgentPlaceholder": "Шта треба променити?",
-    "askAgentSend": "Покрени сесију",
     "notFoundTitle": "Овај артефакт није доступан",
     "notFoundHint": "Обрисан је или је власник престао да га дели.",
     "busyTitle": "Kortix је заузет",
@@ -23202,7 +23345,7 @@
       "error": "Није сачувано. Нови покушај…",
       "conflict": "Измењено на другом месту"
     },
-    "placeholder": "Пиши, или откуцај # за наслов, - за листу, [ ] за задатак",
+    "placeholder": "Pišite ili ukucajte / za blokove",
     "placeholderHeading": "Наслов",
     "strike": "Прецртано",
     "inlineCode": "Код",
@@ -23244,7 +23387,29 @@
     "openFullPage": "Отвори целу страницу",
     "close": "Затвори",
     "conflictReload": "Учитај њихову",
-    "conflictKeepMine": "Задржи моју"
+    "conflictKeepMine": "Задржи моју",
+    "insertMedia": "Slika ili video…",
+    "diagram": "Dijagram",
+    "blockMenu": "Blokovi",
+    "blockMenuEmpty": "Nema odgovarajućih blokova",
+    "embedOffer": "Nalepi link kao",
+    "keepAsLink": "Zadrži kao link",
+    "showEmbed": "Prikaži ugrađeno",
+    "openSession": "Otvori sesiju",
+    "newChat": "Novo ćaskanje",
+    "askAgentReply": "Odgovori agentu",
+    "uploading": "Otpremanje…",
+    "creating": "Pravljenje…",
+    "askAgentNoFiles": "Pošaljite prvu poruku kao tekst. Fajlove dodajte u ćaskanju kada agent odgovori.",
+    "askAgentHistory": "Istorija",
+    "askAgentHistoryEmpty": "Još nema ćaskanja o ovom artefaktu.",
+    "peopleWithAccess": "Osobe sa pristupom: {names}",
+    "docCreated": "Dokument je napravljen",
+    "open": "Otvori",
+    "embedOpen": "Otvori link",
+    "embedConvert": "Pretvori u link",
+    "embedCopy": "Kopiraj link",
+    "embedDelete": "Obriši"
   },
   "emailConnect": {
     "homeTitle": "Gde je sanduče",
@@ -23854,5 +24019,53 @@
     "unavailable": "Slika nije dostupna",
     "tryAgain": "Pokušajte ponovo",
     "details": "Detalji slike"
+  },
+  "appsModal": {
+    "title": "Апликације и проширења",
+    "subtitle": "Користи Kortix у свом прегледачу, на свом рачунару и из својих алата.",
+    "mock": {
+      "group": "Kortix · Врати моју поруџбину",
+      "button": "Покрени повраћај",
+      "working": "Kortix ради",
+      "takeOver": "Преузми контролу",
+      "stop": "Заустави"
+    },
+    "chrome": {
+      "name": "Kortix у Chrome-у",
+      "description": "Kortix отвара странице, кликће и попуњава формуларе у твом претраживачу, са твојим пријавама. Видиш сваки корак.",
+      "connect": "Повежи",
+      "connecting": "Повезивање…",
+      "manage": "Управљај",
+      "unsupported": "Отвори Kortix у Chrome-у, Edge-у, Brave-у или Arc-у да га додаш. Копирај везу да га тамо отвориш.",
+      "group": "Прегледач",
+      "manageLabel": "Управљај Kortix-ом у Chrome-у",
+      "summary": "{count, plural, one {# прегледач} few {# прегледача} other {# прегледача}} · {online} на мрежи"
+    },
+    "computer": {
+      "title": "Твој рачунар",
+      "thisComputer": "Овај рачунар",
+      "thisComputerDescription": "Сесије користе твоје датотеке и терминал.",
+      "connected": "Повезано",
+      "connect": "Повежи",
+      "manage": "Управљај",
+      "desktop": "Апликација за рачунар",
+      "desktopDescription": "Kortix као апликација на твом рачунару.",
+      "desktopRunning": "Користиш је.",
+      "download": "Преузми",
+      "manageLabel": "Управљај овим рачунаром",
+      "connectLabel": "Повежи овај рачунар"
+    },
+    "developers": {
+      "title": "Програмери",
+      "cli": "Терминал (CLI)",
+      "cliDescription": "macOS и Linux, WSL на Windows-у",
+      "copy": "Копирај команду",
+      "copied": "Копирано",
+      "mcp": "MCP",
+      "mcpDescription": "Користи Kortix из Claude-а, Cursor-а или Codex-а.",
+      "connect": "Повежи",
+      "connectLabel": "Повежи MCP",
+      "copyFailed": "Команда није копирана. Покушај поново."
+    }
   }
 }

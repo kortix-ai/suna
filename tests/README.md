@@ -284,7 +284,7 @@ failed `deployed` flow fails the gate.
 | Sandbox stop and wake | SESS-12 |
 | LLM gateway | GW-2, GW-MANAGED-1 |
 | Stripe and billing webhooks | BILL-1, BILL-3, BILL-8, BILL-18 |
-| Object storage and uploads | SESS-31, SESS-31-log, FILE-9, MEMORY-4 |
+| Object storage and uploads | SESS-31, FILE-9, MEMORY-4 |
 | Git push to managed repositories | SHIP-1, RUN-7, GH-19, FILE-1 |
 | Money path: prompt to merged change request, real CLI | GOLD-1, CLI-SESS |
 | MCP over HTTP with a PAT | MCP-4 |
@@ -294,8 +294,8 @@ failed `deployed` flow fails the gate.
 | Internal cron key | BILL-13 |
 | Database writes over the deployed pool | ACCT-2, PROJ-1 |
 
-45 flows, picked for stability: in the 8 release-gate runs from 2026-10-13 to
-2026-10-15, 44 passed every run (SESS-31-log: 3 of 3 since it was added) and
+44 flows, picked for stability: in the 8 release-gate runs from 2026-10-13 to
+2026-10-15, 43 passed every run and
 RUN-3 failed once on a request timeout (run 38399331524). Their median times
 sum to ~10 min of flow work, which the 9 workers run in ~3 min. `unit/deployed-set.test.ts`
 pins this table to the tags, keeps the set between 30 and 50 flows, and rejects

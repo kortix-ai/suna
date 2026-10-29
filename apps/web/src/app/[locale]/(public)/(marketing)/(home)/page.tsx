@@ -24,7 +24,7 @@ export default function Home() {
       <SandBandHero />
       <WorksWithStrip />
       {/* Case studies ship with /services and /case-studies (SERVICES_PAGES_ENABLED). */}
-      {isServicesPagesEnabled() ? <CaseStudies /> : null}
+      {isServicesPagesEnabled() ? <CaseStudies allLink /> : null}
       <PillarsBand />
       {/* ProblemSolution ("Your know-how is everywhere.") is stashed: hidden
           from the home page by founder call, 2026-10-27; the component stays. */}

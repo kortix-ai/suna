@@ -257,7 +257,7 @@ export const surfaces = {
       id: 'cli',
       k: 'CLI',
       v: 'Run sessions and review change requests from a terminal.',
-      href: '/cli',
+      href: '/docs/developers#cli',
     },
     { id: 'slack', k: 'Slack', v: 'Mention the bot. One thread is one session.', href: '/slack' },
     {

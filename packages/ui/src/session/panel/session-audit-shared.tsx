@@ -217,7 +217,7 @@ export function riskTone(risk: string | null): 'destructive' | 'warning' | 'mute
 
 /** Terminal outcome of a gated action → badge tone. */
 export function statusTone(status: string): 'success' | 'destructive' | 'warning' | 'muted' {
-  if (status === 'ok') return 'success';
+  if (status === 'ok' || status === 'approved') return 'success';
   if (status === 'denied' || status === 'error') return 'destructive';
   if (status === 'pending_approval') return 'warning';
   return 'muted';
@@ -228,6 +228,8 @@ export function statusLabel(status: string): string {
   switch (status) {
     case 'ok':
       return 'Allowed';
+    case 'approved':
+      return 'Approved';
     case 'denied':
       return 'Denied';
     case 'error':

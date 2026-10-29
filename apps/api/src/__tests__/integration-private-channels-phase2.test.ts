@@ -491,13 +491,13 @@ describe('artifacts follow the one Drive rule', () => {
   test('a member shares it privately; a non-member never views or lists it, even when named in its sharing', async () => {
     const row = await share(scope, { userId: ALICE, sessionId: null }, await viewerOf(ALICE), { path: `${FOLDER}/deck` });
     artifactId = row.artifactId;
-    const named = await updateArtifactMeta(row, { shared_with_user_ids: [BOB, CAROL] });
+    const named = await updateArtifactMeta(row, { shared_with_user_ids: [BOB, CAROL] }, { userId: ALICE, sessionId: null });
     expect(canView(named, await viewerOf(BOB))).toBe(false);
     expect(canView(named, await viewerOf(MANAGER))).toBe(false);
     expect(canView(named, await viewerOf(CAROL))).toBe(true);
     expect((await listArtifacts(PROJECT, await viewerOf(BOB), { scope: 'all', limit: 50 })).map((a) => a.artifactId)).not.toContain(artifactId);
     expect((await listArtifacts(PROJECT, await viewerOf(CAROL), { scope: 'all', limit: 50 })).map((a) => a.artifactId)).toContain(artifactId);
-    await expect(updateArtifactMeta(named, { visibility: 'public' })).rejects.toMatchObject({ status: 403, code: 'private_channel' });
+    await expect(updateArtifactMeta(named, { visibility: 'public' }, { userId: ALICE, sessionId: null })).rejects.toMatchObject({ status: 403, code: 'private_channel' });
   });
 });
 

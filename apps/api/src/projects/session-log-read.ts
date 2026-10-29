@@ -10,11 +10,7 @@
  * one (OpenCode) and a native one (pi, no `kortix.transcript.v1` ext), whose v1 rows are the ones
  * the SDK renders through `toV1`.
  *
- * Neither read serves the v1 mirror (P8.2). A session with no log at all may be history from
- * before the journal that the backfill has not converted yet: both reads convert it first
- * (`convertMirrorOnRead`, `session-log-backfill.ts`) and then answer from the log. A mirror over
- * the capture's size cap is not converted on a request: the read throws
- * `SessionLogConvertingError` and the backfill's thread converts it.
+ * A session with no log answers as one with nothing saved: the v1 mirror is gone (P8.2 Release B2).
  *
  * The v1 window over a `fromV1` thread equals the mirror's window (deep equality), with these named differences:
  * - `captured_at` is the log's last write (the read thread's newest message write, or the session
@@ -45,7 +41,7 @@ import {
   type V1Row,
 } from '@kortix/api-contract/session-log';
 import { KORTIX_TRANSCRIPT_SCHEMA } from '@kortix/api-contract/transcript';
-import { projectSessions, sessionLogMessages, sessionLogs, sessionLogThreads, sessionTranscriptMirrors } from '@kortix/db';
+import { projectSessions, sessionLogMessages, sessionLogs, sessionLogThreads } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull, lt, lte, sql, type SQL } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
@@ -54,8 +50,6 @@ import {
   UnknownTranscriptCursorError,
   type MirrorSnapshot,
 } from './lib/session-transcript-mirror';
-import { convertMirrorOnRead } from './session-log-backfill';
-import { mirrorDrained } from './session-log-capture';
 import { rehydrateLargeTexts } from './session-log-blobs';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -91,30 +85,8 @@ function readThreads(tx: Tx, sessionId: string): Promise<ThreadRow[]> {
 
 type PageInput = { sessionId: string; threadId: string | null; beforeSeq: number | null; limit: number };
 
-/**
- * One page of one thread. Null when the session has no stored log and no v1 mirror to convert
- * (a new session), or no stored log once the mirror is drained (`mirrorDrained`: no mirror table
- * is read). `'mirror_unconverted'`: no log, but a mirror this read did not convert (another read
- * holds the session's conversion lock, or ingest is off), so the history exists and a client must
- * not read it as "nothing saved".
- */
-export async function readSessionLogPage(input: PageInput): Promise<SessionLogPage | 'unknown_thread' | 'mirror_unconverted' | null> {
-  const page = await readPage(input);
-  if (page !== null) return page;
-  if (await convertMirrorOnRead(input.sessionId)) return readPage(input);
-  const again = await readPage(input);
-  if (again !== null) return again;
-  // Drained: no mirror table is read (Release B1).
-  if (await mirrorDrained()) return null;
-  const [mirror] = await db
-    .select({ sessionId: sessionTranscriptMirrors.sessionId })
-    .from(sessionTranscriptMirrors)
-    .where(eq(sessionTranscriptMirrors.sessionId, input.sessionId))
-    .limit(1);
-  return mirror ? 'mirror_unconverted' : null;
-}
-
-function readPage(input: PageInput): Promise<SessionLogPage | 'unknown_thread' | null> {
+/** One page of one thread. Null when the session has no stored log (a new session). */
+export function readSessionLogPage(input: PageInput): Promise<SessionLogPage | 'unknown_thread' | null> {
   return db.transaction(async (tx) => {
     const [log] = await tx
       .select({ generation: sessionLogs.generation, record: sessionLogs.record })
@@ -215,18 +187,6 @@ type WindowInput = {
   opencodeSessionId?: string | null;
 };
 
-/** The stored transcript window: `toV1` of the log, after `convertMirrorOnRead` for a session with no log. */
-export async function readStoredTranscriptWindow(input: WindowInput): Promise<MirrorSnapshot | null> {
-  const window = await readLogTranscriptWindow(input);
-  if (window !== NO_LOG) return window;
-  if (!(await convertMirrorOnRead(input.sessionId))) return null;
-  const again = await readLogTranscriptWindow(input);
-  return again === NO_LOG ? null : again;
-}
-
-/** The session exists and has no `session_logs` row. */
-const NO_LOG = 'no_log' as const;
-
 /** The mirror order: `created` (missing first), then id. */
 const created = (r: V1Row) => {
   const t = (r.info as { time?: { created?: unknown } })?.time?.created;
@@ -237,8 +197,8 @@ const keyCompare = (a: { at: number; id: string }, b: { at: number; id: string }
   a.at - b.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const keyOf = (r: V1Row) => ({ at: created(r), id: idOf(r) });
 
-/** The window over the log; null when the log has nothing to serve, `NO_LOG` when the session has no log. */
-async function readLogTranscriptWindow(input: WindowInput): Promise<MirrorSnapshot | null | typeof NO_LOG> {
+/** The stored transcript window: `toV1` of the log. Null when the session has no log or the log has nothing to serve. */
+export async function readStoredTranscriptWindow(input: WindowInput): Promise<MirrorSnapshot | null> {
   // One round trip for the session record and the threads.
   const [row] = await db
     .select({
@@ -252,7 +212,7 @@ async function readLogTranscriptWindow(input: WindowInput): Promise<MirrorSnapsh
     .where(eq(projectSessions.sessionId, input.sessionId))
     .limit(1);
   if (!row) return null;
-  if (row.record === null || row.updatedAt === null || row.projectId === null) return NO_LOG;
+  if (row.record === null || row.updatedAt === null || row.projectId === null) return null;
   const log = { record: row.record, updatedAt: row.updatedAt, projectId: row.projectId };
   const threads = row.threads ?? [];
   const root = rootOf(threads);

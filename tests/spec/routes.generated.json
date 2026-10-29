@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 965,
+  "count": 980,
   "routes": [
     {
       "method": "GET",
@@ -1232,6 +1232,30 @@
     },
     {
       "method": "POST",
+      "path": "/v1/chrome/attach"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/chrome/connections"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/chrome/connections/:id"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/chrome/connections/:id"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chrome/panel-session"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chrome/release"
+    },
+    {
+      "method": "POST",
       "path": "/v1/cli/device/decide"
     },
     {
@@ -2060,6 +2084,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/artifact-comment-threads/:threadId"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/artifacts"
     },
     {
@@ -2081,6 +2109,34 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/activity"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/:commentId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/:commentId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/replies"
     },
     {
       "method": "GET",
@@ -2661,6 +2717,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/jwks.json"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/link-preview"
     },
     {
       "method": "GET",

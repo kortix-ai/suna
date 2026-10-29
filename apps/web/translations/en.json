@@ -403,6 +403,10 @@
         "connected": {
           "label": "Connected accounts"
         },
+        "chrome": {
+          "label": "Kortix in Chrome",
+          "description": "Your sessions use Chrome with your logins. You see every step."
+        },
         "tokens": {
           "label": "Personal access keys",
           "description": "API keys that act as you — for the CLI, a script, or a CI job."
@@ -1116,6 +1120,14 @@
         "session_groups": {
           "name": "Session groups",
           "description": "Group the sidebar's sessions into named folders that everyone in the project shares, for example one per store or client. Move a session into a group from its menu or by dragging it; reorder and collapse the groups."
+        },
+        "artifact_comments": {
+          "name": "Artifact comments",
+          "description": "Discuss docs and pages in threads with people and agents. Requires Artifacts."
+        },
+        "chrome": {
+          "name": "Kortix in Chrome",
+          "description": "Let a session use your connected Chrome browser. You can take over or stop it at any time."
         }
       },
       "channelsSwitch": {
@@ -1652,7 +1664,8 @@
       "account": "Account",
       "loadError": "Failed to load projects",
       "createIn": "Create a project in {account}",
-      "localComputer": "Your computer"
+      "localComputer": "Your computer",
+      "appsAndExtensions": "Apps and extensions"
     },
     "manifestUpgrade": {
       "title": "Upgrade to v3",
@@ -2944,6 +2957,13 @@
         "updateFailed": "Could not update password",
         "unexpected": "An unexpected error occurred"
       }
+    },
+    "panel": {
+      "waitingTitle": "Signing you in",
+      "waitingBody": "Connecting this panel to your Kortix account.",
+      "errorTitle": "Couldn't sign in",
+      "errorBody": "Sign in to Kortix in a browser tab, then reopen this panel.",
+      "signIn": "Sign in"
     }
   },
   "onboarding": {
@@ -20409,6 +20429,8 @@
       "text59e5965495d9": "Fixes",
       "text724b09397472": "Adding {name} to {project}",
       "text1e007c47254d": "It sets up in the background. You get a notification when it is done.",
+      "text18e8185e96b0": "Copy prompt",
+      "text0c62d1af38c5": "Or use",
       "text57f57edb6f16": "Change request #{number} is ready to review.",
       "texta8597db6f24b": "Remove skill",
       "text5f6ba69d66d1": "Skill removed",
@@ -20488,7 +20510,7 @@
       "text29ec8e9091cf": "Filter by team",
       "texta6a0a46ebeee": "All use cases",
       "text2adc964c0847": "Start here",
-      "textdc8df43d2f44": "Four use cases that show what agents on Kortix do.",
+      "textdc8df43d2f44": "Three use cases that show what agents on Kortix do.",
       "textb37b0def3a13": "Browse by team",
       "texta3b142af6e97": "use",
       "texta43f1924db10": "No use case matches",
@@ -21898,6 +21920,127 @@
     "calendarEstimatedSr": "Past fire, estimated from the schedule",
     "calendarUpcomingSr": "Upcoming"
   },
+  "chrome": {
+    "pill": "Kortix in Chrome",
+    "connectTitle": "Add Kortix to Chrome",
+    "connectDescription": "Let your sessions use Chrome, with your logins. You see what they do and can stop them at any time.",
+    "promoLabel": "Kortix in Chrome",
+    "dismissPromo": "Dismiss",
+    "steps": {
+      "install": {
+        "title": "Add the extension",
+        "description": "From the Chrome Web Store.",
+        "done": "Kortix is in Chrome.",
+        "descriptionUnlisted": "Load it in Chrome."
+      },
+      "connect": {
+        "title": "Sign in",
+        "description": "Sign in to Kortix from the extension.",
+        "done": "Signed in."
+      },
+      "done": {
+        "title": "Connected",
+        "description": "Your browser appears here."
+      }
+    },
+    "addToChrome": "Add to Chrome",
+    "finishInChrome": "Chrome opened a Kortix tab. Click Connect there.",
+    "connect": "Connect",
+    "connecting": "Connecting…",
+    "done": "Done",
+    "unsupported": "Open Kortix in Chrome, Edge, Brave or Arc to connect it. Copy the link to open it there.",
+    "connectFailed": "Could not connect the browser. Try again.",
+    "online": "Online",
+    "offline": "Offline",
+    "lastSeen": "Last seen {time}",
+    "usedBy": "{count, plural, one {Used by # session now} other {Used by # sessions now}}",
+    "connectAnother": "Add another browser",
+    "listTitle": "Connected browsers",
+    "rename": "Rename {name}",
+    "renameLabel": "Browser name",
+    "disconnect": "Disconnect",
+    "disconnectTitle": "Disconnect {name}?",
+    "disconnectDescription": "Sessions that use it stop. To use it again, connect it from Chrome.",
+    "disconnected": "Browser disconnected",
+    "disconnectFailed": "Could not disconnect the browser. Try again.",
+    "updateFailed": "Could not save the change. Try again.",
+    "loadFailed": "Could not load your browsers.",
+    "retry": "Try again",
+    "access": {
+      "label": "Access",
+      "always": "Without asking",
+      "ask": "Ask first",
+      "off": "Off",
+      "description": "Whether a session asks you first."
+    },
+    "scope": {
+      "label": "Tabs",
+      "own": "Only tabs it opens",
+      "all": "All tabs",
+      "description": "Which tabs a session can see."
+    },
+    "how": {
+      "title": "How it works",
+      "group": "Each session works in its own tab group, with a glow on the page.",
+      "control": "Take over or Stop from the bar on the page at any time.",
+      "own": "Only your own sessions can use your browser."
+    },
+    "howToInstall": "How to install",
+    "copyLink": "Copy link",
+    "linkCopied": "Link copied",
+    "copyFailed": "Could not copy the link. Try again.",
+    "extensionMissing": "Kortix did not find the extension. Add it, then reload this page.",
+    "another": {
+      "title": "Another browser",
+      "waiting": "Waiting for the new browser to connect.",
+      "description": "Open Kortix in the other browser or Chrome profile, then add Kortix to Chrome there. Copy the link to open it."
+    },
+    "panel": {
+      "project": "Project",
+      "title": "Ask about this page",
+      "body": "Kortix reads the tab when you send. Nothing leaves this browser before that.",
+      "selectionTitle": "Ask about your selection",
+      "selectionBody": "Kortix gets the quote, the page title and the address. The rest of the page stays in this browser unless you add it.",
+      "actions": {
+        "summarize": "Summarize this page",
+        "tables": "Extract the tables",
+        "compare": "Compare with another tab",
+        "email": "Draft an email about this"
+      },
+      "prompts": {
+        "summarize": "Summarize this page.",
+        "tables": "Extract the tables on this page as CSV.",
+        "compare": "Compare these pages.",
+        "email": "Draft an email about this page."
+      },
+      "recent": "Recent in {project}",
+      "noProjects": "Create a project to start a chat.",
+      "createProject": "Create a project",
+      "addTab": "Tab",
+      "addTabsTitle": "Add tabs",
+      "addTabsHint": "Only the tabs you tick are sent.",
+      "addTabs": "{count, plural, =0 {Add tabs} one {Add # tab} other {Add # tabs}}",
+      "noTabs": "No other tabs in this window.",
+      "tabsFailed": "Could not list your tabs. Try again.",
+      "cancel": "Cancel",
+      "removeTab": "Remove {title}",
+      "removeQuote": "Remove the quote",
+      "wholePage": "Whole page",
+      "unreadable": "Kortix cannot read this page.",
+      "message": "Message",
+      "placeholder": "Ask anything about this tab",
+      "placeholderNoTab": "Ask Kortix anything",
+      "modeLabel": "How Kortix uses the tab",
+      "read": "Read",
+      "act": "Act",
+      "readHint": "Read sends this page's text. Act lets Kortix click and type in this tab.",
+      "actHint": "Kortix puts this tab in its tab group and can click and type there. Stop it from the bar on the page.",
+      "send": "Send",
+      "readFailed": "Kortix could not read the tab. Reload the page and try again.",
+      "screenshot": "Screenshot",
+      "captureFailed": "Kortix could not take a screenshot of this tab."
+    }
+  },
   "computers": {
     "connectYourComputer": "Connect your computer",
     "connectThisComputer": "Connect this computer",
@@ -23187,10 +23330,10 @@
     "link": "Link",
     "linkPrompt": "Link URL",
     "fullScreen": "Full screen",
-    "askAgent": "Ask agent",
+    "askAgent": "Ask AI",
     "askAgentTitle": "Ask an agent to change this artifact",
+    "askAgentHint": "Starts a session that edits “{title}” in Files and replies with its link.",
     "askAgentPlaceholder": "What should change?",
-    "askAgentSend": "Start session",
     "notFoundTitle": "This artifact is not available",
     "notFoundHint": "It was deleted, or its owner stopped sharing it.",
     "busyTitle": "Kortix is busy",
@@ -23202,7 +23345,7 @@
       "error": "Not saved. Retrying…",
       "conflict": "Changed elsewhere"
     },
-    "placeholder": "Write, or type # for a heading, - for a list, [ ] for a task",
+    "placeholder": "Write, or type / for blocks",
     "placeholderHeading": "Title",
     "strike": "Strikethrough",
     "inlineCode": "Code",
@@ -23244,7 +23387,29 @@
     "openFullPage": "Open full page",
     "close": "Close",
     "conflictReload": "Reload theirs",
-    "conflictKeepMine": "Keep mine"
+    "conflictKeepMine": "Keep mine",
+    "insertMedia": "Image or video…",
+    "diagram": "Diagram",
+    "blockMenu": "Blocks",
+    "blockMenuEmpty": "No matching blocks",
+    "embedOffer": "Paste link as",
+    "keepAsLink": "Keep as link",
+    "showEmbed": "Show embed",
+    "openSession": "Open session",
+    "newChat": "New chat",
+    "askAgentReply": "Reply to the agent",
+    "uploading": "Uploading…",
+    "creating": "Creating…",
+    "askAgentNoFiles": "Send the first message as text. Add files in the chat once the agent replies.",
+    "askAgentHistory": "History",
+    "askAgentHistoryEmpty": "No earlier chats about this artifact.",
+    "peopleWithAccess": "People with access: {names}",
+    "docCreated": "Doc created",
+    "open": "Open",
+    "embedOpen": "Open link",
+    "embedConvert": "Convert to link",
+    "embedCopy": "Copy link",
+    "embedDelete": "Delete"
   },
   "emailConnect": {
     "homeTitle": "Where the inbox lives",
@@ -23854,5 +24019,53 @@
     "unavailable": "Image unavailable",
     "tryAgain": "Try again",
     "details": "Image details"
+  },
+  "appsModal": {
+    "title": "Apps and extensions",
+    "subtitle": "Use Kortix in your browser, on your computer and from your tools.",
+    "mock": {
+      "group": "Kortix · Return my order",
+      "button": "Start return",
+      "working": "Kortix is working",
+      "takeOver": "Take over",
+      "stop": "Stop"
+    },
+    "chrome": {
+      "name": "Kortix in Chrome",
+      "description": "Kortix opens pages, clicks and fills forms in your own browser, with your logins. You see every step.",
+      "connect": "Connect",
+      "connecting": "Connecting…",
+      "manage": "Manage",
+      "unsupported": "Open Kortix in Chrome, Edge, Brave or Arc to add it. Copy the link to open it there.",
+      "group": "Browser",
+      "manageLabel": "Manage Kortix in Chrome",
+      "summary": "{count, plural, one {# browser} other {# browsers}} · {online} online"
+    },
+    "computer": {
+      "title": "Your computer",
+      "thisComputer": "This computer",
+      "thisComputerDescription": "Let sessions use your files and terminal.",
+      "connected": "Connected",
+      "connect": "Connect",
+      "manage": "Manage",
+      "desktop": "Desktop app",
+      "desktopDescription": "Kortix as an app on your computer.",
+      "desktopRunning": "You are using it.",
+      "download": "Download",
+      "manageLabel": "Manage this computer",
+      "connectLabel": "Connect this computer"
+    },
+    "developers": {
+      "title": "Developers",
+      "cli": "Terminal (CLI)",
+      "cliDescription": "macOS and Linux, WSL on Windows",
+      "copy": "Copy command",
+      "copied": "Copied",
+      "mcp": "MCP",
+      "mcpDescription": "Use Kortix from Claude, Cursor or Codex.",
+      "connect": "Connect",
+      "connectLabel": "Connect MCP",
+      "copyFailed": "Could not copy the command. Try again."
+    }
   }
 }

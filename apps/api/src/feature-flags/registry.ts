@@ -423,6 +423,16 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'IAM: project.artifact.* leave the account permission catalog until a project of the account has it on.',
   },
   {
+    key: 'artifact_comments',
+    name: 'Artifact comments',
+    description: 'Discuss docs and pages in threads with people and agents. Requires Artifacts.',
+    stability: 'experimental',
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    enforcement: 'routes',
+    iamActions: ['project.artifact.comment'],
+  },
+  {
     key: 'email_channel',
     name: 'Email channel',
     description:
@@ -443,10 +453,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'session_log_restore',
     name: 'Session log restore',
     description:
-      'Rebuild a session from its saved session log when its computer lost the conversation. Not a Settings toggle: Kortix enables it per project, or for a whole deployment (on by default on dev).',
+      'Rebuild a session from its saved session log when its computer lost the conversation. Not a Settings toggle: on by default; Kortix turns it off per project, or for a whole deployment.',
     stability: 'experimental',
     available: () => true,
-    // Off unless the deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev does, 2026-10-15).
+    // On unless the deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED=false (on by default since 2026-10-28).
     platformDefault: () => config.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
     // Internal-only (2026-10-13): not a Settings toggle. A Kortix operator sets it per project
     // (PUT /v1/admin/api/projects/:id/features). While on, Settings lists it read-only.
@@ -457,8 +467,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(projects/lib/session-sandbox-env-build.ts). On, kortixd restores the harness native store ' +
       'from the session log at boot when the store is missing or behind the log ' +
       '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. The journal uploads ' +
-      'attachment bytes (P2.13), so a restore keeps images and files. On by default only where the ' +
-      'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
+      'attachment bytes (P2.13), so a restore keeps images and files. On by default; a deployment ' +
+      'turns the default off with SESSION_LOG_RESTORE_DEFAULT_ENABLED=false. A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
       '(24 MiB) answers 413 with what the model sees of it, else the newest turns, else the D3 note alone (harness/README.md).',
   },
   // `connectors_v2` graduated (2026-10-24): the Kortix catalog (MCP apps,
@@ -535,6 +545,23 @@ const FLAGS: readonly FeatureFlagDef[] = [
       "so the sidebar lists every session again. Turning it off deletes nothing: the groups and each session's " +
       '`group_id` stay and come back when it is turned on. WEB: no group sections, no New group and no Move to group.',
   },
+  {
+    key: 'chrome',
+    name: 'Kortix in Chrome',
+    description:
+      "Let a session drive your own Chrome, with your logins, through the Kortix in Chrome extension: it opens its tabs in a group named after the session, and you can take over or stop it at any time.",
+    stability: 'experimental',
+    // Off on staging and prod until the Chrome Web Store listing is public.
+    available: () => config.KORTIX_CHROME_ENABLED,
+    platformDefault: () => true,
+    enforcement: 'routes',
+    enforcementNote:
+      'ROUTES: POST /v1/chrome/attach answers 403 `feature_disabled` when the calling session\'s project has it ' +
+      'off (chrome/routes.ts); release stays open so a session can always let go. The browsers a person ' +
+      'connected are account-level and gated only by KORTIX_CHROME_ENABLED (404 when off). BOX: off, the ' +
+      'session has no kortix-chrome skill and its CLI hides and refuses `kortix chrome` (KORTIX_FEATURE_FLAGS). ' +
+      'WEB: no sidebar row, no Chrome card in Apps and extensions, no Settings page.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(
@@ -577,6 +604,7 @@ export function resolveFeatureFlag(metadata: unknown, key: FeatureFlagKey): bool
   const def = FLAG_BY_KEY[key];
   if (!def || !def.available()) return false;
   if (def.derivedFrom) return resolveFeatureFlag(metadata, def.derivedFrom);
+  if (key === 'artifact_comments' && !resolveFeatureFlag(metadata, 'artifacts')) return false;
   return explicitOverride(metadata, key) ?? def.platformDefault();
 }
 

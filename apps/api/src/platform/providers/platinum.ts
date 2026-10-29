@@ -629,6 +629,16 @@ export class PlatinumProvider implements SandboxProvider {
           `[drives] This session’s drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
         );
       }
+      const refusal = platinumHttp(err);
+      if (refusal.status === 503 && refusal.code === 'unavailable' && refusal.body) {
+        const body: unknown = JSON.parse(refusal.body);
+        if (body && typeof body === 'object' && 'error' in body &&
+          body.error === 'the sub_path image is still being derived; retry shortly') {
+          throw new SnapshotStillBuildingError(
+            `Sandbox image snapshot ${template} is building: Platinum is deriving the sub_path image`,
+          );
+        }
+      }
       const regional = regionalTemplateRefusal(err);
       if (regional?.state === 'replicating') {
         // sandbox-init-state.ts waits this class out (~5 min).
@@ -1315,12 +1325,17 @@ export class PlatinumProvider implements SandboxProvider {
       // reload the live half may be the standby, and matching only 4096 would
       // send it upstream unrewritten (see shared/opencode-ports).
       effectivePort: isOpencodePort(request.port) || ptyWebsocket ? AGENT_PORT : request.port,
+      // Platinum's edge drops custom headers on a WebSocket upgrade, so every
+      // daemon socket (PTY, the Kortix in Chrome bridge) carries the signed user
+      // context in the query instead.
       websocket: ptyWebsocket
         ? {
             userContextQueryParam: '__kortix_user_context',
             queryDefaults: { cursor: '0' },
           }
-        : undefined,
+        : request.transport === 'websocket' && request.port === AGENT_PORT
+          ? { userContextQueryParam: '__kortix_user_context' }
+          : undefined,
     };
   }
 

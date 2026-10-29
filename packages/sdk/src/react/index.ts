@@ -154,7 +154,7 @@ export {
 export { useProjectReminders, useSessionReminders } from './use-reminders';
 export { useProjectGoalFiles, useProjectGoals, useSessionGoal } from './use-goals';
 export { useRoom, useRoomConversations, useRoomMessages, useRoomThread, useRooms } from './use-rooms';
-export { prefetchArtifact, useArtifact, useArtifactMutations, useArtifactText, useArtifactTypes, useArtifactVersions, useArtifacts } from './use-artifacts';
+export { prefetchArtifact, useArtifact, useArtifactActivity, useArtifactComments, useArtifactMutations, useArtifactText, useArtifactTypes, useArtifactVersions, useArtifacts } from './use-artifacts';
 export {
   useApproveCaptureDevice,
   useApproveCaptureEnrollment,
@@ -217,6 +217,7 @@ export * from './use-billing-plan';
 export * from './use-impersonation';
 export * from './use-teams-installations';
 export * from './use-tunnel';
+export * from './use-chrome-connections';
 export * from './use-admin-sandboxes';
 export * from './use-authenticated-preview-url';
 export * from './use-static-file-preview';
