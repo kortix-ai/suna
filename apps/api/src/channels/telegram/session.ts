@@ -28,6 +28,7 @@ import { db } from '../../shared/db';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { gateSender, refusedPressText } from '../core/channel-access';
 import { type ChannelNotice, type ChannelPort, type ChannelTarget, forgetChatThread, routeChannelMessage } from '../core/conversation';
+import { chatSessionStart, chatTurnModel } from '../core/model-choice';
 import { connectorReply } from '../core/prompt';
 import {
   clearQuestionButtons,
@@ -37,6 +38,7 @@ import {
   type QuestionPort,
 } from '../core/questions';
 import { registerSessionPort } from '../core/session-notice';
+import type { SettingsChannel } from '../core/settings';
 import { classifyTurnError } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
 import { startErrorMessage, TELEGRAM_START_ERROR_COMMANDS } from '../start-error';
@@ -315,6 +317,13 @@ const RUN_ERROR_ADVICE: Partial<Record<string, string>> = {
 };
 const RUN_ERROR_FALLBACK_ADVICE = 'Send your message again, or send /new to start a new conversation.';
 
+/** The chat's settings row key (`chat_channel_bindings`): the chat, so a forum's topics share one. */
+const telegramSettings = (target: ChannelTarget): SettingsChannel => ({
+  platform: 'telegram',
+  teamId: target.workspaceId,
+  channelId: target.threadId.split(':')[0]!,
+});
+
 export const telegramPort: ChannelPort & { questions: QuestionPort } = {
   async notify(target, notice) {
     const text = telegramNotice(target, notice);
@@ -323,6 +332,7 @@ export const telegramPort: ChannelPort & { questions: QuestionPort } = {
     if (token) await sendTelegramReply(token, target, text);
   },
   questions: telegramQuestions,
+  turnModel: (target, thread) => chatTurnModel(telegramSettings(target), thread),
 };
 
 /**
@@ -462,21 +472,36 @@ export async function handleTelegramEvent(
             read: (maxBytes) => telegramFile(token, file.ref.file_id, maxBytes),
           }]
         : [],
-      plan: async (revived) => ({
-        project,
-        visibility: 'project',
-        body: { agent_name: 'default', title_source: text || null },
-        metadata: {
-          telegram: {
-            bot_id: install.botId,
-            chat_id: message.chat.id,
-            chat_type: message.chat.type,
-            from_id: message.from?.id,
-            message_id: message.message_id,
+      plan: async (revived) => {
+        const start = await chatSessionStart(telegramSettings(target), project).catch((error) => {
+          logger.warn('[telegram] chat settings unreadable; the session starts on the defaults', { projectId: event.projectId, error: String(error) });
+          return { agentName: 'default' } as Awaited<ReturnType<typeof chatSessionStart>>;
+        });
+        if (start.unavailableModel) {
+          await reply(`Kortix did not send your message: this chat's model ${start.unavailableModel} is not available any more. Pick another with /model, then send your message again.`);
+          return null;
+        }
+        return {
+          project,
+          visibility: 'project',
+          body: {
+            agent_name: start.agentName,
+            ...(start.model ? { opencode_model: start.model } : {}),
+            ...(start.pools ? { provider_secret_pools: start.pools } : {}),
+            title_source: text || null,
           },
-        },
-        prompt: channelPromptText(telegramEnvelope(message), { revived }),
-      }),
+          metadata: {
+            telegram: {
+              bot_id: install.botId,
+              chat_id: message.chat.id,
+              chat_type: message.chat.type,
+              from_id: message.from?.id,
+              message_id: message.message_id,
+            },
+          },
+          prompt: channelPromptText(telegramEnvelope(message), { revived }),
+        };
+      },
     },
     run,
   );

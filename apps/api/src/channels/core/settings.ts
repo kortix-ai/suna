@@ -10,6 +10,8 @@ import {
 } from '../slack/selection';
 import { type ChatUser, resolveProjectChatActor } from './identity';
 
+export { currentChannelSelection, type ChannelSelection } from '../slack/selection';
+
 /**
  * Channel settings: the project a chat channel runs, and the agent, model and
  * session policy that new sessions there start with.

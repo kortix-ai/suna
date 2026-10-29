@@ -13,6 +13,7 @@ import {
   accountMembers,
   accountTokens,
   accounts,
+  chatChannelBindings,
   chatEventDedup,
   chatThreads,
   connectorActions,
@@ -63,6 +64,7 @@ import { runJobBatch } from '../../shared/job-queue';
 import { parseStagedPromptDataUrl } from '../../projects/session-lifecycle/prompt-attachment-materializer';
 import { NO_VISION_NOTE } from '../vision-model';
 import * as defaultModel from '../../llm-gateway/resolution/default-model';
+import * as servableCatalog from '../../llm-gateway/models/servable-catalog';
 
 const telegramWebhookApp = channelWebhookRoutes(telegramInbound);
 const ACCOUNT = crypto.randomUUID();
@@ -1752,6 +1754,85 @@ describe('Telegram files — migrated PostgreSQL', () => {
       expect(JSON.stringify({ created, delivered, jobs, loggerCalls })).not.toContain(TOKEN);
     } finally {
       fetchSpy.mockRestore();
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+});
+
+describe("a Telegram chat's model goes with every message — migrated PostgreSQL", () => {
+  /** The chat's settings row, as `/model` or the Channels page writes it. */
+  const seedChoice = (chat: number, model: string) =>
+    db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: String(chat), projectId: PROJECT, model });
+  /** Every model reads as servable (or none does), with nothing in the catalog to replace one. */
+  const servable = (answer: boolean) => [
+    spyOn(defaultModel, 'isModelServableForAccount').mockResolvedValue(answer),
+    spyOn(servableCatalog, 'servableProjectCatalog').mockResolvedValue({ models: {}, modelOverrides: {}, defaultModel: undefined, usingDefaults: true }),
+  ];
+
+  test("a new chat's session starts on the chat's model, and its first prompt carries no model", async () => {
+    await seedChoice(7012, 'cmd-c1');
+    const spies = servable(true);
+    try {
+      await handleTelegramEvent(update('first task', ALLOWED, 7012));
+      expect(created).toHaveLength(1);
+      expect(created[0]!.body).toMatchObject({ agent_name: 'default', opencode_model: 'cmd-c1' });
+      expect(created[0]!.postCreate[1]).not.toHaveProperty('overrides');
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
+  test("a follow-up carries the chat's model, and a photo's model is judged from it", async () => {
+    await seedChoice(7013, 'cmd-c2');
+    await bindChat(7013);
+    const spies = servable(true);
+    try {
+      await handleTelegramEvent(update('next task', ALLOWED, 7013));
+      expect(delivered[0]!.overrides).toEqual({ model: { providerID: 'kortix', modelID: 'cmd-c2' } });
+      stored.set('ph-choice', { bytes: JPEG });
+      await handleTelegramEvent(mediaUpdate({ photo: [{ file_id: 'ph-choice', width: 64, height: 64 }] }, { chat: 7013 }));
+      expect(imageTurns.map((t) => t.currentModel)).toEqual(['cmd-c2']);
+      expect(delivered[1]!.overrides).toEqual({ model: { providerID: 'kortix', modelID: 'vision-x' } });
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
+  test("with no choice, a follow-up carries the session's own model, so an earlier turn's model does not stick", async () => {
+    const sessionId = await bindChat(7014);
+    await db.update(projectSessions).set({ metadata: { opencode_model: 'cmd-p1' } }).where(eq(projectSessions.sessionId, sessionId));
+    const spies = servable(true);
+    try {
+      await handleTelegramEvent(update('carry on', ALLOWED, 7014));
+      expect(delivered[0]!.overrides).toEqual({ model: { providerID: 'kortix', modelID: 'cmd-p1' } });
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
+  test("a button's answer carries the session's model too", async () => {
+    const sessionId = await bindChat(7016);
+    await db.update(projectSessions).set({ metadata: { opencode_model: 'cmd-p2' } }).where(eq(projectSessions.sessionId, sessionId));
+    const spies = servable(true);
+    try {
+      await handleTelegramPress(press(`kq:${await pending(sessionId)}:0`, { chat: 7016 }));
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0]!.overrides).toEqual({ model: { providerID: 'kortix', modelID: 'cmd-p2' } });
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
+  test("a chat whose model can no longer run and has no replacement is told so, and nothing starts", async () => {
+    await seedChoice(7015, 'cmd-gone');
+    const spies = servable(false);
+    try {
+      await handleTelegramEvent(update('anyone there?', ALLOWED, 7015));
+      expect(created).toHaveLength(0);
+      expect(replies()).toEqual([
+        "Kortix did not send your message: this chat's model cmd-gone is not available any more. Pick another with /model, then send your message again.",
+      ]);
+    } finally {
       for (const spy of spies) spy.mockRestore();
     }
   });
