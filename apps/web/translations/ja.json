@@ -24070,5 +24070,9 @@
       "connectLabel": "MCP を接続",
       "copyFailed": "コマンドをコピーできませんでした。もう一度お試しください。"
     }
+  },
+  "roleCapabilities": {
+    "comment": "コメント",
+    "commentArea": "{area}にコメント"
   }
 }

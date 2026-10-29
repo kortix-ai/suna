@@ -24070,5 +24070,9 @@
       "connectLabel": "Conectar MCP",
       "copyFailed": "No se pudo copiar el comando. Inténtalo de nuevo."
     }
+  },
+  "roleCapabilities": {
+    "comment": "Comentar",
+    "commentArea": "Comentar en {area}"
   }
 }

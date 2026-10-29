@@ -22,6 +22,7 @@ import {
   notifications,
   projectSessions,
   sessionContentPurges,
+  sessionSandboxIdentities,
   sessionLifecycleCommands,
   sessionLogBlobs,
   sessionLogMessages,
@@ -512,6 +513,7 @@ const SESSION_TABLES: Record<string, 'purged' | 'scrubbed' | `kept: ${string}`> 
   'audit_session_sequences.session_id': 'kept: audit trail',
   'tunnel_audit_logs.session_id': 'kept: audit trail',
   'provider_events.session_id': 'kept: provider operations, no content',
+  'session_sandbox_identities.session_id': 'kept: verified provider/session ids for surviving Files history, no content',
   'session_sandboxes.session_id': 'kept: the box record, no content',
   'account_session_activity.session_id': 'kept: a login session, not a project session',
   'account_tokens.session_id': 'kept: token metadata, no content',
@@ -543,6 +545,19 @@ const SESSION_TABLES: Record<string, 'purged' | 'scrubbed' | `kept: ${string}`> 
   'memory_thread_loads.session_id': 'kept: memory layer and page ids, no content',
   'project_space_links.session_id': 'kept: a channel link outlives the thread that shared it',
 };
+
+test('a purged session loses its content but retains the minimal verified Files author identity', async () => {
+  const project = await newProject('purge-files-identity');
+  const content = await seedContent(project, { deletedAt: day(0) });
+  const [identity] = await db.insert(sessionSandboxIdentities).values({ accountId: content.accountId, projectId: content.projectId,
+    sessionId: content.sessionId, provider: 'platinum', externalId: `sbx_owned_${crypto.randomUUID()}`, createdAt: BASE }).returning();
+  expect(await tick(30)).toMatchObject({ sessions: 1, failed: 0 });
+  expect(await rowsOf(content.sessionId)).toEqual(NONE);
+  expect(await db.select().from(sessionSandboxIdentities).where(eq(sessionSandboxIdentities.sessionId, content.sessionId))).toEqual([identity]);
+  expect(Object.keys(identity!).sort()).toEqual(['accountId', 'createdAt', 'externalId', 'projectId', 'provider', 'sessionId']);
+  const [shell] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, content.sessionId));
+  expect(shell!.metadata).toEqual({ deletedAt: day(0).toISOString(), copiesPurgedAt: day(30).toISOString() });
+});
 
 test('every table that names a session is classified for the purge', async () => {
   const rows = await db.execute(sql`

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { MOBILE_CARD, MOBILE_ROWS } from './content';
-import { MOBILE_ORDER } from './detect-os';
+import { MOBILE_ORDER } from '@kortix/ui/internal/lib/detect-os';
 import { type CardRow, PlatformCard } from './platform-card';
 
 const Mark = () => <svg />;

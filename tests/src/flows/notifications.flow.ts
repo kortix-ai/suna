@@ -463,7 +463,7 @@ flow(
         (await read({ all: true }, ctx.client.as(ctx.P.ANON))).status(401);
       });
 
-      await ctx.step('GET preferences → the documented defaults for all seven kinds, and email_available', async () => {
+      await ctx.step('GET preferences → the documented defaults for all eleven kinds, and email_available', async () => {
         const r = await asReader.get('/v1/notifications/preferences');
         r.status(200);
         const prefs = r.json<{ kinds: Record<string, { push: boolean; email: boolean }>; email_available: unknown }>();
@@ -478,6 +478,7 @@ flow(
           capture_device_down: { push: true, email: true },
           capture_device_recovered: { push: true, email: false },
           message: { push: true, email: true },
+          artifact_comment: { push: true, email: true },
         };
         if (JSON.stringify(prefs.kinds) !== JSON.stringify(defaults)) throw new Error(`defaults ${JSON.stringify(prefs.kinds)}`);
         if (typeof prefs.email_available !== 'boolean') throw new Error(`email_available ${prefs.email_available}`);

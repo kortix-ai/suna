@@ -24070,5 +24070,9 @@
       "connectLabel": "Повежи MCP",
       "copyFailed": "Команда није копирана. Покушај поново."
     }
+  },
+  "roleCapabilities": {
+    "comment": "Коментар",
+    "commentArea": "Коментариши {area}"
   }
 }

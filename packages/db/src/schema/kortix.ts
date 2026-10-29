@@ -8786,7 +8786,7 @@ export const artifactCommentThreads = kortixSchema.table('artifact_comment_threa
   check('artifact_comment_threads_author_check', sql`(${table.createdByUserId} is not null) <> (${table.createdBySessionId} is not null)`),
   check('artifact_comment_threads_status_check', sql`${table.status} in ('open', 'resolved')`),
   check('artifact_comment_threads_agent_state_check', sql`${table.agentState} in ('none', 'pending', 'sent', 'paused')`),
-]);
+]).enableRLS();
 
 export type ArtifactCommentMention =
   | { kind: 'user'; user_id: string }
@@ -8810,7 +8810,7 @@ export const artifactComments = kortixSchema.table('artifact_comments', {
   index('idx_artifact_comments_thread_created').on(table.threadId, table.createdAt),
   check('artifact_comments_author_check', sql`(${table.authorUserId} is not null) <> (${table.authorSessionId} is not null)`),
   check('artifact_comments_body_check', sql`char_length(${table.body}) <= 10000 and (${table.deletedAt} is not null or char_length(${table.body}) >= 1)`),
-]);
+]).enableRLS();
 
 export const artifactCommentWriteLimits = kortixSchema.table('artifact_comment_write_limits', {
   artifactId: uuid('artifact_id').notNull(),
@@ -8821,7 +8821,7 @@ export const artifactCommentWriteLimits = kortixSchema.table('artifact_comment_w
   foreignKey({ name: 'artifact_comment_write_limits_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
   primaryKey({ columns: [table.artifactId, table.actorKey] }),
   check('artifact_comment_write_limits_writes_check', sql`${table.writes} >= 0`),
-]);
+]).enableRLS();
 
 export const artifactEvents = kortixSchema.table('artifact_events', {
   eventId: uuid('event_id').defaultRandom().primaryKey(),
@@ -8838,7 +8838,7 @@ export const artifactEvents = kortixSchema.table('artifact_events', {
   index('idx_artifact_events_artifact_created').on(table.artifactId, table.createdAt.desc(), table.eventId.desc()),
   index('idx_artifact_events_project').on(table.projectId),
   check('artifact_events_actor_check', sql`${table.actorUserId} is null or ${table.actorSessionId} is null`),
-]);
+]).enableRLS();
 
 export const driveCommitAuthors = kortixSchema.table('drive_commit_authors', {
   driveId: uuid('drive_id').notNull(),
@@ -8850,7 +8850,7 @@ export const driveCommitAuthors = kortixSchema.table('drive_commit_authors', {
   primaryKey({ columns: [table.driveId, table.commitId] }),
   foreignKey({ name: 'drive_commit_authors_drive_fk', columns: [table.driveId], foreignColumns: [drives.driveId] }).onDelete('cascade'),
   check('drive_commit_authors_author_check', sql`(${table.authorUserId} is not null) <> (${table.authorSessionId} is not null)`),
-]);
+]).enableRLS();
 
 export const sessionSandboxIdentities = kortixSchema.table('session_sandbox_identities', {
   accountId: uuid('account_id').notNull(),
@@ -8864,4 +8864,4 @@ export const sessionSandboxIdentities = kortixSchema.table('session_sandbox_iden
   foreignKey({ name: 'session_sandbox_identities_account_fk', columns: [table.accountId], foreignColumns: [accounts.accountId] }).onDelete('cascade'),
   foreignKey({ name: 'session_sandbox_identities_project_fk', columns: [table.projectId], foreignColumns: [projects.projectId] }).onDelete('cascade'),
   index('idx_session_sandbox_identities_project').on(table.projectId),
-]);
+]).enableRLS();

@@ -24070,5 +24070,9 @@
       "connectLabel": "连接 MCP",
       "copyFailed": "无法复制命令。请重试。"
     }
+  },
+  "roleCapabilities": {
+    "comment": "评论",
+    "commentArea": "评论{area}"
   }
 }

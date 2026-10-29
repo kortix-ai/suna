@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import { isMobilePlatform, normalizePlatform } from '@/features/marketing/download/detect-os';
+import { isMobilePlatform, normalizePlatform } from '@kortix/ui/internal/lib/detect-os';
 import {
   deploymentChannel,
   getCaptureDevRelease,

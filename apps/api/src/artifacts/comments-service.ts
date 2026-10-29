@@ -168,7 +168,7 @@ async function write<T>(actor: Actor, access: ArtifactCommentAccess, apply: (tx:
     const [artifact] = await tx.select().from(artifacts)
       .where(and(eq(artifacts.artifactId, access.artifact.artifactId), eq(artifacts.projectId, access.artifact.projectId)))
       .for('update');
-    if (!artifact || !canView(artifact, access.viewer)) throw new ArtifactCommentError(404, 'Artifact not found', 'not_found');
+    if (!artifact || artifact.accountId !== actor.accountId || artifact.accountId !== access.artifact.accountId || !canView(artifact, access.viewer)) throw new ArtifactCommentError(404, 'Artifact not found', 'not_found');
     await writeQuota(tx, actor, access);
     return apply(tx);
   });

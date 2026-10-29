@@ -527,6 +527,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/artifacts/:artifactId/restore': { action: 'project.artifact.restore', title: 'Restored artifact version' },
   'GET /v1/projects/:projectId/artifacts/:artifactId/activity': { action: 'project.artifact.activity', title: 'Read artifact activity' },
   'GET /v1/projects/:projectId/artifacts/:artifactId/versions': { action: 'project.artifact.version.list', title: 'Viewed artifact history' },
+  'GET /v1/projects/:projectId/link-preview': { action: 'project.link_preview.read', title: 'Read a link preview' },
   'GET /v1/projects/:projectId/artifacts/:artifactId/comments': { action: 'project.artifact.comment.list', title: 'Listed artifact comment threads' },
   'GET /v1/projects/:projectId/artifact-comment-threads/:threadId': { action: 'project.artifact.comment.read', title: 'Read artifact comment thread' },
   'POST /v1/projects/:projectId/artifacts/:artifactId/comments': { action: 'project.artifact.comment.create', title: 'Opened artifact comment thread' },

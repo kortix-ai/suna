@@ -22,7 +22,7 @@
 import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
-import type { DesktopOs, MobileOs } from './detect-os';
+import type { DesktopOs, MobileOs } from '@kortix/ui/internal/lib/detect-os';
 import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@kortix/ui/internal/lib/mobile-store-urls';
 
 export const hero = {

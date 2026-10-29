@@ -18,8 +18,7 @@
 // lets in is never told.
 import { artifacts, projects, projectSessions } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
-import { canView, type ArtifactRow } from '../artifacts/service';
-import { privateChannelFoldersFor } from '../drives/service';
+import type { ArtifactRow } from '../artifacts/service';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { PROJECT_ACTIONS } from '../iam/actions';
 import { listAccessible, type Accessible } from '../iam/authorize';
@@ -53,6 +52,8 @@ export async function maySeeArtifacts(userId: string, rows: readonly ArtifactAcc
   if (!userId || !rows.length) return visible;
   try {
     const live = rows.filter((row) => resolveFeatureFlag(row.projectMetadata, 'artifacts') && resolveFeatureFlag(row.projectMetadata, 'artifact_comments'));
+    if (!live.length) return visible;
+    const [{ canView }, { privateChannelFoldersFor }] = await Promise.all([import('../artifacts/service'), import('../drives/service')]);
     const permissions = new Map<string, { read: Accessible; comment: Accessible }>();
     const access = (accountId: string, action: string) => strict
       ? listAccessible({ userId, accountId, credential: { kind: 'jwt' }, ctx: {} }, action, 'project')
