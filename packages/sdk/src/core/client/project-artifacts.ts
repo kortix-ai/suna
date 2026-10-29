@@ -13,6 +13,7 @@ export function bindProjectArtifacts(projectId: string) {
         setStatus: (...args: DropFirst<Parameters<typeof P.setArtifactCommentStatus>>) => P.setArtifactCommentStatus(projectId, ...args),
         edit: (...args: DropFirst<Parameters<typeof P.editArtifactComment>>) => P.editArtifactComment(projectId, ...args),
         remove: (...args: DropFirst<Parameters<typeof P.deleteArtifactComment>>) => P.deleteArtifactComment(projectId, ...args),
+        send: (...args: DropFirst<Parameters<typeof P.sendArtifactComments>>) => P.sendArtifactComments(projectId, ...args),
       },
     },
   };

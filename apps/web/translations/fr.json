@@ -3169,7 +3169,8 @@
       "automation_recovered": "Alerte de rétablissement",
       "capture_device_down": "Ordinateur Capture arrêté",
       "capture_device_recovered": "Ordinateur Capture à nouveau en marche",
-      "message": "Message"
+      "message": "Message",
+      "artifact_comment": "Commentaires sur les artefacts"
     },
     "kindDescription": {
       "turn_done": "Un tour se termine.",
@@ -3181,7 +3182,8 @@
       "automation_recovered": "Un déclencheur ou un rappel en échec fonctionne de nouveau.",
       "capture_device_down": "Un ordinateur Kortix Capture n’enregistre pas. Envoyé aux personnes qui gèrent Capture.",
       "capture_device_recovered": "Un ordinateur Kortix Capture arrêté enregistre à nouveau.",
-      "message": "Quelqu’un vous mentionne avec @, ou répond dans un fil où vous avez écrit, dans un salon."
+      "message": "Quelqu’un vous mentionne avec @, ou répond dans un fil où vous avez écrit, dans un salon.",
+      "artifact_comment": "Retours, mentions et réponses sur les artefacts que vous pouvez consulter."
     },
     "bell": {
       "label": "Notifications",
@@ -3205,7 +3207,8 @@
       "openSession": "Ouvrir la session",
       "openReminders": "Ouvrir les rappels",
       "openTriggers": "Ouvrir les déclencheurs",
-      "openConversation": "Ouvrir la conversation"
+      "openConversation": "Ouvrir la conversation",
+      "openArtifact": "Ouvrir l’artefact"
     },
     "session": {
       "mute": "Mettre les notifications en sourdine",
@@ -24108,5 +24111,9 @@
       "connectLabel": "Connecter MCP",
       "copyFailed": "Impossible de copier la commande. Réessayez."
     }
+  },
+  "roleCapabilities": {
+    "comment": "Commenter",
+    "commentArea": "Commenter dans {area}"
   }
 }

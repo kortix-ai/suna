@@ -3169,7 +3169,8 @@
       "automation_recovered": "Entwarnung",
       "capture_device_down": "Capture-Computer gestoppt",
       "capture_device_recovered": "Capture-Computer nimmt wieder auf",
-      "message": "Nachricht"
+      "message": "Nachricht",
+      "artifact_comment": "Artefaktkommentare"
     },
     "kindDescription": {
       "turn_done": "Ein Durchlauf endet.",
@@ -3181,7 +3182,8 @@
       "automation_recovered": "Ein fehlschlagender Trigger oder eine Erinnerung funktioniert wieder.",
       "capture_device_down": "Ein Kortix-Capture-Computer nimmt nicht auf. Geht an Personen, die Capture verwalten.",
       "capture_device_recovered": "Ein gestoppter Kortix-Capture-Computer nimmt wieder auf.",
-      "message": "Jemand erwähnt dich mit @ oder antwortet in einem Thread, in dem du geschrieben hast, in einem Raum."
+      "message": "Jemand erwähnt dich mit @ oder antwortet in einem Thread, in dem du geschrieben hast, in einem Raum.",
+      "artifact_comment": "Feedback, Erwähnungen und Antworten zu Artefakten, die du ansehen kannst."
     },
     "bell": {
       "label": "Benachrichtigungen",
@@ -3205,7 +3207,8 @@
       "openSession": "Sitzung öffnen",
       "openReminders": "Erinnerungen öffnen",
       "openTriggers": "Trigger öffnen",
-      "openConversation": "Unterhaltung öffnen"
+      "openConversation": "Unterhaltung öffnen",
+      "openArtifact": "Artefakt öffnen"
     },
     "session": {
       "mute": "Benachrichtigungen stummschalten",
@@ -24108,5 +24111,9 @@
       "connectLabel": "MCP verbinden",
       "copyFailed": "Der Befehl konnte nicht kopiert werden. Versuche es erneut."
     }
+  },
+  "roleCapabilities": {
+    "comment": "Kommentieren",
+    "commentArea": "In {area} kommentieren"
   }
 }

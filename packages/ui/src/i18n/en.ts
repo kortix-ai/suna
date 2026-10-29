@@ -1932,7 +1932,8 @@ const catalog = {
       "automation_recovered": "Recovery alert",
       "capture_device_down": "Capture computer stopped",
       "capture_device_recovered": "Capture computer recording again",
-      "message": "Message"
+      "message": "Message",
+      "artifact_comment": "Artifact comments"
     },
     "kindDescription": {
       "turn_done": "A turn ends.",
@@ -1944,7 +1945,8 @@ const catalog = {
       "automation_recovered": "A failing trigger or reminder works again.",
       "capture_device_down": "A Kortix Capture computer is not recording. Sent to people who manage Capture.",
       "capture_device_recovered": "A Kortix Capture computer that stopped records again.",
-      "message": "Someone @-mentions you, or replies in a thread you posted in, in a room."
+      "message": "Someone @-mentions you, or replies in a thread you posted in, in a room.",
+      "artifact_comment": "Feedback, mentions, and replies on Artifacts you can view."
     },
     "bell": {
       "label": "Notifications",
@@ -1968,7 +1970,8 @@ const catalog = {
       "openSession": "Open session",
       "openReminders": "Open reminders",
       "openTriggers": "Open triggers",
-      "openConversation": "Open conversation"
+      "openConversation": "Open conversation",
+      "openArtifact": "Open Artifact"
     },
     "session": {
       "mute": "Mute notifications",

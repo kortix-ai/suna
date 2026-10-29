@@ -3169,7 +3169,8 @@
       "automation_recovered": "Alerta de recuperação",
       "capture_device_down": "Computador do Capture parado",
       "capture_device_recovered": "Computador do Capture gravando de novo",
-      "message": "Mensagem"
+      "message": "Mensagem",
+      "artifact_comment": "Comentários em artefatos"
     },
     "kindDescription": {
       "turn_done": "Um turno termina.",
@@ -3181,7 +3182,8 @@
       "automation_recovered": "Um trigger ou lembrete que falhava volta a funcionar.",
       "capture_device_down": "Um computador do Kortix Capture não está gravando. Enviado a quem gerencia o Capture.",
       "capture_device_recovered": "Um computador do Kortix Capture que parou voltou a gravar.",
-      "message": "Alguém menciona você com @, ou responde em um tópico em que você escreveu, em uma sala."
+      "message": "Alguém menciona você com @, ou responde em um tópico em que você escreveu, em uma sala.",
+      "artifact_comment": "Feedback, menções e respostas nos artefatos que você pode visualizar."
     },
     "bell": {
       "label": "Notificações",
@@ -3205,7 +3207,8 @@
       "openSession": "Abrir sessão",
       "openReminders": "Abrir lembretes",
       "openTriggers": "Abrir triggers",
-      "openConversation": "Abrir conversa"
+      "openConversation": "Abrir conversa",
+      "openArtifact": "Abrir artefato"
     },
     "session": {
       "mute": "Silenciar notificações",
@@ -24108,5 +24111,9 @@
       "connectLabel": "Conectar MCP",
       "copyFailed": "Não foi possível copiar o comando. Tente novamente."
     }
+  },
+  "roleCapabilities": {
+    "comment": "Comentar",
+    "commentArea": "Comentar em {area}"
   }
 }
