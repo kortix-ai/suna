@@ -2142,7 +2142,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       expect((await settingsRow('7035'))?.model).toBeNull();
 
       await handleTelegramEvent(topicUpdate('/model@synthetic_bot cmd-m1', -1007036));
-      expect(replies().at(-1)).toBe('Model for this chat set to cmd-m1. It applies to every topic in this group. Messages you send after this reply use it.');
+      expect(replies().at(-1)).toBe('Model for this chat set to cmd-m1. It applies to the whole chat, every thread in it included. Messages you send after this reply use it.');
       expect(calls.at(-1)!.body).toMatchObject({ chat_id: -1007036, message_thread_id: 5 });
       expect(await settingsRow('-1007036')).toMatchObject({ model: 'cmd-m1', channelName: 'Synthetic group', channelType: 'supergroup' });
     } finally {

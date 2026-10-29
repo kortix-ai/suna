@@ -290,7 +290,8 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
       : verdict.keys.secretIds.length === 1
         ? ' It uses a key the project shares.'
         : ` It rotates across ${verdict.keys.secretIds.length} keys the project shares.`;
-    const shared = ctx.settings.channelId !== ctx.target.threadId ? ' It applies to every topic in this group.' : '';
+    // The conversation is one thread of a chat whose settings row it shares (a Telegram forum topic).
+    const shared = ctx.settings.channelId !== ctx.target.threadId ? ' It applies to the whole chat, every thread in it included.' : '';
     return notice(`Model for this chat set to ${modelName(verdict.model)}.${keys}${shared} Messages you send after this reply use it.`);
   },
 
