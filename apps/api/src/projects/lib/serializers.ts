@@ -25,6 +25,7 @@ import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flag
 // The request reader `requestAuditContext` lives in `middleware/request-audit.ts`.
 // Re-exported here so every importer and mock keeps working.
 export { requestAuditContext } from '../../middleware/request-audit';
+import { CHANNEL_ACCESS_PLATFORMS } from '../../shared/channel-access-platforms';
 import { normalizeJsonObject } from '../../shared/json';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
@@ -391,9 +392,10 @@ export function serializeProject(
 
 export function publicProjectMetadata(metadata: unknown): Record<string, unknown> {
   if (!metadata || typeof metadata !== 'object') return {};
-  // Telegram allowed user ids and access requests are personal data: only the
-  // Telegram channel routes serve them.
-  const { telegram: _telegram, ...source } = metadata as Record<string, unknown>;
+  // Channel allowed user ids and access requests are personal data: only the
+  // channel access routes serve them.
+  const source = { ...(metadata as Record<string, unknown>) };
+  for (const platform of CHANNEL_ACCESS_PLATFORMS) delete source[platform];
   if (!source.git || typeof source.git !== 'object') return source;
   const git = source.git as Record<string, unknown>;
   if (!Object.hasOwn(git, 'fast_boot')) return source;

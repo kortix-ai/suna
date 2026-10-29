@@ -15,6 +15,20 @@ const SRC = resolve(import.meta.dirname, 'src');
 
 // A route file, by path, until R4 moves every controller into one layer.
 const ROUTE_FILES = ['src/**/routes/**/*.ts', 'src/**/routes.ts', 'src/**/*-routes.ts', 'src/**/router.ts'];
+const QUERIES_IN_SERVICES = 'A route calls a service. Queries live in services.';
+/** `no-restricted-imports` options for a route file. */
+const NO_QUERIES = {
+  paths: [
+    { name: 'drizzle-orm', message: QUERIES_IN_SERVICES },
+    { name: '@kortix/db', message: QUERIES_IN_SERVICES },
+  ],
+  patterns: [{ group: ['drizzle-orm/*', '@kortix/db/*'], message: QUERIES_IN_SERVICES }],
+};
+/** A `no-restricted-imports` pattern for shared channel code: the platform folders and their sibling files (`slack-webhook.ts`, `resend-email-api.ts`, …). */
+const NO_PLATFORM = {
+  group: ['../slack*', '../teams*', '../telegram*', '../email*', '../resend*'],
+  message: 'Shared channel code names no platform. The platform adapter registers its port.',
+};
 
 /**
  * The layer of a module path, lowest first: 0 shared (lib/, shared/,
@@ -169,37 +183,29 @@ export default tseslint.config(
   },
   {
     files: ROUTE_FILES,
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          paths: [
-            { name: 'drizzle-orm', message: 'A route calls a service. Queries live in services.' },
-            { name: '@kortix/db', message: 'A route calls a service. Queries live in services.' },
-          ],
-          patterns: [{ group: ['drizzle-orm/*', '@kortix/db/*'], message: 'A route calls a service. Queries live in services.' }],
-        },
-      ],
-    },
+    rules: { 'no-restricted-imports': ['error', NO_QUERIES] },
   },
   {
-    // The conversation core names no platform: an adapter registers its port
-    // (channels/core/session-notice.ts). The patterns cover the platform folders
-    // and their sibling files (`telegram-webhook.ts`, `resend-email-api.ts`, …).
-    // The other files in channels/core are shared Slack/Teams helpers.
-    files: ['src/channels/core/conversation.ts', 'src/channels/core/session-notice.ts', 'src/channels/core/threads.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['../slack*', '../teams*', '../telegram*', '../email*', '../resend*'],
-              message: 'The conversation core names no platform. The platform adapter registers its port.',
-            },
-          ],
-        },
-      ],
-    },
+    // The conversation core and the inbound webhook scaffold name no platform:
+    // an adapter registers its port (channels/core/session-notice.ts) or passes
+    // its `ChannelInbound` (channels/inbound/inbound.ts). The other files in
+    // channels/core are shared Slack/Teams helpers.
+    files: [
+      'src/channels/core/channel-access.ts',
+      'src/channels/core/channel-access-profiles.ts',
+      'src/channels/core/conversation.ts',
+      'src/channels/core/prompt.ts',
+      'src/channels/core/questions.ts',
+      'src/channels/core/session-notice.ts',
+      'src/channels/core/threads.ts',
+      'src/channels/inbound/*.ts',
+    ],
+    rules: { 'no-restricted-imports': ['error', { patterns: [NO_PLATFORM] }] },
+  },
+  {
+    // A later `no-restricted-imports` replaces an earlier one for the same file,
+    // so the scaffold's route file states both rules.
+    files: ['src/channels/inbound/*-routes.ts'],
+    rules: { 'no-restricted-imports': ['error', { ...NO_QUERIES, patterns: [...NO_QUERIES.patterns, NO_PLATFORM] }] },
   },
 );

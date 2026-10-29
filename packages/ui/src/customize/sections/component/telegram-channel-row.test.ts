@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { parseTelegramUserIds } from './telegram-channel-row';
-import { parseTelegramUserId, telegramUserName } from './telegram-users-panel';
+import { CHANNEL_ACCESS, channelUserName } from './channel-access-panel';
+
+const parseTelegramUserId = CHANNEL_ACCESS.telegram.parseUserId;
 
 describe('parseTelegramUserIds', () => {
   test('accepts numeric ids separated by commas or spaces, and an empty list', () => {
@@ -27,17 +29,17 @@ describe('parseTelegramUserId', () => {
   });
 });
 
-describe('telegramUserName', () => {
+describe('channelUserName', () => {
   const user = { user_id: '100200300', username: 'sample_user', first_name: 'Sam', last_name: 'Sample' };
 
   test('shows first and last name first', () => {
-    expect(telegramUserName(user)).toBe('Sam Sample');
-    expect(telegramUserName({ ...user, last_name: null })).toBe('Sam');
-    expect(telegramUserName({ ...user, first_name: null })).toBe('Sample');
+    expect(channelUserName(user)).toBe('Sam Sample');
+    expect(channelUserName({ ...user, last_name: null })).toBe('Sam');
+    expect(channelUserName({ ...user, first_name: null })).toBe('Sample');
   });
 
   test('falls back to @username, then to the id', () => {
-    expect(telegramUserName({ ...user, first_name: null, last_name: null })).toBe('@sample_user');
-    expect(telegramUserName({ ...user, first_name: '', last_name: null, username: null })).toBe('100200300');
+    expect(channelUserName({ ...user, first_name: null, last_name: null })).toBe('@sample_user');
+    expect(channelUserName({ ...user, first_name: '', last_name: null, username: null })).toBe('100200300');
   });
 });

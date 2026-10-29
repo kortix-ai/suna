@@ -2,9 +2,10 @@
 
 import { useTranslations } from '../../i18n';
 /**
- * Review Center — the per-item review page. It replaces the inbox in place
- * (no modal): a status + title header, the branch/diff facts for a change,
- * the plain-language body for the item's kind, and the live file diffs.
+ * Review Center — one item. A change request opens as a page that replaces the
+ * inbox in place: a status + title header, the branch/diff facts, and the live
+ * file diffs. Every other kind opens in `ReviewItemModal`, over the inbox, the
+ * way a connector approval does.
  *
  * Actions mutate parent state optimistically via the passed handlers.
  */
@@ -14,12 +15,29 @@ import { Button } from '../../primitives/button';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '../../primitives/item';
 import { Kbd } from '../../primitives/kbd';
 import Loading from '../../primitives/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalHeader,
+  ModalTitle,
+} from '../../primitives/modal';
 import { DiffStat } from '../../primitives/status';
 import { infoToast, successToast } from '../../primitives/toast';
+import { useProjectContext } from '../../files/project/context';
+import { getFileIcon } from '../../files/project/components/file-icon';
 import {
   useChangeRequestDiff,
   useChangeRequestMergePreview,
 } from '../../files/project/hooks/use-change-requests';
+import { ShowContentRenderer } from '../../files/renderers/show-content-renderer';
+import { getShowFileCategory } from '../../files/renderers/show-type-utils';
+import {
+  SessionDriveFilesScope,
+  sessionDriveMountPath,
+} from '../../internal/files/session-drive-files';
+import { useFilePreviewStore } from '../../internal/stores/file-preview-store';
 import { cn } from '../../internal/lib/utils';
 import type { ReviewVerdict } from '@kortix/sdk';
 import {
@@ -405,45 +423,106 @@ function ApprovalBody({
 }
 
 // ── output ────────────────────────────────────────────────────────────────
+/** File kinds an output draws inline. Everything else is a row that opens it. */
+const INLINE_MEDIA = new Set(['image', 'video', 'audio']);
+
+/** One file of an output: its label and name, and when it can be read, a
+ *  button that opens it in the file preview. */
+function OutputFileRow({
+  file,
+  readable,
+}: {
+  file: { path: string; note?: string };
+  readable: boolean;
+}) {
+  const name = file.path.split('/').pop() || file.path;
+  const body = (
+    <>
+      {getFileIcon(name, { className: 'text-muted-foreground size-4 shrink-0' })}
+      <span className="text-foreground truncate text-sm">{file.note ?? name}</span>
+      {file.note ? (
+        <span className="text-muted-foreground truncate font-mono text-xs">{name}</span>
+      ) : null}
+    </>
+  );
+  return (
+    <li title={file.path}>
+      {readable ? (
+        <button
+          type="button"
+          onClick={() => useFilePreviewStore.getState().openPreview(file.path)}
+          className="hover:bg-hover duration-fast focus-visible:ring-ring flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none"
+        >
+          {body}
+        </button>
+      ) : (
+        <div className="flex min-w-0 items-center gap-2.5 px-2 py-1.5">{body}</div>
+      )}
+    </li>
+  );
+}
+
+/**
+ * The agent's note, then what it made: the first image, video or sound drawn
+ * inline, its text, and every other file as a row. Nothing it made, no section.
+ *
+ * A `/drives/…` path reads through the item's session: its mounts name the
+ * drive behind each path (`SessionDriveFilesScope`), exactly as in the
+ * session. A workspace path needs a running box, which the inbox does not
+ * have, so it is listed and not opened.
+ */
 function OutputBody({ item }: { item: Extract<ReviewItem, { kind: 'output' }> }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const projectId = useProjectContext()?.projectId;
+  const sessionId = item.sessionId;
   const d = item.detail;
+  const files = d.files ?? [];
+  const readable = (path: string) =>
+    !!projectId && !!sessionId && sessionDriveMountPath(path) !== null;
+  const media = files.find(
+    (f) => readable(f.path) && INLINE_MEDIA.has(getShowFileCategory(f.path)),
+  );
+  const rest = files.filter((f) => f !== media);
+  const video = !!media && getShowFileCategory(media.path) === 'video';
   return (
     <>
-      <Panel>
-        <div className="text-foreground flex items-start gap-2 text-sm text-pretty">
-          <SparklesSolid weight="fill" className="text-kortix-purple mt-0.5 size-4 shrink-0" />
-          <span>{d.note}</span>
+      {projectId && sessionId ? (
+        <SessionDriveFilesScope projectId={projectId} sessionId={sessionId} />
+      ) : null}
+      {d.note ? (
+        <p className="text-foreground text-sm whitespace-pre-wrap text-pretty">{d.note}</p>
+      ) : null}
+      {media ? (
+        // A video takes a 16:9 box: the inline card's fixed height bars a
+        // landscape cut top and bottom, worst on a phone.
+        <div className={cn('overflow-hidden rounded-md border', video && 'aspect-video')}>
+          <ShowContentRenderer type="file" path={media.path} fill={video} />
         </div>
-      </Panel>
-      <Panel>
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <SectionLabel>{d.artifactLabel}</SectionLabel>
-            {d.preview && (
-              <div className="text-muted-foreground text-sm text-pretty">{d.preview}</div>
-            )}
-          </div>
-          {d.previewUrl && (
-            <Button variant="outline" size="sm" className="shrink-0 gap-1.5" asChild>
-              <a href={d.previewUrl} target="_blank" rel="noopener noreferrer">
-                {tI18nComplete.raw('textf7afe3dde18c')}
-                <ArrowUpRight className="size-3.5" />
-              </a>
-            </Button>
-          )}
-        </div>
-        {d.files && d.files.length > 0 && (
-          <div className="mt-3 space-y-1">
-            {d.files.map((f) => (
-              <div key={f.path} className="flex items-center gap-2 text-xs">
-                <span className="text-foreground truncate font-mono">{f.path}</span>
-                {f.note && <span className="text-muted-foreground">— {f.note}</span>}
-              </div>
+      ) : null}
+      {d.preview ? (
+        <section>
+          <SectionLabel>{tI18nComplete.raw('text526e0087cc3f')}</SectionLabel>
+          <p className="text-foreground text-sm whitespace-pre-wrap text-pretty">{d.preview}</p>
+        </section>
+      ) : null}
+      {rest.length > 0 ? (
+        <section>
+          <SectionLabel>{tI18nComplete.raw('textabc7e9892806')}</SectionLabel>
+          <ul className="-mx-2 space-y-0.5">
+            {rest.map((f) => (
+              <OutputFileRow key={f.path} file={f} readable={readable(f.path)} />
             ))}
-          </div>
-        )}
-      </Panel>
+          </ul>
+        </section>
+      ) : null}
+      {d.previewUrl ? (
+        <Button variant="outline" size="sm" className="gap-1.5" asChild>
+          <a href={d.previewUrl} target="_blank" rel="noopener noreferrer">
+            {tI18nComplete.raw('textf7afe3dde18c')}
+            <ArrowUpRight className="size-3.5 shrink-0" />
+          </a>
+        </Button>
+      ) : null}
     </>
   );
 }
@@ -635,7 +714,7 @@ function ActionBar({
     ) : null;
   if (item.status !== 'needs_you') {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <span className="text-muted-foreground text-xs">
           {reviewStatusLabel(item.status, tI18nComplete)} · {formatItemAgeLong(item.createdAt)}
         </span>
@@ -652,7 +731,7 @@ function ActionBar({
   const showPrimary = actions.allows(item, 'approve');
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       {openSession}
       {secondaryLabel && !composing && actions.allows(item, 'changes') && (
         <Button variant="ghost" size="sm" onClick={() => setComposing(true)}>
@@ -739,6 +818,60 @@ function ChangeFacts({ item }: { item: Extract<ReviewItem, { kind: 'change' }> }
       )}
       <DiffStat additions={additions} deletions={deletions} />
     </>
+  );
+}
+
+/** The plain-language body for the item's kind: the page's and the modal's. */
+function KindBody({
+  item,
+  actions,
+  onClose,
+  conflicts,
+}: {
+  item: ReviewItem;
+  actions: ReviewActions;
+  onClose: () => void;
+  conflicts: string[];
+}) {
+  switch (item.kind) {
+    case 'change':
+      return <ChangeBody item={item} actions={actions} onClose={onClose} conflicts={conflicts} />;
+    case 'approval':
+      return <ApprovalBody item={item} actions={actions} />;
+    case 'output':
+      return <OutputBody item={item} />;
+    case 'decision':
+      return <DecisionBody item={item} actions={actions} onClose={onClose} />;
+    case 'batch':
+      return <BatchBody item={item} />;
+  }
+}
+
+/** "Ask for changes" with an optional note, sent back to the agent. */
+function ChangesComposer({
+  item,
+  actions,
+  onCancel,
+  onSent,
+}: {
+  item: ReviewItem;
+  actions: ReviewActions;
+  onCancel: () => void;
+  onSent: () => void;
+}) {
+  return (
+    <FeedbackComposer
+      onCancel={onCancel}
+      onSend={(text) => {
+        actions.resolve(
+          item.id,
+          'changes_requested',
+          text ? `Sent to the agent: “${text}”` : `${item.secondaryAction} — sent to the agent`,
+          text || undefined,
+        );
+        onSent();
+      }}
+    />
   );
 }
 
@@ -831,17 +964,11 @@ export function ReviewDetail({
 
       <div className="mt-8 space-y-8">
         {composing && secondaryLabel && item.kind !== 'approval' && (
-          <FeedbackComposer
+          <ChangesComposer
+            item={item}
+            actions={actions}
             onCancel={() => setComposing(false)}
-            onSend={(text) => {
-              actions.resolve(
-                item.id,
-                'changes_requested',
-                text ? `Sent to the agent: “${text}”` : `${secondaryLabel} — sent to the agent`,
-                text || undefined,
-              );
-              onBack();
-            }}
+            onSent={onBack}
           />
         )}
 
@@ -850,20 +977,121 @@ export function ReviewDetail({
             {tI18nComplete.raw('text526e0087cc3f')}
           </h2>
           <div className="space-y-4">
-            {item.kind === 'change' && (
-              <ChangeBody item={item} actions={actions} onClose={onBack} conflicts={conflicts} />
-            )}
-            {item.kind === 'approval' && <ApprovalBody item={item} actions={actions} />}
-            {item.kind === 'output' && <OutputBody item={item} />}
-            {item.kind === 'decision' && (
-              <DecisionBody item={item} actions={actions} onClose={onBack} />
-            )}
-            {item.kind === 'batch' && <BatchBody item={item} />}
+            <KindBody item={item} actions={actions} onClose={onBack} conflicts={conflicts} />
           </div>
         </section>
 
         {crId && <ChangeFiles crId={crId} />}
       </div>
     </div>
+  );
+}
+
+/** The open item in its modal: who made it, its title, its body, its verdict. */
+function ReviewItemDialog({
+  item,
+  actions,
+  onClose,
+}: {
+  item: ReviewItem;
+  actions: ReviewActions;
+  onClose: () => void;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const [composing, setComposing] = useState(false);
+  const kind = KIND_META[item.kind];
+  // A question and a native approval decide inside their body.
+  const decidesInBody =
+    (item.kind === 'decision' || item.kind === 'approval') && item.status === 'needs_you';
+  return (
+    <>
+      <ModalHeader className="shrink-0 gap-3 pr-12 pb-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-sm',
+              kind.tile,
+            )}
+          >
+            <kind.icon className={cn('size-4', kind.iconColor)} />
+          </span>
+          <div className="flex min-w-0 flex-col">
+            <p className="text-foreground truncate text-sm leading-5 font-medium">
+              {reviewKindLabel(item.kind, tI18nComplete)}
+            </p>
+            <ModalDescription className="truncate text-xs leading-4">
+              {item.agent} · {formatItemAgeLong(item.createdAt)}
+            </ModalDescription>
+          </div>
+        </div>
+        <ModalTitle className="text-xl leading-snug wrap-anywhere">{item.title}</ModalTitle>
+      </ModalHeader>
+      <ModalBody className="min-h-0 space-y-5 overflow-y-auto pb-5">
+        <KindBody item={item} actions={actions} onClose={onClose} conflicts={[]} />
+      </ModalBody>
+      {decidesInBody ? null : (
+        <div className="border-border flex shrink-0 justify-end border-t px-5 pt-4 pb-5">
+          {composing && item.secondaryAction ? (
+            <div className="w-full">
+              <ChangesComposer
+                item={item}
+                actions={actions}
+                onCancel={() => setComposing(false)}
+                onSent={onClose}
+              />
+            </div>
+          ) : (
+            <ActionBar
+              item={item}
+              actions={actions}
+              onBack={onClose}
+              conflicts={[]}
+              checkingConflicts={false}
+              composing={composing}
+              setComposing={setComposing}
+            />
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Every review item but a change request opens here, over the inbox, the way a
+ * connector approval does (`ApprovalDecisionModal`). A change keeps its page:
+ * its diff needs the width. Null closes the modal.
+ */
+export function ReviewItemModal({
+  item,
+  actions,
+  onClose,
+}: {
+  item: ReviewItem | null;
+  actions: ReviewActions;
+  onClose: () => void;
+}) {
+  // The last item stays drawn while the modal fades out.
+  const [shown, setShown] = useState(item);
+  if (item && item !== shown) setShown(item);
+  return (
+    <Modal open={item !== null} onOpenChange={(open) => !open && onClose()}>
+      {/* `space-y-0` and `lg:h-auto`: the modal's own `space-y-4` and full
+          height would add a band under each part and stretch a short item.
+          Only the body scrolls, so the verdict stays in view. */}
+      <ModalContent
+        // Focus the dialog, not its first control: a file row or the video
+        // would open with a focus ring nobody asked for.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          (event.currentTarget as HTMLElement | null)?.focus();
+        }}
+        className="flex flex-col space-y-0 overflow-hidden lg:h-auto lg:max-h-[85svh] lg:max-w-2xl"
+      >
+        {shown ? (
+          <ReviewItemDialog key={shown.id} item={shown} actions={actions} onClose={onClose} />
+        ) : null}
+      </ModalContent>
+    </Modal>
   );
 }

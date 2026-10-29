@@ -106,7 +106,7 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
       version: 1,
       latest_version: 3,
       migration_offered: true,
-      target_version: 2,
+      target_version: 3,
       unknown_reason: null,
       path: 'kortix.toml',
     });

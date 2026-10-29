@@ -294,9 +294,10 @@ root. No turn runs at either point.
   sends the batch again, so the session log keeps the old history and the new
   turns after it. The offsets persist in `session-log-restore.json` for a
   restarted daemon; a restore writes the store at the log's seqs and clears
-  them. Prod runs with the flag off unless a project sets
-  `session_log_restore` (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` is on only on
-  dev).
+  them. This path runs only where `session_log_restore` is off: a project
+  that stores `false`, or a deployment that sets
+  `SESSION_LOG_RESTORE_DEFAULT_ENABLED=false` (the default is on since
+  2026-10-28).
 - **Unsent work never reads as behind.** Only ids are compared, one way: a
   message the store holds that the log lacks (a turn not yet journaled), a
   newer version of a stored message, and a message OpenCode deleted after the
@@ -426,9 +427,9 @@ store a box already holds: a box with a large store loads it at boot (`held()`)
 before any restore. A fresh box drops only an attachment whose record still
 says `blob:` (P2.13 uploads the bytes). Precondition for prod default-on: a
 release whose kortixd handles the 413 (an older kortixd boots without the
-restore and its journal stops at 409). Dev turns `session_log_restore` on for
-every project without a stored value (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` in
-`deploy-dev.yml`, 2026-10-15); prod does not yet.
+restore and its journal stops at 409). `session_log_restore` is on for every
+project without a stored value: dev since 2026-10-15, every deployment since
+2026-10-28 (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` defaults to true).
 
 Known limits of the boot reconcile:
 - Losing `session-log-restore.json` (or OpenCode's `opencode-session-log.json`)
@@ -501,7 +502,7 @@ Each adapter declares in its capabilities what its oracle suites passed against:
 `PI_CAPABILITIES` and `OPENCODE_CAPABILITIES` (`@kortix/api-contract/session-log`,
 `capabilities.ts`: apps/api reads the same manifests for the switch preflight,
 `POST /v1/projects/:p/sessions/:s/log/switch-preflight`), field `harness_versions` (a semver range, today
-`1.0.3 || 1.2.0` and `1.18.23`) and field `schema_minors` (today `[1]`). Both are written
+`1.0.3 || 1.2.0 || 1.4.0` and `1.18.23`) and field `schema_minors` (today `[1]`). Both are written
 by hand, never derived from the pin. `session-log-adapter-versions.test.ts`
 reads them and fails when a pin leaves them:
 
@@ -513,6 +514,11 @@ reads them and fails when a pin leaves them:
   `@silvia-odwyer/photon-node` (pi's image resizer, "Images" below) is pinned the same way;
   pi's `resizeImage` must still start its worker as `./src/utils/image-resize-worker.ts`
   (`pi-images.test.ts` fails when it does not).
+  `pi-host-modules.test.ts` fails when pi's `VIRTUAL_MODULES` gains a module: add it to
+  `PI_HOST_MODULES` (apps/api `pi-packages/prebuild.ts`) and to `hostModules()` (`pi/extensions/prebuilt.ts`).
+  It also fails when pi moves its `typebox` pin: move the daemon's `typebox` with it. A
+  different version puts three more TypeBox copies in the binary (pi 1.4.0, compiled
+  darwin-arm64: +1,328 modules, +1.0 MB, boot +20 ms, RSS +11 MB).
 - OpenCode: `opencode` in `packages/shared/src/runtime-versions.json` (the image
   installs it).
 - Both: `SESSION_LOG_MINOR` in `@kortix/api-contract/session-log`.
@@ -584,7 +590,8 @@ The journal publishes the first three in `collectOnce`, from the same records
 it posts (same ids, seqs and revs), in that order. It collects when it starts
 (the store is at rest: the stream gets the session and its threads before the
 first turn streams), at each turn end, when pi stores a compaction between
-turns, and at the daemon stop. The delta frames
+turns, at the daemon stop, and on pi at most 5 s after each `message.*` frame
+of a turn (below). The delta frames
 come from the v1 bus: both harnesses stream text with the v1 session, message
 and part ids, which are the thread, message and block ids of the records.
 
@@ -597,8 +604,9 @@ put replace the whole record.
 
 The journal folds the v1 frames of each message it has not collected. It
 publishes a live put of a message on the v2 bus only, never into the dirty
-set: apps/api receives the turn end's record alone (its `log_durable_at`
-reacts to a non-streaming assistant message or compaction). A live put is published:
+set: apps/api receives only the records a collection exports from the native
+store (its `log_durable_at` reacts to a non-streaming assistant message or
+compaction). A live put is published:
 - on the first `message.updated` of a message: the prompt (complete) and each
   assistant message (`streaming`, no blocks yet, `reply_to` the prompt);
 - on each `message.part.updated` of a part the message did not have: a new
@@ -638,7 +646,36 @@ the fields the frames do not carry, so a live put carries the `message_id`,
   first assistant `message.updated` of that turn, not at accept.
 
 The collection's put of a message has a higher rev than its live puts, and a
-message the journal has collected gets no live put again.
+message the journal has collected gets no live put again (except a streaming
+record of a mid-turn collection, below).
+
+#### Mid-turn collection (pi)
+
+A box can die mid-turn (the provider deletes it, the daemon crashes). Before
+2026-10-28 the journal collected only at turn end, so such a box lost the whole
+turn from the session log, the prompt included. On pi (`midTurnMs`,
+`JOURNAL_MID_TURN_MS` = 5 s, set in `pi/boot.ts`), each `message.*` frame on
+the v1 bus schedules one collection and send at most 5 s later. So within 5 s
+apps/api holds what pi stored of the turn:
+- the prompt: pi appends its entry when the turn starts;
+- each finished step, with its call results: a `complete` record, and the first
+  one marks the turn `log_durable_at`;
+- the step whose calls run: pi exports it `streaming`, calls `running`, no
+  `completed_at`. This record goes to apps/api only: the journal marks its
+  cursor hash `~`, publishes no `log.message`, and its live puts go on, so the
+  stream keeps their v1 metadata (a running task's `sessionId`). A later record
+  has a higher rev and replaces it. A box that dies leaves it `streaming`, as
+  the stop path always did. A restore hands pi the open calls, and pi-ai sends
+  "No result provided" for each. The record stays `streaming` in the log until
+  the restored box's next turn: once pi appends that turn's reply, the step
+  exports closed (C2: the call `error`, a synthetic "No result provided"
+  result) and its record is replaced.
+
+The reply pi streams has no entry before its `message_end` and is not sent: its
+text lives on the stream only. An idle session has no frames and sends nothing.
+A collection that finds nothing changed sends nothing. OpenCode stays at turn
+end only: its `fromV1` closes open calls at rest, so a mid-turn collection
+would mark running calls interrupted.
 
 A live message the harness removes before the journal collects it (pi
 retracts a queued prompt, OpenCode reverts) leaves no ghost: on
@@ -818,7 +855,7 @@ model call read it (its turn runs or ran), and it stays.
 > listed at the end of this section. When the last OpenCode session is gone,
 > `open-code/` and the `opencode` harness id are removed.
 
-pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.2.0) is bundled
+pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.4.0) is bundled
 into the daemon binary and runs INSIDE the daemon process. There is no child
 process, no port, no RPC and no second sandbox: pi-coding-agent's built-in
 `bash`/`read`/`write`/`edit` run on `/workspace` in this process, Kortix adds
@@ -896,7 +933,8 @@ describes.
   config root. Extensions load once per runtime start, so an agent switch
   later in the session keeps them.
 - **codemode.** `KORTIX_PI_CODEMODE`, else the session agent's compiled
-  `codemode`, else `on`. It is fixed at start, like the extensions.
+  `codemode`, else `on`. It is fixed at start, like the extensions. A subagent
+  gets codemode only from its own compiled `codemode` (`on` or `only`, v3).
 
 ### Config releases
 
@@ -1064,7 +1102,40 @@ default: the other tools stay declared), `only` (requests declare codemode alone
   in parallel with its siblings unless its tool is `sequential` (pi's `NestedToolCallRunner`):
   `Promise.all` over `tools.image_gen()` generates the images at the same time.
   A tool the agent's tool access turns off is not callable from a script either (pi offers
-  scripts only active tools). A subagent gets only the workspace tools, so no codemode.
+  scripts only active tools).
+- **Subagents.** A child is a bare `core.Agent`: no extension loads and no tool gets a session
+  context. When the subagent's own compiled agent sets `codemode: on` or `only` (v3; omitted:
+  none, whatever the session's mode), `spawnSession` adds
+  pi's tool (`childCodemodeTool`, reached by a relative path into pi's
+  `dist/extensions/codemode/tool.js`) with the context pi's executor reads: `tools`,
+  `executeTool` and `sessionManager.getBranch()`. Each script call runs pi-agent-core's
+  `runToolCall` with the child's own `beforeToolCall` and `afterToolCall`: validation, the
+  subagent's and the session's rules (`deny` blocks, `ask` asks), and the extension handlers,
+  one call at a time — as the child's own direct calls run. The permission checks are identical,
+  and a script's call now carries its parent `codemode` call id (`parentToolCallId`, derived from
+  pi's `<call>/<n>` nested id), so an extension `tool_call`/`tool_result` handler sees it as nested,
+  as on the root; the child's own gate already policed it (stricter than the root rule), so
+  `nestedCallGate` skips it (no double decision). An `ask` on a subagent call is not attached to the
+  codemode part (`attachToPart: false`), as on every subagent call. A script reaches only the child's
+  tools, so never `task` or `question`. `on` adds codemode beside the direct tools; `only` registers only
+  codemode (and `show`, when the child has it) as the child's model-visible tools, so every call goes
+  through a script, while scripts reach every other tool through the executor (no AgentSession loadout needed).
+  The child's OWN tool access that merely omits `codemode`/`show` (the implicit `{'*': false}`
+  default) still grants them — they are built-in controls, and denying an `only` child's codemode
+  would hide its direct tools and refuse every call. This exemption is the subagent's allowlist
+  only and NOT how the root behaves (the root denies a built-in its allowlist omits). The SESSION
+  (root) agent's allowlist is still enforced, so delegating never unlocks codemode/show the session
+  denies. To turn a subagent's codemode off, set its own `codemode: off`; a `deny` rule — a wildcard
+  `permission: { '*': deny }` matches codemode too, so list `codemode: allow` to keep it — also turns
+  them off, and `tools: none` (no tools at all) takes codemode with it. `codemode` is not a tool name,
+  so do not list it in a `tools` allowlist or `exclude` (validate warns it is unknown). The subagent's mode comes from
+  its OWN agent, independent of the session agent's codemode (`KORTIX_PI_CODEMODE`, which for a v3
+  project the API fills from the session agent): a lead set to `codemode: off` does not disable a
+  subagent's own `only`. When a built-in is off, wiring is skipped and the child keeps its direct
+  tools (a `log.warn` records it), never bricked. `show` stays a direct call: a script cannot call it.
+  Limits: `store()` writes last one script (nothing appends them); the session log's code block has no
+  `result.details` (pi's `nestedCalls` record is an AgentSession feature), only pi's live record in
+  `ext.pi.data.details`.
 - **Transcript.** A nested call is not a part, except a call to a native-part tool
   (`NATIVE_PART_TOOLS`: `show`, `image_gen`). pi emits a nested call's
   `tool_execution_start/update/end` on the session only, with `parentToolCallId`;
@@ -1090,7 +1161,8 @@ default: the other tools stay declared), `only` (requests declare codemode alone
   `store()` values fold into the root thread's `ext.pi.data.codemode_store`; the restore writes
   both back (`nestedCalls`, one `codemode-store` entry).
 - **Build.** The compiled daemon embeds `quickjs-wasi/quickjs.wasm` (`setEmbeddedQuickJSWasmPath`,
-  reached by a relative path into pi's `dist/config.js` because pi does not export it) and builds
+  reached by a relative path into pi's `dist/config.js` because pi does not export it; a child's
+  codemode sets it too, so it works with the session's codemode `off`) and builds
   `src/extensions/codemode/worker.ts` as a second entrypoint with `--root=.`: in a binary pi starts
   the worker as `./src/extensions/codemode/worker.ts`, resolved against the build root. Both fail
   only on the first script, never at boot: `pi-harness.test.ts` "pi codemode" runs scripts from
@@ -1222,14 +1294,12 @@ turn: no model call, no turn relay. An auto compaction (threshold, overflow)
 runs inside its prompt turn, and an extension's `ctx.compact()` is not a
 `/summarize`: neither relays a turn.
 
-Reasoning is display only across models (C3, P7.3). pi-ai replays a thinking
-block that another model wrote as visible assistant text. `pi/reasoning.ts`
-removes the thinking of another model from each request, with pi-ai's own test
-(provider, api, model id): `withoutForeignReasoning` wraps the stream function
-of the root and every child agent. pi's summarizers (compaction, branch
-summary) send no thinking block of any model since pi 1.2.0
-(`serializeConversation`); `pi-session-log-restore.test.ts` fails if that
-changes. A model switch (a prompt's
+Reasoning is display only across models (C3, P7.3). Since pi 1.3.0, pi-ai's
+`transformMessages` drops the thinking another model wrote from each request
+(same model = provider, api, model id), for the root and every child agent.
+pi's summarizers (compaction, branch summary) send no thinking block of any
+model since pi 1.2.0 (`serializeConversation`). `pi-session-log-restore.test.ts`
+fails if either changes. A model switch (a prompt's
 `model`, `POST /kortix/env`) and a restored log written by another model or
 harness both go through it. The same model's thinking goes back unchanged, and
 the store and the session log keep every block.

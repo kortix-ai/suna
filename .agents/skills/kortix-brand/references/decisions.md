@@ -10,6 +10,89 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-27
+
+### D24 The framework surfaces explain Kortix as a backend framework and name pi
+- **Date:** 2026-10-28
+- **Decision:** The home hero band is a slider: the workspace on the left, the same sample project as code on the right (its repository with `kortix.yaml` open). A home band ("A workspace for your team. A framework underneath.") and the `/framework` page explain Kortix as a backend framework for agents: a project is a git repository, `kortix.yaml` declares agents, skills, tools and triggers, every session runs the open-source pi coding agent on its own computer, triggers run agent loops 24/7, and `@kortix/sdk` and `@kortix/ui` compose your own experience. `/framework` carries the architecture diagram (clients, the Kortix API, the project repository, the session computer, the LLM gateway). These framework surfaces may name pi; the hero headline, the pillars and other core copy still do not (D20).
+- **Why:** founder, 2026-10-28: "what doesnt come out enough on the homepage is like that u have the WORKSPACE UI for humans... But everything is code & KORTIX FRAMEWORK, Kortix.YAML & PI CODING AGENT as basis", and "a FRAMEWORK pAGE IN full that shows the technical architecture diagram".
+- **Where:** `apps/web/src/features/marketing/landing-hero/workspace-framework.tsx`, `framework-window.tsx`, `landing-sections/framework-band.tsx`, `features/marketing/framework/`.
+- **Supersedes:** D20 for the framework surfaces only.
+- **Source:** the `services-page` branch.
+
+### D23 The home "Run any model" tab names the managed models with their versions
+- **Date:** 2026-10-27
+- **Decision:** The home How it works tab "Run any model" shows the provider marks (any provider with your own keys) and names the Kortix-managed models with their versions, today "DeepSeek V4.1 Flash" and "GLM 5.3 Flash", served with zero data retention. The names live in one constant, `MANAGED_MODELS` in `step-providers.tsx`; it follows Platinum Inference's `GET /v1/inference/models`. Everywhere else the families-only rule in [claims.md](verbal/claims.md) holds. The separate home sections "Need an internal app?" and "Every model, one bill." are removed: Apps and models are tabs of How it works.
+- **Why:** founder, 2026-10-27: "it should just be model-agnostic: connect any model provider ... show the actual logos ... say we offer deepseek v4 1 ... fold all of these ideas fully into how kortix works".
+- **Where:** `apps/web/src/features/marketing/landing-sections/how-it-works-tabs.tsx`, `step-apps.tsx`.
+- **Status:** reverted 2026-10-28 by the design cleanup on the `services-page` branch ("cleaner home and services sections"): the tab shows the model-slot panel again and names no versions. The families-only rule holds everywhere.
+- **Supersedes:** the families-only rule for this one tab.
+- **Source:** the `services-page` branch.
+
+### D22 `/about` is the vision page: SuperIntelligence, AGI and self-improving companies run by AI
+- **Date:** 2026-10-27
+- **Decision:** `/about` is about SuperIntelligence and AGI: Kortix builds every layer (operating system, agent harness, infrastructure, governance, the 24/7 loop, then training and evals) so companies can run on AI at scale, improve as they operate, and stay their own. Its sections: the hero (D19), "The thesis." (companies will run on AI, they will improve themselves, they have to be owned), "Every layer, A to Z.", "Self-improving companies." and the mission line. On this page only, and only as direction (future tense or "we are building"), copy may say "AGI", "SuperIntelligence", "self-improving companies" and "run by AI". It still never says "self-driving company" or "autonomous company" (positioning.md, retired lines). Elsewhere the idea appears at most as one line, e.g. the home Outcomes sub: "Every run makes the next one better."
+- **Why:** founder, 2026-10-27: "THE WHOLE ABOUT PAGE SHOULD BE ABOUT SI/AGI & how we are building all the infrastructure, harness, architecture, operating system, a to z so u can run it on scale to build self improving autonomous self driving organizations, that are run by AI", and "I don't want to say that [in the home hero], but I want to add that aspect".
+- **Where:** `apps/web/src/features/marketing/about/content.ts`, `about-page.tsx`; `apps/web/src/features/marketing/landing-sections/use-cases-section.tsx` (the one home line); [positioning.md](verbal/positioning.md) AGI rule.
+- **Supersedes:** the `/about` sections "What we believe." and "Build, host, manage, monitor."
+- **Source:** the `services-page` branch.
+
+### D21 The home hero cycles the pillars: "The sovereign / multiplayer / extensible AI Operating System"
+- **Date:** 2026-10-27
+- **Decision:** The home hero title is "The <word> AI Operating System", the word cycling through sovereign, multiplayer, extensible and open (the three pillars, D16, plus "open", founder 2026-10-27: "also add open"). The muted line "for companies that own their …" is gone. Because the hero now names the pillars, the compact three-column pillar band moves down the page, right under the case studies (founder: "move that elsewhere", then "move it up under CASE STUDIES"). Screen readers read "The sovereign, multiplayer, extensible and open AI Operating System".
+- **Why:** founder, 2026-10-27: "The sovereign/multiplayer/extensible AI Operating Systems, maybe these 3 instead as switcher … & then remove the for companies that own their".
+- **Where:** `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`.
+- **Supersedes:** D16's fixed hero line "The sovereign AI Operating System" and the rotating "own their" line.
+- **Source:** the `services-page` branch.
+
+### D20 Core marketing copy does not name pi
+- **Date:** 2026-10-27
+- **Decision:** The home hero, the pillars and other core marketing copy do not name pi. The Company as code pillar reads "Extensible to the core." and says the agent harness is open source and yours to extend. pi stays named in docs, the changelog, developer pages and claims.md row "Harness".
+- **Why:** founder, 2026-10-27: "remove the PI everywhere in core context as nobody will know what it is out of box".
+- **Where:** `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`, `apps/web/src/features/marketing/landing-sections/pillars-band.tsx`.
+- **Supersedes:** D16's "Extensible, powered by pi." pillar line and its naming of pi in the home copy.
+- **Source:** the `services-page` branch.
+
+### D19 The `/about` hero: "We are building the Operating System for SuperIntelligence"
+- **Date:** 2026-10-27
+- **Decision:** The `/about` hero reads "We are building the Operating System for SuperIntelligence. One you own end to end, every part of it." "SuperIntelligence" (capital S and I, founder: "write SI in big letters") is founder vision: it appears in the `/about` hero only, in the future or progressive tense ("we are building"), never as a category, a page title elsewhere or a product claim.
+- **Why:** founder, 2026-10-27: "We are building the Operating System for SuperIntelligence that you can own e2e every aspect".
+- **Where:** `apps/web/src/features/marketing/about/content.ts` (`hero`); [positioning.md](verbal/positioning.md) rule on "AGI", which this extends.
+- **Supersedes:** the `/about` hero line "We are building the open-source AI Operating System."
+- **Source:** the `services-page` branch.
+
+### D18 The home page adds the Promise: "Hand it an outcome, agents run it 24/7"
+- **Date:** 2026-10-27
+- **Decision:** Beside the sovereign category line (D16), the home page says what Kortix does for a company: hand it an outcome and agents run it 24/7. The hero subhead opens with it, and the Outcomes section's header carries the outcome loop (Outcome, Plan, Work, Verify, Learn, 24/7) above each team's outcomes; there is no separate 24/7 section, built from triggers, sessions, change requests and memory. No early-access label: the founder states it works today. The copy says "agents" and "AI-native operating system for your company", never "AI workers", "AI employees", "self-driving" or "autonomous company".
+- **Why:** founder, 2026-10-27: "not on the edge of like AI-native Company OS, OS to run your company in loops let agents run 24/7 … run company 24/7 on ai employees", then "combine all this stuff with like the outcome engine … runs company outcome 24/7". "AI employees" is held back because it sits beside the retired "AI Worker" line and implies no human gate; the founder may override.
+- **Where:** [positioning.md](verbal/positioning.md) row "Promise" and its rule; `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`, `apps/web/src/features/marketing/landing-sections/use-cases-section.tsx` (the Outcomes header).
+- **Supersedes:** nothing; it adds a layer to D10 and D16.
+- **Source:** the `services-page` branch.
+
+### D17 Compliance copy says "SOC 2 Type I verified" and never mentions Type II
+- **Date:** 2026-10-27
+- **Decision:** Every surface states SOC 2 as "SOC 2 Type I verified". Type II is not mentioned anywhere: no "in progress" seal, row, line or footnote. GDPR stays "a posture Kortix runs, not a certificate". No ISO, no HIPAA.
+- **Why:** founder, 2026-10-27: "no whether mention Type ii in progress, just say Soc 2 type 1 verified".
+- **Where:** [claims.md](verbal/claims.md) row "Compliance" and the SOC 2 rule; `/security`, `/enterprise`, `/contact`, `/services`, the home trust band, the a1o page, the README and the open-source blog post.
+- **Supersedes:** the "two facts" SOC 2 rule in claims.md (Type I held, Type II in progress).
+- **Source:** the `services-page` branch.
+
+### D16 The home hero says "The sovereign AI Operating System", and the home page leads with three pillars
+- **Date:** 2026-10-27
+- **Decision:** The home page hero opens on "The sovereign AI Operating System". Right after the hero, the home page leads with three pillars, in this order and with these names: **Multiplayer AI** ("One AI for the whole team."), **Company as code** ("Extensible, powered by pi."), **Sovereign and open** ("Own your data and your infrastructure."). "Open source" stays in the pillar and in sentences. pi is named as the open-source agent harness every session runs.
+- **Why:** founder, 2026-10-27: "today we are launching the sovereign AI Operating System", then "what has to come forward are the 3 CORE PIECES … MULTIPLAYER AI. COMPANY AS CODE / EXTENSIBLE POWERED BY PI & SOVEREIGN/OPEN".
+- **Where:** `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`, `apps/web/src/features/marketing/landing-sections/pillars-band.tsx`, [claims.md](verbal/claims.md) row "Harness".
+- **Supersedes:** D10's tagline in the home hero only. Page titles, README, CLI banner, auth screen and meta descriptions keep "The open-source AI Operating System" until the founder extends this decision.
+- **Source:** the `services-page` branch.
+
+### D15 `/services` sells "AI Transformation" for a flat $20,000 a month, with a quiet guarantee
+- **Date:** 2026-10-27
+- **Decision:** The site sells two things: the AI OS (every product page) and AI Transformation, a done-for-you service, on `/services`. `/services` is a standalone sales page with its own shell and an AI OS | Services switcher. The page says "we" and "our team". The roles (Deployment Strategists, Forward Deployed Engineers) appear once, in the FAQ, with no headcount and no "full time". The page sells three things in one membership: AI Strategy (an audit, baselines, a ranked roadmap), AI Transformation (map the company, unify its data, automate the work with agents, build custom software) and AI Education (we teach the customer's existing team). The price is a flat $20,000 a month: no discount, no "limited time", no strike-through. The guarantee stays low-key, one line, never a card or a headline: "Not loving it in the first 2 weeks? Get 50% back, no questions asked." "Join now" is a Stripe Payment Link. "AI Transformation" is the service's name on `/services` only.
+- **Why:** founder, 2026-10-27: "make it a custom sales experience", "the actual Stripe 1 click checkout as well as the book intro call", "call it an AI TRANSFORMATION service … we map your org, what humans do, how they operate & we automate", the guarantee "more lowkey", then "the 5k off makes it too fishy, remove that and keep it at 20k, say DEPLOYMENT STRATEGIST & FORWARD DEPLOYED ENGINEER e2e", then "take away the fulltime thing … we dont specify the 1 DS & 1 FDE, just keep it more general", "remove all that overindexing on FDE/strategist", "bring ai strategy and ai education into it. we teach our existing team".
+- **Where:** `apps/web/src/features/marketing/services/content.ts` (terms and accuracy gate), `apps/web/src/app/[locale]/(public)/(sales)/`, `apps/web/src/features/marketing/kit/site-switcher.tsx`, [claims.md](verbal/claims.md) row "Services offer", [voice-and-tone.md](verbal/voice-and-tone.md) Don't say row.
+- **Supersedes:** the "no price outside `/pricing`" practice and the "AI transformation" ban, for `/services` only. Every other surface keeps both.
+- **Source:** the `services-page` branch.
+
 ## 2026-10-25
 
 ### D14 Empty states of a tab, folder or list draw `EmptyArt`

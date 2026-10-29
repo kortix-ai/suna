@@ -31,6 +31,14 @@ async function call(path: string, init: RequestInit = {}, allowRangeRefusal = fa
   let res: Response;
   try {
     res = await platinumFetch(path, init);
+    // Reads are safe to replay while storage recovers; writes may have committed.
+    for (const delay of [2_000, 3_000]) {
+      if ((init.method ?? 'GET').toUpperCase() !== 'GET' || res.status !== 503 || init.signal?.aborted) break;
+      await res.body?.cancel();
+      await Bun.sleep(delay);
+      init.signal?.throwIfAborted();
+      res = await platinumFetch(path, init);
+    }
   } catch (err) {
     logger.warn(`[drives] ${init.method ?? 'GET'} ${path} failed:`, { error: err instanceof Error ? err.message : String(err) });
     throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', 'drive_storage_unavailable');

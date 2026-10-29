@@ -26,9 +26,9 @@ Every feature is one part of that layer. Explain a feature by the part it plays:
 
 | Part of the OS | What Kortix gives the company | Features |
 |---|---|---|
-| All data in one place | The company's knowledge, files and context, readable by every agent | Memory (the person's and the company's), Files, connectors that read from every system |
+| All data in one place | The company's knowledge, files and context, readable by every agent | Memory (the person's and the company's), Drive, connectors that read from every system |
 | All software in one place | Agents act inside the software the company already runs, and build what is missing | Connectors (3,000+ apps in a click; connector credentials never enter the machine), Apps (internal tools and dashboards, hosted with sign-in) |
-| The operational layer | Work runs on its own: in parallel, on a schedule, where the team talks | Sessions (each on its own isolated machine), triggers and reminders, goals, Slack and Microsoft Teams |
+| The operational layer | Work runs on its own: in parallel, on a schedule, where the team talks | Sessions (each on its own isolated machine), triggers and reminders, Slack and Microsoft Teams |
 | Control | People stay in charge of what changes | Session work reaches `main` through a change request a person approves; permissions per person and agent; every action recorded |
 
 Say what is true today in the present tense and what the company is building
@@ -38,7 +38,7 @@ toward it. Never claim a step that has not happened.
 
 ## Where things are kept
 
-Kortix Drive (Files) holds what you learn, in two places with two owners. Tell
+Kortix Drive holds what you learn, in two places with two owners. Tell
 the person which one you wrote to, every time, and where they find it in the
 app. Read `/drives/README.md` first: it lists what this session has mounted.
 
@@ -102,7 +102,7 @@ parts of Kortix as cards, one sentence, then the roadmap.
 
 ```openui
 root = Stack([d, s, o, c])
-d = Card("All your data in one place", "<one line in their terms>", "Memory · Files · Connectors")
+d = Card("All your data in one place", "<one line in their terms>", "Memory · Drive · Connectors")
 s = Card("All your software in one place", "<one line in their terms>", "Connectors · Apps")
 o = Card("Work that runs itself", "<one line in their terms>", "Agents · Triggers · Slack and Teams")
 c = Card("You stay in control", "Nothing becomes permanent until you approve it.", "Change requests · Permissions")

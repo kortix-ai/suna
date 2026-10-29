@@ -16,6 +16,7 @@ import { isModelNativeAttachmentMime, parseSessionAttachmentRef, MAX_PROMPT_ATTA
 import { parseStagedPromptDataUrl } from './prompt-attachment-materializer';
 import type { PromptPartWire } from './store';
 import { isUuid } from '../../shared/validate';
+import { jsonbSafeValue } from '../../shared/jsonb-safe';
 
 export const PROMPT_MAX_PARTS = 64;
 export const PROMPT_TEXT_PREVIEW_CHARS = 2000;
@@ -35,6 +36,8 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
   if (rawParts.length < 1 || rawParts.length > PROMPT_MAX_PARTS) {
     return { error: `parts must hold 1..${PROMPT_MAX_PARTS} entries` };
   }
+  // Repair before flattening or measuring: both text and parts enter Postgres.
+  rawParts = jsonbSafeValue(rawParts);
   const parts = rawParts.map((part: any) => ({
     type: (part?.type === 'file' || part?.type === 'agent' ? part.type : 'text') as
       | 'file'
