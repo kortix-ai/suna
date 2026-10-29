@@ -4,7 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { Modal, ModalContent, ModalDescription, ModalTitle } from '@kortix/ui/modal';
 
 import { localizedDownloadContent } from './content';
-import { detectPlatform } from './detect-os';
+import { detectPlatform } from '@kortix/ui/internal/lib/detect-os';
 import { DownloadOptions } from './download-options';
 
 /**

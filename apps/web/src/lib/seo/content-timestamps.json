@@ -1,6 +1,6 @@
 {
   "marketing:index": "2026-10-29T12:54:55.000Z",
-  "marketing:about": "2026-10-29T14:09:26.000Z",
+  "marketing:about": "2026-10-29T21:07:01.000Z",
   "marketing:contact": "2026-10-28T15:43:37.000Z",
   "marketing:developers": "2026-10-02T13:38:34.000Z",
   "marketing:enterprise": "2026-10-28T15:43:37.000Z",
@@ -10,15 +10,15 @@
   "marketing:security": "2026-10-28T21:45:05.000Z",
   "marketing:self-hosted": "2026-10-28T15:43:37.000Z",
   "marketing:services": "2026-10-29T14:27:24.000Z",
-  "marketing:case-studies": "2026-10-29T14:09:26.000Z",
-  "marketing:framework": "2026-10-29T13:31:21.000Z",
+  "marketing:case-studies": "2026-10-29T21:07:01.000Z",
+  "marketing:framework": "2026-10-29T21:07:01.000Z",
   "marketing:multiplayer": "2026-10-29T12:54:55.000Z",
   "marketing:sovereign": "2026-10-28T21:45:05.000Z",
   "marketing:compliance": "2026-10-28T21:45:05.000Z",
   "marketing:white-label": "2026-10-19T10:12:35.000Z",
   "marketing:careers": "2026-10-28T15:43:37.000Z",
   "marketing:changelog": "2026-10-23T11:58:25.000Z",
-  "marketing:use-cases": "2026-10-29T14:09:26.000Z",
+  "marketing:use-cases": "2026-10-29T21:07:01.000Z",
   "marketing:download": "2026-10-20T16:38:11.000Z",
   "marketing:desktop": "2026-10-28T15:43:37.000Z",
   "marketing:mobile": "2026-10-28T15:43:37.000Z",
@@ -29,6 +29,6 @@
   "docs:capture/rollout": "2026-10-19T16:40:22.000Z",
   "docs:connect/chrome": "2026-10-29T14:41:11.000Z",
   "docs:developers": "2026-10-29T19:00:29.000Z",
-  "docs:guide": "2026-10-29T19:59:50.000Z",
-  "docs:index": "2026-10-29T14:09:26.000Z"
+  "docs:guide": "2026-10-29T21:07:01.000Z",
+  "docs:index": "2026-10-29T21:07:01.000Z"
 }
