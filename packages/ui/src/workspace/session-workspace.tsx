@@ -417,7 +417,10 @@ function DesktopSessionLayout({ panel, children }: SessionSurfaceProps) {
               maxSize={shouldShowPanel ? (isAnimating || isExpanded ? 100 : 65) : 100}
               collapsible={isExpanded || isAnimating}
               className={cn(
-                'relative flex w-full flex-col overflow-hidden bg-transparent transition-[padding] duration-(--duration-slow) ease-out',
+                // `isolate`: the chat's own z-indexes (the site header is
+                // z-50) stay inside this panel, so the full-screen layer
+                // (z-30, `SessionPanelSide`) always paints above all of it.
+                'relative isolate flex w-full flex-col overflow-hidden bg-transparent transition-[padding] duration-(--duration-slow) ease-out',
                 isExpanded && 'pointer-events-none',
               )}
               aria-hidden={isExpanded || undefined}
