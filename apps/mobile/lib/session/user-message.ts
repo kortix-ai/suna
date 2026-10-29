@@ -262,15 +262,29 @@ export function parseUserMessageBlocks(blocks: ReadonlyArray<SessionLogBlock>) {
       .flatMap((b) => (b.type === 'text' && !b.synthetic && b.text.trim() ? [b.text] : []))
       .join('\n');
     const content = parseUserMessageText(rawText);
+    return { rawText, content, attachments: messageAttachments(blocks, content) };
+}
+
+/**
+ * The tiles of `content`'s pastes and `<file>` uploads, then the message's
+ * files. An image a `<file>` tag names (`source_path`, pi) draws once, through
+ * its tag, as on web (`normalizeAttachments`).
+ */
+export function messageAttachments(
+  blocks: ReadonlyArray<SessionLogBlock>,
+  content: Pick<ParsedUserMessageText, 'files' | 'pasted'>,
+): MessageAttachment[] {
+    const tagPaths = new Set(content.files.map((f) => f.path));
     const files = blocks.flatMap((b): MessageAttachment[] => {
       if (b.type === 'attachment') {
+        if (b.source_path && tagPaths.has(b.source_path)) return [];
         return [{ key: b.id, filename: b.name || 'File', mime: b.mime, src: b.url, localUri: localUriOf(b.id) }];
       }
       if (b.type !== 'harness' || b.kind !== 'file') return [];
       const data = (b.data ?? {}) as FileData;
       return [{ key: b.id, filename: data.filename || 'File', mime: data.mime ?? '', src: data.url, localUri: localUriOf(b.id) }];
     });
-    const attachments: MessageAttachment[] = [
+    return [
       ...content.pasted.map((paste) => ({ key: `pasted:${paste.id}`, filename: 'Pasted text', pasted: paste })),
       ...content.files.map((f, i) => ({
         key: `upload:${i}:${f.path}`,
@@ -282,7 +296,6 @@ export function parseUserMessageBlocks(blocks: ReadonlyArray<SessionLogBlock>) {
       })),
       ...files,
     ];
-    return { rawText, content, attachments };
 }
 
 /**
