@@ -149,7 +149,7 @@ export function UseCasesBrowser({ posts }: { posts: Post[] }) {
     <div className="grid grid-cols-1 gap-10 lg:grid-cols-[15rem_1fr] lg:gap-12">
       <aside className="lg:sticky lg:top-24 lg:self-start">
         <label className="bg-background focus-within:outline-ring flex items-center gap-2 rounded-md border px-3 py-2 focus-within:outline-2">
-          <MagnifyingGlassIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />
+          <MagnifyingGlassIcon weight="fill" className="text-muted-foreground size-4 shrink-0" aria-hidden />
           <input
             type="search"
             value={query}

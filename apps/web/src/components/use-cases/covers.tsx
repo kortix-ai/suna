@@ -65,6 +65,13 @@ import {
 import type { ComponentType, ReactNode } from 'react';
 
 import type { Post } from '@/lib/blog';
+import {
+  ApprovalCardScene,
+  FannedDraftsScene,
+  RunTimelineScene,
+  SceneCanvas,
+  SlackApprovalScene,
+} from './cover-scenes';
 import { cn } from '@kortix/ui';
 
 export type UseCaseCoverProps = { post: Post; featured?: boolean };
@@ -218,7 +225,7 @@ const big = 'size-8 sm:size-9';
 
 // ── registry ────────────────────────────────────────────────────────────────
 
-export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> = {
+const LOGO_COVERS: Record<string, ComponentType<UseCaseCoverProps>> = {
   'customer-support': () => (
     <RowCover>
       <Kortix />
@@ -234,7 +241,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
         <GitHub key="g" />,
         <Linear key="l" />,
         <IconTile key="d">
-          <Database className={cn(ic, 'text-foreground/70')} />
+          <Database weight="fill" className={cn(ic, 'text-foreground/70')} />
         </IconTile>,
       ]}
     />
@@ -242,18 +249,18 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   'docs-maintainer': () => (
     <RowCover>
       <IconTile>
-        <GitMerge className={cn(ic, 'text-foreground/70')} />
+        <GitMerge weight="fill" className={cn(ic, 'text-foreground/70')} />
       </IconTile>
       <Kortix />
       <IconTile>
-        <FileText className={cn(ic, 'text-foreground/70')} />
+        <FileText weight="fill" className={cn(ic, 'text-foreground/70')} />
       </IconTile>
     </RowCover>
   ),
   'qa-agent': () => (
     <RowCover>
       <IconTile>
-        <GitPullRequest className={cn(ic, 'text-foreground/70')} />
+        <GitPullRequest weight="fill" className={cn(ic, 'text-foreground/70')} />
       </IconTile>
       <Kortix />
       <div className={cn(TILE, 'bg-emerald-500 text-white')}>
@@ -273,14 +280,14 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
       <GitHub />
       <Kortix />
       <IconTile>
-        <Tag className={cn(ic, 'text-foreground/70')} />
+        <Tag weight="fill" className={cn(ic, 'text-foreground/70')} />
       </IconTile>
     </RowCover>
   ),
   'meeting-notes': () => (
     <RowCover>
       <IconTile>
-        <CalendarClock className={cn(ic, 'text-foreground/70')} />
+        <CalendarClock weight="fill" className={cn(ic, 'text-foreground/70')} />
       </IconTile>
       <Kortix />
       <Linear />
@@ -293,7 +300,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
         <Slack key="s" />,
         <Linear key="l" />,
         <IconTile key="u">
-          <UserPlus className={cn(ic, 'text-foreground/70')} />
+          <UserPlus weight="fill" className={cn(ic, 'text-foreground/70')} />
         </IconTile>,
       ]}
     />
@@ -311,7 +318,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <Mail className={cn(ic, 'text-sky-500')} />
+          <Mail weight="fill" className={cn(ic, 'text-sky-500')} />
         </IconTile>
       }
       b={<Linear />}
@@ -321,7 +328,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <BarChart3 className={cn(ic, 'text-indigo-500')} />
+          <BarChart3 weight="fill" className={cn(ic, 'text-indigo-500')} />
         </IconTile>
       }
       b={<Slack />}
@@ -331,7 +338,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <Coffee className={cn(ic, 'text-rose-500')} />
+          <Coffee weight="fill" className={cn(ic, 'text-rose-500')} />
         </IconTile>
       }
       b={<Slack />}
@@ -341,7 +348,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <KeyRound className={cn(ic, 'text-amber-500')} />
+          <KeyRound weight="fill" className={cn(ic, 'text-amber-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -351,7 +358,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <Siren className={cn(ic, 'text-red-500')} />
+          <Siren weight="fill" className={cn(ic, 'text-red-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -361,7 +368,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <ClipboardList className={cn(ic, 'text-orange-500')} />
+          <ClipboardList weight="fill" className={cn(ic, 'text-orange-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -369,49 +376,49 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   ),
   'lead-follow-up': () => (
     <FeatureCover glow="bg-orange-500/15">
-      <UserPlus className={cn(big, 'text-orange-500')} />
+      <UserPlus weight="fill" className={cn(big, 'text-orange-500')} />
     </FeatureCover>
   ),
   'crm-hygiene': () => (
     <FeatureCover glow="bg-fuchsia-500/15">
-      <Users className={cn(big, 'text-fuchsia-500')} />
+      <Users weight="fill" className={cn(big, 'text-fuchsia-500')} />
     </FeatureCover>
   ),
   'expense-reconciliation': () => (
     <FeatureCover glow="bg-emerald-500/15">
-      <Receipt className={cn(big, 'text-emerald-500')} />
+      <Receipt weight="fill" className={cn(big, 'text-emerald-500')} />
     </FeatureCover>
   ),
   'competitor-watch': () => (
     <FeatureCover glow="bg-cyan-500/15">
-      <Radar className={cn(big, 'text-cyan-500')} />
+      <Radar weight="fill" className={cn(big, 'text-cyan-500')} />
     </FeatureCover>
   ),
   'compliance-monitoring': () => (
     <FeatureCover glow="bg-teal-500/15">
-      <ShieldCheck className={cn(big, 'text-teal-500')} />
+      <ShieldCheck weight="fill" className={cn(big, 'text-teal-500')} />
     </FeatureCover>
   ),
   'contract-review': () => (
     <FeatureCover glow="bg-violet-500/15">
-      <ScrollText className={cn(big, 'text-violet-500')} />
+      <ScrollText weight="fill" className={cn(big, 'text-violet-500')} />
     </FeatureCover>
   ),
   'ar-chaser': () => (
     <FeatureCover glow="bg-green-500/15">
-      <CircleDollarSign className={cn(big, 'text-green-500')} />
+      <CircleDollarSign weight="fill" className={cn(big, 'text-green-500')} />
     </FeatureCover>
   ),
   'investor-update': () => (
     <FeatureCover glow="bg-blue-500/15">
-      <TrendingUp className={cn(big, 'text-blue-500')} />
+      <TrendingUp weight="fill" className={cn(big, 'text-blue-500')} />
     </FeatureCover>
   ),
   'security-questionnaire': () => (
     <DuoCover
       a={
         <IconTile>
-          <ClipboardCheck className={cn(ic, 'text-blue-500')} />
+          <ClipboardCheck weight="fill" className={cn(ic, 'text-blue-500')} />
         </IconTile>
       }
       b={<Slack />}
@@ -421,7 +428,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <PhoneCall className={cn(ic, 'text-emerald-500')} />
+          <PhoneCall weight="fill" className={cn(ic, 'text-emerald-500')} />
         </IconTile>
       }
       b={<Linear />}
@@ -429,19 +436,19 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   ),
   'outbound-outreach': () => (
     <FeatureCover glow="bg-sky-500/15">
-      <Send className={cn(big, 'text-sky-500')} />
+      <Send weight="fill" className={cn(big, 'text-sky-500')} />
     </FeatureCover>
   ),
   'resume-triage': () => (
     <FeatureCover glow="bg-violet-500/15">
-      <UserSearch className={cn(big, 'text-violet-500')} />
+      <UserSearch weight="fill" className={cn(big, 'text-violet-500')} />
     </FeatureCover>
   ),
   'employee-offboarding': () => (
     <DuoCover
       a={
         <IconTile>
-          <UserMinus className={cn(ic, 'text-red-500')} />
+          <UserMinus weight="fill" className={cn(ic, 'text-red-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -451,7 +458,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <TrendingDown className={cn(ic, 'text-rose-500')} />
+          <TrendingDown weight="fill" className={cn(ic, 'text-rose-500')} />
         </IconTile>
       }
       b={<Slack />}
@@ -461,7 +468,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <MessagesSquare className={cn(ic, 'text-fuchsia-500')} />
+          <MessagesSquare weight="fill" className={cn(ic, 'text-fuchsia-500')} />
         </IconTile>
       }
       b={<Linear />}
@@ -471,7 +478,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   'payment-recovery': () => (
     <RowCover>
       <IconTile>
-        <CreditCard className={cn(ic, 'text-rose-500')} />
+        <CreditCard weight="fill" className={cn(ic, 'text-rose-500')} />
       </IconTile>
       <Kortix />
       <div className={cn(TILE, 'bg-emerald-500 text-white')}>
@@ -483,7 +490,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <Files className={cn(ic, 'text-amber-500')} />
+          <Files weight="fill" className={cn(ic, 'text-amber-500')} />
         </IconTile>
       }
       b={<Slack />}
@@ -491,29 +498,29 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   ),
   'saas-spend-audit': () => (
     <FeatureCover glow="bg-lime-500/15">
-      <Wallet className={cn(big, 'text-lime-600')} />
+      <Wallet weight="fill" className={cn(big, 'text-lime-600')} />
     </FeatureCover>
   ),
   'renewal-manager': () => (
     <FeatureCover glow="bg-indigo-500/15">
-      <Repeat className={cn(big, 'text-indigo-500')} />
+      <Repeat weight="fill" className={cn(big, 'text-indigo-500')} />
     </FeatureCover>
   ),
   'rfp-responder': () => (
     <FeatureCover glow="bg-purple-500/15">
-      <FileSignature className={cn(big, 'text-purple-500')} />
+      <FileSignature weight="fill" className={cn(big, 'text-purple-500')} />
     </FeatureCover>
   ),
   'pipeline-hygiene': () => (
     <FeatureCover glow="bg-pink-500/15">
-      <Filter className={cn(big, 'text-pink-500')} />
+      <Filter weight="fill" className={cn(big, 'text-pink-500')} />
     </FeatureCover>
   ),
   'content-refresh': () => (
     <DuoCover
       a={
         <IconTile>
-          <RefreshCw className={cn(ic, 'text-orange-500')} />
+          <RefreshCw weight="fill" className={cn(ic, 'text-orange-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -521,36 +528,36 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   ),
   'ad-performance': () => (
     <FeatureCover glow="bg-rose-500/15">
-      <Target className={cn(big, 'text-rose-500')} />
+      <Target weight="fill" className={cn(big, 'text-rose-500')} />
     </FeatureCover>
   ),
   'qbr-prep': () => (
     <FeatureCover glow="bg-blue-500/15">
-      <Presentation className={cn(big, 'text-blue-500')} />
+      <Presentation weight="fill" className={cn(big, 'text-blue-500')} />
     </FeatureCover>
   ),
   'customer-onboarding': () => (
     <FeatureCover glow="bg-sky-500/15">
-      <Rocket className={cn(big, 'text-sky-500')} />
+      <Rocket weight="fill" className={cn(big, 'text-sky-500')} />
     </FeatureCover>
   ),
   'data-pipeline-monitor': () => (
     <DuoCover
       a={
         <IconTile>
-          <Activity className={cn(ic, 'text-cyan-500')} />
+          <Activity weight="fill" className={cn(ic, 'text-cyan-500')} />
         </IconTile>
       }
       b={
         <IconTile>
-          <Database className={cn(ic, 'text-foreground/70')} />
+          <Database weight="fill" className={cn(ic, 'text-foreground/70')} />
         </IconTile>
       }
     />
   ),
   'candidate-sourcing': () => (
     <FeatureCover glow="bg-violet-500/15">
-      <UserRoundSearch className={cn(big, 'text-violet-500')} />
+      <UserRoundSearch weight="fill" className={cn(big, 'text-violet-500')} />
     </FeatureCover>
   ),
   // ── use-case-max batch ─────────────────────────────────────────────────────
@@ -558,7 +565,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <AlarmClock className={cn(ic, 'text-amber-500')} />
+          <AlarmClock weight="fill" className={cn(ic, 'text-amber-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -568,7 +575,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <Bug className={cn(ic, 'text-red-500')} />
+          <Bug weight="fill" className={cn(ic, 'text-red-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -576,54 +583,54 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   ),
   'flaky-test-triage': () => (
     <FeatureCover glow="bg-yellow-500/15">
-      <FlaskConical className={cn(big, 'text-yellow-500')} />
+      <FlaskConical weight="fill" className={cn(big, 'text-yellow-500')} />
     </FeatureCover>
   ),
   'cloud-cost-anomaly': () => (
     <FeatureCover glow="bg-amber-500/15">
-      <Cloud className={cn(big, 'text-amber-500')} />
+      <Cloud weight="fill" className={cn(big, 'text-amber-500')} />
     </FeatureCover>
   ),
   'feature-flag-cleanup': () => (
     <FeatureCover glow="bg-orange-500/15">
-      <Flag className={cn(big, 'text-orange-500')} />
+      <Flag weight="fill" className={cn(big, 'text-orange-500')} />
     </FeatureCover>
   ),
   'lead-routing': () => (
     <FeatureCover glow="bg-blue-500/15">
-      <Route className={cn(big, 'text-blue-500')} />
+      <Route weight="fill" className={cn(big, 'text-blue-500')} />
     </FeatureCover>
   ),
   'sales-forecast': () => (
     <FeatureCover glow="bg-emerald-500/15">
-      <LineChart className={cn(big, 'text-emerald-500')} />
+      <LineChart weight="fill" className={cn(big, 'text-emerald-500')} />
     </FeatureCover>
   ),
   'win-loss-analysis': () => (
     <FeatureCover glow="bg-violet-500/15">
-      <Scale className={cn(big, 'text-violet-500')} />
+      <Scale weight="fill" className={cn(big, 'text-violet-500')} />
     </FeatureCover>
   ),
   'social-scheduler': () => (
     <FeatureCover glow="bg-pink-500/15">
-      <Share2 className={cn(big, 'text-pink-500')} />
+      <Share2 weight="fill" className={cn(big, 'text-pink-500')} />
     </FeatureCover>
   ),
   'brand-monitor': () => (
     <FeatureCover glow="bg-fuchsia-500/15">
-      <AtSign className={cn(big, 'text-fuchsia-500')} />
+      <AtSign weight="fill" className={cn(big, 'text-fuchsia-500')} />
     </FeatureCover>
   ),
   'nps-analysis': () => (
     <FeatureCover glow="bg-cyan-500/15">
-      <Gauge className={cn(big, 'text-cyan-500')} />
+      <Gauge weight="fill" className={cn(big, 'text-cyan-500')} />
     </FeatureCover>
   ),
   'ticket-to-kb': () => (
     <DuoCover
       a={
         <IconTile>
-          <Ticket className={cn(ic, 'text-sky-500')} />
+          <Ticket weight="fill" className={cn(ic, 'text-sky-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -631,47 +638,96 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   ),
   'escalation-manager': () => (
     <FeatureCover glow="bg-rose-500/15">
-      <TriangleAlert className={cn(big, 'text-rose-500')} />
+      <TriangleAlert weight="fill" className={cn(big, 'text-rose-500')} />
     </FeatureCover>
   ),
   'month-end-close': () => (
     <FeatureCover glow="bg-teal-500/15">
-      <Calculator className={cn(big, 'text-teal-500')} />
+      <Calculator weight="fill" className={cn(big, 'text-teal-500')} />
     </FeatureCover>
   ),
   'vendor-onboarding': () => (
     <FeatureCover glow="bg-indigo-500/15">
-      <Handshake className={cn(big, 'text-indigo-500')} />
+      <Handshake weight="fill" className={cn(big, 'text-indigo-500')} />
     </FeatureCover>
   ),
   'interview-scheduler': () => (
     <FeatureCover glow="bg-purple-500/15">
-      <CalendarPlus className={cn(big, 'text-purple-500')} />
+      <CalendarPlus weight="fill" className={cn(big, 'text-purple-500')} />
     </FeatureCover>
   ),
   'hr-policy-qa': () => (
     <FeatureCover glow="bg-sky-500/15">
-      <HelpCircle className={cn(big, 'text-sky-500')} />
+      <HelpCircle weight="fill" className={cn(big, 'text-sky-500')} />
     </FeatureCover>
   ),
   'nda-turnaround': () => (
     <FeatureCover glow="bg-green-500/15">
-      <FileLock2 className={cn(big, 'text-green-600')} />
+      <FileLock2 weight="fill" className={cn(big, 'text-green-600')} />
     </FeatureCover>
   ),
   'gdpr-dsar': () => (
     <FeatureCover glow="bg-blue-500/15">
-      <FileSearch className={cn(big, 'text-blue-500')} />
+      <FileSearch weight="fill" className={cn(big, 'text-blue-500')} />
     </FeatureCover>
   ),
   'phishing-triage': () => (
     <DuoCover
       a={
         <IconTile>
-          <ShieldAlert className={cn(ic, 'text-red-500')} />
+          <ShieldAlert weight="fill" className={cn(ic, 'text-red-500')} />
         </IconTile>
       }
       b={<Slack />}
     />
   ),
+};
+
+// ── product scenes ──────────────────────────────────────────────────────────
+// A scene (one real moment of the agent's work) on the pixel field. These
+// slugs use a scene instead of their logo cover.
+
+function SceneCover({ children }: { children: ReactNode }) {
+  return (
+    <CoverBackdrop>
+      <SceneCanvas>{children}</SceneCanvas>
+    </CoverBackdrop>
+  );
+}
+
+const SCENE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> = {
+  'social-scheduler': () => (
+    <SceneCover>
+      <SlackApprovalScene />
+    </SceneCover>
+  ),
+  'crm-hygiene': () => (
+    <SceneCover>
+      <RunTimelineScene
+        title="Nightly CRM hygiene"
+        meta="02:00 · worked 3m 12s"
+        steps={[
+          { domain: 'hubspot.com', label: 'hubspot · search contacts' },
+          { domain: 'hubspot.com', label: 'hubspot · merge duplicates' },
+          { domain: 'clearbit.com', label: 'clearbit · enrich company' },
+          { domain: 'slack.com', label: 'slack · ask approval for bulk update', waiting: true },
+        ]}
+      />
+    </SceneCover>
+  ),
+  'outbound-outreach': () => (
+    <SceneCover>
+      <FannedDraftsScene />
+    </SceneCover>
+  ),
+  'customer-support': () => (
+    <SceneCover>
+      <ApprovalCardScene />
+    </SceneCover>
+  ),
+};
+
+export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> = {
+  ...LOGO_COVERS,
+  ...SCENE_COVERS,
 };
