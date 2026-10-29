@@ -908,6 +908,14 @@ const envSchema = z.object({
     .optional()
     .default('true')
     .transform((v) => !['0', 'false'].includes(v.trim().toLowerCase())),
+  // Kill switch for running a held connector call on approve. On by default;
+  // `0`, `false` or `off` writes no new held row, so a new gate asks the agent
+  // to repeat the call. Rows already held or queued still run, expire and wipe.
+  KORTIX_APPROVAL_RUNS_HELD_CALL: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((v) => !['0', 'false', 'off'].includes(v.trim().toLowerCase())),
   // Local-only HTTP capture. The deterministic test profile points this at
   // Supabase Mailpit. Deployed environments leave it unset.
   MAILPIT_API_URL: optStr,
@@ -1582,6 +1590,7 @@ export const config = {
   EXPO_ACCESS_TOKEN: env.EXPO_ACCESS_TOKEN,
   EXPO_PUSH_ENABLED: env.EXPO_PUSH_ENABLED ?? !env.KORTIX_INSTANCE_ID,
   PUSH_NOTIFICATIONS_ENABLED: env.PUSH_NOTIFICATIONS_ENABLED,
+  KORTIX_APPROVAL_RUNS_HELD_CALL: env.KORTIX_APPROVAL_RUNS_HELD_CALL,
   MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,

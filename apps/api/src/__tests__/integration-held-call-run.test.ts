@@ -549,6 +549,25 @@ describe('approve runs the held call once', () => {
     expect(jwtGate.approvalInstructions).toStartWith(`Share approval_url with a human. ${APPROVAL_RERUN_RULE}`);
   });
 
+  test('the kill switch off: a project-token gate writes no held row and asks for the repeat', async () => {
+    const withLink = { mintApprovalLink: async () => 'https://app.kortix.test/approve/synthetic' };
+    config.KORTIX_APPROVAL_RUNS_HELD_CALL = false;
+    try {
+      const off = await call({ amount: 1201 }, principal, withLink);
+      expect(off.status).toBe('pending_approval');
+      if (off.status !== 'pending_approval') return;
+      expect(off.runsOnApproval).toBeUndefined();
+      expect(await held(off.executionId!)).toBeUndefined();
+      expect(off.approvalInstructions).toContain(APPROVAL_RERUN_RULE);
+    } finally {
+      config.KORTIX_APPROVAL_RUNS_HELD_CALL = true;
+    }
+    const on = await call({ amount: 1202 }, principal, withLink);
+    expect(on).toMatchObject({ status: 'pending_approval', runsOnApproval: true });
+    if (on.status !== 'pending_approval') return;
+    expect(await held(on.executionId!)).toBeDefined();
+  });
+
   test('a gate with no held row (dashboard JWT caller) keeps the carry-over', async () => {
     const jwtCaller: ConnectorPrincipal = { ...principal, tokenId: null, sessionId: null };
     const args = { amount: 1001 };

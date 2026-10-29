@@ -377,7 +377,7 @@ async function holdCallInput(
   executionId: string,
 ): Promise<void> {
   const tokenId = principal.tokenId;
-  if (!rec.held || !rec.requestDigest || !tokenId) return;
+  if (!config.KORTIX_APPROVAL_RUNS_HELD_CALL || !rec.held || !rec.requestDigest || !tokenId) return;
   try {
     const inputEnc = sealHeldInput({
       v: 1,
