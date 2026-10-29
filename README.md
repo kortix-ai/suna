@@ -10,7 +10,8 @@
 **The open-source CompanyOS: the operating system for your company.**
 
 Hand it an outcome and AI agents run it 24/7.<br />
-Multiplayer AI for your whole team. Your company as code. Sovereign and open source.
+Connect your company's tools, share agents and context across your whole team,<br />
+and own all of it as code: open source, on your infrastructure or ours.
 
 [![GitHub stars](https://img.shields.io/github/stars/kortix-ai/suna?style=flat&color=111111&label=Stars)](https://github.com/kortix-ai/suna/stargazers)
 [![Release](https://img.shields.io/github/v/release/kortix-ai/suna?style=flat&color=111111&label=Release)](https://github.com/kortix-ai/suna/releases/latest)
