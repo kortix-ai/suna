@@ -275,7 +275,9 @@ WORKDIR /workspace
     expect(merged).toContain('FROM ubuntu:24.04');
     expect(merged).toContain('WORKDIR /workspace');
     expect(merged).not.toContain('having them in your base');
-    expect(merged.match(/apt-get update/g)?.length).toBe(1);
+    // The user's block is gone: only the Kortix layer's own apt-get updates remain.
+    const layerOnly = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    expect(merged.match(/apt-get update/g)?.length).toBe(layerOnly.match(/apt-get update/g)?.length);
   });
 
   test('result ends with a trailing newline', () => {
