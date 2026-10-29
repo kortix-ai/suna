@@ -28,7 +28,7 @@ import { config } from '../../config';
 import { db } from '../../shared/db';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { gateSender, refusedPressText } from '../core/channel-access';
-import { parseChannelCommand } from '../core/command-list';
+import { CHANNEL_COMMANDS, parseChannelCommand } from '../core/command-list';
 import { type CommandReply, runChannelCommand } from '../core/commands';
 import { type ChannelNotice, type ChannelPort, type ChannelTarget, routeChannelMessage } from '../core/conversation';
 import { chatSessionStart, chatTurnModel } from '../core/model-choice';
@@ -640,6 +640,10 @@ async function sendTelegramReply(token: string, target: ChannelTarget, text: str
  * button press keeps no names (`telegramPressEvent`), so its sender is the
  * username or the id.
  */
+/** "/new, /stop, … and /help": the commands the agent never receives. */
+const COMMAND_NAMES = CHANNEL_COMMANDS.map((c) => `/${c.name}`);
+const KORTIX_COMMANDS = `${COMMAND_NAMES.slice(0, -1).join(', ')} and ${COMMAND_NAMES.at(-1)}`;
+
 export function telegramEnvelope(message: TelegramMessage): ChannelEnvelope {
   const { chat, from } = message;
   const name = [from?.first_name, from?.last_name].filter(Boolean).join(' ');
@@ -665,7 +669,7 @@ export function telegramEnvelope(message: TelegramMessage): ChannelEnvelope {
       `While you work on a long task, show typing: ${connectorReply(TELEGRAM_CHANNEL_CONNECTOR_SLUG, 'send_chat_action', { chat_id: String(chat.id) })}.`,
       'For bold or code, add `"parse_mode":"HTML"` and use <b>, <i>, <code>, <pre>; otherwise send plain text.',
       'The bot token is resolved server-side. Do not look for it in the sandbox.',
-      'The next message in this chat continues this session; /new in Telegram starts a fresh one.',
+      `The next message in this chat continues this session. Kortix answers ${KORTIX_COMMANDS} in the chat itself; those commands never reach you.`,
     ],
   };
 }
