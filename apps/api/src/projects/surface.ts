@@ -130,10 +130,11 @@ export { releaseRuntimeQuestion } from './session-lifecycle/release-runtime-ques
 // The stored transcript (`toV1` of the session log), consumed by the public share route.
 export { readStoredTranscriptWindow } from './session-log-read';
 
+// Abort a session's running turn (consumed by chrome/, on a user's Stop in Chrome).
+export { abortRuntimeTurn } from './session-lifecycle/abort-runtime-turn';
+
 // The retention purge of session content (consumed by workers/session-log-purge-worker.ts).
 export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
-// The backfill of old sessions into the session log (consumed by workers/session-log-backfill-worker.ts).
-export { backfillSessionLogs } from './session-log-backfill';
 
 // Git reads (consumed by config-releases/publish.ts and config-releases/base-tip.ts).
 export { resolveCommitSha, resolveCommitShaAt } from './git/commits';

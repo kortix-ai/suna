@@ -2838,6 +2838,9 @@ export const sessionTurns = kortixSchema.table(
 );
 
 /**
+ * RETIRED (P8.2): no code reads or writes the two v1 mirror tables below since Release B2. The
+ * Release B3 migration drops them. The rest of this comment describes them as they were.
+ *
  * Durable transcript mirror — the server-side copy of a session's message
  * envelope, so the control plane can answer "what was said in this session"
  * for a session whose sandbox is STOPPED.
@@ -2977,7 +2980,7 @@ export const sessionTranscriptMessages = kortixSchema.table(
  * Every table is read per session, so every index leads with `session_id`
  * (the policy is written out in the creating migration). Each table cascades
  * from `project_sessions`: a deleted session deletes its log. Only the service
- * role reads them (REVOKE + RLS with no policy, like the transcript mirror).
+ * role reads them (REVOKE + RLS with no policy).
  */
 export const sessionLogs = kortixSchema.table(
   'session_logs',
@@ -2998,7 +3001,7 @@ export const sessionLogs = kortixSchema.table(
     // When the daemon's journal first committed a batch for this session. Null:
     // no journal has written (an old daemon, a dump-dir daemon, or posts that
     // have not succeeded yet), so the API's transcript capture writes the log
-    // from the v1 mirror (P2.7). Set: the journal owns the rows; capture stops.
+    // from its read of the box (P8). Set: the journal owns the rows; capture stops.
     journalSeenAt: timestamp('journal_seen_at', { withTimezone: true }),
     // Row time. The session's own `created_at` lives in `record`.
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -3116,8 +3119,8 @@ export const sessionLogBlobs = kortixSchema.table(
 /**
  * One row per session whose content the retention purge (P2.8,
  * `apps/api/src/projects/session-log-purge.ts`) removed. It says WHEN the rows
- * went (`rows_purged_at`: the v2 `session_log*` rows and the v1
- * `session_transcript_*` rows) and when the session's `session-attachments`
+ * went (`rows_purged_at`: the `session_log*` rows and every other content
+ * row) and when the session's `session-attachments`
  * objects went (`objects_purged_at`, 7 days after the rows, null until then).
  * The row stays after both: it is the "done" marker that stops the purge from
  * selecting the session again. No content: ids, a reason and two timestamps.
@@ -3148,10 +3151,9 @@ export const sessionContentPurges = kortixSchema.table(
 );
 
 /**
- * The pass of the session-log backfill (P3.1, `apps/api/src/projects/session-log-backfill.ts`):
- * one row (`id` = 'pass') with the mode, the keyset cursor and the running totals as JSON, so a
- * new leader resumes the pass instead of starting over. `rev` fences a save: a tick saves only
- * over the rev it loaded. No content: counts, the mode and the cursor's (created_at, session_id).
+ * The pass of the removed session-log backfill (P3.1): one row (`id` = 'pass') with the mode, the
+ * cursor and the running totals as JSON. No content. No code reads or writes it since Release B2
+ * (P8.2). The Release B3 migration reads it once as its guard, then drops it with the v1 mirror.
  */
 export const sessionLogBackfillState = kortixSchema.table('session_log_backfill_state', {
   id: text('id').primaryKey(),
@@ -8573,6 +8575,70 @@ export const feedback = kortixSchema.table('feedback', {
   index('idx_feedback_created_at').on(table.createdAt),
   check('feedback_source', sql`${table.source} in ('cli', 'agent', 'web')`),
   check('feedback_kind', sql`${table.kind} in ('bug', 'idea', 'friction')`),
+]);
+
+/**
+ * Kortix in Chrome: a person's own Chrome, connected to Kortix through the
+ * extension's control socket (apps/api/src/chrome). One row per browser
+ * profile. `last_seen_at` is the liveness clock: online means not revoked and
+ * seen in the last 75 s. Protocol: .agents/skills/kortix-chrome/references/protocol.md.
+ */
+export const chromeConnections = kortixSchema.table('chrome_connections', {
+  chromeId: uuid('chrome_id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  brand: text('brand').notNull(),
+  os: text('os').notNull(),
+  profileLabel: text('profile_label'),
+  extensionVersion: text('extension_version'),
+  /** always | ask | off */
+  accessMode: text('access_mode').default('always').notNull(),
+  /** own | all */
+  tabScope: text('tab_scope').default('all').notNull(),
+  relayOwnerId: text('relay_owner_id'),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_chrome_connections_user').on(table.userId),
+  check('chrome_connections_access_mode', sql`${table.accessMode} in ('always', 'ask', 'off')`),
+  check('chrome_connections_tab_scope', sql`${table.tabScope} in ('own', 'all')`),
+]);
+
+/** A remembered consent decision. `session_id` null means the whole project. */
+export const chromeGrants = kortixSchema.table('chrome_grants', {
+  grantId: uuid('grant_id').defaultRandom().primaryKey(),
+  chromeId: uuid('chrome_id').notNull(),
+  projectId: text('project_id').notNull(),
+  sessionId: text('session_id'),
+  /** allow | deny */
+  decision: text('decision').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'chrome_grants_chrome_fk', columns: [table.chromeId], foreignColumns: [chromeConnections.chromeId] }).onDelete('cascade'),
+  index('idx_chrome_grants_chrome').on(table.chromeId, table.sessionId),
+  check('chrome_grants_decision', sql`${table.decision} in ('allow', 'deny')`),
+]);
+
+/** One session's use of one browser. */
+export const chromeAttachments = kortixSchema.table('chrome_attachments', {
+  attachmentId: uuid('attachment_id').defaultRandom().primaryKey(),
+  chromeId: uuid('chrome_id').notNull(),
+  userId: uuid('user_id'),
+  projectId: text('project_id'),
+  sessionId: text('session_id').notNull(),
+  /** pending | granted | connected | denied | ended | failed */
+  status: text('status').notNull(),
+  endReason: text('end_reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'chrome_attachments_chrome_fk', columns: [table.chromeId], foreignColumns: [chromeConnections.chromeId] }).onDelete('cascade'),
+  index('idx_chrome_attachments_chrome').on(table.chromeId, table.status),
+  index('idx_chrome_attachments_session').on(table.sessionId),
+  check('chrome_attachments_status', sql`${table.status} in ('pending', 'granted', 'connected', 'denied', 'ended', 'failed')`),
 ]);
 
 /** CLI login grants contain no credential: only the device secret's hash and

@@ -247,11 +247,8 @@ async function firstShown(page: Page): Promise<Record<string, number>> {
 
 type SavedMessages = Parameters<typeof seedSessionTranscript>[1]['messages'];
 
-/**
- * A user, a project and a stopped session with saved history. `store`: the session log, or an
- * old session's v1 mirror, which the first read converts into the log (P8.2).
- */
-async function setup(page: Page, label: string, messages?: SavedMessages, store: 'log' | 'mirror' = 'log') {
+/** A user, a project and a stopped session with saved history in its session log. */
+async function setup(page: Page, label: string, messages?: SavedMessages) {
   const env = loadEnv();
   const email = `instant-${label}-${Date.now()}@example.test`;
   const user = await createAuthUser(email, authOptions);
@@ -281,7 +278,7 @@ async function setup(page: Page, label: string, messages?: SavedMessages, store:
     accountId,
     sessionId,
     messages,
-    ...(store === 'log' && { log: { bearer: auth.access_token } }),
+    bearer: auth.access_token,
   });
   await runDatabaseSql(
     "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
@@ -1072,7 +1069,7 @@ test('34 — loading older messages leaves the turn the reader is reading where 
   page,
 }, testInfo) => {
   test.setTimeout(300_000);
-  const { project, sessionId, root } = await setup(page, 'older', savedTurns(60), 'mirror');
+  const { project, sessionId, root } = await setup(page, 'older', savedTurns(60));
   try {
     await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
       if (route.request().method() !== 'POST') return route.continue();

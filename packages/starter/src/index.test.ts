@@ -301,6 +301,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
       'kortix-apps',
       'kortix-artifacts',
       'kortix-channel-memory',
+      'kortix-chrome',
       'kortix-computer',
       'kortix-connectors',
       'kortix-design',

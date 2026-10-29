@@ -67,7 +67,6 @@ const WORKERS: Record<string, string> = {
   'drive-mount-revocations': 'workers/drive-worker.ts',
   'notification-digest': 'workers/notification-worker.ts',
   'session-log-purge': 'workers/session-log-purge-worker.ts',
-  'session-log-backfill': 'workers/session-log-backfill-worker.ts',
   'gateway-spend-backfill': 'workers/gateway-spend-backfill-worker.ts',
 };
 
@@ -123,7 +122,6 @@ const STARTS: Record<string, string> = {
   startNotificationWorker: 'notification-digest',
   startSessionLogPurgeWorker: 'session-log-purge',
   startSessionModelFallbackWorker: 'session-model-fallback',
-  startSessionLogBackfillWorker: 'session-log-backfill',
   startGatewaySpendBackfillWorker: 'gateway-spend-backfill',
   startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
   startEventLoopLagSampler: 'not a worker: measures this process event-loop lag',
