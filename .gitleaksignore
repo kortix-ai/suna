@@ -138,3 +138,8 @@ c16b74338b9c53744201aac00694984253a52f0e:apps/api/src/__tests__/unit-email-chann
 c16b74338b9c53744201aac00694984253a52f0e:apps/api/src/connectors/mcp-tools.json:generic-api-key:1
 c16b74338b9c53744201aac00694984253a52f0e:apps/api/src/connectors/one-click-mcp.json:generic-api-key:17
 c16b74338b9c53744201aac00694984253a52f0e:apps/api/src/connectors/one-click-mcp.json:generic-api-key:403
+# apps/api/src/__tests__/integration-held-call-store.test.ts briefly held the
+# fixture credential 'sk_test_credential' (a made-up string, no Stripe key).
+# #11123 renamed it to 'test-credential'; the commit that added it stays in the
+# release history that gitleaks scans.
+4aedc2099e18a97b46283e64b4920d5330d34589:apps/api/src/__tests__/integration-held-call-store.test.ts:stripe-access-token:151
