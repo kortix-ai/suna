@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { chooser, within } from './tool-output/testing';
 
-import { channelPromptText, parseChannelMessage, type ChannelEnvelope } from './channel-message';
+import { channelPromptText, isChannelFileLabel, parseChannelMessage, type ChannelEnvelope } from './channel-message';
 
 /**
  * The scaffolds below are copied from the API renderers that produce them:
@@ -634,3 +634,12 @@ describe('no channel message can freeze the tab that parses it, the envelope inc
 
 // The agent's own Slack replies and the Channels page name a conversation the
 // way the incoming card does.
+
+describe('isChannelFileLabel', () => {
+  test('only a whole one-line label in parentheses', () => {
+    for (const label of ['(photo)', '(file q3.pdf)', '(voice message, 7 s)', ' (document) ']) expect(isChannelFileLabel(label)).toBe(true);
+    for (const text of ['what is this?', '()', '(a) and (b)', '(nested (x))', 'see (photo)', '(photo)\n(file a.pdf)', 'caption\n(file a.pdf)']) {
+      expect(isChannelFileLabel(text)).toBe(false);
+    }
+  });
+});

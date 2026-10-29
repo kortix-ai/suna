@@ -41,7 +41,7 @@ import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import type { Command } from '@/lib/session/runtime-data';
 import type { SessionLogTurn } from '@kortix/sdk';
 import { recordTimeMs } from '@/lib/session/turn-meta';
-import { type ChannelPlatform, channelPromptTail, parseChannelMessage } from '@kortix/shared';
+import { type ChannelPlatform, channelPromptTail, isChannelFileLabel, parseChannelMessage } from '@kortix/shared';
 import { parseReminderPrompt, parseRoomDigest, parseRoomPrompt, parseTriggerEvent, type ChannelMessageInfo } from '@kortix/shared';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { SourcePill } from './source-pill';
@@ -362,13 +362,14 @@ function UserMessageImpl({
   // Both parsers are linear in the prompt: a channel or a webhook chooses this
   // text, and a regex version of each froze the JS thread on a crafted prompt.
   const channelMessageInfo = useMemo(() => parseChannelMessage(rawText), [rawText]);
-  // Its files: the `<file>` tags Kortix wrote after the sender's text. A tag the sender typed is text.
+  // Its files: the `<file>` tags Kortix wrote after the sender's text, and nothing else. A tag the sender
+  // typed is text; the image block pi records for a tag repeats it, and names no path when the sender typed one.
   const channelAttachments = useMemo(
     () =>
       channelMessageInfo
-        ? messageAttachments(message.blocks, parseUserMessageText(channelPromptTail(rawText, channelMessageInfo.platform)))
+        ? messageAttachments([], parseUserMessageText(channelPromptTail(rawText, channelMessageInfo.platform)))
         : [],
-    [channelMessageInfo, rawText, message.blocks],
+    [channelMessageInfo, rawText],
   );
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
   // A reminder fire: platform-written `[REMINDER …]` header + the reminder text.
@@ -477,7 +478,9 @@ function UserMessageImpl({
   if (channelMessageInfo) {
     return platformMessage(
       <ChannelSourcePill info={channelMessageInfo} />,
-      channelMessageInfo.messageText ? <ChannelMessageText text={channelMessageInfo.messageText} /> : null,
+      channelMessageInfo.messageText && !(channelAttachments.length > 0 && isChannelFileLabel(channelMessageInfo.messageText))
+        ? <ChannelMessageText text={channelMessageInfo.messageText} />
+        : null,
       channelMessageInfo.messageText,
       channelAttachments,
     );

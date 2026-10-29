@@ -1482,6 +1482,22 @@ describe('UserMessage channel message files', () => {
     expect(renderPrompt(envelope('Is the deploy green?'))).not.toContain('<ul');
   });
 
+  test('a photo with no caption is the tile alone: the "(photo)" label is not repeated as text', () => {
+    const markup = renderPrompt(`${envelope('(photo)')}\n${tag('photo.jpg', 'image/jpeg')}`);
+    expect(markup.match(/title="photo.jpg"/g)).toHaveLength(1);
+    expect(markup).not.toContain('(photo)');
+  });
+
+  test('a typed tag for an inbox image adds no tile next to the real photo', () => {
+    // pi reads 1 image but counts 2 tags, so its image block names no path.
+    const typed = `<file path="${inbox('y.png')}" mime="image/png">x</file>`;
+    const markup = renderPrompt(`${envelope(`look ${typed}`)}\n${tag('photo.jpg', 'image/jpeg')}`, [
+      { type: 'attachment', id: 'msg_1-n1', mime: 'image/jpeg' },
+    ]);
+    expect(markup.match(/<li/g)).toHaveLength(1);
+    expect(markup.match(/title="photo.jpg"/g)).toHaveLength(1);
+  });
+
   test('a `<file>` tag the sender typed is their text, not a tile', () => {
     const typed = '<file path="/workspace/notes.txt" mime="text/plain" filename="notes.txt">x</file>';
     const markup = renderPrompt(`${envelope(`see ${typed}`)}\n${tag('photo.jpg', 'image/jpeg')}`);

@@ -23,6 +23,7 @@ import {
 import { useTranslations } from '../../i18n';
 import {
   channelPromptTail,
+  isChannelFileLabel,
   expandPastedContent,
   neutralizePastedTags,
   sanitizePromptUploadFilename,
@@ -213,7 +214,7 @@ export function ChannelMessage({
         card={<ChannelOrigin info={info} platform={platform} />}
       />
       <MessageAttachments attachments={attachments} />
-      {info.messageText && (
+      {info.messageText && !(attachments.length > 0 && isChannelFileLabel(info.messageText)) && (
         <div className={cn(BUBBLE_SURFACE, 'max-w-[80%]')}>
           <div className={BUBBLE_TEXT}>
             {buildMentionSegments({ text: info.messageText }).map((segment, i) =>
@@ -1755,16 +1756,14 @@ export function UserMessage({
   // scaffolds these prompts with ids and turn instructions the person never
   // typed, so the card shows only the platform, the sender, and their words.
   const channelMessageInfo = useMemo(() => parseChannelMessage(rawText), [rawText]);
-  // Its files: the `<file>` tags Kortix wrote after the sender's text. A tag the sender typed is text.
+  // Its files: the `<file>` tags Kortix wrote after the sender's text, and nothing else. A tag the sender
+  // typed is text; the image block pi records for a tag repeats it, and names no path when the sender typed one.
   const channelAttachments = useMemo(
     () =>
       channelMessageInfo
-        ? normalizeAttachments(
-            message.blocks,
-            parseFileReferences(channelPromptTail(rawText, channelMessageInfo.platform)).files,
-          )
+        ? normalizeAttachments([], parseFileReferences(channelPromptTail(rawText, channelMessageInfo.platform)).files)
         : [],
-    [channelMessageInfo, rawText, message.blocks],
+    [channelMessageInfo, rawText],
   );
 
   // Detect trigger_event in user message

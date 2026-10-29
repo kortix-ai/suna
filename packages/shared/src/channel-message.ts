@@ -263,6 +263,15 @@ export function channelPromptTail(text: string, platform: ChannelPlatform): stri
   return at < 0 ? '' : text.slice(at);
 }
 
+/**
+ * True when the sender's text is only the label an adapter writes for a file sent with no caption
+ * (`(photo)`, `(file q3.pdf)`, `(voice message, 7 s)`). A view that draws the file hides it.
+ */
+export function isChannelFileLabel(text: string): boolean {
+  const line = text.trim();
+  return line.length > 2 && line.startsWith('(') && line.endsWith(')') && !/[()\n]/.test(line.slice(1, -1));
+}
+
 /** What a channel adapter knows about one incoming message; `channelPromptText` writes it. */
 export interface ChannelEnvelope {
   platform: ChannelPlatform;
