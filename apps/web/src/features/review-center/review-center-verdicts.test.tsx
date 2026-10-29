@@ -192,6 +192,40 @@ describe('the row menu', () => {
   });
 });
 
+describe('an output opens in a modal over the inbox, like a connector approval', () => {
+  const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+
+  test('the dialog holds the item, its files and its verdicts; the inbox stays behind it', () => {
+    search = `id=${OUTPUT.id}`;
+    mount([OUTPUT, CHANGE], MANAGER);
+    expect(dialog()?.textContent).toContain(OUTPUT.title);
+    expect(dialog()?.textContent).toContain('the page');
+    expect(dialog()?.textContent).toContain('Approve & publish');
+    // The inbox list is still drawn: the change request's row is under the dialog.
+    expect(text()).toContain(CHANGE.title);
+  });
+
+  test('an output that names nothing it made shows its note and no empty section', () => {
+    const bare = {
+      ...OUTPUT,
+      id: 'rv-output-bare',
+      detail: { ...OUTPUT.detail, files: undefined, preview: undefined, previewUrl: undefined },
+    } as ReviewItem;
+    search = `id=${bare.id}`;
+    mount([bare], MANAGER);
+    const { note } = OUTPUT.detail as Extract<ReviewItem['detail'], { note: string }>;
+    expect(dialog()?.textContent).toContain(note);
+    expect(dialog()?.querySelectorAll('section')).toHaveLength(0);
+  });
+
+  test('a change request keeps its page: no dialog', () => {
+    search = `id=${CHANGE.id}`;
+    mount([CHANGE], MANAGER);
+    expect(text()).toContain(CHANGE.title);
+    expect(dialog()).toBeNull();
+  });
+});
+
 describe('the review page of one item', () => {
   test('a built-in member gets no verdict on a native output', () => {
     search = `id=${OUTPUT.id}`;

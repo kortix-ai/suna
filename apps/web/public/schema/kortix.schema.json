@@ -1260,7 +1260,7 @@
                 "slug": {
                   "type": "string",
                   "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
-                  "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email` and `computer` are reserved for the built-in connectors."
+                  "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_telegram` and `computer` are reserved for the built-in connectors."
                 },
                 "name": {
                   "type": "string",
@@ -1544,6 +1544,32 @@
                     "properties": {
                       "slug": {
                         "const": "kortix_email"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "slug": {
+                        "const": "kortix_telegram"
                       }
                     }
                   },
@@ -4254,7 +4280,7 @@
                 "slug": {
                   "type": "string",
                   "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
-                  "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email` and `computer` are reserved for the built-in connectors."
+                  "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_telegram` and `computer` are reserved for the built-in connectors."
                 },
                 "name": {
                   "type": "string",
@@ -4626,6 +4652,32 @@
                     "properties": {
                       "slug": {
                         "const": "kortix_email"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "slug": {
+                        "const": "kortix_telegram"
                       }
                     }
                   },
@@ -6828,7 +6880,7 @@
                 "slug": {
                   "type": "string",
                   "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
-                  "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email` and `computer` are reserved for the built-in connectors."
+                  "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_telegram` and `computer` are reserved for the built-in connectors."
                 },
                 "name": {
                   "type": "string",
@@ -7200,6 +7252,32 @@
                     "properties": {
                       "slug": {
                         "const": "kortix_email"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "channel"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "slug": {
+                        "const": "kortix_telegram"
                       }
                     }
                   },

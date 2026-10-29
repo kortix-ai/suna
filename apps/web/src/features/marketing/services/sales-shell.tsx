@@ -1,8 +1,9 @@
 'use client';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { ConsentGate } from '@/components/consent-gate';
-import Link from '@/components/site-link';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import Link from '@/components/site-link';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
@@ -20,36 +21,48 @@ const BAR_LINK =
  * call on top; a one-line footer at the bottom.
  */
 export function SalesShell({ children }: { children: ReactNode }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   const openDemo = useRequestDemo();
   return (
     <div className="bg-background relative min-h-dvh w-full">
       <ConsentGate />
       <SmoothScroll />
-      <header className="bg-background fixed top-0 right-0 left-0 z-50 border-b" data-kx-titlebar-owner="">
+      <header
+        className="bg-background fixed top-0 right-0 left-0 z-50 border-b"
+        data-kx-titlebar-owner=""
+      >
         <div className={cn(MARKETING_CONTAINER, 'flex h-16 items-center gap-4')}>
-          <Link href="/" aria-label="Kortix home" className="text-foreground outline-ring flex h-16 items-center rounded-sm focus-visible:outline-2">
+          <Link
+            href="/"
+            aria-label={tMarketing('text7ecec93ed268')}
+            className="text-foreground outline-ring flex h-16 items-center rounded-sm focus-visible:outline-2"
+          >
             <KortixLogo size={15} variant="logomark" />
           </Link>
           <SiteSwitcher className="mr-auto" />
           {/* designjoy's bar: jump to the parts a buyer checks. Phones keep Pricing only. */}
           <a href="#how-it-works" className={cn(BAR_LINK, 'md:hidden lg:flex')}>
-            How it works
+            {tMarketing('text9c870aa6e5e9')}
           </a>
           <a href="#how" className={cn(BAR_LINK, 'md:hidden lg:flex')}>
-            What we do
+            {tMarketing('text8783c085bdc9')}
           </a>
           <a href="#case-studies" className={cn(BAR_LINK, 'md:hidden lg:flex')}>
-            Recent work
+            {tMarketing('textd355d4fd2a9c')}
           </a>
           <a href="#pricing" className={BAR_LINK}>
-            Pricing
+            {tMarketing('textdfe95783edfe')}
           </a>
           <a href="#faq" className={cn(BAR_LINK, 'md:hidden lg:flex')}>
             FAQ
           </a>
-          <MarketingButton className="hit-area-y-3" onClick={() => openDemo({ source: 'services' })}>
-            <span className="sm:hidden">Book a call</span>
-            <span className="hidden sm:inline">Book an intro call</span>
+          <MarketingButton
+            className="hit-area-y-3"
+            onClick={() => openDemo({ source: 'services' })}
+          >
+            <span className="sm:hidden">{tMarketing('text5461243c8731')}</span>
+            <span className="hidden sm:inline">{tMarketing('text6def5bd6334e')}</span>
           </MarketingButton>
         </div>
       </header>
@@ -62,18 +75,21 @@ export function SalesShell({ children }: { children: ReactNode }) {
           )}
         >
           <span>© {new Date().getFullYear()} Kortix</span>
-          <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2">
+          <nav
+            aria-label={tMarketing('text26c87bb51e69')}
+            className="flex flex-wrap gap-x-6 gap-y-2"
+          >
             <Link href="/" className="hover:text-foreground">
-              The AI OS
+              {tMarketing('text4370c8845eed')}
             </Link>
             <Link href="/security" className="hover:text-foreground">
-              Security
+              {tMarketing('text8f6fb4eb7f42')}
             </Link>
             <Link href="/legal/terms" className="hover:text-foreground">
-              Terms
+              {tMarketing('textede548996483')}
             </Link>
             <Link href="/legal?tab=privacy" className="hover:text-foreground">
-              Privacy
+              {tMarketing('text54a57c3147c4')}
             </Link>
           </nav>
         </div>

@@ -1,21 +1,14 @@
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@kortix/ui';
 import { PlusIcon } from '@phosphor-icons/react/dist/ssr';
 import type { ReactNode } from 'react';
+import { localizeMarketingContent } from './parts';
 
 import { SlackWindow, TeamsWindow } from './chat';
-import { DesktopFrame, PhoneFrame, TerminalFrame } from './frames';
-import {
-  PermissionCard,
-  PROMPT,
-  QuickEntryBar,
-  RESULT,
-  SLACK_THREAD,
-  StepsFold,
-  TEAMS_THREAD,
-  UserBubble,
-} from './parts';
 import type { SurfaceId } from './content';
+import { DesktopFrame, PhoneFrame, TerminalFrame } from './frames';
+import { PermissionCard, QuickEntryBar, StepsFold, UserBubble } from './parts';
 
 /*
  * One hero visual per surface page: Kortix as it looks on that surface,
@@ -32,6 +25,9 @@ const SESSIONS = [
 
 /** The Kortix app in a native window, with Quick Entry open over it. */
 function DesktopStage() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { PROMPT, RESULT } = localizeMarketingContent(tMarketing);
+
   return (
     <div className="relative flex w-full max-w-6xl flex-col items-center">
       <DesktopFrame title="Kortix · Arcadia">
@@ -57,7 +53,12 @@ function DesktopStage() {
                     )}
                   >
                     <span className="truncate">{s.title}</span>
-                    {s.unread ? <span aria-label="Unread" className="bg-foreground size-1.5 shrink-0 rounded-full" /> : null}
+                    {s.unread ? (
+                      <span
+                        aria-label="Unread"
+                        className="bg-foreground size-1.5 shrink-0 rounded-full"
+                      />
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -88,11 +89,16 @@ function DesktopStage() {
 
 /** The phone, with a session that waits on a permission. */
 function MobileStage() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { PROMPT } = localizeMarketingContent(tMarketing);
+
   return (
     <PhoneFrame title="Billing webhook retry">
       <UserBubble>{PROMPT}</UserBubble>
       <StepsFold count={3} />
-      <p className="text-foreground text-sm text-pretty">The fix is in. I want to run the billing tests to prove it.</p>
+      <p className="text-foreground text-sm text-pretty">
+        The fix is in. I want to run the billing tests to prove it.
+      </p>
       <PermissionCard tool="bash" input="bun test src/billing" />
     </PhoneFrame>
   );
@@ -100,6 +106,9 @@ function MobileStage() {
 
 /** Real commands: install, sign in, one prompt, the change request, the merge. */
 function CliStage() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { PROMPT, RESULT } = localizeMarketingContent(tMarketing);
+
   return (
     <div className="w-full max-w-4xl">
       <TerminalFrame
@@ -114,7 +123,10 @@ function CliStage() {
           { kind: 'gap' },
           { kind: 'cmd', text: 'kortix cr ls' },
           { kind: 'row', text: '#    STATUS    FROM → INTO         TITLE' },
-          { kind: 'row', text: '#12  ● open    3f9a2c1e… → main    Stop retrying webhooks on a 4xx' },
+          {
+            kind: 'row',
+            text: '#12  ● open    3f9a2c1e… → main    Stop retrying webhooks on a 4xx',
+          },
           { kind: 'gap' },
           { kind: 'cmd', text: 'kortix cr merge 12' },
           { kind: 'ok', text: 'Merged CR #12 (fast-forward)  8c41d2e' },
@@ -128,10 +140,19 @@ const STAGES: Record<SurfaceId, () => ReactNode> = {
   desktop: () => <DesktopStage />,
   mobile: () => <MobileStage />,
   cli: () => <CliStage />,
-  slack: () => <SlackWindow messages={SLACK_THREAD} />,
-  teams: () => <TeamsWindow messages={TEAMS_THREAD} />,
+  slack: function SlackStage() {
+    const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+    const { SLACK_THREAD } = localizeMarketingContent(tMarketing);
+    return <SlackWindow messages={SLACK_THREAD} />;
+  },
+  teams: function TeamsStage() {
+    const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+    const { TEAMS_THREAD } = localizeMarketingContent(tMarketing);
+    return <TeamsWindow messages={TEAMS_THREAD} />;
+  },
 };
 
 export function SurfaceStage({ id }: { id: SurfaceId }) {
-  return STAGES[id]();
+  const Stage = STAGES[id];
+  return <Stage />;
 }

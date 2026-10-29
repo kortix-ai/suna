@@ -1,17 +1,11 @@
 import Link from '@/components/site-link';
+
+import { useTranslations } from '@/i18n/use-translations';
+
 import { ArrowRightIcon, CheckIcon, XIcon } from '@phosphor-icons/react/dist/ssr';
 import type { ReactNode } from 'react';
 
-import {
-  enterpriseFeatures,
-  enterpriseLines,
-  needs,
-  reachModes,
-  setupSteps,
-  updateLines,
-  whereGroups,
-  type TopicId,
-} from './model';
+import { localizeMarketingContent as localizeModel, type TopicId } from './model';
 import { Terminal, Window } from './parts';
 
 /*
@@ -33,6 +27,9 @@ function Row({ k, v }: { k: string; v: string }) {
 }
 
 function WherePanel() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { whereGroups } = localizeModel(tMarketing);
+
   return (
     <div className="flex flex-col gap-6">
       {whereGroups.map((group) => (
@@ -50,6 +47,9 @@ function WherePanel() {
 }
 
 function ReachPanel() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { reachModes } = localizeModel(tMarketing);
+
   return (
     <ul className={card}>
       {reachModes.map((mode) => (
@@ -65,7 +65,7 @@ function ReachPanel() {
             ) : (
               <XIcon className="text-muted-foreground size-4" aria-hidden />
             )}
-            {mode.sessions ? 'Sessions run' : 'Sessions cannot run'}
+            {mode.sessions ? tMarketing('textb38485a433ee') : tMarketing('text734901f1b461')}
           </span>
         </li>
       ))}
@@ -74,11 +74,16 @@ function ReachPanel() {
 }
 
 function SetupPanel() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { setupSteps } = localizeModel(tMarketing);
+
   return (
     <ol className={card}>
       {setupSteps.map((step, i) => (
         <li key={step.k} className="flex items-start gap-4 px-4 py-3">
-          <span className="text-muted-foreground w-4 shrink-0 pt-0.5 font-mono text-xs tabular-nums">{i + 1}</span>
+          <span className="text-muted-foreground w-4 shrink-0 pt-0.5 font-mono text-xs tabular-nums">
+            {i + 1}
+          </span>
           <div className="flex min-w-0 flex-col">
             <span className="text-foreground text-base">{step.k}</span>
             <span className="text-muted-foreground text-sm text-pretty">{step.v}</span>
@@ -90,9 +95,12 @@ function SetupPanel() {
 }
 
 function EnterprisePanel() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { enterpriseFeatures, enterpriseLines } = localizeModel(tMarketing);
+
   return (
     <div className="flex flex-col gap-6">
-      <Window title="Terminal: your server">
+      <Window title={tMarketing('texte6a39a255b29')}>
         <Terminal lines={enterpriseLines} className="p-4" />
       </Window>
       <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -107,7 +115,7 @@ function EnterprisePanel() {
         href="/enterprise"
         className="text-foreground outline-ring flex w-fit items-center gap-1.5 rounded-sm text-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
       >
-        About Enterprise
+        {tMarketing('textd562671b412d')}
         <ArrowRightIcon className="size-4" aria-hidden />
       </Link>
     </div>
@@ -115,10 +123,16 @@ function EnterprisePanel() {
 }
 
 function NeedsPanel() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { needs } = localizeModel(tMarketing);
+
   return (
     <ul className={card}>
       {needs.map((row) => (
-        <li key={row.k} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-baseline sm:gap-6">
+        <li
+          key={row.k}
+          className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-baseline sm:gap-6"
+        >
           <span className={`${caption} sm:w-24 sm:shrink-0`}>{row.k}</span>
           <span className="text-foreground text-sm text-pretty">{row.v}</span>
         </li>
@@ -131,11 +145,15 @@ export const TOPIC_PANELS: Record<TopicId, () => ReactNode> = {
   where: () => <WherePanel />,
   reach: () => <ReachPanel />,
   setup: () => <SetupPanel />,
-  updates: () => (
-    <Window title="Terminal: your server">
-      <Terminal lines={updateLines} className="p-4" />
-    </Window>
-  ),
+  updates: function UpdatesPanel() {
+    const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+    const { updateLines } = localizeModel(tMarketing);
+    return (
+      <Window title={tMarketing('texte6a39a255b29')}>
+        <Terminal lines={updateLines} className="p-4" />
+      </Window>
+    );
+  },
   enterprise: () => <EnterprisePanel />,
   needs: () => <NeedsPanel />,
 };

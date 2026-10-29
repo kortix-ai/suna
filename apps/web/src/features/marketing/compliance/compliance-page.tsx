@@ -1,7 +1,10 @@
 import Link from '@/components/site-link';
+import { PageColumn, Pillars, TrustBand } from '@/features/marketing/enterprise/sections';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { FaqSection } from '@/features/marketing/landing-sections/faq-section';
-import { PageColumn, Pillars, TrustBand } from '@/features/marketing/enterprise/sections';
+
+import { useTranslations } from '@/i18n/use-translations';
+
 import {
   BuildingsIcon,
   CloudIcon,
@@ -14,8 +17,8 @@ import {
 } from '@phosphor-icons/react/dist/ssr';
 import type { ReactNode } from 'react';
 
-import { faqItems, pillars, trust } from './content';
 import { ComplianceHero } from './compliance-hero';
+import { localizeMarketingContent as localizeContent } from './content';
 import { ComplianceTopics } from './topic-panels';
 
 /**
@@ -26,6 +29,9 @@ import { ComplianceTopics } from './topic-panels';
  * /security; rollout, hosting and the contract live on /enterprise.
  */
 export function CompliancePage(): ReactNode {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { faqItems, pillars, trust } = localizeContent(tMarketing);
+
   return (
     <PageColumn>
       <ComplianceHero />
@@ -45,15 +51,19 @@ export function CompliancePage(): ReactNode {
         actions={
           <>
             <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>
-              <Link href="/enterprise">Kortix for Enterprise</Link>
+              <Link href="/enterprise">{tMarketing('texte4a7222927a8')}</Link>
             </MarketingButton>
             <MarketingButton size="md" className="hit-area-y-1" asChild>
-              <Link href="/security">Read the security page</Link>
+              <Link href="/security">{tMarketing('text185d1ba951b2')}</Link>
             </MarketingButton>
           </>
         }
       />
-      <FaqSection title="Compliance, answered." titleMuted="From the code and the docs." items={faqItems} />
+      <FaqSection
+        title={tMarketing('text11a07d2830be')}
+        titleMuted="From the code and the docs."
+        items={faqItems}
+      />
     </PageColumn>
   );
 }

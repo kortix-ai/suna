@@ -1,7 +1,7 @@
 'use client';
 
 import { CHANNEL_BRAND_COLOR, ChannelBrandMark, channelPlatformLabel } from '../../turn/channel-brand';
-import { slackConversationName, type ChannelPlatform } from '../../turn/channel-message';
+import { slackConversationName } from '../../turn/channel-message';
 import { useChannelBindings } from '../../../internal/hooks/use-channel-bindings';
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
@@ -9,14 +9,14 @@ import { PaperclipIcon } from '@phosphor-icons/react';
 import { useSessionIds } from '../../../providers/session-ids';
 import { channelSendText, type ChannelSend } from './channel-send';
 
-const REPLIED_IN_KEY: Record<ChannelPlatform, string> = {
+const REPLIED_IN_KEY: Record<ChannelSend['platform'], string> = {
   Teams: 'text72b5b0c53de9',
   Slack: 'textfc73e9ad2dae',
   Telegram: 'text8faf56a14a8d',
 };
 
 /** "Replied in Microsoft Teams" — the row title for a channel send. */
-export function channelSendTitle(platform: ChannelPlatform, tI18nComplete: ReturnType<typeof useTranslations>): string {
+export function channelSendTitle(platform: ChannelSend['platform'], tI18nComplete: ReturnType<typeof useTranslations>): string {
   return tI18nComplete.raw(REPLIED_IN_KEY[platform]);
 }
 

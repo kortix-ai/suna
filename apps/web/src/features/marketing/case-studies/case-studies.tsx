@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
+
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Band, Heading } from '@/features/marketing/kit/page-frame';
@@ -16,7 +18,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
-import { caseStudies, type CaseStudy } from './content';
+import { localizeMarketingContent as localizeContent, type CaseStudy } from './content';
 
 const ICONS = { telecom: CellTowerIcon, search: BriefcaseIcon, finance: ChartLineUpIcon } as const;
 
@@ -24,11 +26,13 @@ const PLATINUM_TRACKING = 'tracking-[0.22em]'; // audit:allow Platinum's own wor
 
 /** Platinum's mark as platinum.dev draws it (`pt-logo.tsx`): a square and PLATINUM in mono, both currentColor. */
 function PlatinumMark() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   return (
     <span
       className="text-foreground inline-flex items-center gap-4"
       role="img"
-      aria-label="Platinum"
+      aria-label={tMarketing('text5a98505ed913')}
     >
       <span aria-hidden className="block size-5 bg-current" />
       <span aria-hidden className={`font-mono text-xl ${PLATINUM_TRACKING}`}>
@@ -104,6 +108,9 @@ function CaseStudyCard({ item, className }: { item: CaseStudy; className?: strin
 
 /** Every case study as a two-column grid: the /case-studies page. */
 export function CaseStudyGrid() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { caseStudies } = localizeContent(tMarketing);
+
   return (
     <Band>
       <ul className="bg-border grid grid-cols-1 gap-px lg:grid-cols-2">
@@ -120,7 +127,16 @@ export function CaseStudyGrid() {
  * one card, and the row scrolls by touch, trackpad or keyboard too. Nothing
  * here links anywhere, on purpose. Copy and the naming rules: `./content.ts`.
  */
-export function CaseStudies({ id = 'case-studies', allLink = false }: { id?: string; allLink?: boolean }) {
+export function CaseStudies({
+  id = 'case-studies',
+  allLink = false,
+}: {
+  id?: string;
+  allLink?: boolean;
+}) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { caseStudies } = localizeContent(tMarketing);
+
   const row = useRef<HTMLUListElement>(null);
   const [edge, setEdge] = useState({ start: true, end: false });
 
@@ -154,7 +170,7 @@ export function CaseStudies({ id = 'case-studies', allLink = false }: { id?: str
               variant="secondary"
               size="md"
               className="w-10 px-0"
-              aria-label="Previous case study"
+              aria-label={tMarketing('textcad1806e74af')}
               disabled={edge.start}
               onClick={() => step(-1)}
             >
@@ -164,7 +180,7 @@ export function CaseStudies({ id = 'case-studies', allLink = false }: { id?: str
               variant="secondary"
               size="md"
               className="w-10 px-0"
-              aria-label="Next case study"
+              aria-label={tMarketing('text8c2108ed5a46')}
               disabled={edge.end}
               onClick={() => step(1)}
             >
@@ -172,7 +188,7 @@ export function CaseStudies({ id = 'case-studies', allLink = false }: { id?: str
             </MarketingButton>
             {allLink ? (
               <MarketingButton variant="secondary" size="md" asChild>
-                <Link href="/case-studies">All case studies</Link>
+                <Link href="/case-studies">{tMarketing('text4bba111d6e4f')}</Link>
               </MarketingButton>
             ) : null}
           </>
@@ -183,7 +199,7 @@ export function CaseStudies({ id = 'case-studies', allLink = false }: { id?: str
           ref={row}
           onScroll={measure}
           tabIndex={0}
-          aria-label="Case studies"
+          aria-label={tMarketing('text6b1df2ba950c')}
           className="bg-border scrollbar-hide outline-ring flex snap-x snap-mandatory gap-px overflow-x-auto focus-visible:outline-2 focus-visible:-outline-offset-2"
         >
           {caseStudies.items.map((item) => (

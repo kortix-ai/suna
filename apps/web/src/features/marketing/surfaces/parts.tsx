@@ -1,5 +1,8 @@
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@kortix/ui';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import {
   CameraIcon,
   CaretDownIcon,
@@ -23,7 +26,15 @@ export const RESULT =
   'A 4xx no longer retries. The billing tests pass: 3 pass, 0 fail. I opened change request #12.';
 
 /** A picture of a button: never a control on a marketing page. */
-export function Chip({ children, primary, className }: { children: ReactNode; primary?: boolean; className?: string }) {
+export function Chip({
+  children,
+  primary,
+  className,
+}: {
+  children: ReactNode;
+  primary?: boolean;
+  className?: string;
+}) {
   return (
     <span
       className={cn(
@@ -48,9 +59,12 @@ export function UserBubble({ children }: { children: ReactNode }) {
 
 /** The folded tool steps of a finished turn. */
 export function StepsFold({ count }: { count: number }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   return (
     <span className="text-muted-foreground flex items-center gap-1 text-xs">
-      Completed {count} steps
+      {tMarketing('text22a970d2e5b1')}
+      {count} {tMarketing('textb7595e2a8639')}
       <CaretRightIcon aria-hidden className="size-3" />
     </span>
   );
@@ -92,25 +106,40 @@ export function QuickEntryBar({ text, target = 'New session' }: { text: string; 
  * and Allow always as a quieter text button.
  */
 export function PermissionCard({ tool, input }: { tool: string; input: string }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   return (
     <div className="bg-background flex flex-col gap-3 rounded-lg border p-3">
       <div className="flex flex-col gap-1">
-        <span className="text-foreground text-sm font-medium">Permission needed · {tool}</span>
+        <span className="text-foreground text-sm font-medium">
+          {tMarketing('textf667acf9ff30')}
+          {tool}
+        </span>
         <code className="text-muted-foreground font-mono text-xs break-all">{input}</code>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <Chip className="justify-center">Deny</Chip>
+        <Chip className="justify-center">{tMarketing('text05a2d7332eb9')}</Chip>
         <Chip primary className="justify-center">
-          Allow once
+          {tMarketing('text168511d24d9e')}
         </Chip>
       </div>
-      <span className="text-muted-foreground text-center text-xs">Allow always</span>
+      <span className="text-muted-foreground text-center text-xs">
+        {tMarketing('text11f1800a41af')}
+      </span>
     </div>
   );
 }
 
 /** A checked row: a capability, a setting, a step. */
-export function CheckRow({ title, detail, on = true }: { title: string; detail?: string; on?: boolean }) {
+export function CheckRow({
+  title,
+  detail,
+  on = true,
+}: {
+  title: string;
+  detail?: string;
+  on?: boolean;
+}) {
   return (
     <li className="flex items-start gap-3 px-4 py-3">
       <span
@@ -124,7 +153,9 @@ export function CheckRow({ title, detail, on = true }: { title: string; detail?:
       </span>
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="text-foreground text-base">{title}</span>
-        {detail ? <span className="text-muted-foreground text-sm text-pretty">{detail}</span> : null}
+        {detail ? (
+          <span className="text-muted-foreground text-sm text-pretty">{detail}</span>
+        ) : null}
       </span>
     </li>
   );
@@ -173,3 +204,21 @@ export const TEAMS_THREAD: readonly ChatMessage[] = [
   { from: 'kortix', name: 'Kortix', time: '9:14', text: '', card: FIX_STEPS },
   { from: 'kortix', name: 'Kortix', time: '9:19', text: FOUND_LINE, card: TEAMS_CR },
 ];
+
+export function localizeMarketingContent(tMarketing: import('@/i18n/translator').UiTranslator) {
+  return localizeUiCatalog(
+    {
+      PROMPT,
+      RESULT,
+      FIX_STEPS,
+      ASK_LINE,
+      FOUND_LINE,
+      SLACK_CR,
+      TEAMS_CR,
+      SLACK_THREAD,
+      TEAMS_THREAD,
+    },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+}
