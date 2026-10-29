@@ -35,7 +35,7 @@
   "playwright": "1.60.0",
   "anydoc": "0.1.6",
   "voxl": "acdac72b79b37205d5019ae983655fcdc0c43c27",
-  "voxlSha256Amd64": "c921f2fabd7e142b2f75b3f9debf791e1c0673b6264110069a2e6dc8e63ce941",
-  "voxlSha256Arm64": "c59fd8cb0cd45bf2ed0e30c5b23d13e3b52b5b388c8336404ce20893238ef4d2",
+  "voxlSha256Amd64": "23358393a4debdb854238715e90416bf217f1e66fc9a7d290e2977b982451f93",
+  "voxlSha256Arm64": "63082cb5c2b7d11af01f4a2afe3683184cccb1786413eeb233e4e3cd51c1b121",
   "piSystemPackages": []
 }

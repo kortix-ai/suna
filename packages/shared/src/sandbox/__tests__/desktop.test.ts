@@ -3,7 +3,13 @@ import { resolve } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
 import { OPENCODE_VERSION, VOXL_SHA256_AMD64, VOXL_SHA256_ARM64 } from '../../runtime-versions';
-import { SANDBOX_DESKTOP_INSTALL_COMMAND, SANDBOX_DESKTOP_PACKAGES } from '../desktop';
+import {
+  KORTIX_LOGO_PATHS,
+  KORTIX_SYMBOL_PATH,
+  SANDBOX_DESKTOP_FILES,
+  SANDBOX_DESKTOP_INSTALL_COMMAND,
+  SANDBOX_DESKTOP_PACKAGES,
+} from '../desktop';
 import { kortixToolchainLayer } from '../dockerfile-layer';
 
 const repoFile = (path: string) =>
@@ -39,5 +45,22 @@ describe('session desktop', () => {
     // E2B's Dockerfile parser cannot read heredocs or newlines.
     expect(SANDBOX_DESKTOP_INSTALL_COMMAND).not.toContain('<<');
     expect(SANDBOX_DESKTOP_INSTALL_COMMAND).not.toContain('\n');
+  });
+
+  test('draws the logo and symbol from the brand kit master files', () => {
+    const paths = (file: string) => [...repoFile(file).matchAll(/ d="([^"]+)"/g)].map((m) => m[1]);
+    expect([...KORTIX_LOGO_PATHS]).toEqual(paths('apps/web/public/brandkit/Logo/Logomark/SVG/Logomark White.svg'));
+    expect([KORTIX_SYMBOL_PATH]).toEqual(paths('apps/web/public/brandkit/Logo/Brandmark/SVG/Brandmark White.svg'));
+  });
+
+  test('writes every look file, each a well-formed document', () => {
+    for (const [path, body] of Object.entries(SANDBOX_DESKTOP_FILES)) {
+      expect(SANDBOX_DESKTOP_INSTALL_COMMAND).toContain(`printf %s ${btoa(body)} | base64 -d > ${path}`);
+      if (/\.(xml|svg)$/.test(path)) {
+        const tags = [...body.matchAll(/<(\/?)([a-z]+)[^>]*?(\/?)>/g)].filter((m) => !m[3]);
+        const depth = tags.reduce((d, m) => d + (m[1] ? -1 : 1), 0);
+        expect(depth).toBe(0);
+      }
+    }
   });
 });
