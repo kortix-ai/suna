@@ -34,10 +34,12 @@ import { registerProjectSettingsRoutes } from '../../projects/routes/project-set
 import { projectsApp } from '../../projects/surface';
 import { db } from '../../shared/db';
 import { bindChatThread } from '../core/threads';
-import { telegramWebhookApp } from '../telegram-webhook';
+import { channelWebhookRoutes } from '../inbound/webhook-routes';
 import { saveTelegramInstall, TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME, TELEGRAM_WEBHOOK_SECRET } from './installs';
 import { handleTelegramEvent, telegramMessageEvent, type TelegramMessage } from './session';
+import { telegramInbound } from './inbound';
 
+const telegramWebhookApp = channelWebhookRoutes(telegramInbound);
 const ACCOUNT = crypto.randomUUID();
 const OWNER = crypto.randomUUID();
 const ALLOWED = '111';

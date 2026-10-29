@@ -57,9 +57,11 @@ import { deleteTelegramInstall, loadTelegramInstall, recordTelegramAccessRequest
 import { registerChannelTelegramRoutes } from '../../projects/routes/channel-telegram';
 import { serializeProject } from '../../projects/lib/serializers';
 import { handleTelegramEvent, handleTelegramPress, telegramMessageEvent, telegramPressEvent, type TelegramMessage } from './session';
-import { telegramWebhookApp } from '../telegram-webhook';
+import { channelWebhookRoutes } from '../inbound/webhook-routes';
+import { telegramInbound } from './inbound';
 import { runJobBatch } from '../../shared/job-queue';
 
+const telegramWebhookApp = channelWebhookRoutes(telegramInbound);
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const ACTOR = crypto.randomUUID();
