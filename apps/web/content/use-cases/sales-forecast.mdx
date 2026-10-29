@@ -65,53 +65,117 @@ back to HubSpot.
 ## How it works
 
 <Steps>
-<Step title="Run on a weekly cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent once a week. Each firing spawns a fresh
-**session** in its own sandbox — one week, one run, nothing carried over. The
-forecast is rebuilt from HubSpot's current state every time, so it never
-drifts from what's actually in the CRM.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the forecast skill and the weekly trigger, and opens a change request for you to review. Prefer
+clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Give the agent the rollup rules">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a weekly sales forecast agent in this project.
 
-How deals get weighted, which ones count toward this quarter, and what
-"slipping" and "at risk" mean live as a **skill** that travels with the
-agent: weight every deal by the probability HubSpot already has configured on
-its stage rather than a hardcoded guess, count a deal into the quarter by its
-close date, and call out a deal as slipping when its close date has already
-passed or its stage leaves it too little runway to close in time.
+1. Create the agent agents/sales-forecast.md. Its job is to roll the open HubSpot pipeline into a weekly forecast. It may read HubSpot and post to Slack.
 
-</Step>
-<Step title="Connect HubSpot read-only">
+2. Create the skill skills/forecast-rollup/SKILL.md with these rules:
+   - Weight every open deal by the win probability configured on its HubSpot stage. Never hardcode a probability.
+   - Count an open deal in this quarter when its close date falls inside the quarter. Count this quarter's closed-won deals at full value.
+   - Roll the weighted total up by stage, by rep and by the deal_segment property, and compare it to the quarterly quota of 1000000.
+   - A deal is slipping when its close date has passed and it is still open, or when its stage leaves too little runway to close this quarter.
+   - Flag large deals with no recent activity or no recent stage movement as at risk.
+   - Never write to HubSpot: no change to a deal's amount, close date, stage or owner. The post to #sales-forecast is the only output.
 
-Through a scoped **connector**, brokered server-side so no raw token reaches
-the model, the agent reads:
+3. Add a cron trigger weekly-sales-forecast to kortix.yaml. It runs the sales-forecast agent every Monday at 09:00 with the prompt "Load the forecast-rollup skill and run one complete weekly forecast rollup."
 
-- **Open deals** — amount, stage, close date, owner, and the segment property
-  used for the rollup.
-- **Pipeline stage configuration** — the win probability HubSpot already has
-  set on each stage, used as the weighting instead of an assumption.
-- **Posts to Slack** — the weekly forecast, broken down by stage, rep, and
-  segment, with slipping and at-risk deals called out.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent is **read-only** across HubSpot. It has no write access to a deal's
-amount, close date, stage, or owner — it cannot change the number tied to any
-deal, no matter what the rollup shows. Its only output is the Slack post.
-Credentials are encrypted in the Secrets Manager and injected at runtime,
-scoped to the agents you grant them to.
+Open **Connectors** in your project and connect your CRM with read-only access,
+and Slack for the post. Credentials are brokered server-side and never enter
+the agent's machine.
+
+<ToolList>
+  <ToolNeed name="HubSpot" domain="hubspot.com" tag="Required" alternatives={[['Salesforce', 'salesforce.com'], ['Pipedrive', 'pipedrive.com']]}>
+    Reads open deals, stage probabilities and close dates, read-only.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com'], ['Gmail', 'gmail.com']]}>
+    Posts the weekly forecast rollup and slipping deals.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Post the forecast">
+<Step title="Run it once with this prompt">
 
-Each week brings one Slack post: the total weighted forecast against quota,
-the breakdown by stage, by rep, and by segment, the deals that have slipped
-or are running out of runway this quarter, and the large deals showing other
-signs of risk. The sales team reads it and decides what to do. Nothing is
-written back to HubSpot automatically.
+Merge the change request, then start a session with the **sales-forecast** agent
+and send this prompt. Check the totals against your own pipeline view before
+you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Build this quarter's forecast from HubSpot. Read only. Change nothing.
+
+1. Read every open deal (amount, stage, close date, owner, deal_segment) and each stage's configured win probability.
+2. Weight each open deal that closes this quarter by its stage probability, and add this quarter's closed-won deals at full value.
+3. Roll the total up by stage, by rep and by segment, and compare it to the quota of 1000000.
+4. List the slipping deals and the large deals that look at risk, with owner, amount, stage and close date.
+5. Post the forecast to #sales-forecast.`}
+/>
+
+</Step>
+<Step title="Let the weekly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every Monday at 09:00, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: weekly-sales-forecast
+    name: Weekly sales forecast
+    on:
+      cron: "0 0 9 * * 1"
+    run:
+      agent: sales-forecast
+      prompt: Load the forecast-rollup skill and run one complete weekly forecast rollup.`}
+/>
+
+</Step>
+<Step title="Keep HubSpot read-only">
+
+The agent reads the pipeline and writes nothing back. It never changes a deal's
+amount, close date, stage or owner, even when a deal is clearly slipping. The
+Slack post is its only output, and the sales team decides what to do about each
+flagged deal.
+
+</Step>
+<Step title="Read the weekly forecast">
+
+Each run ends with one message in #sales-forecast. This is what a run looks like
+in the session:
+
+<ExampleRun
+  title="Weekly sales forecast · Mon 09:00"
+  message="Load the forecast-rollup skill and run one complete weekly forecast rollup."
+  worked="Worked for 1m 54s"
+  tools={[
+    'hubspot · search deals (open)',
+    'hubspot · get pipeline stages',
+    'hubspot · search deals (closed won)',
+    'slack · post message → #sales-forecast',
+  ]}
+  note="Illustrative example. Your numbers depend on your pipeline."
+>
+  Weighted forecast is **$842,000** against a **$1,000,000** quota: **84%**
+  attainment and a **$158,000** gap. **5** deals are slipping the quarter, and
+  **2** large deals look at risk with no activity in three weeks.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -121,6 +185,25 @@ written back to HubSpot automatically.
   HubSpot. The weighting and rollup rules live as a **skill**. The agent reads
   the whole pipeline and writes nothing but the weekly Slack post.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Send reps their own risks"
+  code="After each forecast, send each rep a Slack DM with only their slipping and at-risk deals, so they can update close dates before the forecast call."
+/>
+
+<CopyBlock
+  title="Commit and best case"
+  code="Split the forecast into commit (late-stage deals only) and best case (all open deals), and show both against quota."
+/>
+
+<CopyBlock
+  title="Mid-week slip check"
+  code="Every Thursday, post only the deals whose close date passed since Monday to #sales-forecast."
+/>
 
 ## Guardrails
 

@@ -54,54 +54,124 @@ returns a filled draft for security to review before it goes back.
 ## How it works
 
 <Steps>
-<Step title="Trigger on the inbound questionnaire">
+<Step title="Copy the setup prompt into a new session">
 
-A questionnaire arriving as an email, a spreadsheet, or a portal link is the
-**trigger**, and each one spawns a fresh **session** in its own sandbox. The agent
-parses the incoming document, whatever its format, into a list of questions to
-answer. One questionnaire maps to one session on one disposable machine.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the questionnaire skill and the 15-minute trigger, and opens a change request for you to review. Prefer
+clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Ground the agent in our vetted answers">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a security questionnaire agent in this project.
 
-Our approved answers and policy docs live as **skills** and **memory** that travel
-with the agent: the vetted response to each common question, the policies behind
-them, and the standards we map to. The agent answers only from this grounded set,
-so a drafted answer is one we've already approved rather than one the model
-invented. When a policy changes, we update it and the agent uses the new wording.
+1. Create the agent agents/security-questionnaire.md. Its job is to draft responses to inbound security questionnaires from our vetted answers. It may use the Gmail, Google Drive and Google Sheets connectors.
 
-</Step>
-<Step title="Connect the questionnaire and the knowledge base">
+2. Create the skill skills/questionnaire-response/SKILL.md with these rules:
+   - Check the Security Questionnaires label in Gmail. A thread that already has a draft reply has been worked. Skip it.
+   - Parse every tab of the attachment into single questions, and keep each question's section, row and exact wording.
+   - Answer only from the vetted answers in memory/security-answers.md. Flag a question with no confident match for a person. Never invent an answer.
+   - Fill a copy of the vendor's own file (SIG, CAIQ or a custom spreadsheet) in the same layout. Never change the original.
+   - Save the filled file as a Gmail draft reply on the original thread. Never send it.
+   - Post the draft link and the flagged questions to #security.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger questionnaire-check to kortix.yaml. It runs the security-questionnaire agent every 15 minutes with the prompt "Load the questionnaire-response skill and draft a response for every new questionnaire in the Security Questionnaires label."
 
-- **Read the inbound questionnaire** — from the email, spreadsheet, or portal it
-  arrived in, parsed into individual questions.
-- **Search the knowledge base** — the vetted answers and policy docs to match each
-  question against.
-- **Draft in the vendor's format** — writing each response back into the SIG,
-  CAIQ, or custom layout it came in.
-- **Flag low-confidence questions** — anything without a confident match marked
-  for a person to answer.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent **drafts only**: it fills the questionnaire and flags what it's unsure
-of, and it never sends. Anything it can't answer confidently from the vetted set
-is left for a person rather than guessed. The completed draft stops at a **human
-approval gate** — security reviews it before it goes back to the prospect.
-Credentials are encrypted in the Secrets Manager and injected at runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect the inbox where questionnaires
+arrive and the files they come in. Credentials are brokered server-side and
+never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Gmail" domain="gmail.com" tag="Required" alternatives={[['Google Drive', 'drive.google.com'], ['Google Sheets', 'docs.google.com']]}>
+    Reads each new questionnaire and its attached files.
+  </ToolNeed>
+  <ToolNeed name="Notion" domain="notion.so" tag="Optional" alternatives={[['Confluence', 'atlassian.com']]}>
+    Supplies approved answers when the library lives there.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Posts the completed draft and its flags for security review.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Return a filled draft for review">
+<Step title="Run it once with this prompt">
 
-With that in place, an inbound questionnaire comes back as a filled draft in the
-vendor's own format, with each answer drawn from our vetted set and the
-low-confidence rows flagged. Security reviews the draft, answers the flagged
-questions, and sends it. The matching and formatting are done; the sign-off stays
-with a person.
+Merge the change request, then start a session with the
+**security-questionnaire** agent and send this prompt. Check the drafted answers
+and the flagged rows before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Draft a response to the oldest questionnaire in the Security Questionnaires label in Gmail that has no draft reply yet.
+
+1. Read every tab of the attached file and list each question with its section and row.
+2. Answer each question only from memory/security-answers.md. Flag any question without a confident match.
+3. Fill a copy of the file in the vendor's own format. Do not change the original.
+4. Save it as a Gmail draft reply on the same thread. Do not send it.
+5. Post the draft link and the flagged questions to #security.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+checks the label every 15 minutes, and each questionnaire runs in a new session
+on its own cloud computer. To change the interval, edit the cron line, or open
+**Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: questionnaire-check
+    name: Security questionnaire check
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: security-questionnaire
+      prompt: Load the questionnaire-response skill and draft a response for every new questionnaire in the Security Questionnaires label.`}
+/>
+
+</Step>
+<Step title="Hold every draft for security">
+
+The agent drafts and flags. It never sends. The filled file waits as a Gmail
+draft on the original thread, and a person from security answers the flagged
+questions and sends it. A question with no vetted answer is left for a person,
+never answered from scratch.
+
+</Step>
+<Step title="Read the draft summary">
+
+Each run ends with one message in #security. This is what a run looks like
+in the session:
+
+<ExampleRun
+  title="Security questionnaire check · 10:45"
+  message="Load the questionnaire-response skill and draft a response for every new questionnaire in the Security Questionnaires label."
+  worked="Worked for 6m 08s"
+  tools={[
+    'gmail · list messages',
+    'gmail · list drafts',
+    'google_sheets · read spreadsheet',
+    'google_drive · copy file',
+    'google_sheets · update cells × 4',
+    'gmail · create draft',
+    'slack · post message → #security',
+  ]}
+  note="Illustrative example. Your counts depend on the questionnaire and your answer library."
+>
+  Drafted **1** new CAIQ questionnaire: **187** of **196** questions answered
+  from the vetted set. **9** questions are flagged for security, mostly on
+  subprocessors. The draft is saved on the original thread and not sent.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -112,6 +182,25 @@ with a person.
   policies are encoded as **skills** and **memory**. The agent drafts and flags;
   security approves before anything is sent.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Grow the answer library"
+  code="When security answers a flagged question, add the approved answer to memory/security-answers.md in a change request."
+/>
+
+<CopyBlock
+  title="Flag unused answers"
+  code="On the first Monday of each month, list the answers in memory/security-answers.md that no questionnaire used in the last 90 days."
+/>
+
+<CopyBlock
+  title="Track due dates"
+  code="If a questionnaire email names a due date, put it at the top of the #security post and remind #security two days before it."
+/>
 
 ## Guardrails
 

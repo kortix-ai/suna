@@ -52,52 +52,121 @@ usual format as a document. A founder edits it and sends it.
 ## How it works
 
 <Steps>
-<Step title="Trigger the draft on a monthly cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires once a month and spawns a fresh **session** in its own
-sandbox. Each run pulls the current month's numbers and produces one draft. One
-run maps to one session on one disposable machine, and nothing carries over
-between months except what's read from the source systems.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the investor-update-draft skill and the
+monthly trigger, and opens a change request for you to review.
+Prefer clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Give the agent our format and what matters">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a monthly investor update agent in this project.
 
-The shape of our update lives as **skills** and **memory** that travel with the
-agent: which metrics we report, how we define each one, the format and section
-order investors expect, and the plan targets to compare against. Last month's
-update is the reference for tone and structure. When we change how we report, we
-write it down and the agent follows it next month.
+1. Create the agent agents/investor-update.md. Its job is to draft the monthly investor update from our metrics. It may use the PostgreSQL, Stripe and Google Docs connectors.
 
-</Step>
-<Step title="Connect Postgres, Stripe, and last month's update">
+2. Create the skill skills/investor-update-draft/SKILL.md with these rules:
+   - Read last month's update in the Investor Updates folder for the prior figures, the section order and the tone.
+   - Pull MRR, MRR growth and revenue from Stripe, and active accounts, growth, burn and runway from PostgreSQL. Read only.
+   - Compare every metric to last month and to plan. Call out any metric that moved the wrong way two months running.
+   - Mark any cause you cannot verify from the data as likely, for the founder to confirm.
+   - Write the draft as a new document in the Investor Updates folder. Never edit a past update and never send the draft.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger monthly-investor-update to kortix.yaml. It runs the investor-update agent on the 1st of every month at 06:00 with the prompt "Load the investor-update-draft skill and draft this month's investor update."
 
-- **Query Postgres** — active accounts, growth, and the product metrics we track.
-- **Read Stripe** — MRR and revenue for the month.
-- **Read last month's update** — the prior numbers to compare against and the
-  format to match.
-- **Draft into a document** — the numbers and the narrative assembled in our
-  format for a founder to edit.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent is **read-only** across every connected system: it reads the database,
-Stripe, and last month's update, and it writes nothing back to any of them. Its
-one output is a draft document. A founder finalizes and sends; the agent never
-sends anything. Credentials are encrypted in the Secrets Manager and injected at
-runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect PostgreSQL, Stripe and
+Google Docs. Use a read-only database user for PostgreSQL. Credentials are
+brokered server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="PostgreSQL" domain="postgresql.org" tag="Required" alternatives={[['Snowflake', 'snowflake.com'], ['BigQuery', 'cloud.google.com']]}>
+    Reads active accounts, growth, burn and runway.
+  </ToolNeed>
+  <ToolNeed name="Stripe" domain="stripe.com" tag="Required" alternatives={[['QuickBooks', 'quickbooks.intuit.com'], ['Xero', 'xero.com']]}>
+    Reads MRR and revenue for the month.
+  </ToolNeed>
+  <ToolNeed name="Google Docs" domain="docs.google.com" tag="Required" alternatives={[['Notion', 'notion.so']]}>
+    Reads last month's update and drafts this month's.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Hand a founder a finished first draft">
+<Step title="Run it once with this prompt">
 
-With that in place, the start of each month produces a draft with the metrics
-pulled, the month-over-month and against-plan comparisons filled in, and the
-narrative written in our format. The founder edits the commentary, checks the
-numbers, and sends it. The gathering and formatting are done; the judgment stays
-with a person.
+Merge the change request, then start a session with the **investor-update** agent
+and send this prompt. Check the numbers against your own reports
+before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Draft this month's investor update.
+
+1. Read last month's update in the Investor Updates folder for the figures, the section order and the tone.
+2. Pull MRR and revenue from Stripe, and active accounts, burn and runway from PostgreSQL. Read only.
+3. Compare each metric to last month and to plan, and call out the ones that need an explanation.
+4. Write a new document in the Investor Updates folder in the same format as last month.
+5. Tell me where the draft is. Do not edit a past update and do not send anything.`}
+/>
+
+</Step>
+<Step title="Let the monthly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs on the 1st of every month at 06:00, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: monthly-investor-update
+    name: Monthly investor update draft
+    on:
+      cron: "0 0 6 1 * *"
+    run:
+      agent: investor-update
+      prompt: Load the investor-update-draft skill and draft this month's investor update.`}
+/>
+
+</Step>
+<Step title="Keep every source read-only">
+
+The agent reads PostgreSQL, Stripe and every past update, and writes nothing
+back to any of them. Its one output is a new draft document. It never emails,
+shares or publishes the update. A founder edits the commentary, checks the
+numbers and sends it.
+
+</Step>
+<Step title="Read the draft update">
+
+Each run ends with one new draft in the folder. This is what a run looks like in the session:
+
+<ExampleRun
+  title="Monthly investor update draft · 1st · 06:00"
+  message="Load the investor-update-draft skill and draft this month's investor update."
+  worked="Worked for 3m 40s"
+  tools={[
+    'google_docs · read document',
+    'stripe · list subscriptions',
+    'stripe · list charges',
+    'postgresql · run query × 4',
+    'google_docs · create document',
+  ]}
+  note="Illustrative example. Your figures depend on your data."
+>
+  Drafted this month's update in the Investor Updates folder. MRR grew
+  **6.2%** month over month, **1.1** points under plan. Runway is **19**
+  months. The draft marks one churned account as the likely driver for you
+  to confirm.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -107,6 +176,25 @@ with a person.
   Stripe, and last month's update. Our format and metric definitions are encoded as
   **skills** and **memory**. The agent drafts; a founder finalizes and sends.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Add a chart"
+  code="Add a line chart of MRR and active accounts for the last 12 months to the draft, under the metrics table."
+/>
+
+<CopyBlock
+  title="Draft the asks"
+  code="Read the open roles and fundraising notes in the Investor Updates folder and draft the asks section from them."
+/>
+
+<CopyBlock
+  title="Weekly metrics preview"
+  code="Every Monday, send me the month-to-date MRR, burn and active accounts against plan, so the update has no surprises."
+/>
 
 ## Guardrails
 
