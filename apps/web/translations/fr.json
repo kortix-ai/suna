@@ -1067,6 +1067,8 @@
         "entrypoint": "Point d’entrée",
         "optional": "facultatif",
         "entrypointPlaceholder": "Laissez vide pour utiliser la valeur Kortix par défaut (recommandé).",
+        "residentialIp": "IP résidentielle",
+        "residentialIpHint": "Faites passer le trafic web de cette sandbox par une adresse IP résidentielle, facturé par Go sur vos crédits. Les sessions ne démarrent que là où le déploiement la propose.",
         "cancel": "Annuler",
         "save": "Enregistrer",
         "create": "Créer le modèle",

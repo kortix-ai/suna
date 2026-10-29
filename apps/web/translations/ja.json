@@ -1067,6 +1067,8 @@
         "entrypoint": "エントリーポイント",
         "optional": "任意",
         "entrypointPlaceholder": "空欄の場合は Kortix のデフォルトを使います（推奨）。",
+        "residentialIp": "レジデンシャルIP",
+        "residentialIpHint": "このサンドボックスのWebトラフィックを住宅用IPアドレス経由で送信します。GBごとにクレジットから課金されます。デプロイメントが提供している場合にのみセッションが開始します。",
         "cancel": "キャンセル",
         "save": "変更を保存",
         "create": "テンプレートを作成",

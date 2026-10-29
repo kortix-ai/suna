@@ -34,6 +34,7 @@ import { startCaptureWorkers, stopCaptureWorkers } from './workers/capture-worke
 import { startBillingRotation, stopBillingRotation } from './workers/billing-rotation-worker';
 import { startEventLoopLagSampler, stopEventLoopLagSampler } from './workers/event-loop-lag-worker';
 import { startGatewaySpendBackfillWorker, stopGatewaySpendBackfillWorker } from './workers/gateway-spend-backfill-worker';
+import { startResidentialProxyBillingWorker, stopResidentialProxyBillingWorker } from './workers/residential-proxy-billing-worker';
 import { startJobWorker, stopJobWorker } from './workers/job-queue-worker';
 import { startManagedLineupRefresh, stopManagedLineupRefresh } from './workers/managed-lineup-worker';
 import { startNotificationWorker, stopNotificationWorker } from './workers/notification-worker';
@@ -285,6 +286,8 @@ async function startSingletonWorkers() {
   startSessionModelFallbackWorker();
   // Closed pending days of the gateway spend running total, recomputed from the log rows.
   startGatewaySpendBackfillWorker();
+  // Residential proxy charges from Platinum's billing feed, debited once per event.
+  startResidentialProxyBillingWorker();
 }
 // Every stop runs before the first await, then the in-flight ticks drain together. A stop after an
 // await left its worker "started" across that await; a re-acquire then started nothing, and the
@@ -314,6 +317,7 @@ async function stopSingletonWorkers() {
   stopSessionLogPurgeWorker();
   stopSessionModelFallbackWorker();
   stopGatewaySpendBackfillWorker();
+  stopResidentialProxyBillingWorker();
   await Promise.all(drains);
 }
 

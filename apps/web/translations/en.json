@@ -889,6 +889,8 @@
         "entrypoint": "Entrypoint",
         "optional": "optional",
         "entrypointPlaceholder": "Leave blank to use the Kortix default (recommended).",
+        "residentialIp": "Residential IP",
+        "residentialIpHint": "Send this sandbox's web traffic through a residential IP address, billed per GB from your credits. Sessions start only where the deployment offers it.",
         "cancel": "Cancel",
         "save": "Save changes",
         "create": "Create template",

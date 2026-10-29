@@ -29,6 +29,7 @@ import {
   extractSandboxDefault,
   extractSandboxTemplates,
   normalizeUserDockerfileForSnapshot,
+  type SandboxResidentialProxy,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
   SANDBOX_SPEC_LIMITS,
 } from './dockerfile-layer';
@@ -62,6 +63,11 @@ export interface ResolvedTemplate {
   diskGb: number;
   /** kortix.yaml `container_runtime: true` — the sandbox runs Docker. */
   containerRuntime: boolean;
+  /**
+   * kortix.yaml `residential_proxy` (or the template form's "Residential IP"):
+   * null = off. Stored in `metadata.residentialProxy`, outside the image identity.
+   */
+  residentialProxy: SandboxResidentialProxy | null;
   /** Live provider state — refreshed by the caller on demand. */
   providerState: string;
   providerSnapshotName: string | null;
@@ -260,6 +266,7 @@ export interface CreateTemplateInput {
   cpu?: number;
   memoryGb?: number;
   diskGb?: number;
+  residentialProxy?: SandboxResidentialProxy | null;
   source?: 'toml' | 'ui';
 }
 
@@ -282,6 +289,7 @@ export async function createTemplate(input: CreateTemplateInput): Promise<DbSand
       cpu: clamp(input.cpu, SANDBOX_SPEC_LIMITS.cpu),
       memoryGb: clamp(input.memoryGb, SANDBOX_SPEC_LIMITS.memory),
       diskGb: clamp(input.diskGb, SANDBOX_SPEC_LIMITS.disk),
+      metadata: residentialProxyMetadata(input.residentialProxy),
       providerState: 'missing',
     })
     .returning();
@@ -297,6 +305,8 @@ export interface UpdateTemplateInput {
   cpu?: number | null;
   memoryGb?: number | null;
   diskGb?: number | null;
+  /** null turns the residential proxy off. Not part of the image identity. */
+  residentialProxy?: SandboxResidentialProxy | null;
 }
 
 /** Patch a template by id. When `expectProjectId` is given, the row must belong
@@ -322,6 +332,7 @@ export async function updateTemplate(
   if (patch.cpu !== undefined) next.cpu = clamp(patch.cpu ?? undefined, SANDBOX_SPEC_LIMITS.cpu);
   if (patch.memoryGb !== undefined) next.memoryGb = clamp(patch.memoryGb ?? undefined, SANDBOX_SPEC_LIMITS.memory);
   if (patch.diskGb !== undefined) next.diskGb = clamp(patch.diskGb ?? undefined, SANDBOX_SPEC_LIMITS.disk);
+  if (patch.residentialProxy !== undefined) next.metadata = mergeResidentialProxy(patch.residentialProxy);
   // Identity changed → snapshot is stale.
   if (
     patch.image !== undefined ||
@@ -484,7 +495,43 @@ export async function resolveUserDockerfile(
   if (template.image) {
     return { dockerfile: `FROM ${template.image}\n`, commit: null };
   }
-  throw new Error(`Sandbox template "${template.slug}" has neither image nor dockerfilePath`);
+  // Neither: the platform base, built for this template (its own size and settings).
+  return { dockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE, commit: null };
+}
+
+/**
+ * The `residential_proxy` of a project's template, read from its row (the
+ * session create already synced kortix.yaml into it). The platform templates
+ * (`default`, the meta sandbox) never ask for one.
+ */
+export async function templateResidentialProxy(
+  projectId: string,
+  slug: string,
+): Promise<SandboxResidentialProxy | null> {
+  if (!slug || slug === DEFAULT_SANDBOX_SLUG) return null;
+  const [row] = await db
+    .select({ metadata: sandboxTemplates.metadata })
+    .from(sandboxTemplates)
+    .where(and(eq(sandboxTemplates.projectId, projectId), eq(sandboxTemplates.slug, slug)))
+    .limit(1);
+  return storedResidentialProxy(row?.metadata);
+}
+
+/** `metadata.residentialProxy` of a template row; null = off. */
+export function storedResidentialProxy(metadata: unknown): SandboxResidentialProxy | null {
+  const value = (metadata as { residentialProxy?: unknown } | null | undefined)?.residentialProxy;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const country = (value as { country?: unknown }).country;
+  return typeof country === 'string' && country ? { country } : {};
+}
+
+function residentialProxyMetadata(value: SandboxResidentialProxy | null | undefined): Record<string, unknown> {
+  return value ? { residentialProxy: value } : {};
+}
+
+/** Set or clear `metadata.residentialProxy`, keeping every other key (`lastReady`). */
+function mergeResidentialProxy(value: SandboxResidentialProxy | null | undefined) {
+  return sql`(coalesce(${sandboxTemplates.metadata}, '{}'::jsonb) - 'residentialProxy') || ${JSON.stringify(residentialProxyMetadata(value))}::jsonb`;
 }
 
 /**
@@ -636,6 +683,7 @@ function synthesizedDefault(): ResolvedTemplate {
     memoryGb: DEFAULT_MEMORY_GB,
     diskGb: DEFAULT_DISK_GB,
     containerRuntime: false,
+    residentialProxy: null,
     providerState: 'missing',
     providerSnapshotName: null,
     contentHash: null,
@@ -661,6 +709,7 @@ function rowToResolved(row: DbSandboxTemplate): ResolvedTemplate {
     memoryGb: row.memoryGb ?? DEFAULT_MEMORY_GB,
     diskGb: row.diskGb ?? DEFAULT_DISK_GB,
     containerRuntime: row.containerRuntime,
+    residentialProxy: storedResidentialProxy(row.metadata),
     providerState: row.providerState ?? 'missing',
     providerSnapshotName: row.providerSnapshotName,
     contentHash: row.contentHash,
@@ -703,6 +752,7 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
           memoryGb: clamp(tpl.spec.memory, SANDBOX_SPEC_LIMITS.memory),
           diskGb: clamp(tpl.spec.disk, SANDBOX_SPEC_LIMITS.disk),
           containerRuntime: tpl.containerRuntime === true,
+          metadata: residentialProxyMetadata(tpl.residentialProxy),
           providerState: 'missing',
         })
         .onConflictDoUpdate({
@@ -716,6 +766,7 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
             memoryGb: clamp(tpl.spec.memory, SANDBOX_SPEC_LIMITS.memory),
             diskGb: clamp(tpl.spec.disk, SANDBOX_SPEC_LIMITS.disk),
             containerRuntime: tpl.containerRuntime === true,
+            metadata: mergeResidentialProxy(tpl.residentialProxy),
             updatedAt: new Date(),
           },
         });

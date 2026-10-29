@@ -85,6 +85,7 @@ import {
 import { providerAutoStopBackstopMinutes } from './contract';
 import { classifyPtyWebSocketPath } from './pty-ingress';
 import { sandboxOwnershipMarker } from '../sandbox-ownership';
+import { RESIDENTIAL_PROXY_NOT_OFFERED_MESSAGE } from '../services/sandbox-provisioning-error';
 
 const AGENT_PORT = 8000;
 const START_CONFLICT_GRACE_MS = 30_000;
@@ -536,6 +537,10 @@ export class PlatinumProvider implements SandboxProvider {
       // (`api_url`), and every later call by id goes straight to it
       // (shared/platinum.ts).
       ...(opts.location ? { region: opts.location } : {}),
+      // The sandbox template's `residential_proxy` (platform/services/residential-proxy.ts).
+      // Platinum answers 400 residential_proxy_unavailable when it has no
+      // residential provider; the session then does not start.
+      ...(opts.residentialProxy ? { network: { residential_proxy: opts.residentialProxy } } : {}),
       // Database + instance ownership. The versioned marker also excludes
       // these boxes from older clients' environment-wide orphan sweeps.
       metadata: {
@@ -630,6 +635,9 @@ export class PlatinumProvider implements SandboxProvider {
         );
       }
       const refusal = platinumHttp(err);
+      if (refusal.status === 400 && refusal.code === 'residential_proxy_unavailable') {
+        throw new Error(RESIDENTIAL_PROXY_NOT_OFFERED_MESSAGE);
+      }
       if (refusal.status === 503 && refusal.code === 'unavailable' && refusal.body) {
         const body: unknown = JSON.parse(refusal.body);
         if (body && typeof body === 'object' && 'error' in body &&
@@ -833,6 +841,9 @@ export class PlatinumProvider implements SandboxProvider {
         // we asked for — so an operator reading the session row sees the truth.
         ...(sandbox.region ? { platinumRegion: sandbox.region } : {}),
         ...(sandbox.api_url ? { platinumApiUrl: sandbox.api_url } : {}),
+        // Always written, so a rebuilt box never keeps its predecessor's value
+        // (the row's metadata is merged). The warm pool matches on it.
+        residentialProxy: Boolean(opts.residentialProxy),
         // Persisted into session_sandboxes.metadata by the caller
         // (buildSandboxInitSuccessMetadata spreads this in verbatim) so a
         // LATER top-level provisioning call's restorePlatinumCreateAttempt
