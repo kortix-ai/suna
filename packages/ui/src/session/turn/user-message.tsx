@@ -22,6 +22,7 @@ import {
 
 import { useTranslations } from '../../i18n';
 import {
+  channelPromptTail,
   expandPastedContent,
   neutralizePastedTags,
   sanitizePromptUploadFilename,
@@ -185,16 +186,19 @@ export function ChannelOrigin({ info, platform }: { info: ChannelMessageInfo; pl
 
 /**
  * A message that arrived from a chat channel (Slack / Microsoft Teams /
- * Telegram): a source pill — mark, platform, sender — over the same bubble a
- * typed message gets. Every `@name` in the text (`@Kortix`, `@KortixDev`,
- * `@here`) is a `MentionChip`, the chip the composer draws, static because a
- * channel mention opens nothing here. Exported for `channel-message-card.test.tsx`.
+ * Telegram): a source pill — mark, platform, sender — over the files the
+ * sender sent (the strip a composer upload gets) and the same bubble a typed
+ * message gets. Every `@name` in the text (`@Kortix`, `@KortixDev`, `@here`)
+ * is a `MentionChip`, the chip the composer draws, static because a channel
+ * mention opens nothing here. Exported for `channel-message-card.test.tsx`.
  */
 export function ChannelMessage({
   info,
+  attachments = [],
   actions,
 }: {
   info: ChannelMessageInfo;
+  attachments?: NormalizedAttachment[];
   actions?: React.ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -208,6 +212,7 @@ export function ChannelMessage({
         sender={info.userName}
         card={<ChannelOrigin info={info} platform={platform} />}
       />
+      <MessageAttachments attachments={attachments} />
       {info.messageText && (
         <div className={cn(BUBBLE_SURFACE, 'max-w-[80%]')}>
           <div className={BUBBLE_TEXT}>
@@ -1750,6 +1755,17 @@ export function UserMessage({
   // scaffolds these prompts with ids and turn instructions the person never
   // typed, so the card shows only the platform, the sender, and their words.
   const channelMessageInfo = useMemo(() => parseChannelMessage(rawText), [rawText]);
+  // Its files: the `<file>` tags Kortix wrote after the sender's text. A tag the sender typed is text.
+  const channelAttachments = useMemo(
+    () =>
+      channelMessageInfo
+        ? normalizeAttachments(
+            message.blocks,
+            parseFileReferences(channelPromptTail(rawText, channelMessageInfo.platform)).files,
+          )
+        : [],
+    [channelMessageInfo, rawText, message.blocks],
+  );
 
   // Detect trigger_event in user message
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
@@ -1990,7 +2006,7 @@ export function UserMessage({
 
   // Channel messages (Slack / Microsoft Teams / Telegram): a branded card with the sender
   if (channelMessageInfo) {
-    return <ChannelMessage info={channelMessageInfo} actions={actions} />;
+    return <ChannelMessage info={channelMessageInfo} attachments={channelAttachments} actions={actions} />;
   }
 
   if (reminderInfo) {
