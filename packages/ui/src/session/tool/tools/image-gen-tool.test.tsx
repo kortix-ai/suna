@@ -290,6 +290,9 @@ describe('ImageGenTool', () => {
         expect(html).not.toContain('aria-label="Full screen"');
         // The one corner hint shows on hover only.
         expect(html).toMatch(/data-image-gen-expand=""[^>]*class="[^"]*opacity-0[^"]*group-hover:opacity-100/);
+        // The hint is a child of the image's own box, not of the full-width
+        // row: a tall image narrows the box, and the hint stays on its corner.
+        expect(html).toMatch(/<div aria-busy="false" class="[^"]*\bgroup\b[^"]*"[^>]*><button[^>]*><img[^>]*\/?><\/button><span data-image-gen-expand=""/);
       }
     } finally {
       blob = { blobUrl: null, blob: null, isLoading: true, error: null };

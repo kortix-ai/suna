@@ -31,6 +31,7 @@ import {
   type ChannelUser,
 } from '../../../internal/hooks/channels/use-channels-installations';
 import { useTranslations } from '../../../i18n';
+import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { UsersIcon } from '@phosphor-icons/react';
 import { useEffect, useId, useRef, useState } from 'react';
 
@@ -49,13 +50,12 @@ export const CHANNEL_ACCESS: Record<
   }
 > = {
   telegram: {
-    // Digits only.
     parseUserId: (raw) => {
       const id = raw.trim();
-      return /^\d{1,20}$/.test(id) ? id : null;
+      return CHANNELS.telegram.access.userId.test(id) ? id : null;
     },
-    idPlaceholder: '123456789',
-    idInputMode: 'numeric',
+    idPlaceholder: CHANNELS.telegram.access.idPlaceholder,
+    idInputMode: CHANNELS.telegram.access.idInputMode,
     copy: {
       descriptionKey: 'telegramUsersDescription',
       emptyDescription: 'telegramUsersEmptyDescription',

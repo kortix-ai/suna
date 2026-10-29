@@ -187,7 +187,7 @@ export function CaseStudies({
               <ArrowRightIcon aria-hidden />
             </MarketingButton>
             {allLink ? (
-              <MarketingButton variant="secondary" size="md" asChild>
+              <MarketingButton variant="secondary" size="md" className="ml-auto" asChild>
                 <Link href="/case-studies">{tMarketing('text4bba111d6e4f')}</Link>
               </MarketingButton>
             ) : null}

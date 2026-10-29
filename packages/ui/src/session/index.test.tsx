@@ -50,6 +50,15 @@ describe('@kortix/ui/session in a plain host', () => {
     expect(html).toContain('data-slot="session-thread"');
   });
 
+  test('a booting session the host just started shows its first prompt at once, not a blank thread', () => {
+    const session = { projectId: 'p1', sessionId: 's2', runtimeSessionId: null, stage: 'provisioning' };
+    const booting = render(<SessionThread session={session as unknown as UseSessionResult} firstPrompt="Tighten the intro" />);
+    expect(booting).toContain('Tighten the intro');
+    expect(booting).toContain('data-turn-id="optimistic"');
+    const blank = render(<SessionThread session={{ ...session, sessionId: 's3' } as unknown as UseSessionResult} />);
+    expect(blank).not.toContain('data-turn-id="optimistic"');
+  });
+
   test('a host registers its own renderer for a tool name; ToolPartRenderer draws it', () => {
     function LookupRow({ call }: ToolProps) {
       return <BasicTool trigger={`Lookup ${(call.input as { query: string }).query}`} />;

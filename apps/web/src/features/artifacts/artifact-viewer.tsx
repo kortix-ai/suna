@@ -1,21 +1,25 @@
 'use client';
 
-import { createProjectSession, type ArtifactDetail, type ArtifactVersion } from '@kortix/sdk';
+import { type ArtifactVersion } from '@kortix/sdk';
 import { useArtifact, useArtifactMutations, useArtifactVersions } from '@kortix/sdk/react';
+import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbSeparator } from '@kortix/ui/breadcrumb';
 import { Button } from '@kortix/ui/button';
+import { ButtonGroup } from '@kortix/ui/button-group';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@kortix/ui/dropdown-menu';
 import { ErrorState } from '@kortix/ui/error-state';
-import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, ModalTitle } from '@kortix/ui/modal';
+import Loading from '@kortix/ui/loading';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { Textarea } from '@kortix/ui/textarea';
+import { SessionParticipantStack, participantLabel } from '@kortix/ui/session/participants/session-participants';
+import { SplitSheet, SplitSheetMain } from '@kortix/ui/split-sheet';
 import { successToast } from '@kortix/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@kortix/ui/tooltip';
 import { SidebarToggle } from '@kortix/ui/workspace';
@@ -48,12 +52,33 @@ import { drivePathToParam } from '@/features/drives/drive-path-param';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { VISIBILITY_ICON, relativeTime } from './artifact-meta';
+import { AskAgentSheet } from './ask-agent-sheet';
 import { ArtifactFrame, artifactFrameKey, printArtifact } from '@kortix/ui/artifacts';
 import { DocEditor, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
 
 /** Saves closer than this show as one row of the history: an editing burst. */
 const BURST_MS = 5 * 60_000;
+
+type HistoryRow = ArtifactVersion & { saves: number };
+
+/** History rows by calendar day, newest first: "Today", "Yesterday", then the date. */
+function historyDays(rows: HistoryRow[], locale: string): Array<{ day: string; rows: HistoryRow[] }> {
+  const relative = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  const date = new Intl.DateTimeFormat(locale, { dateStyle: 'medium' });
+  const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const today = midnight(new Date());
+  const days: Array<{ day: string; rows: HistoryRow[] }> = [];
+  for (const row of rows) {
+    const at = new Date(row.created_at);
+    const ago = Math.round((today - midnight(at)) / 86_400_000);
+    const label = ago <= 1 ? relative.format(-ago, 'day') : date.format(at);
+    const day = label.charAt(0).toLocaleUpperCase(locale) + label.slice(1);
+    if (days.at(-1)?.day === day) days.at(-1)!.rows.push(row);
+    else days.push({ day, rows: [row] });
+  }
+  return days;
+}
 
 /** The history as people read it: each burst of saves (autosave) is one row, its newest save. */
 function historyRows(versions: ArtifactVersion[]): Array<ArtifactVersion & { saves: number }> {
@@ -65,16 +90,6 @@ function historyRows(versions: ArtifactVersion[]): Array<ArtifactVersion & { sav
     else rows.push({ ...v, saves: 1 });
   });
   return rows;
-}
-
-/** The first prompt of a session that changes an artifact. Agent-facing, so English. */
-function editArtifactPrompt(a: ArtifactDetail, change: string): string {
-  return [
-    `Update the Kortix artifact "${a.title}" (id ${a.artifact_id}). Its files are in Files at ${a.path}.`,
-    `Edit them there (or \`kortix artifacts pull ${a.artifact_id} ./artifact\`, then \`kortix artifacts publish ./artifact --id ${a.artifact_id}\`), and reply with its link.`,
-    '',
-    change.trim(),
-  ].join('\n');
 }
 
 /**
@@ -150,6 +165,7 @@ export function ArtifactViewer({
   const statusText = isDoc && canEdit && docStatus !== 'saved' ? t(`docStatus.${docStatus}`) : null;
   const folder = artifact ? (artifact.path.endsWith(`/${artifact.entry}`) ? artifact.path.slice(0, -artifact.entry.length - 1) : artifact.path) : '';
   const rows = historyRows(versions.data ?? []);
+  const people = artifact?.participants;
 
   return (
     <div className={embedded ? 'flex h-full min-h-0 flex-col overflow-hidden' : 'flex h-svh flex-col overflow-hidden'}>
@@ -164,62 +180,78 @@ export function ArtifactViewer({
         data-sidebar-collapsed={embedded ? undefined : sidebar?.state === 'collapsed' || undefined}
       >
         {embedded ? null : <SidebarToggle />}
-        <div className={`${embedded ? '' : 'kx-titlebar-tabs '}flex h-10 min-w-0 flex-1 items-center gap-1.5 px-3 text-sm`}>
-          {embedded ? null : (
-            <>
-              <Link href={`/projects/${projectId}/artifacts`} className="text-muted-foreground hover:text-foreground shrink-0 transition-colors">
-                {t('title')}
-              </Link>
-              <CaretRightIcon className="text-muted-foreground size-3 shrink-0" aria-hidden />
-            </>
-          )}
-          {artifact ? (
-            renaming ? (
-              <input
-                autoFocus
-                defaultValue={artifact.title}
-                aria-label={t('rename')}
-                className="text-foreground min-w-0 flex-1 bg-transparent font-medium outline-none"
-                onBlur={() => setRenaming(false)}
-                onKeyDown={async (e) => {
-                  if (e.key === 'Escape') setRenaming(false);
-                  if (e.key === 'Enter') {
-                    const title = e.currentTarget.value.trim();
-                    setRenaming(false);
-                    if (title && title !== artifact.title) await mutations.update.mutateAsync({ artifactId: artifact.artifact_id, title });
-                  }
-                }}
-              />
-            ) : (
-              <h1 className="min-w-0 truncate">
-                <button
-                  type="button"
-                  className="text-foreground max-w-full truncate font-medium disabled:cursor-default"
-                  disabled={!artifact.can_manage}
-                  title={artifact.can_manage ? t('rename') : undefined}
-                  onClick={() => setRenaming(true)}
-                >
-                  {artifact.title}
-                </button>
-              </h1>
-            )
-          ) : (
-            <Skeleton className="h-4 w-40" />
-          )}
-          {artifact && VisIcon ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="text-muted-foreground flex shrink-0" aria-label={t(`visibility.${artifact.visibility}`)}>
-                  <VisIcon className="size-3.5" aria-hidden />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>{t(`visibility.${artifact.visibility}`)}</TooltipContent>
-            </Tooltip>
-          ) : null}
-        </div>
+        <Breadcrumb className={`${embedded ? '' : 'kx-titlebar-tabs '}flex h-10 min-w-0 flex-1 items-center px-3`}>
+          <BreadcrumbList className="min-w-0 flex-nowrap gap-1.5 sm:gap-1.5">
+            {embedded ? null : (
+              <>
+                <BreadcrumbItem className="shrink-0">
+                  <BreadcrumbLink asChild>
+                    <Link href={`/projects/${projectId}/artifacts`}>{t('title')}</Link>
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator>
+                  <CaretRightIcon />
+                </BreadcrumbSeparator>
+              </>
+            )}
+            <BreadcrumbItem className="min-w-0 flex-1 gap-2">
+              {artifact ? (
+                renaming ? (
+                  <input
+                    autoFocus
+                    defaultValue={artifact.title}
+                    aria-label={t('rename')}
+                    className="text-foreground min-w-0 flex-1 bg-transparent font-medium outline-none"
+                    onBlur={() => setRenaming(false)}
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Escape') setRenaming(false);
+                      if (e.key === 'Enter') {
+                        const title = e.currentTarget.value.trim();
+                        setRenaming(false);
+                        if (title && title !== artifact.title) await mutations.update.mutateAsync({ artifactId: artifact.artifact_id, title });
+                      }
+                    }}
+                  />
+                ) : (
+                  <h1 className="min-w-0 truncate">
+                    <button
+                      type="button"
+                      className="text-foreground max-w-full truncate font-medium disabled:cursor-default"
+                      disabled={!artifact.can_manage}
+                      title={artifact.can_manage ? t('rename') : undefined}
+                      onClick={() => setRenaming(true)}
+                    >
+                      {artifact.title}
+                    </button>
+                  </h1>
+                )
+              ) : null}
+              {artifact && VisIcon ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-muted-foreground flex shrink-0" aria-label={t(`visibility.${artifact.visibility}`)}>
+                      <VisIcon weight="fill" className="size-3.5" aria-hidden />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{t(`visibility.${artifact.visibility}`)}</TooltipContent>
+                </Tooltip>
+              ) : null}
+              {artifact?.pinned ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-muted-foreground flex shrink-0" aria-label={t('pinned')}>
+                      <PushPinIcon weight="fill" className="size-3.5" aria-hidden />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('pinned')}</TooltipContent>
+                </Tooltip>
+              ) : null}
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
 
         {artifact ? (
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-2">
             {docStatus === 'conflict' && statusText ? (
               <Button size="sm" variant="ghost" className="text-xs" onClick={reloadDoc}>
                 {statusText} · {t('conflictReload')}
@@ -227,102 +259,123 @@ export function ArtifactViewer({
             ) : statusText ? (
               <span className="text-muted-foreground px-2 text-xs">{statusText}</span>
             ) : null}
-            <DropdownMenu open={historyOpen} onOpenChange={setHistoryOpen}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="icon-sm" variant="ghost" aria-label={t('history')}>
-                      <ClockCounterClockwiseIcon className="size-3.5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent>{t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })}</TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent align="end" className="max-h-96 w-72 overflow-y-auto">
-                <DropdownMenuLabel>{t('history')}</DropdownMenuLabel>
-                {versions.isLoading ? (
-                  <div className="flex flex-col gap-2 p-2">
-                    <Skeleton className="h-8 w-full" />
-                    <Skeleton className="h-8 w-full" />
-                  </div>
-                ) : rows.length === 0 ? (
-                  <p className="text-muted-foreground px-2 py-3 text-xs">{t('historyEmpty')}</p>
-                ) : (
-                  rows.map((v, i) => (
-                    <DropdownMenuItem
-                      key={v.id}
-                      onSelect={() => setVersion(i === 0 ? undefined : v.id)}
-                      className="flex items-center justify-between gap-2"
-                    >
-                      <span className="flex min-w-0 flex-col">
-                        <span className="truncate">{new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(v.created_at))}</span>
-                        <span className="text-muted-foreground text-xs">
-                          {relativeTime(v.created_at, locale)}
-                          {v.saves > 1 ? ` · ${t('saves', { count: v.saves })}` : ''}
-                        </span>
-                      </span>
-                      {i === 0 ? <span className="text-muted-foreground text-xs">{t('current')}</span> : null}
-                      {version === v.id ? <span className="text-xs">{t('viewing')}</span> : null}
-                    </DropdownMenuItem>
-                  ))
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {canEdit ? (
-              <Button size="sm" variant="ghost" onClick={() => setAsking(true)} className="hidden gap-1.5 sm:inline-flex">
-                <SparkleIcon className="size-3.5" aria-hidden /> {t('askAgent')}
-              </Button>
+            {/* Who can open it, for every viewer, as the session header shows its people. */}
+            {people ? (
+              <SessionParticipantStack
+                participants={people}
+                label={t('peopleWithAccess', { names: people.participants.map(participantLabel).filter(Boolean).join(', ') })}
+              />
             ) : null}
-            {artifact.can_manage ? (
-              <Button size="sm" variant="secondary" onClick={() => setSharing(true)} className="gap-1.5">
-                <ShareNetworkIcon className="size-3.5" aria-hidden /> {t('share')}
-              </Button>
-            ) : null}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="icon-sm" variant="ghost" aria-label={t('actions')}>
-                  <DotsThreeIcon className="size-4" />
+            {/* Two groups: the artifact's history and Ask AI; then Share and More. */}
+            <ButtonGroup>
+              <DropdownMenu open={historyOpen} onOpenChange={setHistoryOpen}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="icon-sm" variant="secondary" aria-label={t('history')}>
+                        <ClockCounterClockwiseIcon className="size-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })}</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="max-h-96 w-64 overflow-y-auto">
+                  {versions.isLoading ? (
+                    <div className="flex flex-col gap-1 p-1">
+                      <Skeleton className="h-7 w-full" />
+                      <Skeleton className="h-7 w-full" />
+                    </div>
+                  ) : rows.length === 0 ? (
+                    <p className="text-muted-foreground px-2 py-3 text-xs">{t('historyEmpty')}</p>
+                  ) : (
+                    historyDays(rows, locale).map(({ day, rows: dayRows }, d) => (
+                      <DropdownMenuGroup key={day}>
+                        {d > 0 ? <DropdownMenuSeparator /> : null}
+                        <DropdownMenuLabel>{day}</DropdownMenuLabel>
+                        {dayRows.map((v) => {
+                          const current = v.id === rows[0]?.id;
+                          const viewing = current ? !version : version === v.id;
+                          return (
+                            <DropdownMenuItem key={v.id} onSelect={() => setVersion(current ? undefined : v.id)} aria-current={viewing || undefined}>
+                              <span className="tabular-nums">{new Intl.DateTimeFormat(locale, { timeStyle: 'short' }).format(new Date(v.created_at))}</span>
+                              {v.saves > 1 ? <span className="text-muted-foreground text-xs tabular-nums">{t('saves', { count: v.saves })}</span> : null}
+                              {current || viewing ? (
+                                <span className={`ml-auto text-xs ${viewing && !current ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                  {current ? t('current') : t('viewing')}
+                                </span>
+                              ) : null}
+                            </DropdownMenuItem>
+                          );
+                        })}
+                      </DropdownMenuGroup>
+                    ))
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {canEdit ? (
+                <Button
+                size="xs"
+                variant="secondary"
+                onClick={() => setAsking((open) => !open)}
+                aria-expanded={asking}
+                className="hidden aria-expanded:bg-accent sm:inline-flex"
+              >
+                  <SparkleIcon weight="fill" className="size-3.5" aria-hidden /> {t('askAgent')}
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {isDoc ? (
-                  <DropdownMenuItem onSelect={() => setExporting(true)}>
-                    <FilePdfIcon /> {t('exportPdf')}
-                  </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem onSelect={() => frame.current?.requestFullscreen?.()}>
-                    <CornersOutIcon /> {t('fullScreen')}
-                  </DropdownMenuItem>
-                )}
-                {!isDoc && viewUrl && frameKey ? (
-                  <DropdownMenuItem onSelect={() => reloadFrame(frameKey, viewUrl)}>
-                    <ArrowClockwiseIcon /> {t('refresh')}
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuItem onSelect={() => window.open(artifact.version.view_url, '_blank', 'noopener')}>
-                  <ArrowSquareOutIcon /> {t('openNewTab')}
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href={`/projects/${projectId}/drive?path=${encodeURIComponent(drivePathToParam(folder, null))}`}>
-                    <FolderOpenIcon /> {t('openInFiles')}
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => mutations.pin.mutate({ artifactId: artifact.artifact_id, pinned: !artifact.pinned })}>
-                  {artifact.pinned ? <PushPinSlashIcon /> : <PushPinIcon />} {artifact.pinned ? t('unpin') : t('pin')}
-                </DropdownMenuItem>
-                {artifact.can_manage ? (
-                  <>
-                    <DropdownMenuItem onSelect={() => setRenaming(true)}>
-                      <PencilSimpleIcon /> {t('rename')}
+              ) : null}
+            </ButtonGroup>
+            <ButtonGroup>
+              {artifact.can_manage ? (
+                <Button size="xs" variant="secondary" onClick={() => setSharing(true)}>
+                  <ShareNetworkIcon className="size-3.5" aria-hidden /> {t('share')}
+                </Button>
+              ) : null}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="icon-sm" variant="secondary" aria-label={t('actions')}>
+                    <DotsThreeIcon className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {isDoc ? (
+                    <DropdownMenuItem onSelect={() => setExporting(true)}>
+                      <FilePdfIcon /> {t('exportPdf')}
                     </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem variant="destructive" onSelect={() => setRemoving(true)}>
-                      <XCircleIcon /> {t('remove')}
+                  ) : (
+                    <DropdownMenuItem onSelect={() => frame.current?.requestFullscreen?.()}>
+                      <CornersOutIcon /> {t('fullScreen')}
                     </DropdownMenuItem>
-                  </>
-                ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  )}
+                  {!isDoc && viewUrl && frameKey ? (
+                    <DropdownMenuItem onSelect={() => reloadFrame(frameKey, viewUrl)}>
+                      <ArrowClockwiseIcon /> {t('refresh')}
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuItem onSelect={() => window.open(artifact.version.view_url, '_blank', 'noopener')}>
+                    <ArrowSquareOutIcon /> {t('openNewTab')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href={`/projects/${projectId}/drive?path=${encodeURIComponent(drivePathToParam(folder, null))}`}>
+                      <FolderOpenIcon /> {t('openInFiles')}
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => mutations.pin.mutate({ artifactId: artifact.artifact_id, pinned: !artifact.pinned })}>
+                    {artifact.pinned ? <PushPinSlashIcon /> : <PushPinIcon />} {artifact.pinned ? t('unpin') : t('pin')}
+                  </DropdownMenuItem>
+                  {artifact.can_manage ? (
+                    <>
+                      <DropdownMenuItem onSelect={() => setRenaming(true)}>
+                        <PencilSimpleIcon /> {t('rename')}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" onSelect={() => setRemoving(true)}>
+                        <XCircleIcon /> {t('remove')}
+                      </DropdownMenuItem>
+                    </>
+                  ) : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </ButtonGroup>
           </div>
         ) : null}
         {embedded ? (
@@ -374,31 +427,37 @@ export function ArtifactViewer({
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1">
-        {!artifact ? (
-          <Skeleton className="m-4 flex-1 rounded-md" />
-        ) : isDoc ? (
-          <div className="bg-background min-w-0 flex-1 overflow-y-auto">
-            <DocEditor
-              key={`${artifact.artifact_id}:${artifact.version.id ?? 'now'}:${reloads}`}
-              projectId={projectId}
-              artifact={artifact}
-              editable={canEdit}
-              onStatus={setDocStatus}
-              onReload={reloadDoc}
-            />
-          </div>
-        ) : (
-          <div className="bg-muted relative min-w-0 flex-1">
-            {viewUrl ? (
-              <ArtifactFrame ref={frame} frameKey={frameKey!} src={viewUrl} title={artifact.title} className="absolute inset-0 size-full border-0" />
-            ) : null}
-          </div>
-        )}
-      </div>
+      {/* Ask agent: a column beside the artifact with one session's chat (covers it when narrow). */}
+      <SplitSheet open={asking && !!artifact} onOpenChange={setAsking} size="lg" className="h-auto min-h-0 flex-1">
+        <SplitSheetMain className="flex">
+          {!artifact ? (
+            <div className="grid flex-1 place-items-center">
+              <Loading className="size-4" />
+            </div>
+          ) : isDoc ? (
+            <div className="bg-background min-w-0 flex-1 overflow-y-auto">
+              <DocEditor
+                // Read-only: a new file version opens a new editor (an editable one takes it in place).
+              key={`${artifact.artifact_id}:${artifact.version.id ?? 'now'}:${reloads}${canEdit ? '' : `:${artifact.entry_version}`}`}
+                projectId={projectId}
+                artifact={artifact}
+                editable={canEdit}
+                onStatus={setDocStatus}
+                onReload={reloadDoc}
+              />
+            </div>
+          ) : (
+            <div className="bg-muted relative min-w-0 flex-1">
+              {viewUrl ? (
+                <ArtifactFrame ref={frame} frameKey={frameKey!} src={viewUrl} title={artifact.title} className="absolute inset-0 size-full border-0" />
+              ) : null}
+            </div>
+          )}
+        </SplitSheetMain>
+        {artifact ? <AskAgentSheet projectId={projectId} artifact={artifact} onAgentWork={() => void query.refetch()} /> : null}
+      </SplitSheet>
 
       {artifact && sharing ? <ShareArtifactDialog projectId={projectId} artifact={artifact} open onOpenChange={setSharing} /> : null}
-      {artifact ? <AskAgentDialog projectId={projectId} artifact={artifact} open={asking} onOpenChange={setAsking} /> : null}
       <ConfirmDialog
         open={removing}
         onOpenChange={setRemoving}
@@ -415,63 +474,5 @@ export function ArtifactViewer({
         }}
       />
     </div>
-  );
-}
-
-function AskAgentDialog({
-  projectId,
-  artifact,
-  open,
-  onOpenChange,
-}: {
-  projectId: string;
-  artifact: ArtifactDetail;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const t = useTranslations('artifacts');
-  const router = useRouter();
-  const [change, setChange] = useState('');
-  const [starting, setStarting] = useState(false);
-  const start = async () => {
-    if (!change.trim()) return;
-    setStarting(true);
-    try {
-      const session = await createProjectSession(projectId, { initial_prompt: editArtifactPrompt(artifact, change) });
-      // nav-contract: prefetch-only — the session id exists only after the create call returns.
-      router.push(`/projects/${projectId}/sessions/${session.session_id}`);
-    } finally {
-      setStarting(false);
-    }
-  };
-  return (
-    <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="lg:max-w-lg">
-        <ModalHeader>
-          <ModalTitle>{t('askAgentTitle')}</ModalTitle>
-        </ModalHeader>
-        <ModalBody>
-          <Textarea
-            autoFocus
-            value={change}
-            onChange={(e) => setChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void start();
-            }}
-            placeholder={t('askAgentPlaceholder')}
-            aria-label={t('askAgentPlaceholder')}
-            className="min-h-28"
-          />
-        </ModalBody>
-        <ModalFooter>
-          <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
-            {t('cancel')}
-          </Button>
-          <Button size="sm" onClick={start} disabled={!change.trim() || starting}>
-            <SparkleIcon /> {t('askAgentSend')}
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
   );
 }

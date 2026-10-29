@@ -5,6 +5,23 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (no v1 transcript reads, P8.3)
+- No hook and no SDK read sends `GET …/transcript` any more. `useSession`, `useSessionSync`
+  (root, `savedChild`, turn end, older pages), `readSavedSessionCopy` and
+  `loadSessionExportMessages` read only the session log (`GET …/log`). A 404 with
+  `code: 'session_log_missing'` keeps the session on the log with nothing in it. A failed read (a
+  5xx, the network, a 404 without a code, an invalid page) keeps the copy on screen and re-reads
+  the page after 2 s, 10 s and 30 s, or after the API's `Retry-After` (at most 60 s). Without a log
+  in the store, `useSession().hasOlder` / `loadOlder` page the runtime. Before, a 404 without a
+  code or a failed read fell back to the v1 saved copy, and `useSessionSync` re-read the v1 copy
+  3 s after each turn end.
+- `readSavedSessionCopy` returns `envelope: null` always; `SavedSessionCopy.envelope` is
+  deprecated.
+- `loadSessionExportMessages` throws when the log answers no page and the runtime has no
+  messages, instead of reading the v1 copy.
+- The deprecated v1 reads (`getSessionTranscript`, `getSessionTranscriptSync`, `transcript`,
+  `transcriptSync`) stay exported for older code; nothing in the SDK calls them.
+
 ### Added (channel access for any chat platform)
 - `listChannelUsers`, `allowChannelUser`, `removeChannelUser`, `dismissChannelAccessRequest` and
   `getChannelUserPhoto`: the allowed users and access requests of a chat platform's bot, keyed by
@@ -123,9 +140,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the feature-flag catalog. The API sends `experimental.session_log: true` for every project, so
   `useFeatureFlag(id, 'session_log')` reports `true` once the project detail loads, as before.
   `KortixProject.experimental.session_log` is optional in the type.
-- `GET …/sessions/:id/log` answers `503` `{ code: 'session_log_converting' }` with `Retry-After: 60`
-  for an old session whose history is still only in the v1 mirror and over the conversion size cap;
-  retry after the delay.
+- `GET …/sessions/:id/log` no longer answers `503` `{ code: 'session_log_converting' }`: the API
+  stopped converting the v1 mirror on a read (Session Log Plan P8.2, Release B2). A session with no
+  stored log answers `404` `{ code: 'session_log_missing' }`. A client that still retries a `503`
+  after `Retry-After` keeps working.
 
 ### Added (custom LLM providers)
 - `listCustomLlmProviders(projectId)`, `putCustomLlmProvider(projectId, providerId, input)` and

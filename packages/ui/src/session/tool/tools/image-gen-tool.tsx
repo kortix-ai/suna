@@ -193,30 +193,31 @@ function ImageGenFrame({
         }
       : undefined;
   return (
-    <div className={cn('group relative', fill && 'h-full')}>
-      <ImageFrame
-        aspectRatio={image.aspectRatio}
-        fill={fill}
-        maxHeight={fill ? undefined : IMAGE_MAX_HEIGHT}
-        openLabel={image.prompt ? t('openFullScreenPrompt', { prompt: image.prompt }) : t('openFullScreen')}
-        src={src}
-        alt={image.prompt || t('generating')}
-        pending={generating || (!src && !blobError)}
-        label={
-          generating ? (
-            busy
-          ) : blobError ? (
-            <ImageUnavailable onRetry={retry} />
-          ) : !src ? (
-            <BusyLabel seed={seed} label={t('loading')} />
-          ) : null
-        }
-        onOpen={openFullScreen}
-        naturalRatio={naturalRatio}
-        onNaturalSize={onNaturalSize}
-      />
+    <ImageFrame
+      className="group"
+      aspectRatio={image.aspectRatio}
+      fill={fill}
+      maxHeight={fill ? undefined : IMAGE_MAX_HEIGHT}
+      openLabel={image.prompt ? t('openFullScreenPrompt', { prompt: image.prompt }) : t('openFullScreen')}
+      src={src}
+      alt={image.prompt || t('generating')}
+      pending={generating || (!src && !blobError)}
+      label={
+        generating ? (
+          busy
+        ) : blobError ? (
+          <ImageUnavailable onRetry={retry} />
+        ) : !src ? (
+          <BusyLabel seed={seed} label={t('loading')} />
+        ) : null
+      }
+      onOpen={openFullScreen}
+      naturalRatio={naturalRatio}
+      onNaturalSize={onNaturalSize}
+    >
       {src && openFullScreen ? (
         // The one hint that the image opens full screen, on hover only; the whole frame is the button.
+        // A child of the frame: a tall image narrows the frame, and the hint stays on its corner.
         <span
           data-image-gen-expand=""
           aria-hidden="true"
@@ -225,7 +226,7 @@ function ImageGenFrame({
           <ArrowsOutSimpleIcon className="size-3.5" />
         </span>
       ) : null}
-    </div>
+    </ImageFrame>
   );
 }
 

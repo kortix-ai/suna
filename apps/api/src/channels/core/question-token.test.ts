@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { parseQuestionButton, questionButtonData } from './question-token';
 
 // A question button's data is persisted in chats: a message posted before a
@@ -24,6 +25,12 @@ describe('question button data', () => {
       expect(parseQuestionButton(data)).toEqual({ pendingId: ID, question, index: option });
     }
     expect(Buffer.byteLength(questionButtonData(ID, 99, 99))).toBe(45);
+  });
+
+  test("the longest button data fits each platform's cap", () => {
+    const caps = Object.values(CHANNELS).flatMap((d) => ('buttons' in d && 'dataBytes' in d.buttons ? [d.buttons.dataBytes] : []));
+    expect(caps.length).toBeGreaterThan(0);
+    for (const cap of caps) expect(Buffer.byteLength(questionButtonData(ID, 99, 99))).toBeLessThanOrEqual(cap);
   });
 
   test('data Kortix did not post parses as nothing', () => {

@@ -461,6 +461,8 @@ export async function applyPostCreateActions(input: {
           sessionId: input.sessionId,
           text: action.text,
           userId: action.userId ?? undefined,
+          ...(action.parts ? { parts: action.parts } : {}),
+          ...(action.overrides ? { overrides: action.overrides } : {}),
         });
         if (outcome !== 'delivered' && outcome !== 'queued') {
           return { ok: false, error: `initial prompt delivery ${outcome}` };

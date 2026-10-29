@@ -66,6 +66,16 @@ try/catching every call.
 | model catalogs | `GET /v1/projects/:id/llm-catalog` (full runtime), `GET /v1/projects/:id/model-picker` (compact connected UI picker) | ✅ |
 | experimental flags / onboarding | `GET/PUT /v1/projects/:id/{experimental,onboarding}` | ✅ |
 
+### 2b. Artifact comments and activity ✅
+
+`project(id).artifacts.comments.{list,get,create,reply,setStatus,edit,remove}`
+and `.artifacts.activity` wrap the authenticated Artifact comment and activity
+routes. The `get` lookup takes a project-scoped thread id. User and session
+authors have separate identity shapes. `useArtifactComments` owns comment
+writes and refreshes both tabs; `useArtifactActivity` reads cursor pages.
+Both hooks have a mounted 10-second polling fallback. Requires the default-off
+`artifact_comments` project flag and `artifacts`.
+
 ### 3. Project secrets / env  ✅
 `GET/POST/PUT/DELETE /v1/projects/:id/secrets[/:name]` · personal overrides · OAuth credential flow (`/oauth/:provider/{start,poll}`) · git-credential. → SDK `projects-client/secrets.ts`.
 

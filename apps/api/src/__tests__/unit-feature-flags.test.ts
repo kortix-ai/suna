@@ -325,10 +325,10 @@ describe('catalogHidden', () => {
     expect(resolveFeatureFlag({}, 'workspace_volume')).toBe(false);
   });
 
-  test('session_log_restore is a behavioral flag that defaults off', () => {
+  test('session_log_restore is a behavioral flag that defaults on', () => {
     const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'session_log_restore');
     expect(def?.enforcement).toBe('behavioral');
-    expect(resolveFeatureFlag({}, 'session_log_restore')).toBe(false);
+    expect(resolveFeatureFlag({}, 'session_log_restore')).toBe(true);
   });
 
   for (const key of HIDDEN_KEYS) {
@@ -396,5 +396,14 @@ describe('featureDisabledBody', () => {
       expect(body.error).toContain(derived ? 'Turn on Volumes' : HIDDEN_KEYS.includes(key) ? 'Contact Kortix' : 'Settings');
       expect(body.error).not.toContain('organization');
     }
+  });
+});
+
+
+describe('artifact comments require Artifacts', () => {
+  test('defaults off and cannot run when Artifacts is off', () => {
+    expect(resolveFeatureFlag({}, 'artifact_comments')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { artifacts: false, artifact_comments: true } }, 'artifact_comments')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { artifacts: true, artifact_comments: true } }, 'artifact_comments')).toBe(Boolean(config.PLATINUM_API_KEY));
   });
 });

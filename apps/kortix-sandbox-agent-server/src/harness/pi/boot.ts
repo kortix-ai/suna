@@ -49,7 +49,7 @@ import type { PiConfig } from './config'
 import type { PiRuntimeHooks } from './runtime'
 import { createPiHarnessService, type PiHarnessService } from './service'
 import { createPiSessionLogPort } from './session-log'
-import { startSessionLogJournal } from '../shared/session-log-journal'
+import { JOURNAL_MID_TURN_MS, startSessionLogJournal } from '../shared/session-log-journal'
 import { reconcileSessionLog, type SessionLogBoot } from '../shared/session-log-boot'
 import { readPiSnapshot } from './session-log-restore'
 
@@ -260,8 +260,9 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
 
   // ── The session log (P2.5, P6.4) ────────────────────────────────────────
   // Before the first turn, so its turn end flushes it, at the generation and
-  // with the cursors the boot reconcile returned.
-  if (logBoot && startSessionLogJournal(createPiSessionLogPort(() => harness.runtime()?.sessionLogSnapshot() ?? null), logBoot)) {
+  // with the cursors the boot reconcile returned. pi's export is safe mid-turn
+  // (an open reply is `streaming`), so a box that dies mid-turn loses at most 5 s.
+  if (logBoot && startSessionLogJournal(createPiSessionLogPort(() => harness.runtime()?.sessionLogSnapshot() ?? null), { ...logBoot, midTurnMs: JOURNAL_MID_TURN_MS })) {
     logger.info('[session-log] journal started', { harness: 'pi', generation: logBoot.generation, restored: logBoot.cursors.length > 0, dumpDir: process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null })
   }
 

@@ -7,10 +7,11 @@
  * (`connector_calls.result_summary.chat_card`), so the decision path needs no
  * lookup to find it.
  */
-import { connectorCalls, projectSessions } from '@kortix/db';
+import { connectorCalls, connectorHeldCalls, projectSessions } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { approvalPreviewReviewable, isPlainRecord } from '../connectors/args-preview';
 import type { ApprovalDecision, PendingApprovalRow } from '../projects/lib/connector-approval-decision';
+import type { HeldRunCardState } from './core/held-run-card';
 import { db } from '../shared/db';
 import { lookupChatUserForKortixUser } from './core/identity';
 import { loadSlackTokenForProject } from './install-store';
@@ -144,8 +145,33 @@ async function decidedByLabel(userId: string, teamId: string): Promise<string> {
 
 const OUTCOME_LABEL = { approve: 'Approved', deny: 'Denied', expired: 'Expired' } as const;
 
+/**
+ * The run state of an approved held call, for the card: `running` until the
+ * worker settles the row, then its final state. Status only: the card never
+ * shows the run's output. Null for a gate with no held input (the carry-over).
+ */
+async function heldRunCardOf(
+  executionId: string,
+): Promise<{ run: HeldRunCardState; deciderLabel: string | null } | null> {
+  const [held] = await db
+    .select({ state: connectorHeldCalls.state, outcome: connectorHeldCalls.outcome, chatDecider: connectorHeldCalls.chatDecider })
+    .from(connectorHeldCalls)
+    .where(eq(connectorHeldCalls.executionId, executionId))
+    .limit(1);
+  if (!held || held.state === 'held' || held.state === 'cancelled') return null;
+  const run: HeldRunCardState =
+    held.state === 'queued' || held.state === 'dispatched'
+      ? 'running'
+      : held.state === 'refused' && held.outcome?.reason === 'content_changed'
+        ? 'content_changed'
+        : (held.state as HeldRunCardState);
+  const label = held.chatDecider?.label;
+  return { run, deciderLabel: typeof label === 'string' ? label : null };
+}
+
 /** Replace a posted card's buttons with the outcome. No card, no-op.
- *  `expired`: the approval window closed with no decision (the expiry worker). */
+ *  `expired`: the approval window closed with no decision (the expiry worker).
+ *  An approved held call also shows its run: "running…", then how it ended. */
 export async function markApprovalCardDecided(input: {
   projectId: string;
   /** The decided call: its PRE-decision row (the card ref rides on the summary). */
@@ -158,13 +184,20 @@ export async function markApprovalCardDecided(input: {
   const summary = summaryOf(input.row.resultSummary);
   const card = summary ? cardRefOf(summary) : null;
   if (!card) return;
+  const held = input.decision === 'approve' ? await heldRunCardOf(input.row.executionId) : null;
   if (card.platform === 'teams') {
     const ref = await conversationRefForSession(card.session_id);
     if (ref) {
       await updateCard(
         ref,
         card.activity_id,
-        buildTeamsApprovalOutcomeCard({ actionPath, decision: input.decision, note: input.note, decidedBy: 'a teammate in Kortix' }),
+        buildTeamsApprovalOutcomeCard({
+          actionPath,
+          decision: input.decision,
+          note: input.note,
+          decidedBy: held?.deciderLabel ?? 'a teammate in Kortix',
+          run: held?.run,
+        }),
       );
     }
     return;
@@ -177,6 +210,7 @@ export async function markApprovalCardDecided(input: {
     decidedBy: input.decision === 'expired' ? '' : await decidedByLabel(input.actorUserId, card.team_id),
     note: input.note,
     approvalContext: typeof summary?.approval_context === 'string' ? summary.approval_context : null,
+    run: held?.run,
   });
   await updateBlocks(
     token,
@@ -185,4 +219,39 @@ export async function markApprovalCardDecided(input: {
     `${OUTCOME_LABEL[input.decision]}: ${actionPath}`,
     blocks,
   );
+}
+
+/**
+ * After the worker settles an approved held call: show how the run ended on
+ * its chat card. No card, no-op.
+ */
+// ponytail: no ordering fence between the decision's "running…" update and this
+// one; a decision update slower than the whole run (job claim ≤ 2 s + provider
+// call) can land last. Add a per-card version check if that shows up.
+export async function markApprovalCardRan(projectId: string, executionId: string): Promise<void> {
+  const [row] = await db
+    .select({
+      executionId: connectorCalls.executionId,
+      sessionId: connectorCalls.sessionId,
+      actingUserId: connectorCalls.actingUserId,
+      connectorId: connectorCalls.connectorId,
+      actionPath: connectorCalls.actionPath,
+      status: connectorCalls.status,
+      approvedBy: connectorCalls.approvedBy,
+      resolvedAt: connectorCalls.resolvedAt,
+      resultSummary: connectorCalls.resultSummary,
+      expiresAt: connectorCalls.expiresAt,
+    })
+    .from(connectorCalls)
+    .where(eq(connectorCalls.executionId, executionId))
+    .limit(1);
+  if (!row?.approvedBy) return;
+  const note = summaryOf(row.resultSummary)?.decision_note;
+  await markApprovalCardDecided({
+    projectId,
+    row,
+    decision: 'approve',
+    note: typeof note === 'string' ? note : '',
+    actorUserId: row.approvedBy,
+  });
 }

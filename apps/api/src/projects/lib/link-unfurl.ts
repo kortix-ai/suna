@@ -31,8 +31,10 @@ const USER_AGENT = 'KortixLinkPreview/1.0 (+https://kortix.com)';
 const TITLE_MAX = 200;
 const SITE_MAX = 100;
 const URL_MAX = 2048;
+const DESCRIPTION_MAX = 300;
 
-export type LinkMeta = { title: string | null; siteName: string | null; iconUrl: string | null };
+/** `description` and `imageUrl` feed a doc's link card (the link-preview route); a channel link stores the first three. */
+export type LinkMeta = { title: string | null; siteName: string | null; iconUrl: string | null; description: string | null; imageUrl: string | null };
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 
@@ -106,8 +108,10 @@ function absoluteHttpUrl(href: string, base: string): string | null {
 }
 
 /**
- * Read the title, site name and icon from the start of an HTML page. `og:title`
- * wins over `<title>`; `rel="icon"` wins over `apple-touch-icon`. The icon is
+ * Read the title, site name, icon, description and image from the start of an
+ * HTML page. `og:title` wins over `<title>`, `og:description` over
+ * `description`; `rel="icon"` wins over `apple-touch-icon`. The image
+ * (`og:image`) is kept only as an https URL. The icon is
  * resolved against `baseUrl`; a non-http(s) icon is dropped. A tag's
  * attributes are read only up to 1,024 characters and a name only up to 64,
  * so a crafted page costs at most a constant per character.
@@ -121,6 +125,9 @@ export function parseLinkMeta(html: string, baseUrl: string): LinkMeta {
   let siteName: string | null = null;
   let icon: string | null = null;
   let touchIcon: string | null = null;
+  let ogDescription: string | null = null;
+  let description: string | null = null;
+  let image: string | null = null;
   for (const m of head.matchAll(/<(title|meta|link)\b([^<>]{0,1024})>/gi)) {
     const name = m[1]!.toLowerCase();
     if (name === 'title') {
@@ -137,6 +144,12 @@ export function parseLinkMeta(html: string, baseUrl: string): LinkMeta {
       if (content === undefined) continue;
       if (key === 'og:title' && ogTitle === null) ogTitle = cleanText(content, TITLE_MAX);
       else if (key === 'og:site_name' && siteName === null) siteName = cleanText(content, SITE_MAX);
+      else if (key === 'og:description' && ogDescription === null) ogDescription = cleanText(content, DESCRIPTION_MAX);
+      else if (key === 'description' && description === null) description = cleanText(content, DESCRIPTION_MAX);
+      else if (key === 'og:image' && image === null) {
+        const url = absoluteHttpUrl(content, baseUrl);
+        image = url?.startsWith('https:') ? url : null;
+      }
       continue;
     }
     const rel = (attrs.get('rel') ?? '').toLowerCase().split(/\s+/);
@@ -145,7 +158,7 @@ export function parseLinkMeta(html: string, baseUrl: string): LinkMeta {
     if (rel.includes('icon') && icon === null) icon = absoluteHttpUrl(href, baseUrl);
     else if (rel.includes('apple-touch-icon') && touchIcon === null) touchIcon = absoluteHttpUrl(href, baseUrl);
   }
-  return { title: ogTitle || title || null, siteName, iconUrl: icon ?? touchIcon };
+  return { title: ogTitle || title || null, siteName, iconUrl: icon ?? touchIcon, description: ogDescription || description || null, imageUrl: image };
 }
 
 /** At most `max` bytes of the body, then the stream is cancelled. */
@@ -211,7 +224,7 @@ export async function fetchLinkMeta(
       const type = (res.headers.get('content-type') ?? '').toLowerCase();
       if (!type.includes('text/html') && !type.includes('application/xhtml+xml')) {
         await res.body?.cancel().catch(() => {});
-        return { title: null, siteName: null, iconUrl: null };
+        return { title: null, siteName: null, iconUrl: null, description: null, imageUrl: null };
       }
       const html = new TextDecoder().decode(await readCapped(res, UNFURL_MAX_BYTES));
       const meta = parseLinkMeta(html, url);

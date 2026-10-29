@@ -40,6 +40,7 @@ export const DENY_COMMANDS: Record<string, Denial> = {
     use: 'the Capture API with a Kortix API key: GET /v1/accounts/<account_id>/capture/… (timeline, timeline/items, search, frames, media)',
   },
   tools: { reason: "it reads and edits a local kortix.yaml, and this server has no project checkout", use: 'run_command in a session sandbox, where the project lives: `kortix tools ls` there' },
+  chrome: { reason: "it attaches the user's browser to a session sandbox, and this server is not one", use: 'run_command in a session sandbox: `kortix chrome use` there' },
   migrate: { reason: 'it rewrites a local kortix.yaml, and this server has no project checkout', use: 'run_command in a session sandbox, where the project lives: `kortix migrate` there' },
   goals: { reason: 'it reads and writes the goal folders of a session sandbox, and this server has none', use: 'run_command in the session sandbox that coordinates the goal: `kortix goals` there' },
 };

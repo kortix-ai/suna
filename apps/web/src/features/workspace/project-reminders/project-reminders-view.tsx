@@ -77,11 +77,9 @@ function RemindersEmpty() {
   const t = useTranslations('reminders');
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
-      <span className="bg-kortix-purple/15 flex size-10 items-center justify-center rounded-md">
-        <AlarmIcon weight="fill" className="text-kortix-purple size-6" />
-      </span>
       <EmptyState
         size="sm"
+        icon={AlarmIcon}
         title={t('emptyTitle')}
         description={t('emptyDescription')}
         action={
