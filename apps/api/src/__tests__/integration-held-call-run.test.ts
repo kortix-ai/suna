@@ -776,4 +776,46 @@ describe('the approval-expiry tick closes the held-call lifecycle', () => {
     ).toBe(false);
     expect((await gateRow(id)).resultSummary).not.toHaveProperty('consumed_at');
   });
+
+  test('the held-row and job checks correlate to the row itself, not to any row of the inner table', async () => {
+    // A: a held gate approved through the carry-over branch (held row, input wiped).
+    const a = await gate({ amount: 1208 });
+    await db.update(connectorHeldCalls).set({ inputEnc: null }).where(eq(connectorHeldCalls.executionId, a));
+    await decide(a, 'approve');
+    // B: a JWT gate for another digest, approved, no held row.
+    const jwtCaller: ConnectorPrincipal = { ...principal, tokenId: null, sessionId: null };
+    const bArgs = { amount: 1209 };
+    const b = await gate(bArgs, jwtCaller);
+    expect(await held(b)).toBeUndefined();
+    await decide(b, 'approve');
+
+    const before = providerHits;
+    expect((await call(bArgs, jwtCaller)).status).toBe('ok');
+    expect(providerHits).toBe(before + 1);
+    expect((await gateRow(b)).resultSummary).toHaveProperty('consumed_at');
+    const rowA = await gateRow(a);
+    expect(
+      await consumeApprovedExecution({
+        sessionId: rowA.sessionId,
+        actingUserId: rowA.actingUserId!,
+        connectorId: rowA.connectorId!,
+        actionPath: rowA.actionPath,
+        requestDigest: rowA.requestDigest!,
+      }),
+    ).toBe(false);
+
+    // Two queued rows past their deadline: only the one whose own job is dead settles.
+    const dead = await gate({ amount: 1210 });
+    const live = await gate({ amount: 1211 });
+    await decide(dead, 'approve');
+    await decide(live, 'approve');
+    await db
+      .update(connectorHeldCalls)
+      .set({ runDeadline: new Date(Date.now() - 1_000), updatedAt: new Date() })
+      .where(sql`${connectorHeldCalls.executionId} in (${dead}, ${live})`);
+    await killJob(dead);
+    await runApprovalExpiryTick();
+    expect((await held(dead)).state).toBe('refused');
+    expect((await held(live)).state).toBe('queued');
+  });
 });

@@ -27,6 +27,7 @@ import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '.
 import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
 import { registerJobHandler } from '../shared/job-queue';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { buildArgsPreviewDetails } from './args-preview';
 import { approvalRunAuditEvent } from './call-audit';
 import { rebuildHeldCallPrincipal } from './db-deps-principal';
@@ -407,7 +408,7 @@ export async function sweepHeldCalls(): Promise<number> {
   const old = sql`now() - make_interval(days => ${HELD_INPUT_MAX_AGE_DAYS})`;
   const jobGoneOrOld = or(
     sql`NOT EXISTS (SELECT 1 FROM kortix.job_queue j WHERE j.queue = ${HELD_CALL_QUEUE}
-      AND j.job_key = ${connectorHeldCalls.executionId}::text AND j.status = 'queued')`,
+      AND j.job_key = ${qualifiedColumn(connectorHeldCalls.executionId)}::text AND j.status = 'queued')`,
     lt(connectorHeldCalls.createdAt, old),
   );
   const stuck = await db

@@ -37,6 +37,7 @@ import {
   resolveSessionConnectorConnectionOutcome,
 } from '../projects/lib/session-connector-bindings';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { APPROVAL_RERUN_WINDOW_MS, DEFAULT_APPROVAL_TTL_SECONDS, approvalNotExpired } from './approval-expiry';
 import { connectorAttachmentStore } from './attachments';
@@ -117,7 +118,7 @@ export async function consumeApprovedExecution(input: {
         sql`${connectorCalls.resultSummary} ->> 'decision' = 'approve'`,
         sql`${connectorCalls.resultSummary} ->> 'consumed_at' IS NULL`,
         // A gate that held its input runs through the held run, never through a repeat.
-        sql`NOT EXISTS (SELECT 1 FROM kortix.connector_held_calls h WHERE h.execution_id = ${connectorCalls.executionId})`,
+        sql`NOT EXISTS (SELECT 1 FROM kortix.connector_held_calls h WHERE h.execution_id = ${qualifiedColumn(connectorCalls.executionId)})`,
       ),
     )
     .orderBy(desc(connectorCalls.resolvedAt))
