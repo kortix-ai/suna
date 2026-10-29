@@ -1,6 +1,9 @@
 import Link from '@/components/site-link';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { FaqSection } from '@/features/marketing/landing-sections/faq-section';
+
+import { useTranslations } from '@/i18n/use-translations';
+
 import {
   ArrowRightIcon,
   BrainIcon,
@@ -13,7 +16,7 @@ import {
 } from '@phosphor-icons/react/dist/ssr';
 import type { ReactNode } from 'react';
 
-import { faqItems, pillars, trust } from './content';
+import { localizeMarketingContent as localizeContent } from './content';
 import { EnterpriseHero } from './enterprise-hero';
 import { PageColumn, Pillars, TrustBand } from './sections';
 import { EnterpriseTopics } from './topic-panels';
@@ -26,19 +29,27 @@ import { EnterpriseTopics } from './topic-panels';
  * reviews live on /compliance; isolation and secrets on /security.
  */
 export function EnterprisePage(): ReactNode {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { faqItems, pillars, trust } = localizeContent(tMarketing);
+
   return (
     <PageColumn>
       <EnterpriseHero />
       <Pillars
         pillars={pillars}
-        icons={{ platform: SquaresFourIcon, infra: HardDrivesIcon, models: BrainIcon, governed: ShieldCheckIcon }}
+        icons={{
+          platform: SquaresFourIcon,
+          infra: HardDrivesIcon,
+          models: BrainIcon,
+          governed: ShieldCheckIcon,
+        }}
         footer={{
           governed: (
             <Link
               href="/security"
               className="text-foreground hover:text-muted-foreground outline-ring duration-normal inline-flex items-center gap-1.5 self-start rounded-sm text-sm underline-offset-4 transition-colors ease-out hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
             >
-              The security model
+              {tMarketing('text43d612db102b')}
               <ArrowRightIcon className="size-3.5" aria-hidden />
             </Link>
           ),
@@ -51,15 +62,19 @@ export function EnterprisePage(): ReactNode {
         actions={
           <>
             <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>
-              <Link href="/compliance">Compliance</Link>
+              <Link href="/compliance">{tMarketing('text4a109cc49467')}</Link>
             </MarketingButton>
             <MarketingButton size="md" className="hit-area-y-1" asChild>
-              <Link href="/security">Read the security page</Link>
+              <Link href="/security">{tMarketing('text185d1ba951b2')}</Link>
             </MarketingButton>
           </>
         }
       />
-      <FaqSection title="Enterprise, answered." titleMuted="From the code and the docs." items={faqItems} />
+      <FaqSection
+        title={tMarketing('text8484a27f54b0')}
+        titleMuted="From the code and the docs."
+        items={faqItems}
+      />
     </PageColumn>
   );
 }

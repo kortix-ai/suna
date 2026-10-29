@@ -1,3 +1,4 @@
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@kortix/ui';
 import Loading from '@kortix/ui/loading';
 import type { Icon } from '@phosphor-icons/react';
@@ -20,7 +21,7 @@ export function Initials({ label, className }: { label: string; className?: stri
     <span
       aria-hidden
       className={cn(
-        'bg-foreground text-background ring-background flex size-7 shrink-0 tracking-tight items-center justify-center rounded-full text-xs font-medium ring-2',
+        'bg-foreground text-background ring-background flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-medium tracking-tight ring-2',
         className,
       )}
     >
@@ -30,7 +31,15 @@ export function Initials({ label, className }: { label: string; className?: stri
 }
 
 /** A sent message, right-aligned; with an author, their initials and name above it. */
-export function Prompt({ author, children, className }: { author?: string; children: ReactNode; className?: string }) {
+export function Prompt({
+  author,
+  children,
+  className,
+}: {
+  author?: string;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
     <div className={cn('flex flex-col items-end gap-1.5', className)}>
       {author ? (
@@ -109,6 +118,8 @@ export function ApprovalCard({
   by: string;
   className?: string;
 }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   return (
     <div className={cn('bg-popover overflow-hidden rounded-lg border', className)}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-3 py-2">
@@ -117,8 +128,12 @@ export function ApprovalCard({
         ) : (
           <ShieldWarningIcon className="text-kortix-orange size-4 shrink-0" aria-hidden />
         )}
-        <span className="text-foreground text-xs font-medium">{approved ? 'Approved' : 'Approval needed'}</span>
-        <span className="text-muted-foreground text-xs">{approved ? by : 'Gmail rule: Ask'}</span>
+        <span className="text-foreground text-xs font-medium">
+          {approved ? 'Approved' : tMarketing('text9928dd82f38f')}
+        </span>
+        <span className="text-muted-foreground text-xs">
+          {approved ? by : tMarketing('texta31c526d967c')}
+        </span>
       </div>
       <div className="flex flex-wrap items-center gap-3 px-3 py-2.5">
         <span className="flex min-w-0 flex-1 basis-40 flex-col gap-0.5">
@@ -127,8 +142,12 @@ export function ApprovalCard({
         </span>
         {approved ? null : (
           <span className="flex items-center gap-1.5">
-            <span className="text-foreground rounded-md border px-2.5 py-1 text-xs font-medium">Deny</span>
-            <span className="bg-foreground text-background rounded-md px-2.5 py-1 text-xs font-medium">Approve</span>
+            <span className="text-foreground rounded-md border px-2.5 py-1 text-xs font-medium">
+              {tMarketing('text05a2d7332eb9')}
+            </span>
+            <span className="bg-foreground text-background rounded-md px-2.5 py-1 text-xs font-medium">
+              {tMarketing('text6007acbe30b2')}
+            </span>
           </span>
         )}
       </div>

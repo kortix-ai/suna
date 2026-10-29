@@ -1,4 +1,7 @@
 'use client';
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { useTranslations } from '@/i18n/use-translations';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 
 import { MANIFEST } from '@/features/marketing/framework/content';
 import { cn } from '@kortix/ui';
@@ -26,7 +29,7 @@ type Layer = 'session' | 'framework';
 type Step = { label: string; layer: Layer; focus?: FrameworkFocus };
 
 /** Two modes, four steps each, played in one loop of eight. */
-const MODES: { label: string; steps: Step[] }[] = [
+const sourceMODES: { label: string; steps: Step[] }[] = [
   {
     label: 'Workspace',
     steps: [
@@ -52,12 +55,10 @@ const MODES: { label: string; steps: Step[] }[] = [
 ];
 
 const PER_MODE = 4;
-const TOTAL = MODES.length * PER_MODE;
+const TOTAL = sourceMODES.length * PER_MODE;
 const LAYERS: Layer[] = ['session', 'framework'];
 /** How long each step shows, in ms. The longest chat step needs ~6.5 s of it. */
 const STEP_MS = 7500;
-
-const stepAt = (index: number) => MODES[Math.floor(index / PER_MODE)].steps[index % PER_MODE];
 
 /**
  * The hero walkthrough, built as a video player: the mode switch
@@ -75,6 +76,15 @@ const stepAt = (index: number) => MODES[Math.floor(index / PER_MODE)].steps[inde
  * motion: no auto-advance, no timeline, every scene in its final state.
  */
 export function WorkspaceFramework() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { MODES } = localizeUiCatalog(
+    { MODES: sourceMODES },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
+  const stepAt = (index: number) => MODES[Math.floor(index / PER_MODE)].steps[index % PER_MODE];
+
   const [index, setIndex] = useState(0);
   // A layer remounts each time it becomes the shown one, so its scene starts over.
   const [entries, setEntries] = useState<Record<Layer, number>>({ session: 0, framework: 0 });
@@ -133,7 +143,11 @@ export function WorkspaceFramework() {
   return (
     <div className="flex w-full flex-col items-center gap-4">
       {/* The mode switch, centred above the frame: the navbar's site-switcher pattern. */}
-      <div role="group" aria-label="View" className="bg-muted flex items-center rounded-md p-0.5">
+      <div
+        role="group"
+        aria-label={tMarketing('textdcc839a4015c')}
+        className="bg-muted flex items-center rounded-md p-0.5"
+      >
         {MODES.map((m, i) => (
           <button
             key={m.label}
@@ -152,7 +166,10 @@ export function WorkspaceFramework() {
         className="bg-background/20 ring-border w-full rounded-2xl p-1.5 ring-1 sm:p-2"
         role="region"
         aria-roledescription="walkthrough"
-        aria-label={`Kortix ${MODES[mode].label.toLowerCase()}: ${current.label}`}
+        aria-label={tMarketing('text94a8aad616b5', {
+          mode: MODES[mode].label,
+          step: current.label,
+        })}
       >
         <div className="bg-background overflow-hidden rounded-xl border">
           {/* The stage: every layer stays mounted, the shown one fades in. */}
