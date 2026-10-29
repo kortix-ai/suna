@@ -36,11 +36,6 @@
  *   dir, after the write, so a crash mid-write reads as behind at the next boot. A 404 (no
  *   stored log) or 503 (the operator switch is off) claims nothing and restores nothing. Any
  *   other failure is retried: 3 attempts, each a new claim; then the boot fails.
- * - Acknowledged hashes. `session-log-acked.json` (beside this state) holds the native hash of
- *   each message the API acknowledged at a generation (`saveAcked`, written by the journal). A
- *   boot that keeps its store hands the journal the hashes of its own generation (`acked`), so a
- *   restarted daemon sends only what changed. A restore claims a new generation, so the file of
- *   the old one is ignored; the journal seeds the new one with the restored cursors.
  * - Over the cap. A 413 `session_log_too_large` claimed, and carries the part of the log that fits (`kept`).
  *   The box writes the threads as sent and persists every other stored id (`revs`) as unwritten, so later
  *   boots do not read the store as behind. `model_view`: what the model sees; the cut adds no note and no
@@ -97,8 +92,6 @@ export type SessionLogBoot = {
   harness?: HarnessCarry
   /** The journal's seq offsets (a 422 moved a thread above the log: `session-log-journal.ts`); a restore clears them. */
   seq_offsets?: Record<string, number>
-  /** Per message id, the native hash the API acknowledged at this generation (`saveAcked`): a restarted journal sends only what changed. */
-  acked?: Record<string, string>
 }
 
 /** The log's harness history at the restore, and the root seq and time from which this box's harness serves the session. */
@@ -108,7 +101,6 @@ export type HarnessCarry = { history: SessionLog['harness']['history']; from_seq
 type BootState = { version: 1; generation: number; unwritten: string[]; session?: SessionLogSessionPatch; harness?: HarnessCarry; claiming?: true; seq_offsets?: Record<string, number> }
 
 export const sessionLogBootStatePath = () => join(resolveKortixRuntimeStateDirectory(), 'session-log-restore.json')
-const ackedPath = () => join(resolveKortixRuntimeStateDirectory(), 'session-log-acked.json')
 
 function readState(): BootState {
   try {
@@ -120,45 +112,20 @@ function readState(): BootState {
   return { version: 1, generation: 0, unwritten: [] }
 }
 
-function writeJson(path: string, value: unknown): void {
+function writeState(s: BootState): void {
+  const path = sessionLogBootStatePath()
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-  writeFileSync(`${path}.tmp`, JSON.stringify(value), { mode: 0o600 })
+  writeFileSync(`${path}.tmp`, JSON.stringify(s), { mode: 0o600 })
   renameSync(`${path}.tmp`, path)
 }
 
-const writeState = (s: BootState) => writeJson(sessionLogBootStatePath(), s)
-
-/** What a journal at `generation` persisted; nothing for another generation (a restore wrote the store since) or a file that does not parse. */
-function readAcked(generation: number): Record<string, string> | undefined {
-  try {
-    const s = JSON.parse(readFileSync(ackedPath(), 'utf8')) as { generation?: unknown; acked?: unknown }
-    if (s.generation === generation && s.acked && typeof s.acked === 'object') return s.acked as Record<string, string>
-  } catch {
-    // No file (a new box, an older daemon) or a torn one: the journal exports every stored message.
-  }
-  return undefined
-}
-
-/** The journal's acknowledged hashes, beside the generation they belong to (`session-log-journal.ts`). */
-export function saveAcked(generation: number, acked: Record<string, string>): void {
-  try {
-    writeJson(ackedPath(), { generation, acked })
-  } catch (err) {
-    logger.warn('[session-log] could not persist the acknowledged hashes; a restarted daemon sends every message again', { err: String(err) })
-  }
-}
-
-const kept = (s: BootState): SessionLogBoot => {
-  const acked = readAcked(s.generation)
-  return {
-    generation: s.generation,
-    cursors: [],
-    ...(s.session && { session: s.session }),
-    ...(s.harness && { harness: s.harness }),
-    ...(s.seq_offsets && { seq_offsets: s.seq_offsets }),
-    ...(acked && { acked }),
-  }
-}
+const kept = (s: BootState): SessionLogBoot => ({
+  generation: s.generation,
+  cursors: [],
+  ...(s.session && { session: s.session }),
+  ...(s.harness && { harness: s.harness }),
+  ...(s.seq_offsets && { seq_offsets: s.seq_offsets }),
+})
 
 /** The journal keeps its seq offsets beside the generation they belong to. A restore writes a state without them. */
 export function saveSeqOffsets(seq_offsets: Record<string, number>): void {

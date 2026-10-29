@@ -153,9 +153,8 @@ nothing. One failed upload in a pass counts against its sha256 (after 3 it
 keeps `blob:` for the boot); a second stops the pass and counts none, because
 two are an outage. A 404 (an API without the route), a 400 or 413, a body over
 50 MiB and bytes the store lost keep `blob:` for the boot at once. A boot
-without acknowledged hashes (below) re-sends every message, so a session journaled
-before P2.13 gets its objects at its next boot on a new daemon, while its box
-still holds the bytes.
+re-sends every message, so a session journaled before P2.13 gets its objects at
+its next boot on a new daemon, while its box still holds the bytes.
 
 The pi boot starts the journal once the runtime is ready and a session is
 bound, before the first turn, at the generation and with the cursors the boot
@@ -262,7 +261,7 @@ boot restores" below):
 ### When the boot restores (P6.4)
 
 `reconcileSessionLog(port)` (`shared/session-log-boot.ts`) decides, restores, and
-returns what the journal starts with (`{ generation, cursors, session, acked }`). pi
+returns what the journal starts with (`{ generation, cursors, session }`). pi
 runs it beside the workspace checkout (pi's dump needs no `/workspace`) and
 awaits it before `lifecycle.start()`; the runtime adopts the root the dump names
 at start, so a service built before the restore runs under the log's root.
@@ -751,26 +750,12 @@ it off for the boot and stop the drain at once. No refused batch is dropped:
 apps/api logs one WARN `[session-log] journal rejected` (status, code, project
 and session id) for each 400, 403, 409, 413 and 422, because this log stays in
 the box. A 200 that does not acknowledge a batch is retried 3 times, then its
-pairs are dropped: the native store still holds them, and the next boot sends
-them at its first flush (a turn end or the daemon stop). A second
+pairs are dropped: the native store still holds them. The next boot sends every
+stored message again at its first flush (a turn end or the daemon stop; a
+journal that restored nothing has no cursors), so a message an older kortixd
+dropped on a 422 reaches the log at the first turn end after the box's next
+boot on this kortixd (verified on dev 2026-10-23). A second
 `startSessionLogJournal` stops the first journal.
-
-**Acknowledged hashes (restart).** After each 200 the journal writes the cursor
-hash the API acknowledged for each message, with the generation, to
-`$KORTIX_RUNTIME_STATE_DIR/session-log-acked.json`. A boot that keeps its store
-(`kept` in `session-log-boot.ts`) hands the journal the hashes of its own
-generation, and the first collection skips every message whose hash is
-unchanged: a daemon that restarts on the same store (a release, a crash, an
-agent swap) sends only what changed since the last acknowledged batch, plus the
-threads and the session patch. A dropped, refused or unacknowledged message is
-not in the file and goes again. A restore claims a new generation, so the old
-file is ignored; the journal seeds the new one with the restored cursors. No
-file (a new box, a kortixd from before 2026-10-29) or a torn one sends every
-stored message, as before: a message an older kortixd dropped on a 422 reaches
-the log at the first turn end after the box's next boot on this kortixd
-(verified on dev 2026-10-23), and apps/api skips each unchanged one with one
-SELECT per batch (`storedUnchanged` in `session-log-ingest.ts`). The file never
-makes a tombstone: a lost store keeps the 422 path.
 
 ## Health and capabilities (E19, E1)
 

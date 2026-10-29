@@ -71,11 +71,12 @@
  *   journal write also takes every other live capture row out of context (`in_context:
  *   false`, column and record): it stays visible, and the model view is the native
  *   store's. Capture rows are never deleted.
- * - Re-puts. A put whose content hash equals the stored row's (a daemon without its acknowledged
- *   hashes re-sends every message) is acknowledged and changes nothing, unless the row is a
- *   tombstone, a capture row, or of another generation. One SELECT per batch finds them
- *   (`storedUnchanged`): they cost no INSERT, no row version and no row lock (one INSERT per put
- *   made a full re-send as slow as the first write).
+ * - Re-puts. Every daemon restart (each release) re-sends the whole native store by design: that
+ *   is how converter fixes and failed attachment uploads reach the log. A put whose content hash
+ *   equals the stored row's is acknowledged and changes nothing, unless the row is a tombstone, a
+ *   capture row, or of another generation. One SELECT per batch finds them (`storedUnchanged`):
+ *   they cost no INSERT, no row version and no row lock, and a turn already durable is not
+ *   updated again (one statement per put made a full re-send as slow as the first write).
  */
 import { createHash } from 'node:crypto';
 import {
@@ -496,9 +497,10 @@ async function markDurableTurns(tx: Tx, sessionId: string, puts: readonly Sessio
   if (turnMessageIds.length === 0) return;
   await tx
     .update(sessionTurns)
-    // The first acknowledgement: a daemon that restarts re-sends every message, and a replay is not new durability.
-    .set({ logDurableAt: sql`coalesce(${sessionTurns.logDurableAt}, now())` })
-    .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, turnMessageIds)));
+    // The first acknowledgement only: a daemon that restarts re-sends every message, and a replay is not new
+    // durability. A durable turn is not touched (no new row version, no lock).
+    .set({ logDurableAt: sql`now()` })
+    .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, turnMessageIds), isNull(sessionTurns.logDurableAt)));
 }
 
 /** The boot-reconcile manifest, or null when the session is not this project's. */

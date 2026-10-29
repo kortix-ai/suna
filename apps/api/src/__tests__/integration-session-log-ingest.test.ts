@@ -131,10 +131,13 @@ describe('journal', () => {
     expect(await durable()).toEqual(firstDurable!);
   });
 
-  test('a restarted daemon re-sends every message with new revs: an unchanged one gets no row version and no row lock, a changed one is written', async () => {
+  test('a restarted daemon re-sends every message with new revs: an unchanged one gets no row version and no row lock, a changed one is written, a durable turn is left alone', async () => {
     const send = (rev: number, puts: Array<ReturnType<typeof message>>) =>
       journal(batch({ puts: puts.map((m, i) => ({ rev: rev + i, message: m })), threads: [thread('main')] }), tokens[RESTART]!, RESTART);
     const history = Array.from({ length: 20 }, (_, i) => message(`msg_r${i}`, i, { blocks: [{ type: 'text', id: `blk_r${i}`, text: `turn ${i}` }] }));
+    // msg_r1 answers the turn of msg_r0: its first acknowledgement marks the turn durable.
+    history[1] = message('msg_r1', 1, { role: 'assistant', reply_to: 'msg_r0', finish: 'stop', completed_at: T, blocks: [{ type: 'text', id: 'blk_r1', text: 'turn 1' }] });
+    await db.insert(sessionTurns).values({ turnToken: `turn-${RESTART}`, sessionId: RESTART, sandboxId: RESTART, projectId: PROJECT, accountId: ACCOUNT, messageId: 'msg_r0', state: 'active' });
     expect((await send(REV, history)).status).toBe(200);
     // xmin: the row version; xmax: the last transaction that locked or replaced it (0: none since the insert).
     const versions = async () =>
@@ -143,8 +146,14 @@ describe('journal', () => {
           sql`SELECT message_id, xmin::text, xmax::text, rev::text FROM kortix.session_log_messages WHERE session_id = ${RESTART}`,
         )).map((r) => [r.message_id, r]),
       );
+    const turn = async () =>
+      (await db.execute<{ xmin: string; xmax: string; durable: string | null }>(
+        sql`SELECT xmin::text, xmax::text, log_durable_at::text AS durable FROM kortix.session_turns WHERE session_id = ${RESTART}`,
+      ))[0]!;
     const before = await versions();
     expect([...before.values()].every((r) => r.xmax === '0')).toBe(true);
+    const durable = await turn();
+    expect(durable.durable).not.toBeNull();
 
     const edited = message('msg_r19', 19, { blocks: [{ type: 'text', id: 'blk_r19', text: 'turn 19, edited' }] });
     const res = await send(REV + 1_000, [...history.slice(0, 19), edited]);
@@ -157,6 +166,8 @@ describe('journal', () => {
     expect(after.get('msg_r19')!.rev).toBe(String(REV + 1_000 + 19));
     expect((await db.select({ record: sessionLogMessages.record }).from(sessionLogMessages)
       .where(and(eq(sessionLogMessages.sessionId, RESTART), eq(sessionLogMessages.messageId, 'msg_r19'))))[0]!.record).toEqual(edited);
+    // The re-sent reply finds its turn durable already: no new row version, no lock.
+    expect(await turn()).toEqual(durable);
   });
 
   test('a lone UTF-16 surrogate is stored as U+FFFD, never a 500 (KRTX-211 poison batch)', async () => {
@@ -394,7 +405,7 @@ describe('journal', () => {
     }), tokens[OTHER]!, OTHER);
     expect(res.status).toBe(200);
     const rows = await db.select({ token: sessionTurns.turnToken, at: sessionTurns.logDurableAt }).from(sessionTurns).where(eq(sessionTurns.accountId, ACCOUNT));
-    const durable = Object.fromEntries(rows.filter((r) => r.token !== `turn-${SESSION}`).map((r) => [r.token.replace(/-[0-9a-f-]{36}$/, ''), r.at !== null]));
+    const durable = Object.fromEntries(rows.filter((r) => r.token !== `turn-${SESSION}` && r.token !== `turn-${RESTART}`).map((r) => [r.token.replace(/-[0-9a-f-]{36}$/, ''), r.at !== null]));
     expect(durable).toEqual({
       pi_prompt: false, pi_summarize: true, pi_later: false, other_session: false, oc_summarize: true, oc_idless: false,
       r_refused: false, r_prompt: false, x_summarize: true, x_delivery: false, z_later: false,

@@ -45,19 +45,9 @@
  *   A 200 that does not acknowledge a batch is retried 3 times, then its pairs
  *   are dropped (an API bug). A dropped message stays in the native store, and
  *   the first flush after the next boot (a turn end or the daemon stop) sends it
- *   again (below). That also recovers what an older daemon dropped on a 422.
- *
- * Restart (acknowledged hashes). After each 200 the journal writes, per message id, the
- * cursor hash the API acknowledged to `session-log-acked.json` beside the boot state, with
- * its generation (`saveAcked`; a restore seeds it with the cursors it wrote). A daemon that
- * restarts on the same store at the same generation gets them (`options.acked`), and its
- * first collection skips a message whose hash equals its acknowledged one: a release or a
- * crash sends only what changed since the last acknowledged batch. A message not in the file
- * (dropped, refused, collected but not acknowledged, re-sequenced, tombstoned since) goes
- * again. No file, a file of another generation (a restore since) or one that does not parse
- * (a new box, an older daemon) exports every stored message, and the API keeps an unchanged
- * one as it is. The file never makes a tombstone: an id it holds that the store lacks is
- * forgotten after the first collection, so a lost store keeps the 422 path above.
+ *   again: a journal that restored nothing starts with no cursors, so its first
+ *   collection exports every stored message (the API keeps an unchanged one as
+ *   it is). That also recovers what an older daemon dropped on a 422.
  *
  * Live stream (P4.3): each collection publishes what it put in the dirty set
  * on `sessionLogEventBus()`, the bus of `/kortix/runtime/events?schema=v2`
@@ -154,7 +144,7 @@ import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix
 import type { ExportedMessage, SessionLogChanges, SessionLogPort } from '../contract/session-log'
 import { mapLimit } from '@/lib/map-limit'
 import { computeRetryDelay, MAX_RETRY_MS_DEFAULT } from './audit-relay'
-import { carryHarness, saveAcked, saveSeqOffsets, type HarnessCarry } from './session-log-boot'
+import { carryHarness, saveSeqOffsets, type HarnessCarry } from './session-log-boot'
 
 export const JOURNAL_MAX_BATCH_BYTES = 1024 * 1024
 /** The floor a 413 halves the batch limit to. */
@@ -203,8 +193,6 @@ export interface SessionLogJournalOptions {
   harness?: HarnessCarry
   /** Per thread, what this box adds to a native seq (a 422 re-sequenced it, see the header). */
   seq_offsets?: Record<string, number>
-  /** Per message id, the hash an earlier boot on this store saw acknowledged at this generation (see the header). */
-  acked?: Record<string, string>
   /**
    * Collect and send at most this long after a turn's message frame (see the header). Off when
    * absent: an adapter whose export closes open calls (OpenCode's `fromV1` at rest) must not run mid-turn.
@@ -217,8 +205,8 @@ export interface SessionLogJournalOptions {
   maxRetryMs?: number
 }
 
-/** A pending revision: a whole message and its cursor hash, or a tombstone when `message` is absent. */
-type Entry = { id: string; rev: number; message?: SessionLogMessage; hash?: string }
+/** A pending revision: a whole message, or a tombstone when `message` is absent. */
+type Entry = { id: string; rev: number; message?: SessionLogMessage }
 type Batch = { entries: Entry[]; threads: SessionLogThreadUpsert[]; session: SessionLogSessionPatch | null; body: Uint8Array<ArrayBuffer> }
 /** A post's outcome: settled, back off, or pack the dirty set again at once (a 400, 413 or 422 changed it). */
 type Sent = 'settled' | 'retry' | 'repack'
@@ -256,10 +244,6 @@ export class SessionLogJournal {
   /** The live turn's messages by id, in the order the v1 bus first named them. */
   private readonly live = new Map<string, LiveRow>()
   private readonly seqOffsets: Map<string, number>
-  /** Per message id, the cursor hash the API acknowledged at this generation; persisted after each 200 (`saveAcked`). */
-  private readonly acked = new Map<string, string>()
-  /** `options.acked` until the first collection, which skips a message it holds unchanged. */
-  private readonly restarted: Map<string, string>
   private maxBatch: number
   /** The mid-turn collection a message frame scheduled, at most one. */
   private tick: ReturnType<typeof setTimeout> | null = null
@@ -290,12 +274,7 @@ export class SessionLogJournal {
     private readonly port: SessionLogPort,
     private readonly options: SessionLogJournalOptions,
   ) {
-    for (const cursor of options.cursors ?? []) {
-      this.cursors.set(cursor.thread_id, structuredClone(cursor))
-      // A restore wrote these messages from the log: the API holds them.
-      for (const [id, hash] of Object.entries(cursor.native_hashes)) this.acked.set(id, hash)
-    }
-    this.restarted = new Map(Object.entries(options.acked ?? {}))
+    for (const cursor of options.cursors ?? []) this.cursors.set(cursor.thread_id, structuredClone(cursor))
     this.seqOffsets = new Map(Object.entries(options.seq_offsets ?? {}))
     this.maxBatch = options.maxBatchBytes ?? JOURNAL_MAX_BATCH_BYTES
   }
@@ -437,8 +416,7 @@ export class SessionLogJournal {
 
   private async collectOnce(): Promise<void> {
     const changes = await this.port.changes([...this.cursors.values()])
-    const hashOf = (m: SessionLogMessage) => this.cursors.get(m.thread_id)?.native_hashes[m.message_id] ?? this.restarted.get(m.message_id)
-    await this.storeBlobs(changes.messages.filter(({ message: m, native_hash }) => hashOf(m) !== native_hash).map((m) => m.message))
+    await this.storeBlobs(changes.messages.filter(({ message: m, native_hash }) => this.cursors.get(m.thread_id)?.native_hashes[m.message_id] !== native_hash).map((m) => m.message))
     const messages: SessionLogMessageEvent[] = []
     const threads: SessionLogThreadUpsert[] = []
     for (const { message, native_hash } of changes.messages) {
@@ -448,28 +426,19 @@ export class SessionLogJournal {
       // A streaming record (pi: a reply whose calls run) goes to the API only, marked `~` (see the header).
       const streaming = message.status === 'streaming' ? '~' : ''
       if (cursor.native_hashes[id] === streaming + native_hash) continue
-      // An earlier boot on this store saw it acknowledged, unchanged: this boot's cursor takes it (see the header).
-      if (cursor.native_hashes[id] === undefined && this.restarted.get(id) === streaming + native_hash) {
-        this.acked.set(id, (cursor.native_hashes[id] = streaming + native_hash))
-        cursor.last_seq = Math.max(cursor.last_seq, message.seq)
-        continue
-      }
       // An attachment not stored yet: no hash makes the next collection export the message again.
       cursor.native_hashes[id] = streaming + (this.withStoredRefs(message) ? native_hash : '')
       cursor.last_seq = Math.max(cursor.last_seq, message.seq)
       this.tombstoned.delete(id)
-      const entry = { id, rev: nextRev(), message: this.shifted(message), hash: cursor.native_hashes[id] }
+      const entry = { id, rev: nextRev(), message: this.shifted(message) }
       this.dirty.set(id, entry)
       if (streaming) continue
       this.live.delete(id)
       messages.push({ rev: entry.rev, message: entry.message })
     }
-    // The first collection saw the whole store: what it did not find is not this store's.
-    this.restarted.clear()
     for (const id of changes.tombstones) {
       if (this.tombstoned.has(id)) continue
       this.tombstoned.add(id)
-      this.acked.delete(id)
       for (const cursor of this.cursors.values()) delete cursor.native_hashes[id]
       const entry = { id, rev: nextRev() }
       this.dirty.set(id, entry)
@@ -696,15 +665,7 @@ export class SessionLogJournal {
     const text = await response.text().catch(() => '')
     if (response.ok) {
       const acked = SessionLogJournalResponseSchema.safeParse(parseJson(text)).data?.acked ?? []
-      for (const { message_id, rev } of acked) {
-        const e = this.dirty.get(message_id)
-        if (e?.rev !== rev) continue
-        this.dirty.delete(message_id)
-        if (e.hash !== undefined) this.acked.set(message_id, e.hash)
-        else this.acked.delete(message_id)
-      }
-      // ponytail: the whole map per acknowledged POST (~100 B per message); append to a log if one reaches MBs.
-      saveAcked(this.options.generation, Object.fromEntries(this.acked))
+      for (const { message_id, rev } of acked) if (this.dirty.get(message_id)?.rev === rev) this.dirty.delete(message_id)
       const unacked = batch.entries.filter((e) => this.dirty.get(e.id) === e)
       if (unacked.length === 0) {
         this.settle(batch)
@@ -755,7 +716,6 @@ export class SessionLogJournal {
     saveSeqOffsets(Object.fromEntries(this.seqOffsets))
     logger.warn('[session-log] journal seq conflict; the thread now numbers above the log', { thread_id: thread, message_id: conflict.message_id, seq: conflict.seq, seq_max: conflict.seq_max, offset })
     // Every message of the thread goes again at its new seq, also one the API took at its old seq.
-    for (const id of Object.keys(this.cursors.get(thread)?.native_hashes ?? {})) this.acked.delete(id)
     this.cursors.delete(thread)
     for (const [id, e] of this.dirty) if (e.message?.thread_id === thread) this.dirty.delete(id)
     await this.collect()
