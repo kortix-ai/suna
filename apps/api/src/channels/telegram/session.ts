@@ -5,8 +5,9 @@
  *
  *   unknown sender  → a pairing reply naming their user id, no session (fail closed);
  *                     in a private chat, also an access request an admin can allow
- *   `/start`        → a welcome reply
- *   `/new`          → forget the chat's session; the next message starts a new one
+ *   a command       → `/help` (`/start`), `/status`, `/new`, `/stop`, `/model`, `/agent`,
+ *                     also as `/<verb>@<this bot>` and as a caption, run in the core
+ *                     (core/commands.ts) and answered in the chat; a caption's file is not read
  *   anything else   → the core: a follow-up into the chat's session, or a new
  *                     project-visible session bound to the chat; the message's own
  *                     file (photo, document, audio, voice, video) goes with it
@@ -27,7 +28,9 @@ import { config } from '../../config';
 import { db } from '../../shared/db';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { gateSender, refusedPressText } from '../core/channel-access';
-import { type ChannelNotice, type ChannelPort, type ChannelTarget, forgetChatThread, routeChannelMessage } from '../core/conversation';
+import { parseChannelCommand } from '../core/command-list';
+import { type CommandReply, runChannelCommand } from '../core/commands';
+import { type ChannelNotice, type ChannelPort, type ChannelTarget, routeChannelMessage } from '../core/conversation';
 import { chatSessionStart, chatTurnModel } from '../core/model-choice';
 import { connectorReply } from '../core/prompt';
 import {
@@ -54,7 +57,7 @@ interface TelegramFileRef { file_id: string; file_size?: number; file_name?: str
 export interface TelegramMessage {
   message_id: number;
   date?: number;
-  chat: { id: number; type: string; title?: string };
+  chat: { id: number; type: string; title?: string; username?: string; first_name?: string };
   from?: { id?: number; username?: string; first_name?: string; last_name?: string; is_bot?: boolean };
   text?: string;
   caption?: string;
@@ -308,8 +311,8 @@ const RUN_ERROR_ADVICE: Partial<Record<string, string>> = {
   'Usage limit reached': 'Wait, then send your message again. A project admin can also pick another model in Kortix.',
   'Response too long': 'Ask the agent to continue, or narrow the request.',
   'Conversation too long': 'Send /new to start a new conversation.',
-  'Agent unavailable': 'A project admin can fix the agent in Kortix. Then send /new and your message again.',
-  'Model unavailable': 'A project admin can pick another model in Kortix. Then send /new and your message again.',
+  'Agent unavailable': 'Send /agent to pick another agent, then /new and your message again. A project admin can also fix the agent in Kortix.',
+  'Model unavailable': 'Send /model to pick another model, then send your message again.',
   'ChatGPT login needs reconnection': 'Whoever connected the ChatGPT account must reconnect it in Kortix. Then send your message again.',
   'Provider rejected the request': 'A workspace admin can check the model provider settings in Kortix. Then send your message again.',
   'Provider unavailable': 'Send your message again to retry.',
@@ -432,19 +435,25 @@ export async function handleTelegramEvent(
     return;
   }
   const createClaim = `telegram:threadcreate:${event.projectId}:${install.botId}:${target.threadId}`;
-  const startingOver = /^\/new(@\w+)?\b/.test(text);
-  if (!/^\/start(@\w+)?\b/.test(text)) {
-    await clearQuestionButtons(telegramQuestions, target, startingOver ? 'new_conversation' : 'answered_in_chat');
-  }
-  if (/^\/start(@\w+)?\b/.test(text)) {
-    await reply('Connected to Kortix. Send a message to start working with the agent. /new starts a new conversation.');
+  const file = telegramFileOf(message);
+  const command = parseChannelCommand(text, install.username);
+  if (command) {
+    await runChannelCommand(
+      {
+        target,
+        project,
+        settings: telegramSettings(target),
+        label: { name: telegramChatName(message.chat), type: message.chat.type },
+        createClaim,
+        questions: telegramQuestions,
+        ...(file ? { droppedFile: file.kind } : {}),
+      },
+      command,
+      (body) => reply(clip(telegramCommandText(body), CHANNELS.telegram.messageChars)),
+    );
     return;
   }
-  if (startingOver) {
-    await forgetChatThread(target, createClaim);
-    await reply('Started a new conversation. Your next message goes to a new session.');
-    return;
-  }
+  await clearQuestionButtons(telegramQuestions, target, 'answered_in_chat');
 
   await telegramCall(token, 'sendChatAction', {
     chat_id: message.chat.id,
@@ -452,7 +461,6 @@ export async function handleTelegramEvent(
     ...(message.is_topic_message ? { message_thread_id: message.message_thread_id } : {}),
   }).catch(() => undefined);
 
-  const file = telegramFileOf(message);
   await routeChannelMessage(
     telegramPort,
     {
@@ -575,6 +583,37 @@ async function telegramThreadOfSession(sessionId: string, botId: string, chatId:
     )
     .limit(1);
   return row?.threadId ?? null;
+}
+
+/** A command's reply as chat text (core/commands.ts `CommandReply`): plain, with the link and the note last. */
+export function telegramCommandText(reply: CommandReply): string {
+  const lines: string[] = [];
+  switch (reply.kind) {
+    case 'notice':
+      lines.push(reply.text);
+      break;
+    case 'panel':
+      lines.push(reply.title, ...reply.rows.map((r) => `${r.label}: ${r.value}`));
+      break;
+    case 'choices':
+      lines.push(
+        reply.title,
+        ...reply.options.map((o) => `- ${o.value}${o.label ? ` — ${o.label}` : ''}${o.current ? ' (current)' : ''}`),
+        ...(reply.more ? [`…and ${reply.more} more.`] : []),
+        reply.usage,
+      );
+      break;
+    case 'help':
+      lines.push(reply.intro, ...reply.commands.map((c) => `${c.usage} — ${c.description}`), reply.footer);
+      break;
+  }
+  if ('url' in reply && reply.url) lines.push(reply.url);
+  return reply.note ? `${lines.join('\n')}\n\n${reply.note}` : lines.join('\n');
+}
+
+/** What the Kortix Channels page calls a chat: its title, else the @username or the first name of a private chat. */
+function telegramChatName(chat: TelegramMessage['chat']): string | null {
+  return chat.title || (chat.username ? `@${chat.username}` : chat.first_name) || null;
 }
 
 /**

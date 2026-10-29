@@ -1,0 +1,294 @@
+/**
+ * The chat commands (command-list.ts), written once for every platform.
+ *
+ *   help    → the commands and the project
+ *   status  → the chat's project, agent, model and session, and how the session is doing
+ *   stop    → abort the session's running turn, only when this chat (or no known source) prompted it
+ *   new     → stop that turn, take the question buttons off, forget the chat's session
+ *   model   → the models the whole project shares, or the chat's choice of one
+ *   agent   → the agents no grant restricts, or the chat's choice of one
+ *
+ * The adapter parses the command, runs its sender gate, and renders the reply:
+ * the core checks no person. A choice is stored per chat (`ctx.settings`); a
+ * follow-up carries the model through the port's `turnModel` (conversation.ts).
+ */
+import { config } from '../../config';
+import { logger } from '../../lib/logger';
+import { labelForModelRef } from '../../llm-gateway/models/picker';
+import { toWireModel } from '../../llm-gateway/resolution/effective';
+import { abortRuntimeTurn, readRunningTurn, turnPromptSource } from '../../projects/surface';
+import { agentGrantEnvFor, applyChannelSessionKeys, checkChannelModel, listChannelModels } from '../model-access';
+import { chatAgents } from '../scoped-agents';
+import { CHANNEL_COMMANDS, type ChannelCommandName, type ParsedCommand } from './command-list';
+import { type ChannelTarget, forgetChatThread } from './conversation';
+import { describeSession, projectWebUrl, sessionWebUrl } from './display';
+import { chatSelection, sharedChatScope, statusModel } from './model-choice';
+import { type QuestionPort, clearQuestionButtons } from './questions';
+import { type SettingsChannel, ensureChatBinding, setChannelAgent, setChannelModel } from './settings';
+import { type ChatThreadSession, findChatThreadSession, threadCreateHeld } from './threads';
+
+/** Semantic, never markup: each platform renders it. `note` comes last. */
+export type CommandReply = (
+  | { kind: 'notice'; text: string; url?: string }
+  | { kind: 'panel'; title: string; rows: ReadonlyArray<{ label: string; value: string }>; url?: string }
+  | { kind: 'choices'; title: string; options: ReadonlyArray<{ value: string; label: string; current: boolean }>; more: number; usage: string }
+  | { kind: 'help'; intro: string; commands: ReadonlyArray<{ usage: string; description: string }>; footer: string }
+) & { note?: string };
+
+/** A Discord string select holds 25 options (from memory, unverified); every platform lists at most this many. */
+export const CHOICES_MAX = 25;
+
+/** The platform's renderer for one inbound event: renders and sends one reply. Logs send errors; never throws. */
+export type CommandRender = (reply: CommandReply) => Promise<void>;
+
+/** One admitted command. The adapter already ran its sender gate: the core checks no person. */
+export interface CommandContext {
+  /** The conversation; `messageId` is the command's own message. */
+  target: ChannelTarget;
+  /** The project row the adapter loaded. */
+  project: { projectId: string; accountId: string; name: string; metadata: unknown };
+  /** The chat's settings row key. Telegram: the chat, so forum topics share it. */
+  settings: SettingsChannel;
+  /** Stored on the settings row; the Kortix Channels page names the row by it. */
+  label: { name: string | null; type: string | null };
+  /** `ChannelMessage.keys.createClaim` of this conversation. */
+  createClaim: string;
+  /** Present: the platform shows the agent's questions, and /new clears their buttons. */
+  questions?: QuestionPort;
+  /** The kind of a file the command's message carried ('photo'); the command does not send it. */
+  droppedFile?: string;
+}
+
+/** Run one command and render exactly one reply. Catches every error: a job retry would reply twice. */
+export async function runChannelCommand(ctx: CommandContext, command: ParsedCommand, render: CommandRender): Promise<void> {
+  let reply: CommandReply;
+  try {
+    reply = await RUN[command.name](ctx, command.arg);
+  } catch (error) {
+    logger.warn('[channel] command failed', {
+      platform: ctx.target.platform,
+      projectId: ctx.project.projectId,
+      command: command.name,
+      error: error instanceof Error ? error.name : 'unknown',
+    });
+    reply = notice(`Kortix could not run /${command.name} just now. Send it again in a minute.`);
+  }
+  if (ctx.droppedFile) reply = { ...reply, note: `Your ${ctx.droppedFile} was not sent to the agent. Send it again without the command.` };
+  await render(reply);
+}
+
+const notice = (text: string, url?: string): CommandReply => ({ kind: 'notice', text, ...(url ? { url } : {}) });
+
+const NOT_CONNECTED = 'This bot is no longer connected to this Kortix project.';
+/** A queued session has no sandbox yet: its turn cannot run, or be stopped. */
+const STARTING = new Set(['queued', 'branching', 'provisioning']);
+
+const sessionUrl = (ctx: CommandContext, sessionId: string) => sessionWebUrl(config.FRONTEND_URL, ctx.project.projectId, sessionId);
+const chatSession = (ctx: CommandContext) => findChatThreadSession(ctx.target, ctx.project.projectId);
+
+function pinOf(session: ChatThreadSession | null): string | null {
+  const pin = (session?.metadata as Record<string, unknown> | null | undefined)?.opencode_model;
+  return typeof pin === 'string' && pin.trim() ? pin.trim() : null;
+}
+
+/** A model's name, and its id when the name differs. */
+function modelName(id: string): string {
+  const label = labelForModelRef(id);
+  return label === id ? id : `${label} (${id})`;
+}
+
+/** At most `max` characters, with an ellipsis when cut, never half an emoji. */
+function clipped(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1);
+  return `${/[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut}…`;
+}
+
+/** The current option first, then the rest, at most `CHOICES_MAX`. */
+function choices(
+  title: string,
+  items: ReadonlyArray<{ value: string; label: string }>,
+  current: string | null,
+  usage: string,
+): CommandReply {
+  const sorted = [...items.filter((i) => i.value === current), ...items.filter((i) => i.value !== current)];
+  const shown = sorted.slice(0, CHOICES_MAX);
+  return { kind: 'choices', title, options: shown.map((i) => ({ ...i, current: i.value === current })), more: sorted.length - shown.length, usage };
+}
+
+/** Shared by /stop and /new. */
+type TurnStop = 'none' | 'starting' | 'elsewhere' | 'stopped' | 'unreachable';
+
+/**
+ * Stop the chat session's running turn, only when its prompt came from this platform or from no
+ * known source: a turn the web, a trigger or Kortix itself (`system:*`) started is not the chat's.
+ */
+async function stopChatTurn(ctx: CommandContext, session: ChatThreadSession | null): Promise<TurnStop> {
+  if (!session) return (await threadCreateHeld(ctx.createClaim)) ? 'starting' : 'none';
+  const running = await readRunningTurn(session.sessionId);
+  if (!running) return STARTING.has(session.status ?? '') ? 'starting' : 'none';
+  const source = await turnPromptSource(session.sessionId, running.messageId);
+  if (source !== null && source !== ctx.target.platform) return 'elsewhere';
+  return (await abortRuntimeTurn(session.sessionId, { requestedStop: true, stoppedBy: null })) ? 'stopped' : 'unreachable';
+}
+
+const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Promise<CommandReply>> = {
+  async help(ctx) {
+    return {
+      kind: 'help',
+      intro: `Kortix project ${ctx.project.name}. The agent answers in this chat.`,
+      commands: CHANNEL_COMMANDS.map((c) => ({ usage: c.usage, description: c.description })),
+      footer: 'Every other message goes to the agent, also one that starts with /.',
+    };
+  },
+
+  async status(ctx) {
+    const session = await chatSession(ctx);
+    const [held, selection, running] = await Promise.all([
+      session ? false : threadCreateHeld(ctx.createClaim),
+      chatSelection(ctx.settings, ctx.project.projectId),
+      session ? readRunningTurn(session.sessionId) : null,
+    ]);
+    const choice = selection?.opencodeModel ?? null;
+    let model = statusModel(choice, pinOf(session));
+    if (choice && !(await checkChannelModel(await sharedChatScope(ctx.project), choice)).ok) {
+      model += ' — not available here, so runs use another model. Send /model to pick one.';
+    }
+    const sessionAgent = session?.agentName || 'default';
+    const agent = !session
+      ? selection?.agentName || 'project default'
+      : selection?.agentName && selection.agentName !== sessionAgent
+        ? `${sessionAgent} (new sessions: ${selection.agentName})`
+        : sessionAgent;
+    return {
+      kind: 'panel',
+      title: 'This chat in Kortix',
+      rows: [
+        { label: 'Project', value: ctx.project.name },
+        { label: 'Agent', value: agent },
+        { label: 'Model', value: model },
+        {
+          label: 'Session',
+          value: session
+            ? describeSession(session, { none: '', turnRunning: running !== null })
+            : held
+              ? "• starting: Kortix is creating this chat's session"
+              : 'none yet: your next message starts one',
+        },
+      ],
+      url: session ? sessionUrl(ctx, session.sessionId) : projectWebUrl(config.FRONTEND_URL, ctx.project.projectId),
+    };
+  },
+
+  async stop(ctx) {
+    const session = await chatSession(ctx);
+    switch (await stopChatTurn(ctx, session)) {
+      case 'none':
+        return notice('Nothing is running in this chat.');
+      case 'starting':
+        return notice("Kortix is still starting this chat's session. Send /stop again once the agent is working.");
+      case 'elsewhere':
+        return notice('This run was started outside this chat, so only Kortix can stop it:', sessionUrl(ctx, session!.sessionId));
+      case 'stopped':
+        return notice('Stopped. The agent is no longer working on this.');
+      case 'unreachable':
+        return notice("Kortix could not reach this chat's session to stop the run. Send /stop again in a minute, or /new to start over.");
+    }
+  },
+
+  async new(ctx, arg) {
+    const session = await chatSession(ctx);
+    const stop = session ? await stopChatTurn(ctx, session) : 'none';
+    if (ctx.questions) await clearQuestionButtons(ctx.questions, ctx.target, 'new_conversation');
+    // Whatever the abort answered: the sender asked for a new conversation.
+    const { claimHeld } = await forgetChatThread(ctx.target, ctx.createClaim, session?.sessionId);
+    const text = [
+      stop === 'stopped' && "Stopped the agent's run.",
+      'Started a new conversation. Your next message goes to a new session.',
+      stop === 'unreachable' && 'Kortix could not reach the previous session to stop its run, so it may still post here.',
+      stop === 'elsewhere' && 'The previous session is still running a task started outside this chat, and it may post here.',
+      !session && claimHeld && 'Kortix was still starting a session for this chat. That session may take your next message; if it does, send /new again.',
+      arg && 'The text after /new was not sent. Send it as your next message.',
+      session && 'The previous session stays in Kortix:',
+    ].filter(Boolean).join(' ');
+    return notice(text, session ? sessionUrl(ctx, session.sessionId) : undefined);
+  },
+
+  async model(ctx, arg) {
+    const { projectId } = ctx.project;
+    const [session, selection] = await Promise.all([chatSession(ctx), chatSelection(ctx.settings, projectId)]);
+    if (!arg) {
+      const { models } = await listChannelModels(await sharedChatScope(ctx.project));
+      if (!models.length) return notice('No model is available to this chat. A project admin can share a provider key with the whole project in Kortix.');
+      const current = selection?.opencodeModel ?? pinOf(session);
+      return choices(
+        'Models for this chat',
+        models.map((m) => ({ value: m.id, label: m.label })),
+        current ? toWireModel(current) : null,
+        'Send /model <id> to switch, or /model default for the project default. Only models and keys the whole project shares work in this chat.',
+      );
+    }
+    if (/\s/.test(arg)) return notice(`${clipped(arg, 64)} is not a model id. Send /model to see the list.`);
+    if (arg.toLowerCase() === 'default') {
+      if (selection) await setChannelModel(ctx.settings, null);
+      const pin = pinOf(session);
+      return notice(
+        pin
+          ? `Model for this chat reset to the project default for new sessions. This chat's session keeps ${labelForModelRef(pin)}; send /new to start on the default.`
+          : 'Model for this chat reset to the project default.',
+      );
+    }
+    const agent = session?.agentName ?? selection?.agentName ?? null;
+    const verdict = await checkChannelModel(await sharedChatScope(ctx.project), arg, { agentGrantEnv: agentGrantEnvFor(projectId, agent) });
+    if (!verdict.ok) {
+      return notice(
+        verdict.reason === 'agent_grant'
+          ? `The ${agent || 'default'} agent may not use ${verdict.providerId === 'codex' ? 'ChatGPT connections' : `${verdict.providerId} keys`}. Add ${verdict.envVar} to its secrets in kortix.yaml, or pick another model.`
+          : `${modelName(arg)} is not available in this chat. Only models and keys the whole project shares work here. Send /model to see them.`,
+      );
+    }
+    if (!(await ensureChatBinding(ctx.settings, projectId, ctx.label))) return notice(NOT_CONNECTED);
+    await setChannelModel(ctx.settings, verdict.model);
+    if (session) await applyChannelSessionKeys({ sessionId: session.sessionId, keys: verdict.keys, replace: true });
+    // A count, never the key names: in a group every member reads the reply.
+    const keys = !verdict.keys
+      ? ''
+      : verdict.keys.secretIds.length === 1
+        ? ' It uses a key the project shares.'
+        : ` It rotates across ${verdict.keys.secretIds.length} keys the project shares.`;
+    const shared = ctx.settings.channelId !== ctx.target.threadId ? ' It applies to every topic in this group.' : '';
+    return notice(`Model for this chat set to ${modelName(verdict.model)}.${keys}${shared} Messages you send after this reply use it.`);
+  },
+
+  async agent(ctx, arg) {
+    const { projectId } = ctx.project;
+    const refusal = notice(`${clipped(arg, 64)} is not an agent this chat can use. Send /agent to see them.`);
+    if (!arg) {
+      const [agents, session, selection] = await Promise.all([chatAgents(projectId), chatSession(ctx), chatSelection(ctx.settings, projectId)]);
+      if (!agents.length) return notice('This project lists no agents this chat can use. New sessions run the project default agent.');
+      return choices(
+        'Agents for this chat',
+        agents.map((a) => ({ value: a.name, label: clipped(a.description ?? '', 80) })),
+        selection?.agentName ?? session?.agentName ?? null,
+        'Send /agent <name> to switch, or /agent default for the project default. New sessions use it.',
+      );
+    }
+    if (arg.toLowerCase() === 'default') {
+      if (await chatSelection(ctx.settings, projectId)) await setChannelAgent(ctx.settings, null);
+      return notice('Agent for this chat reset to the project default.');
+    }
+    // The list a stranger in a group may pick from: never a name a grant restricts, and never one a failed read let through.
+    if (/\s/.test(arg) || !(await chatAgents(projectId)).some((a) => a.name === arg)) return refusal;
+    if (!(await ensureChatBinding(ctx.settings, projectId, ctx.label))) return notice(NOT_CONNECTED);
+    const set = await setChannelAgent(ctx.settings, arg);
+    if (!set.ok) return set.reason === 'unknown_agent' ? refusal : notice(NOT_CONNECTED);
+    const session = await chatSession(ctx);
+    if (!session) return notice(`Agent for this chat set to ${arg}. Your next message starts a session with it.`);
+    const running = session.agentName || 'default';
+    return notice(
+      running === arg
+        ? `Agent for this chat set to ${arg}. This chat's session already runs it.`
+        : `Agent for this chat set to ${arg}. This chat's session keeps ${running}; send /new to start a session with ${arg}.`,
+    );
+  },
+};

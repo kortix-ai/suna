@@ -5,7 +5,7 @@
  * requests are `projects.metadata.telegram` (channels/core/channel-access.ts),
  * scoped to the bot id.
  */
-import { chatInstalls, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, projects } from '@kortix/db';
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { and, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
@@ -67,8 +67,12 @@ export async function saveTelegramInstall(input: {
     .values({ platform: 'telegram', workspaceId: input.botId, projectId: input.projectId })
     .onConflictDoNothing();
   // Requests to another bot are not requests to this one. After the insert: a
-  // request still writing checks its bot under the row lock.
-  if (previous?.botId !== input.botId) await clearChannelAccessRequests('telegram', input.projectId);
+  // request still writing checks its bot under the row lock. The chats' settings
+  // (`/model`, `/agent`) were the old bot's chats.
+  if (previous?.botId !== input.botId) {
+    await clearChannelAccessRequests('telegram', input.projectId);
+    await deleteTelegramChatSettings(input.projectId);
+  }
   await upsertSecret(input.projectId, TELEGRAM_BOT_TOKEN, input.token);
   await upsertSecret(input.projectId, TELEGRAM_WEBHOOK_SECRET, input.webhookSecret);
   if (input.username) await upsertSecret(input.projectId, TELEGRAM_BOT_USERNAME, input.username);
@@ -102,10 +106,18 @@ export function loadTelegramWebhookSecret(projectId: string): Promise<string | n
   return readSecret(projectId, TELEGRAM_WEBHOOK_SECRET);
 }
 
+/** Every chat's `/model` and `/agent` choice in the project. */
+function deleteTelegramChatSettings(projectId: string) {
+  return db
+    .delete(chatChannelBindings)
+    .where(and(eq(chatChannelBindings.platform, 'telegram'), eq(chatChannelBindings.projectId, projectId)));
+}
+
 export async function deleteTelegramInstall(projectId: string): Promise<void> {
   await db
     .delete(chatInstalls)
     .where(and(eq(chatInstalls.platform, 'telegram'), eq(chatInstalls.projectId, projectId)));
+  await deleteTelegramChatSettings(projectId);
   await deleteProjectSecrets(projectId, [TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, TELEGRAM_BOT_USERNAME]);
   // Requests were made to the old bot. The allowed list stays for a reconnect.
   await clearChannelAccessRequests('telegram', projectId);

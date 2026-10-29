@@ -65,6 +65,10 @@ import { parseStagedPromptDataUrl } from '../../projects/session-lifecycle/promp
 import { NO_VISION_NOTE } from '../vision-model';
 import * as defaultModel from '../../llm-gateway/resolution/default-model';
 import * as servableCatalog from '../../llm-gateway/models/servable-catalog';
+import * as iam from '../../iam';
+import * as threads from '../core/threads';
+import * as selection from '../slack/selection';
+import { projectWebUrl } from '../core/display';
 
 const telegramWebhookApp = channelWebhookRoutes(telegramInbound);
 const ACCOUNT = crypto.randomUUID();
@@ -83,6 +87,16 @@ mock.module('../../projects/session-lifecycle/release-runtime-question', () => (
   releaseRuntimeQuestion: async (...args: unknown[]) => {
     releases.push(args);
     return releaseOutcome;
+  },
+}));
+
+/** No sandbox runs here: `/stop` and `/new` record the abort they ask for, and the runtime answers `abortOutcome`. */
+let abortOutcome = true;
+const aborts: Array<[string, unknown]> = [];
+mock.module('../../projects/session-lifecycle/abort-runtime-turn', () => ({
+  abortRuntimeTurn: async (sessionId: string, opts: unknown) => {
+    aborts.push([sessionId, opts]);
+    return abortOutcome;
   },
 }));
 
@@ -294,6 +308,8 @@ beforeEach(() => {
   failing = null;
   releaseOutcome = 'unreachable';
   releases.length = 0;
+  abortOutcome = true;
+  aborts.length = 0;
   sleeps = 0;
   stored.clear();
   imageTurns.length = 0;
@@ -1834,6 +1850,266 @@ describe("a Telegram chat's model goes with every message — migrated PostgreSQ
       ]);
     } finally {
       for (const spy of spies) spy.mockRestore();
+    }
+  });
+});
+
+describe('Telegram commands — migrated PostgreSQL', () => {
+  const HELP = [
+    'Kortix project telegram-v2. The agent answers in this chat.',
+    "/new — Start a new conversation and stop this chat's run",
+    "/stop — Stop the agent's current run in this chat",
+    "/status — Show this chat's project, agent, model and session",
+    '/model [id] — List the models, or switch this chat to one',
+    '/agent [name] — List the agents, or switch this chat to one',
+    '/help — List the commands',
+    'Every other message goes to the agent, also one that starts with /.',
+  ].join('\n');
+  /** The chat's settings row, or undefined. */
+  const settingsRow = async (chat: string) =>
+    (await db.select().from(chatChannelBindings).where(and(eq(chatChannelBindings.platform, 'telegram'), eq(chatChannelBindings.workspaceId, BOT_ID), eq(chatChannelBindings.channelId, chat))))[0];
+  /** A session of the chat in `status`; with `source`, a running turn whose prompt came from there. */
+  async function chatSession(chat: number, status: 'queued' | 'provisioning' | 'running', source?: string) {
+    const sessionId = await bindChat(chat);
+    await db.update(projectSessions).set({ status }).where(eq(projectSessions.sessionId, sessionId));
+    if (source === undefined) return sessionId;
+    await db.insert(sessionSandboxes).values({
+      sandboxId: sessionId,
+      sessionId,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      status: 'active',
+      metadata: { activeTurns: source ? { t1: { token: 't1', state: 'active', messageId: 'msg_tg' } } : {} },
+    });
+    if (source) {
+      await db.insert(sessionLifecycleCommands).values({ commandType: 'continue_session', source, projectId: PROJECT, accountId: ACCOUNT, sessionId, payload: { wireMessageId: 'msg_tg' } });
+    }
+    return sessionId;
+  }
+  const abortsOf = (sessionId: string) => aborts.filter(([id]) => id === sessionId);
+  /** A message in topic 5 of a forum group. */
+  const topicUpdate = (text: string, chat: number) =>
+    telegramMessageEvent(PROJECT, BOT_ID, {
+      update_id: updateId++,
+      message: {
+        message_id: updateId,
+        date: 1_760_000_000,
+        chat: { id: chat, type: 'supergroup', title: 'Synthetic group' },
+        from: { id: Number(ALLOWED), username: 'synthetic' },
+        text,
+        is_topic_message: true,
+        message_thread_id: 5,
+      },
+    })!;
+  const restore = (spies: Array<{ mockRestore(): void }>) => {
+    for (const spy of spies) spy.mockRestore();
+  };
+
+  test('/help, /start, /HELP and /help@<this bot> list the commands, and nothing reaches the agent', async () => {
+    for (const text of ['/help', '/start', '/HELP', '/help@synthetic_bot']) {
+      calls.length = 0;
+      await handleTelegramEvent(update(text, ALLOWED, 7020));
+      expect(calls.map((c) => c.method)).toEqual(['sendMessage']);
+      expect(calls[0]!.body).toMatchObject({ chat_id: 7020, text: HELP, reply_parameters: { message_id: expect.any(Number) } });
+    }
+    expect(created).toHaveLength(0);
+    expect(delivered).toHaveLength(0);
+  });
+
+  test('an unknown verb, another bot\'s command and a verb inside a word reach the agent as messages', async () => {
+    for (const text of ['/deploy now', '/help@other_bot', '/new-york', 'hello /new']) {
+      await handleTelegramEvent(update(text, ALLOWED, 7021));
+    }
+    expect(created.length + delivered.length).toBe(4);
+    expect(replies()).toEqual([]);
+  });
+
+  test('/status names the project, agent, model and session, and how the session is doing', async () => {
+    await handleTelegramEvent(update('/status', ALLOWED, 7022));
+    expect(replies()).toEqual([
+      [
+        'This chat in Kortix',
+        'Project: telegram-v2',
+        'Agent: project default',
+        'Model: project default',
+        'Session: none yet: your next message starts one',
+        projectWebUrl(appConfig.FRONTEND_URL, PROJECT),
+      ].join('\n'),
+    ]);
+    await holdClaim(7023);
+    await handleTelegramEvent(update('/status', ALLOWED, 7023));
+    expect(replies().at(-1)).toContain("Session: • starting: Kortix is creating this chat's session");
+    const ready = await chatSession(7024, 'running', '');
+    await handleTelegramEvent(update('/status', ALLOWED, 7024));
+    expect(replies().at(-1)).toContain('Agent: default\nModel: project default\nSession: • ready · started just now');
+    expect(replies().at(-1)).toEndWith(sessionWebUrl(appConfig.FRONTEND_URL, PROJECT, ready));
+    await chatSession(7025, 'running', 'telegram');
+    await handleTelegramEvent(update('/status', ALLOWED, 7025));
+    expect(replies().at(-1)).toContain('Session: ⏳ working · started just now');
+    expect(created).toHaveLength(0);
+    expect(delivered).toHaveLength(0);
+  });
+
+  test("/stop stops only a run this chat started, and says when there is nothing to stop", async () => {
+    await handleTelegramEvent(update('/stop', ALLOWED, 7026));
+    expect(replies().at(-1)).toBe('Nothing is running in this chat.');
+    await chatSession(7027, 'provisioning');
+    await handleTelegramEvent(update('/stop', ALLOWED, 7027));
+    expect(replies().at(-1)).toBe("Kortix is still starting this chat's session. Send /stop again once the agent is working.");
+
+    const ours = await chatSession(7028, 'running', 'telegram');
+    await handleTelegramEvent(update('/cancel', ALLOWED, 7028));
+    expect(abortsOf(ours)).toEqual([[ours, { requestedStop: true, stoppedBy: null }]]);
+    expect(replies().at(-1)).toBe('Stopped. The agent is no longer working on this.');
+
+    abortOutcome = false;
+    await chatSession(7029, 'running', 'telegram');
+    await handleTelegramEvent(update('/stop', ALLOWED, 7029));
+    expect(replies().at(-1)).toBe("Kortix could not reach this chat's session to stop the run. Send /stop again in a minute, or /new to start over.");
+
+    const web = await chatSession(7030, 'running', 'ui');
+    await handleTelegramEvent(update('/stop', ALLOWED, 7030));
+    expect(abortsOf(web)).toEqual([]);
+    expect(replies().at(-1)).toBe(`This run was started outside this chat, so only Kortix can stop it:\n${sessionWebUrl(appConfig.FRONTEND_URL, PROJECT, web)}`);
+    expect(created).toHaveLength(0);
+    expect(delivered).toHaveLength(0);
+  });
+
+  test('/new stops a run this chat started, takes the buttons off and forgets the chat; a run started elsewhere keeps going', async () => {
+    const ours = await chatSession(7031, 'running', 'telegram');
+    await db.insert(chatEventDedup).values({ eventId: `telegram:question-buttons:${PROJECT}:${BOT_ID}:7031|50|q-synthetic`, expiresAt: new Date(Date.now() + 60_000) });
+    await handleTelegramEvent(update('/new', ALLOWED, 7031));
+    expect(abortsOf(ours)).toHaveLength(1);
+    expect(calls.filter((c) => c.method === 'editMessageText').map((c) => c.body.text)).toEqual(['A new conversation started.']);
+    expect(await threadRow(7031)).toBeUndefined();
+    expect(replies().at(-1)).toBe(
+      `Stopped the agent's run. Started a new conversation. Your next message goes to a new session. The previous session stays in Kortix:\n${sessionWebUrl(appConfig.FRONTEND_URL, PROJECT, ours)}`,
+    );
+
+    const web = await chatSession(7032, 'running', 'ui');
+    await handleTelegramEvent(update('/new', ALLOWED, 7032));
+    expect(abortsOf(web)).toEqual([]);
+    expect(await threadRow(7032)).toBeUndefined();
+    expect(replies().at(-1)).toContain('The previous session is still running a task started outside this chat, and it may post here.');
+
+    await handleTelegramEvent(update('/new do X', ALLOWED, 7033));
+    expect(replies().at(-1)).toBe(
+      'Started a new conversation. Your next message goes to a new session. The text after /new was not sent. Send it as your next message.',
+    );
+    expect(created).toHaveLength(0);
+    expect(delivered).toHaveLength(0);
+  });
+
+  test('/model lists the models the project shares, at most 25, and switches the chat to one', async () => {
+    const models = Object.fromEntries([
+      ['cmd-m1', { name: 'Model One', provider: 'kortix', enabled: true }],
+      ...Array.from({ length: 200 }, (_, i) => [`cmd-f${i}`, { name: `Synthetic ${String(i).padStart(3, '0')}`, provider: 'kortix', enabled: true }]),
+    ]);
+    const spies = [
+      spyOn(servableCatalog, 'servableProjectCatalog').mockResolvedValue({ models, modelOverrides: {}, defaultModel: undefined, usingDefaults: true } as never),
+      spyOn(defaultModel, 'isModelServableForAccount').mockImplementation(async ({ model }) => model === 'cmd-m1'),
+    ];
+    try {
+      await handleTelegramEvent(update('/models', ALLOWED, 7034));
+      const list = replies().at(-1)!;
+      expect(list.length).toBeLessThanOrEqual(4096);
+      expect(list.split('\n').slice(0, 2)).toEqual(['Models for this chat', '- cmd-m1 — Model One']);
+      expect(list).toContain('\n…and 176 more.\nSend /model <id> to switch');
+
+      await handleTelegramEvent(update('/model cmd-m1', ALLOWED, 7035));
+      expect(replies().at(-1)).toBe('Model for this chat set to cmd-m1. Messages you send after this reply use it.');
+      expect(await settingsRow('7035')).toMatchObject({ projectId: PROJECT, model: 'cmd-m1', agentName: null, channelType: 'private' });
+      await handleTelegramEvent(update('/model', ALLOWED, 7035));
+      expect(replies().at(-1)!.split('\n')[1]).toBe('- cmd-m1 — Model One (current)');
+
+      await handleTelegramEvent(update('/model a b', ALLOWED, 7035));
+      expect(replies().at(-1)).toBe('a b is not a model id. Send /model to see the list.');
+      await handleTelegramEvent(update('/model cmd-f1', ALLOWED, 7035));
+      expect(replies().at(-1)).toBe('cmd-f1 is not available in this chat. Only models and keys the whole project shares work here. Send /model to see them.');
+      expect((await settingsRow('7035'))?.model).toBe('cmd-m1');
+      await handleTelegramEvent(update('/model default', ALLOWED, 7035));
+      expect(replies().at(-1)).toBe('Model for this chat reset to the project default.');
+      expect((await settingsRow('7035'))?.model).toBeNull();
+
+      await handleTelegramEvent(topicUpdate('/model@synthetic_bot cmd-m1', -1007036));
+      expect(replies().at(-1)).toBe('Model for this chat set to cmd-m1. It applies to every topic in this group. Messages you send after this reply use it.');
+      expect(calls.at(-1)!.body).toMatchObject({ chat_id: -1007036, message_thread_id: 5 });
+      expect(await settingsRow('-1007036')).toMatchObject({ model: 'cmd-m1', channelName: 'Synthetic group', channelType: 'supergroup' });
+    } finally {
+      restore(spies);
+    }
+    expect(created).toHaveLength(0);
+    expect(delivered).toHaveLength(0);
+  });
+
+  test('/agent lists and accepts only the agents no grant restricts; a failed check writes nothing', async () => {
+    const agents = [
+      { name: 'reviewer', description: 'Reviews changes', mode: null },
+      { name: 'restricted', description: 'Granted to one person', mode: null },
+    ];
+    const spies: Array<{ mockRestore(): void }> = [
+      spyOn(selection, 'listProjectAgents').mockResolvedValue(agents),
+      spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer']),
+    ];
+    try {
+      await handleTelegramEvent(update('/agents', ALLOWED, 7040));
+      expect(replies().at(-1)).toBe(
+        'Agents for this chat\n- reviewer — Reviews changes\nSend /agent <name> to switch, or /agent default for the project default. New sessions use it.',
+      );
+      await handleTelegramEvent(update('/agent reviewer', ALLOWED, 7040));
+      expect(replies().at(-1)).toBe('Agent for this chat set to reviewer. Your next message starts a session with it.');
+      expect((await settingsRow('7040'))?.agentName).toBe('reviewer');
+
+      for (const name of ['restricted', 'nosuch']) {
+        await handleTelegramEvent(update(`/agent ${name}`, ALLOWED, 7041));
+        expect(replies().at(-1)).toBe(`${name} is not an agent this chat can use. Send /agent to see them.`);
+      }
+      expect(await settingsRow('7041')).toBeUndefined();
+
+      spies.push(spyOn(iam, 'unscopedResourceIds').mockRejectedValue(new Error('synthetic grant read failure')));
+      await handleTelegramEvent(update('/agent reviewer', ALLOWED, 7042));
+      expect(replies().at(-1)).toBe('Kortix could not run /agent just now. Send it again in a minute.');
+      expect(await settingsRow('7042')).toBeUndefined();
+    } finally {
+      restore(spies);
+    }
+  });
+
+  test('a photo captioned with a command runs the command, and its file is not read', async () => {
+    stored.set('ph-cmd', { bytes: JPEG });
+    await handleTelegramEvent(mediaUpdate({ photo: [{ file_id: 'ph-cmd', width: 64, height: 64 }] }, { caption: '/status', chat: 7043 }));
+    expect(calls.filter((c) => c.method === 'getFile')).toEqual([]);
+    expect(downloads).toEqual([]);
+    expect(replies()).toHaveLength(1);
+    expect(replies()[0]).toStartWith('This chat in Kortix\n');
+    expect(replies()[0]).toEndWith('\n\nYour photo was not sent to the agent. Send it again without the command.');
+  });
+
+  test("a sender who is not allowed gets the pairing reply, and their command changes nothing", async () => {
+    await handleTelegramEvent(update('/model cmd-x', '999', 7044));
+    expect(calls.map((c) => c.method)).toEqual(['sendMessage']);
+    expect(replies()[0]).toContain('999');
+    expect(await settingsRow('7044')).toBeUndefined();
+  });
+
+  test('a command that throws answers once with the generic reply, and the job does not retry', async () => {
+    const spy = spyOn(threads, 'findChatThreadSession').mockRejectedValue(new Error('synthetic read failure'));
+    try {
+      await handleTelegramEvent(update('/status', ALLOWED, 7045));
+      expect(replies()).toEqual(['Kortix could not run /status just now. Send it again in a minute.']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("a connect with another bot drops the chats' settings", async () => {
+    await db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: '7090', projectId: PROJECT, model: 'cmd-m1' });
+    const otherBot = String(Number(BOT_ID) + 1);
+    try {
+      await saveTelegramInstall({ projectId: PROJECT, botId: otherBot, username: 'other_bot', token: `${otherBot}:${'B'.repeat(35)}`, webhookSecret: 's' });
+      expect(await settingsRow('7090')).toBeUndefined();
+    } finally {
+      await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
     }
   });
 });
