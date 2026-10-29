@@ -294,9 +294,10 @@ root. No turn runs at either point.
   sends the batch again, so the session log keeps the old history and the new
   turns after it. The offsets persist in `session-log-restore.json` for a
   restarted daemon; a restore writes the store at the log's seqs and clears
-  them. Prod runs with the flag off unless a project sets
-  `session_log_restore` (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` is on only on
-  dev).
+  them. This path runs only where `session_log_restore` is off: a project
+  that stores `false`, or a deployment that sets
+  `SESSION_LOG_RESTORE_DEFAULT_ENABLED=false` (the default is on since
+  2026-10-28).
 - **Unsent work never reads as behind.** Only ids are compared, one way: a
   message the store holds that the log lacks (a turn not yet journaled), a
   newer version of a stored message, and a message OpenCode deleted after the
@@ -426,9 +427,9 @@ store a box already holds: a box with a large store loads it at boot (`held()`)
 before any restore. A fresh box drops only an attachment whose record still
 says `blob:` (P2.13 uploads the bytes). Precondition for prod default-on: a
 release whose kortixd handles the 413 (an older kortixd boots without the
-restore and its journal stops at 409). Dev turns `session_log_restore` on for
-every project without a stored value (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` in
-`deploy-dev.yml`, 2026-10-15); prod does not yet.
+restore and its journal stops at 409). `session_log_restore` is on for every
+project without a stored value: dev since 2026-10-15, every deployment since
+2026-10-28 (`SESSION_LOG_RESTORE_DEFAULT_ENABLED` defaults to true).
 
 Known limits of the boot reconcile:
 - Losing `session-log-restore.json` (or OpenCode's `opencode-session-log.json`)
