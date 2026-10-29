@@ -32,9 +32,11 @@ export const SCHEMA_FILES: Record<string, unknown> = {
 };
 
 /** A JSON Schema `pattern` is a string. A RegExp value renders as its source,
- *  never as `{}`. The release lanes (v0.14.9, v0.14.10) rendered one pattern as
- *  `{}`: under `bun test --isolate` the schema's RegExp can come from another
- *  realm, where `instanceof RegExp` is false. The brand check holds in any realm. */
+ *  never as `{}`; the brand check also holds for a RegExp from another realm.
+ *  Open: the packages-rest lane (v0.14.9, v0.14.10, the 2026-10-29 nightly) still
+ *  renders `authorization_strategy`'s pattern as `{}` in CI on some runs. That
+ *  pattern is a template string, the cause is not known, and it does not
+ *  reproduce locally (macOS, whole package in one process, any file order). */
 const isRegExp = (value: unknown): value is RegExp => Object.prototype.toString.call(value) === '[object RegExp]';
 
 export function renderSchemaFile(schema: unknown): string {
