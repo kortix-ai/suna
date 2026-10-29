@@ -168,6 +168,9 @@ export {
   sessionIdleWatches,
   // Artifacts: published HTML pages (flag artifacts)
   artifacts,
+  artifactCommentThreads,
+  artifactComments,
+  artifactCommentWriteLimits,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Kortix in Chrome (apps/api/src/chrome)
