@@ -1963,7 +1963,8 @@ describe('Telegram commands — migrated PostgreSQL', () => {
   /** A keyboard row of one button. */
   const row = (text: string, data: string) => [[text, data]];
   const lastSent = () => calls.filter((c) => c.method === 'sendMessage').at(-1)!;
-  const MODELS_USAGE = 'Tap a model to use it in this chat, or send /model <id>. Only models and keys the whole project shares work here.';
+  /** No /model <id> hint: a button shows a model's name, never its id. */
+  const MODELS_USAGE = 'Tap a model to use it in this chat. Only models and keys the whole project shares work here.';
   /** 201 models the project shares, 26 pages; only cmd-m1 is servable. */
   const modelSpies = () => {
     const models = Object.fromEntries([

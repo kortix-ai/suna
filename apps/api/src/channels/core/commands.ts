@@ -288,7 +288,8 @@ const PICKERS: Record<'model' | 'agent', (ctx: CommandContext, page: number) => 
       models.map((m) => ({ value: m.id, label: labels.get(m.label)! > 1 ? `${m.label} · ${m.providerLabel}` : m.label })),
       current ? toWireModel(current) : null,
       page,
-      'Tap a model to use it in this chat, or send /model <id>. Only models and keys the whole project shares work here.',
+      // No `/model <id>` hint: a button shows a model's name, never the id to type.
+      'Tap a model to use it in this chat. Only models and keys the whole project shares work here.',
       defaultName ? `Project default · ${defaultName}` : 'Project default',
     );
   },
