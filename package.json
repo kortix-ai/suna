@@ -76,7 +76,7 @@
     "overrides": {
       "shell-quote@<1.11.0": "1.11.0",
       "re2js@>=2.2.0 <2.8.7": "2.8.7",
-      "systeminformation@<5.33.13": "5.33.13",
+      "systeminformation@<5.33.16": "5.33.16",
       "@icons-pack/react-simple-icons@>=13.11.2 <14": "13.11.1",
       "import-in-the-middle": "3.0.0",
       "next@>=15.0.0 <16.4.2": "16.4.2",
