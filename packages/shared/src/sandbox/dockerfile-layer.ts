@@ -622,7 +622,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // loop + 30-min timeout below are the SAFETY NET for that one cold fetch.
     'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\',
     '    AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \\',
-    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\',
+    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage,--test-type,--disable-infobars \\',
     // Playwright's browser download defaults to a 30s socket timeout
     // (NET_DEFAULT_TIMEOUT in playwright-core), which a ~150MB Chrome-for-Testing
     // fetch can miss under any network hiccup / contended CDN — observed live as

@@ -39,7 +39,10 @@ export const SANDBOX_DESKTOP_PACKAGES = [
   'xvfb',
 ];
 
-const CHROMIUM = '/home/kortix/.local/bin/chromium --no-sandbox --no-first-run --no-default-browser-check';
+// --test-type and --disable-infobars hide the --no-sandbox and Chrome for
+// Testing warning bars.
+const CHROMIUM =
+  '/home/kortix/.local/bin/chromium --no-sandbox --test-type --disable-infobars --no-first-run --no-default-browser-check';
 
 /**
  * The path data of the brand kit's master files, as is (kortix-brand
@@ -57,16 +60,22 @@ export const KORTIX_LOGO_PATHS: readonly string[] = [
 ];
 export const KORTIX_SYMBOL_PATH = 'M139.737 139.53H163.055C163.055 109.932 147.261 84.0225 123.642 69.7694C147.261 55.5163 163.054 29.6068 163.054 0.0085907H139.736C139.736 28.0165 119.67 51.4471 93.2921 56.9406V0.0085907H69.9773V56.9406C43.4754 51.5428 23.5331 28.1045 23.5331 0.0085907H0.215285C0.215285 29.6068 16.0088 55.5163 39.6282 69.7694C16.0086 84.0225 0.214767 109.932 0.214767 139.53H23.5325C23.5325 111.434 43.4754 87.996 69.9773 82.5981V139.556H93.2921V82.598C119.794 87.9957 139.737 111.434 139.737 139.53Z';
 
-// The `logo-dark` brand wallpaper (apps/web/scripts/generate-wallpapers.mjs):
-// the white logo at 16% of the canvas width, dead centre on #0A0A0A. Drawn
-// on the 2560x1600 desktop and zoomed by xfdesktop, so any size the viewer
-// resizes the desktop to keeps the logo centred.
+// The `symbol-light` brand wallpaper (apps/web/scripts/generate-wallpapers.mjs):
+// the black symbol at 8.5% of the canvas width, dead centre on #FFFFFF.
+// Drawn on the 2560x1600 desktop and zoomed by xfdesktop, so any size the
+// viewer resizes the desktop to keeps it centred.
 const WALLPAPER_W = 2560;
 const WALLPAPER_H = 1600;
-const LOGO_SCALE = (0.16 * WALLPAPER_W) / 708;
-const WALLPAPER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${WALLPAPER_W}" height="${WALLPAPER_H}" viewBox="0 0 ${WALLPAPER_W} ${WALLPAPER_H}"><rect width="100%" height="100%" fill="#0A0A0A"/><g fill="#FAFAFA" transform="translate(${(WALLPAPER_W - 708 * LOGO_SCALE) / 2} ${(WALLPAPER_H - 142 * LOGO_SCALE) / 2}) scale(${LOGO_SCALE})">${KORTIX_LOGO_PATHS.map((d) => `<path d="${d}"/>`).join('')}</g></svg>`;
-// The applications menu button: the white symbol.
-const SYMBOL_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="164" height="140" viewBox="0 0 164 140"><path fill="#FAFAFA" d="${KORTIX_SYMBOL_PATH}"/></svg>`;
+const SYMBOL_SCALE = (0.085 * WALLPAPER_W) / 164;
+const WALLPAPER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${WALLPAPER_W}" height="${WALLPAPER_H}" viewBox="0 0 ${WALLPAPER_W} ${WALLPAPER_H}"><rect width="100%" height="100%" fill="#FFFFFF"/><path fill="#0A0A0A" transform="translate(${(WALLPAPER_W - 164 * SYMBOL_SCALE) / 2} ${(WALLPAPER_H - 140 * SYMBOL_SCALE) / 2}) scale(${SYMBOL_SCALE})" d="${KORTIX_SYMBOL_PATH}"/></svg>`;
+// Stock Greybird, plus the dock: frosted white, rounded top corners, and
+// quiet grey hover and pressed states instead of Greybird's blue.
+const THEME_CSS = `@import url("/usr/share/themes/Greybird/gtk-3.0/gtk.css");
+.xfce4-panel.background { border-radius: 18px 18px 0 0; background-color: rgba(255, 255, 255, 0.82); color: #0A0A0A; border: 1px solid rgba(10, 10, 10, 0.08); border-bottom: none; }
+.xfce4-panel.background button { border-radius: 12px; color: #0A0A0A; text-shadow: none; }
+.xfce4-panel.background button:hover, .xfce4-panel.background button:active:hover, .xfce4-panel.background button:checked:hover { background-image: none; background-color: rgba(10, 10, 10, 0.06); border-color: transparent; box-shadow: none; }
+.xfce4-panel.background button:active, .xfce4-panel.background button:checked { background-image: none; background-color: rgba(10, 10, 10, 0.1); border-color: transparent; box-shadow: none; }
+`;
 
 // voxl's MIT license, shipped with the binary as the license requires.
 const VOXL_LICENSE = `MIT License
@@ -114,88 +123,57 @@ function channel(name: string, body: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<channel name="${name}" version="1.0">${body}</channel>\n`;
 }
 
-const NEAR_BLACK = [0.039, 0.039, 0.039, 1];
-
 /**
- * The look: Greybird-dark windows, Adwaita icons, Inter, no desktop icons,
- * the Kortix wallpaper, and one slim bottom bar (menu, three launchers,
- * windows, clock). System defaults under /etc/xdg, so a user's own changes in
- * ~/.config win.
+ * The look, close to stock XFCE: Greybird, the Kortix symbol wallpaper,
+ * no desktop icons, and a centred dock with three launchers (browser,
+ * terminal, files). System defaults under /etc/xdg, so a user's own changes
+ * in ~/.config win.
  */
 export const SANDBOX_DESKTOP_FILES: Record<string, string> = {
   ['/usr/share/doc/voxl/LICENSE']: VOXL_LICENSE,
   [`${DIR}/wallpaper.svg`]: WALLPAPER_SVG,
-  [`${DIR}/symbol.svg`]: SYMBOL_SVG,
+  ['/usr/share/themes/Kortix/gtk-3.0/gtk.css']: THEME_CSS,
   [`${XFCONF}/xsettings.xml`]: channel('xsettings', props({
-    Net: { ThemeName: 'Greybird-dark', IconThemeName: 'Adwaita', EnableEventSounds: false },
+    Net: { ThemeName: 'Kortix', IconThemeName: 'Adwaita' },
     // voxl draws the desktop at 1.5 desktop pixels per CSS pixel (its default
     // --resize-scale), so 144 DPI shows text at its normal size, sharp.
-    Xft: { DPI: 144, Antialias: 1, Hinting: 1, HintStyle: 'hintslight', RGBA: 'none' },
-    Gtk: { FontName: 'Inter Variable 10', MonospaceFontName: 'DejaVu Sans Mono 10', CursorThemeName: 'Adwaita', DecorationLayout: ':minimize,maximize,close' },
+    Xft: { DPI: 144 },
+    Gtk: { FontName: 'Inter Variable 10' },
   })),
-  [`${XFCONF}/xfwm4.xml`]: channel('xfwm4', props({
-    general: {
-      theme: 'Greybird-dark',
-      title_font: 'Inter Variable Semi-Bold 10',
-      title_alignment: 'center',
-      button_layout: '|HMC',
-      workspace_count: 1,
-      use_compositing: false,
-      placement_mode: 'center',
-    },
-  })),
+  [`${XFCONF}/xfwm4.xml`]: channel('xfwm4', props({ general: { theme: 'Greybird', workspace_count: 1, show_dock_shadow: false } })),
   [`${XFCONF}/xfce4-desktop.xml`]: channel('xfce4-desktop', props({
     'desktop-icons': { style: 0 },
     backdrop: {
       screen0: {
         monitorscreen: {
-          workspace0: { 'color-style': 0, rgba1: NEAR_BLACK, 'image-style': 5, 'last-image': `${DIR}/wallpaper.svg` },
+          workspace0: { 'color-style': 0, rgba1: [1, 1, 1, 1], 'image-style': 5, 'last-image': `${DIR}/wallpaper.svg` },
         },
       },
     },
   })),
   ['/etc/xdg/xfce4/panel/default.xml']: panelXml(),
-  // The panel's Web Browser and Terminal launchers open Chromium and
-  // xfce4-terminal without asking which one to use.
+  // The dock's launchers open Chromium, xfce4-terminal and Thunar without
+  // asking which one to use.
   ['/usr/share/xfce4/helpers/kortix-chromium.desktop']: `[Desktop Entry]\nType=X-XFCE-Helper\nX-XFCE-Category=WebBrowser\nName=Chromium\nIcon=web-browser\nX-XFCE-Commands=${CHROMIUM}\nX-XFCE-CommandsWithParameter=${CHROMIUM} "%s"\n`,
   ['/etc/xdg/xfce4/terminal/terminalrc']:
-    '[Configuration]\nMiscMenubarDefault=FALSE\nMiscToolbarDefault=FALSE\nScrollingBar=TERMINAL_SCROLLBAR_NONE\nFontName=DejaVu Sans Mono 10\nColorForeground=#FAFAFA\nColorBackground=#0A0A0A\nColorCursor=#FAFAFA\nMiscDefaultGeometry=100x30\n',
-  ['/etc/xdg/xfce4/helpers.rc']: 'WebBrowser=kortix-chromium\nTerminalEmulator=xfce4-terminal\n',
+    '[Configuration]\nMiscMenubarDefault=FALSE\nMiscToolbarDefault=FALSE\nScrollingBar=TERMINAL_SCROLLBAR_NONE\nFontName=DejaVu Sans Mono 10\nColorForeground=#0A0A0A\nColorBackground=#FFFFFF\nColorCursor=#0A0A0A\nColorBold=#0A0A0A\nColorPalette=#0A0A0A;#C01C28;#26A269;#A2734C;#12488B;#A347BA;#2A7BDE;#D0CFCC;#5E5C64;#F66151;#33D17A;#C88800;#2A7BDE;#C061CB;#33C7DE;#FFFFFF\nMiscDefaultGeometry=100x30\n',
+  ['/etc/xdg/xfce4/helpers.rc']: 'WebBrowser=kortix-chromium\nTerminalEmulator=xfce4-terminal\nFileManager=thunar\n',
 };
 
 function panelXml(): string {
-  // [plugin type, its properties], in bar order, left to right.
-  const plugins: [string, Record<string, unknown>][] = [
-    ['applicationsmenu', { 'button-icon': `${DIR}/symbol.svg`, 'show-button-title': false }],
-    ['launcher', { items: ['xfce4-terminal-emulator.desktop'] }],
-    ['launcher', { items: ['xfce4-web-browser.desktop'] }],
-    ['launcher', { items: ['xfce4-file-manager.desktop'] }],
-    ['separator', { style: 0 }],
-    ['tasklist', { 'flat-buttons': true, 'show-handle': false, grouping: 0 }],
-    ['separator', { style: 0, expand: true }],
-    ['clock', { mode: 2, 'digital-layout': 3, 'digital-time-format': '%a %-d %b  %H:%M', 'digital-time-font': 'Inter Variable Medium 10' }],
-    ['separator', { style: 0 }],
-  ];
-  const ids = plugins.map((_, i) => i + 1);
+  const launchers = ['xfce4-web-browser.desktop', 'xfce4-terminal-emulator.desktop', 'xfce4-file-manager.desktop'];
+  const ids = launchers.map((_, i) => i + 1);
+  // p=10 is bottom centre; length 1 shrinks the panel to its icons: a dock.
   const panel = props({
-    'dark-mode': true,
-    'panel-1': {
-      position: 'p=10;x=0;y=0',
-      length: 100,
-      'position-locked': true,
-      size: 48,
-      'icon-size': 24,
-      'background-style': 1,
-      'background-rgba': NEAR_BLACK,
-      'plugin-ids': ids,
-    },
+    'dark-mode': false,
+    'panel-1': { position: 'p=10;x=0;y=0', length: 1, 'position-locked': true, size: 64, 'icon-size': 40, 'plugin-ids': ids },
   });
-  const entries = plugins
-    .map(([type, p], i) => `<property name="plugin-${i + 1}" type="string" value="${type}">${props(p)}</property>`)
+  const plugins = launchers
+    .map((item, i) => `<property name="plugin-${i + 1}" type="string" value="launcher">${props({ items: [item] })}</property>`)
     .join('');
   return channel(
     'xfce4-panel',
-    `<property name="configver" type="int" value="2"/><property name="panels" type="array"><value type="int" value="1"/>${panel}</property><property name="plugins" type="empty">${entries}</property>`,
+    `<property name="configver" type="int" value="2"/><property name="panels" type="array"><value type="int" value="1"/>${panel}</property><property name="plugins" type="empty">${plugins}</property>`,
   );
 }
 
