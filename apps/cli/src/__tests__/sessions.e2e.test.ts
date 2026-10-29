@@ -27,10 +27,7 @@ let previousDisableSandboxEnvFile: string | undefined;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let sessionCreateBody: Record<string, unknown> | null = null;
 let sessionList: Record<string, unknown>[] = [];
-let transcriptRequests: URL[] = [];
-/** Per-session transcript origin, so a test can say which sessions the server
- *  serves live and which it serves from the durable mirror. */
-let transcriptSources: Record<string, 'live' | 'mirror'> = {};
+let logRequests: URL[] = [];
 let apiRequests: string[] = [];
 let clientCreatesBranch = false;
 let readinessStage = 'ready';
@@ -102,8 +99,7 @@ describe('sessions new CLI flow', () => {
     process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
     sessionCreateBody = null;
     sessionList = [];
-    transcriptRequests = [];
-    transcriptSources = {};
+    logRequests = [];
     apiRequests = [];
     clientCreatesBranch = false;
     readinessStage = 'ready';
@@ -175,7 +171,7 @@ describe('sessions new CLI flow', () => {
         if (
           req.method === "GET" &&
           url.pathname.startsWith(`/v1/projects/${PROJECT_ID}/sessions/`) &&
-          !url.pathname.endsWith("/transcript")
+          !url.pathname.endsWith("/log")
         ) {
           return Response.json({
             session_id: "00000000-0000-4000-a000-000000000333",
@@ -185,44 +181,28 @@ describe('sessions new CLI flow', () => {
         if (req.method === 'GET' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
           return Response.json(sessionList);
         }
-        const transcriptMatch = url.pathname.match(new RegExp(`^/v1/projects/${PROJECT_ID}/sessions/([^/]+)/transcript$`));
-        if (req.method === 'GET' && transcriptMatch) {
-          transcriptRequests.push(url);
-          const source = transcriptSources[transcriptMatch[1]!] ?? 'live';
+        const logMatch = url.pathname.match(new RegExp(`^/v1/projects/${PROJECT_ID}/sessions/([^/]+)/log$`));
+        if (req.method === 'GET' && logMatch) {
+          logRequests.push(url);
+          // The stored session log: one root thread, a user message and a reply that ran a tool.
+          const record = { schema: 'kortix.session/2', v: 1, thread_id: 'ses_test', kind: 'turn', status: 'complete', in_context: true,
+            model: null, usage: null, finish: null, error: null, producer: { harness: 'pi', harness_version: '1', adapter_version: '1' } };
           return Response.json({
-            available: true,
-            reason:
-              source === 'mirror'
-                ? 'session is stopped; live transcript requires a running sandbox'
-                : null,
-            source,
-            // A mirror read reports completeness for itself; a live read is
-            // whatever the sandbox holds right now.
-            complete: source === 'mirror',
-            opencode_session_id: 'ses_test',
-            message_count: 2,
+            session: { schema: 'kortix.session/2', v: 1, session_id: logMatch[1] },
+            generation: 1,
+            threads: [{ schema: 'kortix.session/2', v: 1, thread_id: 'ses_test', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '2026-06-20T00:00:00.000Z' }],
+            thread_id: 'ses_test',
+            has_more: false,
             messages: [
-              {
-                role: 'user',
-                created: '2026-06-20T00:00:00.000Z',
-                completed: null,
-                text: 'Review recent sessions',
-                tools: [],
-                files: [],
-                reasoning_omitted: false,
-                error: null,
-              },
-              {
-                role: 'assistant',
-                created: '2026-06-20T00:01:00.000Z',
-                completed: '2026-06-20T00:02:00.000Z',
-                text: 'Found the important changes.',
-                tools: [{ tool: 'bash', status: 'completed', output: 'must not leak' }],
-                files: [],
-                reasoning_omitted: true,
-                error: null,
-                output: 'must not leak',
-              },
+              { ...record, message_id: 'msg_user', seq: 1, role: 'user', created_at: '2026-06-20T00:00:00.000Z', completed_at: null,
+                blocks: [{ type: 'text', id: 't1', text: 'Review recent sessions' }] },
+              { ...record, message_id: 'msg_reply', seq: 2, role: 'assistant', created_at: '2026-06-20T00:01:00.000Z', completed_at: '2026-06-20T00:02:00.000Z',
+                blocks: [
+                  { type: 'reasoning', id: 'r1', text: 'thinking' },
+                  { type: 'text', id: 't2', text: 'Found the important changes.' },
+                  { type: 'tool_call', id: 'c1', call_id: 'call_1', name: 'bash', kind: 'shell', input: { command: 'git log' }, status: 'complete',
+                    result: { content: [{ type: 'text', text: 'must not leak' }], is_error: false } },
+                ] },
             ],
           });
         }
@@ -444,7 +424,7 @@ describe('sessions new CLI flow', () => {
     expect(sessionCreateBody).toBeNull();
   });
 
-  test('digest uses compact project transcript endpoint', async () => {
+  test('digest reads every session\'s stored session log, compacted, and no v1 transcript', async () => {
     const runningId = '11111111-1111-4111-8111-111111111111';
     const stoppedId = '22222222-2222-4222-8222-222222222222';
     sessionList = [
@@ -486,27 +466,21 @@ describe('sessions new CLI flow', () => {
       },
     ];
 
-    transcriptSources[stoppedId] = 'mirror';
-
     const { code, stdout } = await captureStdout(() =>
       runSessions(['digest', '--all', '--messages', '5', '--chars', '120', '--json']),
     );
 
     expect(code).toBe(0);
-    // EVERY session is asked, not only the running one. The API serves a
-    // stopped session from its durable transcript mirror, so skipping the
-    // request here is how the digest used to lose a transcript it could read.
-    expect(transcriptRequests).toHaveLength(2);
-    expect(transcriptRequests.map((u) => u.pathname)).toEqual(
+    // EVERY session's stored log is read, the stopped one too; no v1 transcript (P8.3).
+    expect(logRequests.map((u) => u.pathname)).toEqual(
       expect.arrayContaining([
-        `/v1/projects/${PROJECT_ID}/sessions/${runningId}/transcript`,
-        `/v1/projects/${PROJECT_ID}/sessions/${stoppedId}/transcript`,
+        `/v1/projects/${PROJECT_ID}/sessions/${runningId}/log`,
+        `/v1/projects/${PROJECT_ID}/sessions/${stoppedId}/log`,
       ]),
     );
-    for (const request of transcriptRequests) {
-      expect(request.searchParams.get('limit')).toBe('5');
-      expect(request.searchParams.get('chars')).toBe('120');
-    }
+    expect(logRequests).toHaveLength(2);
+    for (const request of logRequests) expect(request.searchParams.get('limit')).toBe('5');
+    expect(apiRequests.filter((r) => r.includes('/transcript'))).toEqual([]);
 
     const parsed = JSON.parse(stdout) as {
       sessions: Array<{
@@ -527,16 +501,14 @@ describe('sessions new CLI flow', () => {
       opencode_session_id: 'ses_test',
       opencode_titles: ['Digest target'],
     });
-    expect(parsed.sessions[0]!.transcript).toMatchObject({ available: true, source: 'live' });
-    // The stopped session: served, and honest about where from.
-    expect(parsed.sessions[1]!.transcript).toMatchObject({
-      available: true,
-      source: 'mirror',
-      complete: true,
-    });
+    // Both sessions are served from their stored log; the log holds every message (no has_more).
+    for (const digest of parsed.sessions) {
+      expect(digest.transcript).toMatchObject({ available: true, source: 'log', complete: true });
+    }
+    // Tool calls are name and status only: the tool's output never reaches the digest.
     expect(JSON.stringify(parsed)).not.toContain('must not leak');
     expect(parsed.sessions[0]!.transcript.messages[1]!.tools).toEqual([
-      { tool: 'bash', status: 'completed' },
+      { tool: 'bash', status: 'complete' },
     ]);
   });
 });

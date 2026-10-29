@@ -85,6 +85,19 @@ describe('SubSessionSection totals', () => {
   });
 });
 
+/** The session's running row: its runtime answers the sub-agents' reads, without a `/start`. */
+const getToken = async () => 'token';
+async function runningSession(projectId: string, sessionId: string, runtimeSessionId: string) {
+  const { createKortix } = await import('@kortix/sdk');
+  await createKortix({ backendUrl: 'http://test.local/v1', getToken }).session(projectId, sessionId).ensureReady({
+    session: {
+      session_id: sessionId, project_id: projectId, account_id: 'a', status: 'running',
+      sandbox_id: `sbx_${sessionId}`, sandbox_provider: 'synthetic', sandbox_url: `http://test.local/v1/p/sbx-${sessionId}/8000/`,
+      runtime_session_id: runtimeSessionId,
+    } as never,
+  });
+}
+
 describe('SubSessionSection loads a sub-agent thread once its row scrolls into view', () => {
   const ROOT = 'ses_lazy_root', CHILD = 'ses_lazy_child', GRAND = 'ses_lazy_grand', GREAT = 'ses_lazy_great';
   const sessions = [
@@ -94,16 +107,17 @@ describe('SubSessionSection loads a sub-agent thread once its row scrolls into v
     { id: GREAT, parentID: GRAND, title: 'Great-grandchild agent' },
   ] as unknown as Session[];
 
-  test('a row reads its saved window only once it is in view, once; a row behind a closed caret reads nothing', async () => {
+  test('a row reads its thread from the runtime only once it is in view, once; a row behind a closed caret reads nothing', async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    const { configureKortix } = await import('@kortix/sdk');
-    configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
     const requests: string[] = [];
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async (url: unknown) => {
-      requests.push(String(url));
-      return Response.json({ available: false, reason: 'test', messages: [] });
+    // The session has no log (`onLog` is false), so a row reads its thread from the runtime.
+    globalThis.fetch = (async (input: unknown) => {
+      const url = input instanceof Request ? input.url : String(input);
+      requests.push(url);
+      return /\/session\/ses_[a-z_]+\/message/.test(url) ? Response.json([]) : Response.json({ available: false });
     }) as unknown as typeof fetch;
+    await runningSession('p_lazy', 's_lazy', ROOT);
     // A fake IntersectionObserver: `show(title)` reports the row with that title in view.
     type Row = { title: string };
     const observers = new Set<{ cb: IntersectionObserverCallback; rows: Set<Row> }>();
@@ -121,7 +135,7 @@ describe('SubSessionSection loads a sub-agent thread once its row scrolls into v
       });
       await settle();
     };
-    const loaded = () => [CHILD, GRAND, GREAT].filter((id) => requests.some((url) => url.includes(`child=${id}`)));
+    const loaded = () => [CHILD, GRAND, GREAT].filter((id) => requests.some((url) => url.includes(`/session/${id}/message`)));
     // Each row's button gets a node naming its title (react-test-renderer has no DOM).
     type El = { type: unknown; props: { children?: unknown } };
     const createNodeMock = (el: El) => {
@@ -151,11 +165,12 @@ describe('SubSessionSection loads a sub-agent thread once its row scrolls into v
       await show('Grandchild agent');
       expect(loaded()).toEqual([CHILD, GRAND]);
 
-      // A re-render of the open modal keeps both loaded and reads nothing again.
-      const before = requests.length;
+      // A re-render of the open modal keeps both loaded and reads no thread again.
+      const reads = () => requests.filter((url) => url.includes('/message')).length;
+      const before = reads();
       await act(async () => { renderer!.update(tree); });
       await settle();
-      expect(requests.length).toBe(before);
+      expect(reads()).toBe(before);
 
       // Opening the grandchild's caret draws the great-grandchild row; it loads once in view.
       type Node = { children: Array<Node | string> };
@@ -242,21 +257,21 @@ describe('SubSessionSection totals while sub-agents load lazily', () => {
 
   async function setup(observer: typeof IntersectionObserver | undefined) {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    const { configureKortix } = await import('@kortix/sdk');
-    configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
     useSessionStateStore.getState().hydrate(ROOT, [reply(ROOT, 'm_all_root', 2)] as never);
     const loadedIds: string[] = [];
     const originalFetch = globalThis.fetch;
     const originalObserver = globalThis.IntersectionObserver;
-    // A sub-agent's saved-window read lands its thread in the store.
-    globalThis.fetch = (async (url: unknown) => {
-      const child = /child=([^&]+)/.exec(String(url))?.[1];
-      if (child && input[child] !== undefined && !loadedIds.includes(child)) {
-        loadedIds.push(child);
-        useSessionStateStore.getState().hydrate(child, [reply(child, `m_${child}`, input[child]!)] as never);
+    // The session has no log: a sub-agent's runtime read lands its thread in the store.
+    globalThis.fetch = (async (req: unknown) => {
+      const url = req instanceof Request ? req.url : String(req);
+      const child = /\/session\/(ses_[a-z_]+)\/message/.exec(url)?.[1];
+      if (child && input[child] !== undefined) {
+        if (!loadedIds.includes(child)) loadedIds.push(child);
+        return Response.json([reply(child, `m_${child}`, input[child]!)]);
       }
-      return Response.json({ available: false, reason: 'test', messages: [] });
+      return Response.json({ available: false });
     }) as unknown as typeof fetch;
+    await runningSession('p_all', 's_all', ROOT);
     (globalThis as { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver = observer;
     let renderer: ReturnType<typeof create>;
     await act(async () => {
@@ -340,7 +355,6 @@ describe('SubSessionSection with sub-agents the server never saved', () => {
 
   test('"Load all" reads every row from the runtime; a row that cannot load says so, never "0 messages"', async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    const { createKortix } = await import('@kortix/sdk');
     const originalFetch = globalThis.fetch;
     const originalObserver = globalThis.IntersectionObserver;
     const runtimeReads = new Set<string>();
@@ -362,15 +376,7 @@ describe('SubSessionSection with sub-agents the server never saved', () => {
     }) as unknown as typeof fetch;
     // No row is ever in view: only "Load all" requests them.
     globalThis.IntersectionObserver = class { observe() {} disconnect() {} } as unknown as typeof IntersectionObserver;
-    const kortix = createKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
-    // The session's running row: the runtime of this session, without a `/start`.
-    await kortix.session('p_unsaved', 's_unsaved').ensureReady({
-      session: {
-        session_id: 's_unsaved', project_id: 'p_unsaved', account_id: 'a', status: 'running',
-        sandbox_id: 'sbx_unsaved', sandbox_provider: 'synthetic', sandbox_url: 'http://test.local/v1/p/sbx-unsaved/8000/',
-        runtime_session_id: ROOT,
-      } as never,
-    });
+    await runningSession('p_unsaved', 's_unsaved', ROOT);
     useSessionStateStore.getState().hydrate(ROOT, [message(ROOT, 'm_root')] as never);
     let renderer: ReturnType<typeof create>;
     const text = () => JSON.stringify(renderer!.toJSON());

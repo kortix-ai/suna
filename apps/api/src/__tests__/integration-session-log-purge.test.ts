@@ -513,6 +513,7 @@ const SESSION_TABLES: Record<string, 'purged' | 'scrubbed' | `kept: ${string}`> 
   'tunnel_audit_logs.session_id': 'kept: audit trail',
   'provider_events.session_id': 'kept: provider operations, no content',
   'session_sandboxes.session_id': 'kept: the box record, no content',
+  'session_sandbox_identities.session_id': 'kept: a box id to session id map for artifact save authors, no content',
   'account_session_activity.session_id': 'kept: a login session, not a project session',
   'account_tokens.session_id': 'kept: token metadata, no content',
   'connection_oauth_sessions.session_id': 'kept: an OAuth flow, no content',
