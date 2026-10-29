@@ -2218,6 +2218,44 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     }
   });
 
+  test('a session deleted in the web is no session for any command, as for the next message', async () => {
+    const deleted = await chatSession(7054, 'running', 'telegram');
+    await db
+      .update(projectSessions)
+      .set({ metadata: { deletedAt: new Date().toISOString(), opencode_model: 'cmd-deleted-pin' } })
+      .where(eq(projectSessions.sessionId, deleted));
+    const spies: Array<{ mockRestore(): void }> = [
+      spyOn(selection, 'listProjectAgents').mockResolvedValue([{ name: 'reviewer', description: 'Reviews changes', mode: null }]),
+      spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer']),
+    ];
+    try {
+      await handleTelegramEvent(update('/status', ALLOWED, 7054));
+      expect(replies().at(-1)).toBe(
+        [
+          'This chat in Kortix',
+          'Project: telegram-v2',
+          'Agent: project default',
+          'Model: project default',
+          'Session: none yet: your next message starts one',
+          projectWebUrl(appConfig.FRONTEND_URL, PROJECT),
+        ].join('\n'),
+      );
+      await handleTelegramEvent(update('/stop', ALLOWED, 7054));
+      expect(replies().at(-1)).toBe('Nothing is running in this chat.');
+      expect(abortsOf(deleted)).toEqual([]);
+      await handleTelegramEvent(update('/agent reviewer', ALLOWED, 7054));
+      expect(replies().at(-1)).toBe('Agent for this chat set to reviewer. Your next message starts a session with it.');
+      await handleTelegramEvent(update('/model default', ALLOWED, 7054));
+      expect(replies().at(-1)).toBe('Model for this chat reset to the project default.');
+      // What the delivery answers for a deleted session (follow-up-delivery.ts): the message starts a new one.
+      deliverResult = 'no-session';
+      await handleTelegramEvent(update('next task', ALLOWED, 7054));
+      expect(created.map((c) => c.body.agent_name)).toEqual(['reviewer']);
+    } finally {
+      restore(spies);
+    }
+  });
+
   test('a photo captioned with a command runs the command, and its file is not read', async () => {
     stored.set('ph-cmd', { bytes: JPEG });
     await handleTelegramEvent(mediaUpdate({ photo: [{ file_id: 'ph-cmd', width: 64, height: 64 }] }, { caption: '/status', chat: 7043 }));

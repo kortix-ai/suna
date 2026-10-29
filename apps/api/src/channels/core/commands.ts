@@ -86,7 +86,12 @@ const CREATING = "Kortix is still creating this chat's session, which keeps its 
 const STARTING = new Set(['queued', 'branching', 'provisioning']);
 
 const sessionUrl = (ctx: CommandContext, sessionId: string) => sessionWebUrl(config.FRONTEND_URL, ctx.project.projectId, sessionId);
-const chatSession = (ctx: CommandContext) => findChatThreadSession(ctx.target, ctx.project.projectId);
+
+/** The chat's session. One deleted in the web (`metadata.deletedAt`) is none: the next message starts a new one (follow-up-delivery.ts). */
+async function chatSession(ctx: CommandContext): Promise<ChatThreadSession | null> {
+  const session = await findChatThreadSession(ctx.target, ctx.project.projectId);
+  return typeof (session?.metadata as Record<string, unknown> | null | undefined)?.deletedAt === 'string' ? null : session;
+}
 
 function pinOf(session: ChatThreadSession | null): string | null {
   const pin = (session?.metadata as Record<string, unknown> | null | undefined)?.opencode_model;
