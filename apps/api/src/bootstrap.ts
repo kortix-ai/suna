@@ -166,14 +166,14 @@ async function startReplicaServices() {
   // Warm the maintenance config, so a fresh pod serves the stored config from
   // request #1, not the cold-cache default.
   await maintenanceSetting.refresh().catch(() => {});
+  // The durable job queue (Capture ingest, held connector calls): every replica runs jobs.
+  if (config.KORTIX_WORKERS_ENABLED || config.KORTIX_JOB_WORKER_ENABLED) startJobWorker();
   // Every replica stages snapshot/session-boot build contexts in tmpdir and can
   // leak them on error paths; sweep stale ones so they don't fill node disk and
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
   if (config.KORTIX_WORKERS_ENABLED) {
     startTmpReaper();
     startSessionLifecycleWorker();
-    // The durable job queue (Kortix Capture ingest): every replica runs jobs.
-    startJobWorker();
     // Kortix-polled app events: every replica checks due streams.
     startTriggerEventPollWorker();
     // Keep the shared Teams bot token warm before the first message.

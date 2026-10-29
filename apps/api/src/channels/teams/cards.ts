@@ -1,4 +1,5 @@
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
+import { HELD_RUN_CARD_TEXT, type HeldRunCardState } from '../core/held-run-card';
 import { questionButtonData } from '../core/question-token';
 import type { StreamTaskChunk } from '../slack-api';
 import { markdownToCardElements } from './markdown';
@@ -1223,14 +1224,18 @@ export function buildTeamsApprovalOutcomeCard(opts: {
   note: string;
   /** Who decided: the presser's Teams name, or "a teammate in Kortix". */
   decidedBy?: string;
+  /** An approved held call: where its run is. */
+  run?: HeldRunCardState;
 }): Record<string, unknown> {
+  const by = opts.decidedBy ? `by ${opts.decidedBy}` : '';
+  const run = opts.decision === 'approve' && opts.run ? HELD_RUN_CARD_TEXT[opts.run] : '';
   const body: CardElement[] =
     opts.decision === 'expired'
       ? headerBlock('⌛', `Expired: ${opts.actionPath}`, 'This approval expired.')
       : headerBlock(
           opts.decision === 'approve' ? '✅' : '⛔',
           `${opts.decision === 'approve' ? 'Approved' : 'Denied'}: ${opts.actionPath}`,
-          opts.decidedBy ? `by ${opts.decidedBy}` : undefined,
+          [by, run].filter(Boolean).join('. ') || undefined,
         );
   if (opts.note) {
     body.push(

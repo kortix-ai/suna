@@ -689,6 +689,8 @@ export function localApiEnvironment(options: {
     KORTIX_OAUTH_REFRESH_GRACE_MS: "2000",
     KORTIX_TRIGGER_SCHEDULER_ENABLED: "false",
     KORTIX_WORKERS_ENABLED: "false",
+    // Held connector calls (CONN-42) and Capture ingest (CAP-2) run only as queued jobs.
+    KORTIX_JOB_WORKER_ENABLED: "true",
     // The App deploy route kicks its worker directly, so the general
     // switch above does not cover it. Every provider here points at an
     // unreachable address, so driving a sandbox build only races a doomed

@@ -30,6 +30,7 @@ export {
 } from './lib/sessions';
 
 export {
+  buildContinueSessionCommandValues,
   createCommandStatus,
   createSession,
   startSession,
@@ -62,7 +63,6 @@ export { extractAgents, grantsByAgent, loadProjectAgents } from './agents';
 export { mentionTokens, mentionsMember } from './rooms/envelope';
 export { resolveAndAuthorizeAgentAs } from './lib/agent-access';
 export { loadVisibleSession } from './lib/session-visibility';
-export { buildContinueSessionCommandValues } from './session-lifecycle';
 export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
 
 // Project access, the route app and the secret envelope.
