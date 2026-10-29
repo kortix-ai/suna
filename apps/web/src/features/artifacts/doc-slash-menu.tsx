@@ -66,7 +66,7 @@ type Item = {
   id: string;
   icon: Icon;
   /** Key in the `artifacts` catalog. */
-  label: string;
+  labelKey: string;
   /** Words that also find it, beside its label. */
   aliases: string;
   /** The editor shortcut, as keys: `mod`, `alt`, `shift` or a character. */
@@ -79,30 +79,30 @@ const MERMAID_STARTER = 'flowchart LR\n  A[Start] --> B[Finish]';
 /** Groups of block commands, in menu order. Shortcuts are the editor's own (StarterKit, TaskList). */
 const GROUPS: Item[][] = [
   [
-    { id: 'h1', icon: TextHOneIcon, label: 'heading1', aliases: 'h1 title', keys: ['mod', 'alt', '1'], run: (e) => e.chain().focus().setHeading({ level: 1 }).run() },
-    { id: 'h2', icon: TextHTwoIcon, label: 'heading2', aliases: 'h2 subtitle', keys: ['mod', 'alt', '2'], run: (e) => e.chain().focus().setHeading({ level: 2 }).run() },
-    { id: 'h3', icon: TextHThreeIcon, label: 'heading3', aliases: 'h3', keys: ['mod', 'alt', '3'], run: (e) => e.chain().focus().setHeading({ level: 3 }).run() },
+    { id: 'h1', icon: TextHOneIcon, labelKey: 'heading1', aliases: 'h1 title', keys: ['mod', 'alt', '1'], run: (e) => e.chain().focus().setHeading({ level: 1 }).run() },
+    { id: 'h2', icon: TextHTwoIcon, labelKey: 'heading2', aliases: 'h2 subtitle', keys: ['mod', 'alt', '2'], run: (e) => e.chain().focus().setHeading({ level: 2 }).run() },
+    { id: 'h3', icon: TextHThreeIcon, labelKey: 'heading3', aliases: 'h3', keys: ['mod', 'alt', '3'], run: (e) => e.chain().focus().setHeading({ level: 3 }).run() },
   ],
   [
-    { id: 'ul', icon: ListBulletsIcon, label: 'bulletList', aliases: 'ul bullet unordered', keys: ['mod', 'shift', '8'], run: (e) => e.chain().focus().toggleBulletList().run() },
-    { id: 'ol', icon: ListNumbersIcon, label: 'numberedList', aliases: 'ol ordered number', keys: ['mod', 'shift', '7'], run: (e) => e.chain().focus().toggleOrderedList().run() },
-    { id: 'todo', icon: ListChecksIcon, label: 'taskList', aliases: 'todo checkbox checklist', keys: ['mod', 'shift', '9'], run: (e) => e.chain().focus().toggleTaskList().run() },
+    { id: 'ul', icon: ListBulletsIcon, labelKey: 'bulletList', aliases: 'ul bullet unordered', keys: ['mod', 'shift', '8'], run: (e) => e.chain().focus().toggleBulletList().run() },
+    { id: 'ol', icon: ListNumbersIcon, labelKey: 'numberedList', aliases: 'ol ordered number', keys: ['mod', 'shift', '7'], run: (e) => e.chain().focus().toggleOrderedList().run() },
+    { id: 'todo', icon: ListChecksIcon, labelKey: 'taskList', aliases: 'todo checkbox checklist', keys: ['mod', 'shift', '9'], run: (e) => e.chain().focus().toggleTaskList().run() },
   ],
   [
-    { id: 'media', icon: ImageIcon, label: 'insertMedia', aliases: 'image video picture photo upload', run: () => {} },
-    { id: 'table', icon: TableIcon, label: 'table', aliases: 'grid', run: (e) => e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
+    { id: 'media', icon: ImageIcon, labelKey: 'insertMedia', aliases: 'image video picture photo upload', run: () => {} },
+    { id: 'table', icon: TableIcon, labelKey: 'table', aliases: 'grid', run: (e) => e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
   ],
   [
-    { id: 'code', icon: CodeBlockIcon, label: 'codeBlock', aliases: 'pre snippet', keys: ['mod', 'alt', 'C'], run: (e) => e.chain().focus().toggleCodeBlock().run() },
+    { id: 'code', icon: CodeBlockIcon, labelKey: 'codeBlock', aliases: 'pre snippet', keys: ['mod', 'alt', 'C'], run: (e) => e.chain().focus().toggleCodeBlock().run() },
     {
       id: 'diagram',
       icon: FlowArrowIcon,
-      label: 'diagram',
+      labelKey: 'diagram',
       aliases: 'mermaid chart flowchart',
       run: (e) => e.chain().focus().insertContent({ type: 'codeBlock', attrs: { language: 'mermaid' }, content: [{ type: 'text', text: MERMAID_STARTER }] }).run(),
     },
-    { id: 'quote', icon: QuotesIcon, label: 'quote', aliases: 'blockquote citation', keys: ['mod', 'shift', 'B'], run: (e) => e.chain().focus().toggleBlockquote().run() },
-    { id: 'hr', icon: MinusIcon, label: 'divider', aliases: 'hr rule separator line', run: (e) => e.chain().focus().setHorizontalRule().run() },
+    { id: 'quote', icon: QuotesIcon, labelKey: 'quote', aliases: 'blockquote citation', keys: ['mod', 'shift', 'B'], run: (e) => e.chain().focus().toggleBlockquote().run() },
+    { id: 'hr', icon: MinusIcon, labelKey: 'divider', aliases: 'hr rule separator line', run: (e) => e.chain().focus().setHorizontalRule().run() },
   ],
 ];
 
@@ -142,7 +142,7 @@ export function SlashMenu({
   const [height, setHeight] = useState(MENU_HEIGHT);
   const query = state.query.trim().toLowerCase();
   const groups = GROUPS.map((group) =>
-    group.filter((item) => !query || `${t(item.label)} ${item.aliases}`.toLowerCase().includes(query)),
+    group.filter((item) => !query || `${t(item.labelKey)} ${item.aliases}`.toLowerCase().includes(query)),
   ).filter((group) => group.length);
   const items = groups.flat();
 
@@ -221,7 +221,7 @@ export function SlashMenu({
                   className={menuRow('md', 'default', 'cursor-pointer')}
                 >
                   <IconCmp className="text-muted-foreground" />
-                  <span className="truncate">{t(item.label)}</span>
+                  <span className="truncate">{t(item.labelKey)}</span>
                   {item.keys ? (
                     <kbd className={`${MENU_SHORTCUT} font-sans tracking-normal`}>
                       {item.keys.map((k) => keyLabel(k, mac)).join(mac ? '' : '+')}

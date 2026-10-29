@@ -465,6 +465,8 @@ flow(
       ];
 
       await ctx.step("restore off: preflight to pi → 200 available without a restore, and the whole history (4 live messages) is the first loss", async () => {
+        // Restore is on by default (#11032), so this step turns it off first.
+        await setFeatureAsOperator(ctx, project.id, "session_log_restore", false);
         (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
           session_id: sessionId, from: "opencode", to: "pi", available: true, reason: null, restores: false,
           losses: [{ feature: "history", used: 4, status: "lost" }, ...losses], unsupported,

@@ -169,10 +169,14 @@ function seededRolePermissions(): Map<string, string[]> {
     // BASE TABLE `kortix.role_permissions`: `kortix.iam_role_actions` is a view
     // now, and a view cannot take ON CONFLICT.
     for (const one of sql.matchAll(
-      /INSERT INTO kortix\.(?:iam_role_actions|role_permissions) \(role_id, action\)\s*SELECT r\.role_id, '([^']+)'[\s\S]*?r\.key = '([^']+)'[\s\S]*?r\.scope_type = '([^']+)'/gi,
+      /INSERT INTO kortix\.(?:iam_role_actions|role_permissions) \(role_id, action\)\s*SELECT r\.role_id, '([^']+)'[\s\S]*?r\.key\s*(?:=\s*'([^']+)'|IN\s*\(([^)]*)\))[\s\S]*?r\.scope_type = '([^']+)'/gi,
     )) {
-      const key = `${one[2]}:${one[3]}`;
-      out.set(key, [...(out.get(key) ?? []), one[1]]);
+      // `r.key = 'x'` or, since 20261029153736837, `r.key IN ('x', 'y')`.
+      const keys = one[2] ? [one[2]] : [...one[3].matchAll(/'([^']+)'/g)].map((match) => match[1]);
+      for (const name of keys) {
+        const key = `${name}:${one[4]}`;
+        out.set(key, [...(out.get(key) ?? []), one[1]]);
+      }
     }
     // The removal shape (20261013172952181: the member role loses
     // `member.read` and `group.read`).
@@ -240,8 +244,8 @@ describe('the built-in member role reads no directory', () => {
 
 describe('the area table covers the catalog', () => {
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {
-    // 55 since artifacts' `project.artifact.{read,write,manage,public}` (20261024055005000).
-    expect(PROJECT_LEAVES.length).toBe(55);
+    // 56 since `project.artifact.comment` (20261029153736837).
+    expect(PROJECT_LEAVES.length).toBe(56);
     // 31 since Kortix Capture's `capture.read_all` and `capture.manage` (20261015003000001).
     expect(ACCOUNT_LEAVES.length).toBe(31);
     // The retired spellings must not come back: `project.cr.*` collapsed into
@@ -309,14 +313,14 @@ describe('foldSelection → expandFold is lossless', () => {
     const fold = foldSelection('project', CATALOG, new Set());
     expect([...expandFold(fold)]).toEqual([]);
     expect(fold.selectedCount).toBe(0);
-    expect(fold.totalCount).toBe(55);
+    expect(fold.totalCount).toBe(56);
   });
 
   test('a full project role round-trips', () => {
     const selected = new Set(PROJECT_LEAVES);
     const fold = foldSelection('project', CATALOG, selected);
     expect(sorted(expandFold(fold))).toEqual(sorted(selected));
-    expect(fold.selectedCount).toBe(55);
+    expect(fold.selectedCount).toBe(56);
     expect(fold.areas.every((a) => a.view.state !== 'partial' && a.edit.state !== 'partial')).toBe(
       true,
     );

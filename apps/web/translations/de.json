@@ -184,7 +184,37 @@
     "noAgents": "Keine Agenten"
   },
   "useCases": {
-    "headline": "Die Abläufe, die ein Unternehmen am Laufen halten"
+    "headline": "Die Abläufe, die ein Unternehmen am Laufen halten",
+    "covers": {
+      "slackDraftFor": "Entwurf für <b>Donnerstag 10:00</b>, LinkedIn:",
+      "slackPost": "Wir haben Connectors v2 veröffentlicht: ein Katalog für MCP, OpenAPI und GraphQL. Das ändert sich für Ihre Agenten →",
+      "approve": "Genehmigen",
+      "edit": "Bearbeiten",
+      "skip": "Überspringen",
+      "deny": "Ablehnen",
+      "crmTitle": "Nächtliche CRM-Pflege",
+      "crmMeta": "02:00 · 3 Min. 12 s gearbeitet",
+      "crmSearchContacts": "hubspot · Kontakte suchen",
+      "crmMergeDuplicates": "hubspot · Duplikate zusammenführen",
+      "crmEnrichCompany": "clearbit · Firmendaten anreichern",
+      "crmAskApproval": "slack · Freigabe für Massenaktualisierung anfragen",
+      "awaitingApproval": "Wartet auf Freigabe",
+      "draftToOps": "An: Head of Operations · Entwurf",
+      "draftOps": "Ich habe gesehen, dass Ihr Team drei SDRs einstellt. So hat ein ähnliches Team seine Recherchezeit verkürzt.",
+      "draftToSales": "An: VP Sales · Entwurf",
+      "draftSales": "Glückwunsch zur Series B. Lohnt sich ein kurzer Blick darauf, wie Sie eingehende Leads verteilen?",
+      "draftToRevOps": "An: RevOps-Lead · heute",
+      "draftRevOps": "Ihre Preisseite hat sich letzte Woche geändert. Gern zeige ich, was Teams wie Ihres als Nächstes getan haben.",
+      "approvalAsks": "<name>{agent}</name> möchte ein Tool ausführen",
+      "approvalExpires": "Läuft in 58 Min. ab",
+      "approvalQuestion": "640 $ für Bestellung #4821 erstatten?",
+      "approvalTool": "Tool",
+      "approvalAmount": "Betrag",
+      "approvalReason": "Grund",
+      "approvalCustomer": "Kunde",
+      "approvalReasonValue": "Artikel kam beschädigt an",
+      "approvalPolicy": "Richtlinie: Erstattungen über 500 $ brauchen eine menschliche Freigabe"
+    }
   },
   "developers": {
     "heroDescription": "Agenten, Skills, Tools, Konnektoren und Zeitpläne sind Dateien in einem Repository. Bearbeite sie in deiner IDE, führe sie lokal aus und stelle sie mit einem Befehl in der Cloud bereit. Open Source, selbst hostbar und unter deiner Kontrolle.",
@@ -20937,7 +20967,14 @@
       "texta3b142af6e97": "Anwendung",
       "texta43f1924db10": "Kein passender Anwendungsfall",
       "text9f4a8be5c188": "Versuchen Sie ein anderes Wort oder setzen Sie den Teamfilter zurück.",
-      "textdbff0b6e128b": "Ein Backend-Framework und Server für Agenten."
+      "textdbff0b6e128b": "Ein Backend-Framework und Server für Agenten.",
+      "textb1e19e0edf15": "7 inaktive Deals in HubSpot gefunden",
+      "textd6320415db95": "Suche inaktive Deals in HubSpot",
+      "text850aad6d0dc3": "7 Follow-up-Aufgaben erstellt",
+      "textc5e0ccf193cb": "4 inaktive Deals nachverfolgt",
+      "text1f60c85be705": "Inaktive Deals werden nachverfolgt",
+      "text24c939b23dfe": "2 Deals in HubSpot aktualisiert",
+      "text6cfe7973316d": "Deals in HubSpot werden aktualisiert"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
