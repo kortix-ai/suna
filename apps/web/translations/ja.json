@@ -184,7 +184,37 @@
     "noAgents": "エージェントなし"
   },
   "useCases": {
-    "headline": "会社を動かすループ"
+    "headline": "会社を動かすループ",
+    "covers": {
+      "slackDraftFor": "<b>木曜日 10:00</b> の下書き（LinkedIn）:",
+      "slackPost": "コネクター v2 をリリースしました。MCP、OpenAPI、GraphQL を 1 つのカタログで扱えます。エージェントにとっての変更点はこちら →",
+      "approve": "承認",
+      "edit": "編集",
+      "skip": "スキップ",
+      "deny": "拒否",
+      "crmTitle": "毎晩の CRM クリーンアップ",
+      "crmMeta": "02:00 · 作業時間 3分12秒",
+      "crmSearchContacts": "hubspot · 連絡先を検索",
+      "crmMergeDuplicates": "hubspot · 重複を統合",
+      "crmEnrichCompany": "clearbit · 企業情報を補完",
+      "crmAskApproval": "slack · 一括更新の承認を依頼",
+      "awaitingApproval": "承認待ち",
+      "draftToOps": "宛先: オペレーション責任者 · 下書き",
+      "draftOps": "SDR を 3 名採用中と拝見しました。同様のチームがリサーチ時間を短縮した方法をご紹介します。",
+      "draftToSales": "宛先: 営業担当 VP · 下書き",
+      "draftSales": "シリーズ B の資金調達おめでとうございます。インバウンドリードの振り分け方を少し見直してみませんか？",
+      "draftToRevOps": "宛先: RevOps 責任者 · 今日",
+      "draftRevOps": "先週、料金ページが変更されましたね。同様のチームが次に何をしたか、喜んでご紹介します。",
+      "approvalAsks": "<name>{agent}</name> がツールの実行を求めています",
+      "approvalExpires": "あと 58 分で期限切れ",
+      "approvalQuestion": "注文 #4821 に $640 を返金しますか？",
+      "approvalTool": "ツール",
+      "approvalAmount": "金額",
+      "approvalReason": "理由",
+      "approvalCustomer": "顧客",
+      "approvalReasonValue": "商品が破損して届いた",
+      "approvalPolicy": "ポリシー: $500 を超える返金には人の承認が必要"
+    }
   },
   "developers": {
     "heroDescription": "エージェント、スキル、ツール、コネクタ、スケジュールは、すべてリポジトリ内のファイルです。IDE で編集し、ローカルで実行し、1 つのコマンドでクラウドにデプロイできます。オープンソースでセルフホストでき、すべてを所有できます。",
@@ -20939,7 +20969,14 @@
       "textdbff0b6e128b": "エージェント向けのバックエンドフレームワークとサーバー。",
       "text615544b5a953": "pi 拡張機能",
       "text74bf85229fd2": "TypeScriptでハーネスを拡張します。",
-      "text152a04716eb3": "エージェントは pi で動作"
+      "text152a04716eb3": "エージェントは pi で動作",
+      "textb1e19e0edf15": "HubSpot で停滞中の取引が 7 件見つかりました",
+      "textd6320415db95": "HubSpot で停滞中の取引を検索中",
+      "text850aad6d0dc3": "フォローアップタスクを 7 件作成しました",
+      "textc5e0ccf193cb": "停滞中の取引 4 件をフォローアップしました",
+      "text1f60c85be705": "停滞中の取引をフォローアップ中",
+      "text24c939b23dfe": "HubSpot の取引を 2 件更新しました",
+      "text6cfe7973316d": "HubSpot の取引を更新中"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

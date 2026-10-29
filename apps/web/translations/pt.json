@@ -184,7 +184,37 @@
     "noAgents": "Nenhum agente"
   },
   "useCases": {
-    "headline": "Os ciclos que mantêm uma empresa em funcionamento"
+    "headline": "Os ciclos que mantêm uma empresa em funcionamento",
+    "covers": {
+      "slackDraftFor": "Rascunho para <b>quinta-feira às 10:00</b>, LinkedIn:",
+      "slackPost": "Lançamos os conectores v2: um único catálogo para MCP, OpenAPI e GraphQL. Veja o que mudou para os seus agentes →",
+      "approve": "Aprovar",
+      "edit": "Editar",
+      "skip": "Pular",
+      "deny": "Recusar",
+      "crmTitle": "Limpeza noturna do CRM",
+      "crmMeta": "02:00 · trabalhou 3 min 12 s",
+      "crmSearchContacts": "hubspot · pesquisar contatos",
+      "crmMergeDuplicates": "hubspot · mesclar duplicados",
+      "crmEnrichCompany": "clearbit · enriquecer empresa",
+      "crmAskApproval": "slack · pedir aprovação para atualização em massa",
+      "awaitingApproval": "Aguardando aprovação",
+      "draftToOps": "Para: head de Operações · rascunho",
+      "draftOps": "Vi que sua equipe está contratando três SDRs. Veja como uma equipe parecida reduziu o tempo de pesquisa.",
+      "draftToSales": "Para: VP de Vendas · rascunho",
+      "draftSales": "Parabéns pela Série B. Vale uma olhada rápida em como vocês distribuem os leads de entrada?",
+      "draftToRevOps": "Para: líder de RevOps · hoje",
+      "draftRevOps": "Sua página de preços mudou na semana passada. Posso mostrar o que equipes como a sua fizeram em seguida.",
+      "approvalAsks": "<name>{agent}</name> pede para executar uma ferramenta",
+      "approvalExpires": "Expira em 58 min",
+      "approvalQuestion": "Reembolsar US$ 640 do pedido #4821?",
+      "approvalTool": "Ferramenta",
+      "approvalAmount": "Valor",
+      "approvalReason": "Motivo",
+      "approvalCustomer": "Cliente",
+      "approvalReasonValue": "O item chegou danificado",
+      "approvalPolicy": "Política: reembolsos acima de US$ 500 precisam de uma pessoa"
+    }
   },
   "developers": {
     "heroDescription": "Agentes, habilidades, ferramentas, conectores e agendamentos são apenas arquivos em um repositório. Edite-os no seu IDE, execute-os localmente e publique-os na nuvem com um comando. Código aberto, auto-hospedável e sob seu controle.",
@@ -20939,7 +20969,14 @@
       "textdbff0b6e128b": "Um framework de backend e um servidor para agentes.",
       "text615544b5a953": "Extensões do pi",
       "text74bf85229fd2": "Estenda o harness com TypeScript.",
-      "text152a04716eb3": "Os agentes rodam no pi"
+      "text152a04716eb3": "Os agentes rodam no pi",
+      "textb1e19e0edf15": "7 negócios parados encontrados no HubSpot",
+      "textd6320415db95": "Procurando negócios parados no HubSpot",
+      "text850aad6d0dc3": "7 tarefas de follow-up criadas",
+      "textc5e0ccf193cb": "Follow-up feito em 4 negócios parados",
+      "text1f60c85be705": "Fazendo follow-up dos negócios parados",
+      "text24c939b23dfe": "2 negócios atualizados no HubSpot",
+      "text6cfe7973316d": "Atualizando negócios no HubSpot"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
