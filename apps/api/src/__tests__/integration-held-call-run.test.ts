@@ -44,7 +44,7 @@ const { makeDbGatewayDeps } = await import('../connectors/db-deps-gateway');
 const { resolveTokenPrincipal } = await import('../connectors/db-deps-principal');
 const { handleCall } = await import('../connectors/gateway');
 const { HELD_CALL_QUEUE, HELD_RUN_CEILING_MS, HELD_RUN_VISIBILITY_MS } = await import('../connectors/held-call-store');
-const { runHeldCall } = await import('../connectors/held-call-run');
+const { runHeldCall, settleStuckHeldCall } = await import('../connectors/held-call-run');
 const { APPROVAL_RERUN_RULE, heldCallRepeatInstructions, heldRunRule } = await import('../connectors/approval-expiry');
 const { decideConnectorApproval, expireDueApprovals, loadApprovalRow } = await import(
   '../projects/lib/connector-approval-decision'
@@ -641,6 +641,43 @@ describe('the approval-expiry tick closes the held-call lifecycle', () => {
     expect(row).toMatchObject({ state: 'refused', inputEnc: null });
     expect(row.outcome).toMatchObject({ status: 'refused', reason: 'run_window_passed' });
     expect(await resumes(`approval-run:${id}`)).toHaveLength(1);
+  });
+
+  test('the fence checks the run deadline in database time: an app clock behind it never runs the call', async () => {
+    const id = await gate({ amount: 1214 });
+    await decide(id, 'approve');
+    await db
+      .update(connectorHeldCalls)
+      .set({ runDeadline: sql`now() - interval '1 second'`, updatedAt: new Date() })
+      .where(eq(connectorHeldCalls.executionId, id));
+    const deadline = (await held(id)).runDeadline!;
+    const before = providerHits;
+    setSystemTime(new Date(deadline.getTime() - 60_000));
+    try {
+      await run(id);
+    } finally {
+      setSystemTime();
+    }
+    expect(providerHits).toBe(before);
+    const row = await held(id);
+    expect(row).toMatchObject({ state: 'refused', inputEnc: null });
+    expect(row.outcome).toMatchObject({ status: 'refused', reason: 'run_window_passed' });
+    expect(await resumes(`approval-run:${id}`)).toHaveLength(1);
+  });
+
+  test('a stuck settle selected as queued leaves a row its worker fenced since then', async () => {
+    const id = await gate({ amount: 1215 });
+    await decide(id, 'approve');
+    // The sweep selected `queued`; a worker fenced the row before the settle.
+    await db
+      .update(connectorHeldCalls)
+      .set({ state: 'dispatched', dispatchedAt: new Date(), updatedAt: new Date() })
+      .where(eq(connectorHeldCalls.executionId, id));
+    await settleStuckHeldCall(id, 'queued');
+    const row = await held(id);
+    expect(row.state).toBe('dispatched');
+    expect(row.inputEnc).not.toBeNull();
+    expect(await resumes(`approval-run:${id}`)).toHaveLength(0);
   });
 
   test('the 31-day backstop wipes held input in every state; a held row ends cancelled', async () => {

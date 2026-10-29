@@ -8,7 +8,8 @@
  *      settles `unknown` (it may have run; never run again); a row past its
  *      `run_deadline` settles `refused/run_window_passed`;
  *   2. decrypts the held input and rebuilds the caller (refusal = `refused`);
- *   3. fences `queued` → `dispatched` (0 rows: another run owns it);
+ *   3. fences `queued` → `dispatched` while `run_deadline` is ahead in
+ *      database time (0 rows: another run owns it, or the window passed);
  *   4. runs `handleCall` with `heldApproval`: policy is evaluated again, block
  *      wins, and the re-injected request must give the approved digest;
  *   5. settles the redacted outcome, wipes the input, and enqueues the
@@ -120,13 +121,27 @@ export async function runHeldCall(
     return;
   }
 
-  // At-most-once fence: only the run that moves the row out of `queued` calls the provider.
+  // At-most-once fence: only the run that moves the row out of `queued` calls
+  // the provider. The deadline is checked again in database time: the app
+  // clock can be behind.
   const fenced = await db
     .update(connectorHeldCalls)
     .set({ state: 'dispatched', dispatchedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(connectorHeldCalls.executionId, executionId), eq(connectorHeldCalls.state, 'queued')))
+    .where(
+      and(
+        eq(connectorHeldCalls.executionId, executionId),
+        eq(connectorHeldCalls.state, 'queued'),
+        sql`${connectorHeldCalls.runDeadline} > now()`,
+      ),
+    )
     .returning({ id: connectorHeldCalls.executionId });
-  if (fenced.length === 0) return;
+  if (fenced.length === 0) {
+    // Still `queued`: the deadline failed the fence. Otherwise another run owns the row.
+    if ((await loadHeldRun(executionId))?.state === 'queued') {
+      await settle(row, 'queued', { status: 'refused', reason: 'run_window_passed' }, null);
+    }
+    return;
+  }
 
   const { principal, policySet } = caller;
   const base = makeDeps(principal);
@@ -354,17 +369,21 @@ const HELD_INPUT_MAX_AGE_DAYS = 31;
 
 /**
  * Settle a stuck run without running it: never decrypts, rebuilds a principal,
- * fences or calls the provider. `dispatched` → `unknown/run_interrupted`;
- * `queued` → `refused/run_window_passed`. The same settle as the job (state
- * CAS, wipe, one `approval-run:` resume, audit event, card update).
+ * fences or calls the provider. It settles from the state the sweep
+ * `selected` only: `dispatched` → `unknown/run_interrupted`; `queued` →
+ * `refused/run_window_passed`. The same settle as the job (state CAS, wipe,
+ * one `approval-run:` resume, audit event, card update).
  */
-export async function settleStuckHeldCall(executionId: string): Promise<void> {
+export async function settleStuckHeldCall(executionId: string, selected: 'queued' | 'dispatched'): Promise<void> {
   const row = await loadHeldRun(executionId);
-  if (row?.state === 'dispatched') {
-    await settle(row, 'dispatched', { status: 'unknown', reason: 'run_interrupted' }, null);
-  } else if (row?.state === 'queued') {
-    await settle(row, 'queued', { status: 'refused', reason: 'run_window_passed' }, null);
-  }
+  if (!row) return;
+  // Settle only from the state the sweep selected: a row fenced since then belongs to its worker.
+  await settle(
+    row,
+    selected,
+    selected === 'dispatched' ? { status: 'unknown', reason: 'run_interrupted' } : { status: 'refused', reason: 'run_window_passed' },
+    null,
+  );
 }
 
 /**
@@ -392,7 +411,7 @@ export async function sweepHeldCalls(): Promise<number> {
     lt(connectorHeldCalls.createdAt, old),
   );
   const stuck = await db
-    .select({ id: connectorHeldCalls.executionId })
+    .select({ id: connectorHeldCalls.executionId, state: connectorHeldCalls.state })
     .from(connectorHeldCalls)
     .where(
       and(
@@ -410,9 +429,9 @@ export async function sweepHeldCalls(): Promise<number> {
       ),
     )
     .limit(SWEEP_BATCH);
-  for (const { id } of stuck) {
+  for (const { id, state } of stuck) {
     try {
-      await settleStuckHeldCall(id);
+      await settleStuckHeldCall(id, state as 'queued' | 'dispatched');
     } catch (error) {
       logger.warn('[approvals] stuck held call sweep failed', { executionId: id, error: String(error) });
     }
