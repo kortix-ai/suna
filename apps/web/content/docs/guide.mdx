@@ -572,7 +572,7 @@ A reminder is different from a trigger. It does not start a new session. It send
 
 <video src="/media/guide/computers.mp4" aria-label="Computers in Kortix: connecting your own computer" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
-Every session runs on its own isolated cloud computer with the project's files, a terminal, a browser, Python, Node.js and document tools. You can also connect your own computer, or your Chrome browser. The machine itself decides what agents may do on it.
+Every session runs on its own isolated cloud computer with the project's files, a terminal, a browser, Python, Node.js and document tools. You can also connect your own computer. The machine itself decides what agents may do on it.
 
 ### How the cloud computer works
 
@@ -655,60 +655,6 @@ Only you, at the computer, can widen access. Narrowing it works from anywhere an
 #### Share it with your team
 
 Open **Customize → Connectors → Computers → Accounts** and select **Share** on your computer's row. Pick people, groups or the whole project. A computer shared with everyone also serves automations that run with nobody present. Your **Access** setting still applies: in **Ask each time**, every approval is yours to give.
-
-### Kortix in Chrome
-
-Kortix in Chrome is a browser extension. It lets your sessions use your own browser, with the sites you are already signed in to, while you watch. It also adds a side panel where you chat with Kortix about the page you are on. It works in Chrome, Edge, Brave and Arc on a computer.
-
-#### Set it up
-
-<Steps>
-<Step title="Add the extension">
-The Chrome Web Store listing is not public yet. Until it is, build the extension from the Kortix repository: run `bun run build` in `apps/chrome-extension`. In Chrome, open `chrome://extensions`, turn on **Developer mode**, select **Load unpacked** and choose `apps/chrome-extension/dist`.
-</Step>
-<Step title="Connect it">
-In the web app, open **Settings → Kortix in Chrome** and select **Connect**. Chrome opens a Kortix tab. Select **Connect to Kortix**, then **Allow** on the sign-in page.
-</Step>
-<Step title="Name it and choose its access">
-Name the browser and choose its **Access**: **Without asking**, **Ask first** or **Off**. Select **Done**. The browser shows under **Settings → Kortix in Chrome** with an online dot.
-</Step>
-</Steps>
-
-A connected browser is yours: only your own sessions can use it. Its **Tabs** setting decides what a session reaches, **All tabs** (the default) or **Only tabs it opens**. No session reaches `chrome://` pages, the Chrome Web Store or extension pages. To connect a second browser or Chrome profile, select **Add another browser**.
-
-#### Watch it work
-
-Ask in plain words, for example "Use my browser to check the invoices in my billing dashboard." The agent attaches your browser itself. You always see it work:
-
-- The session's tabs sit in a tab group named **Kortix · &lt;session title&gt;**.
-- Each of those tabs shows a glow, the agent's cursor and a control bar.
-- The cursor glides to each place the agent clicks or types. The click or the text lands only when the cursor gets there. Its label says **Typing…** or **Scrolling…** while the agent types or scrolls.
-- **Take over** pauses the agent on that tab, so you can use it yourself. **Resume** gives it back.
-- **Stop** ends the session's access at once. `Alt+Shift+K` stops every session in this browser. The **Cancel** button on Chrome's debugging notice does the same.
-
-With **Ask first**, Chrome asks before each session attaches. You allow it for this session or for every session in the project, or you select **Deny**. A prompt that nobody answers within 90 seconds fails.
-
-A file the agent uploads comes from its session, up to 10 MB. A file a page downloads lands in your own download folder.
-
-#### Chat from the side panel
-
-Select the Kortix icon in the toolbar, or press `Alt+K`. The side panel opens on a new chat:
-
-1. Pick the project at the top. The panel remembers it.
-2. The tab you look at rides along as a chip. Select **+ Tab** to add more tabs, or **Screenshot** to also send an image of the tab.
-3. Type your message, or pick **Summarize this page**, **Extract the tables**, **Compare with another tab** or **Draft an email about this**.
-4. Choose **Read** to send the text of the tabs, or **Act** to let the agent click and type in them. Then send.
-
-The session opens in the panel and shows in your project like any other session. To ask about part of a page, select the text, right-click and choose **Ask Kortix about this selection**.
-
-#### If the browser does not attach
-
-| Message | Fix |
-| --- | --- |
-| `chrome_not_connected` | Connect a browser in **Settings → Kortix in Chrome**. |
-| `chrome_offline` | Open Chrome and check that the extension is signed in. |
-| `chrome_access_off` | Set **Access** to **Without asking** or **Ask first**. |
-| `chrome_denied`, `chrome_consent_timeout` | Ask the agent to try again. It asks Chrome for a fresh prompt. |
 
 ## Models
 

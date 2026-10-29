@@ -773,11 +773,6 @@ const nextConfig = (): NextConfig => ({
         permanent: true,
       },
       {
-        source: '/docs/connect/chrome',
-        destination: '/docs/guide#kortix-in-chrome',
-        permanent: true,
-      },
-      {
         source: '/docs/connect/connectors',
         destination: '/docs/guide#connectors',
         permanent: true,
