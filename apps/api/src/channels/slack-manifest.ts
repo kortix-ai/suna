@@ -255,7 +255,8 @@ export const CANONICAL_DEV: BuildManifestConfig = {
 };
 
 export const CANONICAL_PROD: BuildManifestConfig = {
-  appName: 'Kortix',
+  // The app's name in Slack's directory. The bot keeps the short mention name.
+  appName: 'Kortix CompanyOS',
   botName: 'Kortix',
   command: '/kortix',
   baseUrl: 'https://api.kortix.com',

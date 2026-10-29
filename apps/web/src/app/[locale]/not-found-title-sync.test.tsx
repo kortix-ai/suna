@@ -53,18 +53,18 @@ describe('NotFoundTitleSync', () => {
   }
 
   test('a navigation that landed on the boundary with a stale title gets the 404 title', () => {
-    const unmount = mountWithTitle('Pricing | Kortix');
+    const unmount = mountWithTitle('Pricing | Kortix CompanyOS');
     try {
-      expect(document.title).toBe('404 Page not found | Kortix');
+      expect(document.title).toBe('404 Page not found | Kortix CompanyOS');
     } finally {
       unmount();
     }
   });
 
   test('it stays quiet when the metadata-owned 404 title is already in place', () => {
-    const unmount = mountWithTitle('404 Page not found | Kortix');
+    const unmount = mountWithTitle('404 Page not found | Kortix CompanyOS');
     try {
-      expect(document.title).toBe('404 Page not found | Kortix');
+      expect(document.title).toBe('404 Page not found | Kortix CompanyOS');
     } finally {
       unmount();
     }
@@ -80,24 +80,24 @@ describe('NotFoundTitleSync', () => {
   });
 
   test('it re-asserts the 404 title when the metadata commit clobbers it while mounted', async () => {
-    const unmount = mountWithTitle('Pricing | Kortix');
+    const unmount = mountWithTitle('Pricing | Kortix CompanyOS');
     try {
-      expect(document.title).toBe('404 Page not found | Kortix');
+      expect(document.title).toBe('404 Page not found | Kortix CompanyOS');
       // The tree's own metadata commit re-asserts the previous page's title
       // after client effects run (session-tab-title-sync measured the race).
       document.title = 'Kortix CompanyOS – the open-source operating system for your company';
       await new Promise((resolve) => setTimeout(resolve, 20));
-      expect(document.title).toBe('404 Page not found | Kortix');
+      expect(document.title).toBe('404 Page not found | Kortix CompanyOS');
     } finally {
       unmount();
     }
   });
 
   test('it stops guarding once unmounted so the next page owns the tab again', async () => {
-    const unmount = mountWithTitle('Pricing | Kortix');
+    const unmount = mountWithTitle('Pricing | Kortix CompanyOS');
     unmount();
-    document.title = 'Docs | Kortix';
+    document.title = 'Docs | Kortix CompanyOS';
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(document.title).toBe('Docs | Kortix');
+    expect(document.title).toBe('Docs | Kortix CompanyOS');
   });
 });

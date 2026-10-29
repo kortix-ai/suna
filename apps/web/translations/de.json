@@ -2835,7 +2835,7 @@
       "sending": "Wird gesendet..."
     },
     "unified": {
-      "welcome": "Willkommen bei Kortix",
+      "welcome": "Willkommen bei Kortix CompanyOS",
       "tagline": "Das Open-Source-CompanyOS",
       "email": "E-Mail",
       "emailPlaceholder": "Deine E-Mail-Adresse",
@@ -4942,7 +4942,7 @@
       "line83JsxAttrTitleLoadingTrial": "Testphase wird geladen",
       "line93JsxAttrTitleLoadingTrial": "Testphase wird geladen",
       "line106JsxTextLogOut": "Abmelden",
-      "line114JsxTextWelcomeToKortix": "Willkommen bei Kortix",
+      "line114JsxTextWelcomeToKortix": "Willkommen bei Kortix CompanyOS",
       "line117JsxTextStartYourJourneyWithA7DayFree": "Starten Sie Ihre Reise mit einer 7-tägigen kostenlosen Testphase",
       "line126JsxTextWhatSIncludedInTrial": "In der Testphase enthalten:",
       "line133JsxTextText5InCredits": "5 $ Guthaben",
@@ -21344,7 +21344,7 @@
     "createProjectInstead": "Stattdessen ein neues Projekt erstellen"
   },
   "projectSelector": {
-    "welcome": "Willkommen bei Kortix",
+    "welcome": "Willkommen bei Kortix CompanyOS",
     "welcomeBack": "Willkommen zurück",
     "descriptionNew": "Erstelle dein erstes Projekt oder tritt einem bei, das dein Team geteilt hat.",
     "descriptionReturning": "Öffne ein Projekt oder erstelle ein neues.",

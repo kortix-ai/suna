@@ -2835,7 +2835,7 @@
       "sending": "发送中..."
     },
     "unified": {
-      "welcome": "欢迎使用 Kortix",
+      "welcome": "欢迎使用 Kortix CompanyOS",
       "tagline": "开源的 CompanyOS",
       "email": "邮箱",
       "emailPlaceholder": "您的邮箱地址",
@@ -4942,7 +4942,7 @@
       "line83JsxAttrTitleLoadingTrial": "正在加载试用",
       "line93JsxAttrTitleLoadingTrial": "正在加载试用",
       "line106JsxTextLogOut": "退出登录",
-      "line114JsxTextWelcomeToKortix": "欢迎使用 Kortix",
+      "line114JsxTextWelcomeToKortix": "欢迎使用 Kortix CompanyOS",
       "line117JsxTextStartYourJourneyWithA7DayFree": "通过 7 天免费试用开启你的旅程",
       "line126JsxTextWhatSIncludedInTrial": "试用包含：",
       "line133JsxTextText5InCredits": "$5 额度",
@@ -21344,7 +21344,7 @@
     "createProjectInstead": "改为创建新项目"
   },
   "projectSelector": {
-    "welcome": "欢迎使用 Kortix",
+    "welcome": "欢迎使用 Kortix CompanyOS",
     "welcomeBack": "欢迎回来",
     "descriptionNew": "创建你的第一个项目，或加入团队共享的项目。",
     "descriptionReturning": "打开一个项目，或创建新项目。",

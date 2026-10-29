@@ -2835,7 +2835,7 @@
       "sending": "Слање..."
     },
     "unified": {
-      "welcome": "Добродошли у Kortix",
+      "welcome": "Добродошли у Kortix CompanyOS",
       "tagline": "CompanyOS отвореног кода",
       "email": "Имејл",
       "emailPlaceholder": "Ваша имејл адреса",
@@ -4942,7 +4942,7 @@
       "line83JsxAttrTitleLoadingTrial": "Пробно учитавање",
       "line93JsxAttrTitleLoadingTrial": "Пробно учитавање",
       "line106JsxTextLogOut": "Одјавите се",
-      "line114JsxTextWelcomeToKortix": "Добро дошли у Kortix",
+      "line114JsxTextWelcomeToKortix": "Добро дошли у Kortix CompanyOS",
       "line117JsxTextStartYourJourneyWithA7DayFree": "Започните своје путовање уз 7-дневну бесплатну пробну верзију",
       "line126JsxTextWhatSIncludedInTrial": "Шта је укључено у пробну верзију:",
       "line133JsxTextText5InCredits": "$5 у кредитима",
@@ -21344,7 +21344,7 @@
     "createProjectInstead": "Umesto toga napravite novi projekat"
   },
   "projectSelector": {
-    "welcome": "Dobro došli u Kortix",
+    "welcome": "Dobro došli u Kortix CompanyOS",
     "welcomeBack": "Dobro došli nazad",
     "descriptionNew": "Napravite svoj prvi projekat ili se pridružite onom koji je vaš tim podelio.",
     "descriptionReturning": "Otvorite projekat ili napravite novi.",

@@ -8,7 +8,7 @@ const sidebar = OUTLINE;
 // The docs render through Blume, not through the Next app. Nothing in
 // content/docs may import an app component. Blume built-ins only.
 export default defineConfig({
-  title: 'Kortix',
+  title: 'Kortix CompanyOS',
   description: 'Open-source CompanyOS: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.',
 
   // Content stays where it has always been. src/lib/seo/public-content.ts

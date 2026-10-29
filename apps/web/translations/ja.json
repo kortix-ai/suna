@@ -2835,7 +2835,7 @@
       "sending": "送信中..."
     },
     "unified": {
-      "welcome": "Kortixへようこそ",
+      "welcome": "Kortix CompanyOSへようこそ",
       "tagline": "オープンソースのCompanyOS",
       "email": "メールアドレス",
       "emailPlaceholder": "メールアドレスを入力",
@@ -4942,7 +4942,7 @@
       "line83JsxAttrTitleLoadingTrial": "トライアルを読み込み中",
       "line93JsxAttrTitleLoadingTrial": "トライアルを読み込み中",
       "line106JsxTextLogOut": "ログアウト",
-      "line114JsxTextWelcomeToKortix": "Kortix へようこそ",
+      "line114JsxTextWelcomeToKortix": "Kortix CompanyOS へようこそ",
       "line117JsxTextStartYourJourneyWithA7DayFree": "7日間の無料トライアルで始めましょう",
       "line126JsxTextWhatSIncludedInTrial": "トライアルに含まれる内容:",
       "line133JsxTextText5InCredits": "$5 分のクレジット",
@@ -21344,7 +21344,7 @@
     "createProjectInstead": "代わりに新しいプロジェクトを作成"
   },
   "projectSelector": {
-    "welcome": "Kortix へようこそ",
+    "welcome": "Kortix CompanyOS へようこそ",
     "welcomeBack": "おかえりなさい",
     "descriptionNew": "最初のプロジェクトを作成するか、チームが共有したプロジェクトに参加してください。",
     "descriptionReturning": "プロジェクトを開くか、新しく作成してください。",

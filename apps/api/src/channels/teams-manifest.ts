@@ -50,7 +50,7 @@ export interface TeamsManifest {
  * on an older version; a team owner still accepts a new permission or message
  * action in each team. `unit-teams-manifest.test.ts` fails until you bump.
  */
-export const TEAMS_MANIFEST_VERSION = '1.6.2';
+export const TEAMS_MANIFEST_VERSION = '1.6.3';
 
 /**
  * Resource-specific consent (RSC). These let the bot receive every message in
@@ -122,7 +122,8 @@ export function buildTeamsManifest(cfg: BuildTeamsManifestConfig): TeamsManifest
       privacyUrl: 'https://kortix.com/privacy',
       termsOfUseUrl: 'https://kortix.com/terms',
     },
-    name: { short: appName, full: appName },
+    // `short` is the @-mention name, so it stays short.
+    name: { short: appName, full: cfg.appName ?? 'Kortix CompanyOS' },
     description: {
       short: cfg.description ?? SHORT_DESCRIPTION,
       full: cfg.longDescription ?? LONG_DESCRIPTION,

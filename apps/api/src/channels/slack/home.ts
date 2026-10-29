@@ -79,7 +79,7 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
   });
   blocks.push({
     type: 'header',
-    text: { type: 'plain_text', text: 'Welcome to Kortix', emoji: true },
+    text: { type: 'plain_text', text: 'Welcome to Kortix CompanyOS', emoji: true },
   });
   blocks.push({
     type: 'section',

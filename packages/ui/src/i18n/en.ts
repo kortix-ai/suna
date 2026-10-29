@@ -1663,7 +1663,7 @@ const catalog = {
       "sending": "Sending..."
     },
     "unified": {
-      "welcome": "Welcome to Kortix",
+      "welcome": "Welcome to Kortix CompanyOS",
       "tagline": "The open-source CompanyOS",
       "email": "Email",
       "emailPlaceholder": "Your email address",
@@ -6265,7 +6265,7 @@ const catalog = {
     "createProjectInstead": "Create a new project instead"
   },
   "projectSelector": {
-    "welcome": "Welcome to Kortix",
+    "welcome": "Welcome to Kortix CompanyOS",
     "welcomeBack": "Welcome back",
     "descriptionNew": "Create your first project, or join one your team shared.",
     "descriptionReturning": "Open a project, or create a new one.",

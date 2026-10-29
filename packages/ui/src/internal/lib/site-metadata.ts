@@ -10,11 +10,11 @@
 export const CANONICAL_ORIGIN = 'https://kortix.com';
 
 export const siteMetadata = {
-  name: 'Kortix',
+  name: 'Kortix CompanyOS',
   title: 'Kortix CompanyOS – the open-source operating system for your company',
   description:
     'Open-source CompanyOS: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.',
   url: CANONICAL_ORIGIN,
   keywords:
-    'Kortix, Kortix CompanyOS, CompanyOS, open-source CompanyOS, company operating system, what is a CompanyOS, AI Operating System, open-source AI Operating System, open-source alternative to Claude Cowork, ChatGPT Work alternative, company as a git repo, agents skills and memory as files, shared AI agents, scoped access, self-hosted AI agents, connect 3000 tools, agent orchestration, AI-native company, AI operations',
+    'Kortix, Kortix CompanyOS, CompanyOS, open-source CompanyOS, company operating system, what is a CompanyOS, open-source alternative to Claude Cowork, ChatGPT Work alternative, company as a git repo, agents skills and memory as files, shared AI agents, scoped access, self-hosted AI agents, connect 3000 tools, agent orchestration, AI-native company, AI operations',
 };
