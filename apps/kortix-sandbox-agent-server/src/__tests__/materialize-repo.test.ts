@@ -714,6 +714,7 @@ describe('materializeRepo on a workspace volume', () => {
     await materializeRepo(cfg)
     expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('base\n')
     expect(gitOutput(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])).toBe('session-volume')
+    expect(existsSync(join(target, 'lost+found'))).toBe(true)
 
     writeFileSync(join(target, 'committed.txt'), 'committed\n')
     git(['-C', target, 'add', 'committed.txt'])

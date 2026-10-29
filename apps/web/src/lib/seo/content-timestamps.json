@@ -20,7 +20,6 @@
   "marketing:changelog": "2026-10-23T11:58:25.000Z",
   "marketing:use-cases": "2026-10-28T15:43:37.000Z",
   "marketing:download": "2026-10-20T16:38:11.000Z",
-  "marketing:cli": "2026-10-29T12:54:55.000Z",
   "marketing:desktop": "2026-10-28T15:43:37.000Z",
   "marketing:mobile": "2026-10-28T15:43:37.000Z",
   "marketing:slack": "2026-10-28T15:43:37.000Z",
@@ -28,6 +27,7 @@
   "docs:audit-actions": "2026-10-28T15:43:37.000Z",
   "docs:capture": "2026-10-28T15:43:37.000Z",
   "docs:capture/rollout": "2026-10-19T16:40:22.000Z",
+  "docs:connect/chrome": "2026-10-29T16:02:59.474Z",
   "docs:developers": "2026-10-29T12:17:02.000Z",
   "docs:guide": "2026-10-29T13:47:58.000Z",
   "docs:index": "2026-10-28T15:43:37.000Z"

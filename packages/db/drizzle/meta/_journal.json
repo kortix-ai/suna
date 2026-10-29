@@ -1296,6 +1296,13 @@
       "when": 1793093398130,
       "tag": "20261027092958_project_session_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1793101077645,
+      "tag": "20261027113757_chrome_connections",
+      "breakpoints": true
     }
   ]
 }
