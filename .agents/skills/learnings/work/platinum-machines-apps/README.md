@@ -1,6 +1,6 @@
 ---
 title: Platinum Machines and Apps (the sandbox becomes a Machine; Apps move into Platinum)
-status: planning — design record written 2026-10-29, 7 decisions open, nothing built
+status: planning — design record written 2026-10-29, 7 decisions open, nothing built; plus a parked, unproven idea (layered primitives, bare-metal marketplace)
 owner: Marko Kraemer (decisions), agent sessions (build)
 updated: 2026-10-29
 ---
@@ -25,7 +25,10 @@ group of Machines. Kortix Apps keeps only its product layer.
 - [`design-record.html`](design-record.html): the full record, A to Z. Open it in a
   browser. It has the comparison, the naming and object model, storage
   separate from compute, the split of work, the build order, the risks and the
-  7 open decisions with recommendations.
+  7 open decisions with recommendations. Its section "Parked idea" holds an
+  unproven, long-term idea: decouple everything into 7 base primitives with
+  Apps and similar products on top, and a one-click bare-metal marketplace
+  across providers. Not a plan; nothing about providers is verified.
 - Kortix machine-layer code that moves to Platinum or is deleted (4,855
   lines): `machines.ts`, `fleet.ts`, `fleet-routes.ts`, `idle-reaper.ts`,
   `public-proxy-runtime.ts`, `public-proxy-handler.ts`, `volumes.ts`,

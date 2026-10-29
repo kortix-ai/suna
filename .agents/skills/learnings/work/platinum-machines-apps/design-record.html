@@ -44,7 +44,7 @@ figcaption { color: var(--quiet); font-size: 13px; margin-top: 4px; }
 <main>
 <h1>Platinum Machines and Apps: design record</h1>
 <p class="meta">As of 2026-10-29 · Internal design record, not shipped text · Owner: Marko Kraemer (decisions)</p>
-<nav class="toc"><p>Contents</p><ol><li><a href="#summary">Summary</a></li><li><a href="#the-ask-and-the-sources">The ask and the sources</a></li><li><a href="#kortix-apps-today">Kortix Apps today</a></li><li><a href="#platinum-apps-today">Platinum Apps today</a></li><li><a href="#feature-comparison-against-fly">Feature comparison against Fly</a></li><li><a href="#is-fly-the-right-reference">Is Fly the right reference</a></li><li><a href="#naming-and-object-model">Naming and object model</a></li><li><a href="#storage-separate-from-compute">Storage separate from compute</a></li><li><a href="#split-of-work-and-build-order">Split of work and build order</a></li><li><a href="#rename-cost-migration-path-and-risks">Rename cost, migration path and risks</a></li><li><a href="#open-decisions">Open decisions</a></li><li><a href="#evidence-unverified-items-glossary-next-steps">Evidence, unverified items, glossary, next steps</a></li></ol></nav>
+<nav class="toc"><p>Contents</p><ol><li><a href="#summary">Summary</a></li><li><a href="#the-ask-and-the-sources">The ask and the sources</a></li><li><a href="#kortix-apps-today">Kortix Apps today</a></li><li><a href="#platinum-apps-today">Platinum Apps today</a></li><li><a href="#feature-comparison-against-fly">Feature comparison against Fly</a></li><li><a href="#is-fly-the-right-reference">Is Fly the right reference</a></li><li><a href="#naming-and-object-model">Naming and object model</a></li><li><a href="#storage-separate-from-compute">Storage separate from compute</a></li><li><a href="#split-of-work-and-build-order">Split of work and build order</a></li><li><a href="#rename-cost-migration-path-and-risks">Rename cost, migration path and risks</a></li><li><a href="#open-decisions">Open decisions</a></li><li><a href="#parked-idea-layered-primitives-and-a-bare-metal-marketplace">Parked idea: layered primitives and a bare-metal marketplace</a></li><li><a href="#evidence-unverified-items-glossary-next-steps">Evidence, unverified items, glossary, next steps</a></li></ol></nav>
 <h2 id="summary">Summary</h2>
 <p>Build the machine platform in Platinum, name its core object <strong>Machine</strong>, and keep Kortix Apps as a thin product layer on top. Nothing is built yet. 7 decisions are open (section &quot;Open decisions&quot;).</p>
 <ol>
@@ -905,6 +905,281 @@ figcaption { color: var(--quiet); font-size: 13px; margin-top: 4px; }
 <td>Open</td>
 </tr>
 </tbody></table></div>
+<h2 id="parked-idea-layered-primitives-and-a-bare-metal-marketplace">Parked idea: layered primitives and a bare-metal marketplace</h2>
+<p><strong>Status: unproven, long-term idea from 2026-10-29. Not a plan. Nothing is decided, researched or built.</strong> Marko asked to keep it for later: decouple everything into base primitives, put Apps and similar products on top, and let users buy bare-metal CPU and GPU servers from many providers in one click through Platinum.</p>
+<h3 id="decouple-everything">Decouple everything</h3>
+<p>Two things that change separately get two objects.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Pair that changes separately</th>
+<th>Object that separates them</th>
+<th>Status in Platinum</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Compute vs storage</td>
+<td>Machine vs Volume; the Instance is disposable</td>
+<td>Mostly built (<code>root_volume</code>, volumes)</td>
+</tr>
+<tr>
+<td>Compute vs capacity</td>
+<td>Machine vs Host/Pool; placement is only a constraint (<code>pool:</code>, <code>region:</code>)</td>
+<td>Pools exist, owned by the operator only</td>
+</tr>
+<tr>
+<td>Compute vs ingress</td>
+<td>Endpoint targets Machines by label and outlives them</td>
+<td>New</td>
+</tr>
+<tr>
+<td>Identity vs placement</td>
+<td>Private IP and DNS name stay when the Instance moves</td>
+<td>New (Network)</td>
+</tr>
+<tr>
+<td>Compute vs credentials</td>
+<td>Secret injected at egress</td>
+<td>Built</td>
+</tr>
+<tr>
+<td>Build vs run</td>
+<td>Image vs Machine</td>
+<td>Built (templates)</td>
+</tr>
+<tr>
+<td>Who supplies the hardware vs who meters usage</td>
+<td>Host supplier vs Platinum billing</td>
+<td>New: the marketplace</td>
+</tr>
+<tr>
+<td>Product vs platform</td>
+<td>Kortix uses only the public API</td>
+<td>Target</td>
+</tr>
+</tbody></table></div>
+<h3 id="four-layers">Four layers</h3>
+<p>Each layer uses only the public API of the layer under it. Kortix is an ordinary customer of L2, which proves the primitives are complete.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>L3 Products</td>
+<td>Kortix (agents), PTXP (dev boxes), Inference, Marketplace</td>
+</tr>
+<tr>
+<td>L2 Composites</td>
+<td>App, Job, Schedule, Function, Workspace, Template</td>
+</tr>
+<tr>
+<td>L1 Primitives</td>
+<td>Machine, Volume, Image, Snapshot, Network, Endpoint, Secret</td>
+</tr>
+<tr>
+<td>L0 Capacity</td>
+<td>Host, Pool, Region: the Platinum fleet, your own servers, or servers bought in the marketplace</td>
+</tr>
+</tbody></table></div>
+<h3 id="the-7-primitives-l1">The 7 primitives (L1)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Primitive</th>
+<th>What it is</th>
+<th>Today in Platinum</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Machine</td>
+<td>CPU/RAM/GPU, image, lifecycle: start, stop, suspend, fork, resize, exec</td>
+<td><code>/v1/sandboxes</code></td>
+</tr>
+<tr>
+<td>Volume</td>
+<td>Durable bytes with commits, tags, fork</td>
+<td><code>/v1/volumes</code></td>
+</tr>
+<tr>
+<td>Image</td>
+<td>A bootable root filesystem from a Dockerfile, OCI image, git repo or spec</td>
+<td><code>/v1/templates</code></td>
+</tr>
+<tr>
+<td>Snapshot</td>
+<td>Memory plus disk at one point in time; a source for restore and fork</td>
+<td>Sandbox snapshots</td>
+</tr>
+<tr>
+<td>Network</td>
+<td>A private network per org, plus DNS (<code>&lt;name&gt;.internal</code>)</td>
+<td>None</td>
+</tr>
+<tr>
+<td>Endpoint</td>
+<td>Ingress: HTTP host, TCP/UDP port, IP, domain plus certificate, access rule. Targets Machines by label. Does wake-on-request, balancing and idle stop.</td>
+<td><code>expose</code> per sandbox (HTTP + TCP)</td>
+</tr>
+<tr>
+<td>Secret</td>
+<td>A credential injected on egress, never stored in the VM</td>
+<td><code>/v1/secrets</code></td>
+</tr>
+</tbody></table></div>
+<p>The key move: the host-edge proxy is the Endpoint primitive, so an App needs no proxy of its own. These are not primitives: App, Database and Cron (compositions), GPU (a Machine field), Sandbox (a Machine preset), Workspace (a Machine plus volumes). Contracts that apply to every primitive: identity and scoped keys, durable operations, events, metering, audit, quotas, placement.</p>
+<h3 id="composites-l2">Composites (L2)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Composite</th>
+<th>Turns into</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>App</td>
+<td>Machines per process group, Endpoints, release history, deploy strategy</td>
+<td>Web apps, APIs, bots</td>
+</tr>
+<tr>
+<td>Job</td>
+<td>One Machine that runs to exit, with retries</td>
+<td>Migrations, batch, agent tasks</td>
+</tr>
+<tr>
+<td>Schedule</td>
+<td>A cron or interval that starts a Job or calls an Endpoint</td>
+<td>Nightly reports, polling</td>
+</tr>
+<tr>
+<td>Function</td>
+<td>The <code>cell</code> runtime (<code>/v1/workers</code>, behind a flag)</td>
+<td>Request-scoped handlers</td>
+</tr>
+<tr>
+<td>Workspace</td>
+<td>A Machine with a root volume, a home volume and a Network</td>
+<td>PTXP dev boxes</td>
+</tr>
+<tr>
+<td>Template</td>
+<td>A parameterized bundle of specs</td>
+<td>Postgres, Redis, Convex, GPU apps</td>
+</tr>
+</tbody></table></div>
+<p>A composite labels every child it creates (<code>owner: app/web</code>). The user can see, exec into and detach each child.</p>
+<h3 id="dx-principles">DX principles</h3>
+<ol>
+<li>One resource model for the API, TS/Python SDK, <code>pt</code> CLI, MCP and dashboard, generated from one OpenAPI.</li>
+<li>Declarative and imperative on one API: <code>pt apply</code> shows a plan and applies it; <code>pt machine run</code> acts now. Both upsert by name.</li>
+<li>Names, not IDs, in specs: <code>volume: pg-data</code>, <code>db.internal</code>.</li>
+<li>An escape hatch at every level: App → Machines → exec or SSH.</li>
+<li>Durable operations with an id that can be waited on, streamed and cancelled.</li>
+<li>Every state change is an event (webhook and stream). Composites react to events.</li>
+<li>Templates are data and can be shared.</li>
+<li>Agent-first: MCP tools map 1:1 to primitives; every write has a dry-run plan; every error has a code and a fix.</li>
+</ol>
+<p>Spec sketch. The field names are not decided:</p>
+<pre><code class="language-yaml">network: default
+volumes:
+  pg-data: {}
+apps:
+  db:
+    image: postgres:17
+    mounts: [{ volume: pg-data, path: /var/lib/postgresql/data }]
+    endpoints: [{ port: 5432, protocol: tcp, private: true }]     # db.internal:5432
+  web:
+    build: ./web
+    env: { DATABASE_URL: &quot;postgres://db.internal:5432/app&quot; }
+    secrets: [STRIPE_KEY]
+    endpoints: [{ port: 3000, domain: app.example.com, idle_stop: 5m }]
+    scale: { min: 0, max: 10 }
+jobs:
+  migrate: { app: web, run: [&quot;npm&quot;, &quot;run&quot;, &quot;migrate&quot;], on: release }
+schedules:
+  nightly-report: { cron: &quot;0 3 * * *&quot;, job: { app: web, run: [&quot;npm&quot;, &quot;run&quot;, &quot;report&quot;] } }
+</code></pre>
+<p><code>kortix.yaml</code> would be a superset: Kortix adds access, App events and display, and compiles the rest to this spec.</p>
+<h3 id="bare-metal-marketplace">Bare-metal marketplace</h3>
+<p>Marko&#39;s framing: &quot;u can easy 1 click buy through us all aggregated baremetal from all the various providers, so u can easy buy CPU&quot;. It covers CPU and GPU servers from providers such as OVHcloud, Scaleway and Latitude.sh.</p>
+<p>The one-click flow:</p>
+<ol>
+<li><strong>Catalog:</strong> one list of offers from all providers in one shape: CPU model and family, cores, RAM, disk, GPU model and count, region, delivery time, minimum term, price.</li>
+<li><strong>Buy:</strong> pick an offer and a target pool, then pay.</li>
+<li><strong>Order:</strong> Platinum orders the server through the provider&#39;s API and waits for delivery.</li>
+<li><strong>Install:</strong> Platinum installs its host image (pinned guest kernel) and registers the host into the org&#39;s pool with a bootstrap token.</li>
+<li><strong>Burn-in:</strong> a check of CPU, RAM, disk and GPU passthrough before the host is <code>ready</code>.</li>
+<li><strong>Use:</strong> Machines land on it with <code>pool: &lt;name&gt;</code>, or the pool becomes the org&#39;s default.</li>
+<li><strong>End of life:</strong> Platinum drains the host, then cancels or renews the server.</li>
+</ol>
+<p>Whose account places the order:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>On Platinum&#39;s account (Platinum sells)</th>
+<th>On the user&#39;s connected account</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>UX</td>
+<td>True one click, one bill</td>
+<td>One click after the user connects each provider account</td>
+</tr>
+<tr>
+<td>Who pays the provider</td>
+<td>Platinum, which bills the user from credits</td>
+<td>The user; Platinum charges a platform fee</td>
+</tr>
+<tr>
+<td>Platinum&#39;s risk</td>
+<td>The server term, abuse (mining), payment default</td>
+<td>None on hardware</td>
+</tr>
+<tr>
+<td>Needs</td>
+<td>Reseller terms per provider, ID checks on users</td>
+<td>Only the API integration</td>
+</tr>
+</tbody></table></div>
+<p>Suggestion from the thread, not decided: sell through Platinum first, only for providers that bill by the hour, so a cancel ends the cost. Add monthly-term providers through connected accounts.</p>
+<p><strong>Exists in Platinum</strong> (checked on <code>platinum</code> <code>origin/main</code>):</p>
+<ul>
+<li>dedicated host pools (<code>hosts.pool</code>, the org grant <code>limits.org_overrides[org].pools</code>, <code>403 pool_not_enabled</code>);</li>
+<li>host provisioning scripts for AWS, Hetzner and Scaleway (<code>platinum/infra/scripts/providers/</code>);</li>
+<li>bootstrap-token registration;</li>
+<li>GPU passthrough (VFIO);</li>
+<li>a billing wallet: credits, auto top-up, spend limits.</li>
+</ul>
+<p><strong>New:</strong></p>
+<ul>
+<li>org-owned hosts and pools;</li>
+<li>provider order and terminate integrations (no terminate API today);</li>
+<li>the catalog;</li>
+<li>burn-in;</li>
+<li>drain at end of term;</li>
+<li>billing for host purchases.</li>
+</ul>
+<p><strong>Hard constraints:</strong></p>
+<ul>
+<li>Memory snapshots do not cross CPU families. A family is vendor plus CPU class plus region, and the control plane refuses a cross-family migration. Fork, suspend and migrate with memory stay inside one family; <code>volume</code> mode moves anywhere. Offers must show their family.</li>
+<li>A template boots only on a host with the same guest kernel (<code>templates.guest_kernel</code>). The install must pin the host image.</li>
+<li>Bare metal arrives in minutes to days, so &quot;create a Machine now&quot; must use existing capacity.</li>
+<li>Most dedicated servers bill monthly while Machines bill per second. Someone carries the unused hours.</li>
+<li>A private network across providers needs an encrypted overlay and costs egress per provider.</li>
+<li>GPU offers need boards that support passthrough. Check this per SKU.</li>
+</ul>
+<p><strong>Not verified:</strong> which providers have an ordering API, bill by the hour, deliver fast, sell GPUs, allow resale, or verify identity on signup. Everything above about providers is from memory.</p>
+<h3 id="if-someone-picks-this-up">If someone picks this up</h3>
+<ol>
+<li>Research each provider (OVHcloud, Scaleway, Hetzner, Latitude.sh, Vultr, phoenixNAP, Cherry Servers): ordering API, billing unit, delivery time, CPU and GPU SKUs, resale terms, signup ID checks. Cite every source page.</li>
+<li>Smallest first step: let an org bring its own server into a private pool. Pools exist already.</li>
+<li>Then: connect a provider account and show the catalog.</li>
+<li>Sell through Platinum only when demand is proven.</li>
+</ol>
 <h2 id="evidence-unverified-items-glossary-next-steps">Evidence, unverified items, glossary, next steps</h2>
 <p>Every number in this record comes from the two source trees at the SHAs named in &quot;The ask and the sources&quot;, or from dated measurements. The items below are not verified.</p>
 <h3 id="how-the-numbers-were-measured">How the numbers were measured</h3>
