@@ -39,7 +39,7 @@ None of that is a flaw in a search product. It is exactly the line you cross whe
 
 ## A runtime that does the work, not just retrieves it
 
-Kortix is an open-source AI Operating System, where a workforce of agents runs your company, not a search bar over it. Hand a task to a project and agents run in isolated sandboxes, take real actions through scoped connectors, and land durable change back to one shared `main` through a reviewed change request. The context they need is files in a repo you own, not an index someone else rents back to you.
+Kortix is an open-source CompanyOS, where a workforce of agents runs your company, not a search bar over it. Hand a task to a project and agents run in isolated sandboxes, take real actions through scoped connectors, and land durable change back to one shared `main` through a reviewed change request. The context they need is files in a repo you own, not an index someone else rents back to you.
 
 That is the real split. Glean makes your existing knowledge searchable; Kortix makes your company’s operating layer (agents, skills, memory, connectors, policies) into [files in one repo](/blog/introducing-kortix) that agents run against. One is a window onto work; the other is where the work happens.
 

@@ -7,7 +7,7 @@ canonical: "https://kortix.com/blog/agentic-operating-system"
 author: "team"
 tags: ["Field notes"]
 ---
-An agentic operating system decides which agent may act, and with whose credentials. Most definitions stop a step earlier, at coordination: agents, memory and tools arranged so work runs end to end. Coordination is easy to show; permission is the part you have to read. Kortix is the open-source AI Operating System, and its permission layer is a manifest in the repository.
+An agentic operating system decides which agent may act, and with whose credentials. Most definitions stop a step earlier, at coordination: agents, memory and tools arranged so work runs end to end. Coordination is easy to show; permission is the part you have to read. Kortix is the open-source CompanyOS, and its permission layer is a manifest in the repository.
 
 ## An operating system hands out a scarce resource and can refuse
 

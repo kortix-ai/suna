@@ -282,11 +282,7 @@ describe('ImageGenTool', () => {
     const frame = tree?.root.findAll((node) => node.type === 'view' && node.props.accessibilityState?.busy === true)[0]!;
     expect(heightIn(frame.props.style, 720)).toBeCloseTo(288);
     await act(async () => tree?.unmount());
-    for (const prompts of [['a', 'b'], ['a', 'b', 'c'], ['a', 'b', 'c', 'd']]) {
-      await render(call({ status: 'running', input: { action: 'generate', prompts, aspect_ratio: '9:16' } }), true);
-      expect(heightIn(bento()!.props.style, 720)).toBeLessThanOrEqual(288 + 1e-9);
-      await act(async () => tree?.unmount());
-    }
+    // Two to four 9:16 images are one strip row: see 'portrait images are a strip' below.
   });
 
   test('a tile names its full-screen action', async () => {
@@ -480,6 +476,43 @@ describe('one grid per turn (R38)', () => {
       await act(async () => tree?.unmount());
       tree = undefined;
     }
+  });
+
+  test('portrait images are a strip: every row side by side, no row taller than the cap', async () => {
+    // A prod session: four 9:16 calls of 3 + 2 + 3 + 2. The bento's large tile was taller than the grid was wide.
+    await renderRun([genCall('a', 3, '9:16'), genCall('b', 2, '9:16'), genCall('c', 3, '9:16'), genCall('d', 2, '9:16')]);
+    expect(rowCounts()).toEqual([4, 3, 3]);
+    const r = 9 / 16;
+    const rows = [0, 1, 2].map((row) => byTestId(`image-gen-row-${row}`)!.props.style as { aspectRatio: number; flexDirection: string });
+    expect(rows.map((row) => [row.flexDirection, row.aspectRatio])).toEqual([['row', 4 * r], ['row', 3 * r], ['row', 3 * r]]);
+    const column = byTestId('image-gen-grid')!.props.style as { maxWidth: number };
+    const width = Math.min(720, column.maxWidth);
+    expect(Math.max(...rows.map((row) => width / row.aspectRatio))).toBeLessThanOrEqual(288 + 1e-9);
+    await act(async () => tree?.unmount());
+    // Two to four portrait images are one strip row, not a bento.
+    for (const n of [2, 3, 4]) {
+      await renderRun([genCall('a', n, '9:16')]);
+      expect(byTestId('image-gen-bento')).toBeUndefined();
+      expect(rowCounts()).toEqual([n]);
+      await act(async () => tree?.unmount());
+    }
+    tree = undefined;
+  });
+
+  test('a call the image cap refused draws nothing: no slot in the grid, no card alone', async () => {
+    const refused = (id: string, n: number) =>
+      toolCallBlock({
+        type: 'tool', tool: 'image_gen', callID: id, id, messageID: 'msg-1', sessionID: 'ses-1',
+        state: { status: 'error', input: { prompts: Array.from({ length: n }, (_, i) => `${id} ${i}`), aspect_ratio: '9:16' }, error: `Image limit for this turn reached (10 images; 10 used, ${n} asked).`, time: { start: 1 } },
+      } as unknown as ToolPart);
+    await renderRun([genCall('a', 3, '9:16'), genCall('b', 2, '9:16'), genCall('c', 3, '9:16'), genCall('d', 2, '9:16'), refused('e', 3), refused('f', 2)]);
+    expect(rowCounts()).toEqual([4, 3, 3]);
+    expect(texts().some((text) => text.includes('Image limit'))).toBe(false);
+    await act(async () => tree?.unmount());
+    await renderRun([refused('e', 3)]);
+    expect(tree?.toJSON()).toBeNull();
+    await act(async () => tree?.unmount());
+    tree = undefined;
   });
 
   test('the merged grid is exactly the sum of its rows: no aspect ratio, no min height, every row under the cap', async () => {
