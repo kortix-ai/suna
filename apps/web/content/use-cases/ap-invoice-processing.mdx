@@ -60,51 +60,121 @@ schedules a payment or marks anything paid.
 ## How it works
 
 <Steps>
-<Step title="Run every 15 minutes, fresh">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent every 15 minutes. Each firing spawns a fresh
-**session** in its own sandbox — nothing carries over in the agent's own memory.
-The AP ledger in Google Sheets is the continuity: every run reads it before doing
-anything, so duplicate and overcharge checks are judged against the same record
-every time.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the ap-invoice-match skill and the 15-minute
+trigger, and opens a change request for you to review. Prefer clicks? Choose
+**Use this template** instead.
 
-</Step>
-<Step title="Give the agent the AP rules">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up an accounts payable invoice agent in this project.
 
-How we extract, match, and flag lives as a **skill** loaded into every session:
-what counts as a duplicate, the tolerance allowed before a line item counts as an
-overcharge, and what to do when no PO matches at all. The agent works to that
-standard instead of improvising it invoice by invoice.
+1. Create the agent agents/ap-invoice-processing.md. Its job is to record and match new vendor invoices. It may use the Gmail, Google Sheets and Slack connectors.
 
-</Step>
-<Step title="Connect what invoice processing needs">
+2. Create the skill skills/ap-invoice-match/SKILL.md with these rules:
+   - Read the Accounts Payable sheet and its PO tab before you pull new email. The sheet is the only memory between runs.
+   - Flag missing PO when an invoice has no PO number, or the number is not in the PO tab.
+   - Flag an overcharge when a line item is more than 2% over the PO price, or the total exceeds the PO's remaining balance.
+   - Flag a duplicate when the invoice number is already recorded, or the same vendor sent the same amount and line items within 30 days.
+   - Record every invoice in the sheet, flagged or clean. Never schedule a payment or mark an invoice as paid.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger invoice-intake to kortix.yaml. It runs the ap-invoice-processing agent every 15 minutes with the prompt "Load the ap-invoice-match skill and process new vendor invoices under the Invoices label in Gmail."
 
-- **Read Gmail** — new invoice emails and their attachments in the watched label.
-- **Read and append to Google Sheets** — the POs and the AP ledger it matches
-  against, and the new rows it records.
-- **Post to Slack** — the batch of processed invoices, flagged or clean, for
-  approval.
+4. Tell me which of these connectors are not connected yet.
 
-</Step>
-<Step title="Set the guardrails">
-
-The agent's only write is an appended row in the AP ledger and a Slack post. It
-has no access to a payment rail, and nothing in its instructions lets it schedule
-or mark an invoice as paid — that action belongs to a person, every time, with no
-exception for a clean match. Credentials are encrypted in the secrets manager and
-injected at runtime, scoped to the agents you grant them to.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Route the batch for approval">
+<Step title="Connect your tools">
 
-With that in place, every 15 minutes any new invoices are already extracted,
-matched, and recorded by the time a person looks at Slack — each one marked clean,
-duplicate, overcharge, or missing-PO, with the PO and prior-invoice references
-attached. A person reviews the batch and approves it for payment through the
-normal AP process. The agent's part ends at the Slack post.
+Open **Connectors** in your project and connect the inbox that receives
+invoices, the sheet that holds your AP ledger and Slack. Credentials are brokered server-side and never enter the
+agent's machine.
+
+<ToolList>
+  <ToolNeed name="Gmail" domain="gmail.com" tag="Required" alternatives={[['Outlook', 'outlook.office.com']]}>
+    Reads new vendor invoices filed under the invoice label.
+  </ToolNeed>
+  <ToolNeed name="Google Sheets" domain="docs.google.com" tag="Required" alternatives={[['QuickBooks', 'quickbooks.intuit.com'], ['Xero', 'xero.com']]}>
+    Matches invoices against POs and records each one to the ledger.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Posts duplicates, overcharges and missing POs for a decision.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the
+**ap-invoice-processing** agent and send this prompt. Check the new ledger rows
+before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Process new vendor invoices under the Invoices label in Gmail.
+
+1. Read the Accounts Payable sheet and its PO tab first.
+2. For each new invoice, extract the vendor, invoice number, total and every line item.
+3. Match it against the PO tab and prior invoices from the same vendor. Flag duplicates, overcharges and missing POs.
+4. Append one row per invoice to the sheet, flagged or clean, with the Gmail message ID.
+5. Post the batch to #ap-approvals. Do not schedule or mark any payment.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every 15 minutes, each run in a new session on its own cloud computer.
+To change the interval, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: invoice-intake
+    name: Invoice intake
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: ap-invoice-processing
+      prompt: Load the ap-invoice-match skill and process new vendor invoices under the Invoices label in Gmail.`}
+/>
+
+</Step>
+<Step title="Leave every payment to a person">
+
+The agent writes only ledger rows and the Slack post. It has no tool that
+schedules a payment or marks an invoice as paid. A person approves every
+invoice for payment through the normal AP process, including a clean match.
+
+</Step>
+<Step title="Read the batch in Slack">
+
+Each run that finds new invoices ends with one message in the channel. This
+is what a run looks like in the session:
+
+<ExampleRun
+  title="Invoice intake · 10:45"
+  message="Load the ap-invoice-match skill and process new vendor invoices under the Invoices label in Gmail."
+  worked="Worked for 2m 04s"
+  tools={[
+    'google_sheets · read rows → Accounts Payable',
+    'gmail · list messages → Invoices',
+    'gmail · get attachment × 5',
+    'google_sheets · append rows × 5',
+    'slack · post message → #ap-approvals',
+  ]}
+  note="Illustrative example. Your counts depend on your invoice volume."
+>
+  Recorded **5** new invoices: **3** clean and **2** flagged. One is a
+  **duplicate** of an invoice recorded 9 days earlier, and one bills a line item
+  **8%** over its PO price. All **5** wait in #ap-approvals for a person to
+  approve.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -115,6 +185,25 @@ normal AP process. The agent's part ends at the Slack post.
   through **connectors**, records every invoice in the sheet, and posts the batch
   to Slack. It never schedules or marks a payment as paid — that's a human, always.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Ask vendors for missing POs"
+  code="For each invoice flagged missing PO, draft a reply to the vendor that asks for the PO number, and hold it for me to send."
+/>
+
+<CopyBlock
+  title="Weekly AP summary"
+  code="Every Friday, post the week totals by vendor and by flag to #ap-approvals."
+/>
+
+<CopyBlock
+  title="Due-date watch"
+  code="Each morning, list the recorded invoices that fall due in the next 5 days, so a person can schedule them in time."
+/>
 
 ## Guardrails
 

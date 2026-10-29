@@ -52,50 +52,115 @@ the report to Slack. It cannot write to the database.
 ## How it works
 
 <Steps>
-<Step title="Connect a Monday cron as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-A scheduled **trigger** fires the project every Monday morning. Each firing spawns
-a fresh **session** in its own sandbox. One run, one disposable machine, so
-nothing carries over between weeks and the report is built from scratch each time.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the report skill and the weekly trigger, and opens a change request for you to review. Prefer
+clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Give the agent the report playbook">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a weekly metrics report agent in this project.
 
-What the report contains lives as **skills** and **memory** that travel with the
-agent: the metric definitions, the queries, the layout, and what counts as a
-notable move worth calling out. As the metrics we care about change, we write it
-down and the agent picks it up on the next run.
+1. Create the agent agents/weekly-report.md. Its job is to build the weekly metrics report from Postgres and post it to Slack. It may use the PostgreSQL connector, read-only.
 
-</Step>
-<Step title="Connect the systems the report needs">
+2. Create the skill skills/weekly-metrics-report/SKILL.md with these rules:
+   - Report exactly the metrics defined in memory/weekly-report.md. If a definition is missing, state the assumption in the report.
+   - Query this week from Monday 00:00 and the prior 4 weeks for comparison, with SELECT only.
+   - A move is notable at 15% or more week over week, or when it breaks a trend of 3 or more weeks.
+   - Write one or two plain sentences for each notable move. Steady metrics get the number only.
+   - Report missing data as a gap. Never fill it with a guess.
+   - Post exactly one report to #metrics: the date range, the numbers with deltas, the commentary and any data notes.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger weekly-metrics-report to kortix.yaml. It runs the weekly-report agent every Monday at 06:00 with the prompt "Load the weekly-metrics-report skill and post this week's metrics report to #metrics."
 
-- **Query Postgres read-only** — run the metric queries against a read-only role,
-  pulling this week's numbers and the prior weeks for comparison.
-- **Compute the deltas** — compare against recent history to find what moved and
-  by how much, inside the sandbox.
-- **Write the commentary** — turn the deltas into plain-language notes on what
-  changed and whether it's worth attention.
-- **Post to Slack** — the report and its commentary land in the team channel as a
-  single message.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The database connector is **read-only**: the agent queries but cannot insert,
-update, or delete, and its role is scoped to the metrics tables. It posts to one
-Slack channel and nothing else. Credentials are encrypted in the secrets manager
-and injected at runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect your database with a role that
+can only select, and Slack for the report. Credentials are brokered server-side
+and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="PostgreSQL" domain="postgresql.org" tag="Required" alternatives={[['MySQL', 'mysql.com'], ['Snowflake', 'snowflake.com'], ['BigQuery', 'cloud.google.com']]}>
+    Queries the metrics tables, read-only.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com'], ['Gmail', 'gmail.com']]}>
+    Posts the weekly report with commentary on what moved.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Let each Monday build its own report">
+<Step title="Run it once with this prompt">
 
-With that in place, every Monday the agent runs the queries, computes the deltas
-against recent weeks, writes commentary on what moved, and posts the report to
-Slack before the team logs on — the numbers and a plain-language read of them in
-one message. No one spends their Monday assembling it.
+Merge the change request, then start a session with the **weekly-report** agent
+and send this prompt. Check the numbers against your own dashboard before you
+let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Build this week's metrics report.
+
+1. Query this week's metrics from Postgres through the read-only role.
+2. Query the same metrics for the prior 4 weeks.
+3. Compute the week-over-week change and flag moves of 15% or more.
+4. Write one or two sentences on each notable move, and report any missing data as a gap.
+5. Post one report to #metrics.`}
+/>
+
+</Step>
+<Step title="Let the weekly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every Monday at 06:00, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: weekly-metrics-report
+    name: Weekly metrics report
+    on:
+      cron: "0 0 6 * * 1"
+    run:
+      agent: weekly-report
+      prompt: Load the weekly-metrics-report skill and post this week's metrics report to #metrics.`}
+/>
+
+</Step>
+<Step title="Keep the database read-only">
+
+The Postgres role can run SELECT and nothing else, and it reaches only the
+metrics tables. The report cannot change the data it reports on. The Slack post
+is the only output, and the team decides what to do about each move.
+
+</Step>
+<Step title="Read the weekly report">
+
+Each run ends with one message in #metrics. This is what a run looks like
+in the session:
+
+<ExampleRun
+  title="Weekly metrics report · Mon 06:00"
+  message="Load the weekly-metrics-report skill and post this week's metrics report to #metrics."
+  worked="Worked for 1m 47s"
+  tools={[
+    'postgresql · query (this week)',
+    'postgresql · query (prior 4 weeks)',
+    'slack · post message → #metrics',
+  ]}
+  note="Illustrative example. Your numbers depend on your metrics."
+>
+  Posted the report for **12** metrics. **2** moves are notable: signups rose
+  **18%** week over week, and trial conversion fell to **9.4%**, below its
+  4-week average. **1** metric had no data for Sunday.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -106,6 +171,25 @@ one message. No one spends their Monday assembling it.
   as **skills** and **memory**. The agent queries, interprets, and posts — with no
   path to write to the database.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Add a chart"
+  code="Attach a line chart of each notable metric over the last 8 weeks to the report."
+/>
+
+<CopyBlock
+  title="Explain a big move"
+  code="When a metric moves 15% or more, break it down by plan and add the biggest driver to the commentary."
+/>
+
+<CopyBlock
+  title="Monthly rollup"
+  code="On the first Monday of each month, add a section that compares last month to the month before."
+/>
 
 ## Guardrails
 

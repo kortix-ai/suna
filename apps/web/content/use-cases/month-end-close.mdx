@@ -61,53 +61,124 @@ enters a journal line and never marks the close done.
 ## How it works
 
 <Steps>
-<Step title="Run on a monthly cron, after the period closes">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron** trigger fires the agent once a month, once the prior period has
-closed. Each firing spawns a fresh **session** in its own sandbox — the
-checklist and ledger sheet are the record, so nothing needs to carry over in
-memory between runs.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the close checklist skill and the monthly trigger, and
+opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent the close standard">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a month-end close agent in this project.
 
-What counts as a reconciled line, what tolerance a timing lag gets, which
-checklist items need which supporting document, and how big a swing versus
-the trailing months counts as an anomaly worth flagging — all of it lives as
-**skills** and **memory** the agent loads before touching a single line, so
-every month is judged to the same standard.
+1. Create the agent agents/month-end-close.md. Its job is to walk the close checklist, reconcile Stripe revenue against the ledger and post the open items. It may use the Stripe and Google Sheets connectors and post to Slack.
 
-</Step>
-<Step title="Connect what the close needs, read and flag only">
+2. Create the skill skills/close-checklist/SKILL.md with these rules:
+   - Read the checklist tab and last month's notes in the Month-end close sheet before you pull new data.
+   - Reconcile every Stripe revenue line for the closed month against the ledger tab. Exact matches, and differences that a note on the sheet explains, tie out. Everything else is unreconciled.
+   - A checklist item without its supporting document linked is an open item. Name the row and what is missing.
+   - A figure is an anomaly when it moves more than 15% against the trailing average and no note on the sheet explains it.
+   - Write only the status and flag columns of the checklist tab. Never write a journal entry, never edit a ledger amount and never mark the period closed.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches
-the model, the agent can:
+3. Add a cron trigger monthly-close to kortix.yaml. It runs the month-end-close agent on the 2nd of each month at 07:00 with the prompt "Load the close-checklist skill and run one complete month-end close pass."
 
-- **Read Stripe** — revenue, refunds, and payouts for the closed period.
-- **Read the ledger tab** — what was recorded for the period, to reconcile
-  against Stripe.
-- **Read and flag the checklist tab** — the status of every close item, and
-  the notes and flags the agent adds; it never touches the ledger's recorded
-  entries.
-- **Post to Slack** — the close-status summary with every open item.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent reconciles and flags; it does not close. It never writes a journal
-entry, never edits a recorded ledger amount, and never checks off the period
-as closed — that decision, and every action it implies, belongs to a person.
-Credentials are encrypted in the secrets manager and injected at runtime,
-scoped to the agents you grant them to.
+Open **Connectors** in your project and connect your billing system, the sheet
+that holds your checklist and ledger, and Slack. Credentials are brokered
+server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Stripe" domain="stripe.com" tag="Required" alternatives={[['Chargebee', 'chargebee.com']]}>
+    Reads the month's revenue to reconcile against the ledger.
+  </ToolNeed>
+  <ToolNeed name="Google Sheets" domain="sheets.google.com" tag="Required" alternatives={[['QuickBooks', 'quickbooks.intuit.com'], ['Xero', 'xero.com'], ['NetSuite', 'netsuite.com']]}>
+    Walks the close checklist and reads the ledger.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Posts the close summary and the open items.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Post the open items">
+<Step title="Run it once with this prompt">
 
-With that in place, each month produces a checklist worked end to end and one
-Slack post: what's still unreconciled, which items are missing documentation,
-and which figures moved enough against the trend to need a look — each with
-enough detail that a person can act on it without re-pulling the numbers. The
-finance team reviews the list and closes the books themselves.
+Merge the change request, then start a session with the **month-end-close** agent
+and send this prompt. Compare its flags with your own close notes before you let
+the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one month-end close pass for last month.
+
+1. Read the checklist tab and last month's notes in the Month-end close sheet.
+2. Pull Stripe charges, refunds and payouts for last month and reconcile them against the ledger tab.
+3. Check every other checklist item for its supporting document.
+4. Flag any figure that moved more than 15% against the trailing months with no note that explains it.
+5. Write status flags to the checklist tab only, and post every open item to #finance-close. Do not write a journal entry or mark the period closed.`}
+/>
+
+</Step>
+<Step title="Let the monthly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs on the 2nd of each month at 07:00, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: monthly-close
+    name: Monthly close checklist run
+    on:
+      cron: "0 0 7 2 * *"
+    run:
+      agent: month-end-close
+      prompt: Load the close-checklist skill and run one complete month-end close pass.`}
+/>
+
+</Step>
+<Step title="Leave the close to a person">
+
+The agent reads Stripe and the ledger, and writes only the checklist status
+and flag columns. It never writes a journal entry, never edits a ledger amount
+and never marks the period closed, even when every line ties out. The finance
+team works the open items and closes the books.
+
+</Step>
+<Step title="Read the close status">
+
+Each run ends with one close-status message in the channel. This is what a
+run looks like in the session:
+
+<ExampleRun
+  title="Monthly close checklist run · 07:00"
+  message="Load the close-checklist skill and run one complete month-end close pass."
+  worked="Worked for 6m 05s"
+  tools={[
+    'google sheets · read checklist tab',
+    'stripe · list charges',
+    'stripe · list refunds',
+    'stripe · list payouts',
+    'google sheets · read ledger tab',
+    'google sheets · update checklist × 23',
+    'slack · post message → #finance-close',
+  ]}
+  note="Illustrative example. Your figures depend on your books."
+>
+  Worked **23** checklist items and **19** are clean. **2** revenue lines are
+  unreconciled, **$1,240** in total, and **1** item is missing its bank
+  statement. Marketing spend is up **22%** against the trailing average with no
+  note on the sheet.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -119,6 +190,25 @@ finance team reviews the list and closes the books themselves.
   **memory**. The agent assembles and flags every open item; a human closes
   the books.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Name the owner of each gap"
+  code="For each checklist item that is missing a document, add its owner from the checklist tab to the Slack summary."
+/>
+
+<CopyBlock
+  title="Mid-month dry run"
+  code="On the 15th of each month, run only the revenue reconciliation for the month to date and post any unreconciled lines to #finance-close."
+/>
+
+<CopyBlock
+  title="Show what drives a swing"
+  code="For each anomaly, list the three ledger lines that contribute most to the swing in the Slack summary."
+/>
 
 ## Guardrails
 

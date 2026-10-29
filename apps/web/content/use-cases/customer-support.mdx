@@ -49,49 +49,125 @@ investigates, resolves what it can, and stops at a human for sensitive actions.
 ## How it works
 
 <Steps>
-<Step title="Connect Plain as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-A signed webhook from Plain points at the project. Every new thread or customer
-reply fires it, and each firing spawns a fresh **session** in its own isolated
-sandbox. One customer, one thread, one sandbox. Sessions don't share state, and a
-busy inbox means more sessions running in parallel.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the support skill and the trigger, and opens
+a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent the product's knowledge">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a support queue agent in this project.
 
-Product knowledge lives as **skills** and **memory** loaded into every session:
-how the product works, our support playbook, the reply tone, and resolutions that
-worked before. The knowledge is updated as threads are resolved.
+1. Create the agent agents/support-agent.md. Its job is to work the Plain support queue. It may read the codebase and use the PLAIN_API_KEY and STRIPE_SECRET_KEY secrets.
 
-</Step>
-<Step title="Connect the systems an issue can touch">
+2. Create the skill skills/support-playbook/SKILL.md with these rules:
+   - Work every new thread and every customer reply that has no answer yet.
+   - For a bug report, search the codebase and recent changes for the code path before you reply.
+   - For a billing question, look up the customer's plan, invoices and subscription in Stripe.
+   - Resolve the thread when you can answer it fully. Otherwise draft a reply with the diagnosis attached and hand it to a person.
+   - Refunds, plan changes and anything that touches a customer's money or account state need my approval. Never do them yourself.
+   - Note each resolution that worked, so the next run is faster.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger support-triage to kortix.yaml. It runs the support-agent agent every 15 minutes with the prompt "Load the support-playbook skill and work every new or unanswered thread in Plain."
 
-- **Search the codebase** — for a reported bug, find the relevant code path,
-  check recent changes, and see whether it's already known.
-- **Look up Stripe** — plan, invoices, and subscription state, to answer billing
-  questions from account data.
-- **Read and reply in Plain** — full thread context in, a reply out.
+4. Tell me which of these connectors are not connected yet.
 
-</Step>
-<Step title="Set the guardrails">
-
-The agent is **read-mostly by default**: it investigates freely, but writes are
-scoped. Refunds, plan changes, and anything touching a customer's money or
-account stop at a **human approval gate**. Credentials are encrypted in the
-secrets manager and injected at runtime, scoped to the agents you grant them to or written to
-logs.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Let each thread run">
+<Step title="Connect your tools">
 
-An inbound thread triages, investigates across the three systems, and either
-resolves directly or hands off to a human with the work done and context
-attached. "Why was I charged twice?" becomes a Stripe lookup with an answer.
-"This button does nothing" becomes a codebase search that either explains the
-behavior or files a bug report for engineering.
+Open **Connectors** in your project and connect your code host. Add your
+Plain and Stripe API keys as the `PLAIN_API_KEY` and `STRIPE_SECRET_KEY`
+secrets. Secrets are encrypted and injected at runtime, scoped to the agents you
+grant them to.
+
+<ToolList>
+  <ToolNeed name="Plain" domain="plain.com" tag="Required" alternatives={[['Zendesk', 'zendesk.com'], ['Intercom', 'intercom.com']]}>
+    Reads new support threads and resolves or drafts replies.
+  </ToolNeed>
+  <ToolNeed name="Stripe" domain="stripe.com" tag="Required">
+    Reads the customer's billing state for each thread.
+  </ToolNeed>
+  <ToolNeed name="GitHub" domain="github.com" tag="Optional" alternatives={[['GitLab', 'gitlab.com']]}>
+    Searches the code and recent changes behind a bug report.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the **support-agent** agent
+and send this prompt. Read its replies and drafts before you let
+the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Work the Plain support queue once.
+
+1. Pull every new thread and every customer reply without an answer.
+2. For a bug report, search the codebase and recent changes for the cause.
+3. For a billing question, look up the customer's plan, invoices and subscription in Stripe.
+4. Reply directly when you can resolve the thread. Otherwise draft a reply with your diagnosis and leave it for me.
+5. If a thread needs a refund or a plan change, stop and ask me before you do anything.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+checks the queue every 15 minutes, each run in a new session on its own cloud
+computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: support-triage
+    name: Support queue triage
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: support-agent
+      prompt: Load the support-playbook skill and work every new or unanswered thread in Plain.`}
+/>
+
+</Step>
+<Step title="Hold refunds and plan changes for approval">
+
+The agent reads the codebase and Stripe freely and replies in Plain. A refund,
+a plan change or any other change to a customer's money or account state stops
+for a person. An automated session waits at most 30 minutes for a person, then
+stops without changing anything, and the next run asks again.
+
+</Step>
+<Step title="Read the triage summary">
+
+Each run ends with a short summary of the threads it worked. This is what a run
+looks like in the session:
+
+<ExampleRun
+  title="Support queue triage · 10:15"
+  message="Load the support-playbook skill and work every new or unanswered thread in Plain."
+  worked="Worked for 3m 37s"
+  tools={[
+    'plain · list threads',
+    'codebase · search',
+    'stripe · retrieve subscription',
+    'stripe · list invoices',
+    'plain · reply to thread × 3',
+    'plain · add note',
+  ]}
+  note="Illustrative example. Your queue and resolutions differ."
+>
+  Worked **5** threads. Resolved **3** directly, including a double charge that
+  was one paid invoice and one pending authorization. Drafted **1** bug
+  diagnosis for engineering, and **1** refund request is waiting for approval.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -102,6 +178,25 @@ behavior or files a bug report for engineering.
   **skills** and **memory**, and gate sensitive actions behind a human. Each
   inbound thread then runs in its own session.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Spot repeat issues"
+  code="When three or more threads in one day report the same problem, post one summary to #support with the threads and the likely cause."
+/>
+
+<CopyBlock
+  title="Turn answers into help articles"
+  code="After you resolve a thread that the help docs do not cover, draft a help article from your answer and leave it for review."
+/>
+
+<CopyBlock
+  title="Weekly support digest"
+  code="Every Friday, post to #support the top 5 topics of the week, how many threads you resolved and how many you handed off."
+/>
 
 ## Guardrails
 

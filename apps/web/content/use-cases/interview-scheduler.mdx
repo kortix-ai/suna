@@ -60,51 +60,120 @@ agent sends nothing and decides nothing about the candidate.
 ## How it works
 
 <Steps>
-<Step title="Run on a daily cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent once a day. Each firing spawns a fresh
-**session** in its own sandbox, so the set of candidates ready to schedule and the
-panel's real availability are both recomputed from the current state — nothing
-carries over from the day before.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the interview-scheduling skill and the
+daily trigger, and opens a change request for you to review.
+Prefer clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Give the agent the scheduling conventions">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a daily interview scheduling agent in this project.
 
-How we read an interview plan, how many slot options to propose, how far out to
-look for availability, and what a good candidate-facing proposal reads like all
-live as **skills** and **memory** that travel with the agent. When we change how
-loops are structured, we update the file and the next day's proposals follow it.
+1. Create the agent agents/interview-scheduler.md. Its job is to draft interview slot proposals and calendar invites for the coordinator to review. It may use the Greenhouse and Google Calendar connectors and the coordinator review email channel.
 
-</Step>
-<Step title="Connect Greenhouse, Google Calendar, and email">
+2. Create the skill skills/interview-scheduling/SKILL.md with these rules:
+   - Read candidates in the Onsite, Ready to Schedule stage in Greenhouse who have no drafted proposal yet.
+   - The panel, round and duration come only from the candidate's interview plan. Never add or drop an interviewer.
+   - Propose 2 to 3 slots in the next few business days, and only slots where every panelist is free on their primary calendar.
+   - Draft one proposal email to the candidate and one invite per interviewer, and put the batch in the coordinator review inbox.
+   - Never send a proposal, never create a calendar event, and never change a candidate's stage or make a hiring decision.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger interview-scheduling-sweep to kortix.yaml. It runs the interview-scheduler agent every day at 08:00 with the prompt "Load the interview-scheduling skill and run one complete scheduling sweep."
 
-- **Read Greenhouse** — which candidates are marked ready to schedule, and each
-  one's interview plan: the panel, the round, and the duration.
-- **Read Google Calendar** — the availability of every interviewer on the plan, so
-  a proposed time is one every panelist can actually make.
-- **Draft to email** — a slot proposal to the candidate and a calendar invite per
-  interviewer, held for the coordinator.
+4. Tell me which of these connectors are not connected yet.
 
-</Step>
-<Step title="Set the guardrails">
-
-The agent's job stops at the draft. It never emails a candidate directly, never
-sends a calendar invite, and never makes or implies a hiring decision — no
-rejecting a candidate, no advancing a stage, no offer. Credentials are encrypted
-in the Secrets Manager and injected at runtime, scoped to the agents you grant them to or
-written to logs.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Hand the batch to the coordinator">
+<Step title="Connect your tools">
 
-With that in place, each morning brings a batch of ready-to-schedule candidates
-already matched against real interviewer availability: a proposed slot for the
-candidate and a drafted invite for each panelist. The coordinator reviews, confirms
-the time, and sends — or adjusts first. Nothing reaches a candidate or an
-interviewer's calendar without them.
+Open **Connectors** in your project and connect Greenhouse and Google
+Calendar, then connect the coordinator review inbox under **Channels**.
+Credentials are brokered server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Greenhouse" domain="greenhouse.com" tag="Required" alternatives={[['Lever', 'lever.co'], ['Ashby', 'ashbyhq.com']]}>
+    Reads candidates ready to schedule and their interview plans.
+  </ToolNeed>
+  <ToolNeed name="Google Calendar" domain="calendar.google.com" tag="Required" alternatives={[['Outlook', 'outlook.com']]}>
+    Checks panel availability and drafts each interviewer's invite.
+  </ToolNeed>
+  <ToolNeed name="Gmail" domain="gmail.com" tag="Required" alternatives={[['Slack', 'slack.com']]}>
+    Delivers drafted slot proposals to the coordinator for review.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the **interview-scheduler** agent
+and send this prompt. Check the proposed slots against the panel's
+calendars before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one interview scheduling sweep.
+
+1. Find candidates in the Onsite, Ready to Schedule stage in Greenhouse with no drafted proposal.
+2. Read each candidate's interview plan: panel, round and duration.
+3. Find 2 to 3 slots where every panelist is free on their primary calendar.
+4. Draft a proposal email to the candidate and an invite for each interviewer.
+5. Put the batch in the coordinator review inbox. Do not send anything, create any event or change any stage.`}
+/>
+
+</Step>
+<Step title="Let the daily schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every day at 08:00, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: interview-scheduling-sweep
+    name: Daily interview-scheduling sweep
+    on:
+      cron: "0 0 8 * * *"
+    run:
+      agent: interview-scheduler
+      prompt: Load the interview-scheduling skill and run one complete scheduling sweep.`}
+/>
+
+</Step>
+<Step title="Hold every proposal and invite for the coordinator">
+
+The agent has no send action and no action that creates a live calendar
+event. Every proposal and invite waits in the coordinator review inbox. The
+coordinator confirms the time with the candidate and sends everything. The
+agent never rejects a candidate, moves a stage or drafts an offer.
+
+</Step>
+<Step title="Read the morning batch">
+
+Each run ends with one batch in the coordinator review inbox. This is what a run looks like in the session:
+
+<ExampleRun
+  title="Daily interview-scheduling sweep · 08:00"
+  message="Load the interview-scheduling skill and run one complete scheduling sweep."
+  worked="Worked for 2m 19s"
+  tools={[
+    'greenhouse · list candidates',
+    'greenhouse · get interview plan × 4',
+    'google_calendar · find free busy × 4',
+    'email · send → coordinator review',
+  ]}
+  note="Illustrative example. Your counts depend on your pipeline."
+>
+  Found **4** candidates ready to schedule. Drafted proposals with **3** open
+  slots each for **3** of them. **1** panel has no common free slot in the
+  next 5 business days, so that candidate is listed for the coordinator to
+  handle.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -115,6 +184,25 @@ interviewer's calendar without them.
   conventions live as **skills** and **memory**. The agent drafts the candidate
   proposal and the invites and stops — the coordinator confirms and sends.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Suggest a backup panelist"
+  code="When a panel has no common free slot, name the interviewer who blocks the most slots so the coordinator can ask for a swap."
+/>
+
+<CopyBlock
+  title="Respect time zones"
+  code="Show each proposed slot in the candidate's time zone from Greenhouse, and in the interviewers' time zone in the invite drafts."
+/>
+
+<CopyBlock
+  title="Weekly pipeline note"
+  code="Every Friday, send the coordinator a list of candidates who have waited more than 5 business days for a confirmed slot."
+/>
 
 ## Guardrails
 
