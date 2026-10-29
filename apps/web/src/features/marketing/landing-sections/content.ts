@@ -3,7 +3,7 @@
  *
  * Every claim below is a sentence from `kortix-brand` verbal/claims.md
  * (section 2), shortened by deletion only, or a fact from the project docs
- * (`content/docs/project/index.mdx`, "Repository layout" and "Memory"). The
+ * (`content/docs/developers.mdx` "Git", `content/docs/guide.mdx` "Drive"). The
  * FAQ is not here: it is imported from `faq/content.ts`, whose accuracy gate
  * and translations stay where they are.
  *
@@ -119,7 +119,7 @@ export const security = {
       id: 'compliance',
       title: 'Compliance',
       description:
-        'SOC 2 Type I is held. SOC 2 Type II is in progress. GDPR is a posture Kortix runs, not a certificate.',
+        'SOC 2 Type I verified. GDPR is a posture Kortix runs, not a certificate.',
     },
   ],
 } as const;

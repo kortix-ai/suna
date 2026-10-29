@@ -270,3 +270,16 @@ test('accepts stored non-native files and rejects malformed private references',
   expect(sanitizeInboxPromptParts([file])).toEqual({ parts: [file] });
   expect(sanitizeInboxPromptParts([{ ...file, url: url + '/../private' }])).toHaveProperty('error');
 });
+
+test('repairs PostgreSQL-unsafe prompt strings before flattening and queueing', () => {
+  const result = sanitizeInboxPromptParts([
+    { type: 'text', text: 'hello\0world\ud800 😀 café' },
+    { type: 'agent', name: 'agent\0name', source: { 'key\0': ['value\udfff'] } },
+  ]);
+  expect(result).toEqual({ parts: [
+    { type: 'text', text: 'hello�world� 😀 café' },
+    { type: 'agent', name: 'agent�name', source: { 'key�': ['value�'] } },
+  ] });
+  if ('error' in result) throw new Error(result.error);
+  expect(flattenPromptText(result.parts)).toBe('hello�world� 😀 café');
+});

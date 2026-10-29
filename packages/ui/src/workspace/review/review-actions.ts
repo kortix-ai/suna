@@ -131,8 +131,10 @@ export const BULK_VERDICT: Record<BulkVerb, ReviewVerdict> = {
 /**
  * Whether a bar verb acts on `item`, decided before the request so the bar
  * never sends an id the server must refuse. Approve and Deny decide a pending
- * approval; Approve also needs a call this viewer could review
- * (`approvalReviewable`) that has not expired. Dismiss acts on native items only. A `cr:` id takes no verb.
+ * approval, an output or a batch; on a connector approval Approve also needs a
+ * call this viewer could review (`approvalReviewable`) that has not expired.
+ * Dismiss acts on native items only. A question takes Dismiss only. A `cr:` id
+ * takes no verb.
  */
 export function bulkSupports(
   item: ReviewItem,
@@ -143,6 +145,9 @@ export function bulkSupports(
   if (segmentForStatus(item.status) !== 'needs_you') return false;
   if (crChangeRequestId(item.id) !== null || !allows(item, BULK_VERDICT[verb])) return false;
   if (verb === 'dismiss') return connectorCallId(item.id) === null;
+  // A native output or batch takes the verdicts its own dialog offers. A
+  // question needs an answer, which no bar verb carries.
+  if (item.kind === 'output' || item.kind === 'batch') return true;
   if (item.kind !== 'approval') return false;
   if (item.expiresAt && Date.parse(item.expiresAt) <= now) return false;
   const call = item.detail.actions?.[0];

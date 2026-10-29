@@ -259,3 +259,41 @@ describe('the v2 writers accept a v3 manifest', () => {
     expect(applyAgentBlockV2(manifest(), 'support', { connectors: 'all' } as never).ok).toBe(true);
   });
 });
+
+describe('synthesizeBlankManifest', () => {
+  test('a blank project reads as a valid v3 manifest with the kortix agent', () => {
+    const synthesized = synthesizeBlankManifest({ name: 'blank', manifestPath: null });
+
+    expect(synthesized.schemaVersion).toBe(3);
+    expect(synthesized.raw.kortix_version).toBe(3);
+    expect(validateManifest(synthesized.raw, 'yaml').issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+    expect(serializeManifest(synthesized)).toStartWith('kortix_version: 3\n');
+    expect(block(synthesized.raw, 'kortix')).toMatchObject({
+      mode: 'primary',
+      skills: 'all',
+      connectors: 'all',
+      secrets: 'all',
+      kortix_permissions: 'all',
+      workspace: { project_repository: true },
+    });
+  });
+});
+
+describe('the shipped v3 starter compiles', () => {
+  test('every agent compiles with its prompt file; the built-ins are off; the starter registers no extension', async () => {
+    const { getStarterFiles } = await import('@kortix/starter');
+    const { compileAgentConfig } = await import('../projects/lib/compile-agent-config');
+    const files = Object.fromEntries(getStarterFiles({ projectName: 'Acme' }).map((file) => [file.path, file.content]));
+    const raw = parseManifestString(files['kortix.yaml']!, 'yaml', 'kortix.yaml').raw;
+
+    const compiled = compileAgentConfig(raw, 'opencode', files)!;
+
+    expect(compiled.schema).toBe(3);
+    expect(compiled.default_agent).toBe('kortix');
+    expect(compiled.agent.kortix!.prompt).toContain('Kortix general knowledge worker');
+    expect(compiled.agent['harness-reflector']!.permission).toMatchObject({ task: { 'session-reviewer': 'allow', '*': 'deny' } });
+    expect(compiled.extensions ?? {}).toEqual({});
+    for (const builtin of ['build', 'plan', 'general', 'explore']) expect(compiled.agent[builtin]).toEqual({ disable: true });
+    expect(Object.keys(compiled.skills ?? {})).toContain('pdf');
+  });
+});

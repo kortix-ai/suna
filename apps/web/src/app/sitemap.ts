@@ -1,3 +1,4 @@
+import { showsMarketingLink } from '@/lib/config';
 import type { MetadataRoute } from 'next';
 
 import { locales } from '@/i18n/config';
@@ -29,6 +30,12 @@ export const LOCALIZED_ROUTES = [
   '/pricing',
   '/security',
   '/self-hosted',
+  '/services',
+  '/case-studies',
+  '/framework',
+  '/multiplayer',
+  '/sovereign',
+  '/compliance',
   '/white-label',
   '/cli',
   '/desktop',
@@ -62,6 +69,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   for (const pathname of STATIC_PUBLIC_ROUTES) {
     if (pathname === '/use-cases' && !includeUseCases) continue;
+    if (!showsMarketingLink(pathname)) continue;
     const entry = htmlEntry(pathname);
     entries.set(entry.url, entry);
   }
@@ -69,6 +77,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   // Keep the explicit locale routes that middleware actually serves. English
   // uses the unprefixed URL; every alternate stays on the same non-www origin.
   for (const pathname of LOCALIZED_ROUTES) {
+    if (!showsMarketingLink(pathname)) continue;
     const languages = Object.fromEntries(
       locales.map((locale) => [
         locale,
@@ -87,6 +96,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   for (const record of records) {
     if (record.htmlPath === '/use-cases' && !includeUseCases) continue;
+    if (!showsMarketingLink(record.htmlPath)) continue;
     const html = htmlEntry(record.htmlPath, record.lastModified);
     // Keep the hreflang set a localized route already carries.
     const prior = entries.get(html.url);

@@ -13,8 +13,14 @@ import type { ReactNode } from 'react';
 export function PageFrame({ children }: { children: ReactNode }) {
   return (
     <main className="bg-background relative mx-auto w-full max-w-[1440px]">
-      <div aria-hidden className="bg-border pointer-events-none absolute inset-y-0 left-4 z-10 w-px lg:left-17" />
-      <div aria-hidden className="bg-border pointer-events-none absolute inset-y-0 right-4 z-10 w-px lg:right-17" />
+      <div
+        aria-hidden
+        className="bg-border pointer-events-none absolute inset-y-0 left-4 z-10 w-px lg:left-17"
+      />
+      <div
+        aria-hidden
+        className="bg-border pointer-events-none absolute inset-y-0 right-4 z-10 w-px lg:right-17"
+      />
       {children}
     </main>
   );
@@ -42,7 +48,9 @@ export function PageHero({
           <span className="text-foreground block">{title}</span>
           {titleMuted ? <span className="text-muted-foreground block">{titleMuted}</span> : null}
         </h1>
-        <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">{sub}</p>
+        <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
+          {sub}
+        </p>
       </div>
       {actions ? <div className="flex flex-wrap gap-2.5 pt-2">{actions}</div> : null}
     </div>
@@ -80,14 +88,22 @@ export function Heading({
         {title}
         {titleMuted ? <span className="text-muted-foreground block"> {titleMuted}</span> : null}
       </h2>
-      {sub ? <p className="text-muted-foreground mt-4 max-w-2xl text-base text-pretty">{sub}</p> : null}
+      {sub ? (
+        <p className="text-muted-foreground mt-4 max-w-2xl text-base text-pretty">{sub}</p>
+      ) : null}
       {actions ? <div className="flex flex-wrap gap-2.5 pt-6">{actions}</div> : null}
     </div>
   );
 }
 
 /** Short facts as cells: the term muted on top, the value under it. Sits in a Band. */
-export function SpecGrid({ items, cols }: { items: readonly { k: string; v: string }[]; cols: string }) {
+export function SpecGrid({
+  items,
+  cols,
+}: {
+  items: readonly { k: string; v: string }[];
+  cols: string;
+}) {
   return (
     <dl className={`bg-border grid grid-cols-1 gap-px sm:grid-cols-2 ${cols}`}>
       {items.map((item) => (
@@ -102,11 +118,7 @@ export function SpecGrid({ items, cols }: { items: readonly { k: string; v: stri
 
 /** A band whose hairlines cross the page, its content between the rails. */
 export function Band({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <div className={`kx-rail-fade border-y px-4 lg:px-17 ${className ?? ''}`}>
-      {children}
-    </div>
-  );
+  return <div className={`kx-rail-fade border-y px-4 lg:px-17 ${className ?? ''}`}>{children}</div>;
 }
 
 /** Cells split by hairlines: the band's grid over the border colour. */
@@ -121,7 +133,9 @@ export function CellGrid({
     <ul className={`bg-border grid grid-cols-1 gap-px sm:grid-cols-2 ${cols}`}>
       {items.map((item) => (
         <li key={item.id} className="bg-background flex flex-col gap-3 p-6 lg:p-8">
-          {item.n ? <span className="text-muted-foreground font-mono text-xs tabular-nums">{item.n}</span> : null}
+          {item.n ? (
+            <span className="text-muted-foreground font-mono text-xs tabular-nums">{item.n}</span>
+          ) : null}
           <h3 className="text-foreground text-base font-medium text-pretty">{item.k}</h3>
           <p className="text-muted-foreground text-sm text-pretty">{item.v}</p>
         </li>
@@ -131,7 +145,11 @@ export function CellGrid({
 }
 
 /** Key / value rows on hairlines, aligned with the section copy. */
-export function KeyRows({ rows }: { rows: readonly { id?: string; k: ReactNode; v: ReactNode }[] }) {
+export function KeyRows({
+  rows,
+}: {
+  rows: readonly { id?: string; k: ReactNode; v: ReactNode }[];
+}) {
   return (
     <dl className="divide-y px-8 lg:px-28">
       {rows.map((row, i) => (
@@ -151,4 +169,3 @@ export function Block({ id, children }: { id: string; children: ReactNode }) {
     </section>
   );
 }
-

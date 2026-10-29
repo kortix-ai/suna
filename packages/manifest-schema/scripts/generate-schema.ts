@@ -31,8 +31,11 @@ export const SCHEMA_FILES: Record<string, unknown> = {
   'kortix.v3.schema.json': KORTIX_V3_JSON_SCHEMA,
 };
 
+/** A JSON Schema `pattern` is a string. A RegExp value renders as its source,
+ *  never as `{}` (2026-10-28: the v0.14.9 release lane rendered one pattern as
+ *  `{}`; the cause did not reproduce locally on macOS or Linux). */
 export function renderSchemaFile(schema: unknown): string {
-  return `${JSON.stringify(schema, null, 2)}\n`;
+  return `${JSON.stringify(schema, (_key, value) => (value instanceof RegExp ? value.source : value), 2)}\n`;
 }
 
 if (import.meta.main) {

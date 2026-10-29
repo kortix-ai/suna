@@ -15,6 +15,7 @@ Rule format: **Rule.** — *Why:* — *Where:* — *When silent:*.
 | Comparative | The leading open-source alternative to Claude Cowork and ChatGPT Work | Search, social, launch, GitHub. Anchors against the known category. |
 | Manifesto line | A company is going to be a git repository | The deep thesis. Manifesto, founder voice, vision talks. Never a page title. |
 | Mission | Take a company from human to AGI, and let it keep every byte of itself on the way there. | Founder voice, about, hiring. Never a category. |
+| Promise | Hand it an outcome, agents run it 24/7 | What Kortix does for a company, beside what it is (D18). Home hero subhead, the Outcomes section header, pitches. Never a page title. |
 
 **Rule.** Use "AI Operating System" as the category and "The open-source AI Operating System" as the tagline. — *Why:* D10 (2026-10-04, founder). An operating system is the layer everything else runs on: agents, skills, memory, connectors, computers, channels and triggers. The phrase names that layer, and it scales from one person to a company. — *Where:* app | marketing | mobile | deck | email | CLI | GitHub. — *When silent:* use the tagline in titles and the category noun in sentences.
 
@@ -27,6 +28,8 @@ Rule format: **Rule.** — *Why:* — *Where:* — *When silent:*.
 **Rule.** Keep "AI Operating System" capitalized as a proper category name. Keep "open-source" hyphenated before a noun and "open source" two words as a noun. — *Why:* One spelling per term. The README and hero use this form. — *Where:* every surface. — *When silent:* "the open-source AI Operating System" (adjective); "Kortix is open source" (noun).
 
 **Rule.** Do not name a license in public copy. Write "open source" and stop. — *Why:* The license is a legal detail that changes the claim. Public copy states the fact a reader can verify: they can read, fork and audit the code. — *Where:* marketing | deck | social | email | docs | store listing. — *When silent:* "open source", "code you can read, fork, and audit", "self-host for free". Never add a license badge.
+
+**Rule.** Say what Kortix does for a company with the Promise line: "Hand it an outcome, agents run it 24/7", and its mechanism, the outcome loop (you state the outcome, an agent owns and plans it, agents do the work on their own computers at any hour, a separate agent verifies it and changes land through a change request, the agents learn). The loop is built from shipped parts (triggers, sessions, change requests, memory): present it as working today, with no early-access label (founder, 2026-10-27). — *Why:* D18 (2026-10-27, founder). The sovereign category line says what Kortix is; buyers also need what it does for them. — *Where:* marketing | deck | social | sales. — *When silent:* "agents" and "AI-native operating system for your company". Never "AI workers", "AI employees", "self-driving company" or "autonomous company": those are retired or imply no human gate, and every loop has approval rules a person sets.
 
 ### What-is, in one sentence
 
@@ -67,7 +70,7 @@ Kortix is the open-source AI Operating System: your agents, their skills, your c
 
 **The problem and why now.** See [concepts.md](concepts.md) section 6. Do not restate them here.
 
-**Rule.** Write the mission with "AGI" only in the mission and manifesto, never in a category or product noun. — *Why:* D1 retires "open AGI platform". The mission is founder voice about direction, not a product claim. — *Where:* marketing (about, careers) | deck. — *When silent:* leave "AGI" out of product copy.
+**Rule.** Write the mission with "AGI" only in the mission and manifesto, never in a category or product noun. "SuperIntelligence", "self-improving companies" and "run by AI" follow the same rule: `/about` only, as direction (D19, D22). — *Why:* D1 retires "open AGI platform". The mission is founder voice about direction, not a product claim. — *Where:* marketing (about, careers) | deck. — *When silent:* leave "AGI" out of product copy.
 
 ## 3. Vision and mission
 

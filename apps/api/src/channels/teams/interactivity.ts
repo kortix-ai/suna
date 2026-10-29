@@ -10,8 +10,10 @@ import {
   type TeamsInbound,
 } from './inbound';
 import { consumePendingTeamsPickerMessage } from './auth-resume';
+import { runWebhookWork } from '../webhook-work';
 import {
   APPROVAL_NOTE_INPUT,
+  QUESTION_EARLIER,
   REVIEW_FEEDBACK_INPUT,
   TEAMS_APPROVAL_VERB,
   TEAMS_FORM_VERB,
@@ -38,8 +40,13 @@ export interface TeamsInvokeResponse {
   value: unknown;
 }
 
-function cardResponse(card: unknown): TeamsInvokeResponse {
+export function cardResponse(card: unknown): TeamsInvokeResponse {
   return { statusCode: 200, type: 'application/vnd.microsoft.card.adaptive', value: card };
+}
+
+/** An answer to the presser alone: the card keeps its buttons for anyone else. */
+export function messageResponse(text: string): TeamsInvokeResponse {
+  return { statusCode: 200, type: 'application/vnd.microsoft.activity.message', value: text };
 }
 
 function tenantOf(activity: TeamsActivity): string | null {
@@ -163,8 +170,10 @@ async function handleSetModel(
  * The invoke carries the session id the card was drawn with; nothing about the
  * activity itself names a turn. `stopTeamsTurn` decides whether this person may
  * end it and settles the card, so the reply here is only what the presser is
- * told — and a refusal reads the same to them as to anyone watching, because an
- * `Action.Execute` response is shown to the presser alone.
+ * told, and a refusal reads the same to them as to anyone watching. That holds
+ * only if an `Action.Execute` response is shown to the presser alone. That is
+ * unverified on a real tenant; see the same note in `buildQuestionCard`
+ * (cards.ts).
  */
 async function handleStop(
   activity: TeamsActivity,
@@ -279,17 +288,34 @@ async function handlePickProject(
   return cardResponse(buildNoticeCard('This conversation now runs the selected project.', '✅'));
 }
 
+/**
+ * Each press on a question card has its own key, the invoke id: without one a
+ * press could not be told from another, so it is refused. A press whose data
+ * names its stored question (`kq`) is answered from it (question-press.ts).
+ * Any other is from a card posted before that: it reaches only the
+ * conversation's own session, a conversation with none (after `/new`)
+ * answers nothing, and a presser Kortix cannot act as is told before the
+ * card changes.
+ */
+const TAP_AGAIN = "Couldn't record that. Tap the button again.";
+
 async function handleAnswer(
   activity: TeamsActivity,
   data: Record<string, unknown>,
   inbound: TeamsInbound,
 ): Promise<TeamsInvokeResponse> {
   const convo = convoOf(activity);
+  if (!convo) return cardResponse(buildNoticeCard("I couldn't record that answer."));
+  if (!activity.id) return messageResponse(TAP_AGAIN);
+  if (typeof data.kq === 'string') return (await import('./question-press')).answerTeamsQuestion(activity, convo, inbound, data, false);
   const answer = typeof data.answer === 'string' ? data.answer : '';
-  if (!convo || !answer) return cardResponse(buildNoticeCard("I couldn't record that answer."));
+  if (!answer) return cardResponse(buildNoticeCard("I couldn't record that answer."));
 
-  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
-  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  const target = await decisionTarget(inbound, convo);
+  if (!target) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  if (!target.sessionId) return cardResponse(buildNoticeCard(QUESTION_EARLIER));
+  const unlinked = await (await import('./question-press')).unlinkedPresser(activity, target.projectId, convo.tenantId);
+  if (unlinked) return unlinked;
 
   // The question travels on the action (cards.ts), because the tap REPLACES the
   // card that asked it. Sending the agent a bare "Yes" leaves it to infer what
@@ -302,15 +328,21 @@ async function handleAnswer(
     ...activity,
     type: 'message',
     text: question ? `Answering your question "${question}":\n${answer}` : answer,
-    id: `${activity.id ?? 'answer'}:answer`,
+    id: `${activity.id}:answer`,
   };
-  void createOrJoinTeamsConversationSession({
-    projectId,
-    tenantId: convo.tenantId,
-    conversationId: convo.conversationId,
-    activity: synthetic,
-    ownThreadsOnly: inbound.kind === 'project',
-  }).catch((err) => console.error('[teams-webhook] answer follow-up failed', err));
+  void runWebhookWork(
+    'teams-question',
+    () =>
+      createOrJoinTeamsConversationSession({
+        projectId: target.projectId,
+        tenantId: convo.tenantId,
+        conversationId: convo.conversationId,
+        activity: synthetic,
+        ownThreadsOnly: inbound.kind === 'project',
+        followUpOnly: true,
+      }),
+    { ackWaitMs: 0 },
+  );
 
   return cardResponse(
     buildNoticeCard(question ? `**${question}**\n\n${answer} — working on it.` : `Answer received: ${answer}`, '✅'),
@@ -334,6 +366,8 @@ async function handleForm(
 ): Promise<TeamsInvokeResponse> {
   const convo = convoOf(activity);
   if (!convo) return cardResponse(buildNoticeCard("I couldn't record that."));
+  if (!activity.id) return messageResponse(TAP_AGAIN);
+  if (typeof data.kq === 'string') return (await import('./question-press')).answerTeamsQuestion(activity, convo, inbound, data, true);
 
   const ids = typeof data.fieldIds === 'string' ? data.fieldIds.split(',').map((f) => f.trim()).filter(Boolean) : [];
   const answered: Array<{ id: string; value: string }> = [];
@@ -347,8 +381,11 @@ async function handleForm(
     return cardResponse(buildNoticeCard('Nothing was filled in — open the form again and add at least one answer.'));
   }
 
-  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
-  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  const target = await decisionTarget(inbound, convo);
+  if (!target) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  if (!target.sessionId) return cardResponse(buildNoticeCard(QUESTION_EARLIER));
+  const unlinked = await (await import('./question-press')).unlinkedPresser(activity, target.projectId, convo.tenantId);
+  if (unlinked) return unlinked;
 
   // Every form here is one the agent posted — the `question` tool's, or its own
   // `teams ask` — so the answers are framed as replies to it, not as a new
@@ -358,15 +395,21 @@ async function handleForm(
     ...activity,
     type: 'message',
     text,
-    id: `${activity.id ?? 'form'}:form`,
+    id: `${activity.id}:form`,
   };
-  void createOrJoinTeamsConversationSession({
-    projectId,
-    tenantId: convo.tenantId,
-    conversationId: convo.conversationId,
-    activity: synthetic,
-    ownThreadsOnly: inbound.kind === 'project',
-  }).catch((err) => console.error('[teams-webhook] form follow-up failed', err));
+  void runWebhookWork(
+    'teams-question',
+    () =>
+      createOrJoinTeamsConversationSession({
+        projectId: target.projectId,
+        tenantId: convo.tenantId,
+        conversationId: convo.conversationId,
+        activity: synthetic,
+        ownThreadsOnly: inbound.kind === 'project',
+        followUpOnly: true,
+      }),
+    { ackWaitMs: 0 },
+  );
 
   return cardResponse(
     buildNoticeCard(

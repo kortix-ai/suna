@@ -21,7 +21,7 @@ const ROLL_EASE = 'cubic-bezier(0.76, 0, 0.24, 1)';
  *  the brand colour (or the theme ink for near-black brands). */
 function LogoRow({ logo }: { logo: Logo }) {
   return (
-    <span className="text-muted-foreground group-hover/cell:text-foreground flex h-12 items-center justify-center gap-3 transition-colors duration-moderate ease-out">
+    <span className="text-muted-foreground group-hover/cell:text-foreground duration-moderate flex h-12 items-center justify-center gap-3 transition-colors ease-out">
       {FULL_COLOR_LOGOS.has(logo.slug) ? (
         // eslint-disable-next-line @next/next/no-img-element -- a 28px static SVG; next/image adds nothing here
         <img
@@ -29,12 +29,12 @@ function LogoRow({ logo }: { logo: Logo }) {
           alt=""
           aria-hidden
           decoding="async"
-          className="size-7 shrink-0 object-contain grayscale transition-[filter] duration-moderate ease-out group-hover/cell:grayscale-0"
+          className="duration-moderate size-7 shrink-0 object-contain grayscale transition-[filter] ease-out group-hover/cell:grayscale-0"
         />
       ) : (
         <span
           aria-hidden
-          className="bg-muted-foreground group-hover/cell:bg-(--brand) size-7 shrink-0 transition-colors duration-moderate ease-out"
+          className="bg-muted-foreground duration-moderate size-7 shrink-0 transition-colors ease-out group-hover/cell:bg-(--brand)"
           style={{
             ['--brand' as string]: logo.color ?? 'var(--foreground)',
             maskImage: `url(/media/landing/logos/${logo.slug}.svg)`,

@@ -53,13 +53,15 @@ import { adoptChatThreads, bindChatThread, claimThreadCreate } from '../core/thr
 import { applyPostCreateActions, createCommandStatus, createSession } from '../../projects/session-lifecycle/create-session';
 import { turnPromptSource } from '../../projects/lib/notification-recipients';
 import { sessionWebUrl } from '../slack/util';
-import { deleteTelegramInstall, recordTelegramAccessRequest, saveTelegramInstall, setTelegramAllowedUserIds } from './installs';
+import { deleteTelegramInstall, loadTelegramInstall, recordTelegramAccessRequest, saveTelegramInstall, setTelegramAllowedUserIds } from './installs';
 import { registerChannelTelegramRoutes } from '../../projects/routes/channel-telegram';
 import { serializeProject } from '../../projects/lib/serializers';
 import { handleTelegramEvent, handleTelegramPress, telegramMessageEvent, telegramPressEvent, type TelegramMessage } from './session';
-import { telegramWebhookApp } from '../telegram-webhook';
+import { channelWebhookRoutes } from '../inbound/webhook-routes';
+import { telegramInbound } from './inbound';
 import { runJobBatch } from '../../shared/job-queue';
 
+const telegramWebhookApp = channelWebhookRoutes(telegramInbound);
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const ACTOR = crypto.randomUUID();
@@ -340,7 +342,7 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
       projectId: PROJECT,
       idempotencyKey: `telegram:${BOT_ID}:${event.id}`,
     });
-    expect(delivered[0]!.text).toContain('in the same chat');
+    expect(delivered[0]!.text).toStartWith('[Telegram · ');
 
     await holdClaim(888);
     await handleTelegramEvent(update('/new', ALLOWED, 888));
@@ -366,7 +368,7 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     await handleTelegramEvent(update('still there?', ALLOWED, 914));
     expect(delivered).toHaveLength(1);
     expect(created).toHaveLength(1);
-    expect(created[0]!.postCreate[1].text).toStartWith('You received a message on Telegram.');
+    expect(created[0]!.postCreate[1].text).toStartWith('[Telegram · ');
     const thread = await threadRow(914);
     expect(thread?.sessionId).toBe(createdSessions[0]);
     expect(thread?.sessionId).not.toBe(old);
@@ -1112,7 +1114,7 @@ describe('question buttons go when the chat answers another way — migrated Pos
     expect(await remembered('2101')).toHaveLength(1);
     await handleTelegramEvent(update('Postgres', ALLOWED, 2101));
     expect(edits().map((c) => ({ chat_id: c.body.chat_id, message_id: c.body.message_id, reply_markup: c.body.reply_markup }))).toEqual([
-      { chat_id: '2101', message_id: 1, reply_markup: { inline_keyboard: [] } },
+      { chat_id: 2101, message_id: 1, reply_markup: { inline_keyboard: [] } },
     ]);
     expect(String(edits()[0]!.body.text)).toBe('Pick: Which database?\n1. Postgres\n2. SQLite\n\nAnswered in the chat.');
     expect(await remembered('2101')).toHaveLength(0);
@@ -1716,5 +1718,27 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
     await deleteTelegramInstall(PROJECT);
     expect(await telegramMetadata()).toEqual({ allowedUserIds: ['4040'] });
     await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
+  });
+
+  // Last in the file: the disconnect reconciles the connectors in the background.
+  test('disconnect deletes the webhook only while it points at this project; a bot connected to another project since keeps its webhook', async () => {
+    const moved = { url: `https://example.test/v1/webhooks/telegram/${crypto.randomUUID()}`, allowed_updates: ['message', 'callback_query'] };
+    for (const [webhook, methods] of [
+      [ownWebhook(), ['getWebhookInfo', 'deleteWebhook']],
+      [moved, ['getWebhookInfo']],
+    ] as const) {
+      webhookInfo = webhook;
+      calls.length = 0;
+      try {
+        const res = await api('DELETE', '');
+        expect({ status: res.status, methods: calls.map((c) => c.method), install: await loadTelegramInstall(PROJECT) }).toEqual({
+          status: 200,
+          methods: [...methods],
+          install: null,
+        });
+      } finally {
+        await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
+      }
+    }
   });
 });

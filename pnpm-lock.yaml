@@ -6,6 +6,8 @@ settings:
 
 overrides:
   shell-quote@<1.11.0: 1.11.0
+  re2js@>=2.2.0 <2.8.7: 2.8.7
+  systeminformation@<5.33.16: 5.33.16
   '@icons-pack/react-simple-icons@>=13.11.2 <14': 13.11.1
   import-in-the-middle: 3.0.0
   next@>=15.0.0 <16.4.2: 16.4.2
@@ -43,7 +45,7 @@ overrides:
   '@xmldom/xmldom@>=0.0.0 <0.8.15': 0.8.15
   dompurify@>=3.0.0 <3.4.17: 3.4.17
   follow-redirects@>=1.0.0 <1.16.1: 1.16.1
-  '@hono/node-server@>=1.0.0 <2.0.10': 2.0.10
+  '@hono/node-server@>=1.0.0 <2.1.3': 2.1.3
   '@modelcontextprotocol/server@>=2.0.0 <2.3.0': 2.3.0
   svgo@>=3.0.0 <3.3.5: 3.3.5
   esbuild@>=0.0.0 <0.28.1: 0.28.1
@@ -72,7 +74,7 @@ overrides:
   minimatch@>=9.0.0 <9.0.7: 9.0.7
   ajv@>=8.0.0 <8.18.0: 8.18.0
   markdown-it@>=0.0.0 <14.3.3: 14.3.3
-  seroval@<1.6.3: 1.6.3
+  seroval@<1.6.11: 1.6.11
   source-map-js@<1.2.2: 1.2.2
   '@codemirror/state': 6.7.6
   '@codemirror/view': 6.43.13
@@ -299,8 +301,8 @@ importers:
         specifier: ^3.4.8
         version: 3.4.9(patch_hash=bw5g3bgyrs6h7lakof5ye2m344)
       re2js:
-        specifier: 2.8.6
-        version: 2.8.6
+        specifier: 2.8.7
+        version: 2.8.7
       smol-toml:
         specifier: 1.9.0
         version: 1.9.0
@@ -5185,7 +5187,7 @@ packages:
       object-treeify: 1.1.33
       open: 8.4.2
       picomatch: 4.0.7
-      systeminformation: 5.33.10
+      systeminformation: 5.33.16
       undici: 7.30.1
       which: 4.0.0
       yocto-spinner: 1.2.2
@@ -7224,8 +7226,8 @@ packages:
       yargs: 17.7.3
     dev: false
 
-  /@hono/node-server@2.0.10(hono@4.13.11):
-    resolution: {integrity: sha512-ZcnNVhKTmyDJeg0UlnZjvM73JBsTAuhrH/J4fjwGOw59PwOW51r4J+p6CsKZWXdKSme4MFqU62CZMOsdDrU4CA==}
+  /@hono/node-server@2.1.3(hono@4.13.11):
+    resolution: {integrity: sha512-TA//nWMqPhbfdfneACk6t5a9eqbS9lABEPyKn0/xZTah3H3U2XaVg85rJFl0/Fyit0I552YDHgXGVSf3GwqbUw==}
     engines: {node: '>=20'}
     peerDependencies:
       hono: 4.13.11
@@ -8036,7 +8038,7 @@ packages:
       '@cfworker/json-schema':
         optional: true
     dependencies:
-      '@hono/node-server': 2.0.10(hono@4.13.11)
+      '@hono/node-server': 2.1.3(hono@4.13.11)
       ajv: 8.18.0
       ajv-formats: 3.0.1(ajv@8.18.0)
       content-type: 1.0.5
@@ -28380,9 +28382,9 @@ packages:
       strip-json-comments: 2.0.1
     dev: false
 
-  /re2js@2.8.6:
-    resolution: {integrity: sha512-xLgQil4kIUCrAzVk9fRSkxkFNwmygLFjVxXrLc65aE1F0+Zsb8rxumFBy4XKyvgMCTL6kilDq3EZ0piE2dP/Dg==}
-    engines: {node: '>=18.0.0'}
+  /re2js@2.8.7:
+    resolution: {integrity: sha512-bRSL/vn3KAmlGfGNoVpcsBXLaVvl6AbuvMMWbz0m3vBj60nj+p2/biozfBUOSBP+5XTduF6mr6IO/ZVjmqqkVQ==}
+    engines: {node: '>=20.0.0'}
     dev: false
 
   /react-day-picker@8.10.2(date-fns@3.6.0)(react@19.3.0):
@@ -30103,17 +30105,17 @@ packages:
       type-fest: 0.20.2
     dev: false
 
-  /seroval-plugins@1.5.6(seroval@1.6.3):
+  /seroval-plugins@1.5.6(seroval@1.6.11):
     resolution: {integrity: sha512-HXuLAX2pu/UByPpaeo/TaMfvMIi+1QqIoPJYCcAtU8QkVNwgR6MPlGuCQTErV1JwraaMbYaWVIBX7mppzGLATQ==}
     engines: {node: '>=10'}
     peerDependencies:
-      seroval: 1.6.3
+      seroval: 1.6.11
     dependencies:
-      seroval: 1.6.3
+      seroval: 1.6.11
     dev: false
 
-  /seroval@1.6.3:
-    resolution: {integrity: sha512-5PwLbVPpT4DEki1hYVSSsoxWY6xCNMVucAVLK/CH0mXSDfp/I4KaAex72q80GNt5hpn7CCMGdSpIg4YGqH/wXQ==}
+  /seroval@1.6.11:
+    resolution: {integrity: sha512-hpb6XnMCGN/A+79Uf8V7/iTGkyyyazNn5X0CoCAp7Uy9vT3RT8jZ9GLcnxGoVjg3P8AArbe4ZVHq6C8oT2a0kA==}
     engines: {node: '>=10'}
     dev: false
 
@@ -30436,8 +30438,8 @@ packages:
     resolution: {integrity: sha512-EeiY2xfpZJqPLjXspVEKjAII4yv8NyG//NxZ3IpOFHdUNnnTyL0uJOeS9LWGvA7cFCz5y94cjFwYlmw5Luncsg==}
     dependencies:
       csstype: 3.2.3
-      seroval: 1.6.3
-      seroval-plugins: 1.5.6(seroval@1.6.3)
+      seroval: 1.6.11
+      seroval-plugins: 1.5.6(seroval@1.6.11)
     dev: false
 
   /solid-presence@0.2.0(solid-js@1.9.15):
@@ -31042,8 +31044,8 @@ packages:
       sax: 1.6.1
     dev: false
 
-  /systeminformation@5.33.10:
-    resolution: {integrity: sha512-/NXbMVASt2UbSVgmWto4aBTIAeuYY7zOELpZybmNxqpsrbo5uYHpuEPf5nkyrPng0uG5YOb+Yv6s0FyKY4mDQg==}
+  /systeminformation@5.33.16:
+    resolution: {integrity: sha512-R+Lh69IJXfJj6bfyH1In5cIR9FTr4hBS39YvlZHZjsK1p9cuELPq7hplZZIb56ZESMMb+DzdKqqE6Iomi01Mvg==}
     engines: {node: '>=10.0.0'}
     os: [darwin, linux, win32, freebsd, openbsd, netbsd, sunos, android]
     hasBin: true

@@ -1,83 +1,31 @@
-/** Telegram channel: connect a bot by token, allow senders and access requests, disconnect. */
+/**
+ * Telegram channel: connect a bot by token, replace the allowed list,
+ * disconnect. The access routes (users, photos, allow, remove, dismiss) come
+ * from registerChannelAccessRoutes (channel-access.ts).
+ */
 import { randomBytes } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { TELEGRAM_TOKEN_PATTERN, TELEGRAM_UPDATES, type TelegramBot, TelegramApiError, telegramCall } from '../../channels/telegram/api';
+import { CHANNEL_MAX_ALLOWED_USERS } from '../../channels/core/channel-access';
 import {
-  addTelegramAllowedUser,
-  deleteTelegramInstall,
-  dismissTelegramAccessRequest,
-  loadTelegramBotToken,
   loadTelegramInstall,
-  removeTelegramAllowedUser,
+  releaseTelegramBot,
   saveTelegramInstall,
   setTelegramAllowedUserIds,
-  TELEGRAM_MAX_ALLOWED_USERS,
   TELEGRAM_USER_ID,
-  type TelegramInstall,
 } from '../../channels/telegram/installs';
-import { listTelegramUsers, telegramUserPhoto } from '../../channels/telegram/profiles';
+import { telegramAccessPort } from '../../channels/telegram/access';
 import { config } from '../../config';
 import { reconcileChannelConnectors } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
 import { logger } from '../../lib/logger';
 import { auth, errors, json } from '../../openapi';
-import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import type { AppEnv } from '../../types';
+import { channelContext, channelNotConnected, registerChannelAccessRoutes } from './channel-access';
 
-const UserIds = z.array(z.string().regex(TELEGRAM_USER_ID)).max(TELEGRAM_MAX_ALLOWED_USERS);
-
-const TelegramUserSchema = z.object({
-  user_id: z.string(),
-  username: z.string().nullable(),
-  first_name: z.string().nullable(),
-  last_name: z.string().nullable(),
-  photo_version: z.string().nullable().openapi({ description: 'Changes when the photo changes; null: no photo' }),
-  known: z.boolean().openapi({ description: 'False: Telegram gave no profile and nothing is stored' }),
-});
-const TelegramUsersSchema = z.object({
-  allowed: z.array(TelegramUserSchema),
-  requests: z.array(TelegramUserSchema.extend({ last_seen: z.string() })),
-});
-const UserParams = z.object({ projectId: z.string(), user_id: z.string() });
-
-function installBody(install: TelegramInstall | null) {
-  if (!install) return null;
-  return {
-    bot_id: install.botId,
-    username: install.username,
-    allowed_user_ids: install.allowedUserIds,
-    access_request_count: install.accessRequests.length,
-  };
-}
-
-/** Load the project and check `capability` (none: project read is enough). */
-async function telegramContext(c: Context<AppEnv>, capability?: string) {
-  const projectId = c.req.param('projectId') ?? '';
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return { response: c.json({ error: 'Not found' }, 404) };
-  if (capability) await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, capability);
-  return { response: null, projectId } as const;
-}
-
-const notConnected = (c: Context<AppEnv>) => c.json({ error: 'Telegram is not connected', code: 'telegram_not_connected' }, 404);
-const invalidUserId = (c: Context<AppEnv>) =>
-  c.json({ error: 'user_id must be a numeric Telegram user id', code: 'telegram_user_ids_invalid' }, 400);
-
-/**
- * One list edit by user id (remove, dismiss): idempotent, answers the
- * installation as PUT does.
- */
-async function editByUserId(c: Context<AppEnv>, edit: (projectId: string, userId: string) => Promise<void>) {
-  const ctx = await telegramContext(c, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
-  if (ctx.response) return ctx.response;
-  const userId = c.req.param('user_id') ?? '';
-  if (!TELEGRAM_USER_ID.test(userId)) return invalidUserId(c);
-  if (!(await loadTelegramInstall(ctx.projectId))) return notConnected(c);
-  await edit(ctx.projectId, userId);
-  return c.json(installBody(await loadTelegramInstall(ctx.projectId)), 200);
-}
+const UserIds = z.array(z.string().regex(TELEGRAM_USER_ID)).max(CHANNEL_MAX_ALLOWED_USERS);
 
 function reconcileInBackground(projectId: string): void {
   // Not awaited: on a real project the reconcile reads the repo and can outlast
@@ -99,71 +47,13 @@ export function registerChannelTelegramRoutes(): void {
       responses: { 200: json(z.any(), 'OK'), ...errors(403, 404) },
     }),
     async (c: Context<AppEnv>) => {
-      const ctx = await telegramContext(c);
+      const ctx = await channelContext(c);
       if (ctx.response) return ctx.response;
-      return c.json(installBody(await loadTelegramInstall(ctx.projectId)));
+      return c.json(await telegramAccessPort.installation(ctx.projectId));
     },
   );
 
-  projectsApp.openapi(
-    createRoute({
-      method: 'get',
-      path: '/{projectId}/channels/telegram/users',
-      tags: ['channels'],
-      summary: 'List the allowed Telegram users and the access requests',
-      description:
-        'Allowed users in list order and requests newest first, with names and a photo version from Telegram. ' +
-        'A request is a not-allowed user who messaged the bot privately in the last 30 days.',
-      ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
-      responses: { 200: json(TelegramUsersSchema, 'OK'), ...errors(403, 404) },
-    }),
-    async (c: Context<AppEnv>) => {
-      // Names and photos are personal data: the connector readers only.
-      const ctx = await telegramContext(c, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ);
-      if (ctx.response) return ctx.response;
-      const users = await listTelegramUsers(ctx.projectId);
-      return users ? c.json(users) : notConnected(c);
-    },
-  );
-
-  projectsApp.openapi(
-    createRoute({
-      method: 'get',
-      path: '/{projectId}/channels/telegram/users/{user_id}/photo',
-      tags: ['channels'],
-      summary: "An allowed or requesting Telegram user's profile photo",
-      description: 'JPEG bytes. `v` is the `photo_version` from the user list; it only changes the URL when the photo changes.',
-      ...auth,
-      request: { params: UserParams, query: z.object({ v: z.string().max(128).optional() }) },
-      responses: { 200: { description: 'The photo (image/jpeg)' }, ...errors(403, 404, 502) },
-    }),
-    async (c: Context<AppEnv>) => {
-      const ctx = await telegramContext(c, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ);
-      if (ctx.response) return ctx.response;
-      const userId = c.req.param('user_id') ?? '';
-      const photo = TELEGRAM_USER_ID.test(userId)
-        ? await telegramUserPhoto(ctx.projectId, userId)
-        : ({ ok: false, code: 'telegram_user_unknown' } as const);
-      if (!photo.ok) {
-        const message = {
-          telegram_not_connected: 'Telegram is not connected',
-          telegram_user_unknown: 'This Telegram user is not allowed and has not asked for access',
-          telegram_photo_unavailable: 'This Telegram user has no photo the bot can see',
-          telegram_unreachable: 'Could not reach Telegram',
-        }[photo.code];
-        return c.json({ error: message, code: photo.code }, photo.code === 'telegram_unreachable' ? 502 : 404);
-      }
-      return new Response(photo.bytes, {
-        status: 200,
-        headers: {
-          'Content-Type': 'image/jpeg',
-          'X-Content-Type-Options': 'nosniff',
-          'Cache-Control': 'private, max-age=86400',
-        },
-      }) as never;
-    },
-  );
+  registerChannelAccessRoutes(telegramAccessPort);
 
   projectsApp.openapi(
     createRoute({
@@ -180,7 +70,7 @@ export function registerChannelTelegramRoutes(): void {
       responses: { 200: json(z.any(), 'OK'), ...errors(400, 403, 404, 502) },
     }),
     async (c: Context<AppEnv>) => {
-      const ctx = await telegramContext(c, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+      const ctx = await channelContext(c, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
       if (ctx.response) return ctx.response;
       const body = (await c.req.json().catch(() => null)) as { bot_token?: unknown; allowed_user_ids?: unknown } | null;
       const token = typeof body?.bot_token === 'string' ? body.bot_token.trim() : '';
@@ -222,7 +112,7 @@ export function registerChannelTelegramRoutes(): void {
       });
       if (allowed?.success) await setTelegramAllowedUserIds(ctx.projectId, allowed.data);
       reconcileInBackground(ctx.projectId);
-      return c.json(installBody(await loadTelegramInstall(ctx.projectId)));
+      return c.json(await telegramAccessPort.installation(ctx.projectId));
     },
   );
 
@@ -241,75 +131,16 @@ export function registerChannelTelegramRoutes(): void {
       responses: { 200: json(z.any(), 'OK'), ...errors(400, 403, 404) },
     }),
     async (c: Context<AppEnv>) => {
-      const ctx = await telegramContext(c, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+      const ctx = await channelContext(c, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
       if (ctx.response) return ctx.response;
       const parsed = UserIds.safeParse(((await c.req.json().catch(() => null)) as { user_ids?: unknown } | null)?.user_ids);
       if (!parsed.success) {
         return c.json({ error: 'user_ids must be numeric Telegram user ids', code: 'telegram_user_ids_invalid' }, 400);
       }
-      if (!(await loadTelegramInstall(ctx.projectId))) return notConnected(c);
+      if (!(await loadTelegramInstall(ctx.projectId))) return channelNotConnected(c, telegramAccessPort);
       await setTelegramAllowedUserIds(ctx.projectId, parsed.data);
-      return c.json(installBody(await loadTelegramInstall(ctx.projectId)));
+      return c.json(await telegramAccessPort.installation(ctx.projectId));
     },
-  );
-
-  projectsApp.openapi(
-    createRoute({
-      method: 'post',
-      path: '/{projectId}/channels/telegram/allowed-users',
-      tags: ['channels'],
-      summary: 'Allow one Telegram user',
-      description: 'Adds the id unless it is listed, and drops its access request. Answers the installation.',
-      ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        // `{ user_id }`, validated in the handler so every refusal carries a `code`.
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
-      responses: { 200: json(z.any(), 'OK'), ...errors(400, 403, 404, 409) },
-    }),
-    async (c: Context<AppEnv>) => {
-      const ctx = await telegramContext(c, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
-      if (ctx.response) return ctx.response;
-      const userId = ((await c.req.json().catch(() => null)) as { user_id?: unknown } | null)?.user_id;
-      if (typeof userId !== 'string' || !TELEGRAM_USER_ID.test(userId)) return invalidUserId(c);
-      if (!(await loadTelegramInstall(ctx.projectId))) return notConnected(c);
-      if (!(await addTelegramAllowedUser(ctx.projectId, userId))) {
-        return c.json(
-          { error: `At most ${TELEGRAM_MAX_ALLOWED_USERS} Telegram users can be allowed`, code: 'telegram_allowed_users_full' },
-          409,
-        );
-      }
-      return c.json(installBody(await loadTelegramInstall(ctx.projectId)));
-    },
-  );
-
-  projectsApp.openapi(
-    createRoute({
-      method: 'delete',
-      path: '/{projectId}/channels/telegram/allowed-users/{user_id}',
-      tags: ['channels'],
-      summary: 'Remove one allowed Telegram user',
-      description: 'Idempotent. Answers the installation.',
-      ...auth,
-      request: { params: UserParams },
-      responses: { 200: json(z.any(), 'OK'), ...errors(400, 403, 404) },
-    }),
-    (c: Context<AppEnv>) => editByUserId(c, removeTelegramAllowedUser),
-  );
-
-  projectsApp.openapi(
-    createRoute({
-      method: 'delete',
-      path: '/{projectId}/channels/telegram/access-requests/{user_id}',
-      tags: ['channels'],
-      summary: 'Dismiss one Telegram access request',
-      description: 'Idempotent. The user can ask again by messaging the bot. Answers the installation.',
-      ...auth,
-      request: { params: UserParams },
-      responses: { 200: json(z.any(), 'OK'), ...errors(400, 403, 404) },
-    }),
-    (c: Context<AppEnv>) => editByUserId(c, dismissTelegramAccessRequest),
   );
 
   projectsApp.openapi(
@@ -323,12 +154,10 @@ export function registerChannelTelegramRoutes(): void {
       responses: { 200: json(z.object({ ok: z.boolean() }), 'OK'), ...errors(403, 404) },
     }),
     async (c: Context<AppEnv>) => {
-      const ctx = await telegramContext(c, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+      const ctx = await channelContext(c, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
       if (ctx.response) return ctx.response;
-      const token = await loadTelegramBotToken(ctx.projectId);
-      // Best effort: a revoked token cannot remove its webhook, and the install goes either way.
-      if (token) await telegramCall(token, 'deleteWebhook').catch(() => undefined);
-      await deleteTelegramInstall(ctx.projectId);
+      // The project delete's path: the webhook goes only while it points here.
+      await releaseTelegramBot(ctx.projectId);
       reconcileInBackground(ctx.projectId);
       return c.json({ ok: true });
     },

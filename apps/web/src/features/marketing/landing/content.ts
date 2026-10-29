@@ -1,6 +1,6 @@
 import { AGENTS_LANDING_TRANSLATION_KEYS } from '@/i18n/agents-landing-translation-keys.generated';
-import { localizeUiCatalog } from '@kortix/ui/i18n';
 import type { UiTranslator } from '@/i18n/translator';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 
 /**
  * Landing page copy.
@@ -40,21 +40,18 @@ export const heroEyebrow = {
   ],
 } as const;
 
-/** Closing CTA. Same block the page has always ended with. */
+/**
+ * Closing CTA, above the site map on every marketing page: one line that
+ * echoes the hero, two actions and the trust line. Each claim is a claims.md
+ * row (Hosting, Source, SSO). No price here: prices live on /pricing and
+ * /services.
+ */
 export const cta = {
-  badge: 'Get started',
-  // Two-tone title: `title` in ink, `subtitle` muted on the line below.
-  title: 'Run your whole company',
-  subtitle: 'from one repo you own.',
-  // ONE IDEA ONLY. This line is the invitation, nothing else. Pricing, hosting
-  // and channels each pulled the reader somewhere different and belong on their
-  // own pages. If a price ever comes back here it must match
-  // `features/billing/pricing-plans.ts` (credits, any monthly amount from $20)
-  // — an earlier price here was wrong by 2x.
-  sub: 'Start with one job and grow from there.',
-  trust: 'Open source · SSO, RBAC & on-prem · Any model, your keys · No lock-in',
-  ctaPrimary: 'Get started',
-  ctaSecondary: 'Request demo',
+  title: 'Own your company’s AI.',
+  subtitle: 'Start today, in our cloud or yours.',
+  ctaPrimary: 'Start for free',
+  ctaSecondary: 'Talk to sales',
+  trust: 'Open source · SOC 2 Type I · SAML SSO and SCIM · Any model, your keys',
 } as const;
 
 /**
@@ -237,8 +234,8 @@ export type UseCase = {
  * The arithmetic is derived from the columns beside it. Edit one, re-derive it.
  */
 export const useCases = {
-  eyebrow: 'By role',
-  title: 'It picks up work from every team and runs it start to finish.',
+  eyebrow: 'Outcomes',
+  title: 'Outcomes for every team, delivered end to end.',
   sub: 'Outbound, error triage, the books, the Monday report — real jobs, on real machines, landing as changes you can read.',
   /** Micro-label in the corner of the artifact frame. */
   artifactLabel: 'Output',
@@ -247,7 +244,7 @@ export const useCases = {
       id: 'sales',
       role: 'Sales',
       tag: 'Sales',
-      headline: 'Builds the outbound campaign and runs it.',
+      headline: 'Outbound pipeline, built and worked end to end.',
       body: 'It pulls a lead list from Apollo, enriches every account, and writes a sequence per lead. Put Ask on the send step and it stops with you before anything goes out.',
       artifact: {
         kind: 'thread',
@@ -269,7 +266,7 @@ export const useCases = {
       id: 'engineering',
       role: 'Engineering',
       tag: 'Engineering',
-      headline: 'Reads the logs, ships the fix.',
+      headline: 'Production errors fixed and in review by morning.',
       body: 'Every morning it sweeps the day’s errors, groups them, reproduces the worst one on its own machine, patches it and opens a change request against main.',
       artifact: {
         kind: 'diff',
@@ -289,8 +286,8 @@ export const useCases = {
       id: 'marketing',
       role: 'Marketing',
       tag: 'Marketing',
-      headline: 'Runs the SEO program week after week.',
-      body: 'It tracks the queries you care about, finds the pages losing ground, rewrites them against the brief, and opens each rewrite as a change request.',
+      headline: 'An SEO and GEO program that runs itself.',
+      body: 'It tracks the queries you care about in search and in AI answers, finds the pages losing ground and rewrites them against the brief. Then it measures what moved, learns from it, and runs the loop again every week.',
       artifact: {
         kind: 'sheet',
         file: 'marketing/seo-weekly.xlsx',
@@ -305,14 +302,14 @@ export const useCases = {
           { cells: ['month end close', '/guides/close', '2', '+1'], tone: 'up' },
           { cells: ['receipt capture', '/features/receipts', '21', 'new'], tone: 'info' },
         ],
-        footer: '5 briefs written · 2 rewrites in a change request',
+        footer: '5 pages rewritten · 2 now cited in AI answers',
       },
     },
     {
       id: 'finance',
       role: 'Finance',
       tag: 'Finance',
-      headline: 'Does the books, not just the summary.',
+      headline: 'The books reconciled, not just summarized.',
       body: 'It reconciles the ledger against the bank, chases the receipts that are missing, attaches them, and closes the month with the variance explained.',
       artifact: {
         kind: 'sheet',
@@ -334,7 +331,7 @@ export const useCases = {
       id: 'people',
       role: 'People',
       tag: 'People',
-      headline: 'Sources the pipeline, not just the inbox.',
+      headline: 'A sourced candidate pipeline, every week.',
       body: 'It searches the sources you connect for people matching the brief, scores each against the written bar, and drafts the first approach for every one worth it.',
       artifact: {
         kind: 'sheet',
@@ -356,7 +353,7 @@ export const useCases = {
       id: 'product',
       role: 'Product',
       tag: 'Product',
-      headline: 'Turns what customers say into what ships.',
+      headline: 'Customer feedback turned into shipped changes.',
       body: 'It reads every piece of feedback that came in, groups it into themes you can act on, and takes the top one all the way to a change request.',
       artifact: {
         kind: 'checks',
@@ -374,7 +371,7 @@ export const useCases = {
       id: 'data-science',
       role: 'Data Science',
       tag: 'Data Science',
-      headline: 'Has Monday’s numbers before Monday.',
+      headline: 'Monday’s numbers, ready before Monday.',
       body: 'It queries the warehouse on a schedule, checks the result against last week, draws the chart and posts the whole thing to Slack while you are asleep.',
       artifact: {
         kind: 'chart',

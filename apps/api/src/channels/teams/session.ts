@@ -8,10 +8,10 @@ import {
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
 import { sessionHoldsLiveTurn } from '../../projects/session-lifecycle/inbox-admission';
-import { currentChannelSelection } from '../slack/selection';
+import { type ChannelSelection, currentChannelSelection } from '../slack/selection';
 import { startErrorMessage, TEAMS_START_ERROR_COMMANDS } from '../start-error';
 import { buildAgentUnavailableCard } from './agent-picker';
-import { buildNoticeCard } from './cards';
+import { QUESTION_EARLIER, buildNoticeCard } from './cards';
 import { replyPrivately } from './private-reply';
 import { userMayLaunchAgent } from '../scoped-agents';
 import { resolveAgentGrant } from '../../projects/agents';
@@ -96,12 +96,18 @@ async function tellSender(
   );
 }
 
-async function resolveTeamsTurnActor(
+/**
+ * The Kortix user a Teams turn runs as, or null after the sender was told how
+ * to get in. `replay` false: nothing is kept to run again after they link (a
+ * card press runs only while its card is current: they press again).
+ */
+export async function resolveTeamsTurnActor(
   accountId: string,
   projectId: string,
   tenantId: string,
   activity: TeamsActivity,
   liveCardActivityId: string | undefined,
+  replay = true,
 ): Promise<string | null> {
   if (!config.TEAMS_REQUIRE_USER_IDENTITY) {
     const userId = await teamsSessionLifecycle.resolveProjectAutomationActor(accountId);
@@ -121,6 +127,7 @@ async function resolveTeamsTurnActor(
     tenantId,
     activity,
     reason: actor.reason,
+    replay,
     ...(liveCardActivityId ? { replaceActivityId: liveCardActivityId } : {}),
   }).catch((err) => console.warn('[teams-webhook] failed to post identity prompt', err));
   return null;
@@ -166,7 +173,7 @@ export async function deliverTeamsFollowUpToSession(input: {
  * needs `CODEX_AUTH_JSON` there or the gateway refuses the turn. Only called
  * when a codex candidate is actually reached.
  */
-function agentGrantEnvFor(
+export function agentGrantEnvFor(
   project: { projectId: string } & Record<string, unknown>,
   agentName: string | null,
 ): () => Promise<readonly string[] | 'all' | null> {
@@ -290,7 +297,7 @@ function turnIsLive(turn: TeamsLiveTurn | null, sessionStatus: string | null): b
   return Date.now() - movedAt < TURN_LIVE_WINDOW_MS;
 }
 
-async function deliverFollowUp(input: {
+export interface TeamsFollowUp {
   projectId: string;
   accountId: string;
   /** The project row, for the conversation's model scope. */
@@ -310,14 +317,24 @@ async function deliverFollowUp(input: {
   userId: string;
   /** The message reports an already-authorized decision: see createOrJoinTeamsConversationSession. */
   authorizedResume?: boolean;
-}): Promise<'done' | 'revive'> {
-  const { projectId, tenantId, conversationId, sessionId, activity, userId } = input;
+}
 
-  // Who may continue this session (owner-only / owner-approval / open).
-  // Nothing reaches the session until the sender is allowed in. A refusal is
-  // for the sender alone: their own live card in a 1:1 chat, a targeted
-  // message in a channel or group chat, where the public live card waits for
-  // this verdict.
+async function deliverFollowUp(input: TeamsFollowUp): Promise<'done' | 'revive'> {
+  const admitted = await admitTeamsFollowUp(input);
+  return 'refusal' in admitted ? 'done' : deliverAdmittedFollowUp(input, admitted.selection);
+}
+
+/**
+ * Who may continue this session (owner-only / owner-approval / open).
+ * Nothing reaches the session until the sender is allowed in. A refusal is
+ * for the sender alone: their own live card in a 1:1 chat, a targeted
+ * message in a channel or group chat, where the public live card waits for
+ * this verdict. Returns the conversation's selection, or the refusal shown.
+ */
+export async function admitTeamsFollowUp(
+  input: TeamsFollowUp,
+): Promise<{ selection: ChannelSelection | null } | { refusal: string }> {
+  const { projectId, tenantId, conversationId, sessionId, activity, userId } = input;
   const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
   if (config.TEAMS_REQUIRE_USER_IDENTITY && activity.serviceUrl && !input.authorizedResume) {
     const verdict = await ensureTeamsThreadParticipant({
@@ -343,10 +360,18 @@ async function deliverFollowUp(input: {
     if (!verdict.allowed) {
       if (input.handle) await noticeOnLiveCard(input.handle, verdict.notice);
       else await tellSender(activity, tenantId, conversationId, projectId, verdict.notice);
-      return 'done';
+      return { refusal: verdict.notice };
     }
   }
+  return { selection };
+}
 
+/** The follow-up of a sender `admitTeamsFollowUp` let in; `selection` is what it returned. */
+export async function deliverAdmittedFollowUp(
+  input: TeamsFollowUp,
+  selection: ChannelSelection | null,
+): Promise<'done' | 'revive'> {
+  const { projectId, tenantId, conversationId, sessionId, activity, userId } = input;
   let handle = await input.liveCard();
   const inflight = await loadTurn(sessionId);
   // A card that has not moved for 10 minutes is not proof of a dead run: one
@@ -463,6 +488,12 @@ export async function createOrJoinTeamsConversationSession(input: {
    * a participant decided. The sender is still resolved as a linked member.
    */
   authorizedResume?: boolean;
+  /**
+   * A card press: it continues only the conversation's own session. It posts
+   * no card before the sender is admitted, keeps nothing to replay after a
+   * login, and never starts or revives a session.
+   */
+  followUpOnly?: boolean;
 }): Promise<void> {
   const { tenantId, conversationId, activity } = input;
   let projectId = input.projectId;
@@ -503,7 +534,7 @@ export async function createOrJoinTeamsConversationSession(input: {
   // told why in a targeted message only they see, as Slack's ephemeral
   // (2026-10-01: the public card used to turn into a "Connect your Kortix
   // account" card in front of everyone).
-  const shared = !isPersonalChat(activity);
+  const shared = !isPersonalChat(activity) || Boolean(input.followUpOnly);
   let handle: TeamsLiveTurn | null = shared ? null : await startTurn(projectId, tenantId, activity);
   let livePosted = !shared;
   const liveCard = async (): Promise<TeamsLiveTurn | null> => {
@@ -521,6 +552,7 @@ export async function createOrJoinTeamsConversationSession(input: {
     tenantId,
     activity,
     handle?.messageActivityId || undefined,
+    !input.followUpOnly,
   );
   if (!userId) return;
 
@@ -549,6 +581,11 @@ export async function createOrJoinTeamsConversationSession(input: {
       if (next === 'done') return;
       revived = true;
     }
+  }
+  if (input.followUpOnly) {
+    // The session is gone: the card this press opened says so.
+    if (handle) await noticeOnLiveCard(handle, QUESTION_EARLIER);
+    return;
   }
 
   const claimKey = tenantId && conversationId ? `teams:threadcreate:${tenantId}:${conversationId}` : null;

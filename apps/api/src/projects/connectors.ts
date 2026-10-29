@@ -36,6 +36,7 @@
  * good ones. CRUD round-trips this same file (connectorSpecToTomlEntry).
  */
 import { createHash } from 'node:crypto';
+import { type ChannelPlatformId, channelConnectorSlug } from '@kortix/shared/channel-descriptors';
 import {
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTHORIZATION_STRATEGIES,
@@ -85,7 +86,7 @@ export type ConnectorAuthorizationStrategy = (typeof CONNECTOR_AUTHORIZATION_STR
  */
 export { RESERVED_SLUG_PROVIDERS };
 /** The reserved slug the built-in Slack channel materializes under. */
-export const SLACK_RESERVED_SLUG = 'kortix_slack';
+export const SLACK_RESERVED_SLUG = channelConnectorSlug('slack');
 export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
   'slack',
   'email',
@@ -93,7 +94,7 @@ export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
 ]);
 
 /** Chat platforms a `channel` connector can target. */
-export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'telegram';
+export type ChannelPlatform = ChannelPlatformId;
 
 type ConnectorAuthType =
   | 'bearer'

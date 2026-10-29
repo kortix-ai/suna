@@ -1,5 +1,6 @@
 /** Project settings: onboarding, deletion, feature flags, and the sandbox provider override. */
 import { releaseProjectEventSubscriptions } from '../trigger-events/subscriptions';
+import { releaseProjectChannels } from '../../channels/install-store';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, authorize } from '../../iam';
 import { actorFor } from '../../iam/actor';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
@@ -297,6 +298,9 @@ export function registerProjectSettingsRoutes(): void {
     // a failure leaves the project active and the deletion retryable.
     try {
       await purgeProjectConnectors(projectId);
+      // The tombstone keeps its chat installs, bindings and secrets too:
+      // release them, or the channels keep delivering to a deleted project.
+      await releaseProjectChannels(projectId);
     } catch (error) {
       logger.error('[projects] failed to purge the project connectors', { projectId, error: String(error) });
       return c.json({ error: 'Failed to purge project connectors' }, 500);

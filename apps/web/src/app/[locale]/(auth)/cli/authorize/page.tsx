@@ -18,7 +18,7 @@ import {
   DetailPanel,
   DetailRow,
 } from '@kortix/ui/internal/auth/auth-consent';
-import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
+import { ErrorStrip, FieldLabel, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { approveCliDevice, createAccountToken, revokeAccountToken } from '@kortix/sdk';
 import { validateCallback } from './validate-callback';
@@ -83,28 +83,55 @@ function CliAuthorizeInner() {
     // The URL carries the code, so a link from someone else could too. The
     // person types the code their own terminal shows; only a match approves.
     const confirmed = typedCode.trim().length > 0 && normalizeCliCode(typedCode) === normalizeCliCode(userCode);
+    if (phase === 'success') {
+      return (
+        <AuthStatusScreen
+          title={tI18nComplete.raw('text33a41fd14a13')}
+          description={tI18nComplete.raw('cliDeviceApproved')}
+        />
+      );
+    }
+    const approving = phase === 'authorizing';
     return (
       <AuthFrame>
-        <StepHeader title={tI18nComplete.raw('cliDeviceTitle')} description={tI18nComplete.raw('cliDeviceWarning')} />
-        <Input
-          aria-label={tI18nComplete.raw('cliDeviceCode')}
-          placeholder={tI18nComplete.raw('cliDeviceCode')}
-          autoComplete="off"
-          spellCheck={false}
-          className="font-mono uppercase"
-          value={typedCode}
-          onChange={(event) => setTypedCode(event.target.value)}
-        />
-        {error ? <ErrorStrip message={error} /> : null}
-        {phase === 'success' ? <p>{tI18nComplete.raw('cliDeviceApproved')}</p> : (
-          <Button disabled={!confirmed || phase === 'authorizing'} onClick={async () => {
-            setPhase('authorizing'); setError(null);
-            try {
-              await approveCliDevice(userCode);
-              setPhase('success');
-            } catch (err) { setError((err as Error).message); setPhase('error'); }
-          }}>{tI18nComplete.raw('cliDeviceAction')}</Button>
-        )}
+        <Rise>
+          <StepHeader title={tI18nComplete.raw('cliDeviceTitle')} description={tI18nComplete.raw('cliDeviceWarning')} />
+        </Rise>
+        <Rise delay={0.06}>
+          {error ? <ErrorStrip message={error} /> : null}
+          <form
+            className="space-y-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!confirmed || approving) return;
+              setPhase('authorizing');
+              setError(null);
+              try {
+                await approveCliDevice(userCode);
+                setPhase('success');
+              } catch (err) {
+                setError((err as Error).message);
+                setPhase('error');
+              }
+            }}
+          >
+            <FieldLabel htmlFor="cli-user-code">{tI18nComplete.raw('cliDeviceCode')}</FieldLabel>
+            <Input
+              id="cli-user-code"
+              size="md"
+              autoFocus
+              autoComplete="off"
+              spellCheck={false}
+              className="font-mono tracking-widest uppercase"
+              value={typedCode}
+              onChange={(event) => setTypedCode(event.target.value)}
+            />
+            <Button type="submit" size="lg" className="w-full" disabled={!confirmed || approving}>
+              {approving ? <Loading className="size-4 shrink-0" /> : null}
+              {tI18nComplete.raw('cliDeviceAction')}
+            </Button>
+          </form>
+        </Rise>
       </AuthFrame>
     );
   }
