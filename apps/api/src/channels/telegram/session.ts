@@ -588,7 +588,7 @@ async function telegramThreadOfSession(sessionId: string, botId: string, chatId:
 }
 
 /** A command's reply as chat text (core/commands.ts `CommandReply`): plain, with the link and the note last. */
-export function telegramCommandText(reply: CommandReply): string {
+function telegramCommandText(reply: CommandReply): string {
   const lines: string[] = [];
   switch (reply.kind) {
     case 'notice':

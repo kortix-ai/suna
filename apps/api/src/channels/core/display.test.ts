@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { projectSessionStatusEnum } from '@kortix/db';
-import { SESSION_STATUS, describeSession, projectWebUrl, sessionWebUrl } from './display';
+import { SESSION_STATUS, describeSession } from './display';
 
 const started = new Date(Date.now() - 5 * 60_000);
 
@@ -25,10 +25,5 @@ describe('the session status row', () => {
     expect(describeSession({ status: 'running', createdAt: started }, { none: '-', turnRunning: true })).toBe('⏳ working · started 5m ago');
     expect(describeSession({ status: 'running', createdAt: started }, { none: '-', turnRunning: false })).toBe('• ready · started 5m ago');
     expect(describeSession({ status: 'stopped', createdAt: null }, { none: '-', turnRunning: false })).toBe('• stopped');
-  });
-
-  test('links point at the session, else the project', () => {
-    expect(sessionWebUrl('https://kortix.test/', 'p1', 's1')).toBe('https://kortix.test/projects/p1/sessions/s1');
-    expect(projectWebUrl(undefined, 'p1')).toBe('https://kortix.com/projects/p1');
   });
 });

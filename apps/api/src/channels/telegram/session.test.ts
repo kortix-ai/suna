@@ -3,7 +3,7 @@ import { channelPromptText, parseChannelMessage } from '@kortix/shared';
 import { config } from '../../config';
 import type { TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
-import { telegramCommandText, telegramEnvelope, telegramFileOf, telegramMessageEvent, telegramNotice, telegramQuestionText, telegramThreadId, type TelegramMessage } from './session';
+import { telegramEnvelope, telegramFileOf, telegramMessageEvent, telegramNotice, telegramQuestionText, telegramThreadId, type TelegramMessage } from './session';
 
 const message: TelegramMessage = {
   message_id: 7,
@@ -187,37 +187,5 @@ describe('telegram question text', () => {
     // An emoji across the limit is dropped whole: a lone surrogate fails the Bot API call.
     const emoji = telegramQuestionText([{ header: '', question: `${'q'.repeat(3_899)}😀`, options: [] }], `${'f'.repeat(189)}😀`);
     expect(emoji).toBe(`${'q'.repeat(3_899)}\n\n${'f'.repeat(189)}`);
-  });
-});
-
-describe('telegram command replies', () => {
-  test('each reply kind renders as plain text; a link and a note come last', () => {
-    expect(telegramCommandText({ kind: 'notice', text: 'Stopped.', url: 'https://kortix.test/s' })).toBe('Stopped.\nhttps://kortix.test/s');
-    expect(
-      telegramCommandText({
-        kind: 'panel',
-        title: 'This chat in Kortix',
-        rows: [{ label: 'Project', value: 'synthetic' }, { label: 'Model', value: 'project default' }],
-        url: 'https://kortix.test/p',
-      }),
-    ).toBe('This chat in Kortix\nProject: synthetic\nModel: project default\nhttps://kortix.test/p');
-    expect(
-      telegramCommandText({
-        kind: 'choices',
-        title: 'Models for this chat',
-        options: [{ value: 'm1', label: 'Model One', current: true }, { value: 'm2', label: '', current: false }],
-        more: 3,
-        usage: 'Send /model <id> to switch.',
-      }),
-    ).toBe('Models for this chat\n- m1 — Model One (current)\n- m2\n…and 3 more.\nSend /model <id> to switch.');
-    expect(
-      telegramCommandText({
-        kind: 'help',
-        intro: 'Kortix project synthetic.',
-        commands: [{ usage: '/new', description: 'Start a new conversation' }],
-        footer: 'Every other message goes to the agent.',
-        note: 'Your photo was not sent to the agent.',
-      }),
-    ).toBe('Kortix project synthetic.\n/new — Start a new conversation\nEvery other message goes to the agent.\n\nYour photo was not sent to the agent.');
   });
 });

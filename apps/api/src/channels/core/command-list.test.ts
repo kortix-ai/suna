@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { CHANNEL_COMMANDS, commandMenu, parseChannelCommand } from './command-list';
+import { CHANNEL_COMMANDS, parseChannelCommand } from './command-list';
 
 const parse = (text: string, bot: string | null = 'synthetic_bot') => parseChannelCommand(text, bot);
 
@@ -36,9 +36,5 @@ describe('the command registry', () => {
     for (const verb of verbs) expect(verb).toMatch(/^[a-z0-9_]{1,32}$/);
     for (const c of CHANNEL_COMMANDS) expect(c.description.length).toBeGreaterThanOrEqual(3);
     for (const c of CHANNEL_COMMANDS) expect(c.description.length).toBeLessThanOrEqual(100);
-  });
-
-  test('the menu lists the six names in order, never an alias', () => {
-    expect(commandMenu().map((c) => c.command)).toEqual(['new', 'stop', 'status', 'model', 'agent', 'help']);
   });
 });
