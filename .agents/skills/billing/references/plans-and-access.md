@@ -53,6 +53,17 @@ resolve to `credits`). Stripe owns it. `tier='enterprise'` no longer exists.
 Compute is billed at Platinum's list rates at 1× on every plan
 (`platform/providers/compute-rates.ts`).
 
+Residential proxy traffic is metered usage, not a plan feature. Any project
+on any plan turns it on per sandbox template (`residential_proxy` in
+`kortix.yaml`, or the template form's "Residential IP"). It is served only
+where the operator switch `KORTIX_PLATINUM_RESIDENTIAL_PROXY` is on (set it
+after that environment's Platinum serves `network.residential_proxy`);
+elsewhere such a session does not start. Kortix
+debits each charge in Platinum's billing feed at 1×, once per event, from the
+account wallet: ledger kind `proxy_debit`, key `platinum-resi:<event id>`
+(`billing/services/residential-proxy-charges.ts`, every 5 minutes on the
+leader). The usage breakdown counts it under `other`.
+
 Members are unlimited and share the account credit pool. The Plan and account
 hub billing panes show the existing account member count alongside an unlimited
 allowance; there is no paid-seat denominator.

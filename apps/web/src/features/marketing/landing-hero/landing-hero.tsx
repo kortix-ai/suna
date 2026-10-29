@@ -57,7 +57,7 @@ export function LandingHero() {
           left and the two actions on the right, then the works-with line. */}
       <div className="dark text-foreground relative mx-auto flex max-w-[1440px] flex-col gap-10 px-(--gutter) pt-28 pb-14">
         <h1 className="kx-hero-text max-w-160 text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
-          The open-source AI Operating System.
+          The open-source CompanyOS.
         </h1>
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <p className="kx-hero-text max-w-158 text-base [--kx-enter:150ms]">

@@ -52,7 +52,7 @@ describe('ProjectSelectorView', () => {
     const html = render({
       sections: buildAccountSections({ creatableAccountIds: new Set(['a']), accounts: [account('a', 'owner', 'Me')], lists: [{ accountId: 'a', data: [], isError: false }] }),
     });
-    expect(html).toContain('Welcome to Kortix');
+    expect(html).toContain('Welcome to Kortix CompanyOS');
     expect(html).toContain('data-testid="selector-create"');
     expect(html).toContain('href="/new?account=a"');
     expect(html).not.toContain('Project name');

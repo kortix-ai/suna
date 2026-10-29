@@ -73,6 +73,8 @@ const TABS_DIRS = [join(import.meta.dir, 'tabs'), dirname(uiSourcePath('customiz
 /** Single-column settings. The design system's default container. */
 const FORM_TABS = [
   'appearance-tab.tsx',
+  // The Kortix in Chrome pane: a list of connected browsers, `max-w-2xl`.
+  'chrome-connections-tab.tsx',
   'computer-tab.tsx',
   'connected-tab.tsx',
   'experimental-tab.tsx',

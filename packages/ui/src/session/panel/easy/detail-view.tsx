@@ -256,6 +256,10 @@ function useDetailKeyboard(
       // its own Arrow/Escape handling — e.g. its Escape resets-and-blurs.
       if (isTypingTarget(event.target)) return;
       if (event.key === 'Escape') {
+        // Mark the press consumed: the page-wide triple-ESC-to-stop
+        // (`session-chat.tsx`) skips a `defaultPrevented` Escape. Without it,
+        // closing three full-screen images in a row stopped a running turn.
+        event.preventDefault();
         onBack();
         return;
       }

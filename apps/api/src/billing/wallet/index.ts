@@ -65,7 +65,7 @@ import { assertRpcDebitLedgerType } from '../ledger-type-honesty';
 export type WalletKey = { readonly event: string } | { readonly request: string };
 
 /** Sub-kinds of a debit, stamped into `metadata.ledger_type`; the row's `type` is always `usage`. */
-export type LedgerDebitType = 'usage' | 'compute_debit' | 'llm_debit' | 'token_deduction' | 'token_overage';
+export type LedgerDebitType = 'usage' | 'compute_debit' | 'llm_debit' | 'token_deduction' | 'token_overage' | 'proxy_debit';
 
 interface WalletWrite {
   accountId: string;

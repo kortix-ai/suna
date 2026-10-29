@@ -8,7 +8,7 @@ tags: ["Field notes"]
 updated: "2026-10-21"
 slug: "/chatgpt-work-enterprise-controls-recheck"
 ---
-If someone hands you a ChatGPT Work control list to sign off, ask for the sentence behind each cell and the page it came from. [OpenAI's ChatGPT Work overview](https://learn.chatgpt.com/docs/enterprise/chatgpt-work-overview) documents ten controls for Work, and every one can be tied to a sentence the page writes itself. The record holds all ten, each with its quote and its URL. Kortix is the open-source AI Operating System, and on 2026-10-21 all ten of those sentences were still there.
+If someone hands you a ChatGPT Work control list to sign off, ask for the sentence behind each cell and the page it came from. [OpenAI's ChatGPT Work overview](https://learn.chatgpt.com/docs/enterprise/chatgpt-work-overview) documents ten controls for Work, and every one can be tied to a sentence the page writes itself. The record holds all ten, each with its quote and its URL. Kortix is the open-source CompanyOS, and on 2026-10-21 all ten of those sentences were still there.
 
 ## Ten controls, each with the sentence behind it
 

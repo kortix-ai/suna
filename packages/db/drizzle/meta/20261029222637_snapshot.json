@@ -4802,7 +4802,7 @@
           "value": "\"kortix\".\"artifact_comment_threads\".\"agent_state\" in ('none', 'pending', 'sent', 'paused')"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.artifact_comment_write_limits": {
       "name": "artifact_comment_write_limits",
@@ -4869,7 +4869,7 @@
           "value": "\"kortix\".\"artifact_comment_write_limits\".\"writes\" >= 0"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.artifact_comments": {
       "name": "artifact_comments",
@@ -4998,7 +4998,7 @@
           "value": "char_length(\"kortix\".\"artifact_comments\".\"body\") <= 10000 and (\"kortix\".\"artifact_comments\".\"deleted_at\" is not null or char_length(\"kortix\".\"artifact_comments\".\"body\") >= 1)"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.artifact_events": {
       "name": "artifact_events",
@@ -5139,7 +5139,7 @@
           "value": "\"kortix\".\"artifact_events\".\"actor_user_id\" is null or \"kortix\".\"artifact_events\".\"actor_session_id\" is null"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.artifacts": {
       "name": "artifacts",
@@ -12584,7 +12584,7 @@
           "value": "(\"kortix\".\"drive_commit_authors\".\"author_user_id\" is not null) <> (\"kortix\".\"drive_commit_authors\".\"author_session_id\" is not null)"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.drive_conflicts": {
       "name": "drive_conflicts",
@@ -27179,7 +27179,7 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.session_sandboxes": {
       "name": "session_sandboxes",

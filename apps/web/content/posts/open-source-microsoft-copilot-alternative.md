@@ -51,7 +51,7 @@ Where it differs is where the result lives. Craft's work lands in a session work
 
 Glean is closed and sells search, an assistant and agents across 40+ models, with 275+ connections to work apps and data sources (checked October 2026) ([glean.com](https://www.glean.com)). A closed product cannot stand in for an open-source one, so it is the benchmark a search layer gets measured against rather than a candidate.
 
-Kortix is our recommendation for the lane Copilot now occupies. It is the open-source AI Operating System: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. The starter project shows what a team actually holds. Its header reads this way today:
+Kortix is our recommendation for the lane Copilot now occupies. It is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. The starter project shows what a team actually holds. Its header reads this way today:
 
 ```yaml
 # packages/starter/templates/base/kortix.yaml

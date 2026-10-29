@@ -1,6 +1,6 @@
 {
-  "id": "005d6f01-6087-4c66-aea0-309e44452f6b",
-  "prevId": "fd1075f6-a1fe-4dff-94c3-3527e036e63b",
+  "id": "a65a655a-ef82-4315-ab2b-6747bbaa767f",
+  "prevId": "36cd18d7-d0f6-403a-9095-746fa6dcf65d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4677,12 +4677,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'none'"
-        },
-        "agent_error": {
-          "name": "agent_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "sent_session_id": {
           "name": "sent_session_id",
@@ -14918,12 +14912,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "artifact_id": {
-          "name": "artifact_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "payload": {
           "name": "payload",
           "type": "jsonb",
@@ -14987,22 +14975,6 @@
         }
       },
       "indexes": {
-        "idx_job_queue_artifact": {
-          "name": "idx_job_queue_artifact",
-          "columns": [
-            {
-              "expression": "artifact_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"job_queue\".\"artifact_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_job_queue_key": {
           "name": "idx_job_queue_key",
           "columns": [
@@ -15063,22 +15035,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "job_queue_artifact_fk": {
-          "name": "job_queue_artifact_fk",
-          "tableFrom": "job_queue",
-          "tableTo": "artifacts",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "artifact_id"
-          ],
-          "columnsTo": [
-            "artifact_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -15726,18 +15683,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "artifact_id": {
-          "name": "artifact_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "artifact_thread_id": {
-          "name": "artifact_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "kind": {
           "name": "kind",
           "type": "text",
@@ -15901,38 +15846,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_notifications_artifact": {
-          "name": "idx_notifications_artifact",
-          "columns": [
-            {
-              "expression": "artifact_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"notifications\".\"artifact_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_notifications_artifact_thread": {
-          "name": "idx_notifications_artifact_thread",
-          "columns": [
-            {
-              "expression": "artifact_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"notifications\".\"artifact_thread_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_notifications_created": {
           "name": "idx_notifications_created",
           "columns": [
@@ -15977,34 +15890,6 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
-        },
-        "notifications_artifact_fk": {
-          "name": "notifications_artifact_fk",
-          "tableFrom": "notifications",
-          "tableTo": "artifacts",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "artifact_id"
-          ],
-          "columnsTo": [
-            "artifact_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "notifications_artifact_thread_fk": {
-          "name": "notifications_artifact_thread_fk",
-          "tableFrom": "notifications",
-          "tableTo": "artifact_comment_threads",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "artifact_thread_id"
-          ],
-          "columnsTo": [
-            "thread_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -16022,7 +15907,7 @@
       "checkConstraints": {
         "notifications_kind": {
           "name": "notifications_kind",
-          "value": "\"kortix\".\"notifications\".\"kind\" IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message', 'artifact_comment')"
+          "value": "\"kortix\".\"notifications\".\"kind\" IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message')"
         }
       },
       "isRLSEnabled": false
@@ -26070,12 +25955,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "artifact_id": {
-          "name": "artifact_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "status": {
           "name": "status",
           "type": "session_lifecycle_command_status",
@@ -26176,22 +26055,6 @@
         }
       },
       "indexes": {
-        "idx_session_lifecycle_commands_artifact": {
-          "name": "idx_session_lifecycle_commands_artifact",
-          "columns": [
-            {
-              "expression": "artifact_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"session_lifecycle_commands\".\"artifact_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_session_lifecycle_commands_idempotency": {
           "name": "idx_session_lifecycle_commands_idempotency",
           "columns": [
@@ -26360,20 +26223,6 @@
           ],
           "columnsTo": [
             "account_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "session_lifecycle_commands_artifact_fk": {
-          "name": "session_lifecycle_commands_artifact_fk",
-          "tableFrom": "session_lifecycle_commands",
-          "tableTo": "artifacts",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "artifact_id"
-          ],
-          "columnsTo": [
-            "artifact_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"

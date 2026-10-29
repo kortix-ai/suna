@@ -7,7 +7,7 @@ canonical: "https://kortix.com/blog/openai-dots-alternative"
 author: "team"
 tags: ["Comparisons"]
 ---
-OpenAI's dots are a serious piece of work, a named assistant with its own cloud computer that keeps working after you close the chat; Kortix is the open-source AI Operating System: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. It is the alternative a team keeps once a plan lapses. The question that decides it is where the rules that bound the agent live, and who can read them.
+OpenAI's dots are a serious piece of work, a named assistant with its own cloud computer that keeps working after you close the chat; Kortix is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. It is the alternative a team keeps once a plan lapses. The question that decides it is where the rules that bound the agent live, and who can read them.
 
 ```logos
 label: 'Compared here:'

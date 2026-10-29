@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/open-source-chatgpt-work-alternative"
 ---
-ChatGPT Work is a capable agent inside OpenAI's product, and the open-source alternative is Kortix, the open-source AI Operating System a company can run on its own infrastructure. Each agent lives in a markdown file under `agents/`, with its own block in `kortix.yaml`. The question a buyer actually asks is who can read an agent's instructions and who approves a change to them, and what each option costs before the first agent runs.
+ChatGPT Work is a capable agent inside OpenAI's product, and the open-source alternative is Kortix CompanyOS, which a company can run on its own infrastructure. Each agent lives in a markdown file under `agents/`, with its own block in `kortix.yaml`. The question a buyer actually asks is who can read an agent's instructions and who approves a change to them, and what each option costs before the first agent runs.
 
 ```logos
 label: 'Compared here:'

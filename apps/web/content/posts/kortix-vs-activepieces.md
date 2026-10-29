@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/kortix-vs-activepieces"
 ---
-Activepieces is a strong open-source flow builder; Kortix is the open-source AI Operating System for jobs whose shape changes while you are doing them. The work a flow builder handles well is work you can already describe. Both self-host. Both give you a way to hold a step for a person. So the choice turns on one question: where do the exceptions live once the job stops matching the diagram?
+Activepieces is a strong open-source flow builder; Kortix is the open-source CompanyOS for jobs whose shape changes while you are doing them. The work a flow builder handles well is work you can already describe. Both self-host. Both give you a way to hold a step for a person. So the choice turns on one question: where do the exceptions live once the job stops matching the diagram?
 
 ```logos
 label: 'Compared here:'

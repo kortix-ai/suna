@@ -13,7 +13,9 @@ const { loadPublicResponse, plainTextExcerpt } = await import('./public-response
 test('metadata bounds bracket-heavy responses before parsing markdown', () => {
   const started = performance.now();
   expect(plainTextExcerpt('['.repeat(256 * 1024))).toHaveLength(160);
-  expect(performance.now() - started).toBeLessThan(100);
+  // Linear work is a few ms; the quadratic parse this guards against takes seconds.
+  // 100 ms flaked on a loaded CI runner (107 ms, v0.14.10 release lane).
+  expect(performance.now() - started).toBeLessThan(1000);
 });
 
 test('the shared response is read with no-store, never from the Next fetch cache', async () => {

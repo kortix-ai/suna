@@ -1,6 +1,6 @@
 {
-  "id": "1312b8e3-61a9-42b1-a7dc-20317ad22831",
-  "prevId": "36cd18d7-d0f6-403a-9095-746fa6dcf65d",
+  "id": "005d6f01-6087-4c66-aea0-309e44452f6b",
+  "prevId": "fd1075f6-a1fe-4dff-94c3-3527e036e63b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4802,7 +4802,7 @@
           "value": "\"kortix\".\"artifact_comment_threads\".\"agent_state\" in ('none', 'pending', 'sent', 'paused')"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.artifact_comment_write_limits": {
       "name": "artifact_comment_write_limits",
@@ -4869,7 +4869,7 @@
           "value": "\"kortix\".\"artifact_comment_write_limits\".\"writes\" >= 0"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.artifact_comments": {
       "name": "artifact_comments",
@@ -4998,7 +4998,7 @@
           "value": "char_length(\"kortix\".\"artifact_comments\".\"body\") <= 10000 and (\"kortix\".\"artifact_comments\".\"deleted_at\" is not null or char_length(\"kortix\".\"artifact_comments\".\"body\") >= 1)"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.artifact_events": {
       "name": "artifact_events",
@@ -5139,7 +5139,7 @@
           "value": "\"kortix\".\"artifact_events\".\"actor_user_id\" is null or \"kortix\".\"artifact_events\".\"actor_session_id\" is null"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.artifacts": {
       "name": "artifacts",
@@ -11030,6 +11030,187 @@
       },
       "isRLSEnabled": false
     },
+    "kortix.connector_held_calls": {
+      "name": "connector_held_calls",
+      "schema": "kortix",
+      "columns": {
+        "execution_id": {
+          "name": "execution_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_enc": {
+          "name": "input_enc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dispatched_at": {
+          "name": "dispatched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_deadline": {
+          "name": "run_deadline",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_execution_id": {
+          "name": "run_execution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chat_decider": {
+          "name": "chat_decider",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_connector_held_calls_run_due": {
+          "name": "idx_connector_held_calls_run_due",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "run_deadline",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"connector_held_calls\".\"state\" in ('queued', 'dispatched')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_connector_held_calls_project": {
+          "name": "idx_connector_held_calls_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_connector_held_calls_input_age": {
+          "name": "idx_connector_held_calls_input_age",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"connector_held_calls\".\"input_enc\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "connector_held_calls_project_id_projects_project_id_fk": {
+          "name": "connector_held_calls_project_id_projects_project_id_fk",
+          "tableFrom": "connector_held_calls",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "connector_held_calls_execution_fk": {
+          "name": "connector_held_calls_execution_fk",
+          "tableFrom": "connector_held_calls",
+          "tableTo": "connector_calls",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "execution_id"
+          ],
+          "columnsTo": [
+            "execution_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "connector_held_calls_state_check": {
+          "name": "connector_held_calls_state_check",
+          "value": "\"kortix\".\"connector_held_calls\".\"state\" in ('held', 'queued', 'dispatched', 'ok', 'error', 'refused', 'unknown', 'cancelled')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "kortix.connector_policies": {
       "name": "connector_policies",
       "schema": "kortix",
@@ -12584,7 +12765,7 @@
           "value": "(\"kortix\".\"drive_commit_authors\".\"author_user_id\" is not null) <> (\"kortix\".\"drive_commit_authors\".\"author_session_id\" is not null)"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.drive_conflicts": {
       "name": "drive_conflicts",
@@ -14737,6 +14918,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "artifact_id": {
+          "name": "artifact_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "payload": {
           "name": "payload",
           "type": "jsonb",
@@ -14800,6 +14987,22 @@
         }
       },
       "indexes": {
+        "idx_job_queue_artifact": {
+          "name": "idx_job_queue_artifact",
+          "columns": [
+            {
+              "expression": "artifact_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"job_queue\".\"artifact_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_job_queue_key": {
           "name": "idx_job_queue_key",
           "columns": [
@@ -14860,7 +15063,22 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "job_queue_artifact_fk": {
+          "name": "job_queue_artifact_fk",
+          "tableFrom": "job_queue",
+          "tableTo": "artifacts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "artifact_id"
+          ],
+          "columnsTo": [
+            "artifact_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -25852,6 +26070,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "artifact_id": {
+          "name": "artifact_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "status": {
           "name": "status",
           "type": "session_lifecycle_command_status",
@@ -25952,6 +26176,22 @@
         }
       },
       "indexes": {
+        "idx_session_lifecycle_commands_artifact": {
+          "name": "idx_session_lifecycle_commands_artifact",
+          "columns": [
+            {
+              "expression": "artifact_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"session_lifecycle_commands\".\"artifact_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_session_lifecycle_commands_idempotency": {
           "name": "idx_session_lifecycle_commands_idempotency",
           "columns": [
@@ -26120,6 +26360,20 @@
           ],
           "columnsTo": [
             "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "session_lifecycle_commands_artifact_fk": {
+          "name": "session_lifecycle_commands_artifact_fk",
+          "tableFrom": "session_lifecycle_commands",
+          "tableTo": "artifacts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "artifact_id"
+          ],
+          "columnsTo": [
+            "artifact_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -27106,7 +27360,7 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "kortix.session_sandboxes": {
       "name": "session_sandboxes",
@@ -30919,187 +31173,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "kortix.connector_held_calls": {
-      "name": "connector_held_calls",
-      "schema": "kortix",
-      "columns": {
-        "execution_id": {
-          "name": "execution_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "input_enc": {
-          "name": "input_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "dispatched_at": {
-          "name": "dispatched_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_deadline": {
-          "name": "run_deadline",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_execution_id": {
-          "name": "run_execution_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "chat_decider": {
-          "name": "chat_decider",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "finished_at": {
-          "name": "finished_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_connector_held_calls_run_due": {
-          "name": "idx_connector_held_calls_run_due",
-          "columns": [
-            {
-              "expression": "state",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "run_deadline",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"connector_held_calls\".\"state\" in ('queued', 'dispatched')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_connector_held_calls_project": {
-          "name": "idx_connector_held_calls_project",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_connector_held_calls_input_age": {
-          "name": "idx_connector_held_calls_input_age",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"connector_held_calls\".\"input_enc\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "connector_held_calls_project_id_projects_project_id_fk": {
-          "name": "connector_held_calls_project_id_projects_project_id_fk",
-          "tableFrom": "connector_held_calls",
-          "tableTo": "projects",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "project_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "connector_held_calls_execution_fk": {
-          "name": "connector_held_calls_execution_fk",
-          "tableFrom": "connector_held_calls",
-          "tableTo": "connector_calls",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "execution_id"
-          ],
-          "columnsTo": [
-            "execution_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "connector_held_calls_state_check": {
-          "name": "connector_held_calls_state_check",
-          "value": "\"kortix\".\"connector_held_calls\".\"state\" in ('held', 'queued', 'dispatched', 'ok', 'error', 'refused', 'unknown', 'cancelled')"
-        }
-      },
       "isRLSEnabled": false
     }
   },

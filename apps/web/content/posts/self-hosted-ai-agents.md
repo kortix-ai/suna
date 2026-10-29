@@ -7,7 +7,7 @@ canonical: "https://kortix.com/blog/self-hosted-ai-agents"
 author: "team"
 tags: ["Field notes"]
 ---
-Self-hosted AI agents are agents whose control plane you run: the repo, the shared memory, the accounts and the credentials live on a server you own, while each session runs on a cloud computer that calls back to it. Anyone can stand that up in an afternoon, and the model choice rarely decides what breaks later. Four checks do: where sessions run, who can create an account, what you back up, and the monthly cost. Kortix is the open-source AI Operating System: your agents, skills, company memory, and connectors in one git repo you own, with the agents working on real cloud computers.
+Self-hosted AI agents are agents whose control plane you run: the repo, the shared memory, the accounts and the credentials live on a server you own, while each session runs on a cloud computer that calls back to it. Anyone can stand that up in an afternoon, and the model choice rarely decides what breaks later. Four checks do: where sessions run, who can create an account, what you back up, and the monthly cost. Kortix is the open-source CompanyOS: your agents, skills, company memory, and connectors in one git repo you own, with the agents working on real cloud computers.
 
 ## Where the pieces run
 

@@ -55,6 +55,7 @@ import {
   type EnsureSandboxImageResult,
   type SandboxImageSpec,
 } from '../../snapshots/builder';
+import { templateResidentialProxy } from '../../snapshots/templates';
 import { config } from '../../config';
 import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
@@ -78,6 +79,7 @@ import {
   initialSandboxTurnMetadata,
 } from '../../projects/session-turn-ledger';
 import { resolveSessionSandboxRegion } from './sandbox-region';
+import { resolveSessionResidentialProxy } from './residential-proxy';
 import type { WorkspaceVolume } from './workspace-volume';
 import { logger } from '../../lib/logger';
 
@@ -351,6 +353,8 @@ interface SessionProvisionState {
   // Provider failover (one-shot, on init): set true once we've handed off to a
   // second provider, so a session never bounces between providers forever.
   fallbackAttempted: boolean;
+  /** The template asks for a residential IP: Platinum only, no failover. */
+  residentialProxyRequested: boolean;
   imageInfo: {
     snapshotName: string;
     slug: string;
@@ -541,6 +545,7 @@ export async function provisionSessionSandbox(opts: {
     bgExternalId: null,
     healedStaleSnapshot: false,
     fallbackAttempted: false,
+    residentialProxyRequested: false,
     imageInfo: null,
     activeRouting: null,
     idBootDisabled: false,
@@ -1263,6 +1268,15 @@ async function runProvisionAttempt(
 ): Promise<'done' | 'retry'> {
   const { opts, sandbox, tl } = ctx;
   const branch = opts.baseRef || opts.gitProject.defaultBranch;
+  // The template's `residential_proxy` (residential-proxy.ts), read before the
+  // image so a deployment that cannot serve it fails fast. Fails closed: it
+  // throws instead of booting on the sandbox's own address, and once asked,
+  // the session never fails over to another provider.
+  const residentialProxyRequest = await templateResidentialProxy(opts.projectId, ctx.slug);
+  if (residentialProxyRequest) state.residentialProxyRequested = true;
+  const residentialProxy = await resolveSessionResidentialProxy(residentialProxyRequest, state.providerName);
+  if (residentialProxy) ctx.providerCreateInput.residentialProxy = residentialProxy;
+  else delete ctx.providerCreateInput.residentialProxy;
   // Resolved for its VALIDATION only: it re-reads the agent grant and
   // throws on a policy no session could serve, which is what turns a broken
   // secret config into `invalid-secret-boundary-policy` instead of a
@@ -1357,7 +1371,12 @@ async function failOverToNextProvider(
   // sync on, any provider can carry the drives.)
   const next = nextFailoverProvider({
     // A session whose /workspace is a Platinum volume runs on Platinum only.
-    providerLocked: providerWasExplicitlySelected || (drivesRequirePlatinum && !drivesSyncAllowed) || !!state.workspaceVolume,
+    // So does a session whose web traffic leaves through a residential IP.
+    providerLocked:
+      providerWasExplicitlySelected ||
+      (drivesRequirePlatinum && !drivesSyncAllowed) ||
+      !!state.workspaceVolume ||
+      state.residentialProxyRequested,
     fallbackAttempted: state.fallbackAttempted,
     fallbackEnabled: providerFallbackSetting().enabled,
     current: providerName,
