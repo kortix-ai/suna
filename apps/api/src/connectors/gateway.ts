@@ -133,6 +133,19 @@ export interface ExecutionRecord {
   /** SHA-256 of connector + action + exact execution arguments. */
   requestDigest?: string | null;
   resultSummary: Record<string, unknown> | null;
+  /** Only on a new `pending_approval` row: the call input to hold, encrypted,
+   *  for the approved run. Never part of `resultSummary`. */
+  held?: HeldExecutionInput;
+}
+
+/** The call half of the held input. The caller half comes from the deps' principal. */
+export interface HeldExecutionInput {
+  connectorSlug: string;
+  /** Connector-relative path. */
+  actionPath: string;
+  args: Record<string, unknown>;
+  approvalContext: string | null;
+  policySet: CallPolicySet | null;
 }
 
 export interface EmailSessionContext {
@@ -1152,6 +1165,13 @@ async function enforceCallPolicies(
             ...resolved,
           },
           requestDigest,
+          {
+            connectorSlug: input.connectorSlug,
+            actionPath: input.actionPath,
+            args: executionArgs,
+            approvalContext,
+            policySet,
+          },
         ));
       const extras = await approvalExtras(executionId);
       const cardPosted =
@@ -1799,6 +1819,7 @@ async function audit(
   risk: Risk | null,
   summary: Record<string, unknown> | null,
   requestDigest?: string | null,
+  held?: HeldExecutionInput,
 ): Promise<string | null> {
   try {
     return await deps.recordExecution({
@@ -1813,6 +1834,7 @@ async function audit(
       risk,
       requestDigest: requestDigest ?? null,
       resultSummary: summary,
+      ...(held ? { held } : {}),
     });
   } catch {
     /* auditing must never break the call path */

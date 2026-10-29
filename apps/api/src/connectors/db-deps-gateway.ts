@@ -5,6 +5,7 @@ import {
   connectorActions,
   connectors,
   connectorCalls,
+  connectorHeldCalls,
   connectorProjectSettings,
 } from '@kortix/db';
 import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
@@ -43,7 +44,8 @@ import { gateChannelWrite } from './channel-write-scope';
 import { resolveCredentialValue, resolveConnectionCredentialValue } from './credentials';
 import { connectorEgressFetch } from './egress';
 import { CredentialNotSharedError } from './gateway';
-import type { GatewayAction, GatewayConnector, GatewayDeps } from './gateway';
+import type { ExecutionRecord, GatewayAction, GatewayConnector, GatewayDeps } from './gateway';
+import { sealHeldInput } from './held-call-store';
 import { graphToken } from '../channels/teams-auth';
 import { runPipedreamAction, runPipedreamProxy } from './pipedream';
 import type { ConnectorPrincipal } from './router-contract';
@@ -243,6 +245,88 @@ export function toGatewayConnector(
     enabled: row.enabled,
     sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
   };
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Inserts the audit row and returns its execution id. */
+async function insertConnectorCall(exec: Tx | typeof db, rec: ExecutionRecord): Promise<string | null> {
+  const [row] = await exec
+    .insert(connectorCalls)
+    .values({
+      accountId: rec.accountId,
+      projectId: rec.projectId,
+      connectorId: rec.connectorId,
+      connectionId: rec.connectionId,
+      actionPath: rec.actionPath,
+      actingUserId: rec.actingUserId,
+      sessionId: rec.sessionId,
+      status: rec.status,
+      risk: rec.risk,
+      requestDigest: rec.requestDigest ?? null,
+      resultSummary: rec.resultSummary,
+      // A pending_approval row is genuinely UNRESOLVED — it's awaiting a human
+      // approve/deny (the approvals inbox). Every terminal status (ok/error/
+      // denied) resolves at insert. Leaving pending rows unresolved is what lets
+      // the inbox query surface exactly the actions still waiting on a decision.
+      resolvedAt: rec.status === 'pending_approval' ? null : new Date(),
+      // The decision window: the project's `approvals.ttl`, else 24 h.
+      expiresAt:
+        rec.status === 'pending_approval'
+          ? sql`now() + make_interval(secs => coalesce((select ${connectorProjectSettings.approvalTtlSeconds} from ${connectorProjectSettings} where ${connectorProjectSettings.projectId} = ${rec.projectId}), ${DEFAULT_APPROVAL_TTL_SECONDS}))`
+          : null,
+    })
+    .returning({ id: connectorCalls.executionId });
+  return row?.id ?? null;
+}
+
+/**
+ * Writes the held input in a savepoint inside the gate's transaction. A failed
+ * write rolls back only the held row: the gate commits and Approve falls back
+ * to the carry-over. The log names the gate, never the input.
+ */
+async function holdCallInput(
+  tx: Tx,
+  principal: ConnectorPrincipal,
+  rec: ExecutionRecord,
+  executionId: string,
+): Promise<void> {
+  if (!rec.held || !rec.requestDigest) return;
+  try {
+    const inputEnc = sealHeldInput({
+      v: 1,
+      execution_id: executionId,
+      project_id: rec.projectId,
+      request_digest: rec.requestDigest,
+      account_id: principal.accountId,
+      connector_slug: rec.held.connectorSlug,
+      action_path: rec.held.actionPath,
+      args: rec.held.args,
+      connection_id: rec.connectionId,
+      approval_context: rec.held.approvalContext,
+      policy_set: rec.held.policySet,
+      acting_token_id: principal.tokenId ?? null,
+      session_id: principal.sessionId,
+      user_id: principal.userId,
+      agent_grant: principal.agentGrant ?? null,
+      agent_principal: principal.agentPrincipal ?? null,
+    });
+    await tx.transaction((sp) =>
+      sp.insert(connectorHeldCalls).values({
+        executionId,
+        projectId: rec.projectId,
+        accountId: rec.accountId,
+        inputEnc,
+        state: 'held',
+        updatedAt: new Date(),
+      }),
+    );
+  } catch (error) {
+    logger.warn('[approvals] held input not stored; approve falls back to the carry-over', {
+      executionId,
+      error: error instanceof Error ? error.name : 'unknown',
+    });
+  }
 }
 
 export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
@@ -496,36 +580,15 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     // Lazy: channels import connectors, so a static import here would cycle.
     postApprovalCard: async (input) =>
       (await import('../channels/approval-card-relay')).postApprovalCard(input),
-    recordExecution: async (rec) => {
-      const [row] = await db
-        .insert(connectorCalls)
-        .values({
-          accountId: rec.accountId,
-          projectId: rec.projectId,
-          connectorId: rec.connectorId,
-          connectionId: rec.connectionId,
-          actionPath: rec.actionPath,
-          actingUserId: rec.actingUserId,
-          sessionId: rec.sessionId,
-          status: rec.status,
-          risk: rec.risk,
-          requestDigest: rec.requestDigest ?? null,
-          resultSummary: rec.resultSummary,
-          // A pending_approval row is genuinely UNRESOLVED — it's awaiting a human
-          // approve/deny (the approvals inbox). Every terminal status (ok/error/
-          // denied) resolves at insert. Leaving pending rows unresolved is what lets
-          // the inbox query surface exactly the actions still waiting on a decision.
-          resolvedAt: rec.status === 'pending_approval' ? null : new Date(),
-          // The decision window: the project's `approvals.ttl`, else 24 h.
-          expiresAt:
-            rec.status === 'pending_approval'
-              ? sql`now() + make_interval(secs => coalesce((select ${connectorProjectSettings.approvalTtlSeconds} from ${connectorProjectSettings} where ${connectorProjectSettings.projectId} = ${rec.projectId}), ${DEFAULT_APPROVAL_TTL_SECONDS}))`
-              : null,
-        })
-        .returning({ id: connectorCalls.executionId });
-      if (!row?.id) return null;
-      return row.id;
-    },
+    // A held call writes the gate and its held input in one transaction.
+    recordExecution: (rec) =>
+      rec.held && rec.status === 'pending_approval'
+        ? db.transaction(async (tx) => {
+            const executionId = await insertConnectorCall(tx, rec);
+            if (executionId) await holdCallInput(tx, principal, rec, executionId);
+            return executionId;
+          })
+        : insertConnectorCall(db, rec),
     consumeApprovedExecution: consumeApprovedExecution,
     isPendingApprovalExecution: isPendingApprovalExecution,
     executePipedream: ({ projectId, connectorSlug, app, actionKey, args, accountId, userId }) =>
