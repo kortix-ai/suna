@@ -8,7 +8,7 @@ set lock_timeout = '2s';
 set statement_timeout = '30s';
 
 -- Additive: two indexes on kortix.connector_held_calls. The table comes from
--- 20261029142302149_connector_held_calls in the same release and is empty at
+-- 20261029175001000_connector_held_calls in the same release and is empty at
 -- deploy, so a plain CREATE INDEX holds its lock for no time.
 --   idx_connector_held_calls_project    project transfer and purge read by project.
 --   idx_connector_held_calls_input_age  the approval-expiry sweep wipes held input

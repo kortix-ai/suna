@@ -9,7 +9,7 @@ set statement_timeout = '30s';
 
 -- The connector_calls audit projection (kortix.audit_connector_call) mapped
 -- every status it did not name to outcome 'failure'. Approve now flips a gate
--- that held its input to 'approved' (20261029142228700): a person approved it,
+-- that held its input to 'approved' (20261029175000000): a person approved it,
 -- so the projected row carries outcome 'success', as an approved 'ok' gate
 -- did. Phase stays the status text ('approved'). The held run writes its own
 -- connector_calls row with its own outcome.
