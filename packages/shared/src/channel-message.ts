@@ -31,11 +31,12 @@
  */
 
 import { readLegacyChannelHeader } from './channel-header';
+import { CHANNEL_PLATFORM_IDS, CHANNELS } from './channel-descriptors';
 import { readSlackFollowUpHeader, slackPlainText } from './slack-text';
 import { replaceSpans, tagBlocks } from './tag-blocks';
 
-/** The platform words a header names. Any other word reads as Slack, as every deployed build reads it. */
-export const CHANNEL_PLATFORMS = ['Slack', 'Teams', 'Telegram', 'Email'] as const;
+/** The platform words a header names: each channel descriptor's `envelope`. Any other word reads as Slack, as every deployed build reads it. */
+export const CHANNEL_PLATFORMS = CHANNEL_PLATFORM_IDS.map((id) => CHANNELS[id].envelope);
 export type ChannelPlatform = (typeof CHANNEL_PLATFORMS)[number];
 
 export interface ChannelMessageInfo {

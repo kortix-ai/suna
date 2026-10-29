@@ -5,8 +5,10 @@
  * import the other (a `index.ts` ⇄ `json-schema.ts` cycle broke bun's
  * bundler: circular top-level `const` access threw "Cannot access before
  * initialization"). `index.ts` re-exports everything here for backward
- * compatibility with existing consumers of `@kortix/manifest-schema`.
+ * compatibility with existing consumers of `@kortix/manifest-schema`. Its one
+ * import, the channel descriptor, has no imports of its own.
  */
+import { CHANNEL_PLATFORM_IDS, channelConnectorSlug } from '@kortix/shared/channel-descriptors';
 
 /** The slug reserved for the platform-shared default sandbox template. */
 export const RESERVED_SANDBOX_SLUG = 'default';
@@ -175,18 +177,16 @@ export const CONNECTOR_AUTH_TYPES = [
 ] as const;
 /** The exclusive owner model for connections under one connector. */
 export const CONNECTOR_AUTHORIZATION_STRATEGIES = ['project', 'user'] as const;
-/** Platforms a `channel` connector can target. */
-export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'telegram'] as const;
+/** Platforms a `channel` connector can target: the channel descriptor's ids (`@kortix/shared/channel-descriptors`). */
+export const CHANNEL_PLATFORMS = CHANNEL_PLATFORM_IDS;
 /**
  * Platform-owned slugs and the only provider allowed to use each, so a user
  * app can't shadow the built-in catalog (the bug that made `slack thread` 404;
- * see KORTIX-206). Every `kortix_<platform>` of CHANNEL_PLATFORMS is here.
+ * see KORTIX-206). Every `kortix_<platform>` of CHANNEL_PLATFORMS is here, in
+ * that order: the key order is the published JSON schema's order.
  */
 export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, string>> = {
-  kortix_slack: 'channel',
-  kortix_teams: 'channel',
-  kortix_email: 'channel',
-  kortix_telegram: 'channel',
+  ...Object.fromEntries(CHANNEL_PLATFORMS.map((platform) => [channelConnectorSlug(platform), 'channel'])),
   computer: 'computer',
 };
 export const CONNECTOR_POLICY_ACTIONS = ['always_run', 'require_approval', 'block'] as const;

@@ -4,6 +4,7 @@
  * message as a requester, `getChat` for a user's names and photo, and
  * `getFile` for the photo bytes.
  */
+import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { type ChannelAccessPort, cleanName } from '../core/channel-access';
 import { telegramCall, telegramDownload, telegramUnreachable } from './api';
 import { loadTelegramBotToken, loadTelegramInstall, TELEGRAM_USER_ID, telegramRequester } from './installs';
@@ -14,7 +15,7 @@ const str = (value: unknown) => (typeof value === 'string' && value ? value : nu
 
 export const telegramAccessPort: ChannelAccessPort = {
   platform: 'telegram',
-  label: 'Telegram',
+  label: CHANNELS.telegram.label,
   userId: TELEGRAM_USER_ID,
   idDescription: 'numeric Telegram user id',
   // Telegram profile photos are JPEG; anything else is not served as one.

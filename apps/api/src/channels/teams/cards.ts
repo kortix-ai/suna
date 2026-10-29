@@ -1,3 +1,4 @@
+import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { questionButtonData } from '../core/question-token';
 import type { StreamTaskChunk } from '../slack-api';
 import { markdownToCardElements } from './markdown';
@@ -739,7 +740,7 @@ export interface TeamsQuestion {
 /** A press on a question card that answers nothing: its session is gone, or the conversation moved on. */
 export const QUESTION_EARLIER = 'This question is from an earlier conversation.';
 
-const MAX_BUTTON_OPTIONS = 6;
+const MAX_BUTTON_OPTIONS = CHANNELS.teams.buttons.max;
 /** Past this, a column of radios stops being scannable and a dropdown wins. */
 const MAX_EXPANDED_CHOICES = 6;
 

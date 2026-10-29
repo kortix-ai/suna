@@ -18,6 +18,7 @@
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
 import { chatThreads, projects } from '@kortix/db';
 import { type ChannelEnvelope, channelPromptText } from '@kortix/shared';
+import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { and, eq, like, or } from 'drizzle-orm';
 import { type IntegrationEvent, registerEventConsumer } from '../../integrations/event-inbox';
 import { logger } from '../../lib/logger';
@@ -132,9 +133,9 @@ export function telegramPressEvent(projectId: string, botId: string, update: Tel
 }
 
 /** One tap per option up to this many (Teams parity, teams/cards.ts); more is a numbered list. */
-const MAX_BUTTONS = 6;
-/** A message holds 4096 characters (connectors/channels.ts); the footer gets 190 of them. */
-const QUESTION_BODY_MAX = 3900;
+const MAX_BUTTONS = CHANNELS.telegram.buttons.max;
+/** 3900: of the 4096 characters a message holds, the footer gets 190, the blank line 2, and 4 stay spare. */
+const QUESTION_BODY_MAX = CHANNELS.telegram.messageChars - 196;
 /** A tap on a question nothing can answer any more: its session is gone, or the chat moved on. */
 const EARLIER_QUESTION = 'This question is from an earlier conversation. Send your answer as a message.';
 
@@ -507,7 +508,7 @@ export function telegramEnvelope(message: TelegramMessage): ChannelEnvelope {
   const name = [from?.first_name, from?.last_name].filter(Boolean).join(' ');
   const topic = message.is_topic_message ? message.message_thread_id : undefined;
   return {
-    platform: 'Telegram',
+    platform: CHANNELS.telegram.envelope,
     sender: from?.username ? `@${from.username}` : name || `user ${from?.id ?? 'unknown'}`,
     where: chat.type === 'private' ? 'direct message' : chat.title || `chat ${chat.id}`,
     text: message.text ?? message.caption ?? '(no text: a photo, file or sticker)',
@@ -519,7 +520,7 @@ export function telegramEnvelope(message: TelegramMessage): ChannelEnvelope {
     }),
     notes: [
       `Chat ${chat.id} (${chat.type})${topic ? `, topic ${topic}` : ''}, sender id ${from?.id ?? 'unknown'}, message id ${message.message_id}.`,
-      'One message holds at most 4096 characters; send a longer answer as several messages.',
+      `One message holds at most ${CHANNELS.telegram.messageChars} characters; send a longer answer as several messages.`,
       'To let the user choose between options, call your question tool: Kortix posts it in this chat when it can, with buttons for a single choice; otherwise its result says how to ask.',
       `While you work on a long task, show typing: ${connectorReply(TELEGRAM_CHANNEL_CONNECTOR_SLUG, 'send_chat_action', { chat_id: String(chat.id) })}.`,
       'For bold or code, add `"parse_mode":"HTML"` and use <b>, <i>, <code>, <pre>; otherwise send plain text.',
