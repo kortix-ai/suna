@@ -10,7 +10,8 @@ function fake() {
   let scope: 'own' | 'all' = 'own';
   const hang = new Set<string>();
   let paused = false;
-  const add = (url: string, groupId = 7): TabInfo => {
+  let onPointer: ((p: { type?: string }) => void) | undefined;
+  const add =(url: string, groupId = 7): TabInfo => {
     const t = { id: next++, windowId: 1, url, title: `t${next}`, groupId };
     tabs.set(t.id, t);
     return t;
@@ -36,7 +37,7 @@ function fake() {
       return { ok: method };
     },
     paused: () => paused,
-    pointer: async (_t, p) => void log.pointer.push(p),
+    pointer: async (_t, p) => { log.pointer.push(p); onPointer?.(p); },
     touched: () => {},
   };
   const out: Record<string, Out[]> = {};
@@ -46,7 +47,11 @@ function fake() {
     await shim.handle(c, { id, method, params, sessionId });
     return out[c]!.find((m) => m.id === id)!;
   };
-  return { shim, add, tabs, sends, log, out, call, hang, setScope: (s: 'own' | 'all') => (scope = s), setPaused: (p: boolean) => (paused = p) };
+  return {
+    shim, add, tabs, sends, log, out, call, hang,
+    setScope: (s: 'own' | 'all') => (scope = s), setPaused: (p: boolean) => (paused = p),
+    onPointer: (fn: (p: { type?: string }) => void) => (onPointer = fn),
+  };
 }
 
 let f: ReturnType<typeof fake>;
@@ -275,6 +280,18 @@ describe('visible state hooks', () => {
     await f.call('1', 'Input.dispatchMouseEvent', { type: 'mousePressed', x: 10, y: 20 }, sid);
     expect(f.log.pointer).toEqual([{ type: 'mousePressed', x: 10, y: 20 }]);
     expect(f.sends.at(-1)!.method).toBe('Input.dispatchMouseEvent');
+  });
+  test('typing reaches the overlay before the page, so the cursor gets to the field first', async () => {
+    f.add('https://a.test');
+    const sid = (await f.call('1', 'Target.attachToTarget', { targetId: 'T1' })).result.sessionId;
+    const order: string[] = [];
+    const sent = f.sends.push.bind(f.sends);
+    f.sends.push = (...s) => { order.push(`send ${s[0]!.method}`); return sent(...s); };
+    f.onPointer((p) => order.push(`cursor ${p.type}`));
+    await f.call('1', 'Input.insertText', { text: 'Kortix' }, sid);
+    await f.call('1', 'Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter' }, sid);
+    await f.call('1', 'Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter' }, sid);
+    expect(order).toEqual(['cursor key', 'send Input.insertText', 'cursor key', 'send Input.dispatchKeyEvent', 'send Input.dispatchKeyEvent']);
   });
   test('screenshot activates the tab first', async () => {
     f.add('https://a.test');

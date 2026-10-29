@@ -32,8 +32,10 @@ export interface ShimHost {
   send(tabId: number, childSessionId: string | undefined, method: string, params: unknown): Promise<unknown>;
   paused(): boolean;
   /**
-   * Called before every Input.dispatchMouseEvent: the overlay moves its cursor
-   * and gets its control bar out of the way when the point is under it.
+   * Called before every Input.dispatchMouseEvent, Input.insertText and key
+   * press (`type: 'key'`). Resolves when the overlay's cursor got there: it
+   * glides to the point, or to the focused field, and moves its control bar
+   * out of the way. The page gets the event only after that.
    */
   pointer(tabId: number, params: { type?: string; x?: number; y?: number }): Promise<void>;
   /** Called after the debugger attaches a tab, so the overlay can appear. */
@@ -180,8 +182,12 @@ export class Shim {
     }
     if (tabId === undefined) throw new CdpError(-32001, 'Session with given id not found.');
     if (method.startsWith('Input.') && this.host.paused()) throw new CdpError(-32000, PAUSED_MSG);
-    // Awaited: the page hit-tests the event, and the control bar must not take an agent click.
+    // Awaited: the user sees the cursor arrive before the click or the text lands,
+    // and the control bar must not take an agent click.
     if (method === 'Input.dispatchMouseEvent') await this.host.pointer(tabId, params ?? {});
+    if (method === 'Input.insertText' || (method === 'Input.dispatchKeyEvent' && KEY_DOWN.has(params?.type))) {
+      await this.host.pointer(tabId, { type: 'key' });
+    }
     if (method === 'Page.captureScreenshot') await this.host.activateTab(tabId);
     if (method === 'Kortix.setFileInputFiles') return this.setFiles(tabId, child, params);
     this.inflight.set(tabId, (this.inflight.get(tabId) ?? 0) + 1);
@@ -390,6 +396,7 @@ export class Shim {
   }
 }
 
+const KEY_DOWN = new Set(['keyDown', 'rawKeyDown']);
 const LOCAL = new Set([
   'Browser.getVersion', 'Browser.getWindowForTarget', 'Browser.setContentsSize', 'Browser.setDownloadBehavior', 'Browser.close',
   'Target.setDiscoverTargets', 'Target.getTargets', 'Target.createTarget', 'Target.attachToTarget', 'Target.detachFromTarget',

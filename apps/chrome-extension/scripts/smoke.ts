@@ -253,6 +253,21 @@ try {
   check('overlay: control bar says "Kortix is working"', (await overlay(`r.querySelector('.msg').textContent`)) === 'Kortix is working');
   check('overlay: glow on and agent cursor moved after the click', (await overlay(`r.querySelector('.glow').classList.contains('on') && r.querySelector('.cursor').style.transform.startsWith('translate(')`)) === true);
 
+  // The agent cursor gets to each point before the page gets the input (fixture records it).
+  const down = await pg.eval('window.__down');
+  check('cursor: on the click point when the page got mousedown', !!down?.at && down.on && Math.hypot(down.at[0] - down.x, down.at[1] - down.y) < 1.5, JSON.stringify(down));
+  const typed = await pg.eval('window.__typed');
+  const inBox = (p: number[], b: any) => p[0] >= b.left && p[0] <= b.right && p[1] >= b.top && p[1] <= b.bottom;
+  check('cursor: in the field, saying "Typing…", when the text landed', !!typed?.at && inBox(typed.at, typed.box) && typed.label === 'Typing…', JSON.stringify(typed));
+  r = await ab('scroll', 'down', '600');
+  const scrolled = await until('page scrolled', () => pg.tryEval('window.__scrolled'), 3000).catch(() => undefined);
+  check('cursor: says "Scrolling…" when the agent scrolls with page script', scrolled?.on === true && scrolled.label === 'Scrolling…', JSON.stringify(scrolled));
+  const cursorBefore = await overlay(`r.querySelector('.cursor').style.transform`);
+  r = await ab('open', `${url}?nav=1`);
+  const cursorAfter = await until('cursor on the new page', () =>
+    pg.tryEval(`document.getElementById('kortix-overlay-host')?.shadowRoot?.querySelector('.cursor.on')?.style.transform`), 5000).catch(() => undefined);
+  check('cursor: stays where it was when the agent loads another page', !!cursorBefore && cursorAfter === cursorBefore, `${cursorBefore} -> ${cursorAfter}`);
+
   // Tabs.
   r = await ab('tab', 'new', `${url}?second=1`);
   check('tab new', r.code === 0, r.out);

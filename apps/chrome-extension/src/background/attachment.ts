@@ -15,6 +15,12 @@ export const toTabInfo = (t: chrome.tabs.Tab): TabInfo => ({
   groupId: t.groupId ?? -1, active: t.active,
 });
 
+/**
+ * The longest the page waits for the overlay's cursor: a fade-in, the longest
+ * glide (cursor-path.ts) and the pause on arrival, with room to spare.
+ */
+const CURSOR_WAIT_MS = 1500;
+
 export type AttachmentEnv = {
   onBridgeOpen(a: Attachment): void;
   onEnded(a: Attachment, reason: 'stopped' | 'closed' | 'canceled_by_user' | 'error'): void;
@@ -27,6 +33,8 @@ export class Attachment {
   groupId: number | undefined;
   paused = false;
   touched = new Set<number>();
+  /** Where each tab's cursor was last drawn, so it stays put when the agent loads another page. */
+  readonly cursorAt = new Map<number, { x: number; y: number }>();
   readonly shim: Shim;
   private ws?: WebSocket;
   private ping?: ReturnType<typeof setInterval>;
@@ -192,11 +200,17 @@ export class Attachment {
       send: (tabId, sessionId, method, params) =>
         chrome.debugger.sendCommand({ tabId, ...(sessionId ? { sessionId } : {}) }, method, (params ?? {}) as Record<string, unknown>),
       paused: () => this.paused,
+      // The overlay answers when its cursor got there, with where it is now.
       // Bounded: a tab without the overlay (a page that blocks scripts) must not stall input.
       pointer: (tabId, p) =>
         Promise.race([
-          chrome.tabs.sendMessage(tabId, { kortix: 'cursor', x: p.x, y: p.y, type: p.type }).then(() => {}, () => {}),
-          new Promise<void>((r) => setTimeout(r, 250)),
+          chrome.tabs.sendMessage(tabId, { kortix: 'cursor', x: p.x, y: p.y, type: p.type }).then(
+            (at?: { x?: unknown; y?: unknown }) => {
+              if (typeof at?.x === 'number' && typeof at.y === 'number') this.cursorAt.set(tabId, { x: at.x, y: at.y });
+            },
+            () => {},
+          ),
+          new Promise<void>((r) => setTimeout(r, CURSOR_WAIT_MS)),
         ]),
       touched: (tabId) => {
         this.touched.add(tabId);

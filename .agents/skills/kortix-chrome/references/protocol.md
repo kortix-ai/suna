@@ -212,10 +212,25 @@ navigates a tab the user is reading. Tab groups are decoration: a browser
 without `chrome.tabGroups` (Arc, Dia) works the same. `chrome://`, the Web Store and extension pages are never in scope.
 
 **Visible state.** Each attachment has one tab group `Kortix · <sessionTitle>`
-(color `blue`). The overlay (glow, agent cursor at each
-`Input.dispatchMouseEvent` point, control bar with Take over and Stop) shows on
-every tab of the group. Before `Page.captureScreenshot` the shim activates the
-tab in its own window. Take over pauses: `Input.*` returns `-32000 "The user took
+(color `blue`). The overlay (glow, agent cursor, control bar with Take over and
+Stop) shows on every tab of the group. Before `Page.captureScreenshot` the shim
+activates the tab in its own window.
+
+**Agent cursor.** The cursor glides to each `Input.dispatchMouseEvent` point. Before
+`Input.insertText` and a `keyDown` or `rawKeyDown` `Input.dispatchKeyEvent`, it
+glides into the focused field. The shim sends the command to the tab only when the
+overlay answers that the cursor arrived, or after 1.5 s. The overlay's answer
+carries the cursor position, and the next page in that tab draws the cursor there.
+- A glide takes 180 to 650 ms, by distance, along a shallow arc. The cursor rests
+  70 ms on the target before the event lands.
+- A glide is instant in a background tab and with `prefers-reduced-motion`.
+- A point outside the viewport draws the cursor at the nearest edge. The event
+  keeps its own coordinates.
+- The label says `Typing…` during key input. It says `Scrolling…` on a mouse
+  wheel, and when the page scrolls by 32 px or more within 1 s of no user wheel,
+  touch, pointer or key input. Page-script scrolls (agent-browser `scroll`,
+  `scrollintoview`) send no input event. The label returns to `Kortix` 1.2 s
+  after the last key or scroll. Take over pauses: `Input.*` returns `-32000 "The user took
 over this tab. Wait for them, then retry."` until Resume. Stop and the Chrome
 infobar's Cancel detach the debugger from the group, close the bridge, and send
 `detached`.

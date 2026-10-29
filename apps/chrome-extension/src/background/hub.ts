@@ -27,7 +27,7 @@ export class Hub {
       void this.persist();
     },
     overlay: (tabId, a) => {
-      const msg = { kortix: 'overlay', on: !a.isEnded, paused: a.paused, title: a.title };
+      const msg = { kortix: 'overlay', on: !a.isEnded, paused: a.paused, title: a.title, cursor: a.cursorAt.get(tabId) };
       const send = () => chrome.tabs.sendMessage(tabId, msg).catch(() => {});
       if (a.isEnded) return void send();
       chrome.scripting.executeScript({ target: { tabId }, files: ['overlay.js'] }).then(send, () => {});
@@ -171,6 +171,7 @@ export class Hub {
     for (const a of this.all.values()) {
       a.shim.onTabRemoved(tabId);
       a.touched.delete(tabId);
+      a.cursorAt.delete(tabId);
     }
   }
 

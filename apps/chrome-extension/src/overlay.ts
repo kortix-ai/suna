@@ -1,5 +1,7 @@
 // Content script injected into tabs an attachment controls (protocol.md §7,
 // "Visible state"). Shadow DOM, pointer-events none except the control bar.
+import { clampPoint, glideMs, glidePoint, inside, typingPoint, type Point } from './cursor-path';
+
 declare const __TOKENS_CSS__: string;
 
 const HOST_ID = 'kortix-overlay-host';
@@ -8,8 +10,23 @@ const HOST_ID = 'kortix-overlay-host';
 const CURSOR_OUTLINE = '#fff';
 const CURSOR_SHADOW = 'rgb(0 0 0 / .3)';
 type Msg =
-  | { kortix: 'overlay'; on: boolean; paused: boolean; title: string }
+  | { kortix: 'overlay'; on: boolean; paused: boolean; title: string; cursor?: Point }
   | { kortix: 'cursor'; x?: number; y?: number; type?: string };
+
+/** A hidden cursor fades in where it starts, then glides. Keep in step with the `.cursor` opacity transition. */
+const FADE_MS = 160;
+/** The cursor rests on its target this long before the click lands, so the eye sees it arrive. */
+const ARRIVE_MS = 70;
+/** "Typing…" and "Scrolling…" go back to "Kortix" this long after the last key or scroll. */
+const LABEL_MS = 1200;
+/** A trusted input event this soon after an agent command is the agent's own. */
+const AGENT_EVENT_MS = 400;
+/** A page scroll this soon after the user's own wheel, touch, click or key is the user's. */
+const USER_SCROLL_MS = 1000;
+/** The page must move this far in one burst before the cursor says "Scrolling…": layout shifts nudge it too. */
+const SCROLL_PX = 32;
+const SCROLL_BURST_MS = 300;
+const LABEL = { idle: 'Kortix', typing: 'Typing…', scrolling: 'Scrolling…' };
 
 // tokens.css targets :root. Inside a shadow tree the host is the root, and a bare `:host:not()` is invalid CSS.
 const TOKENS = __TOKENS_CSS__
@@ -28,9 +45,10 @@ button { font: inherit; }
               inset 0 0 48px color-mix(in srgb, var(--kortix-base) 30%, transparent); }
 .glow.on { opacity: 1; }
 .glow.paused { opacity: .35; }
-.cursor { position: fixed; left: 0; top: 0; opacity: 0; transition: transform 160ms ease-out, opacity 200ms ease-out; will-change: transform; }
+.cursor { position: fixed; left: -2px; top: -1.5px; opacity: 0; transition: opacity ${FADE_MS}ms ease-out; will-change: transform; }
 .cursor.on { opacity: 1; }
-.cursor svg { display: block; filter: drop-shadow(0 1px 2px ${CURSOR_SHADOW}); }
+.cursor svg { display: block; filter: drop-shadow(0 1px 2px ${CURSOR_SHADOW}); transform-origin: 2px 1.5px; transition: transform 90ms ease-out; }
+.cursor.down svg { transform: scale(.85); }
 .label { position: absolute; left: 14px; top: 16px; padding: 1px 7px; border-radius: 999px; white-space: nowrap;
   background: var(--kortix-base); color: var(--sidebar-primary-foreground); font-size: var(--text-xs); line-height: 1.4; }
 .ripple { position: fixed; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%;
@@ -52,7 +70,7 @@ button:hover { background: var(--muted); }
 button.stop { background: var(--primary); color: var(--primary-foreground); }
 button.stop:hover { opacity: .9; }
 button:focus-visible { box-shadow: 0 0 0 1px var(--ring); }
-@media (prefers-reduced-motion: reduce) { .glow, .cursor, .ripple { transition: none !important; animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .glow, .cursor, .cursor svg, .ripple { transition: none !important; animation: none !important; } }
 `;
 
 function mount() {
@@ -69,7 +87,7 @@ function mount() {
     <div class="bar" role="region" aria-label="Kortix"><span class="dot"></span><span class="msg"></span>
       <button class="pause" type="button"></button><button class="stop" type="button" title="Stop (Alt+Shift+K)">Stop</button></div>`;
   const $ = <T extends Element>(s: string) => root.querySelector(s) as T;
-  const glow = $<HTMLElement>('.glow'), cursor = $<HTMLElement>('.cursor'), ripple = $<HTMLElement>('.ripple');
+  const glow = $<HTMLElement>('.glow'), cursor = $<HTMLElement>('.cursor'), ripple = $<HTMLElement>('.ripple'), label = $<HTMLElement>('.label');
   const bar = $<HTMLElement>('.bar'), msg = $<HTMLElement>('.msg'), pause = $<HTMLButtonElement>('.pause');
   $<HTMLButtonElement>('.stop').onclick = () => void chrome.runtime.sendMessage({ kortix: 'overlay-stop' });
   pause.onclick = () => void chrome.runtime.sendMessage({ kortix: 'overlay-pause' });
@@ -108,15 +126,137 @@ function mount() {
   addEventListener('scroll', dock, { capture: true, passive: true });
   addEventListener('resize', dock);
 
+  // ─── the agent cursor ──────────────────────────────────────────────────────
+  // It glides to each point the agent acts on, and the background holds the
+  // event until it arrives (shim.ts `pointer`): the user sees where the click
+  // or the text lands before it does.
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  // A background tab draws no frames and throttles timers: there the cursor jumps.
+  const instant = () => reduced.matches || document.visibilityState !== 'visible';
+  let at: Point | undefined;
+  let paused = false;
+  let finish: (() => void) | undefined; // ends the glide in flight at its target
+  let labelTimer: ReturnType<typeof setTimeout> | undefined;
+  let agentAt = -Infinity, userAt = -Infinity;
+
+  const draw = (p: Point) => {
+    at = p;
+    cursor.style.transform = `translate(${p.x}px, ${p.y}px)`;
+  };
+  const say = (what: 'typing' | 'scrolling') => {
+    label.textContent = LABEL[what];
+    clearTimeout(labelTimer);
+    labelTimer = setTimeout(() => (label.textContent = LABEL.idle), LABEL_MS);
+  };
+  /** Show the cursor where it was, else in the middle of the window. */
+  const appear = async () => {
+    if (!at) draw({ x: innerWidth / 2, y: innerHeight / 2 });
+    if (cursor.classList.contains('on')) return;
+    cursor.classList.add('on');
+    if (!instant()) await sleep(FADE_MS);
+  };
+  const glideTo = async (target: Point) => {
+    const to = clampPoint(target, innerWidth, innerHeight);
+    finish?.();
+    await appear();
+    const from = at!;
+    const ms = instant() ? 0 : glideMs(from, to);
+    if (!ms) return draw(to);
+    await new Promise<void>((resolve) => {
+      const t0 = performance.now();
+      const end = () => {
+        if (finish !== end) return;
+        finish = undefined;
+        clearTimeout(guard);
+        draw(to);
+        resolve();
+      };
+      // The tab can go to the background mid-glide and stop drawing frames: end on time anyway.
+      const guard = setTimeout(end, ms + 100);
+      const frame = (now: number) => {
+        if (finish !== end) return;
+        const t = (now - t0) / ms;
+        if (t >= 1) return end();
+        draw(glidePoint(from, to, t));
+        requestAnimationFrame(frame);
+      };
+      finish = end;
+      requestAnimationFrame(frame);
+    });
+    await sleep(ARRIVE_MS);
+  };
+  const focusedBox = () => {
+    let el = document.activeElement;
+    while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+    return el && el !== document.body && el !== document.documentElement ? el.getBoundingClientRect() : undefined;
+  };
+  const onCursor = async (m: Extract<Msg, { kortix: 'cursor' }>) => {
+    if (paused) return;
+    if (m.type === 'key') {
+      // Typing has no point: go to the field that has focus.
+      say('typing');
+      const box = focusedBox();
+      const to = box && typingPoint(box, innerWidth, innerHeight);
+      if (!to || (at && cursor.classList.contains('on') && inside(at, box))) return appear();
+      yieldBar(to.x, to.y);
+      return glideTo(to);
+    }
+    if (m.x === undefined || m.y === undefined) return;
+    yieldBar(m.x, m.y);
+    if (m.type === 'mouseWheel') say('scrolling');
+    await glideTo({ x: m.x, y: m.y });
+    if (m.type === 'mouseReleased') cursor.classList.remove('down');
+    if (m.type !== 'mousePressed') return;
+    cursor.classList.add('down');
+    ripple.style.left = `${at!.x}px`;
+    ripple.style.top = `${at!.y}px`;
+    ripple.classList.remove('go');
+    void ripple.offsetWidth; // restart the animation
+    ripple.classList.add('go');
+  };
+
+  // The agent also scrolls with page script (agent-browser `scroll`, `scrollintoview`),
+  // which sends no input event: a page scroll the user did not start shows on the cursor.
+  const onUserInput = (e: Event) => {
+    if (e.isTrusted && performance.now() - agentAt > AGENT_EVENT_MS) userAt = performance.now();
+  };
+  const USER_INPUT = ['wheel', 'touchmove', 'pointerdown', 'keydown'];
+  for (const t of USER_INPUT) addEventListener(t, onUserInput, { capture: true, passive: true });
+  let lastX = scrollX, lastY = scrollY, moved = 0, movedAt = 0;
+  const onScroll = (e: Event) => {
+    if (e.target !== document) return; // a box inside the page: carousels and tickers scroll by themselves
+    const now = performance.now();
+    if (now - movedAt > SCROLL_BURST_MS) moved = 0;
+    moved += Math.abs(scrollX - lastX) + Math.abs(scrollY - lastY);
+    movedAt = now;
+    lastX = scrollX;
+    lastY = scrollY;
+    if (paused || !bar.classList.contains('on') || now - userAt < USER_SCROLL_MS || moved < SCROLL_PX) return;
+    say('scrolling');
+    void appear();
+  };
+  addEventListener('scroll', onScroll, { capture: true, passive: true });
+
   const onMessage = (m: Msg, _sender: chrome.runtime.MessageSender, reply: (r?: unknown) => void) => {
     if (m?.kortix === 'overlay') {
       if (!m.on) {
         chrome.runtime.onMessage.removeListener(onMessage);
         clearInterval(dockTimer);
+        clearTimeout(labelTimer);
+        finish?.();
         removeEventListener('scroll', dock, true);
+        removeEventListener('scroll', onScroll, true);
+        for (const t of USER_INPUT) removeEventListener(t, onUserInput, true);
         removeEventListener('resize', dock);
         host.remove();
         return;
+      }
+      paused = m.paused;
+      // A page the agent just loaded: the cursor stays where it was on the last one.
+      if (m.cursor && !at) {
+        draw(clampPoint(m.cursor, innerWidth, innerHeight));
+        cursor.classList.add('on');
       }
       glow.classList.add('on');
       glow.classList.toggle('paused', m.paused);
@@ -126,17 +266,14 @@ function mount() {
       pause.textContent = m.paused ? 'Resume' : 'Take over';
       cursor.style.display = m.paused ? 'none' : '';
       dock();
-    } else if (m?.kortix === 'cursor' && m.x !== undefined && m.y !== undefined) {
-      yieldBar(m.x, m.y);
-      cursor.classList.add('on');
-      cursor.style.transform = `translate(${m.x}px, ${m.y}px)`;
-      if (m.type === 'mousePressed') {
-        ripple.style.left = `${m.x}px`;
-        ripple.style.top = `${m.y}px`;
-        ripple.classList.remove('go');
-        void ripple.offsetWidth; // restart the animation
-        ripple.classList.add('go');
-      }
+    } else if (m?.kortix === 'cursor') {
+      agentAt = performance.now();
+      // Answer when the cursor got there: the background holds the event until then.
+      void onCursor(m).finally(() => {
+        agentAt = performance.now();
+        reply(at && cursor.classList.contains('on') ? at : undefined);
+      });
+      return true;
     }
     reply();
   };
