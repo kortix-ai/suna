@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/kortix-vs-dify"
 ---
-Dify is one of the strongest open-source ways to build an LLM application, and Kortix, the open-source AI Operating System, keeps a company's agents, memory and connector rules in a repo a team reviews. Both tools self-host, and both take your model keys. What separates them is the unit of work: an application you compose and ship, or a workforce a company runs and governs.
+Dify is one of the strongest open-source ways to build an LLM application, and Kortix CompanyOS keeps a company's agents, memory and connector rules in a repo a team reviews. Both tools self-host, and both take your model keys. What separates them is the unit of work: an application you compose and ship, or a workforce a company runs and governs.
 
 ```logos
 label: 'Compared here:'

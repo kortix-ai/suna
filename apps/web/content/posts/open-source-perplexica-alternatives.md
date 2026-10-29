@@ -7,7 +7,7 @@ canonical: "https://kortix.com/blog/open-source-perplexica-alternatives"
 author: "team"
 tags: ["Comparisons"]
 ---
-Perplexica, now shipping as Vane, is a genuinely good open-source answer engine, and it stops at the answer. Kortix is the open-source AI Operating System for the step after it: agents that do the work an answer points at, reviewed before anything lands. This maps the open-source Perplexica alternatives, where each one runs, and the decision that settles the choice, which is whether you need an answer or the work that follows it.
+Perplexica, now shipping as Vane, is a genuinely good open-source answer engine, and it stops at the answer. Kortix is the open-source CompanyOS for the step after it: agents that do the work an answer points at, reviewed before anything lands. This maps the open-source Perplexica alternatives, where each one runs, and the decision that settles the choice, which is whether you need an answer or the work that follows it.
 
 ## What Perplexica is, and where the rename to Vane lands
 

@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-21"
 slug: "/kortix-vs-n8n"
 ---
-n8n is the canvas you reach for when the steps are already known, and Kortix is the open-source AI Operating System for the work that has no steps yet. Your agents, their skills, your company memory, and every connector live in one git repo you own, and each session runs on a cloud computer of its own. Either one can run on your own hardware, and n8n puts a person in the path with an approval step inside the flow. What separates them is the unit each one sells, a run of a drawn flow or a session you review, and that unit decides the bill long before the feature list does.
+n8n is the canvas you reach for when the steps are already known, and Kortix is the open-source CompanyOS for the work that has no steps yet. Your agents, their skills, your company memory, and every connector live in one git repo you own, and each session runs on a cloud computer of its own. Either one can run on your own hardware, and n8n puts a person in the path with an approval step inside the flow. What separates them is the unit each one sells, a run of a drawn flow or a session you review, and that unit decides the bill long before the feature list does.
 
 ```logos
 label: 'Compared here:'

@@ -73,5 +73,5 @@ The companies that win the next decade will not be the ones with the best model.
 
 ```cta
 title: Start building your learning loop today.
-body: Kortix is the open-source AI operating system where your company's knowledge compounds. Connect your tools, deploy an agent, and start accumulating your own token capital. Free to start, free to self-host.
+body: Kortix is the open-source CompanyOS where your company's knowledge compounds. Connect your tools, deploy an agent, and start accumulating your own token capital. Free to start, free to self-host.
 ```

@@ -11,12 +11,12 @@ import { Fragment } from 'react';
 
 /** The site's two halves: the product and the done-for-you service. */
 const sourceSITES = [
-  { id: 'os', label: 'AI OS', href: '/' },
+  { id: 'os', label: 'CompanyOS', href: '/' },
   { id: 'services', label: 'Services', href: '/services' },
 ] as const;
 
 /**
- * Two plain text links between the AI OS site and the /services sales page,
+ * Two plain text links between the CompanyOS site and the /services sales page,
  * split by a muted slash: the current half in ink, the other muted. No
  * segmented control: on marketing pages, links are text, never pills.
  * Sits next to the logo in both headers.

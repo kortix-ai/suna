@@ -17,7 +17,7 @@ import { EMAIL_COLORS as C, EMAIL_FONT_SANS, EMAIL_LAYOUT as L } from './brand-t
 
 // Colors and fonts come from the brand kit (brand-tokens.generated.ts). Rules:
 // .agents/skills/kortix-brand/references/verbal/voice-and-tone.md section 5.5.
-export const BRAND_FOOTER = 'Kortix — The open-source AI Operating System';
+export const BRAND_FOOTER = 'Kortix CompanyOS – the open-source operating system for your company';
 // The Brandmark PNG (the symbol) is 2000 x 1708. Outlook desktop ignores CSS
 // sizes and draws an <img> at its attribute size, so both attributes are set.
 const LOGO_HEIGHT = Math.round((L.logoWidth * 1708) / 2000);

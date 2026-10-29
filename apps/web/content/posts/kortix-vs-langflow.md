@@ -7,7 +7,7 @@ canonical: "https://kortix.com/blog/kortix-vs-langflow"
 author: "team"
 tags: ["Comparisons"]
 ---
-Langflow is the quickest way to get one AI flow onto a canvas, and Kortix is the open-source AI Operating System a company reaches for once it runs five. A year of flows leaves a team owning different things. A Langflow team keeps a JSON export per flow and the workspace database around them; a Kortix team keeps a repository it can read, diff and roll back.
+Langflow is the quickest way to get one AI flow onto a canvas, and Kortix is the open-source CompanyOS a company reaches for once it runs five. A year of flows leaves a team owning different things. A Langflow team keeps a JSON export per flow and the workspace database around them; a Kortix team keeps a repository it can read, diff and roll back.
 
 ```logos
 label: 'Compared here:'

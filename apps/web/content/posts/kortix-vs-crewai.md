@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/kortix-vs-crewai"
 ---
-CrewAI is a strong open-source Python framework for role-based agent teams, and Kortix is the open-source AI Operating System that ships the runtime a framework leaves to you. The library costs nothing and a first crew takes an afternoon. What it does not decide is who an agent may call, where memory lives once the process exits, or who signs off before the work reaches production. Those answers are the runtime, and the runtime is the part you choose.
+CrewAI is a strong open-source Python framework for role-based agent teams, and Kortix is the open-source CompanyOS that ships the runtime a framework leaves to you. The library costs nothing and a first crew takes an afternoon. What it does not decide is who an agent may call, where memory lives once the process exits, or who signs off before the work reaches production. Those answers are the runtime, and the runtime is the part you choose.
 
 ```logos
 label: 'Compared here:'

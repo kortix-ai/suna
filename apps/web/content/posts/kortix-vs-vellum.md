@@ -1,6 +1,6 @@
 ---
 title: "Kortix vs Vellum: the second colleague needs an open-source repo"
-description: "Vellum is a personal assistant one person shapes, its cloud closing 2 November 2026; Kortix is the open-source AI Operating System a team owns in a repo."
+description: "Vellum is a personal assistant one person shapes, its cloud closing 2 November 2026; Kortix is the open-source CompanyOS a team owns in a repo."
 date: "2026-10-14"
 canonical: "https://kortix.com/blog/kortix-vs-vellum"
 author: "team"
@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/kortix-vs-vellum"
 ---
-Vellum is a personal assistant that one person names and shapes, while Kortix is the open-source AI Operating System: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. Vellum's hosted platform closes on November 2nd, 2026, which leaves the comparison with two questions: who the assistant belongs to, and who keeps it running after that date ([Vellum](https://www.vellum.ai/vellum-assistant-platform-shutdown)).
+Vellum is a personal assistant that one person names and shapes, while Kortix is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. Vellum's hosted platform closes on November 2nd, 2026, which leaves the comparison with two questions: who the assistant belongs to, and who keeps it running after that date ([Vellum](https://www.vellum.ai/vellum-assistant-platform-shutdown)).
 
 ## What Vellum does well
 

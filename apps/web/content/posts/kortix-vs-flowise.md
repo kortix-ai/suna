@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/kortix-vs-flowise"
 ---
-Flowise turned an LLM app into a canvas of connected nodes, and Kortix is the open-source AI Operating System a team moves to when that canvas has been archived and nobody upstream is left to maintain it. The teams who built on it face a choice: keep a fork nobody patches, or move the work onto a system the company owns and can maintain. Kortix keeps its projects as git repositories, where the agents are markdown files and the manifest states what each one may reach.
+Flowise turned an LLM app into a canvas of connected nodes, and Kortix is the open-source CompanyOS a team moves to when that canvas has been archived and nobody upstream is left to maintain it. The teams who built on it face a choice: keep a fork nobody patches, or move the work onto a system the company owns and can maintain. Kortix keeps its projects as git repositories, where the agents are markdown files and the manifest states what each one may reach.
 
 ```logos
 label: 'Compared here:'
@@ -79,7 +79,7 @@ rows:
     lean: both
   - dimension: What it is
     them: "A visual editor for LLM apps and flows"
-    kortix: "An AI Operating System agents run on"
+    kortix: "A CompanyOS agents run on"
   - dimension: Unit of work
     them: "A flow you draw and run"
     kortix: "A session on its own cloud computer"
