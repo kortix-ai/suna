@@ -603,8 +603,8 @@ async function handleTelegramCommandPress(
       target,
       project,
       settings: telegramSettings(target),
-      // The stored press keeps no chat names (telegramPressEvent): a row this press creates has none.
-      label: { name: null, type: message.chat.type },
+      // The stored press keeps no chat names (telegramPressEvent): a row this press creates asks Telegram.
+      label: { name: null, type: message.chat.type, lookupName: () => fetchTelegramChatName(token, message.chat.id) },
       createClaim: `telegram:threadcreate:${event.projectId}:${botId}:${target.threadId}`,
       questions: telegramQuestions,
     },
@@ -697,6 +697,12 @@ async function ensureTelegramButtons(token: string, projectId: string, botId: st
 /** What the Kortix Channels page calls a chat: its title, else the @username or the first name of a private chat. */
 function telegramChatName(chat: TelegramMessage['chat']): string | null {
   return chat.title || (chat.username ? `@${chat.username}` : chat.first_name) || null;
+}
+
+/** A chat's name from `getChat`, within 3 s. Null when Telegram does not answer or refuses: the row goes unnamed. */
+async function fetchTelegramChatName(token: string, chatId: number): Promise<string | null> {
+  const chat = await telegramCall<TelegramMessage['chat']>(token, 'getChat', { chat_id: chatId }, 3_000).catch(() => null);
+  return chat && telegramChatName(chat);
 }
 
 /**

@@ -80,8 +80,11 @@ export interface CommandContext {
   project: { projectId: string; accountId: string; name: string; metadata: unknown };
   /** The chat's settings row key. Telegram: the chat, so forum topics share it. */
   settings: SettingsChannel;
-  /** Stored on the settings row; the Kortix Channels page names the row by it. */
-  label: { name: string | null; type: string | null };
+  /**
+   * Stored on the settings row; the Kortix Channels page names the row by it. `lookupName`: asked
+   * once, when a command creates the row and `name` is null (a stored press keeps no names).
+   */
+  label: { name: string | null; type: string | null; lookupName?: () => Promise<string | null> };
   /** `ChannelMessage.keys.createClaim` of this conversation. */
   createClaim: string;
   /** Present: the platform shows the agent's questions, and /new clears their buttons. */

@@ -2471,6 +2471,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         calls.length = 0;
         await handleTelegramPress(tap(menu, 'Model One'));
         expect(calls.map((c) => [c.method, c.body.text ?? null])).toEqual([
+          ['getChat', null],
           ['answerCallbackQuery', null],
           ['editMessageText', 'Model for this chat set to cmd-m1. Messages you send after this reply use it.'],
         ]);
@@ -2481,18 +2482,20 @@ describe('Telegram commands — migrated PostgreSQL', () => {
 
     test('a model pick runs /model <id> and takes the buttons off; a second tap on that menu and a job retry are out of date', async () => {
       const spies = modelSpies();
+      chats.set('7105', { first_name: 'Synthetic chat' });
       try {
         await handleTelegramEvent(update('/model', ALLOWED, 7105));
         const menu = lastSent();
         calls.length = 0;
         const pick = tap(menu, 'Model One');
         await handleTelegramPress(pick);
-        expect(methods()).toEqual(['answerCallbackQuery', 'editMessageText']);
-        expect(calls[0]!.body).not.toHaveProperty('text');
-        expect(calls[1]!.body).toMatchObject({ chat_id: 7105, message_id: idOf(menu), reply_markup: { inline_keyboard: [] } });
-        const picked = String(calls[1]!.body.text);
-        // The stored press keeps no chat names, so the row has none.
-        expect(await settingsRow('7105')).toMatchObject({ projectId: PROJECT, model: 'cmd-m1', channelName: null, channelType: 'private' });
+        // The stored press keeps no chat names: the pick that creates the row asks Telegram for one.
+        expect(methods()).toEqual(['getChat', 'answerCallbackQuery', 'editMessageText']);
+        expect(calls[0]!.body).toEqual({ chat_id: 7105 });
+        expect(calls[1]!.body).not.toHaveProperty('text');
+        expect(calls[2]!.body).toMatchObject({ chat_id: 7105, message_id: idOf(menu), reply_markup: { inline_keyboard: [] } });
+        const picked = String(calls[2]!.body.text);
+        expect(await settingsRow('7105')).toMatchObject({ projectId: PROJECT, model: 'cmd-m1', channelName: 'Synthetic chat', channelType: 'private' });
         await handleTelegramEvent(update('/model cmd-m1', ALLOWED, 7106));
         expect(replies().at(-1)).toBe(picked);
 
@@ -2503,7 +2506,15 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         expect(methods()).toEqual(['answerCallbackQuery', 'answerCallbackQuery']);
         expect(calls.map((c) => c.body.text)).toEqual([OUT_OF_DATE, OUT_OF_DATE]);
         expect((await settingsRow('7105'))?.model).toBe('cmd-m1');
+
+        // The row has its name: a later pick asks Telegram nothing.
+        await handleTelegramEvent(update('/model', ALLOWED, 7105));
+        const again = lastSent();
+        calls.length = 0;
+        await handleTelegramPress(tap(again, '✓ Model One'));
+        expect(methods()).toEqual(['answerCallbackQuery', 'editMessageText']);
       } finally {
+        chats.delete('7105');
         restore(spies);
       }
     });
@@ -2529,6 +2540,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         calls.length = 0;
         await handleTelegramPress(tap(menu, 'More ›'));
         expect(calls.map((c) => [c.method, c.body.text ?? null])).toEqual([
+          ['getChat', null],
           ['answerCallbackQuery', null],
           ['editMessageText', 'Model for this chat set to cmd-m1. Messages you send after this reply use it.'],
           ['answerCallbackQuery', OUT_OF_DATE],
@@ -2548,8 +2560,11 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         expect(methods()).toEqual(['answerCallbackQuery']);
         expect(calls[0]!.body.text).toBe(OUT_OF_DATE);
         expect(await settingsRow('7107')).toBeUndefined();
+        // Telegram cannot name the chat: the pick still works, with no name.
+        chats.set('7107', 'fail');
         await handleTelegramPress(tap(menu, 'Model One'));
-        expect((await settingsRow('7107'))?.model).toBe('cmd-m1');
+        chats.delete('7107');
+        expect(await settingsRow('7107')).toMatchObject({ model: 'cmd-m1', channelName: null });
 
         await handleTelegramEvent(update('/model', ALLOWED, 7108));
         const shown = lastSent();
@@ -2584,8 +2599,8 @@ describe('Telegram commands — migrated PostgreSQL', () => {
 
         calls.length = 0;
         await handleTelegramPress(tap(menu, 'reviewer — Reviews changes'));
-        expect(methods()).toEqual(['answerCallbackQuery', 'editMessageText']);
-        expect(calls[1]!.body).toMatchObject({
+        expect(methods()).toEqual(['getChat', 'answerCallbackQuery', 'editMessageText']);
+        expect(calls[2]!.body).toMatchObject({
           text: 'Agent for this chat set to reviewer. Your next message starts a session with it.',
           reply_markup: { inline_keyboard: [] },
         });
@@ -2680,19 +2695,20 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     test('a forum topic gets its menu in the topic; a copy of the menu in another chat is out of date there and changes no chat', async () => {
       const spies = modelSpies();
       try {
+        chats.set('-1007120', { type: 'supergroup', title: 'Synthetic forum' });
         await handleTelegramEvent(topicUpdate('/model', -1007120));
         const menu = lastSent();
         expect(menu.body).toMatchObject({ chat_id: -1007120, message_thread_id: 5 });
         expect(keyboard(menu).length).toBeGreaterThan(0);
         calls.length = 0;
         await handleTelegramPress(tap(menu, 'Model One', { topic: 5 }));
-        expect(calls[1]!.body).toMatchObject({
+        expect(calls.at(-1)!.body).toMatchObject({
           chat_id: -1007120,
           message_id: idOf(menu),
           text: 'Model for this chat set to cmd-m1. It applies to the whole chat, every thread in it included. Messages you send after this reply use it.',
         });
         const group = await settingsRow('-1007120');
-        expect(group).toMatchObject({ model: 'cmd-m1', channelType: 'supergroup' });
+        expect(group).toMatchObject({ model: 'cmd-m1', channelName: 'Synthetic forum', channelType: 'supergroup' });
 
         // A forwarded copy is a new message in another chat: Kortix never sent it there.
         calls.length = 0;
@@ -2701,6 +2717,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         expect(await settingsRow('7121')).toBeUndefined();
         expect(await settingsRow('-1007120')).toEqual(group);
       } finally {
+        chats.delete('-1007120');
         restore(spies);
       }
     });
