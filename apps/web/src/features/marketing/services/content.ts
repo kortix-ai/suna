@@ -4,8 +4,8 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  * The /services sales page: AI Transformation, done for you, sold as one
  * flat monthly membership. The idea: we map
  * your company (what people do, how they work), unify your data, automate the
- * work and build your custom apps. A standalone page with its own shell;
- * the AI OS site and this page link through `SiteSwitcher`.
+ * work and build your custom apps. It shares the site navbar; the AI OS
+ * site and this page link through its `SiteSwitcher`.
  *
  * COMMERCIAL TERMS (founder, 2026-10-27, kortix-brand decisions.md D15):
  *  - The team is "we" / "our team". The roles (Deployment Strategists,
@@ -36,11 +36,11 @@ export const PRICE = { now: '$20,000', per: '/month' } as const;
 export const GUARANTEE = 'Not loving it in the first 2 weeks? Get 50% back, no questions asked.';
 
 export const hero = {
-  title: 'AI Transformation, done for you.',
-  titleMuted: 'We map your company, unify your data and build your apps.',
-  sub: 'Our team works inside your company, from strategy to shipped software, on Kortix. One flat monthly fee. You own every line.',
-  /** One quiet line under the buttons. */
-  terms: `${PRICE.now} a month, flat · Strategy and build, one team · Everything in a repo you own`,
+  title: 'AI adopted across your company.',
+  titleMuted: 'Built for you. Owned by you.',
+  sub: 'Our team maps how your company works, connects your data and ships the agents and apps that run it, on Kortix. Everything lives in a git repo you own.',
+  /** One quiet line under the buttons. The price waits for the pricing section. */
+  terms: 'Strategy and build, one team · One flat monthly fee · Everything in a repo you own',
   /** The logo row: products built on Kortix (case-studies/content.ts naming rules). */
   logosLabel: 'Built on Kortix',
   logos: [
@@ -54,6 +54,31 @@ export const hero = {
     { src: '/media/case-studies/wring.svg', alt: 'Wring', width: 74, height: 28 },
   ],
   logosLink: 'See the work',
+} as const;
+
+/** Why companies buy this: the gap between the mandate and the team. */
+export const problem = {
+  title: 'You have the mandate.',
+  titleMuted: 'Not the team to carry it out.',
+  items: [
+    {
+      id: 'pilots',
+      k: 'Pilots stay pilots',
+      v: 'A chatbot here, a trial there. None of it reaches the work people do every week.',
+    },
+    {
+      id: 'data',
+      k: 'The data is scattered',
+      v: 'Every team runs its own tools. No agent can work from facts that live in ten places.',
+    },
+    {
+      id: 'owner',
+      k: 'Nobody owns it',
+      v: 'A consultancy leaves a deck. An AI team of your own means hiring before anything ships.',
+    },
+  ],
+  answer:
+    'We do the whole job, inside your company: map the work, connect the data, ship the agents and apps, and train your team to run them.',
 } as const;
 
 /** We build on our own product. Claims: claims.md rows Source, Connectors, Hosting. */
@@ -80,35 +105,9 @@ export const intro = {
   body: 'Book an intro call with the team. We look at how your company works and pick the first function together.',
 } as const;
 
-/** How an engagement starts. No durations: none is set (ACCURACY). */
-export const onboarding = {
-  title: 'How it works.',
-  titleMuted: 'Join, map, ship. Then the next function.',
-  items: [
-    {
-      id: 'join',
-      n: '01',
-      k: 'Join',
-      v: 'One flat monthly membership. Book an intro call first if you want to meet the team.',
-    },
-    {
-      id: 'map',
-      n: '02',
-      k: 'We map your company',
-      v: 'We interview your leaders and the people who do the work, then write a ranked roadmap: what to automate first, second and third.',
-    },
-    {
-      id: 'ship',
-      n: '03',
-      k: 'We ship, function by function',
-      v: 'We unify the data, put agents on the work, build the apps and train the team. Then we move to the next function.',
-    },
-  ],
-} as const;
-
 export const stages = {
   title: 'What we do.',
-  titleMuted: 'Map, unify, automate, build, teach.',
+  titleMuted: 'Map, unify, automate, build, teach. One function at a time.',
   items: [
     {
       id: 'map',
@@ -250,49 +249,6 @@ export const compare = {
   ],
 } as const;
 
-export const benefits = {
-  title: 'Membership benefits.',
-  titleMuted: 'Why companies join instead of hiring.',
-  items: [
-    {
-      id: 'team',
-      icon: 'team',
-      k: 'Inside your company',
-      v: 'Our team works in your teams and your tools.',
-    },
-    {
-      id: 'flat',
-      icon: 'flat',
-      k: 'One flat fee',
-      v: 'One price every month. No day rates, no change orders.',
-    },
-    {
-      id: 'one-team',
-      icon: 'path',
-      k: 'Strategy to shipped software',
-      v: 'The people who map your company build its agents and apps.',
-    },
-    {
-      id: 'function',
-      icon: 'os',
-      k: 'Function by function',
-      v: 'We finish one function, then move to the next.',
-    },
-    {
-      id: 'own',
-      icon: 'repo',
-      k: 'You own all of it',
-      v: 'Every agent, skill and app lives in one git repo you own.',
-    },
-    {
-      id: 'trained',
-      icon: 'cloud',
-      k: 'Your team, trained',
-      v: 'Your people run it and build the next agents without us.',
-    },
-  ],
-} as const;
-
 export const pricing = {
   title: 'One membership.',
   titleMuted: 'Everything included.',
@@ -389,11 +345,10 @@ export function localizeMarketingContent(tMarketing: import('@/i18n/translator')
       platform,
       caseCta,
       intro,
-      onboarding,
+      problem,
       stages,
       functions,
       compare,
-      benefits,
       pricing,
       faq,
       closing,
