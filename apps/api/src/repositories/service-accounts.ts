@@ -122,9 +122,6 @@ export async function createServiceAccount(args: {
   return { ...mapRow(row), secret };
 }
 
-/** Auto-provisioned AGENT identities (agent_name set), for the policy
- *  principal picker — an admin binds a role to one to promote that agent to a
- *  standing teammate. Distinct from listServiceAccounts (human bearer SAs). */
 /** True when `serviceAccountId` is a service account of `accountId` that is active and not expired. */
 export async function isServiceAccountActive(accountId: string, serviceAccountId: string): Promise<boolean> {
   const [row] = await db
@@ -142,6 +139,9 @@ export async function isServiceAccountActive(accountId: string, serviceAccountId
   return Boolean(row);
 }
 
+/** Auto-provisioned AGENT identities (agent_name set), for the policy
+ *  principal picker — an admin binds a role to one to promote that agent to a
+ *  standing teammate. Distinct from listServiceAccounts (human bearer SAs). */
 export async function listAgentServiceAccounts(
   accountId: string,
 ): Promise<Array<{ serviceAccountId: string; name: string; projectId: string | null; agentName: string | null }>> {
