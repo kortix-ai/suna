@@ -113,6 +113,10 @@ const cases = [
   ['adapter to app, relative path', 'src/harness/pi/boot.ts', "import '../../app/server';", false],
   ['lib to the harness resolver, relative path', 'src/lib/config/config.ts', "import '../../harness/harness';", false],
 
+  // the image resize worker entrypoint: the photon wasm redirect and pi's worker only
+  ['image resize worker to the photon redirect', 'src/utils/image-resize-worker.ts', "import '@/harness/pi/images';", true],
+  ['image resize worker to another pi file', 'src/utils/image-resize-worker.ts', "import '@/harness/pi/runtime';", false],
+
   // tests reach what they exercise
   ['test to an adapter', 'src/__tests__/pi-harness.test.ts', "import '@/harness/open-code/boot';", true],
 ]
