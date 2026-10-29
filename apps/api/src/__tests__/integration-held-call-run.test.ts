@@ -282,6 +282,66 @@ describe('approve runs the held call once', () => {
     expect(providerHits).toBe(before + 1);
   });
 
+  test('a settle that fails after dispatch retries in-process; no failure text carries the output', async () => {
+    // A trigger fails the settle UPDATE the first `times` attempts. A sequence
+    // counts across the rolled-back transactions.
+    const failSettles = async (id: string, times: number) => {
+      await db.execute(sql.raw(`
+        drop sequence if exists kortix.test_settle_fail;
+        create sequence kortix.test_settle_fail;
+        create or replace function kortix.test_settle_fail() returns trigger language plpgsql as $$
+        begin
+          if new.execution_id = '${id}' and old.state = 'dispatched' and nextval('kortix.test_settle_fail') <= ${times} then
+            raise exception 'forced settle failure' using errcode = '40001';
+          end if;
+          return new;
+        end $$;
+        drop trigger if exists test_settle_fail on kortix.connector_held_calls;
+        create trigger test_settle_fail before update on kortix.connector_held_calls
+          for each row execute function kortix.test_settle_fail();`));
+    };
+    const dropTrigger = () =>
+      db.execute(sql.raw(`drop trigger if exists test_settle_fail on kortix.connector_held_calls;
+        drop function if exists kortix.test_settle_fail(); drop sequence if exists kortix.test_settle_fail;`));
+    const { logger } = await import('../lib/logger');
+    const logged: string[] = [];
+    const { warn, error } = logger;
+    logger.warn = (...args: Parameters<typeof logger.warn>) => { logged.push(JSON.stringify(args)); };
+    logger.error = (...args: Parameters<typeof logger.error>) => { logged.push(JSON.stringify(args)); };
+    try {
+      // Fails once, then succeeds: the outcome persists, the provider ran once.
+      const once = await gate({ amount: 2101 });
+      await decide(once, 'approve');
+      await failSettles(once, 1);
+      const before = providerHits;
+      await run(once);
+      expect(providerHits).toBe(before + 1);
+      const row = await held(once);
+      expect(row).toMatchObject({ state: 'ok', inputEnc: null });
+      expect(String((row.outcome as Record<string, unknown>).output_preview)).toContain('ch_test_1');
+      expect(await resumes(`approval-run:${once}`)).toHaveLength(1);
+
+      // Fails every attempt: the job fails with a clean error, the row stays dispatched.
+      const always = await gate({ amount: 2102 });
+      await decide(always, 'approve');
+      await failSettles(always, 100);
+      await runJobBatch(4);
+      expect((await held(always)).state).toBe('dispatched');
+      const [job] = await db.select().from(jobQueue).where(and(eq(jobQueue.queue, HELD_CALL_QUEUE), eq(jobQueue.jobKey, always)));
+      expect(job.lastError).toContain('held call settle failed');
+      for (const text of [job.lastError ?? '', ...logged]) {
+        expect(text).not.toContain('ch_test_1');
+        expect(text).not.toContain('ran once');
+        expect(text).not.toContain('forced settle failure');
+      }
+      expect(logged.join('\n')).toContain('40001');
+    } finally {
+      logger.warn = warn;
+      logger.error = error;
+      await dropTrigger();
+    }
+  });
+
   test('two runs of one job call the provider once', async () => {
     const id = await gate({ amount: 202 });
     await decide(id, 'approve');

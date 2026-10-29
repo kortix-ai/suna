@@ -160,11 +160,34 @@ export async function runHeldCall(
       executionId,
       error: error instanceof Error ? error.name : 'unknown',
     });
-    await settle(row, 'dispatched', { status: 'unknown', reason: 'run_failed' }, lastRecorded);
+    await settleAfterDispatch(row, { status: 'unknown', reason: 'run_failed' }, lastRecorded);
     return;
   }
   const outcome = outcomeOf(result);
-  await settle(row, 'dispatched', outcome, result.status === 'pending_approval' ? null : lastRecorded);
+  await settleAfterDispatch(row, outcome, result.status === 'pending_approval' ? null : lastRecorded);
+}
+
+const SETTLE_ATTEMPTS = 3;
+
+/**
+ * The provider already ran: retry the settle in-process. A failed query's
+ * message carries its params (the output preview, the resume text), so the
+ * log and the thrown error name only the error class and the pg code. A row
+ * that stays `dispatched` settles `unknown` through the sweep.
+ */
+async function settleAfterDispatch(row: HeldRunRow, outcome: HeldRunOutcome, runExecutionId: string | null): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await settle(row, 'dispatched', outcome, runExecutionId);
+      return;
+    } catch (error) {
+      const name = error instanceof Error ? error.name : 'unknown';
+      const cause = error instanceof Error ? (error.cause as { code?: unknown } | undefined) : undefined;
+      const code = typeof cause?.code === 'string' ? cause.code : null;
+      logger.warn('[approvals] held call settle failed', { executionId: row.executionId, attempt, error: name, code });
+      if (attempt >= SETTLE_ATTEMPTS) throw new Error(`held call settle failed (${name}${code ? ` ${code}` : ''})`);
+    }
+  }
 }
 
 async function loadHeldRun(executionId: string): Promise<HeldRunRow | null> {
