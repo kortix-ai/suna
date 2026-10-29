@@ -682,6 +682,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "DELETE|v1|projects|:projectId|group-grants|:groupId",
   "PATCH|v1|projects|:projectId|group-grants|:groupId",
   "GET|v1|projects|:projectId|jwks.json",
+  "GET|v1|projects|:projectId|link-preview",
   "GET|v1|projects|:projectId|llm-catalog",
   "GET|v1|projects|:projectId|llm-catalog|providers",
   "POST|v1|projects|:projectId|manifest|validate",

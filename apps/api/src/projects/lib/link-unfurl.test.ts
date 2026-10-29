@@ -14,6 +14,8 @@ describe('parseLinkMeta', () => {
       title: 'Q4 & launch — ✓ "plan"',
       siteName: 'Northwind Docs',
       iconUrl: null,
+      description: null,
+      imageUrl: null,
     });
   });
 
@@ -22,9 +24,21 @@ describe('parseLinkMeta', () => {
       title: 'Acme pricing <2026>',
       siteName: null,
       iconUrl: null,
+      description: null,
+      imageUrl: null,
     });
-    expect(parseLinkMeta('', BASE)).toEqual({ title: null, siteName: null, iconUrl: null });
+    expect(parseLinkMeta('', BASE)).toEqual({ title: null, siteName: null, iconUrl: null, description: null, imageUrl: null });
     expect(parseLinkMeta('<title></title>', BASE).title).toBeNull();
+  });
+
+  test('og:description wins over description; og:image resolves against the page and must be https', () => {
+    const html = `<head><meta name="description" content="Plain">
+      <meta property="og:description" content="  Original   paintings &amp; prints. ">
+      <meta property="og:image" content="/art/cover.png"></head>`;
+    expect(parseLinkMeta(html, BASE)).toMatchObject({ description: 'Original paintings & prints.', imageUrl: 'https://northwind.example/art/cover.png' });
+    expect(parseLinkMeta('<meta name="description" content="Plain">', BASE).description).toBe('Plain');
+    expect(parseLinkMeta('<meta property="og:image" content="http://northwind.example/a.png">', BASE).imageUrl).toBeNull();
+    expect(parseLinkMeta('<meta property="og:image" content="javascript:alert(1)">', BASE).imageUrl).toBeNull();
   });
 
   test('a relative icon resolves against the page; rel=icon wins over apple-touch-icon', () => {
@@ -158,6 +172,8 @@ describe('fetchLinkMeta', () => {
       title: 'Acme',
       siteName: null,
       iconUrl: 'https://93.184.216.34/f.ico',
+      description: null,
+      imageUrl: null,
     });
     expect(headers!.get('user-agent')).toContain('KortixLinkPreview');
     expect(headers!.get('cookie')).toBeNull();
@@ -178,7 +194,7 @@ describe('fetchLinkMeta', () => {
   test('a page that is not HTML answers no title; a non-2xx answer fails', async () => {
     globalThis.fetch = (async () =>
       new Response('%PDF-1.7 <title>x</title>', { headers: { 'content-type': 'application/pdf' } })) as unknown as typeof fetch;
-    expect(await fetchLinkMeta('http://93.184.216.34/a.pdf')).toEqual({ title: null, siteName: null, iconUrl: null });
+    expect(await fetchLinkMeta('http://93.184.216.34/a.pdf')).toEqual({ title: null, siteName: null, iconUrl: null, description: null, imageUrl: null });
     globalThis.fetch = (async () => new Response('<title>Gone</title>', { status: 404, headers: { 'content-type': 'text/html' } })) as unknown as typeof fetch;
     await expect(fetchLinkMeta('http://93.184.216.34/gone')).rejects.toThrow('status 404');
   });

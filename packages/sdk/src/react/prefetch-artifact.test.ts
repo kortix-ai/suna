@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 
 import type { QueryClient } from "@tanstack/react-query";
 
-import { prefetchArtifact, seedSavedText } from "./use-artifacts";
+import { prefetchArtifact, seedCreatedArtifact, seedSavedText } from "./use-artifacts";
 import { qk } from "./query-keys";
 
 function client(detail: unknown) {
@@ -50,5 +50,18 @@ describe("seedSavedText", () => {
     seedSavedText(queryClient, "p1", { artifact_id: "a1", type: "doc", entry: "index.md", entry_version: "v8" }, { files: { "media/x.png": { content_base64: "AA==" } } });
 
     expect(setQueryData).not.toHaveBeenCalled();
+  });
+});
+
+describe("seedCreatedArtifact", () => {
+  test("a new doc: its detail and its Markdown are in the cache, so the viewer opens it without a request", () => {
+    const setQueryData = mock(() => undefined);
+    const queryClient = { setQueryData } as unknown as QueryClient;
+    const created = { artifact_id: "a1", type: "doc", entry: "index.md", entry_version: "v1", version: { id: null } };
+
+    seedCreatedArtifact(queryClient, "p1", created as never, { files: { "index.md": { content: "# Untitled\n" } } });
+
+    expect(setQueryData).toHaveBeenCalledWith(qk.project.artifact("p1", "a1", "current"), created);
+    expect(setQueryData).toHaveBeenCalledWith(qk.project.artifactText("p1", "a1", "v1"), "# Untitled\n");
   });
 });

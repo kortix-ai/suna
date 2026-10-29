@@ -185,6 +185,20 @@ export async function prefetchArtifact(queryClient: QueryClient, projectId: stri
   });
 }
 
+/**
+ * After a create: the new artifact's detail, and for a doc the Markdown just
+ * written, so navigating to it opens without a request.
+ */
+export function seedCreatedArtifact(
+  queryClient: QueryClient,
+  projectId: string,
+  created: ArtifactDetail,
+  input: Pick<PublishArtifactInput, 'files'>,
+): void {
+  queryClient.setQueryData(qk.project.artifact(projectId, created.artifact_id, 'current'), created);
+  seedSavedText(queryClient, projectId, created, input);
+}
+
 /** After a doc save: the Markdown just written is the text of the new entry version. */
 export function seedSavedText(
   queryClient: QueryClient,
@@ -222,7 +236,13 @@ export function useArtifactMutations(projectId: string) {
   const refresh = () => qc.invalidateQueries({ queryKey: qk.project.artifacts(projectId) });
   const opts = { onSuccess: refresh };
   return {
-    create: useMutation({ mutationFn: (input: PublishArtifactInput) => createArtifact(projectId, input), ...opts }),
+    create: useMutation({
+      mutationFn: (input: PublishArtifactInput) => createArtifact(projectId, input),
+      onSuccess: (created, input) => {
+        seedCreatedArtifact(qc, projectId, created, input);
+        return refresh();
+      },
+    }),
     share: useMutation({ mutationFn: (input: ShareArtifactPathInput) => shareArtifactPath(projectId, input), ...opts }),
     save: useMutation({
       mutationFn: ({ artifactId, ...input }: SaveArtifactInput & { artifactId: string }) => saveArtifact(projectId, artifactId, input),

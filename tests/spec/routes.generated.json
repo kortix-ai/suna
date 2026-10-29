@@ -2724,6 +2724,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/link-preview"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/llm-catalog"
     },
     {
