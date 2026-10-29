@@ -283,10 +283,10 @@ const envSchema = z.object({
   // Operator switch for the session-log restore (`POST …/sessions/:s/log/restore`, P6.1).
   // On by default. Off answers 503 and claims nothing: the box boots without a restore.
   SESSION_LOG_RESTORE_ENABLED: optBoolTrue,
-  // Default of the project flag `session_log_restore` for a project with no stored value. Off by
-  // default; dev turns it on in its deploy overrides (deploy-dev.yml). A project's stored value wins.
-  // Rollback: set it to "false" in the overrides. Removing the key keeps the running task's value.
-  SESSION_LOG_RESTORE_DEFAULT_ENABLED: optBoolFalse,
+  // Default of the project flag `session_log_restore` for a project with no stored value. On by
+  // default (2026-10-28). A project's stored value wins. Rollback: set it to "false" in the
+  // deployment's env (ECS overrides); removing the key keeps the running task's value.
+  SESSION_LOG_RESTORE_DEFAULT_ENABLED: optBoolTrue,
   // The largest restore the API answers (`POST …/log/restore`), in bytes: the live messages' stored
   // JSON lengths plus 2/5 of the session's live blob bytes (full texts, attachments; ~15x in the daemon,
   // 30 MB of images: +455 MB; `SESSION_LOG_BLOB_WEIGHT`). So 24 MiB allows 24 MiB of records or 60 MiB

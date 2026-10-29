@@ -56,6 +56,7 @@ provider, so neither service imports the other.
 | `src/lib/shutdown-state.ts` | shared | The process-wide "shutting down" flag. |
 | `src/types/` | shared | Types two modules need that may not import each other: `control-plane.ts` (`InitialTurnClaim`), `config-release.ts` (`ConfigReleaseReport`). Type declarations only. |
 | `src/extensions/codemode/worker.ts` | none (own lint layer) | The codemode sandbox worker: a second `bun build --compile` entrypoint (`scripts/build.sh`). pi starts it by this exact path in a compiled binary. It imports `@earendil-works/pi-codemode/worker` only. |
+| `src/utils/image-resize-worker.ts` | none (own lint layer) | pi's image resize worker: an extra `bun build --compile` entrypoint (`scripts/build.sh`). pi starts it by this exact path in a compiled binary. It imports the photon wasm redirect (`src/harness/pi/images.ts`) and pi's own worker module only. |
 | `src/__tests__/` | none | Tests. They may import anything they exercise. |
 
 ## Import rules

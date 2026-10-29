@@ -443,10 +443,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'session_log_restore',
     name: 'Session log restore',
     description:
-      'Rebuild a session from its saved session log when its computer lost the conversation. Not a Settings toggle: Kortix enables it per project, or for a whole deployment (on by default on dev).',
+      'Rebuild a session from its saved session log when its computer lost the conversation. Not a Settings toggle: on by default; Kortix turns it off per project, or for a whole deployment.',
     stability: 'experimental',
     available: () => true,
-    // Off unless the deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev does, 2026-10-15).
+    // On unless the deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED=false (on by default since 2026-10-28).
     platformDefault: () => config.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
     // Internal-only (2026-10-13): not a Settings toggle. A Kortix operator sets it per project
     // (PUT /v1/admin/api/projects/:id/features). While on, Settings lists it read-only.
@@ -457,8 +457,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(projects/lib/session-sandbox-env-build.ts). On, kortixd restores the harness native store ' +
       'from the session log at boot when the store is missing or behind the log ' +
       '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. The journal uploads ' +
-      'attachment bytes (P2.13), so a restore keeps images and files. On by default only where the ' +
-      'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
+      'attachment bytes (P2.13), so a restore keeps images and files. On by default; a deployment ' +
+      'turns the default off with SESSION_LOG_RESTORE_DEFAULT_ENABLED=false. A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
       '(24 MiB) answers 413 with what the model sees of it, else the newest turns, else the D3 note alone (harness/README.md).',
   },
   // `connectors_v2` graduated (2026-10-24): the Kortix catalog (MCP apps,
