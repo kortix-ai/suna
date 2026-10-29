@@ -330,14 +330,29 @@ const SWEEP_BATCH = 200;
 const HELD_INPUT_MAX_AGE_DAYS = 31;
 
 /**
+ * Settle a stuck run without running it: never decrypts, rebuilds a principal,
+ * fences or calls the provider. `dispatched` → `unknown/run_interrupted`;
+ * `queued` → `refused/run_window_passed`. The same settle as the job (state
+ * CAS, wipe, one `approval-run:` resume, audit event, card update).
+ */
+export async function settleStuckHeldCall(executionId: string): Promise<void> {
+  const row = await loadHeldRun(executionId);
+  if (row?.state === 'dispatched') {
+    await settle(row, 'dispatched', { status: 'unknown', reason: 'run_interrupted' }, null);
+  } else if (row?.state === 'queued') {
+    await settle(row, 'queued', { status: 'refused', reason: 'run_window_passed' }, null);
+  }
+}
+
+/**
  * The approval-expiry tick's backstop for held calls, in two steps.
  *
  *   1. A row stuck in the run: `dispatched` past the run ceiling, or `queued`
  *      past its run deadline, whose job is no longer queued (dead after its
- *      last attempt, or gone). `runHeldCall` settles it as the job would
- *      (`unknown` or `refused/run_window_passed`): it never runs the call,
- *      wipes the input, enqueues the one `approval-run:` resume and updates
- *      the card. A row older than 31 days settles even with a queued job.
+ *      last attempt, or gone). `settleStuckHeldCall` settles it (`unknown`
+ *      or `refused/run_window_passed`) and never runs the call. The row is
+ *      selected by database time only. A row older than 31 days settles
+ *      even with a queued job.
  *   2. Held input older than 31 days is wiped in every state; a `held` row
  *      also ends `cancelled`.
  *
@@ -371,7 +386,7 @@ export async function sweepHeldCalls(): Promise<number> {
     .limit(SWEEP_BATCH);
   for (const { id } of stuck) {
     try {
-      await runHeldCall(id);
+      await settleStuckHeldCall(id);
     } catch (error) {
       logger.warn('[approvals] stuck held call sweep failed', { executionId: id, error: String(error) });
     }

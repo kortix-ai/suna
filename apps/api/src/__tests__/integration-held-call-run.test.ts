@@ -9,7 +9,7 @@
  * count did not move. A gate without a held row (a dashboard JWT caller) keeps
  * the carry-over: approve, then repeat the call.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 import {
   type AgentGrant,
   accountMembers,
@@ -535,6 +535,30 @@ describe('the approval-expiry tick closes the held-call lifecycle', () => {
     const before = providerHits;
     await runApprovalExpiryTick();
     await runApprovalExpiryTick();
+    expect(providerHits).toBe(before);
+    const row = await held(id);
+    expect(row).toMatchObject({ state: 'refused', inputEnc: null });
+    expect(row.outcome).toMatchObject({ status: 'refused', reason: 'run_window_passed' });
+    expect(await resumes(`approval-run:${id}`)).toHaveLength(1);
+  });
+
+  test('the sweep never runs a call, even when the API clock is behind the database clock', async () => {
+    const id = await gate({ amount: 1209 });
+    await decide(id, 'approve');
+    await killJob(id);
+    // Past in database time (the sweep's selection), still ahead in the API clock below.
+    await db
+      .update(connectorHeldCalls)
+      .set({ runDeadline: sql`now() - interval '1 second'`, updatedAt: new Date() })
+      .where(eq(connectorHeldCalls.executionId, id));
+    const deadline = (await held(id)).runDeadline!;
+    const before = providerHits;
+    setSystemTime(new Date(deadline.getTime() - 60_000));
+    try {
+      await runApprovalExpiryTick();
+    } finally {
+      setSystemTime();
+    }
     expect(providerHits).toBe(before);
     const row = await held(id);
     expect(row).toMatchObject({ state: 'refused', inputEnc: null });
