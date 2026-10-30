@@ -91,7 +91,8 @@ describe('terminalToggle', () => {
     expect(terminalToggle(false, null)).toEqual({
       open: false,
       focus: null,
-      toast: 'Open a session first: the terminal runs inside its sandbox. Type /sessions or a prompt.',
+      toast:
+        'Open a session first: the terminal runs inside its sandbox. Type /sessions or a prompt.',
     });
   });
   test('with a session it opens and takes focus; a second press closes it back to the composer', () => {

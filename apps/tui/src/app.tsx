@@ -68,6 +68,7 @@ import { focusHints } from './features/session/session-view.tsx';
 import { Sidebar, type SidebarNavItem } from './features/sidebar/index.ts';
 import { kortix } from './kortix.ts';
 import { copyToClipboard } from './lib/clipboard.ts';
+import { demandMouse } from './lib/mouse-demand.ts';
 import { openUrl } from './lib/open-url.ts';
 import { writePrefs } from './lib/prefs.ts';
 import { type Tab, TabsBar } from './layout/tabs-bar.tsx';
@@ -391,6 +392,12 @@ export function App({
     renderer.setTerminalTitle(windowTitle);
   }, [renderer, ui.title.on, windowTitle]);
   useEffect(() => () => renderer.setTerminalTitle(''), [renderer]);
+
+  // The tabs and the sidebar are clickable: they take the mouse while they
+  // are on screen (`lib/mouse-demand.ts`). With neither, the terminal keeps
+  // its own selection and copy.
+  const clickable = ui.tabs.on || (ui.sidebar.on && dimensions.width >= SIDEBAR_MIN_COLUMNS);
+  useEffect(() => (clickable ? demandMouse(renderer) : undefined), [clickable, renderer]);
 
   // ── navigation ──────────────────────────────────────────────────────────
 
@@ -804,7 +811,12 @@ export function App({
   // "New session" tab), so the bar never prints an empty-state sentence.
   if (!sessionId && route === 'session') tabs.push({ sessionId: DRAFT_TAB, title: 'New session' });
   const tabsNode = tabsShown ? (
-    <TabsBar tabs={tabs} activeId={sessionId ?? DRAFT_TAB} width={dimensions.width} />
+    <TabsBar
+      tabs={tabs}
+      activeId={sessionId ?? DRAFT_TAB}
+      width={dimensions.width}
+      onPick={(id) => (id === DRAFT_TAB ? openDraft() : openSession(id))}
+    />
   ) : null;
   const mainWidth = Math.max(dimensions.width - (showSidebar ? SIDEBAR_WIDTH : 0), 20);
   const borderless = !showSidebar;

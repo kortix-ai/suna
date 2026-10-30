@@ -151,7 +151,8 @@ export function withDriveMounts(
         .filter((entry) => entry.type !== 'symlink')
         .map<TreeNode>((entry) => {
           const drivePath = entry.path.startsWith('/') ? entry.path : `/${entry.path}`;
-          const rest = subdir && drivePath.startsWith(subdir) ? drivePath.slice(subdir.length) : drivePath;
+          const rest =
+            subdir && drivePath.startsWith(subdir) ? drivePath.slice(subdir.length) : drivePath;
           return {
             name: entry.name || rest.slice(rest.lastIndexOf('/') + 1),
             path: `${mountRoot}${rest.startsWith('/') ? rest : `/${rest}`}`,

@@ -228,14 +228,23 @@ export function SidebarView({
     [selectableIds, onReachEnd],
   );
 
+  /** What Enter on a row does; a click on the row does the same. */
+  const openEntry = useCallback(
+    (id: EntryId | undefined, sessionId: string | null | undefined) => {
+      if (!id) return;
+      if (id === 'account') return onOpenAccountPicker();
+      if (id === 'project') return onOpenProjectPicker();
+      if (id === 'new') return onNewSession();
+      if (id.startsWith('nav:')) return onNavigate(id.slice(4));
+      if (sessionId) onOpenSession(sessionId);
+    },
+    [onOpenAccountPicker, onOpenProjectPicker, onNewSession, onNavigate, onOpenSession],
+  );
+
   const openCurrent = useCallback(() => {
-    if (!currentId) return;
-    if (currentId === 'account') return onOpenAccountPicker();
-    if (currentId === 'project') return onOpenProjectPicker();
-    if (currentId === 'new') return onNewSession();
-    if (currentId?.startsWith('nav:')) return onNavigate(currentId.slice(4));
-    if (currentSessionId) onOpenSession(currentSessionId);
+    openEntry(currentId, currentSessionId);
   }, [
+    openEntry,
     currentId,
     currentSessionId,
     onOpenAccountPicker,
@@ -394,6 +403,10 @@ export function SidebarView({
             key={entry.key}
             fg={isCursor || isOpenSession ? theme.fg : theme.dim}
             bg={isCursor ? theme.surface : undefined}
+            onMouseDown={() => {
+              if (entry.id) setCursorId(entry.id);
+              openEntry(entry.id, entry.sessionId);
+            }}
           >
             <span fg={theme.brand}>{mark}</span>
             <span fg={entry.glyphColor ?? theme.dim}>{body.slice(0, prefix)}</span>

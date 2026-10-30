@@ -41,7 +41,11 @@ export interface ArtifactRow {
   updatedMs: number;
 }
 
-export function toArtifactRow(artifact: ArtifactLike, webBaseUrl: string, projectId: string): ArtifactRow {
+export function toArtifactRow(
+  artifact: ArtifactLike,
+  webBaseUrl: string,
+  projectId: string,
+): ArtifactRow {
   const updated = Date.parse(artifact.updated_at);
   return {
     id: artifact.artifact_id,
@@ -110,6 +114,7 @@ export function unavailableReason(input: {
 }): string | null {
   if (!input.projectId) return 'No project selected. Pick a project to see its artifacts.';
   if (input.flagLoading) return null;
-  if (!input.flagEnabled) return 'Artifacts are off for this project. Turn on the `artifacts` flag.';
+  if (!input.flagEnabled)
+    return 'Artifacts are off for this project. Turn on the `artifacts` flag.';
   return null;
 }

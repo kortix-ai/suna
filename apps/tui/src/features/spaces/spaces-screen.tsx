@@ -158,7 +158,9 @@ export function SpacesScreen({
       void kortix()
         .projects.createSession(projectId, {
           space_id: space.space_id,
-          ...(space.kind === 'dm' && space.dm_agent_name ? { agent_name: space.dm_agent_name } : {}),
+          ...(space.kind === 'dm' && space.dm_agent_name
+            ? { agent_name: space.dm_agent_name }
+            : {}),
         })
         .then((created) => onOpenSession(created.session_id))
         .catch((error: unknown) => onToast(errorText(error), 'error'))

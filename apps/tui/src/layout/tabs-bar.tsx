@@ -23,6 +23,8 @@ export interface TabsBarProps {
   tabs: readonly Tab[];
   activeId: string | null;
   width: number;
+  /** A click on a tab. */
+  onPick?(sessionId: string): void;
 }
 
 export const TAB_MAX_WIDTH = 26;
@@ -48,7 +50,7 @@ export function tabLabel(index: number, title: string, width: number): string {
   return (text.length > room ? `${text.slice(0, room - 1)}…` : text).padEnd(width);
 }
 
-export function TabsBar({ tabs, activeId, width }: TabsBarProps) {
+export function TabsBar({ tabs, activeId, width, onPick }: TabsBarProps) {
   if (tabs.length === 0) {
     return (
       <box height={1} paddingLeft={1} flexShrink={0}>
@@ -76,6 +78,7 @@ export function TabsBar({ tabs, activeId, width }: TabsBarProps) {
             fg={active ? theme.fg : theme.dim}
             bg={active ? theme.surface : undefined}
             wrapMode="none"
+            onMouseDown={() => onPick?.(tab.sessionId)}
           >
             {active ? (
               <b>{tabLabel(index, tab.title, tabWidth)}</b>

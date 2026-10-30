@@ -30,7 +30,11 @@ export const ROOMS_KEYS: readonly RoomsBinding[] = [
   bind('members', [{ key: 'm' }], 'List the members of the open conversation.'),
   bind('browser', [{ key: 'o' }], 'Open the conversation in the browser.'),
   bind('refresh', [{ key: 'r' }], 'Reload the list or the messages.'),
-  bind('back', [{ key: 'escape' }], 'Close the members, close the conversation, or leave the screen.'),
+  bind(
+    'back',
+    [{ key: 'escape' }],
+    'Close the members, close the conversation, or leave the screen.',
+  ),
 ] as const;
 
 /** True when `event` matches any chord of the Rooms binding with this id. */

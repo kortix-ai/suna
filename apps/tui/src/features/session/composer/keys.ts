@@ -25,7 +25,7 @@
 
 import type { KeyEvent } from '@opentui/core';
 
-import { type Binding, type Chord, formatBinding } from '../../../keymap.ts';
+import { type Binding, type Chord, formatBinding, macOptionKey } from '../../../keymap.ts';
 
 function chord(key: string, modifiers: Omit<Chord, 'key'> = {}): Chord {
   return { key, ...modifiers };
@@ -116,6 +116,9 @@ function shiftIsSignificant(key: string): boolean {
 }
 
 export function matchesComposerChord(event: KeyEvent, target: Chord): boolean {
+  // A stock macOS terminal: Option+key arrives as a character (`µ` for M).
+  if (target.alt && !target.ctrl && !target.shift && macOptionKey(event) === target.key)
+    return true;
   if (!event.name) return false;
   const pressed = normalizeKey(event.name, Boolean(event.shift));
   const wanted = normalizeKey(target.key, Boolean(target.shift));

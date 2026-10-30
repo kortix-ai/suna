@@ -229,10 +229,22 @@ selection is on the clipboard. Nothing in the app needs a click. `kortix tui
 --mouse` (`KORTIX_TUI_MOUSE=1`) gives the mouse to the app instead, and
 then Shift+drag is the way to select natively in most terminals.
 
-One exception: while the Kortix symbol is on screen (the empty state), the
-app takes the mouse so a click on the symbol can start Game of Life from it
-(`/life` does the same from the keyboard). Shift+drag selects there; the
-mouse goes back to the terminal as soon as a session shows.
+Exceptions: the app takes the mouse while something on screen is clickable —
+the Kortix symbol in the empty state (a click starts Game of Life from it;
+`/life` does the same from the keyboard), the session tabs, and the sidebar.
+Shift+drag selects natively then. With none of them on screen (the default
+layout with a session open), the mouse is the terminal's again.
+
+### Alt on a Mac
+
+macOS terminals (Terminal.app, iTerm2, Ghostty) send Option+key as a symbol,
+not as Alt, unless "Use Option as Meta" / `macos-option-as-alt` is on. The TUI
+reads those symbols as Alt on a US layout: Option+B (`∫`) shows the sidebar,
+Option+T (`†`) the terminal, Option+[ / ] (`“` `‘`) switch tabs, and so on.
+Option+E, I, N and U are dead keys there and send nothing, so `/effort`,
+`/info` and `/account` are the way to those. Ctrl alternates exist where the
+input does not already use the key: `Ctrl+T` (terminal), `Ctrl+PageUp/PageDown`
+(tabs); the input keeps the emacs keys (`Ctrl+A/E/B/F/W/K/U/D`).
 
 ### Layout: `/ui`
 
@@ -240,15 +252,15 @@ Every region around the chat is a module, off until you turn it on:
 
 | Module | Command | Sides | What it shows |
 | --- | --- | --- | --- |
-| Header | `/header` | — | The session title and its state, above the transcript. |
-| Session tabs | `/tabs` | top, bottom | The sessions opened in this run. `Alt+[` / `Alt+]` switch, `/close` closes. |
-| Sidebar | `/sidebar`, `Alt+B` | left, right | Projects, every screen, the session list. |
-| Info panel | `/info`, `Alt+I` | right, left | Title, state, context tokens and % used, model, session, forwarded ports. |
-| Tray | `/tray` | — | One row under the input: host · project, model · agent. On by default. |
+| Header | `/header` | — | The session title, and its state while it is not ready. On by default. |
+| Tray | `/tray` | — | One row under the input: host · project, then model · agent · context used. On by default. |
 | Terminal title | `/title` | — | The terminal window's title follows the open session. On by default. |
+| Sidebar | `/sidebar`, `Alt+B` | left, right | Projects, every screen, the session list. Rows are clickable. |
+| Session tabs (experimental) | `/tabs` | top, bottom | The sessions opened in this run. Click a tab, or `Alt+[` / `Alt+]` (`Ctrl+PageUp/PageDown`); `/close` closes. |
+| Info panel (experimental) | `/info`, `Alt+I` | right, left | Title, state, context tokens and % used, model, session, forwarded ports. |
 
-`/ui` opens the picker above the input: three presets (Minimal, Focused,
-Full) and every module with its side. `Enter` toggles, `←`/`→` moves a module
+`/ui` opens the picker above the input: three presets (Minimal, Sidebar,
+Full (experimental)) and every module with its side. `Enter` toggles, `←`/`→` moves a module
 to its other side, and the screen behind the picker is the preview. The first
 start opens it as the welcome step; `Esc` there keeps Minimal. The choice is
 saved in `tui.json` (`{ "ui": …, "onboarded": true }`); the old
@@ -317,7 +329,7 @@ is `/feedback`.
 | `/header` | `/titlebar` | Panels: Show or hide the title row above the transcript. |
 | `/tray` | `/statusline` | Panels: Show or hide the row under the input. |
 | `/title` |  | Panels: Let the terminal window's title follow the session, or not. |
-| `/terminal` | `/shell` `Alt+t` | Panels: Open or close a shell in this session's sandbox. |
+| `/terminal` | `/shell` `Alt+t / Ctrl+t` | Panels: Open or close a shell in this session's sandbox. |
 | `/ports` | `Alt+p` | Panels: Forward sandbox ports to this machine. |
 | `/links` | `Alt+l` | Panels: Open a URL from the transcript or the terminal. |
 | `/files` | `Alt+f` | Screens: Browse this session's files. |
@@ -338,10 +350,11 @@ is `/feedback`.
 | `/account` | `/members` `/billing` `/usage` `Alt+u` | Screens: Members, invites, roles, credits. |
 | `/status` | `/doctor` `/whoami` | App: Host, account, project, session, runtime and version. |
 | `/feedback` | `/bug` | App: Report a bug or an idea on GitHub. |
+| `/life` |  | App: Play Conway's Game of Life from the Kortix symbol. Clicking the symbol does too. |
 | `/help` | `/keys` `/?` `?` | App: Show every command and key. |
 | `/quit` | `/exit` `/q` `Ctrl+c / Ctrl+q` | App: Leave the TUI. |
 
-_53 commands._
+_54 commands._
 
 ### Anywhere
 
@@ -353,11 +366,11 @@ _53 commands._
 | `Shift+Tab` | Focus the previous region. |
 | `Ctrl+p` | Pick a session above the input. Same as /sessions. |
 | `Ctrl+n` | Start a new session. Same as /new. |
-| `Alt+t` | Toggle the terminal panel. |
+| `Alt+t / Ctrl+t` | Toggle the terminal panel. |
 | `Alt+b` | Show or hide the sidebar. Same as /sidebar; the choice is remembered. |
 | `Alt+i` | Show or hide the info panel. Same as /info. |
-| `Alt+[` | Open the previous session tab. |
-| `Alt+]` | Open the next session tab. |
+| `Alt+[ / Ctrl+PgUp` | Open the previous session tab. |
+| `Alt+] / Ctrl+PgDn` | Open the next session tab. |
 | `Alt+l` | Open the Links panel: every URL in the transcript and on the terminal screen, wrapped ones rejoined. Enter opens one in the browser. |
 | `Alt+p` | Open the Ports panel: sandbox ports detected in output, and every local forward. |
 | `Alt+f` | Open the files screen. |

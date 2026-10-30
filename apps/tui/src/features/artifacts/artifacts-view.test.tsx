@@ -123,7 +123,10 @@ describe('artifactRowText', () => {
 
 describe('<ArtifactsView/>', () => {
   test('renders one row per artifact with the hint line', async () => {
-    const { captureCharFrame, flush, renderer } = await testRender(<ArtifactsView {...props()} />, SIZE);
+    const { captureCharFrame, flush, renderer } = await testRender(
+      <ArtifactsView {...props()} />,
+      SIZE,
+    );
     await settle(flush);
     const frame = captureCharFrame();
     expect(frame).toContain('Q3 plan');
@@ -299,8 +302,14 @@ describe('<ArtifactsView/>', () => {
       [{ rows: [] }, 'No artifacts yet'],
       [{ rows: [], loading: true }, 'loading artifacts'],
       [{ rows: [], errorMessage: '403 Forbidden' }, '403 Forbidden'],
-      [{ unavailable: 'Artifacts are off for this project. Turn on the `artifacts` flag.' }, 'Artifacts are off'],
-      [{ unavailable: 'No project selected. Pick a project to see its artifacts.' }, 'No project selected'],
+      [
+        { unavailable: 'Artifacts are off for this project. Turn on the `artifacts` flag.' },
+        'Artifacts are off',
+      ],
+      [
+        { unavailable: 'No project selected. Pick a project to see its artifacts.' },
+        'No project selected',
+      ],
     ];
     for (const [over, expected] of cases) {
       const { captureCharFrame, flush, renderer } = await testRender(

@@ -11,9 +11,13 @@ import {
 } from './ui-prefs.ts';
 
 describe('the layout', () => {
-  test('starts with everything off but the tray and the window title', () => {
+  test('starts with the title row, the tray and the window title; the rest is opt-in', () => {
     const on = MODULES.filter((spec) => DEFAULT_UI[spec.id].on).map((spec) => spec.id);
-    expect(on).toEqual(['tray', 'title']);
+    expect(on).toEqual(['header', 'tray', 'title']);
+    expect(MODULES.filter((spec) => spec.experimental).map((spec) => spec.id)).toEqual([
+      'tabs',
+      'info',
+    ]);
     expect(matchingPreset(DEFAULT_UI)).toBe('minimal');
   });
 
@@ -25,7 +29,7 @@ describe('the layout', () => {
     });
     expect(ui.info).toEqual({ on: true, side: 'right' });
     expect(ui.tabs).toEqual({ on: true, side: 'bottom' });
-    expect(ui.header).toEqual({ on: false });
+    expect(ui.header).toEqual({ on: true });
   });
 
   test('toggle and side cycle are pure', () => {
@@ -39,6 +43,6 @@ describe('the layout', () => {
 
   test('every preset is recognised as itself', () => {
     for (const preset of PRESETS) expect(matchingPreset(preset.ui)).toBe(preset.id);
-    expect(matchingPreset(toggleModule(DEFAULT_UI, 'header'))).toBeNull();
+    expect(matchingPreset(toggleModule(DEFAULT_UI, 'tabs'))).toBeNull();
   });
 });

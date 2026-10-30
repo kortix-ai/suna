@@ -83,8 +83,7 @@ export function loopRowText(row: LoopRow, now: number, width: number): string {
   const right = row.state === 'active' ? `next ${untilText(row.nextMs, now)}` : row.state;
   const scheduleRoom = Math.min(row.schedule.length, 22);
   const titleRoom = Math.max(width - 1 - 2 - scheduleRoom - 2 - right.length - 1, 8);
-  const title =
-    row.title.length > titleRoom ? `${row.title.slice(0, titleRoom - 1)}…` : row.title;
+  const title = row.title.length > titleRoom ? `${row.title.slice(0, titleRoom - 1)}…` : row.title;
   return layoutRow(
     `${stateOf(row).glyph} ${title.padEnd(titleRoom, ' ')}  ${row.schedule.slice(0, scheduleRoom)}`,
     right,
@@ -217,7 +216,12 @@ export function LoopsView({
   const bodyWidth = Math.max(width - 1, 0);
 
   if (mode === 'create') {
-    const line = (name: 'prompt' | 'schedule', label: string, value: string, placeholder: string) => (
+    const line = (
+      name: 'prompt' | 'schedule',
+      label: string,
+      value: string,
+      placeholder: string,
+    ) => (
       <text fg={field === name ? theme.fg : theme.dim}>
         <span fg={theme.brand}>{field === name ? GLYPH.selected : ' '}</span>
         <span fg={theme.faint}>{label.padEnd(LABEL_WIDTH - 1, ' ')}</span>
@@ -251,7 +255,9 @@ export function LoopsView({
               : 'never'
           }
         />
-        {current.lastError ? <Field label="Error" value={current.lastError} fg={theme.danger} /> : null}
+        {current.lastError ? (
+          <Field label="Error" value={current.lastError} fg={theme.danger} />
+        ) : null}
         <Field label="Prompt" value={current.prompt} />
         <text fg={theme.faint}>Esc back</text>
       </box>
@@ -262,7 +268,8 @@ export function LoopsView({
   const rowsAvailable = Math.max(height - (confirming ? 3 : 0) - (busyMessage ? 1 : 0) - 1, 1);
   const start = windowStart(cursorIndex, rows.length, rowsAvailable);
   const visible = rows.slice(start, start + rowsAvailable);
-  const hints = 'n new · Space pause/resume · x run now · d delete · Enter details · r refresh · Esc back';
+  const hints =
+    'n new · Space pause/resume · x run now · d delete · Enter details · r refresh · Esc back';
 
   return (
     <box flexDirection="column" width={width}>
@@ -294,10 +301,14 @@ export function LoopsView({
       {!loading && !errorMessage && rows.length === 0 ? (
         <box flexDirection="column">
           <text fg={theme.fg}>No loops in this session</text>
-          <text fg={theme.faint}>A loop sends a prompt to this session on a schedule. Press n.</text>
+          <text fg={theme.faint}>
+            A loop sends a prompt to this session on a schedule. Press n.
+          </text>
         </box>
       ) : null}
-      {errorMessage ? <text fg={theme.danger}>{layoutRow(errorMessage, '', bodyWidth)}</text> : null}
+      {errorMessage ? (
+        <text fg={theme.danger}>{layoutRow(errorMessage, '', bodyWidth)}</text>
+      ) : null}
       {busyMessage ? <text fg={theme.faint}>{busyMessage}</text> : null}
       <text fg={theme.faint}>{layoutRow(hints, '', bodyWidth)}</text>
     </box>

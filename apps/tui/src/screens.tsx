@@ -165,7 +165,8 @@ export function Screen(props: ScreenProps) {
         />
       );
     case 'account':
-      if (!accountId) return <Missing text="No account on this host. Type /accounts to pick one." />;
+      if (!accountId)
+        return <Missing text="No account on this host. Type /accounts to pick one." />;
       return (
         <AccountScreen
           accountId={accountId}

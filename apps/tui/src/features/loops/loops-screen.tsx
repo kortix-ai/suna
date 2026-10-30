@@ -147,8 +147,7 @@ export function LoopsScreen({
   );
 
   const remove = useCallback(
-    (row: LoopRow) =>
-      run('deleting…', 'Loop deleted.', () => loops.remove.mutateAsync(row.id)),
+    (row: LoopRow) => run('deleting…', 'Loop deleted.', () => loops.remove.mutateAsync(row.id)),
     [loops.remove, run],
   );
 
@@ -164,7 +163,9 @@ export function LoopsScreen({
   if (!sessionId) return <text fg={theme.faint}>Open a session first.</text>;
   if (flag.isLoading) return <Spinner label="checking Loops" />;
   if (!flag.enabled) {
-    return <text fg={theme.faint}>Loops are off: the project's reminders feature is not enabled.</text>;
+    return (
+      <text fg={theme.faint}>Loops are off: the project's reminders feature is not enabled.</text>
+    );
   }
 
   return (

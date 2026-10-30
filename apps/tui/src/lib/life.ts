@@ -287,7 +287,8 @@ export function toBrailleRuns(grid: LifeGrid, previous?: LifeGrid): ToneRun[][] 
           const y = row * 4 + dy;
           if (x >= grid.width || y >= grid.height) continue;
           const value = grid.cells[y * grid.width + x] ?? 0;
-          if (value === 2 || (value && previous && !previous.cells[y * grid.width + x])) full = true;
+          if (value === 2 || (value && previous && !previous.cells[y * grid.width + x]))
+            full = true;
         }
       }
       const tone: ToneRun['tone'] = full ? 'full' : 'half';

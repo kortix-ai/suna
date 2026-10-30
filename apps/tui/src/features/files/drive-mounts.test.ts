@@ -136,8 +136,13 @@ describe('withDriveMounts', () => {
     expect(result).toEqual({ type: 'text', content: '# Notes\n' });
     expect(calls.driveRead).toEqual([['drv-1', '/Users/ana/notes.md']]);
     expect(calls.sandboxRead).toEqual([]);
-    await expect(loaders.readFile('/drives/other/x.md')).rejects.toThrow('not under a mounted Drive folder');
-    expect(await loaders.readFile('/workspace/README.md')).toEqual({ type: 'text', content: 'sandbox' });
+    await expect(loaders.readFile('/drives/other/x.md')).rejects.toThrow(
+      'not under a mounted Drive folder',
+    );
+    expect(await loaders.readFile('/workspace/README.md')).toEqual({
+      type: 'text',
+      content: 'sandbox',
+    });
   });
 
   test('no mounts: the sandbox loaders come back unchanged', () => {

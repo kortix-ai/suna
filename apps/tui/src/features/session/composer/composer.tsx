@@ -41,6 +41,7 @@ import type {
   RuntimeCommand,
 } from '../../../commands/registry.ts';
 import { copyToClipboard } from '../../../lib/clipboard.ts';
+import { contextModel, contextReading } from '../../../lib/context-usage.ts';
 import { theme } from '../../../theme.ts';
 import { lastReplyText, transcriptMarkdown } from '../transcript-export.ts';
 import { AgentPicker } from '../pickers/agent-picker.tsx';
@@ -285,6 +286,29 @@ export function Composer({
   if (queuedCount > 0) status.push(`${queuedCount} queued`);
   if (session.isSending) status.push('sending');
 
+  // Context in use, against the window of the model that answered last (or
+  // the picked one): the one reading the tray adds to model and agent.
+  const answeredBy = contextModel({ messages: messages as SessionLogMessage[] });
+  const windowModel = (session.models ?? []).find((entry) =>
+    session.picks.model
+      ? entry.providerID === session.picks.model.providerID &&
+        entry.modelID === session.picks.model.modelID
+      : answeredBy
+        ? entry.modelID === answeredBy.model &&
+          (entry.providerID === answeredBy.provider || entry.provider === answeredBy.provider)
+        : false,
+  );
+  const contextUse = contextReading(
+    { messages: messages as SessionLogMessage[] },
+    windowModel?.contextWindow && windowModel.contextWindow > 0 ? windowModel.contextWindow : null,
+  );
+  const contextLabel =
+    contextUse.percent !== null
+      ? `${contextUse.percent}% context`
+      : contextUse.tokens > 0
+        ? `${Math.round(contextUse.tokens / 1000)}k tokens`
+        : '';
+
   const pickerWidth = Math.max(Math.min(width, 72), 24);
   const seed = restore && (!hostSeed || restore.seq > hostSeed.seq) ? restore : hostSeed;
 
@@ -305,6 +329,20 @@ export function Composer({
         {selection.variant ? <span fg={theme.dim}>{`:${selection.variantLabel}`}</span> : null}
         <span fg={theme.faint}>{' · '}</span>
         <span fg={theme.dim}>{selection.agentLabel}</span>
+        {contextLabel ? <span fg={theme.faint}>{' · '}</span> : null}
+        {contextLabel ? (
+          <span
+            fg={
+              (contextUse.percent ?? 0) >= 85
+                ? theme.danger
+                : (contextUse.percent ?? 0) >= 70
+                  ? theme.busy
+                  : theme.dim
+            }
+          >
+            {contextLabel}
+          </span>
+        ) : null}
       </text>
     </box>
   );

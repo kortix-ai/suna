@@ -324,7 +324,8 @@ export function DriveScreen({
   const onDelete = useCallback(
     (row: DriveRow) => {
       if (!driveId) return;
-      if (viewer.kind !== 'empty' && 'path' in viewer && isUnder(viewer.path, row.path)) closeViewer();
+      if (viewer.kind !== 'empty' && 'path' in viewer && isUnder(viewer.path, row.path))
+        closeViewer();
       run('deleting…', async () => {
         await deleteDriveFile(driveId, row.path, { recursive: row.kind === 'dir' });
         return `Deleted ${row.name}.`;
@@ -341,7 +342,9 @@ export function DriveScreen({
         const info = await stat(local).catch(() => null);
         if (!info?.isFile()) throw new Error(`No file at ${local}.`);
         if (info.size > MAX_UPLOAD_BYTES) {
-          throw new Error(`${formatBytes(info.size)} is above the 64 MiB limit. Upload it in the web app.`);
+          throw new Error(
+            `${formatBytes(info.size)} is above the 64 MiB limit. Upload it in the web app.`,
+          );
         }
         const name = baseName(local);
         const target = joinDrivePath(folderPath, name);
@@ -445,7 +448,12 @@ export function DriveScreen({
     [driveId, dismiss, onToast],
   );
 
-  const crumb = list === 'conflicts' ? 'Conflicts' : list === 'places' ? 'Places' : crumbText(place, folderPath);
+  const crumb =
+    list === 'conflicts'
+      ? 'Conflicts'
+      : list === 'places'
+        ? 'Places'
+        : crumbText(place, folderPath);
   const loading =
     list === 'folder' ? folder.isLoading : list === 'conflicts' ? conflicts.isLoading : false;
   const listError =

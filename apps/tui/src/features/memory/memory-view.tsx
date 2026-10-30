@@ -224,9 +224,15 @@ export function MemoryView({
               )
             : ' '}
         </text>
-        <text flexShrink={0} fg={theme.border}>{'─'.repeat(bodyWidth)}</text>
+        <text flexShrink={0} fg={theme.border}>
+          {'─'.repeat(bodyWidth)}
+        </text>
         {pageLoading && !page ? <Spinner label="loading page" /> : null}
-        {pageError ? <text flexShrink={0} fg={theme.danger}>{layoutRow(pageError, '', bodyWidth)}</text> : null}
+        {pageError ? (
+          <text flexShrink={0} fg={theme.danger}>
+            {layoutRow(pageError, '', bodyWidth)}
+          </text>
+        ) : null}
         {page ? (
           <scrollbox
             ref={scrollRef}
@@ -239,11 +245,15 @@ export function MemoryView({
             {page.body.trim() ? (
               <TextPart text={page.body} streaming={false} width={bodyWidth} />
             ) : (
-              <text flexShrink={0} fg={theme.faint}>This page has no body.</text>
+              <text flexShrink={0} fg={theme.faint}>
+                This page has no body.
+              </text>
             )}
           </scrollbox>
         ) : null}
-        <text flexShrink={0} fg={theme.faint}>j/k scroll · Space page · g top · o open in browser · Esc back</text>
+        <text flexShrink={0} fg={theme.faint}>
+          j/k scroll · Space page · g top · o open in browser · Esc back
+        </text>
       </box>
     );
   }
@@ -297,7 +307,9 @@ export function MemoryView({
               : 'No memory pages yet. Agents and people add them as they work.'}
         </text>
       ) : null}
-      {errorMessage ? <text fg={theme.danger}>{layoutRow(errorMessage, '', bodyWidth)}</text> : null}
+      {errorMessage ? (
+        <text fg={theme.danger}>{layoutRow(errorMessage, '', bodyWidth)}</text>
+      ) : null}
       {rows.length > 0 || query ? <text fg={theme.faint}>{hints}</text> : null}
     </box>
   );

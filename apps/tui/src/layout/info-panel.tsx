@@ -25,33 +25,12 @@ import {
 import type { UseSessionResult } from '@kortix/sdk/react';
 import { useMemo } from 'react';
 
+import { contextReading } from '../lib/context-usage.ts';
 import { relativeAge } from '../lib/relative-time.ts';
 import { glyph, theme } from '../theme.ts';
 
 /** Columns the panel takes, its left or right rule included. */
 export const INFO_PANEL_WIDTH = 34;
-
-export interface ContextReading {
-  tokens: number;
-  /** The model's window, or null when no source knows it. */
-  limit: number | null;
-  /** 0–100, or null without a limit. */
-  percent: number | null;
-}
-
-/** Context in use for `thread`, against `limit`. */
-export function contextReading(
-  thread: Pick<SessionLogThread, 'messages'> | null | undefined,
-  limit: number | null,
-): ContextReading {
-  const message = thread
-    ? (sessionLogThreadMetrics(thread as SessionLogThread).context as SessionLogMessage | null)
-    : null;
-  const usage = message?.usage;
-  const tokens = usage ? usage.input + usage.output + usage.cache_read + usage.cache_write : 0;
-  const percent = limit && tokens > 0 ? Math.min(Math.round((tokens / limit) * 100), 100) : null;
-  return { tokens, limit, percent };
-}
 
 export interface InfoPanelProps {
   session: UseSessionResult;

@@ -312,12 +312,9 @@ export function SessionView({
     showHeader ? 1 : 0,
   );
 
-  const header = useMemo(() => {
-    const parts: string[] = [];
-    if (session.phase !== 'ready') parts.push(session.stage ?? session.phase);
-    if (session.agentName) parts.push(session.agentName);
-    return parts.join(' · ');
-  }, [session.phase, session.stage, session.agentName]);
+  // The header is the title and, only while the session is not ready, what it
+  // is doing. The agent and the model are the tray's — not printed twice.
+  const header = session.phase !== 'ready' ? (session.stage ?? session.phase) : '';
 
   const infoNode =
     infoShown && showSession ? (

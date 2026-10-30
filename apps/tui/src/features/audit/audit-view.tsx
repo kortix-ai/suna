@@ -58,7 +58,8 @@ function glyphOf(row: AuditRow): string {
  */
 export function auditRowText(row: AuditRow, now: number, width: number): string {
   const age = (relativeAge(row.atMs, now) || '—').padEnd(4, ' ');
-  const actor = row.actor.length > ACTOR_WIDTH ? `${row.actor.slice(0, ACTOR_WIDTH - 1)}…` : row.actor;
+  const actor =
+    row.actor.length > ACTOR_WIDTH ? `${row.actor.slice(0, ACTOR_WIDTH - 1)}…` : row.actor;
   return layoutRow(
     `${glyphOf(row)} ${age} ${actor.padEnd(ACTOR_WIDTH, ' ')} ${row.action}`,
     row.outcome,
@@ -235,10 +236,14 @@ export function AuditView({
       {loading && rows.length === 0 ? <Spinner label="loading audit" /> : null}
       {!loading && !errorMessage && shown.length === 0 ? (
         <text fg={theme.faint}>
-          {rows.length > 0 ? `No ${filter} events. Press f.` : 'No audit events in this session yet.'}
+          {rows.length > 0
+            ? `No ${filter} events. Press f.`
+            : 'No audit events in this session yet.'}
         </text>
       ) : null}
-      {errorMessage ? <text fg={theme.danger}>{layoutRow(errorMessage, '', bodyWidth)}</text> : null}
+      {errorMessage ? (
+        <text fg={theme.danger}>{layoutRow(errorMessage, '', bodyWidth)}</text>
+      ) : null}
       {note ? <text fg={theme.busy}>{note}</text> : null}
       {notice ? <text fg={theme.faint}>{notice}</text> : null}
       {busyMessage ? <text fg={theme.faint}>{busyMessage}</text> : null}

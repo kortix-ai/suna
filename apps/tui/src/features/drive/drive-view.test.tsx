@@ -31,7 +31,11 @@ const DRIVE: Pick<Drive, 'personalFolder' | 'sharedWithMe' | 'access'> = {
   access: 'manage',
 };
 
-function entry(path: string, type: DriveEntry['type'], extra: Partial<DriveEntry> = {}): DriveEntry {
+function entry(
+  path: string,
+  type: DriveEntry['type'],
+  extra: Partial<DriveEntry> = {},
+): DriveEntry {
   return {
     path,
     name: path.slice(path.lastIndexOf('/') + 1),
@@ -183,7 +187,9 @@ describe('drive-model', () => {
       'https://dev.kortix.com/projects/p1/drive?path=Company/Q3+plan',
     );
     expect(driveWebUrl(web, 'p1', '/', null)).toBe('https://dev.kortix.com/projects/p1/drive');
-    expect(featureFlagsWebUrl(web, 'p1')).toBe('https://dev.kortix.com/projects/p1/admin/feature-flags');
+    expect(featureFlagsWebUrl(web, 'p1')).toBe(
+      'https://dev.kortix.com/projects/p1/admin/feature-flags',
+    );
   });
 
   test('moveTarget: a name renames in place, a /path moves, junk is refused', () => {
@@ -203,7 +209,10 @@ describe('drive-model', () => {
 
 describe('<DriveView/> through the OpenTUI test renderer', () => {
   test('renders the crumb, folders first, sizes and the read-only marker', async () => {
-    const { captureCharFrame, flush, renderer } = await testRender(<DriveView {...props()} />, SIZE);
+    const { captureCharFrame, flush, renderer } = await testRender(
+      <DriveView {...props()} />,
+      SIZE,
+    );
     await flush();
     const lines = captureCharFrame().split('\n');
     expect(lines[0]).toContain('My files');
@@ -252,10 +261,18 @@ describe('<DriveView/> through the OpenTUI test renderer', () => {
 
   test('Places: the cursor skips headings and Enter opens a place', async () => {
     const opened: DriveRow[] = [];
-    const rows = placeRows(buildPlaces({ drive: DRIVE, rootEntries: ROOT_ENTRIES, sessionMounts: MOUNTS }));
+    const rows = placeRows(
+      buildPlaces({ drive: DRIVE, rootEntries: ROOT_ENTRIES, sessionMounts: MOUNTS }),
+    );
     const { captureCharFrame, flush, mockInput, renderer } = await testRender(
       <DriveView
-        {...props({ list: 'places', crumb: 'Places', rows, locationKey: 'places', onOpen: (row) => opened.push(row) })}
+        {...props({
+          list: 'places',
+          crumb: 'Places',
+          rows,
+          locationKey: 'places',
+          onOpen: (row) => opened.push(row),
+        })}
       />,
       SIZE,
     );

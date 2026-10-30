@@ -19,7 +19,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { copyToClipboard } from '../../lib/clipboard.ts';
 import { openUrl } from '../../lib/open-url.ts';
-import { type ArtifactRow, orderRows, toArtifactRow, unavailableReason } from './artifacts-model.ts';
+import {
+  type ArtifactRow,
+  orderRows,
+  toArtifactRow,
+  unavailableReason,
+} from './artifacts-model.ts';
 import { type ArtifactDetailData, ArtifactsView } from './artifacts-view.tsx';
 
 /** How often the age column is recomputed. A minute is its smallest unit. */
@@ -149,7 +154,11 @@ export function ArtifactsScreen({
       }}
       onRefresh={refresh}
       onRename={(row, title) =>
-        run('renaming…', mutations.update.mutateAsync({ artifactId: row.id, title }), `Renamed to ${title}.`)
+        run(
+          'renaming…',
+          mutations.update.mutateAsync({ artifactId: row.id, title }),
+          `Renamed to ${title}.`,
+        )
       }
       onPin={(row) =>
         run(

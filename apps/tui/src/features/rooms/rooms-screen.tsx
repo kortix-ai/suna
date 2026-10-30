@@ -127,7 +127,8 @@ export function RoomsScreen({
     [thread.data],
   );
   const members = useMemo(
-    () => (room.data as (Room & { members?: RoomMember[] }) | undefined)?.members?.map(memberRow) ?? [],
+    () =>
+      (room.data as (Room & { members?: RoomMember[] }) | undefined)?.members?.map(memberRow) ?? [],
     [room.data],
   );
 
@@ -151,7 +152,9 @@ export function RoomsScreen({
   if (!projectId) return <text fg={theme.faint}>No project selected.</text>;
   if (flag.isLoading) return <Spinner label="checking Rooms" />;
   if (!flag.enabled) {
-    return <text fg={theme.faint}>Rooms are off: the project's agent_rooms feature is not enabled.</text>;
+    return (
+      <text fg={theme.faint}>Rooms are off: the project's agent_rooms feature is not enabled.</text>
+    );
   }
 
   return (

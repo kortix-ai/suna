@@ -30,12 +30,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { openUrl } from '../../lib/open-url.ts';
 import { theme } from '../../theme.ts';
 import { Spinner } from '../../ui/index.ts';
-import {
-  MIN_QUERY,
-  type MemoryPageDetail,
-  type MemoryRow,
-  MemoryView,
-} from './memory-view.tsx';
+import { MIN_QUERY, type MemoryPageDetail, type MemoryRow, MemoryView } from './memory-view.tsx';
 
 export interface MemoryScreenProps {
   projectId: string | null;

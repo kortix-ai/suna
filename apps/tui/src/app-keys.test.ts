@@ -233,3 +233,28 @@ describe('sidebar toggle and the Links panel', () => {
     expect(globalKeyAction(key('l', { meta: true }), state({ overlay: 'help' }))).toBeNull();
   });
 });
+
+describe('macOS Option keys (no "Option as Meta" setting)', () => {
+  test('Option+B, Option+T, Option+P, Option+[ and Option+] reach their Alt bindings', () => {
+    const base = state({ focus: 'composer' });
+    expect(globalKeyAction(key('∫'), base)).toEqual({ kind: 'toggle-sidebar' });
+    expect(globalKeyAction(key('†'), base)).toEqual({ kind: 'toggle-terminal' });
+    expect(globalKeyAction(key('π'), base)).toEqual({ kind: 'overlay', overlay: 'ports' });
+    expect(globalKeyAction(key('“'), base)).toEqual({ kind: 'tab', step: -1 });
+    expect(globalKeyAction(key('‘'), base)).toEqual({ kind: 'tab', step: 1 });
+  });
+
+  test('a plain letter is still a letter', () => {
+    expect(globalKeyAction(key('b'), state({ focus: 'composer' }))).toBeNull();
+  });
+
+  test('Ctrl alternates: Ctrl+T for the terminal, Ctrl+PageUp/PageDown for tabs', () => {
+    const base = state({ focus: 'composer' });
+    expect(globalKeyAction(key('t', { ctrl: true }), base)).toEqual({ kind: 'toggle-terminal' });
+    expect(globalKeyAction(key('pageup', { ctrl: true }), base)).toEqual({ kind: 'tab', step: -1 });
+    expect(globalKeyAction(key('pagedown', { ctrl: true }), base)).toEqual({
+      kind: 'tab',
+      step: 1,
+    });
+  });
+});

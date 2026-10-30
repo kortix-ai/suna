@@ -37,7 +37,14 @@ function rows(): MemoryRow[] {
       updatedMs: NOW - 30 * HOUR,
       layer: null,
     },
-    { id: 'p3', title: 'Notes', type: 'note', summary: '', updatedMs: NOW - 50 * HOUR, layer: null },
+    {
+      id: 'p3',
+      title: 'Notes',
+      type: 'note',
+      summary: '',
+      updatedMs: NOW - 50 * HOUR,
+      layer: null,
+    },
   ];
 }
 

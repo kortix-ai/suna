@@ -101,11 +101,21 @@ export interface PlacesInput {
  * `/Users` is the per-person tree, not a team folder. Same filter as the web's
  * `useDriveLocation`.
  */
-export function buildPlaces({ drive, rootEntries = [], sessionMounts = [] }: PlacesInput): DrivePlace[] {
+export function buildPlaces({
+  drive,
+  rootEntries = [],
+  sessionMounts = [],
+}: PlacesInput): DrivePlace[] {
   const places: DrivePlace[] = [];
   const personal = drive.personalFolder ? normalizeDrivePath(drive.personalFolder) : null;
   if (personal) {
-    places.push({ id: `mine:${personal}`, kind: 'mine', label: 'My files', root: personal, meta: 'only you' });
+    places.push({
+      id: `mine:${personal}`,
+      kind: 'mine',
+      label: 'My files',
+      root: personal,
+      meta: 'only you',
+    });
   }
   for (const shared of drive.sharedWithMe ?? []) {
     const root = normalizeDrivePath(shared.path);
@@ -195,7 +205,13 @@ export function placeRows(places: readonly DrivePlace[], teamFoldersLoading = fa
     const group = places.filter((place) => place.kind === kind);
     if (group.length === 0 && kind !== 'team') continue;
     if (kind !== 'mine') {
-      rows.push({ id: `heading:${kind}`, kind: 'heading', name: SECTION_TITLE[kind], path: '', meta: '' });
+      rows.push({
+        id: `heading:${kind}`,
+        kind: 'heading',
+        name: SECTION_TITLE[kind],
+        path: '',
+        meta: '',
+      });
     }
     if (group.length === 0) {
       rows.push({
@@ -207,7 +223,13 @@ export function placeRows(places: readonly DrivePlace[], teamFoldersLoading = fa
       });
     }
     for (const place of group) {
-      rows.push({ id: place.id, kind: 'place', name: place.label, path: place.root, meta: place.meta });
+      rows.push({
+        id: place.id,
+        kind: 'place',
+        name: place.label,
+        path: place.root,
+        meta: place.meta,
+      });
     }
   }
   return rows;
@@ -298,7 +320,10 @@ export function driveWebUrl(
         : abs.slice(1);
   }
   if (!param) return base;
-  const query = new URLSearchParams({ path: param }).toString().replace(/%2F/gi, '/').replace(/%7E/gi, '~');
+  const query = new URLSearchParams({ path: param })
+    .toString()
+    .replace(/%2F/gi, '/')
+    .replace(/%7E/gi, '~');
   return `${base}?${query}`;
 }
 
@@ -314,7 +339,9 @@ export function featureFlagsWebUrl(webBaseUrl: string, projectId: string): strin
 export function moveTarget(from: string, input: string): string | null {
   const value = input.trim();
   if (!value) return null;
-  const to = value.includes('/') ? normalizeDrivePath(value) : joinDrivePath(parentDrivePath(from), value);
+  const to = value.includes('/')
+    ? normalizeDrivePath(value)
+    : joinDrivePath(parentDrivePath(from), value);
   if (to.split('/').some((segment) => segment === '.' || segment === '..')) return null;
   if (to === normalizeDrivePath(from) || to === '/') return null;
   return to;

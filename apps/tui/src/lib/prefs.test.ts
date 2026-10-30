@@ -21,7 +21,7 @@ describe('tui.json', () => {
     expect(prefsPath({ KORTIX_CONFIG_FILE: '/x/kortix/config.json' })).toBe('/x/kortix/tui.json');
   });
 
-  test('missing or corrupt reads as the defaults: only the tray and the title, not onboarded', () => {
+  test('missing or corrupt reads as the defaults: header, tray and title, not onboarded', () => {
     const dir = scratch();
     expect(readPrefs(join(dir, 'none.json'))).toEqual(DEFAULT_PREFS);
     writeFileSync(join(dir, 'bad.json'), '{not json');

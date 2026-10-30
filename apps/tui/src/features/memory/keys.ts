@@ -16,11 +16,12 @@ export type MemoryKeyScope = KeyScope | 'memory';
 
 export type MemoryBinding = Omit<Binding, 'scope'> & { scope: MemoryKeyScope };
 
-const bind = (
-  id: string,
-  chords: Binding['chords'],
-  description: string,
-): MemoryBinding => ({ id: `memory.${id}`, scope: 'memory', chords, description });
+const bind = (id: string, chords: Binding['chords'], description: string): MemoryBinding => ({
+  id: `memory.${id}`,
+  scope: 'memory',
+  chords,
+  description,
+});
 
 export const MEMORY_KEYS: readonly MemoryBinding[] = [
   bind('down', [{ key: 'j' }, { key: 'down' }], 'Move down. In a page: scroll down.'),

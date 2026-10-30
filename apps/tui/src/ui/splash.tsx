@@ -45,6 +45,7 @@ import {
   toBrailleRuns,
   toQuadrantRuns,
 } from '../lib/life.ts';
+import { demandMouse } from '../lib/mouse-demand.ts';
 import { theme } from '../theme.ts';
 
 export interface SplashLine {
@@ -259,7 +260,14 @@ function advance(run: LifeRun): LifeRun | null {
     // Stagnant before the cap: sprinkle 1 % of the cells, as the web page
     // does, and keep going. The rule itself never changes.
     const fresh = sprinkle(grid, SPRINKLE_FRACTION);
-    return { ...run, previous: run.grid, grid: fresh, history: [snapshot(fresh)], generation, frame: 0 };
+    return {
+      ...run,
+      previous: run.grid,
+      grid: fresh,
+      history: [snapshot(fresh)],
+      generation,
+      frame: 0,
+    };
   }
   return { ...run, previous: run.grid, grid, history, generation, phase: 'run', frame: 0 };
 }
@@ -268,7 +276,13 @@ function advance(run: LifeRun): LifeRun | null {
  * During a wipe, whether a symbol character already shows as dots: a diagonal
  * sweep from the top-left. `progress` 0 is all blocks, 1 is all dots.
  */
-export function wiped(cx: number, cy: number, cols: number, rows: number, progress: number): boolean {
+export function wiped(
+  cx: number,
+  cy: number,
+  cols: number,
+  rows: number,
+  progress: number,
+): boolean {
   return (cx + cy * 2) / (cols + rows * 2) < progress;
 }
 
@@ -321,13 +335,7 @@ function mergeWipe(
 /** Keep the mouse on while mounted; restore exactly the previous value. */
 function useSplashMouse() {
   const renderer = useRenderer();
-  useEffect(() => {
-    const previous = renderer.useMouse;
-    if (!previous) renderer.useMouse = true;
-    return () => {
-      if (renderer.useMouse !== previous) renderer.useMouse = previous;
-    };
-  }, [renderer]);
+  useEffect(() => demandMouse(renderer), [renderer]);
 }
 
 export function Splash({

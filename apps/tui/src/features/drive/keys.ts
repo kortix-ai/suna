@@ -36,7 +36,12 @@ export const DRIVE_KEYS: readonly DriveBinding[] = [
     chords: [{ key: 'k' }, { key: 'up' }],
     description: 'Move up.',
   },
-  { id: 'drive.first', scope: 'drive', chords: [{ key: 'g' }], description: 'Go to the first row.' },
+  {
+    id: 'drive.first',
+    scope: 'drive',
+    chords: [{ key: 'g' }],
+    description: 'Go to the first row.',
+  },
   { id: 'drive.last', scope: 'drive', chords: [{ key: 'G' }], description: 'Go to the last row.' },
   {
     id: 'drive.open',

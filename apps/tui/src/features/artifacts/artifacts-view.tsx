@@ -155,7 +155,10 @@ export function ArtifactsView({
     }
 
     if (mode === 'confirm-delete') {
-      if (matchesArtifactsBinding(key, 'artifacts.back') || matchesArtifactsBinding(key, 'artifacts.deny'))
+      if (
+        matchesArtifactsBinding(key, 'artifacts.back') ||
+        matchesArtifactsBinding(key, 'artifacts.deny')
+      )
         return setMode('browse');
       if (matchesArtifactsBinding(key, 'artifacts.confirm')) {
         const target = current;
@@ -170,8 +173,10 @@ export function ArtifactsView({
       if (filter) return setFilter('');
       return onBack();
     }
-    if (matchesArtifactsBinding(key, 'artifacts.open')) return current ? onOpenWeb(current) : undefined;
-    if (matchesArtifactsBinding(key, 'artifacts.copy')) return current ? onCopyLink(current) : undefined;
+    if (matchesArtifactsBinding(key, 'artifacts.open'))
+      return current ? onOpenWeb(current) : undefined;
+    if (matchesArtifactsBinding(key, 'artifacts.copy'))
+      return current ? onCopyLink(current) : undefined;
     if (matchesArtifactsBinding(key, 'artifacts.session')) {
       if (current?.sessionId) onOpenSession(current.sessionId);
       return;
@@ -225,12 +230,19 @@ export function ArtifactsView({
   if (mode === 'details' && current) {
     const updated = relativeAge(current.updatedMs, now);
     const body = detail?.text
-      ? detail.text.split('\n').slice(textOffset, textOffset + textRows).join('\n')
+      ? detail.text
+          .split('\n')
+          .slice(textOffset, textOffset + textRows)
+          .join('\n')
       : '';
     return (
       <box flexDirection="column" width={width}>
         <text fg={theme.fg}>
-          {layoutRow(current.title, current.pinned ? `${current.kind} · pinned` : current.kind, bodyWidth)}
+          {layoutRow(
+            current.title,
+            current.pinned ? `${current.kind} · pinned` : current.kind,
+            bodyWidth,
+          )}
         </text>
         <text fg={theme.border}>{'─'.repeat(bodyWidth)}</text>
         <Field label="Path" value={current.path} />
@@ -303,7 +315,9 @@ export function ArtifactsView({
       {confirming && current ? (
         <box flexDirection="column" width={width}>
           <text fg={theme.fg}>Stop sharing this artifact</text>
-          <text fg={theme.dim}>{layoutRow(`${current.title} — its files stay in Files`, '', bodyWidth)}</text>
+          <text fg={theme.dim}>
+            {layoutRow(`${current.title} — its files stay in Files`, '', bodyWidth)}
+          </text>
           <text fg={theme.faint}>y confirm · n or Esc cancel</text>
         </box>
       ) : null}
@@ -351,13 +365,17 @@ export function ArtifactsView({
       {!loading && !errorMessage && allRows.length === 0 ? (
         <box flexDirection="column">
           <text fg={theme.fg}>No artifacts yet</text>
-          <text fg={theme.faint}>An agent shares a document or page from Files to publish one.</text>
+          <text fg={theme.faint}>
+            An agent shares a document or page from Files to publish one.
+          </text>
         </box>
       ) : null}
       {!errorMessage && allRows.length > 0 && rows.length === 0 ? (
         <text fg={theme.faint}>No artifact matches the filter.</text>
       ) : null}
-      {errorMessage ? <text fg={theme.danger}>{layoutRow(errorMessage, '', bodyWidth)}</text> : null}
+      {errorMessage ? (
+        <text fg={theme.danger}>{layoutRow(errorMessage, '', bodyWidth)}</text>
+      ) : null}
       {busyMessage ? <text fg={theme.faint}>{busyMessage}</text> : null}
       {allRows.length > 0 ? <text fg={theme.faint}>{hints}</text> : null}
     </box>

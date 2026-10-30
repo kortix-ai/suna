@@ -71,7 +71,10 @@ export interface RoomsViewProps {
 }
 
 export function roomRowText(room: RoomRow, width: number): string {
-  const right = [room.unread > 0 ? `${room.unread} new` : '', room.memberCount != null ? `${room.memberCount} members` : '']
+  const right = [
+    room.unread > 0 ? `${room.unread} new` : '',
+    room.memberCount != null ? `${room.memberCount} members` : '',
+  ]
     .filter(Boolean)
     .join(' · ');
   const text = room.topic ? `${room.name} · ${room.topic}` : room.name;
@@ -162,7 +165,8 @@ export function RoomsView({
         return box ? box.scrollTo(box.scrollHeight) : undefined;
       }
       if (matchesRoomsBinding(key, 'members')) return setMode('members');
-      if (matchesRoomsBinding(key, 'browser')) return currentRoom ? onOpenBrowser(currentRoom) : undefined;
+      if (matchesRoomsBinding(key, 'browser'))
+        return currentRoom ? onOpenBrowser(currentRoom) : undefined;
       if (matchesRoomsBinding(key, 'refresh')) onRefresh();
       return;
     }
@@ -184,7 +188,8 @@ export function RoomsView({
     if (matchesRoomsBinding(key, 'first')) return setRoomCursor(rooms[0]?.id ?? null);
     if (matchesRoomsBinding(key, 'last')) return setRoomCursor(rooms.at(-1)?.id ?? null);
     if (matchesRoomsBinding(key, 'refresh')) return onRefresh();
-    if (matchesRoomsBinding(key, 'browser')) return currentRoom ? onOpenBrowser(currentRoom) : undefined;
+    if (matchesRoomsBinding(key, 'browser'))
+      return currentRoom ? onOpenBrowser(currentRoom) : undefined;
     if (matchesRoomsBinding(key, 'open') && currentRoom) {
       setMode('room');
       onOpenRoom(currentRoom.id);
@@ -200,8 +205,12 @@ export function RoomsView({
       const start = windowStart(memberIndex, members.length, rowsAvailable);
       return (
         <box flexDirection="column" width={width} height={height} overflow="hidden">
-          <text flexShrink={0} fg={theme.fg}>{layoutRow(title, `${members.length} members`, bodyWidth)}</text>
-          <text flexShrink={0} fg={theme.border}>{'─'.repeat(bodyWidth)}</text>
+          <text flexShrink={0} fg={theme.fg}>
+            {layoutRow(title, `${members.length} members`, bodyWidth)}
+          </text>
+          <text flexShrink={0} fg={theme.border}>
+            {'─'.repeat(bodyWidth)}
+          </text>
           {members.slice(start, start + rowsAvailable).map((member) => {
             const isCursor = member.id === members[memberIndex]?.id;
             return (
@@ -217,7 +226,9 @@ export function RoomsView({
             );
           })}
           {members.length === 0 ? <text fg={theme.faint}>No members.</text> : null}
-          <text flexShrink={0} fg={theme.faint}>Enter open agent session · Esc back</text>
+          <text flexShrink={0} fg={theme.faint}>
+            Enter open agent session · Esc back
+          </text>
         </box>
       );
     }
@@ -226,10 +237,14 @@ export function RoomsView({
         <text flexShrink={0} fg={theme.fg}>
           {layoutRow(title, currentRoom?.topic ?? '', bodyWidth)}
         </text>
-        <text flexShrink={0} fg={theme.border}>{'─'.repeat(bodyWidth)}</text>
+        <text flexShrink={0} fg={theme.border}>
+          {'─'.repeat(bodyWidth)}
+        </text>
         {messagesLoading && messages.length === 0 ? <Spinner label="loading messages" /> : null}
         {messagesError ? (
-          <text flexShrink={0} fg={theme.danger}>{layoutRow(messagesError, '', bodyWidth)}</text>
+          <text flexShrink={0} fg={theme.danger}>
+            {layoutRow(messagesError, '', bodyWidth)}
+          </text>
         ) : null}
         <scrollbox
           ref={scrollRef}
@@ -250,7 +265,11 @@ export function RoomsView({
                   {`${indent}${message.senderKind === 'session' ? GLYPH.running : GLYPH.stopped} ${message.sender}`}
                   <span fg={theme.faint}>{`  ${relativeAge(message.atMs, now) || ''}`}</span>
                 </text>
-                <text fg={theme.fg} wrapMode="word" width={Math.max(bodyWidth - indent.length - 2, 8)}>
+                <text
+                  fg={theme.fg}
+                  wrapMode="word"
+                  width={Math.max(bodyWidth - indent.length - 2, 8)}
+                >
                   {`${indent}  ${message.text}`}
                 </text>
               </box>
@@ -285,8 +304,12 @@ export function RoomsView({
       {!loading && !errorMessage && rooms.length === 0 ? (
         <text fg={theme.faint}>You are in no rooms yet. An agent or a person adds you.</text>
       ) : null}
-      {errorMessage ? <text fg={theme.danger}>{layoutRow(errorMessage, '', bodyWidth)}</text> : null}
-      <text fg={theme.faint}>{layoutRow('Enter read · o browser · r refresh · Esc back', '', bodyWidth)}</text>
+      {errorMessage ? (
+        <text fg={theme.danger}>{layoutRow(errorMessage, '', bodyWidth)}</text>
+      ) : null}
+      <text fg={theme.faint}>
+        {layoutRow('Enter read · o browser · r refresh · Esc back', '', bodyWidth)}
+      </text>
     </box>
   );
 }

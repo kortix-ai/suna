@@ -16,8 +16,20 @@ const NOW = new Date(2026, 9, 30, 12, 0, 0).getTime();
 const HOUR = 3_600_000;
 
 const COMMITS: CommitRow[] = [
-  { hash: 'a'.repeat(40), shortHash: 'aaaaaaa', subject: 'Add readme', author: 'Ada', atMs: NOW - HOUR },
-  { hash: 'b'.repeat(40), shortHash: 'bbbbbbb', subject: 'Init repo', author: 'Lin', atMs: NOW - 5 * HOUR },
+  {
+    hash: 'a'.repeat(40),
+    shortHash: 'aaaaaaa',
+    subject: 'Add readme',
+    author: 'Ada',
+    atMs: NOW - HOUR,
+  },
+  {
+    hash: 'b'.repeat(40),
+    shortHash: 'bbbbbbb',
+    subject: 'Init repo',
+    author: 'Lin',
+    atMs: NOW - 5 * HOUR,
+  },
 ];
 
 const BRANCHES: BranchRow[] = [
@@ -46,7 +58,10 @@ function loaders(calls: Calls, over: Partial<RepoLoaders> = {}): RepoLoaders {
         };
       }
       if (path === '/src') {
-        return { truncated: false, nodes: [{ name: 'index.ts', path: '/src/index.ts', type: 'file' }] };
+        return {
+          truncated: false,
+          nodes: [{ name: 'index.ts', path: '/src/index.ts', type: 'file' }],
+        };
       }
       throw new Error(`no such directory ${path}`);
     },
@@ -114,7 +129,9 @@ describe('REPO_KEYS', () => {
   test('every binding is scoped repo, ids are unique, and h is history', () => {
     expect(REPO_KEYS.every((binding) => binding.scope === 'repo')).toBe(true);
     expect(new Set(REPO_KEYS.map((binding) => binding.id)).size).toBe(REPO_KEYS.length);
-    expect(REPO_KEYS.find((binding) => binding.id === 'repo.history')?.chords).toEqual([{ key: 'h' }]);
+    expect(REPO_KEYS.find((binding) => binding.id === 'repo.history')?.chords).toEqual([
+      { key: 'h' },
+    ]);
   });
 });
 

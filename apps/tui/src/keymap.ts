@@ -212,7 +212,7 @@ export const KEYMAP: readonly Binding[] = [
   {
     id: 'panel.terminal',
     scope: 'global',
-    chords: [chord('t', { alt: true })],
+    chords: [chord('t', { alt: true }), chord('t', { ctrl: true })],
     description: 'Toggle the terminal panel.',
   },
   {
@@ -230,13 +230,13 @@ export const KEYMAP: readonly Binding[] = [
   {
     id: 'tabs.prev',
     scope: 'global',
-    chords: [chord('[', { alt: true })],
+    chords: [chord('[', { alt: true }), chord('pageup', { ctrl: true })],
     description: 'Open the previous session tab.',
   },
   {
     id: 'tabs.next',
     scope: 'global',
-    chords: [chord(']', { alt: true })],
+    chords: [chord(']', { alt: true }), chord('pagedown', { ctrl: true })],
     description: 'Open the next session tab.',
   },
   {
@@ -427,7 +427,54 @@ export function altPressed(event: KeyEvent): boolean {
 }
 
 /** True when `event` is this chord. */
+/**
+ * What macOS Option+key types on a US layout, back to the key.
+ *
+ * Terminal.app, iTerm2 and Ghostty send Option as a character, not as Alt,
+ * unless the user turns on "Use Option as Meta" / `macos-option-as-alt`:
+ * Option+B arrives as `∫`, Option+T as `†`. Without this table every Alt
+ * chord was dead on a stock Mac (reported). Option+E, I, N, U and ` are dead
+ * keys there: they send nothing until the next key, so no app can see them —
+ * those chords have a slash command (`/effort`, `/info`, `/account`).
+ */
+export const MAC_OPTION_KEYS: Readonly<Record<string, string>> = {
+  å: 'a',
+  '∫': 'b',
+  ç: 'c',
+  '∂': 'd',
+  ƒ: 'f',
+  '©': 'g',
+  '˙': 'h',
+  '∆': 'j',
+  '˚': 'k',
+  '¬': 'l',
+  µ: 'm',
+  ø: 'o',
+  π: 'p',
+  œ: 'q',
+  '®': 'r',
+  ß: 's',
+  '†': 't',
+  '√': 'v',
+  '∑': 'w',
+  '≈': 'x',
+  '¥': 'y',
+  Ω: 'z',
+  '“': '[',
+  '‘': ']',
+};
+
+/** The key a macOS Option character stands for, or null. */
+export function macOptionKey(event: KeyEvent): string | null {
+  if (event.ctrl) return null;
+  const typed = event.sequence ?? event.name ?? '';
+  return MAC_OPTION_KEYS[typed] ?? null;
+}
+
 export function matchesChord(event: KeyEvent, target: Chord): boolean {
+  // A stock macOS terminal: Option+key arrives as a character, not as Alt.
+  if (target.alt && !target.ctrl && !target.shift && macOptionKey(event) === target.key)
+    return true;
   if (!event.name) return false;
   const pressed = normalizeKey(event.name, Boolean(event.shift));
   const wanted = normalizeKey(target.key, Boolean(target.shift));

@@ -112,8 +112,8 @@ export function UiPanel({ ui, width, welcome = false, onChange, onClose }: UiPan
           <text key={preset.id} wrapMode="none" height={1}>
             <span fg={theme.brand}>{selected ? glyph.selected : ' '}</span>
             <span fg={current === preset.id ? theme.fg : theme.faint}>{`${mark} `}</span>
-            <span fg={selected ? theme.fg : theme.dim}>{preset.label.padEnd(nameWidth - 2)}</span>
-            <span fg={theme.faint}>{clip(preset.description, inner - nameWidth - 2)}</span>
+            <span fg={selected ? theme.fg : theme.dim}>{preset.label.padEnd(nameWidth + 6)}</span>
+            <span fg={theme.faint}>{clip(preset.description, inner - nameWidth - 10)}</span>
           </text>
         );
       })}
@@ -130,8 +130,9 @@ export function UiPanel({ ui, width, welcome = false, onChange, onClose }: UiPan
             <span fg={theme.brand}>{selected ? glyph.selected : ' '}</span>
             <span fg={state.on ? theme.fg : theme.faint}>{state.on ? '[x] ' : '[ ] '}</span>
             <span fg={selected ? theme.fg : theme.dim}>{spec.label.padEnd(nameWidth - 2)}</span>
+            {spec.experimental ? <span fg={theme.faint}>{'exp '}</span> : <span>{'    '}</span>}
             <span fg={state.on ? theme.dim : theme.faint}>{side.padEnd(8)}</span>
-            <span fg={theme.faint}>{clip(spec.description, inner - nameWidth - 12)}</span>
+            <span fg={theme.faint}>{clip(spec.description, inner - nameWidth - 16)}</span>
           </text>
         );
       })}

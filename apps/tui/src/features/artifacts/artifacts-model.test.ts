@@ -47,13 +47,17 @@ describe('toArtifactRow', () => {
   });
 
   test('an unparseable date is NaN, not a thrown error', () => {
-    expect(toArtifactRow(artifact({ updated_at: 'nope' }), 'https://x.test', 'p1').updatedMs).toBeNaN();
+    expect(
+      toArtifactRow(artifact({ updated_at: 'nope' }), 'https://x.test', 'p1').updatedMs,
+    ).toBeNaN();
   });
 });
 
 describe('artifactWebUrl', () => {
   test('an absolute web_url wins; a relative one joins the origin; none builds the route', () => {
-    expect(artifactWebUrl('https://a.test/x', 'https://w.test/', 'p', 'a')).toBe('https://a.test/x');
+    expect(artifactWebUrl('https://a.test/x', 'https://w.test/', 'p', 'a')).toBe(
+      'https://a.test/x',
+    );
     expect(artifactWebUrl('/projects/p/artifacts/a', 'https://w.test/', 'p', 'a')).toBe(
       'https://w.test/projects/p/artifacts/a',
     );
@@ -70,7 +74,10 @@ describe('list helpers', () => {
   });
 
   test('the filter matches title, path or author, ignoring case', () => {
-    const rows = [row({ id: '1' }), row({ id: '2', title: 'Deck', path: '/workspace/deck', author: 'Lin' })];
+    const rows = [
+      row({ id: '1' }),
+      row({ id: '2', title: 'Deck', path: '/workspace/deck', author: 'Lin' }),
+    ];
     expect(filterArtifactRows(rows, 'PLAN').map((r) => r.id)).toEqual(['1']);
     expect(filterArtifactRows(rows, 'deck').map((r) => r.id)).toEqual(['2']);
     expect(filterArtifactRows(rows, 'lin').map((r) => r.id)).toEqual(['2']);
@@ -80,9 +87,9 @@ describe('list helpers', () => {
 
 describe('unavailableReason', () => {
   test('names the missing project, then the off flag, and is null otherwise', () => {
-    expect(unavailableReason({ projectId: null, flagLoading: false, flagEnabled: false })).toContain(
-      'No project selected',
-    );
+    expect(
+      unavailableReason({ projectId: null, flagLoading: false, flagEnabled: false }),
+    ).toContain('No project selected');
     expect(unavailableReason({ projectId: 'p', flagLoading: false, flagEnabled: false })).toContain(
       '`artifacts` flag',
     );

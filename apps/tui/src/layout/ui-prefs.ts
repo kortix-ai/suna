@@ -31,6 +31,8 @@ export interface ModuleSpec {
   sides?: readonly Side[];
   /** The slash command that toggles it. */
   command: string;
+  /** Opt-in and still settling: `/ui` marks it, no preset but Full turns it on. */
+  experimental?: boolean;
 }
 
 export const MODULES: readonly ModuleSpec[] = [
@@ -46,6 +48,7 @@ export const MODULES: readonly ModuleSpec[] = [
     description: 'The sessions you opened, as tabs. Alt+[ and Alt+] switch.',
     sides: ['top', 'bottom'],
     command: 'tabs',
+    experimental: true,
   },
   {
     id: 'sidebar',
@@ -60,11 +63,12 @@ export const MODULES: readonly ModuleSpec[] = [
     description: 'Title, context use, model, agent, ports of the open session.',
     sides: ['right', 'left'],
     command: 'info',
+    experimental: true,
   },
   {
     id: 'tray',
     label: 'Tray',
-    description: 'One row under the input: where you are, model and agent.',
+    description: 'One row under the input: where you are, model, agent, context used.',
     command: 'tray',
   },
   {
@@ -75,9 +79,13 @@ export const MODULES: readonly ModuleSpec[] = [
   },
 ] as const;
 
-/** First start: the chat alone. The tray and the window title cost no space. */
+/**
+ * First start: the chat, its title row and the tray. The title says which
+ * session this is; the tray says where, which model and agent, and how full
+ * the context is. Everything else is opt-in.
+ */
 export const DEFAULT_UI: UiPrefs = {
-  header: { on: false },
+  header: { on: true },
   tabs: { on: false, side: 'top' },
   sidebar: { on: false, side: 'left' },
   info: { on: false, side: 'right' },
@@ -86,7 +94,7 @@ export const DEFAULT_UI: UiPrefs = {
 };
 
 export interface Preset {
-  id: 'minimal' | 'focused' | 'full';
+  id: 'minimal' | 'sidebar' | 'full';
   label: string;
   description: string;
   ui: UiPrefs;
@@ -96,22 +104,21 @@ export const PRESETS: readonly Preset[] = [
   {
     id: 'minimal',
     label: 'Minimal',
-    description: 'The chat and the input. Everything else is a slash command.',
+    description: 'The chat, its title and the tray. Everything else is a slash command.',
     ui: DEFAULT_UI,
   },
   {
-    id: 'focused',
-    label: 'Focused',
-    description: 'Plus the title row and the info panel on the right.',
-    ui: { ...DEFAULT_UI, header: { on: true }, info: { on: true, side: 'right' } },
+    id: 'sidebar',
+    label: 'Sidebar',
+    description: 'Plus projects, screens and sessions on the left.',
+    ui: { ...DEFAULT_UI, sidebar: { on: true, side: 'left' } },
   },
   {
     id: 'full',
-    label: 'Full',
-    description: 'Tabs on top, the sidebar on the left, the info panel on the right.',
+    label: 'Full (experimental)',
+    description: 'Plus session tabs on top and the info panel on the right.',
     ui: {
       ...DEFAULT_UI,
-      header: { on: true },
       tabs: { on: true, side: 'top' },
       sidebar: { on: true, side: 'left' },
       info: { on: true, side: 'right' },

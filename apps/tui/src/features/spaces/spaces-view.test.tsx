@@ -23,16 +23,49 @@ const SIZE = { width: 84, height: 24 };
 
 function spaces(): SpaceRow[] {
   return [
-    { id: 's1', kind: 'channel', label: '# general', description: 'Everyone', badge: '', updatedMs: NOW - HOUR },
-    { id: 's2', kind: 'channel', label: '# finance', description: '', badge: 'private', updatedMs: NOW - 5 * HOUR },
-    { id: 's3', kind: 'dm', label: '@ kortix', description: '', badge: '', updatedMs: NOW - 30 * HOUR },
+    {
+      id: 's1',
+      kind: 'channel',
+      label: '# general',
+      description: 'Everyone',
+      badge: '',
+      updatedMs: NOW - HOUR,
+    },
+    {
+      id: 's2',
+      kind: 'channel',
+      label: '# finance',
+      description: '',
+      badge: 'private',
+      updatedMs: NOW - 5 * HOUR,
+    },
+    {
+      id: 's3',
+      kind: 'dm',
+      label: '@ kortix',
+      description: '',
+      badge: '',
+      updatedMs: NOW - 30 * HOUR,
+    },
   ];
 }
 
 function threads(): ThreadRow[] {
   return [
-    { id: 'sess-1', title: 'Quarterly close', replies: 4, status: 'running', updatedMs: NOW - HOUR },
-    { id: 'sess-2', title: 'Untitled thread', replies: 1, status: 'stopped', updatedMs: NOW - 3 * HOUR },
+    {
+      id: 'sess-1',
+      title: 'Quarterly close',
+      replies: 4,
+      status: 'running',
+      updatedMs: NOW - HOUR,
+    },
+    {
+      id: 'sess-2',
+      title: 'Untitled thread',
+      replies: 1,
+      status: 'stopped',
+      updatedMs: NOW - 3 * HOUR,
+    },
   ];
 }
 
@@ -80,7 +113,11 @@ const BASE_SPACE: ProjectSpace = {
 
 describe('mappers', () => {
   test('spaceRow labels a channel with # and a DM with @', () => {
-    expect(spaceRow(BASE_SPACE)).toMatchObject({ label: '# general', description: 'Everyone', badge: '' });
+    expect(spaceRow(BASE_SPACE)).toMatchObject({
+      label: '# general',
+      description: 'Everyone',
+      badge: '',
+    });
     expect(
       spaceRow({ ...BASE_SPACE, kind: 'dm', slug: null, name: 'Kortix', dm_agent_name: 'kortix' }),
     ).toMatchObject({ label: '@ kortix', kind: 'dm' });
@@ -88,19 +125,27 @@ describe('mappers', () => {
   });
 
   test('threadTitle prefers the name, then the first prompt line', () => {
-    const base = { session_id: 'x', status: 'running', updated_at: '2026-09-17T10:00:00Z' } as ProjectSession;
+    const base = {
+      session_id: 'x',
+      status: 'running',
+      updated_at: '2026-09-17T10:00:00Z',
+    } as ProjectSession;
     expect(threadTitle({ ...base, custom_name: 'Mine', name: 'Auto' })).toBe('Mine');
     expect(threadTitle({ ...base, name: 'Auto' })).toBe('Auto');
-    expect(threadTitle({ ...base, first_prompt: 'Close the books\nplease' })).toBe('Close the books');
+    expect(threadTitle({ ...base, first_prompt: 'Close the books\nplease' })).toBe(
+      'Close the books',
+    );
     expect(threadTitle(base)).toBe('Untitled thread');
     expect(threadRow({ ...base, reply_count: 3 })).toMatchObject({ id: 'x', replies: 3 });
   });
 
   test('spaceWebUrl builds /c/<slug> and /dm/<agent>', () => {
-    expect(spaceWebUrl('https://kortix.com/', 'p1', BASE_SPACE)).toBe('https://kortix.com/projects/p1/c/general');
-    expect(spaceWebUrl('https://kortix.com', 'p1', { kind: 'dm', slug: null, dm_agent_name: 'kortix' })).toBe(
-      'https://kortix.com/projects/p1/dm/kortix',
+    expect(spaceWebUrl('https://kortix.com/', 'p1', BASE_SPACE)).toBe(
+      'https://kortix.com/projects/p1/c/general',
     );
+    expect(
+      spaceWebUrl('https://kortix.com', 'p1', { kind: 'dm', slug: null, dm_agent_name: 'kortix' }),
+    ).toBe('https://kortix.com/projects/p1/dm/kortix');
   });
 
   test('row text fits the width and carries the age', () => {
@@ -137,7 +182,9 @@ describe('<SpacesView/> through the OpenTUI test renderer', () => {
     const asked: Array<string | null> = [];
     const opened: string[] = [];
     const { captureCharFrame, flush, mockInput, renderer } = await testRender(
-      <SpacesView {...props({ onOpenSpace: (id) => asked.push(id), onOpenThread: (id) => opened.push(id) })} />,
+      <SpacesView
+        {...props({ onOpenSpace: (id) => asked.push(id), onOpenThread: (id) => opened.push(id) })}
+      />,
       SIZE,
     );
     await flush();
@@ -181,7 +228,10 @@ describe('<SpacesView/> through the OpenTUI test renderer', () => {
   });
 
   test('loading, error and empty states each say what is happening', async () => {
-    const loading = await testRender(<SpacesView {...props({ spaces: [], loading: true })} />, SIZE);
+    const loading = await testRender(
+      <SpacesView {...props({ spaces: [], loading: true })} />,
+      SIZE,
+    );
     await loading.flush();
     expect(loading.captureCharFrame()).toContain('loading spaces');
     loading.renderer.destroy();

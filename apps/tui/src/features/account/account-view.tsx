@@ -429,13 +429,7 @@ export function AccountView({
               bodyWidth,
             )}
           </text>
-          <text fg={theme.dim}>
-            {layoutRow(
-              `Tier  ${billingModel.tierName}`,
-              '',
-              bodyWidth,
-            )}
-          </text>
+          <text fg={theme.dim}>{layoutRow(`Tier  ${billingModel.tierName}`, '', bodyWidth)}</text>
           <text fg={theme.faint}>
             {layoutRow(
               `Members  ${members.length}`,

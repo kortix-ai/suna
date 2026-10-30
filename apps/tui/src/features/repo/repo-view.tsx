@@ -349,7 +349,9 @@ export function RepoView({
     if (history.state !== 'closed') {
       // The tree is frozen while the log is up: the same keys move the log.
       if (matchesRepoBinding(key, 'repo.down'))
-        return setHistoryCursor((index) => Math.min(index + 1, Math.max(historyRows.length - 1, 0)));
+        return setHistoryCursor((index) =>
+          Math.min(index + 1, Math.max(historyRows.length - 1, 0)),
+        );
       if (matchesRepoBinding(key, 'repo.up'))
         return setHistoryCursor((index) => Math.max(index - 1, 0));
       if (matchesRepoBinding(key, 'repo.first')) return setHistoryCursor(0);
@@ -536,7 +538,9 @@ function TreeColumn(props: TreeColumnProps) {
         <text fg={theme.danger}>{layoutRow(props.errorMessage, '', bodyWidth)}</text>
       ) : null}
       {props.empty ? (
-        <text fg={theme.faint}>{props.filter ? 'No match in loaded rows.' : 'Empty repository.'}</text>
+        <text fg={theme.faint}>
+          {props.filter ? 'No match in loaded rows.' : 'Empty repository.'}
+        </text>
       ) : null}
 
       <text fg={theme.faint}>{layoutRow('Enter open · / filter · b branch', '', bodyWidth)}</text>

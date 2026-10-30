@@ -96,27 +96,31 @@ describe('buildRows / filterRows', () => {
   const events = [
     event({ event_id: 'old', occurred_at: '2026-09-17T08:00:00.000Z' }),
     event({ event_id: 'new', occurred_at: '2026-09-17T12:00:00.000Z', outcome: 'failure' }),
-    event({ event_id: 'ppl', occurred_at: '2026-09-17T09:00:00.000Z', actor_type: 'human', agent_name: null }),
+    event({
+      event_id: 'ppl',
+      occurred_at: '2026-09-17T09:00:00.000Z',
+      actor_type: 'human',
+      agent_name: null,
+    }),
   ];
 
   test('pending first, then events newest first', () => {
     const rows = buildRows([action({})], events);
-    expect(rows.map((row) => row.id)).toEqual([
-      'action:x1',
-      'event:new',
-      'event:ppl',
-      'event:old',
-    ]);
+    expect(rows.map((row) => row.id)).toEqual(['action:x1', 'event:new', 'event:ppl', 'event:old']);
   });
 
   test('with no events the settled actions stand in for the timeline', () => {
-    const rows = buildRows([action({}), action({ execution_id: 'x2', status: 'denied', resolved_at: 'z' })], []);
+    const rows = buildRows(
+      [action({}), action({ execution_id: 'x2', status: 'denied', resolved_at: 'z' })],
+      [],
+    );
     expect(rows.map((row) => row.id)).toEqual(['action:x1', 'action:x2']);
   });
 
   test('each filter picks its rows', () => {
     const rows = buildRows([action({})], events);
-    const ids = (filter: Parameters<typeof filterRows>[1]) => filterRows(rows, filter).map((r) => r.id);
+    const ids = (filter: Parameters<typeof filterRows>[1]) =>
+      filterRows(rows, filter).map((r) => r.id);
     expect(ids('approvals')).toEqual(['action:x1']);
     expect(ids('person')).toEqual(['event:ppl']);
     expect(ids('failed')).toEqual(['event:new']);

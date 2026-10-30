@@ -173,7 +173,8 @@ export function DriveView({
       let moved = 0;
       while (moved < Math.abs(delta)) {
         let next = index + Math.sign(delta);
-        while (next >= 0 && next < rows.length && !isSelectable(rows[next] as DriveRow)) next += Math.sign(delta);
+        while (next >= 0 && next < rows.length && !isSelectable(rows[next] as DriveRow))
+          next += Math.sign(delta);
         if (next < 0 || next >= rows.length) break;
         index = next;
         moved += 1;
@@ -379,7 +380,8 @@ export function DriveView({
   const listRows = Math.max(height - 4 - (busyMessage ? 1 : 0) - overlayRows, 1);
   const start = windowStart(Math.max(cursorIndex, 0), rows.length, listRows);
   const visible = rows.slice(start, start + listRows);
-  const badge = conflictCount > 0 ? `${conflictCount} ${conflictCount === 1 ? 'conflict' : 'conflicts'}` : '';
+  const badge =
+    conflictCount > 0 ? `${conflictCount} ${conflictCount === 1 ? 'conflict' : 'conflicts'}` : '';
 
   const hints =
     list === 'places'
@@ -388,7 +390,9 @@ export function DriveView({
         ? ['Enter open folder · x dismiss', 'y copy · Esc back']
         : [
             'Enter open · ⌫ up · / filter · o web · y copy',
-            canWrite ? 'n folder · m move · d delete · u upload · r reload' : 'read only · r reload',
+            canWrite
+              ? 'n folder · m move · d delete · u upload · r reload'
+              : 'read only · r reload',
           ];
 
   const confirmText =
@@ -401,9 +405,7 @@ export function DriveView({
   return (
     <box flexDirection="row" width={width} height={height}>
       <box flexDirection="column" width={columnWidth}>
-        <text fg={focused ? theme.fg : theme.dim}>
-          {layoutRow(crumb, badge, bodyWidth)}
-        </text>
+        <text fg={focused ? theme.fg : theme.dim}>{layoutRow(crumb, badge, bodyWidth)}</text>
         <text fg={theme.border}>{'─'.repeat(bodyWidth)}</text>
 
         {mode === 'filter' ? (
@@ -433,7 +435,9 @@ export function DriveView({
                 flexGrow={1}
                 value={draft}
                 onInput={(value: string) => setDraft(value)}
-                onSubmit={(value: unknown) => submitInput(typeof value === 'string' ? value : draft)}
+                onSubmit={(value: unknown) =>
+                  submitInput(typeof value === 'string' ? value : draft)
+                }
               />
             </box>
           </box>
@@ -443,7 +447,13 @@ export function DriveView({
           <box flexDirection="column" width={columnWidth}>
             <text fg={theme.fg}>{layoutRow(confirmText, '', bodyWidth)}</text>
             <text fg={theme.faint}>
-              {layoutRow(confirmKind === 'delete' ? 'y delete · any other key keeps it' : 'y replace · any other key keeps it', '', bodyWidth)}
+              {layoutRow(
+                confirmKind === 'delete'
+                  ? 'y delete · any other key keeps it'
+                  : 'y replace · any other key keeps it',
+                '',
+                bodyWidth,
+              )}
             </text>
           </box>
         ) : null}
@@ -465,8 +475,13 @@ export function DriveView({
           }
           const isCursor = row.id === current?.id;
           const mark =
-            row.kind === 'dir' || row.kind === 'place' ? GLYPH.collapsed : row.kind === 'conflict' ? GLYPH.failed : ' ';
-          const indent = list === 'places' && row.kind === 'place' && !row.id.startsWith('mine:') ? '  ' : '';
+            row.kind === 'dir' || row.kind === 'place'
+              ? GLYPH.collapsed
+              : row.kind === 'conflict'
+                ? GLYPH.failed
+                : ' ';
+          const indent =
+            list === 'places' && row.kind === 'place' && !row.id.startsWith('mine:') ? '  ' : '';
           const name = row.kind === 'dir' ? `${row.name}/` : row.name;
           const body = layoutRow(`${indent}${mark} ${name}`, row.meta, bodyWidth);
           return (

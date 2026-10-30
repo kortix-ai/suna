@@ -4,7 +4,13 @@ import { act } from 'react';
 import { testRender } from '@opentui/react/test-utils';
 
 import { scheduleText, toRow } from './loops-screen.tsx';
-import { type LoopRow, LoopsView, type LoopsViewProps, loopRowText, untilText } from './loops-view.tsx';
+import {
+  type LoopRow,
+  LoopsView,
+  type LoopsViewProps,
+  loopRowText,
+  untilText,
+} from './loops-view.tsx';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -114,7 +120,10 @@ describe('helpers', () => {
 
 describe('<LoopsView/> through the OpenTUI test renderer', () => {
   test('lists each loop with its schedule and next run', async () => {
-    const { captureCharFrame, flush, renderer } = await testRender(<LoopsView {...props()} />, SIZE);
+    const { captureCharFrame, flush, renderer } = await testRender(
+      <LoopsView {...props()} />,
+      SIZE,
+    );
     await flush();
     const frame = captureCharFrame();
     expect(frame).toContain('Did the email arrive?');

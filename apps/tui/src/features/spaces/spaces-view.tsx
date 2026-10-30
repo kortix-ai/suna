@@ -172,7 +172,9 @@ export function SpacesView({
     <box flexDirection="column" width={width}>
       {openSpace ? (
         <>
-          <text fg={theme.fg}>{layoutRow(openSpace.label, `${threads.length} threads`, bodyWidth)}</text>
+          <text fg={theme.fg}>
+            {layoutRow(openSpace.label, `${threads.length} threads`, bodyWidth)}
+          </text>
           <text fg={theme.border}>{'─'.repeat(bodyWidth)}</text>
         </>
       ) : null}

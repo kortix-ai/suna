@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { contextReading } from './info-panel.tsx';
+import { contextReading } from '../lib/context-usage.ts';
 import { tabLabel, visibleTabs } from './tabs-bar.tsx';
 
 describe('session tabs', () => {

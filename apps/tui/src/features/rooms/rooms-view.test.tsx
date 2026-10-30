@@ -31,15 +31,37 @@ function rooms(): RoomRow[] {
 
 function messages(): MessageRow[] {
   return [
-    { id: 'm1', seq: 1, sender: 'Ana Silva', senderKind: 'member', text: 'Is the build green?', replyTo: null, atMs: NOW - 10 * MINUTE },
-    { id: 'm2', seq: 2, sender: 'kortix (agent)', senderKind: 'session', text: 'Yes, all checks passed.', replyTo: 1, atMs: NOW - 5 * MINUTE },
+    {
+      id: 'm1',
+      seq: 1,
+      sender: 'Ana Silva',
+      senderKind: 'member',
+      text: 'Is the build green?',
+      replyTo: null,
+      atMs: NOW - 10 * MINUTE,
+    },
+    {
+      id: 'm2',
+      seq: 2,
+      sender: 'kortix (agent)',
+      senderKind: 'session',
+      text: 'Yes, all checks passed.',
+      replyTo: 1,
+      atMs: NOW - 5 * MINUTE,
+    },
   ];
 }
 
 function members(): MemberRow[] {
   return [
     { id: 'u1', label: 'Ana Silva', kind: 'person', sessionId: null, status: null },
-    { id: 's1', label: '3f2a1b9c (kortix)', kind: 'session', sessionId: 'sess-9', status: 'running' },
+    {
+      id: 's1',
+      label: '3f2a1b9c (kortix)',
+      kind: 'session',
+      sessionId: 'sess-9',
+      status: 'running',
+    },
   ];
 }
 
@@ -93,20 +115,36 @@ describe('mappers', () => {
       created_at: '2026-09-17T10:00:00.000Z',
     } as RoomMessage;
     expect(messageRow(message)).toMatchObject({ seq: 7, senderKind: 'session', replyTo: 3 });
-    const member = { member_id: 'k', kind: 'session', session_id: 's', label: 'L', status: 'running' } as RoomMember;
+    const member = {
+      member_id: 'k',
+      kind: 'session',
+      session_id: 's',
+      label: 'L',
+      status: 'running',
+    } as RoomMember;
     expect(memberRow(member)).toMatchObject({ sessionId: 's', status: 'running' });
   });
 
   test('roomWebUrl builds /rooms/<id>', () => {
-    expect(roomWebUrl('https://kortix.com/', 'p1', 'r1')).toBe('https://kortix.com/projects/p1/rooms/r1');
+    expect(roomWebUrl('https://kortix.com/', 'p1', 'r1')).toBe(
+      'https://kortix.com/projects/p1/rooms/r1',
+    );
   });
 
   test('row text shows unread and member counts, and the member kind', () => {
     const text = roomRowText(rooms()[0] as RoomRow, 82);
     expect(text.trimEnd().endsWith('3 new · 4 members')).toBe(true);
     expect(text.length).toBeLessThanOrEqual(81);
-    expect(memberRowText(members()[1] as MemberRow, 82).trimEnd().endsWith('running')).toBe(true);
-    expect(memberRowText(members()[0] as MemberRow, 82).trimEnd().endsWith('person')).toBe(true);
+    expect(
+      memberRowText(members()[1] as MemberRow, 82)
+        .trimEnd()
+        .endsWith('running'),
+    ).toBe(true);
+    expect(
+      memberRowText(members()[0] as MemberRow, 82)
+        .trimEnd()
+        .endsWith('person'),
+    ).toBe(true);
   });
 });
 

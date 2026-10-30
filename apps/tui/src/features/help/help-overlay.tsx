@@ -48,7 +48,11 @@ export function commandLines(commands: readonly CommandSpec[] = COMMANDS): HelpL
         title: `Commands · ${GROUP_TITLE[spec.group]}`,
       });
     }
-    lines.push({ kind: 'command', spec, usage: spec.args ? `/${spec.name} ${spec.args}` : `/${spec.name}` });
+    lines.push({
+      kind: 'command',
+      spec,
+      usage: spec.args ? `/${spec.name} ${spec.args}` : `/${spec.name}`,
+    });
   }
   return lines;
 }

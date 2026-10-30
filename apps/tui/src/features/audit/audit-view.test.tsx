@@ -83,7 +83,10 @@ describe('auditRowText', () => {
 
 describe('<AuditView/> through the OpenTUI test renderer', () => {
   test('lists the rows and counts the pending ones', async () => {
-    const { captureCharFrame, flush, renderer } = await testRender(<AuditView {...props()} />, SIZE);
+    const { captureCharFrame, flush, renderer } = await testRender(
+      <AuditView {...props()} />,
+      SIZE,
+    );
     await flush();
     const frame = captureCharFrame();
     expect(frame).toContain('gmail.send_email');
@@ -133,7 +136,9 @@ describe('<AuditView/> through the OpenTUI test renderer', () => {
   test('a asks first; y approves the pending action', async () => {
     const decided: string[] = [];
     const { captureCharFrame, flush, mockInput, renderer } = await testRender(
-      <AuditView {...props({ onDecide: (row, d) => decided.push(`${d} ${row.pending?.executionId}`) })} />,
+      <AuditView
+        {...props({ onDecide: (row, d) => decided.push(`${d} ${row.pending?.executionId}`) })}
+      />,
       SIZE,
     );
     await flush();
@@ -166,7 +171,10 @@ describe('<AuditView/> through the OpenTUI test renderer', () => {
 
   test('a pending action the viewer may not decide names who may', async () => {
     const locked = rows();
-    locked[0] = { ...(locked[0] as AuditRow), pending: { executionId: 'x1', canResolve: false, resolvers: 'managers' } };
+    locked[0] = {
+      ...(locked[0] as AuditRow),
+      pending: { executionId: 'x1', canResolve: false, resolvers: 'managers' },
+    };
     const { captureCharFrame, flush, mockInput, renderer } = await testRender(
       <AuditView {...props({ rows: locked })} />,
       SIZE,
@@ -180,7 +188,10 @@ describe('<AuditView/> through the OpenTUI test renderer', () => {
 
   test('m loads older events only when there are some', async () => {
     let loaded = 0;
-    const without = await testRender(<AuditView {...props({ onLoadMore: () => loaded++ })} />, SIZE);
+    const without = await testRender(
+      <AuditView {...props({ onLoadMore: () => loaded++ })} />,
+      SIZE,
+    );
     await without.flush();
     await act(async () => without.mockInput.pressKey('m'));
     expect(loaded).toBe(0);
@@ -211,7 +222,9 @@ describe('<AuditView/> through the OpenTUI test renderer', () => {
     failed.renderer.destroy();
 
     const gated = await testRender(
-      <AuditView {...props({ rows: [], notice: 'History needs the Enterprise audit entitlement.' })} />,
+      <AuditView
+        {...props({ rows: [], notice: 'History needs the Enterprise audit entitlement.' })}
+      />,
       SIZE,
     );
     await gated.flush();

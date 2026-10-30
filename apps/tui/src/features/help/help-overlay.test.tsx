@@ -70,6 +70,8 @@ describe('commandLines', () => {
     const commands = lines.filter((line) => line.kind === 'command');
     expect(commands).toHaveLength(COMMANDS.length);
     expect(lines[0]).toMatchObject({ kind: 'section', title: 'Commands · Session' });
-    expect(commands.some((line) => line.kind === 'command' && line.usage === '/rename <title>')).toBe(true);
+    expect(
+      commands.some((line) => line.kind === 'command' && line.usage === '/rename <title>'),
+    ).toBe(true);
   });
 });

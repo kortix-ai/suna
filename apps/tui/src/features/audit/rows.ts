@@ -85,7 +85,10 @@ export function eventRow(event: AuditEvent): AuditRow {
       ['Actor', `${actor}${event.actor_type ? ` (${event.actor_type})` : ''}`],
       ['Action', event.action],
       ['Outcome', event.outcome],
-      ['Resource', event.resource_type ? `${event.resource_type} ${event.resource_id ?? ''}`.trim() : null],
+      [
+        'Resource',
+        event.resource_type ? `${event.resource_type} ${event.resource_id ?? ''}`.trim() : null,
+      ],
       ['Source', event.authoritative_source ?? event.source],
       ['Credential', event.credential_kind],
       ['HTTP', event.http_status ? String(event.http_status) : null],
