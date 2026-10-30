@@ -5,7 +5,6 @@
 #   - git + ca-certificates + curl  (project repo materialization)
 #   - uv + uv-managed Python       (Python tools resolve dependencies per command)
 #   - pnpm + Node.js + npm         (pinned runtime toolchain)
-#   - opencode CLI                  (the supervised child process)
 #   - kortix-agent                  (compiled daemon from
 #                                    apps/kortix-sandbox-agent-server)
 #   - kortix                        (compiled admin CLI from apps/cli — the
@@ -20,7 +19,7 @@
 #                      `@kortix/*` packages it imports) and compiles the
 #                      `kortix` CLI to a self-contained /cli/kortix binary.
 #   3. final         — copies both binaries onto a clean runtime base
-#                      alongside git + opencode.
+#                      alongside git.
 #
 # Build from the repo root:
 #   docker build -f apps/sandbox/Dockerfile -t kortix/kortix-sandbox:dev .
@@ -115,9 +114,9 @@ RUN apt-get update && if apt-cache show libx264-164 libyuv0 >/dev/null 2>&1; the
 RUN useradd --create-home --shell /bin/bash --user-group kortix \
     && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \
     && chmod 0440 /etc/sudoers.d/kortix \
-    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \
+    && mkdir -p /workspace /opt/kortix /opt/pw-browsers \
         /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \
-    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix
+    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /home/kortix
 
 ENV PNPM_HOME=/home/kortix/.local/share/pnpm \
     PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH
@@ -213,20 +212,6 @@ RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-v
     && chromium --version \
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-# The opencode-kortix link lives in root-owned /usr/local/bin.
-# hadolint ignore=DL3004,DL4006
-RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
-    && pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
-    && command -v opencode \
-    && opencode --version \
-    && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \
-    && test -x "$opencode_native" \
-    && test "$(wc -c < "$opencode_native")" -gt 50000000 \
-    && test "$("$opencode_native" --version)" = "$OPENCODE_VERSION" \
-    && ln -sfn "$opencode_native" /opt/kortix/opencode.current \
-    && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \
-    && test "$(/usr/local/bin/opencode-kortix --version)" = "$OPENCODE_VERSION"
-
 # hadolint ignore=DL4006
 RUN BUN_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bun)")" \
     && BUN_SHA256_AMD64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bunSha256Amd64)")" \
@@ -251,13 +236,6 @@ RUN ANYDOC_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions
     && pnpm add -g "@firecrawl/anydoc@${ANYDOC_VERSION}" \
     && command -v anydoc \
     && test "$(anydoc --version)" = "$ANYDOC_VERSION"
-
-RUN mkdir -p /opt/kortix/opencode-config-deps \
-    && OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"%s","@tavily/core":"^0.7.3","bun-pty":"0.4.11","replicate":"^1.4.0","zod":"4.1.8"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' "${OPENCODE_VERSION}" > /opt/kortix/opencode-config-deps/package.json \
-    && bun install --cwd /opt/kortix/opencode-config-deps \
-    && bun build /opt/kortix/opencode-config-deps/node_modules/axios/lib/utils.js /opt/kortix/opencode-config-deps/node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \
-    && rm -rf /tmp/opencode-deps-bundle-check
 
 # pi system packages (runtime-versions.json `piSystemPackages`), installed the
 # way `pi install` installs a global one. Same step as `piSystemPackageLines` in
@@ -285,8 +263,8 @@ COPY --from=builder --chmod=755 /repo/apps/kortix-sandbox-agent-server/dist/kort
 # project-scoped token the platform injects (KORTIX_TOKEN).
 COPY --from=cli-builder --chown=kortix:kortix --chmod=755 /cli/kortix /usr/local/bin/kortix
 # Always-latest managed Kortix skills (kortix-cli + the kortix-* family). The
-# agent server overlays these into every session's OpenCode skills dir at boot
-# (see injected-skills.ts) so no project ever goes stale on Kortix internals.
+# agent server overlays these into every session's skills dir at boot
+# so no project ever goes stale on Kortix internals.
 COPY --from=cli-builder --chown=kortix:kortix /cli/managed-skills /opt/kortix/managed-skills
 COPY --chmod=755 apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
 COPY apps/sandbox/MACHINE.md /MACHINE.md
@@ -299,23 +277,20 @@ COPY --chown=kortix:kortix --chmod=755 apps/sandbox/slack-cli/ /opt/kortix/apps/
 # The DIRECTORY ONLY: the CLI above already arrives `--chown=kortix:kortix`, so
 # naming the file here changed no ownership and still forced overlayfs to copy
 # the whole ~105 MB binary up into this layer.
-# The second command pins OpenCode's own autoupdate off for every caller in the
-# box, not just the daemon's OPENCODE_CONFIG child. Both live in
-# packages/shared/src/sandbox/platform-binaries.ts, which asserts them on all
-# three image definitions.
+# The command is SANDBOX_CLI_OWNERSHIP_COMMAND in
+# packages/shared/src/sandbox/platform-binaries.ts, asserted on all three image
+# definitions.
 RUN bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \
     && kortix --version \
     && chown kortix:kortix /usr/local/bin \
-    && mkdir -p /home/kortix/.config/opencode && chown kortix:kortix /home/kortix/.config /home/kortix/.config/opencode && echo '{"autoupdate":false}' > /home/kortix/.config/opencode/opencode.json && chown kortix:kortix /home/kortix/.config/opencode/opencode.json && chmod 0644 /home/kortix/.config/opencode/opencode.json \
-    && chown -R kortix:kortix /workspace /ephemeral
+    && chown -R kortix:kortix /workspace
 
 # Platform-owned secret delivery. The daemon writes live project secrets to
 # /dev/shm/kortix/agent-env.sh (tmpfs — never on the persisted disk); these
 # baked hooks source it into every shell — login/non-login, interactive PTY
 # shells, and any terminal the user opens — so secrets load automatically and
-# CANNOT be removed via user opencode config. (Non-interactive `bash -c` from
-# opencode's own tools is covered by BASH_ENV, which the daemon sets when it
-# spawns opencode.)
+# CANNOT be removed via user config. (The agent's non-interactive `bash -c`
+# is covered by BASH_ENV, which the daemon sets.)
 RUN printf '%s\n' '[ -r /dev/shm/kortix/agent-env.sh ] && . /dev/shm/kortix/agent-env.sh' \
       > /etc/profile.d/kortix-agent-env.sh \
     && printf '%s\n' '[ -r /dev/shm/kortix/agent-env.sh ] && . /dev/shm/kortix/agent-env.sh' \

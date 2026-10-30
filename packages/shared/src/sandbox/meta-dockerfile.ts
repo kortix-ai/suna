@@ -1,6 +1,5 @@
 import {
   NODE_VERSION,
-  OPENCODE_VERSION,
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
   PNPM_VERSION,
@@ -13,7 +12,6 @@ import {
 import {
   SANDBOX_CLI_OWNERSHIP_COMMAND,
   SANDBOX_MANAGED_SKILLS_DIR,
-  SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND,
   SANDBOX_RUNTIME_ASSETS_STATE_COMMAND,
   SANDBOX_RUNTIME_ASSETS_STATE_PATH,
 } from './platform-binaries';
@@ -81,7 +79,7 @@ export const META_AGENT_GUIDE = [
 /**
  * Render the platform meta-agent image.
  *
- * This runtime contains the daemon, Kortix CLI, Git, and OpenCode. It excludes
+ * This runtime contains the daemon, Kortix CLI, Git, pnpm and Node.js. It excludes
  * project toolchains because the meta agent delegates project work to another
  * session.
  */
@@ -97,8 +95,8 @@ RUN apt-get update \\
  && ${SANDBOX_SHELL_TOOL_LINK_COMMAND}
 
 RUN useradd --create-home --shell /bin/bash kortix \\
- && mkdir -p /workspace /opt/kortix /ephemeral/kortix-master/opencode \\
- && chown -R kortix:kortix /workspace /opt/kortix /ephemeral
+ && mkdir -p /workspace /opt/kortix \\
+ && chown -R kortix:kortix /workspace /opt/kortix
 
 ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\
     PATH="/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:\${PATH}"
@@ -117,14 +115,6 @@ RUN case "$(uname -m)" in \\
  && rm /tmp/pnpm.tar.gz \\
  && test "$(HOME=/home/kortix pnpm --version)" = "${PNPM_VERSION}" \\
  && HOME=/home/kortix pnpm runtime set node ${NODE_VERSION} --global \\
- && HOME=/home/kortix pnpm add --global --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \\
- && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \\
- && test -x "$opencode_native" \\
- && test "$(wc -c < "$opencode_native")" -gt 50000000 \\
- && test "$("$opencode_native" --version)" = "${OPENCODE_VERSION}" \\
- && ln -sfn "$opencode_native" /opt/kortix/opencode.current \\
- && ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \\
- && test "$(/usr/local/bin/opencode-kortix --version)" = "${OPENCODE_VERSION}" \\
  && ln -sf "\$(command -v node)" /usr/local/bin/node \\
  && chown -R kortix:kortix /home/kortix
 
@@ -134,7 +124,6 @@ RUN gzip -dc /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
  && gzip -dc /tmp/kortix.gz > /usr/local/bin/kortix \\
  && chmod 0755 /usr/local/bin/kortix-agent /usr/local/bin/kortix \\
  && ${SANDBOX_CLI_OWNERSHIP_COMMAND} \\
- && ${SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND} \\
  && rm /tmp/kortix-agent.gz /tmp/kortix.gz
 COPY ${options.entrypointScriptPath} /usr/local/bin/kortix-entrypoint
 RUN chmod 0755 /usr/local/bin/kortix-entrypoint
@@ -149,7 +138,6 @@ ${kortixShellProfileRun()}
 
 ENV KORTIX_WORKSPACE=/workspace \\
     KORTIX_PROJECT_AUTO_CLONE=0 \\
-    KORTIX_OPENCODE_PROCESS_TRANSPORT=rest \\
     KORTIX_LLM_CATALOG_FILE=/opt/kortix/llm-catalog.json
 WORKDIR /workspace
 EXPOSE 8000

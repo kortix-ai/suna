@@ -31,9 +31,9 @@ RUN apt-get update && if apt-cache show libx264-164 libyuv0 >/dev/null 2>&1; the
 RUN useradd --create-home --shell /bin/bash --user-group kortix \\
     && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\
     && chmod 0440 /etc/sudoers.d/kortix \\
-    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\
+    && mkdir -p /workspace /opt/kortix /opt/pw-browsers \\
         /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\
-    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix
+    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /home/kortix
 ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\
     PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH
 USER kortix
@@ -109,20 +109,6 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.23" \\
-    && command -v opencode \\
-    && opencode --version \\
-    && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \\
-    && test -x "$opencode_native" \\
-    && test "$(wc -c < "$opencode_native")" -gt 50000000 \\
-    && test "$("$opencode_native" --version)" = "1.18.23" \\
-    && ln -sfn "$opencode_native" /opt/kortix/opencode.current \\
-    && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \\
-    && test "$(/usr/local/bin/opencode-kortix --version)" = "1.18.23"
-
-COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
-RUN bash /tmp/kortix-opencode-warmup migration && rm -f /tmp/kortix-opencode-warmup
-
 RUN case "$(uname -m)" in \\
       x86_64) bun_arch=x64; bun_sha=3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18 ;; \\
       aarch64|arm64) bun_arch=aarch64; bun_sha=efa9813da5ed72423bf847f916e8d2c47c0d776add972354026a75e10da9aa21 ;; \\
@@ -141,28 +127,6 @@ RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
     && command -v anydoc \\
     && test "$(anydoc --version)" = "0.1.6"
 
-RUN mkdir -p /opt/kortix/opencode-config-deps \\
-    && cd /opt/kortix/opencode-config-deps \\
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.23","@tavily/core":"^0.7.3","bun-pty":"0.4.11","replicate":"^1.4.0","zod":"4.1.8"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\
-    && bun install
-
-RUN cd /opt/kortix/opencode-config-deps \\
-    && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \\
-    && rm -rf /tmp/opencode-deps-bundle-check \\
-    && echo "opencode-config-deps: baked tree bundles cleanly"
-
-COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
-RUN sudo chown -R kortix:kortix /opt/kortix/warm-config
-RUN cd /opt/kortix/warm-config/.kortix/opencode \\
-    && rm -rf node_modules \\
-    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\
-    && bun build plugins/*.ts --target=bun --outdir=/tmp/opencode-plugins-bundle-check \\
-    && rm -rf /tmp/opencode-plugins-bundle-check \\
-    && echo "opencode-config-deps: starter plugin files bundle cleanly"
-
-COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
-RUN bash /tmp/kortix-opencode-warmup instance wipe && rm -f /tmp/kortix-opencode-warmup
-
 USER root
 COPY kortix-agent.gz /tmp/kortix-agent.gz
 COPY kortix.gz /tmp/kortix.gz
@@ -180,8 +144,7 @@ RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\
     && kortix --version \\
     && chown kortix:kortix /usr/local/bin \\
-    && mkdir -p /home/kortix/.config/opencode && chown kortix:kortix /home/kortix/.config /home/kortix/.config/opencode && echo '{"autoupdate":false}' > /home/kortix/.config/opencode/opencode.json && chown kortix:kortix /home/kortix/.config/opencode/opencode.json && chmod 0644 /home/kortix/.config/opencode/opencode.json \\
-    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral
+    && chown -R kortix:kortix /opt/kortix /workspace
 
 COPY --chown=kortix:kortix managed-skills /opt/kortix/managed-skills
 RUN kortix-agent bake-runtime-assets-state \\
@@ -245,9 +208,9 @@ RUN apt-get update && if apt-cache show libx264-164 libyuv0 >/dev/null 2>&1; the
 RUN useradd --create-home --shell /bin/bash --user-group kortix \\
     && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\
     && chmod 0440 /etc/sudoers.d/kortix \\
-    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\
+    && mkdir -p /workspace /opt/kortix /opt/pw-browsers \\
         /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\
-    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix
+    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /home/kortix
 ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\
     PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH
 USER kortix
@@ -323,20 +286,6 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.23" \\
-    && command -v opencode \\
-    && opencode --version \\
-    && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \\
-    && test -x "$opencode_native" \\
-    && test "$(wc -c < "$opencode_native")" -gt 50000000 \\
-    && test "$("$opencode_native" --version)" = "1.18.23" \\
-    && ln -sfn "$opencode_native" /opt/kortix/opencode.current \\
-    && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \\
-    && test "$(/usr/local/bin/opencode-kortix --version)" = "1.18.23"
-
-COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
-RUN bash /tmp/kortix-opencode-warmup migration && rm -f /tmp/kortix-opencode-warmup
-
 RUN case "$(uname -m)" in \\
       x86_64) bun_arch=x64; bun_sha=3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18 ;; \\
       aarch64|arm64) bun_arch=aarch64; bun_sha=efa9813da5ed72423bf847f916e8d2c47c0d776add972354026a75e10da9aa21 ;; \\
@@ -355,28 +304,6 @@ RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
     && command -v anydoc \\
     && test "$(anydoc --version)" = "0.1.6"
 
-RUN mkdir -p /opt/kortix/opencode-config-deps \\
-    && cd /opt/kortix/opencode-config-deps \\
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.23","@tavily/core":"^0.7.3","bun-pty":"0.4.11","replicate":"^1.4.0","zod":"4.1.8"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\
-    && bun install
-
-RUN cd /opt/kortix/opencode-config-deps \\
-    && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \\
-    && rm -rf /tmp/opencode-deps-bundle-check \\
-    && echo "opencode-config-deps: baked tree bundles cleanly"
-
-COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
-RUN sudo chown -R kortix:kortix /opt/kortix/warm-config
-RUN cd /opt/kortix/warm-config/.kortix/opencode \\
-    && rm -rf node_modules \\
-    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\
-    && bun build plugins/*.ts --target=bun --outdir=/tmp/opencode-plugins-bundle-check \\
-    && rm -rf /tmp/opencode-plugins-bundle-check \\
-    && echo "opencode-config-deps: starter plugin files bundle cleanly"
-
-COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
-RUN bash /tmp/kortix-opencode-warmup instance targeted && rm -f /tmp/kortix-opencode-warmup
-
 USER root
 COPY kortix-agent.gz /tmp/kortix-agent.gz
 COPY kortix.gz /tmp/kortix.gz
@@ -394,8 +321,7 @@ RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\
     && kortix --version \\
     && chown kortix:kortix /usr/local/bin \\
-    && mkdir -p /home/kortix/.config/opencode && chown kortix:kortix /home/kortix/.config /home/kortix/.config/opencode && echo '{"autoupdate":false}' > /home/kortix/.config/opencode/opencode.json && chown kortix:kortix /home/kortix/.config/opencode/opencode.json && chmod 0644 /home/kortix/.config/opencode/opencode.json \\
-    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral
+    && chown -R kortix:kortix /opt/kortix /workspace
 
 COPY --chown=kortix:kortix managed-skills /opt/kortix/managed-skills
 RUN kortix-agent bake-runtime-assets-state \\
