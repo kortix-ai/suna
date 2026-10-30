@@ -208,6 +208,43 @@ function heldByLog(row: V1MessageRow, held: ReadonlySet<string>, revs: SessionLo
   return echo !== undefined && (held.has(echo) || revs[echo] !== undefined);
 }
 
+/** How far a server clock may run behind the sending tab's clock and still pair a send. */
+const SEND_SKEW_MS = 30_000;
+
+/** The typed text of a user row, or null (another role, or attachments only). */
+function sentText(row: V1MessageRow): string | null {
+  if (row.info.role !== 'user') return null;
+  const text = row.parts
+    .map((p) => (isObj(p) && p.type === 'text' && p.synthetic !== true && typeof p.text === 'string' ? p.text : ''))
+    .join('')
+    .trim();
+  return text || null;
+}
+
+/**
+ * The optimistic sends in `extra` the log already holds under an id the server minted. The
+ * prompt inbox re-mints every prompt's id, and a v2 stream has no echo frame to pair them, so
+ * the log's user message of the same text, created from the send on, retires the send. One
+ * log message retires one send: the same text sent twice shows twice until both arrive. A log
+ * message a v1 row holds by id is already paired and retires nothing.
+ */
+function sendsTheLogHolds(extra: readonly V1MessageRow[], logRows: readonly V1MessageRow[], v1Rows: readonly V1MessageRow[]): Set<V1MessageRow> {
+  const paired = new Set<V1MessageRow>();
+  const sends = extra.filter((r) => sentText(r) !== null);
+  if (!sends.length) return paired;
+  const byId = new Set(v1Rows.map((r) => r.info.id));
+  const free = logRows.filter((r) => !byId.has(r.info.id) && sentText(r) !== null);
+  const created = (r: V1MessageRow) => (r.info as { time?: { created?: number } }).time?.created ?? 0;
+  for (const send of [...sends].sort((a, b) => created(a) - created(b))) {
+    const text = sentText(send);
+    const at = free.findIndex((r) => sentText(r) === text && created(r) >= created(send) - SEND_SKEW_MS);
+    if (at < 0) continue;
+    free.splice(at, 1);
+    paired.add(send);
+  }
+  return paired;
+}
+
 export function sessionLogRowsFor<R extends V1MessageRow>(
   logs: Record<string, SessionLogState>,
   runtimeSessionId: string,
@@ -221,7 +258,9 @@ export function sessionLogRowsFor<R extends V1MessageRow>(
   const native = nativeOf(head);
   const own = cached && cached.v1Rows === v1Rows && cached.native === native && cached.revs === state.revs ? cached.own : ownRowsOf(head, list, native);
   const shown = new Set(own.map((r) => r.info.id));
-  const extra = v1Rows.filter((row) => !heldByLog(row, shown, state.revs, echoOf));
+  const unheld = v1Rows.filter((row) => !heldByLog(row, shown, state.revs, echoOf));
+  const sent = sendsTheLogHolds(unheld, own, v1Rows);
+  const extra = sent.size ? unheld.filter((row) => !sent.has(row)) : unheld;
   if (cached && cached.own === own && cached.extra.length === extra.length && cached.extra.every((r, i) => r === extra[i])) return cached.result as R[];
   const result = [...own];
   for (const row of extra) result.splice(insertAt(result, row), 0, row);
@@ -229,14 +268,15 @@ export function sessionLogRowsFor<R extends V1MessageRow>(
   return result as R[];
 }
 
-const extended = new WeakMap<SessionLogThread, { held: Set<string>; extra: V1MessageRow[]; result: SessionLogThread }>();
+const extended = new WeakMap<SessionLogThread, { held: Set<string>; logRows: V1MessageRow[]; extra: V1MessageRow[]; result: SessionLogThread }>();
 
 /**
  * `thread` (a thread of `state`) with the v1 store rows the log does not hold, as `fromV1` live
  * messages placed by time as `sessionLogRowsFor` places them (an older page `loadOlder` read
  * goes before the log's messages, an optimistic send after them). The log's messages keep
  * their `seq`; an added one numbers after the last. An optimistic send shows until the log's
- * put of the same id, or of the id the control plane re-minted it under (`echoOf`), replaces it.
+ * put of the same id, or of the id the control plane re-minted it under (`echoOf`), replaces it;
+ * with no echo id known, the log's user message of the same text from the send on replaces it.
  * A compaction marker and its summary row are one message, as on v1 (pi keeps no failed
  * compaction in its store, so only the v1 rows hold it).
  * A row the log holds, or tombstoned, stays out. The thread itself when no row is added; the
@@ -246,8 +286,11 @@ const extended = new WeakMap<SessionLogThread, { held: Set<string>; extra: V1Mes
 export function sessionLogThreadWithV1Rows(state: SessionLogState, thread: SessionLogThread, v1Rows: readonly V1MessageRow[], echoOf?: OptimisticEchoOf): SessionLogThread {
   const cached = extended.get(thread);
   // The ids the log's rows carry: a compaction message also gives its summary row.
-  const held = cached?.held ?? new Set(thread.messages.flatMap((m) => rowsOf(thread, m).map((r) => r.info.id)));
-  const extra = v1Rows.filter((r) => !heldByLog(r, held, state.revs, echoOf));
+  const logRows = cached?.logRows ?? thread.messages.flatMap((m) => rowsOf(thread, m));
+  const held = cached?.held ?? new Set(logRows.map((r) => r.info.id));
+  const unheld = v1Rows.filter((r) => !heldByLog(r, held, state.revs, echoOf));
+  const sent = sendsTheLogHolds(unheld, logRows, v1Rows);
+  const extra = sent.size ? unheld.filter((r) => !sent.has(r)) : unheld;
   if (cached && cached.extra.length === extra.length && cached.extra.every((r, i) => r === extra[i])) return cached.result;
   let result = thread;
   if (extra.length) {
@@ -261,7 +304,7 @@ export function sessionLogThreadWithV1Rows(state: SessionLogState, thread: Sessi
     }
     result = { ...thread, messages };
   }
-  extended.set(thread, { held, extra, result });
+  extended.set(thread, { held, logRows, extra, result });
   return result;
 }
 

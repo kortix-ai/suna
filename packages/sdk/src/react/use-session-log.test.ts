@@ -536,6 +536,31 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(joined.at(-1)!.options.schema).toBe('v2');
   });
 
+  test('session_log_missing while a turn runs: the page is read 6 s after the turn starts, once per turn, not only at its end', async () => {
+    // A new session's first prompt can run before this tab's runtime connection exists: that
+    // connection is live-only, so the user message frame is gone, and pi journals mid-turn
+    // every 5 s. Measured in the TUI: the first message showed only at the turn end.
+    let calls = 0;
+    let stored = false;
+    const running = (token: string) => ({
+      type: 'kortix.control.turn', cseq: 1, cepoch: 'c', at: 1,
+      payload: { known: true, turns: [{ turn_token: token, state: 'active' }], last_ended: null },
+    });
+    const missing = () => Object.assign(new Error('No session log for this session'), { status: 404, code: 'session_log_missing' });
+    const state = mount({ loader: async () => { calls++; if (!stored) throw missing(); return v1Page(); } });
+    await flush();
+    expect(state.dialect).toBe('missing');
+    expect(timers).toEqual([]);
+    // The state at join already holds the running turn: that counts as its start.
+    act(() => joined[0]!.options.onControl(running('t1')));
+    act(() => joined[0]!.options.onControl(running('t1')));
+    expect(timers.map((t) => t.ms)).toEqual([6_000]);
+    stored = true;
+    await runTimers();
+    expect(calls).toBe(2);
+    expect(state.dialect).toBe('v2');
+  });
+
   test('a kortix.resync on the v2 connection re-reads the page once, with no duplicate messages', async () => {
     let calls = 0;
     mount({ loader: async () => { calls++; return v1Page(); } });
