@@ -3,6 +3,11 @@
  * writes out of other projects' conversations, Telegram writes of a chat's
  * session in that chat.
  *
+ * Every rule below reads the call's declared arguments. The gateway refuses a
+ * channel call with any other argument before these gates run (`invalid_args`,
+ * `undeclaredChannelArg` in channels.ts): `body`, for one, would replace the
+ * whole request that was checked.
+ *
  * SLACK. Every project in a Slack workspace posts with the same bot token
  * (channel-read-scope.ts explains why). Reads are confined there. This module
  * confines the writes: posts, files, edits, deletes, reactions, joins, and

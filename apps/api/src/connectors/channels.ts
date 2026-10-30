@@ -139,6 +139,8 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
       },
       blocks: { type: 'array', description: 'Optional Block Kit blocks for a rich message.' },
       thread_ts: { type: 'string', description: 'Optional parent message ts to reply in-thread.' },
+      // The in-sandbox `slack send` sets it on every post.
+      mrkdwn: { type: 'boolean', description: 'Format `text` as mrkdwn (default true).' },
     },
     required: ['channel'],
   },
@@ -750,6 +752,21 @@ export function withChannelDefaults(
   const actions = isChannelPlatform(platform) ? CHANNEL_ACTIONS[platform] : [];
   const defaults = actions.find((a) => a.path === actionPath)?.defaults;
   return defaults ? { ...defaults, ...args } : args;
+}
+
+/**
+ * Why `args` do not fit a channel action, or null: the first argument the
+ * action does not declare. Read from the catalog in code, not from the
+ * materialized row, so an argument a release adds is accepted before every
+ * project re-syncs. An action the catalog does not have declares nothing.
+ */
+export function undeclaredChannelArg(platform: string, actionPath: string, args: Record<string, unknown>): string | null {
+  const actions = isChannelPlatform(platform) ? CHANNEL_ACTIONS[platform] : [];
+  const declared = Object.keys(actions.find((a) => a.path === actionPath)?.properties ?? {});
+  const extra = Object.keys(args).find((key) => !declared.includes(key));
+  if (extra === undefined) return null;
+  const takes = declared.length ? `It takes ${declared.join(', ')}.` : 'It takes no arguments.';
+  return `${actionPath} takes no argument "${extra.slice(0, 64)}". ${takes}`;
 }
 
 /** The fixed catalog for a channel platform (empty for an unknown platform). */

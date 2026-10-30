@@ -2472,7 +2472,8 @@ flow(
 //   5. the turn-stream relay says WHY a step was not relayed;
 //   6. ten consecutive calls after a mid-session connector add keep the grant;
 //   7. a Telegram send reaches any chat until a Telegram chat binds the
-//      session, then only that chat (`conversation_not_in_project`).
+//      session, then only that chat (`conversation_not_in_project`); an
+//      argument the action does not declare is refused (`invalid_args`).
 flow(
   'CONN-27',
   {
@@ -2679,7 +2680,7 @@ flow(
       );
 
       await ctx.step(
-        'a Telegram send reaches any chat while no Telegram chat is bound to the session, and only the bound chat after a bind',
+        'a Telegram send reaches any chat while no Telegram chat is bound to the session, only the bound chat after a bind, and never with an argument the action does not declare',
         async () => {
           const connector = await db.query<{ connector_id: string }>(
             `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
@@ -2706,10 +2707,10 @@ flow(
             bot,
             p.id,
           ]);
-          const send = (chatId: number) =>
+          const send = (chatId: number, extra: Record<string, unknown> = {}) =>
             session.post(
               '/v1/connectors/projects/:projectId/call',
-              { connector: 'kortix_telegram', action: 'send_message', args: { chat_id: chatId, text: 'ke2e' } },
+              { connector: 'kortix_telegram', action: 'send_message', args: { chat_id: chatId, text: 'ke2e', ...extra } },
               { params: { projectId: p.id }, timeoutMs: 60_000 },
             );
           // The seeded connector has no base URL: a send that passes every
@@ -2736,6 +2737,19 @@ flow(
               'This session answers Telegram chat -100777888 only. It does not send to, edit or delete messages in other chats.',
             );
           passedEveryCheck(await send(-100777888));
+          // `body` would replace the request the chat check read: an argument
+          // the action does not declare is refused before every check.
+          const overridden = await send(-100777888, { body: { chat_id: 444555666, text: 'ke2e' } });
+          overridden
+            .status(400)
+            .body()
+            .has('$.ok', false)
+            .has('$.status', 'denied')
+            .has('$.reason', 'invalid_args')
+            .has(
+              '$.message',
+              'send_message takes no argument "body". It takes chat_id, text, reply_parameters, message_thread_id, parse_mode, reply_markup.',
+            );
         },
       );
 
