@@ -672,6 +672,28 @@ Under `/kortix/runtime`, in session-log terms (bodies and answers:
 | `GET /log`, `GET /log/messages/:id`, `GET /log/blobs/:sha256` | the box's own session log, ahead of the API's copy while a turn runs, and its attachment bytes |
 | `GET /workspace`, `GET /workspace/diff?mode=branch\|git` | the checkout's path, home, VCS and default branch; its changes |
 
+### The box's log reads (`runtime.log.v1`)
+
+`RUNTIME_LOG_CAPABILITY` says the box's own log reads can stand in for the
+API's copy of the session log:
+
+- `GET /log` answers a whole `SessionLogPage`: the session record without
+  threads, the generation, the thread heads and one page of a thread. The seqs
+  and session fields are the ones the journal sends apps/api
+  (`sessionLogView()` in `shared/session-log-journal.ts`: its generation, its
+  session overlay, its per-thread seq offsets).
+- A prompt the box admitted and pi has not appended yet (queued behind a
+  running turn, or loading its images) is in the log from its admission at a
+  provisional seq above every real one (the queued seq in
+  `pi/session-log.ts`): on `GET /log`, `GET /log/messages/:id` and the v2
+  stream. When its turn starts, the stream gets it again at its real seq
+  (`reliveSessionLogMessage`). The journal never sends a queued seq to
+  apps/api.
+- `GET /kortix/health` `harness.session.root_thread_id` names the root thread
+  of the log: a restored dump's root once the runtime started.
+
+Each read still builds the log from pi's entries and the v1 transcript.
+
 ## Health and capabilities (E19, E1)
 
 `GET /kortix/health` is composed by `routes/kortix/health.ts`: the host facts

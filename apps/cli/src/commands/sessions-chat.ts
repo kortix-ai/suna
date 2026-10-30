@@ -985,16 +985,17 @@ export async function sendAndWaitForReply(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 1_000));
+    // The status read is cheap; the log is read only once the root is idle.
+    const { statuses } = await withKortixScope(target.auth, () => target.handle.pendingRequests());
+    const status = statuses[target.runtimeSessionId];
+    if (status && status !== 'idle') continue;
     const messages = await tip();
     const prompt = messages.find((message) => message.role === 'user' && !before.has(message.message_id));
     if (!prompt) continue;
     const reply = [...messages]
       .reverse()
       .find((message) => message.role === 'assistant' && message.reply_to === prompt.message_id);
-    if (!reply || reply.status === 'streaming') continue;
-    const { statuses } = await withKortixScope(target.auth, () => target.handle.pendingRequests());
-    const status = statuses[target.runtimeSessionId];
-    if (!status || status === 'idle') return reply;
+    if (reply && reply.status !== 'streaming') return reply;
   }
   throw new Error('Timed out waiting for the reply.');
 }

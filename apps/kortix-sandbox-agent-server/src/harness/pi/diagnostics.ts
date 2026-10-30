@@ -43,7 +43,12 @@ export function createPiDiagnosticsService(
           state,
           ready: !error && state === 'ok' && config.proven && initialSessionReady,
           error,
-          session: { id: bootState.initialRuntimeSessionId ?? null, required: !!bootState.initialRuntimeSessionRequired },
+          session: {
+            id: bootState.initialRuntimeSessionId ?? null,
+            required: !!bootState.initialRuntimeSessionRequired,
+            // The live root: a restored dump's root once the runtime started, never the minted one before it.
+            root_thread_id: state === 'ok' && rt ? rt.rootId : null,
+          },
           turn: probe ? { in_flight: probe.inFlight, end: probe.end, orphaned_prompt: probe.orphanedPrompt } : null,
           details: {
             model: model ? `${model.providerID}/${model.modelID}` : null,
