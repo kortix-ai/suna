@@ -77,6 +77,7 @@ export function fakeHarness(over: Partial<HarnessService> = {}): HarnessService 
       prompt: unused('turns.prompt'), steer: unused('turns.steer'), abort: unused('turns.abort'),
       readMessage: unused('turns.readMessage'), removeMessage: unused('turns.removeMessage'),
       retractMessage: unused('turns.retractMessage'), agents: unused('turns.agents'),
+      replyPermission: unused('turns.replyPermission'), replyQuestion: unused('turns.replyQuestion'), rejectQuestion: unused('turns.rejectQuestion'), compact: unused('turns.compact'), command: unused('turns.command'), setGrants: unused('turns.setGrants'), commands: unused('turns.commands'), pending: unused('turns.pending'), readLog: unused('turns.readLog'), readLogMessage: unused('turns.readLogMessage'), readBlob: unused('turns.readBlob'),
     },
     // `startProxy` starts it; an idle monitor that never ticks.
     background: { start: () => ({ stop: () => {}, latest: () => null, tick: unused('background.tick') }) },

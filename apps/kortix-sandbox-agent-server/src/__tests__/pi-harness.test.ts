@@ -4237,6 +4237,33 @@ describe('pi session log on the v2 stream (P4.3)', () => {
     for (const p of batches.flatMap((b) => b.puts)) expect(onStream.get(`${p.message.message_id}@${p.rev}`)).toEqual(p.message)
   })
 
+  test('a permission request reaches the stream as log.state pending at once, and leaves it when answered', async () => {
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
+    })
+    const rt = r.service.runtime()!
+    expect(startSessionLogJournal(createPiSessionLogPort(() => r.service.runtime()?.sessionLogSnapshot() ?? null), { generation: 0 })).not.toBeNull()
+    const stream = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
+    expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => rt.permissions.list().length === 1)
+    const asked = await readSse(stream, (t) => t.includes('"permissions":[{'))
+    const [request] = rt.permissions.list()
+    const pendingStates = (raw: string) =>
+      raw
+        .split('\n\n')
+        .filter((f) => f.includes('event: log.state'))
+        .map((f) => JSON.parse(f.slice(f.indexOf('data: ') + 6)).payload.session.pending)
+        .filter(Boolean) as Array<{ permissions: Array<{ id: string }> }>
+    expect(pendingStates(asked).at(-1)!.permissions.map((p) => p.id)).toEqual([request!.id])
+    const stream2 = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
+    expect((await r.user(`/kortix/runtime/permissions/${request!.id}/reply`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reply: 'once' }) })).status).toBe(200)
+    await waitFor(() => !rt.busy())
+    await flushSessionLogJournal()
+    const answered = await readSse(stream2, (t) => t.includes('"permissions":[]'))
+    expect(pendingStates(answered).at(-1)!.permissions).toEqual([])
+  })
+
   test('a live turn (P4.3b): the user put, a streaming put before the first delta, a put for each new block, then the final put at a higher rev', async () => {
     const r = await boot({ script: [{ tool: 'bash', args: { command: 'echo live-turn' } }, { text: 'Ran it for you.' }] })
     const rt = r.service.runtime()!
@@ -5299,5 +5326,222 @@ describe('pi Changes surface (/project/current vcs, /vcs/diff)', () => {
     // `git` mode is the working tree only: the committed file is not in it.
     const working = (await r.user('/vcs/diff?mode=git').then((res) => res.json())) as Array<{ file: string }>
     expect(working.map((f) => f.file)).toEqual(['gone.txt', 'kept.txt', 'new file.txt'])
+  })
+})
+
+describe('session-log actions (runtime.actions.v1)', () => {
+  const v3set = (set: Record<string, unknown>) => JSON.stringify({ schema: 3, ...set })
+  const call = (r: Rig, path: string, body?: unknown, method = 'POST') =>
+    r.user(`/kortix/runtime${path}`, { method, headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+  const askBash = JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } })
+  type LogPage = { thread_id: string; messages: SessionLogMessage[]; has_more: boolean }
+  const toolCalls = (page: LogPage) => page.messages.flatMap((m) => m.blocks).filter((b) => b.type === 'tool_call') as Array<{ name: string; status: string }>
+
+  test('health lists runtime.actions.v1', async () => {
+    const r = await boot({ script: [] })
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { capabilities: string[] }
+    expect(health.capabilities).toContain('runtime.actions.v1')
+  })
+
+  test('a permission request waits in the session log pending list until the reply route answers it', async () => {
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'done' }], env: { KORTIX_COMPILED_AGENT_CONFIG: askBash } })
+    const rt = r.service.runtime()!
+    expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => rt.permissions.list().length === 1)
+    const pending = piSessionLog(rt.sessionLogSnapshot()!).log.pending
+    expect(pending.questions).toEqual([])
+    expect(pending.permissions).toEqual([
+      {
+        id: expect.stringMatching(/^perm_/),
+        thread_id: rt.rootId,
+        call_id: expect.any(String),
+        payload: { permission: 'bash', patterns: ['echo gated'], always: expect.any(Array), metadata: { command: 'echo gated' } },
+        asked_at: expect.any(String),
+      },
+    ])
+    // The pending route serves the same records, with what each thread does now.
+    expect(await call(r, '/pending', undefined, 'GET').then((res) => res.json())).toEqual({
+      statuses: { [rt.rootId]: 'busy' },
+      permissions: pending.permissions,
+      questions: [],
+    })
+    const id = pending.permissions[0]!.id
+    expect((await call(r, `/permissions/${id}/reply`, { reply: 'sideways' })).status).toBe(400)
+    expect((await call(r, '/permissions/perm_none/reply', { reply: 'once' })).status).toBe(404)
+    expect(await call(r, `/permissions/${id}/reply`, { reply: 'once' }).then((res) => res.json())).toEqual({ ok: true })
+    await waitFor(() => !rt.busy())
+    expect(piSessionLog(rt.sessionLogSnapshot()!).log.pending.permissions).toEqual([])
+    expect(await call(r, '/pending', undefined, 'GET').then((res) => res.json())).toEqual({
+      statuses: { [rt.rootId]: 'idle' },
+      permissions: [],
+      questions: [],
+    })
+    const page = (await call(r, '/log', undefined, 'GET').then((res) => res.json())) as LogPage
+    expect(toolCalls(page)).toMatchObject([{ name: 'bash', status: 'complete' }])
+  })
+
+  test('a question is answered, or dismissed, through the question routes', async () => {
+    const ask = { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } }
+    const r = await boot({ script: [ask, { text: 'went A' }, ask, { text: 'went on' }] })
+    const rt = r.service.runtime()!
+    for (const [route, body, outcome] of [
+      ['reply', { answers: [['A']] }, 'complete'],
+      ['reject', undefined, 'error'],
+    ] as const) {
+      expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: route }] })).status).toBe(204)
+      await waitFor(() => rt.questions.list().length === 1)
+      const [pending] = piSessionLog(rt.sessionLogSnapshot()!).log.pending.questions
+      expect(pending).toMatchObject({ thread_id: rt.rootId, payload: { questions: [{ question: 'Which way?' }] } })
+      expect((await call(r, `/questions/${pending!.id}/${route}`, body)).status).toBe(200)
+      expect((await call(r, `/questions/${pending!.id}/${route}`, body)).status).toBe(404)
+      await waitFor(() => !rt.busy())
+      const page = (await call(r, '/log', undefined, 'GET').then((res) => res.json())) as LogPage
+      expect(toolCalls(page).at(-1)).toMatchObject({ name: 'question', status: outcome })
+    }
+    expect((await call(r, '/questions/que_none/reply', { answers: 'A' })).status).toBe(400)
+  })
+
+  test('grants answer every ask without a prompt, a deny still wins, and an empty list asks again', async () => {
+    const compiled = JSON.stringify({ agent: { build: { permission: { bash: 'ask', edit: 'deny' } } } })
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo granted' } }, { text: 'one' }, { tool: 'write', args: { path: 'no.txt', content: 'x' } }, { text: 'two' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: compiled },
+    })
+    const rt = r.service.runtime()!
+    expect(await call(r, `/sessions/${rt.rootId}/grants`, { grants: ['*'] }, 'PUT').then((res) => res.json())).toEqual({ grants: ['*'] })
+    await promptAndSettle(r, 'run it')
+    await promptAndSettle(r, 'write it')
+    const page = (await call(r, '/log', undefined, 'GET').then((res) => res.json())) as LogPage
+    expect(toolCalls(page).map((c) => [c.name, c.status])).toEqual([['bash', 'complete'], ['write', 'error']])
+    expect(existsSync(join(r.workspace, 'no.txt'))).toBe(false)
+    expect(await call(r, `/sessions/${rt.rootId}/grants`, { grants: [] }, 'PUT').then((res) => res.json())).toEqual({ grants: [] })
+    gateway.script([{ tool: 'bash', args: { command: 'echo asked' } }, { text: 'three' }])
+    expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: 'again' }] })).status).toBe(204)
+    await waitFor(() => rt.permissions.list().length === 1)
+    rt.permissions.rejectAll()
+    await waitFor(() => !rt.busy())
+    expect((await call(r, '/sessions/ses_other/grants', { grants: ['*'] }, 'PUT')).status).toBe(404)
+  })
+
+  test('commands: the list names each command, template and skill; the command route runs one and refuses what it must', async () => {
+    const set = v3set({
+      default_agent: 'build',
+      agent: { build: { mode: 'primary', prompt: 'You build.', permission: 'allow' }, reviewer: { mode: 'all', prompt: 'You review.', permission: 'allow' } },
+      commands: {
+        audit: { description: 'Audit a module', template: 'Audit $1 for $ARGUMENTS.', agents: ['reviewer'] },
+        ship: { template: 'Ship it.', agents: ['build', 'reviewer'] },
+      },
+    })
+    const r = await boot({ script: [{ text: 'Shipped.' }], env: { KORTIX_COMPILED_AGENT_CONFIG: set } })
+    const rt = r.service.runtime()!
+    const { commands } = (await call(r, '/commands', undefined, 'GET').then((res) => res.json())) as { commands: Array<Record<string, unknown>> }
+    expect(commands.filter((c) => c.source !== 'skill')).toEqual([
+      { name: 'audit', description: 'Audit a module', source: 'command', agents: ['reviewer'] },
+      { name: 'ship', description: null, source: 'command', agents: ['build', 'reviewer'] },
+    ])
+    expect(commands.every((c) => !('template' in c))).toBe(true)
+    const refused = await call(r, `/sessions/${rt.rootId}/command`, { name: 'audit', arguments: 'billing' })
+    expect([refused.status, await refused.json()]).toEqual([403, { error: 'command_not_enabled', command: 'audit', agent: 'build' }])
+    expect((await call(r, `/sessions/${rt.rootId}/command`, { name: 'nope' })).status).toBe(400)
+    expect((await call(r, `/sessions/${rt.rootId}/command`, { arguments: 'x' })).status).toBe(400)
+    const messageId = 'msg_0198e2a4b0f1COMMANDSHIPABC'
+    const ran = await call(r, `/sessions/${rt.rootId}/command`, { name: 'ship', message_id: messageId })
+    expect([ran.status, await ran.json()]).toEqual([202, { message_id: messageId }])
+    await waitFor(() => !rt.busy())
+    const sent = await call(r, `/log/messages/${messageId}`, undefined, 'GET').then((res) => res.json())
+    expect(sent).toMatchObject({ role: 'user', blocks: [{ type: 'text', text: 'Ship it.' }] })
+  })
+
+  test('the log routes page a thread of the box session log; an unknown thread, message or blob is 404', async () => {
+    const r = await boot({ script: [{ text: 'one' }, { text: 'two' }, { text: 'three' }] })
+    const rt = r.service.runtime()!
+    for (const text of ['first', 'second', 'third']) await promptAndSettle(r, text)
+    const all = (await call(r, '/log?limit=200', undefined, 'GET').then((res) => res.json())) as LogPage
+    expect(all.thread_id).toBe(rt.rootId)
+    expect(all.has_more).toBe(false)
+    const turns = all.messages.filter((m) => m.kind === 'turn').map((m) => [m.role, (m.blocks[0] as { text?: string })?.text])
+    expect(turns).toEqual([['user', 'first'], ['assistant', 'one'], ['user', 'second'], ['assistant', 'two'], ['user', 'third'], ['assistant', 'three']])
+    const seqs = all.messages.map((m) => m.seq)
+    expect(seqs).toEqual([...seqs].sort((a, b) => a - b))
+    const newest = (await call(r, '/log?limit=2', undefined, 'GET').then((res) => res.json())) as LogPage
+    expect(newest.messages.map((m) => m.message_id)).toEqual(all.messages.slice(-2).map((m) => m.message_id))
+    expect(newest.has_more).toBe(true)
+    const older = (await call(r, `/log?limit=2&before_seq=${newest.messages[0]!.seq}`, undefined, 'GET').then((res) => res.json())) as LogPage
+    expect(older.messages.map((m) => m.message_id)).toEqual(all.messages.slice(-4, -2).map((m) => m.message_id))
+    const after = (await call(r, `/log?after_seq=${all.messages[1]!.seq}&limit=1`, undefined, 'GET').then((res) => res.json())) as LogPage
+    expect(after.messages.map((m) => m.message_id)).toEqual([all.messages[2]!.message_id])
+    expect(after.has_more).toBe(true)
+    const one = all.messages.find((m) => m.role === 'assistant')!
+    expect(await call(r, `/log/messages/${one.message_id}`, undefined, 'GET').then((res) => res.json())).toEqual(one)
+    expect((await call(r, '/log/messages/msg_missing', undefined, 'GET')).status).toBe(404)
+    expect((await call(r, '/log?thread=ses_missing', undefined, 'GET')).status).toBe(404)
+    expect((await call(r, `/log/blobs/${'0'.repeat(64)}`, undefined, 'GET')).status).toBe(404)
+    expect((await call(r, '/log/blobs/not-a-digest', undefined, 'GET')).status).toBe(400)
+  })
+
+  test('a prompt image is served by its sha256 from the blob route', async () => {
+    const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAD0lEQVR4nGO4IycnZ3MHAAfrAk9bJYxoAAAAAElFTkSuQmCC', 'base64')
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    mkdirSync(join(workspace, 'uploads/.kortix-inbox/cmd_1'), { recursive: true })
+    const path = join(workspace, 'uploads/.kortix-inbox/cmd_1/1-swatch.png')
+    writeFileSync(path, PNG)
+    const sha = createHash('sha256').update(PNG).digest('hex')
+    // The model names the digest with an HTML type in a tool input first: only the attachment's own record types the bytes.
+    const r = await boot({
+      workspace,
+      script: [{ tool: 'bash', args: { command: 'true', sha256: sha, mime: 'text/html' } }, { text: 'ran' }, { text: 'seen' }],
+      catalog: testModel({ attachment: true }),
+    })
+    const rt = r.service.runtime()!
+    await promptAndSettle(r, 'run a command')
+    const tag = `<file path="${path}" mime="image/png" filename="swatch.png">\nuploaded\n</file>`
+    expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: `what colours? ${tag}` }] })).status).toBe(204)
+    await waitFor(() => !rt.busy())
+    const res = await call(r, `/log/blobs/${sha}`, undefined, 'GET')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('image/png')
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(res.headers.get('content-disposition')).toBe('attachment')
+    expect(res.headers.get('content-security-policy')).toBe("default-src 'none'; sandbox")
+    expect(Buffer.from(await res.arrayBuffer()).equals(PNG)).toBe(true)
+  })
+
+  test('the workspace routes name the checkout and list its changes', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    const git = (...args: string[]) => spawnSync('git', ['-C', workspace, '-c', 'user.name=t', '-c', 'user.email=t@example.test', ...args], { encoding: 'utf8' })
+    git('init', '-q', '-b', 'main')
+    writeFileSync(join(workspace, 'a.txt'), 'one\n')
+    git('add', 'a.txt')
+    git('commit', '-qm', 'one')
+    writeFileSync(join(workspace, 'a.txt'), 'two\n')
+    const r = await boot({ workspace, script: [], env: { KORTIX_DEFAULT_BRANCH: 'main' } })
+    expect(await call(r, '/workspace', undefined, 'GET').then((res) => res.json())).toEqual({
+      directory: workspace,
+      home: process.env.HOME ?? '/home/kortix',
+      vcs: 'git',
+      default_branch: 'main',
+    })
+    const { files } = (await call(r, '/workspace/diff?mode=git', undefined, 'GET').then((res) => res.json())) as { files: Array<Record<string, unknown>> }
+    expect(files).toEqual([{ path: 'a.txt', status: 'modified', additions: 1, deletions: 1, patch: expect.stringContaining('+two') }])
+    expect((await call(r, '/workspace/diff?mode=everything', undefined, 'GET')).status).toBe(400)
+  })
+
+  test('log.status on the v2 stream: busy then idle for a turn; compacting while a summary runs', async () => {
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, { text: 'SUMMARY' }], prepare: compactEverything })
+    const rt = r.service.runtime()!
+    const stream = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    expect((await call(r, `/sessions/${rt.rootId}/compact`)).status).toBe(202)
+    const raw = await readSse(stream, (t) => t.split('event: log.status').length > 6 && t.includes('"status":"compacting"'))
+    const statuses = raw
+      .split('\n\n')
+      .filter((f) => f.includes('event: log.status'))
+      .map((f) => JSON.parse(f.slice(f.indexOf('data: ') + 6)).payload as { thread_id: string; status: string })
+    for (const s of statuses) expect(SESSION_LOG_EVENTS['log.status'].safeParse(s).success).toBe(true)
+    expect(statuses.every((s) => s.thread_id === rt.rootId)).toBe(true)
+    expect(statuses.map((s) => s.status).slice(0, 4)).toEqual(['busy', 'idle', 'busy', 'idle'])
+    expect(statuses.map((s) => s.status)).toContain('compacting')
+    expect((await call(r, '/sessions/ses_other/compact')).status).toBe(404)
   })
 })
