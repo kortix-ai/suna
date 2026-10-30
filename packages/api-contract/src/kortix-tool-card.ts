@@ -90,7 +90,8 @@ export type WorkflowAgentStatus = 'starting' | 'running' | 'done' | 'failed' | '
 
 export interface WorkflowRunPhase {
   title: string;
-  status: WorkflowRunStatus;
+  /** `pending`: declared in the script's `meta.phases`, not started yet. */
+  status: WorkflowRunStatus | 'pending';
 }
 
 export interface WorkflowRunAgent {
@@ -107,6 +108,17 @@ export interface WorkflowRunAgent {
   sessionId?: string;
   /** The first line of its answer, or of its error. */
   summary?: string;
+  /** Resumed run: this agent's saved result from the earlier run was reused; no session started. */
+  cached?: true;
+  /** The model the script asked for (`agent(p, { model })`); absent = the agent's own. */
+  model?: string;
+  /** `agent(p, { schema })`: the answer is JSON checked against the schema. */
+  structured?: true;
+  /** 1 for the first attempt; a stalled agent restarts with the same prompt (Claude: `(retry n)`). */
+  attempt?: number;
+  /** Epoch ms. */
+  startedAt?: number;
+  endedAt?: number;
 }
 
 export interface WorkflowRunMetadata {
@@ -118,4 +130,20 @@ export interface WorkflowRunMetadata {
   startedAt: number;
   endedAt?: number;
   error?: string;
+  /** The most agents this run may start: what the person approved, else the tool's limit. */
+  maxAgents?: number;
+  /** A saved workflow run by name (`meta.name`). */
+  name?: string;
+  /** The script's newest `log()` lines, oldest first (at most 5). */
+  logs?: string[];
+  /** More than 25 agents planned or started: the card warns, as Claude Code's "Large workflow". */
+  large?: true;
+  /** The run this one resumed (`resume_run_id`): its completed agents' results were reused. */
+  resumedFrom?: string;
+  /**
+   * `background: true`: the run goes on in its own runner session (a child of
+   * this one), and this call returned at once. The runner session holds the
+   * live run; its answer arrives here as a notification when the run ends.
+   */
+  background?: { sessionId: string };
 }

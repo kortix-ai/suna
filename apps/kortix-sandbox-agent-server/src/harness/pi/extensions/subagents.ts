@@ -40,6 +40,7 @@
  */
 import type { ExtensionAPI, InlineExtension } from '@earendil-works/pi-coding-agent'
 import type { CompiledAgent } from '@kortix/api-contract/runtime-relay'
+import type { RuntimeQuestion } from '@kortix/api-contract/transcript'
 import { Type } from 'typebox'
 
 /** What the subagents extension needs from the runtime that hosts it. */
@@ -65,12 +66,37 @@ export interface KortixHost {
   anyProjectAgent?(): boolean
   /** Run one prompt in a child (separate or same session, see `session`) and return its final answer. */
   spawnSession(input: SpawnSessionInput): Promise<SpawnSessionResult>
+  /** The `workflow` tool's limits on this box (`extensions/workflow.ts`). */
+  workflowLimits(): WorkflowLimits
   /**
-   * The `workflow` tool's limits on this box: how many of its children run at
-   * once (the separate-session cap), and why a run is refused here (this
-   * session is at the subagent depth cap). `extensions/workflow.ts`.
+   * Ask the person in this session (the question broker the `question` tool
+   * uses), attached to the tool call `toolCallId`. Resolves with the answers,
+   * or null when the question was dismissed or the turn ended.
    */
-  workflowLimits(): { maxParallel: number; refusal?: string }
+  ask(questions: RuntimeQuestion[], toolCallId: string): Promise<string[][] | null>
+  /** This session's `runtime_context` (`KORTIX_SESSION_CONTEXT`), parsed; `{}` when absent or malformed. */
+  sessionContext(): Record<string, unknown>
+  /** Where the workflow tool keeps its run records: `$KORTIX_RUNTIME_STATE_DIR/workflows`. */
+  workflowStateDir(): string
+  /** The project checkout this session works in (a git working tree), or null (My Kortix's box has none). */
+  projectCheckout(): string | null
+  /** The Kortix API with this session's token, or null without a control plane. */
+  projectApi(): { apiUrl: string; projectId: string; token: string } | null
+}
+
+/** What bounds a workflow run on this box. */
+export interface WorkflowLimits {
+  /** Children one run keeps working at once: the workflow cap, never above the box's separate-session cap. */
+  maxParallel: number
+  /** `agent()` calls one run may make (`KORTIX_WORKFLOW_MAX_AGENTS`). */
+  maxAgents: number
+  /** Why this session cannot run a workflow (it is at the subagent depth cap). */
+  refusal?: string
+  /** This session's subagent depth (0 for a session a person started) and the cap. */
+  depth: number
+  maxDepth: number
+  /** The box can start separate child sessions (a runner, a saver). */
+  controlPlane: boolean
 }
 
 /** Where a subagent runs: its own new Kortix session (`separate`), or inside this session (`same`). */
@@ -100,6 +126,16 @@ export interface SpawnSessionInput {
    * ends. Ignored for `same` and for a resume.
    */
   background?: boolean
+  /** More `runtime_context` keys for a new separate session (the workflow runner's script). The subagent keys win. */
+  runtimeContext?: Record<string, string | number | boolean>
+  /**
+   * A separate session whose transcript shows no progress for this long is
+   * stopped, and the result is an error with `stalled: true`. A tool call the
+   * child is still running counts as progress.
+   */
+  stallMs?: number
+  /** The most this call waits for a separate child's turn; 30 min when absent. */
+  waitMs?: number
   signal?: AbortSignal
   /** Called once the child exists, before its model runs. */
   onSession?: (session: { sessionId: string; model: { providerID: string; modelID: string } }) => void
@@ -117,6 +153,8 @@ export interface SpawnSessionResult {
   notice?: string
   /** The child runs on; its answer arrives later as a notification (`SpawnSessionInput.background`). */
   background?: boolean
+  /** The child made no progress for `SpawnSessionInput.stallMs` and was stopped. */
+  stalled?: true
 }
 
 interface SubagentType {

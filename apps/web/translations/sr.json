@@ -3155,10 +3155,45 @@
         "running": "Ради",
         "done": "Готово",
         "failed": "Није успело",
-        "stopped": "Заустављено"
+        "stopped": "Заустављено",
+        "pending": "Није почело"
       },
       "openAgent": "Отвори {label}",
-      "showDetails": "Прикажи детаље"
+      "showDetails": "Прикажи детаље",
+      "failedSuffix": "{count} није успело",
+      "resumed": "Настављено",
+      "resumedHint": "Агенти који су завршили у претходном покретању задржавају своје одговоре.",
+      "large": "Велико покретање",
+      "largeHint": "Ово покретање покреће више од 25 агената. Сваког агента можеш да зауставиш из његовог реда.",
+      "openRun": "Отвори покретање",
+      "openRunLabel": "Отвори сесију покретања",
+      "backgroundIdle": "У сопственој сесији",
+      "savedName": "Сачувани ток рада {name}",
+      "upTo": "До {count, plural, one {# агент} few {# агента} other {# агената}}",
+      "result": "Резултат",
+      "logLabel": "Дневник тока рада",
+      "agentsLabel": "Агенти тока рада",
+      "filter": {
+        "label": "Прикажи агенте",
+        "all": "Сви",
+        "running": "Раде",
+        "failed": "Нису успели",
+        "done": "Готови"
+      },
+      "filterEmpty": {
+        "running": "Ниједан агент не ради.",
+        "failed": "Ниједан агент није пао.",
+        "done": "Ниједан агент још није готов."
+      },
+      "showAll": "Прикажи свих {count}",
+      "retry": "поновни покушај {count}",
+      "cached": "из претходног покретања",
+      "stopAgent": "Заустави {label}",
+      "stopHint": "Заустави овог агента",
+      "stopFailed": "Није могуће зауставити {label}",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, one {JSON · # кључ} few {JSON · # кључа} other {JSON · # кључева}}",
+      "jsonItems": "{count, plural, one {JSON · # ставка} few {JSON · # ставке} other {JSON · # ставки}}"
     },
     "agent": {
       "backgroundWorking": "Ради у позадини",

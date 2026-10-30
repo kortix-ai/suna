@@ -3155,10 +3155,45 @@
         "running": "En cours",
         "done": "Terminé",
         "failed": "Échec",
-        "stopped": "Arrêté"
+        "stopped": "Arrêté",
+        "pending": "Pas commencé"
       },
       "openAgent": "Ouvrir {label}",
-      "showDetails": "Afficher les détails"
+      "showDetails": "Afficher les détails",
+      "failedSuffix": "{count} en échec",
+      "resumed": "Repris",
+      "resumedHint": "Les agents terminés lors de l'exécution précédente gardent leurs réponses.",
+      "large": "Grande exécution",
+      "largeHint": "Cette exécution lance plus de 25 agents. Vous pouvez arrêter chaque agent depuis sa ligne.",
+      "openRun": "Ouvrir l'exécution",
+      "openRunLabel": "Ouvrir la session de l'exécution",
+      "backgroundIdle": "Dans sa propre session",
+      "savedName": "Workflow enregistré {name}",
+      "upTo": "Jusqu'à {count, plural, one {# agent} other {# agents}}",
+      "result": "Résultat",
+      "logLabel": "Journal du workflow",
+      "agentsLabel": "Agents du workflow",
+      "filter": {
+        "label": "Afficher les agents",
+        "all": "Tous",
+        "running": "En cours",
+        "failed": "En échec",
+        "done": "Terminés"
+      },
+      "filterEmpty": {
+        "running": "Aucun agent n'est en cours.",
+        "failed": "Aucun agent n'a échoué.",
+        "done": "Aucun agent n'a encore terminé."
+      },
+      "showAll": "Tout afficher ({count})",
+      "retry": "nouvel essai {count}",
+      "cached": "de la dernière exécution",
+      "stopAgent": "Arrêter {label}",
+      "stopHint": "Arrêter cet agent",
+      "stopFailed": "Impossible d'arrêter {label}",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, one {JSON · # clé} other {JSON · # clés}}",
+      "jsonItems": "{count, plural, one {JSON · # élément} other {JSON · # éléments}}"
     },
     "agent": {
       "backgroundWorking": "Travaille en arrière-plan",

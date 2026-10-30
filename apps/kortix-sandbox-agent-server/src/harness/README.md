@@ -1140,6 +1140,19 @@ an error that names `session: "same"` as the way to run it here. A separate
 child runs its own pi with the `agent` tool, so it may delegate again up to
 that depth.
 
+**Workflows.** The `workflow` tool (`pi/extensions/workflow.ts`) starts each
+`agent()` through the same spawn, with three more inputs: `stallMs` (a child
+whose transcript tail, `GET …/transcript?limit=3`, shows no change and no
+running tool for that long is stopped; the result carries `stalled: true` and
+the tool starts a new session), `waitMs` (the run's 2 h deadline replaces the
+30 min ceiling), and `runtimeContext` (a background run's runner gets the
+script, args and approved cap as `kortix.workflow.*` keys; the subagent keys
+win, and the whole context stays within the API's 16 KiB). The run approval
+asks through the question broker at depth 0 only. Run records for
+`resume_run_id` live in `$KORTIX_RUNTIME_STATE_DIR/workflows/runs/`. Saved
+workflows are `.kortix/workflows/<name>.js`: the checkout's working tree, or
+the API's project files on a box without one.
+
 **Tool concurrency.** The root agent runs `toolExecution: 'parallel'`. Every
 built-in tool is `executionMode: 'sequential'` except `PARALLEL_TOOLS`
 (`image_gen`, `runtime.ts`); `agent` (and its `task` alias) is parallel too. pi-agent-core runs a

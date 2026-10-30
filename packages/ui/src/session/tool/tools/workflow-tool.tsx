@@ -1,7 +1,9 @@
 'use client';
 
-import Loading from '../../../primitives/loading';
+import { Badge } from '../../../primitives/badge';
+import { Hint } from '../../../primitives/hint';
 import { TextShimmer } from '../../../primitives/text-shimmer';
+import { errorToast } from '../../../primitives/toast';
 import { SubSessionModal } from '../../thread/sub-session-modal';
 import { GenericTool } from '../generic-tool';
 import {
@@ -16,62 +18,59 @@ import {
 } from '../shared/infrastructure';
 import { FoldedSection, OutputBlock } from '../shared/output-block';
 import { ToolRegistry } from '../shared/registry';
-import { ToolResultCard } from '../shared/result-card';
 import type { ToolProps } from '../shared/types';
 import { ToolError } from '../tool-error';
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
-import { CheckIcon, FlowArrowIcon, MinusIcon, WarningIcon } from '@phosphor-icons/react';
-import { useCallback, useContext, useMemo, useState } from 'react';
-import { useSessionChildren } from '@kortix/sdk/react';
-import type { ProjectSession } from '@kortix/sdk';
+import { FlowArrowIcon, WarningIcon } from '@phosphor-icons/react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { qk, useProjectSession, useSessionChildren } from '@kortix/sdk/react';
+import { stopProjectSession, type ProjectSession } from '@kortix/sdk';
 import { useSessionIds } from '../../../providers/session-ids';
+import { WorkflowLogs, WorkflowProgress, type AgentStopState } from './workflow-progress';
 import {
+  countAgents,
+  elapsedMs,
+  formatElapsed,
   isWorkflowTool,
+  parseWorkflowResult,
   parseWorkflowRun,
-  type WorkflowAgentStatus,
+  type WorkflowResult,
   type WorkflowRun,
   type WorkflowRunAgent,
-  type WorkflowRunStatus,
 } from './workflow-run';
 
 /**
  * The card of pi's `workflow` tool: one script that runs several agents, each in
- * its own child session.
+ * its own child session. It is Claude Code's `/workflows` progress view, inside the chat.
  *
  * The run arrives as part metadata (`WorkflowRunMetadata` in
  * `packages/api-contract/src/kortix-tool-card.ts`), pushed live with every change.
- * The card is the run's title and overall state, its phases, then one dense row
- * per agent: what it does, which agent it runs as, its state and the first line
- * of its answer. A row opens that agent's session in place, as a task row does
- * (`SubSessionModal`). Sixteen agents are sixteen lines, never sixteen cards.
+ * The header says what runs and how far it got ("3 of 8 done · 1 failed · 2m 04s"),
+ * with a "Large run" chip past 25 agents and a "Resumed" chip for a relaunch. The
+ * body is the script's newest log lines, then the phases with their agents
+ * (`workflow-progress.tsx`): a row opens that agent's session in place, as a task
+ * row does (`SubSessionModal`), and a running row has a Stop button. A finished run
+ * folds the script's result away under "Result".
+ *
+ * A run started with `background: true` returned at once: its progress lives in its
+ * own runner session, so the card is one row that opens that session.
  *
  * A call that settled with metadata that is not a run renders as the generic card.
  */
 
-/**
- * One status mark for a run, a phase or an agent: a spinner while it works, else the
- * outcome. The glyph is decoration; the word beside it is for a screen reader.
- */
-function StateMark({ status, label }: { status: WorkflowRunStatus | WorkflowAgentStatus; label: string }) {
-  return (
-    <>
-      {status === 'starting' || status === 'running' ? (
-        // `Loading` paints itself `text-background` inside a button; an agent row is one.
-        <Loading className="text-muted-foreground in-[button]:text-muted-foreground size-3 shrink-0" />
-      ) : status === 'done' ? (
-        <CheckIcon aria-hidden className="text-kortix-green size-3 shrink-0" />
-      ) : status === 'failed' ? (
-        <WarningIcon weight="fill" aria-hidden className="text-kortix-red size-3 shrink-0" />
-      ) : (
-        <MinusIcon aria-hidden className="text-muted-foreground size-3 shrink-0" />
-      )}
-      <span className="sr-only">{label}</span>
-    </>
-  );
-}
-
-function WorkflowTrigger({ title, subtitle, live }: { title: string; subtitle?: string; live: boolean }) {
+function WorkflowTrigger({
+  title,
+  subtitle,
+  chips,
+  live,
+}: {
+  title: string;
+  subtitle?: string;
+  chips?: React.ReactNode;
+  live: boolean;
+}) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-sm">
       {live ? (
@@ -83,8 +82,9 @@ function WorkflowTrigger({ title, subtitle, live }: { title: string; subtitle?: 
           {title}
         </span>
       )}
+      {chips}
       {subtitle && (
-        <span className="text-muted-foreground min-w-0 flex-1 truncate" title={subtitle}>
+        <span className="text-muted-foreground min-w-0 flex-1 truncate tabular-nums" title={subtitle}>
           {subtitle}
         </span>
       )}
@@ -92,51 +92,66 @@ function WorkflowTrigger({ title, subtitle, live }: { title: string; subtitle?: 
   );
 }
 
-function PhaseLine({ run }: { run: WorkflowRun }) {
+function RunChips({ run }: { run: WorkflowRun }) {
   const t = useTranslations('tools.workflow');
-  const indent = useToolIndent();
+  if (!run.large && !run.resumedFrom) return null;
   return (
-    <ol className={cn('flex flex-wrap items-center gap-x-3 gap-y-1 text-xs', indent && 'mt-1.5', indent)}>
-      {run.phases.map((phase, index) => (
-        <li key={`${phase.title}-${index}`} className="flex min-w-0 items-center gap-1.5">
-          <StateMark status={phase.status} label={t(`status.${phase.status}`)} />
-          <span className={cn('min-w-0 truncate', phase.status === 'running' ? 'text-foreground' : 'text-muted-foreground')}>
-            {phase.title}
-          </span>
-        </li>
-      ))}
-    </ol>
+    <>
+      {run.resumedFrom && (
+        <Hint label={t('resumedHint')} side="top">
+          <Badge variant="default">{t('resumed')}</Badge>
+        </Hint>
+      )}
+      {run.large && (
+        <Hint label={t('largeHint')} side="top">
+          <Badge variant="warning">
+            <WarningIcon weight="fill" aria-hidden />
+            {t('large')}
+          </Badge>
+        </Hint>
+      )}
+    </>
   );
 }
 
-const AGENT_ROW_CLASS = 'flex w-full min-w-0 items-center gap-2 rounded-sm px-2 py-1 text-left text-xs';
-
-function AgentRow({ agent, onOpen }: { agent: WorkflowRunAgent; onOpen: (agent: WorkflowRunAgent) => void }) {
+/**
+ * The way into a run's own session, at the right edge of the header. A `span
+ * role="button"`: the header renders inside the row's own `role="button"`, and a
+ * button inside a button is invalid HTML (the task row's "Full view" is the same).
+ */
+function OpenRunAction({ onOpen }: { onOpen: () => void }) {
   const t = useTranslations('tools.workflow');
-  const statusLabel = t(`status.${agent.status}`);
-  const body = (
-    <>
-      <StateMark status={agent.status} label={statusLabel} />
-      <span className="text-foreground min-w-0 shrink truncate" title={agent.label}>
-        {agent.label}
-      </span>
-      {agent.agent && <span className="text-muted-foreground shrink-0">{agent.agent}</span>}
-      <span className="text-muted-foreground min-w-0 flex-1 truncate" title={agent.summary}>
-        {agent.summary ?? (agent.status === 'starting' || agent.status === 'running' ? '' : statusLabel)}
-      </span>
-    </>
-  );
-  if (!agent.sessionId) return <div className={AGENT_ROW_CLASS}>{body}</div>;
   return (
-    <button
-      type="button"
-      aria-label={t('openAgent', { label: agent.label })}
-      onClick={() => onOpen(agent)}
-      className={cn(AGENT_ROW_CLASS, 'hover:bg-muted/40 cursor-pointer transition-colors')}
+    <span
+      role="button"
+      tabIndex={0}
+      aria-label={t('openRunLabel')}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen();
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        event.stopPropagation();
+        onOpen();
+      }}
+      className="text-muted-foreground hover:text-foreground cursor-pointer text-xs whitespace-nowrap underline-offset-2 hover:underline"
     >
-      {body}
-    </button>
+      {t('openRun')}
+    </span>
   );
+}
+
+/** The current time, every second while `active`: a live run's elapsed labels tick. */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return now;
 }
 
 /**
@@ -152,18 +167,28 @@ export function runFromChildren(children: ProjectSession[], startedMs: number, i
     title: description,
     status: 'running',
     phases: [],
+    logs: [],
+    ...(Number.isFinite(startedMs) ? { startedAt: startedMs } : {}),
     agents: mine
       .slice()
       .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
-      .map((child, index) => ({
-        id: `a${index + 1}`,
-        label: (child.name ?? '').replace(/\s*\([^)]*\)\s*$/, '') || child.agent_name || child.session_id.slice(0, 8),
-        ...(child.agent_name ? { agent: child.agent_name } : {}),
-        status: child.status === 'completed' ? 'done' : child.status === 'failed' ? 'failed' : 'running',
-        sessionId: child.session_id,
-      })),
+      .map((child, index): WorkflowRunAgent => {
+        const status = child.status === 'completed' ? 'done' : child.status === 'failed' ? 'failed' : 'running';
+        const created = Date.parse(child.created_at);
+        return {
+          id: `a${index + 1}`,
+          label: (child.name ?? '').replace(/\s*\([^)]*\)\s*$/, '') || child.agent_name || child.session_id.slice(0, 8),
+          ...(child.agent_name ? { agent: child.agent_name } : {}),
+          status,
+          sessionId: child.session_id,
+          // A child that settled has no end time in the list: only a running one shows its elapsed time.
+          ...(status === 'running' && Number.isFinite(created) ? { startedAt: created } : {}),
+        };
+      }),
   };
 }
+
+type OpenTarget = { sessionId: string; title: string };
 
 export function WorkflowTool(props: ToolProps) {
   const { call, defaultOpen, forceOpen, locked } = props;
@@ -184,8 +209,51 @@ export function WorkflowTool(props: ToolProps) {
     () => parsed ?? (needChildren ? runFromChildren(children, startedMs, call.input) : null),
     [parsed, needChildren, children, startedMs, call.input],
   );
-  const [openAgent, setOpenAgent] = useState<WorkflowRunAgent | null>(null);
-  const onOpen = useCallback((agent: WorkflowRunAgent) => setOpenAgent(agent), []);
+  // A background run's own session: whether it still works says what the header reads.
+  const runner = useProjectSession(ids.projectId, run?.background?.sessionId, { enabled: !!run?.background });
+  const live = !!run && run.status === 'running' && !settled && !run.background && running;
+  const now = useNow(live);
+  const [open, setOpen] = useState<OpenTarget | null>(null);
+  const onOpen = useCallback(
+    (agent: WorkflowRunAgent) => {
+      if (agent.sessionId) setOpen({ sessionId: agent.sessionId, title: agent.agent ? `${agent.label} · ${agent.agent}` : agent.label });
+    },
+    [],
+  );
+
+  // Claude Code's `x` on an agent: stop that child session. The run sees the child stop and
+  // marks the agent `stopped`; until the next update the row shows the stop in flight.
+  const queryClient = useQueryClient();
+  const [stopping, setStopping] = useState<ReadonlySet<string>>(() => new Set());
+  const stopAgent = useMutation({
+    mutationFn: (agent: WorkflowRunAgent) => stopProjectSession(ids.projectId!, agent.sessionId!),
+    onSuccess: () => {
+      if (ids.projectId) void queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(ids.projectId) });
+    },
+    onError: (error, agent) => {
+      setStopping((previous) => {
+        const next = new Set(previous);
+        next.delete(agent.sessionId!);
+        return next;
+      });
+      errorToast(t('stopFailed', { label: agent.label }), {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    },
+  });
+  const { mutate: mutateStop } = stopAgent;
+  const stop = useMemo<AgentStopState>(
+    () => ({
+      enabled: !!ids.projectId,
+      pending: stopping,
+      stop: (agent) => {
+        if (!agent.sessionId) return;
+        setStopping((previous) => new Set(previous).add(agent.sessionId!));
+        mutateStop(agent);
+      },
+    }),
+    [ids.projectId, stopping, mutateStop],
+  );
 
   if (!isWorkflowTool(call.name) || (settled && !run)) {
     return <GenericTool call={call} defaultOpen={defaultOpen} forceOpen={forceOpen} locked={locked} />;
@@ -205,30 +273,68 @@ export function WorkflowTool(props: ToolProps) {
     );
   }
 
-  const title = run.title || t('fallbackTitle');
-  const total = run.agents.length;
-  const done = run.agents.filter((agent) => agent.status === 'done').length;
-  const failed = run.agents.filter((agent) => agent.status === 'failed').length;
-  const progress = total > 0 ? t('progress', { done, total }) : undefined;
+  const title = run.title || run.name || t('fallbackTitle');
+  const modal = open && (
+    <SubSessionModal
+      open
+      onOpenChange={(next) => {
+        if (!next) setOpen(null);
+      }}
+      sessionId={open.sessionId}
+      title={open.title}
+    />
+  );
+
+  if (run.background) {
+    const runnerSession = run.background.sessionId;
+    const openRunner = () => setOpen({ sessionId: runnerSession, title });
+    const subtitle = runner.data?.working?.state === 'idle' ? t('backgroundIdle') : t('background');
+    return (
+      <>
+        {/* The row is one way in: its progress and its result live in the run's own session. */}
+        <BasicTool
+          icon={icon}
+          trigger={<WorkflowTrigger title={title} subtitle={subtitle} chips={<RunChips run={run} />} live={false} />}
+          triggerAction={<OpenRunAction onOpen={openRunner} />}
+          onClick={openRunner}
+          locked={locked}
+        />
+        {modal}
+      </>
+    );
+  }
+
+  const counts = countAgents(run.agents);
+  const progress = counts.total > 0 ? t('progress', { done: counts.done, total: counts.total }) : undefined;
+  const failedPart = counts.failed > 0 ? t('failedSuffix', { count: counts.failed }) : undefined;
+  const runElapsed = elapsedMs(run, live, now);
+  const elapsed = runElapsed !== undefined && runElapsed >= 1_000 ? formatElapsed(runElapsed) : undefined;
+  const join = (...parts: (string | undefined)[]) => parts.filter(Boolean).join(' · ') || undefined;
   const subtitle =
     run.status === 'running'
-      ? // The call returned while the run goes on: it works in the background, not in this turn.
+      ? // A call that returned while its run goes on: the run works on without this turn.
         settled
-        ? [t('background'), progress].filter(Boolean).join(' · ')
-        : progress
+        ? join(t('background'), progress)
+        : join(progress, failedPart, elapsed)
       : run.status === 'failed'
-        ? (run.error?.split('\n')[0] ?? (total > 0 ? t('failedCount', { failed, total }) : undefined))
+        ? (run.error?.split('\n')[0] ?? (counts.total > 0 ? t('failedCount', { failed: counts.failed, total: counts.total }) : undefined))
         : run.status === 'stopped'
-          ? [t('status.stopped'), progress].filter(Boolean).join(' · ')
-          : total === 0
-            ? undefined
-            : failed > 0
-              ? t('failedCount', { failed, total })
-              : t('agents', { count: total });
-  const live = run.status === 'running' && !settled && running;
+          ? join(t('status.stopped'), progress)
+          : join(
+              counts.total === 0 ? undefined : counts.failed > 0 ? t('failedCount', { failed: counts.failed, total: counts.total }) : t('agents', { count: counts.total }),
+              elapsed,
+            );
   const callError = status === 'error' ? partError(call) : undefined;
   const runError = run.error ?? callError;
   const output = status === 'completed' ? partOutput(call) : '';
+  const result = output && run.status === 'done' ? parseWorkflowResult(output) : null;
+  // A failed or stopped run's output is its error block, which the error row above already says.
+  const rawOutput = !result && output && !output.trimStart().startsWith('<workflow_error>') ? output : '';
+  const hasProgress = run.agents.length > 0 || run.phases.length > 0;
+  const facts = [
+    run.name && run.name !== title ? t('savedName', { name: run.name }) : undefined,
+    run.status === 'running' && run.maxAgents ? t('upTo', { count: run.maxAgents }) : undefined,
+  ].filter((fact): fact is string => !!fact);
 
   return (
     // A failed run leads with the shared failure triangle, as every failed call does. A
@@ -236,41 +342,41 @@ export function WorkflowTool(props: ToolProps) {
     <ToolOutcomeContext.Provider value={run.status === 'failed' || status === 'error' ? 'failed' : 'ok'}>
       <BasicTool
         icon={icon}
-        trigger={<WorkflowTrigger title={title} subtitle={subtitle} live={live} />}
+        trigger={<WorkflowTrigger title={title} subtitle={subtitle} chips={<RunChips run={run} />} live={live} />}
         defaultOpen={defaultOpen}
         // A running run is the thing to watch, and a failure must not hide behind a closed
         // row: either opens itself, so the rows say which agent is at work or broke.
-        forceOpen={forceOpen || (run.agents.length > 0 && (run.status === 'running' || run.status === 'failed' || status === 'error'))}
+        forceOpen={forceOpen || (hasProgress && (run.status === 'running' || run.status === 'failed' || status === 'error'))}
         locked={locked}
       >
         <>
-          {run.phases.length > 0 && <PhaseLine run={run} />}
-          {run.agents.length > 0 && (
-            <ToolResultCard bodyClassName="py-0.5">
-              <ul>
-                {run.agents.map((agent) => (
-                  <li key={agent.id}>
-                    <AgentRow agent={agent} onOpen={onOpen} />
-                  </li>
-                ))}
-              </ul>
-            </ToolResultCard>
-          )}
+          {facts.length > 0 && <RunFacts facts={facts} />}
+          <WorkflowLogs logs={run.logs} />
+          {hasProgress && <WorkflowProgress run={run} live={live} now={now} onOpen={onOpen} stop={stop} />}
           {runError && run.status !== 'running' && <ToolError error={runError} toolName={call.name} />}
-          {output && <WorkflowDetails output={output} />}
+          {result ? <WorkflowResultFold result={result} /> : rawOutput ? <WorkflowDetails output={rawOutput} /> : null}
         </>
       </BasicTool>
-      {openAgent?.sessionId && (
-        <SubSessionModal
-          open
-          onOpenChange={(next) => {
-            if (!next) setOpenAgent(null);
-          }}
-          sessionId={openAgent.sessionId}
-          title={openAgent.agent ? `${openAgent.label} · ${openAgent.agent}` : openAgent.label}
-        />
-      )}
+      {modal}
     </ToolOutcomeContext.Provider>
+  );
+}
+
+function RunFacts({ facts }: { facts: string[] }) {
+  const indent = useToolIndent();
+  return <p className={cn('text-muted-foreground text-xs', indent && 'mt-1.5', indent)}>{facts.join(' · ')}</p>;
+}
+
+/** The script's return value, folded: pretty JSON in mono, anything else as Markdown. */
+function WorkflowResultFold({ result }: { result: WorkflowResult }) {
+  const t = useTranslations('tools.workflow');
+  const indent = useToolIndent();
+  return (
+    <div className={cn(indent && 'mt-1.5', indent)}>
+      <FoldedSection label={t('result')}>
+        <OutputBlock text={result.text} markdown={result.kind === 'markdown'} />
+      </FoldedSection>
+    </div>
   );
 }
 

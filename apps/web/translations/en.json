@@ -3155,10 +3155,45 @@
         "running": "Running",
         "done": "Done",
         "failed": "Failed",
-        "stopped": "Stopped"
+        "stopped": "Stopped",
+        "pending": "Not started"
       },
       "openAgent": "Open {label}",
-      "showDetails": "Show details"
+      "showDetails": "Show details",
+      "failedSuffix": "{count} failed",
+      "resumed": "Resumed",
+      "resumedHint": "Agents that finished in the earlier run kept their answers.",
+      "large": "Large run",
+      "largeHint": "This run starts more than 25 agents. You can stop any agent from its row.",
+      "openRun": "Open run",
+      "openRunLabel": "Open the run's session",
+      "backgroundIdle": "In its own session",
+      "savedName": "Saved workflow {name}",
+      "upTo": "Up to {count, plural, one {# agent} other {# agents}}",
+      "result": "Result",
+      "logLabel": "Workflow log",
+      "agentsLabel": "Workflow agents",
+      "filter": {
+        "label": "Show agents",
+        "all": "All",
+        "running": "Running",
+        "failed": "Failed",
+        "done": "Done"
+      },
+      "filterEmpty": {
+        "running": "No agent is running.",
+        "failed": "No agent failed.",
+        "done": "No agent is done yet."
+      },
+      "showAll": "Show all {count}",
+      "retry": "retry {count}",
+      "cached": "from last run",
+      "stopAgent": "Stop {label}",
+      "stopHint": "Stop this agent",
+      "stopFailed": "Could not stop {label}",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, one {JSON · # key} other {JSON · # keys}}",
+      "jsonItems": "{count, plural, one {JSON · # item} other {JSON · # items}}"
     },
     "agent": {
       "backgroundWorking": "Working in the background",

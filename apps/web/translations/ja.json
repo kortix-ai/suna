@@ -3155,10 +3155,45 @@
         "running": "実行中",
         "done": "完了",
         "failed": "失敗",
-        "stopped": "停止"
+        "stopped": "停止",
+        "pending": "未開始"
       },
       "openAgent": "{label} を開く",
-      "showDetails": "詳細を表示"
+      "showDetails": "詳細を表示",
+      "failedSuffix": "{count} 件失敗",
+      "resumed": "再開",
+      "resumedHint": "前回の実行で完了したエージェントは、その回答をそのまま使います。",
+      "large": "大規模な実行",
+      "largeHint": "この実行は 25 個を超えるエージェントを起動します。各エージェントは行から停止できます。",
+      "openRun": "実行を開く",
+      "openRunLabel": "実行のセッションを開く",
+      "backgroundIdle": "専用のセッションで実行",
+      "savedName": "保存済みワークフロー {name}",
+      "upTo": "最大 {count, plural, other {# 個のエージェント}}",
+      "result": "結果",
+      "logLabel": "ワークフローのログ",
+      "agentsLabel": "ワークフローのエージェント",
+      "filter": {
+        "label": "エージェントを表示",
+        "all": "すべて",
+        "running": "実行中",
+        "failed": "失敗",
+        "done": "完了"
+      },
+      "filterEmpty": {
+        "running": "実行中のエージェントはありません。",
+        "failed": "失敗したエージェントはありません。",
+        "done": "完了したエージェントはまだありません。"
+      },
+      "showAll": "{count} 件すべて表示",
+      "retry": "再試行 {count}",
+      "cached": "前回の実行から",
+      "stopAgent": "{label} を停止",
+      "stopHint": "このエージェントを停止",
+      "stopFailed": "{label} を停止できませんでした",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, other {JSON · # 個のキー}}",
+      "jsonItems": "{count, plural, other {JSON · # 個の項目}}"
     },
     "agent": {
       "backgroundWorking": "バックグラウンドで作業中",

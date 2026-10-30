@@ -3155,10 +3155,45 @@
         "running": "In corso",
         "done": "Fatto",
         "failed": "Non riuscito",
-        "stopped": "Interrotto"
+        "stopped": "Interrotto",
+        "pending": "Non avviata"
       },
       "openAgent": "Apri {label}",
-      "showDetails": "Mostra dettagli"
+      "showDetails": "Mostra dettagli",
+      "failedSuffix": "{count} non riusciti",
+      "resumed": "Ripresa",
+      "resumedHint": "Gli agenti completati nell'esecuzione precedente conservano le loro risposte.",
+      "large": "Esecuzione grande",
+      "largeHint": "Questa esecuzione avvia più di 25 agenti. Puoi interrompere ogni agente dalla sua riga.",
+      "openRun": "Apri esecuzione",
+      "openRunLabel": "Apri la sessione dell'esecuzione",
+      "backgroundIdle": "Nella sua sessione",
+      "savedName": "Workflow salvato {name}",
+      "upTo": "Fino a {count, plural, one {# agente} other {# agenti}}",
+      "result": "Risultato",
+      "logLabel": "Log del workflow",
+      "agentsLabel": "Agenti del workflow",
+      "filter": {
+        "label": "Mostra agenti",
+        "all": "Tutti",
+        "running": "In corso",
+        "failed": "Non riusciti",
+        "done": "Fatti"
+      },
+      "filterEmpty": {
+        "running": "Nessun agente è in corso.",
+        "failed": "Nessun agente non è riuscito.",
+        "done": "Nessun agente ha ancora finito."
+      },
+      "showAll": "Mostra tutti e {count}",
+      "retry": "nuovo tentativo {count}",
+      "cached": "dall'ultima esecuzione",
+      "stopAgent": "Interrompi {label}",
+      "stopHint": "Interrompi questo agente",
+      "stopFailed": "Impossibile interrompere {label}",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, one {JSON · # chiave} other {JSON · # chiavi}}",
+      "jsonItems": "{count, plural, one {JSON · # elemento} other {JSON · # elementi}}"
     },
     "agent": {
       "backgroundWorking": "Al lavoro in background",

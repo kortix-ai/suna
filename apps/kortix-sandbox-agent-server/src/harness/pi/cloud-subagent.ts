@@ -44,6 +44,13 @@
  * spawn returns once the child exists. It holds a `maxLive` slot only for the
  * create, because nothing on this box waits on it.
  *
+ * Workflow inputs (`extensions/workflow.ts`): `runtimeContext` adds keys to
+ * the create body's `runtime_context` (the subagent keys win; the whole object
+ * must fit the API's 16 KiB), `waitMs` replaces the 30 min wait ceiling, and
+ * `stallMs` watches the child's transcript tail at most once a minute: no new
+ * message, text or tool state, and no tool call still running, for `stallMs`
+ * stops the child and returns an error with `stalled: true`.
+ *
  * Guardrails: at most `maxLive` children wait at once per parent box, and a
  * child at depth `maxDepth` cannot start another separate child (depth rides in
  * `runtime_context` as `kortix.subagent.depth`). Both refuse with an error
@@ -90,6 +97,7 @@ export const DEFAULT_MAX_CLOUD_SUBAGENT_DEPTH = 2
 /** The API's caps on the two create fields this module fills (`@kortix/api-contract`). */
 const INITIAL_CONTEXT_MAX_CHARS = 8_192
 const RUNTIME_CONTEXT_STRING_MAX = 4_096
+const RUNTIME_CONTEXT_MAX_BYTES = 16 * 1024
 const TOOL_NAME = /^[A-Za-z0-9_.:-]{1,128}$/
 
 /** The API callback target and this parent's limits, from the box env. */
@@ -186,6 +194,8 @@ const CLOUD_UNMAPPABLE_AGENTS = new Set(['general', 'explore', 'inline'])
 // ponytail: fixed 30 min ceiling + 2 s poll; make it env-tunable if a real subagent run needs longer.
 const WAIT_CEILING_MS = 30 * 60_000
 const POLL_INTERVAL_MS = 2_000
+/** A stall watch (`SpawnSessionInput.stallMs`) reads the child's transcript tail at most this often. */
+const STALL_CHECK_MS = 60_000
 /** Messages read back from the child's transcript to find its last report. */
 const READ_BACK_MESSAGES = 20
 
@@ -276,7 +286,7 @@ export async function cloudSpawnSession(
     // Publish the child id to the tool part NOW, so the UI links the real child while it works.
     input.onSession?.({ sessionId: childId, model })
     if (input.background) return { sessionId: childId, status: 'completed', text: '', model, background: true }
-    return await settleAndRead(http, childId, null, input.signal, model, opts)
+    return await settleAndRead(http, childId, null, input, model, opts)
   } finally {
     api.live.count -= 1
   }
@@ -299,6 +309,15 @@ function buildCreateBody(api: CloudSubagentApi, input: SpawnSessionInput): Recor
   if (toolsValue && toolsValue.length > RUNTIME_CONTEXT_STRING_MAX) {
     throw new Error(`The tool list for a separate subagent session is longer than ${RUNTIME_CONTEXT_STRING_MAX} characters.`)
   }
+  const runtimeContext = {
+    ...input.runtimeContext,
+    [SUBAGENT_DEPTH_KEY]: api.depth + 1,
+    ...(tools ? { [SUBAGENT_TOOLS_KEY]: toolsValue ?? '' } : {}),
+  }
+  const bytes = new TextEncoder().encode(JSON.stringify(runtimeContext)).byteLength
+  if (bytes > RUNTIME_CONTEXT_MAX_BYTES) {
+    throw new Error(`The context of a separate subagent session is ${bytes} bytes; the API takes at most ${RUNTIME_CONTEXT_MAX_BYTES}.`)
+  }
   return {
     initial_prompt: input.prompt,
     name: input.title,
@@ -307,10 +326,7 @@ function buildCreateBody(api: CloudSubagentApi, input: SpawnSessionInput): Recor
     ...(instructions ? { initial_context: instructions } : {}),
     // The API accepts it only from a session-bound caller, for its own new child (session-create.ts).
     ...(input.background ? { notify_parent_on_turn_end: true } : {}),
-    runtime_context: {
-      [SUBAGENT_DEPTH_KEY]: api.depth + 1,
-      ...(tools ? { [SUBAGENT_TOOLS_KEY]: toolsValue ?? '' } : {}),
-    },
+    runtime_context: runtimeContext,
   }
 }
 
@@ -363,7 +379,7 @@ async function resumeChild(
       return { sessionId: childId, status: 'error', text: '', error: `follow-up prompt answered ${sent.status}: ${body}`, model }
     }
     input.onSession?.({ sessionId: childId, model })
-    return await settleAndRead(http, childId, baseline, input.signal, model, opts)
+    return await settleAndRead(http, childId, baseline, input, model, opts)
   } finally {
     api.live.count -= 1
   }
@@ -373,11 +389,17 @@ async function settleAndRead(
   http: Http,
   childId: string,
   baseline: string | null,
-  signal: AbortSignal | undefined,
+  input: Pick<SpawnSessionInput, 'signal' | 'stallMs' | 'waitMs'>,
   model: { providerID: string; modelID: string },
   opts: CloudSubagentOptions,
 ): Promise<SpawnSessionResult> {
-  const settled = await waitForIdle(http, childId, baseline, signal, opts)
+  const signal = input.signal
+  const settled = await waitForIdle(http, childId, baseline, signal, { ...opts, ...(input.waitMs ? { waitCeilingMs: input.waitMs } : {}) }, input.stallMs)
+  if (settled.status === 'stalled') {
+    // A new attempt starts in a new session: this one must not keep working beside it.
+    await stopChild(http, childId)
+    return { sessionId: childId, status: 'error', text: '', error: settled.error, model, stalled: true }
+  }
   if (settled.status === 'aborted') {
     // The parent gave up on the call: do not leave the child working (and billing) on its own.
     if (signal?.aborted) await stopChild(http, childId)
@@ -394,7 +416,7 @@ async function settleAndRead(
   return { sessionId: childId, status: 'completed', text: report.text, model }
 }
 
-type Settled = { status: 'completed' | 'error' | 'aborted' | 'timeout'; error?: string }
+type Settled = { status: 'completed' | 'error' | 'aborted' | 'timeout' | 'stalled'; error?: string }
 
 /**
  * Poll `GET /v1/projects/:projectId/sessions/:childId` until the child's turn
@@ -408,12 +430,14 @@ async function waitForIdle(
   baseline: string | null,
   signal: AbortSignal | undefined,
   opts: CloudSubagentOptions,
+  stallMs?: number,
 ): Promise<Settled> {
   const now = opts.now ?? (() => Date.now())
   const ceiling = opts.waitCeilingMs ?? WAIT_CEILING_MS
   const interval = opts.pollIntervalMs ?? POLL_INTERVAL_MS
   const deadline = now() + ceiling
   let everWorked = false
+  const stall = stallMs && stallMs > 0 ? { lastProgress: now(), lastCheck: now(), signature: undefined as string | undefined } : null
   for (;;) {
     if (signal?.aborted) return { status: 'aborted' }
     if (now() > deadline) return { status: 'timeout', error: `child session did not settle within ${Math.round(ceiling / 60_000)} min` }
@@ -439,7 +463,38 @@ async function waitForIdle(
     } else if (res.status === 404) {
       return { status: 'error', error: 'child session disappeared' }
     }
+    if (stall && stallMs && now() - stall.lastCheck >= Math.min(STALL_CHECK_MS, stallMs)) {
+      stall.lastCheck = now()
+      const probe = await progressProbe(http, childId)
+      // The first read is the baseline; a change after it, or a tool call still running, is progress.
+      if (probe && (probe.toolRunning || (stall.signature !== undefined && probe.signature !== stall.signature))) stall.lastProgress = now()
+      if (probe) stall.signature = probe.signature
+      if (now() - stall.lastProgress > stallMs) {
+        return { status: 'stalled', error: `agent stalled: no new output for ${Math.round(stallMs / 60_000)} min` }
+      }
+    }
     await delay(interval, signal)
+  }
+}
+
+/**
+ * The child's transcript tail as a signature (message ids, text lengths, tool
+ * states), and whether a tool call still runs. Null when it could not be read:
+ * an unreadable tail is never a stall.
+ */
+async function progressProbe(http: Http, childId: string): Promise<{ signature: string; toolRunning: boolean } | null> {
+  try {
+    const res = await http.fetchImpl(sessionUrl(http, childId, '/transcript?limit=3'), { headers: http.headers })
+    if (res.status !== 200) return null
+    const body = (await res.json().catch(() => null)) as { messages?: Array<CompactMessage & { id?: string | null; tools?: Array<{ status?: string | null }> }> } | null
+    const messages = body?.messages ?? []
+    const last = messages.at(-1)
+    return {
+      signature: JSON.stringify(messages.map((m) => [m.id ?? null, m.role ?? null, m.text?.length ?? 0, (m.tools ?? []).map((t) => t.status ?? null)])),
+      toolRunning: (last?.tools ?? []).some((tool) => tool.status === 'running' || tool.status === 'pending'),
+    }
+  } catch {
+    return null
   }
 }
 

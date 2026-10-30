@@ -28,6 +28,7 @@ import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, Run
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
+import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
 import { withheldManagedSkills } from '@/services/skills/managed-skills'
 import { loadTools } from '@/services/tools/host'
@@ -1590,13 +1591,40 @@ export class PiRuntime {
       spawnSession: (input) => this.resolveSpawn(input),
       workflowLimits: () => {
         const cloud = this.cloudTarget()
+        const depth = cloud?.depth ?? this.subagentContext.depth
+        const maxDepth = cloud?.maxDepth ?? this.cfg.piCloudSubagentsMaxDepth
+        const limits = {
+          maxParallel: Math.min(this.cfg.workflowMaxConcurrent, cloud?.maxLive ?? this.cfg.piCloudSubagentsMax),
+          maxAgents: this.cfg.workflowMaxAgents,
+          depth,
+          maxDepth,
+          controlPlane: cloud !== null,
+        }
         if (cloud && cloud.depth >= cloud.maxDepth) {
           return {
+            ...limits,
             maxParallel: 0,
             refusal: `Separate subagent sessions nest at most ${cloud.maxDepth} levels and this session is level ${cloud.depth}, so it cannot run a workflow. Do the work here, or use the agent tool with session: "same".`,
           }
         }
-        return { maxParallel: cloud?.maxLive ?? this.cfg.piCloudSubagentsMax }
+        return limits
+      },
+      // The workflow tool's run approval: the `question` card, attached to the workflow call.
+      ask: (questions, toolCallId) => this.questions.ask(questions, this.adapter?.toolRef(toolCallId)),
+      sessionContext: () => {
+        try {
+          const parsed: unknown = JSON.parse(this.env.KORTIX_SESSION_CONTEXT ?? '')
+          return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
+        } catch {
+          return {}
+        }
+      },
+      workflowStateDir: () => join(resolveKortixRuntimeStateDirectory(this.env), 'workflows'),
+      // My Kortix's box has no project files on purpose, whatever its workspace holds.
+      projectCheckout: () => (this.env.KORTIX_META_AGENT !== '1' && existsSync(join(this.workspace, '.git')) ? this.workspace : null),
+      projectApi: () => {
+        const cloud = this.cloudTarget()
+        return cloud ? { apiUrl: cloud.apiUrl, projectId: cloud.projectId, token: cloud.token } : null
       },
     }
   }

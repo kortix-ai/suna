@@ -3155,10 +3155,45 @@
         "running": "En curso",
         "done": "Hecho",
         "failed": "Falló",
-        "stopped": "Detenido"
+        "stopped": "Detenido",
+        "pending": "Sin empezar"
       },
       "openAgent": "Abrir {label}",
-      "showDetails": "Mostrar detalles"
+      "showDetails": "Mostrar detalles",
+      "failedSuffix": "{count} fallaron",
+      "resumed": "Reanudado",
+      "resumedHint": "Los agentes que terminaron en la ejecución anterior conservan sus respuestas.",
+      "large": "Ejecución grande",
+      "largeHint": "Esta ejecución inicia más de 25 agentes. Puedes detener cualquier agente desde su fila.",
+      "openRun": "Abrir ejecución",
+      "openRunLabel": "Abrir la sesión de la ejecución",
+      "backgroundIdle": "En su propia sesión",
+      "savedName": "Flujo de trabajo guardado {name}",
+      "upTo": "Hasta {count, plural, one {# agente} other {# agentes}}",
+      "result": "Resultado",
+      "logLabel": "Registro del flujo de trabajo",
+      "agentsLabel": "Agentes del flujo de trabajo",
+      "filter": {
+        "label": "Mostrar agentes",
+        "all": "Todos",
+        "running": "En curso",
+        "failed": "Con error",
+        "done": "Hechos"
+      },
+      "filterEmpty": {
+        "running": "Ningún agente está en curso.",
+        "failed": "Ningún agente falló.",
+        "done": "Ningún agente ha terminado todavía."
+      },
+      "showAll": "Mostrar los {count}",
+      "retry": "reintento {count}",
+      "cached": "de la ejecución anterior",
+      "stopAgent": "Detener {label}",
+      "stopHint": "Detener este agente",
+      "stopFailed": "No se pudo detener {label}",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, one {JSON · # clave} other {JSON · # claves}}",
+      "jsonItems": "{count, plural, one {JSON · # elemento} other {JSON · # elementos}}"
     },
     "agent": {
       "backgroundWorking": "Trabajando en segundo plano",

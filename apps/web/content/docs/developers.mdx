@@ -1316,7 +1316,41 @@ My Kortix, the built-in agent, has seven more tools. Each one runs the in-sandbo
 - **Permissions.** Each tool acts with the session token, so Kortix checks every action against the person's own project role. A refusal comes back as `error.kind: "denied"` with `error.grantors`: the project managers, account owners and admins who can grant it. The card shows them.
 - **Machine-readable errors.** The CLI writes one `{"kortix_error":{…}}` line to stderr instead of its human footer when `KORTIX_ERROR_FORMAT=json` is set. The line has `kind` (`denied` or `failed`), `status`, `code`, `action` and `message`, each when known. Any program that runs the CLI can set it.
 - **Start work** with the `agent` tool, not with these tools. Each hand-off is its own session. `background: true` returns at once, and the API wakes the calling session with the result when the child's turn ends.
-- **Run several agents** with the `workflow` tool: a short script with `agent()`, `parallel()`, `pipeline()` and `phase()`. Each `agent()` is a real child session. The session shows the run as a live card.
+- **Run several agents** with the `workflow` tool: a short script with `agent()`, `parallel()`, `pipeline()` and `phase()`. Each `agent()` is a real child session. The session shows the run as a live card. See [Workflows](/docs/developers#workflows).
+
+#### Workflows
+
+The `workflow` tool runs a JavaScript script that starts and coordinates many agents. The script holds the plan and the intermediate results. The model receives only the script's return value. My Kortix has the tool, and so has every agent that may use the `agent` tool.
+
+```js
+export const meta = {
+  name: 'audit-routes',
+  description: 'Audit route handlers for missing auth',
+  phases: [{ title: 'Find' }, { title: 'Audit' }],
+}
+
+phase('Find')
+const found = await agent('List every .ts file under src/routes/.', {
+  schema: { type: 'object', required: ['files'], properties: { files: { type: 'array', items: { type: 'string' } } } },
+})
+
+phase('Audit')
+const audits = await pipeline(found.files, (file) =>
+  agent(`Audit ${file} for missing authentication checks.`, { label: file }))
+
+return audits.filter(Boolean)
+```
+
+- **Format.** The optional first statement `export const meta = { name, description, phases }` is a plain literal: no variable, call, or spread. The card lists the phases as pending until `phase(title)` starts each one. The body is plain JavaScript with top-level `await`. It has no `fetch`, no file access, no timers, no `Date.now()` and no `Math.random()`.
+- **Script API.** `agent(prompt, opts)` starts one agent in its own session and resolves to its final answer. The options are `label`, `phase`, `agent` (a project agent's name), `model`, `schema`, and `stallMs`. `parallel([() => …])` runs functions at the same time. `pipeline(items, stage1, stage2, …)` sends each item through the stages. `log(text)` shows a progress line, and `args` is the call's `args` value.
+- **Failures.** `agent()` resolves to `null` when its session was stopped. It throws when the agent failed. Awaited directly, the error ends the run. Inside `parallel()` or `pipeline()`, the failed agent becomes `null` and the run continues.
+- **Approval.** Before the first agent starts, the person sees the title, the phases, and the agent count, with **Run it**, **Run it, and don't ask again in this session**, and **Cancel**. The count is the call's `max_agents`, and the run refuses every `agent()` past it. A child session, for example a background runner, does not ask.
+- **Structured output.** With `schema` (a JSON Schema), the agent must answer with JSON that matches it, and `agent()` resolves to the parsed value. A wrong answer gets a correction in the same session, up to 5 attempts. Kortix checks the keywords `type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const`, `minItems`, `maxItems`, `minLength`, `maxLength`, `minimum`, and `maximum`. A schema that contradicts itself, for example a `required` key that `additionalProperties: false` rules out, stops the call before the agent starts.
+- **Background.** With `background: true`, the call starts one runner session and returns at once. The runner runs the script and keeps its own computer awake. Its result arrives in the calling session as a `<task-notification>` message. A background run needs two more session levels below the caller: one for the runner and one for its agents.
+- **Resume.** Each result names a `run_id`. A call with `resume_run_id` runs the script again: agents that completed return their saved results without a new session, and the first agent whose prompt changed or that failed runs again, with every agent after it. A background run resumes in its runner session, and that call waits for the result.
+- **Saved workflows.** A saved workflow is `.kortix/workflows/<name>.js` in the project repository. `name` runs one with `args`, `save_as` saves a script without running it, and `list_saved` lists them. In a session with a project checkout, `save_as` writes the file to the working tree. My Kortix has no checkout: it starts a session that writes the file and opens a change request.
+- **Stalls.** An agent with no new output for `stallMs` (default 15 minutes) stops, and a new session starts with the same prompt. A tool call that is still running counts as output. After 6 attempts, `agent()` throws `agent stalled on all 6 attempts`.
+- **Limits.** One run starts at most 50 agents (`KORTIX_WORKFLOW_MAX_AGENTS`) and runs at most 8 of them at the same time (`KORTIX_WORKFLOW_MAX_CONCURRENT`). The session's subagent limit also applies (`KORTIX_PI_CLOUD_SUBAGENTS_MAX`, 4 by default): the lower number wins. One `parallel()` or `pipeline()` call takes at most 4,096 items. A run ends after 2 hours. The card marks a run with more than 25 agents as large.
 
 ### Generate images
 
