@@ -23,6 +23,7 @@ const OWNER = crypto.randomUUID();
 const SESSION = crypto.randomUUID();
 const OTHER = crypto.randomUUID();
 const RESTART = crypto.randomUUID();
+const BULK = crypto.randomUUID();
 // A daemon journal revision: max(Date.now() * 1000, last + 1), past int4.
 const REV = 1_791_681_474_704_000;
 const T = '2026-10-11T10:00:00.000Z';
@@ -66,6 +67,13 @@ const stored = (id: string) =>
     .from(sessionLogMessages)
     .where(and(eq(sessionLogMessages.sessionId, SESSION), eq(sessionLogMessages.messageId, id)))
     .then((rows) => rows[0]);
+/** `db;dur=…;desc="n=N"` out of a `Server-Timing` header: every statement of the request. */
+const dbStatementCount = (res: Response): number => {
+  const entry = (res.headers.get('Server-Timing') ?? '').split(',').find((part) => part.trim().startsWith('db;'));
+  const match = /desc="n=(\d+)"/.exec(entry ?? '');
+  if (!match) throw new Error(`no db statement count in Server-Timing: ${res.headers.get('Server-Timing')}`);
+  return Number(match[1]);
+};
 const messageCount = async () =>
   (await db.select({ id: sessionLogMessages.messageId }).from(sessionLogMessages).where(eq(sessionLogMessages.sessionId, SESSION))).length;
 
@@ -73,7 +81,7 @@ beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'session-log-ingest' });
   await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'session-log-ingest', repoUrl: 'https://example.test/session-log.git' });
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner' });
-  for (const sessionId of [SESSION, OTHER, RESTART]) {
+  for (const sessionId of [SESSION, OTHER, RESTART, BULK]) {
     await db.insert(projectSessions).values({ sessionId, accountId: ACCOUNT, projectId: PROJECT, branchName: sessionId, createdBy: OWNER });
     // A session PAT authenticates only while its sandbox row is live (the session lease).
     await db.insert(sessionSandboxes).values({ sandboxId: sessionId, sessionId, accountId: ACCOUNT, projectId: PROJECT, status: 'active', config: {}, metadata: {} });
@@ -168,6 +176,61 @@ describe('journal', () => {
       .where(and(eq(sessionLogMessages.sessionId, RESTART), eq(sessionLogMessages.messageId, 'msg_r19'))))[0]!.record).toEqual(edited);
     // The re-sent reply finds its turn durable already: no new row version, no lock.
     expect(await turn()).toEqual(durable);
+  });
+
+  test('a batch of 500 changed puts costs a constant number of statements; a seq collision inside it answers the same 422 as one put at a time', async () => {
+    // v0.14.10 rollout: a new daemon changed every record's hash, so a restart's re-send was all changed puts,
+    // one INSERT each (467–927 statements per request, up to 25 s in prod).
+    const send = (rev: number, puts: Array<ReturnType<typeof message>>) =>
+      journal(batch({ puts: puts.map((m, i) => ({ rev: rev + i, message: m })), threads: [thread('main')] }), tokens[BULK]!, BULK);
+    const history = (text: string) => Array.from({ length: 500 }, (_, i) => message(`msg_b${i}`, i, { blocks: [{ type: 'text', id: `blk_b${i}`, text: `${text} ${i}` }] }));
+    const rows = () =>
+      db.execute<{ message_id: string; rev: string; seq: number; text: string }>(
+        sql`SELECT message_id, rev::text, seq, record->'blocks'->0->>'text' AS text FROM kortix.session_log_messages WHERE session_id = ${BULK} ORDER BY seq`,
+      ).then((r) => [...r]);
+
+    // The first write, then a restart that changed every record: each of the 500 puts is written.
+    for (const [rev, text] of [[REV, 'turn'], [REV + 1_000, 'turn, converted again']] as const) {
+      const res = await send(rev, history(text));
+      expect(res.status).toBe(200);
+      expect((await res.json()).acked).toHaveLength(500);
+      // Auth, the lock, the session, the threads, the batch: 15 statements at any batch size (one INSERT per put: 513).
+      expect(dbStatementCount(res)).toBeLessThan(40);
+      const stored = await rows();
+      expect(stored).toHaveLength(500);
+      expect(stored.every((r, i) => r.message_id === `msg_b${i}` && r.rev === String(rev + i) && r.text === `${text} ${i}`)).toBe(true);
+    }
+    const written = await rows();
+    const seqMax = 499;
+
+    // A new message on a seq another message holds (msg_b3), in the middle of the batch.
+    const taken = history('clash');
+    taken[250] = message('msg_b_new', 3);
+    let res = await send(REV + 2_000, taken);
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'seq_conflict', message_id: 'msg_b_new', rev: REV + 2_000 + 250, thread_id: 'main', seq: 3, seq_max: seqMax });
+    expect(await rows()).toEqual(written);
+
+    // Two new messages of the batch claim one free seq: the second is the pair that collides.
+    const twice = history('clash');
+    twice[100] = message('msg_b_first', 700);
+    twice[400] = message('msg_b_second', 700);
+    res = await send(REV + 3_000, twice);
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'seq_conflict', message_id: 'msg_b_second', rev: REV + 3_000 + 400, thread_id: 'main', seq: 700, seq_max: seqMax });
+    expect(await rows()).toEqual(written);
+
+    // One message twice in a batch: the higher rev wins, as one put at a time.
+    res = await journal(batch({
+      puts: [
+        { rev: REV + 4_001, message: message('msg_b0', 0, { blocks: [{ type: 'text', id: 'blk_b0', text: 'higher' }] }) },
+        { rev: REV + 4_000, message: message('msg_b0', 0, { blocks: [{ type: 'text', id: 'blk_b0', text: 'lower' }] }) },
+        { rev: REV + 4_002, message: message('msg_b1', 1, { blocks: [{ type: 'text', id: 'blk_b1', text: 'edited' }] }) },
+      ],
+    }), tokens[BULK]!, BULK);
+    expect(res.status).toBe(200);
+    const [b0, b1] = await rows();
+    expect([b0!.rev, b0!.text, b1!.rev, b1!.text]).toEqual([String(REV + 4_001), 'higher', String(REV + 4_002), 'edited']);
   });
 
   test('a lone UTF-16 surrogate is stored as U+FFFD, never a 500 (KRTX-211 poison batch)', async () => {
