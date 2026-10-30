@@ -171,6 +171,21 @@ export async function fail(
   }
 }
 
+/** An id, name, slug or email: a word that can never read as a CLI option. */
+const CLI_WORD = /^[A-Za-z0-9][A-Za-z0-9._:@+\/-]{0,199}$/
+
+/**
+ * Why a model-chosen value cannot go to the CLI, or null when it can (CWE-88).
+ * A `word` (an id, name, slug or email) must look like one. `text` that the CLI
+ * reads as a positional argument must not start with "-": the parser would
+ * take it for an option. Text passed as a flag value uses `--flag=value`
+ * instead, which the CLI never reads as an option.
+ */
+export function cliArgProblem(field: string, value: string, kind: 'word' | 'text' = 'word'): string | null {
+  if (kind === 'text') return value.startsWith('-') ? `\`${field}\` cannot start with "-". Rephrase it so it starts with a word.` : null
+  return CLI_WORD.test(value) ? null : `\`${field}\` must be a plain id or name (letters, digits and . _ : @ + / -), as list shows it.`
+}
+
 /** Run one command and parse its JSON, or the error to report. */
 export async function cliJson<T = unknown>(args: string[], context: PlatformToolContext, stdin?: string): Promise<{ value: T } | { error: KortixToolError }> {
   const run = await runKortix(args, context, stdin)

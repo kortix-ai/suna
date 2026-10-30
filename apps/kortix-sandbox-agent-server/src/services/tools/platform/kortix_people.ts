@@ -5,7 +5,7 @@
  * A My Kortix platform tool (`platform.ts`): every action is one
  * `kortix access …` command.
  */
-import { capRows, cliJson, cliRun, fail, memberName, ok, projectHref, projectRoster, type PlatformToolContext } from './platform'
+import { capRows, cliJson, cliRun, fail, memberName, ok, projectHref, projectRoster, cliArgProblem, type PlatformToolContext } from './platform'
 
 const TOOL = 'kortix_people' as const
 const ACTIONS = ['list', 'invite', 'set_role', 'remove', 'pending'] as const
@@ -109,6 +109,8 @@ export default {
     const text = (key: string) => (typeof args[key] === 'string' ? args[key].trim() : '')
     if (action === 'list') return list(context)
     if (action === 'pending') return pending(context)
+    const badEmail = action === 'invite' && text('email') ? cliArgProblem('email', text('email')) : null
+    if (badEmail) return fail(TOOL, action, 'Who should I invite?', { kind: 'invalid', message: badEmail }, context)
     if (action === 'invite') return text('email') ? invite(text('email'), role, context) : fail(TOOL, action, 'Who should I invite?', { kind: 'invalid', message: 'Pass email.' }, context)
     if (action === 'set_role') return text('who') ? setRole(text('who'), role, context) : fail(TOOL, action, 'Whose role?', { kind: 'invalid', message: 'Pass who.' }, context)
     if (action === 'remove') return text('who') ? remove(text('who'), context) : fail(TOOL, action, 'Who should I remove?', { kind: 'invalid', message: 'Pass who.' }, context)

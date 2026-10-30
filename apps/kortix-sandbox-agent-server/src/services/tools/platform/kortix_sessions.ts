@@ -4,7 +4,7 @@
  * `agent` tool (each hand-off is its own session), not this tool. A My Kortix
  * platform tool (`platform.ts`): every action is one `kortix sessions …` command.
  */
-import { capRows, cliJson, cliRun, fail, ok, projectHref, sessionHref, type PlatformToolContext } from './platform'
+import { capRows, cliJson, cliRun, fail, ok, projectHref, sessionHref, cliArgProblem, type PlatformToolContext } from './platform'
 
 const TOOL = 'kortix_sessions' as const
 const ACTIONS = ['list', 'read', 'message', 'stop'] as const
@@ -41,10 +41,10 @@ function stateWord(row: SessionRow): string | undefined {
 
 async function list(args: Record<string, any>, context: PlatformToolContext) {
   const flags: string[] = []
-  if (typeof args.children_of === 'string' && args.children_of) flags.push('--children', args.children_of)
+  if (typeof args.children_of === 'string' && args.children_of) flags.push(`--children=${args.children_of}`)
   else if (args.filter === 'mine') flags.push('--mine')
   else if (args.filter === 'automated') flags.push('--automated')
-  if (typeof args.search === 'string' && args.search.trim()) flags.push('--search', args.search.trim())
+  if (typeof args.search === 'string' && args.search.trim()) flags.push(`--search=${args.search.trim()}`)
   const read = await cliJson<SessionRow[]>(['sessions', 'ls', ...flags, '--json'], context)
   if ('error' in read) return fail(TOOL, 'list', 'Could not list the sessions', read.error, context)
   const rows = Array.isArray(read.value) ? read.value : []
@@ -104,7 +104,7 @@ async function read(id: string, context: PlatformToolContext) {
 
 async function message(id: string, text: string, context: PlatformToolContext) {
   // `--queue`: the prompt lands in the session's durable inbox, and a stopped session wakes for it.
-  const sent = await cliRun(['sessions', 'chat', id, '--prompt', text, '--queue'], context)
+  const sent = await cliRun(['sessions', 'chat', id, `--prompt=${text}`, '--queue'], context)
   if ('error' in sent) return fail(TOOL, 'message', 'Could not send the message', sent.error, context)
   return ok(TOOL, 'message', {
     title: 'Message sent',
@@ -148,6 +148,8 @@ export default {
     if (action === 'list') return list(args, context)
     if (!(ACTIONS as readonly string[]).includes(action)) return fail(TOOL, action, 'Unknown action', { kind: 'invalid', message: `Use one of: ${ACTIONS.join(', ')}.` }, context)
     if (!id) return fail(TOOL, action, 'Which session?', { kind: 'invalid', message: 'Pass session_id.' }, context)
+    const badId = cliArgProblem('session_id', id)
+    if (badId) return fail(TOOL, action, 'Which session?', { kind: 'invalid', message: badId }, context)
     if (action === 'read') return read(id, context)
     if (action === 'stop') return stop(id, context)
     const text = typeof args.text === 'string' ? args.text.trim() : ''

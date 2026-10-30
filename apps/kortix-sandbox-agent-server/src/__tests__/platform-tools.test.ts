@@ -112,13 +112,34 @@ describe('kortix_connectors', () => {
 describe('kortix_schedules', () => {
   test('create without an agent is a reminder to this session; with one, each run starts its session', async () => {
     fakeKortix(`'triggers add Check the report --runtime --in 2h') echo 'trigger.abc123' ;;
-  'triggers add Send the summary --runtime --cron 0 9 * * 1 --timezone Europe/Berlin --agent researcher') echo 'Created trigger.def456' ;;`)
+  'triggers add Send the summary --runtime --cron 0 9 * * 1 --timezone Europe/Berlin --agent=researcher') echo 'Created trigger.def456' ;;`)
     const reminder = await run('kortix_schedules', { action: 'create', prompt: 'Check the report', in: '2h' })
     expect(reminder.card.title).toBe('Reminder set: 2h')
     expect(reminder.data).toMatchObject({ id: 'trigger.abc123', agent: null })
     const weekly = await run('kortix_schedules', { action: 'create', prompt: 'Send the summary', cron: '0 9 * * 1', timezone: 'Europe/Berlin', agent: 'researcher' })
     expect(weekly.data).toMatchObject({ id: 'trigger.def456', agent: 'researcher' })
     expect(argvs()).toHaveLength(2)
+  })
+
+  test('an option-shaped id never reaches the CLI, so pause cannot fall through to the project-wide switch (CWE-88)', async () => {
+    fakeKortix(`'triggers pause') echo 'paused every trigger' ;;`)
+    for (const id of ['--project', '-h', 'a b']) {
+      const result = await run('kortix_schedules', { action: 'pause', id })
+      expect(result.error?.kind).toBe('invalid')
+    }
+    const prompt = await run('kortix_schedules', { action: 'create', prompt: '--help', in: '2h' })
+    expect(prompt.error?.message).toContain('cannot start with "-"')
+    expect((await run('kortix_sessions', { action: 'stop', session_id: '--all' })).error?.kind).toBe('invalid')
+    expect((await run('kortix_agents', { action: 'get', name: '--file' })).error?.kind).toBe('invalid')
+    expect((await run('kortix_connectors', { action: 'find', query: '--limit' })).error?.kind).toBe('invalid')
+    expect((await run('kortix_people', { action: 'invite', email: '--role' })).error?.kind).toBe('invalid')
+    expect(readFileSync(calls, 'utf8')).toBe('')
+  })
+
+  test('message text that starts with "-" goes as --prompt=<text>, never as an option', async () => {
+    fakeKortix(`'sessions chat ses_2 --prompt=- first point --queue') echo 'queued' ;;`)
+    const sent = await run('kortix_sessions', { action: 'message', session_id: 'ses_2', text: '- first point' })
+    expect(sent.ok).toBe(true)
   })
 
   test('create with no schedule is refused before any command runs', async () => {

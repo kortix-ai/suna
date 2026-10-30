@@ -5,7 +5,7 @@
  * `kortix_agents` `set_access`. A My Kortix platform tool (`platform.ts`):
  * every action is one `kortix connectors …` command.
  */
-import { adminHref, capRows, cliJson, cliRun, fail, ok, type PlatformToolContext } from './platform'
+import { adminHref, capRows, cliJson, cliRun, fail, ok, cliArgProblem, type PlatformToolContext } from './platform'
 
 const TOOL = 'kortix_connectors' as const
 const ACTIONS = ['list', 'find', 'add', 'connect'] as const
@@ -137,6 +137,9 @@ export default {
     const action = String(args.action ?? '')
     const text = (key: string) => (typeof args[key] === 'string' ? args[key].trim() : '')
     if (action === 'list') return list(context)
+    const field = action === 'find' ? 'query' : action === 'add' ? 'app' : 'slug'
+    const bad = text(field) ? cliArgProblem(field, text(field), action === 'find' ? 'text' : 'word') : null
+    if (bad) return fail(TOOL, action, 'Which app?', { kind: 'invalid', message: bad }, context)
     if (action === 'find') return text('query') ? find(text('query'), context) : fail(TOOL, action, 'Which app?', { kind: 'invalid', message: 'Pass query.' }, context)
     if (action === 'add') return text('app') ? add(text('app'), context) : fail(TOOL, action, 'Which app?', { kind: 'invalid', message: 'Pass app, an id from find.' }, context)
     if (action === 'connect') return text('slug') ? connect(text('slug'), args.shared === true, context) : fail(TOOL, action, 'Which connector?', { kind: 'invalid', message: 'Pass slug.' }, context)

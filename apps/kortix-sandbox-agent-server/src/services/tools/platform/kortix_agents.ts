@@ -3,7 +3,7 @@
  * change its settings, and set what it may use. A My Kortix platform tool
  * (`platform.ts`): every action is one `kortix agents …` command.
  */
-import { agentHref, capRows, cliJson, diff, fail, listArg, ok, show, withJsonFile, type PlatformToolContext } from './platform'
+import { agentHref, capRows, cliJson, diff, fail, listArg, ok, show, withJsonFile, cliArgProblem, type PlatformToolContext } from './platform'
 
 const TOOL = 'kortix_agents' as const
 const ACTIONS = ['list', 'get', 'create', 'update', 'set_access'] as const
@@ -137,7 +137,7 @@ async function setAccess(name: string, args: Record<string, any>, context: Platf
   const flags: string[] = []
   for (const key of ['connectors', 'secrets', 'apps'] as const) {
     const value = listArg(args[key])
-    if (value !== null) flags.push(`--${key}`, value)
+    if (value !== null) flags.push(`--${key}=${value}`)
   }
   if (flags.length === 0) {
     return fail(TOOL, 'set_access', 'Nothing to change', { kind: 'invalid', message: 'Pass connectors, secrets or apps.' }, context)
@@ -192,6 +192,8 @@ export default {
     if (action === 'list') return list(context)
     if (!(ACTIONS as readonly string[]).includes(action)) return fail(TOOL, action, 'Unknown action', { kind: 'invalid', message: `Use one of: ${ACTIONS.join(', ')}.` }, context)
     if (!name) return fail(TOOL, action, 'Which agent?', { kind: 'invalid', message: 'Pass the agent name.' }, context)
+    const badName = cliArgProblem('name', name)
+    if (badName) return fail(TOOL, action, 'Which agent?', { kind: 'invalid', message: badName }, context)
     if (action === 'get') return get(name, context)
     if (action === 'set_access') return setAccess(name, args, context)
     return save(action as 'create' | 'update', name, args, context)

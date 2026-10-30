@@ -6,7 +6,7 @@
  * the project files. A My Kortix platform tool (`platform.ts`): every action is
  * one `kortix triggers …` command.
  */
-import { adminHref, capRows, cliJson, cliRun, fail, ok, type PlatformToolContext } from './platform'
+import { adminHref, capRows, cliJson, cliRun, fail, ok, cliArgProblem, type PlatformToolContext } from './platform'
 
 const TOOL = 'kortix_schedules' as const
 const ACTIONS = ['list', 'create', 'pause', 'resume', 'delete', 'run_now'] as const
@@ -89,11 +89,15 @@ async function create(args: Record<string, any>, context: PlatformToolContext) {
   if (!prompt) {
     return fail(TOOL, 'create', 'What should it do?', { kind: 'invalid', message: 'Missing `prompt`. Call create again with prompt set to the message each run starts with, e.g. prompt: "Remind me to review the draft".' }, context)
   }
+  const badPrompt = cliArgProblem('prompt', prompt, 'text')
+  if (badPrompt) return fail(TOOL, 'create', 'What should it do?', { kind: 'invalid', message: badPrompt }, context)
   const schedule = scheduleFlags(args)
   if (typeof schedule === 'string') return fail(TOOL, 'create', 'When should it run?', { kind: 'invalid', message: schedule }, context)
   const agent = typeof args.agent === 'string' && args.agent.trim() ? args.agent.trim() : null
   // No agent: the trigger wakes this session (a reminder). An agent: each run is a new session of it.
-  const target = agent ? ['--agent', agent] : []
+  const badAgent = agent ? cliArgProblem('agent', agent) : null
+  if (badAgent) return fail(TOOL, 'create', 'Which agent?', { kind: 'invalid', message: badAgent }, context)
+  const target = agent ? [`--agent=${agent}`] : []
   const made = await cliRun(['triggers', 'add', prompt, '--runtime', ...schedule, ...target], context)
   if ('error' in made) return fail(TOOL, 'create', 'Could not create the schedule', made.error, context)
   const id = made.text.match(/trigger\.[0-9a-f]+/)?.[0] ?? made.text.split('\n').pop() ?? ''
@@ -154,6 +158,9 @@ export default {
     if (!(ACTIONS as readonly string[]).includes(action)) return fail(TOOL, action, 'Unknown action', { kind: 'invalid', message: `Use one of: ${ACTIONS.join(', ')}.` }, context)
     const id = typeof args.id === 'string' ? args.id.trim() : ''
     if (!id) return fail(TOOL, action, 'Which schedule?', { kind: 'invalid', message: 'Pass id, as list shows it.' }, context)
+    // An option-shaped id would leave pause/resume with no trigger, and the CLI would flip the project-wide switch.
+    const badId = cliArgProblem('id', id)
+    if (badId) return fail(TOOL, action, 'Which schedule?', { kind: 'invalid', message: badId }, context)
     return change(action, id, context)
   },
 }
