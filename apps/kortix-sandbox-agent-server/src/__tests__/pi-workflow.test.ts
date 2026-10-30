@@ -208,7 +208,8 @@ async function boot(steps: Step[], env: Record<string, string> = {}, opts: { che
 
 const runWorkflow = (script: string, args?: unknown, extra: Record<string, unknown> = {}): Step => ({
   tool: 'workflow',
-  args: { description: 'Research two topics', script, ...(args === undefined ? {} : { args }), ...extra },
+  // These rows test a run on this box: a top-level session runs a workflow in the background by default.
+  args: { description: 'Research two topics', script, background: false, ...(args === undefined ? {} : { args }), ...extra },
 })
 /** The workflow document of every live update, then of the final part. */
 const workflowDocs = (frames: ToolFrame[]) =>
@@ -249,7 +250,7 @@ describe('pi workflow tool', () => {
       "log('both done')",
       'return { a, b, n: args.n }',
     ].join('\n')
-    const { rt, frames } = await boot([{ tool: 'workflow', args: { script, args: { n: 2 }, max_agents: 2 } }, { text: 'parent done' }])
+    const { rt, frames } = await boot([{ tool: 'workflow', args: { script, args: { n: 2 }, max_agents: 2, background: false } }, { text: 'parent done' }])
     const turn = rt.admit({ text: 'research both', files: [] })
 
     // Before any child exists, the card already lists the declared phases as pending, and the person is asked.
@@ -671,9 +672,9 @@ describe('pi workflow tool, saved workflows', () => {
     const before = model.bodies.length
     const { rt, frames } = await boot(
       [
-        { tool: 'workflow', args: { script: '', name: 'audit', args: { files: ['a.ts'] } } },
-        { tool: 'workflow', args: { script: '', name: 'missing' } },
-        { tool: 'workflow', args: { script: "return agent('x')", name: 'audit' } },
+        { tool: 'workflow', args: { script: '', name: 'audit', args: { files: ['a.ts'] }, background: false } },
+        { tool: 'workflow', args: { script: '', name: 'missing', background: false } },
+        { tool: 'workflow', args: { script: "return agent('x')", name: 'audit', background: false } },
         { text: 'done' },
       ],
       {},
@@ -694,8 +695,8 @@ describe('pi workflow tool, saved workflows', () => {
     api.files.set('.kortix/workflows/audit.js', audit)
     const { rt, frames, workspace } = await boot(
       [
-        { tool: 'workflow', args: { script: '', name: 'audit', args: { files: ['b.ts'] } } },
-        { tool: 'workflow', args: { script: '', name: 'audit-2' } },
+        { tool: 'workflow', args: { script: '', name: 'audit', args: { files: ['b.ts'] }, background: false } },
+        { tool: 'workflow', args: { script: '', name: 'audit-2', background: false } },
         { text: 'ran' },
       ],
       { KORTIX_META_AGENT: '1' },

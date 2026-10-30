@@ -84,6 +84,8 @@ const cases = [
   ['shared to the resolver', 'src/harness/shared/agent-env-file.ts', "import '../harness';", true],
   ['shared to the message-id codec', 'src/harness/shared/session-log-boot.ts', "import { mintWireMessageId } from '@kortix/sdk/wire-message-id';", true],
   ['route to the message-id codec', 'src/routes/kortix/health.ts', "import { wireIdClock } from '@kortix/sdk/wire-message-id';", false],
+  ['pi to the peer-message envelope', 'src/harness/pi/runtime.ts', "import { parsePeerMessagePrompt } from '@kortix/shared/peer-message-prompt';", true],
+  ['service to the room envelope', 'src/services/tools/host.ts', "import { parseRoomPrompt } from '@kortix/shared/room-prompt';", false],
 
   // routes/ — controllers
   ['route to SSRF guard', 'src/routes/proxy/web-proxy.ts', "import '@kortix/shared/ssrf-guard';", true],

@@ -136,7 +136,7 @@ export interface WorkflowRunMetadata {
   name?: string;
   /** The script's newest `log()` lines, oldest first (at most 5). */
   logs?: string[];
-  /** More than 25 agents planned or started: the card warns, as Claude Code's "Large workflow". */
+  /** More than `WORKFLOW_LARGE_AGENT_COUNT` (25) agents planned or started: the card warns, as Claude Code's "Large workflow". */
   large?: true;
   /** The run this one resumed (`resume_run_id`): its completed agents' results were reused. */
   resumedFrom?: string;
@@ -146,4 +146,9 @@ export interface WorkflowRunMetadata {
    * live run; its answer arrives here as a notification when the run ends.
    */
   background?: { sessionId: string };
+  /**
+   * The person paused the run (`POST /kortix/runtime/workflows/:runId/control`
+   * `pause`): no new agent starts until `resume`; running agents finish.
+   */
+  paused?: boolean;
 }

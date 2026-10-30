@@ -39,6 +39,10 @@
       // by the kortixd/import-style lint rule).
       "@/*": ["./src/*"],
       "@kortix/shared/ssrf-guard": ["../../packages/shared/src/ssrf-guard.ts"],
+      // The prompt envelopes a cross-session or room message arrives in: pi reads a
+      // turn's origin from them (the workflow origin gate). Both files import nothing.
+      "@kortix/shared/peer-message-prompt": ["../../packages/shared/src/peer-message-prompt.ts"],
+      "@kortix/shared/room-prompt": ["../../packages/shared/src/room-prompt.ts"],
       "@kortix/api-contract/*": ["../../packages/api-contract/src/*"],
       // pi mints message ids with the platform codec. The file imports nothing;
       // the Dockerfiles copy it to the matching relative path.
