@@ -6,7 +6,7 @@ import {
   buildLayeredDockerfile,
   kortixWorkstationTooling,
 } from '../dockerfile-layer';
-import { buildMetaSandboxDockerfile } from '../meta-dockerfile';
+import { buildMyKortixSandboxDockerfile } from '../my-kortix-dockerfile';
 
 const ARTIFACTS = {
   agentBinaryPath: 'kortix-agent.gz',
@@ -22,7 +22,7 @@ const IMAGES = [
   { label: 'platform default', dockerfile: buildLayeredDockerfile({ userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE, ...ARTIFACTS }) },
   { label: 'custom template on Debian', dockerfile: buildLayeredDockerfile({ userDockerfile: 'FROM debian:bookworm-slim\n', ...ARTIFACTS }) },
   { label: 'custom template with Docker', dockerfile: buildLayeredDockerfile({ userDockerfile: 'FROM node:22\n', containerRuntime: true, ...ARTIFACTS }) },
-  { label: 'My Kortix', dockerfile: buildMetaSandboxDockerfile(ARTIFACTS) },
+  { label: 'My Kortix', dockerfile: buildMyKortixSandboxDockerfile(ARTIFACTS) },
 ];
 
 describe('the Kortix defaults', () => {
@@ -39,7 +39,7 @@ describe('the Kortix defaults', () => {
   }
 
   test('My Kortix runs on the platform default\'s base and adds no workstation', () => {
-    const meta = buildMetaSandboxDockerfile(ARTIFACTS);
+    const meta = buildMyKortixSandboxDockerfile(ARTIFACTS);
     expect(PLATFORM_DEFAULT_USER_DOCKERFILE).toContain(`FROM ${SANDBOX_BASE_IMAGE}\n`);
     expect(meta).toContain(`FROM ${SANDBOX_BASE_IMAGE}\n`);
     expect(meta).not.toContain(kortixWorkstationTooling({}));

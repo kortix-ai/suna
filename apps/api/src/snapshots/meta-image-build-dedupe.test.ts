@@ -18,7 +18,7 @@ setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
 setTestEnv('PLATINUM_API_URL', 'https://platinum.test');
 setTestEnv('PLATINUM_API_KEY', 'pt_live_testkey');
 
-const { ensureMetaSandboxImage, metaSnapshotName, settleMetaImageBuilds } = await import('./builder');
+const { ensureMyKortixSandboxImage, myKortixSnapshotName, settleMyKortixImageBuilds } = await import('./builder');
 const { platinumProvider } = await import('./providers/platinum');
 
 const originalIsConfigured = platinumProvider.isConfigured;
@@ -31,7 +31,7 @@ const originalFindFirstActive = platinumProvider.findFirstActiveSnapshot;
 const NO_FALLBACK = { readServed: async () => [], regionResident: async () => true };
 
 afterEach(async () => {
-  await settleMetaImageBuilds();
+  await settleMyKortixImageBuilds();
   platinumProvider.isConfigured = originalIsConfigured;
   platinumProvider.getSnapshotState = originalGetSnapshotState;
   platinumProvider.buildSnapshot = originalBuildSnapshot;
@@ -65,8 +65,8 @@ test('concurrent meta cold builds share one provider build', async () => {
   };
   platinumProvider.listSnapshots = async () => [];
 
-  const first = ensureMetaSandboxImage({ source: 'session-start', provider: 'platinum' }, NO_FALLBACK);
-  const second = ensureMetaSandboxImage({ source: 'session-start', provider: 'platinum' }, NO_FALLBACK);
+  const first = ensureMyKortixSandboxImage({ source: 'session-start', provider: 'platinum' }, NO_FALLBACK);
+  const second = ensureMyKortixSandboxImage({ source: 'session-start', provider: 'platinum' }, NO_FALLBACK);
   await buildStarted.promise;
 
   // One readiness probe per session start, one more by the single build.
@@ -87,13 +87,13 @@ test('a meta image reports the size it was built with, so metering bills that si
   };
   platinumProvider.listSnapshots = async () => [];
 
-  const result = await ensureMetaSandboxImage({ source: 'session-start', provider: 'platinum' }, NO_FALLBACK);
+  const result = await ensureMyKortixSandboxImage({ source: 'session-start', provider: 'platinum' }, NO_FALLBACK);
   expect(builtSpec).toEqual({ cpu: 1, memoryGb: 2, diskGb: 8 });
   expect(result.spec).toEqual(builtSpec as typeof result.spec);
 });
 
-const PREVIOUS = metaSnapshotName('e'.repeat(64));
-const OLDER = metaSnapshotName('f'.repeat(64));
+const PREVIOUS = myKortixSnapshotName('e'.repeat(64));
+const OLDER = myKortixSnapshotName('f'.repeat(64));
 const served = async () => [
   { snapshotName: PREVIOUS, contentHash: 'e'.repeat(64) },
   { snapshotName: OLDER, contentHash: 'f'.repeat(64) },
@@ -118,7 +118,7 @@ test('a session start boots the last served image and builds the new one behind 
     return { externalTemplateId: 'tpl_test' };
   };
 
-  const result = await ensureMetaSandboxImage(
+  const result = await ensureMyKortixSandboxImage(
     { source: 'session-start', provider: 'platinum' },
     { readServed: served, regionResident: async () => true },
   );
@@ -130,7 +130,7 @@ test('a session start boots the last served image and builds the new one behind 
   expect(buildCalls).toBe(1);
 
   // A second session during the build boots the fallback too and starts no second build.
-  const second = await ensureMetaSandboxImage(
+  const second = await ensureMyKortixSandboxImage(
     { source: 'session-start', provider: 'platinum' },
     { readServed: served, regionResident: async () => true },
   );
@@ -157,7 +157,7 @@ test('a build running on another replica is not duplicated while the fallback se
     return { externalTemplateId: 'tpl_test' };
   };
 
-  const result = await ensureMetaSandboxImage(
+  const result = await ensureMyKortixSandboxImage(
     { source: 'session-start', provider: 'platinum' },
     { readServed: served, regionResident: async () => true },
   );
@@ -175,7 +175,7 @@ test('this version\'s image is served once it is active and in the session regio
   };
   const regionChecks: Array<[string, number | undefined]> = [];
 
-  const result = await ensureMetaSandboxImage(
+  const result = await ensureMyKortixSandboxImage(
     { source: 'session-start', provider: 'platinum', projectId: 'project-1' },
     {
       readServed: served,
@@ -186,7 +186,7 @@ test('this version\'s image is served once it is active and in the session regio
     },
   );
   expect(result.snapshotName).not.toBe(PREVIOUS);
-  expect(result.snapshotName).toStartWith('kortix-meta-dev-');
+  expect(result.snapshotName).toStartWith('kortix-mykortix-dev-');
   expect(buildCalls).toBe(0);
   expect(regionChecks).toEqual([[result.snapshotName, 3_000]]);
 });
@@ -195,7 +195,7 @@ test('an image not yet copied to the session region falls back to a resident one
   fakeStates({}, 'active');
   platinumProvider.buildSnapshot = async () => ({ externalTemplateId: 'tpl_test' });
 
-  const result = await ensureMetaSandboxImage(
+  const result = await ensureMyKortixSandboxImage(
     { source: 'session-start', provider: 'platinum', projectId: 'project-us' },
     {
       readServed: served,
@@ -214,7 +214,7 @@ test('a served image the provider no longer has is skipped; with none left the s
     return { externalTemplateId: 'tpl_test' };
   };
 
-  const result = await ensureMetaSandboxImage(
+  const result = await ensureMyKortixSandboxImage(
     { source: 'session-start', provider: 'platinum' },
     { readServed: served, regionResident: async () => true },
   );
@@ -231,7 +231,7 @@ test('a failed served-image lookup waits for the build instead of failing the se
     return { externalTemplateId: 'tpl_test' };
   };
 
-  const result = await ensureMetaSandboxImage(
+  const result = await ensureMyKortixSandboxImage(
     { source: 'session-start', provider: 'platinum' },
     {
       readServed: async () => {
@@ -252,10 +252,31 @@ test('the startup pre-build never takes the fallback: building the image is its 
     return { externalTemplateId: 'tpl_test' };
   };
 
-  const result = await ensureMetaSandboxImage(
+  const result = await ensureMyKortixSandboxImage(
     { source: 'startup', provider: 'platinum' },
     { readServed: served, regionResident: async () => true },
   );
   expect(result.built).toBe(true);
+  expect(buildCalls).toBe(1);
+});
+
+test('on the first deploy after the rename, a session start boots the served legacy kortix-meta image', async () => {
+  const legacy = `kortix-meta-dev-${'e'.repeat(16)}`;
+  let buildCalls = 0;
+  fakeStates({ [legacy]: 'active' });
+  platinumProvider.buildSnapshot = async () => {
+    buildCalls += 1;
+    return { externalTemplateId: 'tpl_test' };
+  };
+
+  const result = await ensureMyKortixSandboxImage(
+    { source: 'session-start', provider: 'platinum' },
+    { readServed: async () => [{ snapshotName: legacy, contentHash: 'e'.repeat(64) }], regionResident: async () => true },
+  );
+  expect(result.snapshotName).toBe(legacy);
+  expect(result.slug).toBe('mykortix');
+  expect(result.built).toBe(false);
+  await settleMyKortixImageBuilds();
+  // The kortix-mykortix image builds behind it.
   expect(buildCalls).toBe(1);
 });

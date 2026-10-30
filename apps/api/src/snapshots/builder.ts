@@ -31,7 +31,7 @@ import {
 } from './last-ready-image';
 import { canServeLastKnownGoodRuntime } from './runtime-freshness';
 import { openBuildLog, closeBuildLogReady, closeBuildLogFailed, recentlyBuiltSnapshotNames, PREDECESSOR_PRUNE_PROTECT_MS } from './builder-log';
-import { waitForProviderBuild, findFirstActiveSnapshot, maybeSwapAgent, ensureMetaSandboxImage, SnapshotBuildError } from './runtime-images';
+import { waitForProviderBuild, findFirstActiveSnapshot, maybeSwapAgent, ensureMyKortixSandboxImage, SnapshotBuildError } from './runtime-images';
 import { claimSnapshotBuild, holdSnapshotBuild, releaseSnapshotBuild, waitForSnapshotBuildRelease } from './build-claim';
 import { enabledTemplateBuildProviders } from './provider-coverage';
 import { config, type SandboxProviderName } from '../config';
@@ -52,7 +52,7 @@ export type { SandboxTemplateView } from './template-prebuilds';
 export { resolveTemplateBySlug as resolveTemplate };
 export { listSnapshotBuilds, reconcileStaleBuilds, buildLogProviderCandidates, shouldReconcileProviderState, recentlyBuiltStrict } from './builder-log';
 export type { ProjectSnapshotBuildSummary } from './builder-log';
-export { META_RUNTIME_SPEC, ensureMetaSandboxImage, metaSnapshotName, reapSupersededMetaSnapshots, settleMetaImageBuilds } from './runtime-images';
+export { MY_KORTIX_RUNTIME_SPEC, ensureMyKortixSandboxImage, myKortixSnapshotName, reapSupersededMyKortixSnapshots, settleMyKortixImageBuilds } from './runtime-images';
 export { kickPreBuild, kickRoutedPreBuild, templateBuildProviders, kickProjectTemplatePrebuilds } from './template-prebuilds';
 
 export type SnapshotBuildSource =
@@ -76,7 +76,7 @@ export interface EnsureSandboxImageResult {
   contentHash: string;
   built: boolean;
   isDefault: boolean;
-  runtimeProfile?: 'standard' | 'meta';
+  runtimeProfile?: 'standard' | 'mykortix';
   /**
    * The size this image was built with, which is the size the box boots with.
    * Compute metering bills from it. Absent only for a result constructed
@@ -673,7 +673,7 @@ function startupPreBuild(): void {
           err instanceof Error ? err.message : err,
         );
       });
-    void ensureMetaSandboxImage({ source: 'startup', provider: providerId })
+    void ensureMyKortixSandboxImage({ source: 'startup', provider: providerId })
       .then((r) =>
         console.log(
           `[snapshots] startup pre-build (${providerId}): meta image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,

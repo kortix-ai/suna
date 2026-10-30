@@ -7,6 +7,7 @@ import { noteSessionDeleted, noteSessionStopped } from '../../http/session-stopp
 import { isSessionLogPage } from '../../session-log/guard';
 import { loadSessionLogPage, type SessionLogPage, type SessionLogPageQuery } from '../../session-log/source';
 import type { AuditEvent } from './audit';
+import type { SessionAttention, SessionBoardState, SessionInbound } from './multi-agent';
 import { type ConnectorSharing, unwrap } from './shared';
 
 // ---------------------------------------------------------------------------
@@ -185,6 +186,20 @@ export interface ProjectSession {
    *  agent, an API key or a service account. */
   pinned_at?: string | null;
   archived_at?: string | null;
+  /** Where the session sits on the agent board. Absent on an API before multi-agent. */
+  board_state?: SessionBoardState;
+  /** What the session waits for from its person, or null. Absent on an API before multi-agent. */
+  attention?: SessionAttention;
+  /** The newest turn activity (ISO 8601), or null. Absent on an API before multi-agent. */
+  last_activity_at?: string | null;
+  /** At most 280 characters of the last assistant text, or null. Absent on an API before multi-agent. */
+  result_excerpt?: string | null;
+  /** The name an agent gave this child (`agent({ name })`, metadata `agent_handle`), or null. */
+  agent_handle?: string | null;
+  /** The lead session of a teammate (metadata `team_lead`), or null. */
+  team_lead_session_id?: string | null;
+  /** Who may send this session a message. Absent on an API before multi-agent. */
+  inbound?: SessionInbound;
   created_at: string;
   updated_at: string;
 }
@@ -420,6 +435,8 @@ export interface ListProjectSessionsOptions {
   agent?: string;
   /** Only the sessions with activity at or after this ISO 8601 time (`updated_at`). Sent as `updated_after`. */
   updatedAfter?: string;
+  /** Only the teammates of this lead session (metadata `team_lead`). Sent as `team_lead`. */
+  teamLead?: string;
 }
 
 /** One keyset page of a project's sessions. */
@@ -445,6 +462,7 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   if (options?.createdBy) params.set('created_by', options.createdBy);
   if (options?.agent) params.set('agent', options.agent);
   if (options?.updatedAfter) params.set('updated_after', options.updatedAfter);
+  if (options?.teamLead) params.set('team_lead', options.teamLead);
   return params.size > 0 ? `?${params}` : '';
 }
 

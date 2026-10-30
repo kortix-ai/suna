@@ -82,6 +82,8 @@ import { registerSessionListStateRoutes } from './routes/session-list-state';
 import { registerSessionParticipantsRoutes } from './routes/session-participants';
 import { registerSessionPromptsRoutes } from './routes/session-prompts';
 import { registerRoomsRoutes } from './routes/rooms';
+import { registerPeerMessagesRoutes } from './routes/peer-messages';
+import { registerTeamTasksRoutes } from './routes/team-tasks';
 import { registerArtifactRoutes } from './routes/artifacts';
 import { registerArtifactCommentRoutes } from './routes/artifact-comments';
 import { registerLinkPreviewRoutes } from './routes/link-preview';
@@ -180,6 +182,8 @@ export function registerAllProjectRoutes(): void {
   registerSessionParticipantsRoutes();
   registerSessionPromptsRoutes();
   registerRoomsRoutes();
+  registerPeerMessagesRoutes();
+  registerTeamTasksRoutes();
   registerArtifactRoutes();
   registerArtifactCommentRoutes();
   registerLinkPreviewRoutes();

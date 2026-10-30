@@ -15,7 +15,9 @@
     "./egress-shim-rules": "./src/egress-shim-rules.ts",
     "./sandbox-layout": "./src/sandbox-layout.ts",
     "./compiled-agent-config-env": "./src/compiled-agent-config-env.ts",
-    "./permission-rules": "./src/permission-rules.ts"
+    "./permission-rules": "./src/permission-rules.ts",
+    "./kortix-tool-card": "./src/kortix-tool-card.ts",
+    "./multi-agent": "./src/multi-agent.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",

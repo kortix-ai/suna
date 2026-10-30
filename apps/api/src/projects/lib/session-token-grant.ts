@@ -41,7 +41,7 @@
  */
 
 import { type AgentGrant, accountTokens, readStoredAgentGrant, projectSessions, projects } from '@kortix/db';
-import { isMetaAgentName } from '@kortix/shared';
+import { isMyKortixAgentName } from '@kortix/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
@@ -53,7 +53,7 @@ import {
   resolveSessionAgentGrant,
   withGrantProvenance,
 } from './secret-grant';
-import { resolveBuiltinAgents } from './platform-meta-agent';
+import { resolveBuiltinAgents } from './my-kortix-agent';
 
 /** The re-mint could not be written. The caller must FAIL the prompt: letting it
  *  through would run the new agent against the previous agent's grant, which is
@@ -485,7 +485,7 @@ export async function remintGrantForAgentSwitch(
   runningRead.catch(() => undefined);
   // A `meta` prompt in a project that turned My Kortix off is refused, not only
   // narrowed: the grant below still drops to read-only, then the prompt fails.
-  const myKortixRead = isMetaAgentName(runningAgent) ? myKortixEnabled(input.projectId) : null;
+  const myKortixRead = isMyKortixAgentName(runningAgent) ? myKortixEnabled(input.projectId) : null;
   const stored = await storedRead;
   const running = await runningRead;
   const decision = await applyResolvedGrant(input, stored, running, () => resolve(true));

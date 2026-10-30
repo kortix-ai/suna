@@ -25,7 +25,8 @@ mock.module('../projects/session-lifecycle/drain', () => ({
 }));
 
 const { db } = await import('../shared/db');
-const { notifyParentOfFailedStart, notifyParentOfSubagentTurn, stoppedSubagentNotice } = await import('../projects/subagent-notice');
+const { notifyParentOfFailedStart, notifyParentOfLostTurn, notifyParentOfSubagentTurn, stoppedSubagentNotice } = await import('../projects/subagent-notice');
+const { notifyTurnLost } = await import('../shared/turn-lost-notifier');
 const { enqueueContinueSessionCommand } = await import('../projects/session-lifecycle/store');
 
 const ACCOUNT_ID = crypto.randomUUID();
@@ -107,10 +108,18 @@ describe('a background subagent turn end', () => {
       `Continue your task with this result. To send this subagent a follow-up, call \`agent\` with task_id ${CHILD}. To read its whole transcript: \`kortix sessions log ${CHILD}\`.`,
     ].join('\n'));
 
-    // A later turn of the same child (a follow-up) is a new event.
+    // A later turn of the same child (a follow-up) is a new event. While the
+    // first notice still waits, the second joins its row: one delivery.
     transcript = [...transcript, msg('user', 'and the tests?'), msg('assistant', 'Tests pass.')];
     expect(await notifyParentOfSubagentTurn({ sessionId: CHILD, status: 'idle', turnMessageId: 'msg_turn_2' })).toBe(true);
-    expect((await parentRows()).map((r) => r.payload.text.includes('<task_result>\nTests pass.\n</task_result>'))).toEqual([false, true]);
+    const [joined, ...rest] = await parentRows();
+    expect(rest).toHaveLength(0);
+    expect(joined!.payload.noticeKeys).toEqual([`subagent-finished:${CHILD}:msg_turn_1`, `subagent-finished:${CHILD}:msg_turn_2`]);
+    expect((joined!.payload.text as string).startsWith(`${text}\n\n`)).toBe(true);
+    expect(joined!.payload.parts).toEqual([{ type: 'text', text: joined!.payload.text, synthetic: true }]);
+    expect(joined!.payload.text).toContain('<task_result>\nTests pass.\n</task_result>');
+    // A repeat of the second notice's key inserts nothing either.
+    expect(await notifyParentOfSubagentTurn({ sessionId: CHILD, status: 'idle', turnMessageId: 'msg_turn_2' })).toBe(false);
   });
 
   test('an error turn reports error with its cause; a stopped turn reports stopped', async () => {
@@ -118,7 +127,9 @@ describe('a background subagent turn end', () => {
     transcript = [msg('user', 'go'), msg('assistant', '', { name: 'APIError', message: 'model overloaded' })];
     await notifyParentOfSubagentTurn({ sessionId: CHILD, status: 'error', errorInfo: { name: 'APIError', message: 'model overloaded' }, turnMessageId: 'msg_e' });
     await notifyParentOfSubagentTurn({ sessionId: CHILD, status: 'error', errorInfo: { name: 'MessageAbortedError', message: 'aborted' }, turnMessageId: 'msg_s' });
-    const [error, stopped] = (await parentRows()).map((r) => r.payload.text as string);
+    // Both notices wait together, so they are one row: error first, then stopped.
+    const [both] = (await parentRows()).map((r) => r.payload.text as string);
+    const [error, stopped] = both!.split('\n\nA background subagent you started has finished.');
     expect(error).toContain('status: error\n');
     expect(error).toContain('<status>FAILED</status>');
     expect(error).toContain('<task_error>\nAPIError: model overloaded\n</task_error>');
@@ -163,6 +174,25 @@ describe('a background subagent turn end', () => {
     expect(rows[0]!.payload.text).toContain('<task_error>\nA person stopped it before it finished.\n</task_error>');
   });
 
+  test('a teammate always tells its lead, without notify_parent, and the notice names the tasks it still owns', async () => {
+    await insertSession(CHILD, { parent: PARENT, metadata: { team_lead: PARENT, spawned_by_session: PARENT, agent_handle: 'builder' } });
+    await db.execute(sql`
+      INSERT INTO kortix.session_tasks (project_id, lead_session_id, seq, subject, status, owner_handle, owner_session_id)
+      VALUES (${PROJECT_ID}::uuid, ${PARENT}, 1, 'Write the parser', 'in_progress', 'builder', ${CHILD}),
+             (${PROJECT_ID}::uuid, ${PARENT}, 2, 'Ship it', 'completed', 'builder', ${CHILD})`);
+    expect(await notifyParentOfSubagentTurn({ sessionId: CHILD, status: 'idle', turnMessageId: 'msg_team' })).toBe(true);
+    const [row] = await parentRows();
+    const text = row!.payload.text as string;
+    expect(text).toStartWith('Your teammate builder finished its turn and is idle.');
+    expect(text).toContain('Tasks builder still owns: #1 Write the parser (in progress).');
+    expect(text).not.toContain('Ship it');
+    // A team_lead the lead did not create (no spawned_by_session) is no teammate.
+    const forged = crypto.randomUUID();
+    await insertSession(forged, { parent: PARENT, metadata: { team_lead: PARENT } });
+    expect(await notifyParentOfSubagentTurn({ sessionId: forged, status: 'idle', turnMessageId: 'm' })).toBe(false);
+    await db.execute(sql`DELETE FROM kortix.session_tasks WHERE lead_session_id = ${PARENT}`);
+  });
+
   test('a child that never started reports failed, once', async () => {
     await insertSession(CHILD, { parent: PARENT, metadata: background, status: 'failed' });
     expect(await notifyParentOfFailedStart(CHILD, 'Sandbox provisioning failed: capacity')).toBe(true);
@@ -171,5 +201,23 @@ describe('a background subagent turn end', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.payload.text).toContain('status: failed\n');
     expect(rows[0]!.payload.text).toContain('<task_error>\nSandbox provisioning failed: capacity\n</task_error>');
+  });
+
+  test('a turn the reaper settled without its box tells the parent, once per lost turn', async () => {
+    await insertSession(CHILD, { parent: PARENT, metadata: background });
+    transcript = [msg('user', 'go')];
+    // The reaper's hook (sandbox-turn-lifecycle.ts clearSandboxTurn) reaches the registered relay.
+    notifyTurnLost(CHILD, 'turn-lost-1');
+    let rows: Awaited<ReturnType<typeof parentRows>> = [];
+    for (let i = 0; i < 100 && rows.length === 0; i += 1) {
+      rows = await parentRows();
+      if (rows.length === 0) await Bun.sleep(20);
+    }
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.payload.text).toContain('status: error\n');
+    expect(rows[0]!.payload.text).toContain('Its computer stopped before it finished.');
+    // The same lost turn reported again writes nothing.
+    expect(await notifyParentOfLostTurn(CHILD, 'turn-lost-1')).toBe(false);
+    expect(await parentRows()).toHaveLength(1);
   });
 });

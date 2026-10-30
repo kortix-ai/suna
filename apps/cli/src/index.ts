@@ -36,6 +36,7 @@ import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runReminders } from './commands/reminders.ts';
 import { runGoals } from './commands/goals.ts';
+import { runTasks } from './commands/tasks.ts';
 import { runArtifacts } from './commands/artifacts.ts';
 import { runReview } from './commands/review.ts';
 import { runRoles } from './commands/roles.ts';
@@ -60,7 +61,7 @@ import { runToken, runWhoami } from './commands/whoami.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
 import { confirm } from './prompts.ts';
 import { C, header, pad, rule, visibleWidth } from './style.ts';
-import { printPermissionDenialIdentity } from './token-denial.ts';
+import { machineErrors, printPermissionDenialIdentity, withIssues, writeMachineError } from './token-denial.ts';
 import {
   getUpdateNotice,
   isUpdateSnoozed,
@@ -286,6 +287,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   uninstall: (rest) => runUninstall(rest),
   rooms: (rest) => runRooms(rest),
   peers: (rest) => runPeers(rest),
+  tasks: (rest) => runTasks(rest),
 };
 
 async function main(rawArgv: string[]): Promise<number> {
@@ -539,8 +541,15 @@ main(argvForInvocation(process.argv0 ?? '', process.argv.slice(2)))
     return code;
   })
   .then((code) => finish(code))
-  .catch((err: unknown) => {
+  .catch(async (err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`${C.red}kortix:${C.reset} ${msg}\n`);
+    if (machineErrors()) {
+      // A refused call records its denial before it throws: that line names the action.
+      await printPermissionDenialIdentity();
+      const status = typeof (err as { status?: unknown })?.status === 'number' ? (err as { status: number }).status : undefined;
+      writeMachineError({ kind: 'failed', message: withIssues(msg, (err as { body?: unknown })?.body), ...(status ? { status } : {}) });
+    } else {
+      process.stderr.write(`${C.red}kortix:${C.reset} ${msg}\n`);
+    }
     finish(1);
   });

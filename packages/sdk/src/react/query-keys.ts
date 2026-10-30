@@ -424,6 +424,25 @@ export const qk = {
       [...qk.project.sessionsScope(id), 'list-children', parentSessionId, q?.trim() ?? ''] as const,
 
     /**
+     * A session's multi-agent reads: who it can reach, its messages, its
+     * team's tasks and teammates, its workflow runs. Each nests under
+     * `session(id, sessionId)`, so a session invalidation refreshes them, and
+     * under `sessionAgents(id, sessionId)`, so one call refreshes all of them.
+     */
+    sessionAgents: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'agents'] as const,
+    sessionReachable: (id: string, sessionId: string, scope: string) =>
+      [...qk.project.sessionAgents(id, sessionId), 'reachable', scope] as const,
+    peerMessages: (id: string, sessionId: string, direction: string) =>
+      [...qk.project.sessionAgents(id, sessionId), 'peer-messages', direction] as const,
+    teamTasks: (id: string, leadSessionId: string) =>
+      [...qk.project.sessionAgents(id, leadSessionId), 'tasks'] as const,
+    teammates: (id: string, leadSessionId: string) =>
+      [...qk.project.sessionAgents(id, leadSessionId), 'teammates'] as const,
+    sessionWorkflows: (id: string, sessionId: string) =>
+      [...qk.project.sessionAgents(id, sessionId), 'workflows'] as const,
+
+    /**
      * One session, by id. Nests directly under the scope-LESS
      * `sessionsScope` prefix, not under a specific `sessions(id, scope)`
      * slot: a session is not "owned" by whichever list scope happened to
