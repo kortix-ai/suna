@@ -89,9 +89,8 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('useradd --create-home --shell /bin/bash --user-group kortix');
     expect(merged).toContain("echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix");
     expect(merged).not.toContain("NOPASSWD:ALL\\n");
-    expect(merged).toContain(
-      'chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /home/kortix',
-    );
+    expect(merged).toContain('chown -R kortix:kortix /workspace /opt/kortix /home/kortix');
+    expect(merged).toContain('mkdir -p /opt/pw-browsers && chown kortix:kortix /opt/pw-browsers');
     expect(merged).not.toContain('ENV HOME=');
     expect(merged).not.toContain('XDG_DATA_HOME=');
     expect(merged).not.toContain('XDG_CONFIG_HOME=');
