@@ -2,7 +2,7 @@
  * The Kortix tool contract: one module, every harness.
  *
  * A tool is a module whose default export is a plain object. It imports
- * nothing from a harness, so OpenCode, pi and any later harness run the same
+ * nothing from a harness, so pi and any later harness run the same
  * file:
  *
  *   export default {
@@ -27,8 +27,7 @@
 /**
  * The Kortix tools that write files in the checkout (`image_gen` under
  * `output/images/`, `memory` under `memory/`). The `edit` permission governs
- * them on every harness: pi (`toolCapability`) and OpenCode
- * (`capabilityToolRules`) both read this list.
+ * them: pi's `toolCapability` reads this list.
  */
 export const KORTIX_EDIT_TOOLS: readonly string[] = ['image_gen', 'memory']
 

@@ -2,7 +2,7 @@
  * The compiled agent set (`KORTIX_COMPILED_AGENT_CONFIG`, apps/api
  * compile-agent-config.ts) of a kortix.yaml v3 project carries `schema: 3`.
  * Such a session reads its whole configuration from that set: no harness
- * config folder, no project `opencode.json(c)`, no `.opencode/`.
+ * config folder (`harnesses/pi`, `.kortix/pi`).
  *
  * Returns the parsed set when it is v3, else null (v1/v2, absent, malformed).
  */

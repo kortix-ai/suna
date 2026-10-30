@@ -1,13 +1,14 @@
 /**
- * pi's OpenCode-compatible raw surface, served IN-PROCESS behind the host's
- * catch-all transport (`routes/runtime-proxy.ts` → `HarnessProxyService`).
+ * pi's raw runtime surface (the runtime wire), served IN-PROCESS behind the
+ * host's catch-all transport (`routes/proxy/runtime-proxy.ts` →
+ * `HarnessProxyService`).
  *
- * The SDK's OpenCode client points at `<backend>/p/<externalId>/8000` and
- * calls `/session`, `/session/:id/message`, `/session/:id/prompt_async`,
- * `/session/:id/abort`, `/config`, `/agent`, `/provider`, `/permission/:id/reply`
- * and friends unchanged. The API delivers every turn with `prompt_async` and
- * proves it landed with `GET /session/:id/message/:messageID`. This module
- * answers those routes from the runtime's own state; nothing is forwarded.
+ * Clients point at `<backend>/p/<externalId>/8000` and call `/session`,
+ * `/session/:id/message`, `/session/:id/prompt_async`, `/session/:id/abort`,
+ * `/permission/:id/reply` and friends. The API delivers every turn with
+ * `prompt_async` and proves it landed with `GET /session/:id/message/:messageID`.
+ * This module answers those routes from the runtime's own state; nothing is
+ * forwarded.
  *
  * Auth is the host's: the daemon verifies the signed user context before this
  * catch-all runs, so the surface never sees an unauthenticated request.
@@ -48,7 +49,7 @@ function partRef(sessionId: string) {
     `/kortix/part/${encodeURIComponent(sessionId)}/${encodeURIComponent(messageId)}/${encodeURIComponent(partId)}`
 }
 
-/** OpenCode's own `/event` framing: one `data:` line per `{type, properties}`. */
+/** The `/global/event` stream: one `data:` line per `{id, type, properties}` frame. */
 function eventStream(): HarnessForwardResult {
   const bus = kortixEventBus()
   const encoder = new TextEncoder()
@@ -70,7 +71,7 @@ function eventStream(): HarnessForwardResult {
         /*
           THE ENVELOPE NEEDS ITS OWN ID, AND STREAMED TEXT DEPENDS ON IT.
 
-          OpenCode's wire carries a top-level `id` on every event, and the SDK
+          The runtime wire carries a top-level `id` on every event, and the SDK
           store uses it as the idempotency key for `message.part.delta`
           (`applyPartDelta`'s `eventID`). Its rule, verbatim: "a delta with no
           id gets no protection here". The store cannot dedupe on delta CONTENT
@@ -128,8 +129,7 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
       const root = rt.rootId
 
       // ── streams ──────────────────────────────────────────────────────────
-      if (method === 'GET' && (path === '/event' || path === '/global/event')) return eventStream()
-      if (method === 'GET' && path === '/global/health') return json(200, { healthy: true, version: rt.sessionObject().version })
+      if (method === 'GET' && path === '/global/event') return eventStream()
 
       // ── session ──────────────────────────────────────────────────────────
       if (path === '/session' && method === 'GET') return json(200, [rt.sessionObject(), ...rt.childSessions()])
@@ -150,7 +150,6 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
         const sub = session[2] ?? ''
 
         if (sub === '' && method === 'GET') return json(200, child?.object ?? rt.sessionObject())
-        if (sub === 'children' && method === 'GET') return json(200, child ? [] : rt.childSessions())
         const message = /^message(?:\/([^/]+)(?:\/part\/([^/]+))?)?$/.exec(sub)
         if (message && method === 'GET') {
           const messageId = message[1] ? decodeSegment(message[1]) : null
@@ -181,7 +180,7 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
 
               `page()` already knows: `hasMore`. The cursor is the window's
               OLDEST id, because `page({before})` is an exclusive upper bound
-              on the id order — the same contract OpenCode's list serves.
+              on the id order — the transcript page cursor contract.
             */
             const older = page.hasMore ? String(page.messages[0]?.info.id ?? '') : ''
             return json(200, stripped.value, older ? { 'x-next-cursor': older } : {})
@@ -193,11 +192,9 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
           }
         }
         if (child) {
-          if ((sub === 'todo' || sub === 'diff') && method === 'GET') return json(200, [])
           return json(501, { code: 'feature_not_supported', error: 'a pi subagent session is read-only; its parent task drives it' })
         }
         if (sub === '' && method === 'PATCH') return json(200, rt.sessionObject())
-        if (sub === '' && method === 'DELETE') return json(200, true)
 
         if ((sub === 'prompt_async' || sub === 'message' || sub === 'command') && method === 'POST') {
           let prompt
@@ -219,7 +216,7 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
           }
           if (sub === 'prompt_async') {
             // Accepted; execution continues on the serial queue and every byte
-            // of output arrives over the event stream — exactly OpenCode's contract.
+            // of output arrives over the event stream — the `prompt_async` contract.
             void admitted.done.catch(() => {})
             return json(204, null)
           }
@@ -232,8 +229,6 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
           await rt.abort()
           return json(200, true)
         }
-        if (sub === 'todo' && method === 'GET') return json(200, [])
-        if (sub === 'diff' && method === 'GET') return json(200, [])
         if ((sub === 'revert' || sub === 'unrevert') && method === 'POST') {
           return json(501, { code: 'feature_not_supported', error: 'session rewind is not supported by the pi harness' })
         }
@@ -244,9 +239,6 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
             return json(503, { error: err instanceof Error ? err.message : String(err) })
           }
           return json(200, true)
-        }
-        if ((sub === 'init' || sub === 'fork' || sub === 'share' || sub === 'shell') && method === 'POST') {
-          return json(501, { code: 'feature_not_supported', error: `${sub} is not supported by the pi harness` })
         }
 
         if (message) {
@@ -269,26 +261,15 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
 
       // ── catalog reads ────────────────────────────────────────────────────
       if (method === 'GET') {
-        if (path === '/skill') {
-          return json(
-            200,
-            rt.skillList().map((skill) => ({ name: skill.name, description: skill.description, location: skill.filePath })),
-          )
-        }
-        if (path === '/tool/ids' || path === '/experimental/tool/ids') return json(200, rt.toolList().map((t) => t.id))
-        if (path === '/tool' || path === '/experimental/tool') return json(200, rt.toolList())
         if (path === '/permission') return json(200, rt.permissions.list())
         if (path === '/question') return json(200, rt.questions.list())
-        if (path === '/lsp/diagnostics' || path === '/lsp') return json(200, {})
-        if (path === '/mcp') return json(200, {})
         if (path === '/command') return json(200, rt.commandList())
         if (path === '/path') {
           return json(200, { home: process.env.HOME ?? '/home/kortix', state: '', config: '', worktree: rt.workspace, directory: rt.workspace })
         }
-        if (path === '/project/current' || path === '/project') {
-          // OpenCode's shape: `vcs: 'git'` is what turns the Changes tab on.
-          const project = { id: rt.workspace, worktree: rt.workspace, ...((await isGitRepo(rt.workspace)) ? { vcs: 'git' } : {}), time: { created: rt.createdAt } }
-          return json(200, path === '/project' ? [project] : project)
+        if (path === '/project/current') {
+          // `vcs: 'git'` is what turns the Changes tab on.
+          return json(200, { id: rt.workspace, worktree: rt.workspace, ...((await isGitRepo(rt.workspace)) ? { vcs: 'git' } : {}), time: { created: rt.createdAt } })
         }
         if (path === '/vcs/diff') {
           try {
@@ -297,7 +278,6 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
             return json(500, { error: err instanceof Error ? err.message : String(err) })
           }
         }
-        if (path === '/vcs/status' || path === '/vcs') return json(200, [])
       }
 
       // ── interaction replies ──────────────────────────────────────────────

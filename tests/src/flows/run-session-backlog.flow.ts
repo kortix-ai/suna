@@ -1510,16 +1510,14 @@ harnessFlow(
           .matches('$.content', new RegExp(`^EJECTED ${query}$`));
       });
 
-      await ctx.step('show is not loaded: no show call completes and the daemon answers 404 for it; a listed Kortix tool runs', async () => {
+      await ctx.step('show is not loaded: no show call completes, and the box reports memory among its tools and no show', async () => {
         const { messages } = await readTranscript(ctx, session.projectId, session.sessionId);
         const shown = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'show' && t.status === 'completed');
         if (shown.length > 0) throw new Error(`a show call completed on ${harness}: ${JSON.stringify(shown)}`);
-        const owner = ctx.client.as(ctx.P.OWNER);
-        (await owner.post(runtimePath(session.sandboxId, '/kortix/tools/show'), { args: { action: 'show', type: 'text', content: query }, agent: 'kortix' }))
-          .status(404)
-          .body()
-          .matches('$.error', /^no tool named show is loaded$/);
-        (await owner.post(runtimePath(session.sandboxId, '/kortix/tools/memory'), { args: { command: 'view', path: 'memory' }, agent: 'kortix' })).status(200);
+        const diag = await ctx.client.as(ctx.P.OWNER).get(runtimePath(session.sandboxId, '/kortix/diag?tail=1'));
+        diag.status(200);
+        const tools = diag.json<{ pi?: { tools?: string[] } }>().pi?.tools ?? [];
+        if (tools.includes('show') || !tools.includes('memory')) throw new Error(`the box's tools on ${harness} are ${JSON.stringify(tools)}`);
       });
     } finally {
       cli.dispose();

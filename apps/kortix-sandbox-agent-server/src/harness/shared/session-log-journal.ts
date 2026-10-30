@@ -14,8 +14,7 @@
  *   gzipped, 16 MB raw) has its longest strings cut, longest first, to their first
  *   16 kB and `JOURNAL_TRUNCATION_MARK` until it fits. The native store keeps the
  *   whole message.
- * - Both harnesses' turn-end relays (`relayTurnEnd`, OpenCode's
- *   `relayTurnEndToApi`) and the daemon shutdown call `flush`, which waits at
+ * - pi's turn-end relay (`relayTurnEnd`) and the daemon shutdown call `flush`, which waits at
  *   most 3 s for the acknowledgement, and returns at the first failed post. A
  *   batch not acknowledged by then keeps retrying in the background; the
  *   native store still holds the messages.
@@ -89,7 +88,7 @@
  * pi-ai sends "No result provided" for them. The restored box's next turn exports the step closed
  * (C2) and replaces the record. The reply pi streams has no entry before its
  * `message_end` and stays out. The first finished step marks the turn `log_durable_at` (apps/api
- * `markDurableTurns`). OpenCode's `fromV1` closes open calls at rest: it collects at turn end only.
+ * `markDurableTurns`).
  *
  * Attachment bytes (P2.13). An adapter exports an image or file as `ref: blob:<sha256>`; its
  * bytes are only in the native store. A collection starts one attachment pass over the sha256s
@@ -193,10 +192,7 @@ export interface SessionLogJournalOptions {
   harness?: HarnessCarry
   /** Per thread, what this box adds to a native seq (a 422 re-sequenced it, see the header). */
   seq_offsets?: Record<string, number>
-  /**
-   * Collect and send at most this long after a turn's message frame (see the header). Off when
-   * absent: an adapter whose export closes open calls (OpenCode's `fromV1` at rest) must not run mid-turn.
-   */
+  /** Collect and send at most this long after a turn's message frame (see the header). Off when absent. */
   midTurnMs?: number
   /** Test seams. */
   blobBudgetMs?: number
@@ -372,7 +368,7 @@ export class SessionLogJournal {
     if (typeof part?.id !== 'string' || typeof part.messageID !== 'string' || this.collected(part.messageID)) return
     const row = this.row(part.messageID)
     const before = row.parts.get(part.id)
-    // OpenCode also streams complete text snapshots via message.part.updated.
+    // A text part's `message.part.updated` carries the whole text (pi sends one at the text's end).
     // Publish changed snapshots; a snapshot echoing an applied delta is unchanged.
     row.due ||= !before || before.text !== part.text || toolShape(before) !== toolShape(part)
     // A copy: deltas extend it, and the v1 ring must keep the frame as published.
@@ -799,8 +795,8 @@ export class SessionLogJournal {
 }
 
 /**
- * `SessionLogPort.changes` for an adapter that rebuilds its whole log on each read (pi,
- * OpenCode): every message after its thread's cursor or with a new native hash, every id a
+ * `SessionLogPort.changes` for an adapter that rebuilds its whole log on each read (pi):
+ * every message after its thread's cursor or with a new native hash, every id a
  * cursor holds that the log no longer has (a tombstone), every thread (the journal drops an
  * unchanged one), and the session fields when their JSON differs from `previousSessionJson`.
  */

@@ -13,7 +13,8 @@
  * unmodified. Kortix keeps the model, the tools, the permission gate and the event format.
  *
  * Heavy dependencies (`@earendil-works/pi-*`) load on `start()`, never at
- * import: the resolver imports this module for every boot, including OpenCode's.
+ * import: main.ts imports this module in every daemon process, including the
+ * CLI subcommands that never start pi.
  */
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -70,8 +71,8 @@ export function parseCompiledAgentConfig(raw: string | undefined): CompiledAgent
 }
 
 /**
- * A command's prompt with its arguments, exactly as OpenCode expands one
- * (`session/prompt.ts` `command`): the arguments split into words (a quoted
+ * A command's prompt with its arguments, by the command template contract:
+ * the arguments split into words (a quoted
  * string is one word, its quotes dropped); `$1`, `$2`, … take them in order,
  * the highest placeholder takes the rest, a missing one is empty; `$ARGUMENTS`
  * takes the raw text. A template with neither gets the arguments appended.
@@ -106,7 +107,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   'Use the tools to read, search and change files and to run commands. Prefer small, verifiable steps. Report what you did and what remains.',
 ].join('\n')
 
-/** OpenCode's `Today's date` line (its prompt's env block), with the box's time zone. Without it an agent with no shell cannot resolve "yesterday". */
+/** The system prompt's `Today's date` line, with the box's time zone. Without it an agent with no shell cannot resolve "yesterday". */
 export const todayLine = (now: number) => `Today's date: ${new Date(now).toDateString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`
 
 export interface PromptInput {
@@ -117,7 +118,7 @@ export interface PromptInput {
   model?: { providerID: string; modelID: string }
   variant?: string
   system?: string
-  /** OpenCode `noReply`: the message joins the conversation, no turn runs. */
+  /** `noReply`: the message joins the conversation, no turn runs. */
   noReply?: boolean
   /** A slash command (`/name arguments`): the user message on the wire becomes the text pi expands it to. */
   command?: boolean
@@ -133,10 +134,10 @@ export interface PromptInput {
 
 export class PromptRejected extends Error {}
 
-/** OpenCode's `retry` session status from a retry plan (the wire's `retryPlan`). */
+/** The `retry` session status from a retry plan (the wire's `retryPlan`). */
 const retryStatus = (plan: RetryPlan | null | undefined) => (plan ? { attempt: plan.attempt, message: plan.message, next: plan.next } : null)
 
-/** Validate the OpenCode `prompt_async` body before the runtime acknowledges it. */
+/** Validate the `prompt_async` body before the runtime acknowledges it. */
 export function parsePromptBody(raw: unknown): PromptInput {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new PromptRejected('prompt body must be an object')
   const body = raw as Record<string, unknown>
@@ -310,8 +311,8 @@ export interface PiDump {
   rootId: string
   title: string
   createdAt: number
-  /** The model context. A daemon built before pi 1.0 restores from it; this one reads `entries`. Remove when no such daemon runs. */
-  agentMessages: AgentMessage[]
+  /** The model context, in a dump written before pi 1.0. Read only when `entries` is absent; never written. */
+  agentMessages?: AgentMessage[]
   /** pi's session entries: the conversation, its context edits and its compactions. Absent in a dump written before pi 1.0. */
   entries?: SessionEntry[]
   /** pi's session header, which `entries` leaves out. Absent in dumps written before P2.5. */
@@ -619,7 +620,7 @@ export class PiRuntime {
       const restored = this.restore(dump)
       // pi's session store is the model context: the agent's messages are its projection.
       const sessionManager = coding.SessionManager.inMemory(this.workspace, undefined, restored?.entries && restored.header ? [restored.header, ...restored.entries] : restored?.entries)
-      if (restored && !restored.entries) for (const message of restored.agentMessages) sessionManager.appendMessage(message as never)
+      if (restored && !restored.entries) for (const message of restored.agentMessages ?? []) sessionManager.appendMessage(message as never)
       if (this.compiledAgent()?.options) logger.warn('[pi] the agent sets `options`; pi does not apply provider options', { agent: this.agentName })
       const agent = new core.Agent({
         streamFn: withAgentSampling(
@@ -819,7 +820,7 @@ export class PiRuntime {
     this.publishUserMessage(this.rootId, messageId, input, { agent: agentName, selected: this.selected! })
     this.dismissOpenQuestions()
     if (input.noReply) {
-      // OpenCode `noReply`: the next turn's model sees this message, and none
+      // `noReply`: the next turn's model sees this message, and none
       // runs now. On the serial queue so it lands between turns, and persisted
       // so a box that sleeps before anyone answers still has it.
       const slot: { retracted?: boolean } = {}
@@ -1001,8 +1002,8 @@ export class PiRuntime {
   /**
    * The command list a client reads (`GET /command`). v3: every compiled
    * command, with the agents that enable it. Otherwise pi's prompt templates.
-   * Then the agent's granted skills (`source: 'skill'`), as OpenCode lists
-   * them: the composer's `/` menu has no other source for them in a session.
+   * Then the agent's granted skills (`source: 'skill'`): the composer's `/`
+   * menu has no other source for them in a session.
    * A command shadows a skill of the same name.
    */
   commandList(): Array<{ name: string; description: string; source: 'command' | 'skill'; template: string; hints: string[]; agents?: string[] }> {
@@ -1257,7 +1258,7 @@ export class PiRuntime {
   }
 
   /**
-   * pi's compaction on the wire, in OpenCode's shape: a user message whose one
+   * pi's compaction on the v1 wire (`kortix.transcript.v1`): a user message whose one
    * part is `compaction` (the request), an assistant message flagged `summary`
    * that ends with the summary text or an error, `time.compacting` on the
    * session while it runs, and `session.compacted` when it is over. The
@@ -1639,8 +1640,8 @@ export class PiRuntime {
   /**
    * Run one prompt in a child session: its own pi agent, wire adapter and
    * transcript, on the same models, workspace and extension hooks. Frames go
-   * on the bus under the child's id, so the product streams the child exactly
-   * as it streams an OpenCode subagent. The caller's signal aborts the child.
+   * on the bus under the child's id, so the product streams the child as a
+   * subagent session. The caller's signal aborts the child.
    */
   async spawnSession(input: SpawnSessionInput): Promise<SpawnSessionResult> {
     const core = this.core
@@ -1943,7 +1944,7 @@ export class PiRuntime {
 
   // ── configuration ────────────────────────────────────────────────────────
 
-  /** The session's agent; `default` (no agent chosen) is the manifest's `default_agent`, as on OpenCode. */
+  /** The session's agent; `default` (no agent chosen) is the manifest's `default_agent`. */
   private resolveAgentName(): string {
     const requested = (this.env.KORTIX_AGENT_NAME ?? '').trim()
     const agents = Object.keys(this.compiled?.agent ?? {})
@@ -1964,8 +1965,8 @@ export class PiRuntime {
 
   /**
    * The agent a prompt runs on: the one it picks when the compiled config has
-   * it as a primary agent, else the session's agent, as OpenCode does for a
-   * prompt with no agent. A pick pi cannot run is logged and not applied.
+   * it as a primary agent, else the session's agent (also for a prompt with
+   * no agent). A pick pi cannot run is logged and not applied.
    */
   private resolveTurnAgent(requested: string | undefined): string {
     const name = requested?.trim()
@@ -2030,8 +2031,8 @@ export class PiRuntime {
     ).filter((dir) => existsSync(dir))
     if (dirs.length === 0) return []
     try {
-      // Two directories can carry the same skill (a project's OpenCode copy and the managed
-      // overlay): the first directory wins, like OpenCode's search order. pi reports the loser.
+      // Two directories can carry the same skill (a project's own copy and the managed
+      // overlay): the first directory in `dirs` wins. pi reports the loser.
       const { skills, diagnostics } = this.coding.loadSkills({ cwd: this.workspace, agentDir: this.cfg.piAgentDir, skillPaths: dirs, includeDefaults: false })
       for (const diagnostic of diagnostics) if (diagnostic.type !== 'collision') logger.warn('[pi] skill diagnostic', diagnostic)
       // A flagged managed skill exists only while the project's flag is on.
@@ -2123,15 +2124,16 @@ export class PiRuntime {
     return [...own, ...(this.pi?.skills() ?? []).filter((skill) => !seen.has(skill.name) && (seen.add(skill.name), true))]
   }
 
-  toolList(): Array<{ id: string; description: string; parameters: unknown }> {
-    return (this.agent?.state.tools ?? []).map((tool) => ({ id: tool.name, description: tool.description, parameters: tool.parameters }))
+  /** The root agent's tool names, as `/kortix/diag` reports them. */
+  toolNames(): string[] {
+    return (this.agent?.state.tools ?? []).map((tool) => tool.name)
   }
 
   sessionStatus(): { type: 'idle' | 'busy' } {
     return { type: this.status }
   }
 
-  /** The OpenCode `Session` object for this root. */
+  /** The runtime wire's `Session` object for this root. */
   sessionObject(): Record<string, unknown> {
     return {
       id: this.rootId,
@@ -2148,7 +2150,7 @@ export class PiRuntime {
   stateDoc(): Record<string, unknown> {
     const bus = kortixEventBus()
     const selected = this.selected
-    // A disabled agent cannot run, so no picker lists it (OpenCode drops it too).
+    // A disabled agent cannot run, so no picker lists it.
     const agents = Object.entries(this.compiled?.agent ?? { [this.agentName]: this.compiledAgent() ?? {} })
       .filter(([, agent]) => agent?.disable !== true)
       .map(([name, agent]) => ({
@@ -2339,7 +2341,6 @@ export class PiRuntime {
         rootId: this.rootId,
         title: this.title,
         createdAt: this.createdAt,
-        agentMessages: this.agent.state.messages,
         ...(this.pi
           ? { entries: this.pi.session.sessionManager.getEntries(), header: this.pi.session.sessionManager.getHeader() ?? undefined, messageIds: this.entryMessageIds(), seqs: this.entrySeqs }
           : {}),

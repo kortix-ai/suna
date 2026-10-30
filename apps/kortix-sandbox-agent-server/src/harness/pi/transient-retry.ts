@@ -2,7 +2,7 @@
  * Kortix-owned retry of a model step that failed on a transient provider error.
  *
  * pi's AgentSession retry is off (extensions/host.ts): Kortix owns it, so the
- * wire can show OpenCode's `retry` status instead of a terminal error. Without
+ * wire can show the `retry` session status instead of a terminal error. Without
  * this, one cut stream ("Stream ended without finish_reason", "terminated",
  * a 5xx, a rate limit) ended the whole turn, and a trigger or factory loop
  * stopped on it.
@@ -58,7 +58,7 @@ export function isTransientModelError(message: AssistantMessage): boolean {
   return isRetryableAssistantError(message) || TRANSIENT_EXTRA.test(text)
 }
 
-/** OpenCode's `SessionStatus` for a step that waits to retry. The SDK counts it as busy. */
+/** The `retry` `SessionStatus` for a step that waits to retry. The SDK counts it as busy. */
 export interface RetryPlan {
   attempt: number
   message: string

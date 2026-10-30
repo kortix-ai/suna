@@ -68,8 +68,8 @@ function release(message: string, governance: string | null = null): BuiltReleas
   return buildRelease(repo, commitAll(repo, message), REL, { governance })
 }
 
-async function materialize(built: BuiltRelease, prepare?: (dir: string) => Promise<void>) {
-  return materializeRelease({ root: store, manifest: manifestOf(built), archive: built.archive, prepare, managedSkillsDir: overlay })
+async function materialize(built: BuiltRelease) {
+  return materializeRelease({ root: store, manifest: manifestOf(built), archive: built.archive, managedSkillsDir: overlay })
 }
 
 const verify = (built: BuiltRelease, dir: string) =>
@@ -121,26 +121,6 @@ describe('materializeRelease', () => {
     expect(() => accessSync(join(dir, REL, 'agents/kortix.md'), constants.W_OK)).toThrow()
     expect(() => writeFileSync(join(dir, REL, 'agents/kortix.md'), 'EDIT\n')).toThrow()
     accessSync(join(dir, REL, 'skills/pdf/scripts/run.sh'), constants.X_OK)
-  })
-
-  test('the prepare hook runs on the staged directory before it is sealed', async () => {
-    let staged = ''
-    const { dir } = await materialize(release('v1'), async (path) => {
-      staged = path
-      cpSync(overlay, join(path, REL, 'skills'), { recursive: true, force: true })
-      writeFileSync(join(path, REL, 'bun.lock'), 'lock\n')
-    })
-    expect(staged).toMatch(/\.tmp$/)
-    expect(staged.startsWith(`${dir}.`)).toBe(true)
-    expect(existsSync(staged)).toBe(false)
-    expect(readFileSync(join(dir, REL, 'skills/kortix-cli/SKILL.md'), 'utf8')).toBe('OVERLAY\n')
-  })
-
-  test('a failing prepare leaves no release and no staging directory', async () => {
-    const built = release('v1')
-    await expect(materialize(built, async () => { throw new Error('deps failed') })).rejects.toThrow(/deps failed/)
-    expect(existsSync(releaseDir(store, built.descriptor.release_id!))).toBe(false)
-    expect(spawnSync('ls', [store]).stdout.toString().trim()).toBe('')
   })
 
   test('a tracked symlink is extracted as a link to its committed target', async () => {

@@ -151,8 +151,8 @@ export function egressShimAgentEnv(port: number, apiUrl: string): Record<string,
  * The started shim's env, or `{}` when no shim runs.
  *
  * A module-level accessor rather than a value threaded through call sites,
- * because there is exactly ONE shim per daemon and four separate places need
- * its env (the opencode spawn, and three `writeAgentEnvFile` call sites). The
+ * because there is exactly ONE shim per daemon and every `writeAgentEnvFile`
+ * call (at boot and on every env push) needs its env. The
  * threading version had a real failure mode: miss one site and the agent's
  * shells silently lack the proxy, so requests leave uncredentialed and the
  * upstream 401 reads as a bad secret.
@@ -317,13 +317,13 @@ export interface EgressShimSyncResult {
 /**
  * Re-arm the shim from the CURRENT env, after a mid-session capability push.
  *
- * `startEgressShim` runs at most twice in a daemon's life — cold boot and fork
- * adoption — and both are long past by the time a user adds a secret to a live
- * session. That push does deliver a new `KORTIX_SECRET_CAPABILITIES` and does
- * respawn opencode, but the respawn spreads `egressShimEnv()`, which is still
- * `{}` because nothing ever started a listener. So the secret silently did
- * nothing until the session was restarted — the save reported success, the
- * catalog landed, and every request still left uncredentialed.
+ * `startEgressShim` runs once in a daemon's life, at boot, long before a user
+ * adds a secret to a live session. That push delivers a new
+ * `KORTIX_SECRET_CAPABILITIES`, but without a re-arm the agent env file spreads
+ * `egressShimEnv()`, which is still `{}` because nothing ever started a
+ * listener. So the secret silently did nothing until the session was
+ * restarted — the save reported success, the catalog landed, and every
+ * request still left uncredentialed.
  *
  * Stop-then-start rather than a reconfigure: the rules are baked into the
  * listener (and into every leaf it has issued) at construction. The listening

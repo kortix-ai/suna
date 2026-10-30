@@ -2,8 +2,8 @@
  * Model resolution for the pi harness.
  *
  * Every model a session can run is served by the Kortix LLM gateway under
- * the synthetic `kortix` provider — the same provider OpenCode's config
- * registers. pi talks to it through its OpenAI-completions API, pointed at the
+ * the synthetic `kortix` provider. pi talks to it through its
+ * OpenAI-completions API, pointed at the
  * daemon's localhost LLM proxy when one runs (credential injection, image
  * window) and at the gateway directly otherwise.
  *
@@ -96,7 +96,7 @@ export function nativeModelId(ref: string | undefined | null): string | null {
   return id || null
 }
 
-/** OpenCode `variant` names that pi can honour as a thinking level. */
+/** The catalog's `variant` names that pi can honour as a thinking level. */
 export function reasoningVariants(entry: CatalogModel | undefined): string[] {
   if (!entry?.reasoning) return []
   const names = [...Object.keys(entry.variants ?? {}), ...Object.keys(variantsFromReasoningOptions(entry) ?? {})]
