@@ -1919,23 +1919,26 @@ describe('Telegram commands — migrated PostgreSQL', () => {
   /** The chat's settings row, or undefined. */
   const settingsRow = async (chat: string) =>
     (await db.select().from(chatChannelBindings).where(and(eq(chatChannelBindings.platform, 'telegram'), eq(chatChannelBindings.workspaceId, BOT_ID), eq(chatChannelBindings.channelId, chat))))[0];
+  /** A running turn as forwarding records it: `source` is the source of the prompt it delivered, null when none. */
+  const liveTurn = (token: string, startedAtMs: number, source: string | null) => ({ token, state: 'active', messageId: `msg_${token}`, startedAtMs, source });
   /** A session of the chat in `status`; with `source`, a running turn whose prompt came from there. */
   async function chatSession(chat: number, status: 'queued' | 'provisioning' | 'running', source?: string) {
     const sessionId = await bindChat(chat);
     await db.update(projectSessions).set({ status }).where(eq(projectSessions.sessionId, sessionId));
     if (source === undefined) return sessionId;
+    await runningBox(sessionId, source ? [liveTurn('t1', 1, source)] : []);
+    return sessionId;
+  }
+  /** The chat session's box, running `turns`. */
+  async function runningBox(sessionId: string, turns: Array<Record<string, unknown>>) {
     await db.insert(sessionSandboxes).values({
       sandboxId: sessionId,
       sessionId,
       accountId: ACCOUNT,
       projectId: PROJECT,
       status: 'active',
-      metadata: { activeTurns: source ? { t1: { token: 't1', state: 'active', messageId: 'msg_tg' } } : {} },
+      metadata: { activeTurns: Object.fromEntries(turns.map((turn) => [turn.token, turn])) },
     });
-    if (source) {
-      await db.insert(sessionLifecycleCommands).values({ commandType: 'continue_session', source, projectId: PROJECT, accountId: ACCOUNT, sessionId, payload: { wireMessageId: 'msg_tg' } });
-    }
-    return sessionId;
   }
   const abortsOf = (sessionId: string) => aborts.filter(([id]) => id === sessionId);
   /** A message in topic 5 of a forum group. */
@@ -2071,39 +2074,42 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     await handleTelegramEvent(update('/stop', ALLOWED, 7029));
     expect(replies().at(-1)).toBe("Kortix could not reach this chat's session to stop the run. Send /stop again in a minute, or /new to start over.");
 
+    const outside = `This run was started outside this chat, so only Kortix can stop it:\n`;
     const web = await chatSession(7030, 'running', 'ui');
     await handleTelegramEvent(update('/stop', ALLOWED, 7030));
     expect(abortsOf(web)).toEqual([]);
-    expect(replies().at(-1)).toBe(`This run was started outside this chat, so only Kortix can stop it:\n${sessionWebUrl(appConfig.FRONTEND_URL, PROJECT, web)}`);
+    expect(replies().at(-1)).toBe(`${outside}${sessionWebUrl(appConfig.FRONTEND_URL, PROJECT, web)}`);
+
+    const trigger = await chatSession(7036, 'running', 'trigger:x');
+    await handleTelegramEvent(update('/stop', ALLOWED, 7036));
+    expect(abortsOf(trigger)).toEqual([]);
+    expect(replies().at(-1)).toBe(`${outside}${sessionWebUrl(appConfig.FRONTEND_URL, PROJECT, trigger)}`);
     expect(created).toHaveLength(0);
     expect(delivered).toHaveLength(0);
   });
 
-  test("/stop stops a real Telegram run, whose prompt rows name no wire message id, so its source reads as unknown", async () => {
-    // The shape a real pi session records: the turn names its own message id, and the chat's
-    // continue_session row carries neither `payload.wireMessageId` nor `result.forwarded_message_id`.
-    const sessionId = await chatSession(7046, 'running');
-    await db.insert(sessionSandboxes).values({
-      sandboxId: sessionId,
-      sessionId,
-      accountId: ACCOUNT,
-      projectId: PROJECT,
-      status: 'active',
-      metadata: { activeTurns: { t1: { token: 't1', state: 'active', messageId: 'msg_pi_synthetic' } } },
-    });
-    await db.insert(sessionLifecycleCommands).values({
-      commandType: 'continue_session',
-      source: 'telegram',
-      status: 'succeeded',
-      projectId: PROJECT,
-      accountId: ACCOUNT,
-      sessionId,
-      payload: { text: 'synthetic task' },
-      result: { status: 'delivered' },
-    });
-    expect(await turnPromptSource(sessionId, 'msg_pi_synthetic')).toBeNull();
-    await handleTelegramEvent(update('/stop', ALLOWED, 7046));
-    expect(abortsOf(sessionId)).toEqual([[sessionId, { requestedStop: true, stoppedBy: null }]]);
+  test("/stop leaves a run it cannot place in this chat (no recorded source, or another source beside the chat's) and stops two of the chat's own", async () => {
+    const outside = (sessionId: string) => `This run was started outside this chat, so only Kortix can stop it:\n${sessionWebUrl(appConfig.FRONTEND_URL, PROJECT, sessionId)}`;
+    // A web slash command or a direct runtime prompt through the proxy: no queued row, no source.
+    const direct = await chatSession(7046, 'running');
+    await runningBox(direct, [liveTurn('t1', 1, null)]);
+    // A turn recorded before turns named their source: the key is absent.
+    const legacy = await chatSession(7037, 'running');
+    await runningBox(legacy, [{ token: 't1', state: 'active', messageId: 'msg_pi_synthetic', startedAtMs: 1 }]);
+    // A chat message that joined a web run: pi runs the web prompt and queues the chat's behind it.
+    const joined = await chatSession(7038, 'running');
+    await runningBox(joined, [liveTurn('t1', 1, 'ui'), liveTurn('t2', 2, 'telegram')]);
+    for (const [chat, sessionId] of [[7046, direct], [7037, legacy], [7038, joined]] as const) {
+      await handleTelegramEvent(update('/stop', ALLOWED, chat));
+      expect(abortsOf(sessionId)).toEqual([]);
+      expect(replies().at(-1)).toBe(outside(sessionId));
+    }
+
+    // Two of the chat's own messages, one running and one queued behind it.
+    const own = await chatSession(7039, 'running');
+    await runningBox(own, [liveTurn('t1', 1, 'telegram'), liveTurn('t2', 2, 'telegram')]);
+    await handleTelegramEvent(update('/stop', ALLOWED, 7039));
+    expect(abortsOf(own)).toEqual([[own, { requestedStop: true, stoppedBy: null }]]);
     expect(replies().at(-1)).toBe('Stopped. The agent is no longer working on this.');
   });
 
