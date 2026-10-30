@@ -569,6 +569,24 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'session has no kortix-chrome skill and its CLI hides and refuses `kortix chrome` (KORTIX_FEATURE_FLAGS). ' +
       'WEB: no sidebar row, no Chrome card in Apps and extensions, no Settings page.',
   },
+  {
+    key: 'agent_teams',
+    name: 'Agent teams',
+    description:
+      'A lead session starts named teammates that share one task list: each teammate claims a task, works it in its own session and tells the lead when it is done. The lead and the person see every teammate and its tasks. Messages between sessions (`send_message`) work without this flag.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Off ⇒ a project has no team task list. ROUTES: GET/POST /projects/:id/sessions/:lead/tasks and ' +
+      'PATCH/DELETE /projects/:id/sessions/:lead/tasks/:seq answer 403 `feature_disabled` (projects/routes/team-tasks.ts). ' +
+      'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd registers no task_* tool; ' +
+      'a change reaches the next new box. Cross-session messages (`send_message`, `list_agents`, the peer-message ' +
+      'routes) do not read this flag. The session list `team_lead` filter and the session row fields stay on: ' +
+      'without teammates they return nothing new.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(
