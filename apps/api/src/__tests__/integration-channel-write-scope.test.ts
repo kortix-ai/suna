@@ -345,6 +345,30 @@ describe('Telegram writes stay in the chat that started or is bound to the sessi
     expect(await gate(chatSession, 'get_me', {})).toBeNull();
   });
 
+  test("a chat's session replies only to messages of its own chats (`reply_parameters`), given as an object", async () => {
+    const reply = (replyParameters: unknown) =>
+      gate(chatSession, 'send_message', { chat_id: OWN_CHAT, text: 'done', reply_parameters: replyParameters });
+    expect(await reply({ message_id: 5 })).toBeNull();
+    expect(await reply({ chat_id: OWN_CHAT, message_id: 5 })).toBeNull();
+    expect(await reply({ chat_id: String(OWN_CHAT), message_id: 5 })).toBeNull();
+    for (const quoted of [{ chat_id: OTHER_CHAT, message_id: 5 }, { chat_id: '@other_channel', message_id: 5 }]) {
+      expect(await reply(quoted)).toEqual({
+        reason: CONVERSATION_NOT_IN_PROJECT,
+        message: `This session answers Telegram chat ${OWN_CHAT} only. It does not send to, edit or delete messages in other chats.`,
+      });
+    }
+    for (const encoded of [JSON.stringify({ chat_id: OTHER_CHAT, message_id: 5 }), null, [5]]) {
+      expect(await reply(encoded)).toEqual({
+        reason: CONVERSATION_NOT_IN_PROJECT,
+        message: '`reply_parameters` must be an object, for example {"message_id": 5}.',
+      });
+    }
+    // A session no chat started quotes any chat.
+    expect(
+      await gate(webSession, 'send_message', { chat_id: OTHER_CHAT, text: 'a', reply_parameters: { chat_id: OWN_CHAT, message_id: 5 } }),
+    ).toBeNull();
+  });
+
   describe('the confinement follows the lineage (`spawned_by_session`, `reminder_successor_of`)', () => {
     const withMetadata = async (metadata: Record<string, unknown>) => {
       const id = await seedSession(mine, crypto.randomUUID());

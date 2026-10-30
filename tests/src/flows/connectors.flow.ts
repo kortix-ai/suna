@@ -2684,7 +2684,7 @@ flow(
       );
 
       await ctx.step(
-        'a Telegram send reaches any chat while no Telegram chat is bound to the session, only the bound chat after a bind (from the session and from a session it started), and never with an argument the action does not declare',
+        'a Telegram send reaches any chat while no Telegram chat is bound to the session, only the bound chat after a bind (from the session and from a session it started, and in the chat a reply quotes), and never with an argument the action does not declare',
         async () => {
           const connector = await db.query<{ connector_id: string }>(
             `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
@@ -2741,6 +2741,15 @@ flow(
               'This session answers Telegram chat -100777888 only. It does not send to, edit or delete messages in other chats.',
             );
           passedEveryCheck(await send(-100777888));
+          // A reply that quotes a message of another chat is a write there too.
+          (await send(-100777888, { reply_parameters: { chat_id: 444555666, message_id: 5 } }))
+            .status(403)
+            .body()
+            .has('$.reason', 'conversation_not_in_project')
+            .has(
+              '$.message',
+              'This session answers Telegram chat -100777888 only. It does not send to, edit or delete messages in other chats.',
+            );
           // A session this one starts answers the same chat: its own
           // session-bound token reaches the bound chat and no other.
           const childMinted = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', {

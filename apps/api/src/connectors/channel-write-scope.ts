@@ -49,9 +49,11 @@
  *   1. A session a Telegram chat started (`metadata.source` and
  *      `metadata.telegram.chat_id`, both server-managed keys) or a Telegram
  *      chat is bound to (`chat_threads`, for example a reminder's successor)
- *      writes only into that chat: `chat_id` must be its numeric id. Any forum
- *      topic of the chat is fine. Another chat, a `@channel` name and a
- *      malformed id are refused before the call.
+ *      writes only into that chat: `chat_id`, and `reply_parameters.chat_id`
+ *      when a reply quotes a message, must be its numeric id. Any forum topic
+ *      of the chat is fine. Another chat, a `@channel` name and a malformed id
+ *      are refused before the call. `inline_message_id` names no chat, so the
+ *      catalog does not declare it and the gateway refuses it.
  *   2. Rule 1 follows the lineage: a session that such a session started
  *      (`spawned_by_session`), or a reminder successor that replaces it
  *      (`reminder_successor_of`), writes only into the chats of every session
@@ -268,6 +270,17 @@ export function telegramWriteRefusal(chatId: unknown, own: string[] | null): str
   return `${answers} It does not send to, edit or delete messages in other chats.`;
 }
 
+/**
+ * A reply can quote a message of another chat (`reply_parameters.chat_id`):
+ * for a session that answers the chats `own`, that chat must be one of them.
+ * Only an object is read; anything else would reach Telegram unchecked.
+ */
+export function telegramReplyRefusal(reply: unknown, own: string[] | null): string | null {
+  if (!own || reply === undefined) return null;
+  if (!isRecord(reply)) return '`reply_parameters` must be an object, for example {"message_id": 5}.';
+  return Object.hasOwn(reply, 'chat_id') ? telegramWriteRefusal(reply.chat_id, own) : null;
+}
+
 /** Reads are gated in channel-read-scope.ts; this gates the writes. */
 export async function gateChannelWrite(
   input: Omit<ChannelReadInput, 'risk'>,
@@ -275,7 +288,8 @@ export async function gateChannelWrite(
 ): Promise<ChannelWriteGate> {
   if (input.platform === 'telegram') {
     if (TELEGRAM_READS.has(input.actionPath)) return PASS;
-    const refusal = telegramWriteRefusal(input.args.chat_id, await sessionTelegramChats(input.projectId, input.sessionId ?? null));
+    const own = await sessionTelegramChats(input.projectId, input.sessionId ?? null);
+    const refusal = telegramWriteRefusal(input.args.chat_id, own) ?? telegramReplyRefusal(input.args.reply_parameters, own);
     return refusal ? refuse(refusal) : PASS;
   }
   if (input.platform !== 'slack' && input.platform !== 'teams') return PASS;
