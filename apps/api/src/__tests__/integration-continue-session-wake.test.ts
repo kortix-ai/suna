@@ -78,6 +78,9 @@ function deliver(sessionId: string) {
     sessionId,
     projectId: project.project_id,
     text: 'hello',
+    // Exercise the explicit-env convergence path; ordinary prompts now sync
+    // in the proxy and retry missing delivery targets instead of stopping here.
+    opencodeEnv: {},
     userId: crypto.randomUUID(),
   });
 }
