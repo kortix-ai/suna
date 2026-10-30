@@ -32,9 +32,10 @@ export const SCHEMA_FILES: Record<string, unknown> = {
 };
 
 /** A JSON Schema `pattern` is a string. A RegExp value renders as its source,
- *  never as `{}`. The release lanes (v0.14.9, v0.14.10) rendered one pattern as
- *  `{}`: under `bun test --isolate` the schema's RegExp can come from another
- *  realm, where `instanceof RegExp` is false. The brand check holds in any realm. */
+ *  never as `{}`; the brand check also holds for a RegExp from another realm.
+ *  (The `{}` the v0.14.9 and v0.14.10 release lanes saw was not a RegExp: a
+ *  conformance test's `toMatchObject` wrote `expect.any(String)` into the shared
+ *  schema before the sync test rendered it. See json-schema.conformance.test.ts.) */
 const isRegExp = (value: unknown): value is RegExp => Object.prototype.toString.call(value) === '[object RegExp]';
 
 export function renderSchemaFile(schema: unknown): string {
