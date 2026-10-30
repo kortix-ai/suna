@@ -24115,5 +24115,17 @@
   "roleCapabilities": {
     "comment": "评论",
     "commentArea": "评论{area}"
+  },
+  "sessionDesktop": {
+    "title": "桌面",
+    "openTab": "在新标签页中打开",
+    "notRunning": "此计算机上的桌面未运行。",
+    "runCommand": "请让 Kortix 运行 {command}。",
+    "retry": "重试",
+    "takeOver": "接管控制",
+    "userControl": "你拥有控制权",
+    "agentControl": "Kortix 拥有控制权",
+    "returnControl": "交还控制权",
+    "escape": "Esc"
   }
 }

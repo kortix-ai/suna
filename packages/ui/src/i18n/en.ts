@@ -8281,6 +8281,18 @@ const catalog = {
       "connectLabel": "Connect MCP",
       "copyFailed": "Could not copy the command. Try again."
     }
+  },
+  "sessionDesktop": {
+    "title": "Desktop",
+    "openTab": "Open in new tab",
+    "notRunning": "The desktop is not running on this computer.",
+    "runCommand": "Ask Kortix to run {command}.",
+    "retry": "Retry",
+    "takeOver": "Take over",
+    "userControl": "You have control",
+    "agentControl": "Kortix has control",
+    "returnControl": "Return control",
+    "escape": "Esc"
   }
 };
 
