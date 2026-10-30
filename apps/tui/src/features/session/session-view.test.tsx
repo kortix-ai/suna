@@ -26,6 +26,7 @@ import {
   terminalWidth,
   transcriptRows,
 } from './session-view.tsx';
+import { lastReplyText, transcriptMarkdown } from './transcript-export.ts';
 import { fakeSession, message, textPart } from './transcript/test-session.ts';
 
 const HOST: ResolvedHost = {
@@ -224,5 +225,39 @@ describe('SessionView', () => {
     expect(frame).toContain('Casual greeting');
     expect(frame).toContain('TRANSCRIPT-MARKER');
     renderer.destroy();
+  });
+});
+
+describe('/copy and /export text', () => {
+  // Session-log messages: what `useSessionLogThread` hands the session view.
+  const log = (id: string, role: 'user' | 'assistant', text: string) => ({
+    message_id: id,
+    thread_id: 'main',
+    seq: Number(id.slice(1)),
+    role,
+    kind: 'turn',
+    status: 'complete',
+    in_context: true,
+    producer: { harness: 'pi' },
+    created_at: '2026-10-30T00:00:00.000Z',
+    blocks: [{ block_id: `${id}-b`, type: 'text', text }],
+  });
+  const messages = [
+    log('m1', 'user', 'Fix the login bug'),
+    log('m2', 'assistant', 'First answer'),
+    log('m3', 'user', 'And the tests?'),
+    log('m4', 'assistant', 'Tests pass now.'),
+  ];
+
+  test('/copy takes the newest assistant reply', () => {
+    expect(lastReplyText(messages as never)).toBe('Tests pass now.');
+    expect(lastReplyText([] as never)).toBeNull();
+  });
+
+  test('/export writes every turn as Markdown under the title', () => {
+    const markdown = transcriptMarkdown(messages as never, 'Login fix');
+    expect(markdown.startsWith('# Login fix\n')).toBe(true);
+    expect(markdown).toContain('## You\n\nFix the login bug');
+    expect(markdown).toContain('## Kortix\n\nTests pass now.');
   });
 });

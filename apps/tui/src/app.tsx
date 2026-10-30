@@ -30,6 +30,7 @@
  * `Ctrl+C` belongs to the shell, so quitting there is `Ctrl+Q`.
  */
 
+import { clearAuth } from '@kortix/cli/src/api/auth.ts';
 import { webDashboardUrl } from '@kortix/cli/src/web-url.ts';
 import { useAccounts, useFeatureFlag, useProjectSessions, useProjects } from '@kortix/sdk/react';
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
@@ -67,6 +68,7 @@ import { focusHints } from './features/session/session-view.tsx';
 import { Sidebar, type SidebarNavItem } from './features/sidebar/index.ts';
 import { kortix } from './kortix.ts';
 import { copyToClipboard } from './lib/clipboard.ts';
+import { openUrl } from './lib/open-url.ts';
 import { writePrefs } from './lib/prefs.ts';
 import { sessionTitle } from './lib/session-groups.ts';
 import { SCREEN_TITLE, Screen, type ScreenRoute, isScreenRoute } from './screens.tsx';
@@ -74,6 +76,8 @@ import { theme } from './theme.ts';
 import { Panel, type SplashLine, StatusBar, Toast, type ToastKind } from './ui/index.ts';
 
 const SIDEBAR_WIDTH = 28;
+/** Where `/feedback` sends a bug report or an idea. */
+const FEEDBACK_URL = 'https://github.com/kortix-ai/suna/issues/new';
 /** Below this width the terminal panel takes the whole main area. */
 export const SPLIT_MIN_COLUMNS = 100;
 /** Below this width the sidebar never draws, whatever was chosen. */
@@ -507,7 +511,11 @@ export function App({
         case 'reload':
           if (!pid || !sid) return;
           return void act('Reload', () => reloadSession(kortix(), pid, sid));
-        case 'copy': {
+        case 'copy':
+        case 'export':
+          // Run inside the composer: they read the thread on screen.
+          return;
+        case 'link': {
           if (!pid || !sid) return;
           const url = sessionWebUrl(webDashboardUrl(host.backendUrl), pid, sid);
           return void copyToClipboard(`${sid} ${url}`).then((result) =>
@@ -531,6 +539,39 @@ export function App({
         case 'hosts':
           if (onSwitchHost) return onSwitchHost();
           return pushToast('Host switching needs the login screen.', 'error');
+        case 'logout':
+          if (host.source === 'env') {
+            return pushToast('This TUI runs on KORTIX_API_KEY / KORTIX_TOKEN. Unset it to log out.', 'error');
+          }
+          // The same call `kortix logout` makes: the host stays, its token goes.
+          clearAuth(host.name);
+          pushToast(`Logged out of ${host.name}.`);
+          if (onSwitchHost) return onSwitchHost();
+          return onQuit();
+        case 'status':
+          return setPanel({
+            kind: 'status',
+            lines: [
+              { label: 'host', value: `${hostLabel}  ${hostOrigin(host.backendUrl)}` },
+              { label: 'user', value: host.userEmail || 'unknown' },
+              { label: 'account', value: accountName ?? accountId ?? 'none' },
+              { label: 'project', value: projectId ? `${projectName}  ${projectId}` : 'none' },
+              { label: 'session', value: sid ? `${title ?? ''}  ${sid}` : 'none (draft)' },
+              {
+                label: 'runtime',
+                value: sid
+                  ? capabilities
+                    ? capabilities.filter((entry) => entry.startsWith('session.')).join(' ') || 'no session.* capabilities'
+                    : 'not read yet'
+                  : '—',
+              },
+              { label: 'sidebar', value: sidebarShown ? 'shown' : 'hidden (/sidebar)' },
+              { label: 'version', value: process.env.KORTIX_TUI_VERSION || 'dev' },
+            ],
+          });
+        case 'feedback':
+          void openUrl(FEEDBACK_URL).catch(() => {});
+          return pushToast(`Opening ${FEEDBACK_URL}`);
         case 'model':
         case 'effort':
         case 'agent':
@@ -573,7 +614,13 @@ export function App({
       sessionId,
       title,
       sessionRow,
-      host.backendUrl,
+      host,
+      hostLabel,
+      accountName,
+      accountId,
+      projectName,
+      capabilities,
+      sidebarShown,
       start,
       openDraft,
       act,

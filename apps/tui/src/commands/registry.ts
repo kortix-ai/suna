@@ -67,7 +67,7 @@ export const COMMANDS = [
   },
   {
     name: 'sessions',
-    aliases: ['switch', 'resume'],
+    aliases: ['resume', 'continue', 'switch'],
     args: '[filter]',
     description: 'Pick a session of this project and open it.',
     group: 'session',
@@ -135,8 +135,21 @@ export const COMMANDS = [
   },
   {
     name: 'copy',
+    description: 'Copy the last reply to the clipboard.',
+    group: 'session',
+    needs: 'session',
+  },
+  {
+    name: 'link',
     aliases: ['id'],
     description: 'Copy the session id and its web link.',
+    group: 'session',
+    needs: 'session',
+  },
+  {
+    name: 'export',
+    args: '[file]',
+    description: 'Save the conversation as Markdown in the current folder.',
     group: 'session',
     needs: 'session',
   },
@@ -167,6 +180,11 @@ export const COMMANDS = [
     description: 'Switch host or log in to another one.',
     group: 'switch',
     binding: 'hosts',
+  },
+  {
+    name: 'logout',
+    description: "Remove this host's token, then show the login screen.",
+    group: 'switch',
   },
   // — model and agent —
   {
@@ -261,7 +279,7 @@ export const COMMANDS = [
   },
   {
     name: 'approvals',
-    aliases: ['decisions', 'outputs'],
+    aliases: ['permissions', 'decisions', 'outputs'],
     description: 'Approvals, outputs and decisions waiting on a person.',
     group: 'screen',
     needs: 'project',
@@ -313,7 +331,7 @@ export const COMMANDS = [
   },
   {
     name: 'review',
-    aliases: ['changes'],
+    aliases: ['changes', 'pr-comments'],
     description: 'Review change requests.',
     group: 'screen',
     binding: 'screen.review',
@@ -327,20 +345,32 @@ export const COMMANDS = [
   },
   {
     name: 'customize',
-    aliases: ['settings'],
+    aliases: ['settings', 'config', 'mcp', 'connectors'],
     description: 'Agents, skills, secrets, triggers, connectors.',
     group: 'screen',
     binding: 'screen.customize',
   },
   {
     name: 'account',
-    aliases: ['members', 'billing'],
+    aliases: ['members', 'billing', 'usage'],
     description: 'Members, invites, roles, credits.',
     group: 'screen',
     binding: 'screen.account',
     needs: 'account',
   },
   // — app —
+  {
+    name: 'status',
+    aliases: ['doctor', 'info', 'whoami'],
+    description: 'Host, account, project, session, runtime and version.',
+    group: 'app',
+  },
+  {
+    name: 'feedback',
+    aliases: ['bug'],
+    description: 'Report a bug or an idea on GitHub.',
+    group: 'app',
+  },
   {
     name: 'help',
     aliases: ['keys', '?'],

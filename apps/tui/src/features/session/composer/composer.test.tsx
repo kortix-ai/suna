@@ -7,7 +7,7 @@ import { testRender } from '@opentui/react/test-utils';
 
 import { initKortix, resetKortixForTest } from '../../../kortix.ts';
 import type { CommandContext } from '../../../commands/registry.ts';
-import { Composer, type SessionState } from './composer.tsx';
+import { Composer, type SessionState, exportFileName } from './composer.tsx';
 
 // React 19 needs this before `act`. See docs/opentui-notes.md.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -588,5 +588,84 @@ describe('the pickers', () => {
     const text = frame(setup);
     expect(text).toContain('Model');
     expect(text).toContain('Claude Sonnet 5');
+  });
+});
+
+describe('/copy and /export', () => {
+  const reply = {
+    message_id: 'm2',
+    thread_id: 'main',
+    seq: 2,
+    role: 'assistant',
+    kind: 'turn',
+    status: 'complete',
+    in_context: true,
+    producer: { harness: 'pi' },
+    created_at: '2026-10-30T00:00:00.000Z',
+    blocks: [{ block_id: 'b', type: 'text', text: 'The fix is in.' }],
+  };
+
+  async function mountWith(spies: Spies, seams: { copied: string[]; written: [string, string][] }) {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 } },
+    });
+    const setup = await testRender(
+      <QueryClientProvider client={queryClient}>
+        <Composer
+          session={fakeSession(spies)}
+          projectId="project-1"
+          sessionId="1a2b3c4d-session"
+          focused
+          width={60}
+          context={CONTEXT}
+          onCommand={spies.onCommand}
+          messages={[reply] as never}
+          title="Fix the login bug"
+          copyText={async (text) => {
+            seams.copied.push(text);
+            return { ok: true };
+          }}
+          writeFile={async (path, text) => {
+            seams.written.push([path, text]);
+          }}
+        />
+      </QueryClientProvider>,
+      { width: 60, height: 30 },
+    );
+    active = setup;
+    return setup;
+  }
+
+  test('/copy puts the last reply on the clipboard, inside the composer', async () => {
+    const spies = newSpies();
+    const seams = { copied: [] as string[], written: [] as [string, string][] };
+    const setup = await mountWith(spies, seams);
+    await act(async () => {
+      await setup.mockInput.typeText('/copy', 1);
+    });
+    await act(async () => {
+      setup.mockInput.pressEnter();
+    });
+    expect(seams.copied).toEqual(['The fix is in.']);
+    expect(spies.onCommand).not.toHaveBeenCalled();
+  });
+
+  test('/export writes Markdown to the named file', async () => {
+    const spies = newSpies();
+    const seams = { copied: [] as string[], written: [] as [string, string][] };
+    const setup = await mountWith(spies, seams);
+    await act(async () => {
+      await setup.mockInput.typeText('/export notes.md', 1);
+    });
+    await act(async () => {
+      setup.mockInput.pressEnter();
+    });
+    expect(seams.written[0]?.[0]).toEndWith('/notes.md');
+    expect(seams.written[0]?.[1]).toContain('## Kortix\n\nThe fix is in.');
+  });
+
+  test('the default export name is the slugged title plus the session id', () => {
+    expect(exportFileName('Fix the login bug!', '1a2b3c4d-xyz')).toBe('kortix-fix-the-login-bug-1a2b3c4d.md');
+    expect(exportFileName('', '1a2b3c4d-xyz')).toBe('kortix-1a2b3c4d.md');
   });
 });

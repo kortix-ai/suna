@@ -356,6 +356,8 @@ export function SessionView({
               panel={panel}
               seed={seed}
               trayLeft={trayLeft}
+              messages={thread?.messages}
+              title={title}
             />
           </box>
         </Panel>

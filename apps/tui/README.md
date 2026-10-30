@@ -252,12 +252,18 @@ The `?` overlay (`/help`) prints these tables live: they are generated from
 command or binding that is not here does not exist. Regenerate this section
 with `pnpm --filter @kortix/tui keymap`.
 
+The names follow Claude Code where the action is the same: `/resume` and
+`/continue` are `/sessions`, `/clear` is `/new`, `/exit` is `/quit`, `/copy`
+copies the last reply, `/export` saves the conversation, `/config` and `/mcp`
+open Customize, `/permissions` opens Approvals, `/doctor` is `/status`, `/bug`
+is `/feedback`.
+
 ### Commands
 
 | Command | Also | Action |
 | --- | --- | --- |
 | `/new [prompt]` | `/clear` `Ctrl+n` | Session: Start a new session. A prompt after the name is its first message. |
-| `/sessions [filter]` | `/switch` `/resume` `Ctrl+p` | Session: Pick a session of this project and open it. |
+| `/sessions [filter]` | `/resume` `/continue` `/switch` `Ctrl+p` | Session: Pick a session of this project and open it. |
 | `/rename <title>` |  | Session: Rename this session. |
 | `/stop` |  | Session: Stop the running turn. |
 | `/compact` |  | Session: Summarize the conversation to free context. |
@@ -267,11 +273,14 @@ with `pnpm --filter @kortix/tui keymap`.
 | `/archive` |  | Session: Archive this session, or bring it back. |
 | `/share <team\|private>` |  | Session: Let the whole project open this session, or only you. |
 | `/reload` |  | Session: Reload kortix.yaml, agents and skills into this session. |
-| `/copy` | `/id` | Session: Copy the session id and its web link. |
+| `/copy` |  | Session: Copy the last reply to the clipboard. |
+| `/link` | `/id` | Session: Copy the session id and its web link. |
+| `/export [file]` |  | Session: Save the conversation as Markdown in the current folder. |
 | `/delete` |  | Session: Delete this session. Asks first. |
 | `/projects [filter]` | `/project` | Switch: Pick another project. |
 | `/accounts [filter]` | `/org` | Switch: Pick another account. |
 | `/hosts` | `/host` `/login` `Alt+h / Ctrl+h` | Switch: Switch host or log in to another one. |
+| `/logout` |  | Switch: Remove this host's token, then show the login screen. |
 | `/model` | `/models` `Alt+m` | Model and agent: Pick the model. |
 | `/effort` | `/thinking` `Alt+e` | Model and agent: Pick the thinking effort. |
 | `/agent` | `/agents` `Alt+g` | Model and agent: Pick the agent. |
@@ -284,21 +293,23 @@ with `pnpm --filter @kortix/tui keymap`.
 | `/repo` | `/git` `/code` | Screens: Browse the project's repository: files, branches, history. |
 | `/artifacts` | `/docs` | Screens: Docs and pages the agents published. |
 | `/inbox` | `/notifications` | Screens: Notifications: what needs you, newest first. |
-| `/approvals` | `/decisions` `/outputs` | Screens: Approvals, outputs and decisions waiting on a person. |
+| `/approvals` | `/permissions` `/decisions` `/outputs` | Screens: Approvals, outputs and decisions waiting on a person. |
 | `/goals` |  | Screens: Outcomes the agents work toward, and their progress. |
 | `/memory` | `/knowledge` | Screens: Read and search company memory pages. |
 | `/spaces` | `/channels` `/dm` | Screens: Channels and DMs, and the threads in them. |
 | `/rooms` |  | Screens: Rooms where agents and people talk. |
 | `/loops` | `/reminders` `/schedule` | Screens: This session's loops: prompts that run on a schedule. |
 | `/audit` | `/activity` | Screens: What happened in this session, and approvals waiting. |
-| `/review` | `/changes` `Alt+r` | Screens: Review change requests. |
+| `/review` | `/changes` `/pr-comments` `Alt+r` | Screens: Review change requests. |
 | `/apps` | `Alt+a` | Screens: List and deploy Apps. |
-| `/customize` | `/settings` `Alt+c` | Screens: Agents, skills, secrets, triggers, connectors. |
-| `/account` | `/members` `/billing` `Alt+u` | Screens: Members, invites, roles, credits. |
+| `/customize` | `/settings` `/config` `/mcp` `/connectors` `Alt+c` | Screens: Agents, skills, secrets, triggers, connectors. |
+| `/account` | `/members` `/billing` `/usage` `Alt+u` | Screens: Members, invites, roles, credits. |
+| `/status` | `/doctor` `/info` `/whoami` | App: Host, account, project, session, runtime and version. |
+| `/feedback` | `/bug` | App: Report a bug or an idea on GitHub. |
 | `/help` | `/keys` `/?` `?` | App: Show every command and key. |
 | `/quit` | `/exit` `/q` `Ctrl+c / Ctrl+q` | App: Leave the TUI. |
 
-_41 commands._
+_46 commands._
 
 ### Anywhere
 

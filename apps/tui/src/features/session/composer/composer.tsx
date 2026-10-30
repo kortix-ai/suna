@@ -29,11 +29,15 @@ import {
   mintSessionWireMessageId,
   useSessionPrompts,
 } from '@kortix/sdk/react';
+import type { SessionLogMessage } from '@kortix/sdk';
 import type { KeyEvent } from '@opentui/core';
+import { resolve } from 'node:path';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { CommandContext, CommandName, MenuEntry, RuntimeCommand } from '../../../commands/registry.ts';
+import { copyToClipboard } from '../../../lib/clipboard.ts';
 import { theme } from '../../../theme.ts';
+import { lastReplyText, transcriptMarkdown } from '../transcript-export.ts';
 import { AgentPicker } from '../pickers/agent-picker.tsx';
 import { EffortPicker } from '../pickers/effort-picker.tsx';
 import { ModelPicker } from '../pickers/model-picker.tsx';
@@ -65,12 +69,29 @@ export interface ComposerProps {
   trayLeft?: string;
   /** Replace the draft (e.g. `/rename <title>`). */
   seed?: { text: string; seq: number } | null;
+  /** The thread on screen, for `/copy` and `/export`. */
+  messages?: readonly SessionLogMessage[];
+  /** The session's title, for the `/export` heading and file name. */
+  title?: string;
+  /** Test seams. Production copies with the system tool and writes with Bun. */
+  copyText?: (text: string) => Promise<{ ok: boolean; error?: string }>;
+  writeFile?: (path: string, text: string) => Promise<unknown>;
+}
+
+/** `kortix-fix-the-login-bug-1a2b3c4d.md`: the title, slugged, and the id. */
+export function exportFileName(title: string, sessionId: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+  return `kortix-${slug ? `${slug}-` : ''}${sessionId.slice(0, 8)}.md`;
 }
 
 type Picker = 'model' | 'effort' | 'agent' | null;
 
 /** The built-ins this composer runs on its own session. */
-const LOCAL_COMMANDS = new Set<string>(['model', 'effort', 'agent', 'stop']);
+const LOCAL_COMMANDS = new Set<string>(['model', 'effort', 'agent', 'stop', 'copy', 'export']);
 
 export function Composer({
   session,
@@ -86,6 +107,10 @@ export function Composer({
   panel = null,
   trayLeft = '',
   seed: hostSeed = null,
+  messages = [],
+  title = 'Kortix session',
+  copyText = copyToClipboard,
+  writeFile = (path, text) => Bun.write(path, text),
 }: ComposerProps) {
   const [picker, setPicker] = useState<Picker>(null);
   const [queueError, setQueueError] = useState<string | null>(null);
@@ -189,12 +214,31 @@ export function Composer({
           onToast?.('Stopping…');
           return;
         }
+        if (entry.name === 'copy') {
+          const text = lastReplyText(messages);
+          if (!text) return void onToast?.('No reply to copy yet.');
+          void copyText(text).then((result) =>
+            result.ok
+              ? onToast?.(`Copied the last reply (${text.length} characters).`)
+              : onToast?.(`Copy failed: ${result.error ?? 'no clipboard tool'}.`, 'error'),
+          );
+          return;
+        }
+        if (entry.name === 'export') {
+          const path = resolve(process.cwd(), args.trim() || exportFileName(title, sessionId));
+          void Promise.resolve(writeFile(path, transcriptMarkdown(messages, title)))
+            .then(() => onToast?.(`Saved ${path}`))
+            .catch((error: unknown) =>
+              onToast?.(`Export failed: ${error instanceof Error ? error.message : String(error)}`, 'error'),
+            );
+          return;
+        }
         setPicker(entry.name as Exclude<Picker, null>);
         return;
       }
       onCommand(entry.name as CommandName, args);
     },
-    [session, stop, onCommand, onToast],
+    [session, stop, onCommand, onToast, messages, title, sessionId, copyText, writeFile],
   );
 
   // Alt+M / Alt+E / Alt+G open the pickers from anywhere in the input.

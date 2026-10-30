@@ -63,7 +63,7 @@ new entry here, decided deliberately:
 | `src/api/config.ts` | `Host`, `loadConfig`, `activeHostName`, `listHosts`, `getHost`, `upsertHost`, `removeHost`, `useHost`, `validateHostName`, `secureRemoteBase` | `auth/hosts.ts`, `features/login` |
 | `src/api/sdk.ts` | `sdkBackendUrl` — the one rule for when `http` is legitimate | `auth/hosts.ts`, `features/login` |
 | `src/web-url.ts` | `webDashboardUrl` — the billing/settings link the TUI prints instead of running checkout | `features/account/account-screen.tsx` |
-| `src/api/auth.ts` | `Auth`, the type the port-forward engine takes | `features/ports` |
+| `src/api/auth.ts` | `Auth`, the type the port-forward engine takes; `clearAuth`, the call `kortix logout` makes, for `/logout` | `features/ports`, `app.tsx` |
 | `src/port-forward.ts` | `startPortForward`, `PortForwardError`, `PortForwardDeps` — the same engine `kortix sessions forward` runs | `features/ports` |
 | `src/session-runtime.ts` | `SessionRuntimeError` — to detect a stopped session and print the `sessions restart` remedy | `features/ports` |
 

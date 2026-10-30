@@ -10,12 +10,14 @@
  */
 
 import { useAccounts, useProjectSessions, useProjects } from '@kortix/sdk/react';
+import { useKeyboard } from '@opentui/react';
 import { useMemo } from 'react';
 
 import { InlinePicker } from '../features/session/pickers/inline-picker.tsx';
 import { relativeAge } from '../lib/relative-time.ts';
 import { sessionActivityMs, sessionTitle } from '../lib/session-groups.ts';
-import { glyph } from '../theme.ts';
+import { matchesBinding } from '../keymap.ts';
+import { glyph, theme } from '../theme.ts';
 import type { ListItem } from '../ui/index.ts';
 
 /** What the panel slot holds. Null = nothing above the input. */
@@ -23,7 +25,8 @@ export type CommandPanel =
   | { kind: 'sessions'; query: string }
   | { kind: 'projects'; query: string }
   | { kind: 'accounts'; query: string }
-  | { kind: 'confirm'; title: string; yes: string; action: ConfirmAction };
+  | { kind: 'confirm'; title: string; yes: string; action: ConfirmAction }
+  | { kind: 'status'; lines: readonly { label: string; value: string }[] };
 
 /** What a confirmed panel runs. Data, so the panel stays a pure view. */
 export type ConfirmAction = { kind: 'delete-session'; sessionId: string };
@@ -82,6 +85,7 @@ export function CommandPanelView(props: PanelProps) {
   if (panel.kind === 'sessions') return <SessionsPanel {...props} query={panel.query} />;
   if (panel.kind === 'projects') return <ProjectsPanel {...props} query={panel.query} />;
   if (panel.kind === 'accounts') return <AccountsPanel {...props} query={panel.query} />;
+  if (panel.kind === 'status') return <StatusPanel lines={panel.lines} width={props.width} onClose={props.onClose} />;
   return (
     <InlinePicker
       title={panel.title}
@@ -193,5 +197,47 @@ function AccountsPanel({ width, accountId, query, onClose, onPickAccount }: Pane
         onPickAccount(item.id);
       }}
     />
+  );
+}
+
+/** `/status`: one `label value` line per fact. Esc or Enter closes it. */
+function StatusPanel({
+  lines,
+  width,
+  onClose,
+}: {
+  lines: readonly { label: string; value: string }[];
+  width: number;
+  onClose(): void;
+}) {
+  useKeyboard((key) => {
+    if (matchesBinding(key, 'back') || key.name === 'return') {
+      key.preventDefault();
+      onClose();
+    }
+  });
+  const labelWidth = Math.max(...lines.map((line) => line.label.length), 0) + 2;
+  const room = Math.max(width - 4 - labelWidth, 8);
+  return (
+    <box
+      border
+      borderStyle="rounded"
+      borderColor={theme.border}
+      title=" Status "
+      titleColor={theme.dim}
+      bottomTitle=" Esc close "
+      bottomTitleAlignment="right"
+      flexDirection="column"
+      width={width}
+      paddingLeft={1}
+      paddingRight={1}
+    >
+      {lines.map((line) => (
+        <text key={line.label} wrapMode="none" height={1}>
+          <span fg={theme.faint}>{line.label.padEnd(labelWidth)}</span>
+          <span fg={theme.fg}>{line.value.length > room ? `${line.value.slice(0, room - 1)}…` : line.value}</span>
+        </text>
+      ))}
+    </box>
   );
 }
