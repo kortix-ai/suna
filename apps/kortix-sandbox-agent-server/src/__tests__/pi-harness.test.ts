@@ -5355,7 +5355,7 @@ describe('session-log actions (runtime.actions.v1)', () => {
         id: expect.stringMatching(/^perm_/),
         thread_id: rt.rootId,
         call_id: expect.any(String),
-        payload: { permission: 'bash', patterns: ['echo gated'], metadata: { command: 'echo gated' } },
+        payload: { permission: 'bash', patterns: ['echo gated'], always: expect.any(Array), metadata: { command: 'echo gated' } },
         asked_at: expect.any(String),
       },
     ])

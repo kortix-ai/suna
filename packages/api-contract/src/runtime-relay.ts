@@ -329,7 +329,7 @@ export interface RuntimePendingRecord {
   id: string;
   thread_id: string;
   call_id?: string;
-  /** A permission: `{ permission, patterns, metadata }`. A question: `{ questions }`. */
+  /** A permission: `{ permission, patterns, always, metadata }`. A question: `{ questions }`. */
   payload: unknown;
   asked_at: string;
 }

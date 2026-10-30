@@ -422,7 +422,7 @@ export class PermissionBroker {
       id: request.id,
       thread_id: request.sessionID,
       ...(request.tool?.callID ? { call_id: request.tool.callID } : {}),
-      payload: { permission: request.permission, patterns: request.patterns, metadata: request.metadata },
+      payload: { permission: request.permission, patterns: request.patterns, always: request.always, metadata: request.metadata },
       asked_at: askedAt,
     }))
   }
