@@ -3115,6 +3115,10 @@
         "usage": {
           "read": "Vérification de l’utilisation…",
           "change": "Vérification de l’utilisation…"
+        },
+        "changeRequests": {
+          "read": "Vérification des demandes de modification…",
+          "change": "Mise à jour d’une demande de modification…"
         }
       },
       "status": {

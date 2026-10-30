@@ -3115,6 +3115,10 @@
         "usage": {
           "read": "正在查看用量…",
           "change": "正在查看用量…"
+        },
+        "changeRequests": {
+          "read": "正在查看更改请求…",
+          "change": "正在更新更改请求…"
         }
       },
       "status": {

@@ -3115,6 +3115,10 @@
         "usage": {
           "read": "Nutzung wird geprüft…",
           "change": "Nutzung wird geprüft…"
+        },
+        "changeRequests": {
+          "read": "Änderungsanfragen werden geprüft…",
+          "change": "Änderungsanfrage wird aktualisiert…"
         }
       },
       "status": {

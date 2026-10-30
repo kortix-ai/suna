@@ -3115,6 +3115,10 @@
         "usage": {
           "read": "Revisando el uso…",
           "change": "Revisando el uso…"
+        },
+        "changeRequests": {
+          "read": "Revisando las solicitudes de cambio…",
+          "change": "Actualizando una solicitud de cambio…"
         }
       },
       "status": {

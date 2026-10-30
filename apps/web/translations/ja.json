@@ -3115,6 +3115,10 @@
         "usage": {
           "read": "使用量を確認中…",
           "change": "使用量を確認中…"
+        },
+        "changeRequests": {
+          "read": "変更リクエストを確認中…",
+          "change": "変更リクエストを更新中…"
         }
       },
       "status": {

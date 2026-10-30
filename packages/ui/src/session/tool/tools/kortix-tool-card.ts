@@ -16,6 +16,7 @@ export const KORTIX_PLATFORM_TOOLS = [
   'kortix_people',
   'kortix_access',
   'kortix_usage',
+  'kortix_change_requests',
 ] as const;
 export type KortixPlatformTool = (typeof KORTIX_PLATFORM_TOOLS)[number];
 

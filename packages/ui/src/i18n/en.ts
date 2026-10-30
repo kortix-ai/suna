@@ -1908,6 +1908,10 @@ const catalog = {
         "usage": {
           "read": "Checking usage…",
           "change": "Checking usage…"
+        },
+        "changeRequests": {
+          "read": "Checking change requests…",
+          "change": "Updating a change request…"
         }
       },
       "status": {
