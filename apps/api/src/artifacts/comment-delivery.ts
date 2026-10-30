@@ -11,6 +11,7 @@ import { sharedPath, entryVersion, type ArtifactRow } from './service';
 import { recordArtifactEvent } from './events-store';
 import { isUuid } from '../shared/validate';
 import type { ArtifactCommentAnchor } from '@kortix/shared/artifact-comments';
+import { wakeArtifactCommentLifecycle } from './comment-lifecycle-wake';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const PEOPLE = 'artifact-comment-people';
@@ -190,7 +191,7 @@ async function deliverToExisting(job: Job, payload: ArtifactCommentAgentPayload,
   loaded: Awaited<ReturnType<typeof source>>, actor: Actor, text: string, version: string) {
   const { buildContinueSessionCommandValues, sessionHoldsLiveTurn } = await import('../projects/surface');
   const running = await sessionHoldsLiveTurn(target.sessionId);
-  await db.transaction(async (tx) => {
+  const receipt = await db.transaction(async (tx) => {
     const [artifact] = await tx.select({ id: artifacts.artifactId }).from(artifacts).where(eq(artifacts.artifactId, payload.artifactId)).for('update');
     if (!artifact) throw invalid('The Artifact is no longer available');
     let digestThreads = payload.threadIds;
@@ -222,7 +223,15 @@ async function deliverToExisting(job: Job, payload: ArtifactCommentAgentPayload,
         .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
     }
     await markSent(tx, job, payload, target, loaded.artifact);
+    const [command] = await tx.select({ idempotencyKey: sessionLifecycleCommands.idempotencyKey,
+      availableAt: sessionLifecycleCommands.availableAt, status: sessionLifecycleCommands.status }).from(sessionLifecycleCommands)
+      .where(and(eq(sessionLifecycleCommands.idempotencyKey, pending?.idempotencyKey ?? target.key),
+        eq(sessionLifecycleCommands.artifactId, payload.artifactId), eq(sessionLifecycleCommands.projectId, loaded.artifact.projectId),
+        eq(sessionLifecycleCommands.accountId, loaded.artifact.accountId)));
+    return command?.status === 'queued' && command.idempotencyKey ? { idempotencyKey: command.idempotencyKey, availableAt: command.availableAt } : null;
   });
+  target.status = 'sent';
+  if (receipt) wakeArtifactCommentLifecycle(receipt);
 }
 
 function makePrompt(loaded: Awaited<ReturnType<typeof source>>, artifact: ArtifactRow, version: string) {
@@ -334,9 +343,9 @@ async function reconcileRefusedDelivery(
 }
 
 async function markSent(tx: Tx, job: Job, payload: ArtifactCommentAgentPayload, target: ArtifactCommentTarget, artifact: ArtifactRow) {
-  target.status = 'sent';
-  await saveProgress(tx, job, payload);
-  await updateThreadDeliveryState(tx, payload);
+  const sent: ArtifactCommentAgentPayload = { ...payload, targets: payload.targets!.map((entry) => entry === target ? { ...entry, status: 'sent' } : entry) };
+  await saveProgress(tx, job, sent);
+  await updateThreadDeliveryState(tx, sent);
   for (const threadId of payload.threadIds) await recordArtifactEvent(tx, artifact,
     payload.callerSessionId ? { sessionId: payload.callerSessionId } : { userId: payload.actor.userId }, 'sent_to_agent', {
       thread_id: threadId, ...(payload.commentId ? { comment_id: payload.commentId } : {}), session_id: target.sessionId,
@@ -394,11 +403,14 @@ export async function runArtifactCommentAgentJob(job: Job): Promise<void> {
             throw invalid('The agent session could not be created');
           }
         }
-        const [command] = await db.select({ status: sessionLifecycleCommands.status }).from(sessionLifecycleCommands)
-          .where(and(eq(sessionLifecycleCommands.idempotencyKey, key), eq(sessionLifecycleCommands.projectId, loaded.artifact.projectId), eq(sessionLifecycleCommands.accountId, loaded.artifact.accountId)));
+        const [command] = await db.select({ status: sessionLifecycleCommands.status, idempotencyKey: sessionLifecycleCommands.idempotencyKey,
+          availableAt: sessionLifecycleCommands.availableAt }).from(sessionLifecycleCommands)
+          .where(and(eq(sessionLifecycleCommands.idempotencyKey, key), eq(sessionLifecycleCommands.artifactId, payload.artifactId),
+            eq(sessionLifecycleCommands.projectId, loaded.artifact.projectId), eq(sessionLifecycleCommands.accountId, loaded.artifact.accountId)));
+        if (command?.status === 'queued' && command.idempotencyKey) wakeArtifactCommentLifecycle({ idempotencyKey: command.idempotencyKey, availableAt: command.availableAt });
         if (command && ['failed', 'cancelled', 'dead_lettered'].includes(command.status)) throw invalid('The agent session could not be created');
         if (!session || command?.status !== 'succeeded') throw new Error('The agent session is still being created');
-        if (target.created) { await db.transaction((tx) => markSent(tx, job, payload, target, loaded.artifact)); continue; }
+        if (target.created) { await db.transaction((tx) => markSent(tx, job, payload, target, loaded.artifact)); target.status = 'sent'; continue; }
       }
       if (!session || !authority.canPromptExisting) throw invalid('The agent session is no longer available to this commenter');
       await deliverToExisting(job, payload, target, loaded, authority.actor, text, version);

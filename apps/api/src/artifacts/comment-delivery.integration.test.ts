@@ -6,12 +6,26 @@ import { db } from '../shared/db';
 import type { Actor } from '../iam/actor';
 import { pruneFinishedJobs } from '../shared/job-queue';
 import { config } from '../config';
+import type { ArtifactCommentLifecycleReceipt } from './comment-lifecycle-wake';
 
 let stats = 0;
 let missingEntry = false;
 let callerSessionId: string | null = null;
 const refused = new Set<string>();
 const unavailable = new Set<string>();
+const wakes: ArtifactCommentLifecycleReceipt[] = [];
+const wakeChecks: Array<Promise<{ visible: boolean; unlocked: boolean }>> = [];
+mock.module('./comment-lifecycle-wake', () => ({
+  wakeArtifactCommentLifecycle: (receipt: ArtifactCommentLifecycleReceipt) => {
+    wakes.push(receipt);
+    wakeChecks.push(db.transaction(async (tx) => {
+      const [command] = await tx.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.idempotencyKey, receipt.idempotencyKey));
+      if (!command?.artifactId) return { visible: false, unlocked: false };
+      await tx.execute(sql`select artifact_id from kortix.artifacts where artifact_id = ${command.artifactId} for update nowait`);
+      return { visible: true, unlocked: true };
+    }).catch(() => ({ visible: false, unlocked: false })));
+  },
+}));
 class ArtifactCommentAuthorityError extends Error { readonly status = 403; readonly code = 'artifact_comment_agent_forbidden'; }
 const volumes = await import('../drives/volumes');
 mock.module('../drives/volumes', () => ({ ...volumes, statVolumeFile: async () => { stats++; return { version: missingEntry ? null : 'actual-entry-etag' }; } }));
@@ -46,6 +60,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
     stats = 0;
     missingEntry = false;
     refused.clear(); unavailable.clear();
+    await Promise.all(wakeChecks);
+    wakes.length = 0; wakeChecks.length = 0;
     config.PLATINUM_API_KEY = 'synthetic-delivery-storage';
     project = await seedProject(`comment-delivery-${crypto.randomUUID()}`, { metadata: { experimental: { artifacts: true, artifact_comments: true } } });
     seeded.push(project);
@@ -58,7 +74,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
       root: '/report', entry: 'index.md', folder: true, type: 'doc', title: 'Synthetic report', visibility: 'project',
       createdByUserId: actor.userId, createdBySessionId: sessionId }).returning() as [typeof artifacts.$inferSelect];
   });
-  afterAll(async () => { config.PLATINUM_API_KEY = storageKey; await removeSeeded(seeded); });
+  afterAll(async () => { config.PLATINUM_API_KEY = storageKey; await Promise.all(wakeChecks); await removeSeeded(seeded); });
 
   async function thread(body: string, agent = false) {
     const [row] = await db.insert(artifactCommentThreads).values({ artifactId: artifact.artifactId, projectId: artifact.projectId,
@@ -87,6 +103,64 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
     await runArtifactCommentAgentJob(secondJob);
     return { first, second, firstJob, secondJob, command: (await commands())[0]! };
   }
+
+  test('an existing-session handoff wakes only its committed unlocked command', async () => {
+    const claimed = await job(await thread('Wake this exact handoff.', true));
+    await runArtifactCommentAgentJob(claimed);
+    const [command] = await commands();
+    expect(wakes).toEqual([{ idempotencyKey: claimed.jobKey, availableAt: command!.availableAt }]);
+    expect(await Promise.all(wakeChecks)).toEqual([{ visible: true, unlocked: true }]);
+  });
+
+  test('digest append wakes the original command key and its persisted future availability', async () => {
+    const started = Date.now();
+    const state = await digest();
+    expect(state.command.availableAt.getTime()).toBeGreaterThanOrEqual(started + 15_000);
+    expect(wakes).toEqual([state.firstJob, state.secondJob].map(() => ({
+      idempotencyKey: state.firstJob.jobKey, availableAt: state.command.availableAt,
+    })));
+    expect(await Promise.all(wakeChecks)).toEqual([{ visible: true, unlocked: true }, { visible: true, unlocked: true }]);
+  });
+
+  test('new and inherited pending-session handoffs wake the actual durable create key', async () => {
+    const claimed = await job(await thread('Create one reserved agent session.', true));
+    const payload = claimed.payload as import('./comment-delivery').ArtifactCommentAgentPayload;
+    payload.targets = [{ recipientKey: `session:${sessionId}`, sessionId: crypto.randomUUID(), agentName: 'writer', created: true,
+      initialized: true, key: claimed.jobKey, implicit: false, status: 'pending' }];
+    await db.update(jobQueue).set({ payload }).where(eq(jobQueue.jobId, claimed.jobId));
+    await expect(runArtifactCommentAgentJob({ ...claimed, payload })).rejects.toThrow('still being created');
+    const [command] = await commands();
+    expect(command!.commandType).toBe('create_session');
+    const inherited = await job(await thread('Reuse the reserved agent session.', true));
+    const inheritedPayload = inherited.payload as import('./comment-delivery').ArtifactCommentAgentPayload;
+    inheritedPayload.targets = [{ ...payload.targets[0]!, created: false, key: inherited.jobKey, createKey: claimed.jobKey }];
+    await db.update(jobQueue).set({ payload: inheritedPayload }).where(eq(jobQueue.jobId, inherited.jobId));
+    await expect(runArtifactCommentAgentJob({ ...inherited, payload: inheritedPayload })).rejects.toThrow('still being created');
+    expect(wakes).toEqual([claimed, inherited].map(() => ({ idempotencyKey: claimed.jobKey, availableAt: command!.availableAt })));
+    expect(await Promise.all(wakeChecks)).toEqual([{ visible: true, unlocked: true }, { visible: true, unlocked: true }]);
+    expect(await commands()).toHaveLength(1);
+  });
+
+  test('a commit failure leaves the target pending and never wakes a rolled-back command', async () => {
+    const claimed = await job(await thread('Do not wake a rolled-back handoff.', true));
+    await db.execute(sql.raw(`create function kortix.synthetic_artifact_wake_rollback() returns trigger language plpgsql as $$
+      begin if new.artifact_id = '${artifact.artifactId}'::uuid then raise exception 'synthetic commit failure'; end if; return new; end $$`));
+    await db.execute(sql.raw('create constraint trigger synthetic_artifact_wake_rollback after insert on kortix.artifact_events deferrable initially deferred for each row execute function kortix.synthetic_artifact_wake_rollback()'));
+    try {
+      await expect(runArtifactCommentAgentJob(claimed)).rejects.toThrow();
+      expect(wakes).toEqual([]);
+      expect(await commands()).toEqual([]);
+      expect(await events()).toEqual([]);
+      const [stored] = await db.select().from(jobQueue).where(eq(jobQueue.jobId, claimed.jobId));
+      expect((stored!.payload as import('./comment-delivery').ArtifactCommentAgentPayload).targets).toMatchObject([{ status: 'pending' }]);
+    } finally {
+      await db.execute(sql.raw('drop trigger synthetic_artifact_wake_rollback on kortix.artifact_events'));
+      await db.execute(sql.raw('drop function kortix.synthetic_artifact_wake_rollback()'));
+    }
+    await runArtifactCommentAgentJob(claimed);
+    expect(wakes).toHaveLength(1);
+    expect(await commands()).toHaveLength(1);
+  });
 
   test('a dead-lettered inherited create fails once without retrying or duplicating its target', async () => {
     const source = await thread('Review the existing reservation.', true);
