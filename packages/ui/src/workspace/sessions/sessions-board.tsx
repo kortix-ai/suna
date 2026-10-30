@@ -38,6 +38,7 @@ import {
 } from './board-dispatch';
 import {
   boardActivityAt,
+  boardAgentLabel,
   boardAgentOf,
   boardRowOrder,
   boardStateOf,
@@ -477,7 +478,7 @@ function BoardRow({
   const t = useTranslations('multiAgent.board');
   const state = boardStateOf(session, needsYouCount);
   const title = sessionDisplayLabel(session);
-  const agent = boardAgentOf(session);
+  const agent = boardAgentLabel(session);
   const excerpt = session.result_excerpt?.replace(/\s+/g, ' ').trim();
   const activity = boardActivityAt(session);
   return (

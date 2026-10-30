@@ -3,6 +3,7 @@
  * project grouped by what it needs from the person, as Claude Code's agent view
  * groups background sessions. Pure functions; the board component renders them.
  */
+import { agentDisplayName } from '../../internal/components/agent-mark';
 import type { ProjectSession, SessionBoardState } from '@kortix/sdk';
 
 /** The board's groups, top to bottom. */
@@ -82,6 +83,12 @@ export interface BoardFilters {
 /** The agent a row names: the handle an agent gave it, else the agent it runs. */
 export function boardAgentOf(session: ProjectSession): string | null {
   return session.agent_handle || session.agent_name || null;
+}
+
+/** The agent a row shows: the handle an agent gave it, else the agent it runs as a person reads it ("My Kortix"). */
+export function boardAgentLabel(session: ProjectSession): string | null {
+  if (session.agent_handle) return session.agent_handle;
+  return session.agent_name ? agentDisplayName(session.agent_name) : null;
 }
 
 export function matchesBoardFilters(

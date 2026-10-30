@@ -16,7 +16,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '../../primiti
 import { errorToast, successToast } from '../../primitives/toast';
 import { UiLink } from '../../providers/ui-provider';
 import { SessionThread } from '../../session/thread/session-thread';
-import { boardAgentOf, boardStateOf } from './board-grouping';
+import { boardAgentLabel, boardStateOf } from './board-grouping';
 import { BoardStateMark } from './board-state-mark';
 
 /** A box that answers: its transcript is worth drawing live. Any other session shows its result. */
@@ -92,7 +92,7 @@ export function BoardPeek({
   };
 
   const state = session ? boardStateOf(session, needsYouCount) : null;
-  const agent = session ? boardAgentOf(session) : null;
+  const agent = session ? boardAgentLabel(session) : null;
   const live = session ? isLive(session, needsYouCount) : false;
 
   return (
