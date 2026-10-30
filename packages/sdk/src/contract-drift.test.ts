@@ -101,21 +101,7 @@ export function contractDrift(): void {
   noPhantom<NoPhantom<KortixProject, C.Project, 'warm_pool' | 'warm_pool_available'>>();
 
   fits<ProjectSession>(wire<C.ProjectSession>());
-  // The multi-agent row fields (`@kortix/api-contract/multi-agent`): the session serializers
-  // gain them with the multi-agent API. Drop this list once `ProjectSessionSchema` carries them.
-  noPhantom<
-    NoPhantom<
-      ProjectSession,
-      C.ProjectSession,
-      | 'board_state'
-      | 'attention'
-      | 'last_activity_at'
-      | 'result_excerpt'
-      | 'agent_handle'
-      | 'team_lead_session_id'
-      | 'inbound'
-    >
-  >();
+  noPhantom<NoPhantom<ProjectSession, C.ProjectSession>>();
 
   fits<ReachableAgents>(wire<MA.ReachableAgents>());
   noPhantom<NoPhantom<ReachableAgents, MA.ReachableAgents>>();
