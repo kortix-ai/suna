@@ -93,7 +93,7 @@ function fakeHarness(convergenceInFlight: () => boolean): HarnessService {
     },
     diagnostics: { capabilities: async () => [], health: unexpected, report: unexpected, logSources: () => [], readLog: unexpected },
     queries: { bind: () => queries },
-    turns: { prompt: unexpected, steer: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, retractMessage: unexpected, agents: unexpected },
+    turns: { prompt: unexpected, steer: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, retractMessage: unexpected, agents: unexpected, replyPermission: unexpected, replyQuestion: unexpected, rejectQuestion: unexpected, compact: unexpected, command: unexpected, setGrants: unexpected, commands: unexpected, pending: unexpected, readLog: unexpected, readLogMessage: unexpected, readBlob: unexpected },
     background: { start: () => ({ stop: () => {} }) as unknown as ReturnType<HarnessService['background']['start']> },
     assets: {
       harness: 'test', componentNames: [],        reconcile: async () => ({ components: {}, reasons: {}, state: {} }),

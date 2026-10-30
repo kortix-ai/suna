@@ -443,9 +443,10 @@ export class SteerNotTaken extends Error {
 }
 
 /**
- * One message of the session's root, through the Kortix route. `null` when the
- * runtime answers that it does not hold it; throws when it could not be asked
- * (the landing proof's "unknown").
+ * One message of the session's root, through the transcript route. `null` when
+ * the runtime answers that it does not hold it; throws when it could not be
+ * asked (the landing proof's "unknown"). Not the box's session log: a prompt
+ * admitted behind a running turn enters the log only when its turn starts.
  */
 export async function readRuntimeMessage(session: ResolvedSessionRuntime, messageId: string): Promise<unknown> {
   const res = await sessionRuntimeFetch(session.endpoint, 'GET', runtimeVerbPaths.message(session.opencodeSessionId, messageId));

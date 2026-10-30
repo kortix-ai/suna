@@ -10,6 +10,9 @@ const COMMENTS = `${ARTIFACT}/comments`;
 const THREAD = `${COMMENTS}/:threadId`;
 const REPLIES = `${THREAD}/replies`;
 const COMMENT = `${THREAD}/:commentId`;
+const SCREENSHOT = `${COMMENTS}/:commentId/screenshot`;
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAE0lEQVQImWP4z8DwnwGM/zMwAAAf7gP9qS/A4gAAAABJRU5ErkJggg==';
+const WEBP = 'UklGRjwAAABXRUJQVlA4IDAAAADQAQCdASoCAAIAAUAmJaACdLoB+AADsAD+8ut//NgVzXPv9//S4P0uD9Lg/9KQAAA=';
 const FEATURES = '/v1/projects/:projectId/features';
 const ROLES = '/v1/accounts/:accountId/iam/roles';
 const POLICIES = '/v1/accounts/:accountId/iam/policies';
@@ -21,6 +24,9 @@ type Comment = {
   body: string;
   deleted_at: string | null;
   edited_at: string | null;
+  marks?: unknown[];
+  screenshot_key?: string | null;
+  screenshot_url?: string;
 };
 
 type Thread = {
@@ -51,12 +57,12 @@ const AGENTS = [
 
 flow('ART-4', {
   domain: 'artifacts',
-  requires: ['database'],
+  requires: ['database', 'supabaseAdmin'],
   timeoutMs: 180_000,
   routes: [
     `PATCH ${FEATURES}`, `GET ${COMMENTS}`, `POST ${COMMENTS}`,
     `POST ${REPLIES}`, `PATCH ${THREAD}`, `PATCH ${COMMENT}`, `DELETE ${COMMENT}`,
-    `GET ${ARTIFACTS}`, `DELETE ${ARTIFACT}`, `POST ${ROLES}`, `POST ${POLICIES}`,
+    `GET ${ARTIFACTS}`, `GET ${SCREENSHOT}`, `PATCH ${ARTIFACT}`, `DELETE /v1/projects/:projectId`, `DELETE ${ARTIFACT}`, `POST ${ROLES}`, `POST ${POLICIES}`,
   ],
 }, async (ctx) => {
   const team = await ctx.fixtures.team({ enterprise: true });
@@ -85,6 +91,20 @@ flow('ART-4', {
     return found;
   };
   const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
+  const screenshotKeys = new Set<string>();
+  const screenshotProjects = new Set([project.id]);
+  const region = { type: 'region', version: 'v1', selector: '#chart', snippet: 'Forecast chart', viewport_width: 1200, scroll: { x: 0, y: 0 }, offset: { x: 0.1, y: 0.2, width: 0.5, height: 0.5 } };
+  const marks = [{ tool: 'arrow', color: 'red', width: 0.006, points: [{ x: 0.1, y: 0.2 }, { x: 0.8, y: 0.7 }] }];
+  const rememberScreenshot = (comment: Comment) => { if (!comment.screenshot_key) throw new Error('Screenshot key missing'); screenshotKeys.add(comment.screenshot_key); return comment.screenshot_key; };
+  const storageUrl = (key: string, mode = '') => `${ctx.env.supabaseUrl}/storage/v1/object/${mode}session-attachments/${key.split('/').map(encodeURIComponent).join('/')}`;
+  const serviceHeaders = () => { const key = ctx.env.supabaseServiceRoleKey!; return { apikey: key, Authorization: `Bearer ${key}` }; };
+  async function objectAbsent(key: string) {
+    const response = await fetch(storageUrl(key), { headers: serviceHeaders(), signal: AbortSignal.timeout(20_000) });
+    if (response.ok) throw new Error('Deleted screenshot object is still readable with the service role');
+    const body = await response.json().catch(() => ({})) as { statusCode?: string | number; error?: string };
+    if (response.status !== 404 && String(body.statusCode) !== '404' && body.error !== 'not_found') throw new Error(`Unexpected screenshot absence response${response.status}`);
+  }
+
 
   try {
     await ctx.step('seed a project page and a private page without external Files storage', async () => {
@@ -285,6 +305,77 @@ flow('ART-4', {
       (await list()).status(200);
     });
 
+    await ctx.step('PNG/WebP screenshot and normalized marks persist; every read rechecks view access and Storage known-key reads are denied', async () => {
+      const privateParams = { ...params, artifactId: privateId };
+      const created = (await owner.post(COMMENTS, { anchor: region, body: 'Drawn screenshot feedback.', marks, screenshot_base64: PNG }, { params: privateParams })).status(201).json<{ thread: Thread }>().thread;
+      const comment = created.comments[0]!;
+      const key = rememberScreenshot(comment);
+      if (JSON.stringify(comment.marks) !== JSON.stringify(marks)) throw new Error('Marks did not round-trip');
+      const path = `/projects/${project.id}/artifacts/${privateId}/comments/${comment.comment_id}/screenshot`;
+      if (comment.screenshot_url !== path) throw new Error('Screenshot read URL must be the protected relative Artifact path');
+      (await owner.get(SCREENSHOT, { params: { ...privateParams, commentId: comment.comment_id } })).status(200).headerEquals('content-type', 'image/png').headerEquals('cache-control', 'private, no-store');
+      (await asMember.get(SCREENSHOT, { params: { ...privateParams, commentId: comment.comment_id } })).status(404).body().has('$.code', 'screenshot_not_found');
+      (await ctx.client.as(ctx.P.NONMEMBER).get(SCREENSHOT, { params: { ...privateParams, commentId: comment.comment_id } })).status(404);
+      const auth = ctx.P.OWNER.auth;
+      if (auth.mode !== 'bearer') throw new Error('Owner JWT required for binary verification');
+      await auth.ensureFresh?.();
+      const binary = await fetch(`${ctx.env.apiUrl}${path}`, { headers: { Authorization: `Bearer ${auth.token}` }, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
+      if (binary.status !== 200 || Buffer.from(await binary.arrayBuffer()).toString('base64') !== PNG || binary.headers.has('location')) throw new Error('Protected screenshot bytes changed or redirected');
+      const jwt = member.auth;
+      if (jwt.mode !== 'bearer') throw new Error('Member JWT required for Storage privacy verification');
+      await jwt.ensureFresh?.();
+      const headers = { apikey: ctx.env.supabaseAnonKey!, Authorization: `Bearer ${jwt.token}` };
+      for (const [url, request] of [
+        [storageUrl(key, 'authenticated/'), { headers }],
+        [storageUrl(key, 'public/'), { headers: { apikey: ctx.env.supabaseAnonKey! } }],
+        [storageUrl(key, 'sign/'), { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ expiresIn: 3600 }) }],
+      ] as const) {
+        const denied = await fetch(url, { ...request, signal: AbortSignal.timeout(20_000) });
+        if (denied.ok) throw new Error('Generic Storage bypasses Artifact screenshot permissions');
+      }
+      (await owner.patch(ARTIFACT, { shared_with_user_ids: [member.userId!] }, { params: privateParams })).status(200);
+      (await asMember.get(SCREENSHOT, { params: { ...privateParams, commentId: comment.comment_id } })).status(200);
+      (await owner.patch(ARTIFACT, { shared_with_user_ids: [] }, { params: privateParams })).status(200);
+      (await asMember.get(SCREENSHOT, { params: { ...privateParams, commentId: comment.comment_id } })).status(404);
+      const reply = (await owner.post(REPLIES, { body: 'WebP screenshot reply.', marks, screenshot_base64: `data:image/webp;base64,${WEBP}` }, { params: { ...privateParams, threadId: created.thread_id } })).status(201).json<{ comment: Comment }>().comment;
+      const replyKey = rememberScreenshot(reply);
+      (await owner.get(SCREENSHOT, { params: { ...privateParams, commentId: reply.comment_id } })).status(200).headerEquals('content-type', 'image/webp');
+      (await owner.patch(COMMENT, { body: 'Edited text only.' }, { params: { ...privateParams, threadId: created.thread_id, commentId: comment.comment_id } })).status(200).body().has('$.comment.screenshot_key', key);
+      (await owner.del(COMMENT, { params: { ...privateParams, threadId: created.thread_id, commentId: reply.comment_id } })).status(200).body().has('$.comment.screenshot_key', null);
+      (await owner.get(SCREENSHOT, { params: { ...privateParams, commentId: reply.comment_id } })).status(404);
+      await objectAbsent(replyKey);
+    });
+
+    await ctx.step('decoded screenshot2MiB cap, type/magic mismatch and bounded marks reject; capture failure still saves marks without an image', async () => {
+      const privateParams = { ...params, artifactId: privateId };
+      for (const screenshot_base64 of [Buffer.alloc(2 * 1024 * 1024 + 1).toString('base64'), 'data:image/svg+xml;base64,PHN2Zy8+', `data:image/webp;base64,${PNG}`, Buffer.from(PNG, 'base64').subarray(0, 20).toString('base64')]) {
+        (await owner.post(COMMENTS, { anchor: region, body: 'Invalid screenshot.', screenshot_base64 }, { params: privateParams })).status(413).body().has('$.code', 'screenshot_too_large');
+      }
+      (await owner.post(COMMENTS, { anchor: region, body: 'Invalid marks.', marks: [{ ...marks[0], points: [{ x: -1, y: 0 }, { x: 1, y: 1 }] }] }, { params: privateParams })).status(400).body().has('$.code', 'invalid_marks');
+      const saved = (await owner.post(COMMENTS, { anchor: region, body: 'Capture failed but the drawing survives.', marks }, { params: privateParams })).status(201).json<{ thread: Thread }>().thread.comments[0]!;
+      if (saved.screenshot_key !== null || saved.screenshot_url || JSON.stringify(saved.marks) !== JSON.stringify(marks)) throw new Error('Capture failure lost marks or invented an image');
+      (await owner.get(SCREENSHOT, { params: { ...privateParams, commentId: saved.comment_id } })).status(404);
+      (await owner.del(ARTIFACT, { params: privateParams })).status(200);
+      for (const key of screenshotKeys) await objectAbsent(key);
+    });
+
+    await ctx.step('project deletion releases screenshot objects before its tombstone; authenticated known URLs then return404', async () => {
+      const purge = await team.project({ name: 'Screenshot purge' });
+      screenshotProjects.add(purge.id);
+      const id = randomUUID(), drive = randomUUID();
+      await withDb(ctx, async db => {
+        await db.query("INSERT INTO kortix.drives(drive_id,account_id,project_id,kind,name,platinum_volume_name) VALUES($1,$2,$3,'project','Screenshot purge',$4)", [drive, team.id, purge.id, `screenshot-purge-${drive}`]);
+        await db.query("INSERT INTO kortix.artifacts(artifact_id,project_id,account_id,drive_id,root,entry,folder,title,type,visibility,created_by_user_id) VALUES($1,$2,$3,$4,'/screenshots','index.html',true,'Screenshot purge','html','project',$5)", [id, purge.id, team.id, drive, ctx.P.OWNER.userId]);
+      });
+      for (const feature of ['artifacts', 'artifact_comments']) (await owner.patch(FEATURES, { feature, enabled: true }, { params: { projectId: purge.id } })).status(200);
+      const purgeParams = { projectId: purge.id, artifactId: id };
+      const picture = (await owner.post(COMMENTS, { anchor: region, body: 'Erase this screenshot with the project.', marks, screenshot_base64: PNG }, { params: purgeParams })).status(201).json<{ thread: Thread }>().thread.comments[0]!;
+      const key = rememberScreenshot(picture);
+      (await owner.del('/v1/projects/:projectId', { params: { projectId: purge.id } })).status(200);
+      (await owner.get(SCREENSHOT, { params: { ...purgeParams, commentId: picture.comment_id } })).status(404);
+      await objectAbsent(key);
+    });
+
     await ctx.step('OWNER unshares the Artifact → 200; comment routes → 404 and both comment tables contain no rows for it', async () => {
       const threadIds = (await list()).status(200).json<{ threads: Thread[] }>().threads.map((row) => row.thread_id);
       (await owner.del(ARTIFACT, { params })).status(200);
@@ -298,6 +389,17 @@ flow('ART-4', {
       if (counts?.threads !== '0' || counts.comments !== '0') throw new Error(`unshare left comment data: ${JSON.stringify(counts)}`);
     });
   } finally {
+    let cleanupError: unknown;
+    try {
+      const receipts = await withDb(ctx, async db => (await db.query<{ object_key: string }>('SELECT object_key FROM kortix.artifact_comment_screenshot_objects WHERE project_id=ANY($1::uuid[])', [[...screenshotProjects]])).rows);
+      for (const row of receipts) screenshotKeys.add(row.object_key);
+      if (screenshotKeys.size) {
+        const response = await fetch(`${ctx.env.supabaseUrl}/storage/v1/object/session-attachments`, { method: 'DELETE', headers: { ...serviceHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ prefixes: [...screenshotKeys] }), signal: AbortSignal.timeout(20_000) });
+        if (!response.ok) throw new Error(`Screenshot cleanup failed${response.status}`);
+        for (const key of screenshotKeys) await objectAbsent(key);
+      }
+    } catch (error) { cleanupError = error; }
     await world.close();
+    if (cleanupError) throw cleanupError;
   }
 });

@@ -1,6 +1,5 @@
 import { copySessionLog, withForkAttachmentCleanup } from '../session-log-fork';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
-import { captureJournallessSessionLog } from './session-transcript-capture';
 import { randomUUID } from 'node:crypto';
 import { SESSION_INITIAL_CONTEXT_MAX_CHARS, SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
@@ -1282,7 +1281,7 @@ async function insertSessionAndBindings(
     .returning();
   if (!row) throw new Error('Session insert returned no row');
   if (typeof body.fork_from_session_id === 'string') {
-    await copySessionLog(tx, { sourceId: body.fork_from_session_id, sessionId, projectId, accountId, captureComplete: input.forkCaptureComplete });
+    await copySessionLog(tx, { sourceId: body.fork_from_session_id, sessionId, projectId, accountId });
   }
   if (input.createCommandId) {
     // Same transaction as the session row: a create command whose worker
@@ -1611,7 +1610,6 @@ export async function createProjectSession(input: {
   userId: string;
   requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
-  forkCaptureComplete?: boolean;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
@@ -1804,13 +1802,7 @@ export async function createProjectSession(input: {
     if (!config.SESSION_LOG_RESTORE_ENABLED || !config.SESSION_LOG_INGEST_ENABLED) {
       return { error: { status: 503, body: { error: 'Session log restore is off' } } };
     }
-    const capture = await captureJournallessSessionLog(body.fork_from_session_id);
-    // A reachable box must provide the whole snapshot. A stopped box can use
-    // its durable journal, checked again under the journal lock during copy.
-    if (capture && !capture.head_complete) {
-      return { error: { status: 409, body: { error: 'Source history capture is incomplete' } } };
-    }
-    input.forkCaptureComplete = capture?.head_complete === true;
+    // The source's journal is its complete history, checked under the journal lock during the copy.
   }
 
   const { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion } = identity;

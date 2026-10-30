@@ -5,8 +5,11 @@ import {
   type ArtifactAnnotationFrameMessage,
   type ArtifactAnnotationHostMessage,
   type ArtifactAnnotationLayout,
+  type ArtifactAnnotationRect,
+  type ArtifactAnnotationViewport,
 } from '@kortix/shared/artifact-annotations';
 import { artifactCommentAnchorSchema } from '@kortix/shared/artifact-comments';
+import { createArtifactAnnotationCapture } from './artifact-annotation-capture';
 import {
   assembleArtifactAnnotationLayout,
   resolveArtifactAnnotationAnchor,
@@ -37,9 +40,12 @@ export function createArtifactAnnotationController(
     onFocus: (threadId: string) => void;
     onThreads: (threads: ArtifactCommentThread[]) => void;
     onStatus?: (status: ArtifactAnnotationStatus) => void;
+    onViewport?: (viewport: ArtifactAnnotationViewport | null) => void;
+    onRegions?: (regions: Readonly<Record<string, ArtifactAnnotationRect>>) => void;
   },
   schedule: ArtifactAnnotationScheduler = scheduleDeadline,
 ) {
+  const capture = createArtifactAnnotationCapture(callbacks.post, schedule);
   let config: Config | null = null;
   let inventory: ArtifactAnnotationInventory | null = null;
   let chunks: ArtifactAnnotationLayout[] = [];
@@ -77,6 +83,8 @@ export function createArtifactAnnotationController(
   const loading = (restart = false) => {
     if (!restart && status === 'loading' && cancelDeadline) return;
     clearDeadline();
+    capture.cancel('stale');
+    callbacks.onViewport?.(null);
     readiness('loading');
     const attempt = generation;
     cancelDeadline = schedule(() => {
@@ -93,11 +101,19 @@ export function createArtifactAnnotationController(
     const current = config;
     const pins: Extract<ArtifactAnnotationHostMessage, { type: 'draw' }>['pins'] = [];
     const ids = new Map<number, string>();
+    const regions: Record<string, ArtifactAnnotationRect> = {};
     const rows = current.threads.map((thread) => {
       if (thread.anchor.type === 'none') return thread;
       const resolved = inventory
         ? resolveArtifactAnnotationAnchor(thread.anchor, inventory, current.version)
         : null;
+      if (
+        resolved?.status === 'resolved' &&
+        thread.anchor.type === 'region' &&
+        !threadDeleted(thread) &&
+        resolved.rects[0]
+      )
+        regions[thread.thread_id] = { ...resolved.rects[0] };
       if (
         resolved?.status === 'resolved' &&
         !threadDeleted(thread) &&
@@ -120,6 +136,7 @@ export function createArtifactAnnotationController(
       };
     });
     callbacks.onThreads(rows);
+    callbacks.onRegions?.(regions);
     if (!inventory) return;
     const active = [...ids].find(([, id]) => id === current.focusedThreadId)?.[0] ?? null;
     if (active !== null) pins.sort((a, b) => Number(b.n === active) - Number(a.n === active));
@@ -144,6 +161,71 @@ export function createArtifactAnnotationController(
     }
   };
   return {
+    isCurrentViewport(viewport: ArtifactAnnotationViewport) {
+      return (
+        config?.canComment === true &&
+        status === 'ready' &&
+        inventory?.complete === true &&
+        inventory.viewport === viewport &&
+        inventory.revision === latestRevision
+      );
+    },
+    capture(rect: ArtifactAnnotationRect) {
+      if (!config?.canComment || status !== 'ready' || !inventory?.complete)
+        return Promise.resolve({ ok: false as const, reason: 'unavailable' as const });
+      return capture.begin(rect, inventory.revision);
+    },
+    cancelCapture: capture.cancel,
+    regionForViewportRect(rect: ArtifactAnnotationRect) {
+      if (
+        !config?.canComment ||
+        status !== 'ready' ||
+        !inventory?.complete ||
+        !Object.values(rect).every(Number.isFinite) ||
+        rect.x < 0 ||
+        rect.y < 0 ||
+        rect.width <= 0 ||
+        rect.height <= 0 ||
+        rect.x + rect.width > inventory.viewport.width ||
+        rect.y + rect.height > inventory.viewport.height
+      )
+        return null;
+      const { viewport } = inventory;
+      const documentRect = {
+        ...rect,
+        x: rect.x + viewport.scroll.x,
+        y: rect.y + viewport.scroll.y,
+      };
+      const element = inventory.elements
+        .filter(
+          (item) =>
+            item.rect.x <= documentRect.x &&
+            item.rect.y <= documentRect.y &&
+            item.rect.x + item.rect.width >= documentRect.x + rect.width &&
+            item.rect.y + item.rect.height >= documentRect.y + rect.height,
+        )
+        .sort((a, b) => a.rect.width * a.rect.height - b.rect.width * b.rect.height)[0];
+      if (!element) return null;
+      const x = (documentRect.x - element.rect.x) / element.rect.width;
+      const y = (documentRect.y - element.rect.y) / element.rect.height;
+      const anchor: Extract<ArtifactCommentAnchor, { type: 'region' }> = {
+        type: 'region',
+        version: config.version,
+        selector: element.selector,
+        snippet: element.snippet,
+        viewport_width: viewport.width,
+        scroll: viewport.scroll,
+        offset: {
+          x,
+          y,
+          width: Math.min(1 - x, rect.width / element.rect.width),
+          height: Math.min(1 - y, rect.height / element.rect.height),
+        },
+      };
+      return artifactCommentAnchorSchema.safeParse(anchor).success
+        ? { anchor, documentRect }
+        : null;
+    },
     update(next: Config) {
       if (disposed) return;
       const changedVersion = config?.version !== next.version;
@@ -158,6 +240,7 @@ export function createArtifactAnnotationController(
       }
       const modeChanged =
         !config || config.canComment !== next.canComment || config.mode !== next.mode;
+      if (!next.canComment) capture.cancel();
       config = next;
       if (changedVersion) loading(true);
       if (modeChanged) postMode();
@@ -178,6 +261,10 @@ export function createArtifactAnnotationController(
     },
     receive(message: ArtifactAnnotationFrameMessage) {
       if (disposed || !config) return;
+      if (message.type.startsWith('capture_')) {
+        capture.receive(message);
+        return;
+      }
       if (message.type === 'ready') {
         handshake();
         return;
@@ -214,6 +301,7 @@ export function createArtifactAnnotationController(
         if (next) {
           inventory = next;
           readiness(next.complete ? 'ready' : 'unavailable');
+          callbacks.onViewport?.(next.complete ? next.viewport : null);
           redraw();
         } else readiness('unavailable');
         return;
@@ -233,10 +321,12 @@ export function createArtifactAnnotationController(
         if (result.success) callbacks.onCandidate(result.data);
         return;
       }
+      if (message.type !== 'focus') return;
       const id = sent.get(message.n);
       if (id) callbacks.onFocus(id);
     },
     dispose() {
+      capture.cancel();
       disposed = true;
       clearDeadline();
       config = null;

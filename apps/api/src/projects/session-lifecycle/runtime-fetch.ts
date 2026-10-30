@@ -6,6 +6,7 @@
  * fail-open default and the warning that explains it stay at the call site.
  */
 
+import { RUNTIME_ACTIONS_CAPABILITY } from '@kortix/api-contract/runtime-relay';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 
 /** The directory every runtime read and write is forwarded under. */
@@ -54,6 +55,8 @@ export const runtimeVerbPaths = {
   prompt: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/prompt`,
   /** Hand a message to the RUNNING turn (`session.steer`). Not a turn start. */
   steer: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/steer`,
+  /** The session-log actions (`runtime.actions.v1`). */
+  questionReply: (requestId: string) => `/kortix/runtime/questions/${segment(requestId)}/reply`,
 } as const;
 
 const CAPABILITIES_TTL_MS = 5 * 60_000;
@@ -93,6 +96,17 @@ export async function runtimeCapabilities(
   } catch {
     return null;
   }
+}
+
+/**
+ * Does this sandbox's daemon serve the session-log actions (`runtime.actions.v1`)?
+ * A failed read answers false: the caller uses the route every daemon serves.
+ */
+export async function runtimeServesActions(
+  externalId: string | undefined,
+  endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
+): Promise<boolean> {
+  return (await runtimeCapabilities(externalId, endpoint))?.includes(RUNTIME_ACTIONS_CAPABILITY) ?? false;
 }
 
 /** Test-only. */

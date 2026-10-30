@@ -613,9 +613,12 @@ jobs:
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
-      # Release gate: build the Platinum platform default image THIS API version
-      # computes, and make it resident in KORTIX_PLATINUM_US_REGION, before the
-      # roll. Without it the new tasks start on a missing image: sessions boot
+      # Release gate: build the Platinum platform default image and the meta
+      # image (My Kortix sessions) THIS API version computes, and make both
+      # resident in KORTIX_PLATINUM_US_REGION, before the roll. Without the meta
+      # build, the first My Kortix session after a deploy waited 80-111 s for
+      # it (2026-10-30). Without the default build the new tasks start on a
+      # missing image: sessions boot
       # the previous one and repair its runtime in place, and the first US
       # session waits while Platinum copies the image from the EU (150-255 s on
       # 2026-10-02). The new image is built UNPUBLISHED, so the version still
@@ -630,7 +633,7 @@ jobs:
       # one place (secret read, image pull, build, copy, timeout); the script's
       # own exit code still marks the step failed with a ::warning:: naming the
       # cause, and the next sessions then behave exactly as before this gate.
-      - name: Build the next default sandbox image and make it resident in US
+      - name: Build the next default and meta sandbox images and make them resident in US
         continue-on-error: true
         timeout-minutes: 25
         env:

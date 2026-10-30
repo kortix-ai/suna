@@ -277,6 +277,8 @@ export function registerProjectSettingsRoutes(): void {
     // the archive, the project answers 404, so a release could never be retried.
     const { releasePromptAttachmentsForProject } = await import('../prompt-attachments');
     await releasePromptAttachmentsForProject(projectId);
+    const { releaseArtifactCommentScreenshotsForProject } = await import('../../artifacts/comment-screenshot-objects');
+    await releaseArtifactCommentScreenshotsForProject(projectId);
 
     // Deleting the project deletes the Kortix-managed upstream with it; the
     // helper no-ops for user-connected/BYO repositories and never touches

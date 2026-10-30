@@ -201,3 +201,176 @@ test('the project facade exposes the Artifact comment and activity functions', a
   response = page;
   expect(await handle.artifacts.activity('artifact-a')).toEqual(page);
 });
+
+test("drawing create and reply preserve optional marks and screenshot without widening edit input", async () => {
+  const mark = {
+    tool: "pen" as const,
+    color: "black" as const,
+    width: 0.01,
+    points: [
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+    ],
+  };
+  response = { thread, comment };
+  await artifacts.createArtifactComment("project-a", "artifact-a", {
+    anchor,
+    body: "Drawn",
+    marks: [mark],
+    screenshot_base64: "aW1hZ2U=",
+  });
+  await artifacts.replyArtifactComment("project-a", "artifact-a", "thread-a", {
+    body: "Reply",
+    marks: [mark],
+    screenshot_base64: "aW1hZ2U=",
+  });
+  expect(calls[0].body).toEqual({
+    anchor,
+    body: "Drawn",
+    marks: [mark],
+    screenshot_base64: "aW1hZ2U=",
+  });
+  expect(calls[1].body).toEqual({
+    body: "Reply",
+    marks: [mark],
+    screenshot_base64: "aW1hZ2U=",
+  });
+});
+
+test("screenshot reads authenticate each binary request and keep API refusal status", async () => {
+  globalThis.fetch = mock(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        method: init?.method ?? "GET",
+        body: undefined,
+        authorization: new Headers(init?.headers).get("authorization"),
+      });
+      return new Response(new Uint8Array([137, 80, 78, 71]), {
+        status,
+        headers: { "content-type": "image/png" },
+      });
+    },
+  ) as unknown as typeof fetch;
+  const blob = await artifacts.readArtifactCommentScreenshot(
+    "project-a",
+    "artifact-a",
+    "comment-a",
+  );
+  expect(blob.type).toBe("image/png");
+  expect(blob.size).toBe(4);
+  expect(calls[0].url).toBe(`${base}/comments/comment-a/screenshot`);
+  expect(calls[0].authorization).toBe("Bearer session-token");
+  await createKortix({
+    backendUrl: "https://artifact-sdk.example/v1",
+    getToken: async () => "session-token",
+  })
+    .project("project-a")
+    .artifacts.comments.readScreenshot("artifact-a", "comment-a");
+  status = 404;
+  await expect(
+    artifacts.readArtifactCommentScreenshot(
+      "project-a",
+      "artifact-a",
+      "comment-a",
+    ),
+  ).rejects.toMatchObject({ status: 404 });
+});
+
+test('screenshot reads retain authenticated JSON refusal details', async () => {
+  response = { error: 'Screenshot not found', code: 'not_found' };
+  status = 404;
+  await expect(artifacts.readArtifactCommentScreenshot('project-a', 'artifact-a', 'comment-a')).rejects.toMatchObject({
+    status: 404, code: 'not_found', details: response, data: response,
+  });
+});
+
+test('Send drawing quota refusals retain all API limits', async () => {
+  status = 413;
+  for (const includeParts of [false, true]) {
+    response = { error: 'Screenshot limit reached', code: 'artifact_comment_screenshot_limit', limits: {
+      max_files: 20, max_total_bytes: 104857600, max_screenshot_bytes: 2097152,
+      ...(includeParts ? { max_parts_bytes: 12582912 } : {}),
+    } };
+    await expect(artifacts.sendArtifactComments('project-a', 'artifact-a', { thread_ids: ['thread-a'], batch_id: 'owned-batch' }))
+      .rejects.toMatchObject({ status: 413, code: 'artifact_comment_screenshot_limit', details: response, data: response });
+  }
+});
+
+test("mark parser accepts empty/valid data and rejects malformed or unbounded old response values", () => {
+  const mark: artifacts.ArtifactCommentMark = {
+    tool: "arrow",
+    color: "red",
+    width: 0.01,
+    points: [
+      { x: 0, y: 0.2 },
+      { x: 1, y: 1 },
+    ],
+  };
+  expect(artifacts.parseArtifactCommentMarks([])).toEqual([]);
+  expect(artifacts.parseArtifactCommentMarks([mark])).toEqual([mark]);
+  for (const value of [
+    null,
+    {},
+    [null],
+    [{ ...mark, width: 0 }],
+    [{ ...mark, token: "extra" }],
+    [
+      {
+        ...mark,
+        points: [
+          { x: Infinity, y: 0 },
+          { x: 1, y: 1 },
+        ],
+      },
+    ],
+    Array(65).fill(mark),
+  ])
+    expect(artifacts.parseArtifactCommentMarks(value)).toBeNull();
+});
+
+test("published mark parser stays equal to the server schema without a runtime shared dependency", async () => {
+  const { artifactCommentMarksSchema } =
+    await import("../../../../../shared/src/artifact-comments");
+  const mark = {
+    tool: "rectangle",
+    color: "blue",
+    width: 0.01,
+    points: [
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+    ],
+  };
+  const values = [
+    [],
+    [mark],
+    [
+      {
+        ...mark,
+        points: [
+          { x: 0, y: 0 },
+          { x: 0, y: 0 },
+        ],
+      },
+    ],
+    [{ ...mark, points: [{ x: 0, y: 0 }] }],
+    [{ ...mark, width: NaN }],
+    [{ ...mark, color: "green" }],
+    [
+      {
+        ...mark,
+        points: [
+          { x: 0, y: 0, z: 1 },
+          { x: 1, y: 1 },
+        ],
+      },
+    ],
+    Array(65).fill(mark),
+  ];
+  for (const value of values) {
+    const server = artifactCommentMarksSchema.safeParse(value);
+    const client = artifacts.parseArtifactCommentMarks(value);
+    expect(client !== null).toBe(server.success);
+    if (server.success) expect(client).toEqual(server.data);
+  }
+});

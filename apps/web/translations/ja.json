@@ -23962,7 +23962,23 @@
       "panelTitle": "コメントとアクティビティ",
       "resizePanel": "コメントパネルのサイズを変更",
       "unshareComments": "{count, plural, other {# 件のコメントが削除されます。}}",
-      "systemActor": "システム"
+      "systemActor": "システム",
+      "draw": "フィードバックを描く",
+      "drawPen": "ペン",
+      "drawArrow": "矢印",
+      "drawRectangle": "四角形",
+      "drawBlack": "黒",
+      "drawRed": "赤",
+      "drawBlue": "青",
+      "drawUndo": "線を元に戻す",
+      "drawPageChanged": "ページが変わりました。キャンセルして描き直してください。",
+      "drawLimit": "描画上限に達しました。線を元に戻すと続行できます。",
+      "openScreenshot": "スクリーンショットを開く",
+      "drawingScreenshot": "フィードバックのスクリーンショット",
+      "screenshotReadFailed": "スクリーンショットを読み込めませんでした。",
+      "screenshotMissing": "スクリーンショットは利用できません。描画は保存されています。",
+      "screenshotCaptureFailed": "スクリーンショットを取得できませんでした。コメントには画像なしで描画を含めます。",
+      "sendScreenshotLimit": "この一括送信は20枚またはエンコード済みリクエストあたり12 MiBを超えています。添付画像を減らすか、テキスト専用モデルを使用してください。"
     }
   },
   "emailConnect": {

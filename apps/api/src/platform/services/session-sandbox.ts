@@ -580,7 +580,7 @@ export async function provisionSessionSandbox(opts: {
     targetProvider: string,
   ): Promise<EnsureSandboxImageResult> =>
     slug === META_SANDBOX_SLUG
-      ? ensureMetaSandboxImage({ source: 'session-start', provider: targetProvider })
+      ? ensureMetaSandboxImage({ source: 'session-start', provider: targetProvider, projectId })
       : ensureSandboxImage(gitProject, {
           slug,
           accountId,

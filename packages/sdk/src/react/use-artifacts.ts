@@ -16,6 +16,7 @@ import {
   listArtifactVersions,
   listArtifacts,
   readArtifactFile,
+  readArtifactCommentScreenshot,
   replyArtifactComment,
   saveArtifact,
   shareArtifactPath,
@@ -27,6 +28,7 @@ import {
   type ArtifactDetail,
   type ArtifactCommentStatus,
   type ArtifactCommentBodyInput,
+  type ReplyArtifactCommentInput,
   type CreateArtifactCommentInput,
   type SendArtifactCommentsInput,
   type ListArtifactsOptions,
@@ -41,6 +43,34 @@ import { qk } from './query-keys';
 function commentScope(projectId: string | null | undefined, artifactId: string | null | undefined): [string, string] {
   if (!projectId || !artifactId) throw new Error('An Artifact comment needs a project and Artifact id');
   return [projectId, artifactId];
+}
+
+/** Private image bytes are fetched for this mounted comment and discarded on unmount. */
+export function useArtifactCommentScreenshot(
+  projectId: string | null | undefined,
+  artifactId: string | null | undefined,
+  commentId: string | null | undefined,
+  options: { enabled?: boolean } = {},
+) {
+  return useQuery({
+    queryKey: [
+      ...qk.project.artifactComments(projectId ?? "", artifactId ?? ""),
+      "screenshot",
+      commentId ?? "",
+    ],
+    queryFn: ({ signal }) =>
+      readArtifactCommentScreenshot(
+        ...commentScope(projectId, artifactId),
+        commentId!,
+        { signal },
+      ),
+    enabled:
+      options.enabled !== false && !!projectId && !!artifactId && !!commentId,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
 }
 
 /** Threads and their writes. Each successful write refreshes both mounted tabs. */
@@ -72,7 +102,7 @@ export function useArtifactComments(
     onSuccess: refresh,
   });
   const reply = useMutation({
-    mutationFn: ({ threadId, input }: { threadId: string; input: ArtifactCommentBodyInput }) =>
+    mutationFn: ({ threadId, input }: { threadId: string; input: ReplyArtifactCommentInput }) =>
       replyArtifactComment(...writeScope(), threadId, input),
     onSuccess: refresh,
   });
@@ -98,7 +128,7 @@ export function useArtifactComments(
   return {
     ...query,
     create: create.mutateAsync,
-    reply: (threadId: string, input: ArtifactCommentBodyInput) => reply.mutateAsync({ threadId, input }),
+    reply: (threadId: string, input: ReplyArtifactCommentInput) => reply.mutateAsync({ threadId, input }),
     setStatus: (threadId: string, status: ArtifactCommentStatus) => setStatus.mutateAsync({ threadId, status }),
     edit: (threadId: string, commentId: string, input: ArtifactCommentBodyInput) => edit.mutateAsync({ threadId, commentId, input }),
     remove: (threadId: string, commentId: string) => remove.mutateAsync({ threadId, commentId }),

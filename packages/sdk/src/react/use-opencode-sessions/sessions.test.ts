@@ -70,6 +70,14 @@ mock.module('../../browser/stores/opencode-compaction-store', () => ({
   ),
 }));
 
+// The session-log action route of the active runtime: null = an older box (the default here).
+let actionImpl: (method: string, path: string, body?: unknown) => Promise<Response | null> = async () => null;
+const realRuntimeActions = await import('../../core/session/runtime-actions');
+mock.module('../../core/session/runtime-actions', () => ({
+  ...realRuntimeActions,
+  activeRuntimeAction: (method: string, path: string, body?: unknown) => actionImpl(method, path, body),
+}));
+
 const { useSummarizeRuntimeSession, useInitSession, useForkSession } = await import('./sessions');
 const { runtimeKeys } = await import('./keys');
 const { NoCompactionModelError } = await import('./no-compaction-model-error');
@@ -77,6 +85,28 @@ const { NoCompactionModelError } = await import('./no-compaction-model-error');
 beforeEach(() => {
   fakeQueryClient = makeFakeQueryClient();
   clientImpl = {};
+  actionImpl = async () => null;
+});
+
+describe('useSummarizeRuntimeSession on a box with the session-log actions', () => {
+  test('posts the compact route of the session: no model, no history read, no compatibility call', async () => {
+    const calls: unknown[] = [];
+    actionImpl = async (method, path, body) => (calls.push([method, path, body]), Response.json({ ok: true }, { status: 202 }));
+    clientImpl = { session: new Proxy({}, { get: () => { throw new Error('the compatibility client must not be used'); } }) };
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
+      mutationFn: (args: { sessionId: string }) => Promise<string>;
+    };
+    expect(await mutationFn({ sessionId: 'ses_1' })).toBe('ses_1');
+    expect(calls).toEqual([['POST', '/kortix/runtime/sessions/ses_1/compact', undefined]]);
+  });
+
+  test('a refused compaction throws the runtime message', async () => {
+    actionImpl = async () => Response.json({ error: 'the runtime cannot compact' }, { status: 501 });
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
+      mutationFn: (args: { sessionId: string }) => Promise<string>;
+    };
+    await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toThrow('the runtime cannot compact');
+  });
 });
 
 // ============================================================================

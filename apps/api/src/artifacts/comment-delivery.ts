@@ -11,6 +11,9 @@ import { sharedPath, entryVersion, type ArtifactRow } from './service';
 import { recordArtifactEvent } from './events-store';
 import { isUuid } from '../shared/validate';
 import type { ArtifactCommentAnchor } from '@kortix/shared/artifact-comments';
+import { config } from '../config';
+import { screenshotReferences, screenshotQueuedParts, screenshotTargetCapability, assertScreenshotReferences, SCREENSHOT_LIMIT_MESSAGE } from './comment-screenshot-parts';
+import { ArtifactCommentScreenshotError } from './comment-screenshot-validation';
 import { wakeArtifactCommentLifecycle } from './comment-lifecycle-wake';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -31,6 +34,7 @@ export interface ArtifactCommentTarget {
   originCommentId?: string;
   initialized?: boolean;
   error?: string;
+  errorCode?: string;
 }
 export interface ArtifactCommentAgentPayload extends Record<string, unknown> {
   artifactId: string;
@@ -182,13 +186,16 @@ async function updateThreadDeliveryState(tx: Tx, payload: ArtifactCommentAgentPa
   const pending = targets.some((target) => target.status === 'pending');
   const sent = targets.some((target) => target.status === 'sent');
   const failed = targets.some((target) => target.status === 'failed');
-  await tx.update(artifactCommentThreads).set({ agentState: pending ? 'pending' : failed ? 'paused' : sent ? 'sent' : 'none', agentError: !pending && failed ? FAILURE : null,
+  await tx.update(artifactCommentThreads).set({ agentState: pending ? 'pending' : failed ? 'paused' : sent ? 'sent' : 'none', agentError: !pending && failed ? targets.find(target => target.status === 'failed')?.error ?? FAILURE : null,
     sentSessionId: display?.sessionId ?? null, ...(display?.status === 'sent' ? { sentAt: new Date() } : !display ? { sentAt: null } : {}) })
     .where(and(eq(artifactCommentThreads.artifactId, payload.artifactId), inArray(artifactCommentThreads.threadId, payload.threadIds), ne(artifactCommentThreads.agentState, 'paused')));
 }
 
 async function deliverToExisting(job: Job, payload: ArtifactCommentAgentPayload, target: ArtifactCommentTarget,
   loaded: Awaited<ReturnType<typeof source>>, actor: Actor, text: string, version: string) {
+  const capability = loaded.comments.some(comment => !comment.deletedAt && comment.screenshotKey)
+    ? await screenshotTargetCapability(loaded.artifact.projectId, target.sessionId) : { known: true, vision: false, mayNeedImages: false };
+  const imageParts = await screenshotQueuedParts(loaded.artifact, loaded.comments, target.sessionId, text);
   const { buildContinueSessionCommandValues, sessionHoldsLiveTurn } = await import('../projects/surface');
   const running = await sessionHoldsLiveTurn(target.sessionId);
   const receipt = await db.transaction(async (tx) => {
@@ -206,14 +213,15 @@ async function deliverToExisting(job: Job, payload: ArtifactCommentAgentPayload,
         digestThreads = [...new Set([...state.threadIds, ...payload.threadIds])];
         const digestSource = await source({ ...payload, threadIds: digestThreads }, tx);
         text = makePrompt(digestSource, loaded.artifact, version);
-        await tx.update(sessionLifecycleCommands).set({ payload: { ...pending.payload, text,
+        const digestParts = await screenshotQueuedParts(loaded.artifact, digestSource.comments, target.sessionId, text, { capability, executor: tx });
+        await tx.update(sessionLifecycleCommands).set({ payload: { ...pending.payload, text, parts: digestParts.length ? digestParts : undefined,
           artifactCommentDigest: { artifactId: payload.artifactId, threadIds: digestThreads, keys: [...state.keys, target.key],
             deliveries: [...state.deliveries, { job_id: job.jobId, target_key: target.key }] } }, updatedAt: new Date() })
           .where(eq(sessionLifecycleCommands.commandId, pending.commandId));
       }
     } else {
       const values = buildContinueSessionCommandValues({ source: 'system:artifact-comment', projectId: loaded.artifact.projectId,
-        accountId: loaded.artifact.accountId, sessionId: target.sessionId, actorUserId: actor.userId, text, idempotencyKey: target.key,
+        accountId: loaded.artifact.accountId, sessionId: target.sessionId, actorUserId: actor.userId, text, ...(imageParts.length ? { parts: imageParts } : {}), idempotencyKey: target.key,
         delivery: 'queue', placement: 'composer', bindTurnIdentity: !payload.callerSessionId, authorSessionId: payload.callerSessionId,
         ...(running ? { availableAt: new Date(Date.now() + 15_000) } : {}),
       });
@@ -235,10 +243,11 @@ async function deliverToExisting(job: Job, payload: ArtifactCommentAgentPayload,
 }
 
 function makePrompt(loaded: Awaited<ReturnType<typeof source>>, artifact: ArtifactRow, version: string) {
+  const screenshots = new Map(screenshotReferences(artifact, loaded.comments, config.KORTIX_URL).map(image => [image.filename.split('.')[0]!, image.url]));
   return artifactCommentPrompt({ artifactId: artifact.artifactId, title: artifact.title, path: sharedPath(artifact), version }, loaded.threads.map((thread) => ({
     thread_id: thread.threadId, anchor: thread.anchor as ArtifactCommentAnchor,
     comments: loaded.comments.filter((comment) => comment.threadId === thread.threadId).map((comment) => ({
-      body: comment.deletedAt ? '' : comment.body, author_user_id: comment.authorUserId, author_session_id: comment.authorSessionId,
+      body: comment.deletedAt ? '' : comment.body, ...(screenshots.has(comment.commentId) ? { screenshot_url: screenshots.get(comment.commentId)! } : {}), author_user_id: comment.authorUserId, author_session_id: comment.authorSessionId,
     })),
   })));
 }
@@ -258,7 +267,7 @@ export async function rebuildArtifactCommentCreatePrompt(jobId: string, targetKe
 }
 
 export async function rebuildArtifactCommentContinuePrompt(row: Pick<typeof sessionLifecycleCommands.$inferSelect,
-  'accountId' | 'projectId' | 'sessionId' | 'artifactId' | 'payload' | 'actorUserId' | 'idempotencyKey'>): Promise<string> {
+  'accountId' | 'projectId' | 'sessionId' | 'artifactId' | 'payload' | 'actorUserId' | 'idempotencyKey'>, onCurrentSource?: (loaded: Awaited<ReturnType<typeof source>>, text: string) => Promise<void>): Promise<string> {
   const digest = row.payload.artifactCommentDigest as { deliveries?: Array<{ job_id: string; target_key: string }> } | undefined;
   const references = digest?.deliveries ?? [row.payload.artifactCommentDelivery as { job_id: string; target_key: string }];
   if (!references.length || references.some((reference) => !reference)) throw invalid('The comment delivery context is missing');
@@ -281,9 +290,11 @@ export async function rebuildArtifactCommentContinuePrompt(row: Pick<typeof sess
     const loaded = await source({ ...payload, threadIds }, db, true);
     const version = await entryVersion(loaded.artifact);
     if (!version) throw invalid('The Artifact entry no longer exists');
-    return makePrompt(loaded, loaded.artifact, version);
+    const text = makePrompt(loaded, loaded.artifact, version);
+    await onCurrentSource?.(loaded, text);
+    return text;
   } catch (error) {
-    if (error instanceof ArtifactCommentDeliveryError) for (const reference of references) await reconcileRefusedDelivery(row, reference);
+    if (error instanceof ArtifactCommentDeliveryError || error instanceof ArtifactCommentScreenshotError && error.status === 413) for (const reference of references) await reconcileRefusedDelivery(row, reference, error instanceof ArtifactCommentScreenshotError ? SCREENSHOT_LIMIT_MESSAGE : FAILURE);
     throw error;
   }
 }
@@ -291,6 +302,7 @@ export async function rebuildArtifactCommentContinuePrompt(row: Pick<typeof sess
 async function reconcileRefusedDelivery(
   row: Pick<typeof sessionLifecycleCommands.$inferSelect, 'accountId' | 'projectId' | 'artifactId'>,
   reference: { job_id: string; target_key: string },
+  message = FAILURE,
 ) {
   if (!row.artifactId || !reference || !isUuid(reference.job_id)) return;
   await db.transaction(async (tx) => {
@@ -318,7 +330,7 @@ async function reconcileRefusedDelivery(
       }
       if (thread.agentState === 'paused' && thread.agentError === null) continue;
       if (!removed) {
-        await tx.update(artifactCommentThreads).set({ agentState: 'paused', agentError: FAILURE }).where(eq(artifactCommentThreads.threadId, thread.threadId));
+        await tx.update(artifactCommentThreads).set({ agentState: 'paused', agentError: message }).where(eq(artifactCommentThreads.threadId, thread.threadId));
         continue;
       }
       const remaining: ArtifactCommentTarget[] = [];
@@ -388,6 +400,7 @@ export async function runArtifactCommentAgentJob(job: Job): Promise<void> {
         text = makePrompt(loaded, loaded.artifact, version);
       }
       if (target.created || target.createKey) {
+        await assertScreenshotReferences(loaded.artifact, screenshotReferences(loaded.artifact, loaded.comments, config.KORTIX_URL), text);
         const key = target.createKey ?? target.key;
         if (target.created) {
           const { createSession } = await import('../projects/surface');
@@ -416,10 +429,11 @@ export async function runArtifactCommentAgentJob(job: Job): Promise<void> {
       await deliverToExisting(job, payload, target, loaded, authority.actor, text, version);
     } catch (error) {
       if (error instanceof ArtifactCommentDeliveryError && error.message === 'The comment delivery claim expired') throw error;
-      const terminal = error instanceof ArtifactCommentDeliveryError || (error instanceof Error && error.name === 'ArtifactCommentAuthorityError');
+      const terminal = error instanceof ArtifactCommentDeliveryError || (error instanceof ArtifactCommentScreenshotError && error.status === 413) || (error instanceof Error && error.name === 'ArtifactCommentAuthorityError');
       if (terminal) {
         target.status = 'failed';
-        target.error = FAILURE;
+        if (error instanceof ArtifactCommentScreenshotError) target.errorCode = error.code;
+        target.error = error instanceof ArtifactCommentScreenshotError && error.code === 'artifact_comment_screenshot_limit' ? SCREENSHOT_LIMIT_MESSAGE : FAILURE;
         await db.transaction(async (tx) => {
           await saveProgress(tx, job, payload);
           await updateThreadDeliveryState(tx, payload);
@@ -446,10 +460,11 @@ async function agents(job: Job): Promise<void> {
     const terminal = error instanceof ArtifactCommentDeliveryError || (error instanceof Error && error.name === 'ArtifactCommentAuthorityError');
     if (terminal || job.attempts >= job.maxAttempts) {
       const payload = job.payload as ArtifactCommentAgentPayload;
+      const failureMessage = payload.targets?.some(target => target.errorCode === 'artifact_comment_screenshot_limit') ? SCREENSHOT_LIMIT_MESSAGE : FAILURE;
       await db.transaction(async (tx) => {
         const [claim] = await tx.select({ id: jobQueue.jobId }).from(jobQueue).where(ownClaim(job)).for('update');
         if (!claim) return;
-        await tx.update(artifactCommentThreads).set({ agentState: 'paused', agentError: FAILURE })
+        await tx.update(artifactCommentThreads).set({ agentState: 'paused', agentError: failureMessage })
           .where(and(eq(artifactCommentThreads.artifactId, payload.artifactId), inArray(artifactCommentThreads.threadId, payload.threadIds)));
         if (terminal) await tx.update(jobQueue).set({ status: 'dead', lockedUntil: null, lastError: FAILURE }).where(ownClaim(job));
       });
@@ -499,8 +514,14 @@ export async function sendArtifactCommentThreads(artifact: ArtifactRow, actor: A
   const key = `artifact-comments:batch:${batch}`;
   const threadIds = [...new Set(input.thread_ids)].sort();
   const payload: ArtifactCommentAgentPayload = { artifactId: artifact.artifactId, threadIds, actor, callerSessionId, recipients: [], manual: true };
-  await source(payload);
+  const currentSource = await source(payload);
   const { agentName, session } = await resolveArtifactCommentSendTarget(artifact, actor, callerSessionId, input.agent);
+  const screenshots = screenshotReferences(artifact, currentSource.comments, config.KORTIX_URL);
+  if (screenshots.length && (await screenshotTargetCapability(artifact.projectId, session?.sessionId)).mayNeedImages) {
+    const version = await entryVersion(artifact);
+    if (!version) throw invalid('The Artifact entry no longer exists');
+    await assertScreenshotReferences(artifact, screenshots, makePrompt(currentSource, artifact, version));
+  }
   payload.recipients = [{ recipientKey: session ? `session:${session.sessionId}` : `agent:${agentName}`, ...(session ? { sessionId: session.sessionId } : {}), agentName, implicit: true }];
   await db.transaction(async (tx) => {
     const [locked] = await tx.select({ id: artifacts.artifactId }).from(artifacts).where(eq(artifacts.artifactId, artifact.artifactId)).for('update');
@@ -520,6 +541,10 @@ export async function sendArtifactCommentThreads(artifact: ArtifactRow, actor: A
     [job] = await db.select().from(jobQueue).where(and(eq(jobQueue.queue, AGENTS), eq(jobQueue.jobKey, key)));
   }
   const target = (job!.payload as ArtifactCommentAgentPayload).targets?.[0];
+  if (target?.status === 'failed' && target.errorCode === 'artifact_comment_screenshot_limit') {
+    const { ARTIFACT_SCREENSHOT_DELIVERY_LIMITS } = await import('./comment-screenshot-parts');
+    throw new ArtifactCommentScreenshotError(413, target.errorCode, SCREENSHOT_LIMIT_MESSAGE, ARTIFACT_SCREENSHOT_DELIVERY_LIMITS);
+  }
   if (!target || target.initialized === false || target.status === 'failed' || target.status === 'skipped') throw invalid('The comment batch could not be sent');
   return { session_id: target.sessionId, created: target.created };
 }
