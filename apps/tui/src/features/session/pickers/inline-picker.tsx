@@ -190,7 +190,7 @@ export function InlinePicker({
       {shortcuts ? null : (
         <>
           <text fg={query ? theme.fg : theme.faint}>
-            <span fg={theme.accent}>{'› '}</span>
+            <span fg={theme.faint}>{'› '}</span>
             {query || 'Type to filter'}
           </text>
           <text fg={theme.border}>{'─'.repeat(inner)}</text>
@@ -208,7 +208,7 @@ export function InlinePicker({
           const fg = isHeader ? theme.faint : isSelected ? theme.fg : theme.dim;
           return (
             <text key={item.id} fg={fg} bg={isSelected ? theme.bg : undefined}>
-              <span fg={theme.accent}>{isSelected ? '▌' : ' '}</span>
+              <span fg={theme.brand}>{isSelected ? '▌' : ' '}</span>
               {padded}
             </text>
           );

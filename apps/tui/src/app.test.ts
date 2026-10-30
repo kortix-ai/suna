@@ -23,8 +23,11 @@ describe('focusOrder', () => {
     ]);
   });
 
-  test('a narrow terminal drops the sidebar from the ring', () => {
-    expect(focusOrder('session', false, true)).toEqual(['transcript', 'composer', 'terminal']);
+  test('with the sidebar hidden, Tab never leaves the input (an open terminal is the one exception)', () => {
+    expect(focusOrder('session', false, false)).toEqual(['composer']);
+    expect(focusOrder('session', false, true)).toEqual(['composer', 'terminal']);
+    expect(nextFocus('composer', focusOrder('session', false, false), 1)).toBe('composer');
+    expect(nextFocus('composer', focusOrder('session', false, false), -1)).toBe('composer');
   });
 
   test('a secondary screen is one region, and has no terminal panel', () => {

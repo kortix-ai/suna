@@ -225,7 +225,7 @@ export function AuditView({
             fg={isCursor ? theme.fg : theme.dim}
             bg={isCursor ? theme.surface : undefined}
           >
-            <span fg={theme.accent}>{isCursor && focused ? GLYPH.selected : ' '}</span>
+            <span fg={theme.brand}>{isCursor && focused ? GLYPH.selected : ' '}</span>
             <span fg={toneOf(row)}>{body.slice(0, 2)}</span>
             {body.slice(2)}
           </text>

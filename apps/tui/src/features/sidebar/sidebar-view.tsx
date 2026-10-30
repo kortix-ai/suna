@@ -371,7 +371,7 @@ export function SidebarView({
         if (mode === 'rename' && isCursor) {
           return (
             <box key={entry.key} flexDirection="row" width={width}>
-              <text fg={theme.accent}>{GLYPH.selected}</text>
+              <text fg={theme.brand}>{GLYPH.selected}</text>
               <input
                 focused
                 flexGrow={1}
@@ -395,7 +395,7 @@ export function SidebarView({
             fg={isCursor || isOpenSession ? theme.fg : theme.dim}
             bg={isCursor ? theme.surface : undefined}
           >
-            <span fg={theme.accent}>{mark}</span>
+            <span fg={theme.brand}>{mark}</span>
             <span fg={entry.glyphColor ?? theme.dim}>{body.slice(0, prefix)}</span>
             {body.slice(prefix)}
           </text>

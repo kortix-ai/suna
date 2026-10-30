@@ -392,7 +392,7 @@ export function FilesView({
                 : theme.dim;
           return (
             <text key={row.id} fg={fg} bg={isCursor ? theme.surface : undefined}>
-              <span fg={theme.accent}>{isCursor && focused ? GLYPH.selected : ' '}</span>
+              <span fg={theme.brand}>{isCursor && focused ? GLYPH.selected : ' '}</span>
               {body}
             </text>
           );

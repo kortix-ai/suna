@@ -2,13 +2,16 @@
  * Terminal design tokens.
  *
  * The rule from CLAUDE.md's frontend standard, translated to a terminal:
- * monochrome surfaces, one earned accent, no decorative color. The accent is
- * the terminal turquoise the `kortix` CLI banner already prints
- * (`apps/cli/src/banner.ts`, ANSI cyan), so the CLI and the TUI read as one
- * product (kortix-brand `decisions.md`, D30). It marks the wordmark, focus,
- * the selection bar, the caret and the slash-menu highlight. Nothing else. Every color a
- * component draws comes from this file — a component never writes a hex
- * literal inline, exactly as a web surface never writes `bg-emerald-500`.
+ * monochrome surfaces, one earned accent, no decorative color. `accent` is
+ * the monochrome emphasis (white on dark). `brand` is the terminal turquoise
+ * the `kortix` CLI banner prints (`apps/cli/src/banner.ts`, ANSI cyan; brand
+ * decision D31), rationed to three marks: the KORTIX wordmark, the one-column
+ * `▌` selection marker, and the text cursor. Focus borders, prompts and
+ * highlights stay monochrome: turquoise on every focused frame was too much.
+ *
+ * Every color a component draws comes from this file — a component never
+ * writes a hex literal inline, exactly as a web surface never writes
+ * `bg-emerald-500`.
  *
  * Values are 24-bit hex strings. OpenTUI parses them through `RGBA.fromHex`
  * (`@opentui/core` `lib/RGBA.d.ts`), so any renderable prop that takes a color
@@ -22,8 +25,10 @@ export interface Theme {
   dim: string;
   /** Tertiary text: disabled, placeholder. */
   faint: string;
-  /** The one accent. Selection, focus, the active row marker. */
+  /** Monochrome emphasis: highlighted text, the prompt glyph, key names. */
   accent: string;
+  /** The terminal turquoise (D31). Only the wordmark, the `▌` marker, the cursor. */
+  brand: string;
   /** Text drawn on top of `accent`. */
   onAccent: string;
   /** Panel border, unfocused. */
@@ -46,10 +51,11 @@ const DARK: Theme = {
   fg: '#e6e6e6',
   dim: '#9b9b9b',
   faint: '#6b6b6b',
-  accent: '#2ec4c4',
+  accent: '#ffffff',
+  brand: '#2ec4c4',
   onAccent: '#0b0b0b',
   border: '#2e2e2e',
-  borderFocus: '#2ec4c4',
+  borderFocus: '#6b6b6b',
   bg: '#0b0b0b',
   surface: '#1a1a1a',
   danger: '#e06c6c',
@@ -61,10 +67,11 @@ const LIGHT: Theme = {
   fg: '#1a1a1a',
   dim: '#5c5c5c',
   faint: '#8a8a8a',
-  accent: '#0f7f80',
+  accent: '#0b0b0b',
+  brand: '#0f7f80',
   onAccent: '#ffffff',
   border: '#cfcfcf',
-  borderFocus: '#0f7f80',
+  borderFocus: '#8a8a8a',
   bg: '#fbfbfb',
   surface: '#eeeeee',
   danger: '#b23c3c',

@@ -323,6 +323,7 @@ export function SessionView({
               <Transcript
                 session={session}
                 focused={focus === 'transcript'}
+                pageKeys={focus === 'composer'}
                 width={innerWidth}
                 height={rows}
                 onToast={onToast}

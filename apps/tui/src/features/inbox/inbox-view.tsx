@@ -168,7 +168,7 @@ export function InboxView({
             fg={isCursor ? theme.fg : row.read ? theme.dim : theme.fg}
             bg={isCursor ? theme.surface : undefined}
           >
-            <span fg={theme.accent}>{isCursor && focused ? GLYPH.selected : ' '}</span>
+            <span fg={theme.brand}>{isCursor && focused ? GLYPH.selected : ' '}</span>
             {body.slice(0, 2)}
             <span fg={TONE_COLOR[row.tone]}>{body.slice(2, 3)}</span>
             {body.slice(3)}

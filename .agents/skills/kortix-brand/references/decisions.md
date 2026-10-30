@@ -14,8 +14,8 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ### D31 The terminal accent is turquoise; the ASCII wordmark is sanctioned in the CLI and the TUI
 - **Date:** 2026-10-30
-- **Decision:** The CLI and the TUI share one accent, `terminal-accent` (turquoise; the CLI prints it as ANSI cyan). It marks the block-letter KORTIX wordmark, focus borders, the selection bar, the caret and the slash-menu highlight, and nothing else: the rest stays monochrome. The ASCII wordmark in `apps/cli/src/banner.ts` is sanctioned on the CLI landing screen and on the TUI boot and empty-session splash. Customer output (D8c) is not affected.
-- **Why:** founder, 2026-10-30, on the session-first TUI: "add hints of that turqoise accent color [...] like a dope as booting KORTIX THING", then chose "Turquoise, CLI cyan" over `kortix-base` so the CLI and the TUI read as one product.
+- **Decision:** The CLI and the TUI share one accent, `terminal-accent` (turquoise; the CLI prints it as ANSI cyan). It marks three things only: the block-letter KORTIX wordmark, the one-column `▌` selection marker, and the text cursor. Focus borders, prompts and highlights stay monochrome. The ASCII wordmark in `apps/cli/src/banner.ts` is sanctioned on the CLI landing screen and on the TUI boot and empty-session splash. Customer output (D8c) is not affected.
+- **Why:** founder, 2026-10-30, on the session-first TUI: "add hints of that turqoise accent color [...] like a dope as booting KORTIX THING", then chose "Turquoise, CLI cyan" over `kortix-base` so the CLI and the TUI read as one product. After a first build that also drew focus borders, prompts and highlights in it: "way toooo much turqoise", so it is rationed to the three marks.
 - **Where:** `visual/visual-system.json` (`color.terminal.terminal-accent`), `visual/color.md` (CLI rule), `apps/tui/src/theme.ts`, `apps/tui/src/ui/splash.tsx`, `apps/cli/src/banner.ts`.
 - **Supersedes:** the "ASCII wordmark: OPEN" status for the CLI and the TUI in `visual/brandmark.md` and `visual/color.md`.
 - **Source:** the `tui-session-first` branch.

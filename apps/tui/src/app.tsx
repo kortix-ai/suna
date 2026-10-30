@@ -94,9 +94,11 @@ const COMMAND_FLAGS = [
 /**
  * The Tab ring for a route.
  *
- * SPEC §6 order: sidebar → transcript → composer → terminal. The transcript
- * joins only when a session is open (the draft has none), the terminal only
- * while its panel is open.
+ * Session-first: with the sidebar hidden the input is the only place to be,
+ * so Tab never leaves it (the terminal joins only while its panel is open).
+ * PgUp/PgDn scroll the transcript from the input. With the sidebar shown the
+ * ring is sidebar → transcript → composer → terminal; the transcript joins
+ * only when a session is open (the draft has none).
  */
 export function focusOrder(
   route: Route,
@@ -106,7 +108,7 @@ export function focusOrder(
 ): Focus[] {
   const order: Focus[] = showSidebar ? ['sidebar'] : [];
   if (route === 'session') {
-    if (hasSession) order.push('transcript');
+    if (hasSession && showSidebar) order.push('transcript');
     order.push('composer');
     if (terminalOpen && hasSession) order.push('terminal');
   } else {

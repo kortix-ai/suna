@@ -243,7 +243,9 @@ completes, `Enter` runs. `/name args` runs with arguments (`/rename Fix the
 login bug`, `/sessions fix`). A command that cannot run here is listed dimmed
 with the reason, and Enter on it says why. An unknown `/word` is refused and
 kept; a path such as `/etc/hosts is broken` is sent as a prompt. `Esc` three
-times within 4 s stops a running turn, the same rule as the web chat.
+times within 4 s stops a running turn, the same rule as the web chat. With the
+sidebar hidden, `Tab` never leaves the input (an open terminal is the one
+exception); `PgUp`/`PgDn` scroll the transcript from it.
 
 The `?` overlay (`/help`) prints these tables live: they are generated from
 `src/commands/registry.ts`, `src/keymap.ts` and every feature's `keys.ts`, so a
@@ -304,7 +306,7 @@ _41 commands._
 | --- | --- |
 | `Ctrl+c / Ctrl+q` | Quit. Ctrl+C asks once, then quits on the second press. Inside the terminal panel Ctrl+C belongs to the shell and only Ctrl+Q quits. |
 | `?` | Show this help. Not while a text input or the terminal has focus. |
-| `Tab` | Focus the next region: sidebar → transcript → composer → terminal. |
+| `Tab` | Focus the next region: sidebar → transcript → composer → terminal. With the sidebar hidden, Tab stays in the input (or moves to an open terminal). |
 | `Shift+Tab` | Focus the previous region. |
 | `Ctrl+p` | Pick a session above the input. Same as /sessions. |
 | `Ctrl+n` | Start a new session. Same as /new. |
@@ -343,8 +345,8 @@ _41 commands._
 | --- | --- |
 | `j / ↓` | Scroll down one line. |
 | `k / ↑` | Scroll up one line. |
-| `PgDn` | Scroll down one screen. |
-| `PgUp` | Scroll up one screen. At the top, load older turns. |
+| `PgDn` | Scroll down one screen. Works from the input too. |
+| `PgUp` | Scroll up one screen. At the top, load older turns. Works from the input too. |
 | `g` | Jump to the oldest turn. |
 | `G` | Jump to the newest turn and re-lock autoscroll. |
 | `J` | Move the cursor to the next collapsible row. |

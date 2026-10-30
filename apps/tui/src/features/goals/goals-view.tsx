@@ -249,7 +249,7 @@ export function GoalsView({
               fg={isCursor ? theme.fg : line.style ? DETAIL_COLOR[line.style] : theme.fg}
               bg={isCursor ? theme.surface : undefined}
             >
-              <span fg={theme.accent}>{isCursor && focused ? GLYPH.selected : ' '}</span>
+              <span fg={theme.brand}>{isCursor && focused ? GLYPH.selected : ' '}</span>
               {line.text}
             </text>
           );
@@ -321,7 +321,7 @@ export function GoalsView({
             fg={isCursor ? theme.fg : theme.dim}
             bg={isCursor ? theme.surface : undefined}
           >
-            <span fg={theme.accent}>{isCursor && focused ? GLYPH.selected : ' '}</span>
+            <span fg={theme.brand}>{isCursor && focused ? GLYPH.selected : ' '}</span>
             <span fg={TONE_COLOR[row.tone]}>{body.slice(0, 1)}</span>
             {body.slice(1)}
           </text>

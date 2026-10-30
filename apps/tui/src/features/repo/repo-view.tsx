@@ -525,7 +525,7 @@ function TreeColumn(props: TreeColumnProps) {
         const fg = row.error ? theme.danger : isCursor ? theme.fg : theme.dim;
         return (
           <text key={row.id} fg={fg} bg={isCursor ? theme.surface : undefined}>
-            <span fg={theme.accent}>{isCursor && focused ? GLYPH.selected : ' '}</span>
+            <span fg={theme.brand}>{isCursor && focused ? GLYPH.selected : ' '}</span>
             {body}
           </text>
         );
@@ -600,7 +600,7 @@ function BranchPicker({
             fg={isCursor ? theme.fg : theme.dim}
             bg={isCursor ? theme.surface : undefined}
           >
-            <span fg={theme.accent}>{isCursor ? GLYPH.selected : ' '}</span>
+            <span fg={theme.brand}>{isCursor ? GLYPH.selected : ' '}</span>
             {layoutRow(row.isDefault ? `${name} (default)` : name, right, bodyWidth)}
           </text>
         );
@@ -647,7 +647,7 @@ function HistoryPane({ state, cursor, now, width, height }: HistoryPaneProps) {
             fg={isCursor ? theme.fg : theme.dim}
             bg={isCursor ? theme.surface : undefined}
           >
-            <span fg={theme.accent}>{isCursor ? GLYPH.selected : ' '}</span>
+            <span fg={theme.brand}>{isCursor ? GLYPH.selected : ' '}</span>
             <span fg={theme.faint}>{row.shortHash}</span>
             {layoutRow(` ${row.subject}`, right, bodyWidth - row.shortHash.length - 1)}
           </text>

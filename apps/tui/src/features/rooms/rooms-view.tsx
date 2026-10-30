@@ -211,7 +211,7 @@ export function RoomsView({
                 fg={isCursor ? theme.fg : theme.dim}
                 bg={isCursor ? theme.surface : undefined}
               >
-                <span fg={theme.accent}>{isCursor && focused ? GLYPH.selected : ' '}</span>
+                <span fg={theme.brand}>{isCursor && focused ? GLYPH.selected : ' '}</span>
                 {memberRowText(member, width)}
               </text>
             );
@@ -276,7 +276,7 @@ export function RoomsView({
             fg={isCursor ? theme.fg : theme.dim}
             bg={isCursor ? theme.surface : undefined}
           >
-            <span fg={theme.accent}>{isCursor && focused ? GLYPH.selected : ' '}</span>
+            <span fg={theme.brand}>{isCursor && focused ? GLYPH.selected : ' '}</span>
             {roomRowText(room, width)}
           </text>
         );

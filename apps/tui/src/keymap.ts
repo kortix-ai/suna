@@ -188,7 +188,8 @@ export const KEYMAP: readonly Binding[] = [
     id: 'focus.next',
     scope: 'global',
     chords: [chord('tab')],
-    description: 'Focus the next region: sidebar → transcript → composer → terminal.',
+    description:
+      'Focus the next region: sidebar → transcript → composer → terminal. With the sidebar hidden, Tab stays in the input (or moves to an open terminal).',
   },
   {
     id: 'focus.prev',

@@ -312,7 +312,7 @@ export function PromptInput({
         flexDirection="row"
         overflow="hidden"
       >
-        <text fg={focused ? theme.accent : theme.faint} wrapMode="none" width={2} flexShrink={0}>
+        <text fg={focused ? theme.fg : theme.faint} wrapMode="none" width={2} flexShrink={0}>
           ›
         </text>
         <textarea
@@ -327,7 +327,7 @@ export function PromptInput({
           focusedTextColor={theme.fg}
           backgroundColor={theme.bg}
           focusedBackgroundColor={theme.bg}
-          cursorColor={theme.accent}
+          cursorColor={theme.brand}
           onKeyDown={onKeyDown}
           onContentChange={() => {
             const value = textareaRef.current?.plainText ?? '';

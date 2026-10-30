@@ -4,7 +4,7 @@
  *
  * Shown while the TUI boots (`features/boot`) and at the head of an empty
  * session, the way a fresh shell prints its banner. Brand decision D31
- * sanctions the wordmark here, in `terminal-accent` (`theme.accent`), and the
+ * sanctions the wordmark here, in `terminal-accent` (`theme.brand`), and the
  * art itself is the one copy the CLI banner prints too
  * (`@kortix/shared/wordmark`).
  *
@@ -52,12 +52,12 @@ export function Splash({ width, tagline, lines = [], center = false }: SplashPro
     <box flexDirection="column" paddingLeft={indent} flexShrink={0}>
       {fits ? (
         KORTIX_WORDMARK.map((row) => (
-          <text key={row} fg={theme.accent} wrapMode="none" height={1}>
+          <text key={row} fg={theme.brand} wrapMode="none" height={1}>
             {row}
           </text>
         ))
       ) : (
-        <text fg={theme.accent} wrapMode="none" height={1}>
+        <text fg={theme.brand} wrapMode="none" height={1}>
           kortix
         </text>
       )}

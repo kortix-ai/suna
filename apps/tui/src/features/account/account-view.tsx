@@ -454,7 +454,7 @@ export function AccountView({
               fg={isCursor ? theme.fg : row.dim ? theme.faint : theme.dim}
               bg={isCursor ? theme.surface : undefined}
             >
-              <span fg={theme.accent}>{isCursor && focused ? '▌' : ' '}</span>
+              <span fg={theme.brand}>{isCursor && focused ? '▌' : ' '}</span>
               {layoutRow(row.label, row.right, Math.max(bodyWidth - 1, 0))}
             </text>
           );

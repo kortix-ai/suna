@@ -369,7 +369,7 @@ export function ApprovalsView({
       <text fg={theme.dim}>
         {SEGMENTS.map((seg) => (
           <span key={seg} fg={seg === segment ? theme.fg : theme.faint}>
-            <span fg={theme.accent}>{seg === segment ? GLYPH.selected : ' '}</span>
+            <span fg={theme.brand}>{seg === segment ? GLYPH.selected : ' '}</span>
             {SEGMENT_LABEL[seg]}
             {seg === 'needs_you' && needsYouCount !== null ? ` ${needsYouCount}` : ''}
             {'  '}
@@ -394,7 +394,7 @@ export function ApprovalsView({
             fg={isCursor ? theme.fg : theme.dim}
             bg={isCursor ? theme.surface : undefined}
           >
-            <span fg={theme.accent}>{isCursor && focused ? GLYPH.selected : ' '}</span>
+            <span fg={theme.brand}>{isCursor && focused ? GLYPH.selected : ' '}</span>
             <span fg={TONE_COLOR[row.tone]}>{rowText.slice(0, 1)}</span>
             {rowText.slice(1)}
           </text>

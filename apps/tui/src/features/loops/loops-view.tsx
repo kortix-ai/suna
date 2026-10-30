@@ -219,7 +219,7 @@ export function LoopsView({
   if (mode === 'create') {
     const line = (name: 'prompt' | 'schedule', label: string, value: string, placeholder: string) => (
       <text fg={field === name ? theme.fg : theme.dim}>
-        <span fg={theme.accent}>{field === name ? GLYPH.selected : ' '}</span>
+        <span fg={theme.brand}>{field === name ? GLYPH.selected : ' '}</span>
         <span fg={theme.faint}>{label.padEnd(LABEL_WIDTH - 1, ' ')}</span>
         {value ? `${value}${field === name ? '▏' : ''}` : field === name ? '▏' : placeholder}
       </text>
@@ -283,7 +283,7 @@ export function LoopsView({
             fg={isCursor ? theme.fg : theme.dim}
             bg={isCursor ? theme.surface : undefined}
           >
-            <span fg={theme.accent}>{isCursor && focused ? GLYPH.selected : ' '}</span>
+            <span fg={theme.brand}>{isCursor && focused ? GLYPH.selected : ' '}</span>
             <span fg={stateOf(row).color}>{body.slice(0, 2)}</span>
             {body.slice(2)}
           </text>

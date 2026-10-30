@@ -82,7 +82,7 @@ export function SlashMenu({ entries, selected, width, query }: SlashMenuProps) {
           const nameColor = unavailable ? theme.faint : isSelected ? theme.accent : theme.fg;
           return (
             <box key={`${entry.source}:${entry.name}`} flexDirection="row" height={1}>
-              <text fg={theme.accent} wrapMode="none">
+              <text fg={theme.brand} wrapMode="none">
                 {isSelected ? glyph.selected : ' '}
               </text>
               <text fg={nameColor} wrapMode="none">
