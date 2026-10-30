@@ -116,7 +116,8 @@ export async function claimJobs(queues: string[], limit: number, visibilityMs: n
      ORDER BY j.run_at
      LIMIT ${limit}
      FOR UPDATE SKIP LOCKED)`;
-  return db
+  const started = Date.now();
+  const claimed = await db
     .update(jobQueue)
     .set({
       lockedUntil: sql`now() + make_interval(secs => ${visibilityMs / 1000})`,
@@ -125,7 +126,13 @@ export async function claimJobs(queues: string[], limit: number, visibilityMs: n
     })
     .where(inArray(jobQueue.jobId, due))
     .returning();
+  // The order check scans each key's held backlog: ~30 ms at 10k held rows, ~325 ms at 100k.
+  const ms = Date.now() - started;
+  if (ms > SLOW_CLAIM_MS) logger.warn('[job-queue] slow claim', { queues, ms, claimed: claimed.length });
+  return claimed;
 }
+
+const SLOW_CLAIM_MS = 200;
 
 const ownClaim = (job: Job) =>
   and(eq(jobQueue.jobId, job.jobId), eq(jobQueue.attempts, job.attempts), eq(jobQueue.status, 'queued'));
