@@ -107,10 +107,18 @@ describe('a background subagent turn end', () => {
       `Continue your task with this result. To send this subagent a follow-up, call \`agent\` with task_id ${CHILD}. To read its whole transcript: \`kortix sessions log ${CHILD}\`.`,
     ].join('\n'));
 
-    // A later turn of the same child (a follow-up) is a new event.
+    // A later turn of the same child (a follow-up) is a new event. While the
+    // first notice still waits, the second joins its row: one delivery.
     transcript = [...transcript, msg('user', 'and the tests?'), msg('assistant', 'Tests pass.')];
     expect(await notifyParentOfSubagentTurn({ sessionId: CHILD, status: 'idle', turnMessageId: 'msg_turn_2' })).toBe(true);
-    expect((await parentRows()).map((r) => r.payload.text.includes('<task_result>\nTests pass.\n</task_result>'))).toEqual([false, true]);
+    const [joined, ...rest] = await parentRows();
+    expect(rest).toHaveLength(0);
+    expect(joined!.payload.noticeKeys).toEqual([`subagent-finished:${CHILD}:msg_turn_1`, `subagent-finished:${CHILD}:msg_turn_2`]);
+    expect((joined!.payload.text as string).startsWith(`${text}\n\n`)).toBe(true);
+    expect(joined!.payload.parts).toEqual([{ type: 'text', text: joined!.payload.text, synthetic: true }]);
+    expect(joined!.payload.text).toContain('<task_result>\nTests pass.\n</task_result>');
+    // A repeat of the second notice's key inserts nothing either.
+    expect(await notifyParentOfSubagentTurn({ sessionId: CHILD, status: 'idle', turnMessageId: 'msg_turn_2' })).toBe(false);
   });
 
   test('an error turn reports error with its cause; a stopped turn reports stopped', async () => {
@@ -118,7 +126,9 @@ describe('a background subagent turn end', () => {
     transcript = [msg('user', 'go'), msg('assistant', '', { name: 'APIError', message: 'model overloaded' })];
     await notifyParentOfSubagentTurn({ sessionId: CHILD, status: 'error', errorInfo: { name: 'APIError', message: 'model overloaded' }, turnMessageId: 'msg_e' });
     await notifyParentOfSubagentTurn({ sessionId: CHILD, status: 'error', errorInfo: { name: 'MessageAbortedError', message: 'aborted' }, turnMessageId: 'msg_s' });
-    const [error, stopped] = (await parentRows()).map((r) => r.payload.text as string);
+    // Both notices wait together, so they are one row: error first, then stopped.
+    const [both] = (await parentRows()).map((r) => r.payload.text as string);
+    const [error, stopped] = both!.split('\n\nA background subagent you started has finished.');
     expect(error).toContain('status: error\n');
     expect(error).toContain('<status>FAILED</status>');
     expect(error).toContain('<task_error>\nAPIError: model overloaded\n</task_error>');

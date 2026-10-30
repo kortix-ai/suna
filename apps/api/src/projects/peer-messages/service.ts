@@ -46,7 +46,7 @@ import {
 } from '@kortix/api-contract/multi-agent';
 import { projectSessions, projects, sessionLifecycleCommands, sessionPeerMessages } from '@kortix/db';
 import { peerMessagePromptText, type PeerMessageKind } from '@kortix/shared';
-import { and, desc, eq, gte, inArray, isNotNull, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNotNull, lte, or, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import type { Actor } from '../../iam/actor';
 import { logger } from '../../lib/logger';
@@ -557,11 +557,15 @@ export async function firePeerIdleNotices(input: {
   errorName?: string | null;
   excerpt: string | null;
 }): Promise<number> {
-  const due = await db.update(sessionPeerMessages)
+  // RETURNING reads the cleared row, so the live check is in the WHERE; a
+  // second statement drops the watches that lapsed unsent.
+  const live = await db.update(sessionPeerMessages)
     .set({ idleNoticeUntil: null })
-    .where(and(eq(sessionPeerMessages.toSessionId, input.sessionId), isNotNull(sessionPeerMessages.idleNoticeUntil)))
+    .where(and(eq(sessionPeerMessages.toSessionId, input.sessionId), gt(sessionPeerMessages.idleNoticeUntil, new Date())))
     .returning();
-  const live = due.filter((row) => row.idleNoticeUntil && row.idleNoticeUntil.getTime() > Date.now());
+  await db.update(sessionPeerMessages)
+    .set({ idleNoticeUntil: null })
+    .where(and(eq(sessionPeerMessages.toSessionId, input.sessionId), isNotNull(sessionPeerMessages.idleNoticeUntil)));
   if (live.length === 0) return 0;
   const senders = await db.select().from(projectSessions)
     .where(and(inArray(projectSessions.sessionId, [...new Set(live.map((row) => row.fromSessionId))]), liveSql));
