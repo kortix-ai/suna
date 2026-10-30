@@ -89,7 +89,7 @@ describe('harness ownership boundary', () => {
     const body = await response.json()
     expect(body).toMatchObject({
       daemon: 'ok',
-      capabilities: ['file.import', 'file.append', 'agent-config.env-gz.v1', 'runtime.turns.v1', 'runtime.retract.v1', 'session.subagents'],
+      capabilities: ['file.import', 'file.append', 'agent-config.env-gz.v1', 'runtime.turns.v1', 'runtime.retract.v1', 'runtime.actions.v1', 'runtime.log.v1', 'session.subagents'],
       status: 'ok',
       runtimeReady: true,
       boot_error: null,
