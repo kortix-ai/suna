@@ -89,6 +89,7 @@ describe('kortix tui — flags', () => {
       newSession: false,
       terminal: false,
       noSidebar: false,
+      sidebar: false,
       mouse: false,
       host: 'cloud',
       project: 'p1',
@@ -104,6 +105,7 @@ describe('kortix tui — flags', () => {
       newSession: false,
       terminal: false,
       noSidebar: false,
+      sidebar: false,
       mouse: false,
       project: 'p2',
       session: 's2',
@@ -128,6 +130,12 @@ describe('kortix tui — flags', () => {
       KORTIX_TUI_TERMINAL: '1',
     });
     expect(tuiChildEnv(parseTuiFlags([]), {})).toEqual({});
+  });
+
+  test('--sidebar travels as KORTIX_TUI_SIDEBAR=1', () => {
+    const flags = parseTuiFlags(['--sidebar']);
+    expect(flags).toMatchObject({ sidebar: true, noSidebar: false });
+    expect(tuiChildEnv(flags, {}).KORTIX_TUI_SIDEBAR).toBe('1');
   });
 
   test('--no-sidebar and --mouse travel as env too', () => {

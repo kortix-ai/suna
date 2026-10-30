@@ -6,8 +6,8 @@ import type { TestRendererSetup } from '@opentui/core/testing';
 import { testRender } from '@opentui/react/test-utils';
 
 import { initKortix, resetKortixForTest } from '../../../kortix.ts';
+import type { CommandContext } from '../../../commands/registry.ts';
 import { Composer, type SessionState } from './composer.tsx';
-import { BUILTIN_COMMANDS, commandItems, resolveCommandItem } from './slash-commands.ts';
 
 // React 19 needs this before `act`. See docs/opentui-notes.md.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -81,7 +81,7 @@ function fakeSession(spies: Spies, overrides: Partial<SessionState> = {}): Sessi
     defaultAgent: 'galileo',
     agentName: null,
     commands: [
-      { name: 'review', path: '.opencode/command/review.md', description: 'Review the diff' },
+      { name: 'deploy', path: '.kortix/commands/deploy.md', description: 'Ship the build' },
     ],
     picks: {
       model: null,
@@ -115,7 +115,18 @@ function newSpies(): Spies {
 
 let active: TestRendererSetup | null = null;
 
-async function mountComposer(session: SessionState, spies: Spies): Promise<TestRendererSetup> {
+const CONTEXT: CommandContext = {
+  hasProject: true,
+  hasSession: true,
+  hasAccount: true,
+  capabilities: null,
+};
+
+async function mountComposer(
+  session: SessionState,
+  spies: Spies,
+  onToast?: (message: string) => void,
+): Promise<TestRendererSetup> {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 } },
   });
@@ -127,10 +138,12 @@ async function mountComposer(session: SessionState, spies: Spies): Promise<TestR
         sessionId="session-1"
         focused
         width={60}
-        onCommand={spies.onCommand as unknown as (id: 'new') => void}
+        context={CONTEXT}
+        onCommand={spies.onCommand}
+        onToast={onToast}
       />
     </QueryClientProvider>,
-    { width: 60, height: 24 },
+    { width: 60, height: 30 },
   );
   active = setup;
   await setup.renderOnce();
@@ -168,7 +181,7 @@ describe('composer typing and sending', () => {
   test('the placeholder shows until the user types, then the text appears', async () => {
     const spies = newSpies();
     const setup = await mountComposer(fakeSession(spies), spies);
-    expect(frame(setup)).toContain('Type / for skills, commands, and files');
+    expect(frame(setup)).toContain('Type a prompt · / for commands');
 
     await act(async () => {
       await setup.mockInput.typeText('ship it', 1);
@@ -192,7 +205,7 @@ describe('composer typing and sending', () => {
     expect(spies.send).toHaveBeenCalledTimes(1);
     expect(spies.send.mock.calls[0]?.[0]).toBe('hello world');
     // Cleared: the placeholder is back and the text is gone.
-    expect(frame(setup)).toContain('Type / for skills, commands, and files');
+    expect(frame(setup)).toContain('Type a prompt · / for commands');
     expect(frame(setup)).not.toContain('hello world');
   });
 
@@ -228,13 +241,11 @@ describe('composer typing and sending', () => {
     expect(lines.some((line) => line.includes('first') && !line.includes('second'))).toBe(true);
   });
 
-  test('the footer states the model, effort and agent', async () => {
+  test('the tray states the model and the agent', async () => {
     const spies = newSpies();
     const setup = await mountComposer(fakeSession(spies), spies);
     const text = frame(setup);
-    expect(text).toContain('Auto');
     expect(text).toContain('galileo');
-    expect(text).toContain('Enter sends');
   });
 
   test('a send error renders one line under the composer', async () => {
@@ -246,10 +257,10 @@ describe('composer typing and sending', () => {
     expect(frame(setup)).toContain('billing: Out of credits');
   });
 
-  test('a busy session says Enter queues', async () => {
+  test('a busy session says the next prompt queues', async () => {
     const spies = newSpies();
     const setup = await mountComposer(fakeSession(spies, { isBusy: true }), spies);
-    expect(frame(setup)).toContain('Enter queues');
+    expect(frame(setup)).toContain('Type to queue the next prompt');
   });
 });
 
@@ -265,39 +276,27 @@ describe('escape', () => {
     expect(spies.cancel).not.toHaveBeenCalled();
   });
 
-  test('Esc twice on an empty busy composer stops the agent', async () => {
+  test('Esc ×3 on an empty busy input stops the turn; one or two never do', async () => {
     const spies = newSpies();
     const toasts: string[] = [];
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 } },
-    });
-    const setup = await testRender(
-      <QueryClientProvider client={queryClient}>
-        <Composer
-          session={fakeSession(spies, { isBusy: true })}
-          projectId="project-1"
-          sessionId="session-1"
-          focused
-          width={60}
-          onCommand={spies.onCommand as unknown as (id: 'new') => void}
-          onToast={(message) => toasts.push(message)}
-        />
-      </QueryClientProvider>,
-      { width: 60, height: 24 },
+    const setup = await mountComposer(fakeSession(spies, { isBusy: true }), spies, (message) =>
+      toasts.push(message),
     );
-    active = setup;
 
     await pressEscape(setup);
     expect(spies.cancel).not.toHaveBeenCalled();
-    expect(toasts).toContain('Esc again to stop');
-    expect(frame(setup)).toContain('Esc again to stop');
+    expect(toasts).toContain('Esc 2 more times to stop');
+
+    await pressEscape(setup);
+    expect(spies.cancel).not.toHaveBeenCalled();
+    expect(toasts).toContain('Esc once more to stop');
 
     await pressEscape(setup);
     expect(spies.cancel).toHaveBeenCalledTimes(1);
-    expect(spies.onCommand).toHaveBeenCalledWith('stop');
+    expect(toasts).toContain('Stopping…');
   });
 
-  test('Esc on an empty idle composer does nothing — the app owns back', async () => {
+  test('Esc on an empty idle input does nothing — the app owns back', async () => {
     const spies = newSpies();
     const setup = await mountComposer(fakeSession(spies), spies);
     await pressEscape(setup);
@@ -306,81 +305,122 @@ describe('escape', () => {
   });
 });
 
-describe('the / command palette', () => {
-  test('/ at column 0 opens the palette with the runtime command and the built-ins', async () => {
-    const spies = newSpies();
-    const setup = await mountComposer(fakeSession(spies), spies);
+describe('slash commands in the input', () => {
+  async function type(setup: TestRendererSetup, text: string): Promise<void> {
     await act(async () => {
-      await setup.mockInput.typeText('/', 1);
+      await setup.mockInput.typeText(text, 1);
     });
     await setup.renderOnce();
+  }
+  async function enter(setup: TestRendererSetup): Promise<void> {
+    await act(async () => {
+      setup.mockInput.pressEnter();
+    });
+    await setup.renderOnce();
+  }
 
+  test('/ opens the menu with the built-ins and the project command; the slash stays typed', async () => {
+    const spies = newSpies();
+    const setup = await mountComposer(fakeSession(spies), spies);
+    await type(setup, '/');
     const text = frame(setup);
-    expect(text).toContain('Commands');
-    expect(text).toContain('/review');
+    expect(text).toContain('/sessions');
     expect(text).toContain('/new');
-    expect(text).toContain('/model');
-    // The slash itself never reaches the buffer.
-    expect(text).toContain('Type / for skills, commands, and files');
+    expect(text).toContain('Tab complete');
+    await type(setup, 'dep');
+    expect(frame(setup)).toContain('/deploy');
   });
 
-  test('a mid-line slash stays text', async () => {
+  test('/sessions + Enter hands the command to the app', async () => {
     const spies = newSpies();
     const setup = await mountComposer(fakeSession(spies), spies);
+    await type(setup, '/sessions');
+    await enter(setup);
+    expect(spies.onCommand).toHaveBeenCalledWith('sessions', '');
+    expect(spies.send).not.toHaveBeenCalled();
+  });
+
+  test('a command with arguments carries them: /rename New title', async () => {
+    const spies = newSpies();
+    const setup = await mountComposer(fakeSession(spies), spies);
+    await type(setup, '/rename Fix the login bug');
+    expect(frame(setup)).toContain('/rename <title>');
+    await enter(setup);
+    expect(spies.onCommand).toHaveBeenCalledWith('rename', 'Fix the login bug');
+  });
+
+  test('an alias runs its command: /switch is /sessions', async () => {
+    const spies = newSpies();
+    const setup = await mountComposer(fakeSession(spies), spies);
+    await type(setup, '/switch');
+    await enter(setup);
+    expect(spies.onCommand).toHaveBeenCalledWith('sessions', '');
+  });
+
+  test('↓ then Enter runs the second row of the filtered menu', async () => {
+    const spies = newSpies();
+    const setup = await mountComposer(fakeSession(spies), spies);
+    // `/se`: sessions first, then the next prefix match.
+    await type(setup, '/se');
     await act(async () => {
-      await setup.mockInput.typeText('cd /workspace', 1);
+      setup.mockInput.pressArrow('down');
     });
-    await setup.renderOnce();
+    await enter(setup);
+    expect(spies.onCommand).toHaveBeenCalledTimes(1);
+    expect(spies.onCommand.mock.calls[0]?.[0]).not.toBe('sessions');
+  });
+
+  test('a project command runs through session.runCommand', async () => {
+    const spies = newSpies();
+    const setup = await mountComposer(fakeSession(spies), spies);
+    await type(setup, '/deploy');
+    await enter(setup);
+    expect(spies.runCommand).toHaveBeenCalledWith('deploy', '');
+  });
+
+  test('an unknown /word is refused and kept, never sent to the model', async () => {
+    const spies = newSpies();
+    const toasts: string[] = [];
+    const setup = await mountComposer(fakeSession(spies), spies, (message) => toasts.push(message));
+    await type(setup, '/nosuch thing');
+    await enter(setup);
+    expect(spies.send).not.toHaveBeenCalled();
+    expect(toasts.some((message) => message.startsWith('Unknown command /nosuch'))).toBe(true);
+    expect(frame(setup)).toContain('/nosuch thing');
+  });
+
+  test('a path is text: /etc/hosts is broken goes to the model', async () => {
+    const spies = newSpies();
+    const setup = await mountComposer(fakeSession(spies), spies);
+    await type(setup, '/etc/hosts is broken');
+    await enter(setup);
+    expect(spies.send).toHaveBeenCalledWith('/etc/hosts is broken');
+  });
+
+  test('a mid-line slash stays text and opens no menu', async () => {
+    const spies = newSpies();
+    const setup = await mountComposer(fakeSession(spies), spies);
+    await type(setup, 'cd /workspace');
     const text = frame(setup);
     expect(text).toContain('cd /workspace');
-    expect(text).not.toContain('Commands');
+    expect(text).not.toContain('Tab complete');
   });
 
-  test('picking /new calls onCommand("new") and closes the palette', async () => {
+  test('/stop stops the running turn inside the composer', async () => {
     const spies = newSpies();
-    const setup = await mountComposer(fakeSession(spies), spies);
-    await act(async () => {
-      await setup.mockInput.typeText('/', 1);
-    });
-    // Filter down to the built-in, then take it.
-    await act(async () => {
-      await setup.mockInput.typeText('new', 1);
-    });
-    await setup.renderOnce();
-    expect(frame(setup)).toContain('/new');
-
-    await act(async () => {
-      setup.mockInput.pressEnter();
-    });
-    await setup.renderOnce();
-
-    expect(spies.onCommand).toHaveBeenCalledWith('new');
-    expect(frame(setup)).not.toContain('Commands');
+    const setup = await mountComposer(fakeSession(spies, { isBusy: true }), spies);
+    await type(setup, '/stop');
+    await enter(setup);
+    expect(spies.cancel).toHaveBeenCalledTimes(1);
+    expect(spies.onCommand).not.toHaveBeenCalled();
   });
 
-  test('picking a runtime command runs it through session.runCommand', async () => {
+  test('Esc closes the menu without sending', async () => {
     const spies = newSpies();
     const setup = await mountComposer(fakeSession(spies), spies);
-    await act(async () => {
-      await setup.mockInput.typeText('/', 1);
-    });
-    await act(async () => {
-      await setup.mockInput.typeText('review', 1);
-    });
-    await act(async () => {
-      setup.mockInput.pressEnter();
-    });
-    expect(spies.runCommand).toHaveBeenCalledWith('review', '');
-  });
-
-  test('Esc closes the palette without sending', async () => {
-    const spies = newSpies();
-    const setup = await mountComposer(fakeSession(spies), spies);
-    await act(async () => {
-      await setup.mockInput.typeText('/', 1);
-    });
+    await type(setup, '/');
     await pressEscape(setup);
-    expect(frame(setup)).not.toContain('Commands');
+    expect(frame(setup)).not.toContain('Tab complete');
     expect(spies.send).not.toHaveBeenCalled();
   });
 });
@@ -424,24 +464,7 @@ describe('the pickers', () => {
   test('the model picker refuses a model the project turned off', async () => {
     const spies = newSpies();
     const toasts: string[] = [];
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 } },
-    });
-    const setup = await testRender(
-      <QueryClientProvider client={queryClient}>
-        <Composer
-          session={fakeSession(spies)}
-          projectId="project-1"
-          sessionId="session-1"
-          focused
-          width={60}
-          onCommand={spies.onCommand as unknown as (id: 'new') => void}
-          onToast={(message) => toasts.push(message)}
-        />
-      </QueryClientProvider>,
-      { width: 60, height: 24 },
-    );
-    active = setup;
+    const setup = await mountComposer(fakeSession(spies), spies, (message) => toasts.push(message));
     await act(async () => {
       setup.mockInput.pressKey('m', { meta: true });
     });
@@ -552,14 +575,11 @@ describe('the pickers', () => {
     expect(spies.send).toHaveBeenCalledWith('hello');
   });
 
-  test('/model opens the model picker instead of leaving the palette open', async () => {
+  test('/model opens the model picker', async () => {
     const spies = newSpies();
     const setup = await mountComposer(fakeSession(spies), spies);
     await act(async () => {
-      await setup.mockInput.typeText('/', 1);
-    });
-    await act(async () => {
-      await setup.mockInput.typeText('model', 1);
+      await setup.mockInput.typeText('/model', 1);
     });
     await act(async () => {
       setup.mockInput.pressEnter();
@@ -568,41 +588,5 @@ describe('the pickers', () => {
     const text = frame(setup);
     expect(text).toContain('Model');
     expect(text).toContain('Claude Sonnet 5');
-  });
-});
-
-describe('slash-command data', () => {
-  test('runtime commands come first and ids never collide with the built-ins', () => {
-    const items = commandItems([{ name: 'new', description: 'a project command called new' }]);
-    expect(items[0]?.id).toBe('runtime:new');
-    expect(items.filter((item) => item.id === 'builtin:new')).toHaveLength(1);
-    expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
-  });
-
-  test('a runtime without session.commands lists no project commands', () => {
-    const commands = [{ name: 'review', description: 'Review the diff' }];
-    const ids = (capabilities: readonly string[] | null) =>
-      commandItems(commands, capabilities).map((item) => item.id);
-
-    const without = ids(['file.import', 'session.subagents']);
-    expect(without).not.toContain('runtime:review');
-    expect(without).toContain('builtin:new');
-
-    for (const all of [null, ['session.commands']]) {
-      expect(ids(all)).toContain('runtime:review');
-    }
-  });
-
-  test('a non-array command payload degrades to the built-ins', () => {
-    const items = commandItems({ nope: true } as unknown as undefined);
-    expect(items).toHaveLength(BUILTIN_COMMANDS.length);
-  });
-
-  test('resolveCommandItem routes each id', () => {
-    expect(resolveCommandItem('runtime:review')).toEqual({ kind: 'runtime', name: 'review' });
-    expect(resolveCommandItem('builtin:new')).toEqual({ kind: 'app', id: 'new' });
-    expect(resolveCommandItem('builtin:model')).toEqual({ kind: 'picker', id: 'model' });
-    expect(resolveCommandItem('builtin:nope')).toBeNull();
-    expect(resolveCommandItem('whatever')).toBeNull();
   });
 });

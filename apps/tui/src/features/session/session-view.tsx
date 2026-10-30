@@ -25,19 +25,20 @@
 
 import { type SessionHealthResult, type SessionLogMessage, classifySessionLogMessage } from '@kortix/sdk';
 import { useSession, useSessionLogThread } from '@kortix/sdk/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ResolvedHost } from '../../auth/hosts.ts';
 import { hintFor } from '../../keymap.ts';
 import { kortix } from '../../kortix.ts';
 import { extractUrls, extractUrlsFromScreen } from '../../lib/links.ts';
 import { glyph, theme } from '../../theme.ts';
-import { Panel, type ToastKind } from '../../ui/index.ts';
+import type { CommandContext, CommandName } from '../../commands/registry.ts';
+import { Panel, Splash, type SplashLine, type ToastKind } from '../../ui/index.ts';
 import { type LinkRow, sameLinks, withLinks } from '../links/index.ts';
 import { type UsePortsResult, detectForwardablePorts, usePorts } from '../ports/index.ts';
 import { TerminalPanel } from '../terminal/terminal-panel.tsx';
 import { Composer } from './composer/composer.tsx';
-import type { AppCommandId } from './composer/slash-commands.ts';
+import type { PromptInputMetrics } from './composer/prompt-input.tsx';
 import { SessionPrompts, Transcript } from './transcript/index.ts';
 
 /** Every assistant text part and tool output in the transcript, joined by newlines. */
@@ -65,21 +66,14 @@ export type SessionFocus = 'transcript' | 'composer' | 'terminal';
 export const TRANSCRIPT_MIN_ROWS = 3;
 /** Upper bound on the rows a pending question/permission card draws. */
 export const PROMPT_RESERVE_ROWS = 12;
-/** Upper bound on the rows a composer overlay (the `/` palette, a picker) adds. */
-export const OVERLAY_RESERVE_ROWS = 12;
-/** The composer's fixed chrome: two border rows, the footer, and an error row. */
+/** The composer's fixed chrome: two border rows, the tray, and an error row. */
 export const COMPOSER_CHROME_ROWS = 4;
 
-export interface ComposerMetrics {
-  /** Text rows the textarea currently needs (1–6). */
-  rows: number;
-  /** A palette or picker is open above the input. */
-  overlayOpen: boolean;
-}
+export type ComposerMetrics = PromptInputMetrics;
 
 /** Rows to keep clear under the transcript. Always ≥ what the composer draws. */
 export function composerReserve(metrics: ComposerMetrics): number {
-  return metrics.rows + COMPOSER_CHROME_ROWS + (metrics.overlayOpen ? OVERLAY_RESERVE_ROWS : 0);
+  return metrics.rows + COMPOSER_CHROME_ROWS + metrics.aboveRows;
 }
 
 /** The transcript's height for a content box of `contentRows`. */
@@ -130,8 +124,24 @@ export interface SessionViewProps {
   wide: boolean;
   onFocus(target: SessionFocus): void;
   onCloseTerminal(): void;
-  onCommand(command: AppCommandId): void;
+  /** What the composer can offer (minus this session's capabilities, read here). */
+  context: Omit<CommandContext, 'capabilities' | 'hasSession'>;
+  onCommand(command: CommandName, args: string): void;
   onToast(message: string, kind?: ToastKind): void;
+  /** The runtime's `/kortix/health` capabilities, hoisted for the app's commands. */
+  onCapabilities?: (capabilities: readonly string[] | null) => void;
+  /** The composer metrics, hoisted so the app can stand down while the slash menu is open. */
+  onComposerMetrics?: (metrics: ComposerMetrics) => void;
+  /** A host panel above the input: `/sessions`, `/projects`, a confirm. */
+  panel?: ReactNode;
+  /** Replace the composer draft (e.g. `/rename <title>`). */
+  seed?: { text: string; seq: number } | null;
+  /** No frame: the sidebar is hidden and the session fills the screen. */
+  borderless?: boolean;
+  /** Left side of the tray (`host · project`). */
+  trayLeft?: string;
+  /** Splash metadata for an empty session. */
+  splashLines?: readonly SplashLine[];
   /** Ports panel (`Alt+P`) state, hoisted so `app.tsx` can render its overlay
    *  at the root — same reason `onMetrics` hoists composer metrics. */
   onPortsApi?: (api: UsePortsResult) => void;
@@ -160,8 +170,16 @@ export function SessionView({
   wide,
   onFocus,
   onCloseTerminal,
+  context,
   onCommand,
   onToast,
+  onCapabilities,
+  onComposerMetrics,
+  panel = null,
+  seed = null,
+  borderless = false,
+  trayLeft = '',
+  splashLines = [],
   onPortsApi,
   onLinks,
   readHealth = readSessionHealth,
@@ -169,7 +187,7 @@ export function SessionView({
 }: SessionViewProps) {
   // The one call. Every child reads this object; none of them calls a hook.
   const session = useSessionImpl(projectId, sessionId);
-  const [metrics, setMetrics] = useState<ComposerMetrics>({ rows: 1, overlayOpen: false });
+  const [metrics, setMetrics] = useState<ComposerMetrics>({ rows: 1, aboveRows: 0, menuOpen: false });
 
   // What this runtime serves: one `/kortix/health` read once the runtime is up.
   // Null — not read yet, or the read failed — hides nothing.
@@ -187,6 +205,9 @@ export function SessionView({
       live = false;
     };
   }, [projectId, sessionId, session.switched, readHealth]);
+  useEffect(() => {
+    onCapabilities?.(capabilities);
+  }, [capabilities, onCapabilities]);
 
   const ports = usePorts({ host, projectId, sessionId, onToast });
   useEffect(() => {
@@ -222,19 +243,33 @@ export function SessionView({
     noticeLinks(extractUrls(transcriptText(thread?.messages ?? [])), 'transcript');
   }, [thread]);
 
-  const onMetrics = useCallback((next: ComposerMetrics) => {
-    setMetrics((current) =>
-      current.rows === next.rows && current.overlayOpen === next.overlayOpen ? current : next,
-    );
-  }, []);
+  const onMetrics = useCallback(
+    (next: ComposerMetrics) => {
+      setMetrics((current) =>
+        current.rows === next.rows &&
+        current.aboveRows === next.aboveRows &&
+        current.menuOpen === next.menuOpen
+          ? current
+          : next,
+      );
+      onComposerMetrics?.(next);
+    },
+    [onComposerMetrics],
+  );
 
   const focusComposer = useCallback(() => onFocus('composer'), [onFocus]);
 
   const sessionWidth = terminalOpen && wide ? Math.max(width - terminalWidth(width), 20) : width;
   const showSession = !terminalOpen || wide;
 
-  const contentRows = Math.max(height - 2, 1);
-  const innerWidth = Math.max(sessionWidth - 4, 12);
+  const frame = borderless ? 0 : 2;
+  const contentRows = Math.max(height - frame, 1);
+  const innerWidth = Math.max(sessionWidth - frame - 2, 12);
+  const empty = (thread?.messages.length ?? 0) === 0 && !session.isBusy;
+  const composerContext = useMemo<CommandContext>(
+    () => ({ ...context, hasSession: true, capabilities }),
+    [context, capabilities],
+  );
   const promptOpen = session.questions.length > 0 || session.permissions.length > 0;
   const rows = transcriptRows(contentRows, metrics, promptOpen);
 
@@ -249,6 +284,7 @@ export function SessionView({
     <>
       {showSession ? (
         <Panel
+          borderless={borderless}
           focused={focus === 'transcript' || focus === 'composer'}
           width={sessionWidth}
           flexGrow={0}
@@ -271,18 +307,28 @@ export function SessionView({
                 <span fg={theme.faint}>{header ? `  ${header}` : ''}</span>
               </text>
               <text fg={theme.faint} wrapMode="none">
-                {`${hintFor('panel.terminal')} terminal`}
+                {`/ commands · ${hintFor('panel.terminal')} terminal`}
               </text>
             </box>
 
-            <Transcript
-              session={session}
-              focused={focus === 'transcript'}
-              width={innerWidth}
-              height={rows}
-              onToast={onToast}
-              renderPrompts={false}
-            />
+            {empty ? (
+              <box flexDirection="column" height={rows} paddingTop={1} overflow="hidden">
+                <Splash
+                  width={innerWidth}
+                  tagline="Type a prompt to start. / lists every command."
+                  lines={splashLines}
+                />
+              </box>
+            ) : (
+              <Transcript
+                session={session}
+                focused={focus === 'transcript'}
+                width={innerWidth}
+                height={rows}
+                onToast={onToast}
+                renderPrompts={false}
+              />
+            )}
 
             <SessionPrompts
               session={session}
@@ -301,11 +347,14 @@ export function SessionView({
               sessionId={sessionId}
               focused={focus === 'composer'}
               width={innerWidth}
+              context={composerContext}
               onCommand={onCommand}
               onToast={onToast}
               onRequestFocus={focusComposer}
               onMetrics={onMetrics}
-              capabilities={capabilities}
+              panel={panel}
+              seed={seed}
+              trayLeft={trayLeft}
             />
           </box>
         </Panel>

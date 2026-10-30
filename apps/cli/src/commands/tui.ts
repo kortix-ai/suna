@@ -62,7 +62,10 @@ Options:
   --new             Create a session in the project at boot and open it.
   --agent <name>    Agent for the new session. Default: the project's default.
   --terminal        Open the sandbox terminal panel at boot (focused).
-  --no-sidebar      Start with the sidebar hidden. Alt+b shows it again.
+  --sidebar         Start with the sidebar shown, for this run.
+  --no-sidebar      Start with the sidebar hidden, for this run. Without
+                    either flag the TUI uses the last /sidebar choice
+                    (hidden the first time).
   --mouse           Let the TUI take the mouse. Off by default, so your
                     terminal's own text selection, copy-on-select and
                     Cmd+click on a URL keep working inside the TUI.
@@ -75,19 +78,24 @@ Environment:
                     (pnpm --filter @kortix/tui bundle) or a packaged copy.
                     Nothing is downloaded and no version is checked.
 
+Commands:
+  The TUI is one session on screen and one input. Type / in the input to
+  list every action; keep typing to filter, Enter runs it.
+  /sessions [filter]   Pick another session (also Ctrl+p).
+  /new [prompt]        Start a new session (also Ctrl+n). With no session
+                       open, any prompt starts one.
+  /rename /fork /pin /archive /share /delete /restart /compact
+  /projects /accounts /hosts
+  /model /effort /agent
+  /sidebar /terminal /ports /links
+  /files /repo /review /apps /customize /account
+  /help /quit
+
 Keys:
-  ?                 Every binding, generated from the app's own keymap.
-  Ctrl+p            Session switcher across every project.
-  Ctrl+n            New session in this project.
-  Alt+t             Toggle the sandbox terminal beside the transcript.
-  Alt+b             Hide or show the sidebar.
-  Alt+l             Links: every URL in the transcript or on the terminal
-                    screen (wrapped ones rejoined). Enter opens it.
-  Alt+f / Alt+r     Files · Review.
-  Alt+a / Alt+c     Apps · Customize.
-  Alt+u / Alt+h     Account · switch host.
-  Alt+o             Hand this session to the stock opencode TUI (OpenCode
-                    sessions only; a pi session shows a notice).
+  ?                 Every command and binding (also /help).
+  Alt+b             Show or hide the sidebar (also /sidebar).
+  Alt+t             Toggle the sandbox terminal (also /terminal).
+  Esc ×3            Stop the running turn (also /stop).
   Ctrl+c twice      Quit.
 
 Needs a real terminal at least 80x24 wide. Experimental means the screens,
@@ -117,7 +125,9 @@ interface TuiFlags {
   agent?: string;
   /** Open the sandbox terminal panel at boot (`--terminal`). */
   terminal: boolean;
-  /** Start with the sidebar hidden (`--no-sidebar`); Alt+B shows it. */
+  /** Start with the sidebar shown (`--sidebar`) for this run. */
+  sidebar: boolean;
+  /** Start with the sidebar hidden (`--no-sidebar`) for this run. */
   noSidebar: boolean;
   /** Let the TUI take the mouse (`--mouse`). Off by default so the terminal's
    *  own selection, copy-on-select and Cmd+click on URLs keep working. */
@@ -143,6 +153,7 @@ export function parseTuiFlags(argv: string[]): TuiFlags {
     newSession: takeFlagBool(rest, ['--new']),
     terminal: takeFlagBool(rest, ['--terminal']),
     noSidebar: takeFlagBool(rest, ['--no-sidebar']),
+    sidebar: takeFlagBool(rest, ['--sidebar']),
     mouse: takeFlagBool(rest, ['--mouse']),
     host: takeFlagValue(rest, ['--host']),
     project: takeFlagValue(rest, ['--project']),
@@ -174,7 +185,15 @@ export function tuiChildEnv(
   flags: Partial<
     Pick<
       TuiFlags,
-      'host' | 'project' | 'session' | 'newSession' | 'agent' | 'terminal' | 'noSidebar' | 'mouse'
+      | 'host'
+      | 'project'
+      | 'session'
+      | 'newSession'
+      | 'agent'
+      | 'terminal'
+      | 'sidebar'
+      | 'noSidebar'
+      | 'mouse'
     >
   >,
   base: NodeJS.ProcessEnv,
@@ -187,6 +206,7 @@ export function tuiChildEnv(
     ...(flags.newSession ? { KORTIX_TUI_NEW: '1' } : {}),
     ...(flags.agent ? { KORTIX_TUI_AGENT: flags.agent } : {}),
     ...(flags.terminal ? { KORTIX_TUI_TERMINAL: '1' } : {}),
+    ...(flags.sidebar ? { KORTIX_TUI_SIDEBAR: '1' } : {}),
     ...(flags.noSidebar ? { KORTIX_TUI_SIDEBAR: '0' } : {}),
     ...(flags.mouse ? { KORTIX_TUI_MOUSE: '1' } : {}),
   };
@@ -353,7 +373,10 @@ export async function runTui(argv: string[], overrides: Partial<TuiDeps> = {}): 
   }
 
   deps.stderr(`${EXPERIMENTAL_NOTICE}\n`);
-  return deps.run(resolution.bin, tuiChildEnv(flags, process.env));
+  return deps.run(resolution.bin, {
+    ...tuiChildEnv(flags, process.env),
+    KORTIX_TUI_VERSION: deps.version(),
+  });
 }
 
 /**

@@ -34,14 +34,21 @@ describe('focusOrder', () => {
 });
 
 describe('sidebarVisible', () => {
-  test('hidden by the user wins over a wide terminal', () => {
-    expect(sidebarVisible(200, true)).toBe(false);
-    expect(sidebarVisible(200, false)).toBe(true);
+  test('drawn only when chosen: hidden is the default', () => {
+    expect(sidebarVisible(200, false)).toBe(false);
+    expect(sidebarVisible(200, true)).toBe(true);
   });
 
-  test('a narrow terminal squeezes it out even when not hidden', () => {
-    expect(sidebarVisible(SIDEBAR_MIN_COLUMNS - 1, false)).toBe(false);
-    expect(sidebarVisible(SIDEBAR_MIN_COLUMNS, false)).toBe(true);
+  test('a narrow terminal squeezes it out even when chosen', () => {
+    expect(sidebarVisible(SIDEBAR_MIN_COLUMNS - 1, true)).toBe(false);
+    expect(sidebarVisible(SIDEBAR_MIN_COLUMNS, true)).toBe(true);
+  });
+});
+
+describe('focusOrder with no session (the draft)', () => {
+  test('is the composer alone: no transcript and no terminal to land on', () => {
+    expect(focusOrder('session', false, true, false)).toEqual(['composer']);
+    expect(focusOrder('session', true, false, false)).toEqual(['sidebar', 'composer']);
   });
 });
 
@@ -81,7 +88,7 @@ describe('terminalToggle', () => {
     expect(terminalToggle(false, null)).toEqual({
       open: false,
       focus: null,
-      toast: 'Open a session first — the terminal runs inside its sandbox (Ctrl+N creates one).',
+      toast: 'Open a session first: the terminal runs inside its sandbox. Type /sessions or a prompt.',
     });
   });
   test('with a session it opens and takes focus; a second press closes it back to the composer', () => {

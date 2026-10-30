@@ -52,13 +52,27 @@ export const COMPOSER_KEYMAP: readonly Binding[] = [
     id: 'composer.cancel',
     scope: 'composer',
     chords: [chord('escape')],
-    description: 'Clear the draft, or (empty and busy) stop the agent on a second press.',
+    description:
+      'Clear the draft, or close the command menu. Empty and busy: press it 3 times within 4 s to stop the turn.',
   },
   {
     id: 'composer.commands',
     scope: 'composer',
     chords: [chord('/')],
-    description: 'Open the command picker. Only at column 0.',
+    description:
+      'Type / at the start of the input to list every command. Keep typing to filter; /name args runs one.',
+  },
+  {
+    id: 'composer.menuMove',
+    scope: 'composer',
+    chords: [chord('up'), chord('down'), chord('p', { ctrl: true }), chord('n', { ctrl: true })],
+    description: 'Move the selection in the command menu.',
+  },
+  {
+    id: 'composer.complete',
+    scope: 'composer',
+    chords: [chord('tab')],
+    description: 'Complete the selected command in the menu.',
   },
   {
     id: 'composer.model',

@@ -22,13 +22,36 @@ import {
   formatBinding,
   matchesBinding,
 } from '../../keymap.ts';
+import { COMMANDS, type CommandSpec, GROUP_TITLE } from '../../commands/registry.ts';
 import { theme } from '../../theme.ts';
 import { Modal, modalBox } from '../../ui/index.ts';
 
-/** One printed line of the overlay: a section title or a binding row. */
+/** One printed line of the overlay: a section title, a command or a binding row. */
 export type HelpLine =
-  | { kind: 'section'; scope: KeyScope; title: string }
+  | { kind: 'section'; scope: KeyScope | `commands:${string}`; title: string }
+  | { kind: 'command'; spec: CommandSpec; usage: string }
   | { kind: 'binding'; binding: Binding; keys: string };
+
+/**
+ * The slash commands, grouped the way the menu groups them. They come first:
+ * the input is where every action starts, and the keys are accelerators.
+ */
+export function commandLines(commands: readonly CommandSpec[] = COMMANDS): HelpLine[] {
+  const lines: HelpLine[] = [];
+  let group: string | null = null;
+  for (const spec of commands) {
+    if (spec.group !== group) {
+      group = spec.group;
+      lines.push({
+        kind: 'section',
+        scope: `commands:${spec.group}`,
+        title: `Commands · ${GROUP_TITLE[spec.group]}`,
+      });
+    }
+    lines.push({ kind: 'command', spec, usage: spec.args ? `/${spec.name} ${spec.args}` : `/${spec.name}` });
+  }
+  return lines;
+}
 
 /** Columns reserved for the chord column, so the descriptions line up. */
 export const KEYS_COLUMN = 24;
@@ -79,7 +102,7 @@ export interface HelpOverlayProps {
  */
 export function HelpOverlay({ onClose }: HelpOverlayProps) {
   const dimensions = useTerminalDimensions();
-  const lines = useMemo(() => helpLines(allBindings()), []);
+  const lines = useMemo(() => [...commandLines(), ...helpLines(allBindings())], []);
   const [top, setTop] = useState(0);
 
   const { innerWidth, innerHeight } = modalBox(
@@ -110,19 +133,30 @@ export function HelpOverlay({ onClose }: HelpOverlayProps) {
   const visible = lines.slice(clampedTop, clampedTop + rows);
   const position =
     maxTop === 0
-      ? 'all keys'
+      ? 'everything'
       : `${clampedTop + 1}–${clampedTop + visible.length} of ${lines.length}`;
 
   return (
     <Modal
-      title="Keys"
+      title="Commands and keys"
       hint="j/k scroll · Esc close"
       onClose={onClose}
       width={Math.max(dimensions.width - 8, 40)}
       height={Math.max(dimensions.height - 2, 8)}
     >
       {visible.map((line) =>
-        line.kind === 'section' ? (
+        line.kind === 'command' ? (
+          <box key={`c:${line.spec.name}`} flexDirection="row" height={1}>
+            <box width={KEYS_COLUMN} flexShrink={0}>
+              <text fg={theme.accent} wrapMode="none">
+                {line.usage.slice(0, KEYS_COLUMN - 1)}
+              </text>
+            </box>
+            <text fg={theme.dim} wrapMode="none">
+              {line.spec.description.slice(0, Math.max(innerWidth - KEYS_COLUMN, 8))}
+            </text>
+          </box>
+        ) : line.kind === 'section' ? (
           // One row, never a leading blank: the row budget above is exact, and
           // a `\n` inside a <text> silently costs a second row.
           <text key={`s:${line.scope}`} fg={theme.fg} wrapMode="none" height={1}>

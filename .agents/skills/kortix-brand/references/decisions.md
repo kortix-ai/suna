@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-30
 
+### D31 The terminal accent is turquoise; the ASCII wordmark is sanctioned in the CLI and the TUI
+- **Date:** 2026-10-30
+- **Decision:** The CLI and the TUI share one accent, `terminal-accent` (turquoise; the CLI prints it as ANSI cyan). It marks the block-letter KORTIX wordmark, focus borders, the selection bar, the caret and the slash-menu highlight, and nothing else: the rest stays monochrome. The ASCII wordmark in `apps/cli/src/banner.ts` is sanctioned on the CLI landing screen and on the TUI boot and empty-session splash. Customer output (D8c) is not affected.
+- **Why:** founder, 2026-10-30, on the session-first TUI: "add hints of that turqoise accent color [...] like a dope as booting KORTIX THING", then chose "Turquoise, CLI cyan" over `kortix-base` so the CLI and the TUI read as one product.
+- **Where:** `visual/visual-system.json` (`color.terminal.terminal-accent`), `visual/color.md` (CLI rule), `apps/tui/src/theme.ts`, `apps/tui/src/ui/splash.tsx`, `apps/cli/src/banner.ts`.
+- **Supersedes:** the "ASCII wordmark: OPEN" status for the CLI and the TUI in `visual/brandmark.md` and `visual/color.md`.
+- **Source:** the `tui-session-first` branch.
+
 ### D30 The sign-in screen has no subtitle
 - **Date:** 2026-10-30
 - **Decision:** The sign-in entry step shows only "Welcome to Kortix CompanyOS". The tagline "The open-source CompanyOS" no longer sits under it, and no other line replaces it. The tagline is never placed directly under a heading that already says "Kortix CompanyOS".

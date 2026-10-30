@@ -16,7 +16,6 @@ import { act } from 'react';
 import type { ResolvedHost } from '../../auth/hosts.ts';
 import {
   COMPOSER_CHROME_ROWS,
-  OVERLAY_RESERVE_ROWS,
   PROMPT_RESERVE_ROWS,
   type SessionFocus,
   SessionView,
@@ -40,29 +39,29 @@ const HOST: ResolvedHost = {
 
 describe('row budget', () => {
   test('a one-line composer reserves its chrome plus one row', () => {
-    expect(composerReserve({ rows: 1, overlayOpen: false })).toBe(1 + COMPOSER_CHROME_ROWS);
+    expect(composerReserve({ rows: 1, aboveRows: 0, menuOpen: false })).toBe(1 + COMPOSER_CHROME_ROWS);
   });
 
-  test('an open palette reserves the room it grows into', () => {
-    expect(composerReserve({ rows: 1, overlayOpen: true })).toBe(
-      1 + COMPOSER_CHROME_ROWS + OVERLAY_RESERVE_ROWS,
+  test('an open slash menu reserves exactly the rows it draws', () => {
+    expect(composerReserve({ rows: 1, aboveRows: 10, menuOpen: true })).toBe(
+      1 + COMPOSER_CHROME_ROWS + 10,
     );
   });
 
   test('the transcript takes what is left after the header and the composer', () => {
     // 30 content rows − 1 header − (1 + 4) composer = 24.
-    expect(transcriptRows(30, { rows: 1, overlayOpen: false }, false)).toBe(24);
+    expect(transcriptRows(30, { rows: 1, aboveRows: 0, menuOpen: false }, false)).toBe(24);
   });
 
   test('a pending question reserves room for its card', () => {
-    expect(transcriptRows(30, { rows: 1, overlayOpen: false }, true)).toBe(
+    expect(transcriptRows(30, { rows: 1, aboveRows: 0, menuOpen: false }, true)).toBe(
       24 - PROMPT_RESERVE_ROWS,
     );
   });
 
   test('the transcript never goes below its floor, however big the composer gets', () => {
-    expect(transcriptRows(10, { rows: 6, overlayOpen: true }, true)).toBe(TRANSCRIPT_MIN_ROWS);
-    expect(transcriptRows(1, { rows: 6, overlayOpen: true }, true)).toBe(TRANSCRIPT_MIN_ROWS);
+    expect(transcriptRows(10, { rows: 6, aboveRows: 12, menuOpen: true }, true)).toBe(TRANSCRIPT_MIN_ROWS);
+    expect(transcriptRows(1, { rows: 6, aboveRows: 12, menuOpen: true }, true)).toBe(TRANSCRIPT_MIN_ROWS);
   });
 });
 
@@ -126,6 +125,7 @@ async function mount(focus: SessionFocus | null, overrides: Record<string, unkno
         wide
         onFocus={() => {}}
         onCloseTerminal={() => {}}
+        context={{ hasProject: true, hasAccount: true }}
         onCommand={() => {}}
         onToast={() => {}}
         useSessionImpl={useSessionImpl as never}
@@ -190,7 +190,7 @@ describe('SessionView', () => {
     const { captureCharFrame, renderer } = await mount('composer');
     const lines = captureCharFrame().split('\n');
     const transcript = lines.findIndex((line) => line.includes('TRANSCRIPT-MARKER'));
-    const composer = lines.findIndex((line) => line.includes('Type / for'));
+    const composer = lines.findIndex((line) => line.includes('Type a prompt'));
     expect(transcript).toBeGreaterThan(0);
     expect(composer).toBeGreaterThan(transcript);
     renderer.destroy();
@@ -198,7 +198,7 @@ describe('SessionView', () => {
 
   test('the composer placeholder is on screen when the composer has focus', async () => {
     const { captureCharFrame, renderer } = await mount('composer');
-    expect(captureCharFrame()).toContain('Type / for skills, commands, and files');
+    expect(captureCharFrame()).toContain('Type a prompt · / for commands');
     renderer.destroy();
   });
 
@@ -215,7 +215,7 @@ describe('SessionView', () => {
     // keeps the transcript and the composer where they were.
     expect(withTranscript.split('\n').length).toBe(withComposer.split('\n').length);
     expect(withTranscript).toContain('TRANSCRIPT-MARKER');
-    expect(withTranscript).toContain('Type / for skills, commands, and files');
+    expect(withTranscript).toContain('Type a prompt · / for commands');
   });
 
   test('focus=null (the sidebar has it) still renders the whole column', async () => {

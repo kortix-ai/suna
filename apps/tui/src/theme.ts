@@ -2,7 +2,11 @@
  * Terminal design tokens.
  *
  * The rule from CLAUDE.md's frontend standard, translated to a terminal:
- * monochrome surfaces, one earned accent, no decorative color. Every color a
+ * monochrome surfaces, one earned accent, no decorative color. The accent is
+ * the terminal turquoise the `kortix` CLI banner already prints
+ * (`apps/cli/src/banner.ts`, ANSI cyan), so the CLI and the TUI read as one
+ * product (kortix-brand `decisions.md`, D30). It marks the wordmark, focus,
+ * the selection bar, the caret and the slash-menu highlight. Nothing else. Every color a
  * component draws comes from this file — a component never writes a hex
  * literal inline, exactly as a web surface never writes `bg-emerald-500`.
  *
@@ -42,10 +46,10 @@ const DARK: Theme = {
   fg: '#e6e6e6',
   dim: '#9b9b9b',
   faint: '#6b6b6b',
-  accent: '#ffffff',
+  accent: '#2ec4c4',
   onAccent: '#0b0b0b',
-  border: '#3a3a3a',
-  borderFocus: '#8a8a8a',
+  border: '#2e2e2e',
+  borderFocus: '#2ec4c4',
   bg: '#0b0b0b',
   surface: '#1a1a1a',
   danger: '#e06c6c',
@@ -57,10 +61,10 @@ const LIGHT: Theme = {
   fg: '#1a1a1a',
   dim: '#5c5c5c',
   faint: '#8a8a8a',
-  accent: '#0b0b0b',
+  accent: '#0f7f80',
   onAccent: '#ffffff',
   border: '#cfcfcf',
-  borderFocus: '#6b6b6b',
+  borderFocus: '#0f7f80',
   bg: '#fbfbfb',
   surface: '#eeeeee',
   danger: '#b23c3c',
