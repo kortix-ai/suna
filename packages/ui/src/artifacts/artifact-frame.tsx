@@ -50,7 +50,10 @@ export const ArtifactFrame = forwardRef<
       interactive,
     });
     // The viewer hands the keyboard to the page, so a deck's arrow keys work at once.
-    const claimed = slot.querySelector('iframe');
+    const claimed =
+      Array.from(slot.querySelectorAll('iframe')).find(
+        (candidate) => candidate.dataset.frameKey === frameKey,
+      ) ?? null;
     if (interactive) claimed?.focus({ preventScroll: true });
     latestOnFrame.current?.(claimed);
     return () => {
