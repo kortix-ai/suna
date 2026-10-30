@@ -38,9 +38,9 @@ it live in the session's **Desktop** panel, streamed from port 6901.
   open the page and ask them to take over. A tab they open becomes your
   active tab. Leave the browser open when you finish: `agent-browser close`
   closes the user's window and drops its logins.
-- For a run the user should not see, use another session:
-  `agent-browser --session hidden --headed false …`. Changing the default
-  session's flags restarts the browser the user shares.
+- Browse only in the default session, with its flags as set. A named
+  `--session` starts a second browser the user does not share, and a flag
+  such as `--headed false` restarts the shared one.
 - `curl -o shot.png localhost:6901/screenshot` captures the screen as a PNG.
 - After a GUI action, `curl localhost:6901/wait` returns when the screen is
   still for 300 ms. Do not sleep.

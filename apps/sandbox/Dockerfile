@@ -199,7 +199,7 @@ RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-v
     && pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}" \
     && agent-browser --version \
     && for pw_try in 1 2 3 4 5; do \
-        pnpm dlx "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium && break; \
+        pnpm dlx "playwright@${PLAYWRIGHT_VERSION}" install --with-deps --no-shell chromium && break; \
         echo "playwright chromium install attempt $pw_try failed, retrying..."; \
         sleep $((pw_try*10)); \
     done \
@@ -209,6 +209,13 @@ RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-v
     && ln -sf "$pw_chrome" /home/kortix/.local/bin/chromium \
     && mkdir -p /home/kortix/.agent-browser/browsers \
     && ln -sf "$(dirname "$pw_chrome")" /home/kortix/.agent-browser/browsers/chrome-linux64 \
+    && pw_rev="${pw_chrome#/opt/pw-browsers/chromium-}" && pw_rev="${pw_rev%%/*}" \
+    && pw_shell_dir="/opt/pw-browsers/chromium_headless_shell-${pw_rev}" \
+    && case "$(uname -m)" in x86_64) pw_shell=chrome-headless-shell-linux64/chrome-headless-shell ;; *) pw_shell=chrome-linux/headless_shell ;; esac \
+    && mkdir -p "$(dirname "${pw_shell_dir}/${pw_shell}")" \
+    && ln -sf "$pw_chrome" "${pw_shell_dir}/${pw_shell}" \
+    && touch "${pw_shell_dir}/INSTALLATION_COMPLETE" "${pw_shell_dir}/DEPENDENCIES_VALIDATED" \
+    && test -x "${pw_shell_dir}/${pw_shell}" \
     && chromium --version \
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 

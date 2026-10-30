@@ -22,9 +22,9 @@ On the session desktop, `agent-browser` runs headed in the one browser the user
 shares with you. They watch each page in the **Desktop** panel, open the same
 window from the dock, and can take over to sign in for you. Leave it open when
 you finish: `agent-browser close` closes the user's window and drops its
-logins. For a run the user should not see, use another session:
-`agent-browser --session hidden --headed false …`. A sandbox without a desktop
-runs the browser headless.
+logins. Browse only in the default session: a named `--session` starts a
+second browser the user does not share. A sandbox without a desktop runs the
+browser headless.
 
 ## The user's own browser
 
