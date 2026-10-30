@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, writeFileSync } from 'node:fs'
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -21,11 +21,7 @@ import {
   registerHarnessAssets,
   resetHarnessAssetsForTests,
 } from '@/services/runtime-assets/runtime-assets'
-import {
-  createOpenCodeAssetsService,
-  type OpenCodeAssetsOptions,
-  type OpenCodeAssetsRuntime,
-} from '@/harness/open-code/assets'
+import { createPiAssetsService } from '@/harness/pi/assets'
 import { resolveHarness } from '@/harness/harness'
 
 // Production registers this lookup in main.ts before anything runs.
@@ -51,19 +47,8 @@ const dirs: string[] = []
 async function workspace() {
   const dir = await mkdtemp(join(tmpdir(), 'runtime-convergence-'))
   dirs.push(dir)
-  // Every real box has `/opt/kortix/opencode.current` — the image creates it
-  // (apps/sandbox/Dockerfile:205) and lifecycle.ts LAUNCHES through it. The
-  // rollback half reads and rewrites the same link, so a fixture without one is
-  // not a box: it is a box whose opencode we could not put back.
-  const opencodeInstalled = join(dir, 'opencode-installed.exe')
-  await Bun.write(opencodeInstalled, '#!/bin/sh\nexit 0\n')
-  // Executable, because `publishOpencodeNativeLink` refuses a target it cannot
-  // exec — the rollback republishes through that same guard.
-  await chmod(opencodeInstalled, 0o755)
   await mkdir(join(dir, 'state'), { recursive: true })
-  await symlink(opencodeInstalled, join(dir, 'state', 'opencode.current'))
   return {
-    opencodeInstalled,
     root: dir,
     cliPath: join(dir, 'bin', 'kortix'),
     agentBakedPath: join(dir, 'usr', 'kortix-agent'),
@@ -74,10 +59,6 @@ async function workspace() {
     agentPinned: join(dir, 'state', 'agent.pinned'),
     skillsDir: join(dir, 'opt', 'managed-skills'),
     statePath: join(dir, 'state', 'runtime-assets-state.json'),
-    depsDir: join(dir, 'opencode-config-deps'),
-    opencodeCurrent: join(dir, 'state', 'opencode.current'),
-    opencodePrev: join(dir, 'state', 'opencode.prev'),
-    opencodePinned: join(dir, 'state', 'opencode.pinned'),
   }
 }
 
@@ -104,7 +85,6 @@ interface ManifestOptions {
   agentSha?: string
   agentPath?: string
   agentSelfUpdate?: boolean
-  opencodeVersion?: string
   /** Emit a v1-only document — no `components`, no `build`, no `policy`. */
   v1Only?: boolean
 }
@@ -132,7 +112,6 @@ function buildManifest(opts: ManifestOptions = {}): Record<string, unknown> {
         sha256: sha(CLI_BYTES),
         size: CLI_BYTES.length,
       },
-      opencode: { version: opts.opencodeVersion ?? '1.18.19', source: 'npm' },
       'managed-skills': { hash: SKILLS_HASH, count: SKILL_FILES.length },
     },
     policy: { agent_self_update: opts.agentSelfUpdate ?? true },
@@ -163,21 +142,8 @@ function stubFetch(opts: ManifestOptions & { agentBody?: string; agentStatus?: n
 async function run(
   ws: Awaited<ReturnType<typeof workspace>>,
   stub: ReturnType<typeof stubFetch>,
-  extra: RuntimeAssetsOptions & OpenCodeAssetsOptions & { runtime?: OpenCodeAssetsRuntime } = {},
+  shared: RuntimeAssetsOptions = {},
 ) {
-  const {
-    runtime,
-    installOpencode,
-    readOpencodeVersion,
-    opencodeBinaryExists,
-    turnProbe,
-    opencodeDepsDir,
-    installPluginDeps,
-    opencodeCurrentLinkPath,
-    opencodePrevPath,
-    opencodePinnedPath,
-    ...shared
-  } = extra
   return reconcileRuntimeAssets({
     apiUrl: API_URL,
     token: TOKEN,
@@ -193,22 +159,7 @@ async function run(
     agentBakedPath: ws.agentBakedPath,
     fetchImpl: stub.impl,
     ...shared,
-    assets:
-      shared.assets ??
-      createOpenCodeAssetsService(runtime, {
-        installOpencode,
-        readOpencodeVersion,
-        opencodeBinaryExists,
-        turnProbe,
-        opencodeDepsDir,
-        installPluginDeps,
-        // Never the real `/opt/kortix/*` paths: the rollback half reads and writes
-        // them, and a unit test must not depend on (or touch) a machine's own box
-        // layout.
-        opencodeCurrentLinkPath: opencodeCurrentLinkPath ?? ws.opencodeCurrent,
-        opencodePrevPath: opencodePrevPath ?? ws.opencodePrev,
-        opencodePinnedPath: opencodePinnedPath ?? ws.opencodePinned,
-      }),
+    assets: shared.assets ?? createPiAssetsService(),
   })
 }
 
@@ -451,9 +402,9 @@ describe('v1 compatibility', () => {
     expect(result.skills).toBe('updated')
     expect(await readFile(ws.cliPath, 'utf8')).toBe(CLI_BYTES)
     // An API that has never heard of `components` says nothing about the agent
-    // or opencode — which is different from saying "skip them".
+    // or the harness — which is different from saying "skip them".
     expect(result.agent).toBeUndefined()
-    expect(result.harness?.opencode).toBeUndefined()
+    expect(result.harness).toBeUndefined()
     expect(result.build).toBeUndefined()
     // And nothing was staged from a manifest that never described an agent.
     expect(await stat(ws.agentNext).catch(() => null)).toBeNull()
@@ -509,7 +460,7 @@ describe('requestAgentSwapIfIdle', () => {
     ['a digest side-car without its binary', { staged: 'sidecar-only' }, 'nothing-staged'],
     ['a pinned box', { pinned: true }, 'pinned'],
     ['no turn oracle configured', { configured: false }, 'not-configured'],
-    // The boot reconcile fires seconds after opencode is ready, the moment a
+    // The boot reconcile fires seconds after the harness is ready, the moment a
     // first prompt arrives. The supervisor promotes before every launch anyway.
     ['a freshly booted daemon', { uptimeMs: 20_000 }, 'too-young'],
   ] as const)('%s keeps the daemon running', async (_name, row, decision) => {
@@ -572,7 +523,7 @@ describe('runtime convergence report', () => {
       cli: 'current',
       skills: 'current',
       agent: 'staged',
-      harness: { opencode: 'updated' },
+      harness: { 'harness-asset': 'updated' },
       build: 1787241641,
       agentSwapPending: true,
     })
@@ -582,13 +533,13 @@ describe('runtime convergence report', () => {
       cli: 'current',
       skills: 'current',
       agent: 'staged',
-      opencode: 'updated',
+      'harness-asset': 'updated',
     })
     expect(report.agentSwapPending).toBe(true)
     expect(typeof report.at).toBe('string')
   })
 
-  test('omits agent/opencode for a v1 manifest instead of claiming they were skipped', async () => {
+  test('omits agent and harness components for a v1 manifest instead of claiming they were skipped', async () => {
     noteRuntimeConvergence({ cli: 'current', skills: 'current' })
     const report = await runtimeConvergenceReport(reportDir())
     expect(report.components).toEqual({ cli: 'current', skills: 'current' })
@@ -612,8 +563,8 @@ describe('runtime convergence report', () => {
         agent_sha256: 'c'.repeat(64),
         agent_path: '/opt/kortix/agent.current',
         staged_agent_sha256: 'd'.repeat(64),
-        harness: 'opencode',
-        harness_version: '1.18.23',
+        harness: 'pi',
+        harness_version: '1.4.0',
         build: 1787241641,
       }),
     )
@@ -626,8 +577,8 @@ describe('runtime convergence report', () => {
       agent_sha256: 'c'.repeat(64),
       agent_path: '/opt/kortix/agent.current',
       staged_agent_sha256: 'd'.repeat(64),
-      harness: 'opencode',
-      harness_version: '1.18.23',
+      harness: 'pi',
+      harness_version: '1.4.0',
       build: 1787241641,
       // Never on disk — this call supplied no `catalogSnapshot`, so it reads
       // as "unconfirmed", the same as an older daemon with no such concept.
@@ -683,8 +634,7 @@ describe('runtime convergence report', () => {
 // prints a DECORATED header (`header('Kortix CLI', VERSION)`), so an equality
 // check against the manifest's `cli_version` would assert a formatting detail,
 // not a fact — and a false negative there would freeze CLI updates fleet-wide
-// while looking like a safety feature. `opencode --version` prints a bare
-// version, which is why `installOpencodeVersion` can and does compare it.
+// while looking like a safety feature.
 // ---------------------------------------------------------------------------
 describe('a candidate binary must run before it replaces a working one', () => {
   test('a CLI that cannot exec is NOT renamed into place', async () => {
@@ -858,12 +808,12 @@ describe('the CLI falls back to the PATH fallback when /usr/local/bin is not wri
 // THE TRIGGER THAT WAS MISSING. `scheduleRuntimeAssetsReconcile` had exactly
 // two non-test call sites — `runtimeReadyTail` (boot) and `POST /kortix/refresh`
 // — and `requestAgentSwapIfIdle` is reached only from the tail of that same
-// pass. The boot pass fires seconds after `opencode-ready`, so it always
+// pass. The boot pass fires seconds after the harness is ready, so it always
 // answered `too-young` against `AGENT_SWAP_MIN_UPTIME_MS = 5 min`, and no later
 // pass existed. A long-lived box therefore staged a daemon and NEVER installed
 // it.
 //
-// The uptime floor is a BOOT-FLAP guard: a restart moments after opencode-ready
+// The uptime floor is a BOOT-FLAP guard: a restart moments after the harness is ready
 // is a readiness flap on the session-start hot path. A `session.idle` frame is
 // the opposite of that — a turn just finished, so the box is provably past boot
 // and provably not serving anyone. The floor is therefore waived at an idle

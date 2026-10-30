@@ -1,11 +1,27 @@
 'use client';
 
-import { type ArtifactVersion } from '@kortix/sdk';
-import { useArtifact, useArtifactMutations, useArtifactVersions } from '@kortix/sdk/react';
-import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbSeparator } from '@kortix/ui/breadcrumb';
+import { readArtifactCommentSnapshot, type ArtifactVersion } from '@kortix/sdk';
+import {
+  useArtifact,
+  useArtifactCommentContext,
+  useArtifactComments,
+  useArtifactMutations,
+  useArtifactVersions,
+  useFeatureFlag,
+  useInfiniteArtifactActivity,
+} from '@kortix/sdk/react';
+import { reloadFrame } from '@kortix/ui/apps';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbSeparator,
+} from '@kortix/ui/breadcrumb';
 import { Button } from '@kortix/ui/button';
 import { ButtonGroup } from '@kortix/ui/button-group';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { CountBadge } from '@kortix/ui/count-badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,22 +32,24 @@ import {
   DropdownMenuTrigger,
 } from '@kortix/ui/dropdown-menu';
 import { ErrorState } from '@kortix/ui/error-state';
+import Hint from '@kortix/ui/hint';
 import Loading from '@kortix/ui/loading';
+import {
+  SessionParticipantStack,
+  participantLabel,
+} from '@kortix/ui/session/participants/session-participants';
+import { useOptionalSidebar } from '@kortix/ui/sidebar';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { SessionParticipantStack, participantLabel } from '@kortix/ui/session/participants/session-participants';
 import { SplitSheet, SplitSheetMain } from '@kortix/ui/split-sheet';
 import { successToast } from '@kortix/ui/toast';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@kortix/ui/tooltip';
 import { SidebarToggle } from '@kortix/ui/workspace';
-import { useOptionalSidebar } from '@kortix/ui/sidebar';
-import { reloadFrame } from '@kortix/ui/apps';
 import {
   ArrowClockwiseIcon,
   ArrowCounterClockwiseIcon,
-  CaretRightIcon,
   ArrowSquareOutIcon,
   ArrowsOutSimpleIcon,
-  XIcon,
+  CaretRightIcon,
+  ChatCircleIcon,
   ClockCounterClockwiseIcon,
   CornersOutIcon,
   DotsThreeIcon,
@@ -43,19 +61,29 @@ import {
   ShareNetworkIcon,
   SparkleIcon,
   XCircleIcon,
+  XIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { drivePathToParam } from '@/features/drives/drive-path-param';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
+import { ArtifactFrame, artifactFrameKey, printArtifact } from '@kortix/ui/artifacts';
+import { ArtifactDiscussionLayout } from './artifact-discussion-layout';
+import { threadDeleted } from './artifact-discussion-logic';
+import {
+  ArtifactDiscussionSidebar,
+  useArtifactDiscussionState,
+} from './artifact-discussion-sidebar';
 import { VISIBILITY_ICON, relativeTime } from './artifact-meta';
 import { AskAgentSheet } from './ask-agent-sheet';
-import { ArtifactFrame, artifactFrameKey, printArtifact } from '@kortix/ui/artifacts';
 import { DocEditor, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
+import { useArtifactSelectionCapture } from './use-artifact-selection-capture';
+import { useArtifactUnshare } from './use-artifact-unshare';
 
 /** Saves closer than this show as one row of the history: an editing burst. */
 const BURST_MS = 5 * 60_000;
@@ -63,7 +91,10 @@ const BURST_MS = 5 * 60_000;
 type HistoryRow = ArtifactVersion & { saves: number };
 
 /** History rows by calendar day, newest first: "Today", "Yesterday", then the date. */
-function historyDays(rows: HistoryRow[], locale: string): Array<{ day: string; rows: HistoryRow[] }> {
+function historyDays(
+  rows: HistoryRow[],
+  locale: string,
+): Array<{ day: string; rows: HistoryRow[] }> {
   const relative = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
   const date = new Intl.DateTimeFormat(locale, { dateStyle: 'medium' });
   const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -86,7 +117,8 @@ function historyRows(versions: ArtifactVersion[]): Array<ArtifactVersion & { sav
   versions.forEach((v, i) => {
     const newer = versions[i - 1];
     const row = rows.at(-1);
-    if (row && newer && Date.parse(newer.created_at) - Date.parse(v.created_at) <= BURST_MS) row.saves += 1;
+    if (row && newer && Date.parse(newer.created_at) - Date.parse(v.created_at) <= BURST_MS)
+      row.saves += 1;
     else rows.push({ ...v, saves: 1 });
   });
   return rows;
@@ -98,21 +130,27 @@ function historyRows(versions: ArtifactVersion[]): Array<ArtifactVersion & { sav
  * Files); an HTML page runs in a sandboxed frame. The history is the Files
  * commit log of its path.
  */
-export function ArtifactViewer({
-  projectId,
-  artifactId,
-  onClose,
-}: {
+type ArtifactViewerProps = {
   projectId: string;
   artifactId: string;
   /** Embedded (the session panel): fill the panel, close instead of the sidebar toggle, and a way to the full page. */
   onClose?: () => void;
-}) {
+};
+
+export function ArtifactViewer(props: ArtifactViewerProps) {
+  return <ArtifactViewerContent key={`${props.projectId}:${props.artifactId}`} {...props} />;
+}
+
+function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewerProps) {
   const embedded = !!onClose;
   const t = useTranslations('artifacts');
   const locale = useLocale();
   const router = useRouter();
+  const search = useSearchParams();
+  const viewerId = useAuth().user?.id;
   const [version, setVersion] = useState<string | undefined>(undefined);
+  const selection = useArtifactSelectionCapture();
+  const clearSelection = selection.clear;
   const query = useArtifact(projectId, artifactId, version);
   const artifact = query.data;
   const mutations = useArtifactMutations(projectId);
@@ -121,6 +159,7 @@ export function ArtifactViewer({
   // Bumped by a conflict's Reload: the editor opens again on the version now in Files.
   const [reloads, setReloads] = useState(0);
   const reloadDoc = () => {
+    selection.clear();
     setDocStatus('saved');
     void query.refetch().then(() => setReloads((n) => n + 1));
   };
@@ -133,7 +172,6 @@ export function ArtifactViewer({
     printArtifact(exportUrl);
   }, [exporting, exportUrl, docStatus]);
   const [sharing, setSharing] = useState(false);
-  const [removing, setRemoving] = useState(false);
   const [asking, setAsking] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -144,6 +182,110 @@ export function ArtifactViewer({
   const canEdit = !!artifact?.can_edit && !viewingOld;
   const isDoc = artifact?.type === 'doc';
   const sidebar = useOptionalSidebar();
+  const commentsFlag = useFeatureFlag(projectId, 'artifact_comments').enabled;
+  const artifactsFlag = useFeatureFlag(projectId, 'artifacts').enabled;
+  const discussionEnabled = commentsFlag && artifactsFlag;
+  const comments = useArtifactComments(projectId, artifactId, {
+    status: 'all',
+    version,
+    enabled: discussionEnabled,
+  });
+  const context = useArtifactCommentContext(projectId, artifactId, {
+    version,
+    enabled: discussionEnabled,
+  });
+  const removal = useArtifactUnshare(
+    discussionEnabled
+      ? async () => {
+          const fresh = await context.refetch();
+          if (fresh.isError || !fresh.data) throw new Error('Comment count unavailable');
+          return fresh.data.comment_count;
+        }
+      : undefined,
+  );
+  const activity = useInfiniteArtifactActivity(projectId, artifactId, {
+    enabled: discussionEnabled,
+  });
+  const discussionState = useArtifactDiscussionState();
+  const [discussionOpen, setDiscussionOpen] = useState(false);
+  const [focusedThreadId, setFocusedThreadId] = useState<string | null>(null);
+  const [focusRevision, setFocusRevision] = useState(0);
+  const defaultPanel = useRef('');
+  const scope = `${projectId}:${artifactId}`;
+  const pendingAnchor = selection.anchor;
+  const openVersion = (next: string | undefined) => {
+    selection.clear();
+    setVersion(next);
+  };
+  const openComments = (comments.data ?? []).filter(
+    (thread) => thread.status === 'open' && !threadDeleted(thread),
+  ).length;
+  useEffect(() => {
+    if (!discussionEnabled || !comments.data || defaultPanel.current === scope) return;
+    defaultPanel.current = scope;
+    setDiscussionOpen(openComments > 0);
+  }, [discussionEnabled, comments.data, scope, openComments]);
+  const focusThread = useCallback(
+    (threadId: string) => {
+      defaultPanel.current = scope;
+      if (version && !comments.data?.some((thread) => thread.thread_id === threadId)) {
+        clearSelection();
+        setVersion(undefined);
+      }
+      setFocusedThreadId(threadId);
+      setFocusRevision((revision) => revision + 1);
+      setDiscussionOpen(true);
+    },
+    [scope, version, comments.data, clearSelection],
+  );
+  const requestedThread = search.get('thread');
+  const requestedFocus = useRef('');
+  useEffect(() => {
+    const key = `${scope}:${requestedThread ?? ''}`;
+    if (!discussionEnabled || !requestedThread || requestedFocus.current === key) return;
+    requestedFocus.current = key;
+    focusThread(requestedThread);
+  }, [discussionEnabled, scope, requestedThread, focusThread]);
+  const readCommentSnapshot = useCallback(
+    () => readArtifactCommentSnapshot(projectId, artifactId),
+    [projectId, artifactId],
+  );
+  const changeDiscussionOpen = (open: boolean) => {
+    defaultPanel.current = scope;
+    if (!open && selection.status === 'pending') selection.clear();
+    setDiscussionOpen(open);
+  };
+  const discussion =
+    artifact && discussionEnabled ? (
+      <ArtifactDiscussionSidebar
+        projectId={projectId}
+        artifact={artifact}
+        comments={comments}
+        context={context.data}
+        contextLoading={context.isLoading}
+        contextError={context.isError}
+        onRetryContext={() => void context.refetch()}
+        activity={{
+          items: activity.items,
+          isLoading: activity.isLoading,
+          isError: activity.isError,
+          hasNextPage: activity.hasNextPage,
+          isFetchingNextPage: activity.isFetchingNextPage,
+          olderVersions: activity.olderVersions,
+          onLoadMore: () => void activity.fetchNextPage(),
+          onRetry: () => void activity.refetch(),
+        }}
+        focusedThreadId={focusedThreadId}
+        focusRevision={focusRevision}
+        onFocusThread={focusThread}
+        pendingAnchor={pendingAnchor}
+        onClearAnchor={selection.clear}
+        selectionCapture={selection.status}
+        readOnly={!!version}
+        onOpenVersion={openVersion}
+        state={discussionState}
+      />
+    ) : null;
 
   if (query.isError) {
     return (
@@ -163,12 +305,22 @@ export function ArtifactViewer({
 
   const VisIcon = artifact ? VISIBILITY_ICON[artifact.visibility] : null;
   const statusText = isDoc && canEdit && docStatus !== 'saved' ? t(`docStatus.${docStatus}`) : null;
-  const folder = artifact ? (artifact.path.endsWith(`/${artifact.entry}`) ? artifact.path.slice(0, -artifact.entry.length - 1) : artifact.path) : '';
+  const folder = artifact
+    ? artifact.path.endsWith(`/${artifact.entry}`)
+      ? artifact.path.slice(0, -artifact.entry.length - 1)
+      : artifact.path
+    : '';
   const rows = historyRows(versions.data ?? []);
   const people = artifact?.participants;
 
   return (
-    <div className={embedded ? 'flex h-full min-h-0 flex-col overflow-hidden' : 'flex h-svh flex-col overflow-hidden'}>
+    <div
+      className={
+        embedded
+          ? 'flex h-full min-h-0 flex-col overflow-hidden'
+          : 'flex h-svh flex-col overflow-hidden'
+      }
+    >
       {/* The project page header (ProjectPageHeader's title-bar classes): a breadcrumb, then quiet actions.
           Embedded in the session panel: the panel's own plain header row. */}
       <header
@@ -180,7 +332,9 @@ export function ArtifactViewer({
         data-sidebar-collapsed={embedded ? undefined : sidebar?.state === 'collapsed' || undefined}
       >
         {embedded ? null : <SidebarToggle />}
-        <Breadcrumb className={`${embedded ? '' : 'kx-titlebar-tabs '}flex h-10 min-w-0 flex-1 items-center px-3`}>
+        <Breadcrumb
+          className={`${embedded ? '' : 'kx-titlebar-tabs'}flex h-10 min-w-0 flex-1 items-center px-3`}
+        >
           <BreadcrumbList className="min-w-0 flex-nowrap gap-1.5 sm:gap-1.5">
             {embedded ? null : (
               <>
@@ -208,7 +362,11 @@ export function ArtifactViewer({
                       if (e.key === 'Enter') {
                         const title = e.currentTarget.value.trim();
                         setRenaming(false);
-                        if (title && title !== artifact.title) await mutations.update.mutateAsync({ artifactId: artifact.artifact_id, title });
+                        if (title && title !== artifact.title)
+                          await mutations.update.mutateAsync({
+                            artifactId: artifact.artifact_id,
+                            title,
+                          });
                       }
                     }}
                   />
@@ -227,24 +385,21 @@ export function ArtifactViewer({
                 )
               ) : null}
               {artifact && VisIcon ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="text-muted-foreground flex shrink-0" aria-label={t(`visibility.${artifact.visibility}`)}>
-                      <VisIcon weight="fill" className="size-3.5" aria-hidden />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>{t(`visibility.${artifact.visibility}`)}</TooltipContent>
-                </Tooltip>
+                <Hint label={t(`visibility.${artifact.visibility}`)}>
+                  <span
+                    className="text-muted-foreground flex shrink-0"
+                    aria-label={t(`visibility.${artifact.visibility}`)}
+                  >
+                    <VisIcon weight="fill" className="size-3.5" aria-hidden />
+                  </span>
+                </Hint>
               ) : null}
               {artifact?.pinned ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="text-muted-foreground flex shrink-0" aria-label={t('pinned')}>
-                      <PushPinIcon weight="fill" className="size-3.5" aria-hidden />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>{t('pinned')}</TooltipContent>
-                </Tooltip>
+                <Hint label={t('pinned')}>
+                  <span className="text-muted-foreground flex shrink-0" aria-label={t('pinned')}>
+                    <PushPinIcon weight="fill" className="size-3.5" aria-hidden />
+                  </span>
+                </Hint>
               ) : null}
             </BreadcrumbItem>
           </BreadcrumbList>
@@ -263,22 +418,21 @@ export function ArtifactViewer({
             {people ? (
               <SessionParticipantStack
                 participants={people}
-                label={t('peopleWithAccess', { names: people.participants.map(participantLabel).filter(Boolean).join(', ') })}
+                label={t('peopleWithAccess', {
+                  names: people.participants.map(participantLabel).filter(Boolean).join(', '),
+                })}
               />
             ) : null}
             {/* Two groups: the artifact's history and Ask AI; then Share and More. */}
             <ButtonGroup>
               <DropdownMenu open={historyOpen} onOpenChange={setHistoryOpen}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DropdownMenuTrigger asChild>
-                      <Button size="icon-sm" variant="secondary" aria-label={t('history')}>
-                        <ClockCounterClockwiseIcon className="size-3.5" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent>{t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })}</TooltipContent>
-                </Tooltip>
+                <Hint label={t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })}>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="icon-sm" variant="secondary" aria-label={t('history')}>
+                      <ClockCounterClockwiseIcon className="size-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </Hint>
                 <DropdownMenuContent align="end" className="max-h-96 w-64 overflow-y-auto">
                   {versions.isLoading ? (
                     <div className="flex flex-col gap-1 p-1">
@@ -296,11 +450,25 @@ export function ArtifactViewer({
                           const current = v.id === rows[0]?.id;
                           const viewing = current ? !version : version === v.id;
                           return (
-                            <DropdownMenuItem key={v.id} onSelect={() => setVersion(current ? undefined : v.id)} aria-current={viewing || undefined}>
-                              <span className="tabular-nums">{new Intl.DateTimeFormat(locale, { timeStyle: 'short' }).format(new Date(v.created_at))}</span>
-                              {v.saves > 1 ? <span className="text-muted-foreground text-xs tabular-nums">{t('saves', { count: v.saves })}</span> : null}
+                            <DropdownMenuItem
+                              key={v.id}
+                              onSelect={() => openVersion(current ? undefined : v.id)}
+                              aria-current={viewing || undefined}
+                            >
+                              <span className="tabular-nums">
+                                {new Intl.DateTimeFormat(locale, { timeStyle: 'short' }).format(
+                                  new Date(v.created_at),
+                                )}
+                              </span>
+                              {v.saves > 1 ? (
+                                <span className="text-muted-foreground text-xs tabular-nums">
+                                  {t('saves', { count: v.saves })}
+                                </span>
+                              ) : null}
                               {current || viewing ? (
-                                <span className={`ml-auto text-xs ${viewing && !current ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                <span
+                                  className={`ml-auto text-xs ${viewing && !current ? 'text-foreground' : 'text-muted-foreground'}`}
+                                >
                                   {current ? t('current') : t('viewing')}
                                 </span>
                               ) : null}
@@ -314,16 +482,30 @@ export function ArtifactViewer({
               </DropdownMenu>
               {canEdit ? (
                 <Button
-                size="xs"
-                variant="secondary"
-                onClick={() => setAsking((open) => !open)}
-                aria-expanded={asking}
-                className="hidden aria-expanded:bg-accent sm:inline-flex"
-              >
+                  size="xs"
+                  variant="secondary"
+                  onClick={() => setAsking((open) => !open)}
+                  aria-expanded={asking}
+                  className="aria-expanded:bg-accent hidden sm:inline-flex"
+                >
                   <SparkleIcon weight="fill" className="size-3.5" aria-hidden /> {t('askAgent')}
                 </Button>
               ) : null}
             </ButtonGroup>
+            {discussionEnabled ? (
+              <Hint label={t(discussionOpen ? 'discussion.hidePanel' : 'discussion.showPanel')}>
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  aria-label={t(discussionOpen ? 'discussion.hidePanel' : 'discussion.showPanel')}
+                  aria-expanded={discussionOpen}
+                  onClick={() => changeDiscussionOpen(!discussionOpen)}
+                >
+                  <ChatCircleIcon className="size-3.5" aria-hidden />
+                  {openComments > 0 ? <CountBadge count={openComments} /> : null}
+                </Button>
+              </Hint>
+            ) : null}
             <ButtonGroup>
               {artifact.can_manage ? (
                 <Button size="xs" variant="secondary" onClick={() => setSharing(true)}>
@@ -351,16 +533,28 @@ export function ArtifactViewer({
                       <ArrowClockwiseIcon /> {t('refresh')}
                     </DropdownMenuItem>
                   ) : null}
-                  <DropdownMenuItem onSelect={() => window.open(artifact.version.view_url, '_blank', 'noopener')}>
+                  <DropdownMenuItem
+                    onSelect={() => window.open(artifact.version.view_url, '_blank', 'noopener')}
+                  >
                     <ArrowSquareOutIcon /> {t('openNewTab')}
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link href={`/projects/${projectId}/drive?path=${encodeURIComponent(drivePathToParam(folder, null))}`}>
+                    <Link
+                      href={`/projects/${projectId}/drive?path=${encodeURIComponent(drivePathToParam(folder, null))}`}
+                    >
                       <FolderOpenIcon /> {t('openInFiles')}
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => mutations.pin.mutate({ artifactId: artifact.artifact_id, pinned: !artifact.pinned })}>
-                    {artifact.pinned ? <PushPinSlashIcon /> : <PushPinIcon />} {artifact.pinned ? t('unpin') : t('pin')}
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      mutations.pin.mutate({
+                        artifactId: artifact.artifact_id,
+                        pinned: !artifact.pinned,
+                      })
+                    }
+                  >
+                    {artifact.pinned ? <PushPinSlashIcon /> : <PushPinIcon />}{' '}
+                    {artifact.pinned ? t('unpin') : t('pin')}
                   </DropdownMenuItem>
                   {artifact.can_manage ? (
                     <>
@@ -368,7 +562,10 @@ export function ArtifactViewer({
                         <PencilSimpleIcon /> {t('rename')}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem variant="destructive" onSelect={() => setRemoving(true)}>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() => void removal.prepare()}
+                      >
                         <XCircleIcon /> {t('remove')}
                       </DropdownMenuItem>
                     </>
@@ -380,33 +577,34 @@ export function ArtifactViewer({
         ) : null}
         {embedded ? (
           <div className="flex shrink-0 items-center">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} asChild>
-                  <Link href={`/projects/${projectId}/artifacts/${artifactId}`}>
-                    <ArrowsOutSimpleIcon className="size-3.5" />
-                  </Link>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('openFullPage')}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button size="icon-sm" variant="ghost" aria-label={t('close')} onClick={onClose}>
-                  <XIcon className="size-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('close')}</TooltipContent>
-            </Tooltip>
+            <Hint label={t('openFullPage')}>
+              <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} asChild>
+                <Link href={`/projects/${projectId}/artifacts/${artifactId}`}>
+                  <ArrowsOutSimpleIcon className="size-3.5" />
+                </Link>
+              </Button>
+            </Hint>
+            <Hint label={t('close')}>
+              <Button size="icon-sm" variant="ghost" aria-label={t('close')} onClick={onClose}>
+                <XIcon className="size-3.5" />
+              </Button>
+            </Hint>
           </div>
         ) : null}
       </header>
 
       {artifact && viewingOld ? (
         <div className="bg-muted flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2 text-xs">
-          <span>{t('viewingOld', { time: relativeTime(rows.find((r) => r.id === version)?.created_at ?? artifact.updated_at, locale) })}</span>
+          <span>
+            {t('viewingOld', {
+              time: relativeTime(
+                rows.find((r) => r.id === version)?.created_at ?? artifact.updated_at,
+                locale,
+              ),
+            })}
+          </span>
           <span className="flex gap-1">
-            <Button size="xs" variant="ghost" onClick={() => setVersion(undefined)}>
+            <Button size="xs" variant="ghost" onClick={() => openVersion(undefined)}>
               {t('backToCurrent')}
             </Button>
             {artifact.can_edit ? (
@@ -415,8 +613,11 @@ export function ArtifactViewer({
                 variant="secondary"
                 disabled={mutations.restore.isPending}
                 onClick={async () => {
-                  await mutations.restore.mutateAsync({ artifactId: artifact.artifact_id, version: version! });
-                  setVersion(undefined);
+                  await mutations.restore.mutateAsync({
+                    artifactId: artifact.artifact_id,
+                    version: version!,
+                  });
+                  openVersion(undefined);
                   successToast(t('restored'));
                 }}
               >
@@ -428,44 +629,118 @@ export function ArtifactViewer({
       ) : null}
 
       {/* Ask agent: a column beside the artifact with one session's chat (covers it when narrow). */}
-      <SplitSheet open={asking && !!artifact} onOpenChange={setAsking} size="lg" className="h-auto min-h-0 flex-1">
+      <SplitSheet
+        open={asking && !!artifact}
+        onOpenChange={setAsking}
+        size="lg"
+        className="h-auto min-h-0 flex-1"
+      >
         <SplitSheetMain className="flex">
-          {!artifact ? (
-            <div className="grid flex-1 place-items-center">
-              <Loading className="size-4" />
-            </div>
-          ) : isDoc ? (
-            <div className="bg-background min-w-0 flex-1 overflow-y-auto">
-              <DocEditor
-                // Read-only: a new file version opens a new editor (an editable one takes it in place).
-              key={`${artifact.artifact_id}:${artifact.version.id ?? 'now'}:${reloads}${canEdit ? '' : `:${artifact.entry_version}`}`}
-                projectId={projectId}
-                artifact={artifact}
-                editable={canEdit}
-                onStatus={setDocStatus}
-                onReload={reloadDoc}
-              />
-            </div>
-          ) : (
-            <div className="bg-muted relative min-w-0 flex-1">
-              {viewUrl ? (
-                <ArtifactFrame ref={frame} frameKey={frameKey!} src={viewUrl} title={artifact.title} className="absolute inset-0 size-full border-0" />
-              ) : null}
-            </div>
-          )}
+          <ArtifactDiscussionLayout
+            open={discussionEnabled && discussionOpen}
+            onOpenChange={changeDiscussionOpen}
+            embedded={embedded}
+            viewerId={viewerId}
+            title={t('discussion.panelTitle')}
+            closeLabel={t('close')}
+            resizeLabel={t('discussion.resizePanel')}
+            discussion={discussion}
+          >
+            {!artifact ? (
+              <div className="grid flex-1 place-items-center">
+                <Loading className="size-4" />
+              </div>
+            ) : isDoc ? (
+              <div className="bg-background min-w-0 flex-1 overflow-y-auto">
+                <DocEditor
+                  // Read-only: a new file version opens a new editor (an editable one takes it in place).
+                  key={`${artifact.artifact_id}:${artifact.version.id ?? 'now'}:${reloads}${canEdit || viewingOld ? '' : `:${artifact.entry_version}`}`}
+                  projectId={projectId}
+                  artifact={artifact}
+                  editable={canEdit}
+                  onStatus={setDocStatus}
+                  onReload={reloadDoc}
+                  comments={discussionEnabled ? comments.data : undefined}
+                  commentEntryVersion={context.data?.version.entry_version}
+                  focusedThreadId={focusedThreadId}
+                  focusRevision={focusRevision}
+                  onFocusThread={discussionEnabled ? focusThread : undefined}
+                  canComment={discussionEnabled && context.data?.can_comment === true && !version}
+                  historical={!!version}
+                  onCommentStart={() => {
+                    const finish = selection.begin();
+                    changeDiscussionOpen(true);
+                    return finish;
+                  }}
+                  onComment={(anchor) => {
+                    if (!selection.publish(anchor)) return;
+                    changeDiscussionOpen(true);
+                  }}
+                  readCommentSnapshot={discussionEnabled ? readCommentSnapshot : undefined}
+                />
+              </div>
+            ) : (
+              <div className="bg-muted relative min-w-0 flex-1">
+                {viewUrl ? (
+                  <ArtifactFrame
+                    ref={frame}
+                    frameKey={frameKey!}
+                    src={viewUrl}
+                    title={artifact.title}
+                    className="absolute inset-0 size-full border-0"
+                  />
+                ) : null}
+              </div>
+            )}
+          </ArtifactDiscussionLayout>
         </SplitSheetMain>
-        {artifact ? <AskAgentSheet projectId={projectId} artifact={artifact} onAgentWork={() => void query.refetch()} /> : null}
+        {artifact ? (
+          <AskAgentSheet
+            projectId={projectId}
+            artifact={artifact}
+            onAgentWork={() => void query.refetch()}
+          />
+        ) : null}
       </SplitSheet>
 
-      {artifact && sharing ? <ShareArtifactDialog projectId={projectId} artifact={artifact} open onOpenChange={setSharing} /> : null}
+      {artifact && sharing ? (
+        <ShareArtifactDialog
+          projectId={projectId}
+          artifact={artifact}
+          open
+          onOpenChange={setSharing}
+        />
+      ) : null}
       <ConfirmDialog
-        open={removing}
-        onOpenChange={setRemoving}
+        open={removal.open}
+        onOpenChange={(open) => {
+          if (!open) removal.close();
+        }}
         title={t('removeTitle')}
-        description={t('removeHint')}
+        description={
+          <div className="space-y-3">
+            <p>{t('removeHint')}</p>
+            {removal.status === 'loading' ? <Loading className="size-4" /> : null}
+            {removal.status === 'error' ? (
+              <ErrorState
+                size="sm"
+                title={t('discussion.commentsLoadError')}
+                action={
+                  <Button size="sm" variant="outline" onClick={() => void removal.prepare()}>
+                    {t('discussion.retry')}
+                  </Button>
+                }
+              />
+            ) : null}
+            {discussionEnabled && removal.status === 'ready' && removal.count > 0 ? (
+              <p>{t('discussion.unshareComments', { count: removal.count })}</p>
+            ) : null}
+          </div>
+        }
         confirmLabel={t('remove')}
         confirmVariant="destructive"
         isPending={mutations.remove.isPending}
+        confirmDisabled={removal.status !== 'ready'}
         onConfirm={async () => {
           await mutations.remove.mutateAsync(artifactId);
           successToast(t('removed'));

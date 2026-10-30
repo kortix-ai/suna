@@ -295,6 +295,9 @@ flow(
       'opencode_model_fallback_until',
       'opencode_model_picked_at',
       'opencode_model_restored',
+      // Telegram write confinement follows a reminder successor to the
+      // session it replaces: a client value would add or drop a chat.
+      'reminder_successor_of',
     ]) {
       await ctx.step(`PATCH metadata.${key} → 400 (server-managed)`, async () => {
         (

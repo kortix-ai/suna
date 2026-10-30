@@ -77,4 +77,20 @@ describe('an email channel message', () => {
     expect(html).not.toContain('#36C5F0');
     expect(html).not.toContain('#29B6F6');
   });
+
+  test("the origin card names the email's subject as Subject, and a chat's as Channel", () => {
+    const card = (platform: 'Email' | 'Telegram', where: string) =>
+      renderToStaticMarkup(
+        <QueryClientProvider client={new QueryClient()}>
+          <ChannelOrigin
+            info={parseChannelMessage(channelPromptText({ platform, sender: 'a@b.example', where, text: 'hi', reply: 'send', notes: [] }))!}
+            platform={platform}
+          />
+        </QueryClientProvider>,
+      );
+    const email = card('Email', 'Q3 report');
+    expect(email).toMatch(/>Subject<\/dt><dd[^>]*>Q3 report</);
+    expect(email).not.toContain('>Channel<');
+    expect(card('Telegram', 'direct message')).toMatch(/>Channel<\/dt><dd[^>]*>direct message</);
+  });
 });

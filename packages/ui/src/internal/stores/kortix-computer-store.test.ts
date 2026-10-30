@@ -425,6 +425,34 @@ describe('mobile tool drawer state', () => {
     useKortixComputerStore.getState().reset();
     expect(useKortixComputerStore.getState().mobileToolView).toBeNull();
   });
+
+  test('browser targets replace each other and close cannot resurrect the previous target', () => {
+    const state = useKortixComputerStore.getState();
+    state.openMobileTool('browser', { url: 'https://example.test/a', title: 'A' });
+    expect(useKortixComputerStore.getState().mobileToolTarget).toEqual({ url: 'https://example.test/a', title: 'A' });
+    state.openMobileTool('browser', { url: 'https://example.test/b' });
+    expect(useKortixComputerStore.getState().mobileToolTarget).toEqual({ url: 'https://example.test/b' });
+    state.closeMobileTool();
+    expect(useKortixComputerStore.getState().mobileToolTarget).toBeNull();
+    state.openMobileTool('browser');
+    expect(useKortixComputerStore.getState().mobileToolTarget).toBeNull();
+  });
+
+  test('target belongs to its session and clears on reset or another tool', () => {
+    const state = useKortixComputerStore.getState();
+    state.setActiveSession('a');
+    state.openMobileTool('browser', { url: 'https://example.test/a' });
+    state.setActiveSession('a');
+    expect(useKortixComputerStore.getState().mobileToolTarget?.url).toBe('https://example.test/a');
+    state.setActiveSession('b');
+    expect(useKortixComputerStore.getState().mobileToolTarget).toBeNull();
+    state.openMobileTool('browser', { url: 'https://example.test/b' });
+    state.openMobileTool('terminal');
+    expect(useKortixComputerStore.getState().mobileToolTarget).toBeNull();
+    state.openMobileTool('browser', { url: 'https://example.test/b' });
+    state.reset();
+    expect(useKortixComputerStore.getState().mobileToolTarget).toBeNull();
+  });
 });
 
 describe('floating action panel vs detail side panel — two flags, zero coupling', () => {

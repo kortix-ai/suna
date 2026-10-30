@@ -5,6 +5,7 @@
  * max_attempts; a stale worker cannot complete a job another worker re-claimed.
  * A running job holds one slot of its replica: a slow job stops no other queue,
  * and a job whose last claim never settled is dead instead of claimed forever.
+ * Jobs that share an order key run one at a time, lowest seq first.
  */
 import { expect, test } from 'bun:test';
 import { jobQueue } from '@kortix/db';
@@ -210,4 +211,37 @@ test('one queue never takes every slot: one stays for the other queues', async (
   await settled.reached(3);
   expect(await runJobBatch()).toBe(1);
   expect(await statuses(q)).toEqual(['done/1', 'done/1', 'done/1', 'done/1']);
+});
+
+test('jobs that share an order key run one at a time, lowest seq first; other keys and unordered jobs do not wait', async () => {
+  const q = queue();
+  for (const seq of [3, 1, 2]) await enqueueJob(q, `a${seq}`, {}, { order: { key: 'chat-a', seq } });
+  await enqueueJob(q, 'b9', {}, { order: { key: 'chat-b', seq: 9 } });
+  await enqueueJob(q, 'free');
+  const first = await claimJobs([q], 10, 60_000);
+  expect(first.map((j) => j.jobKey).sort()).toEqual(['a1', 'b9', 'free']);
+  // a2 waits while a1 runs.
+  expect(await claimJobs([q], 10, 60_000)).toEqual([]);
+  await completeJob(first.find((j) => j.jobKey === 'a1')!);
+  expect((await claimJobs([q], 10, 60_000)).map((j) => j.jobKey)).toEqual(['a2']);
+});
+
+test('an earlier job holds its key through its first retry, not after its second failure; a dead one holds nothing', async () => {
+  const q = queue();
+  for (const seq of [1, 2, 3]) await enqueueJob(q, `a${seq}`, {}, { order: { key: 'k', seq } });
+  const due = (key: string) => db.update(jobQueue).set({ runAt: sql`now()` }).where(and(eq(jobQueue.queue, q), eq(jobQueue.jobKey, key)));
+  const first = await claimJobs([q], 10, 60_000);
+  expect(first.map((j) => j.jobKey)).toEqual(['a1']);
+  // Attempt 1 failed: a1 backs off 10 s, and a2 waits out the retry.
+  await failJob(first[0]!, new Error('transient'));
+  expect(await claimJobs([q], 10, 60_000)).toEqual([]);
+  await due('a1');
+  const retry = await claimJobs([q], 10, 60_000);
+  expect(retry.map((j) => j.jobKey)).toEqual(['a1']);
+  // Attempt 2 failed: a1 holds nothing now.
+  await failJob(retry[0]!, new Error('again'));
+  const second = await claimJobs([q], 10, 60_000);
+  expect(second.map((j) => j.jobKey)).toEqual(['a2']);
+  await db.update(jobQueue).set({ status: 'dead' }).where(eq(jobQueue.jobId, second[0]!.jobId));
+  expect((await claimJobs([q], 10, 60_000)).map((j) => j.jobKey)).toEqual(['a3']);
 });

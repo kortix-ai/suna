@@ -82,13 +82,15 @@ function remember(artifactId: string, text: string, loaded = false) {
 }
 
 /** Where a text sits in this tab's history of the doc (newest last); -1 when this tab never had it. */
-const ownIndex = (artifactId: string, text: string) => ownTexts.get(artifactId)?.lastIndexOf(text) ?? -1;
+const ownIndex = (artifactId: string, text: string) =>
+  ownTexts.get(artifactId)?.lastIndexOf(text) ?? -1;
 
 /**
  * Saves of this doc still on their way from an editor that closed, retries
  * included. The next editor opens on the outcome (null: open as given).
  */
-export const pendingSave = (artifactId: string): Promise<Known | null> | undefined => landing.get(artifactId);
+export const pendingSave = (artifactId: string): Promise<Known | null> | undefined =>
+  landing.get(artifactId);
 
 export function createDocSaver(start: Known, deps: DocSaverDeps) {
   const clock = deps.timers ?? realTimers;
@@ -170,12 +172,15 @@ export function createDocSaver(start: Known, deps: DocSaverDeps) {
       const at = known;
       // A closed editor never writes on its own: a restore may have put an older text back on purpose.
       if (closed || conflict || saving || queued !== null || debounce !== null) return;
-      void deps.read().then((now) => {
-        if (closed || known !== at || now.version === at.version) return;
-        const verdict = reconcile(now, at.text, at.text);
-        if (verdict === 'ours') later(0);
-        if (verdict === 'theirs') enterConflict();
-      }, () => {});
+      void deps.read().then(
+        (now) => {
+          if (closed || known !== at || now.version === at.version) return;
+          const verdict = reconcile(now, at.text, at.text);
+          if (verdict === 'ours') later(0);
+          if (verdict === 'theirs') enterConflict();
+        },
+        () => {},
+      );
     }, VERIFY_MS);
   };
 
@@ -205,7 +210,11 @@ export function createDocSaver(start: Known, deps: DocSaverDeps) {
       failures = 0;
     } catch (err) {
       const now = deps.isConflict(err) ? await deps.read().catch(() => null) : null;
-      const verdict = deps.isConflict(err) ? (now ? reconcile(now, text, at.text) : 'theirs') : null;
+      const verdict = deps.isConflict(err)
+        ? now
+          ? reconcile(now, text, at.text)
+          : 'theirs'
+        : null;
       if (verdict === 'theirs') {
         after = null;
         enterConflict();
@@ -246,6 +255,15 @@ export function createDocSaver(start: Known, deps: DocSaverDeps) {
       debounce = stop(debounce);
       void save(deps.text());
     },
+    async snapshot(): Promise<Known> {
+      if (conflict) throw new Error('The document has a save conflict');
+      this.flush();
+      const waiting = landing.get(id);
+      const saved = waiting ? await waiting : known;
+      if (!saved || debounce !== null || saving || next !== null || queued !== null || conflict)
+        throw new Error('The document has unsaved changes');
+      return saved;
+    },
     /** The conflict's Keep mine: write this tab's text over theirs, then autosave resumes. */
     keepMine() {
       conflict = false;
@@ -260,7 +278,8 @@ export function createDocSaver(start: Known, deps: DocSaverDeps) {
      * text (written back, as after a save).
      */
     async refresh(version?: string | null): Promise<Known | null> {
-      const idle = () => !closed && !conflict && !saving && queued === null && debounce === null && next === null;
+      const idle = () =>
+        !closed && !conflict && !saving && queued === null && debounce === null && next === null;
       // The version this editor already holds (its own save): nothing to read.
       if (!idle() || (version !== undefined && version === known.version)) return null;
       const at = known;

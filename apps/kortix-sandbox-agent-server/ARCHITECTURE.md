@@ -8,7 +8,7 @@ this page says.
 ```
  app       src/main.ts, src/app/, src/routes/     composition root and HTTP controllers
    ↓
- harness   src/harness/                           the session runtime: OpenCode and pi, isolated from each other
+ harness   src/harness/                           the session runtime: pi, behind the resolver and its ports
    ↓
  services  src/services/<name>/                   host capabilities; each declares the other services it uses
    ↓
@@ -32,10 +32,10 @@ provider, so neither service imports the other.
 | --- | --- | --- |
 | `src/main.ts` | app | Entry point. Builds the config, the harness boot context and the HTTP `serve` function. |
 | `src/app/` | app | `server.ts` (Hono app, auth gate, route mounting), `shutdown.ts`, `cli.ts` (management CLI). |
-| `src/routes/kortix/` | app | `/kortix/*`: health, refresh, config, catalog, abort, env, part, logs, diag, the Runtime API (`/kortix/runtime/*`, also mounted at its pre-W3 path `/kortix/opencode/*`), pty, env-rpc, git. Each route checks its own credential. `legacy-names.ts` holds every pre-W3 wire name the routes still answer and accept. |
+| `src/routes/kortix/` | app | `/kortix/*`: health, refresh, config, catalog, abort, env, part, logs, diag, the Runtime API (`/kortix/runtime/*`), pty, env-rpc, git. Each route checks its own credential. |
 | `src/routes/workspace/` | app | `/file`, `/find`, `/presentation`: daemon-owned access to `/workspace`, behind the user-context gate. |
 | `src/routes/proxy/` | app | `/proxy/:port`, `/web-proxy`, and the catch-all to the harness, behind the user-context gate. |
-| `src/harness/` | harness | `harness.ts` (resolver, `loadConfig`, boot context), `contract/` (ports app and routes call), `shared/` (steps both adapters run), `open-code/`, `pi/`. See its [README](src/harness/README.md). |
+| `src/harness/` | harness | `harness.ts` (resolver, `loadConfig`, boot context), `contract/` (ports app and routes call), `shared/` (boot and relay steps that are not pi-specific), `pi/` (the one adapter). See its [README](src/harness/README.md). |
 | `src/services/workspace-provider/` | services | Provides `/workspace` on a boot. `provideWorkspace` (`workspace-provider.ts`) adopts a baked checkout or calls `acquire` (`acquire.ts`), which takes the `git` or S3 transport by mode (`git`, `prefer-s3`, `require-s3`). `git.ts` is the git transport and the warm-pool seeds; `checkout.ts` is the session checkout every transport ends with. |
 | `src/services/config-provider/` | services | Provides the config release a boot needs: the store outside the repository, its descriptor, notice and API calls. `obtain.ts` builds a release from the store, the checkout, the project snapshot (`src/lib/project-snapshot/`) or the API archive. `compiled-agent-config.ts` reads and writes the compiled agent config in env, raw or gzip-encoded, for every harness and route. |
 | `src/services/runtime-assets/` | services | CLI, agent, skill-overlay and harness-asset convergence (self-update); the runtime-truth ledger. `port.ts` is the contract a harness implements. |
@@ -68,7 +68,7 @@ provider, so neither service imports the other.
 | `src/lib/**` | the shared layer | none |
 | `src/services/<name>/**` | its own folder, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract`. `config-provider`, `runtime-assets`, `tools`: `@kortix/api-contract` |
 | `src/harness/harness.ts` | the harness, all services, the shared layer | none |
-| `src/harness/{open-code,pi}/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`. `open-code`: `bun:sqlite`. `pi`: `@earendil-works/*`, `typebox`, `@kortix/sdk/wire-message-id` |
+| `src/harness/pi/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`, `@earendil-works/*`, `typebox`, `quickjs-wasi`, `@silvia-odwyer/photon-node`, `@kortix/sdk/wire-message-id` |
 | `src/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract` (the daemon-to-API wire, `runtime-relay`), `@kortix/sdk/wire-message-id` (the session-log boot's restore note) |
 | `src/routes/**` | `src/routes/**`, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `hono`, `@kortix/api-contract` |
 | `src/app/**`, `src/main.ts` | everything above except adapter internals | `hono`, `@kortix/api-contract` |
@@ -77,11 +77,10 @@ provider, so neither service imports the other.
 Consequences:
 
 - Only `src/harness/harness.ts` imports an adapter. An adapter never imports
-  another adapter, a route, or `src/app/`.
+  a route or `src/app/`.
 - No service imports the harness.
 - Hono lives only in `src/routes/` and `src/app/`.
-- pi's packages load only from `src/harness/pi/`, so an OpenCode boot never pays
-  for them.
+- pi's packages load only from `src/harness/pi/`.
 - A service never imports another service. What two services both need lives
   in the shared layer (`src/lib/project-snapshot/`, `src/lib/release-store-lock.ts`,
   `src/lib/config/managed-skills-dir.ts`), and the harness composes them.
@@ -119,24 +118,23 @@ with this source, and the Dockerfiles copy them (`src/__tests__/shared-sources.t
 
 ## OpenCode names (E18 ratchet)
 
-OpenCode knowledge belongs in `src/harness/open-code/`. The `kortixd/opencode-names`
-lint rule rejects an identifier or string that matches `/open.?code/i` in
-`src/lib/`, `src/types/`, `src/services/`, `src/routes/`, `src/app/`,
-`src/main.ts`, `src/harness/contract/`, `src/harness/shared/` and, since W5 E2
-(pi emits the Kortix format), `src/harness/pi/`. Tests, `src/harness/harness.ts`
-and the OpenCode adapter are out of scope. Comments are not checked.
+OpenCode is deleted. The `kortixd/opencode-names` lint rule rejects an
+identifier or string that matches `/open.?code/i` in `src/lib/`, `src/types/`,
+`src/services/`, `src/routes/`, `src/app/`, `src/main.ts`,
+`src/harness/contract/`, `src/harness/shared/` and `src/harness/pi/`. Tests and
+`src/harness/harness.ts` are out of scope: the resolver names the `opencode` id
+it maps to pi (see the [harness README](src/harness/README.md)). Comments are
+not checked.
 
 `OPENCODE_NAMES_ALLOWED` in `eslint.config.mjs` lists the names that exist
 today, per file. The list only shrinks: an entry whose word no longer occurs in
 its file fails the lint, so the PR that removes a name deletes its entry. Do not
-add an entry; name the new code neutrally or move it into the adapter.
+add an entry; name the new code neutrally.
 
-Since W3 the list holds one file, `src/routes/kortix/legacy-names.ts`: the
-pre-W3 wire names (`opencode_pid`, `opencodeEnv`, `/kortix/opencode`, …) that an
-API deploy built before W3 still reads and sends. Every other module uses the
-Kortix names (`runtime_*`, `runtime_session_id`, `harness_version`). Delete the
-file, its callers' spreads and its entry when no such API deploy can run. The
-two pi entries (`src/harness/pi/config.ts`, `config-release.ts`) name the legacy
+The routes use the Kortix names only (`runtime_*`, `runtime_session_id`,
+`harness_version`). The pre-W3 wire names (`opencode_pid`, `opencodeEnv`,
+`/kortix/opencode`, …) are gone from the daemon since 2026-10-30. The two pi
+entries (`src/harness/pi/config.ts`, `config-release.ts`) name the legacy
 layout's config directory, `.kortix/opencode`, which a project that has not
 moved to the root layout still uses.
 
@@ -146,7 +144,7 @@ moved to the root layout still uses.
    ports stay in `src/harness/contract/`, next to what implements them; every
    adapter, route and `src/app/` may import them.
 2. A type that two modules need and that neither may import from the other goes
-   to `src/types/`: two adapters, a service and an adapter, or two services.
+   to `src/types/`: a service and the adapter, or two services.
    Move it, point every user at it, and delete the copies.
 3. A type the API also uses goes to `packages/api-contract`, not `src/types/`.
 
@@ -172,8 +170,8 @@ Do not import it. The higher layer hands it down:
 1. It handles an HTTP request: `src/routes/<zone>/`, by URL. A helper that only
    routes use sits next to them.
 2. It wires startup, shutdown or a workload: `src/app/`.
-3. It is harness-specific: `src/harness/<adapter>/`. Both adapters need it:
-   `src/harness/shared/`. App or routes call it: a port in
+3. It is pi-specific: `src/harness/pi/`. A boot or relay step that is not
+   pi-specific: `src/harness/shared/`. App or routes call it: a port in
    `src/harness/contract/`.
 4. It is a host capability with its own state or lifecycle: an existing
    service, or a new `src/services/<name>/`.

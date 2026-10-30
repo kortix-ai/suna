@@ -224,10 +224,10 @@ importers:
         version: 0.1.0-alpha.76
       '@composio/core':
         specifier: 0.17.0
-        version: 0.17.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.21.3)(zod@3.25.76)
+        version: 0.17.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.22.0)(zod@3.25.76)
       '@daytonaio/sdk':
         specifier: ^0.184.0
-        version: 0.184.0(ws@8.21.3)
+        version: 0.184.0(ws@8.22.0)
       '@hono/zod-openapi':
         specifier: ^0.19.10
         version: 0.19.10(hono@4.13.11)(zod@3.25.76)
@@ -454,16 +454,16 @@ importers:
     dependencies:
       '@earendil-works/pi-agent-core':
         specifier: 1.4.0
-        version: 1.4.0(undici@8.12.2)(ws@8.21.3)(zod@3.25.76)
+        version: 1.4.0(undici@8.12.2)(zod@3.25.76)
       '@earendil-works/pi-ai':
         specifier: 1.4.0
-        version: 1.4.0(undici@8.12.2)(ws@8.21.3)(zod@3.25.76)
+        version: 1.4.0(undici@8.12.2)(zod@3.25.76)
       '@earendil-works/pi-codemode':
         specifier: 1.4.0
         version: 1.4.0
       '@earendil-works/pi-coding-agent':
         specifier: 1.4.0
-        version: 1.4.0(ws@8.21.3)(zod@3.25.76)
+        version: 1.4.0(zod@3.25.76)
       '@earendil-works/pi-tui':
         specifier: 1.4.0
         version: 1.4.0
@@ -498,9 +498,6 @@ importers:
       '@types/node-forge':
         specifier: ^1.3.11
         version: 1.3.14
-      '@types/ws':
-        specifier: 8.18.1
-        version: 8.18.1
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20260707.2
         version: 7.0.0-dev.20260707.2
@@ -516,9 +513,6 @@ importers:
       typescript-eslint:
         specifier: 8.70.0
         version: 8.70.0(eslint@9.39.5)(typescript@5.9.3)
-      ws:
-        specifier: 8.21.3
-        version: 8.21.3
 
   apps/llm-gateway:
     dependencies:
@@ -919,7 +913,7 @@ importers:
         version: 0.5.11
       '@opentui/react':
         specifier: 0.5.11
-        version: 0.5.11(react-devtools-core@7.0.1)(react@19.3.0)(typescript@5.9.3)(web-tree-sitter@0.25.10)(ws@8.21.3)
+        version: 0.5.11(react-devtools-core@7.0.1)(react@19.3.0)(typescript@5.9.3)(web-tree-sitter@0.25.10)(ws@8.22.0)
       '@tanstack/react-query':
         specifier: ^5.75.2
         version: 5.103.0(react@19.3.0)
@@ -5086,7 +5080,7 @@ packages:
     resolution: {integrity: sha512-MXC5JGRVdiQ4EgLricy9o/mqBa1+1T7wHFZ6Q4ZJkrjzZqOMvxTgy21Zlb5J/1oGkB2bg9UDzpH8PkXCp/D4zA==}
     dev: false
 
-  /@composio/core@0.17.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.21.3)(zod@3.25.76):
+  /@composio/core@0.17.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.22.0)(zod@3.25.76):
     resolution: {integrity: sha512-HJzpKWgise3piltWorEHt07nrjUR3gPZnBmrFgnJXx5+6AiKn79YGBYLytdtuMscElLt/7pHOIxfcaYpiGkJ7A==}
     peerDependencies:
       zod: 4.6.7
@@ -5095,7 +5089,7 @@ packages:
       '@composio/json-schema-to-zod': 0.3.0(zod@3.25.76)
       '@types/json-schema': 7.0.15
       is-fs-case-sensitive: 2.0.0
-      openai: 7.15.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.21.3)(zod@3.25.76)
+      openai: 7.15.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.22.0)(zod@3.25.76)
       picocolors: 1.1.1
       pusher-js: 8.6.0
       semver: 7.8.5
@@ -5168,7 +5162,7 @@ packages:
       - supports-color
     dev: false
 
-  /@daytonaio/sdk@0.184.0(ws@8.21.3):
+  /@daytonaio/sdk@0.184.0(ws@8.22.0):
     resolution: {integrity: sha512-9dIzN1keoS10DVVXoI1f1WEz/FeJc0iTIv2z21Yg844j2gdCclsvQJVhV3rUHRxinRLSuyr312PIb9/xZEglDg==}
     deprecated: 'Moved to @daytona/sdk, same API, no breaking changes. Please update: npm uninstall @daytonaio/sdk && npm i @daytona/sdk'
     dependencies:
@@ -5191,7 +5185,7 @@ packages:
       expand-tilde: 2.0.2
       fast-glob: 3.3.3
       form-data: 4.0.6
-      isomorphic-ws: 5.0.0(ws@8.21.3)
+      isomorphic-ws: 5.0.0(ws@8.22.0)
       pathe: 2.0.3
       shell-quote: 1.11.0
       tar: 7.5.21
@@ -5250,11 +5244,11 @@ packages:
       playwright: 1.63.0
     dev: true
 
-  /@earendil-works/pi-agent-core@1.4.0(undici@8.12.2)(ws@8.21.3)(zod@3.25.76):
+  /@earendil-works/pi-agent-core@1.4.0(undici@8.12.2)(zod@3.25.76):
     resolution: {integrity: sha512-PoKY84SKUwnt7S5QBZaGUqfNO1kjP3KHpHUA9QpFTj4cOjaVWMYIcBPJ6FDRCdE8Zen9OSECQUd0uUfVgtSmgA==}
     engines: {node: '>=22.19.0'}
     dependencies:
-      '@earendil-works/pi-ai': 1.4.0(undici@8.12.2)(ws@8.21.3)(zod@3.25.76)
+      '@earendil-works/pi-ai': 1.4.0(undici@8.12.2)(zod@3.25.76)
       typebox: 1.3.27
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -5270,7 +5264,7 @@ packages:
       - zod
     dev: false
 
-  /@earendil-works/pi-ai@1.4.0(undici@8.12.2)(ws@8.21.3)(zod@3.25.76):
+  /@earendil-works/pi-ai@1.4.0(undici@8.12.2)(zod@3.25.76):
     resolution: {integrity: sha512-hQM/C4+1w8rHYACzDDf+0vQMnEnpzIop1tptIERVgR3ZeT/hHSzBNG8PaWPgxWQjqSeKCyBZSyp8uTT6eKK1pQ==}
     engines: {node: '>=22.19.0'}
     hasBin: true
@@ -5282,7 +5276,7 @@ packages:
       '@smithy/node-http-handler': 4.12.1
       http-proxy-agent: 9.1.0
       https-proxy-agent: 9.1.0
-      openai: 7.19.0(undici@8.12.2)(ws@8.21.3)(zod@3.25.76)
+      openai: 7.19.0(undici@8.12.2)(zod@3.25.76)
       partial-json: 0.1.7
       typebox: 1.3.27
     transitivePeerDependencies:
@@ -5306,13 +5300,13 @@ packages:
       quickjs-wasi: 3.6.2
     dev: false
 
-  /@earendil-works/pi-coding-agent@1.4.0(ws@8.21.3)(zod@3.25.76):
+  /@earendil-works/pi-coding-agent@1.4.0(zod@3.25.76):
     resolution: {integrity: sha512-Z41LpZ3yYHSC/UUps6Mr39UMFPwH8elhJBG9DY1P7kuzsE5qSK/6eMj2EHzO5evJRQWLbKSqUMw+4nCNtIyiQg==}
     engines: {node: '>=22.19.0'}
     hasBin: true
     dependencies:
-      '@earendil-works/pi-agent-core': 1.4.0(undici@8.12.2)(ws@8.21.3)(zod@3.25.76)
-      '@earendil-works/pi-ai': 1.4.0(undici@8.12.2)(ws@8.21.3)(zod@3.25.76)
+      '@earendil-works/pi-agent-core': 1.4.0(undici@8.12.2)(zod@3.25.76)
+      '@earendil-works/pi-ai': 1.4.0(undici@8.12.2)(zod@3.25.76)
       '@earendil-works/pi-codemode': 1.4.0
       '@earendil-works/pi-mcp': 1.4.0
       '@earendil-works/pi-tui': 1.4.0
@@ -8927,7 +8921,7 @@ packages:
       - typescript
     dev: false
 
-  /@opentui/react@0.5.11(react-devtools-core@7.0.1)(react@19.3.0)(typescript@5.9.3)(web-tree-sitter@0.25.10)(ws@8.21.3):
+  /@opentui/react@0.5.11(react-devtools-core@7.0.1)(react@19.3.0)(typescript@5.9.3)(web-tree-sitter@0.25.10)(ws@8.22.0):
     resolution: {integrity: sha512-ACH6Kpl3/O1zdNL0sZtzrnxfw0+auJu4eefIbPTAPuNEessyuhd2xvV4agrdWRJCeogywS7er5k7uS/8YRWnZg==}
     peerDependencies:
       react: '>=19.2.0'
@@ -8938,7 +8932,7 @@ packages:
       react: 19.3.0
       react-devtools-core: 7.0.1
       react-reconciler: 0.33.0(react@19.3.0)
-      ws: 8.21.3
+      ws: 8.22.0
     transitivePeerDependencies:
       - typescript
       - web-tree-sitter
@@ -24149,12 +24143,12 @@ packages:
     engines: {node: '>=20'}
     dev: true
 
-  /isomorphic-ws@5.0.0(ws@8.21.3):
+  /isomorphic-ws@5.0.0(ws@8.22.0):
     resolution: {integrity: sha512-muId7Zzn9ywDsyXgTIafTry2sV3nySZeUDe6YedVd1Hvuuep5AsIlqK+XefWpYTyJG5e503F2xIuT2lcU6rCSw==}
     peerDependencies:
       ws: '*'
     dependencies:
-      ws: 8.21.3
+      ws: 8.22.0
     dev: false
 
   /isomorphic.js@0.2.5:
@@ -27403,7 +27397,7 @@ packages:
       is-wsl: 2.2.0
     dev: true
 
-  /openai@7.15.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.21.3)(zod@3.25.76):
+  /openai@7.15.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.22.0)(zod@3.25.76):
     resolution: {integrity: sha512-2DIwesnPSduw68MFx7nAdgvshrgvS8WOan5W8+tgUMlAy/tY+Q41g80Pa+w/v64rHA6rtn+dketa8QvMVxU96w==}
     engines: {node: '>=22.0.0'}
     peerDependencies:
@@ -27429,11 +27423,11 @@ packages:
     dependencies:
       '@aws-sdk/credential-provider-node': 3.972.62
       '@smithy/signature-v4': 5.6.2
-      ws: 8.21.3
+      ws: 8.22.0
       zod: 3.25.76
     dev: false
 
-  /openai@7.19.0(undici@8.12.2)(ws@8.21.3)(zod@3.25.76):
+  /openai@7.19.0(undici@8.12.2)(zod@3.25.76):
     resolution: {integrity: sha512-MX2s3u2L5racTO0CC/SWpCOasJQBCJrqLKXK+l82cAhdeF8mPMBEe/gxMm0ZFa2xpKpOFLRjxv5afYEZbBXmbQ==}
     engines: {node: '>=22.0.0'}
     peerDependencies:
@@ -27458,7 +27452,6 @@ packages:
         optional: true
     dependencies:
       undici: 8.12.2(patch_hash=mu6tw5d72jgydn6wat3dblh4w4)
-      ws: 8.21.3
       zod: 3.25.76
     dev: false
 
@@ -33413,7 +33406,7 @@ packages:
       y-protocols: 1.0.7(yjs@13.6.33)
       yjs: 13.6.33
     optionalDependencies:
-      ws: 8.21.3
+      ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
       - supports-color

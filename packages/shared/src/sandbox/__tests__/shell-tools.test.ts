@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
-import { OPENCODE_VERSION } from '../../runtime-versions';
 import { kortixToolchainLayer } from '../dockerfile-layer';
 import { buildMetaSandboxDockerfile } from '../meta-dockerfile';
 import {
@@ -18,7 +17,7 @@ const repoFile = (path: string) =>
 const IMAGES: Array<{ label: string; dockerfile: string }> = [
   {
     label: 'standard layer (platform default + custom templates)',
-    dockerfile: kortixToolchainLayer({ opencodeVersion: OPENCODE_VERSION }),
+    dockerfile: kortixToolchainLayer({}),
   },
   {
     label: 'meta-agent image',
@@ -26,7 +25,6 @@ const IMAGES: Array<{ label: string; dockerfile: string }> = [
       agentBinaryPath: 'a',
       cliBinaryPath: 'a',
       entrypointScriptPath: 'a',
-      catalogPath: 'a',
       managedSkillsPath: 'a',
     }),
   },

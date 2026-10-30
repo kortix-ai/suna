@@ -196,6 +196,11 @@ async function startReplicaServices() {
   // is one connection and it must be in place before the first turn; it never
   // rejects, and a failure degrades to the memo's TTL.
   await import('./shared/pg-broadcast').then(async (m) => {
+    // A box row change NOTIFYs every replica, so a first prompt waiting on this
+    // replica re-opens when the box went active on another one. Registered
+    // before the LISTEN check: the handler set survives a later retry.
+    const { signalSessionRuntimeActive } = await import('./projects/surface');
+    m.onSessionChanged(signalSessionRuntimeActive);
     const listening = await m.startConfigBaseMoveBroadcast();
     if (!listening) return;
     const { useDesiredInvalidationTransport } = await import('./projects/lib/turn-start-convergence');

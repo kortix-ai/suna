@@ -4879,6 +4879,7 @@ const catalog = {
       "textce1e609b7bf5": "Sandbox ports only",
       "textce34af36d804": "Kortix CompanyOS – the open-source operating system for your company",
       "textce4683e7013a": "Channel",
+      "text68971283841a": "Subject",
       "textce49e021df99": "The session owner or a project manager can reload it.",
       "textce4c96225f63": "1 attempt",
       "textce5e9df4a78f": "Service account",
@@ -8281,6 +8282,18 @@ const catalog = {
       "connectLabel": "Connect MCP",
       "copyFailed": "Could not copy the command. Try again."
     }
+  },
+  "sessionDesktop": {
+    "title": "Desktop",
+    "openTab": "Open in new tab",
+    "offline": "The desktop is not running on this computer.",
+    "start": "Ask Kortix to run",
+    "retry": "Retry",
+    "takeOver": "Take over",
+    "userControl": "You have control",
+    "agentControl": "Kortix has control",
+    "returnControl": "Return control",
+    "escape": "Esc"
   }
 };
 

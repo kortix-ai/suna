@@ -1,26 +1,21 @@
 import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'bun:test'
 import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
-import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
-import type { Opencode } from '@/harness/open-code/lifecycle'
+import type { Config } from '@/lib/config/config'
 import { startProxy } from '@/app/server'
-import { requireOpenCodeConfig } from '@/harness/open-code/config'
-import { composeOpenCodeHarnessService } from '@/harness/open-code/service'
+import { fakeHarness } from './helpers/daemon-test-app'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
 function baseConfig(over: Partial<Config> = {}): Config {
   return {
     servicePort: 0,
-    opencodeInternalPort: 4096,
-    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/tmp',
     projectTarget: '/tmp',
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,
-    defaultOpencodeConfigDir: '/ephemeral/opencode',
     autoClone: false,
     projectId: undefined,
     apiUrl: undefined,
@@ -35,15 +30,6 @@ function baseConfig(over: Partial<Config> = {}): Config {
     cloneDepth: 1,
     ...over,
   }
-}
-
-function fakeOpencode(): Opencode {
-  return {
-    getState: () => 'ok',
-    getPid: () => null,
-    getInternalUrl: () => 'http://127.0.0.1:1',
-    restart: async () => {},
-  } as unknown as Opencode
 }
 
 function base64url(buf: Buffer): string {
@@ -69,7 +55,7 @@ function authHeaders(): Record<string, string> {
 }
 
 function startTestProxy(cfg: Config = baseConfig()) {
-  return startProxy(cfg, composeOpenCodeHarnessService(requireOpenCodeConfig(cfg), fakeOpencode()), Date.now(), { repoMaterializationError: null, timeline: [] })
+  return startProxy(cfg, fakeHarness(), Date.now(), { repoMaterializationError: null, timeline: [] })
 }
 
 interface PtyMeta {

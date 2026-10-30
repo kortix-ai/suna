@@ -16,17 +16,14 @@ It also manages its own lifecycle — see [Management CLI](#management-cli).
 
 **Scope:**
 
-1. Runs the session harness `KORTIX_HARNESS` selects: OpenCode (unset or
-   `opencode`, the default today) as a supervised `opencode serve` child
-   process, or pi (`pi`) inside the daemon process. pi replaces OpenCode;
-   OpenCode support is temporary. See [the harness README](src/harness/README.md).
+1. Runs the session harness, pi, inside the daemon process. There is no child
+   process. OpenCode is deleted: a box that OpenCode booted before the sunset
+   boots pi too. See [the harness README](src/harness/README.md).
 2. Serves the session runtime's HTTP + SSE surface on `KORTIX_SERVICE_PORT`
-   (default `8000`): a reverse proxy to opencode, or pi's own handlers. The
-   routes, the transcript (`kortix.transcript.v1`) and the events are the
-   same on both harnesses.
-3. Managed Kortix system skills for the harness: injected into OpenCode's
-   native discovery directory; read by pi from the image's overlay directory,
-   with nothing written into the working tree.
+   (default `8000`): pi's own handlers, the transcript (`kortix.transcript.v1`)
+   and the events.
+3. Managed Kortix system skills for the harness: pi reads them from the image's
+   overlay directory, with nothing written into the working tree.
 4. Kortix-namespaced control surface under `/kortix/*`: `GET /kortix/health`,
    `POST /kortix/refresh`, the Runtime API (`/kortix/runtime/*`) and the
    routes [ARCHITECTURE.md](ARCHITECTURE.md) lists.
@@ -50,7 +47,7 @@ in-process daemon.
 
 The source has four layers, bottom to top: **shared** (`src/lib/` building blocks and
 `src/types/` shared types), **services** (`src/services/`, host capabilities),
-**harness** (`src/harness/`, the session runtime: OpenCode and pi), and **app**
+**harness** (`src/harness/`, the session runtime: pi), and **app**
 (`src/main.ts`, `src/app/`, `src/routes/`: startup and HTTP controllers). A layer
 imports only from the layers below it. [ARCHITECTURE.md](ARCHITECTURE.md) lists every folder, the
 import rules, and where new code goes; `bun run lint` enforces them.
@@ -88,24 +85,19 @@ import rules, and where new code goes; `bun run lint` enforces them.
    the optional history backfill until the runtime is actually ready and the
    hydration has settled. Materialization failures are logged but non-fatal in
    non-required modes.
-4. Inject managed system skills into the project's skills dir: root `skills/`
-   (root layout) or `<config dir>/skills` (legacy `.kortix/opencode`).
-   A `kortix_version: 3` session takes its agents, registered skill folders,
-   commands and extensions only from the compiled set
+4. Resolve the skill directories. pi reads the managed system skills from the
+   image's overlay directory first, then the project's root `skills/` (root
+   layout) or `<config dir>/skills` (legacy `.kortix/opencode`). It writes
+   nothing into the working tree. A `kortix_version: 3` session takes its
+   agents, registered skill folders, commands and extensions only from the
+   compiled set
    (`KORTIX_COMPILED_AGENT_CONFIG`, `schema: 3`) and reads no `harnesses/`,
    `.kortix/`, `.opencode/` or `.pi/` folder; config dirs are a v1/v2 concern.
-5. Resolve `OPENCODE_CONFIG_DIR`.
-6. Start the OpenCode REST supervisor in the project directory
-   (`opencode serve --port <internal> --hostname 127.0.0.1`).
-   If the binary isn't found we keep going and report `opencode: 'starting'`.
-7. Start the Hono proxy on `0.0.0.0:KORTIX_SERVICE_PORT`.
-
-   Steps 5 to 7 are the OpenCode harness. With `KORTIX_HARNESS=pi` the daemon
-   starts pi in its own process instead: no child process, no internal port and
-   no `OPENCODE_CONFIG_DIR`. pi reads the managed skills from the image's
-   overlay directory and the project's `skills/`
-   ([harness README](src/harness/README.md), "The pi harness").
-8. Trap signals; on shutdown, drain proxy + static web + kill child processes.
+5. Start the Hono server on `0.0.0.0:KORTIX_SERVICE_PORT`.
+6. Start pi in the daemon process ([harness README](src/harness/README.md),
+   "The pi harness"). A box that OpenCode booted before the sunset restores its
+   session log into pi first.
+7. Trap signals; on shutdown, drain the server and the static web server.
 
 ## Routes
 
@@ -113,15 +105,15 @@ import rules, and where new code goes; `bun run lint` enforces them.
 | ---------------------- | --------------------------------------------------------------------- |
 | `GET /kortix/health`   | Daemon liveness + harness state + repo info (always 200 from daemon)  |
 | `POST /kortix/refresh` | Signed-context protected repo fast-forward + harness reload.          |
-| `/kortix/runtime/*`    | The Runtime API: the Kortix contract clients build on (transcript, turn verbs, agents). Same routes on both harnesses. |
-| `/*`                   | The harness's own routes: reverse-proxied to opencode, or answered by pi. 503 with `code: "runtime_not_ready"` while the runtime is not ready. |
+| `/kortix/runtime/*`    | The Runtime API: the Kortix contract clients build on (transcript, turn verbs, agents). |
+| `/*`                   | The harness's own routes, answered by pi. 503 with `code: "runtime_not_ready"` while the runtime is not ready. |
 
 ### `GET /kortix/health` response shape
 
 ```json
 {
   "daemon": "ok",
-  "capabilities": ["file.import", "file.append", "config.release.v1", "session.rewind", "session.compact", "…"],
+  "capabilities": ["file.import", "file.append", "config.release.v1", "session.subagents", "session.compact", "…"],
   "status": "ok",
   "runtimeReady": true,
   "boot_error": null,
@@ -130,43 +122,28 @@ import rules, and where new code goes; `bun run lint` enforces them.
   "repo": "https://github.com/owner/name.git",
   "branch": "main",
   "commit_sha": "abc123...",
-  "runtime": { "running": { "harness": "opencode", "harness_version": "1.18.23", "…": "…" } },
+  "runtime": { "running": { "harness": "pi", "harness_version": "pi-agent-core@1.4.0", "…": "…" } },
   "harness": {
-    "id": "opencode",
-    "version": "1.18.23",
+    "id": "pi",
+    "version": "pi-agent-core@1.4.0",
     "state": "ok",
     "ready": true,
     "error": null,
     "session": { "id": "ses_…", "required": true },
     "turn": null,
-    "details": { "pid": 4567, "port": 4096 }
-  },
-  "opencode": "ok",
-  "opencode_pid": 4567,
-  "opencode_port": 4096,
-  "opencode_session_id": "ses_…"
+    "details": { "model": "kortix/…", "extensions": { "…": "…" }, "agentsMd": null }
+  }
 }
 ```
 
 - `daemon` is always `"ok"` if the route responds.
 - `harness` is the selected harness's closed block (E19). `runtimeReady` is
   computed once in `routes/kortix/health.ts` from the host's repo checks and
-  `harness.ready`. `capabilities` lists the session features the runtime
-  serves (E1): all eleven on OpenCode 1.18.15 and later (`session.steer` is
-  absent on an older or unknown version); `session.subagents`,
-  `session.compact`, `session.commands` and `session.steer` on pi.
-- `opencode`, `opencode_pid`, `opencode_port`, `opencode_session_id` and
-  `opencode_session_required` are the pre-W3 flat names of the block's fields
-  (`routes/kortix/legacy-names.ts`), kept for an API built before W3.
-- `harness.state` (flat: `opencode`) is `"ok" | "starting" | "down"`. `"starting"` covers both
-  pre-bind and between-restart states. The supervisor sends OpenCode nothing —
-  no readiness probe, no root list, no `/event` subscribe — until the process
-  has printed `opencode server listening on http://…` on its (piped, forwarded)
-  stdout. OpenCode 1.18 binds its port ~100 ms before its request handler is
-  attached, and a request accepted in that window is never answered
-  (anomalyco/opencode#46437); the line is printed only after the handler
-  exists. Boot timeline mark: `opencode-listening-line`. If the line never
-  shows up, plain probing resumes 10 s after the spawn.
+  `harness.ready`. `capabilities` lists the host features, then the session
+  features pi serves (E1): `session.subagents`, `session.compact`,
+  `session.commands`, `session.steer` and `session.log.v2`.
+- `harness.state` is `"ok"`, `"starting"` or `"down"`. A pi
+  that cannot start reports `"down"` and its reason in `harness.error`.
 - `repo`, `branch`, `commit_sha` come from `git` in `KORTIX_PROJECT_TARGET` and
   are `null` when no repo has been materialized.
 
@@ -175,7 +152,7 @@ import rules, and where new code goes; `bun run lint` enforces them.
 Requires a valid `X-Kortix-User-Context` signed with `KORTIX_TOKEN`. On success,
 the daemon fetches origin, runs `git pull --ff-only` for the session branch, and
 reloads the harness so project config changes are picked up without recreating the
-sandbox: OpenCode restarts (`?restart=0` skips it), pi re-reads its skills in place. Missing/invalid context returns `401`; no materialized repo or a
+sandbox: pi re-reads its skills in place. Missing/invalid context returns `401`; no materialized repo or a
 non-fast-forward conflict returns `409`.
 
 ## What lives elsewhere
@@ -186,22 +163,19 @@ non-fast-forward conflict returns `409`.
 - **Secrets** — cloud API decides which secrets a sandbox needs and sets them
   as plain environment variables at create-time (via Daytona env injection).
   The daemon does not read them and has no `/kortix/secrets` route.
-- **User preferences** — deferred. On OpenCode the frontend reads the runtime's
-  own config document (`session.config`); pi has none.
+- **User preferences** — deferred. pi has no runtime config document.
 
 ## Env vars
 
 ```
 KORTIX_SERVICE_PORT=8000
-KORTIX_HARNESS=                           # unset or "opencode" (default) | "pi" (src/harness/harness.ts)
-KORTIX_OPENCODE_INTERNAL_PORT=4096
+KORTIX_HARNESS=pi                         # "pi"; "opencode" or unset (a box OpenCode booted) boots pi too (src/harness/harness.ts)
 KORTIX_STATIC_PORT=3211
 KORTIX_WORKSPACE=/workspace
 KORTIX_PROJECT_TARGET=/workspace/.kortix
 KORTIX_DEFAULT_BRANCH=main
 KORTIX_BRANCH_FETCH_ATTEMPTS=60
 KORTIX_BRANCH_FETCH_DELAY=0.25
-KORTIX_DEFAULT_OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
 KORTIX_PROJECT_AUTO_CLONE=0
 KORTIX_PROJECT_SNAPSHOT_MODE=git          # git | prefer-s3 | require-s3 (src/services/workspace-provider)
 KORTIX_PROJECT_SNAPSHOT_PIN=              # <sha>:<archive-sha256>:<bytes> of a PREPARED archive, set by the API
@@ -230,8 +204,9 @@ KORTIX_PROJECT_AUTO_CLONE=0 KORTIX_SERVICE_PORT=9999 bun run src/main.ts
 curl -s http://localhost:9999/kortix/health
 ```
 
-The daemon should boot and report `opencode: "starting"` (or `"down"` if the
-binary is genuinely missing) without crashing.
+The daemon should boot and answer health without crashing. Without
+`KORTIX_LLM_BASE_URL` and `KORTIX_TOKEN`, pi does not start: `harness.state` is
+`"down"` and `harness.error` names the missing variables.
 
 ## Run it on your machine (`scripts/local.ts`)
 
@@ -242,8 +217,7 @@ is your ChatGPT Plus/Pro subscription.
 ```
 bun apps/kortix-sandbox-agent-server/scripts/local.ts login      # once: ChatGPT sign-in in the browser
 cd ~/some/project
-bun ~/path/to/suna/apps/kortix-sandbox-agent-server/scripts/local.ts                      # pi
-bun ~/path/to/suna/apps/kortix-sandbox-agent-server/scripts/local.ts --harness opencode   # OpenCode
+bun ~/path/to/suna/apps/kortix-sandbox-agent-server/scripts/local.ts
 ```
 
 Options: `--model codex/<id>` (default `codex/gpt-5.5`; `/models` in the REPL
@@ -257,8 +231,8 @@ What it starts:
    It sends every request to ChatGPT's Codex backend with the token `login`
    stored in `~/.kortix/local/codex-auth.json`, and refreshes that token.
 2. kortixd from source, pointed at that gateway (`KORTIX_LLM_BASE_URL`), with
-   `HOME=~/.kortix/local/home` so it never writes your own git or OpenCode
-   config. State, `daemon.log` and `gateway.log` live in
+   `HOME=~/.kortix/local/home` so it never writes your own git config. State,
+   `daemon.log` and `gateway.log` live in
    `~/.kortix/local/workspaces/<harness>-<hash>/`, so the next run in the same
    directory continues the same conversation.
 3. A REPL over the Runtime API: `POST /kortix/runtime/sessions/:id/prompt` and
