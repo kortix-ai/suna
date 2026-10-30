@@ -97,9 +97,6 @@ describe('daemon proxy auth gate', () => {
     const body = (await (await app.request('/kortix/health')).json()) as Record<string, any>
     expect(body.harness).toMatchObject({ id: 'test', session: { id: null, required: false }, turn: null })
     expect(body.harness.details).toMatchObject({ pid: null, port: 4096 })
-    // The pre-W3 flat fields an older API reads, composed from the block.
-    expect(body.opencode_pid).toBe(body.harness.details.pid)
-    expect(body.opencode_port).toBe(body.harness.details.port)
     // apps/api reads the runtime port for its PTY proxy with this function.
     expect(HarnessHealthSchema.parse(body.harness).details.port).toBe(4096)
     expect(healthRuntimePort(body)).toBe(4096)

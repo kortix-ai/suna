@@ -14,7 +14,6 @@ import { createPartRouter } from './part'
 import { createLogsRouter } from './logs'
 import { createDiagRouter } from './diag'
 import { createRuntimeRouter } from './runtime'
-import { LEGACY_RUNTIME_MOUNT } from './legacy-names'
 import { RUNTIME_RETRACT_CAPABILITY, RUNTIME_TURNS_CAPABILITY } from '@kortix/api-contract/runtime-relay'
 
 export interface HarnessRouteContext {
@@ -54,12 +53,11 @@ export function createHarnessControlRouter(harness: HarnessService, context: Har
   mount('/logs', createLogsRouter(context.cfg, harness.diagnostics))
   mount('/diag', createDiagRouter(context, harness.diagnostics))
   if (context.projectEnv) mount('/env', createEnvRouter(context.cfg, control))
-  // The Runtime API, and its pre-W3 mount that an older API still calls.
+  // The Runtime API.
   const runtimeRouter = createRuntimeRouter(context.cfg, queries, {
     turns: harness.turns,
     readiness: () => harness.proxy.readiness(context),
   })
   mount('/runtime', runtimeRouter)
-  mount(LEGACY_RUNTIME_MOUNT, runtimeRouter)
   return router
 }
