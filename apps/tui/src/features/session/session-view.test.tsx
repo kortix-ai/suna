@@ -109,7 +109,6 @@ async function mount(focus: SessionFocus | null, overrides: Record<string, unkno
   });
   const useSessionImpl = mock(() => session);
   const readHealth = mock(async () => ({ health: { capabilities: PI_CAPABILITIES } }));
-  const onCapabilities = mock((_capabilities: readonly string[] | null) => {});
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 } },
   });
@@ -131,7 +130,6 @@ async function mount(focus: SessionFocus | null, overrides: Record<string, unkno
         onToast={() => {}}
         useSessionImpl={useSessionImpl as never}
         readHealth={readHealth as never}
-        onCapabilities={onCapabilities}
       />
     </QueryClientProvider>,
     { width: 120, height: 25 },
@@ -144,7 +142,7 @@ async function mount(focus: SessionFocus | null, overrides: Record<string, unkno
     await new Promise((resolve) => setTimeout(resolve, 600));
   });
   await setup.flush();
-  return { ...setup, useSessionImpl, readHealth, onCapabilities };
+  return { ...setup, useSessionImpl, readHealth };
 }
 
 describe('SessionView', () => {
@@ -158,17 +156,15 @@ describe('SessionView', () => {
     renderer.destroy();
   });
 
-  test('reads the runtime capabilities once it is up and hoists them', async () => {
-    const { readHealth, onCapabilities, renderer } = await mount('composer');
+  test('reads the runtime capabilities once it is up', async () => {
+    const { readHealth, renderer } = await mount('composer');
     expect(readHealth.mock.calls as unknown[]).toEqual([['p1', 's1']]);
-    expect(onCapabilities.mock.calls.at(-1)).toEqual([PI_CAPABILITIES]);
     renderer.destroy();
   });
 
   test('a runtime that is not up yet is not asked for its capabilities', async () => {
-    const { readHealth, onCapabilities, renderer } = await mount('composer', { switched: false });
+    const { readHealth, renderer } = await mount('composer', { switched: false });
     expect(readHealth).not.toHaveBeenCalled();
-    expect(onCapabilities.mock.calls.at(-1)).toEqual([null]);
     renderer.destroy();
   });
 

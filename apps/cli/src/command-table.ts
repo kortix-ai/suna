@@ -122,11 +122,6 @@ export const TIERS: readonly CommandTier[] = [
             blurb: 'Run, share, queue, inspect, stop and delete project sessions',
           },
           {
-            name: 'connect',
-            args: '[session-id]',
-            blurb: 'Deprecated: attach the OpenCode TUI to an OpenCode session (pi sessions use chat or shell)',
-          },
-          {
             name: 'chat',
             args: '[session-id]',
             blurb: "Talk to a session's agent (REPL or --prompt)",

@@ -1,7 +1,7 @@
 import type { Auth } from '../../api/auth.ts';
 import type { ProjectSession } from '../../api/types.ts';
 
-/** Shared fixtures for the `attach-opencode` / `session-runtime` unit tests. */
+/** Shared fixtures for the `session-runtime` / `port-forward` unit tests. */
 
 export const auth: Auth = {
   api_base: 'https://api.example.test',
