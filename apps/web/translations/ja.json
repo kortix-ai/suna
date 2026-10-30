@@ -24965,6 +24965,21 @@
       "openRun": "実行を開く",
       "runNoAgents": "エージェントはまだありません"
     },
+    "subagent": {
+      "fallbackTitle": "エージェント",
+      "openPage": "ページを開く",
+      "close": "閉じる",
+      "messagePlaceholder": "{name} にメッセージ…",
+      "messageLabel": "{name} にメッセージ",
+      "send": "送信",
+      "sent": "メッセージを送信しました",
+      "sendFailed": "メッセージを送信できませんでした",
+      "loadFailed": "このエージェントのメッセージを読み込めませんでした",
+      "retry": "再試行",
+      "emptyTitle": "まだ何もありません",
+      "emptyDescription": "作業中のメッセージがここに表示されます。",
+      "loadOlder": "以前のメッセージを表示"
+    },
     "tasks": {
       "label": "チームのタスク",
       "empty": "チームが計画したタスクがここに表示されます。",
@@ -25059,8 +25074,6 @@
         "failed": "失敗",
         "stopped": "停止"
       },
-      "result": "結果",
-      "noResult": "まだ回答はありません。",
       "replyPlaceholder": "返信します。エージェントの次のステップで届きます。",
       "replyLabel": "{title} に返信",
       "sendReply": "返信を送信",

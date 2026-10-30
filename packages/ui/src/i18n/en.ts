@@ -9407,6 +9407,21 @@ const catalog = {
       "openRun": "Open run",
       "runNoAgents": "No agents yet"
     },
+    "subagent": {
+      "fallbackTitle": "Agent",
+      "openPage": "Open page",
+      "close": "Close",
+      "messagePlaceholder": "Message {name}…",
+      "messageLabel": "Message {name}",
+      "send": "Send",
+      "sent": "Message sent",
+      "sendFailed": "Could not send the message",
+      "loadFailed": "Could not load this agent’s messages",
+      "retry": "Try again",
+      "emptyTitle": "Nothing yet",
+      "emptyDescription": "Its messages show here as it works.",
+      "loadOlder": "Show earlier messages"
+    },
     "tasks": {
       "label": "Team tasks",
       "empty": "Tasks the team plans will show up here.",
@@ -9501,8 +9516,6 @@ const catalog = {
         "failed": "Failed",
         "stopped": "Stopped"
       },
-      "result": "Result",
-      "noResult": "No answer yet.",
       "replyPlaceholder": "Reply. It reaches the agent at its next step.",
       "replyLabel": "Reply to {title}",
       "sendReply": "Send reply",

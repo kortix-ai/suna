@@ -667,7 +667,7 @@ export function SessionChat({
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
-  // A chat with no `useSession` (a sub-agent's: `sub-session-modal`, the `?rs=` route) runs
+  // A chat with no `useSession` (a sub-agent's: `legacy-subagent-chat`, the `?rs=` route) runs
   // inside the route's session. While that session reads its log (v2: the store holds it),
   // the sub-agent's thread and its older pages are the log's, and no saved copy is read.
   const [scopeProjectId = '', scopeSessionId = ''] = savedHistoryScope?.split('/') ?? [];
@@ -702,7 +702,7 @@ export function SessionChat({
     freshness: transcriptFreshness,
     retryTranscript,
   } = sessionState ?? localSync;
-  // A chat with no `useSession` (a sub-agent's, `sub-session-modal`) reads its
+  // A chat with no `useSession` (a sub-agent's, `legacy-subagent-chat`) reads its
   // runtime session's rows through `useSessionSync`: the same `fromV1` view.
   // On v2 that is the fallback while the log does not hold the sub-agent's thread yet.
   const detachedThread = useMemo(
@@ -1171,7 +1171,7 @@ export function SessionChat({
    * turn authority first (`GET .../turn`), the stream second, and this tab's
    * own send receipt only until either of them answers.
    */
-  // A child-session mount (`sub-session-modal.tsx` passes no project ids) has
+  // A child-session mount (`legacy-subagent-chat.tsx` passes no project ids) has
   // no Kortix session row for `/turn` to answer about, so the projection below
   // is disabled and every working read falls back to the raw stream slot —
   // the same split `session-layout.tsx` makes for its busy indicator.
@@ -4144,7 +4144,7 @@ export function SessionChat({
   // about which ref backs a change request.
   const outcomesBaseRef = useSessionBaseRef(projectId, projectSessionId);
   const searchParams = useUiSearchParams();
-  // `readOnly` is the nested sub-session modal (`sub-session-modal.tsx`) — it
+  // `readOnly` is the nested sub-session modal (`legacy-subagent-chat.tsx`) — it
   // shares this component but must not rewrite the parent route's URL.
   const [openCrId, setOpenCrIdState] = useState<string | null>(() =>
     readOnly ? null : (searchParams?.get('cr') ?? null),

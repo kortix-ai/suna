@@ -24965,6 +24965,21 @@
       "openRun": "Abrir execução",
       "runNoAgents": "Ainda não há agentes"
     },
+    "subagent": {
+      "fallbackTitle": "Agente",
+      "openPage": "Abrir página",
+      "close": "Fechar",
+      "messagePlaceholder": "Mensagem para {name}…",
+      "messageLabel": "Mensagem para {name}",
+      "send": "Enviar",
+      "sent": "Mensagem enviada",
+      "sendFailed": "Não foi possível enviar a mensagem",
+      "loadFailed": "Não foi possível carregar as mensagens deste agente",
+      "retry": "Tentar novamente",
+      "emptyTitle": "Nada ainda",
+      "emptyDescription": "As mensagens dele aparecem aqui enquanto trabalha.",
+      "loadOlder": "Mostrar mensagens anteriores"
+    },
     "tasks": {
       "label": "Tarefas da equipe",
       "empty": "As tarefas que a equipe planejar aparecerão aqui.",
@@ -25059,8 +25074,6 @@
         "failed": "Falhou",
         "stopped": "Parada"
       },
-      "result": "Resultado",
-      "noResult": "Ainda sem resposta.",
       "replyPlaceholder": "Responda. A resposta chega ao agente no próximo passo dele.",
       "replyLabel": "Responder a {title}",
       "sendReply": "Enviar resposta",

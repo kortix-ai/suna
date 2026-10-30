@@ -12,7 +12,7 @@ import { errorToast } from '../../primitives/toast';
 import { useTranslations } from '../../i18n';
 import { agentDisplayName } from '../../internal/components/agent-mark';
 import { cn } from '../../lib/utils';
-import { SubSessionModal } from '../thread/sub-session-modal';
+import { SubagentDialog } from './subagent-view';
 import { ArrowUpRightIcon, CaretUpIcon, CheckIcon, SquareIcon } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -631,11 +631,12 @@ export function AgentsLine({
         compact={compact}
       />
       {open && (
-        <SubSessionModal
+        <SubagentDialog
           open
           onOpenChange={(next) => {
             if (!next) setOpen(null);
           }}
+          projectId={projectId}
           sessionId={open.sessionId}
           title={open.title}
         />

@@ -24965,6 +24965,21 @@
       "openRun": "打开运行",
       "runNoAgents": "还没有智能体"
     },
+    "subagent": {
+      "fallbackTitle": "智能体",
+      "openPage": "打开页面",
+      "close": "关闭",
+      "messagePlaceholder": "给 {name} 发消息…",
+      "messageLabel": "给 {name} 发消息",
+      "send": "发送",
+      "sent": "消息已发送",
+      "sendFailed": "无法发送消息",
+      "loadFailed": "无法加载此智能体的消息",
+      "retry": "重试",
+      "emptyTitle": "暂无内容",
+      "emptyDescription": "它工作时的消息会显示在这里。",
+      "loadOlder": "显示更早的消息"
+    },
     "tasks": {
       "label": "团队任务",
       "empty": "团队计划的任务会显示在这里。",
@@ -25059,8 +25074,6 @@
         "failed": "失败",
         "stopped": "已停止"
       },
-      "result": "结果",
-      "noResult": "还没有回答。",
       "replyPlaceholder": "回复。智能体会在下一步收到。",
       "replyLabel": "回复 {title}",
       "sendReply": "发送回复",
