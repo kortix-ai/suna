@@ -24,6 +24,10 @@ describe('toolKind', () => {
     ['kortix_people', 'platform'],
     ['kortix_access', 'platform'],
     ['kortix_usage', 'platform'],
+    // The multi-agent tools (`@kortix/api-contract/multi-agent`): the same `KortixToolResult` card.
+    ['send_message', 'platform'],
+    ['list_agents', 'platform'],
+    ['task_stop', 'platform'],
     // OpenCode built-ins and aliases
     ['list', 'list'],
     ['ls', 'list'],

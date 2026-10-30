@@ -50,6 +50,7 @@ export * from './public-session-shares';
 export * from './session-reminders';
 export * from './runtime-triggers';
 export * from './rooms';
+export * from './multi-agent';
 export * from './artifacts';
 export * from './tokens';
 export * from './audit';

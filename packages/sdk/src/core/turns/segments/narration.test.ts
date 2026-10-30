@@ -201,6 +201,20 @@ describe('narrateStep - pi agent, workflow and the My Kortix platform tools narr
     expect(narrateStep('platform', [part('kortix_schedules', { action: 'pause' })])).toBe('Updated your schedules');
   });
 
+  it('the messaging and team task tools narrate by tool, not by an action input', () => {
+    for (const t of ['send_message', 'list_agents', 'task_stop']) {
+      expect(familyForTool(t)).toBe('platform');
+    }
+    expect(narrateStep('platform', [part('send_message', { to: 'reviewer', message: 'hi' })])).toBe('Sent a message');
+    expect(narrateStep('platform', [part('send_message'), part('send_message')])).toBe('Sent 2 messages');
+    expect(narrateStep('platform', [part('list_agents')])).toBe('Checked the other agents');
+    expect(narrateStep('platform', [part('task_stop', { session_id: 's' })])).toBe('Stopped an agent');
+    const refused = platform('send_message', '', { ok: false, error: { kind: 'denied', message: 'no' } });
+    expect(narrateStep('platform', [refused])).toBe('Sending a message needs a permission');
+    const failed = platform('send_message', '', { ok: false, error: { kind: 'failed', message: 'boom' } });
+    expect(narrateStep('platform', [failed])).toBe("Couldn't send a message");
+  });
+
   it('a group of several platform tools names the project', () => {
     expect(narrateStep('platform', [platform('kortix_agents', 'list', { ok: true }), platform('kortix_sessions', 'list', { ok: true })])).toBe('Checked your project');
     expect(narrateStep('platform', [platform('kortix_agents', 'list', { ok: true }), platform('kortix_sessions', 'stop', { ok: true })])).toBe('Updated your project');

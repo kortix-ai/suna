@@ -509,6 +509,35 @@ model when the gateway rerouted after a failed attempt, whether or not the fallb
 A transcript message carries only the model its turn asked for. In React,
 `useSessionModelUsage(projectId, sessionId)` reads the same record.
 
+### Agents that work together: messages, teams, workflows
+
+A session can message another session, lead a team with a shared task list, and run
+workflows of many agents. Every call acts as the caller: a session may message another
+only where its person may prompt it, and a refusal is a result, never a silent drop.
+
+```ts
+const s = kortix.session(projectId, sessionId)
+await s.reachable({ scope: 'mine' })            // { self, agents }: parent, children, lead, teammates
+await s.peerMessages.send({ to: 'reviewer', message: 'The migration finished.', summary: 'Migration done' })
+await s.peerMessages.list({ direction: 'in' })  // held messages wait for approve(id) / deny(id)
+await s.setInbound('hold')                      // 'accept' | 'hold' | 'refuse'
+await s.tasks.list()                            // the team this session leads (flag agent_teams)
+await s.tasks.update(3, { status: 'completed' })
+await s.workflows.list()                        // the runs on this session's own box
+await s.workflows.control(runId, { action: 'pause' }) // 'resume' | 'stop' | 'restart_agent' + session_id
+```
+
+`send` answers `{ status, message, to, note }`: `delivered`, `held` (the receiver's person
+approves it), `refused`, or `dropped` (a duplicate). A `to` that names several sessions is a
+`409` with the candidates. A session row carries `board_state` (`working`, `needs_input`,
+`idle`, `completed`, `failed`, `stopped`), `attention`, `last_activity_at`, `result_excerpt`,
+`agent_handle`, `team_lead_session_id` and `inbound`; `listProjectSessionsPage(projectId,
+{ teamLead })` lists a lead's teammates. In React: `useReachableAgents(pid, sid, scope?)`,
+`usePeerMessages(pid, sid, direction?)` (with `approve` and `deny`), `useTeamTasks(pid, lead)`,
+`useTeammates(pid, lead)` and `useSessionWorkflows(pid, sid)` (with `control`). Each polls
+every 5 s while the page is visible, a running workflow every 2 s. A workflow poll never
+starts a stopped session.
+
 ### React runtime
 
 `useSession(projectId, sessionId)` opens the session runtime returned by
