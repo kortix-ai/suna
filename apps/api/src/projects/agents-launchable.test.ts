@@ -9,7 +9,6 @@ function spec(name: string, enabled = true): AgentSpec {
     connectors: 'all',
     permissions: 'all',
     env: 'all',
-    file: null,
     model: null,
   };
 }
@@ -42,14 +41,19 @@ describe('isLaunchableAgentName', () => {
     expect(isLaunchableAgentName('meta', { ...governed, builtinAgents: { my_kortix: false } })).toBe(false);
   });
 
-  test("OpenCode's built-in agents stay launchable in a governed project — a plan/build pick keeps running", () => {
-    for (const builtin of ['build', 'plan', 'general', 'explore']) {
-      expect(isLaunchableAgentName(builtin, governed)).toBe(true);
+  test("OpenCode's build/plan/general/explore are not launchable in a governed project unless declared", () => {
+    for (const name of ['build', 'plan', 'general', 'explore']) {
+      expect(isLaunchableAgentName(name, governed)).toBe(false);
     }
+    expect(isLaunchableAgentName('plan', { ...governed, specs: [...governed.specs, spec('plan')] })).toBe(true);
+  });
+
+  test('the runtime-internal agents and the default sentinel stay launchable', () => {
+    for (const name of ['compaction', 'summary', 'title', 'default']) expect(isLaunchableAgentName(name, governed)).toBe(true);
   });
 
   test('a project with no per-agent governance keeps the runtime roster as the authority', () => {
-    expect(isLaunchableAgentName('build', { specs: [], errors: [] })).toBe(true);
+    expect(isLaunchableAgentName('anything', { specs: [], errors: [] })).toBe(true);
   });
 
   test('a manifest that failed to parse proves nothing: fail closed', () => {
@@ -64,18 +68,5 @@ describe('isLaunchableAgentName', () => {
     expect(isLaunchableAgentName('  galileo ', governed)).toBe(true);
     expect(isLaunchableAgentName('Galileo', governed)).toBe(false);
     expect(isLaunchableAgentName('', governed)).toBe(false);
-  });
-});
-
-describe('isLaunchableAgentName on kortix_version 3', () => {
-  const v3: LoadedAgents = { ...governed, schemaVersion: 3 };
-
-  test("OpenCode's build/plan/general/explore are not launchable unless declared", () => {
-    for (const name of ['build', 'plan', 'general', 'explore']) expect(isLaunchableAgentName(name, v3)).toBe(false);
-    expect(isLaunchableAgentName('plan', { ...v3, specs: [...v3.specs, spec('plan')] })).toBe(true);
-  });
-
-  test('the runtime-internal agents and the default sentinel stay launchable', () => {
-    for (const name of ['compaction', 'summary', 'title', 'default']) expect(isLaunchableAgentName(name, v3)).toBe(true);
   });
 });

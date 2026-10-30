@@ -189,7 +189,7 @@ function startServer(triggers: unknown[]): string {
 function writeManifest(): void {
   writeFileSync(
     join(tmp, 'kortix.yaml'),
-    ['kortix_version: 2', 'name: monitors-test', 'default_agent: default', ''].join('\n'),
+    ['name: monitors-test', 'default_agent: default', ''].join('\n'),
     'utf8',
   );
 }

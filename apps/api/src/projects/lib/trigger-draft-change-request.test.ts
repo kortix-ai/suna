@@ -3,7 +3,7 @@ import { type ParsedManifest, extractTriggers } from '../triggers';
 import { draftToSpec, parseTriggerDraft, specToBody } from './trigger-draft';
 import { upsertTriggerInManifest } from './trigger-manifest';
 
-const blank = (): ParsedManifest => ({ schemaVersion: 3, raw: { kortix_version: 3 }, format: 'yaml', path: 'kortix.yaml' });
+const blank = (): ParsedManifest => ({ raw: {}, path: 'kortix.yaml' });
 
 describe('a change_request trigger from POST /triggers', () => {
   test('filter.base becomes the branch; kortix.yaml gets the flat entry; it reads back the same', () => {

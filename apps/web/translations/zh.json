@@ -553,10 +553,6 @@
           "label": "功能开关",
           "description": "可在正式发布前启用的功能。"
         },
-        "upgrades": {
-          "label": "升级",
-          "description": "代理对此项目进行的更改。每次运行都会创建变更请求供你审核。任何内容都不会自动合并。"
-        },
         "profile": {
           "label": "个人资料",
           "description": "你的头像、姓名、电子邮件和组织。"
@@ -1349,23 +1345,6 @@
       "wip": "Work in progress",
       "wipNote": "Not recommended yet: it can change or break."
     },
-    "upgrades": {
-      "available": "可用升级",
-      "readOnly": "只读 — 运行升级需要此项目的写入权限。",
-      "none": "没有可用升级",
-      "upToDateDescription": "此项目已经是最新版本。",
-      "upToDate": "已是最新",
-      "run": "运行",
-      "oneOff": "一次性升级",
-      "oneOffDescription": "您也可以描述一项更改。会话会完成并验证更改，然后打开变更请求。",
-      "oneOffPlaceholder": "例如：在所有引用中将 release-bot 智能体重命名为 deploy-bot",
-      "runUpgrade": "运行升级",
-      "manifestV3": {
-        "title": "将清单升级到 v3 (kortix.yaml)",
-        "description": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。"
-      },
-      "agentEditorHint": "此项目使用版本 1 的清单。将其升级到 <code>kortix.yaml</code> 版本 3，即可在此编辑该代理的指令、模型、工具权限和访问权限。"
-    },
     "plan": {
       "managedByAdmin": "由帐户管理员管理",
       "adminOnly": "只有此帐户的管理员才能更改套餐或购买积分。",
@@ -1697,10 +1676,16 @@
       "localComputer": "你的电脑",
       "appsAndExtensions": "应用和扩展"
     },
-    "manifestUpgrade": {
-      "title": "升级到 v3",
-      "description": "此项目使用较旧的清单。代理会将其升级到 <yaml>kortix.yaml</yaml> 版本 3，刷新托管技能并创建更改请求。在你批准之前，不会应用任何更改。",
-      "start": "开始升级"
+    "manifestIssues": {
+      "title": "{file} 有 {errors, plural, other {# 个错误}}和 {warnings, plural, other {# 个警告}}",
+      "titleErrors": "{file} 有 {errors, plural, other {# 个错误}}",
+      "titleWarnings": "{file} 有 {warnings, plural, other {# 个警告}}",
+      "errorsOff": "有错误的智能体和触发器会保持关闭，直到错误被修复。",
+      "warningsOnly": "一切仍正常运行。",
+      "error": "错误",
+      "warning": "警告",
+      "fix": "使用 My Kortix 修复",
+      "fixInSession": "在新会话中修复"
     },
     "filter": {
       "grouping": "分组",
@@ -10923,7 +10908,6 @@
       "text18093cad2644": "模态框",
       "text180bbb19a1b2": "只存在于一个人脑中的运行手册",
       "text1814e0a6cb50": "查看可用模型",
-      "text1815aa434bc6": "# Schema 版本 2。运行时是 OpenCode。",
       "text1815ae76cdc7": "未部署",
       "text1829231e85b1": "此账户的所有成员将再次看到 Kortix 徽标、图标、favicon 和名称。已上传的图片会被删除。",
       "text1836d8d61ae9": "从 {value1} 中删除 {value0}",
@@ -12217,7 +12201,6 @@
       "text11ef24ea6e15": "无法重命名账户",
       "text0223e507afd3": "要使用其他账户，请在项目设置中将其添加到此连接器的账户下，并设为默认。",
       "text073fce23e704": "      memory/ 并发起一个标题为",
-      "text0922e6bf143c": "harnesses/opencode/opencode.jsonc",
       "text3ed7c1e32705": "读取跟踪器和改写跟踪器是不同的操作。将写入操作设为“询问”，运行会在调用处暂停，准确显示它想合并或关闭的问题；批准后从此处继续。",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "已记入贷方",
@@ -12550,7 +12533,6 @@
       "text47931699ba90": "时间表已更新",
       "text4795dc5fb288": "当前连接会持续工作，直到保存替换连接。",
       "text479974eaff88": "{value0}：{value1} 个成功，{value2} 个失败。{value3}：{value4}{value5}",
-      "text479d92cbfaa1": "(kortix_version 2) 编辑此代理的说明、模型、工具权限和访问权限。",
       "text47a8467a2faa": "无法加载更改",
       "text47b31f661d3f": "更新角色失败",
       "text47bd29075f8b": "内容",
@@ -13457,7 +13439,6 @@
       "text61dac62928db": "已计划：",
       "text61e8d44ad423": "开始使用",
       "text61eedf5451c2": "    timezone: UTC",
-      "text61f28ba7b5a4": "kortix_version: 2",
       "text61ff61757ef1": "此账户中的访问机制。",
       "text6201111b83a0": "和",
       "text6201f8d3134e": "已摄取监控事件",
@@ -15864,7 +15845,6 @@
       "texta743aa4452d3": "更新授权所有者失败",
       "texta756e5fb5f6b": "IT 需要的不是仪表板，而是一份清单：每行都有站得住脚的理由，并且批准后确实会产生操作。",
       "texta757b331fa9a": "状态文本",
-      "texta757f937ab97": "（kortix_version 2）以在此处编辑此代理的可用性、模型、工具权限和访问权限。",
       "texta76a1fd4cef5": "已接收 Stripe 计费 Webhook",
       "texta76ce82a9749": "缓存",
       "texta76e13b98392": "恢复",
@@ -15955,7 +15935,6 @@
       "texta9f78a15820d": "规则{value0}条件{value1}比较",
       "textaa000c983975": "Groups Resource",
       "textaa023456aca4": "连接 ChatGPT",
-      "textaa132a97a22a": "  config_dir: harnesses/opencode",
       "textaa1c8a0b1716": "点击保存将清除所有维护通知，并恢复正常访问。",
       "textaa2025f803e6": "智能体拥有 shell 和文件系统，可以安装软件包、下载样本、运行、查看输出并重试——这是分析师真正工作的循环，而不是对固定工具集的一次性调用。",
       "textaa2e1a551c0a": "它负责收集，你负责决定。",
@@ -16857,7 +16836,6 @@
       "textc3bf78fdd3b9": "无法提交您的申请",
       "textc3c25857485f": "负责",
       "textc3c709a999c1": "正在读取记忆…",
-      "text7823a1f3af93": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。",
       "textc3d2e79ebdd0": "连接器",
       "textc3e3a6edeaa5": "条款与条件",
       "textc3e58a73609d": "危险操作",
@@ -16950,7 +16928,6 @@
       "textc634dcb25574": "入账",
       "textc63adab9bd56": "跟踪此任务中使用的工具和引用的文件。",
       "textc63eb6720c6e": "私有",
-      "textc6414eb01d9a": "代理对此工作区所做的更改。每次运行都会打开一个更改请求供您查看 - 没有任何内容会自行合并。",
       "textc6479e2f4970": "刷新更改",
       "textc65feb0006ea": "工人·{value0}{value1}",
       "textc661a1039aa0": "最大化",
@@ -17593,7 +17570,6 @@
       "textd83a0d814c59": "API Status 显示绿色的“Enabled”，“SCIM Username”参数映射到 Email，并且 Provisioning 已启用且没有管理员审批阻塞。",
       "textd84b8be91e7b": "Kortix — 演示文稿",
       "textd84ee1e1e08b": "试试 kortix init，或输入 / 查看命令",
-      "text08edd5b6dcdc": "将清单升级到 v3 (kortix.yaml)",
       "text848f54e89660": "运行记录",
       "textb098a09c78aa": "使用负载测试",
       "text99733344956d": "负载",
@@ -17775,7 +17751,6 @@
       "textdc70ef3b3338": "只有当答案能回到提问所在的位置时，连接频道才有价值。文件可以双向传递，而代理需要你做出的决定会以线程中的按钮呈现，而不是让你跳转到其他地方。",
       "textdc76dd6b1aff": "登录 Kortix CLI",
       "textdc78f4d17256": "未启用 MFA — 他们不会被锁定，但建议让其注册：",
-      "textdc7ab144ca89": "升级以使用完整的代理编辑器",
       "textdc7ea87fdc45": "文件，双向传递",
       "textdc8659db6d41": "Enter",
       "textdc8d7c5c602b": "源账本",
@@ -17898,7 +17873,6 @@
       "textdfea74d6d58d": "上移备用项",
       "textdffb64dc7001": "限额",
       "texte01d77b4a0bd": "问题",
-      "texte02a5941602a": "升级",
       "texte030ac604b81": "部署与安全态势",
       "texte0362b3241c5": "在范围内",
       "texte03abcb2b624": "连接器和更新时间窗口",
@@ -21869,7 +21843,6 @@
     "connectorsEmptyBody": "浏览目录并安装应用。添加账户后，智能体即可使用。",
     "browseApps": "浏览应用",
     "agentsLoadFailed": "无法加载智能体",
-    "agentsNeedsV2": "智能体访问在 kortix.yaml（kortix_version 2 或更高）中设置。此项目使用 kortix.toml。",
     "agentsEmpty": "此项目还没有智能体。",
     "agentsIntro": "选择哪些智能体可以使用此连接器以及适用的规则。每次更改都会提交到 kortix.yaml。",
     "agentsReadOnly": "只有能编辑智能体和连接器的人才能更改此项。",

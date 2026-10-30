@@ -26,15 +26,18 @@ const FILE_WARN_BYTES = 10 * 1024 * 1024;
 const LISTED_FILES = 5;
 const LFS_POINTER_BYTES = 200;
 
+/** A project issue. `file` is set when the issue is in a file other than the manifest (a Dockerfile). */
+export type ProjectIssue = ManifestIssue & { file?: string };
+
 export function lintProject(
   parsed: Record<string, unknown> | null,
   manifestPath: string,
-  opts: { dockerfileLint?: boolean } = {},
-): ManifestIssue[] {
+  opts: { dockerfileLint?: boolean; wiring?: boolean } = {},
+): ProjectIssue[] {
   const root = dirname(manifestPath);
   return [
     ...(opts.dockerfileLint === false ? [] : lintSandboxDockerfiles(parsed, manifestPath)),
-    ...lintWiring(parsed, root),
+    ...(opts.wiring === false ? [] : lintWiring(parsed, root)),
     ...lintRepoSize(root),
   ];
 }
@@ -51,10 +54,10 @@ export function lintProject(
 function lintSandboxDockerfiles(
   parsed: Record<string, unknown> | null,
   manifestPath: string,
-): ManifestIssue[] {
+): ProjectIssue[] {
   if (!parsed) return [];
   const root = dirname(manifestPath);
-  const issues: ManifestIssue[] = [];
+  const issues: ProjectIssue[] = [];
   for (const tpl of extractSandboxTemplates(parsed)) {
     if (!tpl.dockerfile) continue;
     const abs = resolve(root, tpl.dockerfile);
@@ -68,7 +71,7 @@ function lintSandboxDockerfiles(
     // Report the path as written in the manifest when it stays inside the
     // project, so the author sees the string they typed.
     const shown = relative(root, abs).startsWith('..') ? abs : tpl.dockerfile;
-    issues.push(...lintDockerfile(text, { path: shown }));
+    issues.push(...lintDockerfile(text, { path: shown }).map((issue) => ({ ...issue, file: abs })));
   }
   return issues;
 }

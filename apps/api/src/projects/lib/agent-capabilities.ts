@@ -21,7 +21,7 @@
  *    the `extensions:` registry.
  */
 
-import { KORTIX_SKILL_NAMES, KORTIX_TOOL_NAMES, kortixToolRef, selectedKortixTools } from '@kortix/manifest-schema';
+import { KORTIX_SKILL_NAMES, KORTIX_TOOL_NAMES, kortixToolRef } from '@kortix/manifest-schema';
 
 export type AgentCapabilityToolGroup = 'workspace' | 'interaction' | 'kortix' | 'project';
 
@@ -104,20 +104,19 @@ function extensionSource(entry: unknown): string | null {
 export function buildAgentCapabilities(input: {
   agentName: string;
   manifest: Record<string, unknown>;
-  schemaVersion: number;
   managedSkills: ReadonlyArray<{ name: string; description: string; featureFlag: string | null }>;
   /** Project skill name → its SKILL.md `description`, when the file was read. */
   projectSkillDescriptions: Record<string, string | null>;
   enabledFlags: ReadonlySet<string>;
 }): AgentCapabilities {
-  // `kortix:<name>` keeps a Kortix tool (v2); any other value is a repository module.
+  // A `kortix:<name>` value names a Kortix tool; any other value is a repository module.
   const registeredTools = Object.entries(mapOf(input.manifest.tools)).filter(
     (entry): entry is [string, string] => typeof entry[1] === 'string' && kortixToolRef(entry[1]) === null,
   );
   const replaced = new Map(registeredTools);
   const kortixNames = new Set<string>(KORTIX_TOOL_NAMES);
-  // v3 sessions load every Kortix tool; a v2 `tools` key keeps only the ones it lists.
-  const kortixTools = input.schemaVersion >= 3 ? [...KORTIX_TOOL_NAMES] : selectedKortixTools(input.manifest.tools);
+  // A session loads every Kortix tool.
+  const kortixTools = [...KORTIX_TOOL_NAMES];
   const tools: AgentCapabilityTool[] = [
     ...BUILTIN_TOOLS.map((tool) => ({ id: tool.id, group: tool.group, description: tool.description, aliases: tool.aliases ?? [], source: null })),
     ...kortixTools.map((id) => ({
@@ -161,5 +160,6 @@ export function buildAgentCapabilities(input: {
     })),
   ];
 
-  return { agent: input.agentName, schema_version: input.schemaVersion, tools, skills, extensions };
+  // `schema_version` is a wire constant: clients released before the one manifest format read it.
+  return { agent: input.agentName, schema_version: 3, tools, skills, extensions };
 }

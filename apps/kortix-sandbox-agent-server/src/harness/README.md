@@ -763,7 +763,7 @@ into the daemon binary and runs INSIDE the daemon process. There is no child
 process, no port, no RPC and no second sandbox: pi-coding-agent's built-in
 `bash`/`read`/`write`/`edit` run on `/workspace` in this process, Kortix adds
 `glob`/`grep` (ripgrep) and `question`, and the hosted tools (see "Hosted
-tools" below). A project needs no `harnesses/pi/` file for any of them.
+tools" below). A project needs no harness folder for any of them.
 Every model request goes to the Kortix LLM gateway through the
 daemon's localhost LLM proxy, under the `kortix` provider id.
 
@@ -802,23 +802,29 @@ runs on the session's agent. A pick of a subagent, a disabled
 agent or an unknown name is logged and runs on the session's agent. pi
 packages and extensions stay the ones the session booted with.
 
-### kortix.yaml v3
+### kortix.yaml
 
-A compiled set with `schema: 3` (`CompiledAgentSet`) is the only config input
-for a v3 session. Every rule below holds for the working tree and for a config
-release. v1 and v2 sessions keep the folder behavior the rest of this section
-describes.
+The compiled agent set (`KORTIX_COMPILED_AGENT_CONFIG`, `CompiledAgentSet`,
+compiled by apps/api from kortix.yaml) is the only config input of every
+session. Every rule below holds for the working tree and for a config release.
 
-- **No harness folder.** pi reads no `pi.config_dir`, `harnesses/pi` or
-  `.kortix/pi`: no project `settings.json`, `extensions/` or `prompts/`
-  (`PiRuntime.projectConfigDir`, `config-release.ts` `piDirIn`). pi's own
-  discovery of `.pi/` and `.agents/skills` is off (`discoveryRoot: null`).
+- **No harness folder.** pi reads no `harnesses/pi`, `harnesses/opencode`,
+  `.kortix/pi`, `.kortix/opencode`, `opencode.json[c]` or agent `.md`
+  frontmatter: no project `settings.json`, `extensions/` or `prompts/`. pi's
+  own discovery of `.pi/` and `.agents/skills` is off (`NO_PROJECT_DIR` in
+  `pi/extensions/host.ts`).
+- **The `schema: 3` marker.** apps/api writes `schema: 3` into every set it
+  compiles from kortix.yaml; boxes that run older daemons read the marker, so
+  it stays on the wire. A set without it (My Kortix's, or one from an API that
+  predates the one schema) is built-in agents only: its agents run with the
+  built-in subagents `general` and `explore`, and no folder is read either.
+  No set at all runs `KORTIX_AGENT_NAME` (else `build`) on pi's default prompt.
 - **Skills.** The managed `kortix-*` skills, then exactly the folders in
   `compiled.skills`, under the config root: the active release root, else
-  `/workspace` (`resolvePiV3SkillDirectories`). The image default has no
-  project skill. pi does not scan `skills/` or the legacy dir. The agent's
+  `/workspace` (`resolvePiSkillDirectories`). The image default has no
+  project skill. pi scans no `skills/` folder. The agent's
   `permission.skill` allowlist still hides every skill it does not grant.
-- **Subagents.** No built-in `general` or `explore`. The `agent` tool offers
+- **Subagents.** A kortix.yaml set has no built-in `general` or `explore`. The `agent` tool offers
   only declared, enabled agents with `mode` `subagent` or `all` that the
   calling agent's `permission.task` rule does not deny. The rule's subject is
   `subagent_type`, so a call to a denied name is refused before it runs.
@@ -832,7 +838,7 @@ describes.
   take the words (a quoted string is one word), the highest placeholder takes
   the rest, `$ARGUMENTS` takes the raw text, and a template with neither gets
   the arguments appended. `` !`cmd` `` shell expansion is not supported.
-- **Skills in the command list.** On v2 and v3, `GET /command` ends with the
+- **Skills in the command list.** `GET /command` ends with the
   agent's granted skills as `source: 'skill'` rows: the session composer's `/`
   menu reads only this list. A command shadows a
   skill of the same name. `POST /session/:id/command` with a skill name sends
@@ -843,7 +849,15 @@ describes.
   later in the session keeps them.
 - **codemode.** `KORTIX_PI_CODEMODE`, else the session agent's compiled
   `codemode`, else `on`. It is fixed at start, like the extensions. A subagent
-  gets codemode only from its own compiled `codemode` (`on` or `only`, v3).
+  gets codemode only from its own compiled `codemode` (`on` or `only`).
+- **kortix.yaml issues.** A set that carries `manifest_issues` (apps/api: the
+  file's errors first, at most 50, each `{ path, message, severity, line?,
+  column? }`) adds a section to the session notice (below): the error and
+  warning counts, one line per issue (`kortix.yaml:<line>:<col> <severity>
+  <path> <message>`), the rule that an agent or trigger with an error is off
+  until it is fixed, and the fix (edit `/workspace/kortix.yaml`, run `kortix
+  validate`, open a change request). No issues: no section
+  (`services/config-provider/notice.ts` `manifestIssuesOf`).
 
 ### Config releases
 
@@ -852,13 +866,10 @@ pi runs the base branch's current config release
 a checkout of the base branch under `/opt/kortix/config/<release_id>`, with
 the repository's own layout, verified against its Git blob IDs and sealed
 read-only. pi reads from it what it reads from `/workspace`: the compiled
-governance (`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/` (and the
-legacy `.kortix/opencode/skills`), the root `AGENTS.md` (else `CLAUDE.md`),
-and its own config dir (`pi.config_dir`, else `harnesses/pi`, else
-`.kortix/pi`: skills, extensions, prompts, `settings.json`), resolved inside
-the release by `resolvePiProjectConfigDir`.
-`harnesses/opencode` is not pi's: a commit that breaks only those files is a
-working config.
+governance (`KORTIX_COMPILED_AGENT_CONFIG`, the agents), the skill folders
+and project tools that governance registers, the `./` pi packages, and the
+root `AGENTS.md` (else `CLAUDE.md`). A descriptor's `config_dir` (an older
+API's) is ignored: the release manifest records `config_dir: null`.
 
 - **Boot.** `runPi` starts the config choice and the workspace checkout
   together, and they never wait for each other. `lifecycle.start()` waits for
@@ -873,9 +884,9 @@ working config.
   one pass after ready). pi applies a release in place: the governance goes
   into the runtime's env, the skill directories and the `AGENTS.md` root
   (`PiConfigReleases.projectRoot()`) move into the release, and
-  `PiRuntime.reconfigure()` re-reads them. A release that changes anything
-  in pi's config dir other than its skills (extensions, prompts, settings, which only
-  a start reads) restarts the runtime in place instead: the same root, the
+  `PiRuntime.reconfigure()` re-reads them. A release that changes a project
+  tool or a file in the folder of a `./` pi package (which only a start reads,
+  `startOnlyFiles`) restarts the runtime in place instead: the same root, the
   transcript restored. Nothing else restarts, and the answer carries
   `reload: null` either way. A turn in flight, or one admitted behind it
   (`PiRuntime.idle()`), defers the apply; it is asked again after the download,
@@ -885,14 +896,14 @@ working config.
   `harness.ready` requires `config.proven`. While a release
   owns the governance, a `/kortix/env` push of `KORTIX_COMPILED_AGENT_CONFIG`
   is dropped. The session notice (`/tmp/kortix/config-release.md`) is part of
-  pi's system prompt while a release runs.
-- **Discovery.** pi's own discovery of `.pi/{extensions,skills,prompts}` and
-  `.agents/skills` reads the release root, never `/workspace`
-  (`createPiSession`'s `discoveryRoot`). The image default discovers nothing,
-  and a `./` pi package does not load on it.
-- **Not in a release.** npm pi packages (`harnesses.pi.packages`) load when
-  the runtime starts. A change to them reaches a session at its next boot or
-  restart.
+  pi's system prompt while a release runs. It is rewritten only when its text
+  changes: the commit, the agent re-point, or the kortix.yaml issues.
+- **Discovery.** pi discovers nothing (`.pi/{extensions,skills,prompts}`,
+  `.agents/skills`), in the release or in `/workspace`. On the image default a
+  `./` pi package does not load.
+- **Not in a release.** npm pi packages (the agent's kortix.yaml
+  `extensions`) load when the runtime starts. A change to them reaches a
+  session at its next boot or restart.
 
 Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `initial-turn-claimed`,
 `config-release-published` (the release the API published and signed at
@@ -961,8 +972,8 @@ Three sources, in pi's own scopes:
 | Source | Declared in | Installed in |
 |---|---|---|
 | system (every session) | `<agentDir>/settings.json` `packages`; `agentDir` = `KORTIX_PI_AGENT_DIR`, default `/opt/kortix/pi-agent` | `<agentDir>/npm`, when the image is built |
-| project | kortix.yaml `harnesses.pi.packages` → `KORTIX_PI_PACKAGES` | npm sources: built once per package list by the API (apps/api/src/pi-packages, on change-request merge) as a PRE-BUILT bundle — one self-contained, minified ESM file per extension (deps inlined; pi's own modules read `globalThis.__kortixPiHost`) plus the package's own files minus the code that file inlined, type declarations, source maps and the root README/CHANGELOG — and the installed `node_modules` as a fallback. The daemon starts the download with the service (beside the repo clone), unpacks to `<KORTIX_PI_PACKAGES_DIR>/<digest>` (outside the repo) and imports each extension natively: no jiti, no install (`extensions/prebuilt.ts`). A package with no pre-built form, one whose file throws on import, or an entry with its own `extensions` filter loads from the fallback (`KORTIX_PI_PACKAGES_FALLBACK_URL`, fetched only then) through pi's loader |
-| repo-local | `<workspace>/.pi/extensions/*.ts`, or a `./` path in `harnesses.pi.packages` (a file is one extension, anywhere in the repo) | the repo itself: a `./` path resolves against the config release root while a release runs, else the working tree (`packageRoot`); a release that changes a file in its folder restarts the runtime (`pi/config-release.ts` `startOnlyFiles`) |
+| project | the session agent's kortix.yaml `extensions` → `KORTIX_PI_PACKAGES` | npm sources: built once per package list by the API (apps/api/src/pi-packages, on change-request merge) as a PRE-BUILT bundle — one self-contained, minified ESM file per extension (deps inlined; pi's own modules read `globalThis.__kortixPiHost`) plus the package's own files minus the code that file inlined, type declarations, source maps and the root README/CHANGELOG — and the installed `node_modules` as a fallback. The daemon starts the download with the service (beside the repo clone), unpacks to `<KORTIX_PI_PACKAGES_DIR>/<digest>` (outside the repo) and imports each extension natively: no jiti, no install (`extensions/prebuilt.ts`). A package with no pre-built form, one whose file throws on import, or an entry with its own `extensions` filter loads from the fallback (`KORTIX_PI_PACKAGES_FALLBACK_URL`, fetched only then) through pi's loader |
+| repo-local | a `./` path in the agent's `extensions` (a file is one extension, anywhere in the repo) | the repo itself: a `./` path resolves against the config release root while a release runs, else the working tree (`packageRoot`); a release that changes a file in its folder restarts the runtime (`pi/config-release.ts` `startOnlyFiles`) |
 
 A project entry for the same package overrides the system one. Nothing installs
 at boot. pi installs a missing package on load (13.2 s for two packages,
@@ -982,9 +993,8 @@ the hidden `kortix-nested-calls` gate and `codemode`.
 pi-coding-agent's `createCodemodeExtension()` (`pi/codemode.ts`): one tool, `codemode`, whose
 input is a JavaScript script that calls the other tools as `await tools.<name>(args)` in a
 QuickJS VM (no Node, file system, network or timers; 256 MB). Only the script's output
-returns to the model. kortix.yaml `harnesses.pi.codemode` (v3: the agent's `codemode`;
-`KORTIX_PI_CODEMODE`, sent by the API at session start; an agent's value replaces the
-top-level one; without the variable the session agent's compiled `codemode`) picks `on` (the
+returns to the model. The agent's kortix.yaml `codemode` (`KORTIX_PI_CODEMODE`, sent by the
+API at session start; without the variable the session agent's compiled `codemode`) picks `on` (the
 default: the other tools stay declared), `only` (requests declare codemode alone) or `off`
 (the extension is not loaded). `models` stays off: it would call providers past the LLM gateway.
 
@@ -1000,7 +1010,7 @@ default: the other tools stay declared), `only` (requests declare codemode alone
   A tool the agent's tool access turns off is not callable from a script either (pi offers
   scripts only active tools).
 - **Subagents.** A child is a bare `core.Agent`: no extension loads and no tool gets a session
-  context. When the subagent's own compiled agent sets `codemode: on` or `only` (v3; omitted:
+  context. When the subagent's own compiled agent sets `codemode: on` or `only` (omitted:
   none, whatever the session's mode), `spawnSession` adds
   pi's tool (`childCodemodeTool`, reached by a relative path into pi's
   `dist/extensions/codemode/tool.js`) with the context pi's executor reads: `tools`,
@@ -1025,8 +1035,8 @@ default: the other tools stay declared), `only` (requests declare codemode alone
   `permission: { '*': deny }` matches codemode too, so list `codemode: allow` to keep it — also turns
   them off, and `tools: none` (no tools at all) takes codemode with it. `codemode` is not a tool name,
   so do not list it in a `tools` allowlist or `exclude` (validate warns it is unknown). The subagent's mode comes from
-  its OWN agent, independent of the session agent's codemode (`KORTIX_PI_CODEMODE`, which for a v3
-  project the API fills from the session agent): a lead set to `codemode: off` does not disable a
+  its OWN agent, independent of the session agent's codemode (`KORTIX_PI_CODEMODE`, which
+  the API fills from the session agent): a lead set to `codemode: off` does not disable a
   subagent's own `only`. When a built-in is off, wiring is skipped and the child keeps its direct
   tools (a `log.warn` records it), never bricked. `show` stays a direct call: a script cannot call it.
   Limits: `store()` writes last one script (nothing appends them); the session log's code block has no
@@ -1100,7 +1110,7 @@ own wire transcript served by `/session` (the root and its children),
 resumes it after a restart. A call picks one of two sources. A named
 `subagent_type`: `general` (all workspace and Kortix tools), `explore`
 (`bash`/`read`/`glob`/`grep`), and every compiled agent with `mode: subagent`
-or `all`; v3 has only the declared agents. The calling agent's
+or `all`; a kortix.yaml set (`schema: 3`) has only the declared agents. The calling agent's
 `permission.task` rule (subject: `subagent_type`) removes a denied type from
 the list and refuses a call to it. Or an inline ephemeral agent `agent: {
 instructions, model?, tools?, description? }`, defined on the fly with no
@@ -1217,20 +1227,21 @@ only when the recovery fails). The wire carries it as a user message whose one
 part is `compaction` (`auto`, `overflow`), an assistant
 message flagged `summary` with the summary text or an error,
 `time.compacting` on the session while it runs, and `session.compacted`. The
-transcript keeps every message. A project's `settings.json` in the pi config
-dir sets `compaction.enabled`, `reserveTokens` and `keepRecentTokens`.
+transcript keeps every message. pi's global settings (`<agentDir>/settings.json`,
+the image's) set `compaction.enabled`, `reserveTokens` and `keepRecentTokens`; a
+project sets none.
 Subagent child sessions have no `AgentSession` and do not compact.
 
 The threshold is `window - reserve`, and this daemon sets the reserve from the
 catalog: the model's own output limit, floored at pi's 16,384 default and at the
-`compaction.reserveTokens` a project configures, and capped at half the window
+`compaction.reserveTokens` pi's global settings configure, and capped at half the window
 (`compactionSettings` in `pi/model.ts`). pi's default reserve alone lets a
 request enter the window with less room left than the answer may use, so the
 provider cuts the reply (`stopReason: length`, `output_length` on the wire) at a
 context the meter still calls healthy. The reserve follows a catalog refresh
 (`applyCompaction`), so a custom endpoint's real limits apply to a running
 session. A model's `limit.output` therefore also decides when its session
-compacts; a project can only ask for an earlier cut, never a later one.
+compacts; the settings can only ask for an earlier cut, never a later one.
 
 A transient model error is retried at pi's `agent_before_settle` boundary
 (`turnExtension`), not after `session.prompt` returns. The retry therefore stays
@@ -1279,12 +1290,11 @@ provider and model only, so the restore gives a `kortix` message without `api`
 (a v1 or OpenCode-converted log) the gateway dialect `openai-completions`;
 pi-ai then sees the same model and keeps its reasoning.
 
-`GET /command` lists pi's prompt templates (`prompts/*.md` in the pi config
-dir, and the templates of pi packages) as slash commands. A v3 session lists
-its compiled commands instead (see "kortix.yaml v3").
-`POST /session/:id/command` runs one: it admits `/name arguments`, pi expands
-the template, and the user message on the wire becomes the expanded text. A
-command pi does not have is a 400. pi does not read a `commands/` directory.
+`GET /command` lists the compiled commands (see "kortix.yaml"), never pi's
+prompt templates. `POST /session/:id/command` runs one: the runtime expands
+its template, and the user message on the wire is the expanded text. An
+unknown command is a 400. pi does not read a `commands/` or `prompts/`
+directory.
 
 Not supported by pi today (answered honestly, never silently): session rewind
 (`/session/:id/revert`, 501 `feature_not_supported`), MCP/connector tools, todo
@@ -1347,7 +1357,7 @@ register routes or receive a Hono context.
 
 ## Unchanged contracts
 
-- Project folders, native config locations and configuration precedence.
+- Project folders. The compiled agent set is the only config input ("kortix.yaml").
 - Environment variable names, defaults and loaded values (pi adds `KORTIX_PI_*`).
 - Routes, response/event payloads, diagnostics and durable state filenames.
 - Readiness gates, timeout policy and update ordering.

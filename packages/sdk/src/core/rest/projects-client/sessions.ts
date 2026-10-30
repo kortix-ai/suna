@@ -1999,8 +1999,8 @@ export interface SessionConfigState {
    * TRI-STATE, and the distinction is the point.
    *
    * `null` means "could not tell", NEVER "up to date": the sandbox is
-   * unreachable, or the project has no compiled config at all (a v1
-   * `kortix.toml` project). Branch on `=== true` and `=== false`; `!stale`
+   * unreachable, or the project has no compiled config at all. Branch on
+   * `=== true` and `=== false`; `!stale`
    * silently reports an unaskable session as current, which is the exact
    * failure this field exists to prevent.
    */

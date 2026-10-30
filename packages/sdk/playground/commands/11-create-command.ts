@@ -2,7 +2,8 @@
  * 11 — create a slash command (file round-trip through the session workspace).
  *
  * Same deterministic write→read→delete cycle as 06/09. Set KEEP_TEST_FILES=1
- * to keep it (commit it to register `/sdk-test-command`).
+ * to keep it (commit it and register it under `commands:` in kortix.yaml to
+ * offer `/sdk-test-command`).
  *
  * Run (from packages/sdk):  bun run playground/commands/11-create-command.ts
  */
@@ -15,7 +16,7 @@ import {
 } from "../_shared";
 
 const COMMAND_NAME = "sdk-test-command";
-const COMMAND_DIR = "/workspace/harnesses/opencode/commands";
+const COMMAND_DIR = "/workspace/commands";
 const COMMAND_PATH = `${COMMAND_DIR}/${COMMAND_NAME}.md`;
 const COMMAND_MD = `---
 description: Throwaway command created by the SDK playground to prove command files round-trip.

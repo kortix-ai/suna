@@ -163,7 +163,6 @@ describe('runtime triggers', () => {
     const sessionId = await seedSession();
     const manifest = parseManifestString(
       [
-        'kortix_version: 3',
         'project:',
         '  name: runtime-triggers',
         'triggers:',
@@ -182,7 +181,6 @@ describe('runtime triggers', () => {
         `    session_id: ${sessionId}`,
         '    prompt: never',
       ].join('\n'),
-      'yaml',
     );
     const { specs, errors } = extractTriggers(manifest);
     expect(errors).toEqual([]);

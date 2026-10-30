@@ -515,7 +515,6 @@ describe('genuine synonyms still answer', () => {
     ['approvals', 'nav:proj-review-inbox'],
     ['experimental', 'nav:proj-config-feature-flags'],
     ['labs', 'nav:proj-config-feature-flags'],
-    ['migration', 'nav:proj-config-upgrades'],
     ['change requests', 'nav:review-changes'],
     ['github', 'nav:account-git'],
     ['grants', 'nav:account-access-projects'],

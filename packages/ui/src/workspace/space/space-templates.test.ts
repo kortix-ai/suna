@@ -23,12 +23,14 @@ test('every template is a list of starting tabs; the first is the default', () =
   for (const template of SPACE_TEMPLATES) expect(Array.isArray(template.tabs)).toBe(true);
 });
 
-test('addSpaceToManifest creates the spaces map when absent and keeps the rest', () => {
+test('addSpaceToManifest creates the spaces map when absent, keeps the rest, and writes the latest shape', () => {
   const yaml = '# keep me\nkortix_version: 3\nagents:\n  a:\n    mode: primary\n';
   const text = addSpaceToManifest(yaml, { slug: 'sales', label: 'Sales', description: 'Deals.', tabs: [{ type: 'goals' }] });
   const next = parseYaml(text);
   expect(next.spaces.sales).toEqual({ label: 'Sales', description: 'Deals.', tabs: [{ type: 'goals' }] });
-  expect(next.kortix_version).toBe(3);
+  // Deprecated shapes are rewritten on the way: the version line goes, a missing `tools` is written as `all`.
+  expect(next.agents).toEqual({ a: { mode: 'primary', tools: 'all' } });
+  expect(next.kortix_version).toBeUndefined();
   expect(text).toContain('# keep me');
 });
 

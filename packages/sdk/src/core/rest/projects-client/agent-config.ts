@@ -13,11 +13,10 @@ import { unwrap } from './shared';
 // body). The backend route is what merges the two files into this one
 // response/request shape — see apps/api/src/projects/routes/agent-config.ts.
 // Distinct from setAgentScope (agent-scope.ts), which writes only the
-// secrets/connectors grant subset into a v1 `[[agents]]` entry. Manager-gated
-// server-side (project.agent.write). A kortix_version 2 or 3 manifest is
-// editable; `editable:false` on the GET means a v1 project — the UI degrades to
-// the limited scope editor. A v3 block also carries the per-agent grants of the
-// project registries (`subagents`, `commands`, `extensions`).
+// secrets/connectors grant subset. Manager-gated server-side
+// (project.agent.write). `editable` on the GET is the server's verdict; the UI
+// shows a read-only page when it is false. A block also carries the per-agent
+// grants of the project registries (`subagents`, `commands`, `extensions`).
 
 /** A Kortix governance grant on the wire: an allowlist, or the sentinels. */
 export type AgentGrantSetV2 = 'all' | 'none' | string[];
@@ -53,7 +52,7 @@ export interface RuntimeAgentConfig {
 /** @deprecated Renamed to `RuntimeAgentConfig`. Removed in the next major. */
 export type OpencodeAgentConfig = RuntimeAgentConfig;
 
-/** The full agent block on the wire — mirrors `AgentBlockV2` in
+/** The full agent block on the wire — mirrors `AgentBlockV3` in
  *  @kortix/manifest-schema PLUS the merged `behavior` half (a wire-only
  *  convenience; kortix.yaml itself never nests it — see the module doc
  *  above). */
@@ -100,7 +99,7 @@ export interface AgentConfigBlock {
    *  alias and answer with `kortix_permissions`. Removed in the next major. */
   kortix_cli?: AgentGrantSetV2;
   /** Whether new sessions can access the project repository. The API always answers it; an
-   *  omitted value defaults to true on kortix_version 1 and 2, false on 3. */
+   *  omitted value is false. */
   repository_access?: boolean;
   /** @deprecated Use repository_access. Legacy read requires an explicit choice. */
   workspace?: 'runtime' | 'read' | 'branch';
@@ -117,13 +116,13 @@ export interface AgentConfigBlock {
 
 export interface AgentConfigResponse {
   agent: string;
-  /** The manifest's declared schema version (1, 2 or 3). */
+  /** @deprecated The manifest has no version: one schema. Do not branch on it. Removed in the next major. */
   schema_version: number;
-  /** True iff the full block is editable. The server decides: a kortix_version 2 or 3 manifest. */
+  /** True iff the full block is editable. The server decides. */
   editable: boolean;
-  /** The manifest's top-level `default_agent` (v2 and v3; null for v1). */
+  /** The manifest's top-level `default_agent`, or null when it names none. */
   default_agent: string | null;
-  /** The declared block, or null for a v1 manifest / an agent not declared yet. */
+  /** The declared block, or null for an agent not declared yet. */
   block: AgentConfigBlock | null;
   /** The harness a new session of this project runs (`opencode` or `pi`). Absent from an older API. */
   harness?: string;

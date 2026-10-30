@@ -14,7 +14,7 @@ import {
 } from '../projects/lib/platform-meta-agent';
 import { grantFromLoadedAgents } from '../projects/agents';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
+import { manifestHealthWithout } from '../projects/lib/manifest-health';
 
 describe('platform meta agent', () => {
   test('adds one reserved meta agent and replaces a project collision', () => {
@@ -34,11 +34,7 @@ describe('platform meta agent', () => {
       signals: {},
       manifest_raw: null,
       manifest: {},
-      manifest_version: resolveManifestVerdict({
-        raw: null,
-        format: 'yaml',
-        path: null,
-      }),
+      manifest_health: manifestHealthWithout('missing'),
       env: { required: [], optional: [] },
       open_code_raw: null,
       default_agent: null,
@@ -109,8 +105,9 @@ describe('platform meta agent', () => {
     expect(enabledBuiltinAgentKey('meta', { my_kortix: true })).toBe('my_kortix');
     expect(enabledBuiltinAgentKey('meta', { my_kortix: false })).toBeNull();
     expect(enabledBuiltinAgentKey('kortix', { my_kortix: true })).toBeNull();
-    expect(builtinAgentConfigView('my_kortix', 3, 'kortix')).toMatchObject({
+    expect(builtinAgentConfigView('my_kortix', 'kortix')).toMatchObject({
       agent: 'meta',
+      schema_version: 3,
       builtin: 'my_kortix',
       editable: false,
       block: null,
@@ -119,7 +116,7 @@ describe('platform meta agent', () => {
   });
 
   test('a kortix.yaml that turns My Kortix off strips a meta session to no project action', () => {
-    const governed = { specs: [], errors: [], defaultAgent: 'kortix', schemaVersion: 3 };
+    const governed = { specs: [], errors: [], defaultAgent: 'kortix' };
     expect(grantFromLoadedAgents('meta', governed)).toEqual(platformMetaAgentGrant());
     expect(grantFromLoadedAgents('meta', { ...governed, builtinAgents: { my_kortix: true } })).toEqual(
       platformMetaAgentGrant(),

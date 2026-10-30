@@ -54,7 +54,7 @@ function manifestOf(release: BuiltRelease): ReleaseManifest {
   return {
     release_id: d.release_id!,
     source_commit: d.source_commit!,
-    config_dir: d.config_dir,
+    config_dir: REL,
     config_tree_id: d.config_tree_id!,
     archive_url: d.archive!.url,
     archive_bytes: d.archive!.bytes,
@@ -65,7 +65,7 @@ function manifestOf(release: BuiltRelease): ReleaseManifest {
 }
 
 function release(message: string, governance: string | null = null): BuiltRelease {
-  return buildRelease(repo, commitAll(repo, message), REL, { governance })
+  return buildRelease(repo, commitAll(repo, message), { governance })
 }
 
 async function materialize(built: BuiltRelease) {

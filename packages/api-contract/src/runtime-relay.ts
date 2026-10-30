@@ -500,6 +500,21 @@ export interface CompiledAgentSet {
   commands?: Record<string, CompiledCommand>;
   /** v3: registered extensions, by name. An agent loads the ones its `extensions` list names. */
   extensions?: Record<string, CompiledExtension>;
+  /**
+   * kortix.yaml's validation issues, errors first, at most 50. The set is what
+   * the project applies without the broken parts; the daemon lists these in
+   * the session's config notice so the agent can fix the file. Absent: none.
+   */
+  manifest_issues?: CompiledManifestIssue[];
+}
+
+/** One kortix.yaml validation issue in a compiled agent set. `line`/`column` are 1-indexed. */
+export interface CompiledManifestIssue {
+  path: string;
+  message: string;
+  severity: 'error' | 'warning';
+  line?: number;
+  column?: number;
 }
 
 /** May an agent with this compiled `tools` map use `tool`? Its own entry, else `*`, else yes. */

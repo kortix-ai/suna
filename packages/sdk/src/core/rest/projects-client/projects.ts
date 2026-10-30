@@ -1,6 +1,7 @@
 // Projects — project CRUD, detail, feature flags, warm pool, onboarding.
 
 import type { CatalogModel } from '@kortix/llm-catalog';
+import type { ManifestIssue } from './change-request-recovery';
 import type { ManifestSpace } from './manifest-spaces';
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import { retiredEndpointError } from '../../http/api/errors';
@@ -271,6 +272,8 @@ export interface ProjectConfigSummary {
   is_kortix_repo: boolean;
   signals: Record<string, boolean>;
   manifest_raw: string | null;
+  /** kortix.yaml problems for this project. Absent from an API released before the one-schema manifest. */
+  manifest_health?: ProjectManifestHealth;
   /** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
   open_code_raw: string | null;
   /** Provider-neutral project default. The SDK derives this from legacy servers. */
@@ -292,7 +295,8 @@ export interface ProjectConfigSummary {
     /** The agent's `model:` frontmatter (`provider/model`); absent on older
      *  servers, null when it follows the project default. */
     model?: string | null;
-    source?: 'opencode' | 'kortix.toml';
+    /** The server sends `kortix.yaml`. `kortix.toml` is never sent; it stays in the union until the next major. */
+    source?: 'opencode' | 'kortix.yaml' | 'kortix.toml';
     enabled?: boolean;
     /** True for a platform-owned agent (SUNA — the coordinator) that the API
      *  injects, not one declared in `kortix.yaml`. Its configuration is fixed:
@@ -326,6 +330,21 @@ export interface ProjectConfigSummary {
   /** The spaces from `kortix.yaml` top-level `spaces:`. Absent on older
    *  servers. `listSpaces(config)` adds the ones agents name. */
   spaces?: ManifestSpace[];
+}
+
+/**
+ * What the server found in the project's `kortix.yaml`. `ok`: no issues.
+ * `issues`: one or more; a running project still applies the valid rest, and
+ * an agent or trigger with an error is off. `missing`: no manifest, built-in
+ * agents only. `issues` lists errors first, at most 50.
+ */
+export interface ProjectManifestHealth {
+  /** Repository path of the manifest. null when none was read. */
+  path: string | null;
+  state: 'ok' | 'issues' | 'missing' | 'unreadable' | 'restricted' | 'repository_disconnected';
+  errors: number;
+  warnings: number;
+  issues: ManifestIssue[];
 }
 
 export interface ProjectDetail {
@@ -574,7 +593,7 @@ export interface ManifestValidationResult {
 }
 
 /**
- * Validate a `kortix.toml` manifest's raw TOML text server-side — the same
+ * Validate a `kortix.yaml` manifest's raw text server-side — the same
  * schema the CLI (`kortix ship` pre-flight / `kortix validate`) and the CR-merge
  * gate exercise. Always resolves (never throws on an invalid manifest) — the
  * verdict is in the body.

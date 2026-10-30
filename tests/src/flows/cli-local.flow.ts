@@ -49,7 +49,7 @@ flow('INIT-1', { domain: 'cli', routes: [] }, async (ctx) => {
           true,
           sb.exists('init-one/kortix.yaml'),
         );
-        // The v3 root layout: one worker agent, its skills and memory at the
+        // The root layout: one worker agent, its skills and memory at the
         // root, no harness folder and no .kortix/ folder.
         for (const path of [
           'agents/worker.md',
@@ -67,7 +67,7 @@ flow('INIT-1', { domain: 'cli', routes: [] }, async (ctx) => {
           true,
           manifest.includes('default_agent: worker') && manifest.includes('prompt_file: agents/worker.md'),
         );
-        check('no harness folder', !sb.exists('init-one/harnesses'), false, sb.exists('init-one/harnesses'));
+        check('kortix.yaml has no kortix_version', !manifest.includes('kortix_version'), true, !manifest.includes('kortix_version'));
         // codex is the default primary → AGENTS.md pointer is wired.
         check(
           'AGENTS.md (codex default) wired',

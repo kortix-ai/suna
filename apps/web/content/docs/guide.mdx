@@ -244,6 +244,12 @@ Changes to the project itself go through review too. When an agent changes a ski
 The built-in `kortix` agent is allowed to merge its own change requests. Its standing instructions tell it to stop after it opens one, so a person merges. To require a person every time, remove the merge permission from the agent's **Kortix permissions**.
 </Callout>
 
+### When kortix.yaml has a problem
+
+`kortix.yaml` can have a mistake, such as a misspelled key or a skill that is not registered. The project then shows a banner with the problems. Select **Fix with My Kortix**: My Kortix fixes the file and opens a change request for you to review. The agent of every session also gets the list, so you can ask any agent to fix it.
+
+The project keeps running while the file has a mistake. Kortix turns off only the broken part, such as one agent or one trigger, and never gives an agent more access than the file grants. When the mistake is in a part the whole project depends on, only My Kortix runs until the file is fixed. The rules are in the [kortix.yaml reference](/docs/developers#when-kortixyaml-has-a-problem).
+
 ## Skills
 
 <video src="/media/guide/skills.mp4" aria-label="Skills in Kortix: the skill list and one skill opened" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />

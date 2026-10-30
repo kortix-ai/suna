@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import { closeSync, constants, existsSync, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs'
 import { join, sep } from 'node:path'
-import { readProjectManifest, extractNestedString } from '@/lib/config/config'
 import { z } from 'zod'
 import type { Config as HostConfig } from '@/lib/config/config'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
@@ -29,7 +28,7 @@ const EnvironmentSchema = z.object({
   // pi's global agent dir: `settings.json` lists the system packages the image
   // installed under `npm/` by the image build (runtime-versions.json `piSystemPackages`).
   KORTIX_PI_AGENT_DIR: z.string().optional(),
-  // JSON array of the project's pi package sources (kortix.yaml `harnesses.pi.packages`).
+  // JSON array of the session agent's pi package sources (kortix.yaml `extensions` the agent enables).
   KORTIX_PI_PACKAGES: z.string().optional(),
   // The API-built bundle of those packages: short-lived download URLs (pre-built,
   // and the installed node_modules fallback) and their shared digest.
@@ -114,47 +113,12 @@ export function requirePiConfig(cfg: HostConfig): PiConfig {
  * Skill directories, most specific first; pi keeps the first skill of a name.
  * The baked managed `kortix-*` overlay comes first, so the platform's latest
  * copy wins over one a project tracks, with nothing written into the working
- * tree. Then the project's `skills/`, then the legacy `.kortix/opencode/skills`
- * of a project authored for OpenCode before the sunset, so pi still loads them.
+ * tree. Then exactly the folders kortix.yaml registers (`compiled.skills`)
+ * under the config root: the active release root, else the workspace. No
+ * folder is scanned. Null (the image default) has no project skill.
  */
-export async function resolvePiProjectConfigDir(cfg: HostConfig): Promise<string | null> {
-  const workspace = cfg.projectTarget || cfg.workspace || '/workspace'
-  const manifest = await readProjectManifest(await import('node:fs/promises'), workspace)
-  const raw = manifest && extractNestedString(manifest.body, manifest.format, 'pi', 'config_dir')
-  // Repo-relative only. A manifest must never make the harness load host files.
-  if (raw && !raw.startsWith('/') && !raw.startsWith('-') && raw.split('/').every((segment) => segment && segment !== '.' && segment !== '..' && /^[\w .-]+$/.test(segment))) {
-    const path = join(workspace, raw)
-    return existsSync(path) ? path : null
-  }
-  for (const path of ['harnesses/pi', '.kortix/pi']) {
-    if (existsSync(join(workspace, path))) return join(workspace, path)
-  }
-  return null
-}
-
-/**
- * kortix.yaml v3 (`schema: 3`): the managed `kortix-*` overlay, then exactly the
- * registered skill folders (`compiled.skills`) under the config root. No
- * `skills/` scan, no legacy dir, no pi folder. `root` is the active release
- * root, else the workspace; null (the image default) has no project skill.
- */
-export function resolvePiV3SkillDirectories(skills: Record<string, string> | undefined, root: string | null): string[] {
+export function resolvePiSkillDirectories(skills: Record<string, string> | undefined, root: string | null): string[] {
   return [managedSkillsDir(), ...(root ? Object.values(skills ?? {}).map((folder) => join(root, folder)) : [])]
-}
-
-export function resolvePiSkillDirectories(
-  cfg: HostConfig,
-  piDir?: string | null,
-  releaseSkillDirs: string[] | null = null,
-): string[] {
-  const piSkills = piDir ? [join(piDir, 'skills')] : []
-  // A config release decides the project's skills (config-release.ts); the
-  // working tree is read only while releases are not in play.
-  if (releaseSkillDirs) return [managedSkillsDir(), ...releaseSkillDirs, ...piSkills]
-  const workspace = cfg.projectTarget || cfg.workspace || '/workspace'
-  // The layout is packages/manifest-schema/src/layout.ts `skillDirs`; kortixd
-  // imports no `@kortix/*` package, so pi lists the dirs itself.
-  return [managedSkillsDir(), join(workspace, 'skills'), ...piSkills, join(workspace, '.kortix', 'opencode', 'skills')]
 }
 
 /** The project's root instructions file, as the system prompt renders it and health reports it. */

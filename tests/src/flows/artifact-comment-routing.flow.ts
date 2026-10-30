@@ -18,7 +18,7 @@ type Artifact = { artifact_id: string; title: string; path: string; entry_versio
 type Command = { command_id: string; command_type: string; status: string; session_id: string | null; actor_user_id: string | null; idempotency_key: string; payload: Record<string, any> };
 type Notice = { notification_id: string; user_id: string; actor_user_id: string | null; email_due_at: Date | null; created_at: Date };
 const AGENTS = [
-  'kortix_version: 3', 'project:', '  name: artifact-routing', 'default_agent: writer', 'agents:',
+  'project:', '  name: artifact-routing', 'default_agent: writer', 'agents:',
   '  writer:', '    kortix_permissions: [project.session.read, project.session.start, project.artifact.read, project.artifact.write, project.artifact.comment]',
   '  critic:', '    kortix_permissions: [project.session.read, project.session.start, project.artifact.comment]',
   '  researcher:', '    kortix_permissions: [project.session.read, project.artifact.comment]',

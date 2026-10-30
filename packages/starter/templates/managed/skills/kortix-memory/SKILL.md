@@ -22,10 +22,12 @@ prior context, then `view` the sub-files (`overview.md`,
 `connections.md`, etc.) the index points at when they're relevant.
 Record anything durable as you go — your context window may reset at
 any time, so what isn't written to `memory/` is lost.
-Every agent has the `memory` tool unless its `agents.<name>.tools` in
+An agent has the `memory` tool unless its `agents.<name>.tools` grant in
 `kortix.yaml` leaves it out. Without it, read and edit the files under
-`memory/` with the file tools; adding `memory` back to that list brings
-the tool back.
+`memory/` with the file tools; adding `memory` to that grant brings the
+tool back. Memory edits land only from an agent with
+`workspace: { project_repository: true }`: without it the session has no
+checkout to commit or push.
 
 Memory is **continuously CRUD'd**:
 
@@ -57,6 +59,8 @@ memory is about durable knowledge, not session state.
 </when-to-load>
 
 <file-layout>
+A new project has `memory/MEMORY.md` only. The usual sub-files:
+
 ```
 memory/
 ├── MEMORY.md           Index. `view` this first. One line per sub-file.

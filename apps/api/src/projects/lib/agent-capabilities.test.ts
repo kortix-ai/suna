@@ -3,7 +3,6 @@ import { KORTIX_SKILL_NAMES, KORTIX_TOOL_NAMES } from '@kortix/manifest-schema';
 import { buildAgentCapabilities } from './agent-capabilities';
 
 const MANIFEST = {
-  kortix_version: 3,
   default_agent: 'lead',
   skills: { pdf: 'skills/pdf' },
   tools: { lookup_order: 'tools/lookup_order.ts', web_search: 'tools/search.ts' },
@@ -15,7 +14,6 @@ const build = (flags: string[] = []) =>
   buildAgentCapabilities({
     agentName: 'lead',
     manifest: MANIFEST,
-    schemaVersion: 3,
     managedSkills: [
       { name: 'kortix-system', description: 'How Kortix works.', featureFlag: null },
       { name: 'kortix-goals', description: 'Goals.', featureFlag: 'goals' },
@@ -45,21 +43,8 @@ describe('buildAgentCapabilities', () => {
     expect(tools.find((tool) => tool.id === 'web_search')?.source).toBe('tools/search.ts');
   });
 
-  test('v2: kortix:<name> keeps a Kortix tool (no replacement); a tools key lists the Kortix tools, plus the default-on image_gen', () => {
-    const v2 = buildAgentCapabilities({
-      agentName: 'lead',
-      manifest: { kortix_version: 2, tools: { web_search: 'kortix:web_search', memory: 'tools/memory.ts', lookup: 'tools/lookup.ts' } },
-      schemaVersion: 2,
-      managedSkills: [],
-      projectSkillDescriptions: {},
-      enabledFlags: new Set(),
-    });
-    expect(v2.tools.filter((tool) => tool.group === 'kortix').map((tool) => [tool.id, tool.source])).toEqual([
-      ['web_search', null],
-      ['image_gen', null],
-      ['memory', 'tools/memory.ts'],
-    ]);
-    expect(v2.tools.filter((tool) => tool.group === 'project').map((tool) => tool.id)).toEqual(['lookup']);
+  test('the catalog carries the schema_version wire constant 3', () => {
+    expect(build().schema_version).toBe(3);
   });
 
   test('built-in skills come with their description and flag; a flag that is off makes the row unavailable', () => {

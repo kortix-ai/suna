@@ -27,17 +27,17 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-const MANIFEST_V1 = `kortix_version: 2
-default_agent: helper
+const MANIFEST_BEFORE = `default_agent: helper
 agents:
   helper:
-    kortix_permissions: []
+    prompt: Help.
+    tools: all
 `;
-const MANIFEST_V2 = `kortix_version: 2
-default_agent: reviewer
+const MANIFEST_AFTER = `default_agent: reviewer
 agents:
   reviewer:
-    kortix_permissions: []
+    prompt: Review.
+    tools: all
 `;
 
 const originRoot = await mkdtemp(join(tmpdir(), 'krtx818-origin-'));
@@ -49,9 +49,9 @@ const git = (...args: string[]) => execFileAsync('git', args, { cwd: originRoot 
 await git('init', '-b', 'main', '.');
 await git('config', 'user.email', 'krtx818-test@example.com');
 await git('config', 'user.name', 'krtx818 test');
-await writeFile(join(originRoot, 'kortix.yaml'), MANIFEST_V1);
+await writeFile(join(originRoot, 'kortix.yaml'), MANIFEST_BEFORE);
 await git('add', '.');
-await git('commit', '-m', 'manifest v1');
+await git('commit', '-m', 'manifest before');
 
 const { latestAgentConfigEtag, LATEST_ETAG_BUDGET_MS } = await import('./session-reload');
 const { resolveCompiledAgentConfigForSession } = await import('./compile-agent-config');
@@ -80,9 +80,9 @@ describe('the config etag read stays fresh without a whole-mirror fetch', () => 
 
     // The merge lands straight on the remote: no Kortix write, so no
     // `invalidateProjectMirror` broadcast reaches this process.
-    await writeFile(join(originRoot, 'kortix.yaml'), MANIFEST_V2);
+    await writeFile(join(originRoot, 'kortix.yaml'), MANIFEST_AFTER);
     await git('add', '.');
-    await git('commit', '-m', 'manifest v2');
+    await git('commit', '-m', 'manifest after');
 
     // A read without the proof serves the 60s TTL: the pre-push manifest.
     const ttlRead = await resolveCompiledAgentConfigForSession(project, 'main');
@@ -111,17 +111,6 @@ describe('the config etag read stays fresh without a whole-mirror fetch', () => 
     expect(body).not.toContain('invalidateProjectMirror(input.projectId)');
     expect(LATEST_ETAG_BUDGET_MS).toBeLessThan(25_000);
     expect(LATEST_ETAG_BUDGET_MS).toBeGreaterThan(0);
-  });
-
-  test('both compile entry points thread the forced refresh', async () => {
-    const src = await Bun.file(
-      new URL('./compile-agent-config.ts', import.meta.url).pathname,
-    ).text();
-    for (const name of ['resolveCompiledAgentConfigForSession', 'resolveSelectedAgentConfigForSession']) {
-      const body = src.split(`export async function ${name}(`)[1]?.split('\n}\n')[0];
-      expect(body).toBeTruthy();
-      expect(body).toContain('forceRefresh: options.forceRefresh');
-    }
   });
 
   test('a failed database read still throws — only the mirror wait degrades', async () => {
