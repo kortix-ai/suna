@@ -9,6 +9,7 @@ import type { FlowContext } from '../core/types';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
 import { CliSandbox, type CliResult } from '../fixtures/cli';
 import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixtures/database-project';
+import { localApiUsesTestProfile } from '../core/local-stack';
 
 const LIST = '/v1/projects/:projectId/artifacts';
 const SHARE = '/v1/projects/:projectId/artifacts/share';
@@ -90,7 +91,8 @@ flow(
     }
     const providerBase = process.env.PLATINUM_API_URL?.replace(/\/+$/, '');
     const providerKey = process.env.PLATINUM_API_KEY;
-    if (!providerBase || !providerKey || providerKey.startsWith('encrypted:')) throw new Error('ART-1 needs decrypted Files credentials for owned-volume cleanup');
+    const storageDisabled = ctx.env.target === 'local' && !ctx.env.capabilities.sandbox && await localApiUsesTestProfile(ctx.env.apiUrl);
+    if (!storageDisabled && (!providerBase || !providerKey || providerKey.startsWith('encrypted:'))) throw new Error('ART-1 needs decrypted Files credentials for owned-volume cleanup');
     const provider = (method: string, path: string) => fetch(`${providerBase}${path}`, {
       method, headers: { Authorization: `Bearer ${providerKey}` }, redirect: 'error', signal: AbortSignal.timeout(30_000),
     });
@@ -116,6 +118,11 @@ flow(
     let storage = true;
     await ctx.step('OWNER publishes index.md (+ notes.md) → 201: a doc, private, stored as a folder in their folder in Files, titled by its heading (503 without volume storage)', async () => {
       const r = await owner.post(LIST, { files: { 'index.md': { content: DOC_V1 }, 'notes.md': { content: '# Notes\n' } } }, { params: p });
+      if (storageDisabled) {
+        r.status(503).body().has('$.code', 'drive_storage_unavailable');
+        storage = false;
+        return;
+      }
       if (r.statusCode === 503) {
         r.body().has('$.code', 'drive_storage_unavailable');
         storage = false;
@@ -300,7 +307,7 @@ flow(
       (await owner.del(ONE, one(page))).status(200);
     });
     } finally {
-      if (volumeName) await ctx.step('delete only the owned Files volume → 204 and provider read-back → 404', async () => {
+      if (volumeName && !storageDisabled) await ctx.step('delete only the owned Files volume → 204 and provider read-back → 404', async () => {
         if ((await provider('DELETE', `/v1/volumes/${volumeName}?missing_ok=true`)).status !== 204) throw new Error('Owned Files volume deletion failed');
         if ((await provider('GET', `/v1/volumes/${volumeName}`)).status !== 404) throw new Error('Owned Files volume remains after deletion');
       });

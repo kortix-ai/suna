@@ -176,6 +176,7 @@ const CASES: Case[] = [
       updateId: 1001,
       value: {
         id: '1001',
+        sequence: 1001,
         source: `telegram:${BOT}`,
         type: 'telegram.message.created',
         time: new Date(DATE * 1000).toISOString(),
@@ -217,6 +218,7 @@ const CASES: Case[] = [
       updateId: 1003,
       value: {
         id: '1003',
+        sequence: 1003,
         source: `telegram:${BOT}`,
         type: 'telegram.callback_query.created',
         time: expect.any(String),
@@ -286,6 +288,7 @@ const CASES: Case[] = [
       updateId: 1006,
       value: {
         id: '1006',
+        sequence: 1006,
         source: `telegram:${BOT}`,
         type: 'telegram.message.created',
         time: new Date(DATE * 1000).toISOString(),

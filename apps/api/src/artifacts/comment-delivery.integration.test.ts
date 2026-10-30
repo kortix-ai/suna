@@ -100,6 +100,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
     const firstJob = await job(first);
     const secondJob = await job(second);
     await runArtifactCommentAgentJob(firstJob);
+    await Promise.all(wakeChecks);
     await runArtifactCommentAgentJob(secondJob);
     return { first, second, firstJob, secondJob, command: (await commands())[0]! };
   }
