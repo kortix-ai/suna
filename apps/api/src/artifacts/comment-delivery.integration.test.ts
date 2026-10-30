@@ -131,6 +131,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
     await expect(runArtifactCommentAgentJob({ ...claimed, payload })).rejects.toThrow('still being created');
     const [command] = await commands();
     expect(command!.commandType).toBe('create_session');
+    expect(await Promise.all(wakeChecks)).toEqual([{ visible: true, unlocked: true }]);
     const inherited = await job(await thread('Reuse the reserved agent session.', true));
     const inheritedPayload = inherited.payload as import('./comment-delivery').ArtifactCommentAgentPayload;
     inheritedPayload.targets = [{ ...payload.targets[0]!, created: false, key: inherited.jobKey, createKey: claimed.jobKey }];
