@@ -102,10 +102,10 @@ describe('agents — kortix_permissions enum enforcement', () => {
     expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.cr.merge')).toBe(false);
   });
 
-  test('a renamed action still PARSES, so an old manifest keeps its grant', () => {
+  test('a renamed action still PARSES, so an old manifest keeps its grant under the new name', () => {
     const { specs, errors } = parseAgents('  a:\n    kortix_permissions: [project.cr.open, project.trigger.create]\n');
     expect(errors).toEqual([]);
-    expect(specs[0]!.permissions).toEqual(['project.cr.open', 'project.trigger.create']);
+    expect(specs[0]!.permissions).toEqual(['project.gitops.push', 'project.trigger.create']);
   });
 
   test('account actions are NOT in the grantable set', () => {
@@ -143,7 +143,7 @@ describe('agents — `agents:` map', () => {
 `);
     expect(errors).toEqual([]);
     expect(specs[0].connectors).toEqual(['github', 'slack']);
-    expect(specs[0].permissions).toEqual(['project.trigger.create', 'project.cr.open']);
+    expect(specs[0].permissions).toEqual(['project.trigger.create', 'project.gitops.push']);
     expect(specs[0].env).toEqual(['STRIPE_KEY', 'GH_TOKEN']);
   });
 

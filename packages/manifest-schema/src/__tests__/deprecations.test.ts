@@ -55,6 +55,25 @@ describe.each(Object.entries(CASES))('%s', (id, [old, path, latest]) => {
   });
 });
 
+test('--fix changes only the lines a deprecation changes: no folding, padding, spacing or indent changes', () => {
+  const rest = [
+    'project:',
+    '  name: p   # two spaces before this comment',
+    "  description: 'single quoted'",
+    'agents:',
+    '  a:',
+    `    prompt: "${'x '.repeat(70).trim()}"`,
+    '    tools: [read, bash]',
+    '    workspace: { project_repository: true }',
+    '    skills:',
+    '    - one',
+    '    - two',
+    '    description: plain text that is quite long and goes well past the eighty character limit of the default',
+    '',
+  ].join('\n');
+  expect(fixManifestText(`kortix_version: 3\n${rest}`).text).toBe(rest);
+});
+
 test('a conflict is not rewritten: it stays an error', () => {
   const result = validateManifest('agents:\n  a:\n    prompt: x\n    tools: all\n    kortix_cli: [project.file.read]\n    kortix_permissions: [project.read]\n');
   expect(result.issues.filter((i) => i.severity === 'error').map((i) => i.path)).toContain('agents.a.kortix_cli');

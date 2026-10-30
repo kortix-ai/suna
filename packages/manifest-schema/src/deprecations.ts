@@ -263,11 +263,56 @@ export function applyDeprecations(doc: Document): AppliedFix[] {
 
 /**
  * `text` rewritten to the latest shape, comments kept. Unchanged (the same
- * bytes) when nothing is deprecated or the YAML does not parse.
+ * bytes) when nothing is deprecated or the YAML does not parse. Every line a
+ * deprecation does not change keeps its bytes (`keepUnchangedLines`).
  */
 export function fixManifestText(text: string): { text: string; fixed: AppliedFix[] } {
   const doc = parseDocument(text);
   if (doc.errors.length > 0) return { text, fixed: [] };
   const fixed = applyDeprecations(doc);
-  return fixed.length === 0 ? { text, fixed } : { text: doc.toString(), fixed };
+  if (fixed.length === 0) return { text, fixed };
+  // No folding of long lines, no padding inside `[a, b]`.
+  const rendered = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
+  return { text: keepUnchangedLines(text, rendered), fixed };
+}
+
+/** A line without the whitespace the YAML renderer may change in a line it did not edit: runs, and space beside `[]{},:`. */
+const lineShape = (line: string) => line.replace(/\s+/g, ' ').replace(/ ?([[\]{},:]) ?/g, '$1').trim();
+
+/**
+ * `rendered` with each line that matches an original line, apart from
+ * whitespace, put back as the original wrote it: a heal changes only the lines
+ * it rewrites, not comment spacing or list indentation. The lines are paired
+ * in order (longest common subsequence). When the result does not read as
+ * `rendered` does, `rendered` is returned.
+ */
+function keepUnchangedLines(original: string, rendered: string): string {
+  const a = original.split('\n');
+  const b = rendered.split('\n');
+  const as = a.map(lineShape);
+  const bs = b.map(lineShape);
+  // ponytail: O(n·m) table; a manifest is at most a few thousand lines.
+  const lcs = Array.from({ length: a.length + 1 }, () => new Uint32Array(b.length + 1));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      lcs[i]![j] = as[i] === bs[j] ? lcs[i + 1]![j + 1]! + 1 : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!);
+    }
+  }
+  const out: string[] = [];
+  let i = 0;
+  let j = 0;
+  while (j < b.length) {
+    if (i < a.length && as[i] === bs[j]) {
+      out.push(a[i]!);
+      i++;
+      j++;
+    } else if (i < a.length && lcs[i + 1]![j]! >= lcs[i]![j + 1]!) i++;
+    else out.push(b[j++]!);
+  }
+  const merged = out.join('\n');
+  const read = (yaml: string) => {
+    const parsed = parseDocument(yaml);
+    return parsed.errors.length > 0 ? null : JSON.stringify(parsed.toJS());
+  };
+  return read(merged) !== null && read(merged) === read(rendered) ? merged : rendered;
 }
