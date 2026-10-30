@@ -543,6 +543,21 @@ describe("proxy responses: the operator's Kortix identity never reaches a member
     expect((out as { template?: string }[])[1].template).toBe('Use the Lumen sandbox to open the file.');
   });
 
+  test('the session-log command list (runtime.actions.v1) is filtered the same way', () => {
+    const path = 'p/sbx_1/8000/kortix/runtime/commands';
+    expect(redactsIdentity(path)).toBe(true);
+    const out = redactIdentity(path, {
+      commands: [
+        { name: 'review', description: 'Review changes', source: 'command' },
+        { name: 'kortix-cli', description: 'Drive the platform', source: 'skill' },
+        { name: 'pdf', description: 'Read PDFs. Uses the Kortix file tools.', source: 'skill' },
+        { name: 'notes', description: 'Notes for the Kortix team', source: 'template' },
+        { name: 'xlsx', description: null, source: 'skill' },
+      ],
+    }) as { commands: { name: string }[] };
+    expect(out.commands.map((c) => c.name)).toEqual(['review', 'xlsx']);
+  });
+
   test('the open-session snapshot filters its command list the same way', () => {
     const snap = redactIdentity(`${S}/snapshot`, {
       session: { session_id: 's1' },

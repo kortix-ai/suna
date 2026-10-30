@@ -56,8 +56,14 @@ async function sendPermissionReply(
     ...(message !== undefined ? { message } : {}),
   });
   if (answered) {
-    // 404: no such request waits any more; another reply resolved it.
-    if (answered.status !== 404) await ensureActionOk(answered, 'Answering the permission request failed');
+    // Only the reply route's own 404 ("no such permission request") means another
+    // reply resolved it. Any other refusal — the proxy's lost sandbox included —
+    // reaches the caller, so the card stays for a decision that never landed.
+    if (answered.status === 404) {
+      const body = (await answered.clone().json().catch(() => null)) as { error?: unknown } | null;
+      if (typeof body?.error === 'string' && /no such permission request/i.test(body.error)) return;
+    }
+    await ensureActionOk(answered, 'Answering the permission request failed');
     return;
   }
   const client = getClient();

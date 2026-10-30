@@ -64,8 +64,11 @@ describe('on a box with the session-log actions', () => {
   });
 
   test('a permission request another tab already answered resolves; any other refusal throws', async () => {
-    answers['POST /kortix/runtime/permissions/perm_gone/reply'] = () => Response.json({ error: 'unknown permission request' }, { status: 404 });
+    answers['POST /kortix/runtime/permissions/perm_gone/reply'] = () => Response.json({ error: 'no such permission request' }, { status: 404 });
     await replyToPermission('perm_gone', 'once');
+    // A 404 that is not the reply route's own answer (the proxy lost the sandbox) never reads as answered.
+    answers['POST /kortix/runtime/permissions/perm_lost/reply'] = () => Response.json({ error: 'sandbox not found' }, { status: 404 });
+    await expect(replyToPermission('perm_lost', 'once')).rejects.toThrow('sandbox not found');
     answers['POST /kortix/runtime/permissions/perm_down/reply'] = () => Response.json({ error: 'pi runtime is not started' }, { status: 503 });
     await expect(replyToPermission('perm_down', 'once')).rejects.toThrow('pi runtime is not started');
     answers['POST /kortix/runtime/questions/que_gone/reply'] = () => Response.json({ error: 'unknown question' }, { status: 404 });
