@@ -301,6 +301,9 @@ export const RuntimeCommandBodySchema = z.object({
   name: z.string().min(1),
   arguments: z.string().default(''),
   agent: z.string().min(1).optional(),
+  /** `provider/model`, as the prompt route takes it. */
+  model: z.string().min(1).optional(),
+  variant: z.string().min(1).optional(),
 });
 export type RuntimeCommandBody = z.infer<typeof RuntimeCommandBodySchema>;
 

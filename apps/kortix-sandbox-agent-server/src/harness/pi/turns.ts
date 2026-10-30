@@ -189,6 +189,8 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
           command: body.name,
           arguments: body.arguments,
           ...(body.agent ? { agent: body.agent } : {}),
+          ...(body.model ? { model: body.model } : {}),
+          ...(body.variant ? { variant: body.variant } : {}),
           ...(body.message_id ? { messageID: body.message_id } : {}),
         })
       } catch (err) {
