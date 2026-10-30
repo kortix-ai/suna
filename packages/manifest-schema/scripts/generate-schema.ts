@@ -32,10 +32,14 @@ export const SCHEMA_FILES: Record<string, unknown> = {
 };
 
 /** A JSON Schema `pattern` is a string. A RegExp value renders as its source,
- *  never as `{}` (2026-10-28: the v0.14.9 release lane rendered one pattern as
- *  `{}`; the cause did not reproduce locally on macOS or Linux). */
+ *  never as `{}`; the brand check also holds for a RegExp from another realm.
+ *  (The `{}` the v0.14.9 and v0.14.10 release lanes saw was not a RegExp: a
+ *  conformance test's `toMatchObject` wrote `expect.any(String)` into the shared
+ *  schema before the sync test rendered it. See json-schema.conformance.test.ts.) */
+const isRegExp = (value: unknown): value is RegExp => Object.prototype.toString.call(value) === '[object RegExp]';
+
 export function renderSchemaFile(schema: unknown): string {
-  return `${JSON.stringify(schema, (_key, value) => (value instanceof RegExp ? value.source : value), 2)}\n`;
+  return `${JSON.stringify(schema, (_key, value) => (isRegExp(value) ? value.source : value), 2)}\n`;
 }
 
 if (import.meta.main) {

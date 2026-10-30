@@ -1,11 +1,9 @@
 /**
  * The v1 transcript row projections, pure.
  *
- * The v1 mirror tables (`session_transcript_mirrors`, `session_transcript_messages`) were the
- * server-side copy of a session's transcript until the session log replaced them (P8). Nothing
- * reads or writes them through this module any more (P8.2): the conversion of an old mirror into
- * the log is `writeSessionLogFromMirror` (`../session-log-capture.ts`). What stays here is the row
- * shape both paths share:
+ * The v1 mirror tables were the server-side copy of a session's transcript until the session log
+ * replaced them (P8); Release B2 (P8.2) dropped them. What stays here is the v1 row shape the
+ * journal-less capture (`session-transcript-capture.ts`) and the v1 reads still use:
  *
  * - `mirrorRowsFromOpencodePayload` / `sanitizeParts`: a box's `GET /session/:id/message` payload
  *   as v1 rows. A message with no id is dropped, never synthesized. Every part is kept 1:1 except

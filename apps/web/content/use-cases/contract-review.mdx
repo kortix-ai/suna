@@ -52,50 +52,122 @@ the counterparty.
 ## How it works
 
 <Steps>
-<Step title="Connect the Drive folder as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-A signed webhook watches the contracts folder in Drive. A new file fires it, and
-each firing spawns a fresh **session** in its own sandbox, seeded with the
-document. One contract, one session, one disposable machine. Nothing carries over
-between runs.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the contract playbook skill and the trigger,
+and opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent our contract playbook">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a contract review agent in this project.
 
-Our standard positions — which clauses are routine, which terms we push back on,
-what an acceptable liability cap or notice period looks like — are stored as
-**skills** and **memory** that load into every session. The agent checks each
-contract against that playbook rather than a generic notion of "standard," and it
-updates as our positions change.
+1. Create the agent agents/contract-review.md. Its job is to give each new contract a first-pass review. It may use the Google Drive, Google Docs and Slack connectors.
 
-</Step>
-<Step title="Connect what a review can touch">
+2. Create the skill skills/contract-playbook/SKILL.md with these rules:
+   - A contract in Legal/Contracts is new when #legal has no summary post for it. Never review a contract twice.
+   - Read the whole contract in Google Docs before you summarize or flag anything.
+   - Flag a liability cap above 12 months of fees, one-sided or uncapped indemnification, termination notice over 90 days, auto-renewal with under 30 days notice, and payment terms of Net 60 or longer.
+   - If the playbook has no position on a clause, say so. Never invent one.
+   - Draft each redline as a suggested edit in the contract doc. Never apply it and never send it to the counterparty.
+   - Post one summary to #legal: what the contract is, who it is with, the term, each flag with its section, and links to the redlines.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger contract-review-check to kortix.yaml. It runs the contract-review agent every 15 minutes with the prompt "Load the contract-playbook skill and review every new contract in Legal/Contracts."
 
-- **Read the contract in Drive** — the full document, not just an excerpt.
-- **Draft redlines** — proposed edits on the clauses that deviate from the
-  playbook.
-- **Post to Slack** — the summary and flags filed to the legal channel.
+4. Tell me which of these connectors are not connected yet.
 
-</Step>
-<Step title="Set the guardrails">
-
-The agent produces a first pass, not a decision. Redlines are drafted, never
-sent — every one stops at a **human approval gate** for a lawyer to sign off
-before it reaches the counterparty. It reads the contract and writes its summary
-and drafts; it doesn't act on the deal. Credentials are encrypted in the secrets
-manager and injected at runtime, scoped to the agents you grant them to.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Let each contract come back reviewed">
+<Step title="Connect your tools">
 
-With that in place, a contract landing in the folder comes back as a summary in
-the legal channel, the non-standard clauses flagged against our playbook, and
-draft redlines attached for a lawyer to review. A vendor agreement becomes a
-readout and a set of proposed edits; the lawyer starts from the flags instead of
-a blank read.
+Open **Connectors** in your project and connect the place your contracts live,
+your document editor and Slack. Credentials are brokered server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Google Drive" domain="drive.google.com" tag="Required" alternatives={[['Google Docs', 'docs.google.com'], ['Dropbox', 'dropbox.com'], ['Box', 'box.com']]}>
+    Reads new contracts and adds redlines as suggested edits.
+  </ToolNeed>
+  <ToolNeed name="DocuSign" domain="docusign.com" tag="Optional">
+    Pulls contracts that arrive through signing envelopes.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Posts each summary with the flagged clauses and links.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the **contract-review** agent
+and send this prompt. Check its flags and redlines against your
+playbook before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Review the oldest unreviewed contract in Legal/Contracts.
+
+1. List the files in Legal/Contracts and skip any that already have a summary in #legal.
+2. Read the contract in full. Note its type, the parties, the term and the value.
+3. Check every clause against the contract-playbook skill. Note each deviation with its section number.
+4. Draft a redline for each flagged clause as a suggested edit in the doc. Do not apply it.
+5. Post the summary to #legal, marked as waiting for a lawyer.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+checks the folder every 15 minutes, each run in a new session on its own cloud
+computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: contract-review-check
+    name: Contract review check
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: contract-review
+      prompt: Load the contract-playbook skill and review every new contract in Legal/Contracts.`}
+/>
+
+</Step>
+<Step title="Hold every redline for a lawyer">
+
+Redlines land as suggested edits in the contract doc, never as direct edits.
+The agent never sends a redline and never messages the counterparty. A lawyer
+reads the flags in #legal and decides what goes back.
+
+</Step>
+<Step title="Read the summary">
+
+Each new contract ends as one message in #legal. This is what a run looks like
+in the session:
+
+<ExampleRun
+  title="Contract review check · 10:15"
+  message="Load the contract-playbook skill and review every new contract in Legal/Contracts."
+  worked="Worked for 2m 48s"
+  tools={[
+    'google drive · list files',
+    'slack · search messages → #legal',
+    'google docs · get document',
+    'google docs · suggest edit × 3',
+    'slack · post message → #legal',
+  ]}
+  note="Illustrative example. Your flags depend on your contracts and playbook."
+>
+  Reviewed **1** new vendor agreement with a **24-month** term. Flagged **3**
+  clauses: uncapped liability in §9.2, **Net 60** payment terms in §4.1 and
+  auto-renewal with 15 days notice in §12. Drafted **3** redlines as suggested
+  edits, and all of them wait for a lawyer.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -105,6 +177,25 @@ a blank read.
   **connectors** into Drive and Slack, encode the contract playbook as **skills**
   and **memory**, and gate every redline behind a lawyer.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Flag missing data terms"
+  code="Add a rule to the contract-playbook skill: flag any contract that covers personal data but has no data processing agreement attached."
+/>
+
+<CopyBlock
+  title="Weekly renewal digest"
+  code="Every Monday, post to #legal the contracts in Legal/Contracts that renew or end in the next 60 days, with each notice deadline."
+/>
+
+<CopyBlock
+  title="Compare with the last version"
+  code="When a contract has an earlier version in the same folder, list only the clauses that changed since that version in the summary."
+/>
 
 ## Guardrails
 

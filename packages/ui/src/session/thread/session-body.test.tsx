@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { COMPOSER_SHELL_CLASS } from '../composer/composer';
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from './session-body';
 
 /**
@@ -70,7 +71,12 @@ describe('the transcript column has ONE definition', () => {
     // `COMPOSER_SHELL_CLASS` is `px-4`; the conversation sits 12px further in
     // on both sides so a right-aligned bubble never reaches the input card's
     // edge. Equal gutters on both sides keep it on the row's exact center.
-    expect(SESSION_TRANSCRIPT_CLASS).toBe('mx-auto w-full max-w-3xl min-w-0 px-7 pt-6');
+    // A compact thread (a side column) tightens the conversation only: its gutters
+    // match the composer's px-4, so messages line up with the input card's edges.
+    expect(SESSION_TRANSCRIPT_CLASS).toBe(
+      'mx-auto w-full max-w-3xl min-w-0 px-7 pt-6 group-data-[density=compact]/thread:px-4 group-data-[density=compact]/thread:pt-4',
+    );
+    expect(COMPOSER_SHELL_CLASS).toBe('relative z-10 mx-auto w-full max-w-210 shrink-0 px-4');
   });
 
   test('neither surface hand-writes a transcript column', () => {

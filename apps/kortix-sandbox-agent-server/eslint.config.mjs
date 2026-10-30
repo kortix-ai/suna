@@ -38,6 +38,7 @@ const RUNTIME = ['node:*', 'node:*/**', ...pkg('bun', 'zod', 'tar')]
  * entry here (see ARCHITECTURE.md).
  */
 export const SERVICES = [
+  'chrome',
   'config-provider',
   'drive-sync',
   'egress-shim',
@@ -189,6 +190,13 @@ const independentModules = createIndependentModules({
       [],
       pkg('@earendil-works/pi-codemode'),
       'The codemode worker entrypoint (scripts/build.sh) imports pi-codemode only.',
+    ),
+    layer(
+      'image-resize-worker',
+      at('src/utils/image-resize-worker.ts'),
+      [at('src/harness/pi/images.ts')],
+      [at('node_modules/@earendil-works/pi-coding-agent/dist/utils/image-resize-worker.*')],
+      "The image resize worker entrypoint (scripts/build.sh) imports the photon wasm redirect (harness/pi/images.ts) and pi's resize worker only.",
     ),
     // Last: a file no layer above matched is in no layer at all (a new
     // top-level folder, an unregistered service or adapter).

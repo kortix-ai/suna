@@ -8,6 +8,8 @@ import type { ReactNode } from 'react';
 import { BlogProse } from '@/components/blog/blog-prose';
 import {
   Callout,
+  CopyBlock,
+  ExampleRun,
   Fact,
   Figure,
   KeyFacts,
@@ -16,6 +18,8 @@ import {
   StatGrid,
   Step,
   Steps,
+  ToolList,
+  ToolNeed,
 } from '@/components/use-cases/mdx';
 import { UseTemplateButton } from '@/components/use-cases/template-install-dialog';
 import { UseCaseCard, UseCaseCover } from '@/components/use-cases/use-case-card';
@@ -50,6 +54,10 @@ const mdxComponents = {
   Callout,
   Steps,
   Step,
+  CopyBlock,
+  ToolList,
+  ToolNeed,
+  ExampleRun,
   Figure,
   StatGrid,
   Stat,
@@ -200,17 +208,19 @@ export default async function UseCasePage(props: PageProps) {
 
         {post ? <UseCaseCover post={post} className="mt-16 aspect-[2/1] w-full" /> : null}
 
-        <div className="mt-16 grid grid-cols-1 gap-y-12 lg:grid-cols-4">
-          <dl className="grid grid-cols-2 gap-6 sm:grid-cols-4 lg:sticky lg:top-24 lg:flex lg:flex-col lg:self-start lg:pr-8">
-            {meta.map((item) => (
-              <div key={item.label}>
-                <dt className="text-muted-foreground text-sm">{item.label}</dt>
-                <dd className="text-foreground mt-1 text-sm text-pretty">{item.value}</dd>
-              </div>
-            ))}
-          </dl>
+        {/* The byline sits in one row under the cover, so the prose gets
+            columns 1–3 and the contents keep column 4. */}
+        <dl className="border-border mt-8 grid grid-cols-2 gap-6 border-b pb-8 sm:grid-cols-4">
+          {meta.map((item) => (
+            <div key={item.label}>
+              <dt className="text-muted-foreground text-sm">{item.label}</dt>
+              <dd className="text-foreground mt-1 text-sm text-pretty">{item.value}</dd>
+            </div>
+          ))}
+        </dl>
 
-          <BlogProse className="min-w-0 lg:col-span-2 lg:pr-8 [&>*:first-child]:mt-0">
+        <div className="mt-12 grid grid-cols-1 gap-y-12 lg:grid-cols-4">
+          <BlogProse className="min-w-0 lg:col-span-3 lg:pr-12 [&>*:first-child]:mt-0">
             <MDX components={mdxComponents} />
           </BlogProse>
 
@@ -228,7 +238,11 @@ export default async function UseCasePage(props: PageProps) {
                   <p className="text-muted-foreground mt-2 text-sm text-pretty">
                     {tI18nComplete.raw('text512241b9824c')}
                   </p>
-                  <UseTemplateButton templateId={data.template} className="mt-6" size="sm" />
+                  <UseTemplateButton
+                    templateId={data.template}
+                    title={data.title}
+                    className="hit-area-y-1 mt-6 w-full"
+                  />
                 </>
               ) : (
                 <>

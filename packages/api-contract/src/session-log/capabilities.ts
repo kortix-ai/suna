@@ -41,12 +41,12 @@ const PI_NATIVE: CapabilityFeatures = {
   compaction: ['summary_first_tail'],
   subagents: 'sync', // the Kortix `task` tool runs a child agent in process
   todos: false,
-  reasoning_replay: 'same_model', // reasoning.ts drops another model's thinking; pi-ai would replay it as text
+  reasoning_replay: 'same_model', // pi-ai (1.3.0+) drops another model's thinking from the request
   freeform_tool_input: false,
 };
 export const PI_CAPABILITIES: AdapterCapabilities = {
   harness: 'pi',
-  harness_versions: '1.0.3 || 1.2.0',
+  harness_versions: '1.0.3 || 1.2.0 || 1.4.0',
   schema_minors: [1],
   dialects: ['openai-chat'],
   native: PI_NATIVE,

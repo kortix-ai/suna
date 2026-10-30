@@ -50,46 +50,122 @@ proposed as a reviewed change, never applied automatically.
 ## How it works
 
 <Steps>
-<Step title="Connect the schedule as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron** trigger runs the sweep once a day. Each run spawns a fresh **session**
-in its own sandbox. One sweep, one session, one disposable machine. Nothing
-carries over between runs, so each day's check starts clean.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the compliance-sweep skill and the daily
+trigger, and opens a change request for you to review. Prefer clicks? Choose
+**Use this template** instead.
 
-</Step>
-<Step title="Give the agent the compliance policy">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a daily compliance monitoring agent in this project.
 
-What counts as a violation — which buckets may be public, which tags are
-required, what a role should and shouldn't hold — is stored as **skills** and
-**memory** that load into every session. The agent checks against that policy
-rather than a fixed rule set, and it updates as the policy changes.
+1. Create the agent agents/compliance-monitoring.md. Its job is to check AWS against our compliance policy and propose fixes as change requests. It may use the AWS and Slack connectors. It only reads AWS.
 
-</Step>
-<Step title="Connect what the sweep can read">
+2. Create the skill skills/compliance-sweep/SKILL.md with these rules:
+   - Read the policy from memory/compliance-policy.md on every run. If the file does not exist, start from the rules below and propose it.
+   - No S3 bucket is public unless the policy allow-lists it by name.
+   - Every resource carries the owner and environment tags.
+   - No IAM role holds a full wildcard grant or an unscoped iam:PassRole.
+   - For each finding, look up in CloudTrail when it changed and who changed it, then open a change request with the fix. Never apply a fix in AWS.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger daily-compliance-sweep to kortix.yaml. It runs the compliance-monitoring agent every day at 06:00 UTC with the prompt "Load the compliance-sweep skill, run one complete sweep, and post the findings to #security."
 
-- **Read AWS resource state** — bucket policies, resource tags, and IAM roles.
-- **Read the audit logs** — when a configuration changed and what changed it.
-- **Post to Slack** — findings filed to the channel the team watches.
+4. Tell me which of these connectors are not connected yet.
 
-</Step>
-<Step title="Set the guardrails">
-
-The sweep's access to AWS is **read-only** — it inspects state, it doesn't change
-it. Remediation is proposed as a reviewed **change request** and stops at a
-**human approval gate**; nothing is applied automatically. Credentials are
-encrypted in the secrets manager and injected at runtime, scoped to the agents you grant them to.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Let each day surface the drift">
+<Step title="Connect your tools">
 
-With that in place, the daily sweep checks the infrastructure against policy,
-files what drifted to Slack, and attaches a proposed fix for a person to review.
-A newly public bucket becomes a finding and a draft policy change. An untagged
-resource becomes a flag and a proposed tag set. An over-broad role becomes a
-narrower policy held for review.
+Open **Connectors** in your project and connect AWS with read-only access and
+Slack. Credentials are brokered server-side and never enter the
+agent's machine.
+
+<ToolList>
+  <ToolNeed name="AWS" domain="aws.amazon.com" tag="Required" alternatives={[['Google Cloud', 'cloud.google.com'], ['Azure', 'azure.microsoft.com']]}>
+    Checks buckets, tags and IAM roles, and reads audit logs.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Posts findings with their audit trail and proposed fixes.
+  </ToolNeed>
+  <ToolNeed name="Jira" domain="atlassian.com" tag="Optional" alternatives={[['Linear', 'linear.app']]}>
+    Tracks each finding as a ticket for its owner.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the
+**compliance-monitoring** agent and send this prompt. Review the change
+requests it opens before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one compliance sweep on AWS. Read only.
+
+1. Load the policy from memory/compliance-policy.md.
+2. List every S3 bucket and IAM role once, and check each against the policy: public buckets, missing required tags and over-broad roles.
+3. For each finding, look up in CloudTrail when it changed and who changed it.
+4. Open one change request per finding with the proposed fix. Do not apply any fix.
+5. Post each finding with its audit trail and change request link to #security, or one line if nothing drifted.`}
+/>
+
+</Step>
+<Step title="Let the daily schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every day at 06:00 UTC, each run in a new session on its own cloud computer. To change the time, edit the cron line, or open
+**Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: daily-compliance-sweep
+    name: Daily compliance sweep
+    on:
+      cron: "0 0 6 * * *"
+    run:
+      agent: compliance-monitoring
+      prompt: Load the compliance-sweep skill, run one complete sweep, and post the findings to #security.`}
+/>
+
+</Step>
+<Step title="Propose every fix as a change request">
+
+The agent only reads AWS. Each fix arrives as a change request with the
+diagnosis and the proposed change. A person reviews it, merges it and applies
+it. Nothing changes in AWS without that review.
+
+</Step>
+<Step title="Read the findings">
+
+Each run ends with one message in the channel. This is what a run looks like
+in the session:
+
+<ExampleRun
+  title="Daily compliance sweep · 06:00"
+  message="Load the compliance-sweep skill, run one complete sweep, and post the findings to #security."
+  worked="Worked for 3m 26s"
+  tools={[
+    'aws · list buckets',
+    'aws · get bucket policy status × 40',
+    'aws · list roles',
+    'aws · lookup events × 3',
+    'kortix · open change request × 3',
+    'slack · post message → #security',
+  ]}
+  note="Illustrative example. Your findings depend on your AWS accounts."
+>
+  Found **3** findings: **1** newly public bucket, **1** resource without the
+  **owner** tag, and **1** role with a wildcard grant. CloudTrail shows when each
+  one changed and who changed it. **3** change requests with the proposed fixes
+  wait for review.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -100,6 +176,25 @@ narrower policy held for review.
   **memory**, and propose every fix as a reviewed **change request** rather than
   applying it.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Check security groups"
+  code="Extend the policy to flag security groups that allow 0.0.0.0/0 on any port other than 443, in every region I list."
+/>
+
+<CopyBlock
+  title="Weekly posture report"
+  code="Every Monday, post the count of open findings by type to #security, and list the change requests that still wait for review."
+/>
+
+<CopyBlock
+  title="Keep audit evidence"
+  code="Each month, write a dated summary of every finding and its fix to memory/compliance-evidence.md for audit review."
+/>
 
 ## Guardrails
 

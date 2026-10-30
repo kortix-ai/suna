@@ -747,11 +747,6 @@
       "count": 7
     }
   },
-  "src/channels/telegram-webhook.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/channels/vision-model.ts": {
     "kortix-api/replica-local": {
       "count": 1

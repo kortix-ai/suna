@@ -83,6 +83,8 @@ import { registerSessionParticipantsRoutes } from './routes/session-participants
 import { registerSessionPromptsRoutes } from './routes/session-prompts';
 import { registerRoomsRoutes } from './routes/rooms';
 import { registerArtifactRoutes } from './routes/artifacts';
+import { registerArtifactCommentRoutes } from './routes/artifact-comments';
+import { registerLinkPreviewRoutes } from './routes/link-preview';
 import { registerSessionRemindersRoutes } from './routes/session-reminders';
 import { registerProjectSpacesRoutes } from './routes/project-spaces';
 import { registerProjectMemoryRoutes } from './routes/project-memory';
@@ -177,6 +179,8 @@ export function registerAllProjectRoutes(): void {
   registerSessionPromptsRoutes();
   registerRoomsRoutes();
   registerArtifactRoutes();
+  registerArtifactCommentRoutes();
+  registerLinkPreviewRoutes();
   registerSessionRemindersRoutes();
   registerProjectSpacesRoutes();
   registerProjectMemoryRoutes();

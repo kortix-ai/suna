@@ -34,10 +34,12 @@ import { registerProjectSettingsRoutes } from '../../projects/routes/project-set
 import { projectsApp } from '../../projects/surface';
 import { db } from '../../shared/db';
 import { bindChatThread } from '../core/threads';
-import { telegramWebhookApp } from '../telegram-webhook';
+import { channelWebhookRoutes } from '../inbound/webhook-routes';
 import { saveTelegramInstall, TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME, TELEGRAM_WEBHOOK_SECRET } from './installs';
 import { handleTelegramEvent, telegramMessageEvent, type TelegramMessage } from './session';
+import { telegramInbound } from './inbound';
 
+const telegramWebhookApp = channelWebhookRoutes(telegramInbound);
 const ACCOUNT = crypto.randomUUID();
 const OWNER = crypto.randomUUID();
 const ALLOWED = '111';
@@ -223,7 +225,8 @@ for (const f of [fixture('tombstone'), fixture('deleted')]) {
           .from(projectSecrets)
           .where(and(eq(projectSecrets.projectId, f.project), inArray(projectSecrets.name, TELEGRAM_SECRETS)));
         expect({ deleteCalls: f.deleteCalls, installs: installs.length, secrets: secrets.map((s) => s.name) }).toEqual({
-          deleteCalls: ['getWebhookInfo', 'deleteWebhook'],
+          // The fake's menu is not a list (`true`), so nothing is written.
+          deleteCalls: ['getWebhookInfo', 'deleteWebhook', 'getMyCommands'],
           installs: 0,
           secrets: [],
         });

@@ -47,7 +47,15 @@ import {
   uploadSlackChannelFile,
   type ChannelBinding,
   type EmailInbox,
+  type ChannelAccessPlatform,
 } from './channels';
+import type { DiscoverKortixApp } from './connectors';
+import type { CHANNELS, ChannelPlatformId } from '../../../../../shared/src/channel-descriptors';
+
+type Equal<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2)
+    ? true
+    : false;
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -823,4 +831,16 @@ test('removeEmailInbox deletes one inbox and says whether Resend deleted it too'
 test('a refused add surfaces the server error', async () => {
   nextResponse = { status: 400, body: { error: 'Connect your own Resend API key.', code: 'email_key_required' } };
   await expect(addEmailInbox('P1', { username: 'support' })).rejects.toThrow();
+});
+
+// The published unions stay literal; the private channel descriptor in
+// packages/shared is their source. A channel added there and not here fails
+// `tsc --noEmit` on these lines (bun strips types, so this test passes at run time).
+test('the channel unions equal the ids of the shared channel descriptor', () => {
+  type WithAccess = {
+    [P in ChannelPlatformId]: 'access' extends keyof (typeof CHANNELS)[P] ? P : never;
+  }[ChannelPlatformId];
+  const accessPlatforms: Equal<ChannelAccessPlatform, WithAccess> = true;
+  const kortixApps: Equal<DiscoverKortixApp['app'], ChannelPlatformId | 'computer'> = true;
+  expect([accessPlatforms, kortixApps]).toEqual([true, true]);
 });

@@ -181,6 +181,7 @@ export const PROJECT_ACTIONS = {
   // artifact a public link: the one outward step, so a custom role or an
   // agent's `kortix_permissions` can withhold it on its own.
   PROJECT_ARTIFACT_READ: 'project.artifact.read',
+  PROJECT_ARTIFACT_COMMENT: 'project.artifact.comment',
   PROJECT_ARTIFACT_WRITE: 'project.artifact.write',
   PROJECT_ARTIFACT_MANAGE: 'project.artifact.manage',
   PROJECT_ARTIFACT_PUBLIC: 'project.artifact.public',

@@ -25,7 +25,7 @@ import {
 import { channelModelContext } from '../slack/model-gate';
 import { currentChannelSelection, setChannelModel } from '../slack/selection';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
-import { type TeamsConversationSession, conversationSession, teamsChannelCtx } from './binding';
+import { conversationSession, teamsChannelCtx } from './binding';
 import { buildModelPickerCard, buildNoticeCard } from './cards';
 import { normalizeConversationPolicy } from './participants';
 import { teamsUserId } from './identity';
@@ -34,6 +34,8 @@ import { authorizeChannelChange } from '../core/settings';
 import { teamsSettingsChannel, teamsSettingsRefusal } from './settings-text';
 import type { TeamsActivity } from './types';
 import { isPersonalChat } from './util';
+
+export { statusModel } from '../core/model-choice';
 
 const PERSONAL_SCOPE_NOTE = 'Includes your own API keys and ChatGPT subscriptions. When a provider has several keys, they rotate.';
 const SHARED_SCOPE_NOTE =
@@ -171,21 +173,4 @@ export async function applyTeamsModelChoice(
   if (live?.sessionId) await applyChannelSessionKeys({ sessionId: live.sessionId, keys: verdict.keys, replace: true });
   const keysNote = describeKeys(verdict.keys);
   return buildNoticeCard(`Model set to ${label}.${keysNote ? ` ${keysNote}` : ''} Your next message uses it.`, '✅');
-}
-
-/**
- * The model the next message runs on: this conversation's `/model` choice —
- * it reaches the live session too — else the model the live session started
- * with, else the project default. "project default" beside a session pinned
- * to another model was how a chat stuck on a model it could not run looked
- * fine here.
- */
-export function statusModel(
-  choice: string | null,
-  session: Pick<TeamsConversationSession, 'opencodeModel'> | null,
-): string {
-  const pinned = session?.opencodeModel ?? null;
-  if (choice) return labelForModelRef(choice);
-  if (pinned) return `${labelForModelRef(pinned)} (this session)`;
-  return 'project default';
 }

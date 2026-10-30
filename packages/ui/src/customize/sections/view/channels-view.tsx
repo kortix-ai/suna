@@ -162,11 +162,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTunnelConnections } from '@kortix/sdk/react';
 import { ComputerHero } from '../../connectors/detail/computer-app-page';
 import { FeatureGateScreen } from '../../shared/feature-gate-screen';
+import {
+  CHANNEL_PLATFORM_IDS,
+  CHANNELS,
+  type ChannelPlatformId,
+  isChannelPlatform,
+} from '@kortix/shared/channel-descriptors';
 
 /** Reserved slug for the built-in Email channel (see api connectors.ts). */
 
 /** A Kortix channel's own page (`platform`), or every channel (the Channels page). */
-export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'telegram';
+export type ChannelPlatform = ChannelPlatformId;
 
 export function ChannelsSection({ projectId, platform }: { projectId: string; platform?: ChannelPlatform }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -202,7 +208,7 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
   // platform, the Channels tab every platform, one under the other.
   const platforms: ChannelPlatform[] = platform
     ? [platform]
-    : ['slack', 'teams', ...(emailEnabled ? (['email'] as const) : []), 'telegram'];
+    : CHANNEL_PLATFORM_IDS.filter((pf) => pf !== 'email' || emailEnabled);
   // The Kortix tab also holds the computer, where this deployment can pair one
   // (the machine list answers 503 where computers are off).
   const computersEnabled = useTunnelConnections({ refetchInterval: false }).isSuccess;
@@ -246,6 +252,11 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
         return <EmailHero projectId={projectId} canWrite={canWrite} />;
       case 'telegram':
         return <TelegramChannelRow projectId={projectId} canWrite={canWrite} />;
+      default: {
+        // A new channel id fails here until it has a hero.
+        const _exhaustive: never = pf;
+        return _exhaustive;
+      }
     }
   };
 
@@ -352,14 +363,15 @@ function ChannelsButton({ count, onOpen }: { count: number; onOpen: () => void }
 
 /**
  * What follows a connected Slack before its first channel: the one-time "now
- * do this in Slack" nudge. It retires itself as soon as `bindings.length > 0`:
- * a bound channel is proof the user already invited the bot and mentioned it,
+ * do this in Slack" nudge. It retires itself as soon as a Slack channel is
+ * bound: that is proof the user already invited the bot and mentioned it,
  * and from then on the Slack row's "N channels" opens the bindings dialog.
+ * Another platform's row (a Telegram chat's `/model`) proves nothing about Slack.
  */
 function SlackFollowUp({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const bindingsQuery = useChannelBindings(projectId);
-  const bindings = bindingsQuery.data?.bindings ?? [];
+  const bindings = (bindingsQuery.data?.bindings ?? []).filter((b) => b.platform === 'slack');
 
   return bindings.length === 0 && !bindingsQuery.isLoading ? (
     <InfoBanner tone="neutral" icon={AtIcon} title={tI18nComplete.raw('textd63af8edd3d6')}>
@@ -470,7 +482,7 @@ function ChannelBindingsDialog({
                 <TabsListCompact>
                   {tabs.map((t) => (
                     <TabsTriggerCompact key={t.platform} value={t.platform} className="gap-1.5">
-                      {PLATFORM_NAMES[t.platform] ?? t.platform}
+                      {isChannelPlatform(t.platform) ? CHANNELS[t.platform].label : t.platform}
                       <span className="text-muted-foreground tabular-nums">{t.count}</span>
                     </TabsTriggerCompact>
                   ))}
@@ -532,9 +544,6 @@ function ChannelBindingsDialog({
     </Modal>
   );
 }
-
-/** Brand names, as the platform rows spell them. */
-const PLATFORM_NAMES: Record<string, string> = { slack: 'Slack', teams: 'Microsoft Teams' };
 
 /** A row's settings at a glance: only what overrides the project, else "Project default". */
 function BindingOverrides({

@@ -11,6 +11,7 @@ import { useSession } from './opencode';
 import { useSessionLogThread } from './use-session-log';
 import { qk } from './query-keys';
 import { resetSessionOpenBundles } from '../core/session/open-bundle';
+import { getSessionSyncController, resetSessionSyncControllersForSession } from '../browser/session-sync/session-sync-registry';
 import type { SessionLog, SessionLogThread } from '../core/session-log/types';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -40,6 +41,10 @@ let emptyLog = false;
 let detailPending = false;
 /** `GET …/log` answers 404 `session_log_missing`: an API that serves the log, a session with none yet. */
 let missingLog = false;
+/** The turn record (`GET …/turn`) never answers. */
+let turnPending = false;
+/** `GET …/log` answers no page another way: a bare 404, a 500, an invalid page. */
+let failedLog: 'bare-404' | 'server-error' | 'invalid' | null = null;
 let renderer: ReactTestRenderer | null = null;
 let queryClient: QueryClient;
 
@@ -50,6 +55,8 @@ beforeEach(() => {
   emptyLog = false;
   detailPending = false;
   missingLog = false;
+  failedLog = null;
+  turnPending = false;
   setCurrentRuntime(null);
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   globalThis.fetch = mock(async (url: unknown) => {
@@ -57,6 +64,11 @@ beforeEach(() => {
     const path = parsed.pathname;
     urls.push(path + parsed.search);
     if (missingLog && path.endsWith('/log')) return Response.json({ error: 'No session log for this session', code: 'session_log_missing' }, { status: 404 });
+    if (failedLog && path.endsWith('/log')) {
+      if (failedLog === 'bare-404') return Response.json({ error: 'No session log for this session' }, { status: 404 });
+      if (failedLog === 'server-error') return Response.json({ error: 'Internal Server Error' }, { status: 500 });
+      return Response.json({ ...page(), messages: [{ seq: 'x' }] });
+    }
     if (serveLog && path.endsWith('/log')) {
       if (emptyLog) return Response.json({ ...page(), messages: [], has_more: false });
       if (!pagedLog) return Response.json(page());
@@ -68,6 +80,7 @@ beforeEach(() => {
     // The session stream: an open SSE body that never ends.
     if (serveLog && path.endsWith('/events')) return new Response(new ReadableStream({ start() {} }), { headers: { 'content-type': 'text/event-stream' } });
     // The turn record of a session that never ran a turn.
+    if (turnPending && path.endsWith('/turn')) return new Promise<Response>(() => {});
     if (emptyLog && path.endsWith('/turn')) return Response.json({ turns: [], last_ended: null });
     if (path === `/projects/${PROJECT_ID}/detail` && detailPending) return new Promise<Response>(() => {});
     if (path === `/projects/${PROJECT_ID}/detail`) return Response.json({ project: { project_id: PROJECT_ID, experimental: { session_log: true } }, config: {} });
@@ -207,6 +220,54 @@ describe('useSession with its chat engine: the session log owns the history once
     expect(seen.result!.conversationEmpty).toBe(true);
   });
 
+  test('an empty root thread and an unanswered turn record: loading, never empty and never the boot screen', async () => {
+    serveLog = true;
+    emptyLog = true;
+    turnPending = true;
+    const seen = mountHost(true);
+    await flush();
+    expect(seen.result!.savedTranscript).toBe('loading');
+    expect(seen.result!.conversationEmpty).toBe(false);
+  });
+
+  test('GET …/log fails and the runtime holds older messages: hasOlder and loadOlder page the runtime', async () => {
+    failedLog = 'server-error';
+    const ROOT = 'ses_runtime_root_older';
+    const before: Array<string | undefined> = [];
+    const row = (id: string) => ({ info: { id, sessionID: ROOT, role: 'user', time: { created: 1 } }, parts: [{ id: `${id}-p`, sessionID: ROOT, messageID: id, type: 'text', text: id }] });
+    // The runtime's newest page leaves a cursor: an older page exists there.
+    const client = {
+      session: {
+        messages: async (request: { sessionID: string; limit: number; before?: string }) => {
+          before.push(request.before);
+          return request.before
+            ? { data: [row('msg_older')], response: new Response(null) }
+            : { data: [row('msg_newest')], response: new Response(null, { headers: { 'x-next-cursor': 'cursor-1' } }) };
+        },
+      },
+    };
+    const controller = getSessionSyncController(ROOT, client as never, 'none');
+    try {
+      await controller.start();
+      expect(controller.getSnapshot().hasOlder).toBe(true);
+      const seen: { result: Result | null } = { result: null };
+      function Host() {
+        seen.result = useSession(PROJECT_ID, SESSION_ID, { replayStartStash: false, initialRuntimeSessionId: ROOT });
+        return null;
+      }
+      act(() => {
+        renderer = create(createElement(QueryClientProvider, { client: queryClient }, createElement(Host)));
+      });
+      await flush();
+      expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
+      expect(seen.result!.hasOlder).toBe(true);
+      await act(async () => { await seen.result!.loadOlder(); });
+      expect(before).toEqual([undefined, 'cursor-1']);
+    } finally {
+      resetSessionSyncControllersForSession(ROOT);
+    }
+  });
+
   test('a cold open (the project features not loaded) reads GET …/log first and sends no /transcript', async () => {
     serveLog = true;
     detailPending = true;
@@ -237,13 +298,13 @@ describe('useSession with its chat engine: the session log owns the history once
     expect(seen.result!.savedTranscript).toBe('none');
   });
 
-  test.each([true, false])('flag %p: a server older than the log (GET …/log answers 404) falls back to the v1 saved copy', async (flag) => {
-    mountHost(flag);
+  test.each(['bare-404', 'server-error', 'invalid'] as const)('GET …/log answers no page (%s): no /transcript (P8.3), nothing saved to show', async (failure) => {
+    failedLog = failure;
+    const seen = mountHost(true);
     await flush();
     const base = `/projects/${PROJECT_ID}/sessions/${SESSION_ID}`;
     expect(urls).toContain(`${base}/log?limit=40`);
-    expect(urls).toContain(`${base}/transcript?shape=sync&limit=40&history=true`);
-    // The log is asked first.
-    expect(urls.indexOf(`${base}/log?limit=40`)).toBeLessThan(urls.indexOf(`${base}/transcript?shape=sync&limit=40&history=true`));
+    expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
+    expect(seen.result!.savedTranscript).toBe('none');
   });
 });

@@ -49,52 +49,125 @@ change is green; a human merges.
 ## How it works
 
 <Steps>
-<Step title="Connect a weekly cron as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-A scheduled **trigger** fires the project once a week. Each firing spawns a fresh
-**session** in its own sandbox, seeded with a clean checkout of the default
-branch. One run, one disposable machine, so nothing carries over between weeks and
-independent upgrade sets can run in parallel.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the upgrade skill and the weekly trigger, and
+opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent the upgrade playbook">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a weekly dependency upgrade agent in this project.
 
-How we handle upgrades lives as **skills** and **memory** that travel with the
-agent: which packages are pinned on purpose, how to run the suite, the order to
-apply major versions in, and migrations that have bitten us before. When an
-upgrade needs a manual step, we write it down and the agent applies it on the next
-run.
+1. Create the agent agents/dep-upgrader.md. Its job is to keep the dependencies of owner/repo current. It may use a GH_TOKEN secret for GitHub and open pull requests.
 
-</Step>
-<Step title="Connect the systems the upgrade needs">
+2. Create the skill skills/dependency-upgrade/SKILL.md with these rules:
+   - Read memory/dependency-upgrade-log.md first. Skip pinned packages and resume any open upgrade pull request.
+   - Group patch and minor upgrades into one batch. Apply each major upgrade on its own, with its migration in the same commit.
+   - Run the full suite in the sandbox: install, typecheck, lint, build, unit tests, integration tests and audit.
+   - Open a pull request only when every check passes. A partial pass counts as a fail.
+   - When a major upgrade fails and the fix is more than about 30 lines, revert it and file an issue.
+   - Never hand-edit the lockfile, never downgrade, and never merge the pull request.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger weekly-upgrades to kortix.yaml. It runs the dep-upgrader agent every Tuesday at 05:00 with the prompt "Load the dependency-upgrade skill and run one complete upgrade sweep on owner/repo."
 
-- **Read the manifests** — resolve which dependencies are behind and how far,
-  separating patch and minor bumps from majors.
-- **Apply and install in the sandbox** — update the lockfile and install clean on
-  a branch, with the resolution output captured in full.
-- **Run the full suite** — unit, integration, and e2e inside the sandbox, so a
-  bump that breaks a path fails here rather than in review.
-- **Open a PR on GitHub** — the branch, the changelog for each bump, and the green
-  result post as a pull request.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent opens a PR only when the suite passes; a failing upgrade is dropped or
-split, not pushed for a human to debug. It never merges — the merge is a **human
-approval gate**. Credentials are encrypted in the secrets manager and injected at
-runtime, scoped to the agents you grant them to.
+Add a GitHub token as the `GH_TOKEN` secret in your project. The agent uses it
+to push its branch and open the pull request. Secrets are encrypted and injected
+at runtime, scoped to the agents you grant them to.
+
+<ToolList>
+  <ToolNeed name="GitHub" domain="github.com" tag="Required" alternatives={[['GitLab', 'gitlab.com'], ['Bitbucket', 'bitbucket.org']]}>
+    Upgrades dependencies on a branch and opens a PR when green.
+  </ToolNeed>
+  <ToolNeed name="CircleCI" domain="circleci.com" tag="Optional" alternatives={[['Buildkite', 'buildkite.com']]}>
+    Runs the pipeline on the upgrade branch.
+  </ToolNeed>
+  <ToolNeed name="Linear" domain="linear.app" tag="Optional" alternatives={[['Jira', 'atlassian.com']]}>
+    Tracks each deferred or failed upgrade as an issue.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Let the weekly run happen">
+<Step title="Run it once with this prompt">
 
-With that in place, each week the agent finds what's behind, applies the upgrades,
-runs the suite in the sandbox, and opens a PR that's already been proven green —
-with the bumps grouped and the changelog attached. A bump that breaks a test never
-becomes a PR; it comes back flagged with the failure instead.
+Merge the change request, then start a session with the **dep-upgrader** agent
+and send this prompt. Read the pull request and its verification
+results before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one dependency upgrade sweep on owner/repo.
+
+1. Read the upgrade ledger and check for open upgrade pull requests.
+2. List outdated dependencies and split them into patch, minor and major.
+3. On a new branch, apply the patch and minor upgrades together, then each major upgrade one at a time.
+4. Run install, typecheck, lint, build, tests and audit after each step.
+5. If everything passes, open one pull request with each bump and its changelog. Do not merge it.
+6. Log what you dropped or deferred, and why.`}
+/>
+
+</Step>
+<Step title="Let the weekly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every Tuesday at 05:00, each run in a new session on its own cloud
+computer. The ledger in memory carries pins and deferred upgrades from one week
+to the next.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: weekly-upgrades
+    name: Weekly dependency upgrades
+    on:
+      cron: "0 0 5 * * 2"
+    run:
+      agent: dep-upgrader
+      prompt: Load the dependency-upgrade skill and run one complete upgrade sweep on owner/repo.`}
+/>
+
+</Step>
+<Step title="Open a pull request only when every check passes">
+
+A failing upgrade never becomes a pull request. The agent reverts it, logs
+it and files an issue. When the full suite passes, it opens one pull request and
+stops. A person reviews it and merges it.
+
+</Step>
+<Step title="Review the pull request">
+
+Each run ends with one green pull request or a logged reason why there is none.
+This is what a run looks like in the session:
+
+<ExampleRun
+  title="Weekly dependency upgrades · Tue 05:00"
+  message="Load the dependency-upgrade skill and run one complete upgrade sweep on owner/repo."
+  worked="Worked for 18m 26s"
+  tools={[
+    'github · list pull requests',
+    'sandbox · pnpm outdated',
+    'sandbox · pnpm install',
+    'sandbox · pnpm test',
+    'sandbox · pnpm audit',
+    'github · open pull request',
+  ]}
+  note="Illustrative example. Your packages and suite differ."
+>
+  Upgraded **17** packages: **14** patch and minor bumps and **3** majors. The
+  full suite passed, and the pull request is open for review. **1** more major
+  upgrade failed the typecheck, so it was reverted and filed as an issue.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -104,6 +177,25 @@ becomes a PR; it comes back flagged with the failure instead.
   and CI. The upgrade playbook is encoded as **skills** and **memory**. The agent
   proves the change green in its sandbox and a human owns the merge.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Fix vulnerabilities first"
+  code="When the audit finds a vulnerability with a fix available, upgrade that package first and give it its own pull request."
+/>
+
+<CopyBlock
+  title="Explain each major upgrade"
+  code="For each major upgrade, add the breaking changes from its changelog and the files you changed to the pull request body."
+/>
+
+<CopyBlock
+  title="Monthly pin review"
+  code="On the first Tuesday of each month, list every pinned package with its pin reason and how far behind latest it is."
+/>
 
 ## Guardrails
 

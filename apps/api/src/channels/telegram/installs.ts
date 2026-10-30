@@ -5,11 +5,13 @@
  * requests are `projects.metadata.telegram` (channels/core/channel-access.ts),
  * scoped to the bot id.
  */
-import { chatInstalls, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, projects } from '@kortix/db';
+import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { and, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { telegramCall } from './api';
+import { removeTelegramMenu } from './menu';
 import {
   type ChannelAccessEntry,
   type ChannelAccessRequester,
@@ -26,7 +28,7 @@ export const TELEGRAM_BOT_TOKEN = 'TELEGRAM_BOT_TOKEN';
 export const TELEGRAM_WEBHOOK_SECRET = 'TELEGRAM_WEBHOOK_SECRET';
 export const TELEGRAM_BOT_USERNAME = 'TELEGRAM_BOT_USERNAME';
 
-export const TELEGRAM_USER_ID = /^\d{1,20}$/;
+export const TELEGRAM_USER_ID = CHANNELS.telegram.access.userId;
 
 /** A sender's id and cleaned names (the port's `requester`). Null: `from` has no valid Telegram user id. */
 export function telegramRequester(from: unknown): ChannelAccessRequester | null {
@@ -66,8 +68,12 @@ export async function saveTelegramInstall(input: {
     .values({ platform: 'telegram', workspaceId: input.botId, projectId: input.projectId })
     .onConflictDoNothing();
   // Requests to another bot are not requests to this one. After the insert: a
-  // request still writing checks its bot under the row lock.
-  if (previous?.botId !== input.botId) await clearChannelAccessRequests('telegram', input.projectId);
+  // request still writing checks its bot under the row lock. The chats' settings
+  // (`/model`, `/agent`) were the old bot's chats.
+  if (previous?.botId !== input.botId) {
+    await clearChannelAccessRequests('telegram', input.projectId);
+    await deleteTelegramChatSettings(input.projectId);
+  }
   await upsertSecret(input.projectId, TELEGRAM_BOT_TOKEN, input.token);
   await upsertSecret(input.projectId, TELEGRAM_WEBHOOK_SECRET, input.webhookSecret);
   if (input.username) await upsertSecret(input.projectId, TELEGRAM_BOT_USERNAME, input.username);
@@ -101,32 +107,60 @@ export function loadTelegramWebhookSecret(projectId: string): Promise<string | n
   return readSecret(projectId, TELEGRAM_WEBHOOK_SECRET);
 }
 
+/** Every chat's `/model` and `/agent` choice in the project. */
+function deleteTelegramChatSettings(projectId: string) {
+  return db
+    .delete(chatChannelBindings)
+    .where(and(eq(chatChannelBindings.platform, 'telegram'), eq(chatChannelBindings.projectId, projectId)));
+}
+
 export async function deleteTelegramInstall(projectId: string): Promise<void> {
   await db
     .delete(chatInstalls)
     .where(and(eq(chatInstalls.platform, 'telegram'), eq(chatInstalls.projectId, projectId)));
+  await deleteTelegramChatSettings(projectId);
   await deleteProjectSecrets(projectId, [TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, TELEGRAM_BOT_USERNAME]);
   // Requests were made to the old bot. The allowed list stays for a reconnect.
   await clearChannelAccessRequests('telegram', projectId);
 }
 
 /**
- * Disconnect and the project delete release the bot: the webhook, only while
- * it points at this project (the bot may serve another project since), then
- * the install and its secrets. Telegram is best effort and never blocks either;
- * an update that still arrives finds no secret and gets the webhook's 404.
+ * Disconnect and the project delete release the bot (`releaseTelegramWebhook`),
+ * then delete the install and its secrets. An update that still arrives finds
+ * no secret and gets the webhook's 404.
  */
 export async function releaseTelegramBot(projectId: string): Promise<void> {
   const token = await loadTelegramBotToken(projectId);
-  if (token) {
-    try {
-      const info = await telegramCall<{ url?: string }>(token, 'getWebhookInfo', {}, 5_000);
-      if (info.url?.endsWith(`/v1/webhooks/telegram/${projectId}`)) await telegramCall(token, 'deleteWebhook', {}, 5_000);
-    } catch (error) {
-      logger.warn('[telegram] the released bot kept its webhook', { projectId, error: String(error) });
-    }
-  }
+  if (token) await releaseTelegramWebhook(projectId, token);
   await deleteTelegramInstall(projectId);
+}
+
+/**
+ * The bot's webhook and Kortix's menu entries go, only while the webhook
+ * points at this project: the bot may serve another project since. Telegram
+ * is best effort; never throws.
+ */
+export async function releaseTelegramWebhook(projectId: string, token: string): Promise<void> {
+  try {
+    const info = await telegramCall<{ url?: string }>(token, 'getWebhookInfo', {}, 5_000);
+    if (!info.url?.endsWith(`/v1/webhooks/telegram/${projectId}`)) return;
+    await telegramCall(token, 'deleteWebhook', {}, 5_000);
+    // The bot is this project's: its menu loses Kortix's commands and keeps the owner's.
+    await removeTelegramMenu(token).catch((error) =>
+      logger.warn('[telegram] the released bot kept its Kortix commands', { projectId, error: String(error) }));
+  } catch (error) {
+    logger.warn('[telegram] the released bot kept its webhook', { projectId, error: String(error) });
+  }
+}
+
+/** The token of the project's bot when a connect replaces it with `botId`; read it before the save overwrites it. */
+export async function replacedTelegramBotToken(projectId: string, botId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ botId: chatInstalls.workspaceId })
+    .from(chatInstalls)
+    .where(and(eq(chatInstalls.platform, 'telegram'), eq(chatInstalls.projectId, projectId)))
+    .limit(1);
+  return row && row.botId !== botId ? loadTelegramBotToken(projectId) : null;
 }
 
 /** Replace the allowed sender list; drops the requests of the ids it allows. */

@@ -184,7 +184,37 @@
     "noAgents": "Keine Agenten"
   },
   "useCases": {
-    "headline": "Die Abläufe, die ein Unternehmen am Laufen halten"
+    "headline": "Die Abläufe, die ein Unternehmen am Laufen halten",
+    "covers": {
+      "slackDraftFor": "Entwurf für <b>Donnerstag 10:00</b>, LinkedIn:",
+      "slackPost": "Wir haben Connectors v2 veröffentlicht: ein Katalog für MCP, OpenAPI und GraphQL. Das ändert sich für Ihre Agenten →",
+      "approve": "Genehmigen",
+      "edit": "Bearbeiten",
+      "skip": "Überspringen",
+      "deny": "Ablehnen",
+      "crmTitle": "Nächtliche CRM-Pflege",
+      "crmMeta": "02:00 · 3 Min. 12 s gearbeitet",
+      "crmSearchContacts": "hubspot · Kontakte suchen",
+      "crmMergeDuplicates": "hubspot · Duplikate zusammenführen",
+      "crmEnrichCompany": "clearbit · Firmendaten anreichern",
+      "crmAskApproval": "slack · Freigabe für Massenaktualisierung anfragen",
+      "awaitingApproval": "Wartet auf Freigabe",
+      "draftToOps": "An: Head of Operations · Entwurf",
+      "draftOps": "Ich habe gesehen, dass Ihr Team drei SDRs einstellt. So hat ein ähnliches Team seine Recherchezeit verkürzt.",
+      "draftToSales": "An: VP Sales · Entwurf",
+      "draftSales": "Glückwunsch zur Series B. Lohnt sich ein kurzer Blick darauf, wie Sie eingehende Leads verteilen?",
+      "draftToRevOps": "An: RevOps-Lead · heute",
+      "draftRevOps": "Ihre Preisseite hat sich letzte Woche geändert. Gern zeige ich, was Teams wie Ihres als Nächstes getan haben.",
+      "approvalAsks": "<name>{agent}</name> möchte ein Tool ausführen",
+      "approvalExpires": "Läuft in 58 Min. ab",
+      "approvalQuestion": "640 $ für Bestellung #4821 erstatten?",
+      "approvalTool": "Tool",
+      "approvalAmount": "Betrag",
+      "approvalReason": "Grund",
+      "approvalCustomer": "Kunde",
+      "approvalReasonValue": "Artikel kam beschädigt an",
+      "approvalPolicy": "Richtlinie: Erstattungen über 500 $ brauchen eine menschliche Freigabe"
+    }
   },
   "developers": {
     "heroDescription": "Agenten, Skills, Tools, Konnektoren und Zeitpläne sind Dateien in einem Repository. Bearbeite sie in deiner IDE, führe sie lokal aus und stelle sie mit einem Befehl in der Cloud bereit. Open Source, selbst hostbar und unter deiner Kontrolle.",
@@ -549,6 +579,10 @@
         },
         "connected": {
           "label": "Verbundene Konten"
+        },
+        "chrome": {
+          "label": "Kortix in Chrome",
+          "description": "Deine Sitzungen nutzen Chrome mit deinen Logins. Du siehst jeden Schritt."
         },
         "tokens": {
           "label": "Persönliche Zugriffsschlüssel",
@@ -1294,6 +1328,14 @@
         "session_groups": {
           "name": "Sitzungsgruppen",
           "description": "Ordne die Sitzungen der Seitenleiste in benannte Ordner, die alle im Projekt teilen, zum Beispiel einen pro Shop oder Kunde. Verschiebe eine Sitzung über ihr Menü oder per Ziehen in eine Gruppe; sortiere die Gruppen und klappe sie ein."
+        },
+        "artifact_comments": {
+          "name": "Artefakt-Kommentare",
+          "description": "Besprich Dokumente und Seiten in Threads mit Personen und Agenten. Erfordert Artefakte."
+        },
+        "chrome": {
+          "name": "Kortix in Chrome",
+          "description": "Lass eine Session deinen verbundenen Chrome-Browser nutzen. Du kannst jederzeit übernehmen oder sie stoppen."
         }
       },
       "channelsSwitch": {
@@ -1652,7 +1694,8 @@
       "account": "Konto",
       "loadError": "Projekte konnten nicht geladen werden",
       "createIn": "Projekt in {account} erstellen",
-      "localComputer": "Dein Computer"
+      "localComputer": "Dein Computer",
+      "appsAndExtensions": "Apps und Erweiterungen"
     },
     "manifestUpgrade": {
       "title": "Auf v3 aktualisieren",
@@ -2944,6 +2987,13 @@
         "updateFailed": "Passwort konnte nicht aktualisiert werden",
         "unexpected": "Ein unerwarteter Fehler ist aufgetreten"
       }
+    },
+    "panel": {
+      "waitingTitle": "Anmeldung läuft",
+      "waitingBody": "Dieses Panel wird mit deinem Kortix-Konto verbunden.",
+      "errorTitle": "Anmeldung nicht möglich",
+      "errorBody": "Melde dich in einem Browser-Tab bei Kortix an und öffne dieses Panel dann erneut.",
+      "signIn": "Anmelden"
     }
   },
   "onboarding": {
@@ -20398,6 +20448,8 @@
       "text59e5965495d9": "Fehlerbehebungen",
       "text724b09397472": "{name} wird zu {project} hinzugefügt",
       "text1e007c47254d": "Die Einrichtung läuft im Hintergrund. Sie erhalten eine Benachrichtigung, wenn sie fertig ist.",
+      "text18e8185e96b0": "Prompt kopieren",
+      "text0c62d1af38c5": "Oder nutzen Sie",
       "text57f57edb6f16": "Änderungsanfrage #{number} ist bereit zur Prüfung.",
       "texta8597db6f24b": "Skill entfernen",
       "text5f6ba69d66d1": "Skill entfernt",
@@ -20910,12 +20962,19 @@
       "textc055fa5fff72": "eng-triage",
       "textf98ee81bceda": "Triagiert jedes neue GitHub-Issue.",
       "text9fad6f07633c": "Das Repository in /workspace, in einem eigenen Branch",
-      "textdc8df43d2f44": "Vier Anwendungsfälle, die zeigen, was Agenten auf Kortix tun.",
+      "textdc8df43d2f44": "Drei Anwendungsfälle, die zeigen, was Agenten auf Kortix tun.",
       "textb37b0def3a13": "Nach Team stöbern",
       "texta3b142af6e97": "Anwendung",
       "texta43f1924db10": "Kein passender Anwendungsfall",
       "text9f4a8be5c188": "Versuchen Sie ein anderes Wort oder setzen Sie den Teamfilter zurück.",
-      "textdbff0b6e128b": "Ein Backend-Framework und Server für Agenten."
+      "textdbff0b6e128b": "Ein Backend-Framework und Server für Agenten.",
+      "textb1e19e0edf15": "7 inaktive Deals in HubSpot gefunden",
+      "textd6320415db95": "Suche inaktive Deals in HubSpot",
+      "text850aad6d0dc3": "7 Follow-up-Aufgaben erstellt",
+      "textc5e0ccf193cb": "4 inaktive Deals nachverfolgt",
+      "text1f60c85be705": "Inaktive Deals werden nachverfolgt",
+      "text24c939b23dfe": "2 Deals in HubSpot aktualisiert",
+      "text6cfe7973316d": "Deals in HubSpot werden aktualisiert"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -21897,6 +21956,127 @@
     "calendarFailed": "Fehlgeschlagen",
     "calendarEstimatedSr": "Vergangene Ausführung, aus dem Zeitplan geschätzt",
     "calendarUpcomingSr": "Bevorstehend"
+  },
+  "chrome": {
+    "pill": "Kortix in Chrome",
+    "connectTitle": "Kortix zu Chrome hinzufügen",
+    "connectDescription": "Lass deine Sitzungen Chrome mit deinen Logins nutzen. Du siehst, was sie tun, und kannst sie jederzeit stoppen.",
+    "promoLabel": "Kortix in Chrome",
+    "dismissPromo": "Ausblenden",
+    "steps": {
+      "install": {
+        "title": "Erweiterung hinzufügen",
+        "description": "Aus dem Chrome Web Store.",
+        "done": "Kortix ist in Chrome.",
+        "descriptionUnlisted": "Lade sie in Chrome."
+      },
+      "connect": {
+        "title": "Anmelden",
+        "description": "Melde dich über die Erweiterung bei Kortix an.",
+        "done": "Angemeldet."
+      },
+      "done": {
+        "title": "Verbunden",
+        "description": "Dein Browser erscheint hier."
+      }
+    },
+    "addToChrome": "Zu Chrome hinzufügen",
+    "finishInChrome": "Chrome hat einen Kortix-Tab geöffnet. Klicke dort auf Verbinden.",
+    "connect": "Verbinden",
+    "connecting": "Wird verbunden…",
+    "done": "Fertig",
+    "unsupported": "Öffne Kortix in Chrome, Edge, Brave oder Arc, um den Browser zu verbinden. Kopiere den Link, um es dort zu öffnen.",
+    "connectFailed": "Der Browser konnte nicht verbunden werden. Versuche es erneut.",
+    "online": "Online",
+    "offline": "Offline",
+    "lastSeen": "Zuletzt gesehen {time}",
+    "usedBy": "{count, plural, one {Wird gerade von # Sitzung genutzt} other {Wird gerade von # Sitzungen genutzt}}",
+    "connectAnother": "Weiteren Browser hinzufügen",
+    "listTitle": "Verbundene Browser",
+    "rename": "{name} umbenennen",
+    "renameLabel": "Browsername",
+    "disconnect": "Trennen",
+    "disconnectTitle": "{name} trennen?",
+    "disconnectDescription": "Sitzungen, die ihn nutzen, werden gestoppt. Verbinde ihn über Chrome erneut, um ihn wieder zu nutzen.",
+    "disconnected": "Browser getrennt",
+    "disconnectFailed": "Der Browser konnte nicht getrennt werden. Versuche es erneut.",
+    "updateFailed": "Die Änderung konnte nicht gespeichert werden. Versuche es erneut.",
+    "loadFailed": "Deine Browser konnten nicht geladen werden.",
+    "retry": "Erneut versuchen",
+    "access": {
+      "label": "Zugriff",
+      "always": "Ohne Nachfrage",
+      "ask": "Jedes Mal fragen",
+      "off": "Aus",
+      "description": "Ob eine Sitzung zuerst bei dir nachfragt."
+    },
+    "scope": {
+      "label": "Tabs",
+      "own": "Nur selbst geöffnete Tabs",
+      "all": "Alle Tabs",
+      "description": "Welche Tabs eine Sitzung sehen kann."
+    },
+    "how": {
+      "title": "So funktioniert es",
+      "group": "Jede Sitzung arbeitet in einer eigenen Tab-Gruppe, mit einem Leuchten auf der Seite.",
+      "control": "Übernehmen oder Stopp jederzeit über die Leiste auf der Seite.",
+      "own": "Nur deine eigenen Sitzungen können deinen Browser nutzen."
+    },
+    "howToInstall": "So installierst du sie",
+    "copyLink": "Link kopieren",
+    "linkCopied": "Link kopiert",
+    "copyFailed": "Der Link konnte nicht kopiert werden. Versuche es erneut.",
+    "extensionMissing": "Kortix hat die Erweiterung nicht gefunden. Füge sie hinzu und lade diese Seite neu.",
+    "another": {
+      "title": "Weiterer Browser",
+      "waiting": "Warte darauf, dass sich der neue Browser verbindet.",
+      "description": "Öffne Kortix im anderen Browser oder Chrome-Profil und füge Kortix dort zu Chrome hinzu. Kopiere den Link, um es zu öffnen."
+    },
+    "panel": {
+      "project": "Projekt",
+      "title": "Frag zu dieser Seite",
+      "body": "Kortix liest den Tab, wenn du sendest. Vorher verlässt nichts diesen Browser.",
+      "selectionTitle": "Frag zu deiner Auswahl",
+      "selectionBody": "Kortix erhält das Zitat, den Seitentitel und die Adresse. Der Rest der Seite bleibt in diesem Browser, außer du fügst ihn hinzu.",
+      "actions": {
+        "summarize": "Diese Seite zusammenfassen",
+        "tables": "Tabellen extrahieren",
+        "compare": "Mit einem anderen Tab vergleichen",
+        "email": "Eine E-Mail dazu entwerfen"
+      },
+      "prompts": {
+        "summarize": "Fasse diese Seite zusammen.",
+        "tables": "Extrahiere die Tabellen dieser Seite als CSV.",
+        "compare": "Vergleiche diese Seiten.",
+        "email": "Entwirf eine E-Mail zu dieser Seite."
+      },
+      "recent": "Zuletzt in {project}",
+      "noProjects": "Erstelle ein Projekt, um einen Chat zu starten.",
+      "createProject": "Projekt erstellen",
+      "addTab": "Tab",
+      "addTabsTitle": "Tabs hinzufügen",
+      "addTabsHint": "Nur die markierten Tabs werden gesendet.",
+      "addTabs": "{count, plural, =0 {Tabs hinzufügen} one {# Tab hinzufügen} other {# Tabs hinzufügen}}",
+      "noTabs": "Keine anderen Tabs in diesem Fenster.",
+      "tabsFailed": "Deine Tabs konnten nicht geladen werden. Versuche es erneut.",
+      "cancel": "Abbrechen",
+      "removeTab": "{title} entfernen",
+      "removeQuote": "Zitat entfernen",
+      "wholePage": "Ganze Seite",
+      "unreadable": "Kortix kann diese Seite nicht lesen.",
+      "message": "Nachricht",
+      "placeholder": "Frag alles zu diesem Tab",
+      "placeholderNoTab": "Frag Kortix alles",
+      "modeLabel": "Wie Kortix den Tab nutzt",
+      "read": "Lesen",
+      "act": "Handeln",
+      "readHint": "Lesen sendet den Text dieser Seite. Handeln lässt Kortix in diesem Tab klicken und tippen.",
+      "actHint": "Kortix legt diesen Tab in seine Tab-Gruppe und kann dort klicken und tippen. Stoppe es über die Leiste auf der Seite.",
+      "send": "Senden",
+      "readFailed": "Kortix konnte den Tab nicht lesen. Lade die Seite neu und versuche es erneut.",
+      "screenshot": "Screenshot",
+      "captureFailed": "Kortix konnte keinen Screenshot dieses Tabs aufnehmen."
+    }
   },
   "computers": {
     "connectYourComputer": "Deinen Computer verbinden",
@@ -23187,10 +23367,10 @@
     "link": "Link",
     "linkPrompt": "Link-URL",
     "fullScreen": "Vollbild",
-    "askAgent": "Agent fragen",
+    "askAgent": "KI fragen",
     "askAgentTitle": "Einen Agenten bitten, dieses Artefakt zu ändern",
+    "askAgentHint": "Startet eine Sitzung, die „{title}“ in Dateien bearbeitet und mit dem Link antwortet.",
     "askAgentPlaceholder": "Was soll sich ändern?",
-    "askAgentSend": "Sitzung starten",
     "notFoundTitle": "Dieses Artefakt ist nicht verfügbar",
     "notFoundHint": "Es wurde gelöscht, oder der Inhaber teilt es nicht mehr.",
     "busyTitle": "Kortix ist ausgelastet",
@@ -23202,7 +23382,7 @@
       "error": "Nicht gespeichert. Neuer Versuch…",
       "conflict": "Anderswo geändert"
     },
-    "placeholder": "Schreibe etwas, oder tippe # für eine Überschrift, - für eine Liste, [ ] für eine Aufgabe",
+    "placeholder": "Schreiben oder / für Blöcke eingeben",
     "placeholderHeading": "Titel",
     "strike": "Durchgestrichen",
     "inlineCode": "Code",
@@ -23244,7 +23424,29 @@
     "openFullPage": "Ganze Seite öffnen",
     "close": "Schließen",
     "conflictReload": "Ihre Version laden",
-    "conflictKeepMine": "Meine behalten"
+    "conflictKeepMine": "Meine behalten",
+    "insertMedia": "Bild oder Video…",
+    "diagram": "Diagramm",
+    "blockMenu": "Blöcke",
+    "blockMenuEmpty": "Keine passenden Blöcke",
+    "embedOffer": "Link einfügen als",
+    "keepAsLink": "Als Link behalten",
+    "showEmbed": "Als Einbettung zeigen",
+    "openSession": "Sitzung öffnen",
+    "newChat": "Neuer Chat",
+    "askAgentReply": "Dem Agenten antworten",
+    "uploading": "Wird hochgeladen…",
+    "creating": "Wird erstellt…",
+    "askAgentNoFiles": "Senden Sie die erste Nachricht als Text. Fügen Sie Dateien im Chat hinzu, sobald der Agent antwortet.",
+    "askAgentHistory": "Verlauf",
+    "askAgentHistoryEmpty": "Noch keine Chats zu diesem Artefakt.",
+    "peopleWithAccess": "Personen mit Zugriff: {names}",
+    "docCreated": "Dokument erstellt",
+    "open": "Öffnen",
+    "embedOpen": "Link öffnen",
+    "embedConvert": "In Link umwandeln",
+    "embedCopy": "Link kopieren",
+    "embedDelete": "Löschen"
   },
   "emailConnect": {
     "homeTitle": "Wo das Postfach liegt",
@@ -23854,5 +24056,53 @@
     "unavailable": "Bild nicht verfügbar",
     "tryAgain": "Erneut versuchen",
     "details": "Bilddetails"
+  },
+  "appsModal": {
+    "title": "Apps und Erweiterungen",
+    "subtitle": "Nutze Kortix in deinem Browser, auf deinem Computer und in deinen Tools.",
+    "mock": {
+      "group": "Kortix · Meine Bestellung zurückgeben",
+      "button": "Rückgabe starten",
+      "working": "Kortix arbeitet",
+      "takeOver": "Übernehmen",
+      "stop": "Stopp"
+    },
+    "chrome": {
+      "name": "Kortix in Chrome",
+      "description": "Kortix öffnet Seiten, klickt und füllt Formulare in deinem eigenen Browser aus, mit deinen Logins. Du siehst jeden Schritt.",
+      "connect": "Verbinden",
+      "connecting": "Verbinde …",
+      "manage": "Verwalten",
+      "unsupported": "Öffne Kortix in Chrome, Edge, Brave oder Arc, um die Erweiterung hinzuzufügen. Kopiere den Link, um es dort zu öffnen.",
+      "group": "Browser",
+      "manageLabel": "Kortix in Chrome verwalten",
+      "summary": "{count, plural, one {# Browser} other {# Browser}} · {online} online"
+    },
+    "computer": {
+      "title": "Dein Computer",
+      "thisComputer": "Dieser Computer",
+      "thisComputerDescription": "Sitzungen nutzen deine Dateien und dein Terminal.",
+      "connected": "Verbunden",
+      "connect": "Verbinden",
+      "manage": "Verwalten",
+      "desktop": "Desktop-App",
+      "desktopDescription": "Kortix als App auf deinem Computer.",
+      "desktopRunning": "Du nutzt sie gerade.",
+      "download": "Herunterladen",
+      "manageLabel": "Diesen Computer verwalten",
+      "connectLabel": "Diesen Computer verbinden"
+    },
+    "developers": {
+      "title": "Entwickler",
+      "cli": "Terminal (CLI)",
+      "cliDescription": "macOS und Linux, WSL unter Windows",
+      "copy": "Befehl kopieren",
+      "copied": "Kopiert",
+      "mcp": "MCP",
+      "mcpDescription": "Nutze Kortix in Claude, Cursor oder Codex.",
+      "connect": "Verbinden",
+      "connectLabel": "MCP verbinden",
+      "copyFailed": "Der Befehl konnte nicht kopiert werden. Versuche es erneut."
+    }
   }
 }

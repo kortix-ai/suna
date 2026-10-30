@@ -72,7 +72,6 @@ export const STATIC_PUBLIC_ROUTES = [
   '/compliance',
   '/use-cases',
   '/white-label',
-  '/cli',
   '/desktop',
   '/mobile',
   '/slack',
@@ -280,14 +279,6 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   },
   {
     kind: 'marketing',
-    slug: 'cli',
-    title: 'Kortix CLI: your company from the terminal',
-    description:
-      'One kortix binary for people and agents: init, ship and chat with projects, script access and audit, and self-host the whole stack. macOS and Linux, x86_64 and arm64, WSL on Windows.',
-    htmlPath: '/cli',
-  },
-  {
-    kind: 'marketing',
     slug: 'slack',
     title: 'Kortix in Slack: one thread, one session',
     description:
@@ -404,8 +395,18 @@ const MDX_WRAPPER_TAGS = new Set([
   'StatGrid',
   'Steps',
   'Tabs',
+  'ToolList',
 ]);
-const MDX_BLOCK_TAGS = new Set(['AccordionItem', 'Callout', 'Card', 'Fact', 'Step', 'Tab']);
+const MDX_BLOCK_TAGS = new Set([
+  'AccordionItem',
+  'Callout',
+  'Card',
+  'ExampleRun',
+  'Fact',
+  'Step',
+  'Tab',
+  'ToolNeed',
+]);
 
 // `:::warning[Title]` opens a container directive; a bare `:::` closes it.
 // Agent-facing markdown has no directive syntax, so both render as a
@@ -448,6 +449,16 @@ function renderCard(attrs: Record<string, string>, body?: string): string {
   return body && body !== title ? `- ${link}: ${body.trim()}` : `- ${link}`;
 }
 
+/** A copyable prompt or file: its title, then the text as a fenced block. */
+function renderCopyBlock(attrs: Record<string, string>): string {
+  const title = attrs.title ? `**${attrs.title}**\n\n` : '';
+  return `${title}\`\`\`${attrs.lang ?? ''}\n${(attrs.code ?? '').trim()}\n\`\`\``;
+}
+
+function renderToolNeed(attrs: Record<string, string>): string {
+  return `- **${attrs.name || 'Tool'}**${attrs.tag ? ` (${attrs.tag})` : ''}`;
+}
+
 function renderMdxTagLine(line: string, stack: MdxRenderContext[]): string | null | undefined {
   if (/^\s*<a\b[^>]*\/?>\s*$/.test(line)) return null;
 
@@ -479,6 +490,8 @@ function renderMdxTagLine(line: string, stack: MdxRenderContext[]): string | nul
     if (tag === 'Figure') return attrs.caption ? `> Figure: ${attrs.caption}` : null;
     if (tag === 'Stat') return `- **${attrs.value || 'Stat'}:** ${attrs.label || ''}`.trimEnd();
     if (tag === 'Card') return renderCard(attrs);
+    if (tag === 'CopyBlock') return renderCopyBlock(attrs);
+    if (tag === 'ToolNeed') return renderToolNeed(attrs);
     return undefined;
   }
 
@@ -511,6 +524,16 @@ function renderMdxTagLine(line: string, stack: MdxRenderContext[]): string | nul
   if (tag === 'Fact') {
     stack.push({ tag });
     return attrs.label ? `- **${attrs.label}:**` : '-';
+  }
+  if (tag === 'ToolNeed') {
+    stack.push({ tag });
+    return `${renderToolNeed(attrs)}:`;
+  }
+  // An illustrative run: its title and prompt, then the summary, as a quote.
+  if (tag === 'ExampleRun') {
+    stack.push({ tag, quote: true });
+    const prompt = attrs.message ? `\n>\n> Prompt: ${attrs.message}` : '';
+    return `> **${attrs.title || 'Example run'}**${prompt}\n>`;
   }
 
   return undefined;
@@ -581,12 +604,14 @@ export function renderPlainMarkdownFromMdx(source: string): string {
     }
 
     if (/^\s*<[A-Z][A-Za-z0-9_.]*\b/.test(line) && !closesTag(line)) {
+      // A CopyBlock's code keeps its line breaks and indentation.
+      const copyBlock = /^\s*<CopyBlock\b/.test(line);
       const tagLines = [line.trim()];
       while (index + 1 < lines.length && !closesTag(tagLines.join(' '))) {
         index += 1;
-        tagLines.push(lines[index].trim());
+        tagLines.push(copyBlock ? lines[index] : lines[index].trim());
       }
-      line = tagLines.join(' ');
+      line = tagLines.join(copyBlock ? '\n' : ' ');
     }
 
     const transformed = renderMdxTagLine(line, stack);

@@ -184,7 +184,37 @@
     "noAgents": "无代理"
   },
   "useCases": {
-    "headline": "驱动公司运转的循环"
+    "headline": "驱动公司运转的循环",
+    "covers": {
+      "slackDraftFor": "<b>周四 10:00</b> 的草稿，LinkedIn：",
+      "slackPost": "我们发布了连接器 v2：MCP、OpenAPI 和 GraphQL 共用一个目录。看看你的代理有哪些变化 →",
+      "approve": "批准",
+      "edit": "编辑",
+      "skip": "跳过",
+      "deny": "拒绝",
+      "crmTitle": "每晚 CRM 数据清理",
+      "crmMeta": "02:00 · 运行 3 分 12 秒",
+      "crmSearchContacts": "hubspot · 搜索联系人",
+      "crmMergeDuplicates": "hubspot · 合并重复项",
+      "crmEnrichCompany": "clearbit · 补全公司信息",
+      "crmAskApproval": "slack · 请求批准批量更新",
+      "awaitingApproval": "等待批准",
+      "draftToOps": "收件人：运营负责人 · 草稿",
+      "draftOps": "看到贵团队正在招聘三名 SDR。这是一个类似团队缩短调研时间的做法。",
+      "draftToSales": "收件人：销售副总裁 · 草稿",
+      "draftSales": "恭喜完成 B 轮融资。要不要快速看看你们如何分配入站线索？",
+      "draftToRevOps": "收件人：RevOps 负责人 · 今天",
+      "draftRevOps": "你们的定价页面上周有变化。很乐意分享与你们类似的团队接下来是怎么做的。",
+      "approvalAsks": "<name>{agent}</name> 请求运行一个工具",
+      "approvalExpires": "58 分钟后过期",
+      "approvalQuestion": "为订单 #4821 退款 $640？",
+      "approvalTool": "工具",
+      "approvalAmount": "金额",
+      "approvalReason": "原因",
+      "approvalCustomer": "客户",
+      "approvalReasonValue": "商品到货时已损坏",
+      "approvalPolicy": "策略：超过 $500 的退款需要人工审批"
+    }
   },
   "developers": {
     "heroDescription": "代理、技能、工具、连接器和计划全都是仓库中的文件。你可以在 IDE 中编辑它们，在本地运行，并用一条命令部署到云端。开源、可自行托管，并完全由你掌控。",
@@ -549,6 +579,10 @@
         },
         "connected": {
           "label": "关联账户"
+        },
+        "chrome": {
+          "label": "Chrome 中的 Kortix",
+          "description": "你的会话沿用登录状态使用 Chrome。每一步你都看得见。"
         },
         "tokens": {
           "label": "个人访问密钥",
@@ -1294,6 +1328,14 @@
         "session_groups": {
           "name": "会话分组",
           "description": "将侧边栏中的会话整理到全项目共享的命名文件夹中，例如每个店铺或客户一个。可通过菜单或拖动将会话移入分组，并对分组排序和折叠。"
+        },
+        "artifact_comments": {
+          "name": "工件评论",
+          "description": "与成员和代理在讨论串中讨论文档和页面。需要启用工件。"
+        },
+        "chrome": {
+          "name": "Chrome 中的 Kortix",
+          "description": "允许会话使用已连接的 Chrome 浏览器。你可以随时接管或停止。"
         }
       },
       "channelsSwitch": {
@@ -1652,7 +1694,8 @@
       "account": "账户",
       "loadError": "项目加载失败",
       "createIn": "在 {account} 中创建项目",
-      "localComputer": "你的电脑"
+      "localComputer": "你的电脑",
+      "appsAndExtensions": "应用和扩展"
     },
     "manifestUpgrade": {
       "title": "升级到 v3",
@@ -2944,6 +2987,13 @@
         "updateFailed": "无法更新密码",
         "unexpected": "发生意外错误"
       }
+    },
+    "panel": {
+      "waitingTitle": "正在登录",
+      "waitingBody": "正在将此面板连接到你的 Kortix 账户。",
+      "errorTitle": "无法登录",
+      "errorBody": "请先在浏览器标签页中登录 Kortix，然后重新打开此面板。",
+      "signIn": "登录"
     }
   },
   "onboarding": {
@@ -20398,6 +20448,8 @@
       "text59e5965495d9": "修复",
       "text724b09397472": "正在将 {name} 添加到 {project}",
       "text1e007c47254d": "它会在后台完成设置，完成后你会收到通知。",
+      "text18e8185e96b0": "复制提示词",
+      "text0c62d1af38c5": "或使用",
       "text57f57edb6f16": "变更请求 #{number} 已可审阅。",
       "texta8597db6f24b": "移除技能",
       "text5f6ba69d66d1": "技能已移除",
@@ -20476,7 +20528,7 @@
       "text0661a8cc9ef3": "会话所使用的模型",
       "text3f6dbbaa3aa4": "以最先设置的为准。",
       "text20c0a1a03b2b": "主权 Kortix 的运作方式",
-      "textdc8df43d2f44": "四个用例展示 Kortix 上智能体的功能。",
+      "textdc8df43d2f44": "三个用例展示 Kortix 上智能体的功能。",
       "textb37b0def3a13": "按团队浏览",
       "texta3b142af6e97": "使用",
       "texta43f1924db10": "没有匹配的用例",
@@ -20915,7 +20967,14 @@
       "text8484a27f54b0": "企业级，有问必答。",
       "texte4d812fc9db4": "Arcadia · Drive",
       "text9218ded06bfa": "自定义 → 模型 → 成本",
-      "textdbff0b6e128b": "面向智能体的后端框架和服务器。"
+      "textdbff0b6e128b": "面向智能体的后端框架和服务器。",
+      "textb1e19e0edf15": "在 HubSpot 中找到 7 笔沉寂的交易",
+      "textd6320415db95": "正在 HubSpot 中查找沉寂的交易",
+      "text850aad6d0dc3": "已创建 7 个跟进任务",
+      "textc5e0ccf193cb": "已跟进 4 笔沉寂的交易",
+      "text1f60c85be705": "正在跟进沉寂的交易",
+      "text24c939b23dfe": "已在 HubSpot 中更新 2 笔交易",
+      "text6cfe7973316d": "正在更新 HubSpot 中的交易"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -21897,6 +21956,127 @@
     "calendarFailed": "失败",
     "calendarEstimatedSr": "过去的触发，根据计划推算",
     "calendarUpcomingSr": "即将触发"
+  },
+  "chrome": {
+    "pill": "Chrome 中的 Kortix",
+    "connectTitle": "将 Kortix 添加到 Chrome",
+    "connectDescription": "让你的会话使用 Chrome，并沿用你的登录状态。你可以看到它们的操作，并随时停止。",
+    "promoLabel": "Chrome 中的 Kortix",
+    "dismissPromo": "关闭",
+    "steps": {
+      "install": {
+        "title": "添加扩展程序",
+        "description": "来自 Chrome Web Store。",
+        "done": "Kortix 已在 Chrome 中。",
+        "descriptionUnlisted": "在 Chrome 中加载它。"
+      },
+      "connect": {
+        "title": "登录",
+        "description": "在扩展程序中登录 Kortix。",
+        "done": "已登录。"
+      },
+      "done": {
+        "title": "已连接",
+        "description": "你的浏览器会显示在这里。"
+      }
+    },
+    "addToChrome": "添加到 Chrome",
+    "finishInChrome": "Chrome 已打开一个 Kortix 标签页。请在该标签页中点击“连接”。",
+    "connect": "连接",
+    "connecting": "正在连接…",
+    "done": "完成",
+    "unsupported": "请在 Chrome、Edge、Brave 或 Arc 中打开 Kortix 来连接。复制链接即可在那里打开。",
+    "connectFailed": "无法连接浏览器，请重试。",
+    "online": "在线",
+    "offline": "离线",
+    "lastSeen": "最后在线：{time}",
+    "usedBy": "{count, plural, other {当前有 # 个会话在使用}}",
+    "connectAnother": "添加另一个浏览器",
+    "listTitle": "已连接的浏览器",
+    "rename": "重命名 {name}",
+    "renameLabel": "浏览器名称",
+    "disconnect": "断开连接",
+    "disconnectTitle": "断开 {name}？",
+    "disconnectDescription": "正在使用它的会话将停止。要再次使用，请从 Chrome 重新连接。",
+    "disconnected": "浏览器已断开",
+    "disconnectFailed": "无法断开浏览器。请重试。",
+    "updateFailed": "无法保存更改。请重试。",
+    "loadFailed": "无法加载你的浏览器。",
+    "retry": "重试",
+    "access": {
+      "label": "访问",
+      "always": "无需询问",
+      "ask": "每次询问",
+      "off": "关闭",
+      "description": "会话是否先询问你。"
+    },
+    "scope": {
+      "label": "标签页",
+      "own": "仅它打开的标签页",
+      "all": "所有标签页",
+      "description": "会话可以看到哪些标签页。"
+    },
+    "how": {
+      "title": "工作方式",
+      "group": "每个会话在自己的标签页组里工作，页面会发光。",
+      "control": "随时可通过页面上的栏接管或停止。",
+      "own": "只有你自己的会话可以使用你的浏览器。"
+    },
+    "howToInstall": "如何安装",
+    "copyLink": "复制链接",
+    "linkCopied": "链接已复制",
+    "copyFailed": "无法复制链接。请重试。",
+    "extensionMissing": "Kortix 未找到扩展程序。请先添加，然后重新加载此页面。",
+    "another": {
+      "title": "另一个浏览器",
+      "waiting": "正在等待新浏览器连接。",
+      "description": "在另一个浏览器或 Chrome 配置文件中打开 Kortix，然后在那里将 Kortix 添加到 Chrome。复制链接即可打开。"
+    },
+    "panel": {
+      "project": "项目",
+      "title": "询问此页面",
+      "body": "发送时 Kortix 才会读取该标签页。在此之前，任何内容都不会离开此浏览器。",
+      "selectionTitle": "询问你选中的内容",
+      "selectionBody": "Kortix 只会收到引用内容、页面标题和地址。除非你添加，页面的其余部分都留在此浏览器中。",
+      "actions": {
+        "summarize": "总结此页面",
+        "tables": "提取表格",
+        "compare": "与另一个标签页比较",
+        "email": "就此起草一封邮件"
+      },
+      "prompts": {
+        "summarize": "总结此页面。",
+        "tables": "将此页面中的表格提取为 CSV。",
+        "compare": "比较这些页面。",
+        "email": "就此页面起草一封邮件。"
+      },
+      "recent": "{project} 中的最近会话",
+      "noProjects": "创建一个项目即可开始聊天。",
+      "createProject": "创建项目",
+      "addTab": "标签页",
+      "addTabsTitle": "添加标签页",
+      "addTabsHint": "只发送你勾选的标签页。",
+      "addTabs": "{count, plural, =0 {添加标签页} other {添加 # 个标签页}}",
+      "noTabs": "此窗口中没有其他标签页。",
+      "tabsFailed": "无法列出你的标签页。请重试。",
+      "cancel": "取消",
+      "removeTab": "移除 {title}",
+      "removeQuote": "移除引用",
+      "wholePage": "整个页面",
+      "unreadable": "Kortix 无法读取此页面。",
+      "message": "消息",
+      "placeholder": "询问关于此标签页的任何问题",
+      "placeholderNoTab": "向 Kortix 提问",
+      "modeLabel": "Kortix 如何使用该标签页",
+      "read": "读取",
+      "act": "操作",
+      "readHint": "“读取”会发送此页面的文本。“操作”让 Kortix 在此标签页中点击和输入。",
+      "actHint": "Kortix 会把此标签页放入它的标签页组，并可以在其中点击和输入。可通过页面上的栏停止它。",
+      "send": "发送",
+      "readFailed": "Kortix 无法读取该标签页。请重新加载页面后重试。",
+      "screenshot": "截图",
+      "captureFailed": "Kortix 无法截取此标签页。"
+    }
   },
   "computers": {
     "connectYourComputer": "连接你的电脑",
@@ -23187,10 +23367,10 @@
     "link": "链接",
     "linkPrompt": "链接地址",
     "fullScreen": "全屏",
-    "askAgent": "询问智能体",
+    "askAgent": "询问 AI",
     "askAgentTitle": "请智能体修改此工件",
+    "askAgentHint": "启动一个会话，在文件中编辑“{title}”并回复其链接。",
     "askAgentPlaceholder": "需要修改什么？",
-    "askAgentSend": "开始会话",
     "notFoundTitle": "此工件不可用",
     "notFoundHint": "它已被删除，或所有者已停止分享。",
     "busyTitle": "Kortix 正忙",
@@ -23202,7 +23382,7 @@
       "error": "未保存。正在重试…",
       "conflict": "已在别处更改"
     },
-    "placeholder": "开始书写，或输入 # 添加标题、- 添加列表、[ ] 添加任务",
+    "placeholder": "输入内容，或键入 / 插入块",
     "placeholderHeading": "标题",
     "strike": "删除线",
     "inlineCode": "代码",
@@ -23244,7 +23424,29 @@
     "openFullPage": "全页打开",
     "close": "关闭",
     "conflictReload": "加载对方版本",
-    "conflictKeepMine": "保留我的版本"
+    "conflictKeepMine": "保留我的版本",
+    "insertMedia": "图片或视频…",
+    "diagram": "图表",
+    "blockMenu": "块",
+    "blockMenuEmpty": "没有匹配的块",
+    "embedOffer": "粘贴链接为",
+    "keepAsLink": "保留为链接",
+    "showEmbed": "显示嵌入",
+    "openSession": "打开会话",
+    "newChat": "新对话",
+    "askAgentReply": "回复智能体",
+    "uploading": "正在上传…",
+    "creating": "正在创建…",
+    "askAgentNoFiles": "请以文本发送第一条消息。智能体回复后，可在对话中添加文件。",
+    "askAgentHistory": "历史记录",
+    "askAgentHistoryEmpty": "还没有关于此产物的对话。",
+    "peopleWithAccess": "有访问权限的人：{names}",
+    "docCreated": "已创建文档",
+    "open": "打开",
+    "embedOpen": "打开链接",
+    "embedConvert": "转换为链接",
+    "embedCopy": "复制链接",
+    "embedDelete": "删除"
   },
   "emailConnect": {
     "homeTitle": "收件箱所在位置",
@@ -23854,5 +24056,53 @@
     "unavailable": "图片不可用",
     "tryAgain": "重试",
     "details": "图片详情"
+  },
+  "appsModal": {
+    "title": "应用和扩展",
+    "subtitle": "在浏览器、电脑和你的工具中使用 Kortix。",
+    "mock": {
+      "group": "Kortix · 退回我的订单",
+      "button": "开始退货",
+      "working": "Kortix 正在工作",
+      "takeOver": "接管",
+      "stop": "停止"
+    },
+    "chrome": {
+      "name": "Chrome 中的 Kortix",
+      "description": "Kortix 在你自己的浏览器里打开页面、点击并填写表单，沿用你的登录状态。每一步你都看得见。",
+      "connect": "连接",
+      "connecting": "正在连接…",
+      "manage": "管理",
+      "unsupported": "请在 Chrome、Edge、Brave 或 Arc 中打开 Kortix 来添加。复制链接即可在那里打开。",
+      "group": "浏览器",
+      "manageLabel": "管理 Chrome 中的 Kortix",
+      "summary": "{count, plural, other {# 个浏览器}} · {online} 个在线"
+    },
+    "computer": {
+      "title": "你的电脑",
+      "thisComputer": "这台电脑",
+      "thisComputerDescription": "会话可以使用你的文件和终端。",
+      "connected": "已连接",
+      "connect": "连接",
+      "manage": "管理",
+      "desktop": "桌面应用",
+      "desktopDescription": "电脑上的 Kortix 应用。",
+      "desktopRunning": "你正在使用它。",
+      "download": "下载",
+      "manageLabel": "管理这台电脑",
+      "connectLabel": "连接这台电脑"
+    },
+    "developers": {
+      "title": "开发者",
+      "cli": "终端 (CLI)",
+      "cliDescription": "macOS 和 Linux，Windows 使用 WSL",
+      "copy": "复制命令",
+      "copied": "已复制",
+      "mcp": "MCP",
+      "mcpDescription": "在 Claude、Cursor 或 Codex 中使用 Kortix。",
+      "connect": "连接",
+      "connectLabel": "连接 MCP",
+      "copyFailed": "无法复制命令。请重试。"
+    }
   }
 }

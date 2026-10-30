@@ -10,6 +10,26 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-29
+
+### D26 Email card: one logo, one left edge, one type scale
+- **Date:** 2026-10-29
+- **Decision:** The symbol shows once, 20 px wide, in the header row; the card has no logo. The header carries no label: no email names its type ("Sign in", "Password reset", "Billing") anywhere above the title, and `renderEmail` has no `kicker` input. Every block inside the card sits on one left edge with a 40 px inset (24 px on mobile). The type scale has four steps: title 24 px / 600 / line height 1.25 / tracking −0.48 px, body 15 px / 400 / 1.6, label 13 px, small 12 px; emphasis is 500. The one-time code uses the sans face with tabular digits, never the mono face. The footer is centered: tagline, social icons, `kortix.com`.
+- **Why:** founder, 2026-10-29: the logo twice "looks a bit weird", the code must not be mono, and the title and description hierarchy was "not proper".
+- **Where:** `visual/visual-system.json` (`email`), `scripts/generate-tokens.ts`, `apps/api/src/lib/email/template.tsx`.
+- **Supersedes:** D25 for the card logo, the centered card and the 28/16 sizes. The Barebone frame stands.
+- **Source:** the `email-redesign` branch.
+
+### D25 Transactional email uses the React Email Barebone layout
+- **Date:** 2026-10-29
+- **Decision:** The email shell copies the React Email demo template 01-Barebone (activation / password-reset), built with `@react-email/components` and rendered with `renderToStaticMarkup`. A grey page (`--card`), a 640 px white frame (`--background`) with a header row (the symbol 23 px wide on the left, the kicker on the right), one grey card with radius 8 holding the symbol (48 px wide), a 28 px title, 16 px body text in a 380 px column, the button and the note, then a white footer with the tagline, three social icons (X, LinkedIn, GitHub, served from `apps/web/public/email`) and a `kortix.com` link. The `mobile:` variants ship as one `<style>` media query at 600 px. The logo is the Brandmark PNG (the symbol), not the lockup. Colors stay on the token roles: Barebone's three text greys collapse onto `--foreground` and `--muted-foreground`; the font stays the system stack (D8a), not Inter. The copy-paste link under the button is gone; the plain-text part keeps the URL.
+- **Why:** founder, 2026-10-29: the shipped email was "not good UI-wise"; use React Email and make it "exactly the same" as the Barebone templates.
+- **Where:** `visual/visual-system.json` (`email`), `scripts/generate-tokens.ts`, `apps/api/src/lib/email/template.tsx`, `visual/layout.md` Email layout, `visual/brandmark.md` email logo.
+- **Supersedes:** the layout numbers and the lockup logo of the 2026-10-01 email entries (Q27, Q51); the light-only and color-role rules stand.
+- **Source:** the `email-redesign` branch.
+
+---
+
 ## 2026-10-27
 
 ### D24 The framework surfaces explain Kortix as a backend framework and name pi
