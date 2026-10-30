@@ -1330,7 +1330,7 @@ export function buildManifestSchema(): JsonSchemaFragment {
       },
       default_agent: {
         ...NON_BLANK_STRING,
-        description: 'The agent a session or trigger runs when it names none. A declared agent that is enabled and whose `mode` is `primary` or `all`.',
+        description: 'The agent that runs when nothing names one and My Kortix is off, and the agent My Kortix starts when it names none. A session or trigger that names no agent runs My Kortix while it is on. A declared agent that is enabled and whose `mode` is `primary` or `all`.',
       },
       runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES], deprecated: true, description: 'Selects nothing: every new session runs pi.' },
       ...shared,

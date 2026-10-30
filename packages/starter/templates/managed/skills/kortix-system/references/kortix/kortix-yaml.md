@@ -12,7 +12,7 @@ defaults keep today's behavior, so a valid file stays valid.
 
 | Key | Holds |
 | --- | --- |
-| `default_agent` | The agent a session or trigger runs when it names none. A declared, enabled agent that is not `mode: subagent`. Omitted: My Kortix. |
+| `default_agent` | The agent that runs when nothing names one and My Kortix is off, and the agent My Kortix starts when it names none. A declared, enabled agent that is not `mode: subagent`. |
 | `project` | `name`, `description`: shown in the dashboard. |
 | `imports` | Repository paths of more YAML files or folders (below). |
 | `env` | `required` and `optional` secret names. Values live in Kortix, never here. |
@@ -192,7 +192,7 @@ triggers:
 
 | `run:` | Does |
 | --- | --- |
-| `prompt` (+ `agent`, `model`, `session`, `session_key`, `session_id`) | Prompts an agent session. `agent` defaults to `default_agent`, else My Kortix. |
+| `prompt` (+ `agent`, `model`, `session`, `session_key`, `session_id`) | Prompts an agent session. Without `agent` it runs My Kortix (`default_agent` when My Kortix is off). |
 | `app` (+ `path` default `/`, `method` `POST` or `GET`, `payload`) | Calls the App. No session, no model. |
 
 - Other fields: `slug` (required, `[a-z0-9][a-z0-9_-]{0,127}`, unique across

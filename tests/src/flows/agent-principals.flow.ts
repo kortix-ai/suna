@@ -165,13 +165,13 @@ flow(
         if (issues.length) throw new Error(`canonical key produced issues: ${JSON.stringify(issues)}`);
       });
 
-      await ctx.step('kortix_cli is an error at agents.legacy.kortix_cli that names kortix_permissions; the agent-config write with it answers 400', async () => {
+      await ctx.step('kortix_cli is deprecated: valid, one warning at agents.legacy.kortix_cli with fix agent-kortix-cli; a write that sets it against a different kortix_permissions answers 400', async () => {
         const r = await validate(retired);
-        r.status(200).body().has('$.valid', false);
-        const issues = r.json<{ issues: Issue[] }>().issues;
-        const error = issues.find((i) => i.severity === 'error' && i.path === 'agents.legacy.kortix_cli');
-        if (!error || !/kortix_permissions/.test(error.message)) {
-          throw new Error(`expected an error naming kortix_permissions, got ${JSON.stringify(issues)}`);
+        r.status(200).body().has('$.valid', true);
+        const issues = r.json<{ issues: Array<Issue & { fix?: string }> }>().issues;
+        const warning = issues.find((i) => i.path === 'agents.legacy.kortix_cli');
+        if (!warning || warning.severity !== 'warning' || warning.fix !== 'agent-kortix-cli' || !/kortix_permissions/.test(warning.message)) {
+          throw new Error(`expected a deprecation warning naming kortix_permissions, got ${JSON.stringify(issues)}`);
         }
         const put = await world.owner.put(
           '/v1/projects/:projectId/agents/:agentName/config',
@@ -181,16 +181,16 @@ flow(
         put.status(400);
       });
 
-      await ctx.step('real CLI `kortix validate --json`: kortix_permissions exits 0; kortix_cli exits 1 with the error', async () => {
+      await ctx.step('real CLI `kortix validate --json`: kortix_permissions exits 0; kortix_cli exits 0 with the deprecation warning', async () => {
         sandbox.writeFile('kortix.yaml', canonical);
         const ok = await sandbox.run(['validate', '--json', '--no-dockerfile-lint']);
         if (ok.exitCode !== 0) throw new Error(`canonical: exit ${ok.exitCode}: ${ok.all.slice(0, 600)}`);
         sandbox.writeFile('kortix.yaml', retired);
-        const bad = await sandbox.run(['validate', '--json', '--no-dockerfile-lint']);
-        if (bad.exitCode !== 1) throw new Error(`kortix_cli: expected exit 1, got ${bad.exitCode}: ${bad.all.slice(0, 600)}`);
-        const report = JSON.parse(bad.stdout.trim()) as { valid: boolean; issues: Issue[] };
-        if (!report.issues.some((i) => i.severity === 'error' && i.path === 'agents.legacy.kortix_cli')) {
-          throw new Error(`CLI report lacks the kortix_cli error: ${bad.stdout.slice(0, 600)}`);
+        const old = await sandbox.run(['validate', '--json', '--no-dockerfile-lint']);
+        if (old.exitCode !== 0) throw new Error(`kortix_cli: expected exit 0, got ${old.exitCode}: ${old.all.slice(0, 600)}`);
+        const report = JSON.parse(old.stdout.trim()) as { valid: boolean; issues: Array<Issue & { fix?: string }> };
+        if (!report.issues.some((i) => i.severity === 'warning' && i.path === 'agents.legacy.kortix_cli' && i.fix === 'agent-kortix-cli')) {
+          throw new Error(`CLI report lacks the kortix_cli deprecation warning: ${old.stdout.slice(0, 600)}`);
         }
       });
     } finally {

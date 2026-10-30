@@ -789,7 +789,7 @@ Kortix refuses to write a file with an error, an unknown key included: `kortix s
 | An unknown key, anywhere | Kortix ignores the key. |
 | An agent or a trigger | That agent or trigger is off. A session that names the agent fails with an error that names the issue. A trigger that is off does not fire. |
 | A connector, App, skill, tool, command, extension, space or sandbox template | That entry is not available. |
-| `project` or `default_agent` | The key takes its default. With no `default_agent`, a session or trigger that names no agent runs My Kortix. |
+| `project` or `default_agent` | The key takes its default. |
 | Any other key (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, `builtin_agents`), a YAML syntax error, or a retired format | Only My Kortix runs, so that it can fix the file. |
 
 Each rule takes access away. No error gives an agent more than the file grants.
@@ -973,7 +973,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 - **Names must exist.** A listed skill, command, extension, subagent or tool that is not registered or built in is an error.
 - **`secrets` reaches the sandbox.** A granted secret is an environment variable or a network-enforced secret in the agent's sandbox. Model logins, connector and git credentials stay with Kortix services: the agent's model and connector settings decide their use.
 - **Built in, with no entry.** The Kortix skills: `kortix-cli`, `kortix-memory` and the other `kortix-*` skills. The Kortix tools: `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `memory`, `show`. See [Kortix tools](/docs/developers#kortix-tools). The built-in tools: `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `task`. An agent loads a Kortix skill only when its `skills` grant names it or is `all`.
-- **My Kortix is built in.** A session or trigger that names no agent runs `default_agent`, else My Kortix. `builtin_agents: { my_kortix: false }` removes it.
+- **My Kortix is built in.** A session or trigger that names no agent runs My Kortix. `builtin_agents: { my_kortix: false }` turns it off; then such a session runs `default_agent`. A session My Kortix starts without naming an agent also runs `default_agent`.
 - **Extensions** are packages for the agent runtime. A package holds runtime extensions, skills, prompts or themes. The change request merge builds npm packages, and a session never installs them. A session loads its extensions when its runtime starts, so a change reaches a running session at its next start.
 
 {/* generated:kortix-yaml:start */}
@@ -985,7 +985,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `imports` | list | — | YAML files or folders whose collections merge into this file. See [imports](#imports). |
-| `default_agent` | string | — | The agent a session or trigger runs when it names none. A declared agent that is enabled and whose `mode` is `primary` or `all`. |
+| `default_agent` | string | — | The agent that runs when nothing names one and My Kortix is off, and the agent My Kortix starts when it names none. A session or trigger that names no agent runs My Kortix while it is on. A declared agent that is enabled and whose `mode` is `primary` or `all`. |
 | `project` | map | — | `name`: the project's name. A push that changes it renames the project, and a rename in Kortix commits it here. `description`: text for people who read the repository. |
 | `env` | map | — | The secret names the project expects. Values live in Secrets, never in this file. See [env keys](#env-keys). |
 | `sandbox` | map | the platform image | Sandbox templates and the project's default template. See [sandbox keys](#sandbox-keys). |
