@@ -1,12 +1,10 @@
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
-import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@kortix/ui';
 import { localizeUiCatalog } from '@kortix/ui/i18n';
 import {
   CameraIcon,
   CaretDownIcon,
-  CaretRightIcon,
   CheckIcon,
   PaperclipIcon,
 } from '@phosphor-icons/react/dist/ssr';
@@ -48,28 +46,6 @@ export function Chip({
   );
 }
 
-/** The person's message, right-aligned, as the session page draws it. */
-export function UserBubble({ children }: { children: ReactNode }) {
-  return (
-    <div className="bg-secondary text-foreground ml-auto max-w-[85%] rounded-lg px-3 py-2 text-sm text-pretty">
-      {children}
-    </div>
-  );
-}
-
-/** The folded tool steps of a finished turn. */
-export function StepsFold({ count }: { count: number }) {
-  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
-
-  return (
-    <span className="text-muted-foreground flex items-center gap-1 text-xs">
-      {tMarketing('text22a970d2e5b1')}
-      {count} {tMarketing('textb7595e2a8639')}
-      <CaretRightIcon aria-hidden className="size-3" />
-    </span>
-  );
-}
-
 /**
  * Quick Entry (apps/desktop-electron/src/quick-entry.js): the prompt, the
  * target picker on the right, attach and, on macOS, screenshot.
@@ -96,36 +72,6 @@ export function QuickEntryBar({ text, target = 'New session' }: { text: string; 
         </span>
         <span className="text-muted-foreground hidden font-mono text-xs sm:inline">↵</span>
       </div>
-    </div>
-  );
-}
-
-/**
- * The mobile permission card (apps/mobile/components/session/
- * PermissionPromptCard.tsx): the tool and its input, Deny and Allow once,
- * and Allow always as a quieter text button.
- */
-export function PermissionCard({ tool, input }: { tool: string; input: string }) {
-  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
-
-  return (
-    <div className="bg-background flex flex-col gap-3 rounded-lg border p-3">
-      <div className="flex flex-col gap-1">
-        <span className="text-foreground text-sm font-medium">
-          {tMarketing('textf667acf9ff30')}
-          {tool}
-        </span>
-        <code className="text-muted-foreground font-mono text-xs break-all">{input}</code>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <Chip className="justify-center">{tMarketing('text05a2d7332eb9')}</Chip>
-        <Chip primary className="justify-center">
-          {tMarketing('text168511d24d9e')}
-        </Chip>
-      </div>
-      <span className="text-muted-foreground text-center text-xs">
-        {tMarketing('text11f1800a41af')}
-      </span>
     </div>
   );
 }
