@@ -303,9 +303,17 @@ export function skillGranted(policy: PermissionPolicy, name: string): boolean {
   return resolvePolicyRule(policy, 'skill', { name }, '/') !== 'deny'
 }
 
+/** One rule of the session ruleset (`PATCH /session/:id` `permission`). */
+export interface SessionPermissionRule {
+  permission?: unknown
+  pattern?: unknown
+  action?: unknown
+}
+
 export class PermissionBroker {
   private readonly pending = new Map<string, { request: RuntimePermissionRequest; resolve: (reply: PermissionReply) => void }>()
-  private readonly alwaysAllowed = new Set<string>()
+  /** Capabilities allowed for the rest of the session: an "always" reply, or the session ruleset (`*`: every one). */
+  private readonly granted = new Set<string>()
 
   constructor(
     private readonly sessionID: string,
@@ -325,8 +333,36 @@ export class PermissionBroker {
     // A deny outranks an earlier "always": approving `ls` must not unlock the
     // `rm -rf *` the same pattern map denies.
     if (resolved === 'deny') return 'deny'
-    if (this.alwaysAllowed.has(toolCapability(tool, args))) return 'allow'
+    if (this.grants(tool, args)) return 'allow'
     return resolved ?? 'allow'
+  }
+
+  /** The session's grants cover this call's capability. A policy `deny` still outranks them (`rule`). */
+  grants(tool: string, args?: unknown): boolean {
+    return this.granted.has('*') || this.granted.has(toolCapability(tool, args))
+  }
+
+  /**
+   * Replace the session's grants with the session ruleset: each `allow` rule over every pattern
+   * grants its capability (`*`: all of them). An empty list clears every grant, "always" replies
+   * included. A rule for one pattern, or any other action, grants nothing.
+   */
+  setSessionRules(rules: readonly SessionPermissionRule[]): void {
+    this.granted.clear()
+    for (const rule of rules) {
+      if (rule?.action === 'allow' && typeof rule.permission === 'string' && (rule.pattern === undefined || rule.pattern === '*')) {
+        this.granted.add(rule.permission)
+      }
+    }
+  }
+
+  /** The grants, as the runtime's dump keeps them. */
+  grantList(): string[] {
+    return [...this.granted]
+  }
+
+  restoreGrants(grants: readonly string[]): void {
+    for (const grant of grants) if (typeof grant === 'string') this.granted.add(grant)
   }
 
   /** Resolves with the user's reply; never rejects. */
@@ -352,7 +388,7 @@ export class PermissionBroker {
     const entry = this.pending.get(id)
     if (!entry) return false
     this.pending.delete(id)
-    if (reply === 'always') this.alwaysAllowed.add(entry.request.permission)
+    if (reply === 'always') this.granted.add(entry.request.permission)
     this.publish({ type: 'permission.replied', properties: { sessionID: this.sessionID, requestID: id, reply } })
     entry.resolve(reply)
     return true
