@@ -99,3 +99,75 @@ test('missing scope or a disabled feature sends no comments or activity requests
   await mount('project-a', 'artifact-a', false);
   expect(reads).toEqual({ comments: 0, activity: 0 });
 });
+
+test('comment context shares write invalidation and historical hooks reject mutations before HTTP', async () => {
+  const urls: string[] = [];
+  let context: ReturnType<typeof hooks.useArtifactCommentContext>;
+  globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    urls.push(url);
+    return url.includes('/context') ? Response.json({ can_comment: false, send_thread_ids: [], version: { commit_id: 'vc old', entry_version: 'old-etag' } })
+      : Response.json({ threads: [] });
+  }) as unknown as typeof fetch;
+  function Probe() {
+    context = hooks.useArtifactCommentContext('project-a', 'artifact-a', { version: 'vc old' });
+    comments = hooks.useArtifactComments('project-a', 'artifact-a', { status: 'all', version: 'vc old' });
+    return null;
+  }
+  await act(async () => { renderer = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe))); });
+  await settle();
+  expect(context!.data?.version.commit_id).toBe('vc old');
+  expect(urls.some((url) => url.endsWith('/comments?status=all&version=vc+old'))).toBe(true);
+  await act(async () => { await expect(comments.reply('thread-a', { body: 'Must not write.' })).rejects.toThrow('read-only'); });
+  await settle();
+  expect(urls).toHaveLength(2);
+});
+
+test('infinite activity follows opaque cursors, keeps page order without duplicates, and refreshes after a comment write', async () => {
+  let infinite: ReturnType<typeof hooks.useInfiniteArtifactActivity>;
+  let context: ReturnType<typeof hooks.useArtifactCommentContext>;
+  const activityReads: Array<string | null> = [];
+  let contextReads = 0;
+  let writes = 0;
+  globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (init?.method === 'POST') { writes++; return Response.json({ comment: { comment_id: 'reply' } }); }
+    if (url.pathname.endsWith('/context')) { contextReads++; return Response.json({ can_comment: true, comment_count: writes, version: { commit_id: 'vc_now' } }); }
+    if (url.pathname.endsWith('/comments')) return Response.json({ threads: [] });
+    const cursor = url.searchParams.get('cursor');
+    activityReads.push(cursor);
+    return Response.json(cursor ? { items: [{ id: 'shared' }, { id: 'older' }], next_cursor: null, older_versions: true }
+      : { items: [{ id: `new-${writes}` }, { id: 'shared' }], next_cursor: 'opaque + cursor', older_versions: false });
+  }) as unknown as typeof fetch;
+  function Probe() {
+    comments = hooks.useArtifactComments('project-a', 'artifact-a');
+    context = hooks.useArtifactCommentContext('project-a', 'artifact-a');
+    infinite = hooks.useInfiniteArtifactActivity('project-a', 'artifact-a', { limit: 2 });
+    return null;
+  }
+  await act(async () => { renderer = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe))); });
+  await settle();
+  expect(infinite!.items.map((item) => item.id)).toEqual(['new-0', 'shared']);
+  await act(async () => { await infinite!.fetchNextPage(); });
+  await settle();
+  expect(activityReads).toEqual([null, 'opaque + cursor']);
+  expect(infinite!.items.map((item) => item.id)).toEqual(['new-0', 'shared', 'older']);
+  expect(infinite!.hasNextPage).toBe(false);
+  expect(infinite!.olderVersions).toBe(true);
+  await act(async () => { await comments.reply('thread-a', { body: 'New reply.' }); });
+  await settle();
+  expect(contextReads).toBe(2);
+  expect(context!.data?.comment_count).toBe(1);
+  expect(infinite!.items.map((item) => item.id)).toEqual(['new-1', 'shared', 'older']);
+});
+
+test('missing scope disables context and infinite activity without network requests', async () => {
+  function Probe() {
+    hooks.useArtifactCommentContext(null, null);
+    hooks.useInfiniteArtifactActivity(null, null);
+    return null;
+  }
+  await act(async () => { renderer = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe))); });
+  await settle();
+  expect(globalThis.fetch).not.toHaveBeenCalled();
+});

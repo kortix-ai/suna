@@ -8,6 +8,8 @@ export function bindProjectArtifacts(projectId: string) {
       comments: {
         list: (...args: DropFirst<Parameters<typeof P.listArtifactComments>>) => P.listArtifactComments(projectId, ...args),
         get: (...args: DropFirst<Parameters<typeof P.getArtifactCommentThread>>) => P.getArtifactCommentThread(projectId, ...args),
+        context: (...args: DropFirst<Parameters<typeof P.getArtifactCommentContext>>) => P.getArtifactCommentContext(projectId, ...args),
+        snapshot: (...args: DropFirst<Parameters<typeof P.readArtifactCommentSnapshot>>) => P.readArtifactCommentSnapshot(projectId, ...args),
         create: (...args: DropFirst<Parameters<typeof P.createArtifactComment>>) => P.createArtifactComment(projectId, ...args),
         reply: (...args: DropFirst<Parameters<typeof P.replyArtifactComment>>) => P.replyArtifactComment(projectId, ...args),
         setStatus: (...args: DropFirst<Parameters<typeof P.setArtifactCommentStatus>>) => P.setArtifactCommentStatus(projectId, ...args),
