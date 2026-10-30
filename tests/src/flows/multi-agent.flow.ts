@@ -99,7 +99,8 @@ flow(
         if (Date.now() - started > 1_000) throw new Error(`send took ${Date.now() - started} ms; it must not wait for the receiver`);
         messageId = res.json<SendResult>().message!.id;
         const rows = await peerRows(ctx, reviewer);
-        if (rows.length !== 1 || rows[0]!.status !== 'queued' || rows[0]!.delivery !== 'steer' || rows[0]!.author !== lead) throw new Error(JSON.stringify(rows));
+        // Queued, or already claimed by the drain the send kicked; never failed for want of a box.
+        if (rows.length !== 1 || !['queued', 'running'].includes(rows[0]!.status) || rows[0]!.delivery !== 'steer' || rows[0]!.author !== lead) throw new Error(JSON.stringify(rows));
         if (!rows[0]!.text.startsWith(`[message from lead · session ${lead.slice(0, 8)} · #${messageId} · review PR 12]\n\nReview PR 12, focus on the parser.\n`)) {
           throw new Error(`delivered text: ${rows[0]!.text.slice(0, 200)}`);
         }
@@ -185,8 +186,12 @@ flow(
       let second = '';
       await ctx.step('hold → held, no delivery row; the target lists both held messages', async () => {
         (await owner.put(INBOUND, { inbound: 'hold' }, { params: { ...p, sessionId: target } })).status(200);
-        first = (await send({ to: 'target', message: 'may I start the deploy?' })).status(200).body().has('$.status', 'held').json<SendResult>().message!.id;
-        second = (await send({ to: 'target', message: 'second question' })).status(200).body().has('$.status', 'held').json<SendResult>().message!.id;
+        const a = (await send({ to: 'target', message: 'may I start the deploy?' })).status(200);
+        a.body().has('$.status', 'held');
+        first = a.json<SendResult>().message!.id;
+        const b = (await send({ to: 'target', message: 'second question' })).status(200);
+        b.body().has('$.status', 'held');
+        second = b.json<SendResult>().message!.id;
         if ((await peerRows(ctx, target)).length !== 0) throw new Error('a held message was delivered');
         (await owner.get(`${SEND}?direction=in`, { params: { ...p, sessionId: target } })).status(200).body().has('$.messages.length', 2).has('$.messages[0].status', 'held');
       });
