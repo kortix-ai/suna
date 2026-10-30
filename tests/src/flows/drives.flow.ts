@@ -289,3 +289,121 @@ flow(
     });
   },
 );
+
+flow(
+  'DRIVE-3',
+  {
+    domain: 'drives',
+    // One wait for every API process to see the new member (≤45 s).
+    timeoutMs: 300_000,
+    routes: [
+      'POST /v1/drives/:driveId/files/upload',
+      'PUT /v1/drives/:driveId/files/upload/:uploadId/blocks/:sha',
+      'POST /v1/drives/:driveId/files/upload/:uploadId/commit',
+    ],
+  },
+  async (ctx) => {
+    const { createHash } = await import('node:crypto');
+    const sha = (data: string | Uint8Array) => createHash('sha256').update(data).digest('hex');
+    const MiB = 1024 * 1024;
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'user');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const asMember = ctx.client.as(member);
+    const listFiles = { query: { projectId: project.id } };
+    const setVolumes = (enabled: boolean | null) =>
+      owner.patch('/v1/projects/:projectId/features', { feature: 'volumes', enabled }, { params: { projectId: project.id } });
+    // Two blocks: one full 1 MiB block and a 10-byte tail.
+    const content = 'a'.repeat(MiB) + 'tail-bytes';
+    const blocks = [sha(content.slice(0, MiB)), sha(content.slice(MiB))];
+    let driveId = '';
+    let ownerFolder = '';
+    let path = '';
+    let uploadId = '';
+    let storage = true;
+    const block = (id: string, s: string) => ({ params: { driveId, uploadId: id, sha: s } });
+
+    try {
+      await ctx.step('the project admin turns Volumes on; OWNER and the member open Files', async () => {
+        (await setVolumes(true)).status(200);
+        const drive = (await owner.get('/v1/drives', listFiles)).status(200).json<{ drives: any[] }>().drives[0];
+        driveId = drive.driveId;
+        ownerFolder = drive.personalFolder;
+        await waitForFilesStatus(ctx, listFiles, 200, member);
+        const mine = (await asMember.get('/v1/drives', listFiles)).status(200).json<{ drives: any[] }>().drives[0];
+        path = `${mine.personalFolder}/big.bin`;
+      });
+
+      await ctx.step('ANON cannot plan an upload → 401', async () => {
+        (await ctx.client.as(ctx.P.ANON).post('/v1/drives/:driveId/files/upload', { path, size: content.length, blocks }, { params: { driveId } })).status(401);
+      });
+
+      await ctx.step("the member plans into OWNER's private folder → 404; a wrong block count → 400", async () => {
+        (await asMember.post('/v1/drives/:driveId/files/upload', { path: `${ownerFolder}/x.bin`, size: content.length, blocks }, { params: { driveId } })).status(404);
+        (await asMember.post('/v1/drives/:driveId/files/upload', { path, size: content.length, blocks: blocks.slice(0, 1) }, { params: { driveId } })).status(400);
+        (await asMember.post('/v1/drives/:driveId/files/upload', { path, size: content.length, blocks: ['NOT-A-SHA', blocks[1]] }, { params: { driveId } })).status(400);
+      });
+
+      await ctx.step('the member plans a 2-block file in their folder → 200: an upload id and the blocks storage lacks', async () => {
+        const r = await asMember.post('/v1/drives/:driveId/files/upload', { path, size: content.length, blocks }, { params: { driveId } });
+        if (r.statusCode === 503) {
+          r.body().has('$.code', 'drive_storage_unavailable');
+          storage = false;
+          return;
+        }
+        const planned = r.status(200).json<{ uploadId: string; missing: string[] }>();
+        uploadId = planned.uploadId;
+        if (!uploadId || !planned.missing.every((m) => blocks.includes(m))) throw new Error(`plan ${r.text()}`);
+      });
+      if (!storage) return;
+
+      await ctx.step("OWNER cannot use the member's upload id, and a changed id is refused → 404 upload_not_found", async () => {
+        (await owner.put('/v1/drives/:driveId/files/upload/:uploadId/blocks/:sha', content.slice(0, MiB), { ...block(uploadId, blocks[0]!), raw: true }))
+          .status(404)
+          .body()
+          .has('$.code', 'upload_not_found');
+        (await owner.post('/v1/drives/:driveId/files/upload/:uploadId/commit', {}, { params: { driveId, uploadId } })).status(404);
+        (await asMember.post('/v1/drives/:driveId/files/upload/:uploadId/commit', {}, { params: { driveId, uploadId: `${uploadId}x` } })).status(404);
+      });
+
+      await ctx.step('a block over 1 MiB → 413; a block name that is not a sha256 → 400', async () => {
+        (await asMember.put('/v1/drives/:driveId/files/upload/:uploadId/blocks/:sha', `${content.slice(0, MiB)}x`, { ...block(uploadId, blocks[0]!), raw: true })).status(413);
+        (await asMember.put('/v1/drives/:driveId/files/upload/:uploadId/blocks/:sha', 'x', { ...block(uploadId, 'nope'), raw: true })).status(400);
+      });
+
+      await ctx.step('the member sends both blocks (each twice: safe to resend) → 204, and commits → 200 {path,size}', async () => {
+        for (const [i, part] of [content.slice(0, MiB), content.slice(MiB)].entries()) {
+          for (let n = 0; n < 2; n++) {
+            (await asMember.put('/v1/drives/:driveId/files/upload/:uploadId/blocks/:sha', part, { ...block(uploadId, blocks[i]!), raw: true })).status(204);
+          }
+        }
+        (await asMember.post('/v1/drives/:driveId/files/upload/:uploadId/commit', {}, { params: { driveId, uploadId } }))
+          .status(200)
+          .body()
+          .has('$.path', path)
+          .has('$.size', content.length);
+      });
+
+      await ctx.step('the file reads back byte for byte (sha256 equal); OWNER still cannot read it → 404', async () => {
+        const read = (await asMember.get('/v1/drives/:driveId/files/content', { params: { driveId }, query: { path } })).status(200);
+        if (read.text().length !== content.length || sha(read.text()) !== sha(content)) throw new Error(`read back ${read.text().length} bytes`);
+        (await owner.get('/v1/drives/:driveId/files/content', { params: { driveId }, query: { path } })).status(404);
+      });
+
+      await ctx.step('a plan with a stale If-Match → 409 file_changed', async () => {
+        (await asMember.post('/v1/drives/:driveId/files/upload', { path, size: content.length, blocks }, { params: { driveId }, headers: { 'if-match': '"stale-version"' } }))
+          .status(409)
+          .body()
+          .has('$.code', 'file_changed');
+      });
+
+      await ctx.step('cleanup: the member deletes the file → 204', async () => {
+        (await asMember.del('/v1/drives/:driveId/files', { params: { driveId }, query: { path } })).status(204);
+      });
+    } finally {
+      await setVolumes(null).catch(() => undefined);
+    }
+  },
+);

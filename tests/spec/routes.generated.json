@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 992,
+  "count": 995,
   "routes": [
     {
       "method": "GET",
@@ -1517,6 +1517,18 @@
     {
       "method": "POST",
       "path": "/v1/drives/:driveId/files/move"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/drives/:driveId/files/upload"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/drives/:driveId/files/upload/:uploadId/blocks/:sha"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/drives/:driveId/files/upload/:uploadId/commit"
     },
     {
       "method": "GET",
