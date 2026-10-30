@@ -49,20 +49,25 @@ flow('INIT-1', { domain: 'cli', routes: [] }, async (ctx) => {
           true,
           sb.exists('init-one/kortix.yaml'),
         );
-        // The kortix_version 3 layout: every folder at the root, no harness
-        // folder and no .kortix/ folder.
-        for (const path of ['agents/kortix.md', 'skills/kortix-cli/SKILL.md', 'memory/MEMORY.md']) {
+        // The v3 root layout: one worker agent, its skills and memory at the
+        // root, no harness folder and no .kortix/ folder.
+        for (const path of [
+          'agents/worker.md',
+          'skills/kortix-cli/SKILL.md',
+          'memory/MEMORY.md',
+        ]) {
           check(`${path} written`, sb.exists(`init-one/${path}`), true, sb.exists(`init-one/${path}`));
         }
         check('no harnesses/ folder', !sb.exists('init-one/harnesses'), false, sb.exists('init-one/harnesses'));
         check('no .kortix/ folder', !sb.exists('init-one/.kortix'), false, sb.exists('init-one/.kortix'));
         const manifest = readFileSync(join(sb.cwd, 'init-one', 'kortix.yaml'), 'utf8');
         check(
-          'kortix.yaml is kortix_version 3 and names the agent prompt file',
-          manifest.includes('kortix_version: 3') && manifest.includes('prompt_file: agents/kortix.md'),
+          'kortix.yaml declares the worker agent as the default and names its prompt file',
+          manifest.includes('default_agent: worker') && manifest.includes('prompt_file: agents/worker.md'),
           true,
-          manifest.includes('kortix_version: 3'),
+          manifest.includes('default_agent: worker') && manifest.includes('prompt_file: agents/worker.md'),
         );
+        check('no harness folder', !sb.exists('init-one/harnesses'), false, sb.exists('init-one/harnesses'));
         // codex is the default primary → AGENTS.md pointer is wired.
         check(
           'AGENTS.md (codex default) wired',
@@ -125,6 +130,12 @@ flow('INIT-3', { domain: 'cli', routes: [] }, async (ctx) => {
         // Selected agents' native dirs are symlinks onto the shared folders;
         // existsSync follows the link, so a resolving path proves it works.
         check('no .opencode link', !sb.exists('wired/.opencode'), false, sb.exists('wired/.opencode'));
+        check(
+          '.claude/agents → agents resolves to the worker agent',
+          sb.exists('wired/.claude/agents/worker.md'),
+          true,
+          sb.exists('wired/.claude/agents/worker.md'),
+        );
         check(
           '.agents/skills → skills resolves (Codex reads it natively)',
           sb.exists('wired/.agents/skills/kortix-cli/SKILL.md'),

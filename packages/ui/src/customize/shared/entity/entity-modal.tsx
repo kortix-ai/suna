@@ -47,6 +47,17 @@ export interface EntityDetailEntity {
   description: string | null;
 }
 
+/**
+ * Where the modal reads the entity's files when they are not in the project's
+ * repo: a Kortix built-in skill ships with Kortix (`getBuiltinSkill`). `key`
+ * scopes the cache. With a source the modal is read-only: no Edit, no Remove.
+ */
+export interface EntityFileSource {
+  key: string;
+  list: () => Promise<{ path: string }[]>;
+  read: (path: string) => Promise<{ content: string }>;
+}
+
 export interface EntityDetailModalProps {
   projectId: string;
   /** The skill/command to show, or `null` when it has not resolved yet. `open`
@@ -75,6 +86,8 @@ export interface EntityDetailModalProps {
    *  the modal when the refetched config drops the skill. The agent editor
    *  does not, because its unsaved draft could grant the removed skill again. */
   removable?: boolean;
+  /** Read the files from here instead of the project's repo (read-only). */
+  source?: EntityFileSource;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -128,6 +141,7 @@ export function EntityDetailModal({
   meta,
   paneOverride,
   removable = false,
+  source,
   onOpenChange,
 }: EntityDetailModalProps) {
   // A skill/command with no description renders no `ModalDescription`, so
@@ -155,6 +169,7 @@ export function EntityDetailModal({
             meta={meta}
             paneOverride={paneOverride}
             removable={removable}
+            source={source}
           />
         ) : isResolving ? (
           <EntityModalSkeleton kind={kind} />
@@ -212,6 +227,7 @@ function EntityModalBody({
   meta,
   paneOverride,
   removable,
+  source,
 }: {
   projectId: string;
   entity: EntityDetailEntity;
@@ -220,6 +236,7 @@ function EntityModalBody({
   meta?: ReactNode;
   paneOverride?: ReactNode;
   removable: boolean;
+  source?: EntityFileSource;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const configure = useConfigureThread(projectId);
@@ -244,9 +261,9 @@ function EntityModalBody({
   // Not fetched at all for a single-file kind: the listing would be every
   // sibling entity's source, and nothing renders it (see OWNS_ITS_DIRECTORY).
   const filesQuery = useQuery({
-    queryKey: ['entity-files', projectId, dir],
-    queryFn: () => listProjectFiles(projectId, { path: dir }),
-    enabled: hasFileRail && dir !== '',
+    queryKey: source ? ['entity-files', source.key] : ['entity-files', projectId, dir],
+    queryFn: () => (source ? source.list() : listProjectFiles(projectId, { path: dir })),
+    enabled: hasFileRail && (!!source || dir !== ''),
     staleTime: 30_000,
   });
 
@@ -256,8 +273,8 @@ function EntityModalBody({
   );
 
   const fileQuery = useQuery({
-    queryKey: ['entity-file-content', projectId, selectedPath],
-    queryFn: () => readProjectFile(projectId, selectedPath),
+    queryKey: source ? ['entity-file-content', source.key, selectedPath] : ['entity-file-content', projectId, selectedPath],
+    queryFn: () => (source ? source.read(selectedPath) : readProjectFile(projectId, selectedPath)),
     staleTime: 30_000,
   });
 
@@ -271,7 +288,8 @@ function EntityModalBody({
   // React tree on purpose: rendered as a sibling, Radix would read every
   // click in the alert as an outside-click and dismiss the modal underneath
   // (see packages/ui/src/primitives/alert-dialog.tsx).
-  const editButton = canWrite ? (
+  // Kortix's own files (a `source`) are read-only here.
+  const editButton = canWrite && !source ? (
     <EntityEditButton
       name={entity.name}
       pending={configure.pending}

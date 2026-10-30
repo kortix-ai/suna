@@ -49,16 +49,16 @@ const fakeProject = () => ({
 });
 
 describe('loadProjectAgents — blank managed project (no manifest committed yet)', () => {
-  test('synthesizes the same declared "kortix" default agent loadManifestForEdit promises', async () => {
+  test('synthesizes the same declared "worker" default agent loadManifestForEdit promises', async () => {
     manifestFile = null; // brand-new repo, nothing committed yet
 
     const loaded = await loadProjectAgents(fakeProject());
 
     expect(loaded.errors).toEqual([]);
-    expect(loaded.defaultAgent).toBe('kortix');
-    expect(loaded.specs.map((s) => s.name)).toEqual(['kortix']);
+    expect(loaded.defaultAgent).toBe('worker');
+    expect(loaded.specs.map((s) => s.name)).toEqual(['worker']);
     expect(loaded.specs[0]).toMatchObject({
-      name: 'kortix',
+      name: 'worker',
       enabled: true,
       connectors: 'all',
       permissions: 'all',
@@ -66,7 +66,7 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
       // KRTX-165: no human declared it, so it keeps the project checkout.
       repositoryAccess: true,
     });
-    expect(repositoryAccessFromLoadedAgents('kortix', loaded)).toBe(true);
+    expect(repositoryAccessFromLoadedAgents('worker', loaded)).toBe(true);
   });
 
   // GAP 1 (dev-live repro): sessions.ts resolves the launching agent through
@@ -88,18 +88,18 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
     expect(governed.ok).toBe(true);
     if (!governed.ok) return;
     expect(governed.grant).toEqual({
-      agent: 'kortix',
+      agent: 'worker',
       connectors: 'all',
       permissions: 'all',
       env: 'all',
     });
   });
 
-  test('the synthesized "kortix" agent also resolves when named explicitly', async () => {
+  test('the synthesized "worker" agent also resolves when named explicitly', async () => {
     manifestFile = null;
 
     const loaded = await loadProjectAgents(fakeProject());
-    const governed = resolveGovernedAgentGrant('kortix', loaded, {
+    const governed = resolveGovernedAgentGrant('worker', loaded, {
       subject: true,
       projectDefaultAgent: null,
     });

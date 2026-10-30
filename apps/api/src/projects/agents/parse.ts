@@ -12,6 +12,7 @@ import {
   type GrantSetV2,
 } from '@kortix/manifest-schema';
 import { normalizeRequiredConnectorAliases, readAgentBlockV2 } from '../lib/agent-config-v2';
+import { declaredBuiltinAgents } from '../lib/platform-meta-agent';
 import {
   MANIFEST_FILENAME,
   type AgentParseError,
@@ -200,7 +201,7 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
  * `readManifest`'s literal `null` → zero declared agents → every
  * declared-agent check (`resolveGovernedAgentGrant`) 400'd AGENT_NOT_DECLARED
  * even though the project "should" already resolve to the synthesized
- * `kortix` default agent with zero writes. Synthesizing here too closes that
+ * `worker` default agent with zero writes. Synthesizing here too closes that
  * gap — a blank project's very first session-create with no agent forced now
  * resolves the same declared default the write path already promises.
  */
@@ -242,6 +243,7 @@ export async function loadProjectAgents(
   if (!manifest) manifest = synthesizeBlankManifest({ manifestPath: project.manifestPath });
   return {
     ...extractAgents(manifest),
+    builtinAgents: declaredBuiltinAgents(manifest.raw),
     manifest: { revision: manifest.revision ?? null, commit: manifest.commit ?? null },
   };
 }

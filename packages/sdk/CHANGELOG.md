@@ -5,6 +5,33 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (built-in skills)
+- `getBuiltinSkill(name)` and the `BuiltinSkill` / `BuiltinSkillReference` types: one skill Kortix
+  ships (`GET /v1/skills/:name`), with its description, the full SKILL.md body, the feature flag
+  that gates it, and its reference files. A built-in skill is not a file in the project's repo.
+  `getBuiltinSkill(name, { full: true })` also inlines each reference file's `content`.
+
+### Added (project catalog, project mounts)
+- `getProjectCapabilities(projectId)` and the `ProjectCapabilities` type: every tool, skill and
+  extension any agent of the project can be given (`GET /projects/:id/capabilities`).
+- `listProjectMounts(driveId)`, `projectMountsQueryOptions` and `useProjectMounts`: the Files folders
+  every new session of the project mounts (`GET /drives/:driveId/mounts`).
+- `FeatureFlagView.wip`: the flag is work in progress and not recommended yet. Optional.
+
+### Added (agent mounts)
+- `listAgentMounts(driveId, agentName)`, `agentMountsQueryOptions` and `useAgentMounts`, with the
+  `AgentMount` and `AgentMountPlan` types: the Files folders a new session of an agent mounts, at
+  which `/drives/...` path, read-only or not, and through the agent's own grant or the project's
+  (`GET /drives/:driveId/agents/:agentName/mounts`).
+
+### Added (spaces)
+- Spaces are channels: `kortix.yaml` `spaces.<slug>` (label, description, order, `header`, `tabs`) and
+  `agents.<name>.space`. `ProjectConfigSummary.spaces`, each agent's `space`, and `AgentConfigBlock.space`.
+- Types `ProjectSpace`, `SpaceTab`, `SpaceTabType`, `SpaceBlock`, `SpaceHeaderItem`, `SpaceGroup` and
+  `ResourceBinding`; helpers `listSpaces`, `groupBySpace`, `bindingSpace`, `agentsInSpace`, `spaceTabs`,
+  `spaceTabKey`, `spaceHeader`, and the constants `PROJECT_WIDE_SPACE`, `DEFAULT_SPACE_TABS`,
+  `DEFAULT_SPACE_HEADER`.
+
 ### Added (portrait image grids)
 - `ImageGenGrid.strip`: `true` when the run's first call asks for portrait images (taller than
   wide). Every row of a strip is its tiles side by side, up to four, the rows as even as they split
@@ -131,6 +158,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (a human owner or project manager who can read it). Single-session reads only; absent means unknown.
 - `getPublicResponse` and the `PublicResponse` type: the anonymous read of a shared response
   (`GET /public/responses/:token`); `prompt` is null unless the sharer included it. Throws `HostBoundaryError` with `status` 404 or 410.
+
+### Changed (generative UI is always on)
+- `FeatureFlagKey` `'genui'` is deprecated and no longer a flag: absent from `FEATURE_FLAG_KEYS`
+  and from the feature-flag catalog. The API sends `experimental.genui: true` for every project,
+  and `useFeatureFlag(id, 'genui')` reports `true`. `KortixProject.experimental.genui` is optional
+  in the type.
 
 ### Changed (pi runs every new session; OpenCode is sunset)
 - `FeatureFlagKey` `'pi_harness'` is deprecated and no longer a flag: absent from `FEATURE_FLAG_KEYS`

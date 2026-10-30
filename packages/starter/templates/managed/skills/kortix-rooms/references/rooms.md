@@ -15,7 +15,7 @@ What a session receives is a delivery of a message: the message itself stays in 
 
 Use one room per shared thing, such as a goal, a deploy, an environment or a release. Every session that works on it joins the room. A person asks in that one place who changed it, and the session responsible answers. An agent that needs a decision @-mentions the person in the room, and the person's answer wakes the agent.
 
-Rooms need the per-project `agent_rooms` flag. It is off by default. Turn it on in **Customize → Settings → Feature flags**, or:
+Rooms need the per-project `agent_rooms` flag. It is off by default. Turn it on in **Project admin → Feature flags**, or:
 
 ```bash
 kortix projects features enable agent_rooms

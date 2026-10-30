@@ -72,6 +72,13 @@ describe('denial', () => {
     expect(denial(['migrate', '--write'])?.use).toContain('`kortix migrate` there');
   });
 
+  test('loop and loops run, and the old remind and reminders aliases still run', () => {
+    expect(denial(['loop', 'check the build', '--in', '1h'])).toBeNull();
+    expect(denial(['loops', 'ls', '--json'])).toBeNull();
+    expect(denial(['remind', 'check the build', '--in', '1h'])).toBeNull();
+    expect(denial(['reminders', 'ls'])).toBeNull();
+  });
+
   test('apps list and create run; token points at a session sandbox', () => {
     expect(denial(['apps', 'list'])).toBeNull();
     expect(denial(['apps', 'create', 'main'])).toBeNull();

@@ -18,6 +18,8 @@ const SCRIPT = 'apps/web/scripts/generate-cli-commands-doc.mjs';
 const UNDOCUMENTED = {
   // Attaches the OpenCode TUI; a pi session has no `session.attach` and the command exits 1.
   connect: 'OpenCode only',
+  // Served only where KORTIX_CHROME_ENABLED is on (dev) until the Chrome Web Store listing is public.
+  chrome: 'not launched',
 };
 
 /** The usage cell, where the table's arguments name more than the docs describe. */
@@ -62,15 +64,14 @@ const COMMANDS = {
   env: ['Pull secret names into a `.env` file, or push a `.env` file as secrets.', '[Security](/docs/guide#security)'],
   channels: ['Slack and Microsoft Teams connections, and the agent each channel runs.', '[Channels](/docs/guide#channels)'],
   sandboxes: ['Sandbox templates, their builds and their health.', '[Computers](/docs/guide#computers)'],
-  chrome: ['Attach your connected Chrome to the session, and release it. The browser then answers on port 9333 for any DevTools Protocol client.', '[Kortix in Chrome](/docs/connect/chrome)'],
   apps: ['Deploy and manage Apps: sites and servers with stable Kortix URLs.', '[Apps reference](/docs/developers#apps-reference)'],
   marketplace: ['Search, show, install and uninstall marketplace skills.', '[Skills](/docs/guide#skills)'],
   files: ['Read the committed repository: files, history, branches, commits, diffs and a zip download.', '[Git](/docs/developers#git)'],
   drive: ["The project's Drive: list, read, upload, move and delete files, and share folders.", '[Drive](/docs/guide#drive)'],
   cr: ['Change requests: list, show, diff, open, merge, request changes, close and reopen.', '[Git](/docs/developers#git)'],
   review: ['The review inbox: change requests, held connector calls and submitted outputs.', '[Git](/docs/developers#git)'],
-  triggers: ['List, add, fire, enable, disable, pause and resume triggers.', '[Automations](/docs/guide#automations)'],
-  reminders: ['Prompt one session later or on repeat. `kortix remind "…" --in 24h` adds one.', '[Automations](/docs/guide#automations)'],
+  triggers: ['Every trigger, `kortix.yaml` and runtime: `ls` lists both, `add` writes `kortix.yaml` (with `--on`, `--session` or `--runtime` it creates a runtime trigger), `fire`, `enable`, `disable`, `run`, `pause`, `resume` and `rm` take a slug or a runtime id.', '[Triggers](/docs/guide#triggers)'],
+  loops: ['A schedule into one session (a loop: a trigger that wakes the session that created it). `kortix loop "…" --in 24h` adds one. Alias: `reminders`.', '[Triggers](/docs/guide#triggers)'],
   capture: ['Search the Capture timeline of the person you act for. Capture is off until an account admin turns it on.', '[Capture](/docs/capture)'],
   access: ['Grant, list and revoke role assignments for people, groups and agents.', '[Teams](/docs/guide#teams)'],
   roles: ['System and custom roles, and what each one permits.', '[Teams](/docs/guide#teams)'],

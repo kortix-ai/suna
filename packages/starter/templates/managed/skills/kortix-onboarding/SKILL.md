@@ -28,7 +28,7 @@ Every feature is one part of that layer. Explain a feature by the part it plays:
 |---|---|---|
 | All data in one place | The company's knowledge, files and context, readable by every agent | Memory (the person's and the company's), Drive, connectors that read from every system |
 | All software in one place | Agents act inside the software the company already runs, and build what is missing | Connectors (3,000+ apps in a click; connector credentials never enter the machine), Apps (internal tools and dashboards, hosted with sign-in) |
-| The operational layer | Work runs on its own: in parallel, on a schedule, where the team talks | Sessions (each on its own isolated machine), triggers and reminders, Slack and Microsoft Teams |
+| The operational layer | Work runs on its own: in parallel, on a schedule, where the team talks | Sessions (each on its own isolated machine), triggers and loops, Slack and Microsoft Teams |
 | Control | People stay in charge of what changes | Session work reaches `main` through a change request a person approves; permissions per person and agent; every action recorded |
 
 Say what is true today in the present tense and what the company is building
@@ -319,11 +319,16 @@ the features you have. Name what comes next for each part in one line.
 
 Propose three concrete first tasks built from their own words in stages 1–4 as
 a GenUI `RankedList`, then one `question` with those three as options plus
-`custom`. Do the chosen task end to end, in this session, until it ends in a
-real object: a file, an artifact, a hosted App, a sent message, a filled sheet.
+`custom`. Do the chosen task end to end until it ends in a real object: a
+file, an artifact, a hosted App, a sent message, a filled sheet. A task a
+project agent is made for goes to that agent with the `agent` tool (default
+`session: "separate"`): one call starts its session, waits and returns its
+final message. Ask it to end with the result and the paths of its files, and
+show that. Never delegate or wait with `kortix sessions new`, `kortix sessions
+wait-for` or `kortix sessions cp`.
 
 Then take the next step toward the self-driving company: offer to run the task
-on a schedule (a trigger) or to check back later (`kortix remind`), and set it
+on a schedule (a trigger) or to check back later (a loop: `kortix loop`), and set it
 up on a yes. Say it in those terms: "This is one piece of <company> running on
 its own."
 

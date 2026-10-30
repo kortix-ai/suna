@@ -71,6 +71,13 @@ export function planSkillRemoval(
           agent.skills = agent.skills.filter(
             (skill) => typeof skill !== "string" || !removedNames.has(skill),
           );
+        // `{ exclude }` names the skill too; a removed skill leaves it.
+        else if (isRecord(agent.skills) && Array.isArray(agent.skills.exclude))
+          agent.skills = {
+            exclude: agent.skills.exclude.filter(
+              (skill) => typeof skill !== "string" || !removedNames.has(skill),
+            ),
+          };
         return [key, agent];
       }),
     );

@@ -41,6 +41,7 @@ import {
   type AgentBlockV2,
   type ManifestIssue,
   SLUG_RE,
+  SPACE_SLUG_RE,
   validateAgentMdFrontmatter,
 } from '@kortix/manifest-schema';
 import { eq } from 'drizzle-orm';
@@ -49,6 +50,8 @@ import { RESPONSE_ISSUE_LIMIT, auth, boundedIssues, errors, json } from '../../o
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { extractAgents, agentNotDeclaredError, grantsByAgent } from '../agents';
+import { projectBuiltinAgents } from '../lib/builtin-agents';
+import { builtinAgentConfigView, builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/platform-meta-agent';
 import { assertNoGrantEscalation, changedPolicySet } from '../../iam/agent-grant-ceiling';
 import { isRepoFileNotFoundError, readRepoFile } from '../git';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
@@ -91,6 +94,14 @@ const GrantSetSchema = z.union([
   z.array(z.string().min(1).max(200)).max(500),
 ]);
 
+// `agents.<name>.skills` / `.extensions` (v3): a grant set, or `{ exclude }`:
+// every registered name but those. validateManifest refuses the exclude form
+// on a v2 manifest and checks every name.
+const ExcludableGrantSetSchema = z.union([
+  GrantSetSchema,
+  z.object({ exclude: z.array(z.string().min(1).max(200)).max(500) }).strict(),
+]);
+
 // `agents.<name>.tools` (`AgentToolsV2`): all/none, an allowlist, an
 // exclude list, or the earlier name → boolean map. validateManifest checks the names.
 const AgentToolsSchema = z.union([
@@ -111,6 +122,9 @@ const AgentBlockSchema = z
     enabled: z.boolean().optional(),
     tools: AgentToolsSchema.optional(),
     sandbox: z.string().min(1).max(128).regex(SLUG_RE).optional(),
+    // The agent's space (`agents.<name>.space`). Grouping only,
+    // version-agnostic. Empty string clears it (the handler drops empties).
+    space: z.union([z.literal(''), z.string().min(1).max(63).regex(SPACE_SLUG_RE)]).optional(),
     connectors: GrantSetSchema.optional(),
     connectors_required: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
     // Deprecated request alias. The handler normalizes it before serialization.
@@ -119,14 +133,14 @@ const AgentBlockSchema = z
     // value; a PUT that changes it needs project.connector.write too.
     policy_sets: z.record(z.string().min(1).max(128), z.string().max(64)).optional(),
     secrets: GrantSetSchema.optional(),
-    skills: GrantSetSchema.optional(),
+    skills: ExcludableGrantSetSchema.optional(),
     // Kortix Apps (by slug) this agent may open when restricted/private (§2.5).
     apps: GrantSetSchema.optional(),
     kortix_permissions: GrantSetSchema.optional(),
     // kortix_version 3 grants. A PUT that omits one keeps the declared value.
     subagents: GrantSetSchema.optional(),
     commands: GrantSetSchema.optional(),
-    extensions: GrantSetSchema.optional(),
+    extensions: ExcludableGrantSetSchema.optional(),
     codemode: z.enum(['on', 'only', 'off']).optional(),
     // Deprecated request alias of kortix_permissions. The handler normalizes it
     // (normalizeKortixPermissionAliases) before serialization.
@@ -143,8 +157,16 @@ const AgentBlockSchema = z
     behavior: OpencodeAgentConfigSchema.optional(),
     // The pre-W4 name of `behavior`; see resolveBehaviorDraft.
     opencode: OpencodeAgentConfigSchema.optional(),
+    // Server-owned (SERVER_KEPT_KEYS): the GET returns them, so a GET → PUT
+    // round trip carries them back. The handler drops them and the declared
+    // value stays. Strict-rejecting them made every save of such an agent 400.
+    network_egress: z.unknown().optional(),
+    harnesses: z.unknown().optional(),
   })
   .strict();
+
+/** Block keys this editor never writes: a PUT keeps the declared value. */
+const SERVER_KEPT_KEYS = new Set(['network_egress', 'harnesses']);
 
 const DefaultAgentBodySchema = z.object({ agent: z.string().min(1).max(200) });
 const DefaultAgentResponseSchema = z.object({
@@ -284,6 +306,12 @@ export function registerAgentConfigRoutes(): void {
 
       const read = readAgentBlockV2(manifest, agentName);
       if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
+
+      // A built-in agent the project runs (My Kortix, slug `meta`) is listed by
+      // /detail but declared nowhere in kortix.yaml. Its config is
+      // platform-owned: answer the read-only view, never the roster 404.
+      const builtinKey = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw, loaded.row.metadata));
+      if (builtinKey) return c.json(builtinAgentConfigView(builtinKey, read.schemaVersion, read.defaultAgent));
 
       // A name the manifest does not declare is a 404, not an empty success:
       // the dashboard's editor contract says a missing agent answers 404 (its
@@ -492,6 +520,8 @@ export function registerAgentConfigRoutes(): void {
         behavior: behaviorName,
         opencode: preW4BehaviorName,
         file: requestedFile,
+        network_egress: _declaredEgress,
+        harnesses: _declaredHarnesses,
         ...governanceRaw
       } = parsed.data;
       const normalizedGovernance = normalizeRequiredConnectorAliases(governanceRaw);
@@ -500,7 +530,11 @@ export function registerAgentConfigRoutes(): void {
       }
       const governanceBlock: AgentBlockV2 = {};
       for (const [key, value] of Object.entries(normalizedGovernance.block)) {
-        if (value !== undefined) (governanceBlock as Record<string, unknown>)[key] = value;
+        if (value === undefined) continue;
+        // `space: ''` clears it: the block is a whole-block replace, so leaving
+        // the key out removes it instead of writing an empty string.
+        if (key === 'space' && value === '') continue;
+        (governanceBlock as Record<string, unknown>)[key] = value;
       }
 
       let manifest;
@@ -513,6 +547,11 @@ export function registerAgentConfigRoutes(): void {
           400,
         );
       }
+
+      // A built-in agent's configuration is platform-owned: a write here would
+      // only add an `agents.meta` block that the platform ignores.
+      const builtinKey = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw, loaded.row.metadata));
+      if (builtinKey) return c.json(builtinAgentWriteRefusal(builtinKey), 409);
 
       if (governanceBlock.sandbox) {
         try {
@@ -556,6 +595,9 @@ export function registerAgentConfigRoutes(): void {
       // `policy_sets: {}` clears the agent's sets: write no key at all.
       const writtenBlock = (edit.raw.agents as Record<string, Record<string, unknown>> | undefined)?.[agentName];
       if (writtenBlock) dropEmptyPolicySets(writtenBlock);
+      // `tools` omitted is every tool, the one grant that defaults open: write
+      // it so the file says what the agent holds.
+      if (writtenBlock && writtenBlock.tools === undefined) writtenBlock.tools = 'all';
       // Re-parse through the runtime grant reader before committing.
       const parsedCheck = extractAgents({ ...manifest, raw: edit.raw });
       const parseProblem = parsedCheck.errors.find((e) => e.name === agentName);
@@ -678,7 +720,7 @@ async function prepareAgentConfigV2(
     // (`harnesses`, `network_egress`) are not this editor's to delete: keep
     // them, as the v3 write does.
     for (const [key, value] of Object.entries((currentBlock.ok && currentBlock.block) || {})) {
-      if (!(key in AgentBlockSchema.shape)) (governanceBlock as Record<string, unknown>)[key] = value;
+      if (!(key in AgentBlockSchema.shape) || SERVER_KEPT_KEYS.has(key)) (governanceBlock as Record<string, unknown>)[key] = value;
     }
     // `policy_sets` is in the schema (the GET → PUT round trip carries it) but
     // keeps the declared value when omitted, like the v3 grants.

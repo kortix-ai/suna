@@ -32,7 +32,6 @@ import { slackMessageLabels, type SlackMessageLabels } from './labels';
 import { modelReadsImages, NO_VISION_NOTE, promptModelOverride } from '../vision-model';
 import {
   type ChannelModelScope,
-  agentGrantEnvFor,
   planChannelFollowUp,
   planChannelSessionStart,
   projectChannelModelScope,
@@ -134,7 +133,6 @@ export async function slackFollowUpModel(input: {
     session: { sessionId: input.sessionId, ownerUserId: row?.createdBy ?? null, pinnedModel: pinned },
     chosenModel: null,
     hasImage,
-    agentGrantEnv: agentGrantEnvFor(input.project.projectId, row?.agentName),
   });
   return {
     model,
@@ -326,7 +324,6 @@ async function planSlackLaunch(
     chosenModel: selection?.opencodeModel,
     agentName: launchAgent,
     hasImage: slackMessageHasImage(event),
-    agentGrantEnv: agentGrantEnvFor(projectId, launchAgent),
   });
 
   if (start.unavailableModel) {

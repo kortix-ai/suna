@@ -107,7 +107,7 @@ for (const permission of [true, false, undefined]) {
     const mounted = renderer;
     try {
       const links = mounted.root.findAll(
-        (node) => node.props.href === '/projects/synthetic-project/customize/settings',
+        (node) => node.props.href === '/projects/synthetic-project/admin/general',
       );
       expect(links.length > 0).toBe(permission === true);
       if (permission === true)

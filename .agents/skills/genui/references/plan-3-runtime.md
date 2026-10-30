@@ -1,5 +1,7 @@
 # Generative UI — plan 3: project flag, kill switch, prompt injection, channel guards
 
+> **Superseded (2026-10-24):** generative UI is always on. The `genui` project flag, the `GENUI_ENABLED` kill switch and the `KORTIX_GENUI` sandbox env described below were deleted. Every session lists the `kortix-genui` system skill. See `../SKILL.md`.
+
 > **Superseded delivery (2026-10-13):** the prompt-injection tasks below (`genui-instruction.ts`, `/tmp/kortix/genui.md`, pi `genuiPromptSection`) were replaced by the `kortix-genui` managed system skill, which the flag shows or hides. See rule 4 in `../SKILL.md`. The flag, kill switch and channel-guard tasks still hold.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Load the **testing** skill before Task 1.

@@ -603,7 +603,7 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       expect(fires).toHaveLength(0);
     });
 
-    // KRTX-1721: Pause all automations stops app events in every project of the account.
+    // KRTX-1721: Pause all triggers stops app events in every project of the account.
     test('an account whose automations are paused skips the delivery; resuming fires it', async () => {
       await armed();
       await testDb().update(accounts).set({ automationsPausedAt: new Date() }).where(eq(accounts.accountId, ACCOUNT_ID));

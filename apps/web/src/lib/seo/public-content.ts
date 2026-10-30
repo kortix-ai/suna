@@ -637,6 +637,9 @@ function sourceDocuments(kind: 'docs' | 'use-case'): SourceDocument[] {
     const source = fs.readFileSync(sourcePath, 'utf8');
     const frontmatter = parseFrontmatter(source);
     if (frontmatter.draft === 'true' && process.env.NODE_ENV === 'production') return [];
+    // A `noindex` page is built and reachable by link, and nothing indexes it: not the sitemap,
+    // llms.txt, the Markdown copies or the agent APIs.
+    if (frontmatter.noindex === 'true') return [];
 
     const relative = path
       .relative(root, sourcePath)

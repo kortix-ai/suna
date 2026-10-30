@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useTranslations as useI18nTranslations } from '../../../i18n';
 /**
  * The first two sections of the agent editor: what the agent IS (Basics) and
@@ -130,6 +131,22 @@ export function BasicsSection({
         </Select>
       </SettingRow>
 
+      {/* The agent's space (`agents.<name>.space`): the space it works in.
+          A slug (`engineering`), or empty for Project-wide. Grouping only:
+          no behavior, no grants. */}
+      <SettingRow
+        label="Space"
+        help="The space this agent works in: a slug like engineering or sales. Empty: Project-wide."
+      >
+        <Input
+          aria-label="Space"
+          className="h-9 w-full sm:max-w-56"
+          value={draft.space ?? ''}
+          placeholder="e.g. engineering"
+          onChange={(e) => set('space', e.target.value.toLowerCase() || undefined)}
+        />
+      </SettingRow>
+
       {/* Stored as `hidden`, shown as "Show in pickers". A switch you turn ON
           to make something disappear is a double negative, and it sat two rows
           under "Enabled" — two toggles whose ON states meant opposite things. */}
@@ -153,12 +170,16 @@ export function ModelSection({
   oc,
   setOc,
   showPrompt = true,
+  lead = true,
 }: {
   oc: RuntimeAgentConfig;
   setOc: SetRuntime;
   /** The agent page gives the system prompt the whole left column — pass
    *  `false` there so the collapsed copy of it does not sit in this section. */
   showPrompt?: boolean;
+  /** `false` under a host that already titles the pane (the Models page's
+   *  "This agent" tab): the first section then takes a subsection header. */
+  lead?: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const { data: providers } = useRuntimeProviders();
@@ -181,7 +202,7 @@ export function ModelSection({
       <EditorSection
         title={tI18nComplete.raw('text5e2c614c23f0')}
         description={tI18nComplete.raw('text32398dbb68e2')}
-        lead
+        lead={lead}
       >
         {/* "Provider model", not "Model": the section is already titled Model,
           and a row that repeats its section's name reads as a typo. */}
@@ -326,8 +347,53 @@ export function ModelSection({
             }
           />
         </SettingRow>
+        <ProviderOptionsRow value={oc.options} onChange={(next) => setOc('options', next)} />
       </EditorSection>
     </>
+  );
+}
+
+/**
+ * `options` (kortix.yaml): free-form provider settings as JSON. The draft
+ * changes only when the text parses to an object; an empty field clears it.
+ */
+function ProviderOptionsRow({
+  value,
+  onChange,
+}: {
+  value: Record<string, unknown> | undefined;
+  onChange: (next: Record<string, unknown> | undefined) => void;
+}) {
+  const t = useI18nTranslations('agentEditor.tabs');
+  const [text, setText] = useState(() => (value ? JSON.stringify(value, null, 2) : ''));
+  const [invalid, setInvalid] = useState(false);
+  const commit = (next: string) => {
+    setText(next);
+    if (!next.trim()) {
+      setInvalid(false);
+      return onChange(undefined);
+    }
+    try {
+      const parsed: unknown = JSON.parse(next);
+      const ok = !!parsed && typeof parsed === 'object' && !Array.isArray(parsed);
+      setInvalid(!ok);
+      if (ok) onChange(parsed as Record<string, unknown>);
+    } catch {
+      setInvalid(true);
+    }
+  };
+  return (
+    <SettingBlock label={t('providerOptions')} help={t('providerOptionsHelp')}>
+      <Textarea
+        aria-label={t('providerOptions')}
+        value={text}
+        placeholder='{ "reasoning": "high" }'
+        className="min-h-20 font-mono text-xs"
+        aria-invalid={invalid || undefined}
+        onChange={(e) => commit(e.target.value)}
+      />
+      {invalid ? <p className="text-destructive text-xs">{t('providerOptionsInvalid')}</p> : null}
+    </SettingBlock>
   );
 }
 

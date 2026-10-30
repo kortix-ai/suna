@@ -28,7 +28,7 @@ export const OUTLINE = [
       { label: 'Apps', href: '/guide/#apps' },
       { label: 'Drive', href: '/guide/#drive' },
       { label: 'Connectors', href: '/guide/#connectors' },
-      { label: 'Automations', href: '/guide/#automations' },
+      { label: 'Triggers', href: '/guide/#triggers' },
       { label: 'Computers', href: '/guide/#computers' },
       { label: 'Models', href: '/guide/#models' },
     ],

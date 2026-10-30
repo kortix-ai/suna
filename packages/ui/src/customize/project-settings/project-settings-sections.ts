@@ -8,6 +8,7 @@ import {
 } from '@phosphor-icons/react';
 
 import { capabilityTabHref } from '../../internal/lib/capability-tab-routes';
+import { adminPath } from '../../lib/routes';
 import { localizeUiCatalog } from '../../i18n/ui-catalog/localize-ui-catalog';
 import { REMAINING_UI_TRANSLATION_KEYS } from '../../i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '../../i18n';
@@ -45,7 +46,7 @@ import type { CustomizeSection } from '../../internal/lib/project-actions';
  * which is what the pane is called everywhere else in the codebase (it is
  * already the `CustomizeSection` id, see `packages/ui/src/internal/lib/project-actions.ts`).
  *
- * A `key` IS its `?section=` query value, so renaming one breaks live links.
+ * A `key` IS its Project admin segment (`/admin/<key>`), so renaming one breaks live links.
  * `settings-tabs.ts`'s `GRADUATED` map points every retired `SettingsTab` id
  * at the key below that replaced it.
  */
@@ -177,14 +178,12 @@ export function parseProjectSettingsSection(
   return hit ? hit.key : null;
 }
 
-/** The canonical link to one section. The default section carries no query. */
+/** The canonical link to one section: its Project admin page, `/admin/<key>`. Review is its own page. */
 export function projectSettingsSectionHref(
   projectId: string,
   key: ProjectSettingsSectionKey,
 ): string {
-  return key === DEFAULT_PROJECT_SETTINGS_SECTION
-    ? capabilityTabHref(projectId, 'config')
-    : `${capabilityTabHref(projectId, 'config')}?section=${key}`;
+  return key === 'review' ? capabilityTabHref(projectId, 'review') : adminPath(projectId, key);
 }
 
 /** The copy for one section, independent of any flag — used by pane headings. */

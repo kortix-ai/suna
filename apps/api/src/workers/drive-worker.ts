@@ -2,9 +2,10 @@
 //
 // - the conflict scanner (see drives/conflicts.ts);
 // - the volume deletion queue: `kortix.platinum_volume_deletions` holds every
-//   volume whose owner row is gone (a drive). A
-//   trigger fills it on every delete path, cascades included; this drains it.
-//   A volume still held by a sandbox answers 409 and is retried with backoff.
+//   volume whose owner row is gone (a drive), with its region. A
+//   trigger fills it on every delete path, cascades included; this drains it,
+//   each delete in the volume's own region. A volume still held by a sandbox
+//   answers 409 and is retried with backoff.
 // - the revocation retry: a session sandbox whose folder access narrowed but
 //   whose detach did not land is brought in line again until it does.
 
@@ -44,7 +45,7 @@ export async function drainVolumeDeletions(limit = 20): Promise<{ deleted: numbe
       .limit(limit);
     for (const row of due) {
       try {
-        await deleteDriveVolume(row.volumeName);
+        await deleteDriveVolume({ name: row.volumeName, region: row.region ?? null, unfenced: true });
         await db.delete(platinumVolumeDeletions).where(eq(platinumVolumeDeletions.volumeName, row.volumeName));
         deleted++;
         logger.info(`[drives] deleted volume ${row.volumeName} (${row.reason})`);

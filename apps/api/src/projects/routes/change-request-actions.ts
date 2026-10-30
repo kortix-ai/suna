@@ -16,6 +16,7 @@ import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { kickPiPackageBundle } from '../../pi-packages/bundle';
 import { resolveManifestPiPackageLists } from '../lib/compile-agent-config';
 import { getCrById, markChangeRequestsLanded, serializeChangeRequest } from '../change-requests';
+import { wakeGoalForMergedChangeRequest } from '../lib/goal-wake';
 import {
   headRefsLandedIn,
   invalidateProjectMirror,
@@ -283,6 +284,29 @@ export function registerChangeRequestActionsRoutes(): void {
       });
 
       invalidateProjectMirror(projectId);
+      // SEAM (Triggers, "change request merged" source): a merge wakes the
+      // goal the CR's origin session works on (lib/goal-wake.ts). Best-effort.
+      void wakeGoalForMergedChangeRequest({ project: loaded.row, changeRequest: cr }).catch((error: unknown) =>
+        logger.warn('[cr-merge] goal wake failed', { projectId, error: error instanceof Error ? error.message : String(error) }),
+      );
+      // The `change_request` trigger source: every trigger this merge
+      // matches fires (lib/change-request-triggers.ts). Best-effort and not
+      // awaited: the merge is durable and its response must not wait on a fire.
+      void import('../lib/change-request-triggers')
+        .then(({ fireChangeRequestMergedTriggers }) =>
+          fireChangeRequestMergedTriggers(loaded.row, [
+            {
+              cr_id: cr.crId,
+              number: cr.number,
+              title: cr.title,
+              base_ref: cr.baseRef,
+              head_ref: cr.headRef,
+              merge_commit_sha: result.merge_commit_sha,
+            },
+            ...alsoMerged.map((other) => ({ cr_id: other.cr_id, number: other.number, base_ref: cr.baseRef, merge_commit_sha: result.merge_commit_sha })),
+          ]),
+        )
+        .catch(() => {});
       // The merge moved the CR's base branch. Sessions on it converge.
       void import('../lib/config-convergence-triggers')
         .then((triggers) => triggers.notifyBaseBranchMoved(projectId, cr.baseRef, 'change-request-merge'))

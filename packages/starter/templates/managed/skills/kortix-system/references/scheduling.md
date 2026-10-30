@@ -4,10 +4,12 @@ Read this when you decide whether and how to schedule work. The decision
 table is in `SKILL.md` → `<scheduling>`; trigger fields are in
 `kortix/kortix-yaml.md` → triggers.
 
-A **trigger** is `on:` (what fires it) plus `run:` (what runs). A fire starts
-a session and prompts its agent as a teammate would, or calls one of the
-project's Apps (`run: { app, path }`: no session, no model). A **reminder**
-re-prompts the session that set it.
+A **trigger** is a source (what fires it) plus a target (what a fire
+does). A `kortix.yaml` trigger is `on:` plus `run:`. A fire starts a session
+and prompts its agent as a teammate would, or calls one of the project's Apps
+(`run: { app, path }`: no session, no model). A **loop** is a trigger that
+wakes the session that created it: a runtime trigger, stored in the database.
+`kortix triggers ls` lists both.
 
 Do not schedule work that finishes in this turn, and do not schedule a
 question: ask it now.
@@ -87,27 +89,38 @@ the same item.
   `/drives` or the repository) and skip it next time.
 - Prefer "update this row" over "append a row".
 
-## Reminders: pause mid-task
+## Loops: pause mid-task
 
-A turn cannot sleep for hours. A reminder resumes THIS session later with
+A turn cannot sleep for hours. A loop resumes THIS session later with
 its whole conversation and workspace.
 
 1. Set it with what to check and what to do next:
-   `kortix remind "The rate limit has reset. Resume the export at record 1,001." --in 1h`
-   `kortix remind "Did the vendor reply? If yes, summarize it and remove this reminder." --in 24h --every 1h`
+   `kortix loop "The rate limit has reset. Resume the export at record 1,001." --in 1h`
+   `kortix loop "Did the vendor reply? If yes, summarize it and remove this loop." --in 24h --every 1h`
    `--in` or `--at <ISO-8601>` alone fires once. `--every <duration>`
    (at least `5m`) or `--cron "<expr>" --timezone <tz>` repeats.
 2. End the turn with what is done and what is pending.
 3. A fire arrives as a prompt that starts `[REMINDER reminder.<id> — …]` and
    wakes the session. It is not a user message.
-4. Remove a recurring reminder the moment its condition holds:
-   `kortix reminders rm <id>`. Every fire is a model turn.
+4. Remove a recurring loop the moment its condition holds:
+   `kortix loops rm <id>`. Every fire is a model turn.
 
-- `kortix reminders ls|pause <id>|resume <id>|run <id>` (`run` fires once now).
-- A reminder lives in the database, not in `kortix.yaml`: no CR. It never
+- `kortix loops ls|pause <id>|resume <id>|run <id>` (`run` fires once now).
+- Wake THIS session on an event instead of a time:
+  `kortix triggers add "CR merged: verify the deploy" --on cr-merged --cr <id>`,
+  `--on webhook --secret-env <NAME>` (POST to the printed URL), `--on event
+  --connector <slug> --event <TYPE>`, or `--on app --app <slug>`. The fire
+  arrives as `[REMINDER trigger.<id> — … trigger (<source>) …]`.
+  `kortix triggers rm <id>` removes it.
+- Every merge into a branch, for the whole project, is a `kortix.yaml`
+  trigger: `type: change_request`, `filter: { base: main }` (omit the filter
+  for any branch), `agent`, `prompt`. The prompt reads
+  `{{ change_request.number }}`, `{{ change_request.title }}` and
+  `{{ change_request.base_ref }}`.
+- A loop lives in the database, not in `kortix.yaml`: no CR. It never
   starts a new session; it pauses itself when its session is deleted.
 - From a Slack or Teams thread, put the channel and thread ids in the
-  reminder text: the fire is not a channel turn, so post the answer with
+  loop text: the fire is not a channel turn, so post the answer with
   `slack send --channel <id> --thread <ts>`.
 - A wait of seconds to a couple of minutes inside one turn: `sleep`.
 
@@ -171,7 +184,7 @@ Saying "I stopped it" without a config change leaves it firing.
 
 ## Checklist
 
-- [ ] Right mechanism: reminder, one-off `at`, `cron`/`every`, webhook, App
+- [ ] Right mechanism: loop, one-off `at`, `cron`/`every`, webhook, App
       call, or App events.
 - [ ] 6-field cron, `timezone` set, no day-of-month + day-of-week trap, no
       exact-minute check.

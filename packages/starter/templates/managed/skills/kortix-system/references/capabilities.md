@@ -15,7 +15,7 @@ Kortix compare to <tool>?". For configuration, use `SKILL.md`.
 ## What Kortix is
 
 Kortix is an open-source CompanyOS. Agents, skills,
-memory and automations are files in one Git repository: versioned,
+memory and triggers are files in one Git repository: versioned,
 reviewable and self-hostable.
 
 - A **session** is one piece of agent work on its own cloud computer, so
@@ -38,7 +38,7 @@ reviewable and self-hostable.
 | Connectors | Acts in connected apps, MCP servers and HTTP APIs, with credentials kept server-side (the `kortix-connectors` skill). |
 | Secrets | Encrypted credentials, delivered only to the agents granted them. |
 | Memory and Drive | Files that outlive the session: the user's own folder and the company's shared folders (the `kortix-drives` and `kortix-memory` skills). |
-| Automations | Schedules, webhooks and App events start agent work, or call an App (`SKILL.md` → `<scheduling>`). |
+| Triggers | Schedules, webhooks, connector and App events and merged change requests start agent work, or call an App (`SKILL.md` → `<scheduling>`). |
 | Channels | Slack and Teams start sessions where the team already works (the `kortix-slack` and `kortix-teams` skills). |
 | Subagents | Splits a large job across agents that run in parallel and report back. |
 | Models | Kortix-managed models (Platinum Inference) or the project's own provider keys, all through the Kortix LLM gateway (`kortix models ls`). |
@@ -59,7 +59,7 @@ people.
 
 ## What makes Kortix different
 
-- **It is code you own.** Agents, skills, memory and automations are a Git
+- **It is code you own.** Agents, skills, memory and triggers are a Git
   repository. Nothing is a black box.
 - **A workforce, not one assistant.** Specialist agents run in parallel and
   share one company memory.

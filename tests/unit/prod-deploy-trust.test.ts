@@ -72,6 +72,14 @@ describe('promote green gate', () => {
       expect(gate).toContain(`Publish ${name} manifest (staging)`);
     }
   });
+
+  // v0.14.12: merge-tree honored the learnings MEMORY.md `merge=union`, said "no
+  // conflict", and GitHub (no union driver) then refused the promotion PR merge.
+  it('checks the staging merge for conflicts the way GitHub merges, without merge drivers', () => {
+    const override = promote.indexOf(`printf '* merge\\n' >> "$(git rev-parse --git-dir)/info/attributes"`);
+    expect(override).toBeGreaterThan(-1);
+    expect(override).toBeLessThan(promote.indexOf('git merge-tree --write-tree origin/staging'));
+  });
 });
 
 describe('ecs-scale', () => {

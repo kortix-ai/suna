@@ -14,7 +14,7 @@ const tabsOf = (): string[] => railGroups().flatMap((g) => g.items.map((i) => i.
  * Audit log, API keys) for `/accounts/[id]`, and thirteen project-scoped ones
  * (General, Members, Secrets, Channels, Repositories, Models, Sandbox
  * templates, Snapshots, Marketplace, Review, Voice, Feature flags, Upgrades)
- * for `/projects/[id]/customize/settings`. These tests pin that they are gone from HERE —
+ * for `/projects/[id]/admin/general`. These tests pin that they are gone from HERE —
  * `capabilities/project-settings/project-settings-sections.test.ts` pins that
  * they arrived THERE.
  */

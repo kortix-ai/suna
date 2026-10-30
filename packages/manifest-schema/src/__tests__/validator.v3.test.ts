@@ -17,6 +17,30 @@ const swap = (from: string, to: string) => {
   return GOLDEN.replace(from, to);
 };
 
+describe('kortix_version 3: a change_request trigger', () => {
+  const merged = (filter: string) =>
+    swap(
+      '    prompt: Write the weekly support report for the last 7 days.\n',
+      `    prompt: Write the weekly support report for the last 7 days.\n  - slug: merged\n    type: change_request\n    agent: assistant\n${filter}    prompt: Verify {{ change_request.number }} on prod.\n`,
+    );
+
+  test('is valid with no filter, and with filter.base', () => {
+    expect(check(merged('')).errors).toEqual([]);
+    expect(check(merged('    filter: { base: main }\n')).errors).toEqual([]);
+    expect(check(merged('    filter: { base: main, change_request.title: { prefix: [fix] } }\n')).errors).toEqual([]);
+  });
+
+  test('filter.base must be a branch name', () => {
+    expect(errorPaths(merged('    filter: { base: "" }\n'))).toContain('triggers[1].filter');
+    expect(errorPaths(merged('    filter: { base: { in: [main] } }\n'))).toContain('triggers[1].filter');
+  });
+
+  test('takes no schedule, webhook or connector keys', () => {
+    expect(errorPaths(merged('    every: 5m\n'))).toContain('triggers[1].every');
+    expect(errorPaths(merged('    connector: github\n')).length).toBeGreaterThan(0);
+  });
+});
+
 describe('kortix_version 3: the golden manifest', () => {
   test('is valid with no warnings', () => {
     const { errors, warnings } = check(GOLDEN);
@@ -137,6 +161,23 @@ describe('kortix_version 3: agents', () => {
     expect(errorPaths(swap('    mode: subagent\n', '    mode: subagent\n    enabled: false\n'))).toContain('agents.assistant.subagents');
   });
 
+  test('skills and extensions take { exclude: [...] }: everything but the named ones', () => {
+    expect(errorPaths(swap('skills: [triage-rules, kortix-system]', 'skills: { exclude: [kortix-goals, triage-rules] }'))).toEqual([]);
+    expect(errorPaths(swap('extensions: [audit, web-access]', 'extensions: { exclude: [audit] }'))).toEqual([]);
+    expect(errorPaths(swap('skills: [triage-rules, kortix-system]', 'skills: { exclude: [nope] }'))).toContain('agents.researcher.skills');
+    expect(errorPaths(swap('extensions: [audit, web-access]', 'extensions: { exclude: [nope] }'))).toContain('agents.assistant.extensions');
+    expect(errorPaths(swap('skills: [triage-rules, kortix-system]', 'skills: { exclude: [triage-rules], also: [] }'))).toContain('agents.researcher.skills');
+    expect(errorPaths(swap('skills: [triage-rules, kortix-system]', 'skills: { exclude: triage-rules }'))).toContain('agents.researcher.skills');
+  });
+
+  test('subagents and commands do not take the exclude form', () => {
+    expect(errorPaths(swap('commands: [weekly-report, summarize]', 'commands: { exclude: [summarize] }'))).toContain('agents.assistant.commands');
+  });
+
+  test('tools may name the agent and codemode tools', () => {
+    expect(errorPaths(swap('exclude: [lookup_order]', 'exclude: [agent, task, codemode]'))).toEqual([]);
+  });
+
   test('tools rejects the v2 map form', () => {
     expect(errorPaths(swap('    tools: all\n', '    tools:\n      bash: false\n'))).toContain('agents.assistant.tools');
   });
@@ -154,6 +195,37 @@ describe('kortix_version 3: agents', () => {
   });
 });
 
+describe('kortix_version 3: builtin_agents (My Kortix switch)', () => {
+  test('absent is valid: My Kortix stays on', () => {
+    expect(check(GOLDEN).errors).toEqual([]);
+  });
+
+  test.each([['true'], ['false']])('my_kortix: %s is valid', (value) => {
+    const { errors, warnings } = check(swap('agents:', `builtin_agents:\n  my_kortix: ${value}\nagents:`));
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([]);
+  });
+
+  test('an unknown built-in is an error that lists the known ones', () => {
+    const { errors } = check(swap('agents:', 'builtin_agents:\n  helper: true\nagents:'));
+    expect(errors.map((issue) => issue.path)).toEqual(['builtin_agents.helper']);
+    expect(errors[0]?.message).toContain('my_kortix');
+  });
+
+  test('a non-boolean value and a non-map are errors', () => {
+    expect(errorPaths(swap('agents:', 'builtin_agents:\n  my_kortix: yes please\nagents:'))).toEqual(['builtin_agents.my_kortix']);
+    expect(errorPaths(swap('agents:', 'builtin_agents: [my_kortix]\nagents:'))).toEqual(['builtin_agents']);
+  });
+
+  test('a declared `meta` agent is an error whether My Kortix is on, off or unset', () => {
+    const declared = swap('agents:', 'agents:\n  meta:\n    prompt: hi');
+    expect(errorPaths(declared)).toEqual(['agents.meta']);
+    expect(check(declared).errors[0]?.message).toContain('reserved for My Kortix');
+    expect(errorPaths(declared.replace('agents:', 'builtin_agents:\n  my_kortix: false\nagents:'))).toEqual(['agents.meta']);
+    expect(errorPaths(declared.replace('agents:', 'builtin_agents:\n  my_kortix: true\nagents:'))).toEqual(['agents.meta']);
+  });
+});
+
 describe('agents.<name>.workspace.project_repository default', () => {
   test('defaults to true for v1/v2 and false when the caller passes the v3 default', async () => {
     const { resolveProjectRepository, projectRepositoryDefault } = await import('../index.ts');
@@ -163,5 +235,117 @@ describe('agents.<name>.workspace.project_repository default', () => {
     expect(resolveProjectRepository({ workspace: {} }, projectRepositoryDefault(3))).toEqual({ ok: true, value: false, legacyRead: false });
     expect(resolveProjectRepository({ workspace: { project_repository: true } }, projectRepositoryDefault(3))).toEqual({ ok: true, value: true, legacyRead: false });
     expect(projectRepositoryDefault(1)).toBe(true);
+  });
+});
+
+describe('kortix_version 3: spaces (a channel: a room plus configurable tabs)', () => {
+  test('golden has no space and stays valid', () => {
+    expect(check(GOLDEN).errors).toEqual([]);
+  });
+
+  test('an agent may declare a space', () => {
+    const yaml = swap('codemode: on', 'codemode: on\n    space: engineering');
+    expect(check(yaml).errors).toEqual([]);
+  });
+
+  test('the old `domain` key is unknown', () => {
+    const yaml = swap('codemode: on', 'codemode: on\n    domain: engineering');
+    expect(errorPaths(yaml)).toContain('agents.assistant.domain');
+    expect(errorPaths(swap('agents:', 'domains:\n  eng:\n    label: Eng\nagents:'))).toContain('domains');
+  });
+
+  test('a top-level spaces map with a header and every tab type is accepted', () => {
+    const yaml = swap(
+      'agents:',
+      [
+        'spaces:',
+        '  eng:',
+        '    label: Engineering',
+        '    description: Ship the product.',
+        '    order: 1',
+        '    header: [agents, members, needs_you, new_session, ask_my_kortix]',
+        '    tabs:',
+        '      - type: goals',
+        '      - type: apps',
+        '      - type: artifacts',
+        '      - type: files',
+        '        path: docs',
+        '      - type: board',
+        '        label: Overview',
+        '        blocks:',
+        '          - type: text',
+        '            text: Welcome',
+        '          - type: iframe',
+        '            url: https://example.com',
+        '      - type: app',
+        '        app: dashboard',
+        '      - type: artifact',
+        '        artifact: 00000000-0000-4000-8000-000000000001',
+        '      - type: link',
+        '        label: Status',
+        '        url: https://status.example.com',
+        '        embed: true',
+        'agents:',
+      ].join('\n'),
+    );
+    expect(check(yaml).errors).toEqual([]);
+  });
+
+  test('a non-string agent space is an error', () => {
+    expect(errorPaths(swap('codemode: on', 'codemode: on\n    space: 42'))).toContain('agents.assistant.space');
+  });
+
+  test('an invalid agent space slug is an error', () => {
+    expect(errorPaths(swap('codemode: on', 'codemode: on\n    space: "Not A Slug"'))).toContain('agents.assistant.space');
+  });
+
+  test('an unknown key inside a space is an error', () => {
+    expect(errorPaths(swap('agents:', 'spaces:\n  eng:\n    color: red\nagents:'))).toContain('spaces.eng.color');
+  });
+
+  test('space-level blocks moved into a board tab', () => {
+    expect(errorPaths(swap('agents:', 'spaces:\n  eng:\n    blocks: []\nagents:'))).toContain('spaces.eng.blocks');
+  });
+
+  test('a non-numeric space order is an error', () => {
+    expect(errorPaths(swap('agents:', 'spaces:\n  eng:\n    order: soon\nagents:'))).toContain('spaces.eng.order');
+  });
+
+  test('an unknown header item is an error', () => {
+    expect(errorPaths(swap('agents:', 'spaces:\n  eng:\n    header: [weather]\nagents:'))).toContain('spaces.eng.header[0]');
+  });
+
+  test('an unknown tab type is an error', () => {
+    expect(errorPaths(swap('agents:', 'spaces:\n  eng:\n    tabs:\n      - type: video\nagents:'))).toContain('spaces.eng.tabs[0].type');
+  });
+
+  test('a pinned tab without its target is an error', () => {
+    const tab = (body: string) => swap('agents:', `spaces:\n  eng:\n    tabs:\n      - ${body}\nagents:`);
+    expect(errorPaths(tab('type: app'))).toContain('spaces.eng.tabs[0].app');
+    expect(errorPaths(tab('type: artifact'))).toContain('spaces.eng.tabs[0].artifact');
+    expect(errorPaths(tab('type: link'))).toContain('spaces.eng.tabs[0].url');
+    expect(errorPaths(tab('type: files'))).toContain('spaces.eng.tabs[0].path');
+  });
+
+  test('a link tab needs an http(s) url', () => {
+    const yaml = swap('agents:', 'spaces:\n  eng:\n    tabs:\n      - type: link\n        url: javascript:alert(1)\nagents:');
+    expect(errorPaths(yaml)).toContain('spaces.eng.tabs[0].url');
+  });
+
+  test('an unknown tab key is an error', () => {
+    const yaml = swap('agents:', 'spaces:\n  eng:\n    tabs:\n      - type: goals\n        color: red\nagents:');
+    expect(errorPaths(yaml)).toContain('spaces.eng.tabs[0].color');
+  });
+
+  test('an invalid board block type is an error', () => {
+    const yaml = swap('agents:', 'spaces:\n  eng:\n    tabs:\n      - type: board\n        blocks:\n          - type: video\nagents:');
+    expect(errorPaths(yaml)).toContain('spaces.eng.tabs[0].blocks[0].type');
+  });
+
+  test('a space slug is also a room name: at most 63 characters', () => {
+    const long = 'a'.repeat(64);
+    expect(errorPaths(swap('agents:', `spaces:\n  ${long}:\n    label: Long\nagents:`))).toContain(`spaces.${long}`);
+    expect(check(swap('agents:', `spaces:\n  ${'a'.repeat(63)}:\n    label: Ok\nagents:`)).errors).toEqual([]);
+    expect(errorPaths(swap('codemode: on', `codemode: on\n    space: ${long}`))).toContain('agents.assistant.space');
   });
 });
