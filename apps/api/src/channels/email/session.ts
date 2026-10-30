@@ -4,6 +4,8 @@ import {
   chatInstalls,
   projects,
 } from '@kortix/db';
+import { type ChannelEnvelope, channelPromptText } from '@kortix/shared';
+import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
@@ -19,6 +21,7 @@ import {
   resolveEmailApiKey,
 } from '../resend-email-api';
 import { type ChannelPort, type ChannelSessionPlan, type ChannelTarget, routeChannelMessage } from '../core/conversation';
+import { connectorReply } from '../core/prompt';
 import {
   type EmailSenderPolicy,
   emailOwnKeyForAccount,
@@ -162,7 +165,7 @@ export async function handleEmailEvent(event: IntegrationEvent, run: { finalAtte
         create: `email:create:${inboxId}:${threadId}:${emailId}`,
         createClaim: `email:threadcreate:${inboxId}:${threadId}`,
       },
-      followUp: { text: renderFollowUpPrompt(email) },
+      followUp: { text: channelPromptText(emailEnvelope(email)) },
       plan: (revived) => planEmailSession(projectId, email, revived),
     },
     run,
@@ -342,8 +345,8 @@ async function planEmailSession(projectId: string, email: InboundEmail, revived:
         email: { connection_id: account.connectionId },
       },
       // Email delivers its prompt via postCreate, so create is the only moment
-      // this session has any user text — title from the subject.
-      title_source: messageSubject(email) ?? messageSummary(email),
+      // this session has any user text: title from the subject, else the body.
+      title_source: messageSubject(email) ?? email.text,
     },
     mayManageSystemConnections: true,
     metadata: {
@@ -363,7 +366,7 @@ async function planEmailSession(projectId: string, email: InboundEmail, revived:
       KORTIX_EMAIL_ADDRESS: email.to[0] ?? '',
       KORTIX_FRONTEND_URL: config.FRONTEND_URL,
     },
-    prompt: renderAgentPrompt(email, revived),
+    prompt: channelPromptText(emailEnvelope(email), { revived }),
   };
 }
 
@@ -401,81 +404,40 @@ async function replyNotAccepting(target: ChannelTarget): Promise<void> {
 }
 
 /**
- * How the agent works the inbox: the `kortix connectors` CLI, which every
- * harness's shell has. The MCP face exists only in OpenCode's config, so a
- * prompt that named MCP tools left a pi session unable to read or answer.
+ * The email as one channel message (`channelPromptText`): the subject is where it
+ * was sent, the body is the text. The agent works the inbox with the
+ * `kortix connectors` CLI, which every harness's shell has: the MCP face exists
+ * only in OpenCode's config, so a prompt that named MCP tools left a pi session
+ * unable to read or answer. Every value the sender wrote is quoted in the notes.
  */
-function emailTurnInstructions(email: InboundEmail): string {
-  const readThreadArgs = JSON.stringify({ thread_id: email.threadId });
-  const replyArgs = JSON.stringify({
-    thread_id: email.threadId,
-    message_id: email.emailId,
-    text: '<reply>',
-  });
-  return [
-    'How to work:',
-    '- You are operating an email inbox assigned to this Kortix project.',
-    '- Use the `kortix connectors` CLI in the shell. Connector actions are not direct tools.',
-    `- Read the current thread, every email with its body: \`kortix connectors call email.get_thread '${readThreadArgs}'\`.`,
-    `- Reply in the same conversation: \`kortix connectors call email.reply_message '${replyArgs}'\`. Use \`html\` instead of \`text\` only when needed.`,
-    '- Start a new outbound email with `kortix connectors call email.send_message` and args containing `to`, `subject`, and `text` or `html`.',
-    '- Run `kortix connectors show email.<action>` to confirm an input schema before the first call. Pass long or quoted args as a file: `@args.json`.',
-    '- Kortix fills in the inbox and resolves the email key server-side. Do not look for either in the sandbox.',
-    '- If you need the user to clarify something, reply by email and end the turn. Their next reply will resume this same session.',
-  ].join('\n');
-}
-
-function renderFollowUpPrompt(email: InboundEmail): string {
-  return [
-    `New email reply from ${messageSender(email)} in the same thread:`,
-    '',
-    messageSummary(email),
-    '',
-    emailTurnInstructions(email),
-  ].join('\n');
-}
-
-function renderAgentPrompt(email: InboundEmail, revived: boolean): string {
-  const lines: string[] = [];
-  if (revived) {
-    lines.push(
-      'NOTE: This email thread had an earlier conversation in another Kortix session, which cannot continue it: that session was deleted, or this inbox was removed and connected again.',
-      'Pick the thread back up from the current email context.',
-      '',
-    );
-  }
-  lines.push(
-    "You're answering an email thread as the Kortix agent.",
-    '',
-    `Inbox ID:   ${email.inboxId}`,
-    `Thread ID:  ${email.threadId}`,
-    `Message ID: ${email.emailId}`,
-    `From:       ${messageSender(email)}`,
-    `To:         ${email.to.join(', ')}`,
-    `Subject:    ${messageSubject(email) ?? '(no subject)'}`,
-    '',
-    messageSummary(email),
-    '',
-    emailTurnInstructions(email),
-  );
-  return lines.join('\n');
+function emailEnvelope(email: InboundEmail): ChannelEnvelope {
+  const sender = messageSender(email);
+  return {
+    platform: CHANNELS.email.envelope,
+    sender,
+    where: email.subject?.trim() || '(no subject)',
+    text: email.text.trim() ? email.text : '(empty)',
+    reply: connectorReply('email', 'reply_message', { thread_id: email.threadId, message_id: email.emailId, text: '<reply>' }),
+    notes: [
+      'Use `html` instead of `text` only when needed.',
+      `Inbox ${email.inboxId}, thread ${email.threadId}, message ${email.emailId}.`,
+      `From ${JSON.stringify(sender)}, to ${email.to.map((to) => JSON.stringify(to)).join(', ')}.`,
+      ...email.attachments.map(
+        (a) => `Attachment ${JSON.stringify(a.filename ?? a.id)} (${a.size ?? 'unknown'} bytes, attachment_id ${a.id}).`,
+      ),
+      'You are operating an email inbox assigned to this Kortix project.',
+      'Use the `kortix connectors` CLI in the shell. Connector actions are not direct tools.',
+      `Read the current thread, every email with its body: ${connectorReply('email', 'get_thread', { thread_id: email.threadId })}.`,
+      'Start a new outbound email with `kortix connectors call email.send_message` and args containing `to`, `subject`, and `text` or `html`.',
+      'Run `kortix connectors show email.<action>` to confirm an input schema before the first call. Pass long or quoted args as a file: `@args.json`.',
+      'Kortix fills in the inbox and resolves the email key server-side. Do not look for either in the sandbox.',
+      'If you need the user to clarify something, reply by email and end the turn. Their next reply will resume this same session.',
+    ],
+  };
 }
 
 function messageSubject(email: InboundEmail): string | null {
   return email.subject;
-}
-
-function messageSummary(email: InboundEmail): string {
-  const attachments = email.attachments.length
-    ? [
-        '',
-        'Attachments:',
-        ...email.attachments.map(
-          (a) => `- ${a.filename ?? a.id} (${a.size ?? 'unknown'} bytes, attachment_id ${a.id})`,
-        ),
-      ].join('\n')
-    : '';
-  return ['Email body:', email.text || '(empty)', attachments].filter(Boolean).join('\n');
 }
 
 function messageSender(email: InboundEmail): string {

@@ -50,6 +50,9 @@ const RUN = crypto.randomUUID().slice(0, 8);
 const REPLY = 'This address is not accepting email right now. No one will answer this message.';
 const SIGNING_KEY = 'test-signing-key';
 const QUEUE = 'integration.events.email';
+/** The header and body of every email the stubbed Resend answers. */
+const HEAD = '[Email · A question · message from Sender <sender@example.test>]\nHello?';
+const REVIVED_NOTE = '\n- NOTE: This conversation had an earlier session that ended. You do not have its history.';
 
 /** Resend's API as seen by the suite: every call, and GET answers to fail. */
 let calls: Array<{ url: string; method: string; auth: string | null; body: unknown }> = [];
@@ -306,6 +309,9 @@ describe('a received email: stored before the ack, then run', () => {
     expect(bodyReads()[0]!.auth).toBe('Bearer re_project_key');
     expect(created).toHaveLength(1);
     expect(created[0]!.idempotencyKey).toBe(`email:create:${INBOX}:${INBOX}-t1:eml-${INBOX}-1`);
+    // The channel envelope: nothing before the header, and a first email is no revival.
+    expect(created[0]!.postCreate[1].text).toStartWith(`${HEAD}\n\n── Email instructions\n`);
+    expect(created[0]!.postCreate[1].text).not.toContain(REVIVED_NOTE);
     const [thread] = await db.select().from(chatThreads).where(and(eq(chatThreads.workspaceId, INBOX), eq(chatThreads.threadId, `${INBOX}-t1`)));
     expect(thread?.projectId).toBe(project.project_id);
     expect(await db.select().from(chatEventDedup).where(eq(chatEventDedup.eventId, `email:threadcreate:${INBOX}:${INBOX}-t1`))).toHaveLength(0);
@@ -464,7 +470,8 @@ describe('a received email: stored before the ack, then run', () => {
       await runEmail(INBOX, 11, 'm1');
       expect(delivered).toHaveLength(0);
       expect(created).toHaveLength(1);
-      expect(created[0]!.postCreate[1].text).toStartWith('NOTE: This email thread had an earlier conversation');
+      expect(created[0]!.postCreate[1].text).toStartWith(`${HEAD}\n\n── Email instructions\n`);
+    expect(created[0]!.postCreate[1].text).toContain(REVIVED_NOTE);
       const thread = await threadOf(INBOX, 'm1');
       expect(thread?.projectId).toBe(project.project_id);
       expect(thread?.sessionId).not.toBe(old);
@@ -508,7 +515,8 @@ describe('a received email: stored before the ack, then run', () => {
     await runEmail(READDED, 1, 'r1');
     expect(delivered).toHaveLength(0);
     expect(created).toHaveLength(1);
-    expect(created[0]!.postCreate[1].text).toStartWith('NOTE: This email thread had an earlier conversation');
+    expect(created[0]!.postCreate[1].text).toStartWith(`${HEAD}\n\n── Email instructions\n`);
+    expect(created[0]!.postCreate[1].text).toContain(REVIVED_NOTE);
     const second = (await loadEmailInboxAccountForInbox(project.project_id, READDED))!;
     expect(second.connectionId).not.toBe(first.connectionId);
     expect(created[0]!.body.connector_bindings).toEqual({ email: { connection_id: second.connectionId } });
