@@ -17,6 +17,17 @@ export {
 } from './files';
 export { pageHistory } from './history';
 export { assertFilesOn, assertWrites, authorName, MemoryError, notFound, type Project, resolveLayer, threadLabelOf, type Viewer } from './layers';
+export {
+  assertMemoryName,
+  assertMyKortixAgent,
+  deleteMyMemory,
+  isMyKortixSession,
+  listMyMemory,
+  MY_KORTIX_AUTHOR,
+  myKortixLayer,
+  saveMyMemory,
+  viewMyMemory,
+} from './my-memory';
 export { searchMemory } from './search';
 export { recordThreadLoad, threadUsage } from './thread-loads';
 export { isMemoryTurnRoute, memoryTurnContext, withMemoryTurn, withoutClientSystem } from './turn-context';
