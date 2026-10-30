@@ -256,3 +256,152 @@ test('loading and unavailable release comment mode, then a complete layout resto
   expect(f.statuses.at(-1)).toBe('unavailable');
   expect(mode()).toBe('off');
 });
+
+test('capture binds one private request to current layout and assembles ordered bounded PNG bytes', async () => {
+  const f = fixture();
+  f.controller.receive(layout as never);
+  const rect = { x: 20, y: 22, width: 10, height: 10 };
+  const region = f.controller.regionForViewportRect(rect)!;
+  expect(region.anchor.type).toBe('region');
+  expect(region.documentRect).toEqual(rect);
+  const pending = f.controller.capture(rect);
+  const request = f.sent.findLast((message) => message.type === 'capture');
+  expect(request.rect).toEqual(rect);
+  expect(JSON.stringify(request)).not.toContain('immutable-commit');
+  const png = Uint8Array.from(
+    atob(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zxc8AAAAASUVORK5CYII=',
+    ),
+    (character) => character.charCodeAt(0),
+  );
+  const common = { kortix: 'annotate', v: 1, request: request.request, revision: 1 };
+  f.controller.receive({
+    ...common,
+    type: 'capture_complete',
+    request: request.request + 1,
+  } as never);
+  f.controller.receive({
+    ...common,
+    type: 'capture_start',
+    mime: 'image/png',
+    width: 1,
+    height: 1,
+    bytes: png.length,
+    chunks: 1,
+  } as never);
+  f.controller.receive({
+    ...common,
+    type: 'capture_chunk',
+    index: 0,
+    data: btoa(String.fromCharCode(...png)),
+  } as never);
+  f.controller.receive({ ...common, type: 'capture_complete' } as never);
+  const result = await pending;
+  expect(result.ok).toBe(true);
+  if (result.ok) {
+    expect(result.blob.size).toBe(png.length);
+    expect(result.blob.type).toBe('image/png');
+  }
+});
+
+test('capture cancels on revision, reset, timeout and disposal without reusing request ids', async () => {
+  const f = fixture();
+  f.controller.receive(layout as never);
+  const rect = { x: 20, y: 22, width: 10, height: 10 };
+  const first = f.controller.capture(rect);
+  const id = f.sent.findLast((message) => message.type === 'capture').request;
+  f.controller.receive({ ...layout, revision: 2 } as never);
+  expect(await first).toEqual({ ok: false, reason: 'stale' });
+  const second = f.controller.capture(rect);
+  expect(f.sent.findLast((message) => message.type === 'capture').request).toBeGreaterThan(id);
+  f.clock.expire();
+  expect(await second).toEqual({ ok: false, reason: 'timeout' });
+  const third = f.controller.capture(rect);
+  f.controller.reset();
+  expect(await third).toEqual({ ok: false, reason: 'stale' });
+  expect(f.controller.regionForViewportRect(rect)).toBeNull();
+  f.controller.receive({ ...layout, revision: 3 } as never);
+  const fourth = f.controller.capture(rect);
+  f.controller.dispose();
+  expect(await fourth).toEqual({ ok: false, reason: 'cancelled' });
+});
+
+test('capture rejects gaps, bad encoded sizes and oversized declarations without keeping a partial image', async () => {
+  for (const invalid of ['gap', 'size', 'oversized', 'missing']) {
+    const f = fixture();
+    f.controller.receive(layout as never);
+    const pending = f.controller.capture({ x: 10, y: 20, width: 20, height: 10 });
+    const request = f.sent.findLast((message) => message.type === 'capture');
+    const common = { kortix: 'annotate', v: 1, request: request.request, revision: 1 };
+    f.controller.receive({
+      ...common,
+      type: 'capture_start',
+      mime: 'image/png',
+      width: 1,
+      height: 1,
+      bytes: invalid === 'oversized' ? 2097153 : 24,
+      chunks: 1,
+    } as never);
+    if (invalid === 'missing')
+      f.controller.receive({ ...common, type: 'capture_complete' } as never);
+    else if (invalid !== 'oversized')
+      f.controller.receive({
+        ...common,
+        type: 'capture_chunk',
+        index: invalid === 'gap' ? 1 : 0,
+        data: 'AAAA',
+      } as never);
+    expect(await pending).toEqual({ ok: false, reason: 'unavailable' });
+    f.controller.dispose();
+  }
+});
+
+test('resolved region geometry remains private and clears with a frame reset', () => {
+  const sent: unknown[] = [];
+  let regions: Readonly<Record<string, { x: number; y: number; width: number; height: number }>> =
+    {};
+  const controller = createArtifactAnnotationController(
+    {
+      post: (message) => {
+        sent.push(message);
+        return true;
+      },
+      onCandidate() {},
+      onFocus() {},
+      onThreads() {},
+      onRegions: (value) => {
+        regions = value;
+      },
+    },
+    () => () => {},
+  );
+  controller.update({
+    version: 'immutable-commit',
+    canComment: true,
+    mode: 'text',
+    focusRevision: 0,
+    focusedThreadId: null,
+    threads: [
+      {
+        thread_id: 'private-thread',
+        anchor: {
+          type: 'region',
+          version: 'immutable-commit',
+          selector: '#title',
+          snippet: 'Page quote',
+          viewport_width: 800,
+          scroll: { x: 0, y: 0 },
+          offset: { x: 0.2, y: 0.2, width: 0.5, height: 0.5 },
+        },
+        status: 'open',
+        comments: [{ deleted_at: null }],
+      } as never,
+    ],
+  });
+  controller.receive(layout as never);
+  expect(regions['private-thread']).toEqual({ x: 30, y: 26, width: 50, height: 15 });
+  expect(JSON.stringify(sent)).not.toContain('private-thread');
+  controller.reset();
+  expect(regions).toEqual({});
+  controller.dispose();
+});

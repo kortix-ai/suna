@@ -72,7 +72,7 @@ export function annotationInventory(document: Document): AnnotationInventory {
   let node: Node | null;
   while ((node = walker.nextNode())) {
     if (node.nodeType === 1) {
-      if (inventory.elements.length >= limits.elements) { inventory.complete = false; continue; }
+      if (inventory.elements.length >= limits.elements - 1) { inventory.complete = false; continue; }
       const element = node as Element;
       const rect = annotationRect(element.getBoundingClientRect(), view.scrollX, view.scrollY);
       const selector = rect && annotationSelector(element);
@@ -116,6 +116,12 @@ export function annotationInventory(document: Document): AnnotationInventory {
   }
   for (const item of inventory.elements) {
     item.snippet = safeAnnotationSlice(snippets[item.n]!.trim(), 0, 120);
+  }
+  const root = annotationRect({ x: 0, y: 0, width: Math.max(view.innerWidth, document.documentElement.scrollWidth), height: Math.max(view.innerHeight, document.documentElement.scrollHeight) });
+  if (root && inventory.elements.length < limits.elements) {
+    const n = inventory.elementNodes.length;
+    inventory.elements.push({ n, selector: 'html', snippet: safeAnnotationSlice(inventory.texts.map(part => part.text).join('').replace(/\s+/g, ' ').trim(), 0, 120), rect: root });
+    inventory.elementNodes.push(document.documentElement);
   }
   return inventory;
 }

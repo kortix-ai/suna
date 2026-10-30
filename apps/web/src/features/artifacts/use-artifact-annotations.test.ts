@@ -130,3 +130,67 @@ test('the real hook reports readiness, resets on frame load, and cancels its tim
   f.message(layout);
   expect(f.posts).toHaveLength(posted);
 });
+
+test('private capture geometry follows the owned frame and load cancels pending output', async () => {
+  const f = fixture();
+  f.render();
+  expect(observed.viewport).toBeNull();
+  expect(observed.regions).toEqual({});
+  f.render({ ...f.options, enabled: true });
+  f.message({
+    ...layout,
+    viewport: { width: 800, height: 600, scroll: { x: 0, y: 3 } },
+    elements: [
+      { n: 0, selector: 'html', snippet: '', rect: { x: 0, y: 0, width: 800, height: 1000 } },
+    ],
+  });
+  expect(observed.viewport?.scroll.y).toBe(3);
+  expect(
+    observed.regionForViewportRect({ x: 10, y: 10, width: 20, height: 20 })?.documentRect.y,
+  ).toBe(13);
+  const pending = observed.capture({ x: 10, y: 13, width: 20, height: 20 });
+  act(() => {
+    f.frame.dispatchEvent(new Event('load'));
+  });
+  expect(await pending).toEqual({ ok: false, reason: 'stale' });
+  expect(observed.viewport).toBeNull();
+  expect(observed.regions).toEqual({});
+});
+
+test('permission, version, frame, and enabled scope changes discard pending capture bytes', async () => {
+  for (const change of ['permission', 'version', 'frame', 'enabled']) {
+    const f = fixture();
+    const initial = { ...f.options, enabled: true };
+    f.render(initial);
+    f.message(layout);
+    const pending = observed.capture({ x: 10, y: 10, width: 20, height: 20 });
+    const next = { ...initial };
+    if (change === 'permission') next.canComment = false;
+    if (change === 'version') next.version = 'vc_two';
+    if (change === 'enabled') next.enabled = false;
+    if (change === 'frame')
+      next.frame = Object.assign(new EventTarget(), {
+        contentWindow: {},
+      }) as unknown as HTMLIFrameElement;
+    f.render(next);
+    expect((await pending).ok).toBe(false);
+    act(() => root!.unmount());
+    root = undefined;
+    expect(f.timers.size).toBe(0);
+  }
+});
+
+test('a completed drawing epoch cannot survive a newer single-chunk layout with identical viewport numbers', () => {
+  const f = fixture();
+  f.render({ ...f.options, enabled: true });
+  f.message(layout);
+  const first = observed.viewport!;
+  expect(observed.isCurrentViewport(first)).toBe(true);
+  f.message({ ...layout, revision: 2 });
+  expect(observed.status).toBe('ready');
+  expect(observed.viewport).toEqual(first);
+  expect(observed.isCurrentViewport(first)).toBe(false);
+  expect(observed.isCurrentViewport(observed.viewport!)).toBe(true);
+  act(() => { f.frame.dispatchEvent(new Event('load')); });
+  expect(observed.isCurrentViewport(first)).toBe(false);
+});

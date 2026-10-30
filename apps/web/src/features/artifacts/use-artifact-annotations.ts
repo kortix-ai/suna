@@ -1,13 +1,23 @@
 'use client';
 
 import type { ArtifactCommentAnchor, ArtifactCommentThread } from '@kortix/sdk';
+import type {
+  ArtifactAnnotationRect,
+  ArtifactAnnotationViewport,
+} from '@kortix/shared/artifact-annotations';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import type { ArtifactAnnotationCaptureResult } from './artifact-annotation-capture';
 import { connectArtifactAnnotationFrame } from './artifact-annotation-channel';
 import {
   createArtifactAnnotationController,
   type ArtifactAnnotationScheduler,
   type ArtifactAnnotationStatus,
 } from './artifact-annotation-controller';
+export type {
+  ArtifactAnnotationRect,
+  ArtifactAnnotationViewport,
+} from '@kortix/shared/artifact-annotations';
+export type { ArtifactAnnotationCaptureResult } from './artifact-annotation-capture';
 
 const EMPTY_THREADS: ArtifactCommentThread[] = [];
 export function useArtifactAnnotations(
@@ -26,6 +36,9 @@ export function useArtifactAnnotations(
   },
   schedule?: ArtifactAnnotationScheduler,
 ) {
+  const [viewport, setViewport] = useState<ArtifactAnnotationViewport | null>(null);
+  const [regions, setRegions] = useState<Readonly<Record<string, ArtifactAnnotationRect>>>({});
+  const scope = useRef<{ frame: HTMLIFrameElement; version: string } | null>(null);
   const [resolved, setResolved] = useState<ArtifactCommentThread[]>(EMPTY_THREADS);
   const [readiness, setReadiness] = useState<{
     frame: HTMLIFrameElement;
@@ -51,12 +64,15 @@ export function useArtifactAnnotations(
         onCandidate: (anchor) => latest.current.onCandidate(anchor),
         onFocus: (id) => latest.current.onFocus(id),
         onThreads: setResolved,
+        onViewport: setViewport,
+        onRegions: setRegions,
         onStatus: (status) =>
           setReadiness({ frame: options.frame!, version: options.version!, status }),
       },
       schedule,
     );
     controller.current = current;
+    scope.current = { frame: options.frame, version: options.version };
     const state = latest.current;
     current.update({
       ...state,
@@ -65,6 +81,7 @@ export function useArtifactAnnotations(
     });
     current.reset();
     return () => {
+      scope.current = null;
       controller.current = null;
       current.dispose();
       channel.dispose();
@@ -86,7 +103,45 @@ export function useArtifactAnnotations(
   const reset = useCallback(() => {
     if (latest.current.enabled) controller.current?.reset();
   }, []);
+  const ownsScope = useCallback(
+    () =>
+      latest.current.enabled &&
+      latest.current.frame === scope.current?.frame &&
+      latest.current.version === scope.current?.version,
+    [],
+  );
+  const capture = useCallback(
+    async (rect: ArtifactAnnotationRect): Promise<ArtifactAnnotationCaptureResult> => {
+      if (!ownsScope() || !latest.current.canComment || !controller.current)
+        return { ok: false, reason: 'unavailable' };
+      const owner = controller.current;
+      const result = await owner.capture(rect);
+      return owner === controller.current && ownsScope() ? result : { ok: false, reason: 'stale' };
+    },
+    [ownsScope],
+  );
+  const regionForViewportRect = useCallback(
+    (rect: ArtifactAnnotationRect) =>
+      ownsScope() && latest.current.canComment
+        ? (controller.current?.regionForViewportRect(rect) ?? null)
+        : null,
+    [ownsScope],
+  );
+  const cancelCapture = useCallback(() => controller.current?.cancelCapture(), []);
+  const isCurrentViewport = useCallback(
+    (value: ArtifactAnnotationViewport) =>
+      ownsScope() &&
+      latest.current.canComment &&
+      controller.current?.isCurrentViewport(value) === true,
+    [ownsScope],
+  );
   return {
+    isCurrentViewport,
+    viewport: options.enabled && current && readiness?.status === 'ready' ? viewport : null,
+    regions: options.enabled && current && readiness?.status === 'ready' ? regions : {},
+    capture,
+    cancelCapture,
+    regionForViewportRect,
     threads: options.enabled && options.frame && current ? resolved : threads,
     status: !options.enabled
       ? ('unavailable' as const)
