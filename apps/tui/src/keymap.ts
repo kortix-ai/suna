@@ -222,6 +222,24 @@ export const KEYMAP: readonly Binding[] = [
     description: 'Show or hide the sidebar. Same as /sidebar; the choice is remembered.',
   },
   {
+    id: 'panel.info',
+    scope: 'global',
+    chords: [chord('i', { alt: true })],
+    description: 'Show or hide the info panel. Same as /info.',
+  },
+  {
+    id: 'tabs.prev',
+    scope: 'global',
+    chords: [chord('[', { alt: true })],
+    description: 'Open the previous session tab.',
+  },
+  {
+    id: 'tabs.next',
+    scope: 'global',
+    chords: [chord(']', { alt: true })],
+    description: 'Open the next session tab.',
+  },
+  {
     id: 'links',
     scope: 'global',
     chords: [chord('l', { alt: true })],

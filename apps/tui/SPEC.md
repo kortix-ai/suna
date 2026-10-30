@@ -164,6 +164,27 @@ framed, and the session panel keeps its border. Minimum size 80×24. Below 100
 columns the terminal panel is a full-screen toggle instead of a split. Below
 60 columns the sidebar never draws.
 
+### 4.0 The layout system (`src/layout/`)
+
+- `ui-prefs.ts` is the layout as data: six modules (`header`, `tabs`,
+  `sidebar`, `info`, `tray`, `title`), each `{ on, side? }`, three presets,
+  `normalizeUi` for a hand-edited file and the old `{ sidebar }` shape. All
+  off by default except the tray and the window title.
+- `app.tsx` composes the frame from it: tabs above or below the main row,
+  the sidebar left or right of the chat. `session-view.tsx` docks the info
+  panel left or right of the session column (it needs the one `useSession`
+  result) and draws the header only when it is on; the composer and the draft
+  draw the tray only when it is on. The info panel steps aside when the chat
+  would drop under 50 columns.
+- `ui-panel.tsx` is `/ui` and the first-run welcome step; changes apply
+  live and save to `tui.json` through `lib/prefs.ts`.
+- `info-panel.tsx` reads context use with the SDK's
+  `sessionLogThreadMetrics(...).context` and the model's `contextWindow`
+  (the web's rule: input + output + cache, reasoning not added twice).
+- `tabs-bar.tsx` draws the sessions opened in this run (opencode's model).
+- The terminal title is `renderer.setTerminalTitle(<session> · Kortix)`,
+  cleared on exit.
+
 ### 4.1 The command table (`src/commands/`)
 
 - `registry.ts` is the one list of actions: name, aliases, an argument hint,

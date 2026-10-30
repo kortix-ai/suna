@@ -33,8 +33,8 @@
 import { clearAuth } from '@kortix/cli/src/api/auth.ts';
 import { webDashboardUrl } from '@kortix/cli/src/web-url.ts';
 import { useAccounts, useFeatureFlag, useProjectSessions, useProjects } from '@kortix/sdk/react';
-import { useKeyboard, useTerminalDimensions } from '@opentui/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { type Focus, type Overlay, type Route, globalKeyAction } from './app-keys.ts';
 import { type ResolvedHost, hostOrigin } from './auth/hosts.ts';
@@ -70,6 +70,9 @@ import { kortix } from './kortix.ts';
 import { copyToClipboard } from './lib/clipboard.ts';
 import { openUrl } from './lib/open-url.ts';
 import { writePrefs } from './lib/prefs.ts';
+import { type Tab, TabsBar } from './layout/tabs-bar.tsx';
+import { UI_PANEL_ROWS, UiPanel } from './layout/ui-panel.tsx';
+import { DEFAULT_UI, type ModuleId, type UiPrefs, toggleModule } from './layout/ui-prefs.ts';
 import { sessionTitle } from './lib/session-groups.ts';
 import { SCREEN_TITLE, Screen, type ScreenRoute, isScreenRoute } from './screens.tsx';
 import { theme } from './theme.ts';
@@ -135,7 +138,8 @@ export function terminalToggle(
     return {
       open: false,
       focus: null,
-      toast: 'Open a session first: the terminal runs inside its sandbox. Type /sessions or a prompt.',
+      toast:
+        'Open a session first: the terminal runs inside its sandbox. Type /sessions or a prompt.',
     };
   }
   return { open: true, focus: 'terminal', toast: null };
@@ -194,16 +198,20 @@ export interface AppProps {
   initialSessionId?: string | null;
   /** `--terminal`: open the sandbox terminal panel at boot, focused. Needs a session. */
   initialTerminalOpen?: boolean;
-  /** Draw the sidebar at boot: the saved choice, or `--sidebar` / `--no-sidebar`. */
-  initialSidebarShown?: boolean;
+  /** The layout at boot: the saved `/ui` choice, with `--sidebar` / `--no-sidebar` applied. */
+  initialUi?: UiPrefs;
+  /** The first-run layout picker was already answered. False opens it at boot. */
+  onboarded?: boolean;
   /** Tear the renderer down and leave. `src/main.tsx` owns the real exit. */
   onQuit: () => void;
   /** `/hosts`. `src/main.tsx` remounts the app on the new host. */
   onSwitchHost?: () => void;
   /** A boot-time workaround (a dead default project) to show once. */
   bootNotice?: string | null;
-  /** Remember the sidebar choice. Test seam; production writes `tui.json`. */
-  saveSidebar?: (shown: boolean) => void;
+  /** Remember the layout. Test seam; production writes `tui.json`. */
+  saveUi?: (ui: UiPrefs) => void;
+  /** Remember that the first-run picker was answered. */
+  saveOnboarded?: () => void;
 }
 
 export function App({
@@ -212,22 +220,28 @@ export function App({
   accountId: initialAccountId = null,
   initialSessionId = null,
   initialTerminalOpen = false,
-  initialSidebarShown = false,
+  initialUi = DEFAULT_UI,
+  onboarded = true,
   onQuit,
   onSwitchHost,
   bootNotice = null,
-  saveSidebar = (shown) => void writePrefs({ sidebar: shown }),
+  saveUi = (next) => void writePrefs({ ui: next }),
+  saveOnboarded = () => void writePrefs({ onboarded: true }),
 }: AppProps) {
   // A SIGWINCH re-renders through this hook, and the re-render is what
   // repaints: every region's width/height is derived from it.
   const dimensions = useTerminalDimensions();
+  const renderer = useRenderer();
 
   const [route, setRoute] = useState<Route>('session');
   const [overlay, setOverlay] = useState<Overlay>(null);
   const bootTerminal = initialTerminalOpen && Boolean(initialSessionId);
   const [focus, setFocus] = useState<Focus>(bootTerminal ? 'terminal' : 'composer');
   const [terminalOpen, setTerminalOpen] = useState(bootTerminal);
-  const [sidebarShown, setSidebarShown] = useState(initialSidebarShown);
+  const [ui, setUiState] = useState<UiPrefs>(initialUi);
+  const sidebarShown = ui.sidebar.on;
+  /** Sessions opened in this run, in order: the tabs module draws them. */
+  const [openTabs, setOpenTabs] = useState<string[]>(initialSessionId ? [initialSessionId] : []);
   const [quitArmed, setQuitArmed] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(initialProjectId);
   const [accountId, setAccountId] = useState<string | null>(
@@ -237,7 +251,9 @@ export function App({
   const [toast, setToast] = useState<{ message: string; kind: ToastKind; seq: number } | null>(
     null,
   );
-  const [panel, setPanel] = useState<CommandPanel | null>(null);
+  const [panel, setPanel] = useState<CommandPanel | null>(
+    onboarded ? null : { kind: 'ui', welcome: true },
+  );
   const [seed, setSeed] = useState<{ text: string; seq: number } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   // Hoisted from `SessionView`: the ports API, the links rows and the
@@ -256,13 +272,19 @@ export function App({
   );
 
   useEffect(() => {
-    if (!order.includes(focus)) setFocus(order.includes('composer') ? 'composer' : (order[0] as Focus));
+    if (!order.includes(focus))
+      setFocus(order.includes('composer') ? 'composer' : (order[0] as Focus));
   }, [order, focus]);
 
   // A stale ports API (from the previous session's `SessionView` instance)
   // must never answer for the new one. `sessionId` is a re-run trigger only.
   // biome-ignore lint/correctness/useExhaustiveDependencies(sessionId): trigger-only dependency, not read in the body.
+  // Only on a CHANGE of session: on mount it would close the first-run
+  // layout picker before it was ever seen (measured).
+  const shownSession = useRef(sessionId);
   useEffect(() => {
+    if (shownSession.current === sessionId) return;
+    shownSession.current = sessionId;
     setPortsApi(null);
     setLinks([]);
     setCapabilities(null);
@@ -296,7 +318,11 @@ export function App({
     () => sessions.sessions.find((entry) => entry.session_id === sessionId) ?? null,
     [sessions.sessions, sessionId],
   );
-  const title = sessionRow ? sessionTitle(sessionRow) : sessionId ? sessionId.slice(0, 8) : undefined;
+  const title = sessionRow
+    ? sessionTitle(sessionRow)
+    : sessionId
+      ? sessionId.slice(0, 8)
+      : undefined;
   const projectName =
     projects.data?.find((project) => project.project_id === projectId)?.name ??
     (projectId ? projectId.slice(0, 8) : 'no project');
@@ -323,7 +349,8 @@ export function App({
   const sidebarNav = useMemo<SidebarNavItem[]>(
     () =>
       COMMANDS.filter(
-        (spec) => spec.group === 'screen' && isScreenRoute(spec.name) && !unavailableReason(spec, context),
+        (spec) =>
+          spec.group === 'screen' && isScreenRoute(spec.name) && !unavailableReason(spec, context),
       ).map((spec) => ({
         screen: spec.name,
         label: SCREEN_TITLE[spec.name as ScreenRoute],
@@ -335,12 +362,18 @@ export function App({
   const forwardedPorts = (portsApi?.rows ?? [])
     .filter((row) => row.state === 'forwarding')
     .map((row) => row.sandboxPort);
-  const trayLeft = [hostLabel, projectName, forwardedPorts.length ? `⇄ ${forwardedPorts.join(',')}` : '']
+  const trayLeft = [
+    hostLabel,
+    projectName,
+    forwardedPorts.length ? `⇄ ${forwardedPorts.join(',')}` : '',
+  ]
     .filter(Boolean)
     .join(' · ');
 
   const splashLines = useMemo<SplashLine[]>(() => {
-    const lines: SplashLine[] = [{ label: 'host', value: `${hostLabel}  ${hostOrigin(host.backendUrl)}` }];
+    const lines: SplashLine[] = [
+      { label: 'host', value: `${hostLabel}  ${hostOrigin(host.backendUrl)}` },
+    ];
     if (host.userEmail) lines.push({ label: 'user', value: host.userEmail });
     if (accountName) lines.push({ label: 'account', value: accountName });
     lines.push({ label: 'project', value: projectName });
@@ -348,9 +381,19 @@ export function App({
     return lines;
   }, [hostLabel, host.backendUrl, host.userEmail, accountName, projectName, title]);
 
+  // The terminal window's title follows the open session (the `title`
+  // module). Cleared on the way out so the shell gets its own title back.
+  const windowTitle = ui.title.on ? (title ? `${title} · Kortix` : `${projectName} · Kortix`) : '';
+  useEffect(() => {
+    if (!ui.title.on) return;
+    renderer.setTerminalTitle(windowTitle);
+  }, [renderer, ui.title.on, windowTitle]);
+  useEffect(() => () => renderer.setTerminalTitle(''), [renderer]);
+
   // ── navigation ──────────────────────────────────────────────────────────
 
   const openSession = useCallback((id: string) => {
+    setOpenTabs((tabs) => (tabs.includes(id) ? tabs : [...tabs, id]));
     setSessionId(id);
     setRoute('session');
     setOverlay(null);
@@ -376,13 +419,26 @@ export function App({
   // Showing the sidebar does NOT move the keyboard: the input stays where the
   // user is typing, and Tab reaches the sidebar. Measured: when it took focus,
   // the next `/drive` went into the sidebar's own `/` filter.
-  const toggleSidebar = useCallback(() => {
-    setSidebarShown((shown) => {
-      const next = !shown;
-      saveSidebar(next);
-      return next;
-    });
-  }, [saveSidebar]);
+  const setUi = useCallback(
+    (next: UiPrefs) => {
+      setUiState(next);
+      saveUi(next);
+    },
+    [saveUi],
+  );
+
+  /** `/sidebar`, `/info`, `/tabs`, `/header`, `/tray`, `/title`, `Alt+B`, `Alt+I`. */
+  const toggle = useCallback(
+    (id: ModuleId) => {
+      setUiState((current) => {
+        const next = toggleModule(current, id);
+        saveUi(next);
+        return next;
+      });
+    },
+    [saveUi],
+  );
+  const toggleSidebar = useCallback(() => toggle('sidebar'), [toggle]);
 
   const toggleTerminal = useCallback(() => {
     const decision = terminalToggle(terminalOpen, sessionId);
@@ -456,9 +512,13 @@ export function App({
     (action: ConfirmAction) => {
       if (action.kind === 'delete-session' && projectId) {
         const target = action.sessionId;
-        void act('Delete', () => deleteSession(kortix(), projectId, target), () => {
-          if (target === sessionId) openDraft();
-        });
+        void act(
+          'Delete',
+          () => deleteSession(kortix(), projectId, target),
+          () => {
+            if (target === sessionId) openDraft();
+          },
+        );
       }
     },
     [act, projectId, sessionId, openDraft],
@@ -484,7 +544,10 @@ export function App({
           if (!pid || !sid) return;
           if (!args.trim()) {
             // Prefill the current title: edit it, Enter saves.
-            return setSeed((current) => ({ text: `/rename ${title ?? ''}`, seq: (current?.seq ?? 0) + 1 }));
+            return setSeed((current) => ({
+              text: `/rename ${title ?? ''}`,
+              seq: (current?.seq ?? 0) + 1,
+            }));
           }
           return void act('Rename', () => renameSession(kortix(), pid, sid, args));
         case 'stop':
@@ -501,7 +564,9 @@ export function App({
           return void start(args, sid).catch(() => {});
         case 'pin':
           if (!pid || !sid) return;
-          return void act('Pin', () => togglePin(kortix(), pid, sid, Boolean(sessionRow?.pinned_at)));
+          return void act('Pin', () =>
+            togglePin(kortix(), pid, sid, Boolean(sessionRow?.pinned_at)),
+          );
         case 'archive':
           if (!pid || !sid) return;
           return void act('Archive', async () => (await toggleArchive(kortix(), pid, sid)).message);
@@ -541,7 +606,10 @@ export function App({
           return pushToast('Host switching needs the login screen.', 'error');
         case 'logout':
           if (host.source === 'env') {
-            return pushToast('This TUI runs on KORTIX_API_KEY / KORTIX_TOKEN. Unset it to log out.', 'error');
+            return pushToast(
+              'This TUI runs on KORTIX_API_KEY / KORTIX_TOKEN. Unset it to log out.',
+              'error',
+            );
           }
           // The same call `kortix logout` makes: the host stays, its token goes.
           clearAuth(host.name);
@@ -561,11 +629,19 @@ export function App({
                 label: 'runtime',
                 value: sid
                   ? capabilities
-                    ? capabilities.filter((entry) => entry.startsWith('session.')).join(' ') || 'no session.* capabilities'
+                    ? capabilities.filter((entry) => entry.startsWith('session.')).join(' ') ||
+                      'no session.* capabilities'
                     : 'not read yet'
                   : '—',
               },
-              { label: 'sidebar', value: sidebarShown ? 'shown' : 'hidden (/sidebar)' },
+              {
+                label: 'layout',
+                value:
+                  (['header', 'tabs', 'sidebar', 'info', 'tray'] as const)
+                    .filter((id) => ui[id].on)
+                    .map((id) => (ui[id].side ? `${id} ${ui[id].side}` : id))
+                    .join(' · ') || 'chat only (/ui)',
+              },
               { label: 'version', value: process.env.KORTIX_TUI_VERSION || 'dev' },
             ],
           });
@@ -579,6 +655,23 @@ export function App({
           return;
         case 'sidebar':
           return toggleSidebar();
+        case 'info':
+        case 'tabs':
+        case 'header':
+        case 'tray':
+        case 'title':
+          return toggle(command);
+        case 'ui':
+          return setPanel({ kind: 'ui', welcome: false });
+        case 'close': {
+          if (!sid) return;
+          const index = openTabs.indexOf(sid);
+          const rest = openTabs.filter((tab) => tab !== sid);
+          setOpenTabs(rest);
+          const next = rest[Math.min(Math.max(index, 0), rest.length - 1)];
+          if (next) return openSession(next);
+          return openDraft();
+        }
         case 'terminal':
           return toggleTerminal();
         case 'ports':
@@ -620,7 +713,10 @@ export function App({
       accountId,
       projectName,
       capabilities,
-      sidebarShown,
+      ui,
+      toggle,
+      openTabs,
+      openSession,
       start,
       openDraft,
       act,
@@ -659,6 +755,15 @@ export function App({
         return toggleTerminal();
       case 'toggle-sidebar':
         return toggleSidebar();
+      case 'toggle-info':
+        return toggle('info');
+      case 'tab': {
+        if (openTabs.length === 0) return;
+        const index = sessionId ? openTabs.indexOf(sessionId) : -1;
+        const next = openTabs[(index + action.step + openTabs.length) % openTabs.length];
+        if (next) openSession(next);
+        return;
+      }
       case 'overlay':
         if (action.overlay === 'ports' && !portsApi) {
           return pushToast('Open a session first.', 'error');
@@ -683,27 +788,88 @@ export function App({
     }
   });
 
-  const contentHeight = route === 'session' ? dimensions.height : Math.max(dimensions.height - 1, 3);
+  const tabsShown = ui.tabs.on;
+  const contentHeight =
+    (route === 'session' ? dimensions.height : Math.max(dimensions.height - 1, 3)) -
+    (tabsShown ? 1 : 0);
+  const tabs: Tab[] = openTabs.map((id) => {
+    const row = sessions.sessions.find((entry) => entry.session_id === id);
+    return { sessionId: id, title: row ? sessionTitle(row) : id.slice(0, 8) };
+  });
+  const tabsNode = tabsShown ? (
+    <TabsBar tabs={tabs} activeId={sessionId} width={dimensions.width} />
+  ) : null;
   const mainWidth = Math.max(dimensions.width - (showSidebar ? SIDEBAR_WIDTH : 0), 20);
   const borderless = !showSidebar;
 
-  const panelNode = panel ? (
-    <CommandPanelView
-      panel={panel}
-      width={Math.max(Math.min(mainWidth - (borderless ? 2 : 4), 96), 24)}
-      projectId={projectId}
-      accountId={accountId}
-      sessionId={sessionId}
-      onClose={() => {
-        setPanel(null);
-        setFocus('composer');
-      }}
-      onOpenSession={openSession}
-      onPickProject={pickProject}
-      onPickAccount={pickAccount}
-      onConfirm={confirm}
-    />
-  ) : null;
+  const panelWidth = Math.max(Math.min(mainWidth - (borderless ? 2 : 4), 96), 24);
+  const closePanel = () => {
+    if (panel?.kind === 'ui' && panel.welcome) saveOnboarded();
+    setPanel(null);
+    setFocus('composer');
+  };
+  const panelNode =
+    panel?.kind === 'ui' ? (
+      <UiPanel
+        ui={ui}
+        width={panelWidth}
+        welcome={panel.welcome}
+        onChange={setUi}
+        onClose={closePanel}
+      />
+    ) : panel ? (
+      <CommandPanelView
+        panel={panel}
+        width={panelWidth}
+        projectId={projectId}
+        accountId={accountId}
+        sessionId={sessionId}
+        onClose={closePanel}
+        onOpenSession={openSession}
+        onPickProject={pickProject}
+        onPickAccount={pickAccount}
+        onConfirm={confirm}
+      />
+    ) : null;
+
+  const sidebarNode = (
+    <Panel
+      title={hostLabel === 'env' ? 'kortix' : hostLabel}
+      focused={focus === 'sidebar'}
+      width={SIDEBAR_WIDTH}
+      flexShrink={0}
+    >
+      <Sidebar
+        host={host}
+        accountId={accountId}
+        projectId={projectId}
+        selectedSessionId={sessionId}
+        focused={focus === 'sidebar'}
+        width={SIDEBAR_WIDTH - 2}
+        height={contentHeight - 2}
+        onOpenSession={openSession}
+        onNewSession={openSession}
+        onStartDraft={openDraft}
+        nav={sidebarNav}
+        onNavigate={(screen) => {
+          if (isScreenRoute(screen)) openScreen(screen);
+        }}
+        onProjectChange={pickProject}
+        // Only fills a blank (an env host with no KORTIX_ACCOUNT_ID);
+        // it keeps the open project and session, unlike a real pick.
+        onAccountResolved={(resolved) => {
+          setAccountId((current) => current ?? resolved);
+        }}
+        onAccountChange={(nextAccount) => {
+          setAccountId(nextAccount);
+          setProjectId(null);
+          setSessionId(null);
+          setRoute('session');
+        }}
+        onToast={pushToast}
+      />
+    </Panel>
+  );
 
   return (
     <box
@@ -712,45 +878,9 @@ export function App({
       height={dimensions.height}
       backgroundColor={theme.bg}
     >
+      {ui.tabs.side !== 'bottom' ? tabsNode : null}
       <box flexDirection="row" flexGrow={1} overflow="hidden">
-        {showSidebar ? (
-          <Panel
-            title={hostLabel === 'env' ? 'kortix' : hostLabel}
-            focused={focus === 'sidebar'}
-            width={SIDEBAR_WIDTH}
-            flexShrink={0}
-          >
-            <Sidebar
-              host={host}
-              accountId={accountId}
-              projectId={projectId}
-              selectedSessionId={sessionId}
-              focused={focus === 'sidebar'}
-              width={SIDEBAR_WIDTH - 2}
-              height={contentHeight - 2}
-              onOpenSession={openSession}
-              onNewSession={openSession}
-              onStartDraft={openDraft}
-              nav={sidebarNav}
-              onNavigate={(screen) => {
-                if (isScreenRoute(screen)) openScreen(screen);
-              }}
-              onProjectChange={pickProject}
-              // Only fills a blank (an env host with no KORTIX_ACCOUNT_ID);
-              // it keeps the open project and session, unlike a real pick.
-              onAccountResolved={(resolved) => {
-                setAccountId((current) => current ?? resolved);
-              }}
-              onAccountChange={(nextAccount) => {
-                setAccountId(nextAccount);
-                setProjectId(null);
-                setSessionId(null);
-                setRoute('session');
-              }}
-              onToast={pushToast}
-            />
-          </Panel>
-        ) : null}
+        {showSidebar && ui.sidebar.side !== 'right' ? sidebarNode : null}
 
         {route === 'session' && projectId && sessionId ? (
           <SessionView
@@ -780,6 +910,10 @@ export function App({
             borderless={borderless}
             trayLeft={trayLeft}
             splashLines={splashLines}
+            info={ui.info.on ? (ui.info.side === 'left' ? 'left' : 'right') : null}
+            showHeader={ui.header.on}
+            showTray={ui.tray.on}
+            forwardedPorts={forwardedPorts}
             onPortsApi={onPortsApi}
             onLinks={setLinks}
           />
@@ -794,6 +928,7 @@ export function App({
             context={context}
             splashLines={splashLines}
             trayLeft={trayLeft}
+            showTray={ui.tray.on}
             onStart={(prompt) => start(prompt)}
             onCommand={runCommand}
             onToast={pushToast}
@@ -829,7 +964,9 @@ export function App({
             />
           </Panel>
         ) : null}
+        {showSidebar && ui.sidebar.side === 'right' ? sidebarNode : null}
       </box>
+      {ui.tabs.side === 'bottom' ? tabsNode : null}
 
       {route !== 'session' ? (
         <StatusBar

@@ -34,7 +34,12 @@ import type { KeyEvent } from '@opentui/core';
 import { resolve } from 'node:path';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { CommandContext, CommandName, MenuEntry, RuntimeCommand } from '../../../commands/registry.ts';
+import type {
+  CommandContext,
+  CommandName,
+  MenuEntry,
+  RuntimeCommand,
+} from '../../../commands/registry.ts';
 import { copyToClipboard } from '../../../lib/clipboard.ts';
 import { theme } from '../../../theme.ts';
 import { lastReplyText, transcriptMarkdown } from '../transcript-export.ts';
@@ -69,6 +74,8 @@ export interface ComposerProps {
   trayLeft?: string;
   /** Replace the draft (e.g. `/rename <title>`). */
   seed?: { text: string; seq: number } | null;
+  /** The tray module: the row under the input. Default on. */
+  showTray?: boolean;
   /** The thread on screen, for `/copy` and `/export`. */
   messages?: readonly SessionLogMessage[];
   /** The session's title, for the `/export` heading and file name. */
@@ -109,6 +116,7 @@ export function Composer({
   seed: hostSeed = null,
   messages = [],
   title = 'Kortix session',
+  showTray = true,
   copyText = copyToClipboard,
   writeFile = (path, text) => Bun.write(path, text),
 }: ComposerProps) {
@@ -229,7 +237,10 @@ export function Composer({
           void Promise.resolve(writeFile(path, transcriptMarkdown(messages, title)))
             .then(() => onToast?.(`Saved ${path}`))
             .catch((error: unknown) =>
-              onToast?.(`Export failed: ${error instanceof Error ? error.message : String(error)}`, 'error'),
+              onToast?.(
+                `Export failed: ${error instanceof Error ? error.message : String(error)}`,
+                'error',
+              ),
             );
           return;
         }
@@ -257,7 +268,8 @@ export function Composer({
   // ── render ────────────────────────────────────────────────────────────────
 
   const runtimeCommands = useMemo<readonly RuntimeCommand[]>(
-    () => (runtimeSupports(context.capabilities, 'session.commands') ? (session.commands ?? []) : []),
+    () =>
+      runtimeSupports(context.capabilities, 'session.commands') ? (session.commands ?? []) : [],
     [session.commands, context.capabilities],
   );
 
@@ -277,7 +289,13 @@ export function Composer({
   const seed = restore && (!hostSeed || restore.seq > hostSeed.seq) ? restore : hostSeed;
 
   const tray = (
-    <box flexDirection="row" justifyContent="space-between" height={1} paddingLeft={1} paddingRight={1}>
+    <box
+      flexDirection="row"
+      justifyContent="space-between"
+      height={1}
+      paddingLeft={1}
+      paddingRight={1}
+    >
       <text fg={theme.faint} wrapMode="none">
         {trayLeft}
       </text>
@@ -347,7 +365,11 @@ export function Composer({
       <PromptInput
         focused={focused && !covered}
         width={width}
-        placeholder={session.isBusy ? 'Type to queue the next prompt · / for commands' : 'Type a prompt · / for commands'}
+        placeholder={
+          session.isBusy
+            ? 'Type to queue the next prompt · / for commands'
+            : 'Type a prompt · / for commands'
+        }
         context={context}
         runtimeCommands={runtimeCommands}
         busy={session.isBusy}
@@ -358,7 +380,7 @@ export function Composer({
         onKey={onKey}
         onMetrics={setInputMetrics}
         seed={seed}
-        footer={tray}
+        footer={showTray ? tray : null}
       />
     </box>
   );

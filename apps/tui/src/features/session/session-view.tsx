@@ -23,7 +23,11 @@
  * ordinary typing is exact and only the overlay case is an estimate.
  */
 
-import { type SessionHealthResult, type SessionLogMessage, classifySessionLogMessage } from '@kortix/sdk';
+import {
+  type SessionHealthResult,
+  type SessionLogMessage,
+  classifySessionLogMessage,
+} from '@kortix/sdk';
 import { useSession, useSessionLogThread } from '@kortix/sdk/react';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -37,6 +41,7 @@ import { Panel, Splash, type SplashLine, type ToastKind } from '../../ui/index.t
 import { type LinkRow, sameLinks, withLinks } from '../links/index.ts';
 import { type UsePortsResult, detectForwardablePorts, usePorts } from '../ports/index.ts';
 import { TerminalPanel } from '../terminal/terminal-panel.tsx';
+import { INFO_PANEL_WIDTH, InfoPanel } from '../../layout/info-panel.tsx';
 import { Composer } from './composer/composer.tsx';
 import type { PromptInputMetrics } from './composer/prompt-input.tsx';
 import { SessionPrompts, Transcript } from './transcript/index.ts';
@@ -81,8 +86,9 @@ export function transcriptRows(
   contentRows: number,
   metrics: ComposerMetrics,
   promptOpen: boolean,
+  headerRows = 1,
 ): number {
-  const reserved = 1 + composerReserve(metrics) + (promptOpen ? PROMPT_RESERVE_ROWS : 0);
+  const reserved = headerRows + composerReserve(metrics) + (promptOpen ? PROMPT_RESERVE_ROWS : 0);
   return Math.max(contentRows - reserved, TRANSCRIPT_MIN_ROWS);
 }
 
@@ -142,6 +148,14 @@ export interface SessionViewProps {
   trayLeft?: string;
   /** Splash metadata for an empty session. */
   splashLines?: readonly SplashLine[];
+  /** The info panel module: docked left or right, or off. */
+  info?: 'left' | 'right' | null;
+  /** The header module: the title row above the transcript. */
+  showHeader?: boolean;
+  /** The tray module: the row under the input. */
+  showTray?: boolean;
+  /** Local ports forwarded from this sandbox, for the info panel. */
+  forwardedPorts?: readonly number[];
   /** Ports panel (`Alt+P`) state, hoisted so `app.tsx` can render its overlay
    *  at the root — same reason `onMetrics` hoists composer metrics. */
   onPortsApi?: (api: UsePortsResult) => void;
@@ -180,6 +194,10 @@ export function SessionView({
   borderless = false,
   trayLeft = '',
   splashLines = [],
+  info = null,
+  showHeader = true,
+  showTray = true,
+  forwardedPorts = [],
   onPortsApi,
   onLinks,
   readHealth = readSessionHealth,
@@ -187,7 +205,11 @@ export function SessionView({
 }: SessionViewProps) {
   // The one call. Every child reads this object; none of them calls a hook.
   const session = useSessionImpl(projectId, sessionId);
-  const [metrics, setMetrics] = useState<ComposerMetrics>({ rows: 1, aboveRows: 0, menuOpen: false });
+  const [metrics, setMetrics] = useState<ComposerMetrics>({
+    rows: 1,
+    aboveRows: 0,
+    menuOpen: false,
+  });
 
   // What this runtime serves: one `/kortix/health` read once the runtime is up.
   // Null — not read yet, or the read failed — hides nothing.
@@ -259,7 +281,13 @@ export function SessionView({
 
   const focusComposer = useCallback(() => onFocus('composer'), [onFocus]);
 
-  const sessionWidth = terminalOpen && wide ? Math.max(width - terminalWidth(width), 20) : width;
+  // The info panel docks beside the chat only while the chat keeps 50 columns.
+  const infoShown =
+    Boolean(info) &&
+    width - (terminalOpen && wide ? terminalWidth(width) : 0) - INFO_PANEL_WIDTH >= 50;
+  const columnWidth = width - (infoShown ? INFO_PANEL_WIDTH : 0);
+  const sessionWidth =
+    terminalOpen && wide ? Math.max(columnWidth - terminalWidth(width), 20) : columnWidth;
   const showSession = !terminalOpen || wide;
 
   const frame = borderless ? 0 : 2;
@@ -271,7 +299,7 @@ export function SessionView({
     [context, capabilities],
   );
   const promptOpen = session.questions.length > 0 || session.permissions.length > 0;
-  const rows = transcriptRows(contentRows, metrics, promptOpen);
+  const rows = transcriptRows(contentRows, metrics, promptOpen, showHeader ? 1 : 0);
 
   const header = useMemo(() => {
     const parts: string[] = [];
@@ -280,8 +308,22 @@ export function SessionView({
     return parts.join(' · ');
   }, [session.phase, session.stage, session.agentName]);
 
+  const infoNode =
+    infoShown && showSession ? (
+      <InfoPanel
+        session={session}
+        thread={thread}
+        title={title ?? 'Session'}
+        sessionId={sessionId}
+        footer={trayLeft}
+        forwarded={forwardedPorts}
+        height={height}
+      />
+    ) : null;
+
   return (
     <>
+      {info === 'left' ? infoNode : null}
       {showSession ? (
         <Panel
           borderless={borderless}
@@ -298,18 +340,20 @@ export function SessionView({
             paddingRight={1}
             overflow="hidden"
           >
-            <box flexDirection="row" height={1} justifyContent="space-between">
-              <text fg={theme.fg} wrapMode="none">
-                <span fg={session.phase === 'error' ? theme.danger : theme.accent}>
-                  {`${phaseGlyph(session.phase)} `}
-                </span>
-                {truncate(title ?? 'Session', Math.max(innerWidth - 28, 8))}
-                <span fg={theme.faint}>{header ? `  ${header}` : ''}</span>
-              </text>
-              <text fg={theme.faint} wrapMode="none">
-                {`/ commands · ${hintFor('panel.terminal')} terminal`}
-              </text>
-            </box>
+            {showHeader ? (
+              <box flexDirection="row" height={1} justifyContent="space-between">
+                <text fg={theme.fg} wrapMode="none">
+                  <span fg={session.phase === 'error' ? theme.danger : theme.accent}>
+                    {`${phaseGlyph(session.phase)} `}
+                  </span>
+                  {truncate(title ?? 'Session', Math.max(innerWidth - 28, 8))}
+                  <span fg={theme.faint}>{header ? `  ${header}` : ''}</span>
+                </text>
+                <text fg={theme.faint} wrapMode="none">
+                  {`/ commands · ${hintFor('panel.terminal')} terminal`}
+                </text>
+              </box>
+            ) : null}
 
             {empty ? (
               <box flexDirection="column" height={rows} paddingTop={1} overflow="hidden">
@@ -358,11 +402,13 @@ export function SessionView({
               trayLeft={trayLeft}
               messages={thread?.messages}
               title={title}
+              showTray={showTray}
             />
           </box>
         </Panel>
       ) : null}
 
+      {info !== 'left' ? infoNode : null}
       {terminalOpen ? (
         <TerminalPanel
           projectId={projectId}
@@ -384,7 +430,10 @@ export function SessionView({
 }
 
 /** `GET /kortix/health` through the session handle. Async so a throw is a rejection. */
-async function readSessionHealth(projectId: string, sessionId: string): Promise<SessionHealthResult> {
+async function readSessionHealth(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionHealthResult> {
   return kortix().session(projectId, sessionId).health();
 }
 

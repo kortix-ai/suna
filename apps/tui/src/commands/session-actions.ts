@@ -126,7 +126,10 @@ export async function startSession(
   prompt: string,
 ): Promise<string> {
   const text = prompt.trim();
-  const created = await client.projects.createSession(projectId, text ? { initial_prompt: text } : {});
+  const created = await client.projects.createSession(
+    projectId,
+    text ? { initial_prompt: text } : {},
+  );
   return created.session_id;
 }
 

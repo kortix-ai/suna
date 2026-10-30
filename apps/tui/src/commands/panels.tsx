@@ -26,7 +26,9 @@ export type CommandPanel =
   | { kind: 'projects'; query: string }
   | { kind: 'accounts'; query: string }
   | { kind: 'confirm'; title: string; yes: string; action: ConfirmAction }
-  | { kind: 'status'; lines: readonly { label: string; value: string }[] };
+  | { kind: 'status'; lines: readonly { label: string; value: string }[] }
+  /** `/ui` and the first-run layout picker. `app.tsx` draws it (it owns the layout). */
+  | { kind: 'ui'; welcome: boolean };
 
 /** What a confirmed panel runs. Data, so the panel stays a pure view. */
 export type ConfirmAction = { kind: 'delete-session'; sessionId: string };
@@ -85,7 +87,9 @@ export function CommandPanelView(props: PanelProps) {
   if (panel.kind === 'sessions') return <SessionsPanel {...props} query={panel.query} />;
   if (panel.kind === 'projects') return <ProjectsPanel {...props} query={panel.query} />;
   if (panel.kind === 'accounts') return <AccountsPanel {...props} query={panel.query} />;
-  if (panel.kind === 'status') return <StatusPanel lines={panel.lines} width={props.width} onClose={props.onClose} />;
+  if (panel.kind === 'status')
+    return <StatusPanel lines={panel.lines} width={props.width} onClose={props.onClose} />;
+  if (panel.kind === 'ui') return null;
   return (
     <InlinePicker
       title={panel.title}
@@ -106,7 +110,14 @@ export function CommandPanelView(props: PanelProps) {
   );
 }
 
-function SessionsPanel({ width, projectId, sessionId, query, onClose, onOpenSession }: PanelProps & { query: string }) {
+function SessionsPanel({
+  width,
+  projectId,
+  sessionId,
+  query,
+  onClose,
+  onOpenSession,
+}: PanelProps & { query: string }) {
   const sessionsQuery = useProjectSessions(projectId ?? '', { enabled: Boolean(projectId) });
   const items = useMemo(
     () => sessionItems(sessionsQuery.sessions, sessionId, Date.now()),
@@ -172,7 +183,13 @@ function ProjectsPanel({
   );
 }
 
-function AccountsPanel({ width, accountId, query, onClose, onPickAccount }: PanelProps & { query: string }) {
+function AccountsPanel({
+  width,
+  accountId,
+  query,
+  onClose,
+  onPickAccount,
+}: PanelProps & { query: string }) {
   const accountsQuery = useAccounts();
   const items = useMemo<ListItem[]>(
     () =>
@@ -235,7 +252,9 @@ function StatusPanel({
       {lines.map((line) => (
         <text key={line.label} wrapMode="none" height={1}>
           <span fg={theme.faint}>{line.label.padEnd(labelWidth)}</span>
-          <span fg={theme.fg}>{line.value.length > room ? `${line.value.slice(0, room - 1)}…` : line.value}</span>
+          <span fg={theme.fg}>
+            {line.value.length > room ? `${line.value.slice(0, room - 1)}…` : line.value}
+          </span>
         </text>
       ))}
     </box>

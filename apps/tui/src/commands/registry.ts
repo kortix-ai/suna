@@ -101,6 +101,12 @@ export const COMMANDS = [
     needs: 'session',
   },
   {
+    name: 'close',
+    description: 'Close this session tab; the neighbour opens.',
+    group: 'session',
+    needs: 'session',
+  },
+  {
     name: 'fork',
     args: '[prompt]',
     description: 'Copy this conversation into a new session and open it.',
@@ -213,10 +219,45 @@ export const COMMANDS = [
   },
   // — panels —
   {
+    name: 'ui',
+    aliases: ['layout', 'tui'],
+    description: 'Pick the layout: presets, and every panel on or off, left or right.',
+    group: 'view',
+  },
+  {
     name: 'sidebar',
     description: 'Show or hide the sidebar. The choice is remembered.',
     group: 'view',
     binding: 'panel.sidebar',
+  },
+  {
+    name: 'info',
+    aliases: ['panel'],
+    description: 'Show or hide the info panel: title, context, model, ports.',
+    group: 'view',
+    binding: 'panel.info',
+  },
+  {
+    name: 'tabs',
+    description: 'Show or hide the session tabs.',
+    group: 'view',
+  },
+  {
+    name: 'header',
+    aliases: ['titlebar'],
+    description: 'Show or hide the title row above the transcript.',
+    group: 'view',
+  },
+  {
+    name: 'tray',
+    aliases: ['statusline'],
+    description: 'Show or hide the row under the input.',
+    group: 'view',
+  },
+  {
+    name: 'title',
+    description: "Let the terminal window's title follow the session, or not.",
+    group: 'view',
   },
   {
     name: 'terminal',
@@ -361,7 +402,7 @@ export const COMMANDS = [
   // — app —
   {
     name: 'status',
-    aliases: ['doctor', 'info', 'whoami'],
+    aliases: ['doctor', 'whoami'],
     description: 'Host, account, project, session, runtime and version.',
     group: 'app',
   },
@@ -410,7 +451,11 @@ export function unavailableReason(spec: CommandSpec, context: CommandContext): s
   if (spec.needs === 'session' && !context.hasSession) return 'needs an open session';
   if (spec.needs === 'project' && !context.hasProject) return 'needs a project — /projects';
   if (spec.needs === 'account' && !context.hasAccount) return 'needs an account — /accounts';
-  if (spec.capability && context.hasSession && !runtimeSupports(context.capabilities, spec.capability)) {
+  if (
+    spec.capability &&
+    context.hasSession &&
+    !runtimeSupports(context.capabilities, spec.capability)
+  ) {
     return "this session's runtime does not support it";
   }
   if (spec.flag && context.flags?.[spec.flag] === false) return 'turned off for this project';
@@ -529,7 +574,9 @@ export function menuEntries(
     });
   }
   const project =
-    Array.isArray(runtime) && runtimeSupports(context.capabilities, 'session.commands') ? runtime : [];
+    Array.isArray(runtime) && runtimeSupports(context.capabilities, 'session.commands')
+      ? runtime
+      : [];
   for (const command of project) {
     if (!command || typeof command.name !== 'string' || !command.name) continue;
     // A project command never shadows a built-in: the built-in row is the one

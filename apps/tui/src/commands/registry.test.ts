@@ -131,7 +131,9 @@ describe('project commands', () => {
   });
 
   test('are hidden on a runtime without session.commands', () => {
-    const rows = menuEntries('', { ...FULL, capabilities: ['session.compact'] }, [{ name: 'deploy' }]);
+    const rows = menuEntries('', { ...FULL, capabilities: ['session.compact'] }, [
+      { name: 'deploy' },
+    ]);
     expect(rows.some((row) => row.name === 'deploy')).toBe(false);
   });
 

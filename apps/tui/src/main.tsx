@@ -41,12 +41,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 
 import { App } from './app.tsx';
-import { type ResolvedHost, hostOrigin, listHostEntries, tokenRejectionNotice } from './auth/hosts.ts';
+import {
+  type ResolvedHost,
+  hostOrigin,
+  listHostEntries,
+  tokenRejectionNotice,
+} from './auth/hosts.ts';
 import { type BootStep, BootScreen } from './features/boot/boot-screen.tsx';
 import { LoginScreen } from './features/login/index.ts';
 import { registerEmbeddedTerminal } from './features/terminal/register.ts';
 import { initKortix, kortix } from './kortix.ts';
-import { initialSidebarShown } from './lib/prefs.ts';
+import type { UiPrefs } from './layout/ui-prefs.ts';
+import { initialUi, prefsPath, readPrefs } from './lib/prefs.ts';
 
 registerEmbeddedTerminal();
 
@@ -179,8 +185,10 @@ interface RootProps {
   initialAccountId: string | null;
   /** `--terminal`: open the sandbox terminal panel at boot. */
   initialTerminalOpen: boolean;
-  /** Draw the sidebar at boot. */
-  initialSidebarShown: boolean;
+  /** The layout at boot. */
+  initialUi: UiPrefs;
+  /** The first-run layout picker was answered before. */
+  onboarded: boolean;
   /** What boot had to work around (a dead default project), shown once as a toast. */
   bootNotice: string | null;
   initialHost: ResolvedHost | null;
@@ -207,7 +215,8 @@ function Root({
   initialSessionId,
   initialAccountId,
   initialTerminalOpen,
-  initialSidebarShown,
+  initialUi: bootUi,
+  onboarded,
   onQuit,
 }: RootProps) {
   const [host, setHost] = useState<ResolvedHost | null>(initialHost);
@@ -260,7 +269,8 @@ function Root({
       accountId={initialAccountId ?? (host.accountId || null)}
       initialSessionId={initialSessionId}
       initialTerminalOpen={initialTerminalOpen}
-      initialSidebarShown={initialSidebarShown}
+      initialUi={bootUi}
+      onboarded={onboarded}
       onQuit={onQuit}
       onSwitchHost={() => {
         setPreviousHost(host);
@@ -414,14 +424,22 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
             bootAccountId = null;
           }
         }
-        mark('project', 'done', projectName ?? (projectId ? projectId.slice(0, 8) : 'none on this host'));
+        mark(
+          'project',
+          'done',
+          projectName ?? (projectId ? projectId.slice(0, 8) : 'none on this host'),
+        );
       }
 
       let createdSessionId: string | null = null;
       if (host && options.newSession) {
         mark('session', 'running');
         createdSessionId = await bootSession(projectId, options.newSession, note);
-        mark('session', createdSessionId ? 'done' : 'failed', createdSessionId ? undefined : 'see the note');
+        mark(
+          'session',
+          createdSessionId ? 'done' : 'failed',
+          createdSessionId ? undefined : 'see the note',
+        );
       }
       const initialSessionId = createdSessionId ?? options.sessionId?.trim() ?? null;
 
@@ -435,7 +453,12 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
             initialSessionId={initialSessionId}
             initialAccountId={bootAccountId}
             initialTerminalOpen={Boolean(options.openTerminal) && Boolean(initialSessionId)}
-            initialSidebarShown={options.showSidebar ?? initialSidebarShown()}
+            initialUi={
+              options.showSidebar === undefined
+                ? initialUi()
+                : { ...initialUi(), sidebar: { ...initialUi().sidebar, on: options.showSidebar } }
+            }
+            onboarded={readPrefs(prefsPath()).onboarded}
             onQuit={() => shutdown(0)}
           />
         </QueryClientProvider>,

@@ -30,6 +30,8 @@ export interface DraftViewProps {
   splashLines: readonly SplashLine[];
   /** Left side of the tray. */
   trayLeft: string;
+  /** The tray module: the row under the input. Default on. */
+  showTray?: boolean;
   /** Create the session with this first prompt. Resolves when it is open. */
   onStart(prompt: string): Promise<void>;
   onCommand(command: CommandName, args: string): void;
@@ -47,6 +49,7 @@ export function DraftView({
   context,
   splashLines,
   trayLeft,
+  showTray = true,
   onStart,
   onCommand,
   onToast,
@@ -98,7 +101,13 @@ export function DraftView({
   const seed = restore && (!hostSeed || restore.seq > hostSeed.seq) ? restore : hostSeed;
 
   const tray = (
-    <box flexDirection="row" justifyContent="space-between" height={1} paddingLeft={1} paddingRight={1}>
+    <box
+      flexDirection="row"
+      justifyContent="space-between"
+      height={1}
+      paddingLeft={1}
+      paddingRight={1}
+    >
       <text fg={theme.faint} wrapMode="none">
         {trayLeft}
       </text>
@@ -117,7 +126,13 @@ export function DraftView({
         paddingRight={1}
         overflow="hidden"
       >
-        <box flexDirection="column" flexGrow={1} flexShrink={1} justifyContent="center" overflow="hidden">
+        <box
+          flexDirection="column"
+          flexGrow={1}
+          flexShrink={1}
+          justifyContent="center"
+          overflow="hidden"
+        >
           <Splash
             width={innerWidth}
             center
@@ -148,7 +163,7 @@ export function DraftView({
           onToast={onToast}
           onMetrics={reportMetrics}
           seed={seed}
-          footer={tray}
+          footer={showTray ? tray : null}
         />
       </box>
     </Panel>

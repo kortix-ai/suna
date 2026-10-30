@@ -229,6 +229,26 @@ selection is on the clipboard. Nothing in the app needs a click. `kortix tui
 --mouse` (`KORTIX_TUI_MOUSE=1`) gives the mouse to the app instead, and
 then Shift+drag is the way to select natively in most terminals.
 
+### Layout: `/ui`
+
+Every region around the chat is a module, off until you turn it on:
+
+| Module | Command | Sides | What it shows |
+| --- | --- | --- | --- |
+| Header | `/header` | — | The session title and its state, above the transcript. |
+| Session tabs | `/tabs` | top, bottom | The sessions opened in this run. `Alt+[` / `Alt+]` switch, `/close` closes. |
+| Sidebar | `/sidebar`, `Alt+B` | left, right | Projects, every screen, the session list. |
+| Info panel | `/info`, `Alt+I` | right, left | Title, state, context tokens and % used, model, session, forwarded ports. |
+| Tray | `/tray` | — | One row under the input: host · project, model · agent. On by default. |
+| Terminal title | `/title` | — | The terminal window's title follows the open session. On by default. |
+
+`/ui` opens the picker above the input: three presets (Minimal, Focused,
+Full) and every module with its side. `Enter` toggles, `←`/`→` moves a module
+to its other side, and the screen behind the picker is the preview. The first
+start opens it as the welcome step; `Esc` there keeps Minimal. The choice is
+saved in `tui.json` (`{ "ui": …, "onboarded": true }`); the old
+`{ "sidebar": true }` file still reads.
+
 The sidebar is optional and starts hidden. `/sidebar` or `Alt+B` toggles it
 and saves the choice in `tui.json` (beside `config.json`), so the next run
 opens the same way. `kortix tui --sidebar` / `--no-sidebar`
@@ -268,6 +288,7 @@ is `/feedback`.
 | `/stop` |  | Session: Stop the running turn. |
 | `/compact` |  | Session: Summarize the conversation to free context. |
 | `/restart` |  | Session: Restart this session's sandbox. The conversation is kept. |
+| `/close` |  | Session: Close this session tab; the neighbour opens. |
 | `/fork [prompt]` |  | Session: Copy this conversation into a new session and open it. |
 | `/pin` |  | Session: Pin or unpin this session at the top of the list. |
 | `/archive` |  | Session: Archive this session, or bring it back. |
@@ -284,7 +305,13 @@ is `/feedback`.
 | `/model` | `/models` `Alt+m` | Model and agent: Pick the model. |
 | `/effort` | `/thinking` `Alt+e` | Model and agent: Pick the thinking effort. |
 | `/agent` | `/agents` `Alt+g` | Model and agent: Pick the agent. |
+| `/ui` | `/layout` `/tui` | Panels: Pick the layout: presets, and every panel on or off, left or right. |
 | `/sidebar` | `Alt+b` | Panels: Show or hide the sidebar. The choice is remembered. |
+| `/info` | `/panel` `Alt+i` | Panels: Show or hide the info panel: title, context, model, ports. |
+| `/tabs` |  | Panels: Show or hide the session tabs. |
+| `/header` | `/titlebar` | Panels: Show or hide the title row above the transcript. |
+| `/tray` | `/statusline` | Panels: Show or hide the row under the input. |
+| `/title` |  | Panels: Let the terminal window's title follow the session, or not. |
 | `/terminal` | `/shell` `Alt+t` | Panels: Open or close a shell in this session's sandbox. |
 | `/ports` | `Alt+p` | Panels: Forward sandbox ports to this machine. |
 | `/links` | `Alt+l` | Panels: Open a URL from the transcript or the terminal. |
@@ -304,12 +331,12 @@ is `/feedback`.
 | `/apps` | `Alt+a` | Screens: List and deploy Apps. |
 | `/customize` | `/settings` `/config` `/mcp` `/connectors` `Alt+c` | Screens: Agents, skills, secrets, triggers, connectors. |
 | `/account` | `/members` `/billing` `/usage` `Alt+u` | Screens: Members, invites, roles, credits. |
-| `/status` | `/doctor` `/info` `/whoami` | App: Host, account, project, session, runtime and version. |
+| `/status` | `/doctor` `/whoami` | App: Host, account, project, session, runtime and version. |
 | `/feedback` | `/bug` | App: Report a bug or an idea on GitHub. |
 | `/help` | `/keys` `/?` `?` | App: Show every command and key. |
 | `/quit` | `/exit` `/q` `Ctrl+c / Ctrl+q` | App: Leave the TUI. |
 
-_46 commands._
+_53 commands._
 
 ### Anywhere
 
@@ -323,6 +350,9 @@ _46 commands._
 | `Ctrl+n` | Start a new session. Same as /new. |
 | `Alt+t` | Toggle the terminal panel. |
 | `Alt+b` | Show or hide the sidebar. Same as /sidebar; the choice is remembered. |
+| `Alt+i` | Show or hide the info panel. Same as /info. |
+| `Alt+[` | Open the previous session tab. |
+| `Alt+]` | Open the next session tab. |
 | `Alt+l` | Open the Links panel: every URL in the transcript and on the terminal screen, wrapped ones rejoined. Enter opens one in the browser. |
 | `Alt+p` | Open the Ports panel: sandbox ports detected in output, and every local forward. |
 | `Alt+f` | Open the files screen. |
@@ -752,7 +782,7 @@ _46 commands._
 | `PgUp` | Page up. |
 | `Enter` | Open the row. |
 
-_316 bindings._
+_319 bindings._
 
 ## Tests
 

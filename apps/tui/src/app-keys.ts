@@ -67,6 +67,9 @@ export type AppKeyAction =
   | { kind: 'focus'; step: 1 | -1 }
   | { kind: 'toggle-terminal' }
   | { kind: 'toggle-sidebar' }
+  | { kind: 'toggle-info' }
+  /** Alt+[ / Alt+]: the previous or next session tab. */
+  | { kind: 'tab'; step: 1 | -1 }
   | { kind: 'overlay'; overlay: Exclude<Overlay, null> }
   | { kind: 'new-session' }
   /** Ctrl+P: the `/sessions` list above the input. */
@@ -147,6 +150,9 @@ export function globalKeyAction(key: KeyEvent, state: AppKeyState): AppKeyAction
   if (terminalFocused) return null;
 
   if (matchesBinding(key, 'panel.sidebar')) return { kind: 'toggle-sidebar' };
+  if (matchesBinding(key, 'panel.info')) return { kind: 'toggle-info' };
+  if (matchesBinding(key, 'tabs.prev')) return { kind: 'tab', step: -1 };
+  if (matchesBinding(key, 'tabs.next')) return { kind: 'tab', step: 1 };
 
   if (matchesBinding(key, 'help')) {
     return globalKeyBlocked(state.focus) ? null : { kind: 'overlay', overlay: 'help' };
