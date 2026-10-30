@@ -1363,7 +1363,7 @@ Kortix maintains six tools. Every project registers all six with no entry. Every
 
 ### My Kortix tools
 
-My Kortix, the built-in agent, has seven more tools. Each one runs the in-sandbox `kortix` CLI with `--json` and returns one JSON object: a `card` the web app shows in the session, `data` for the model, and an `error` when Kortix refused or the command failed. The contract is `@kortix/api-contract/kortix-tool-card`. The tools load only when a compiled config names them in `kortix_tools`. The platform's My Kortix config names them; a project's own agents do not get them.
+My Kortix, the built-in agent, has eight more tools. Each one runs the in-sandbox `kortix` CLI with `--json` and returns one JSON object: a `card` the web app shows in the session, `data` for the model, and an `error` when Kortix refused or the command failed. The contract is `@kortix/api-contract/kortix-tool-card`. The tools load only when a compiled config names them in `kortix_tools`. The platform's My Kortix config names them; a project's own agents do not get them.
 
 | Tool | Actions | CLI it runs |
 | --- | --- | --- |
@@ -1374,10 +1374,12 @@ My Kortix, the built-in agent, has seven more tools. Each one runs the in-sandbo
 | `kortix_people` | `list`, `pending`, `invite`, `set_role`, `remove` | `kortix access ls`, `access pending`, `access invite`, `access grant`, `access revoke` |
 | `kortix_access` | `me`, `who_can_grant` | `kortix whoami`, `kortix access ls` |
 | `kortix_usage` | `summary`, `top_sessions` | `kortix billing costs` |
+| `kortix_change_requests` | `list`, `get`, `merge`, `close` | `kortix cr ls`, `cr show`, `cr diff`, `cr merge`, `cr close` |
 
 - **Permissions.** Each tool acts with the session token, so Kortix checks every action against the person's own project role. A refusal comes back as `error.kind: "denied"` with `error.grantors`: the project managers, account owners and admins who can grant it. The card shows them.
 - **Machine-readable errors.** The CLI writes one `{"kortix_error":{…}}` line to stderr instead of its human footer when `KORTIX_ERROR_FORMAT=json` is set. The line has `kind` (`denied` or `failed`), `status`, `code`, `action` and `message`, each when known. Any program that runs the CLI can set it.
 - **Start work** with the `agent` tool, not with these tools. Each hand-off is its own session. From My Kortix it runs in the background by default: the call returns the child's `task_id` at once, and the API delivers the child's report into the calling session as a new message when the child finishes. See [Agents working together](#agents-working-together).
+- **Change requests.** `kortix_change_requests` lists the open change requests (number, title, author, status), reads one (summary, files changed, whether it can merge), and merges or closes one. My Kortix merges only after the person agreed in the conversation. A change request needs `project.review.act` to merge or close.
 - **Run several agents** with the `workflow` tool: a short script with `agent()`, `parallel()`, `pipeline()` and `phase()`. Each `agent()` is a real child session. The session shows the run as a live card. See [Workflows](/docs/developers#workflows).
 
 #### Workflows
@@ -1451,9 +1453,10 @@ A session a person started is an orchestrator: nothing it starts blocks its conv
 
 #### Named agents and forks
 
-- **A name.** `agent({ name: "post-writer", … })` gives the child a handle. Kortix stores it in the child's metadata `agent_handle` (`AGENT_HANDLE_KEY`). A handle is unique among one lead's live children. `send_message` takes it as `to`, and the session list shows it as `@post-writer`.
+- **A name.** `agent({ name: "post-writer", … })` gives the child a handle. Kortix stores it in the child's metadata `agent_handle` (`AGENT_HANDLE_KEY`). `send_message` takes it as `to`, and the session list shows it as `@post-writer`. A name alone never makes a teammate: that needs `team: true` (see [Agent teams](#agent-teams)).
 - **A fork.** `agent({ fork: true, … })` starts the child with a copy of this session's conversation instead of an empty one. Use it when the child needs everything said so far. A plain child sees only its prompt.
-- **Continue a child.** `agent` with a `task_id` sends a finished child a follow-up. The child keeps its conversation.
+- **Reuse first.** Work that builds on an earlier hand-off goes to that same child: `send_message` to its name, or `agent` with its `task_id`. The child keeps its conversation, and its computer is already running. Start a new child only for independent or parallel work. The `agent` and `send_message` tool descriptions tell the model this rule.
+- **Continue a child.** `agent` with a `task_id` sends a finished child a follow-up in its same session. `agent` with the `name` of a finished child (idle, completed or stopped) does the same: no new session starts, and the result says `This continued your earlier subagent "<name>" in its same session` (tool metadata `continued: true`). A `name` whose child still works, or waits for its person, is refused. A failed child frees its name. A message to a finished child wakes it in its same session, and a background child or teammate then sends its next report by itself.
 - **Stop a child.** `task_stop` with the child's `task_id` or name stops its session.
 - **Depth.** A separate child may start its own separate children down to depth 2 (`KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH`). One session runs at most 4 separate children at the same time (`KORTIX_PI_CLOUD_SUBAGENTS_MAX`).
 
@@ -1504,7 +1507,8 @@ Inside a session the CLI sends as `$KORTIX_SESSION_ID`. Outside one, pass `--fro
 
 An agent team is one lead session and the teammates it starts. They share one task list and message each other by name. Teams are experimental and off by default: a project admin turns on the feature flag `agent_teams` (`kortix projects features enable agent_teams`). A runtime that serves the task tools lists `session.team_tasks` in `GET /kortix/health` `capabilities`.
 
-- **Teammates.** With the flag on, a named `agent({ name })` from the lead starts a teammate: a child session whose metadata `team_lead` (`TEAM_LEAD_KEY`) is the lead and whose `agent_handle` is its name. `GET /projects/:id/sessions?team_lead=<sid>` lists one lead's teammates. A teammate cannot start teammates of its own.
+- **Teammates.** With the flag on, `agent({ name, team: true })` from the lead starts a teammate: a child session whose metadata `team_lead` (`TEAM_LEAD_KEY`) is the lead and whose `agent_handle` is its name. A `name` without `team` is a plain named child, also with the flag on. `team: true` without the flag, without a name, with `fork`, or from a session at depth 1 or deeper fails with the reason. `GET /projects/:id/sessions?team_lead=<sid>` lists one lead's teammates. A teammate cannot start teammates of its own.
+- **Roles are per session.** A teammate runs an existing agent: a project agent by `subagent_type`, or the default agent. Its name and the role in its prompt are context for that one child session (`initial_context` and the prompt). Nothing in `kortix.yaml` changes, and no team is saved: a team lives in its lead session.
 - **The task list.** `task_create`, `task_list`, `task_get` and `task_update` read and change the lead's list. A task has a number (`seq`, shown as `#3`), a `subject`, a `description`, a `status` (`pending`, `in_progress`, `completed`), an owner, and `blocked_by`: the numbers it waits for. `blocked` stays `true` until every task in `blocked_by` is completed.
 - **Claim.** A teammate takes the next pending, unowned, unblocked task with `task_update({ claim: true })`. The claim is atomic: the loser of a race gets `409 task_taken`, and a blocked task answers `409 task_blocked`. The lead may assign a task with `owner`.
 - **Idle notices.** When a teammate's turn ends, the lead gets one notice with the teammate's final answer. The lead combines the answers for the person.

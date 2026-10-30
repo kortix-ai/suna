@@ -69,6 +69,17 @@ describe('My Kortix agent', () => {
     expect(config.kortix_tools).toEqual([...KORTIX_TOOL_NAMES, ...KORTIX_PLATFORM_TOOL_NAMES]);
     // The guide ships in the prompt now: the meta image carries no AGENTS.md to point at.
     expect(MY_KORTIX_PROMPT).not.toContain('/workspace/AGENTS.md');
+    expect(config.kortix_tools).toContain('kortix_change_requests');
+  });
+
+  test('the prompt reuses the same colleague for a follow-up, starts teams only with team: true, and merges through the change request tool', () => {
+    expect(MY_KORTIX_PROMPT).toContain('A follow-up on the same work goes to the same colleague.');
+    expect(MY_KORTIX_PROMPT).toContain('Start a new colleague only for separate work that runs at the same time.');
+    expect(MY_KORTIX_PROMPT).toContain('`agent({ name, team: true })`; a name alone is a plain hand-off');
+    expect(MY_KORTIX_PROMPT).toContain('tell the person it is a role for this session only');
+    expect(MY_KORTIX_PROMPT).toContain('`kortix_change_requests`');
+    // No shell command for change requests: the tool shows the person a card.
+    expect(MY_KORTIX_PROMPT).not.toContain('kortix cr');
     expect(MY_KORTIX_DESCRIPTION).toBe(
       'The one agent you talk to. It routes each task to the agent made for it and runs it, with your permissions.',
     );
