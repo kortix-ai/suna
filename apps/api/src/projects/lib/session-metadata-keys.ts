@@ -63,6 +63,9 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // but still not the client's to write.
   'spawned_by_session',
   'on_behalf_of_cleared_at',
+  // The session a failed reminder's successor replaces (`trigger-fire.ts`).
+  // Telegram write confinement follows it (connectors/channel-write-scope.ts).
+  'reminder_successor_of',
   // Lost-session recovery (KRTX-2419): its boxes restore
   // from the session log at boot (`recover-lost-session.ts`).
   'lostRecoveredAt',

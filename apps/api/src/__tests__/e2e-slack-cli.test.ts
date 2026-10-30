@@ -15,7 +15,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SLACK_CHANNEL_CONNECTOR_SLUG } from '../connectors/channels';
+import { SLACK_CHANNEL_CONNECTOR_SLUG, undeclaredChannelArg } from '../connectors/channels';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const SLACK_CLI_ENTRY = resolve(REPO_ROOT, 'apps/sandbox/slack-cli/channels/slack.ts');
@@ -393,6 +393,8 @@ describe('slack CLI', () => {
         action: c.action,
         args: c.expectedArgs,
       });
+      // The gateway refuses an argument the action does not declare.
+      expect(undeclaredChannelArg('slack', c.action, c.expectedArgs)).toBeNull();
     }
     // 15 cases, and `runSlack` spawns a real `bun` process for each one. That
     // is ~3s on a developer laptop and 29.2s on a GitHub-hosted 4-vCPU runner
