@@ -294,16 +294,18 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'us_region',
     name: 'US Region',
     description:
-      "Place this project's newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Existing sandboxes keep their region, including on restart. This changes compute placement, not API, database, or archive residency. A new sandbox image is copied to the region before sessions use it; until then they boot from the previous image. If that copy fails, the session starts in the provider's home region instead.",
+      "Place this project's Files and newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Files stay in the region where they were created, and every new sandbox runs where the project's Files live, so changing this setting after the Files exist does not move them or their sessions. Existing sandboxes keep their region, including on restart. This changes compute and Files placement, not API, database, or archive residency. A new sandbox image is copied to the region before sessions use it.",
     stability: 'experimental',
     // Two operator gates: Platinum must be the configured provider, and the
     // environment must name the region (KORTIX_PLATINUM_US_REGION), which is
     // also what says the Platinum org holds a grant for it. Unset ⇒ hidden.
     available: () => Boolean(config.PLATINUM_API_KEY) && platinumUsRegion() !== null,
-    platformDefault: () => false,
-    // Read at provisioning (platform/services/session-sandbox.ts
-    // resolveSessionSandboxRegion) and sent as `region` on the Platinum
-    // create. Off ⇒ no region is sent and Platinum places in its home region.
+    // Off unless the operator sets KORTIX_PLATINUM_US_REGION_DEFAULT (dev does).
+    platformDefault: () => config.KORTIX_PLATINUM_US_REGION_DEFAULT === true,
+    // Read when a project's drive is created (drives/service.ts
+    // ensureProjectDrive) and at provisioning (platform/services/sandbox-region.ts
+    // resolveSessionPlacement), sent as `region` on the Platinum create. Off ⇒
+    // the home region, unless the project's Files already live in another.
     enforcement: 'behavioral',
   },
   {

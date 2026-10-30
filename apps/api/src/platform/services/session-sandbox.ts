@@ -78,7 +78,7 @@ import {
   type PreparedInitialSandboxTurn,
   initialSandboxTurnMetadata,
 } from '../../projects/session-turn-ledger';
-import { resolveSessionSandboxRegion } from './sandbox-region';
+import { resolveSessionPlacement } from './sandbox-region';
 import { resolveSessionResidentialProxy } from './residential-proxy';
 import type { WorkspaceVolume } from './workspace-volume';
 import { logger } from '../../lib/logger';
@@ -522,9 +522,11 @@ export async function provisionSessionSandbox(opts: {
   beforeActive?: (externalId: string) => Promise<void>;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType } = opts;
-  // An explicit caller location wins; otherwise the project's `us_region`
-  // flag decides (sandbox-region.ts). Only Platinum reads it.
-  const location = opts.location ?? resolveSessionSandboxRegion(opts.projectMetadata);
+  // An explicit caller location wins; otherwise where the project's Files
+  // live, else its `us_region` flag (sandbox-region.ts). Only Platinum reads it.
+  const placement = opts.location !== undefined
+    ? { location: opts.location, required: false }
+    : await resolveSessionPlacement(projectId, opts.projectMetadata);
   const providerWasExplicitlySelected = opts.providerLocked ?? opts.provider !== undefined;
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a
@@ -702,10 +704,11 @@ export async function provisionSessionSandbox(opts: {
     // only at the specific "this is a genuinely new attempt" transitions.
     sandboxId: sandbox.sandboxId,
     serverType,
-    location,
-    // A warm (speculative) box never leaves its project's region: the warm
-    // marker of projects/sandbox-deadline-policy.ts isWarmPoolBox.
-    locationRequired: sandbox.metadata?.warm === true,
+    location: placement.location,
+    // A box that mounts the project's Files never leaves their region: the
+    // home region could not mount them. Nor does a warm (speculative) box:
+    // the warm marker of projects/sandbox-deadline-policy.ts isWarmPoolBox.
+    locationRequired: placement.required || sandbox.metadata?.warm === true,
     envVars: {
       ...extraEnvVars,
       // One sandbox, one session-scoped Kortix credential. Provider, connector,
@@ -854,6 +857,27 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
     state.driveMounts = await planDrives();
     state.driveMountsResolved = true;
   }
+  // A box mounts the project's Files only in their region. The placement read
+  // that region when provisioning started; a region move may have finished
+  // since. A box nothing else pins follows the Files. A box pinned by its
+  // session's /workspace volume in another region (a session older than the
+  // move) boots without the Files: no box mounts volumes of two regions, and
+  // the session's own files win. Never a create the provider would refuse.
+  const filesRegion = state.driveMounts?.mounts.length ? state.driveMounts.region : undefined;
+  if (state.driveMounts && filesRegion !== undefined) {
+    if (state.workspaceVolume && (state.workspaceVolume.location ?? null) !== filesRegion) {
+      logger.warn('[drives] the session’s /workspace volume and the project’s files live in different regions; the box boots without the files', {
+        sandboxId: sandbox.sandboxId,
+        workspaceRegion: state.workspaceVolume.location ?? 'home',
+        filesRegion: filesRegion ?? 'home',
+      });
+      const { withoutDriveMounts } = await import('../../drives/service');
+      state.driveMounts = withoutDriveMounts(state.driveMounts, 'region');
+    } else if (!state.workspaceVolume && (providerCreateInput.location ?? null) !== filesRegion) {
+      providerCreateInput.location = filesRegion ?? undefined;
+      providerCreateInput.locationRequired = filesRegion !== null;
+    }
+  }
   providerCreateInput.volumes = state.driveMounts?.volumes;
   if (state.workspaceVolume) applyWorkspaceVolume(providerCreateInput, state.workspaceVolume);
 }
@@ -872,11 +896,13 @@ async function recordAttemptBoot(ctx: SessionProvisionContext, state: SessionPro
     driveMounts && (providerCreateInput.volumes || (providerName !== 'platinum' && drivesSyncAllowed))
       ? driveMounts.mounts
       : [];
-  // And the drives that did not fit, which the chip and the agent's notes name.
+  // And the folders it does not mount (past its mount slots, or Files in
+  // another region or moving), which the chip and the agent's notes name.
+  const unmounted = driveMounts?.skipped.some((d) => d.reason) ? driveMounts.skipped : [];
   const driveAdmission =
     mountedDrives.length && driveMounts
       ? { driveMountsSkipped: driveMounts.skipped, driveMountSlots: driveMounts.slots }
-      : { driveMountsSkipped: [] };
+      : { driveMountsSkipped: providerName === 'platinum' ? unmounted : [] };
   // A synced box: its daemon copies the drives in and keeps them in sync.
   const driveSyncMeta = providerName !== 'platinum' && mountedDrives.length ? { driveSync: true } : {};
   return {

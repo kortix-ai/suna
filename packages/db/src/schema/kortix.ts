@@ -8141,6 +8141,23 @@ export const timelineAudio = kortixSchema.table(
 // `agent` and `company` are the earlier per-person / per-agent / per-account
 // drives; they are read only by the job that folds them into project drives
 // (apps/api/src/drives/fold.ts). Server-only: the API is the sole reader.
+
+/** `drives.platinum_volume_move`: one region move of a drive's volume. */
+export interface DriveVolumeMoveRecord {
+  /** The region the drive moves to (a Platinum region key). */
+  to: string;
+  /** The volume and region it moves from; null region = home. Kept until purged. */
+  from_name: string;
+  from_region: string | null;
+  /** The old volume's head when the copy was taken. */
+  from_head?: string | null;
+  started_at: string;
+  /** Set when the row points at the new volume: the fence is off. */
+  finished_at?: string;
+  /** Set when the old volume was deleted after the retention window. */
+  purged_at?: string;
+}
+
 export const drives = kortixSchema.table('drives', {
   driveId: uuid('drive_id').defaultRandom().primaryKey(),
   accountId: uuid('account_id')
@@ -8154,6 +8171,19 @@ export const drives = kortixSchema.table('drives', {
   isDefault: boolean('is_default').default(false).notNull(),
   platinumVolumeId: text('platinum_volume_id'),
   platinumVolumeName: text('platinum_volume_name').notNull().unique('drives_platinum_volume_name_key'),
+  /**
+   * The Platinum region the volume lives in; null = Platinum's home region.
+   * Set when the row is inserted, changed only by a region move. Every call
+   * about the volume goes to that region's control plane, and every box that
+   * mounts it runs there.
+   */
+  platinumVolumeRegion: text('platinum_volume_region'),
+  /**
+   * The drive's last region move (drives/region-move.ts), null if it never
+   * moved. While `finished_at` is unset the drive is fenced: storage refuses
+   * writes and no box mounts it.
+   */
+  platinumVolumeMove: jsonb('platinum_volume_move').$type<DriveVolumeMoveRecord>(),
   /** The volume head the conflict scanner last read; null until the first scan. */
   conflictScanHead: text('conflict_scan_head'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -8237,6 +8267,8 @@ export const driveConflicts = kortixSchema.table('drive_conflicts', {
 // cascades included; the API's scheduler leader drains it.
 export const platinumVolumeDeletions = kortixSchema.table('platinum_volume_deletions', {
   volumeName: text('volume_name').primaryKey(),
+  /** The Platinum region the volume lives in; null = the home region. */
+  region: text('region'),
   reason: text('reason').notNull(),
   attempts: integer('attempts').default(0).notNull(),
   lastError: text('last_error'),

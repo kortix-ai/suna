@@ -3,7 +3,7 @@
 
 import { createHash } from 'node:crypto';
 import { logger } from '../lib/logger';
-import { isPlatinumConfigured, platinumFetch } from '../shared/platinum';
+import { isPlatinumConfigured, platinumFetch, platinumRegionControlPlane } from '../shared/platinum';
 import { DEFAULT_SANDBOX_MOUNT_LIMIT } from './access';
 import { parseVolumeWriteCommit, type VolumeWriteCommit } from './volume-commit';
 
@@ -29,18 +29,53 @@ const FILE_TIMEOUT_MS = 5 * 60_000;
 
 export const FILE_CHANGED_MESSAGE = 'This file changed since you opened it. Reload it to see the latest version, then save again.';
 
-async function call(path: string, init: RequestInit = {}, allowRangeRefusal = false): Promise<Response> {
+export const DRIVE_MOVING_MESSAGE = 'These files are moving to another region. Try again in a minute.';
+
+/**
+ * A drive's volume as every storage call addresses it. Platinum volumes
+ * belong to the control plane that created them: the global origin answers
+ * `409 volume_in_other_region` for a volume of another region, for reads and
+ * opens alike. So every call goes to the volume's own region.
+ */
+export interface DriveVolume {
+  name: string;
+  /** The Platinum region it lives in; null = the home region (PLATINUM_API_URL). */
+  region: string | null;
+  /** A region move is copying it (drives/region-move.ts): every write is refused. */
+  moving?: boolean;
+}
+
+/** The control plane that owns the volume: its region's own, or the global origin for home. */
+function volumeOrigin(volume: DriveVolume): string | undefined {
+  if (!volume.region) return undefined;
+  const origin = platinumRegionControlPlane(volume.region);
+  if (!origin) {
+    logger.warn(`[drives] no Platinum control plane is known for region ${volume.region}`);
+    throw new DriveStorageError(503, 'Drive storage is not available', 'drive_storage_unavailable');
+  }
+  return origin;
+}
+
+/**
+ * One Platinum call. `volume` names the drive volume the call is about (its
+ * region's control plane gets it); null is a call about a sandbox or the
+ * account, which shared/platinum.ts routes by sandbox id.
+ */
+async function call(volume: DriveVolume | null, path: string, init: RequestInit = {}, allowRangeRefusal = false): Promise<Response> {
   if (!driveStorageAvailable()) throw new DriveStorageError(503, 'Drive storage is not available', 'drive_storage_unavailable');
+  const method = (init.method ?? 'GET').toUpperCase();
+  if (volume?.moving && method !== 'GET') throw new DriveStorageError(503, DRIVE_MOVING_MESSAGE, 'drive_moving');
+  const origin = volume ? volumeOrigin(volume) : undefined;
   let res: Response;
   try {
-    res = await platinumFetch(path, init);
+    res = await platinumFetch(path, init, origin);
     // Reads are safe to replay while storage recovers; writes may have committed.
     for (const delay of [2_000, 3_000]) {
-      if ((init.method ?? 'GET').toUpperCase() !== 'GET' || res.status !== 503 || init.signal?.aborted) break;
+      if (method !== 'GET' || res.status !== 503 || init.signal?.aborted) break;
       await res.body?.cancel();
       await Bun.sleep(delay);
       init.signal?.throwIfAborted();
-      res = await platinumFetch(path, init);
+      res = await platinumFetch(path, init, origin);
     }
   } catch (err) {
     logger.warn(`[drives] ${init.method ?? 'GET'} ${path} failed:`, { error: err instanceof Error ? err.message : String(err) });
@@ -67,6 +102,10 @@ async function call(path: string, init: RequestInit = {}, allowRangeRefusal = fa
       throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', code);
     case 409:
       if (code === 'volume_busy') throw new DriveStorageError(409, 'The drive is attached to a running session', code);
+      if (code === 'volume_in_other_region') {
+        logger.warn(`[drives] ${init.method ?? 'GET'} ${path} -> 409 ${text.slice(0, 300)}`);
+        throw new DriveStorageError(409, 'These files live in another region than this session', code);
+      }
       throw new DriveStorageError(409, 'A file or folder with that name already exists', code);
     case 412:
       throw new DriveStorageError(409, FILE_CHANGED_MESSAGE, 'file_changed');
@@ -78,13 +117,13 @@ async function call(path: string, init: RequestInit = {}, allowRangeRefusal = fa
   }
 }
 
-async function callJson<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await call(path, init);
+async function callJson<T>(volume: DriveVolume | null, path: string, init: RequestInit = {}): Promise<T> {
+  const res = await call(volume, path, init);
   const text = await res.text();
   return (text ? JSON.parse(text) : {}) as T;
 }
 
-const v = (volume: string) => `/v1/volumes/${encodeURIComponent(volume)}`;
+const v = (volume: DriveVolume) => `/v1/volumes/${encodeURIComponent(volume.name)}`;
 
 export interface VolumeInfo {
   id: string;
@@ -100,14 +139,22 @@ export function isMissingVolume(err: unknown): boolean {
   return err instanceof DriveStorageError && err.code === 'volume_not_found';
 }
 
-/** Open-or-create by name, so a retry after a lost response never makes a second volume. */
-export async function openDriveVolume(name: string, signal?: AbortSignal): Promise<VolumeInfo> {
+/**
+ * Open-or-create by name in the volume's region, so a retry after a lost
+ * response never makes a second volume.
+ */
+export async function openDriveVolume(volume: DriveVolume, signal?: AbortSignal): Promise<VolumeInfo> {
   try {
-    return await callJson<VolumeInfo>(v(name), {
+    const info = await callJson<VolumeInfo & { region?: string }>(volume, v(volume), {
       method: 'PUT',
       body: JSON.stringify({ sync_mode: 'drive' }),
       ...(signal ? { signal } : {}),
     });
+    if (volume.region && info.region && info.region !== volume.region) {
+      logger.warn(`[drives] volume ${volume.name} answered from ${info.region}, not ${volume.region}`);
+      throw new DriveStorageError(503, 'Drive storage is not available', 'drive_storage_unavailable');
+    }
+    return info;
   } catch (err) {
     // A 404 here means volumes are not enabled for the storage account: not a
     // missing file, and not the caller's to fix.
@@ -118,12 +165,12 @@ export async function openDriveVolume(name: string, signal?: AbortSignal): Promi
   }
 }
 
-export async function getDriveVolume(volume: string, signal?: AbortSignal): Promise<VolumeInfo> {
-  return callJson<VolumeInfo>(v(volume), signal ? { signal } : {});
+export async function getDriveVolume(volume: DriveVolume, signal?: AbortSignal): Promise<VolumeInfo> {
+  return callJson<VolumeInfo>(volume, v(volume), signal ? { signal } : {});
 }
 
-export async function deleteDriveVolume(volume: string): Promise<void> {
-  await call(`${v(volume)}?missing_ok=true`, { method: 'DELETE' });
+export async function deleteDriveVolume(volume: DriveVolume): Promise<void> {
+  await call(volume, `${v(volume)}?missing_ok=true`, { method: 'DELETE' });
 }
 
 export interface VolumeEntry {
@@ -134,34 +181,34 @@ export interface VolumeEntry {
 }
 
 export async function listVolumeFiles(
-  volume: string,
+  volume: DriveVolume,
   path: string,
   recursive: boolean,
   signal?: AbortSignal,
   at?: string,
 ): Promise<VolumeEntry[]> {
   const q = new URLSearchParams({ path, recursive: String(recursive), limit: '10000', ...(at ? { at } : {}) });
-  const r = await callJson<{ entries: VolumeEntry[] }>(`${v(volume)}/files?${q}`, signal ? { signal } : {});
+  const r = await callJson<{ entries: VolumeEntry[] }>(volume, `${v(volume)}/files?${q}`, signal ? { signal } : {});
   return r.entries ?? [];
 }
 
 /** A file's bytes; `at` reads it as it was at that commit. */
-export async function readVolumeFile(volume: string, path: string, range?: string, at?: string): Promise<Response> {
+export async function readVolumeFile(volume: DriveVolume, path: string, range?: string, at?: string): Promise<Response> {
   const q = new URLSearchParams({ path, ...(at ? { at } : {}) });
-  return call(`${v(volume)}/files/content?${q}`, {
+  return call(volume, `${v(volume)}/files/content?${q}`, {
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
     headers: range ? { Range: range } : {},
   }, true);
 }
 
 export async function writeVolumeFile(
-  volume: string,
+  volume: DriveVolume,
   path: string,
   body: Uint8Array<ArrayBuffer>,
   opts: { overwrite: boolean; ifMatch?: string },
 ): Promise<{ path: string; size: number; version?: string; commit?: VolumeWriteCommit }> {
   const q = new URLSearchParams({ path, overwrite: String(opts.overwrite) });
-  const r = await callJson<{ path: string; size: number; version?: string }>(`${v(volume)}/files/content?${q}`, {
+  const r = await callJson<{ path: string; size: number; version?: string }>(volume, `${v(volume)}/files/content?${q}`, {
     method: 'PUT',
     body,
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
@@ -175,14 +222,13 @@ export async function writeVolumeFile(
 
 /** One page of a listing, for callers that walk a whole drive (drive sync). */
 export async function listVolumeFilesPage(
-  volume: string,
+  volume: DriveVolume,
   path: string,
   opts: { recursive: boolean; cursor?: string; signal?: AbortSignal },
 ): Promise<{ entries: VolumeEntry[]; next_cursor: string | null }> {
   const q = new URLSearchParams({ path, recursive: String(opts.recursive), limit: '5000' });
   if (opts.cursor) q.set('cursor', opts.cursor);
-  const r = await callJson<{ entries: VolumeEntry[]; next_cursor?: string | null }>(
-    `${v(volume)}/files?${q}`,
+  const r = await callJson<{ entries: VolumeEntry[]; next_cursor?: string | null }>(volume, `${v(volume)}/files?${q}`,
     opts.signal ? { signal: opts.signal } : {},
   );
   return { entries: r.entries ?? [], next_cursor: r.next_cursor ?? null };
@@ -190,29 +236,38 @@ export async function listVolumeFilesPage(
 
 export interface VolumeFileStat extends VolumeEntry {
   version: string | null;
+  /** The file's permission bits, when storage reports them. */
+  mode?: number;
 }
 
 /** A file's metadata; `at` stats it as it was at that commit. */
-export async function statVolumeFile(volume: string, path: string, at?: string): Promise<VolumeFileStat> {
+export async function statVolumeFile(volume: DriveVolume, path: string, at?: string): Promise<VolumeFileStat> {
   const q = new URLSearchParams({ path, ...(at ? { at } : {}) });
-  const r = await callJson<VolumeFileStat>(`${v(volume)}/files/stat?${q}`, { signal: AbortSignal.timeout(30_000) });
-  return { path: r.path, type: r.type, size: Number(r.size ?? 0), mtime: Number(r.mtime ?? 0), version: r.version ?? null };
+  const r = await callJson<VolumeFileStat>(volume, `${v(volume)}/files/stat?${q}`, { signal: AbortSignal.timeout(30_000) });
+  return {
+    path: r.path,
+    type: r.type,
+    size: Number(r.size ?? 0),
+    mtime: Number(r.mtime ?? 0),
+    version: r.version ?? null,
+    ...(Number.isInteger(r.mode) ? { mode: Number(r.mode) } : {}),
+  };
 }
 
 /**
  * The block upload protocol, for files too large for one PUT: plan (the
  * store answers which 1 MiB blocks it lacks), send only those, commit.
  */
-export async function planVolumeUpload(volume: string, plan: unknown): Promise<unknown> {
-  return callJson<unknown>(`${v(volume)}/files/upload`, {
+export async function planVolumeUpload(volume: DriveVolume, plan: unknown): Promise<unknown> {
+  return callJson<unknown>(volume, `${v(volume)}/files/upload`, {
     method: 'POST',
     body: JSON.stringify(plan),
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
   });
 }
 
-export async function putVolumeUploadBlock(volume: string, uploadId: string, sha: string, body: Uint8Array<ArrayBuffer>): Promise<void> {
-  await call(`${v(volume)}/files/upload/${encodeURIComponent(uploadId)}/blocks/${encodeURIComponent(sha)}`, {
+export async function putVolumeUploadBlock(volume: DriveVolume, uploadId: string, sha: string, body: Uint8Array<ArrayBuffer>): Promise<void> {
+  await call(volume, `${v(volume)}/files/upload/${encodeURIComponent(uploadId)}/blocks/${encodeURIComponent(sha)}`, {
     method: 'PUT',
     body,
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
@@ -220,8 +275,8 @@ export async function putVolumeUploadBlock(volume: string, uploadId: string, sha
   });
 }
 
-export async function commitVolumeUpload(volume: string, uploadId: string): Promise<unknown> {
-  return callJson<unknown>(`${v(volume)}/files/upload/${encodeURIComponent(uploadId)}/commit`, {
+export async function commitVolumeUpload(volume: DriveVolume, uploadId: string): Promise<unknown> {
+  return callJson<unknown>(volume, `${v(volume)}/files/upload/${encodeURIComponent(uploadId)}/commit`, {
     method: 'POST',
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
   });
@@ -236,7 +291,7 @@ const BLOCK_CONCURRENCY = 8;
  * commit lands every file at once. A reader never sees half a folder.
  */
 export async function writeVolumeFiles(
-  volume: string,
+  volume: DriveVolume,
   files: Array<{ path: string; bytes: Uint8Array<ArrayBuffer> }>,
   opts: { overwrite: boolean },
 ): Promise<VolumeWriteCommit | undefined> {
@@ -260,17 +315,17 @@ export async function writeVolumeFiles(
   return parseVolumeWriteCommit(await commitVolumeUpload(volume, plan.upload_id));
 }
 
-export async function moveVolumeFile(volume: string, src: string, dst: string): Promise<void> {
-  await call(`${v(volume)}/files/move`, {
+export async function moveVolumeFile(volume: DriveVolume, src: string, dst: string): Promise<void> {
+  await call(volume, `${v(volume)}/files/move`, {
     method: 'POST',
     body: JSON.stringify({ src, dst, overwrite: false }),
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
   });
 }
 
-export async function removeVolumeFile(volume: string, path: string, recursive: boolean): Promise<void> {
+export async function removeVolumeFile(volume: DriveVolume, path: string, recursive: boolean): Promise<void> {
   const q = new URLSearchParams({ path, recursive: String(recursive) });
-  await call(`${v(volume)}/files?${q}`, { method: 'DELETE', signal: AbortSignal.timeout(FILE_TIMEOUT_MS) });
+  await call(volume, `${v(volume)}/files?${q}`, { method: 'DELETE', signal: AbortSignal.timeout(FILE_TIMEOUT_MS) });
 }
 
 export interface VolumeCommit {
@@ -285,18 +340,36 @@ export interface VolumeCommit {
   stats?: { changed_paths?: number; deleted_paths?: number };
 }
 
-export async function listVolumeCommits(volume: string, limit = 100, opts: { includeSide?: boolean; before?: string } = {}): Promise<VolumeCommit[]> {
+export async function listVolumeCommits(volume: DriveVolume, limit = 100, opts: { includeSide?: boolean; before?: string } = {}): Promise<VolumeCommit[]> {
   const query = new URLSearchParams({ limit: String(limit), ...(opts.includeSide ? { include_side: 'true' } : {}), ...(opts.before ? { before: opts.before } : {}) });
-  const r = await callJson<{ commits: VolumeCommit[] }>(`${v(volume)}/commits?${query}`);
+  const r = await callJson<{ commits: VolumeCommit[] }>(volume, `${v(volume)}/commits?${query}`);
   return r.commits ?? [];
 }
 
-export async function getVolumeCommit(volume: string, commitId: string): Promise<VolumeCommit> {
-  return callJson<VolumeCommit>(`${v(volume)}/commits/${encodeURIComponent(commitId)}`);
+export async function getVolumeCommit(volume: DriveVolume, commitId: string): Promise<VolumeCommit> {
+  return callJson<VolumeCommit>(volume, `${v(volume)}/commits/${encodeURIComponent(commitId)}`);
 }
 
-export async function restoreVolume(volume: string, to: string): Promise<void> {
-  await call(`${v(volume)}/restore`, { method: 'POST', body: JSON.stringify({ to }) });
+/** One mount of a volume on a sandbox, running or stopped. */
+export interface VolumeMount {
+  sandboxId: string;
+  mountPath: string;
+  /** Platinum's mount state: `mounted`/`pulling`/`pending`/`unmounting`/`unflushed` on a live guest, `parked` on a stopped one. */
+  state: string;
+}
+
+/** Every mount of the volume that has not ended, on any sandbox (`GET /v1/volumes/:v/mounts`). */
+export async function listVolumeMounts(volume: DriveVolume): Promise<VolumeMount[]> {
+  const r = await callJson<{ mounts?: Array<Record<string, unknown>> }>(volume, `${v(volume)}/mounts`, { signal: AbortSignal.timeout(15_000) });
+  return (r.mounts ?? []).map((m) => ({
+    sandboxId: String(m.sandbox_id ?? ''),
+    mountPath: String(m.mount_path ?? ''),
+    state: String(m.state ?? ''),
+  }));
+}
+
+export async function restoreVolume(volume: DriveVolume, to: string): Promise<void> {
+  await call(volume, `${v(volume)}/restore`, { method: 'POST', body: JSON.stringify({ to }) });
 }
 
 let mountLimitCache: { value: number; at: number } | null = null;
@@ -328,7 +401,7 @@ export async function sandboxMountLimit(): Promise<number> {
   if (mountLimitCache && Date.now() - mountLimitCache.at < MOUNT_LIMIT_TTL_MS) return mountLimitCache.value;
   let value = DEFAULT_SANDBOX_MOUNT_LIMIT;
   try {
-    value = mountSlotsFrom(await callJson<PlatinumMountLimits>('/v1/volumes/limits', { signal: AbortSignal.timeout(5_000) }));
+    value = mountSlotsFrom(await callJson<PlatinumMountLimits>(null, '/v1/volumes/limits', { signal: AbortSignal.timeout(5_000) }));
   } catch (err) {
     logger.warn('[drives] reading the sandbox mount limit failed:', { error: err instanceof Error ? err.message : String(err) });
     return value;
@@ -351,6 +424,7 @@ export interface SandboxVolumeMount {
 export async function sandboxVolumeMounts(externalId: string): Promise<SandboxVolumeMount[] | null> {
   try {
     const body = await callJson<{ volume_mounts?: Array<Record<string, unknown>> | Record<string, unknown> }>(
+      null,
       `/v1/sandboxes/${encodeURIComponent(externalId)}`,
       { signal: AbortSignal.timeout(10_000) },
     );
@@ -382,18 +456,20 @@ const sandboxMount = (externalId: string, mountPath: string) =>
 /**
  * Hot-attach a volume to a running sandbox. Platinum answers 201 once the
  * guest mounted it, 202 while the mount is still pending (it lands within
- * seconds); both count as attached.
+ * seconds); both count as attached. A sandbox mounts only a volume of its own
+ * region: another region's answers `volume_in_other_region`.
  */
 export async function attachSandboxVolume(
   externalId: string,
   mountPath: string,
-  input: { volume: string; readOnly: boolean; subdir?: string },
+  input: { volume: DriveVolume; readOnly: boolean; subdir?: string },
 ): Promise<void> {
+  if (input.volume.moving) throw new DriveStorageError(409, DRIVE_MOVING_MESSAGE, 'drive_moving');
   try {
-    await call(sandboxMount(externalId, mountPath), {
+    await call(null, sandboxMount(externalId, mountPath), {
       method: 'POST',
       body: JSON.stringify({
-        volume: input.volume,
+        volume: input.volume.name,
         read_only: input.readOnly,
         ...(input.subdir ? { subdir: input.subdir } : {}),
         share: 'node',
@@ -428,7 +504,7 @@ export async function attachSandboxVolume(
  */
 export async function detachSandboxVolume(externalId: string, mountPath: string): Promise<void> {
   try {
-    await call(sandboxMount(externalId, mountPath), {
+    await call(null, sandboxMount(externalId, mountPath), {
       method: 'DELETE',
       signal: AbortSignal.timeout(30_000),
     });
@@ -457,7 +533,7 @@ export async function unmountInGuest(externalId: string, mountPath: string): Pro
 export async function execInSandbox(externalId: string, script: string, timeoutMs = 20_000): Promise<void> {
   let res: Response;
   try {
-    res = await call(`/v1/sandboxes/${encodeURIComponent(externalId)}/exec`, {
+    res = await call(null, `/v1/sandboxes/${encodeURIComponent(externalId)}/exec`, {
       method: 'POST',
       body: JSON.stringify({ cmd: ['bash', '-c', `sudo -n bash -c ${shellQuote(script)}`], timeout_ms: timeoutMs }),
       signal: AbortSignal.timeout(timeoutMs + 10_000),
