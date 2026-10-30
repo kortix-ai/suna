@@ -43,6 +43,11 @@ import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } fro
 export const DESKTOP_URL = 'http://localhost:6901/';
 /** How often the panel asks again until the desktop answers. */
 const PROBE_INTERVAL_MS = 3_000;
+/**
+ * The proxy answers 502 for a stopped desktop only after ~5 s (measured 4.8 s:
+ * it retries the port first). The probe's 3 s default reads that as `unknown`.
+ */
+const PROBE_TIMEOUT_MS = 10_000;
 
 const subscribeVisibility = (onChange: () => void) => {
   document.addEventListener('visibilitychange', onChange);
@@ -84,7 +89,7 @@ export function SessionDesktop({
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const ask = async () => {
-      const result = await probePreviewPort(src, { signal: abort.signal });
+      const result = await probePreviewPort(src, { signal: abort.signal, timeoutMs: PROBE_TIMEOUT_MS });
       if (abort.signal.aborted) return;
       setProbe(result);
       if (result !== 'reachable') timer = setTimeout(ask, PROBE_INTERVAL_MS);
