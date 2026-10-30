@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { openAsBlob } from 'node:fs';
 import {
   deleteDriveFile,
   type Drive,
@@ -37,7 +37,9 @@ their own private session.
 Subcommands:
   ls [<path>]                       List a folder (default: the top of Files).
   cat <path>                        Print a file's bytes.
-  put <local> <path>                Upload a local file to <path>.
+  put <local> <path>                Upload a local file to <path>. Any size: a file
+                                    over 64 MiB goes up in 1 MiB blocks, read from
+                                    disk as they are sent.
   mkdir <path>                      Create a folder.
   mv <from> <to>                    Move or rename a file or folder.
   rm <path> [-r]                    Delete a file, or a folder with -r.
@@ -113,8 +115,10 @@ export async function runDrive(argv: string[]): Promise<number> {
         }
         case 'put': {
           if (!a || !b) return missing('a local file and a path in Files');
-          const result = await uploadDriveFile(id, abs(b), new Uint8Array(await readFile(a)));
-          return done(result, `Uploaded ${a} to ${abs(b)}`);
+          // A file-backed Blob: the SDK reads it one block at a time, never whole.
+          const file = await openAsBlob(a);
+          const result = await uploadDriveFile(id, abs(b), file, { onProgress: json ? undefined : uploadProgress(a) });
+          return done(result, `Uploaded ${a} to ${abs(b)} (${megabytes(file.size)})`);
         }
         case 'mkdir':
           if (!a) return missing('a folder path');
@@ -161,6 +165,23 @@ export async function runDrive(argv: string[]): Promise<number> {
   } catch (err) {
     return surfaceApiError(err);
   }
+}
+
+const megabytes = (bytes: number) => `${(bytes / 1e6).toFixed(1)} MB`;
+
+/** Progress on stderr, one line redrawn at most every 200 ms; nothing when stderr is not a terminal. */
+function uploadProgress(local: string): ((sent: number, total: number) => void) | undefined {
+  if (!process.stderr.isTTY) return undefined;
+  const started = Date.now();
+  let drawn = 0;
+  return (sent, total) => {
+    const now = Date.now();
+    if (sent < total && now - drawn < 200) return;
+    drawn = now;
+    const rate = sent / Math.max(1, (now - started) / 1000);
+    const line = `  ${local}: ${megabytes(sent)} / ${megabytes(total)} (${Math.floor((sent / total) * 100)}%) ${megabytes(rate)}/s`;
+    process.stderr.write(`\r${line}\x1b[K${sent >= total ? '\n' : ''}`);
+  };
 }
 
 async function driveLs(drive: Drive, path: string, json: boolean): Promise<number> {

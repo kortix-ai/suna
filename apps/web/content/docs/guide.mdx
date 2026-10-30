@@ -380,6 +380,7 @@ Drive is the project's shared folders, for people and agents. Sessions open the 
 - **Shared folders.** Any folder can be shared with people, groups and agents.
 - **What a session sees.** A new session opens the folders that its agent, or the whole project, has access to. In a private session that you started, it also opens your own folder and every folder shared with you or your groups.
 - **Where to manage them.** Open **Drive** in the sidebar: **My files** (only you), **Company** (everyone) and, for admins, **All files**.
+- **Large files.** Drive takes a file of any size, up to the project's storage limit: in the web app, with `kortix drive put <local> <path>`, and through the API. A file over 64 MiB goes up in 1 MiB blocks, and only the blocks Drive does not have yet travel. The file appears when its last block lands.
 
 Drive is on by default. It is experimental. Its folders are stored on Platinum, where sessions run.
 
