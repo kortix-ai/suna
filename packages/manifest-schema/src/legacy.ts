@@ -418,6 +418,9 @@ export function convertLegacyManifest(input: Table, from: 1 | 2, manifestPath: s
     nextAgents[name] = ordered(next, AGENT_ORDER);
   }
 
+  // `runtime` is a harness name that selects nothing; a table there (the one-day `[runtime]` control plane) never ran.
+  const runtime = typeof raw.runtime === 'string' ? raw.runtime : undefined;
+  if (raw.runtime !== undefined && runtime === undefined) dropped.push('runtime: not a harness name; every session runs pi');
   const known = [...TOP_LEVEL_ORDER, 'kortix_version', 'opencode', 'pi', 'harnesses'];
   for (const key of Object.keys(raw)) if (!known.includes(key)) dropped.push(`${key} (not a kortix.yaml key)`);
   // The v1 `[[apps]]` list was retired before v2; today's `apps` is a map of App settings.
@@ -425,6 +428,7 @@ export function convertLegacyManifest(input: Table, from: 1 | 2, manifestPath: s
   const next = ordered(
     {
       ...Object.fromEntries(TOP_LEVEL_ORDER.map((key) => [key, raw[key]])),
+      runtime,
       apps: Array.isArray(raw.apps) ? undefined : raw.apps,
       skills: Object.keys(skills).length ? skills : undefined,
       tools: Object.keys(tools).length ? tools : undefined,

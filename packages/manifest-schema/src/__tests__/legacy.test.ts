@@ -183,6 +183,16 @@ describe('a kortix_version 2 project', () => {
     expect(validateManifest(raw).issues).toEqual([expect.objectContaining({ path: 'agents.helper.descripton', severity: 'error', message: expect.stringContaining('Did you mean "description"?') })]);
   });
 
+  test('an unknown agent key is an error that leaves the agent on; a runtime table is dropped with a note', () => {
+    const text = 'kortix_version: 2\nruntime:\n  root: .opencode\nagents:\n  helper:\n    prompt: You help.\n    excluded_skills: [pdf]\n';
+    const { raw, dropped } = convertLegacyManifest(parseManifestText(text), 2, 'kortix.yaml', repo({}));
+    expect(raw.runtime).toBeUndefined();
+    expect(dropped).toEqual(['runtime: not a harness name; every session runs pi']);
+    const { issues } = validateManifest(raw);
+    expect(issues).toEqual([expect.objectContaining({ path: 'agents.helper.excluded_skills', severity: 'error', unknownKey: true })]);
+    expect((usableManifest(raw, issues).agents as Record<string, { enabled?: boolean }>).helper?.enabled).not.toBe(false);
+  });
+
   test('an inline prompt next to the agent file is reported: the file is the prompt', () => {
     const text = 'kortix_version: 2\nagents:\n  lead:\n    file: agents/lead.md\n    prompt: Ignored.\n';
     const { raw, dropped } = convertLegacyManifest(parseManifestText(text), 2, 'kortix.yaml', repo({ 'agents/lead.md': 'You lead.\n' }));
