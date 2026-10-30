@@ -1377,7 +1377,7 @@ My Kortix, the built-in agent, has seven more tools. Each one runs the in-sandbo
 
 - **Permissions.** Each tool acts with the session token, so Kortix checks every action against the person's own project role. A refusal comes back as `error.kind: "denied"` with `error.grantors`: the project managers, account owners and admins who can grant it. The card shows them.
 - **Machine-readable errors.** The CLI writes one `{"kortix_error":{…}}` line to stderr instead of its human footer when `KORTIX_ERROR_FORMAT=json` is set. The line has `kind` (`denied` or `failed`), `status`, `code`, `action` and `message`, each when known. Any program that runs the CLI can set it.
-- **Start work** with the `agent` tool, not with these tools. Each hand-off is its own session. `run_in_background: true` returns the child's `task_id` at once, and the API delivers the child's report into the calling session as a new message when the child finishes.
+- **Start work** with the `agent` tool, not with these tools. Each hand-off is its own session. From My Kortix it runs in the background by default: the call returns the child's `task_id` at once, and the API delivers the child's report into the calling session as a new message when the child finishes. See [Agents working together](#agents-working-together).
 - **Run several agents** with the `workflow` tool: a short script with `agent()`, `parallel()`, `pipeline()` and `phase()`. Each `agent()` is a real child session. The session shows the run as a live card. See [Workflows](/docs/developers#workflows).
 
 #### Workflows
@@ -1410,11 +1410,149 @@ return audits.filter(Boolean)
 - **Failures.** `agent()` resolves to `null` when its session was stopped. It throws when the agent failed. Awaited directly, the error ends the run. Inside `parallel()` or `pipeline()`, the failed agent becomes `null` and the run continues.
 - **Approval.** Before the first agent starts, the person sees the title, the phases, and the agent count, with **Run it**, **Run it, and don't ask again in this session**, and **Cancel**. The count is the call's `max_agents`, and the run refuses every `agent()` past it. A child session, for example a background runner, does not ask.
 - **Structured output.** With `schema` (a JSON Schema), the agent must answer with JSON that matches it, and `agent()` resolves to the parsed value. A wrong answer gets a correction in the same session, up to 5 attempts. Kortix checks the keywords `type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const`, `minItems`, `maxItems`, `minLength`, `maxLength`, `minimum`, and `maximum`. A schema that contradicts itself, for example a `required` key that `additionalProperties: false` rules out, stops the call before the agent starts.
-- **Background.** With `background: true`, the call starts one runner session and returns at once. The runner calls the tool with `script: ""`, which runs the workflow its session context holds, and keeps its own computer awake. The runner is a background subagent: its result arrives in the calling session as a new message when the runner's turn ends, and a `resume_run_id` relaunch returns at once the same way. A background run needs two more session levels below the caller: one for the runner and one for its agents.
+- **Background.** With `background: true`, the default in a session a person started, the call starts one runner session and returns at once. The runner calls the tool with `script: ""`, which runs the workflow its session context holds, and keeps its own computer awake. The runner is a background subagent: its result arrives in the calling session as a new message when the runner's turn ends, and a `resume_run_id` relaunch returns at once the same way. A background run needs two more session levels below the caller: one for the runner and one for its agents.
 - **Resume.** Each result names a `run_id`. A call with `resume_run_id` runs the script again: agents that completed return their saved results without a new session, and the first agent whose prompt changed or that failed runs again, with every agent after it. A background run resumes in its runner session, and that call waits for the result.
 - **Saved workflows.** A saved workflow is `.kortix/workflows/<name>.js` in the project repository. `name` runs one with `args`. A session with a project checkout reads its working tree, and the tool description lists the saved names. My Kortix has no checkout: it reads the file from the project's default branch. The tool does not save workflows. To save one, the person asks, and an agent with access to the repository writes `.kortix/workflows/<name>.js` and opens a change request.
 - **Stalls.** An agent with no new output for `stallMs` (default 15 minutes) stops, and a new session starts with the same prompt. A tool call that is still running counts as output. After 6 attempts, `agent()` throws `agent stalled on all 6 attempts`.
 - **Limits.** One run starts at most 50 agents (`KORTIX_WORKFLOW_MAX_AGENTS`) and runs at most 8 of them at the same time (`KORTIX_WORKFLOW_MAX_CONCURRENT`). The session's subagent limit also applies (`KORTIX_PI_CLOUD_SUBAGENTS_MAX`, 4 by default): the lower number wins. One `parallel()` or `pipeline()` call takes at most 4,096 items. A run ends after 2 hours. The card marks a run with more than 25 agents as large.
+
+#### Workflow controls
+
+The person controls a running workflow from its card. The card calls the box that runs the workflow: the session itself, or its background runner.
+
+| Control | What it does |
+| --- | --- |
+| **Pause** | No new `agent()` starts. The agents that run finish their work. |
+| **Resume** | New `agent()` calls start again. |
+| **Restart** (on one agent) | Stops that agent's session and starts it again with the same prompt. |
+| **Stop** | Stops every agent and ends the run. `agent()` calls of stopped agents resolve to `null`. |
+| **Save** | Saves the run's script as `.kortix/workflows/<name>.js` through a change request, so `name` runs it again. |
+
+- **Routes.** `POST /kortix/runtime/workflows/:runId/control` with `{ action: "pause" | "resume" | "restart_agent" | "stop", session_id? }` answers `200 { ok: true, paused }`, and `404` for an unknown run. `restart_agent` needs `session_id`, the agent's child session. `GET /kortix/runtime/workflows` answers `200 { runs }`, the session's runs, newest first. The contract is `WorkflowControlBody` in `@kortix/api-contract/multi-agent`.
+- **Large workflow.** A run with more than 25 agents (`WORKFLOW_LARGE_AGENT_COUNT`) shows a **Large workflow** label on its card. The label does not pause or limit the run.
+- **ultracode.** The word `ultracode` in a message the person types means "run this as a workflow". The composer highlights the word. My Kortix then writes and starts a workflow instead of working step by step. The word has no effect in a message from a trigger, a channel or another session.
+- **Background.** From My Kortix and any session a person started, a workflow runs in the background by default: the call returns at once with the run, and the result arrives later as a new message. `background: false` waits inside the turn, up to 2 hours.
+- **Limits.** 50 agents per run, 8 at the same time, 2 hours per run. See [Workflows](#workflows).
+
+### Agents working together
+
+Every session runs pi, and pi gives each session the same multi-agent tools. A session hands work to named agents, talks to other sessions, leads a team with a shared task list, and runs workflows. The person keeps talking to the session the whole time.
+
+#### Work in the background
+
+A session a person started is an orchestrator: nothing it starts blocks its conversation.
+
+- **Hand-offs.** An `agent` call with `session: "separate"` from a session at depth 0 runs in the background by default (`run_in_background` defaults to `true` there). The call returns the child's `task_id` at once. A child session at depth 1 or deeper, and every `agent()` in a workflow script, waits for its result by default.
+- **Workflows.** The `workflow` tool runs in the background by default at depth 0. See [Workflow controls](#workflow-controls).
+- **Teams.** Teammates are background children. Each one sends an idle notice to its lead when its turn ends.
+- **Results arrive as messages.** When a background child, a workflow runner or a teammate finishes, the API delivers one message into the calling session. When the session is idle, that message starts a turn. When several finish together, they arrive together in one turn.
+- **The person keeps talking.** The composer stays enabled while children work. A message the person sends is answered at once, and the notices arrive between turns.
+- **Status without waiting.** `list_agents` and `kortix sessions status` read each child's state. Neither waits for the child to finish.
+
+#### Named agents and forks
+
+- **A name.** `agent({ name: "post-writer", … })` gives the child a handle. Kortix stores it in the child's metadata `agent_handle` (`AGENT_HANDLE_KEY`). A handle is unique among one lead's live children. `send_message` takes it as `to`, and the session list shows it as `@post-writer`.
+- **A fork.** `agent({ fork: true, … })` starts the child with a copy of this session's conversation instead of an empty one. Use it when the child needs everything said so far. A plain child sees only its prompt.
+- **Continue a child.** `agent` with a `task_id` sends a finished child a follow-up. The child keeps its conversation.
+- **Stop a child.** `task_stop` with the child's `task_id` or name stops its session.
+- **Depth.** A separate child may start its own separate children down to depth 2 (`KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH`). One session runs at most 4 separate children at the same time (`KORTIX_PI_CLOUD_SUBAGENTS_MAX`).
+
+#### Messages between sessions
+
+`send_message` sends a text from one session to another session of the project. `list_agents` lists the sessions a session can reach. Messaging is on in every project, with no feature flag. A runtime that serves the tools lists `session.messaging` in `GET /kortix/health` `capabilities`.
+
+- **`to`.** An agent handle, a session id or a unique prefix of 8 or more characters, `parent` (`main` is the same), or `@name`. When `to` names more than one session, the call answers `409 ambiguous_recipient` with the `candidates`.
+- **Input.** `{ to, message, summary?, notify_when_idle?, type?, approve?, project_id? }` (`PeerMessageSendBody`). `summary` is the one-line preview. `project_id` resolves `to` in another project.
+- **Delivery.** The receiver reads the message at its next step during a turn. An idle receiver starts a new turn with it. The text starts with a header such as `[message from reviewer · session 3f2a1b9c · #m_7Kq2]` and ends with a note that it comes from another session. `peerMessagePromptText` and `parsePeerMessagePrompt` in `@kortix/shared` write and read that text. The web app shows it as one **Message from @reviewer** line, not as a turn the person typed.
+- **No authority.** A message from another session is a request, never an approval. It cannot answer a permission prompt or a question for the person, and it cannot change settings.
+- **Who may send.** A session may message a session only when its person may prompt that session. A refusal is a result, never a silent drop.
+- **Results.** `delivered`, `held` (waits for the receiver's person), `refused` (the receiver refuses messages, or the sender may not prompt it), `denied` (the person declined a held message), `expired` (nobody approved a held message in 5 minutes), `dropped` (the same text to the same session within 60 s). Each result carries a `note`, for example `Not sent: reviewer refuses messages.`
+- **Idle notice.** `notify_when_idle: true` sends one notice back to the sender when the receiver's turn ends. When the receiver is already idle, the notice comes at once. A watch lapses after 12 hours.
+- **`list_agents`.** `scope: "mine"` (default) lists the parent, the children, the lead and the teammates. `scope: "project"` lists every live session of the project. Another project needs an explicit `project_id`. Each row (`ReachableAgent`) has `handle`, `session_id`, `short_id`, `relation` (`self`, `parent`, `child`, `lead`, `teammate`, `session`), `state`, `inbound` and `can_receive`.
+
+**Inbound.** Each session chooses what it does with messages from other sessions. The default is `accept`.
+
+| Mode | What happens |
+| --- | --- |
+| `accept` | The message is delivered. |
+| `hold` | The message waits until the session's person selects **Approve** or **Deny**. It expires after 5 minutes. A session holds at most 100 messages. |
+| `refuse` | The message is not sent. The sender reads `Not sent`. |
+
+**Limits.** 16,000 characters per message (`PEER_MESSAGE_MAX_CHARS`), 200 per `summary`, 30 messages per minute per sender session (`PEER_MESSAGE_PER_MINUTE`).
+
+| Route | Body | Answer |
+| --- | --- | --- |
+| `GET /projects/:id/sessions/:sid/reachable?scope=mine\|project` | none | `200 ReachableAgents` |
+| `POST /projects/:id/sessions/:sid/peer-messages` (`:sid` = sender) | `PeerMessageSendBody` | `200 PeerMessageSendResult`; `409` ambiguous `to` |
+| `GET /projects/:id/sessions/:sid/peer-messages?direction=in\|out` | none | `200 { messages }` |
+| `POST /projects/:id/sessions/:sid/peer-messages/:mid/approve` (`:sid` = receiver) | none | `200 PeerMessage` |
+| `POST /projects/:id/sessions/:sid/peer-messages/:mid/deny` | none | `200 PeerMessage` |
+| `PUT /projects/:id/sessions/:sid/inbound` | `{ inbound }` | `200 { inbound }` |
+
+The contract is `@kortix/api-contract/multi-agent`. From a terminal:
+
+```bash
+kortix sessions reachable --scope project
+kortix sessions message reviewer "The schema change landed; rebase is safe." --notify-idle
+kortix sessions inbound 3f2a1b9c hold
+kortix sessions inbound 3f2a1b9c approve m_7Kq2
+```
+
+Inside a session the CLI sends as `$KORTIX_SESSION_ID`. Outside one, pass `--from <session>`.
+
+#### Agent teams
+
+An agent team is one lead session and the teammates it starts. They share one task list and message each other by name. Teams are experimental and off by default: a project admin turns on the feature flag `agent_teams` (`kortix projects features enable agent_teams`). A runtime that serves the task tools lists `session.team_tasks` in `GET /kortix/health` `capabilities`.
+
+- **Teammates.** With the flag on, a named `agent({ name })` from the lead starts a teammate: a child session whose metadata `team_lead` (`TEAM_LEAD_KEY`) is the lead and whose `agent_handle` is its name. `GET /projects/:id/sessions?team_lead=<sid>` lists one lead's teammates. A teammate cannot start teammates of its own.
+- **The task list.** `task_create`, `task_list`, `task_get` and `task_update` read and change the lead's list. A task has a number (`seq`, shown as `#3`), a `subject`, a `description`, a `status` (`pending`, `in_progress`, `completed`), an owner, and `blocked_by`: the numbers it waits for. `blocked` stays `true` until every task in `blocked_by` is completed.
+- **Claim.** A teammate takes the next pending, unowned, unblocked task with `task_update({ claim: true })`. The claim is atomic: the loser of a race gets `409 task_taken`, and a blocked task answers `409 task_blocked`. The lead may assign a task with `owner`.
+- **Idle notices.** When a teammate's turn ends, the lead gets one notice with the teammate's final answer. The lead combines the answers for the person.
+- **Shutdown.** The lead sends `send_message({ to: "<teammate>", type: "shutdown_request" })`. The teammate answers with `type: "shutdown_response"` and `approve: true` (its session stops) or `approve: false` and the reason.
+
+| Route | Body | Answer |
+| --- | --- | --- |
+| `GET /projects/:id/sessions/:lead/tasks` | none | `200 { tasks }` |
+| `POST /projects/:id/sessions/:lead/tasks` | `SessionTaskCreateBody` | `201 SessionTask` |
+| `PATCH /projects/:id/sessions/:lead/tasks/:seq` | `SessionTaskUpdateBody` | `200 SessionTask`; `409 { code: "task_taken" \| "task_blocked" }` |
+| `DELETE /projects/:id/sessions/:lead/tasks/:seq` | none | `200 { deleted: true }` |
+
+```bash
+kortix tasks add "Draft the outline" --owner writer
+kortix tasks add "Review the draft" --blocked-by 1
+kortix tasks claim 2          # exit 3 when another session took it first
+kortix tasks 3f2a1b9c ls      # a lead's list from outside the team
+```
+
+#### Agent board
+
+`/projects/<id>/sessions?view=board` shows the project's sessions as a board, grouped by state. Select a card to open its session.
+
+| State (`board_state`) | Meaning |
+| --- | --- |
+| `working` | A turn runs. |
+| `needs_input` | The session waits for its person: `attention` is `question` or `approval`. |
+| `idle` | The turn ended; the session takes a new message. |
+| `completed` | The work is done. |
+| `failed` | The session failed. |
+| `stopped` | The session was stopped. |
+
+Each session row of the API carries the board's fields: `board_state`, `attention` (`question`, `approval` or `null`), `last_activity_at`, `result_excerpt` (at most 280 characters of the last answer), `agent_handle`, `team_lead_session_id` and `inbound`. `kortix sessions status --json` prints `board_state`, `attention`, `agent_handle` and `team_lead_session_id` for each session.
+
+#### From the SDK
+
+The SDK exposes the same surface, session-scoped. See [`@kortix/sdk` README](https://github.com/kortix-ai/suna/tree/dev/packages/sdk#agents-working-together).
+
+```ts
+const s = kortix.session(projectId, sessionId);
+await s.reachable({ scope: 'project' });
+await s.peerMessages.send({ to: 'reviewer', message: 'The schema change landed.', notify_when_idle: true });
+await s.setInbound('hold');
+await s.tasks.create({ subject: 'Review the draft', blocked_by: [1] });
+await s.workflows.control(runId, { action: 'pause' });
+```
+
+React: `useReachableAgents`, `usePeerMessages`, `useTeamTasks`, `useSessionWorkflows` and `useTeammates` in `@kortix/sdk/react`.
 
 ### Generate images
 
