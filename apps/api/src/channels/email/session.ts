@@ -4,7 +4,7 @@ import {
   chatInstalls,
   projects,
 } from '@kortix/db';
-import { type ChannelEnvelope, channelPromptText } from '@kortix/shared';
+import type { ChannelEnvelope } from '@kortix/shared';
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
@@ -165,8 +165,8 @@ export async function handleEmailEvent(event: IntegrationEvent, run: { finalAtte
         create: `email:create:${inboxId}:${threadId}:${emailId}`,
         createClaim: `email:threadcreate:${inboxId}:${threadId}`,
       },
-      followUp: { text: channelPromptText(emailEnvelope(email)) },
-      plan: (revived) => planEmailSession(projectId, email, revived),
+      followUp: emailEnvelope(email),
+      plan: () => planEmailSession(projectId, email),
     },
     run,
   );
@@ -298,7 +298,7 @@ const emailPort: ChannelPort = {
  * model, a private inbox ("only me") runs as its owner, and the session is
  * pinned to the inbox's connector account.
  */
-async function planEmailSession(projectId: string, email: InboundEmail, revived: boolean): Promise<ChannelSessionPlan | null> {
+async function planEmailSession(projectId: string, email: InboundEmail): Promise<ChannelSessionPlan | null> {
   const { inboxId, threadId } = email;
   const [project] = await db
     .select()
@@ -366,7 +366,7 @@ async function planEmailSession(projectId: string, email: InboundEmail, revived:
       KORTIX_EMAIL_ADDRESS: email.to[0] ?? '',
       KORTIX_FRONTEND_URL: config.FRONTEND_URL,
     },
-    prompt: channelPromptText(emailEnvelope(email), { revived }),
+    prompt: emailEnvelope(email),
   };
 }
 
