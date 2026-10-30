@@ -184,7 +184,7 @@ flow(
       });
       let first = '';
       let second = '';
-      await ctx.step('hold → held, no delivery row; the target lists both held messages', async () => {
+      await ctx.step('hold → held, no delivery row; the target lists both held messages above the refused one', async () => {
         (await owner.put(INBOUND, { inbound: 'hold' }, { params: { ...p, sessionId: target } })).status(200);
         const a = (await send({ to: 'target', message: 'may I start the deploy?' })).status(200);
         a.body().has('$.status', 'held');
@@ -193,7 +193,8 @@ flow(
         b.body().has('$.status', 'held');
         second = b.json<SendResult>().message!.id;
         if ((await peerRows(ctx, target)).length !== 0) throw new Error('a held message was delivered');
-        (await owner.get(`${SEND}?direction=in`, { params: { ...p, sessionId: target } })).status(200).body().has('$.messages.length', 2).has('$.messages[0].status', 'held');
+        (await owner.get(`${SEND}?direction=in`, { params: { ...p, sessionId: target } })).status(200).body().has('$.messages.length', 3)
+          .has('$.messages[0].status', 'held').has('$.messages[1].status', 'held').has('$.messages[2].status', 'refused');
       });
       await ctx.step('the person approves the first → delivered and one delivery row; denies the second → denied; a second decision → 409', async () => {
         (await asTarget.post(APPROVE, {}, { params: { ...p, sessionId: target, messageId: first } })).status(403);
