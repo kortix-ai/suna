@@ -71,6 +71,7 @@ mock.module('../../core/runtime/client', () => ({
 }));
 
 const { createEventHandler } = await import('./handle-event');
+const { useRuntimePendingStore } = await import('../../browser/stores/opencode-pending-store');
 const { qk } = await import('../query-keys');
 const { useSyncStore } = await import('../../browser/stores/sync-store');
 const { useDiagnosticsStore } = await import('../../browser/stores/diagnostics-store');
@@ -761,6 +762,42 @@ describe('kortix session title mirroring', () => {
 // session.status / session.idle — busy/retry → idle transition fires a
 // task-complete notification + invalidates the git/file-list caches.
 // ============================================================================
+
+describe('session-log control frames', () => {
+  test('a log.status frame moves the thread status like session.status: idle reconciles the tail', () => {
+    const reconciled: string[] = [];
+    const { handleEvent, applySyncEvent } = buildHandler({
+      sessionId: 'kortix-1',
+      reconcileSessionTail: async (sessionID) => {
+        reconciled.push(sessionID);
+      },
+    });
+    handleEvent({ id: 'evt_1', type: 'log.status', properties: { thread_id: 'ses_1', status: 'idle' } } as never);
+    expect(applySyncEvent.calls).toEqual([[{ type: 'session.status', properties: { sessionID: 'ses_1', status: { type: 'idle' } } }]]);
+    expect(reconciled).toEqual(['ses_1']);
+  });
+
+  test("a log.state frame's pending asks a new permission and answers one the log dropped", () => {
+    useRuntimePendingStore.setState({ permissions: { perm_old: { id: 'perm_old', sessionID: 'ses_1' } as never }, questions: {} });
+    const { handleEvent, addPermission, removePermission } = buildHandler({ sessionId: 'kortix-1' });
+    handleEvent({
+      id: 'evt_2',
+      type: 'log.state',
+      properties: {
+        generation: 1,
+        session: {
+          pending: {
+            permissions: [{ id: 'perm_new', thread_id: 'ses_1', payload: { permission: 'bash', patterns: ['ls'], always: [], metadata: {} }, asked_at: '' }],
+            questions: [],
+          },
+        },
+      },
+    } as never);
+    expect(addPermission.calls.map(([req]) => req.id)).toEqual(['perm_new']);
+    expect(removePermission.calls).toEqual([['perm_old']]);
+    useRuntimePendingStore.setState({ permissions: {}, questions: {} });
+  });
+});
 
 describe('session.status', () => {
   test('idle status reconciles the transcript without a prior busy frame', () => {
