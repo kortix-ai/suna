@@ -18,7 +18,7 @@ import { readManifestFromRepo } from '../projects/git';
 import type { GitBackedProject } from '../projects/git/types';
 import { extractAgents } from '../projects/agents';
 import { parseManifestString } from '../projects/triggers';
-import { manifestCandidatePaths, manifestFormatForPath } from '@kortix/manifest-schema';
+import { manifestCandidatePaths } from '@kortix/manifest-schema';
 import { ttlMemo } from '../shared/ttl-memo';
 import type { DeclaredAgentRoster } from './session-agent';
 
@@ -32,12 +32,7 @@ const UNREADABLE: DeclaredAgentRoster = { enabled: [], defaultAgent: null, reada
 async function readRoster(project: GitBackedProject, commit: string): Promise<DeclaredAgentRoster> {
   let found: Awaited<ReturnType<typeof readManifestFromRepo>>;
   try {
-    found = await readManifestFromRepo(
-      project,
-      manifestCandidatePaths(project.manifestPath).map((candidate) => candidate.path),
-      commit,
-      { strictRef: true },
-    );
+    found = await readManifestFromRepo(project, manifestCandidatePaths(project.manifestPath), commit, { strictRef: true });
   } catch {
     return UNREADABLE;
   }
@@ -45,14 +40,7 @@ async function readRoster(project: GitBackedProject, commit: string): Promise<De
 
   let parsed;
   try {
-    parsed = parseManifestString(
-      found.content,
-      manifestFormatForPath(found.path),
-      found.path,
-      found.sha,
-      found.candidatePaths,
-      found.commit,
-    );
+    parsed = parseManifestString(found.content, found.path, found.sha, found.candidatePaths, found.commit);
   } catch {
     return UNREADABLE;
   }
@@ -68,7 +56,7 @@ async function readRoster(project: GitBackedProject, commit: string): Promise<De
     defaultAgent: loaded.defaultAgent && enabled.includes(loaded.defaultAgent) ? loaded.defaultAgent : null,
     readable: true,
     governed: true,
-    ...((loaded.schemaVersion ?? 0) >= 3 ? { onlyDeclared: true } : {}),
+    onlyDeclared: true,
   };
 }
 

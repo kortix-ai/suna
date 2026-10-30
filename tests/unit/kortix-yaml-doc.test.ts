@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // The kortix.yaml key tables in apps/web/content/docs/developers.mdx (the
-// generated:kortix-yaml region) are generated from the v3 JSON Schema. A key or
+// generated:kortix-yaml region) are generated from the JSON Schema. A key or
 // description changed in packages/manifest-schema/src/json-schema.ts without a
 // regenerate leaves the public reference stale. Fix:
 //   (cd packages/manifest-schema && bun run generate:schema)
@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
 
 describe('kortix.yaml reference doc', () => {
-  it('matches the v3 JSON Schema', () => {
+  it('matches the JSON Schema', () => {
     expect(() =>
       execFileSync('bun', ['apps/web/scripts/generate-kortix-yaml-doc.mjs', '--check'], {
         cwd: REPO_ROOT,

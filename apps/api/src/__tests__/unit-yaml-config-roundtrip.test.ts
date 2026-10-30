@@ -3,27 +3,22 @@ import {
   parseManifestString,
   serializeManifest,
   extractTriggers,
-  triggerSpecToTomlEntry,
+  triggerSpecToFlatEntry,
 } from '../projects/triggers';
 import { draftToSpec, parseTriggerDraft } from '../projects/lib/triggers';
 import { extractAgents } from '../projects/agents';
 import { extractConnectors } from '../projects/connectors';
 
-// Empirical ground truth for the dual-format (TOML v1 + YAML v2) manifest core:
-// parse → extract each resource → serialize → re-parse, for BOTH formats, and
-// prove the write path preserves the file's own format (a .yaml project must
-// never serialize back as TOML).
+// Empirical ground truth for the manifest core: parse → extract each resource
+// → serialize → re-parse, with no data loss.
 
-const YAML_V2 = `kortix_version: 2
-default_agent: kortix
+const MANIFEST = `default_agent: kortix
 project:
   name: probe
   description: A probe project.
 env:
   required: []
   optional: [STRIPE_API_KEY]
-opencode:
-  config_dir: .kortix/opencode
 agents:
   kortix:
     connectors: all
@@ -31,7 +26,7 @@ agents:
     kortix_permissions: all
     skills: all
   scout:
-    kortix_permissions: [project.cr.open]
+    kortix_permissions: [project.gitops.push]
     connectors: [github]
 triggers:
   - slug: nightly
@@ -44,44 +39,20 @@ triggers:
     prompt: do the nightly thing
 `;
 
-const TOML_V1 = `kortix_version = 1
-default_agent = "kortix"
+describe('manifest — parse + extract', () => {
+  const m = parseManifestString(MANIFEST, 'kortix.yaml');
 
-[[agents]]
-name = "kortix"
-env = "all"
-connectors = "all"
-
-[[agents]]
-name = "scout"
-connectors = ["github"]
-
-[[triggers]]
-slug = "nightly"
-name = "Nightly"
-type = "cron"
-agent = "kortix"
-enabled = true
-cron = "0 0 3 * * *"
-prompt = "do the nightly thing"
-`;
-
-describe('YAML v2 manifest — parse + extract', () => {
-  const m = parseManifestString(YAML_V2, 'yaml', 'kortix.yaml');
-
-  test('parses as yaml, schema v2, format/path threaded', () => {
-    expect(m.format).toBe('yaml');
+  test('the path is threaded', () => {
     expect(m.path).toBe('kortix.yaml');
-    expect(m.schemaVersion).toBe(2);
   });
 
-  test('extractAgents reads the v2 agents MAP', () => {
+  test('extractAgents reads the agents map', () => {
     const { specs, errors } = extractAgents(m);
     expect(errors).toEqual([]);
     const names = specs.map((s) => s.name).sort();
     expect(names).toEqual(['kortix', 'scout']);
     const scout = specs.find((s) => s.name === 'scout')!;
-    expect(scout.permissions).toEqual(['project.cr.open']);
+    expect(scout.permissions).toEqual(['project.gitops.push']);
     expect(scout.connectors).toEqual(['github']);
     const kortix = specs.find((s) => s.name === 'kortix')!;
     expect(kortix.connectors).toBe('all');
@@ -94,53 +65,20 @@ describe('YAML v2 manifest — parse + extract', () => {
     expect(specs[0].agent).toBe('scout');
   });
 
-  test('extractConnectors never throws on a yaml manifest', () => {
+  test('extractConnectors never throws', () => {
     expect(() => extractConnectors(m)).not.toThrow();
   });
 });
 
-describe('TOML v1 manifest — parse + extract (parity)', () => {
-  const m = parseManifestString(TOML_V1, 'toml', 'kortix.toml');
-
-  test('parses as toml, schema v1', () => {
-    expect(m.format).toBe('toml');
-    expect(m.schemaVersion).toBe(1);
-  });
-
-  test('extractAgents reads the v1 [[agents]] ARRAY', () => {
-    const { specs, errors } = extractAgents(m);
-    expect(errors).toEqual([]);
-    expect(specs.map((s) => s.name).sort()).toEqual(['kortix', 'scout']);
-    expect(specs.find((s) => s.name === 'scout')!.connectors).toEqual(['github']);
-  });
-
-  test('extractTriggers reads the toml [[triggers]] array', () => {
-    const { specs, errors } = extractTriggers(m);
-    expect(errors).toEqual([]);
-    expect(specs.map((s) => s.slug)).toEqual(['nightly']);
-  });
-});
-
-describe('round-trip serialize preserves the file format', () => {
-  test('yaml manifest → serialize stays YAML (agents map, not [[agents]]) + re-parses equal', () => {
-    const m = parseManifestString(YAML_V2, 'yaml', 'kortix.yaml');
+describe('round-trip serialize', () => {
+  test('serialize → re-parse loses no data and writes no kortix_version', () => {
+    const m = parseManifestString(MANIFEST, 'kortix.yaml');
     const out = serializeManifest(m);
-    expect(out).toMatch(/^kortix_version: 2/m); // yaml scalar, not `kortix_version = 2`
+    expect(out).not.toContain('kortix_version');
     expect(out).toContain('agents:');
-    expect(out).not.toContain('[[agents]]');
-    // Re-parse and confirm no data loss on the round-trip.
-    const m2 = parseManifestString(out, 'yaml', 'kortix.yaml');
+    const m2 = parseManifestString(out, 'kortix.yaml');
     expect(extractAgents(m2).specs.map((s) => s.name).sort()).toEqual(['kortix', 'scout']);
     expect(extractTriggers(m2).specs.map((s) => s.slug)).toEqual(['nightly']);
-  });
-
-  test('toml manifest → serialize stays TOML ([[agents]], not agents:)', () => {
-    const m = parseManifestString(TOML_V1, 'toml', 'kortix.toml');
-    const out = serializeManifest(m);
-    expect(out).toMatch(/kortix_version = 1/);
-    expect(out).toContain('[[agents]]');
-    const m2 = parseManifestString(out, 'toml', 'kortix.toml');
-    expect(extractAgents(m2).specs.map((s) => s.name).sort()).toEqual(['kortix', 'scout']);
   });
 });
 
@@ -154,26 +92,23 @@ describe('draftToSpec — new trigger spec path uses the real manifest file', ()
         filter: null,
   };
 
-  test('YAML project → path is kortix.yaml#triggers.<slug> (not hardcoded toml)', () => {
-    expect(draftToSpec(draft, 'kortix.yaml').path).toBe('kortix.yaml#triggers.nightly');
+  test('a kortix.yml project → path is kortix.yml#triggers.<slug>', () => {
+    expect(draftToSpec(draft, 'kortix.yml').path).toBe('kortix.yml#triggers.nightly');
   });
 
-  test('TOML default preserved when no path passed', () => {
-    expect(draftToSpec(draft).path).toBe('kortix.toml#triggers.nightly');
+  test('no path passed → kortix.yaml (the default)', () => {
+    expect(draftToSpec(draft).path).toBe('kortix.yaml#triggers.nightly');
   });
 });
 
 describe('session_mode = pinned — parse, validate, serialize', () => {
-  const yamlWith = (triggerExtra: string) => `kortix_version: 2
-default_agent: kortix
+  const yamlWith = (triggerExtra: string) => `default_agent: kortix
 project:
   name: probe
   description: A probe project.
 env:
   required: []
   optional: []
-opencode:
-  config_dir: .kortix/opencode
 agents:
   kortix:
     connectors: all
@@ -194,7 +129,6 @@ ${triggerExtra}`;
   test('a pinned trigger parses sessionMode + pinnedSessionId', () => {
     const m = parseManifestString(
       yamlWith('    session_mode: pinned\n    session_id: sess-abc\n'),
-      'yaml',
       'kortix.yaml',
     );
     const { specs, errors } = extractTriggers(m);
@@ -204,27 +138,26 @@ ${triggerExtra}`;
   });
 
   test('pinned WITHOUT session_id is a parse error', () => {
-    const m = parseManifestString(yamlWith('    session_mode: pinned\n'), 'yaml', 'kortix.yaml');
+    const m = parseManifestString(yamlWith('    session_mode: pinned\n'), 'kortix.yaml');
     const { errors } = extractTriggers(m);
     expect(errors.length).toBeGreaterThan(0);
     expect(errors[0].error).toMatch(/session_id/);
   });
 
-  test('triggerSpecToTomlEntry emits session_mode + session_id for pinned', () => {
+  test('triggerSpecToFlatEntry emits session_mode + session_id for pinned', () => {
     const m = parseManifestString(
       yamlWith('    session_mode: pinned\n    session_id: sess-xyz\n'),
-      'yaml',
       'kortix.yaml',
     );
     const spec = extractTriggers(m).specs[0];
-    const entry = triggerSpecToTomlEntry(spec);
+    const entry = triggerSpecToFlatEntry(spec);
     expect(entry.session_mode).toBe('pinned');
     expect(entry.session_id).toBe('sess-xyz');
   });
 
   test('fresh trigger omits session_mode/session_id on serialize', () => {
-    const m = parseManifestString(yamlWith(''), 'yaml', 'kortix.yaml');
-    const entry = triggerSpecToTomlEntry(extractTriggers(m).specs[0]);
+    const m = parseManifestString(yamlWith(''), 'kortix.yaml');
+    const entry = triggerSpecToFlatEntry(extractTriggers(m).specs[0]);
     expect(entry.session_mode).toBeUndefined();
     expect(entry.session_id).toBeUndefined();
   });

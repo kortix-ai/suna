@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { describe, expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
-import { manifestWrites, parseManifestString, serializeManifest } from './manifest-io';
+import { manifestWrites, parseManifestString } from './manifest-io';
 import { removeTriggerFromManifest, upsertTriggerInManifest } from './lib/trigger-manifest';
 import { draftToSpec, parseTriggerDraft, specToBody } from './lib/trigger-draft';
 import { extractTriggers } from './trigger-entry';
@@ -17,7 +17,6 @@ import { extractTriggers } from './trigger-entry';
  */
 const FIXTURE = `# Kortix manifest — edited by both humans and the agent.
 # The comments below carry the reasons behind each grant; keep them.
-kortix_version: 3
 
 project:
   name: probe
@@ -60,7 +59,7 @@ const commentLines = (text: string): string[] =>
  *  (routes/triggers.ts): merge the patch onto the current spec's body, parse
  *  the draft, upsert, then take the write through manifestWrites. */
 function patchTrigger(manifestText: string, slug: string, patch: Record<string, unknown>): string {
-  const manifest = parseManifestString(manifestText, 'yaml', 'kortix.yaml');
+  const manifest = parseManifestString(manifestText, 'kortix.yaml');
   const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
   if (!current) throw new Error(`fixture has no trigger ${slug}`);
   const draft = parseTriggerDraft({ ...specToBody(current), ...patch, slug }, { existingSlug: slug });
@@ -75,7 +74,7 @@ function patchTrigger(manifestText: string, slug: string, patch: Record<string, 
 
 /** The DELETE /triggers/:slug route's mutation. */
 function removeTrigger(manifestText: string, slug: string): string {
-  const manifest = parseManifestString(manifestText, 'yaml', 'kortix.yaml');
+  const manifest = parseManifestString(manifestText, 'kortix.yaml');
   const next = removeTriggerFromManifest(manifest, slug);
   manifest.raw = next.raw;
   return manifestWrites(manifest, manifest.path).files[0]?.content ?? '';
@@ -83,7 +82,7 @@ function removeTrigger(manifestText: string, slug: string): string {
 
 /** The POST /triggers route's mutation. */
 function addTrigger(manifestText: string, body: Record<string, unknown>): string {
-  const manifest = parseManifestString(manifestText, 'yaml', 'kortix.yaml');
+  const manifest = parseManifestString(manifestText, 'kortix.yaml');
   const draft = parseTriggerDraft({ ...body, slug: body.slug }, { existingSlug: null });
   if ('error' in draft) throw new Error(draft.error);
   const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
@@ -201,49 +200,20 @@ describe('trigger edits keep every YAML comment (KRTX-2742)', () => {
 
   test('the committed text carries exactly the data a full re-serialize would', () => {
     const after = patchTrigger(FIXTURE, 'nightly-audit', { enabled: false });
-    const manifest = parseManifestString(FIXTURE, 'yaml', 'kortix.yaml');
+    const manifest = parseManifestString(FIXTURE, 'kortix.yaml');
     const data = parseYaml(after) as Record<string, unknown>;
     const expectedRaw = parseYaml(FIXTURE) as {
       triggers: Array<Record<string, unknown>>;
     };
     expectedRaw.triggers[0]!.enabled = false;
     expect(isDeepStrictEqual(data, expectedRaw)).toBe(true);
-    // And the result still validates as the same manifest version.
-    expect(data.kortix_version).toBe(3);
   });
 
   test('a non-trigger change to raw still lands (the doc path must never drop it)', () => {
-    const manifest = parseManifestString(FIXTURE, 'yaml', 'kortix.yaml');
+    const manifest = parseManifestString(FIXTURE, 'kortix.yaml');
     manifest.raw.agents = { kortix: { connectors: 'none', secrets: 'none' } };
     const content = manifestWrites(manifest, manifest.path).files[0]?.content ?? '';
     const data = parseYaml(content) as { agents: { kortix: { connectors: string } } };
     expect(data.agents.kortix.connectors).toBe('none');
-  });
-
-  test('a TOML manifest still round-trips through the same path', () => {
-    const toml = `kortix_version = 3
-
-[[triggers]]
-slug = "nightly-audit"
-name = "Nightly audit"
-type = "cron"
-agent = "kortix"
-enabled = true
-cron = "0 3 * * *"
-prompt = "Run the audit"
-`;
-    const manifest = parseManifestString(toml, 'toml', 'kortix.toml');
-    const current = extractTriggers(manifest).specs[0]!;
-    const draft = parseTriggerDraft({ ...specToBody(current), enabled: false }, { existingSlug: 'nightly-audit' });
-    if ('error' in draft) throw new Error(draft.error);
-    const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
-    manifest.raw = next.raw;
-    const writes = manifestWrites(manifest, manifest.path);
-    expect(writes.files[0]?.path).toBe('kortix.toml');
-    const text = writes.files[0]?.content ?? '';
-    expect(text).toContain('enabled = false');
-    expect(serializeManifest(parseManifestString(text, 'toml', 'kortix.toml'))).toContain(
-      'enabled = false',
-    );
   });
 });

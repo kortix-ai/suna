@@ -43,29 +43,19 @@ const { insertIntoView } = await import('./helpers/compat-views');
 const { createLocalGitUpstream } = await import('./helpers/local-git-upstream');
 import type { LocalGitUpstream } from './helpers/local-git-upstream';
 
-const V2_MANIFEST = `# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
-kortix_version: 2
+const MANIFEST = `# yaml-language-server: $schema=https://kortix.com/schema/kortix.schema.json
 default_agent: kortix
 project:
   name: name-gate
 agents:
   kortix:
-    file: agents/kortix.md
+    prompt: You are Kortix.
     connectors: all
     secrets: all
     kortix_permissions: all
   research:
-    file: agents/research.md
+    prompt: You research.
     connectors: none
-`;
-
-const V1_MANIFEST = `kortix_version = 1
-[project]
-name = "name-gate-v1"
-
-[[agents]]
-name = "kortix"
-file = "agents/kortix.md"
 `;
 
 interface Ctx {
@@ -81,7 +71,7 @@ const minted: string[] = [];
 
 /** One isolated project per describe block: fresh ids each time (a second
  *  insert of the same account id would collide before afterAll runs). */
-async function seed(manifestFile: 'kortix.yaml' | 'kortix.toml', manifest: string): Promise<void> {
+async function seed(manifestFile: 'kortix.yaml', manifest: string): Promise<void> {
   const accountId = crypto.randomUUID();
   const projectId = crypto.randomUUID();
   const userId = crypto.randomUUID();
@@ -139,14 +129,15 @@ afterAll(async () => {
 
 describe('GET /agents/:name/config — a name the manifest does not declare is 404, not an empty block', () => {
   test('a DECLARED agent reads back its governance block (unchanged)', async () => {
-    await seed('kortix.yaml', V2_MANIFEST);
+    await seed('kortix.yaml', MANIFEST);
     const secret = await ownerToken();
     const res = await app.request(`/v1/projects/${ctx!.projectId}/agents/kortix/config`, {
       headers: { Authorization: `Bearer ${secret}` },
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.schema_version).toBe(2);
+    expect(body.schema_version).toBe(3);
+    expect(body.editable).toBe(true);
     expect(body.block).toMatchObject({ connectors: 'all', secrets: 'all' });
   });
 
@@ -216,7 +207,7 @@ describe('PUT /model-defaults?scope=agent — an undeclared agentName is refused
 
 describe('a malformed agent entry is manifest_malformed, not agent_not_found (PUT mirrors the GET)', () => {
   test('an entry that exists but is not a table answers 400 on both gates', async () => {
-    await seed('kortix.yaml', `${V2_MANIFEST}\n  broken: not-a-table\n`);
+    await seed('kortix.yaml', `${MANIFEST}\n  broken: not-a-table\n`);
     const secret = await ownerToken();
     const res = await app.request(
       `/v1/projects/${ctx!.projectId}/model-defaults?scope=agent&agentName=${encodeURIComponent('broken')}`,
@@ -237,29 +228,5 @@ describe('a malformed agent entry is manifest_malformed, not agent_not_found (PU
     });
     expect(get.status).toBe(400);
     expect((await get.json()).code).toBe('manifest_malformed');
-  });
-});
-
-describe('v1 manifests — `[[agents]]` array is the roster', () => {
-  test('a declared v1 agent still reads back schema_version 1 (unchanged)', async () => {
-    await seed('kortix.toml', V1_MANIFEST);
-    const secret = await ownerToken();
-    const res = await app.request(`/v1/projects/${ctx!.projectId}/agents/kortix/config`, {
-      headers: { Authorization: `Bearer ${secret}` },
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.schema_version).toBe(1);
-    expect(body.block).toBeNull();
-  });
-
-  test('an undeclared v1 agent answers 404, not the old empty success', async () => {
-    const secret = await ownerToken();
-    const res = await app.request(`/v1/projects/${ctx!.projectId}/agents/does-not-exist/config`, {
-      headers: { Authorization: `Bearer ${secret}` },
-    });
-    expect(res.status).toBe(404);
-    const body = await res.json();
-    expect(body.code).toBe('agent_not_found');
   });
 });

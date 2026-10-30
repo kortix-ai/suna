@@ -1,15 +1,9 @@
 /**
- * Read/write helpers for the v2 `agents.<name>` GOVERNANCE block (redirected
- * 2026-07-05 — "one home per concern"). `AgentBlockV2` here is governance
- * ONLY: connectors/secrets/skills/kortix_permissions/repository_access/enabled, plus
- * `file` (the path of the agent's `.md`). Agent BEHAVIOR (mode/model/
- * temperature/top_p/steps/variant/color/hidden/permission/prompt) lives
- * entirely in that `.md` frontmatter + body — see `./agent-markdown.ts`
- * (parse/serialize) and `./compile-agent-config.ts` (`agentMarkdownPath`,
- * `readAgentMarkdownFile`). The dashboard's agent
- * editor route (`../routes/agent-config.ts`) is what merges this governance
- * half with the `.md` behavior half into one wire response/request — this
- * module only ever touches kortix.yaml.
+ * Read/write helpers for one `agents.<name>` block of kortix.yaml: behavior,
+ * prompt (`prompt` or `prompt_file`) and grants. The dashboard's agent editor
+ * route (`../routes/agent-config.ts`) serves it as `block` (grants) plus
+ * `block.behavior` (behavior + prompt); this module only ever touches
+ * kortix.yaml.
  *
  * Distinct from `../agents.ts` (`AgentSpec` / `extractAgents`): that module
  * resolves the platform GRANT the session token carries (a narrower view —
@@ -20,16 +14,16 @@
  * load/commit (mirrors `applyAgentScope` in `../agents.ts`).
  */
 import {
-  type AgentBlockV2,
   defaultAgentFile,
   resolveGrantSet,
-  projectRepositoryDefault,
   resolveProjectRepository,
   SLUG_RE,
-  validateManifest,
   type ManifestIssue,
 } from '@kortix/manifest-schema';
-import type { ParsedManifest } from '../triggers';
+import { addedManifestErrors, type ParsedManifest } from '../triggers';
+
+/** One raw `agents.<name>` block, as kortix.yaml holds it. */
+export type AgentBlock = Record<string, unknown>;
 import { isDeepStrictEqual } from 'node:util';
 
 /** Slug rule for an agent name — same as every other manifest slug. Reuses
@@ -211,23 +205,17 @@ function pruneRequiredConnectors(block: Record<string, unknown>): void {
 }
 
 type ReadAgentBlockResult =
-  | { ok: true; schemaVersion: number; block: AgentBlockV2 | null; defaultAgent: string | null }
+  | { ok: true; block: AgentBlock | null; defaultAgent: string | null }
   | { ok: false; error: string };
 
 /**
- * Read one agent's raw block out of an already-loaded v2 or v3 manifest. Never
- * throws. A v3 block also carries behavior and the prompt; the route splits it
- * with `agentConfigViewV3`. `block` is `null` for a v1 manifest with a
- * DECLARED agent (valid — the route answers 200 with `schema_version: 1` so
- * the editor can offer the upgrade; an undeclared v1 name hits the same
- * 404 gate), or when the named agent isn't declared in a v2+ manifest (the
- * GET route turns that into 404 `agent_not_found`, which names the declared
- * agents — see `agentNotDeclaredError` in `agents/parse.ts`).
+ * Read one agent's raw block out of an already-loaded manifest. Never throws.
+ * The block carries behavior, the prompt and grants; the route splits it with
+ * `agentConfigViewV3`. `block` is `null` when the named agent isn't declared
+ * (the GET route turns that into 404 `agent_not_found`, which names the
+ * declared agents — see `agentNotDeclaredError` in `agents/parse.ts`).
  */
 export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): ReadAgentBlockResult {
-  if (manifest.schemaVersion < 2) {
-    return { ok: true, schemaVersion: manifest.schemaVersion, block: null, defaultAgent: null };
-  }
   const defaultAgentRaw = manifest.raw.default_agent;
   const defaultAgent =
     typeof defaultAgentRaw === 'string' && defaultAgentRaw.trim() ? defaultAgentRaw.trim() : null;
@@ -240,40 +228,38 @@ export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): R
   }
   const entry = agentBlockOf(agentName, agents.map?.[agentName]);
   if (!entry.ok) return entry;
-  if (!entry.block) {
-    return { ok: true, schemaVersion: manifest.schemaVersion, block: null, defaultAgent };
-  }
+  if (!entry.block) return { ok: true, block: null, defaultAgent };
   const aliases = normalizeGovernanceAliases(entry.block);
   if (!aliases.ok) return aliases;
-  const repository = normalizeRepositoryAccess(aliases.block, manifest.schemaVersion, true);
+  const repository = normalizeRepositoryAccess(aliases.block, true);
   if (!repository.ok) return repository;
-  return {
-    ok: true,
-    schemaVersion: manifest.schemaVersion,
-    block: repository.block as AgentBlockV2,
-    defaultAgent,
-  };
+  return { ok: true, block: repository.block, defaultAgent };
 }
 
 /**
  * The wire block carries `repository_access`; kortix.yaml stores
  * `workspace: { project_repository }`. Reading maps every form to the wire key;
  * writing maps it back to the YAML form. Both always carry the value: an
- * omitted one is the version default (`projectRepositoryDefault`), so every
- * editor save pins it. A legacy `workspace: read` with no explicit choice is
- * written back unchanged.
+ * omitted one is the default (`false`), so every editor save pins it. A legacy
+ * `workspace: read` with no explicit choice is written back unchanged.
  */
 function normalizeRepositoryAccess(
   block: Record<string, unknown>,
-  version: number,
   reading = false,
 ): NormalizeRequiredConnectorsResult {
-  const repository = resolveProjectRepository(block, projectRepositoryDefault(version));
+  // The wire key: the YAML has only `workspace` (`resolveProjectRepository`).
+  const access = block.repository_access;
+  if (access !== undefined && typeof access !== 'boolean') return { ok: false, error: 'repository_access must be a boolean.' };
+  const repository = resolveProjectRepository(block);
   if (!repository.ok) return { ok: false, error: `${repository.path} ${repository.message}` };
-  if (repository.legacyRead && !reading) return { ok: true, block: { ...block } };
+  if (access !== undefined && block.workspace !== undefined && access !== repository.value) {
+    return { ok: false, error: 'repository_access conflicts with workspace.' };
+  }
+  if (repository.legacyRead && access === undefined && !reading) return { ok: true, block: { ...block } };
+  const value = access ?? repository.value;
   const { repository_access: _access, workspace: _workspace, ...next } = block;
-  if (reading) next.repository_access = repository.value;
-  else next.workspace = { project_repository: repository.value };
+  if (reading) next.repository_access = value;
+  else next.workspace = { project_repository: value };
   return { ok: true, block: next };
 }
 
@@ -298,13 +284,15 @@ function applyAgentMapBlock(
   if (!aliases.ok) return aliases;
   pruneRequiredConnectors(aliases.block);
   const nextAgents: Record<string, unknown> = { ...agents.map };
-  const repository = normalizeRepositoryAccess(aliases.block, manifest.schemaVersion);
+  const repository = normalizeRepositoryAccess(aliases.block);
   if (!repository.ok) return repository;
   nextAgents[agentName] = repository.block;
-  const nextRaw = { ...manifest.raw, agents: nextAgents };
+  return refuseAddedErrors(manifest, { ...manifest.raw, agents: nextAgents });
+}
 
-  const result = validateManifest(nextRaw, manifest.format);
-  const errorIssues = result.issues.filter((issue) => issue.severity === 'error');
+/** `nextRaw`, unless it adds a validation error (`addedManifestErrors`). */
+function refuseAddedErrors(manifest: ParsedManifest, nextRaw: Record<string, unknown>): ApplyAgentBlockResult {
+  const errorIssues = addedManifestErrors(manifest.raw, nextRaw);
   if (errorIssues.length > 0) {
     return {
       ok: false,
@@ -318,81 +306,43 @@ function applyAgentMapBlock(
 /**
  * Change the project-wide default agent without touching any agent block.
  * The manifest validator is the authority: the target must be a declared,
- * enabled map-based agent before the caller is allowed to commit the file.
+ * enabled agent before the caller is allowed to commit the file.
  */
 export function applyDefaultAgentV2(
   manifest: ParsedManifest,
   agentName: string,
 ): ApplyAgentBlockResult {
-  if (manifest.schemaVersion < 2) {
-    return {
-      ok: false,
-      error:
-        'This project must use kortix_version 2 or later (kortix.yaml) to set a project default agent.',
-    };
-  }
   if (!isValidAgentName(agentName)) {
     return {
       ok: false,
       error: `"${agentName}" is not a valid agent name (lowercase letters, digits, dashes, underscores).`,
     };
   }
-
-  const nextRaw = { ...manifest.raw, default_agent: agentName };
-  const result = validateManifest(nextRaw, manifest.format);
-  const errorIssues = result.issues.filter((issue) => issue.severity === 'error');
-  if (errorIssues.length > 0) {
-    return {
-      ok: false,
-      error: errorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '),
-      issues: errorIssues,
-    };
-  }
-  return { ok: true, raw: nextRaw };
+  return refuseAddedErrors(manifest, { ...manifest.raw, default_agent: agentName });
 }
 
 /**
- * Write one agent's full v2 block into the manifest's raw object (full
- * replace, upsert-by-name — same "read whole file, mutate one entry,
- * validate, commit" shape as `applyAgentScope`), and shape-validate the
- * RESULT through the real `validateManifest` before the caller commits —
- * a malformed permission tree, unknown enum, or ungrantable `kortix_permissions`
+ * Write one agent's full block into the manifest's raw object (full replace,
+ * upsert-by-name), and validate the RESULT before the caller commits — a
+ * malformed permission tree, unknown enum, or ungrantable `kortix_permissions`
  * action is a clean rejection here, never a broken manifest on disk.
- *
- * Refuses outright on a v1 manifest — the full v2 field space (permission
- * trees, per-field governance) has no v1 representation to fall back to;
- * the caller degrades in the UI instead of ever reaching this function for
- * a v1 project.
  */
 export function applyAgentBlockV2(
   manifest: ParsedManifest,
   agentName: string,
-  block: AgentBlockV2,
+  block: AgentBlock,
 ): ApplyAgentBlockResult {
-  if (manifest.schemaVersion < 2) {
-    return {
-      ok: false,
-      error:
-        'This project uses a kortix_version 1 manifest. Upgrade to kortix.yaml (kortix_version 2 or later) to edit the full agent configuration.',
-    };
-  }
-  return applyAgentMapBlock(manifest, agentName, block as Record<string, unknown>);
+  return applyAgentMapBlock(manifest, agentName, block);
 }
 
 /**
- * Apply a secrets/connectors SCOPE edit to an `agents:` map manifest — the
- * counterpart of `applyAgentScope` in `../agents.ts` (which only handles the v1
- * `[[agents]]` array and would treat a v2 map as an empty array → "agent not
- * found"). Reads the agent's existing governance block, merges in JUST the two
- * scope grants, and reuses `applyAgentBlockV2` for the upsert + `validateManifest`
- * gate (so every other governance field on the block is preserved verbatim).
- *
- * Two v2 semantics the v1 path gets wrong: (1) v1's wire `env` is v2's `secrets`
- * key; (2) v2 is deny-by-default, so a none/`[]` selection is written by OMITTING
- * the key (matching hand-authored kortix.yaml), NOT by v1's env-default-is-'all'
- * omit rule. `notFound` distinguishes "agent not declared" (route → 404) from a
- * validation failure (route → 400) — this path scopes an existing agent, it
- * never creates one.
+ * Apply a secrets/connectors SCOPE edit to one agent's block. Reads the
+ * agent's existing block, merges in JUST the scope grants, and reuses the
+ * upsert + validation gate (so every other field on the block is preserved
+ * verbatim). The wire `env` is the `secrets` key; grants are deny-by-default,
+ * so a none/`[]` selection is written by OMITTING the key. `notFound`
+ * distinguishes "agent not declared" (route → 404) from a validation failure
+ * (route → 400) — this path scopes an existing agent, it never creates one.
  */
 export function applyAgentScopeV2(
   manifest: ParsedManifest,
@@ -407,13 +357,6 @@ export function applyAgentScopeV2(
     policySets?: Record<string, string | null>;
   },
 ): ApplyAgentBlockResult & { notFound?: boolean } {
-  if (manifest.schemaVersion < 2) {
-    return {
-      ok: false,
-      error:
-        'This project must use kortix_version 2 or later (kortix.yaml) to edit agent scope.',
-    };
-  }
   const rawAgents = manifest.raw.agents;
   const existing =
     rawAgents && typeof rawAgents === 'object' && !Array.isArray(rawAgents)
@@ -496,7 +439,7 @@ type GrantSecretToAgentResult =
       alreadyGranted: boolean;
       adoptedGovernance: boolean;
     }
-  | { ok: false; error: string; issues?: ManifestIssue[]; unsupportedV1?: boolean };
+  | { ok: false; error: string; issues?: ManifestIssue[] };
 
 /**
  * Add ONE secret identifier to ONE agent's `secrets:` allowlist — the write
@@ -529,14 +472,6 @@ export function grantSecretToAgentV2(
   identifier: string,
   projectIdentifiers: readonly string[] = [],
 ): GrantSecretToAgentResult {
-  if (manifest.schemaVersion < 2) {
-    return {
-      ok: false,
-      unsupportedV1: true,
-      error:
-        'This project uses a kortix_version 1 manifest (kortix.toml). Upgrade to kortix.yaml (kortix_version 2 or later) to grant a secret to an agent.',
-    };
-  }
   const agents = agentsMapOf(manifest);
   if (!agents.ok) return agents;
   const adoptedGovernance =
@@ -580,12 +515,12 @@ export function grantSecretToAgentV2(
   return applied.ok ? { ...applied, alreadyGranted: false, adoptedGovernance } : applied;
 }
 
-// ─── kortix_version 3 ──────────────────────────────────────────────────────
+// ─── The editor's view of a block ──────────────────────────────────────────
 //
-// A v3 agent is ONE block: behavior, prompt (`prompt` or `prompt_file`) and
-// grants. The editor's wire shape stays the v2 one — `block` (governance) plus
-// `block.behavior` (behavior + `prompt`) — and maps onto that block and, at
-// most, the agent's prompt file. No `.md` frontmatter is ever written.
+// An agent is ONE block: behavior, prompt (`prompt` or `prompt_file`) and
+// grants. The editor's wire shape is `block` (governance) plus
+// `block.behavior` (behavior + `prompt`), mapped onto that block and, at most,
+// the agent's prompt file. No `.md` frontmatter is ever written.
 
 /** v3 behavior keys: the editor serves and writes them as `behavior`. */
 const BEHAVIOR_KEYS_V3: readonly string[] = [
@@ -679,7 +614,7 @@ export function agentConfigViewV3(
     else governance[key] = value;
   }
   if (block.prompt_file !== undefined && promptText?.trim()) behavior.prompt = promptText;
-  const repository = normalizeRepositoryAccess(governance, 3, true);
+  const repository = normalizeRepositoryAccess(governance, true);
   return { governance: repository.ok ? repository.block : governance, behavior };
 }
 

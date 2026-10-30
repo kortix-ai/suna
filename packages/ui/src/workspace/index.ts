@@ -20,13 +20,6 @@ export {
   reviewHref,
 } from '../internal/lib/capability-tab-routes';
 export {
-  detectManifestVersion,
-  manifestFilename,
-  manifestNeedsUpgrade,
-  useProjectManifestVersion,
-  type ManifestVersion,
-} from '../internal/lib/manifest-version';
-export {
   CUSTOMIZE_SECTION_ACCESS,
   CUSTOMIZE_SECTION_GATE_ACTIONS,
   PROJECT_ACTIONS,

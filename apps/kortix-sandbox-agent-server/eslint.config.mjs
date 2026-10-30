@@ -265,52 +265,34 @@ const importStyle = {
   },
 }
 
-// E18: OpenCode is deleted. A new OpenCode-named identifier or string fails
-// (the resolver, harness.ts, may name the id it maps); the names that exist today are
-// allowlisted per file. The list only shrinks: an entry whose word no longer
-// occurs in its file fails too, so the PR that removes a name deletes its entry.
+// E18: OpenCode is deleted. An OpenCode-named identifier or string fails
+// (the resolver, harness.ts, may name the id it maps).
 // harness/pi/ is in the scope since W5 E2: pi emits the Kortix format.
 // Comments are not checked.
 const OPENCODE_NAME = /open.?code/i
 const OPENCODE_WORD = /[A-Za-z0-9_.$-]*open.?code[A-Za-z0-9_.$-]*/gi
 const OPENCODE_SCOPE = /^(?:(?:lib|types|services|routes|app|harness\/contract|harness\/shared|harness\/pi)\/.*|main\.ts)$/
-/** Allowed OpenCode words per file, package-relative. Delete entries; never add. @type {Record<string, string[]>} */
-export const OPENCODE_NAMES_ALLOWED = {
-  // The legacy project layout's config directory, `.kortix/opencode`: pi reads
-  // its skills and releases it for a project that has not moved to the root layout.
-  'src/harness/pi/config.ts': ['opencode'],
-  'src/harness/pi/config-release.ts': ['opencode'],
-}
 /** @type {import('eslint').Rule.RuleModule} */
 const opencodeNames = {
   meta: {
     type: 'problem',
     messages: {
       unexpected: "OpenCode name '{{word}}'. OpenCode is deleted: use a harness-neutral name (E18, ARCHITECTURE.md).",
-      stale: "E18 allowlist entry '{{word}}' no longer occurs in this file. Delete it from OPENCODE_NAMES_ALLOWED.",
     },
     schema: [],
   },
   create(context) {
     const rel = posixPath(relative(SRC, context.filename))
     if (rel.startsWith('..') || isAbsolute(rel) || !OPENCODE_SCOPE.test(rel) || rel.endsWith('.test.ts') || rel.includes('__tests__/')) return {}
-    const allowed = new Set(OPENCODE_NAMES_ALLOWED[`src/${rel}`] ?? [])
-    const seen = new Set()
     /** @param {any} node @param {unknown} text */
     const check = (node, text) => {
       if (typeof text !== 'string' || !OPENCODE_NAME.test(text)) return
-      for (const [word] of text.matchAll(OPENCODE_WORD)) {
-        seen.add(word)
-        if (!allowed.has(word)) context.report({ node, messageId: 'unexpected', data: { word } })
-      }
+      for (const [word] of text.matchAll(OPENCODE_WORD)) context.report({ node, messageId: 'unexpected', data: { word } })
     }
     return {
       Identifier: (node) => check(node, node.name),
       Literal: (node) => check(node, node.value),
       TemplateElement: (node) => check(node, node.value.cooked),
-      'Program:exit': (node) => {
-        for (const word of allowed) if (!seen.has(word)) context.report({ node, messageId: 'stale', data: { word } })
-      },
     }
   },
 }

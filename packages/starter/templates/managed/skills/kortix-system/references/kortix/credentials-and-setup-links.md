@@ -18,9 +18,10 @@ settings page.
 | An app account (Gmail, GitHub, …) | A connect link: `kortix connectors connect` | A sign-in |
 
 Slack is neither: `kortix channels connect` prints its install link. Never
-request `SLACK_BOT_TOKEN` and never add a `slack` connector (the slug is
-reserved). Both links open a dialog in the web app and a tappable link in
-Slack or Teams. A value entered through a link never passes through you.
+request `SLACK_BOT_TOKEN` and never add a connector for Slack: the channel
+is `kortix_slack`, which Kortix builds. Both links open a dialog in the web
+app and a tappable link in Slack or Teams. A value entered through a link
+never passes through you.
 
 ## Store a value you have
 
@@ -109,7 +110,7 @@ https://<app>/connect/ksl_…
 
 | You see | Meaning | Do |
 | --- | --- | --- |
-| `not granted` in `kortix secrets ls`, or `withheld` | The value exists; your agent's `secrets` grant lacks it. | Never say it is unset. Ask the user to enable it for your agent (**Customize → Agents → <agent> → Secrets**, or `kortix secrets grant <NAME> --agent <agent>`), then run `kortix secrets sync`. |
+| `not granted` in `kortix secrets ls`, or `withheld` | The value exists; your agent's `secrets` grant lacks it. | Never say it is unset. Ask the user to enable it for your agent (**Customize → Agents → <agent> → Access → Secrets**, or `kortix secrets grant <NAME> --agent <agent>`), then run `kortix secrets sync`. |
 | `undecryptable`, `credential_undecryptable` | Kortix can no longer decrypt the stored value. | Ask the user to enter it again: mint a secret link. |
 | `credential_not_shared` | The value is shared with someone this session does not act for (a shared session, a trigger, another member). | Never ask for it again. Name the case; the user runs it in their own private session or shares it (`kortix secrets share <NAME> --everyone`). |
 | `409 PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION` | The session uses a value shared only with its person. | Suggest a new session to share. |

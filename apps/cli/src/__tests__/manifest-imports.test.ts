@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path';
  * `imports:` in kortix.yaml, exercised through the CLI as a real process in a
  * working tree split across files — the same layout a 30-trigger project uses:
  *
- *   kortix.yaml                       root: version, default agent, imports
+ *   kortix.yaml                       root: default agent, imports
  *   .kortix/agents.yaml               imported file
  *   .kortix/triggers/**\/*.yaml        imported directory, nested
  */
@@ -18,7 +18,6 @@ const CLI_ENTRY = join(CLI_ROOT, 'src', 'index.ts');
 let tmp: string;
 
 const ROOT = `# root manifest — keep this comment
-kortix_version: 2
 default_agent: kortix
 imports:
   - .kortix/triggers/
@@ -140,7 +139,21 @@ describe('kortix validate — imports', () => {
       message:
         'triggers "weekly-report" is declared in both .kortix/triggers/clash.yaml and .kortix/triggers/reports/weekly.yaml — one name, one file',
       severity: 'error',
+      file: join(realpathSync(tmp), 'kortix.yaml'),
+      line: 3,
+      column: 1,
     });
+  });
+
+  test('an error in an imported file is reported at that file, line and column', async () => {
+    write({ '.kortix/triggers/dockets.yaml': DOCKETS.replace('cron: "0 0 17 * * 5"', 'cron: "not a cron"') });
+    const result = await runCli(['validate']);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('.kortix/triggers/dockets.yaml:8:5  error  triggers[1].cron  invalid cron expression');
+    const report = JSON.parse((await runCli(['validate', '--json'])).stdout);
+    expect(report.issues).toContainEqual(
+      expect.objectContaining({ file: join(realpathSync(tmp), '.kortix/triggers/dockets.yaml'), path: 'triggers[1].cron', line: 8, column: 5, severity: 'error' }),
+    );
   });
 
   test('a missing import and a path escaping the repository are errors', async () => {
@@ -205,13 +218,13 @@ describe('kortix triggers — edits land in the declaring file', () => {
 });
 
 describe('resolveLocalManifestImports origins', () => {
-  test('a TOML manifest carries one origin map per importable key of the manifest schema', async () => {
+  test('a manifest without imports carries one origin map per importable key of the manifest schema', async () => {
     const { IMPORTABLE_LIST_KEYS, IMPORTABLE_MAP_KEYS } = await import('@kortix/manifest-schema');
     const { resolveLocalManifestImports } = await import('../manifest-imports.ts');
     const dir = mkdtempSync(join(tmpdir(), 'imports-origins-'));
     try {
-      writeFileSync(join(dir, 'kortix.toml'), 'kortix_version = 1\n');
-      const resolved = resolveLocalManifestImports(join(dir, 'kortix.toml'), 'toml');
+      writeFileSync(join(dir, 'kortix.yaml'), 'default_agent: main\n');
+      const resolved = resolveLocalManifestImports(join(dir, 'kortix.yaml'));
       expect(Object.keys(resolved.origins).sort()).toEqual([...IMPORTABLE_LIST_KEYS, ...IMPORTABLE_MAP_KEYS].sort());
     } finally {
       rmSync(dir, { recursive: true, force: true });

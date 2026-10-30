@@ -11,7 +11,7 @@ import {
   SLACK_RESERVED_SLUG,
   RESERVED_CONNECTOR_SLUGS,
 } from '../projects/connectors';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { parseManifestString } from '../projects/triggers';
 import {
   hideSupersededSlack,
   withChannelDeclaration,
@@ -19,8 +19,8 @@ import {
 } from '../connectors/channel-rules';
 
 function parse(body: string) {
-  const src = [`kortix_version: ${KNOWN_SCHEMA_VERSION}`, 'project:\n  name: t', body].join('\n');
-  return extractConnectors(parseManifestString(src, 'yaml', 'kortix.yaml'));
+  const src = ['project:\n  name: t', body].join('\n');
+  return extractConnectors(parseManifestString(src, 'kortix.yaml'));
 }
 
 /* ─── parser: reserved slug ─────────────────────────────────────────────────── */

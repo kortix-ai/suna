@@ -472,7 +472,6 @@ flow(
 );
 
 const GOVERNED_MANIFEST = [
-  'kortix_version: 2',
   'project:',
   '  name: ke2e-rooms',
   'default_agent: talker',

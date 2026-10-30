@@ -44,7 +44,7 @@ beforeEach(async () => {
   await git(['init', '--initial-branch=main', seedPath]);
   await git(['config', 'user.name', 'Kortix Test'], seedPath);
   await git(['config', 'user.email', 'test@kortix.invalid'], seedPath);
-  await writeFile(join(seedPath, 'kortix.yaml'), 'kortix_version: 2\nconnectors: []\n');
+  await writeFile(join(seedPath, 'kortix.yaml'), 'connectors: []\n');
   await git(['add', 'kortix.yaml'], seedPath);
   await git(['commit', '-m', 'seed manifest'], seedPath);
   await git(['remote', 'add', 'origin', remotePath], seedPath);
@@ -71,7 +71,7 @@ describe('manifest file compare-and-swap', () => {
     await writeFile(join(seedPath, 'skills/pdf/SKILL.md'), 'user edited skill');
     await writeFile(join(seedPath, 'skills/pdf/custom/script.py'), 'custom script');
     await writeFile(join(seedPath, 'tools/shared.ts'), 'shared tool');
-    await writeFile(join(seedPath, 'kortix.yaml'), 'kortix_version: 3\nskills:\n  pdf: skills/pdf\nagents:\n  helper:\n    skills: [pdf]\n');
+    await writeFile(join(seedPath, 'kortix.yaml'), 'skills:\n  pdf: skills/pdf\nagents:\n  helper:\n    skills: [pdf]\n');
     await git(['add', '.'], seedPath);
     await git(['commit', '-m', 'install synthetic skill'], seedPath);
     await git(['push', 'origin', 'main'], seedPath);
@@ -99,7 +99,7 @@ describe('manifest file compare-and-swap', () => {
     await expect(commitMultipleFilesToBranch(project, {
       deletes: ['kortix.yaml'], message: 'remove stale selection', expectedCommit,
     })).rejects.toBeInstanceOf(GitFileRevisionConflictError);
-    expect(await git(['--git-dir', remotePath, 'show', 'main:kortix.yaml'])).toContain('kortix_version');
+    expect(await git(['--git-dir', remotePath, 'show', 'main:kortix.yaml'])).toContain('connectors: []');
   });
 
   test('allows credential-free absolute repositories only in local development', async () => {
@@ -173,9 +173,9 @@ describe('manifest file compare-and-swap', () => {
       files: [
         {
           path: 'kortix.yaml',
-          content: 'kortix_version: 2\nconnectors:\n  - slug: first\n    provider: http\n',
+          content: 'connectors:\n  - slug: first\n    provider: http\n',
         },
-        { path: '.kortix/opencode/agents/default.md', content: 'first behavior\n' },
+        { path: 'agents/default.md', content: 'first behavior\n' },
       ],
       message: 'first multi-file write',
       expectedFileRevision: {
@@ -190,9 +190,9 @@ describe('manifest file compare-and-swap', () => {
         files: [
           {
             path: 'kortix.yaml',
-            content: 'kortix_version: 2\nconnectors:\n  - slug: stale\n    provider: http\n',
+            content: 'connectors:\n  - slug: stale\n    provider: http\n',
           },
-          { path: '.kortix/opencode/agents/default.md', content: 'stale behavior\n' },
+          { path: 'agents/default.md', content: 'stale behavior\n' },
         ],
         message: 'stale multi-file write',
         expectedFileRevision: {
@@ -207,28 +207,25 @@ describe('manifest file compare-and-swap', () => {
       'slug: first',
     );
     expect(
-      await git(['--git-dir', remotePath, 'show', 'main:.kortix/opencode/agents/default.md']),
+      await git(['--git-dir', remotePath, 'show', 'main:agents/default.md']),
     ).toBe('first behavior');
   });
 
   test('rejects a write when a higher-priority manifest appears', async () => {
     await git(['rm', 'kortix.yaml'], seedPath);
-    await writeFile(
-      join(seedPath, 'kortix.toml'),
-      'kortix_version = 1\n[project]\nname = "initial"\n',
-    );
-    await git(['add', 'kortix.toml'], seedPath);
-    await git(['commit', '-m', 'switch to toml'], seedPath);
+    await writeFile(join(seedPath, 'kortix.yml'), 'project:\n  name: initial\n');
+    await git(['add', 'kortix.yml'], seedPath);
+    await git(['commit', '-m', 'switch to kortix.yml'], seedPath);
     await git(['push', 'origin', 'main'], seedPath);
 
     const original = await readManifest(project);
-    expect(original?.path).toBe('kortix.toml');
-    expect(original?.candidatePaths).toEqual(['kortix.yaml', 'kortix.yml', 'kortix.toml']);
-    if (!original) throw new Error('Expected the TOML manifest');
+    expect(original?.path).toBe('kortix.yml');
+    expect(original?.candidatePaths).toEqual(['kortix.yaml', 'kortix.yml']);
+    if (!original) throw new Error('Expected the kortix.yml manifest');
 
     await writeFile(
       join(seedPath, 'kortix.yaml'),
-      'kortix_version: 2\nproject:\n  name: concurrent\nconnectors: []\n',
+      'project:\n  name: concurrent\nconnectors: []\n',
     );
     await git(['add', 'kortix.yaml'], seedPath);
     await git(['commit', '-m', 'add higher priority manifest'], seedPath);
@@ -239,15 +236,15 @@ describe('manifest file compare-and-swap', () => {
     expect(
       await commitManifest(project as Parameters<typeof commitManifest>[0], stale, 'stale write'),
     ).toEqual({
-      error: 'File "kortix.toml" changed since it was read',
+      error: 'File "kortix.yml" changed since it was read',
       status: 409,
     });
 
     expect(await git(['--git-dir', remotePath, 'show', 'main:kortix.yaml'])).toContain(
       'name: concurrent',
     );
-    expect(await git(['--git-dir', remotePath, 'show', 'main:kortix.toml'])).toContain(
-      'name = "initial"',
+    expect(await git(['--git-dir', remotePath, 'show', 'main:kortix.yml'])).toContain(
+      'name: initial',
     );
   });
 

@@ -2,7 +2,7 @@
 
 pi is the runtime of every Kortix session. It runs inside the Kortix daemon
 in the sandbox, calls models only through the Kortix LLM gateway, and reads
-its config from `kortix.yaml` (kortix_version 3). It reads no harness folder.
+its config from `kortix.yaml` and the files it names.
 
 ## Tools
 
@@ -15,11 +15,12 @@ its config from `kortix.yaml` (kortix_version 3). It reads no harness folder.
 | `glob` | Finds files by glob pattern. | `glob` |
 | `grep` | Searches file contents by regular expression. | `grep` |
 | `question` | Asks the user and waits for the answer. | `question` |
-| `task` | Delegates one task to a subagent. | the `subagents` grant |
+| `agent` | Starts a subagent (`task` is its old name). | the `subagents` grant |
 | `codemode` | Runs a JavaScript script that calls the other tools as `await tools.<name>(args)`. Only the script output returns. | the rule of each nested call |
 | `web_search` | Searches the web. Batch queries with `\|\|\|`. | `websearch` |
 | `image_search` | Searches for images. | `websearch` |
 | `scrape_webpage` | Fetches pages as markdown. Comma-separated URLs. | `webfetch` |
+| `image_gen` | Generates or edits an image file. | `edit` |
 | `memory` | Reads and writes the project brain in `memory/` (the `kortix-memory` skill). | `edit` (`read` for `view`) |
 | `show` | Shows a file, an image, a URL or content to the user. | `show` |
 
@@ -27,7 +28,7 @@ its config from `kortix.yaml` (kortix_version 3). It reads no harness folder.
   the project. No key is needed in the sandbox.
 - Project tools from `tools:` run like the Kortix tools (`kortix/tools.md`).
 - `agents.<name>.codemode`: `on` (default), `only` (the model sees only
-  `codemode`), `off`. A script cannot call `task` or `question`.
+  `codemode`), `off`. A script cannot call `agent` or `question`.
 - Not on pi: `webfetch`, `websearch`, `todowrite`, `lsp`, `apply_patch`,
   `skill`, `list`, MCP tools. Fetch a page with `scrape_webpage`. Read a
   skill with `read`. Keep a process running with
@@ -60,31 +61,35 @@ permission:
   govern `bash`: `cat secrets/a` is a `bash` command.
 - `ask` stops the call and asks the user: `once`, `always` (this permission
   key, for the session) or `reject`. A `deny` still wins after `always`.
-- No rule: `allow`. `skill` and `task` are not permission keys in v3: use
-  the `skills` and `subagents` grants.
+- No rule: `allow`. `skill` and `task` are not permission keys: use the
+  `skills` and `subagents` grants.
 - `agents.<name>.tools` hides tools; `permission` decides calls to visible
   ones.
 
 ## Subagents
 
-`task` runs one prompt in a child session and returns its final message.
-Arguments: `description`, `prompt`, `subagent_type`, and `task_id` to
-continue an earlier child.
+`agent` runs one prompt in a child and returns its final message.
+Arguments: `description`, `prompt`, `subagent_type` (a declared agent) or
+`agent` (an inline agent: `instructions`, optional `description`, `model`,
+`tools`), `session`, and `task_id` to continue an earlier child.
 
 - `subagent_type` is a declared, enabled agent with `mode: subagent` or
   `all`, named in the caller's `subagents` grant. pi has no built-in
-  `general` or `explore` subagent.
+  `general` or `explore` subagent. An inline agent needs no grant: leave
+  `agent` and `task` out of `tools` to stop an agent from delegating.
 - A subagent runs with its own prompt, model and permission. A call must
   pass both the subagent's rules and the caller's: a `deny` from either wins.
-- A subagent cannot start another subagent or ask the user a question.
-- Several `task` calls in one message run at the same time. The user sees
-  each child session.
+  A child never gets a tool its caller lacks.
 - `session: "separate"` (the default) runs the subagent in its own new
   session with its own sandbox and branch. The one call waits until that
   session finishes (up to 30 minutes) and returns its final message: ask the
-  subagent to put the answer and the paths of its files there. Do not drive
-  `kortix sessions new`, `wait-for` or `cp` from bash to delegate: bash stops
-  a command after 30 s.
+  subagent to put the answer and the paths of its files there. A separate
+  child may delegate again, at most 2 levels deep; at most 4 wait at once.
+- `session: "same"` runs it inside this session: no boot, no new sandbox.
+  It cannot start a subagent or ask the user a question.
+- Several `agent` calls alone in one message run at the same time. The user
+  sees each child session.
+- Delegate with `agent`, not with `kortix sessions new` + `wait-for` from bash.
 - With codemode `only`, call `agent` and `question` directly, not from a
   script: a script may not call them.
 
@@ -111,6 +116,7 @@ extensions:
     pi: { source: "npm:pi-mcp-adapter@2.36.0", extensions: ["extensions/*.ts"], skills: [] }
 agents:
   kortix:
+    tools: all
     extensions: [word-count, web-access]          # all | none | names; omitted = none
 ```
 

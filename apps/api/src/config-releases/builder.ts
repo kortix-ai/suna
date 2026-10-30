@@ -50,7 +50,6 @@ export {
   MAX_CONFIG_ARCHIVE_BYTES,
   readComposedRelease,
   resolveReleaseTreeSource,
-  selectedOpenCodePlugins,
 } from './release-tree';
 export type { ConfigReleaseVariant } from './release-tree';
 
@@ -303,15 +302,14 @@ async function build(
   if (variant !== 'project') return toolsRelease(project, mirror, commit, variant, withGovernance, store, archiveLimit);
   let resolved: Awaited<ReturnType<typeof resolveReleaseTreeSource>>;
   try {
-    resolved = await resolveReleaseTreeSource(mirror, project, commit, variant);
+    resolved = await resolveReleaseTreeSource(mirror, project, commit);
   } catch (error) {
     return { ...withGovernance, reason: (error as Error).message };
   }
   if (!('source' in resolved)) {
-    return { ...withGovernance, release_id: governanceOnly, config_dir: resolved.configDir, reason: resolved.reason };
+    return { ...withGovernance, release_id: governanceOnly, reason: resolved.reason };
   }
   const { source } = resolved;
-  const configDir = source.configDir;
   const composed = isComposedSource(source);
 
   let treeId = source.rootTree;
@@ -342,7 +340,6 @@ async function build(
       return {
         ...withGovernance,
         release_id: configReleaseId(treeId, etag),
-        config_dir: configDir,
         config_tree_id: treeId,
         files: read?.files ?? (await listConfigFiles(mirror, treeId)),
         archive_reason:
@@ -353,7 +350,7 @@ async function build(
     }
     throw error;
   }
-  const located: ConfigRelease = { ...withGovernance, config_dir: configDir, config_tree_id: treeId };
+  const located: ConfigRelease = { ...withGovernance, config_tree_id: treeId };
 
   const key = configArchiveKey(project.projectId, treeId);
   if (freshArchive) {

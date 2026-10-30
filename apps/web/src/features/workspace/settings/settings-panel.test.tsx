@@ -394,7 +394,7 @@ describe('SettingsPanelShell — real tab content gating', () => {
     // They are the Customize bar's Settings tab since 2026-09-03; the ids
     // stay in the type so their panes keep compiling, but no rail row or
     // route opens them here.
-    for (const tab of ['workspace', 'sandbox', 'feature-flags', 'upgrades'] as const) {
+    for (const tab of ['workspace', 'sandbox', 'feature-flags'] as const) {
       expect(SETTINGS_TABS).not.toContain(tab);
     }
   });
@@ -566,7 +566,7 @@ describe('isSettingsTabAllowed — project scope (JAY-547)', () => {
     // The panes still exist behind the type, and the gate still refuses them
     // without a project, so a stray `openSettings('sandbox')` on `/accounts`
     // cannot mount a project pane with nothing to point it at.
-    for (const tab of ['workspace', 'sandbox', 'feature-flags', 'upgrades'] as const) {
+    for (const tab of ['workspace', 'sandbox', 'feature-flags'] as const) {
       expect(isSettingsTabAllowed(tab, paramsFor())).toBe(false);
     }
   });
