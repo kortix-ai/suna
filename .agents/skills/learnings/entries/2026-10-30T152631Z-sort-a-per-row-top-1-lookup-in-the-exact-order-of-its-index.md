@@ -19,7 +19,7 @@ mapped each gateway request to its turn with `order by started_at desc` against
 1,377 turns took 7.8 s per read, with 8.8 M buffer hits. In 24 h, 176 reads failed with
 500/503 at the 25 s limit. One open session spent 5.6 h of request time. With
 `desc nulls last`: 108 ms and 65 k buffer hits, the same result for all 13,316
-requests. Fixed in PR #<pr>.
+requests. Fixed in PR #11219.
 
 **Enforcement:** `apps/api/src/__tests__/integration-session-model-usage.test.ts`,
 "a long session reads one turn per request, not every earlier turn". It uses
