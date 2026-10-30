@@ -7,7 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./audit-labels": "./src/audit-labels.ts",
-    "./meta-agent": "./src/meta-agent.ts",
+    "./my-kortix-agent": "./src/my-kortix-agent.ts",
     "./channel-descriptors": "./src/channel-descriptors.ts",
     "./artifact-doc": "./src/artifact-doc.ts",
     "./artifact-comments": "./src/artifact-comments.ts",

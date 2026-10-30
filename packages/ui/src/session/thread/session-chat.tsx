@@ -108,6 +108,8 @@ import {
   Composer as SessionChatInput,
 } from '../composer/composer';
 import { ComposerDropZone } from '../composer/composer-drop-zone';
+import { AgentStrip } from '../agents/agent-strip';
+import { SessionPromptContext } from '../agents/session-prompt';
 import { channelRunnableAgents, resolveComposerAgent, withChannelAgents } from '../composer/composer-agent-access';
 import {
   acknowledgeQuoteRequests,
@@ -4181,6 +4183,13 @@ export function SessionChat({
   // the loader exists to avoid). The connection keeps running in the parent
   // ProjectSessionRuntimeConnection, so as soon as the runtime is ready
   // isDataLoading flips and the full shell renders in one shot.
+  // A control outside the composer ("Save as workflow" on a workflow card) sends through the
+  // same path as a typed prompt: a running turn is steered, an idle session starts a turn.
+  const sendSessionPrompt = useCallback(
+    (text: string) => handleSend(text, undefined, undefined, undefined, composerSendDelivery('transcript', isBusyRef.current)),
+    [handleSend],
+  );
+
   if (isDataLoading) {
     // A transcript read that genuinely FAILED (not a waking box — the SDK keeps
     // those on `loading` and retries them itself) gets an explicit retry, not
@@ -4219,6 +4228,7 @@ export function SessionChat({
   return (
     // A read-only view (the sub-session modal) offers no fix inside a tool card.
     <ReadOnlySessionContext.Provider value={!!readOnly}>
+    <SessionPromptContext.Provider value={readOnly ? null : sendSessionPrompt}>
     {/* Outcomes' cache coherence and the shareable `?cr=` link both hinge on
         ONE `ProjectFilesProvider`: `useChangeRequests` inside
         `SessionOutcomesProvider` and `ChangeRequestDetailDialog` below both read
@@ -4983,11 +4993,19 @@ export function SessionChat({
                     : undefined
                 }
               />
+              {/* The agents this session started, under the composer (Claude Code's agent
+                  panel). It reads its own lists and never holds the composer. */}
+              <AgentStrip
+                projectId={projectId}
+                sessionId={projectSessionId}
+                className={cn(COMPOSER_SHELL_CLASS, 'pb-3', transcriptRows && 'max-w-none px-5')}
+              />
             </>
           )}
         </SessionBodyRow>
       </ComposerDropZone>
     </ProjectFilesProvider>
+    </SessionPromptContext.Provider>
     </ReadOnlySessionContext.Provider>
   );
 }

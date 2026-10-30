@@ -11,6 +11,13 @@ import { AGENT_ENV_FILE } from '@kortix/api-contract/sandbox-layout'
 import { logger } from '@/lib/log/logger'
 import imageGen from './kortix/image_gen'
 import imageSearch from './kortix/image_search'
+import kortixAccess from './platform/kortix_access'
+import kortixAgents from './platform/kortix_agents'
+import kortixConnectors from './platform/kortix_connectors'
+import kortixPeople from './platform/kortix_people'
+import kortixSchedules from './platform/kortix_schedules'
+import kortixSessions from './platform/kortix_sessions'
+import kortixUsage from './platform/kortix_usage'
 import memory from './kortix/memory'
 import scrapeWebpage from './kortix/scrape_webpage'
 import show from './kortix/show'
@@ -32,6 +39,23 @@ export const KORTIX_TOOLS: Readonly<Record<string, KortixTool>> = {
   scrape_webpage: scrapeWebpage,
   memory,
   show,
+}
+
+/**
+ * The My Kortix platform tools: typed fronts for the in-sandbox `kortix` CLI
+ * (`platform/platform.ts`). They share that helper, so they are not ejectable,
+ * and they load only when the compiled config names them in `kortix_tools`
+ * (the platform's My Kortix config does): a project that lists no `tools`
+ * key, which loads every Kortix tool above, never gets these.
+ */
+export const PLATFORM_TOOLS: Readonly<Record<string, KortixTool>> = {
+  kortix_agents: kortixAgents,
+  kortix_sessions: kortixSessions,
+  kortix_schedules: kortixSchedules,
+  kortix_connectors: kortixConnectors,
+  kortix_people: kortixPeople,
+  kortix_access: kortixAccess,
+  kortix_usage: kortixUsage,
 }
 
 export interface HostedTool extends KortixTool {
@@ -63,7 +87,8 @@ export async function loadTools(
   compiled: Pick<CompiledAgentSet, 'project_tools' | 'kortix_tools'> | null | undefined,
 ): Promise<ToolLoad> {
   const kortix = Object.entries(KORTIX_TOOLS).filter(([name]) => !compiled?.kortix_tools || compiled.kortix_tools.includes(name))
-  const tools = new Map<string, HostedTool>(kortix.map(([name, tool]) => [name, { ...tool, name, source: 'kortix' }]))
+  const platform = Object.entries(PLATFORM_TOOLS).filter(([name]) => compiled?.kortix_tools?.includes(name))
+  const tools = new Map<string, HostedTool>([...kortix, ...platform].map(([name, tool]) => [name, { ...tool, name, source: 'kortix' }]))
   const failed: ToolLoad['failed'] = []
   for (const [name, path] of Object.entries(compiled?.project_tools ?? {})) {
     const tool = await importTool(root, path)

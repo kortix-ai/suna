@@ -5,7 +5,7 @@
  * monochrome surfaces, one earned accent, no decorative color. `accent` is
  * the monochrome emphasis (white on dark). `brand` is the terminal turquoise
  * the `kortix` CLI banner prints (`apps/cli/src/banner.ts`, ANSI cyan; brand
- * decisions D31, D32), rationed to two marks: the one-column `▌` selection
+ * decisions D32, D33), rationed to two marks: the one-column `▌` selection
  * marker and the text cursor. The Kortix symbol, focus borders, prompts and
  * highlights stay monochrome: turquoise on every focused frame was too much.
  *
@@ -27,7 +27,7 @@ export interface Theme {
   faint: string;
   /** Monochrome emphasis: highlighted text, the prompt glyph, key names. */
   accent: string;
-  /** The terminal turquoise (D31). Only the wordmark, the `▌` marker, the cursor. */
+  /** The terminal turquoise (D32, D33). Only the `▌` selection marker and the text cursor. */
   brand: string;
   /** Text drawn on top of `accent`. */
   onAccent: string;

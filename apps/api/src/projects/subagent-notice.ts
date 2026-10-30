@@ -25,33 +25,49 @@
  *  - A child that never started (provisioning failed) reports `failed` once.
  *  - A child someone other than its parent stops mid-turn reports `stopped`.
  *
+ * Teammates (agent teams): a child whose `team_lead` is its parent always
+ * notifies its lead, `notify_parent` or not, and the notice names the team
+ * tasks it still owns, as Claude Code tells a lead when a teammate goes idle.
+ *
+ * Notices are coalesced (`session-notice-batch.ts`): several that arrive
+ * together reach the parent as ONE delivery, so five finished agents wake a
+ * stopped parent once and start one turn, not five.
+ *
  * Never throws: it runs beside the turn-end relay and provisioning cleanup.
  * ponytail: the report is read between the turn end and the enqueue (~1 s);
  * an API process killed in that window drops that one message. The parent can
  * still read the child (`kortix sessions log <task_id>`).
  */
+import { TEAM_LEAD_KEY } from '@kortix/api-contract/multi-agent';
 import { SUBAGENT_NOTIFY_PARENT_KEY } from '@kortix/api-contract/runtime-relay';
 import { projectSessions } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { registerSessionFailureNotifier } from '../shared/session-failure-notifier';
+import { registerTurnLostNotifier } from '../shared/turn-lost-notifier';
 import type { ProjectSessionRow } from './lib/serializers';
 import { buildSessionTranscriptDigest } from './lib/session-transcript';
 import { readSessionsWorking } from './lib/session-working-read';
-import { drainSessionLifecycleQueue, enqueueContinueSessionCommand } from './session-lifecycle';
+import { enqueueSessionNotice } from './session-notice-batch';
 import { ABORT_END_ERROR_NAMES } from './session-turn-ledger';
-import { mintWireMessageId } from './wire-message-id';
+import { tasksOwnedBy, teamHandle } from './team-tasks/service';
 
 export type SubagentNoticeStatus = 'completed' | 'error' | 'stopped' | 'failed';
 
 /** Messages read back from the child to find its last report. */
 const READ_BACK_MESSAGES = 20;
 
-/** The parent this child reports to, or null when it is not a background subagent. */
+/** True when the session is a teammate of its parent (agent teams: `team_lead` = the parent). */
+export function isTeammateRow(row: Pick<ProjectSessionRow, 'parentSessionId' | 'metadata'>): boolean {
+  const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  return !!row.parentSessionId && meta[TEAM_LEAD_KEY] === row.parentSessionId;
+}
+
+/** The parent this child reports to, or null when it is neither a background subagent nor a teammate. */
 export function noticeParentOf(row: Pick<ProjectSessionRow, 'parentSessionId' | 'metadata'>): string | null {
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
-  if (meta[SUBAGENT_NOTIFY_PARENT_KEY] !== true || typeof meta.deletedAt === 'string') return null;
+  if ((meta[SUBAGENT_NOTIFY_PARENT_KEY] !== true && !isTeammateRow(row)) || typeof meta.deletedAt === 'string') return null;
   const parent = row.parentSessionId;
   return parent && meta.spawned_by_session === parent ? parent : null;
 }
@@ -69,13 +85,23 @@ export function subagentNoticeText(input: {
   title: string | null;
   report: string;
   error?: string | null;
+  /** A teammate: its handle and the team tasks it still owns. */
+  teammate?: { handle: string; tasks: Array<{ seq: number; subject: string; status: string }> } | null;
 }): string {
   const body =
     input.status === 'completed'
       ? `<task_result>\n${input.report || 'The subagent finished without a text report.'}\n</task_result>`
       : `<task_error>\n${input.error || `The subagent ${input.status === 'stopped' ? 'was stopped' : 'failed'}.`}\n</task_error>${input.report ? `\n<task_result>\n${input.report}\n</task_result>` : ''}`;
+  const teammate = input.teammate;
+  const taskLines = teammate
+    ? teammate.tasks.length > 0
+      ? [`Tasks ${teammate.handle} still owns: ${teammate.tasks.map((t) => `#${t.seq} ${t.subject} (${t.status.replace('_', ' ')})`).join('; ')}.`]
+      : [`${teammate.handle} owns no unfinished task.`]
+    : [];
   return [
-    'A background subagent you started has finished. This message is from the platform, not from the user.',
+    teammate
+      ? `Your teammate ${teammate.handle} finished its turn and is idle. This message is from the platform, not from the user.`
+      : 'A background subagent you started has finished. This message is from the platform, not from the user.',
     `task_id: ${input.childId}`,
     `status: ${input.status}`,
     '',
@@ -88,6 +114,7 @@ export function subagentNoticeText(input: {
     `<result>\n${body}\n</result>`,
     '</session-report>',
     '</kortix_system>',
+    ...(taskLines.length > 0 ? ['', ...taskLines] : []),
     '',
     `Continue your task with this result. To send this subagent a follow-up, call \`agent\` with task_id ${input.childId}. To read its whole transcript: \`kortix sessions log ${input.childId}\`.`,
   ].join('\n');
@@ -137,6 +164,22 @@ export async function notifyParentOfFailedStart(sessionId: string, message: stri
 }
 
 registerSessionFailureNotifier(notifyParentOfFailedStart);
+
+/**
+ * The reaper settled a turn of `sessionId` without its box (`runtime_gone`):
+ * the turn-end relay never ran. Tell a waiting parent once; the notice key
+ * names the lost turn.
+ */
+export function notifyParentOfLostTurn(sessionId: string, turnToken: string): Promise<boolean> {
+  return notifyParentOfSubagentTurn({
+    sessionId,
+    status: 'error',
+    errorInfo: { name: 'runtime_gone', message: 'Its computer stopped before it finished. Start it again, or hand the work to another agent.' },
+    turnMessageId: `lost:${turnToken}`,
+  });
+}
+
+registerTurnLostNotifier(notifyParentOfLostTurn);
 
 /**
  * Before a stop (`POST …/sessions/:id/stop`): when `sessionId` is a background
@@ -224,6 +267,9 @@ async function deliver(
   const parentMeta = (parent?.metadata ?? {}) as Record<string, unknown>;
   if (!parent || parent.projectId !== child.projectId || typeof parentMeta.deletedAt === 'string') return false;
   const childMeta = (child.metadata ?? {}) as Record<string, unknown>;
+  const teammate = isTeammateRow(child)
+    ? { handle: teamHandle(child), tasks: await tasksOwnedBy(child.sessionId).catch(() => []) }
+    : null;
   const text = subagentNoticeText({
     childId: child.sessionId,
     status: outcome.status,
@@ -231,9 +277,12 @@ async function deliver(
     title: typeof childMeta.custom_name === 'string' ? childMeta.custom_name : null,
     report: outcome.report,
     error: outcome.error,
+    teammate,
   });
   const key = `subagent-finished:${child.sessionId}:${turnKey}`;
-  const { deduped } = await enqueueContinueSessionCommand({
+  // Coalesced with every other notice still waiting for the parent; the row
+  // steers into a running parent turn, else starts one (waking the box first).
+  const { deduped, coalesced } = await enqueueSessionNotice({
     source: 'system:subagent-finished',
     projectId: parent.projectId,
     accountId: parent.accountId,
@@ -241,18 +290,9 @@ async function deliver(
     // The identity the child ran as: the person its parent acts for.
     actorUserId: child.createdBy,
     text,
-    // Harness context, not the person's words: the transcript shows it as a notice.
-    parts: [{ type: 'text', text, synthetic: true }],
-    idempotencyKey: key,
-    clientMessageId: key,
-    wireMessageId: mintWireMessageId({ nowMs: Date.now() }).id,
-    remintOnDelivery: true,
-    placement: 'composer',
-    delivery: 'steer',
+    key,
     authorSessionId: child.sessionId,
   });
-  // Targeted: an untargeted kick delivers whichever row is oldest-due.
-  drainSessionLifecycleQueue({ idempotencyKey: key, burst: false }).catch(() => {});
-  logger.info('[subagent-notice] parent notified', { childId: child.sessionId, parentId, status: outcome.status, deduped });
+  logger.info('[subagent-notice] parent notified', { childId: child.sessionId, parentId, status: outcome.status, deduped, coalesced });
   return !deduped;
 }

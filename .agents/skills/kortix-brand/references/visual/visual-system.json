@@ -198,7 +198,7 @@
       "terminal-surface": { "value": "#0f0f0f", "mobile": true },
       "terminal-fg": { "value": "#e5e5e5", "mobile": true },
       "terminal-border": { "value": "rgb(255 255 255 / 0.1)", "mobile": true },
-      "terminal-accent": { "light": "#0f7f80", "dark": "#2ec4c4", "mobile": false, "use": "The terminal accent of the CLI and the TUI (D31), on the CLI wordmark (D31) and two TUI marks: the one-column selection marker and the text cursor (D32). apps/tui/src/theme.ts `brand` must equal it; the CLI prints it as ANSI cyan." }
+      "terminal-accent": { "light": "#0f7f80", "dark": "#2ec4c4", "mobile": false, "use": "The terminal accent of the CLI and the TUI (D32), on the CLI wordmark (D32) and two TUI marks: the one-column selection marker and the text cursor (D33). apps/tui/src/theme.ts `brand` must equal it; the CLI prints it as ANSI cyan." }
     },
     "emoji": {
       "rule": "Emoji-picker active cell. Hues are DERIVED from the glyph (emoji-tint.ts) and must stay stable. Fill stays pale; the 1px inset ring carries WCAG 1.4.11 3:1 against --popover (measured 3.03-3.19:1). Emitted as light-dark() in @theme.",

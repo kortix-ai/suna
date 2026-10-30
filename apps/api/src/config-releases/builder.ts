@@ -23,7 +23,7 @@ import {
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
 } from '../projects/lib/compile-agent-config';
-import { buildPlatformMetaOpenCodeConfig } from '../projects/lib/platform-meta-agent';
+import { buildMyKortixConfig } from '../projects/lib/my-kortix-agent';
 import type { GitBackedProject } from '../projects/git/types';
 import { bumpBounded } from '../shared/ttl-memo';
 import { configArchiveKey, getConfigArchiveStore, type ConfigArchiveStore } from './store';
@@ -248,7 +248,7 @@ async function compileGovernance(
 ): Promise<string | null> {
   if (variant === 'project') return resolveCompiledAgentConfigForSession(project, commit);
   if (variant === 'none') return EMPTY_GOVERNANCE;
-  if (variant === 'meta') return buildPlatformMetaOpenCodeConfig();
+  if (variant === 'mykortix') return buildMyKortixConfig();
   return resolveSelectedAgentConfigForSession(project, variant.slice('agent:'.length), commit);
 }
 
@@ -298,7 +298,7 @@ async function build(
   // The meta coordinator gets a governance-only release: its box holds no
   // project checkout.
   const governanceOnly = configReleaseId(null, etag);
-  if (variant === 'meta') return { ...withGovernance, release_id: governanceOnly };
+  if (variant === 'mykortix') return { ...withGovernance, release_id: governanceOnly };
   if (variant !== 'project') return toolsRelease(project, mirror, commit, variant, withGovernance, store, archiveLimit);
   let resolved: Awaited<ReturnType<typeof resolveReleaseTreeSource>>;
   try {

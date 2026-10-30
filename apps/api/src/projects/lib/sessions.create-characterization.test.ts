@@ -60,7 +60,7 @@ import { createProjectSession } from './sessions';
 // meta_agent is default-on (2026-10-24). This suite characterizes the ordinary
 // (non-meta) session-create path — model pin, metadata fields, sandbox slug —
 // so it opts out of the meta coordinator explicitly to stay isolated from the
-// default. The meta path has its own coverage in unit-platform-meta-agent.test.ts.
+// default. The meta path has its own coverage in unit-my-kortix-agent.test.ts.
 const project = {
   projectId: 'synthetic-project', accountId: 'synthetic-account', defaultBranch: 'main',
   metadata: { experimental: { meta_agent: false } }, repoUrl: 'https://example.test/repo', manifestPath: 'kortix.yaml',

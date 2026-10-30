@@ -7,6 +7,7 @@
  * fields, and side-effect order — is unchanged.
  */
 import { SUBAGENT_NOTIFY_PARENT_KEY, type TurnStreamRelayBody } from '@kortix/api-contract/runtime-relay';
+import { TEAM_LEAD_KEY } from '@kortix/api-contract/multi-agent';
 import { isTurnErrorCode } from '@kortix/api-contract/transcript';
 import { projectSessions } from '@kortix/db';
 import { genuiToMarkdown } from '@kortix/sdk/genui';
@@ -45,6 +46,7 @@ import {
   turnCompletionAllowsQueuePromotion,
 } from '../session-turn-ledger';
 import { fireIdleWatches } from '../rooms/service';
+import { onPeerTurnEnded } from '../peer-messages/service';
 import { notifyParentOfSubagentTurn } from '../subagent-notice';
 
 /** The relay request body, shape only — the route parses JSON into this. */
@@ -558,10 +560,11 @@ export async function settleTurnEnd(
   // THE TURN ENDED, SO A BACKGROUND SUBAGENT'S PARENT HEARS IT (subagent-notice.ts).
   // After the promotion: a prompt queued for this child starts its next turn
   // first, so the child is not finished yet. Tracked, never awaited.
+  // A teammate (agent teams: `team_lead`) always tells its lead.
   if (
     settled.turnCompletion.outcome === 'closed' &&
     ctx.childSession &&
-    ctx.turnStreamMetadata[SUBAGENT_NOTIFY_PARENT_KEY] === true
+    (ctx.turnStreamMetadata[SUBAGENT_NOTIFY_PARENT_KEY] === true || typeof ctx.turnStreamMetadata[TEAM_LEAD_KEY] === 'string')
   ) {
     trackDetached(
       notifyParentOfSubagentTurn({
@@ -571,6 +574,12 @@ export async function settleTurnEnd(
         turnMessageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : null,
       }),
     );
+  }
+  // THE TURN ENDED, SO ITS RESULT EXCERPT AND ITS "TELL ME WHEN IT IS IDLE"
+  // MESSAGES ARE DUE (projects/peer-messages). Every session, child or not.
+  // Tracked, never awaited, never throws.
+  if (settled.turnCompletion.outcome === 'closed') {
+    trackDetached(onPeerTurnEnded(ctx.sessionId, settled.status, settled.errorInfo?.name ?? null));
   }
   return response;
 }

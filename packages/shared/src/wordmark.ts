@@ -2,8 +2,8 @@
  * The block-letter KORTIX wordmark the terminal surfaces print.
  *
  * The CLI landing banner (`apps/cli/src/banner.ts`) prints it, in
- * `terminal-accent` (brand decision D31). The TUI draws the pixel symbol
- * instead (`@kortix/shared/pixel-mark`, D32). Rows are plain text with no
+ * `terminal-accent` (brand decision D32). The TUI draws the pixel symbol
+ * instead (`@kortix/shared/pixel-mark`, D33). Rows are plain text with no
  * indent and no color: each caller adds its own.
  */
 export const KORTIX_WORDMARK: readonly string[] = [

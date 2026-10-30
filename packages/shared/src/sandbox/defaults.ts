@@ -4,7 +4,7 @@
  * Every image the platform builds for an agent session renders these steps
  * verbatim and in this order: the platform default image and every custom
  * template (`buildLayeredDockerfile`), and My Kortix
- * (`buildMetaSandboxDockerfile`). `__tests__/defaults.test.ts` fails when an
+ * (`buildMyKortixSandboxDockerfile`). `__tests__/defaults.test.ts` fails when an
  * image lacks them. Change a default here, and every image gets it.
  *
  * - `kortixDefaultsSetup()` installs from the network: the base apt packages

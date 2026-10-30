@@ -99,6 +99,8 @@ export const LIST_OMITTED_SESSION_METADATA_KEYS = [
   // A channel thread's top message: the list already serves it as the
   // top-level `first_prompt` field, so the metadata copy is a duplicate.
   'first_prompt',
+  // Served as the top-level `result_excerpt` (lib/session-board.ts).
+  'result_excerpt',
 ] as const;
 
 function trimSessionMetadataForList(

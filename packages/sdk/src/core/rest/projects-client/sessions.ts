@@ -7,6 +7,7 @@ import { noteSessionDeleted, noteSessionStopped } from '../../http/session-stopp
 import { isSessionLogPage } from '../../session-log/guard';
 import { loadSessionLogPage, type SessionLogPage, type SessionLogPageQuery } from '../../session-log/source';
 import type { AuditEvent } from './audit';
+import type { SessionAttention, SessionBoardState, SessionInbound } from './multi-agent';
 import { type ConnectorSharing, unwrap } from './shared';
 
 // ---------------------------------------------------------------------------
@@ -185,6 +186,20 @@ export interface ProjectSession {
    *  agent, an API key or a service account. */
   pinned_at?: string | null;
   archived_at?: string | null;
+  /** Where the session sits on the agent board. Absent on an API before multi-agent. */
+  board_state?: SessionBoardState;
+  /** What the session waits for from its person, or null. Absent on an API before multi-agent. */
+  attention?: SessionAttention;
+  /** The newest turn activity (ISO 8601), or null. Absent on an API before multi-agent. */
+  last_activity_at?: string | null;
+  /** At most 280 characters of the last assistant text, or null. Absent on an API before multi-agent. */
+  result_excerpt?: string | null;
+  /** The name an agent gave this child (`agent({ name })`, metadata `agent_handle`), or null. */
+  agent_handle?: string | null;
+  /** The lead session of a teammate (metadata `team_lead`), or null. */
+  team_lead_session_id?: string | null;
+  /** Who may send this session a message. Absent on an API before multi-agent. */
+  inbound?: SessionInbound;
   created_at: string;
   updated_at: string;
 }
@@ -420,6 +435,8 @@ export interface ListProjectSessionsOptions {
   agent?: string;
   /** Only the sessions with activity at or after this ISO 8601 time (`updated_at`). Sent as `updated_after`. */
   updatedAfter?: string;
+  /** Only the teammates of this lead session (metadata `team_lead`). Sent as `team_lead`. */
+  teamLead?: string;
 }
 
 /** One keyset page of a project's sessions. */
@@ -445,6 +462,7 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   if (options?.createdBy) params.set('created_by', options.createdBy);
   if (options?.agent) params.set('agent', options.agent);
   if (options?.updatedAfter) params.set('updated_after', options.updatedAfter);
+  if (options?.teamLead) params.set('team_lead', options.teamLead);
   return params.size > 0 ? `?${params}` : '';
 }
 
@@ -2491,5 +2509,56 @@ export async function getSessionModelUsage(
       `/projects/${projectId}/sessions/${sessionId}/model-usage`,
       { showErrors: false },
     ),
+  );
+}
+
+/** The model usage of one session or of a session tree, from the gateway's request record. */
+export interface SessionUsageTotals {
+  /** Every dollar the model requests cost, in USD: `kortix_cost + provider_cost`. */
+  cost: number;
+  /** Debited from the Kortix wallet, in USD. */
+  kortix_cost: number;
+  /** Paid to the account's own provider key, in USD. */
+  provider_cost: number;
+  request_count: number;
+  error_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cache_write_tokens: number;
+}
+
+/** One session of a `SessionUsage` tree. */
+export interface SessionUsageEntry extends SessionUsageTotals {
+  session_id: string;
+  /** Null for the session the read starts at. */
+  parent_session_id: string | null;
+  /** 0 for the session the read starts at. */
+  depth: number;
+  title: string | null;
+  agent_name: string | null;
+  status: string;
+  created_at: string;
+}
+
+export interface SessionUsage {
+  session_id: string;
+  currency: 'USD';
+  /** The sum over `sessions`. */
+  total: SessionUsageTotals;
+  /** The session first, then every session it started that the caller may open, depth-first, oldest child first. */
+  sessions: SessionUsageEntry[];
+  /** Started sessions the caller may not open. Their cost is not in `total`. */
+  hidden_sessions: number;
+  /** True when the read stopped at its limit (10 levels, 500 sessions). */
+  truncated: boolean;
+}
+
+/** What a session and every session it started cost, in USD, from the gateway's
+ *  request record. A sub-agent in the session's sandbox bills under the session
+ *  itself, so its cost is in the session's own entry. */
+export async function getSessionUsage(projectId: string, sessionId: string): Promise<SessionUsage> {
+  return unwrap(
+    await backendApi.get<SessionUsage>(`/projects/${projectId}/sessions/${sessionId}/usage`, { showErrors: false }),
   );
 }

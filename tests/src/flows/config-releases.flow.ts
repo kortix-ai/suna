@@ -927,7 +927,7 @@ flow(
       // has no `bun`, so it failed every `project` release it was assigned, and
       // two coordinators quarantined each one for the whole project.
       await ctx.step('a meta coordinator is assigned the platform governance alone, and its failures quarantine nothing', async () => {
-        const metaA = await fixture.mint({ agentName: 'meta' });
+        const metaA = await fixture.mint({ agentName: 'mykortix' });
         const metaB = await fixture.mint({ agentName: 'meta' });
         const r = await fixture.descriptor(metaA.secret, metaA.sessionId);
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
@@ -935,7 +935,7 @@ flow(
         if (d.archive !== null || d.files !== null || d.config_tree_id !== null) throw new Error(`meta got a project tree: ${JSON.stringify(d)}`);
         if (!d.release_id || d.release_id === bad.release_id || d.release_id === good.release_id) throw new Error(`meta release ${d.release_id}`);
         const agents = Object.keys(JSON.parse(d.compiled_governance ?? '{}').agent ?? {});
-        if (agents.join() !== 'meta') throw new Error(`meta governance declares ${agents.join()}`);
+        if (agents.join() !== 'mykortix') throw new Error(`My Kortix governance declares ${agents.join()}`);
         await failed(bad.release_id!, metaA.sessionId);
         await failed(bad.release_id!, metaB.sessionId);
         const still = await fixture.descriptor(b.secret, b.sessionId);
@@ -2253,13 +2253,13 @@ flow(
       });
 
       let box!: Awaited<ReturnType<typeof boxSession>>;
-      await ctx.step('a session created with no agent boots the meta coordinator and answers its boot prompt', async () => {
+      await ctx.step('a session created with no agent boots My Kortix and answers its boot prompt', async () => {
         box = await boxSession(ctx, fixture);
         const { rows } = await fixture.db.query(
           `SELECT agent_name, metadata->>'sandbox_slug' AS sandbox FROM kortix.project_sessions WHERE session_id = $1`,
           [box.sessionId],
         );
-        if (rows[0]?.agent_name !== 'meta' || rows[0]?.sandbox !== 'meta') throw new Error(`session is ${JSON.stringify(rows[0])}`);
+        if (rows[0]?.agent_name !== 'mykortix' || rows[0]?.sandbox !== 'mykortix') throw new Error(`session is ${JSON.stringify(rows[0])}`);
       });
 
       const settled = () =>

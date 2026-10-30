@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { refreshMirror } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
-import { buildPlatformMetaOpenCodeConfig } from '../projects/lib/platform-meta-agent';
+import { buildMyKortixConfig } from '../projects/lib/my-kortix-agent';
 import {
   __clearConfigReleaseCachesForTests,
   buildConfigArchive,
@@ -579,8 +579,8 @@ describe('buildConfigRelease', () => {
   // the tool dependencies, and its failures quarantined that release for every
   // session of the project.
   test('the meta variant is the platform governance alone, whatever the tree holds', async () => {
-    const first = await buildConfigRelease(project, seed(), 'meta', { store });
-    expect(first.compiled_governance).toBe(buildPlatformMetaOpenCodeConfig());
+    const first = await buildConfigRelease(project, seed(), 'mykortix', { store });
+    expect(first.compiled_governance).toBe(buildMyKortixConfig());
     expect(first.release_id).toBe(configReleaseId(null, first.compiled_governance_etag));
     expect(first.config_dir).toBeNull();
     expect(first.config_tree_id).toBeNull();
@@ -590,7 +590,7 @@ describe('buildConfigRelease', () => {
     expect(toDescriptor(first, { repositoryAccess: true }).archive).toBeNull();
 
     const moved = commit({ 'tools/hello.ts': 'export default { changed: true }\n' }, 'tool change');
-    expect((await buildConfigRelease(project, moved, 'meta', { store })).release_id).toBe(first.release_id);
+    expect((await buildConfigRelease(project, moved, 'mykortix', { store })).release_id).toBe(first.release_id);
   });
 
   test('a repository over the archive limit keeps its release; only the archive is withheld', async () => {

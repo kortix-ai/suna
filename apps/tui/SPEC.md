@@ -136,10 +136,11 @@ input; the sidebar is an optional view (hidden by default, `/sidebar` or
 the KORTIX splash and the input, and the first prompt creates the session.
 The look follows prime-agent's CLI: a pinned header, the transcript, a rounded
 input with a `›` caret, and a tray row under it (left: host · project, right:
-model:effort · agent). Brand decision D31: `terminal-accent` (turquoise,
-`theme.brand`) marks only the wordmark, the `▌` selection marker and the
-cursor; everything else is monochrome. With the sidebar hidden, Tab never
-leaves the input; PgUp/PgDn scroll the transcript from it.
+model · agent · context %). Brand decisions D32 and D33: `terminal-accent`
+(turquoise, `theme.brand`) marks only the `▌` selection marker and the
+cursor; the empty state is the monochrome pixel symbol; everything else is
+monochrome. With the sidebar hidden, Tab never leaves the input; PgUp/PgDn
+scroll the transcript from it.
 
 ```
  ● Fix the login bug  meta                          / commands · Alt+t terminal

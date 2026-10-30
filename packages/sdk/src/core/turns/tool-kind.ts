@@ -27,6 +27,8 @@ export type ToolKind =
   | 'show'
   | 'task'
   | 'delegate'
+  | 'workflow'
+  | 'platform'
   | 'sessions'
   | 'todowrite'
   | 'question'
@@ -63,7 +65,28 @@ kind('web_search', ['web_search', 'websearch', 'image_search']);
 kind('webfetch', ['webfetch', 'web_fetch', 'scrape_webpage', 'scrapewebpage']);
 kind('media', ['image_gen', 'video_gen']);
 kind('show', ['show', 'show_user', 'presentation_gen']);
-kind('task', ['task']);
+// pi's subagent tool is `agent`; `task` is its deprecated alias. Both run one child session.
+kind('task', ['task', 'agent']);
+// pi's `workflow`: a script that runs several agents, each in its own child session.
+kind('workflow', ['workflow']);
+// The My Kortix platform tools: one JSON result each, which the client renders as a card
+// (`KORTIX_PLATFORM_TOOL_NAMES` in `@kortix/api-contract/kortix-tool-card`).
+kind('platform', [
+  'kortix_agents',
+  'kortix_sessions',
+  'kortix_schedules',
+  'kortix_connectors',
+  'kortix_people',
+  'kortix_access',
+  'kortix_usage',
+  // The multi-agent tools (`@kortix/api-contract/multi-agent`): the same one-JSON-result card.
+  // pi's `task_create`, `task_list`, `task_get` and `task_update` keep the legacy `delegate` kind
+  // below: an older transcript's plugin tools share those names, and the web card tells the two
+  // apart by the output (a `KortixToolResult` or not).
+  'send_message',
+  'list_agents',
+  'task_stop',
+]);
 // Legacy plugin tools that spawn, message, check, stop or finish a helper agent.
 kind('delegate', [
   'agent_spawn',
@@ -101,7 +124,6 @@ kind('connectors', [
   'connector_list',
   'connector_setup',
   'kortix_connector_call',
-  'kortix_connectors',
   'kortix_connectors_connectors',
   'kortix_connectors_discover',
   'kortix_connectors_describe',
