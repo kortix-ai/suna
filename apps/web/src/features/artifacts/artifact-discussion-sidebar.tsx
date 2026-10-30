@@ -51,6 +51,7 @@ export interface ArtifactDiscussionSidebarProps {
   projectId: string;
   artifact: ArtifactDetail;
   comments: ReturnType<typeof useArtifactComments>;
+  displayThreads?: ArtifactCommentThread[];
   context?: ArtifactCommentContext;
   contextLoading?: boolean;
   contextError?: boolean;
@@ -112,6 +113,7 @@ export function ArtifactDiscussionSidebar({
   projectId,
   artifact,
   comments,
+  displayThreads,
   context,
   contextLoading = false,
   contextError = false,
@@ -158,7 +160,7 @@ export function ArtifactDiscussionSidebar({
   const draft = (kind: string, id = '') => drafts[draftKey(kind, id)] ?? '';
   const setDraft = (kind: string, value: string, id = '') =>
     setDrafts((current) => ({ ...current, [draftKey(kind, id)]: value }));
-  const threads = comments.data ?? EMPTY_THREADS;
+  const threads = displayThreads ?? comments.data ?? EMPTY_THREADS;
   const grouped = groupCommentThreads(threads, filter);
   const openCount = threads.filter(
     (thread) => thread.status === 'open' && !threadDeleted(thread),
