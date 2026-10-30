@@ -171,8 +171,6 @@ export interface ContinueSessionCommand {
   materializationKey?: string;
   /** Persist the message without starting an agent loop (OpenCode `noReply`). */
   noReply?: boolean;
-  /** Skip legacy first-message repair only for the pending-first row itself. */
-  isPendingFirstPrompt?: boolean;
   /** `userId` is the person who sent this prompt: the session token acts as
    *  them from this turn on (`bindSessionTurnIdentity`). Set by the prompt
    *  route for a non-agent caller; absent keeps the token's identity. */
@@ -184,14 +182,6 @@ export interface ContinueSessionCommand {
    * the Stop itself (`holdInboxPrompts`) and released by the next send.
    */
   queuedAt?: Date;
-}
-
-/** JSON metadata used to gate the one-time repair of pre-materialization prompts. */
-export interface LegacyInlineAttachmentRepairMetadata extends Record<string, unknown> {
-  pending_prompt?: {
-    attachment_names?: unknown;
-  };
-  legacy_inline_attachments_repaired_at?: unknown;
 }
 
 export interface StartSessionCommand {

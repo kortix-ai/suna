@@ -2477,12 +2477,12 @@
   },
   "src/projects/session-lifecycle/queued-continue.ts": {
     "no-console": {
-      "count": 4
+      "count": 3
     }
   },
   "src/projects/session-lifecycle/runtime-client.ts": {
     "no-console": {
-      "count": 6
+      "count": 5
     }
   },
   "src/projects/session-lifecycle/runtime-fetch.ts": {
