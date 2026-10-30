@@ -1,9 +1,7 @@
 /**
- * pi's `/project/current` `vcs` field and `GET /vcs/diff`.
- *
- * The Changes tab reads both: it treats the project as tracked only when
- * `vcs === 'git'`, then reads `/vcs/diff?mode=branch`. pi used to answer `[]`
- * for every diff and omit `vcs`, so the tab was empty on every pi session.
+ * The session checkout's changes: `GET /kortix/runtime/workspace/diff` and the
+ * `/vcs/diff` the Changes tab reads today. The tab treats the project as tracked
+ * only when the workspace reports `vcs: 'git'`, then reads the `branch` diff.
  *
  * The runtime wire's `VcsFileDiff` shape: one row per file with a git-format
  * patch, `additions`, `deletions` and `status`.
@@ -12,7 +10,7 @@
  * - `branch` (default): the same, against the merge base of HEAD and the
  *   project's default branch, so committed work stays listed.
  */
-import { runGit } from '@/lib/git/git'
+import { runGit } from './git'
 
 export interface VcsFileDiff {
   file: string

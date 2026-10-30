@@ -481,6 +481,7 @@ in `subscriberCount`. The journal's v1 listener is a tap too. The
 | `log.thread` | the thread upsert (no messages) | for each thread a collection finds new or changed |
 | `log.message` | a put `{ rev, message }`, or a tombstone `{ message_id, rev }` (the journal's tombstone; no `message`; the schema has no `deleted_at`) | for each revision a collection puts in the dirty set; and a live put while a turn runs (below) |
 | `log.block.delta` | `{ thread_id, message_id, block_id, delta }` | for each v1 `message.part.delta` text frame while the journal runs |
+| `log.status` | `{ thread_id, status: idle\|busy\|retry\|compacting, retry? }` | each time a thread starts or ends work, waits to retry, or compacts; never stored |
 | any kept v1 type | the v1 payload, unchanged | for each such frame on the v1 bus |
 
 The journal publishes the first three in `collectOnce`, from the same records
@@ -646,6 +647,29 @@ journal that restored nothing has no cursors), so a message an older kortixd
 dropped on a 422 reaches the log at the first turn end after the box's next
 boot on this kortixd (verified on dev 2026-10-23). A second
 `startSessionLogJournal` stops the first journal.
+
+### Pending requests
+
+The session log's `pending` lists the permission requests and questions waiting
+for an answer (`PermissionBroker.records()`, `QuestionBroker.records()`: `id`,
+`thread_id`, `call_id`, `payload`, `asked_at`). Each ask, answer or dismissal
+flushes the journal at once, so the change reaches apps/api and the v2 stream as
+a `log.state` patch without waiting for the turn to end.
+
+### The session-log actions (`runtime.actions.v1`)
+
+Under `/kortix/runtime`, in session-log terms (bodies and answers:
+`RUNTIME_ACTIONS_CAPABILITY` in `@kortix/api-contract/runtime-relay`):
+
+| Route | Does |
+| --- | --- |
+| `POST /permissions/:id/reply`, `POST /questions/:id/reply`, `POST /questions/:id/reject` | answer what `pending` lists |
+| `POST /sessions/:id/compact` | summarize the conversation, as a turn of its own |
+| `POST /sessions/:id/command` | run a command, prompt template or skill by name |
+| `PUT /sessions/:id/grants` | the capabilities the session uses without asking (`*`: all); `[]` clears them; a `deny` still wins |
+| `GET /commands` | the commands, templates and granted skills, without their templates |
+| `GET /log`, `GET /log/messages/:id`, `GET /log/blobs/:sha256` | the box's own session log, ahead of the API's copy while a turn runs, and its attachment bytes |
+| `GET /workspace`, `GET /workspace/diff?mode=branch\|git` | the checkout's path, home, VCS and default branch; its changes |
 
 ## Health and capabilities (E19, E1)
 

@@ -17,7 +17,7 @@ import { MESSAGE_READ_CODE } from '@kortix/api-contract/runtime-relay'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import type { HarnessForwardInput, HarnessForwardResult } from '../contract/proxy'
-import { isGitRepo, vcsDiff } from './vcs'
+import { isGitRepo, vcsDiff } from '@/lib/git/vcs-diff'
 import { CommandNotEnabled, PromptRejected, parsePromptBody, type PiRuntime } from './runtime'
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}): HarnessForwardResult => ({
