@@ -3,7 +3,7 @@
  *
  *   help    → the commands and the project
  *   status  → the chat's project, agent, model and session, and how the session is doing
- *   stop    → abort the session's running turn, only when this chat (or no known source) prompted it
+ *   stop    → abort the session's running turn, only when every live turn's prompt came from this platform
  *   new     → stop that turn, take the question buttons off, forget the chat's session
  *   model   → the models the whole project shares, or the chat's choice of one
  *   agent   → the agents no grant restricts, or the chat's choice of one
@@ -18,7 +18,7 @@ import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { toWireModel } from '../../llm-gateway/resolution/effective';
-import { abortRuntimeTurn, readRunningTurn, turnPromptSource } from '../../projects/surface';
+import { abortRuntimeTurn, readRunningTurn } from '../../projects/surface';
 import { agentGrantEnvFor, applyChannelSessionKeys, checkChannelModel, listChannelModels } from '../model-access';
 import { chatAgents } from '../scoped-agents';
 import { CHANNEL_COMMANDS, type ChannelCommandName, type ParsedCommand } from './command-list';
@@ -331,17 +331,17 @@ async function modelRow(ctx: CommandContext, session: ChatThreadSession | null, 
 type TurnStop = 'none' | 'starting' | 'elsewhere' | 'stopped' | 'unreachable';
 
 /**
- * Stop the chat session's running turn, only when its prompt came from this platform or from no
- * known source: a turn the web, a trigger or Kortix itself (`system:*`) started is not the chat's.
+ * Stop the chat session's running turn, only when every live turn records this platform as its
+ * prompt's source (`readRunningTurn`): one live turn is the run, the others wait behind it or
+ * outlived theirs. A turn the web, a trigger or Kortix itself (`system:*`) started is not the
+ * chat's, and neither is one that records no source: a web slash command, a prompt sent to the
+ * runtime directly, a turn recorded before turns named their source.
  */
 async function stopChatTurn(ctx: CommandContext, session: ChatThreadSession | null): Promise<TurnStop> {
   if (!session) return (await threadCreateHeld(ctx.createClaim)) ? 'starting' : 'none';
   const running = await readRunningTurn(session.sessionId);
   if (!running) return STARTING.has(session.status ?? '') ? 'starting' : 'none';
-  const source = await turnPromptSource(session.sessionId, running.messageId);
-  // Null is stoppable: a channel prompt carries no wire message id (its `continue_session` row has no
-  // `wireMessageId` and no `forwarded_message_id`), so the chat's own run reads as unknown.
-  if (source !== null && source !== ctx.target.platform) return 'elsewhere';
+  if (running.sources.some((source) => source !== ctx.target.platform)) return 'elsewhere';
   return (await abortRuntimeTurn(session.sessionId, { requestedStop: true, stoppedBy: null })) ? 'stopped' : 'unreachable';
 }
 

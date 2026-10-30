@@ -33,8 +33,8 @@ export async function readManifestAtSha(
  * manifest's `opencode.config_dir`, else `harnesses/opencode`, then the legacy
  * `.kortix/opencode`) that ships an `opencode.json[c]`. `null` means the
  * revision carries no project OpenCode config, so the daemon runs on its baked
- * default dir. Mirrors `resolveOpencodeConfigDir` in the daemon's
- * harness/open-code/config.ts, evaluated server-side.
+ * default dir. Mirrors `resolveOpencodeConfigDir` of the daemon's OpenCode
+ * adapter (since deleted), evaluated server-side.
  */
 export async function resolveOpencodeConfigDirAtSha(
   mirror: string,

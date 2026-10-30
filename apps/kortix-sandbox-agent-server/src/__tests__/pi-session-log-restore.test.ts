@@ -52,7 +52,8 @@ const saved: Record<string, string | undefined> = {}
 const services: PiHarnessService[] = []
 const dirs: string[] = []
 beforeAll(() => {
-  model = startFakeModel(MODEL_ID)
+  // The model reads images.
+  model = startFakeModel(MODEL_ID, { [MODEL_ID]: { name: 'Test Model', attachment: true, limit: { context: 64_000, output: 4_096 } } })
 })
 afterAll(() => model.stop())
 beforeEach(() => {
@@ -79,14 +80,12 @@ afterEach(async () => {
 function freshBox(sessionId: string) {
   const workspace = mkdtempSync(join(tmpdir(), 'pi-restore-box-'))
   dirs.push(workspace)
-  // The model reads images; compaction keeps one token so a summary cuts.
-  writeFileSync(join(workspace, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', attachment: true, limit: { context: 64_000, output: 4_096 } } } }))
+  // Compaction keeps one token so a summary cuts.
   mkdirSync(join(workspace, 'harnesses/pi'), { recursive: true })
   writeFileSync(join(workspace, 'harnesses/pi/settings.json'), JSON.stringify({ compaction: { keepRecentTokens: 1 } }))
   const env: NodeJS.ProcessEnv = {
     KORTIX_HARNESS: 'pi',
     KORTIX_LLM_BASE_URL: model.url,
-    KORTIX_LLM_CATALOG_FILE: join(workspace, 'catalog.json'),
     KORTIX_PI_STATE_DIR: join(workspace, '.state'),
     KORTIX_PI_AGENT_DIR: join(workspace, '.pi-agent'),
     KORTIX_PI_PACKAGES_DIR: join(workspace, '.pi-packages'),

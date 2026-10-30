@@ -1,4 +1,3 @@
-import { publishOpenCodeEvent, OPENCODE_EVENT_RECOVERY } from '@/harness/open-code/event-bus'
 /**
  * The sequencer — the property the whole stream design rests on.
  *
@@ -12,6 +11,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { PI_EVENT_RECOVERY } from '@/harness/pi/queries'
 import { KortixEventBus, kortixEventBus, resetKortixEventBusForTests, sessionLogEventBus, V1_TRANSCRIPT_EVENTS, type KortixEvent } from '@/services/event-bus/kortix-event-bus'
 
 function collect(): { events: KortixEvent[]; listener: (e: KortixEvent) => void } {
@@ -29,11 +29,11 @@ describe('sequencing', () => {
     expect(bus.headSeq).toBe(2)
   })
 
-  test('daemon events share ONE space with OpenCode events, interleaved in true order', () => {
+  test('daemon events share ONE space with runtime events, interleaved in true order', () => {
     const bus = new KortixEventBus('e1')
-    publishOpenCodeEvent(bus, { type: 'message.updated', properties: { info: { sessionID: 'ses_a' } } })
+    bus.publish('message.updated', { info: { sessionID: 'ses_a' } }, 'ses_a')
     bus.publishDaemon('kortix.turn', { verdict: 'idle' }, 'ses_a')
-    publishOpenCodeEvent(bus, { type: 'session.idle', properties: { sessionID: 'ses_a' } })
+    bus.publish('session.idle', { sessionID: 'ses_a' }, 'ses_a')
     const { events, listener } = collect()
     const sub = bus.subscribe(listener, { since: 0, epoch: 'e1' })
     expect(sub.replay.map((e) => [e.seq, e.type])).toEqual([
@@ -43,20 +43,6 @@ describe('sequencing', () => {
     ])
     sub.unsubscribe()
     expect(events).toEqual([])
-  })
-
-  test('the session a frame is about is extracted from every shape OpenCode uses', () => {
-    const bus = new KortixEventBus('e1')
-    expect(publishOpenCodeEvent(bus, { type: 'session.status', properties: { sessionID: 'ses_a' } })!.session).toBe('ses_a')
-    expect(publishOpenCodeEvent(bus, { type: 'message.updated', properties: { info: { sessionID: 'ses_b' } } })!.session).toBe('ses_b')
-    expect(publishOpenCodeEvent(bus, { type: 'message.part.updated', properties: { part: { sessionID: 'ses_c' } } })!.session).toBe('ses_c')
-    expect(publishOpenCodeEvent(bus, { type: 'lsp.updated', properties: {} })!.session).toBeUndefined()
-  })
-
-  test('a typeless frame is refused rather than sequenced as garbage', () => {
-    const bus = new KortixEventBus('e1')
-    expect(publishOpenCodeEvent(bus, { properties: {} })).toBeNull()
-    expect(bus.headSeq).toBe(0)
   })
 })
 
@@ -92,7 +78,7 @@ describe('resync — the daemon says so instead of pretending', () => {
   test('a gap older than the ring is refused with the recovery recipe', () => {
     const bus = new KortixEventBus('e1', 5)
     for (let i = 0; i < 20; i++) bus.publish('x', { i })
-    const sub = bus.subscribe(() => {}, { since: 2, epoch: 'e1', recover: OPENCODE_EVENT_RECOVERY })
+    const sub = bus.subscribe(() => {}, { since: 2, epoch: 'e1', recover: PI_EVENT_RECOVERY })
     expect(sub.replay).toEqual([])
     expect(sub.resync).toMatchObject({
       reason: 'gap-too-old',

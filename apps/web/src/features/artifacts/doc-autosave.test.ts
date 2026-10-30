@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
-import { AUTOSAVE_MS, SAVE_GAP_MS, VERIFY_MS, createDocSaver, pendingSave, type DocSaveStatus, type Timers } from './doc-autosave';
+import {
+  AUTOSAVE_MS,
+  SAVE_GAP_MS,
+  VERIFY_MS,
+  createDocSaver,
+  pendingSave,
+  type DocSaveStatus,
+  type Timers,
+} from './doc-autosave';
 
 /** A fake clock: timers run only when the test moves time. */
 function fakeTimers() {
@@ -20,7 +28,9 @@ function fakeTimers() {
     const end = now + ms;
     await settle();
     for (;;) {
-      const nextTimer = [...due.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+      const nextTimer = [...due.entries()]
+        .filter(([, t]) => t.at <= end)
+        .sort((a, b) => a[1].at - b[1].at)[0];
       if (!nextTimer) break;
       due.delete(nextTimer[0]);
       now = nextTimer[1].at;
@@ -54,7 +64,8 @@ function fakeFile(text: string, clock: ReturnType<typeof fakeTimers>) {
     },
     async write(next: string, base: string | null) {
       file.writes.push({ text: next, base, startedAt: clock.now() });
-      if (file.latency) await new Promise<void>((resolve) => clock.timers.set(resolve, file.latency));
+      if (file.latency)
+        await new Promise<void>((resolve) => clock.timers.set(resolve, file.latency));
       if (base && base !== `v${version}`) throw new Conflict('version_conflict');
       file.replace(next);
       return `v${version}`;
@@ -71,16 +82,19 @@ function setup(start = 'start') {
   let conflicts = 0;
   let editor = start;
   const artifactId = `doc-${++docs}`;
-  const saver = createDocSaver({ version: file.version(), text: start }, {
-    artifactId,
-    write: (text, base) => file.write(text, base),
-    read: async () => ({ version: file.version(), text: file.text }),
-    text: () => editor,
-    onStatus: (s) => statuses.push(s),
-    onConflict: () => void (conflicts += 1),
-    isConflict: (err) => err instanceof Conflict,
-    timers: clock.timers,
-  });
+  const saver = createDocSaver(
+    { version: file.version(), text: start },
+    {
+      artifactId,
+      write: (text, base) => file.write(text, base),
+      read: async () => ({ version: file.version(), text: file.text }),
+      text: () => editor,
+      onStatus: (s) => statuses.push(s),
+      onConflict: () => void (conflicts += 1),
+      isConflict: (err) => err instanceof Conflict,
+      timers: clock.timers,
+    },
+  );
   const type = (text: string) => {
     editor = text;
     saver.edited();
@@ -129,7 +143,10 @@ describe('doc autosave', () => {
     await clock.advance(AUTOSAVE_MS);
     type('abc');
     await clock.advance(20_000);
-    expect(file.writes.map((w) => [w.text, w.base])).toEqual([['a', 'v1'], ['abc', 'v2']]);
+    expect(file.writes.map((w) => [w.text, w.base])).toEqual([
+      ['a', 'v1'],
+      ['abc', 'v2'],
+    ]);
     expect(file.text).toBe('abc');
     expect(statuses.at(-1)).toBe('saved');
     expect(statuses).not.toContain('conflict');
@@ -144,7 +161,8 @@ describe('doc autosave', () => {
     }
     await clock.advance(20_000);
     const starts = file.writes.map((w) => w.startedAt);
-    for (let i = 1; i < starts.length; i++) expect(starts[i]! - starts[i - 1]!).toBeGreaterThanOrEqual(SAVE_GAP_MS);
+    for (let i = 1; i < starts.length; i++)
+      expect(starts[i]! - starts[i - 1]!).toBeGreaterThanOrEqual(SAVE_GAP_MS);
     expect(file.text).toBe('t5');
   });
 
@@ -221,5 +239,60 @@ describe('doc autosave', () => {
     file.replace('start');
     await clock.advance(VERIFY_MS * 2);
     expect(file.text).toBe('start');
+  });
+
+  test('a comment snapshot waits for the current save and returns the actual saved text and version', async () => {
+    const { clock, file, type, saver } = setup();
+    file.latency = 1_000;
+    type('Selected passage.');
+    let settled = false;
+    const snapshot = saver.snapshot().then((value) => {
+      settled = true;
+      return value;
+    });
+    await clock.advance(999);
+    expect(settled).toBe(false);
+    await clock.advance(1);
+    expect(await snapshot).toEqual({ version: file.version(), text: 'Selected passage.' });
+    expect(file.writes).toHaveLength(1);
+    expect(await saver.snapshot()).toEqual({ version: file.version(), text: 'Selected passage.' });
+    expect(file.writes).toHaveLength(1);
+  });
+
+  test('a comment snapshot rejects a save failure', async () => {
+    const failed = setup();
+    failed.file.write = async () => {
+      throw new Error('Synthetic save failure');
+    };
+    failed.type('unsaved');
+    await expect(failed.saver.snapshot()).rejects.toThrow();
+  });
+  test('a comment snapshot rejects a save conflict', async () => {
+    const conflict = setup();
+    conflict.file.replace('Another writer.');
+    conflict.type('My passage.');
+    await expect(conflict.saver.snapshot()).rejects.toThrow();
+  });
+  test('a comment snapshot rejects edits made while its save waits', async () => {
+    const changed = setup();
+    changed.file.latency = 1_000;
+    changed.type('First passage.');
+    let failure: unknown;
+    const snapshot = changed.saver.snapshot().catch((error) => {
+      failure = error;
+    });
+    changed.type('Different passage.');
+    await changed.clock.advance(1_000);
+    await snapshot;
+    expect(failure).toBeInstanceOf(Error);
+  });
+
+  test('a comment snapshot uses an upstream idle refresh without writing the old editor text', async () => {
+    const { file, saver } = setup();
+    file.replace('The agent updated this passage.');
+    const refreshed = await saver.refresh(file.version());
+    expect(refreshed).toEqual({ text: file.text, version: file.version() });
+    expect(await saver.snapshot()).toEqual({ text: file.text, version: file.version() });
+    expect(file.writes).toHaveLength(0);
   });
 });

@@ -10,8 +10,8 @@ import { authorizeControl } from './control-auth'
  * `POST /converge` with a body `{ "model": "<wire id>" }` registers the one
  * model a turn asks for, of any provider. The API's turn-start gate awaits it.
  * Without a body it registers everything the project's listing serves. Both
- * apply by one idle-gated config reload, never across a running turn. See
- * `convergeManagedModelCatalog` (harness/open-code/lifecycle.ts).
+ * apply by one idle-gated config reload, never across a running turn. Only the
+ * OpenCode adapter (since deleted) implemented it: pi answers `404`.
  */
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:@\/-]{0,255}$/
 /** @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */

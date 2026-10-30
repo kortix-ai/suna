@@ -75,6 +75,8 @@ export interface StoredSandboxTurn extends SandboxTurnIdentity {
    * would make a reader trust a number nobody measured.
    */
   startedAtMs: number | null;
+  /** `SandboxTurnStart.source`; absent when the record names none. */
+  source?: string;
 }
 /**
  * Iterate a sandbox row's live turn metadata: the `activeTurns` object when it
@@ -170,6 +172,7 @@ function parseStoredSandboxTurn(value: unknown, expectedToken?: string): StoredS
       typeof turn.startedAtMs === 'number' && Number.isFinite(turn.startedAtMs)
         ? turn.startedAtMs
         : null,
+    ...(typeof turn.source === 'string' ? { source: turn.source } : {}),
   };
 }
 
@@ -222,6 +225,12 @@ export function extractTurnIdentity(
 
 export interface SandboxTurnStart extends SandboxTurnIdentity {
   token: string;
+  /**
+   * The `session_lifecycle_commands.source` of the queued row whose prompt the
+   * API forwards ('telegram', 'ui', 'trigger:cron', …). Omitted for a prompt a
+   * client sent the runtime directly and for a turn the box began.
+   */
+  source?: string;
 }
 export type RuntimeTurnAdoption =
   | 'adopted'

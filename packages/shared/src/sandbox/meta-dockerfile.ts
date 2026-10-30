@@ -20,7 +20,6 @@ export interface MetaSandboxDockerfileOptions {
   agentBinaryPath: string;
   cliBinaryPath: string;
   entrypointScriptPath: string;
-  catalogPath: string;
   /** Staged managed `kortix-*` skills dir — overlaid into the harness skills
    *  dir at boot so the coordinator learns the `kortix` CLI properly. */
   managedSkillsPath: string;
@@ -130,15 +129,13 @@ RUN chmod 0755 /usr/local/bin/kortix-entrypoint
 COPY --chown=kortix:kortix <<'KORTIX_META_AGENT_GUIDE' /workspace/AGENTS.md
 ${META_AGENT_GUIDE}
 KORTIX_META_AGENT_GUIDE
-COPY --chown=kortix:kortix ${options.catalogPath} /opt/kortix/llm-catalog.json
 COPY --chown=kortix:kortix ${options.managedSkillsPath} ${SANDBOX_MANAGED_SKILLS_DIR}
 RUN ${SANDBOX_RUNTIME_ASSETS_STATE_COMMAND} \\
  && chown kortix:kortix ${SANDBOX_RUNTIME_ASSETS_STATE_PATH}
 ${kortixShellProfileRun()}
 
 ENV KORTIX_WORKSPACE=/workspace \\
-    KORTIX_PROJECT_AUTO_CLONE=0 \\
-    KORTIX_LLM_CATALOG_FILE=/opt/kortix/llm-catalog.json
+    KORTIX_PROJECT_AUTO_CLONE=0
 WORKDIR /workspace
 EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]

@@ -305,7 +305,7 @@ export function Ask({ projectId, onAsk }: { projectId: string; onAsk: (text: str
 }
 ```
 
-Names: `ComposerAboveCard`, `ComposerCard`, `AgentSelector`, `agentDisplayLabel`, `captureAttachmentSubmission`, `runComposerSend`, `AttachmentSubmission`, `COMMAND_CHIP_ATTRIBUTE`, `COMMAND_CHIP_LABEL_ATTRIBUTE`, `COMMAND_CHIP_SELECTOR`, `COMMAND_CHIP_VALUE`, `draftWillRunCommand`, `planCommandAttachments`, `planUnresolvedCommandChip`, `readCommandChipLabel`, `COMPOSER_INPUT_SLOT_CLASS`, `COMPOSER_SHELL_CLASS`, `Composer`, `ComposerChatInput`, `ComposerOptions`, `ComposerDropZone`, `ComposerUnderbar`, `DraftScope`, `ComposerEditor`, `ComposerEditorHandle`, `baseExtensions`, `MentionNode`, `baseSuggestion`, `MenuController`, `ReasoningEffortSelector`, `SessionChatInput`, `SessionChatInputProps`, `useFirstPromptPreviewStore`, `useSessionComposerPrefillStore`, `createSubmitLatch`, `AttachedFile`
+Names: `ComposerAboveCard`, `ComposerCard`, `AgentSelector`, `agentDisplayLabel`, `captureAttachmentSubmission`, `runComposerSend`, `AttachmentSubmission`, `COMMAND_CHIP_ATTRIBUTE`, `COMMAND_CHIP_LABEL_ATTRIBUTE`, `COMMAND_CHIP_SELECTOR`, `COMMAND_CHIP_VALUE`, `draftWillRunCommand`, `planCommandAttachments`, `planUnresolvedCommandChip`, `readCommandChipLabel`, `COMPOSER_INPUT_SLOT_CLASS`, `COMPOSER_SHELL_CLASS`, `Composer`, `ComposerChatInput`, `ComposerOptions`, `ComposerDropZone`, `ComposerUnderbar`, `DraftScope`, `ComposerEditor`, `ComposerEditorHandle`, `baseExtensions`, `MentionChip`, `MentionNode`, `baseSuggestion`, `MenuController`, `ReasoningEffortSelector`, `SessionChatInput`, `SessionChatInputProps`, `useFirstPromptPreviewStore`, `useSessionComposerPrefillStore`, `createSubmitLatch`, `AttachedFile`
 
 ## `@kortix/ui/session`
 

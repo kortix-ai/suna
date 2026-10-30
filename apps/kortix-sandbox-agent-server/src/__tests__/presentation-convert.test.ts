@@ -3,21 +3,18 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Config } from '@/lib/config/config'
 import { createPresentationRouter, parseScriptResult, type ConvertRunner } from '@/routes/workspace/presentation'
 
 function baseConfig(workspace: string): Config {
   return {
     servicePort: 8000,
-    opencodeInternalPort: 4096,
-    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace,
     projectTarget: workspace,
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,
-    defaultOpencodeConfigDir: '/ephemeral/opencode',
     autoClone: false,
     projectId: 'project-1',
     apiUrl: 'http://api.test/v1',

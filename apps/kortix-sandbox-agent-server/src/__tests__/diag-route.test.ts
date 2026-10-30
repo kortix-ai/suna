@@ -2,16 +2,16 @@
  * GET /kortix/diag — one call, the whole error report.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Config } from '@/lib/config/config'
 import { __flushDaemonLogFileForTests, __resetLoggerFileSinkForTests, enableDaemonLogFile, logger } from '@/lib/log/logger'
-import type { Opencode } from '@/harness/open-code/lifecycle'
 import { startResourceMonitor } from '@/services/resources/resources'
 import { createDiagRouter } from '@/routes/kortix/diag'
-import { createOpenCodeDiagnosticsService } from '@/harness/open-code/diagnostics'
+import { createPiConfigReleases } from '@/harness/pi/config-release'
+import { createPiDiagnosticsService } from '@/harness/pi/diagnostics'
 import type { HarnessDiagnosticsContext, HarnessDiagnosticsService } from '@/harness/contract/diagnostics'
 
 let root: string
@@ -31,31 +31,18 @@ afterEach(async () => {
   rmSync(root, { recursive: true, force: true })
 })
 
-const fakeOpencode = {
-  getState: () => 'ok',
-  getPid: () => 4242,
-  getActivePort: () => 4097,
-  getInternalUrl: () => 'http://127.0.0.1:4097',
-  getBinaryPath: () => '/opt/kortix/opencode.current',
-} as unknown as Opencode
-
 describe('GET /kortix/diag', () => {
   const token = 'sandbox-token'
   const cfg = {
     sandboxToken: token,
     workspace: '/workspace',
     servicePort: 8000,
-    opencodeInternalPort: 4096,
-    opencodeStandbyPort: 4097,
-    defaultOpencodeConfigDir: '/tmp/opencode',
   } as Config
 
-  test('returns state, resources, runtime report, and both log tails in one document', async () => {
+  test('returns state, resources, runtime report, and the daemon log tail in one document', async () => {
     enableDaemonLogFile()
     logger.info('[test] diag-line')
     await __flushDaemonLogFileForTests()
-    mkdirSync(join(root, '.local', 'share', 'opencode', 'log'), { recursive: true })
-    writeFileSync(join(root, '.local', 'share', 'opencode', 'log', 'opencode.log'), 'oc-line\n')
     const monitor = startResourceMonitor({ intervalMs: 60_000, runtimePid: () => 4242 })
     try {
       const app = createDiagRouter({
@@ -64,26 +51,20 @@ describe('GET /kortix/diag', () => {
         bootTime: Date.now() - 5_000,
         bootState: { repoMaterializationError: null, timeline: [{ label: 'proxy-up', atMs: 12 }] },
         resources: () => monitor,
-      }, createOpenCodeDiagnosticsService(fakeOpencode, root))
+      }, createPiDiagnosticsService(() => null, () => null, createPiConfigReleases({ cfg, env: {} })))
       const res = await app.request('http://d/?tail=50', { headers: { Authorization: `Bearer ${token}` } })
       expect(res.status).toBe(200)
       const body = (await res.json()) as Record<string, any>
-      expect(body.opencode).toMatchObject({ state: 'ok', pid: 4242, port: 4097, port_pair: [4096, 4097] })
+      // The production pi report over a runtime that never started.
+      expect(body.pi).toMatchObject({ state: 'down', root_id: null, start_error: null })
       expect(body.daemon.uptime_s).toBeGreaterThanOrEqual(5)
       expect(body.daemon.daemon_log_file).toBe(join(root, 'daemon.log'))
       expect(body.boot.timeline).toEqual([{ label: 'proxy-up', atMs: 12 }])
       expect(body.resources).not.toBeNull()
       expect(Array.isArray(body.resources.disks)).toBe(true)
-      expect(body.resources.opencode.pid).toBe(4242)
-      expect(Array.isArray(body.resources.opencodePids)).toBe(true)
-      expect(body.resources).not.toHaveProperty('runtime')
-      expect(body.resources).not.toHaveProperty('runtimePids')
-      expect(body.resources_previous.opencode.pid).toBe(4242)
-      expect(body.resources_previous).not.toHaveProperty('runtime')
-      expect(body.resources_previous).not.toHaveProperty('runtimePids')
+      expect(body.resources_previous).not.toBeNull()
       expect(body.logs.tail).toBe(50)
       expect(String(body.logs.daemon)).toContain('[test] diag-line')
-      expect(body.logs.opencode).toBe('oc-line\n')
       // Never a secret dump.
       expect(JSON.stringify(body)).not.toContain(token)
     } finally {

@@ -832,8 +832,6 @@ mock.module('../projects/trigger-execution-store', () => ({
     });
     return terminal ? 'dead_lettered' : 'queued';
   },
-  countUncatalogedTriggerProjects: async () =>
-    runtimeRows.some((row) => !row.scheduleRevision) ? 1 : 0,
 }));
 
 // The alert edge is SQL (integration-trigger-alerts.test.ts); here only which

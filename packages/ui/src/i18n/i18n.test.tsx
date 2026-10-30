@@ -26,6 +26,10 @@ describe('@kortix/ui/i18n without a host', () => {
     expect(html(<Probe ns="secrets" run={(t) => t('agentAccess', { agents: t('noAgents') })} />)).toBe('en|Agents: No agents');
   });
 
+  test('renders desktop controls from the bundled catalog', () => {
+    expect(html(<Probe ns="sessionDesktop" run={(t) => `${t('title')}|${t('takeOver')}|${t('escape')}`} />)).toBe('en|Desktop|Take over|Esc');
+  });
+
   test('t.raw and t.has read the catalog; a missing key renders `namespace.key`', () => {
     expect(html(<Probe ns="threads" run={(t) => String(t.raw('stoppedBy'))} />)).toBe('en|Stopped by {name}');
     expect(html(<Probe ns="threads" run={(t) => `${t.has('stoppedBy')},${t.has('noSuchKey')}`} />)).toBe('en|true,false');

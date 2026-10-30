@@ -170,6 +170,7 @@ export async function beginSandboxTurn(
                    'runtimeSessionId', ${turn.runtimeSessionId}::text,
                    'opencodeSessionId', ${turn.runtimeSessionId}::text,
                    'messageId', ${turn.messageId}::text,
+                   'source', ${turn.source ?? null}::text,
                    'startedAtMs', floor(extract(epoch from ${observedAt}) * 1000))),
                true),
              deadline_at = GREATEST(

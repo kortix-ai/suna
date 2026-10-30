@@ -49,7 +49,6 @@ const COMMON = {
   machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
   managedSkillsPath: 'managed-skills',
-  catalogPath: 'kortix-llm-catalog.json',
 };
 
 /**

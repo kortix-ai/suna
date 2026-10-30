@@ -186,7 +186,6 @@ describe('every image that runs the web terminal bakes the hook as root', () => 
       agentBinaryPath: 'kortix-agent.gz',
       cliBinaryPath: 'kortix.gz',
       entrypointScriptPath: 'kortix-entrypoint',
-      catalogPath: 'llm-catalog.json',
       managedSkillsPath: 'managed-skills',
     });
     const at = meta.indexOf(kortixShellProfileRun());

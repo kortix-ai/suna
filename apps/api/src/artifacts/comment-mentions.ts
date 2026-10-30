@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
 import type { ArtifactRow } from './service';
+import { artifactAgentMentionToken } from './comment-tokens';
 
 export type { ArtifactCommentMention } from '@kortix/db';
 
@@ -12,9 +13,10 @@ export async function resolveArtifactCommentMentions(artifact: ArtifactRow, body
   if (!tokens.size) return [];
   const members = await db.select({ userId: accountMembers.userId }).from(accountMembers).where(eq(accountMembers.accountId, artifact.accountId));
   const users = await resolveUserIdentities(members.map((member) => member.userId));
+  const peopleTokens = new Set([...tokens].filter((token) => !token.startsWith('agent.')));
   const people = members.filter((member) => {
     const identity = users.get(member.userId);
-    return mentionsMember(tokens, { ids: [member.userId], names: [identity?.displayName, identity?.email].filter((name): name is string => !!name) });
+    return mentionsMember(peopleTokens, { ids: [member.userId], names: [identity?.displayName, identity?.email].filter((name): name is string => !!name) });
   }).map((member) => member.userId);
   const { filterArtifactRecipients } = await import('../notifications/access');
   const allowedPeople = await filterArtifactRecipients(artifact, people);
@@ -23,13 +25,14 @@ export async function resolveArtifactCommentMentions(artifact: ArtifactRow, body
   if (!agentTokens.size) return mentions;
   const ownSession = artifact.createdBySessionId ? await db.select({ id: projectSessions.sessionId, agent: projectSessions.agentName }).from(projectSessions)
     .where(and(eq(projectSessions.accountId, artifact.accountId), eq(projectSessions.projectId, artifact.projectId), eq(projectSessions.sessionId, artifact.createdBySessionId))) : [];
+  const rawAgentTokens = new Set([...agentTokens].filter((token) => !token.startsWith('agent.')));
   for (const session of ownSession) {
-    if (mentionsMember(agentTokens, { ids: [session.id], names: [session.agent] })) mentions.push({ kind: 'session', session_id: session.id, agent_name: session.agent });
+    if (mentionsMember(rawAgentTokens, { ids: [session.id], names: [session.agent] })) mentions.push({ kind: 'session', session_id: session.id, agent_name: session.agent });
   }
-  const matchedTokens = new Set([...agentTokens].filter((token) => members.some((member) => {
+  const matchedTokens = new Set([...agentTokens].filter((token) => !token.startsWith('agent.') && (members.some((member) => {
     const identity = users.get(member.userId);
     return mentionsMember(new Set([token]), { ids: [member.userId], names: [identity?.displayName, identity?.email].filter((name): name is string => !!name) });
-  }) || ownSession.some((session) => mentionsMember(new Set([token]), { ids: [session.id], names: [session.agent] }))));
+  }) || ownSession.some((session) => mentionsMember(new Set([token]), { ids: [session.id], names: [session.agent] })))));
   const unresolved = new Set([...agentTokens].filter((token) => !matchedTokens.has(token)));
   if (!unresolved.size) return mentions;
   const [project] = await db.select().from(projects).where(and(eq(projects.projectId, artifact.projectId), eq(projects.accountId, artifact.accountId)));
@@ -37,8 +40,11 @@ export async function resolveArtifactCommentMentions(artifact: ArtifactRow, body
   const agents = await loadProjectAgents(project, { rethrowReadErrors: true });
   for (const token of unresolved) {
     for (const agent of agents.specs) {
-      if (agent.enabled && mentionsMember(new Set([token]), { ids: [], names: [agent.name] })
-        && !mentions.some((mention) => mention.kind !== 'user' && mention.agent_name === agent.name)) mentions.push({ kind: 'agent', agent_name: agent.name });
+      if (agent.enabled && (token.startsWith('agent.') ? token === artifactAgentMentionToken(agent.name).slice(1) : mentionsMember(new Set([token]), { ids: [], names: [agent.name] }))
+        && !mentions.some((mention) => mention.kind !== 'user' && mention.agent_name === agent.name)) {
+        const source = ownSession.find((session) => session.agent === agent.name);
+        mentions.push(source ? { kind: 'session', session_id: source.id, agent_name: agent.name } : { kind: 'agent', agent_name: agent.name });
+      }
     }
   }
   return mentions;

@@ -31,7 +31,16 @@ it live in the session's **Desktop** panel, streamed from port 6901.
 
 - `DISPLAY=:1` is set, so any GUI program you start opens on the desktop.
 - `agent-browser` runs headed (`AGENT_BROWSER_HEADED=true`): the user sees
-  every page you open. Pass `--headed false` for a run they should not see.
+  every page you open.
+- The desktop has one browser, yours. The dock's browser icon and every
+  `xdg-open <url>` open your default `agent-browser` session, so the user
+  shares your window, tabs and logins. To have the user sign in to a site,
+  open the page and ask them to take over. A tab they open becomes your
+  active tab. Leave the browser open when you finish: `agent-browser close`
+  closes the user's window and drops its logins.
+- Browse only in the default session, with its flags as set. A named
+  `--session` starts a second browser the user does not share, and a flag
+  such as `--headed false` restarts the shared one.
 - `curl -o shot.png localhost:6901/screenshot` captures the screen as a PNG.
 - After a GUI action, `curl localhost:6901/wait` returns when the screen is
   still for 300 ms. Do not sleep.
