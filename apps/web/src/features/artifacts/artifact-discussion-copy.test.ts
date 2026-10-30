@@ -41,5 +41,12 @@ for (const locale of locales)
     expect(batch).toContain('100');
     expect(batch).toContain('101');
     expect(t('artifacts.discussion.sendNew', { agent: 'Writer' })).toContain('Writer');
+    expect(t('artifacts.discussion.annotationLoading')).toBe(copy.annotationLoading);
+    const unavailable = t('artifacts.discussion.annotationUnavailable', {
+      refresh: 'REFRESH_TEST',
+      actions: 'ACTIONS_TEST',
+    });
+    expect(unavailable).toContain('REFRESH_TEST');
+    expect(unavailable).toContain('ACTIONS_TEST');
     expect(errors).toEqual([]);
   });

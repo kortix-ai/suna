@@ -1,7 +1,6 @@
 import {
   runFreeTierCreditRotation,
   runSubprocessorNotices,
-  runTermsNotices,
   runTrialExpirySweep,
   runYearlyCreditRotation,
 } from '../billing/rotation-schedule';
@@ -27,7 +26,6 @@ export function startBillingRotation(): void {
     hourly('yearly rotation', () => runWorkerTick('billing-yearly-rotation', runYearlyCreditRotation)),
     hourly('free-tier rotation', () => runWorkerTick('billing-free-tier-rotation', runFreeTierCreditRotation)),
     hourly('subprocessor notices', () => runWorkerTick('legal-subprocessor-notices', runSubprocessorNotices)),
-    hourly('terms notices', () => runWorkerTick('legal-terms-notices', runTermsNotices)),
   ];
 }
 

@@ -104,6 +104,9 @@ export async function sessionModelUsage(session: {
     // A request belongs to the last turn that started before it was logged. A
     // trace is written when its request ends, which can be after the turn's own
     // end was recorded, so the turn's end time is not a bound.
+    // `desc nulls last` is the order of the turn indexes, so each lookup reads one
+    // index entry. Plain `desc` (nulls first) read and sorted every earlier turn:
+    // 7.8 s for a 13k-request session. started_at is never null.
     db.execute<{ message_id: string; served: string; fallback_from: string | null; answered: number; cost: number }>(sql`
       select turn.message_id,
              ${servedModelSql} as served,
@@ -117,7 +120,7 @@ export async function sessionModelUsage(session: {
         where ${sessionTurns.sessionId} = ${logs.sessionId}
           and ${sessionTurns.messageId} is not null
           and ${sessionTurns.startedAt} <= ${logs.createdAt}
-        order by ${sessionTurns.startedAt} desc
+        order by ${sessionTurns.startedAt} desc nulls last
         limit 1
       ) turn
       where ${ofSession}
@@ -136,7 +139,7 @@ export async function sessionModelUsage(session: {
         where ${sessionTurns.sessionId} = ${logs.sessionId}
           and ${sessionTurns.messageId} is not null
           and ${sessionTurns.startedAt} <= ${logs.createdAt}
-        order by ${sessionTurns.startedAt} desc
+        order by ${sessionTurns.startedAt} desc nulls last
         limit 1
       ) turn
       where ${ofSession} and ${logs.ok}
