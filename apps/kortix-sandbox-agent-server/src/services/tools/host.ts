@@ -45,8 +45,8 @@ export const KORTIX_TOOLS: Readonly<Record<string, KortixTool>> = {
  * The My Kortix platform tools: typed fronts for the in-sandbox `kortix` CLI
  * (`platform/platform.ts`). They share that helper, so they are not ejectable,
  * and they load only when the compiled config names them in `kortix_tools`
- * (the platform's My Kortix config does): a project that lists no `tools`
- * key, which loads every Kortix tool above, never gets these.
+ * (the platform's My Kortix config does): a project's compiled set, which
+ * omits `kortix_tools` and loads every Kortix tool above, never gets these.
  */
 export const PLATFORM_TOOLS: Readonly<Record<string, KortixTool>> = {
   kortix_agents: kortixAgents,
@@ -74,8 +74,8 @@ let loaded = new Map<string, HostedTool>()
 
 /**
  * Load the session's tools from its compiled config. The Kortix tools: the
- * ones `kortix_tools` lists, or all of them when it is absent (a project with
- * no kortix.yaml `tools` key, or a config compiled before the key existed).
+ * ones `kortix_tools` lists (My Kortix), or all of them when it is absent (every
+ * project's compiled set).
  * Then the project tools (`project_tools`: tool name → module path, relative
  * to `root`, the checkout the runtime reads its config from); one with a
  * Kortix tool's name replaces it. A module is imported again when its file

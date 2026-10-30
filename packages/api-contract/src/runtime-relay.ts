@@ -502,9 +502,10 @@ export interface CompiledAgentSet {
    */
   project_tools?: Record<string, string>;
   /**
-   * The Kortix tools the project lists as `<name>: kortix:<name>`. Present
-   * only when kortix.yaml has a `tools` key; then only these Kortix tools load,
-   * plus the ones `project_tools` replaces. Absent: all of them load.
+   * The Kortix tools this compiled set loads, plus the ones `project_tools`
+   * replaces. Only the platform's My Kortix config sets it; a project's
+   * compiled set omits it, and then every Kortix tool loads (an agent's
+   * `tools` grant decides what it may call).
    */
   kortix_tools?: string[];
   /**

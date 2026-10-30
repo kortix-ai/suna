@@ -1,6 +1,7 @@
 /**
- * memory: the Kortix memory tool. Kortix maintains this file. A project lists
- * it in kortix.yaml as `memory: kortix:memory`. `kortix tools eject memory`
+ * memory: the Kortix memory tool. Kortix maintains this file, and every
+ * session loads it; an agent's `tools` grant decides whether that agent can
+ * call it. `kortix tools eject memory`
  * copies it to `tools/memory.ts` for the project to own and change; the copy
  * runs unchanged on every harness. The web UI renders a call from its
  * arguments (`command`, `path`); a changed copy must keep them.
