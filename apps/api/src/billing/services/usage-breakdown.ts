@@ -35,8 +35,10 @@ const LLM_DEBIT_KINDS = ['llm_debit', 'token_deduction', 'token_overage'] as con
  *
  * `admin_debit` is a manual adjustment. It is real money leaving the wallet, so
  * it belongs in the total; calling it compute or LLM would be a lie.
+ *
+ * `proxy_debit` is residential proxy traffic (workers/residential-proxy-billing-worker.ts).
  */
-const OTHER_DEBIT_KINDS = ['usage', 'admin_debit'] as const;
+const OTHER_DEBIT_KINDS = ['usage', 'admin_debit', 'proxy_debit'] as const;
 const DEBIT_KINDS: string[] = [
   ...COMPUTE_DEBIT_KINDS,
   ...LLM_DEBIT_KINDS,

@@ -6,6 +6,8 @@ import { db } from '../shared/db';
 import { canView, readArtifactFile, type ArtifactRow, type Viewer } from './service';
 import { recordArtifactEvent } from './events-store';
 import { hydrateCommentAuthors } from './comment-authors';
+import { resolveArtifactCommentMentions } from './comment-mentions';
+import { dispatchArtifactCommentJobs, enqueueArtifactCommentRouting } from './comment-delivery';
 
 export class ArtifactCommentError extends Error {
   constructor(readonly status: 400 | 403 | 404 | 409 | 429, message: string, readonly code: string, readonly retryAfterSeconds = 60) {
@@ -78,6 +80,7 @@ function threadView(row: Thread, comments: Comment[], text?: string) {
     resolved_by_session_id: row.resolvedBySessionId,
     resolved_at: row.resolvedAt?.toISOString() ?? null,
     agent_state: row.agentState,
+    agent_error: row.agentError,
     sent_session_id: row.sentSessionId,
     sent_at: row.sentAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
@@ -165,7 +168,7 @@ async function write<T>(actor: Actor, access: ArtifactCommentAccess, apply: (tx:
     const [artifact] = await tx.select().from(artifacts)
       .where(and(eq(artifacts.artifactId, access.artifact.artifactId), eq(artifacts.projectId, access.artifact.projectId)))
       .for('update');
-    if (!artifact || !canView(artifact, access.viewer)) throw new ArtifactCommentError(404, 'Artifact not found', 'not_found');
+    if (!artifact || artifact.accountId !== actor.accountId || artifact.accountId !== access.artifact.accountId || !canView(artifact, access.viewer)) throw new ArtifactCommentError(404, 'Artifact not found', 'not_found');
     await writeQuota(tx, actor, access);
     return apply(tx);
   });
@@ -188,6 +191,7 @@ export async function createArtifactCommentThread(actor: Actor, access: Artifact
     throw new ArtifactCommentError(400, 'Invalid comment anchor', 'invalid_anchor');
   }
   const body = bodyText(input.body);
+  const mentions = await resolveArtifactCommentMentions(access.artifact, body);
   const who = author(actor, access);
   const thread = await write(actor, access, async (tx) => {
     await sessionCommentQuota(tx, access);
@@ -204,26 +208,35 @@ export async function createArtifactCommentThread(actor: Actor, access: Artifact
       authorUserId: who.userId,
       authorSessionId: who.sessionId,
       body,
+      mentions,
+      createdAt: sql`clock_timestamp()`,
     }).returning();
     await recordArtifactEvent(tx, access.artifact, who, 'thread_opened', { thread_id: thread!.threadId, comment_id: comment!.commentId });
+    await enqueueArtifactCommentRouting(tx, access.artifact, actor, access.sessionId, thread!.threadId, comment!.commentId, false);
+    const [updated] = await tx.select().from(artifactCommentThreads).where(eq(artifactCommentThreads.threadId, thread!.threadId));
+    Object.assign(thread!, updated!);
     return threadView(thread!, [comment!]);
   });
+  await dispatchArtifactCommentJobs(`artifact-comments:${thread.thread_id}:${thread.comments[0]!.comment_id}`);
   return (await hydrateThreads(access, [thread]))[0]!;
 }
 
 export async function replyArtifactCommentThread(actor: Actor, access: ArtifactCommentAccess, threadId: string, body: string) {
   const text = bodyText(body);
+  const mentions = await resolveArtifactCommentMentions(access.artifact, text);
   const who = author(actor, access);
   const comment = await write(actor, access, async (tx) => {
     await loadThread(tx, access, threadId);
     await sessionCommentQuota(tx, access);
     const [comment] = await tx.insert(artifactComments).values({
-      threadId, body: text, authorUserId: who.userId, authorSessionId: who.sessionId,
+      threadId, body: text, mentions, authorUserId: who.userId, authorSessionId: who.sessionId, createdAt: sql`clock_timestamp()`,
     }).returning();
     await tx.update(artifactCommentThreads).set({ updatedAt: sql`now()` }).where(eq(artifactCommentThreads.threadId, threadId));
     await recordArtifactEvent(tx, access.artifact, who, 'replied', { thread_id: threadId, comment_id: comment!.commentId });
+    await enqueueArtifactCommentRouting(tx, access.artifact, actor, access.sessionId, threadId, comment!.commentId, true);
     return commentView(comment!);
   });
+  await dispatchArtifactCommentJobs(`artifact-comments:${threadId}:${comment.comment_id}`);
   return (await hydrateCommentAuthors(access.artifact, [comment]))[0]!;
 }
 
@@ -254,6 +267,7 @@ export async function setArtifactCommentThreadStatus(actor: Actor, access: Artif
 
 export async function changeArtifactComment(actor: Actor, access: ArtifactCommentAccess, threadId: string, commentId: string, body: string | null) {
   const text = body === null ? null : bodyText(body);
+  const mentions = text === null ? [] : await resolveArtifactCommentMentions(access.artifact, text);
   const comment = await write(actor, access, async (tx) => {
     await loadThread(tx, access, threadId);
     const [comment] = await tx.select().from(artifactComments)
@@ -263,7 +277,7 @@ export async function changeArtifactComment(actor: Actor, access: ArtifactCommen
     if (!own(actor, access, comment.authorUserId, comment.authorSessionId) && !(text === null && access.viewer.manageAny)) throw forbidden();
     const [updated] = await tx.update(artifactComments).set(text === null
       ? { body: '', mentions: [], marks: [], screenshotKey: null, deletedAt: sql`now()` }
-      : { body: text, editedAt: sql`now()` })
+      : { body: text, mentions, editedAt: sql`now()` })
       .where(eq(artifactComments.commentId, commentId)).returning();
     await tx.update(artifactCommentThreads).set({ updatedAt: sql`now()` }).where(eq(artifactCommentThreads.threadId, threadId));
     if (text === null) await recordArtifactEvent(tx, access.artifact, author(actor, access), 'comment_deleted', { thread_id: threadId, comment_id: commentId });

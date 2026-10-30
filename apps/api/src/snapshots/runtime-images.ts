@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { OPENCODE_VERSION } from '@kortix/shared';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
 import { config } from '../config';
 import { logger } from '../lib/logger';
@@ -27,8 +26,7 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
   if (metaRuntimeFingerprint) return metaRuntimeFingerprint;
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
   metaRuntimeFingerprint = buildRuntimeArtifactFingerprint({
-    sandboxVersion: `meta-v3:opencode:${OPENCODE_VERSION}`,
-    opencodeVersion: OPENCODE_VERSION,
+    sandboxVersion: 'meta-v4',
     artifacts: [
       { label: 'agent', path: resolve(root, 'apps/kortix-sandbox-agent-server/src') },
       { label: 'agent-package', path: resolve(root, 'apps/kortix-sandbox-agent-server/package.json') },
@@ -36,7 +34,6 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
       { label: 'cli', path: resolve(root, 'apps/cli/src') },
       { label: 'cli-package', path: resolve(root, 'apps/cli/package.json') },
       { label: 'entrypoint', path: resolve(root, 'apps/sandbox/entrypoint.sh') },
-      { label: 'opencode-warmup', path: resolve(root, 'apps/sandbox/opencode-warmup.sh') },
       { label: 'meta-renderer', path: resolve(root, 'packages/shared/src/sandbox/meta-dockerfile.ts') },
       { label: 'sdk', path: resolve(root, 'packages/sdk/src') },
       { label: 'llm-catalog', path: resolve(root, 'packages/llm-catalog/src') },

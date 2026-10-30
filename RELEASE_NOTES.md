@@ -1,40 +1,83 @@
-Telegram attachments and commands, richer artifacts, and more reliable sessions
-
-Telegram attachments and commands, richer artifacts, and more reliable sessions
+Computer desktops, Telegram commands, and artifact collaboration
 
 ### New
-- Send photos, files and voice notes to a Telegram bot and see them in the session (#11091, #11094).
-- Use Telegram /help, /status, /new, /stop, /model and /agent commands, with button menus for models and agents (#11097, #11105).
-- Drive your own Chrome from a session when the Chrome feature flag is enabled (#9745).
-- Add artifact comment threads and permissions (KRTX-3661, e672225), activity history and author receipts (KRTX-3662, 8bf7060), and SDK and CLI comments (KRTX-3663, 813e351).
-- Work with artifact editor blocks, link cards, an Ask AI sheet and a smoother gallery (#11111).
-- Find Instagram content studio and Instagram Reels skills in the marketplace (#11116).
+- Sessions run pi 1.4.0, and the daemon boots 20 ms faster (#11087) (3500b0d)
+- Every deployment restores a lost conversation from the session log (#11032) (2d64f69)
+- Photos, files and voice notes sent to a Telegram bot reach the agent (shared core, KRTX-2235) (#11091) (8adf1f6)
+- /cli page removed, fitted nav menus, cleaner hero walkthrough (#11092) (1e1962e)
+- /services shares the site navbar, with a new hero and a tighter story (#11096) (ce91f72)
+- Kortix in Chrome — sessions drive the user's own Chrome (behind the chrome flag) (#9745) (849b60f)
+- /help /status /new /stop /model /agent for Telegram, written once in the channel core (KRTX-2235) (#11097) (042c7fa)
+- Use-case pages get a step-by-step setup guide (#11100) (be7d0f9)
+- React Email Barebone shell for every transactional email (#11101) (0517ba0)
+- Product-scene covers for four use cases, filled icons (#11102) (6646ff0)
+- Telegram command menus with buttons — /model and /agent pickers, /help and /status actions (KRTX-2235) (#11105) (6a20a92)
+- Add comment threads and permissions (KRTX-3661) (e672225)
+- Add activity history and author receipts (KRTX-3662) (8bf7060)
+- Approving a held connector call runs it once, as the original caller (#11103) (4aedc20)
+- Add SDK and CLI comments (KRTX-3663) (813e351)
+- Editor blocks, link cards, Ask AI sheet and a smoother gallery (#11111) (6482382)
+- Add the Instagram content studio and Instagram Reels skills (#11116) (b434168)
+- Kortix CompanyOS rebrand, plus custom pi agents and pi extensions on /framework and the home page (#11093) (7566de6)
+- Residential IP per sandbox template, billed per GB from credits (#11122) (4b47b71)
+- Notify people and route comment feedback to agents (a4fd484)
+- Every session has a Kortix Computer desktop the user can watch and take control of (#11115) (a8207d6)
+- New sandboxes boot without OpenCode, ~1 GB less disk (#11146) (fb3519d)
 
 ### Improved
-- Restore lost conversations from the session log across deployments and preserve running turns when a box dies (#11032, #11043).
-- Run sessions on pi 1.4.0 with a faster daemon boot (#11087).
-- Approving a held connector call runs it once as the original caller; agents also receive clearer guidance about repeating approved calls (#11103, #11095).
-- Browse fitted navigation menus, a cleaner hero walkthrough and a refreshed Services page; the standalone /cli page is removed (#11092, #11096).
-- Follow step-by-step setup guides on use-case pages, with new product-scene covers and filled icons (#11100, #11102).
-- Receive transactional emails in a shared React Email shell (#11101).
+- A new session's first prompt reaches the box up to 3 s sooner (#11144) (70c8906)
 
 ### Fixed
-- Keep large images from stalling daemon health checks and event streams (#11029).
-- Restore a workspace-volume session from its S3 snapshot when lost+found remains (#11099).
-- Repair unsafe Unicode in prompt parts and wait for Platinum derived images before using them (#11080, #11081).
-- Preserve the built-in Telegram channel when a user connector uses its reserved name (#11084).
-- Place image full-screen hints at the image corner and show every artifact block-menu row without scroll bars (#11112, #11114).
-- Filter wallet missing-account and Talisman onboarding noise in the web app (#11107, #11108).
-- Generate valid pattern schemas and give the HEIC browser test time to complete (#11074).
-- Upload the production Vercel deployment as one archive and stamp its release commit (#11088).
+- Schema render never emits {} for a pattern; HEIC browser test gets 30 s (#11074) (2d9f3c3)
+- Type gateway analytics timeouts (KRTX-3631) (#11076) (a072230)
+- Repair unsafe Unicode in prompt parts (KRTX-3647) (#11080) (b198e7c)
+- Wait for Platinum derived images (KRTX-3648) (#11081) (59cfa29)
+- Reserve kortix_telegram so a user connector cannot hide the Telegram channel (KRTX-2235) (#11084) (8508b97)
+- The prod Vercel deploy uploads one archive and stamps the release commit (#11088) (29e07e4)
+- Current web, mobile and CLI builds send no GET …/transcript (#11034) (55aacb7)
+- Pi keeps a running turn in the log when the box dies (#11043) (581add6)
+- A large image no longer stalls /health and SSE for ~0.9 s (#11029) (37715f2)
+- A photo or file sent to a channel bot shows in the session's message (KRTX-2235) (#11094) (04bf6b3)
+- A workspace-volume session boots from the S3 snapshot when lost+found is left (#11099) (7919385)
+- Agents learn that an approved call must be repeated to run (#11095) (f270a86)
+- An unchanged journal re-send costs the API no write (#11104) (b582d74)
+- Filter wallet missing-account noise (KRTX-2150) (#11107) (e09fae0)
+- Filter Talisman onboarding noise (KRTX-3678) (#11108) (e11b996)
+- The image card's full-screen hint sits on the image corner (#11112) (22d4056)
+- The / block menu shows every row with no scroll bars (#11114) (b35789f)
+- KRTX-3686 audit session speed reliability denominators (#11118) (ed27a78)
+- Portrait runs draw as a strip; calls the image cap refused draw nothing (#11121) (c7076ab)
+- Escape closes a full-screen image without stopping the turn; full screen opens over the chat (#11120) (c717bee)
+- V0.14.10 release suite green (RLS on new tables, stale tests, scanners, i18n) (#11123) (06d8e91)
+- The migration-order guard lets a stage-fix branch carry a migration dev already has (#11124) (d7f87b4)
+- A RegExp from another realm renders as its source, not {} (081b9b5)
+- /sovereign no longer crashes when its walkthrough reaches the server step (#11141) (5def696)
+- KRTX-3691 handle null show content paths (#11145) (20ef739)
 
 ### Security
-- Patch seroval, re2js, systeminformation and @hono/node-server advisories, including the scanner pin and subsequent systeminformation update (#11070, #11073, #11077).
+- Patch seroval, re2js, systeminformation and @hono/node-server advisories (#11070) (c57dc30)
+- .deepsec pins @hono/node-server 2.1.3 (GHSA-rmxm-3fg6-px4f) (#11073) (ff04d1e)
+- Systeminformation 5.33.16 (GHSA-3f7j-7jwc-fxfj) (#11077) (82b1fd4)
+- Only the in-box CLI drives the owner's Chrome; panel sign-in rejects control characters (#11126) (c2bd329)
+- Gitleaks ignores the made-up fixture credential left in v0.14.10 history (#11128) (5ff9561)
+- The gitleaks ignore comment no longer quotes the fixture it explains (3bd2e9c)
 
 ### Internal
-- Share channel webhook routing and platform descriptors across the API and Channels UI without changing existing output (#11082, #11085, #11086).
-- Stop current clients from requesting the old transcript endpoint, remove v1 transcript-mirror reads and avoid writes for unchanged journal re-sends (#11034, #11033, #11104).
-- Type gateway analytics timeout errors (#11076).
-- Document fixes against the frozen staging candidate and gate browser shards on RELEASE_BROWSER_LANES=on (#11063, #11064).
-- Regenerate the developers' kortix.yaml reference and update agent planning guidance (#11067, #11113).
-- Advance the development version to 0.14.10 after 0.14.9 (b1f87c4).
+- Fix a red release on the frozen staging candidate (#11063) (36a344f)
+- Browser shards off until RELEASE_BROWSER_LANES=on (#11064) (f4282c8)
+- Regenerate the kortix.yaml region of developers.mdx (#11067) (7bb30c4)
+- One shared webhook route for every channel, Telegram first (KRTX-2235) (#11082) (2d0f93f)
+- One descriptor per chat platform; API reads it, output unchanged (KRTX-2235) (#11085) (ee31fd7)
+- The Channels page, Telegram row and access panel read the channel descriptor (KRTX-2235) (#11086) (1bdff1b)
+- Dev VERSION → 0.14.10 (dev target after 0.14.9) [skip ci] (b1f87c4)
+- No code reads the v1 transcript mirror (P8.2 Release B2) (#11033) (1526019)
+- Agents plan before non-trivial changes; ponytail only on request (#11113) (a6cdfdd)
+- Box identities follow a transferred project, live and retired (#11127) (fba24db)
+- The action reference lists project.link_preview.read (862ce7c)
+- The Kortix in Chrome pane is a form-tier settings tab (1db753b)
+- The navigation stub carries ServicePreviewRow (0bdb6e7)
+- Design record for Platinum Machines and Apps (#11134) (e0cb6f2)
+- Reskin overrides waits for the shared cold build; excerpt timing bound tolerates a loaded runner (9768ecb)
+- The schema-sync CI failure is still open; the realm theory did not fix it (4ccd971)
+- Park the layered-primitives and bare-metal marketplace idea (#11140) (a6000da)
+- The conformance check copies the schema, so toMatchObject cannot corrupt it for the sync test (5ec6656)

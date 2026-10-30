@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/kortix-vs-hermes"
 ---
-Hermes Agent already asks before it keeps what it learned, holding every skill write in `~/.hermes/pending/skills/` for `/skills diff` and `/skills approve` and logging each mutation to an append-only ledger, while Kortix, the open-source AI Operating System, puts that same review in a git repo where the approver can be someone other than the person who asked. Add a second colleague and the question becomes whose approval it is, and where the record lives.
+Hermes Agent already asks before it keeps what it learned, holding every skill write in `~/.hermes/pending/skills/` for `/skills diff` and `/skills approve` and logging each mutation to an append-only ledger, while Kortix CompanyOS puts that same review in a git repo where the approver can be someone other than the person who asked. Add a second colleague and the question becomes whose approval it is, and where the record lives.
 
 ```logos
 label: 'Compared here:'

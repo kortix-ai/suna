@@ -1,6 +1,6 @@
 ---
 title: "Kortix vs OpenHands: replace the open-source harness, keep the open-source record"
-description: "OpenHands is a strong open-source coding harness; Kortix is the open-source AI Operating System that keeps the record of who let an agent do what."
+description: "OpenHands is a strong open-source coding harness; Kortix is the open-source CompanyOS that keeps the record of who let an agent do what."
 date: "2026-10-04"
 canonical: "https://kortix.com/blog/kortix-vs-openhands"
 author: "team"
@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-21"
 slug: "/kortix-vs-openhands"
 ---
-OpenHands is a strong open-source coding harness; Kortix, which we build, is the open-source AI Operating System for the layer underneath it, the record of who let an agent do what. OpenHands' own product page makes the case that the harness is the replaceable part: Agent Canvas drives Claude Code, Codex, Gemini CLI or the built-in OpenHands agent from one screen ([OpenHands](https://openhands.dev/), checked October 2026). The question a company has to answer sits under that screen. When the harness changes, what stays in your hands?
+OpenHands is a strong open-source coding harness; Kortix, which we build, is the open-source CompanyOS for the layer underneath it, the record of who let an agent do what. OpenHands' own product page makes the case that the harness is the replaceable part: Agent Canvas drives Claude Code, Codex, Gemini CLI or the built-in OpenHands agent from one screen ([OpenHands](https://openhands.dev/), checked October 2026). The question a company has to answer sits under that screen. When the harness changes, what stays in your hands?
 
 ```logos
 label: 'Compared here:'

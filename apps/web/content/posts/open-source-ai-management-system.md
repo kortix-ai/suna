@@ -1,5 +1,5 @@
 ---
-title: "Open source is what makes an AI Operating System yours"
+title: "Open source is what makes a CompanyOS yours"
 description: "Kortix is open source: one git repo for the agents, skills, memory and connector config, self-hosted or managed, on any model."
 date: "2026-07-31"
 canonical: "https://kortix.com/blog/open-source-ai-management-system"
@@ -10,7 +10,7 @@ slug: "/open-source-ai-management-system"
 cover: "/banner.png"
 leadMedia: {"poster": "https://kortix.com/media/showcase/kortix-showcase-poster.jpg", "sources": [{"src": "https://kortix.com/media/showcase/kortix-showcase-1920.mp4", "type": "video/mp4"}, {"src": "https://kortix.com/media/showcase/kortix-showcase-1280.mp4", "type": "video/mp4"}], "alt": "Kortix in the browser: a project and its connectors, agents, skills and schedules, then a session working on a cloud computer and returning a finished deck.", "aspectRatio": "1920 / 1200"}
 ---
-Most AI tools ask you to move the company into their product. Kortix is the open-source AI Operating System, and the part that matters is a repository: agent prompts, skills, company memory and the connector configuration are text in a project you clone and run. The question that decides whether you own any of it is dull and decisive. Where does the configuration sit, and who can change it?
+Most AI tools ask you to move the company into their product. Kortix is the open-source CompanyOS, and the part that matters is a repository: agent prompts, skills, company memory and the connector configuration are text in a project you clone and run. The question that decides whether you own any of it is dull and decisive. Where does the configuration sit, and who can change it?
 
 ## One repo holds the whole company
 

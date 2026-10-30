@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/kortix-vs-openwork"
 ---
-OpenWork is the right open-source desktop agent for one person at one machine; Kortix is the open-source AI Operating System, one git repo holding your agents, their skills, your company memory and every connector, with the agents working on real cloud computers. OpenWork keeps the session on the laptop where it started, which is the whole answer until a colleague has to approve the result. An approval needs a record, and a desktop app has nowhere to keep one a second person can read.
+OpenWork is the right open-source desktop agent for one person at one machine; Kortix is the open-source CompanyOS, one git repo holding your agents, their skills, your company memory and every connector, with the agents working on real cloud computers. OpenWork keeps the session on the laptop where it started, which is the whole answer until a colleague has to approve the result. An approval needs a record, and a desktop app has nowhere to keep one a second person can read.
 
 ```logos
 label: 'Compared here:'

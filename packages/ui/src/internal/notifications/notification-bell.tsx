@@ -4,7 +4,7 @@
  * The bell (KRTX-1742): the person's notification inbox, across projects.
  *
  * It sits in the project sidebar header and in `AccountTopBar`, only while the
- * `notification_center` flag is on (`useNotificationCenter`). The badge is
+ * inbox gate is on (`useNotificationInboxEnabled`). The badge is
  * the server's unread count, clamped at 99+. A row opens its session (or the
  * Triggers page for an alert) and marks itself read. When this browser shows
  * no notifications yet, the panel's footer offers to turn them on.
@@ -51,7 +51,7 @@ import {
   withoutNotificationParam,
   type NotificationTab,
 } from './notification-rows';
-import { useNotificationCenter } from '../hooks/use-notification-center';
+import { useNotificationInboxEnabled } from '../hooks/use-notification-center';
 import { webPushSupported } from './web-push';
 
 type KindIcon = (props: { className?: string; 'aria-hidden'?: boolean }) => ReactNode;
@@ -74,6 +74,7 @@ const KIND_MARK: Record<InboxNotificationKind, { icon: KindIcon; className: stri
   capture_device_down: { icon: solid(WarningIcon), className: 'text-kortix-red' },
   capture_device_recovered: { icon: SolidCheckIcon, className: 'text-kortix-green' },
   message: { icon: solid(ChatCircleIcon), className: 'text-muted-foreground' },
+  artifact_comment: { icon: solid(ChatCircleIcon), className: 'text-muted-foreground' },
 };
 
 export interface NotificationPanelProps {
@@ -313,7 +314,7 @@ export function NotificationBell({
   const t = useTranslations('notifications');
   const viewerId = useUiViewerId();
   const [open, setOpen] = useState(false);
-  const notificationCenter = useNotificationCenter(projectId);
+  const notificationCenter = useNotificationInboxEnabled(projectId);
   const inbox = useNotificationInbox({ userId: viewerId, enabled: notificationCenter });
   const notificationsOn = useWebNotificationStore((s) => s.preferences.enabled);
   const permission = useWebNotificationStore((s) => s.permission);

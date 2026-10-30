@@ -1,6 +1,6 @@
 ---
 title: "Kortix vs AgenticSeek: open source that outlives one laptop"
-description: "Kortix is the open-source AI Operating System a team reviews, while AgenticSeek runs a private agent on one laptop."
+description: "Kortix is the open-source CompanyOS a team reviews, while AgenticSeek runs a private agent on one laptop."
 date: "2026-10-15"
 canonical: "https://kortix.com/blog/kortix-vs-agenticseek"
 author: "team"
@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/kortix-vs-agenticseek"
 ---
-AgenticSeek gives one person a capable private agent on hardware they already own, while Kortix is the open-source AI Operating System for the team that has to review the result. Both put an agent to work on real files. The output lands in different places: a folder on one laptop, or a branch a colleague can open. Which of those does your team need?
+AgenticSeek gives one person a capable private agent on hardware they already own, while Kortix is the open-source CompanyOS for the team that has to review the result. Both put an agent to work on real files. The output lands in different places: a folder on one laptop, or a branch a colleague can open. Which of those does your team need?
 
 ```logos
 label: 'Compared here:'

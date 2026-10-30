@@ -150,6 +150,9 @@ function AgentCard() {
       <Row k="Skills">
         <Chips items={['triage-issue']} mono />
       </Row>
+      <Row k="Extensions">
+        <Chips items={['triage-policy']} mono />
+      </Row>
       <p className="text-muted-foreground flex items-center gap-2 border-t pt-4 text-sm">
         <GitBranchIcon className="size-4 shrink-0" aria-hidden />
         {tMarketing('text9fad6f07633c')}

@@ -1,5 +1,7 @@
 # @kortix/cli
 
+The command line for Kortix CompanyOS, the open-source operating system for your company.
+
 Create a new Kortix project.
 
 ```sh

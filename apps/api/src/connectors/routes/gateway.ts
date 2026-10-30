@@ -705,4 +705,3 @@ export function registerGatewayCallRoutes(app: OpenAPIHono, deps: ConnectorRoute
     },
   );
 }
-

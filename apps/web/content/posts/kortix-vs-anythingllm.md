@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-25"
 slug: "/kortix-vs-anythingllm"
 ---
-AnythingLLM is a good answer to one question, what this folder of documents says; Kortix, the open-source AI Operating System, is the choice when the answer has to become work other people can find, run and approve. AnythingLLM runs on your own hardware and cites the page an answer came from, so a person can be chatting with their files within minutes. Each one is open source, and each runs on models you pick. The split arrives with the second person. They need the context the first person taught the app, and someone has to sign off before an agent touches a live system.
+AnythingLLM is a good answer to one question, what this folder of documents says; Kortix CompanyOS is the choice when the answer has to become work other people can find, run and approve. AnythingLLM runs on your own hardware and cites the page an answer came from, so a person can be chatting with their files within minutes. Each one is open source, and each runs on models you pick. The split arrives with the second person. They need the context the first person taught the app, and someone has to sign off before an agent touches a live system.
 
 ## What AnythingLLM does well
 
