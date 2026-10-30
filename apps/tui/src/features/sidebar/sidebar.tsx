@@ -26,6 +26,12 @@ export interface SidebarProps {
   height: number;
   onOpenSession(sessionId: string): void;
   onNewSession(sessionId: string): void;
+  /**
+   * `+ New session` / `n`, session-first: open the draft instead of creating
+   * an empty session on the server. The draft's first prompt creates it, the
+   * same as `/new`. Without it the row creates the session at once.
+   */
+  onStartDraft?(): void;
   onNavigate(screen: SidebarScreen): void;
   /** The screen rows. Default: the four the sidebar always had. */
   nav?: readonly SidebarNavItem[];
@@ -68,6 +74,7 @@ export function Sidebar({
   height,
   onOpenSession,
   onNewSession,
+  onStartDraft,
   onNavigate,
   nav,
   onProjectChange,
@@ -262,7 +269,7 @@ export function Sidebar({
       onOpenProjectPicker={() =>
         authError && projects.length === 0 ? onToast?.(authError, 'error') : setPicker('project')
       }
-      onNewSession={() => void createSession()}
+      onNewSession={() => (onStartDraft ? onStartDraft() : void createSession())}
       onNavigate={(screen: SidebarScreen) => onNavigate(screen)}
       onRename={(sessionId, name) => void renameSession(sessionId, name)}
       onDelete={(sessionId) => void deleteSession(sessionId)}

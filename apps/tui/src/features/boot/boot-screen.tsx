@@ -10,6 +10,7 @@
  * optional step and shows the reason as a toast.
  */
 
+import { KORTIX_WORDMARK_WIDTH } from '@kortix/shared/wordmark';
 import { useTerminalDimensions } from '@opentui/react';
 
 import { glyph, theme } from '../../theme.ts';
@@ -39,7 +40,10 @@ function stepGlyph(state: BootStepState): { mark: string; color: string } {
 export function BootScreen({ steps, version }: BootScreenProps) {
   const dimensions = useTerminalDimensions();
   const width = dimensions.width;
-  const blockIndent = Math.max(Math.floor((width - 46) / 2), 0) + 2;
+  // The same left edge `Splash center` computes, so the steps line up under
+  // the wordmark.
+  const blockWidth = Math.min(Math.max(KORTIX_WORDMARK_WIDTH, 40), width - 2);
+  const blockIndent = Math.max(Math.floor((width - blockWidth) / 2), 0);
 
   return (
     <box

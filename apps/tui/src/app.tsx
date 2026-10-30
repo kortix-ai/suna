@@ -367,12 +367,13 @@ export function App({
     setFocus('screen');
   }, []);
 
+  // Showing the sidebar does NOT move the keyboard: the input stays where the
+  // user is typing, and Tab reaches the sidebar. Measured: when it took focus,
+  // the next `/drive` went into the sidebar's own `/` filter.
   const toggleSidebar = useCallback(() => {
     setSidebarShown((shown) => {
       const next = !shown;
       saveSidebar(next);
-      // Showing it also focuses it: that is what the key is for.
-      if (next) setFocus('sidebar');
       return next;
     });
   }, [saveSidebar]);
@@ -680,6 +681,7 @@ export function App({
               height={contentHeight - 2}
               onOpenSession={openSession}
               onNewSession={openSession}
+              onStartDraft={openDraft}
               nav={sidebarNav}
               onNavigate={(screen) => {
                 if (isScreenRoute(screen)) openScreen(screen);
