@@ -244,7 +244,7 @@ export async function clearQuestionButtons(
  * answers the question: in the turn it still blocks (the server could not
  * release it when it was posted), else as a follow-up that quotes it. A tap on
  * a question from before a reset, or of another session, answers nothing.
- * `followUp`: the adapter's persisted keys and prompt for the answer, delivered
+ * `followUp`: the adapter's persisted keys and envelope for the answer, delivered
  * into `threadId`. Throws to ask the transport for a retry.
  */
 export async function handleQuestionTap(

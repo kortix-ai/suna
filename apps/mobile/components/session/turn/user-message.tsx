@@ -58,6 +58,7 @@ import {
   planAttachmentGrid,
 } from '@/lib/session/attachment-tile';
 import {
+  channelPlaceLabel,
   commandMessageText,
   messageAttachments,
   parseUserMessageBlocks,
@@ -193,7 +194,7 @@ export interface SessionSourceAuthor {
   agent?: string;
 }
 
-/** Slack / Teams / Telegram / Email: mark · platform · sender; the sheet names the channel and sender. */
+/** Slack / Teams / Telegram / Email: mark · platform · sender; the sheet names the channel (an email's subject) and sender. */
 function ChannelSourcePill({ info }: { info: ChannelMessageInfo }) {
   const platform = CHANNEL_LABEL[info.platform];
   // A Teams conversation id names nothing a person reads: no channel row.
@@ -208,7 +209,7 @@ function ChannelSourcePill({ info }: { info: ChannelMessageInfo }) {
       title={info.userName}
       subtitle={channel ? `${platform} · ${channel}` : platform}
       rows={[
-        { label: 'Channel', value: channel },
+        { label: channelPlaceLabel(info.platform), value: channel },
         { label: 'From', value: info.userName },
       ]}
     />
