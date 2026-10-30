@@ -23,6 +23,7 @@ import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
   channelCatalog,
+  undeclaredChannelArg,
   withChannelDefaults,
 } from './channels';
 import {
@@ -245,8 +246,9 @@ export interface GatewayDeps {
   gateChannelRead?(input: ChannelReadInput): Promise<ChannelReadGate>;
   /**
    * Keeps a Slack write (post, edit, delete, reaction, join) out of other
-   * projects' channels and threads (channel-write-scope.ts): refused before
-   * the call, and a post that landed elsewhere is taken back after it.
+   * projects' channels and threads, and a Telegram write of a chat's session
+   * in that chat (channel-write-scope.ts): refused before the call, and a
+   * Slack post that landed elsewhere is taken back after it.
    * Absent = unconfined: production always wires it (db-deps.ts).
    */
   gateChannelWrite?(input: ChannelReadInput): Promise<ChannelWriteGate>;
@@ -543,6 +545,9 @@ const MAX_UPSTREAM_RESPONSE_BYTES = 64 * 1024 * 1024;
 
 /** Reason prefix of a call that hit the upstream deadline. */
 export const UPSTREAM_TIMEOUT = 'upstream_timeout';
+
+/** A channel call with an argument its action does not declare (HTTP 400). */
+export const INVALID_ARGS = 'invalid_args';
 
 /**
  * The upstream deadline: below Cloudflare's 100 s proxy timeout, so the
@@ -873,10 +878,21 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason: 'action_not_found' };
   }
 
+  // A channel call carries only the arguments its action declares: the gates
+  // below check those, and an undeclared `body` would replace the whole
+  // request they checked (buildHttpRequest sends it verbatim).
+  const undeclared =
+    connector.provider === 'channel' ? undeclaredChannelArg(connector.platform ?? '', input.actionPath, input.args ?? {}) : null;
+  if (undeclared) {
+    await audit(deps, input, connector, 'denied', action.risk, { reason: INVALID_ARGS, message: undeclared });
+    return { status: 'denied', reason: INVALID_ARGS, message: undeclared };
+  }
+
   // Before any credential, approval or provider call: a read of another
   // project's conversation, or a write into it, never leaves the API.
   const channelInput: ChannelReadInput = {
     projectId: input.projectId,
+    sessionId: input.sessionId ?? null,
     platform: connector.platform ?? null,
     actionPath: input.actionPath,
     args: input.args ?? {},

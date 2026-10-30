@@ -24118,9 +24118,9 @@
   },
   "sessionDesktop": {
     "title": "Área de trabalho",
-    "openInNewTab": "Abrir em nova aba",
-    "notRunning": "A área de trabalho não está em execução neste computador.",
-    "askToRun": "Peça ao Kortix para executar",
+    "openTab": "Abrir em nova aba",
+    "offline": "A área de trabalho não está em execução neste computador.",
+    "start": "Peça ao Kortix para executar",
     "retry": "Tentar novamente",
     "takeOver": "Assumir o controle",
     "userControl": "Você está no controle",

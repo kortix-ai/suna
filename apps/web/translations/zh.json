@@ -24118,13 +24118,13 @@
   },
   "sessionDesktop": {
     "title": "桌面",
-    "openInNewTab": "在新标签页中打开",
-    "notRunning": "此计算机上的桌面尚未运行。",
-    "askToRun": "请让 Kortix 运行",
+    "openTab": "在新标签页中打开",
+    "offline": "此计算机上的桌面未运行。",
+    "start": "请让 Kortix 运行",
     "retry": "重试",
     "takeOver": "接管",
-    "userControl": "你拥有控制权",
-    "agentControl": "Kortix 拥有控制权",
+    "userControl": "你正在控制",
+    "agentControl": "Kortix 正在控制",
     "returnControl": "交还控制权",
     "escape": "Esc"
   }
