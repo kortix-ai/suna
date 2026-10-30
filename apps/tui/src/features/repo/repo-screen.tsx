@@ -66,9 +66,8 @@ export function RepoScreen({
           const result = await project.files.history(path, { ref, limit: HISTORY_LIMIT });
           return result.commits.map(toCommitRow);
         }
-        // `git.commits()` takes no options, so it cannot read another branch.
-        if (ref) throw new Error('Repository history reads the default branch. Select a file.');
-        return (await project.git.commits()).commits.map(toCommitRow);
+        const result = await project.git.commits({ ...(ref ? { ref } : {}), limit: HISTORY_LIMIT });
+        return result.commits.map(toCommitRow);
       },
       async branches() {
         const result = await project.git.branches();
