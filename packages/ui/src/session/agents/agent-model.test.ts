@@ -1,15 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { ProjectSession } from '@kortix/sdk';
-import {
-  agentRowOf,
-  boardStateOf,
-  foldIdle,
-  moveSelection,
-  RECENT_MS,
-  stripCounts,
-  stripGroups,
-  stripKeyAction,
-} from './agent-model';
+import { agentRowOf, boardStateOf, lineSummary, RECENT_MS, shortElapsed, stripCounts, stripGroups } from './agent-model';
 
 // Synthetic values only: every id, name and text below is invented.
 
@@ -57,16 +48,30 @@ describe('boardStateOf', () => {
 
 describe('agentRowOf', () => {
   test('names the row by its handle, else its name without the agent suffix, and keeps the agent apart', () => {
-    expect(agentRowOf(session('s', { agent_handle: 'reviewer' }))).toMatchObject({ handle: 'reviewer', agent: 'researcher' });
+    expect(agentRowOf(session('s', { agent_handle: 'reviewer' }))).toMatchObject({ handle: 'reviewer', agent: 'researcher', named: true });
     expect(agentRowOf(session('s', { name: 'Find the price changes (@researcher subagent)' }))).toMatchObject({
       handle: 'Find the price changes',
       agent: 'researcher',
+      named: true,
     });
     expect(agentRowOf(session('abcdef123456', { agent_name: null })).handle).toBe('abcdef12');
   });
 
+  test('a row with no name of its own shows the agent display name, never the raw slug', () => {
+    expect(agentRowOf(session('s', { agent_name: 'mykortix' }))).toMatchObject({ handle: 'My Kortix', agent: 'mykortix', named: false });
+    expect(agentRowOf(session('s', { agent_name: 'kortix' }))).toMatchObject({ handle: 'Kortix', named: false });
+    expect(agentRowOf(session('s', { agent_name: 'code-reviewer' })).handle).toBe('Code reviewer');
+  });
+
   test('the line is the result excerpt on one line', () => {
     expect(agentRowOf(session('s', { result_excerpt: 'Found 4\nprice changes' })).line).toBe('Found 4 price changes');
+  });
+
+  test('a working row knows since when it works; any other row does not', () => {
+    const working = { state: 'working' as const, since: '2026-10-30T11:58:00.000Z', turn_token: null, pending_delivery: false };
+    expect(agentRowOf(session('s', { board_state: 'working', working })).workingSinceMs).toBe(Date.parse('2026-10-30T11:58:00.000Z'));
+    expect(agentRowOf(session('s', { board_state: 'idle', working })).workingSinceMs).toBeNull();
+    expect(agentRowOf(session('s', { board_state: 'working' })).workingSinceMs).toBeNull();
   });
 });
 
@@ -129,28 +134,7 @@ describe('stripGroups', () => {
   });
 });
 
-describe('foldIdle', () => {
-  const rows = ['w', 'i1', 'i2', 'i3', 'i4', 'i5'].map((id) =>
-    agentRowOf(session(id, { board_state: id === 'w' ? 'working' : 'idle', agent_handle: id })),
-  );
-
-  test('more than three idle rows fold the rest into one row; a working row keeps its own', () => {
-    const { shown, folded } = foldIdle(rows, false);
-    expect(shown.map((row) => row.sessionId)).toEqual(['w', 'i1', 'i2', 'i3']);
-    expect(folded.map((row) => row.sessionId)).toEqual(['i4', 'i5']);
-  });
-
-  test('expanded shows every row; three idle rows never fold', () => {
-    expect(foldIdle(rows, true).folded).toEqual([]);
-    expect(foldIdle(rows.slice(0, 4), false).folded).toEqual([]);
-  });
-
-  test('the selected row keeps its own row', () => {
-    expect(foldIdle(rows, false, 'i5').shown.map((row) => row.sessionId)).toContain('i5');
-  });
-});
-
-describe('counts and keys', () => {
+describe('counts and the line', () => {
   test('stripCounts counts agents, working and waiting rows', () => {
     const rows = [
       agentRowOf(session('a', { board_state: 'working' })),
@@ -160,22 +144,24 @@ describe('counts and keys', () => {
     expect(stripCounts(rows)).toEqual({ agents: 3, working: 1, needsInput: 1 });
   });
 
-  test("the strip's keys are Claude Code's agent panel keys", () => {
-    expect(stripKeyAction({ key: 'ArrowUp' })).toBe('up');
-    expect(stripKeyAction({ key: 'ArrowDown' })).toBe('down');
-    expect(stripKeyAction({ key: 'Enter' })).toBe('open');
-    expect(stripKeyAction({ key: 'x' })).toBe('stop');
-    expect(stripKeyAction({ key: 'Escape' })).toBe('clear');
-    expect(stripKeyAction({ key: 't', ctrlKey: true })).toBe('toggleTasks');
-    expect(stripKeyAction({ key: 'x', metaKey: true })).toBeNull();
-    expect(stripKeyAction({ key: 'a' })).toBeNull();
+  test('lineSummary: needs you wins, then working (agents or a running run), then the newest agent', () => {
+    const at = (id: string, state: string, minute: number) =>
+      agentRowOf(session(id, { board_state: state as never, agent_handle: id, last_activity_at: `2026-10-30T11:${minute}:00.000Z` }));
+    expect(lineSummary([at('a', 'working', 10), at('b', 'needs_input', 11)], []).mark).toBe('needs_input');
+    expect(lineSummary([at('a', 'working', 10), at('b', 'idle', 11)], []).mark).toBe('working');
+    expect(lineSummary([at('a', 'completed', 10)], [{ status: 'running' }])).toMatchObject({ mark: 'working', runs: 1, runningRuns: 1 });
+    const done = lineSummary([at('namer', 'completed', 10), at('poet', 'idle', 30)], [{ status: 'done' }]);
+    expect(done).toMatchObject({ mark: 'done', agents: 2, working: 0, runs: 1, runningRuns: 0 });
+    expect(done.newest?.handle).toBe('poet');
+    expect(lineSummary([at('a', 'completed', 10), at('b', 'failed', 20)], []).mark).toBe('failed');
+    expect(lineSummary([], []).newest).toBeNull();
   });
 
-  test('moveSelection steps and stops at either end', () => {
-    expect(moveSelection(['a', 'b'], null, 'down')).toBe('a');
-    expect(moveSelection(['a', 'b'], null, 'up')).toBe('b');
-    expect(moveSelection(['a', 'b'], 'a', 'down')).toBe('b');
-    expect(moveSelection(['a', 'b'], 'b', 'down')).toBe('b');
-    expect(moveSelection([], null, 'down')).toBeNull();
+  test('shortElapsed reads seconds, then whole minutes, then whole hours', () => {
+    expect(shortElapsed(12_400)).toBe('12s');
+    expect(shortElapsed(-5)).toBe('0s');
+    expect(shortElapsed(90_000)).toBe('1m');
+    expect(shortElapsed(59 * 60_000)).toBe('59m');
+    expect(shortElapsed(2 * 60 * 60_000 + 5)).toBe('2h');
   });
 });

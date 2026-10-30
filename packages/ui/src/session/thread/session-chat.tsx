@@ -108,7 +108,8 @@ import {
   Composer as SessionChatInput,
 } from '../composer/composer';
 import { ComposerDropZone } from '../composer/composer-drop-zone';
-import { AgentStrip } from '../agents/agent-strip';
+import { AgentsLine } from '../agents/agent-strip';
+import { HeldMessages } from '../agents/held-messages';
 import { SessionPromptContext } from '../agents/session-prompt';
 import { channelRunnableAgents, resolveComposerAgent, withChannelAgents } from '../composer/composer-agent-access';
 import {
@@ -3897,6 +3898,14 @@ export function SessionChat({
     [projectId, projectSessionId, sessionScopeAgentName],
   );
 
+  // The agents this session started, as one line in the composer's under-row
+  // (Claude Code's agent panel). It reads its own lists and never holds the composer.
+  const agentsLineCompact = !!transcriptRows && !isPhone;
+  const chatUnderbarSlot = useMemo(
+    () => <AgentsLine projectId={projectId} sessionId={projectSessionId} compact={agentsLineCompact} />,
+    [projectId, projectSessionId, agentsLineCompact],
+  );
+
   // The queued messages and the one Resume while a Stop holds the queue: their
   // own full-width card above the composer stack, not inside the strip.
   const chatAboveSlot = useMemo(
@@ -4974,6 +4983,7 @@ export function SessionChat({
                 aboveSlot={chatAboveSlot}
                 inputSlot={chatInputSlot}
                 toolbarSlot={chatToolbarSlot}
+                underbarSlot={chatUnderbarSlot}
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.
@@ -4993,13 +5003,11 @@ export function SessionChat({
                     : undefined
                 }
               />
-              {/* The agents this session started, under the composer (Claude Code's agent
-                  panel). It reads its own lists and never holds the composer. */}
-              <AgentStrip
-                projectId={projectId}
-                sessionId={projectSessionId}
-                className={cn(COMPOSER_SHELL_CLASS, 'pb-3', transcriptRows && 'max-w-none px-5')}
-              />
+              {/* Messages from other sessions that wait for the person: one card each,
+                  under the composer. `empty:hidden` drops the gutter while none waits. */}
+              <div className={cn(COMPOSER_SHELL_CLASS, 'pb-3 empty:hidden', transcriptRows && 'max-w-none px-5')}>
+                <HeldMessages projectId={projectId} sessionId={projectSessionId} />
+              </div>
             </>
           )}
         </SessionBodyRow>
