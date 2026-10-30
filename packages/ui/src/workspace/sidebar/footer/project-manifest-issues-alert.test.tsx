@@ -73,6 +73,14 @@ describe('ProjectManifestIssuesAlertView', () => {
     expect(html).not.toContain('are off until it is fixed');
   });
 
+  test('a warning that heals itself (it has a fix) asks for nothing: no row alone, not listed beside an error', () => {
+    const healing = { path: 'kortix_version', message: 'an older format; it still works.', severity: 'warning' as const, fix: 'legacy-format', line: 1, column: 1 };
+    expect(render({ health: { ...ISSUES, errors: 0, warnings: 1, issues: [healing] } })).not.toContain('sidebar-menu-item');
+    const html = render({ health: { ...ISSUES, warnings: 2, issues: [...ISSUES.issues, healing] }, defaultOpen: true });
+    expect(html).toContain('kortix.yaml has 1 error and 1 warning');
+    expect(html).not.toContain('an older format');
+  });
+
   test('with My Kortix turned off the action names no agent', () => {
     const html = render({ health: ISSUES, myKortix: false, defaultOpen: true });
     expect(html).toContain('Fix in a new session');

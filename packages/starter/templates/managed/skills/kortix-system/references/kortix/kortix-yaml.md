@@ -240,8 +240,9 @@ error:
 | `project` or `default_agent` | The key falls back to its default. |
 | Anything else (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, an unknown format version, YAML syntax) | Only My Kortix runs, so it can fix the file. |
 
-Each rule only takes access away. The project page shows the issues with
-**Fix with My Kortix**. Every session's system prompt lists the errors.
+Each rule only takes access away. The project page shows the errors and
+the warnings without a fix id, with **Fix with My Kortix**. Every session's
+system prompt lists the errors.
 
 A deprecated key is not an error: it still works, and `kortix validate`
 warns with its replacement and a fix id. Run `kortix validate --fix` to

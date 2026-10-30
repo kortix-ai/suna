@@ -247,7 +247,7 @@ function projectManifestHealth(
         ...(versionLine >= 0 ? { line: versionLine + 1, column: 1 } : {}),
       },
       ...(legacy.error ? [{ path: '<toml>', message: `Syntax error: ${legacy.error}. Only My Kortix runs until it is fixed.`, severity: 'error' as const }] : []),
-      ...legacy.dropped.map((note) => ({ path: 'kortix_version', message: `Not carried over: ${note}`, severity: 'warning' as const, ...(versionLine >= 0 ? { line: versionLine + 1, column: 1 } : {}) })),
+      ...legacy.dropped.map((note) => ({ path: 'kortix_version', message: `Not carried over: ${note}`, severity: 'warning' as const, fix: 'legacy-format', ...(versionLine >= 0 ? { line: versionLine + 1, column: 1 } : {}) })),
       ...converted,
     ];
     return manifestHealthOf(found.path, read.importError ? [read.importError, ...issues] : issues);

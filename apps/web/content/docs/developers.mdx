@@ -779,7 +779,7 @@ They warn when the files in Git exceed 512 MiB, or when one file reaches 10 MiB.
 Kortix shows the issues of the file on the default branch in three places:
 
 1. **`kortix validate`** prints each issue with its file, line and column.
-2. **The project** shows a banner with the errors and warnings. **Fix with My Kortix** starts a session in which My Kortix fixes the file and opens a change request for you to review.
+2. **The project** shows a banner with the errors, and the warnings a person has to act on. **Fix with My Kortix** starts a session in which My Kortix fixes the file and opens a change request for you to review. A warning with a fix id (a deprecated key, an older format) is not in the banner: the next change Kortix writes to the file heals it.
 3. **The agent of every session** gets the same list in its system prompt, with the line and the fix of each issue. It can fix the file through a change request.
 
 Kortix refuses to write a file with an error, an unknown key included: `kortix ship`, the change request merge, the API routes that write the manifest and the file editor in the web app stop on it. A file with an error that reaches the default branch another way, such as a direct push, never stops the project. Kortix runs what is valid and takes away only the broken part:

@@ -71,6 +71,20 @@ Rules for how the fix lands:
 6. If \`kortix validate\` reports no issues on the latest origin/main, say so and stop. Do not open an empty change request.`;
 }
 
+/**
+ * The issues a person has to act on: every error, and each warning without a
+ * `fix`. A warning with a `fix` (a deprecated key, an older format) heals on
+ * the next Kortix write or `kortix validate --fix`, so the sidebar does not
+ * ask for it; `kortix validate` and the API still list it.
+ */
+export function attentionHealth(health: ProjectManifestHealth | undefined): ProjectManifestHealth | undefined {
+  if (health?.state !== 'issues') return health;
+  const issues = health.issues.filter((issue) => issue.severity === 'error' || !issue.fix);
+  // The server's counts can exceed the listed issues: keep them, less the hidden warnings.
+  const warnings = Math.max(0, health.warnings - (health.issues.length - issues.length));
+  return { ...health, state: health.errors + warnings > 0 ? 'issues' : 'ok', issues, warnings };
+}
+
 /** Presentational shell: no data fetching, so every state renders under
  *  renderToStaticMarkup. The reads and the permission gate live in the wrapper. */
 export function ProjectManifestIssuesAlertView({
@@ -90,6 +104,7 @@ export function ProjectManifestIssuesAlertView({
 }) {
   const t = useTranslations('sidebar.manifestIssues');
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  health = attentionHealth(health);
   if (health?.state !== 'issues') return null;
   const file = health.path ?? 'kortix.yaml';
 

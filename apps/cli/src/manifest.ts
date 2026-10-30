@@ -180,7 +180,7 @@ function validateLegacyManifestFile(
   const converted = validateManifest(conversion.raw).issues;
   const issues: FileIssue[] = [
     { path: 'kortix_version', message: legacyFormatMessage(legacy.from), severity: 'warning', fix: 'legacy-format', ...at, file: path },
-    ...conversion.dropped.map((note) => ({ path: 'kortix_version', message: `Not carried over: ${note}`, severity: 'warning' as const, ...at, file: path })),
+    ...conversion.dropped.map((note) => ({ path: 'kortix_version', message: `Not carried over: ${note}`, severity: 'warning' as const, fix: 'legacy-format', ...at, file: path })),
     ...converted.map((issue) => ({ ...issue, file: path })),
     ...lintProject(conversion.raw, path, { ...opts, wiring: false }).map((issue) => ({ ...issue, file: issue.file ?? path })),
   ];
