@@ -74,7 +74,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
       throw new Error(`expected ok:true, got AGENT_NOT_DECLARED: ${governed.error}`);
     }
     expect(governed.grant).toEqual({
-      agent: 'kortix',
+      agent: 'worker',
       connectors: 'all',
       permissions: 'all',
       env: 'all',

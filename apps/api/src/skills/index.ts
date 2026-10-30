@@ -34,7 +34,22 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import type { AppEnv } from '../types';
+import { featureFlagDef, isFeatureFlagKey } from '../feature-flags/registry';
 import { getManagedSkill, getManagedSkillFile, listManagedSkills } from './catalog';
+
+/**
+ * A skill behind a flag this platform does not offer (`available` is false, for
+ * example `chrome` before launch) does not exist here: no project can turn it on,
+ * so no box has it. It is not listed and not served, to the CLI, MCP and the API.
+ */
+function offered(featureFlag: string | null | undefined): boolean {
+  return !featureFlag || !isFeatureFlagKey(featureFlag) || featureFlagDef(featureFlag).available();
+}
+
+function offeredSkill(name: string) {
+  const skill = getManagedSkill(name);
+  return skill && offered(skill.featureFlag) ? skill : null;
+}
 
 export const skillsApp = makeOpenApiApp<AppEnv>();
 
@@ -87,7 +102,7 @@ skillsApp.openapi(
     },
   }),
   (c) => {
-    const skills = listManagedSkills();
+    const skills = listManagedSkills().filter((skill) => offered(skill.featureFlag));
     return c.json({ skills, count: skills.length });
   },
 );
@@ -115,7 +130,7 @@ skillsApp.openapi(
     const name = c.req.param('name');
     const path = c.req.query('path');
     if (!path) return c.json({ error: true, message: 'path is required', status: 400 }, 400);
-    const file = getManagedSkillFile(name, path);
+    const file = offeredSkill(name) ? getManagedSkillFile(name, path) : null;
     if (!file) {
       return c.json(
         { error: true, message: `No file "${path}" in Kortix skill "${name}"`, status: 404 },
@@ -147,7 +162,7 @@ skillsApp.openapi(
   }),
   (c) => {
     const name = c.req.param('name');
-    const skill = getManagedSkill(name);
+    const skill = offeredSkill(name);
     if (!skill) {
       return c.json(
         { error: true, message: `No Kortix system skill named "${name}"`, status: 404 },

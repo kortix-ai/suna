@@ -258,11 +258,15 @@ export const TIERS: readonly CommandTier[] = [
             args: '<subcommand>',
             blurb: "The project's review inbox: approve, reject, request changes",
           },
-          { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
           {
-            name: 'reminders',
+            name: 'triggers',
             args: '<subcommand>',
-            blurb: 'Re-prompt one session later or on repeat (kortix remind "…" --in 24h)',
+            blurb: 'kortix.yaml and runtime triggers: a source (schedule, webhook, event, App, CR merged) plus a target (agent or session)',
+          },
+          {
+            name: 'loops',
+            args: '<subcommand>',
+            blurb: 'A schedule into one session — a loop, a trigger that wakes its session (kortix loop "…" --in 24h; alias: reminders)',
           },
           {
             name: 'chrome',
@@ -273,7 +277,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'goals',
             args: '<subcommand>',
-            blurb: 'Own an outcome until verified done: new, check, ls, status (in a session)',
+            blurb: 'Work a goal until a verifier confirms it done: new, verify, verdict, handover, ls (in a session)',
             featureFlag: 'goals',
           },
           {

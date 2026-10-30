@@ -240,7 +240,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
   });
 
   test('reports adopted_governance when the repo carries no manifest at all', async () => {
-    // What loadManifestForEdit synthesizes for a blank project: a `kortix`
+    // What loadManifestForEdit synthesizes for a blank project: a `worker`
     // agent with `secrets: all` and a null revision. Committing it publishes
     // the project's first roster, so the flag must fire.
     manifest = synthesizeBlankManifest({ name: 'demo', manifestPath: null });

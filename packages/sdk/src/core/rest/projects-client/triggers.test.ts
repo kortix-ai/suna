@@ -661,7 +661,7 @@ test('createProjectTrigger sends the run caps, updateProjectTrigger removes one 
   expect(caps).toEqual([5, null]);
 });
 
-// KRTX-1721: the account's Pause all automations.
+// KRTX-1721: the account's Pause all triggers.
 test('getAccountAutomations reads the switch and setAccountAutomationsPaused flips it', async () => {
   nextResponse = { status: 200, body: { paused: false, paused_at: null, paused_by: null, can_change: true } };
   const status = await getAccountAutomations('A1');

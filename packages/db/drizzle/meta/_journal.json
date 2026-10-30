@@ -1384,8 +1384,15 @@
     {
       "idx": 197,
       "version": "7",
-      "when": 1793364296934,
-      "tag": "20261030124456_session_turn_message_time",
+      "when": 1793365474468,
+      "tag": "20261030130434_artifact_bindings",
+      "breakpoints": true
+    },
+    {
+      "idx": 198,
+      "version": "7",
+      "when": 1793371046398,
+      "tag": "20261030143726_session_turn_message_time",
       "breakpoints": true
     }
   ]

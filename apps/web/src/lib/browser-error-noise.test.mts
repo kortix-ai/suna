@@ -12980,13 +12980,13 @@ test('keeps reporting first-party errors that carry no masked-extension frame', 
 // dead object`, 39 occurrences / 0 identified users, ALL on 2026-10-14
 // 17:05:37–17:05:39 UTC in ONE session (Firefox 140.0, Linux x86_64, release
 // `1ecba158…`, turbopack), on
-// `/projects/<project_id>/customize/connectors/browseai/<connector>?src=apps`
+// `/projects/<project_id>/admin/connectors/browseai/<connector>?src=apps`
 // (the connector detail page, Tools tab), mechanism
 // `auto.browser.global_handlers.onerror` (UNCAUGHT global `onerror`,
 // `handled:false` — never reached a React error boundary).
 //
 // The stack is the deciding evidence: the ONLY frame is the page DOCUMENT
-// itself (`app:///projects/<project_id>/customize/connectors/…?src=apps`) at
+// itself (`app:///projects/<project_id>/admin/connectors/…?src=apps`) at
 // `lineno: 0, colno: 1, function: "?"` — there is NO script frame at all.
 // `can't access dead object` is SpiderMonkey's exact wording for a property
 // access on a destroyed browsing-context object (an `<iframe>` window removed
@@ -13044,7 +13044,7 @@ const FIREFOX_DEAD_OBJECT_ERROR = "can't access dead object";
 // synthetic uuid; the route and query shape are the production ones.
 const FIREFOX_DEAD_OBJECT_DOC_FRAME = {
   filename:
-    'app:///projects/00000000-0000-4000-8000-000000000001/customize/connectors/browseai/browseai-y6t3hm?src=apps',
+    'app:///projects/00000000-0000-4000-8000-000000000001/admin/connectors/browseai/browseai-y6t3hm?src=apps',
   function: '?',
 };
 
@@ -13099,7 +13099,7 @@ test('suppresses the Firefox dead-object Sentry event via the beforeSend gate (e
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000001/customize/connectors/browseai/browseai-y6t3hm?src=apps',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000001/admin/connectors/browseai/browseai-y6t3hm?src=apps',
       },
       exception: {
         values: [
@@ -13135,7 +13135,7 @@ test('suppresses the Firefox dead-object noise via the runtime (window.onerror) 
     shouldIgnoreBrowserRuntimeNoise({
       message: `TypeError: ${FIREFOX_DEAD_OBJECT_ERROR}`,
       filename:
-        'https://kortix.com/projects/00000000-0000-4000-8000-000000000001/customize/connectors/browseai/browseai-y6t3hm?src=apps',
+        'https://kortix.com/projects/00000000-0000-4000-8000-000000000001/admin/connectors/browseai/browseai-y6t3hm?src=apps',
       error: new TypeError(FIREFOX_DEAD_OBJECT_ERROR),
     }),
     true,

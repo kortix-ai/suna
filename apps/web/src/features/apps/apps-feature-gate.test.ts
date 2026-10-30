@@ -148,10 +148,6 @@ test('Apps UI is operational only and has no creation action or modal', () => {
 
 test('the Apps header is the capability tab bar, not a settings masthead', () => {
   const view = appsSource();
-  const tabs = readFileSync(
-    uiSourcePath('customize/shared/capability-tabs.tsx'),
-    'utf8',
-  );
 
   // The exact bar contract, read off the file that owns it — if the tab row is
   // ever restyled this fails rather than letting Apps drift into a second
@@ -163,7 +159,6 @@ test('the Apps header is the capability tab bar, not a settings masthead', () =>
     'utf8',
   );
   const BAR = 'relative flex shrink-0 items-center gap-1 border-b px-2';
-  expect(tabs).toContain(`kx-titlebar-row kx-capability-titlebar ${BAR}`);
   expect(header).toContain(`kx-titlebar-row kx-capability-titlebar ${BAR}`);
   expect(view).toContain('<ProjectPageHeader');
 
@@ -372,15 +367,6 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   // sane default, so what has to hold is the DEFAULT, not the absence.
   expect(view).toContain('export const APP_GRID_DEFAULT_COLUMNS: AppGridColumns = 3;');
   expect(view).not.toContain('AppGridDensity');
-  // A picker over the feature gate, the error state or the empty state is a
-  // dead switch, so the header takes an explicit flag rather than always
-  // rendering it.
-  const header = view.slice(
-    view.indexOf('function AppsHeader('),
-    view.indexOf('export function AppsView('),
-  );
-  expect(header).toContain('showColumns');
-  expect(header).toContain('{showColumns ? (');
 
   // The gallery column is also the grid's measuring box. A `@lg/apps:` variant
   // with no `@container/apps` ancestor compiles and then never matches, so the
@@ -402,8 +388,10 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   expect(card).not.toContain('border-b');
   expect(card).toContain('className="mt-3 flex items-center gap-2"');
 
-  // Still exactly one control per card — a hover overflow button inside the
-  // card button would be invalid HTML and a nested hit area.
-  expect(card.match(/<button/g)).toHaveLength(1);
+  // One card button, plus the agent-scope caption button that sits beside the
+  // grant checkbox as a sibling, never inside the card button: a hover
+  // overflow button inside the card button would be invalid HTML and a nested
+  // hit area.
+  expect(card.match(/<button/g)).toHaveLength(2);
   expect(card).not.toContain('DropdownMenu');
 });

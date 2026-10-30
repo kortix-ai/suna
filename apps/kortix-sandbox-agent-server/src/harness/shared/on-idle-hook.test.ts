@@ -33,6 +33,35 @@ describe('coordinatesGoal', () => {
     expect(coordinatesGoal('coord', join(root, 'missing'))).toBe(false)
   })
 
+  test('finds a GOAL.md whose current (last) owner is the session; a former owner or a verifier is not', () => {
+    const root = mkdtempSync(join(tmpdir(), 'drives-'))
+    const folder = join(root, 'company', 'Goals', 'eu-billing')
+    require('node:fs').mkdirSync(folder, { recursive: true })
+    writeFileSync(
+      join(folder, 'GOAL.md'),
+      [
+        '---',
+        'goal: EU billing live',
+        'state: active',
+        'sessions:',
+        '  - id: old-owner',
+        '    role: owner',
+        '    since: "2026-10-28T08:00:00Z"',
+        '  - id: ver',
+        '    role: verifier',
+        '    since: "2026-10-28T09:00:00Z"',
+        '  - id: new-owner',
+        '    role: owner',
+        '    since: "2026-10-28T10:00:00Z"',
+        '---',
+        '# EU billing',
+      ].join('\n'),
+    )
+    expect(coordinatesGoal('new-owner', root)).toBe(true)
+    expect(coordinatesGoal('old-owner', root)).toBe(false)
+    expect(coordinatesGoal('ver', root)).toBe(false)
+  })
+
   test('without a hook, a coordinating session still runs (the goal check)', () => {
     const root = mkdtempSync(join(tmpdir(), 'drives-'))
     const folder = join(root, 'me', 'Goals', 'rho')

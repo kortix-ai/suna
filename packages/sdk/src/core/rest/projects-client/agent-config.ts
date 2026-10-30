@@ -1,4 +1,5 @@
 import { backendApi } from '../../http/api-client';
+import type { AgentCapabilityGrant } from './agent-capabilities';
 import { canonicalizeRequiredConnectors } from './agent-connectors';
 import { unwrap } from './shared';
 
@@ -63,6 +64,9 @@ export interface AgentConfigBlock {
   file?: string;
   enabled?: boolean;
   sandbox?: string;
+  /** The space the agent works in (a `spaces:` key, or a bare slug).
+   *  Grouping only. Empty string clears it. */
+  space?: string;
   connectors?: AgentGrantSetV2;
   /** Connectors that must resolve before the session starts. */
   connectors_required?: string[];
@@ -74,13 +78,18 @@ export interface AgentConfigBlock {
    *  the declared value; a change needs `project.connector.write`. */
   policy_sets?: Record<string, string>;
   secrets?: AgentGrantSetV2;
-  skills?: AgentGrantSetV2;
+  /** The skills this agent may load. v3 also takes `{ exclude: [...] }`: every skill but those. */
+  skills?: AgentCapabilityGrant;
+  /** v3: the tools this agent may call. Omitted: all. `{ exclude: [...] }`: every tool but those. */
+  tools?: AgentCapabilityGrant;
+  /** v3: pi's codemode tool. Omitted: `on`. */
+  codemode?: 'on' | 'only' | 'off';
   /** v3: the declared subagents this agent may start (`mode` `subagent` or `all`). */
   subagents?: AgentGrantSetV2;
   /** v3: the registered commands this agent may run. */
   commands?: AgentGrantSetV2;
-  /** v3: the registered extensions a session of this agent loads. */
-  extensions?: AgentGrantSetV2;
+  /** v3: the registered extensions a session of this agent loads. `{ exclude: [...] }`: every one but those. */
+  extensions?: AgentCapabilityGrant;
   /** Kortix Apps (by App slug) this agent may open when the App is
    *  `restricted` or `private`. Deny by default. A `project`-mode App needs
    *  only `project.app.read` in `kortix_permissions`. */
@@ -120,12 +129,20 @@ export interface AgentConfigResponse {
   harness?: string;
   /** The `behavior` settings that harness ignores (pi: `options`, `color`). Absent from an older API. */
   ignored_settings?: string[];
+  /** Set for a built-in agent (`my_kortix` for `meta`): platform-owned, never
+   *  editable, `block` is null. Absent for a declared agent and from an older API. */
+  builtin?: 'my_kortix';
 }
 
+/**
+ * The caller draws every failure of this read (the agent page's not-found and
+ * error states), so it does not also reach the host's global `onError` toast.
+ */
 export async function getAgentConfig(projectId: string, agentName: string) {
   const response = unwrap(
     await backendApi.get<AgentConfigResponse>(
       `/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`,
+      { showErrors: false },
     ),
   );
   return {

@@ -7,28 +7,14 @@ installed app on the channel and needs Jay's explicit approval.
 
 ## Preconditions
 
-1. The backend the app talks to runs the genui runtime from branch `genui`:
-   the `genui` project flag, `KORTIX_GENUI` in the sandbox env, and the kortixd
-   prompt. `dev-api.kortix.com` has it only after `genui` merges to `dev` and
-   dev deploys. Before that, point the app at the worktree's local stack
-   (`pnpm worktree start genui`, then set `EXPO_PUBLIC_BACKEND_URL` to an
+1. The backend the app talks to runs the genui runtime. It is on `dev`, and
+   generative UI has no flag: every session lists the `kortix-genui` system
+   skill. To test unmerged changes, point the app at a worktree's local stack
+   (`pnpm worktree start <slug>`, then set `EXPO_PUBLIC_BACKEND_URL` to an
    address the phone can reach, for example the cloudflared tunnel URL plus
    `/v1`).
-2. Turn the flag on for one test project. Use one of:
-   - web: Project settings → Feature flags → Generative UI;
-   - CLI: `kortix projects features enable genui --project <project_id>`
-     (without `--project`, the linked or default project).
-   The flag applies to **new** sessions. Start a new session after you turn it
-   on. A running or restarted session keeps its old prompt. A warm session
-   keeps the prompt it was provisioned with, and both web and the phone create
-   one when they open the project (the phone also on return to the
-   foreground), then reuse it for the next new session. So do one of:
-   - turn the flag on before any client (web or phone) opens the test
-     project; or
-   - turn warm sessions off for the test project first:
-     `kortix projects features disable warm_sessions --project <project_id>`,
-     and turn them back on with `kortix projects features reset warm_sessions
-     --project <project_id>` after the check.
+2. Use a session that started on a sandbox image with the current skill. A
+   running, restarted or warm session keeps the skill text it booted with.
 3. Start Metro from the `genui` worktree's `apps/mobile` directory. Copy
    `apps/mobile/.env` from the primary checkout first (the file is gitignored;
    edit `EXPO_PUBLIC_BACKEND_URL` if needed), then run `pnpm dev`

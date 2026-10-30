@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { elapsedShare, formatFireTime, nearestFire, reminderTitle, soonestFire } from './reminder-format';
+import { elapsedShare, formatFireTime, nearestFire, reminderTitle, scheduleLabel, soonestFire } from './reminder-format';
+
+describe('scheduleLabel', () => {
+  const t = (key: string, values?: Record<string, string>) => `${key}${values ? JSON.stringify(values) : ''}`;
+  test('a loop reads its schedule; a trigger another source fires reads as an event', () => {
+    expect(scheduleLabel({ cron: null, timezone: 'UTC', every: '1h' }, t)).toBe('every{"period":"1h"}');
+    expect(scheduleLabel({ cron: null, timezone: 'UTC', every: null, source_type: 'schedule' }, t)).toBe('once');
+    expect(scheduleLabel({ cron: null, timezone: 'UTC', every: null, source_type: 'webhook' }, t)).toBe('onEvent');
+  });
+});
 
 const NOW = Date.parse('2026-09-29T10:00:00.000Z');
 

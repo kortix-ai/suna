@@ -740,25 +740,25 @@ export function narrateStep(family: StepFamily, calls: ReadonlyArray<ToolPart | 
       if (allSame(actions)) {
         switch (actions[0]) {
           case 'create':
-            return n === 1 ? 'Set up an automation' : `Set up ${n} automations`;
+            return n === 1 ? 'Set up a trigger' : `Set up ${n} triggers`;
           case 'update':
-            return n === 1 ? 'Updated an automation' : `Updated ${n} automations`;
+            return n === 1 ? 'Updated a trigger' : `Updated ${n} triggers`;
           case 'delete':
-            return n === 1 ? 'Deleted an automation' : `Deleted ${n} automations`;
+            return n === 1 ? 'Deleted a trigger' : `Deleted ${n} triggers`;
           case 'control':
-            return n === 1 ? 'Adjusted an automation' : `Adjusted ${n} automations`;
+            return n === 1 ? 'Adjusted a trigger' : `Adjusted ${n} triggers`;
           case 'test':
             // A dry run — nothing is created, changed, or paused.
-            return n === 1 ? 'Tested an automation' : `Tested ${n} automations`;
+            return n === 1 ? 'Tested a trigger' : `Tested ${n} triggers`;
           case 'read':
-            return 'Checked your automations';
+            return 'Checked your triggers';
           case 'unknown':
             // An action neither this file nor the tool's own component
             // recognizes — never guess it's a harmless read.
-            return 'Worked with your automations';
+            return 'Worked with your triggers';
         }
       }
-      return 'Worked with your automations';
+      return 'Worked with your triggers';
     }
     case 'projects': {
       const actions = parts.map(projectAction);
@@ -840,7 +840,7 @@ export function narrateFailedStep(family: StepFamily, calls: ReadonlyArray<ToolP
     case 'connectors':
       return "Couldn't reach a connector";
     case 'automations':
-      return 'Hit a problem with your automations';
+      return 'Hit a problem with your triggers';
     case 'projects':
       return 'Hit a problem with your project';
     case 'skills':

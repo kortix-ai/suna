@@ -307,6 +307,8 @@ function initExistingProject(flags: InitFlags): number {
   const projectName = normalizeProjectName(basename(process.cwd()));
   const cwd = resolve(process.cwd());
 
+  // The manifest is the project. A new project has no OpenCode folder (the
+  // starter ships none since 2026-10-28); an older one keeps its own.
   const hasManifest =
     existsSync(resolve(cwd, 'kortix.yaml')) || existsSync(resolve(cwd, 'kortix.toml'));
   if (!hasManifest) {

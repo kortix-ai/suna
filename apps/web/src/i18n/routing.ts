@@ -46,6 +46,7 @@ const NON_PAGE_PREFIXES = [
   '/monitoring',
   '/_betterstack',
   '/docs',
+  '/blog',
   '/mcp',
   '/markdown/',
   '/markdown-negotiation',

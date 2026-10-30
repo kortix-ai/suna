@@ -36,6 +36,7 @@ import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
+import { cloudSpawnSession, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
 import type { CatalogModel, PiModels, SelectedModel } from './model'
 import { compactionSettings, nativeModelId } from './model'
@@ -199,6 +200,12 @@ export type TurnOutcome = 'completed' | 'error' | 'aborted'
 
 /** Tools whose call renders as its own transcript part (a card), also when a codemode script makes it. */
 const NATIVE_PART_TOOLS: readonly string[] = ['show', 'image_gen']
+/**
+ * Built-in tools the model calls directly also with codemode `only`: presentation (NATIVE_PART_TOOLS)
+ * and `question`, which a script may not call (`nestedCallGate`). `agent` is the subagents
+ * extension's (`KortixHost.codemodeOnly`).
+ */
+const CODEMODE_ONLY_DIRECT_TOOLS: readonly string[] = [...NATIVE_PART_TOOLS, 'question']
 /** Built-in tools that run concurrently with each other: independent network I/O whose caps count before any await. */
 const PARALLEL_TOOLS: readonly string[] = ['image_gen']
 /**
@@ -345,6 +352,10 @@ export class PiRuntime {
 
   private readonly cfg: PiConfig
   private readonly env: NodeJS.ProcessEnv
+  /** This session as a cloud subagent: its depth and tool narrowing (KORTIX_SESSION_CONTEXT). A root session: depth 0, no narrowing. */
+  private readonly subagentContext: SubagentContext
+  /** The separate-session target, built on the first `agent` call; null without a control plane. */
+  private cloudSubagents: CloudSubagentApi | null = null
   private readonly now: () => number
   private readonly hooks: PiRuntimeHooks
   private readonly releases: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'projectRoot' | 'notice'> | null
@@ -445,6 +456,7 @@ export class PiRuntime {
   constructor(opts: PiRuntimeOptions) {
     this.cfg = opts.cfg
     this.env = opts.env ?? process.env
+    this.subagentContext = subagentContextFrom(this.env.KORTIX_SESSION_CONTEXT)
     this.now = () => Date.now()
     this.hooks = opts.hooks ?? {}
     this.releases = opts.releases ?? null
@@ -594,7 +606,7 @@ export class PiRuntime {
       // `turnId` is the running turn's message id: the same for its direct, script, retried and subagent calls.
       this.workspaceTools = createWorkspaceTools(this.workspace, hosted.tools, () => ({ sessionId: this.sessionId, agent: this.agentName, turnId: this.active?.messageId }))
       // The root agent runs parallel-capable; every built-in tool except PARALLEL_TOOLS pins its batch
-      // to sequential, so only a batch made entirely of parallel tools (task, image_gen calls) runs
+      // to sequential, so only a batch made entirely of parallel tools (agent, image_gen calls) runs
       // concurrently. pi applies the same mode to a script's nested calls.
       // Every built-in tool is registered; the agent's `tools` switches pick the active ones (rebuildSystemPrompt).
       this.baseTools = [...this.workspaceTools, createQuestionTool(this.questions, (toolCallId) => this.adapter?.toolRef(toolCallId))].map(
@@ -1389,7 +1401,7 @@ export class PiRuntime {
 
   /** The root agent's rule for a call: its tool access, then the permission policy. */
   private rootRule(tool: string, args: unknown): PermissionRule {
-    return toolAllowed(this.compiledAgent()?.tools, tool) ? this.permissions.rule(tool, args) : 'deny'
+    return this.rootToolAllowed(tool) ? this.permissions.rule(tool, args) : 'deny'
   }
 
   /** Permission policy first, then extension `tool_call` handlers (`next`). Root and child agents share it. */
@@ -1426,8 +1438,8 @@ export class PiRuntime {
           if (!parent) return undefined
           // A subagent's script call already passed the child's own gate (stricter than rootRule); re-deciding here would double an `ask`.
           if (this.childNestedCalls.has(event.toolCallId)) return undefined
-          // A subagent thread links to its root `task` call; a question needs the model-issued call it answers.
-          if (event.toolName === 'task' || event.toolName === 'question') {
+          // A subagent thread links to its root `agent`/`task` call; a question needs the model-issued call it answers.
+          if (event.toolName === 'agent' || event.toolName === 'task' || event.toolName === 'question') {
             return { block: true, reason: `Call ${event.toolName} directly, not from a script.` }
           }
           return this.decide(this.rootRule(event.toolName, event.input), event.toolName, event.input, () => this.adapter?.toolRef(event.toolCallId) ?? this.adapter?.toolRef(parent))
@@ -1436,14 +1448,17 @@ export class PiRuntime {
     }
   }
 
-  /** Presentation needs a native transcript part, not codemode's bounded call metadata. */
+  /**
+   * Presentation needs a native transcript part, not codemode's bounded call metadata, and
+   * `question` needs the model-issued call it answers: with codemode `only` both stay direct.
+   */
   private presentationExtension(): InlineExtension {
     return {
       name: 'kortix-presentation',
       hidden: true,
       factory: (pi) => {
         if (this.codemodeMode !== 'only') return
-        for (const tool of this.baseTools) if (NATIVE_PART_TOOLS.includes(tool.name)) pi.registerTool({ ...tool, exposure: 'model-only' })
+        for (const tool of this.baseTools) if (CODEMODE_ONLY_DIRECT_TOOLS.includes(tool.name)) pi.registerTool({ ...tool, exposure: 'model-only' })
       },
     }
   }
@@ -1528,7 +1543,7 @@ export class PiRuntime {
   private rebuildSystemPrompt(): void {
     const session = this.pi?.session
     if (!session) return
-    const allowed = (name: string) => toolAllowed(this.compiledAgent()?.tools, name)
+    const allowed = (name: string) => this.rootToolAllowed(name)
     // ponytail: a pi package that deactivates a built-in gets it back on the next rebuild; remember package choices if one ever does.
     // pi registers codemode inactive: it is a built-in here, switched like the rest.
     const builtIn = [...this.baseTools.map((tool) => tool.name), ...(this.codemodeMode === 'off' ? [] : [CODEMODE_TOOL])]
@@ -1544,8 +1559,81 @@ export class PiRuntime {
       compiledAgents: () => this.compiled?.agent ?? {},
       builtInSubagents: () => !this.v3(),
       subagentAllowed: (name) => this.permissions.rule('task', { subagent_type: name }) !== 'deny',
-      spawnSession: (input) => this.spawnSession(input),
+      codemodeOnly: () => this.codemodeMode === 'only',
+      spawnSession: (input) => this.resolveSpawn(input),
     }
+  }
+
+  /**
+   * Route one `agent` call (cloud-subagent.ts `routeSubagent`): `separate`
+   * (the default) spawns a REAL Kortix child session with its own sandbox;
+   * `same` runs the in-process child. A separate call runs in process, with a
+   * notice in the tool result, when the box has no control plane. A
+   * `task_id` resumes the child where it was created. The result shape is
+   * identical either way, so the tool contract and the UI do not change.
+   */
+  private async resolveSpawn(input: SpawnSessionInput): Promise<SpawnSessionResult> {
+    // One target per box: its live-child counter is the per-parent cap.
+    this.cloudSubagents ??= cloudSubagentApiFrom({
+      apiUrl: this.cfg.apiUrl,
+      projectId: this.cfg.projectId,
+      sandboxToken: this.cfg.sandboxToken,
+      sessionId: this.env.KORTIX_SESSION_ID,
+      context: this.subagentContext,
+      maxLive: this.cfg.piCloudSubagentsMax,
+      maxDepth: this.cfg.piCloudSubagentsMaxDepth,
+    })
+    const route = routeSubagent({
+      requested: input.session,
+      taskId: input.sessionId,
+      localChild: !!input.sessionId && this.children.has(input.sessionId),
+      controlPlane: this.cloudSubagents !== null,
+    })
+    if (route.session === 'separate' && this.cloudSubagents) {
+      // The agent and its tools are read per call: a prompt may switch the agent (applyAgent).
+      // The spread keeps the shared `live` counter.
+      const result = await cloudSpawnSession({ ...this.cloudSubagents, ...this.cloudParent() }, input)
+      return { ...result, session: 'separate' }
+    }
+    if (route.notice) logger.info('[pi] separate subagent session ran in this session', { notice: route.notice })
+    const result = await this.spawnSession(input)
+    return { ...result, session: 'same', ...(route.notice ? { notice: route.notice } : {}) }
+  }
+
+  /**
+   * What a cloud child inherits from the agent running now. `parentAgent` is
+   * the RESOLVED agent (never the `default` sentinel, which the API could
+   * resolve to the platform coordinator), left out for the coordinator itself
+   * so the API picks the project default. `toolAllowlist` is every tool this
+   * agent may use (`rootToolAllowed`), sent for every child, named ones
+   * included, so the child runs with intersection(its own tools, these).
+   * Undefined = this agent is not narrowed at all.
+   */
+  private cloudParent(): Pick<CloudSubagentApi, 'parentAgent' | 'toolAllowlist'> {
+    const coordinator = this.env.KORTIX_META_AGENT === '1'
+    const declared = Object.prototype.hasOwnProperty.call(this.compiled?.agent ?? {}, this.agentName)
+    const narrowed = this.compiledAgent()?.tools !== undefined || this.subagentContext.tools !== undefined
+    const session = this.pi?.session
+    const names = [
+      ...this.baseTools.map((tool) => tool.name),
+      ...(this.codemodeMode === 'off' ? [] : [CODEMODE_TOOL]),
+      ...(session?.getActiveToolNames() ?? []),
+      ...this.hiddenTools,
+    ]
+    return {
+      parentAgent: !coordinator && declared ? this.agentName : undefined,
+      toolAllowlist: narrowed ? [...new Set(names)].filter((name) => this.rootToolAllowed(name)) : undefined,
+    }
+  }
+
+  /**
+   * The root agent's tool access: its compiled `tools`, narrowed by the tool
+   * list a parent gave this session when it started it as a cloud subagent
+   * (`kortix.subagent.tools` in KORTIX_SESSION_CONTEXT). Only ever narrows.
+   */
+  private rootToolAllowed(name: string): boolean {
+    const narrowed = this.subagentContext.tools
+    return toolAllowed(this.compiledAgent()?.tools, name) && (!narrowed || narrowed.includes(name))
   }
 
   /**
@@ -1582,7 +1670,6 @@ export class PiRuntime {
     const codemode = this.compiled?.agent?.[input.agent]?.codemode
     const policy = compilePermissionPolicy(input.permission)
     const childTools = this.compiled?.agent?.[input.agent]?.tools
-    const rootTools = this.compiledAgent()?.tools
     // codemode, and `show` in `only`, are built-in controls, not project tools. A subagent whose own
     // agent sets `codemode: on`/`only` gets them even when its OWN allowlist merely omits them (the
     // implicit `{'*': false}` default an allowlist adds) — otherwise a `codemode: only` child is
@@ -1597,7 +1684,7 @@ export class PiRuntime {
     const childDeniesAllTools = childTools?.['*'] === false && !Object.values(childTools).some((v) => v === true)
     const builtinAvailable = (tool: string) =>
       !childDeniesAllTools &&
-      toolAllowed(rootTools, tool) &&
+      this.rootToolAllowed(tool) &&
       childTools?.[tool] !== false &&
       resolvePolicyRule(policy, tool, {}, this.workspace) !== 'deny' &&
       this.permissions.rule(tool, {}) !== 'deny'
@@ -1609,7 +1696,7 @@ export class PiRuntime {
       ...(codemodeActive ? [CODEMODE_TOOL] : []),
       ...(showExempt ? ['show'] : []),
     ])
-    const allowed = (tool: string) => toolAllowed(rootTools, tool) && toolAllowed(childTools, tool)
+    const allowed = (tool: string) => this.rootToolAllowed(tool) && toolAllowed(childTools, tool)
     const tools = (input.tools ? this.workspaceTools.filter((tool) => input.tools!.includes(tool.name)) : this.workspaceTools).filter((tool) => allowed(tool.name))
     const messageId = this.clock.mint(this.now())
     // The subagent's own rules first, the session's rules otherwise. A deny from either wins; the
@@ -1618,7 +1705,7 @@ export class PiRuntime {
     const beforeToolCall = this.toolGate((tool, args) => {
       const own = resolvePolicyRule(policy, tool, args, this.workspace)
       const session = this.permissions.rule(tool, args)
-      if (own === 'deny' || session === 'deny' || !toolAllowed(rootTools, tool)) return 'deny'
+      if (own === 'deny' || session === 'deny' || !this.rootToolAllowed(tool)) return 'deny'
       if (!toolAllowed(childTools, tool) && !allowlistExempt.has(tool)) return 'deny'
       return own ?? session
     }, false, this.childExtensionGate())
@@ -1987,8 +2074,13 @@ export class PiRuntime {
           if (!toolList?.some((t) => t.name === CODEMODE_TOOL)) return []
           if ((child ? child.codemode : this.codemodeMode) !== 'only')
             return ['Use codemode to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate calls.']
-          // only-mode: show stays a direct call, but only when the agent actually has it.
-          return [toolList.some((t) => t.name === 'show')
+          // only-mode: show stays a direct call, but only when the agent actually has it; the session's agent and question stay direct too.
+          const show = toolList.some((t) => t.name === 'show')
+          if (!child)
+            return [show
+              ? 'Call show directly to present outputs, and agent and question directly too. Every other tool runs from a codemode script: `await tools.<name>(args)`.'
+              : 'Call agent and question directly. Every other tool runs from a codemode script: `await tools.<name>(args)`.']
+          return [show
             ? 'Call show directly to present outputs. Every other tool runs from a codemode script: `await tools.<name>(args)`.'
             : 'Every tool call runs from a codemode script: `await tools.<name>(args)`.']
         })(),
@@ -2052,7 +2144,7 @@ export class PiRuntime {
     }
   }
 
-  /** The `/kortix/opencode/state` document. */
+  /** The `/kortix/runtime/state` document. */
   stateDoc(): Record<string, unknown> {
     const bus = kortixEventBus()
     const selected = this.selected
