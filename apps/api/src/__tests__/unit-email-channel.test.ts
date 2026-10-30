@@ -787,6 +787,28 @@ describe("handleEmailEvent", () => {
     expect(parseChannelMessage(prompt)?.messageText).toBe("(empty)");
   });
 
+  test("a subject longer than the header holds reaches the agent in full, quoted in the notes", async () => {
+    const subject = `Quarterly report ${"x".repeat(100)} end`;
+    setThreadEmailLoaderForTest(async (input) => ({
+      id: input.emailId,
+      direction: "inbound",
+      from: "Customer <customer@example.com>",
+      to: ["agent@example.com"],
+      subject,
+      text: "Can you help?",
+      html: null,
+      attachments: [],
+    }));
+    dbResults = [[CHANNEL_ON], [{ sessionId: "sess-1", projectId: "proj-1" }], ...BOUND];
+    const long = { ...event, data: { ...event.data, email: { ...event.data.email, subject } } };
+
+    await handleEmailEvent(emailMessageEvent("proj-1", long)!, { finalAttempt: true });
+
+    const prompt = continueCalls[0]!.text;
+    const vouched = prompt.slice(prompt.indexOf("── Email instructions\n"));
+    expect(vouched).toContain(`, subject ${JSON.stringify(subject)}.\n`);
+  });
+
   test("an email whose project turned the channel off, or removed the inbox, since the ack is dropped unread", async () => {
     dbResults = [[{ metadata: {} }]];
     await handleEmailEvent(stored(), { finalAttempt: false });

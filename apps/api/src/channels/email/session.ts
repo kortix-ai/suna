@@ -412,16 +412,18 @@ async function replyNotAccepting(target: ChannelTarget): Promise<void> {
  */
 function emailEnvelope(email: InboundEmail): ChannelEnvelope {
   const sender = messageSender(email);
+  const subject = email.subject?.trim();
   return {
     platform: CHANNELS.email.envelope,
     sender,
-    where: email.subject?.trim() || '(no subject)',
+    // The header keeps 80 characters of it; the notes carry it whole.
+    where: subject || '(no subject)',
     text: email.text.trim() ? email.text : '(empty)',
     reply: connectorReply('email', 'reply_message', { thread_id: email.threadId, message_id: email.emailId, text: '<reply>' }),
     notes: [
       'Use `html` instead of `text` only when needed.',
       `Inbox ${email.inboxId}, thread ${email.threadId}, message ${email.emailId}.`,
-      `From ${JSON.stringify(sender)}, to ${email.to.map((to) => JSON.stringify(to)).join(', ')}.`,
+      `From ${JSON.stringify(sender)}, to ${email.to.map((to) => JSON.stringify(to)).join(', ')}${subject ? `, subject ${JSON.stringify(subject)}` : ''}.`,
       ...email.attachments.map(
         (a) => `Attachment ${JSON.stringify(a.filename ?? a.id)} (${a.size ?? 'unknown'} bytes, attachment_id ${a.id}).`,
       ),
