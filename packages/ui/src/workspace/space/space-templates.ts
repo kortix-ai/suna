@@ -2,11 +2,11 @@
  * Space templates and the pure `kortix.yaml` edits that create a space and
  * set its tabs. A space is `spaces.<slug>` (see `ManifestSpace` in
  * `@kortix/sdk`). Every edit round-trips through the `yaml` document model,
- * so comments and the rest of the manifest stay as they were. Each edit drops
- * the obsolete `kortix_version`: a Kortix write never keeps it.
+ * so comments and the rest of the manifest stay as they were. Each edit rewrites
+ * every deprecated shape (`fixManifestText`): a Kortix write saves the latest shape.
  */
 
-import { dropVersionLine } from '@kortix/manifest-schema';
+import { fixManifestText } from '@kortix/manifest-schema';
 import { type Document, isSeq, parseDocument } from 'yaml';
 
 import { DEFAULT_SPACE_TABS, type SpaceTab } from '@kortix/sdk';
@@ -56,7 +56,7 @@ export function slugifySpace(name: string): string {
 
 function editManifest(yamlText: string, edit: (doc: Document) => void): string {
   // The line, not the key: a comment above it stays.
-  const doc = parseDocument(dropVersionLine(yamlText));
+  const doc = parseDocument(fixManifestText(yamlText).text);
   edit(doc);
   return doc.toString();
 }

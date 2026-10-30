@@ -37,9 +37,16 @@ describe('kortix_permissions — canonical key', () => {
   });
 });
 
-describe('kortix_cli — retired key', () => {
-  test('kortix_cli is an error that names kortix_permissions', () => {
-    const r = summarize(doc('    kortix_cli: [project.read]\n'));
+describe('kortix_cli — deprecated key', () => {
+  test('kortix_cli still grants, as kortix_permissions, with a deprecation warning that names the fix', () => {
+    const result = validateManifest(doc('    kortix_cli: [project.read]\n'));
+    expect(result.valid).toBe(true);
+    expect(result.issues.find((i) => i.path === 'agents.w.kortix_cli')).toMatchObject({ severity: 'warning', fix: 'agent-kortix-cli' });
+    expect((result.parsed?.agents as Record<string, Record<string, unknown>>).w!.kortix_permissions).toEqual(['project.read']);
+  });
+
+  test('kortix_cli that disagrees with kortix_permissions stays an error', () => {
+    const r = summarize(doc('    kortix_cli: [project.read]\n    kortix_permissions: [project.file.read]\n'));
     expect(r.valid).toBe(false);
     expect(r.errors.find((i) => i.path === 'agents.w.kortix_cli')?.message).toContain('kortix_permissions');
   });

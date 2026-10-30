@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import {
   ENV_NAME_RE,
+  deprecationIssues,
   type ManifestIssue,
   ManifestImportError,
   type ResolvedManifest,
@@ -124,6 +125,13 @@ export function validateManifestFile(
     }
   }
   const located = [...issues, ...lintProject(parsed, path, opts)].map((issue) => declaringFile(issue, path, resolved));
+  // The merged document is already in the latest shape: each file reports its own deprecated shapes.
+  if (resolved) {
+    for (const file of resolved.files) {
+      const filePath = resolve(dirname(path), file.path);
+      located.unshift(...deprecationIssues(filePath === path ? text : readFileSync(filePath, 'utf8')).map((issue) => ({ ...issue, file: filePath })));
+    }
+  }
   // One parse per file: `locateIssues` fills `line`/`column` on every issue that has none.
   // A Dockerfile issue always has its line, so its file is never read here.
   for (const file of new Set(located.map((issue) => issue.file))) {

@@ -309,14 +309,15 @@ sandbox:
     expect(errorPaths).toContain('sandbox.default');
   });
 
-  test('rejects the renamed legacy sandboxes form with a migration error', () => {
-    const { valid, errorPaths } = summarize(`
+  test('reads the deprecated sandboxes list as sandbox.templates', () => {
+    const result = validateManifest(`
 sandboxes:
   - slug: ml
     image: python:3.12-slim
 `);
-    expect(valid).toBe(false);
-    expect(errorPaths).toContain('sandboxes');
+    expect(result.valid).toBe(true);
+    expect(result.issues.find((i) => i.path === 'sandboxes')).toMatchObject({ severity: 'warning', fix: 'sandbox-templates' });
+    expect(result.parsed?.sandbox).toEqual({ templates: [{ slug: 'ml', image: 'python:3.12-slim' }] });
   });
 
   test('warns on gpu key (not supported)', () => {

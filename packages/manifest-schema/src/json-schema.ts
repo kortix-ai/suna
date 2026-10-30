@@ -1272,7 +1272,10 @@ function agentBlockV3Schema(): JsonSchemaFragment {
       ),
       workspace: {
         description: 'What new sessions of this agent get in /workspace. Any other key under `workspace` is an error.',
-        type: 'object',
+        anyOf: [
+          { type: 'string', enum: ['branch', 'runtime', 'read'], deprecated: true, description: 'Deprecated: `branch` is `{ project_repository: true }`, `runtime` is `{ project_repository: false }`.' },
+          { type: 'object' },
+        ],
         properties: {
           project_repository: {
             type: 'boolean',
@@ -1293,6 +1296,12 @@ function agentBlockV3Schema(): JsonSchemaFragment {
         ...v2.properties.network_egress,
         description: 'Only `{ version: 1, default: deny, rules: [] }`. It validates with a warning: Kortix does not enforce it.',
       },
+      // Deprecated shapes (`DEPRECATIONS` in ./deprecations.ts): they still work; `kortix validate --fix` rewrites them.
+      disable: { type: 'boolean', deprecated: true, description: 'Deprecated: use `enabled` (the opposite value).' },
+      env: { ...v2.properties.secrets, deprecated: true, description: 'Deprecated: use `secrets` (same value).' },
+      kortix_cli: { ...deprecatedKortixCliGrantSetSchema(), description: 'Deprecated: use `kortix_permissions` (same value).' },
+      connectors_personal: { ...v2.properties.connectors_personal, deprecated: true, description: 'Deprecated: use `connectors_required` (same value).' },
+      repository_access: { type: 'boolean', deprecated: true, description: 'Deprecated: use `workspace: { project_repository: <bool> }`.' },
     },
     additionalProperties: false,
     not: { required: ['prompt', 'prompt_file'] },
@@ -1312,7 +1321,8 @@ export function buildManifestSchema(): JsonSchemaFragment {
       'The format has no version: it changes only by adding optional keys. Unknown keys are errors when you write the file; a running project ignores them.',
     type: 'object',
     properties: {
-      kortix_version: { const: 3, deprecated: true, description: 'Obsolete and ignored. Remove it.' },
+      kortix_version: { const: 3, deprecated: true, description: 'Deprecated: obsolete, the format has no version. Delete the line.' },
+      sandboxes: { type: 'array', deprecated: true, description: 'Deprecated: use `sandbox.templates`.', items: sandboxTemplateSchema() },
       imports: {
         type: 'array',
         description: 'YAML files or folders whose collections merge into this file.',

@@ -708,7 +708,10 @@ Through the API, `DELETE /v1/projects/<project-id>` answers `{ "ok": true, "dele
 
 `kortix.yaml` is the manifest at the root of a project repository. It defines the project's agents and everything each agent may use. This section lists every key.
 
-The format has no version number. It changes only by adding optional keys whose defaults keep today's behavior, so a file that is valid today stays valid. `kortix_version` is obsolete: Kortix ignores `kortix_version: 3`, `kortix validate` warns about it, and a Kortix write to the file removes it.
+The format has no version number. It changes in two ways only, so a file that is valid today stays valid:
+
+1. **A new key is optional,** and leaving it out keeps today's behavior.
+2. **A replaced key is deprecated, never removed.** The old key keeps working: Kortix reads it as the key that replaced it. `kortix validate` shows a warning with the replacement and a fix id. `kortix validate --fix` rewrites every deprecated key in the file and the files it imports, and keeps comments. Every Kortix write saves the latest shape. [Deprecated keys](#deprecated-keys) lists them.
 
 The smallest useful manifest:
 
@@ -792,6 +795,26 @@ Kortix refuses to write a file with an error, an unknown key included: `kortix s
 Each rule takes access away. No error gives an agent more than the file grants.
 
 `kortix_version` with a value other than `3` marks a retired format. `kortix validate` reports one error with a link to this reference, and Kortix reads nothing else in the file. Rewrite the file in the format on this page, or ask My Kortix to do it.
+
+### Deprecated keys
+
+Each row still works. `kortix validate --fix` writes the replacement with the same meaning.
+
+| Fix id | Deprecated | Write instead |
+| --- | --- | --- |
+| `drop-kortix-version` | `kortix_version: 3` | Nothing: delete the line. |
+| `tools-explicit` | An agent without `tools` (it gets every tool) | `tools: all`, or the list of tools it needs |
+| `agent-disable` | `disable: true` | `enabled: false` |
+| `agent-env` | An agent's `env` | `secrets` |
+| `agent-kortix-cli` | `kortix_cli` | `kortix_permissions` |
+| `agent-connectors-personal` | `connectors_personal` | `connectors_required` |
+| `agent-repository-access` | `repository_access: true` | `workspace: { project_repository: true }` |
+| `agent-workspace-mode` | `workspace: branch` or `workspace: runtime` | `workspace: { project_repository: true }` or `false` |
+| `sandbox-templates` | The top-level `sandboxes` list | `sandbox.templates` |
+| `permission-renamed` | A renamed Kortix permission, such as `project.cr.open` | Its new name (`kortix validate --scopes` lists them) |
+| `tool-retired` | A retired Kortix tool name in `tools` | Nothing: the name is removed. |
+
+When a deprecated key and its replacement are both set with different values, Kortix does not guess: it is an error.
 
 ### Example project
 
@@ -1010,7 +1033,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `secrets` | grant | `none` | Secret names the agent's sandbox receives. |
 | `apps` | grant | `none` | App slugs the agent may open when the App's access is restricted or private. |
 | `kortix_permissions` | grant | `none` | Project permissions (`project.*`) the agent holds, whoever starts the session. `kortix validate --scopes` prints them. An account permission is an error. See [Agents](/docs/guide#agents). |
-| `workspace` | map | — | What new sessions of this agent get in /workspace. Any other key under `workspace` is an error. |
+| `workspace` | `branch`, `runtime`, `read` | — | What new sessions of this agent get in /workspace. Any other key under `workspace` is an error. |
 | `workspace.project_repository` | boolean | `false` | `true`: new sessions check out the project repository in `/workspace`, on their own session branch. `false`: no checkout, and repository calls answer `403` `session_repository_access_denied`. Project tools still load. |
 | `sandbox` | string | `sandbox.default` | A template slug, or `default` for the platform image. |
 | `space` | string | — | The space the agent works in (a key of the top-level `spaces` map, or a bare slug). Grouping only. |

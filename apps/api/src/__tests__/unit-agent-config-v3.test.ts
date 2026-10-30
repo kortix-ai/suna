@@ -43,9 +43,11 @@ agents:
     connectors: [github]
     secrets: [STRIPE_KEY]
     kortix_permissions: [project.session.start]
+    tools: all
   researcher:
     mode: subagent
     prompt: You research accounts.
+    tools: all
 `;
 
 const manifest = () => parseManifestString(V3, 'kortix.yaml');
@@ -83,6 +85,7 @@ describe('agentConfigViewV3', () => {
       connectors: ['github'],
       secrets: ['STRIPE_KEY'],
       kortix_permissions: ['project.session.start'],
+      tools: 'all',
       repository_access: false,
     });
   });
@@ -251,7 +254,7 @@ describe('the v2 writers accept a v3 manifest', () => {
 
     expect(granted).toMatchObject({ ok: true, alreadyGranted: false });
     if (!granted.ok) return;
-    expect(block(granted.raw, 'researcher')).toEqual({ mode: 'subagent', prompt: 'You research accounts.', secrets: ['HELPDESK_TOKEN'], workspace: { project_repository: false } });
+    expect(block(granted.raw, 'researcher')).toEqual({ mode: 'subagent', prompt: 'You research accounts.', tools: 'all', secrets: ['HELPDESK_TOKEN'], workspace: { project_repository: false } });
   });
 });
 

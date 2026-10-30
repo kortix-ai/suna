@@ -1,6 +1,6 @@
 import {
   MANIFEST_FILENAME,
-  dropVersionLine,
+  fixManifestText,
   type ManifestIssue,
   ManifestImportError,
   isTable,
@@ -241,8 +241,8 @@ export function serializeManifest(manifest: ParsedManifest): string {
   // the full re-serialize below, so this can only change COMMENT
   // preservation, never data.
   if (typeof manifest.source === 'string' && Array.isArray(out.triggers)) {
-    // The obsolete `kortix_version` line goes: a write drops it.
-    const source = dropVersionLine(manifest.source);
+    // A write saves the latest shape: every deprecated shape is rewritten, comments kept.
+    const source = fixManifestText(manifest.source).text;
     const spliced = spliceTriggerEntriesIntoYaml(out, source);
     if (spliced !== null) return spliced;
   }

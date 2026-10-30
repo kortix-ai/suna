@@ -2,7 +2,8 @@
  * The manifest file: `kortix.yaml` (or `kortix.yml`), read and written as YAML.
  */
 
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { parseDocument, stringify as stringifyYaml } from 'yaml';
+import { applyDeprecations } from './deprecations';
 
 export const MANIFEST_FILENAME = 'kortix.yaml';
 
@@ -16,9 +17,16 @@ export function manifestCandidatePaths(configuredPath?: string | null): string[]
   return [`${stem}.yaml`, `${stem}.yml`];
 }
 
-/** Parse manifest text into the raw object. Throws the YAML syntax error. */
+/**
+ * Parse manifest text into the object a reader uses: the LATEST shape, with
+ * every deprecated shape rewritten (`./deprecations.ts`). Throws the YAML
+ * syntax error.
+ */
 export function parseManifestText(raw: string): Record<string, unknown> {
-  const value = parseYaml(raw);
+  const doc = parseDocument(raw);
+  if (doc.errors.length > 0) throw doc.errors[0];
+  applyDeprecations(doc);
+  const value = doc.toJS() as unknown;
   // An empty document parses to null; a scalar or list top level is not a manifest.
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
@@ -27,9 +35,4 @@ export function parseManifestText(raw: string): Record<string, unknown> {
 /** Serialize a manifest object to YAML. */
 export function serializeManifestObject(obj: Record<string, unknown>): string {
   return stringifyYaml(obj);
-}
-
-/** `text` without its top-level `kortix_version` line (obsolete: a Kortix write never keeps it). Every other byte stays. */
-export function dropVersionLine(text: string): string {
-  return text.replace(/^kortix_version[ \t]*:.*(?:\r?\n|$)/m, '');
 }

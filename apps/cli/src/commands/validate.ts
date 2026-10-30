@@ -16,10 +16,11 @@
  * warning: a large repository still pushes and its sessions still start, but
  * above 512 MiB compressed a running session stops picking up config changes.
  */
-import { existsSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
-import { DEPRECATED_KORTIX_PERMISSION_ALIASES, GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname, relative, resolve } from 'node:path';
+import { DEPRECATED_KORTIX_PERMISSION_ALIASES, fixManifestText, GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
 import { type FileIssue, formatIssueLine, resolveLocalManifest, validateManifestFile } from '../manifest.ts';
+import { resolveLocalManifestImports } from '../manifest-imports.ts';
 import { C, help, status } from '../style.ts';
 import { takeFlags } from '../command-argv.ts';
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
@@ -38,8 +39,13 @@ Prints one line per issue: <file>:<line>:<col>  <severity>  <path>  <message>.
 An entry that \`imports:\` brings in is reported in the file that declares it.
 Exit 1 on any error; warnings alone exit 0.
 
+A deprecated shape still works and is a warning with \`fix: <id>\`. \`--fix\`
+rewrites every deprecated shape to the latest one, in kortix.yaml and in the
+files it imports, keeping comments, then validates.
+
 Options:
   --file <path>          Validate this file instead of ./kortix.yaml.
+  --fix                  Rewrite deprecated shapes to the latest shape first.
   --no-dockerfile-lint   Skip the sandbox Dockerfile checks (manifest only).
   --json                 Emit a machine-readable JSON report (no color).
   --scopes               Print the full grantable kortix_permissions enum and exit.
@@ -63,6 +69,7 @@ export function runValidate(argv: string[]): number {
   const flags = takeFlags(argv, HELP, (rest) => ({
     file: takeFlagValue(rest, ['--file']),
     json: takeFlagBool(rest, ['--json']),
+    fix: takeFlagBool(rest, ['--fix']),
     scopes: takeFlagBool(rest, ['--scopes']),
     dockerfileLint: !takeFlagBool(rest, ['--no-dockerfile-lint']),
   }));
@@ -104,6 +111,24 @@ export function runValidate(argv: string[]): number {
       );
     }
     return 2;
+  }
+
+  if (flags.fix) {
+    const root = dirname(filePath);
+    let paths = [filePath];
+    try {
+      paths = resolveLocalManifestImports(filePath).files.map((file) => resolve(root, file.path));
+    } catch {
+      // A broken file or import: fix what can be read, and let validation report the rest.
+    }
+    for (const path of paths) {
+      const { text, fixed } = fixManifestText(readFileSync(path, 'utf8'));
+      if (fixed.length === 0) continue;
+      writeFileSync(path, text, 'utf8');
+      if (!flags.json) {
+        process.stdout.write(`${status.ok(`${relative(process.cwd(), path) || basename(path)}: rewrote ${fixed.map((f) => `${f.path} (${f.id})`).join(', ')}`)}\n`);
+      }
+    }
   }
 
   // Manifest issues first, then the project checks — one merged report, one

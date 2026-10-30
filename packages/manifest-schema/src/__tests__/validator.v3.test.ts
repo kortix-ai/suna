@@ -56,7 +56,6 @@ describe('top-level keys', () => {
     ['harnesses:\n  pi:\n    codemode: on', 'harnesses'],
     ['permission: allow', 'permission'],
     ['channels: []', 'channels'],
-    ['sandboxes: []', 'sandboxes'],
     ['agentz: {}', 'agentz'],
   ])('rejects %s', (line, path) => {
     const { errors } = check(`${GOLDEN}\n${line}\n`);
@@ -122,13 +121,10 @@ describe('registries', () => {
 describe('agents', () => {
   test.each([
     ['file: agents/x.md', 'file'],
-    ['disable: true', 'disable'],
     ['opencode: {}', 'opencode'],
     ['harnesses: {}', 'harnesses'],
     ['env: all', 'env'],
     ['kortix_cli: all', 'kortix_cli'],
-    ['connectors_personal: []', 'connectors_personal'],
-    ['repository_access: true', 'repository_access'],
     ['temprature: 0.2', 'temprature'],
   ])('rejects agent key %s', (line, key) => {
     expect(errorPaths(swap('    mode: primary\n', `    mode: primary\n    ${line}\n`))).toContain(`agents.assistant.${key}`);

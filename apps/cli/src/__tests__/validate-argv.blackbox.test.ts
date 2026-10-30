@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -98,5 +98,36 @@ describe('validate project tools', () => {
       expect.objectContaining({ path: 'agents.kortix.tools', message: expect.stringContaining('bassh'), severity: 'error', line: 5, column: 5 }),
       expect.objectContaining({ path: 'tools.lookup_order', message: '"tools/lookup.ts" does not exist in the project files.', severity: 'error', line: 7, column: 3 }),
     ]);
+  });
+});
+
+describe('validate --fix', () => {
+  test('a deprecated key warns, still validates, and --fix rewrites it in every imported file, comments kept', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'validate-fix-'));
+    try {
+      mkdirSync(join(cwd, 'team'));
+      writeFileSync(join(cwd, 'kortix.yaml'), '# demo\nkortix_version: 3\nimports:\n  - team/agents.yaml\nproject:\n  name: fix-test\n');
+      writeFileSync(join(cwd, 'team/agents.yaml'), 'agents:\n  worker:\n    prompt: Work.\n    tools: all\n    # keep the checkout\n    repository_access: true\n');
+      const env: Record<string, string | undefined> = { ...process.env, NO_COLOR: '1', KORTIX_DISABLE_SANDBOX_ENV_FILE: '1', KORTIX_NO_UPDATE_CHECK: '1', KORTIX_CONFIG_FILE: join(cwd, 'config.json') };
+      delete env.KORTIX_TOKEN;
+      const run = (args: string[]) => Bun.spawnSync([process.execPath, cli, 'validate', '--no-dockerfile-lint', ...args], { cwd, env });
+
+      const before = run(['--json']);
+      expect(before.exitCode).toBe(0);
+      const report = JSON.parse(before.stdout.toString()) as { issues: Array<{ path: string; fix?: string; line?: number; file: string }> };
+      expect(report.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: 'kortix_version', fix: 'drop-kortix-version', line: 2 }),
+        expect.objectContaining({ path: 'agents.worker.repository_access', fix: 'agent-repository-access', line: 6, file: join(cwd, 'team/agents.yaml') }),
+      ]));
+
+      const fixed = run(['--fix']);
+      expect(fixed.exitCode).toBe(0);
+      expect(fixed.stdout.toString()).toContain('team/agents.yaml: rewrote agents.worker.repository_access (agent-repository-access)');
+      expect(readFileSync(join(cwd, 'kortix.yaml'), 'utf8')).toBe('# demo\nimports:\n  - team/agents.yaml\nproject:\n  name: fix-test\n');
+      expect(readFileSync(join(cwd, 'team/agents.yaml'), 'utf8')).toContain('    # keep the checkout\n    workspace:\n      project_repository: true\n');
+      expect(JSON.parse(run(['--json']).stdout.toString()).issues).toEqual([]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });

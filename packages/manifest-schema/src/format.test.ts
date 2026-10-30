@@ -21,12 +21,18 @@ describe('parse/serialize round-trip', () => {
   const obj = {
     project: { name: 'demo' },
     triggers: [{ slug: 'nightly', type: 'cron', cron: '0 9 * * *', prompt: 'line one\nline two' }],
-    agents: { 'pr-bot': { connectors: ['github'], kortix_permissions: ['project.gitops.push'] } },
+    agents: { 'pr-bot': { connectors: ['github'], kortix_permissions: ['project.gitops.push'], tools: 'all' } },
   };
 
   test('object → text → object is stable', () => {
     const text = serializeManifestObject(obj);
     expect(parseManifestText(text)).toEqual(obj);
+  });
+
+  test('a deprecated shape reads as the latest shape', () => {
+    expect(parseManifestText('kortix_version: 3\nagents:\n  a:\n    prompt: x\n    disable: true\n')).toEqual({
+      agents: { a: { prompt: 'x', tools: 'all', enabled: false } },
+    });
   });
 
   test('empty yaml doc normalizes to {}', () => {

@@ -16,6 +16,7 @@ import {
   type SpaceBlockV3,
   type SpaceHeaderItem,
   type SpaceTabV3,
+  deprecationIssues,
   validateManifest,
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
@@ -234,9 +235,19 @@ function projectManifestHealth(
       severity: 'error',
     }]);
   }
-  // The root text carries line numbers; a merged `imports:` document has none to give.
-  const { issues } = validateManifest(read.found.imports ? read.found.imports.raw : read.found.content);
-  return manifestHealthOf(read.found.path, read.importError ? [read.importError, ...issues] : issues);
+  const found = read.found;
+  if (!found.imports) {
+    const { issues } = validateManifest(found.content);
+    return manifestHealthOf(found.path, read.importError ? [read.importError, ...issues] : issues);
+  }
+  // A merged `imports:` document is already in the latest shape and has no lines:
+  // each file reports its own deprecated shapes, at its own lines.
+  const deprecated = found.imports.files.flatMap((file) => {
+    const text = file.path === found.path ? found.content : file.text;
+    return text ? deprecationIssues(text).map((issue) => (file.path === found.path ? issue : { ...issue, file: file.path })) : [];
+  });
+  const { issues } = validateManifest(found.imports.raw);
+  return manifestHealthOf(found.path, [...(read.importError ? [read.importError] : []), ...issues, ...deprecated]);
 }
 
 function manifestMap(value: unknown): Record<string, unknown> {

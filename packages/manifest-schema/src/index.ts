@@ -22,8 +22,8 @@
 
 import { Cron } from 'croner';
 import { normalizeTriggerList } from './trigger-shape';
-import { isMap, LineCounter, parseDocument } from 'yaml';
-import { parseManifestText } from './format';
+import { Document, isMap, LineCounter, parseDocument } from 'yaml';
+import { type AppliedFix, applyDeprecations, DEPRECATIONS } from './deprecations';
 import { areValidConditions, isValidMatcher, MAX_CONDITIONS_PER_POLICY } from './policy-rules';
 import { parseConnectorHeaders } from './connector-headers';
 import { normalizeImportPath } from './imports';
@@ -94,13 +94,13 @@ export {
 
 export {
   MANIFEST_FILENAME,
-  dropVersionLine,
   manifestCandidatePaths,
   parseManifestText,
   serializeManifestObject,
 } from './format';
 
 export { slugifySlug } from './slug';
+export { type AppliedFix, type Deprecation, DEPRECATIONS, applyDeprecations, fixManifestText } from './deprecations';
 export {
   type PolicyArgCondition,
   FORBIDDEN_ARG_SEGMENTS,
@@ -304,6 +304,8 @@ export interface ManifestIssue {
   severity: 'error' | 'warning';
   /** A key the format does not have. A running project ignores it. */
   unknownKey?: true;
+  /** A deprecated shape: the id of the rewrite (`DEPRECATIONS`) that `kortix validate --fix` applies. */
+  fix?: string;
   /** Optional 1-indexed line within the original YAML text. */
   line?: number;
   /** Optional 1-indexed column. */
@@ -375,28 +377,31 @@ export interface ManifestValidationResult {
  */
 export function validateManifest(input: string | Record<string, unknown>): ManifestValidationResult {
   const issues: ManifestIssue[] = [];
-  let parsed: Record<string, unknown> | null = null;
-
+  let doc: Document;
   if (typeof input === 'string') {
-    try {
-      parsed = parseManifestText(input);
-    } catch (err) {
-      // The yaml package's YAMLParseError carries a `linePos` array of { line, col }.
-      const pos = (err as { linePos?: Array<{ line?: number; col?: number }> }).linePos?.[0];
-      issues.push({
-        path: '<yaml>',
-        message: `Syntax error: ${err instanceof Error ? err.message : String(err)}`,
-        severity: 'error',
-        line: pos?.line,
-        column: pos?.col,
-      });
+    doc = parseDocument(input);
+    const error = doc.errors[0];
+    if (error) {
+      const pos = error.linePos?.[0];
+      issues.push({ path: '<yaml>', message: `Syntax error: ${error.message}`, severity: 'error', line: pos?.line, column: pos?.col });
       return { valid: false, parsed: null, issues };
     }
   } else {
-    parsed = input;
+    doc = new Document(input);
   }
+  const asObject = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  let parsed = typeof input === 'string' ? asObject(doc.toJS()) : input;
 
-  if (validateVersionKey(parsed.kortix_version, issues)) validateManifestBody(parsed, issues);
+  if (validateVersionKey(parsed.kortix_version, issues)) {
+    // Deprecated shapes are rewritten in memory: the body is checked, and `parsed` returned, in the latest shape.
+    const fixed = applyDeprecations(doc);
+    if (fixed.length > 0) {
+      parsed = asObject(doc.toJS());
+      issues.push(...fixed.map(deprecationIssue));
+    }
+    validateManifestBody(parsed, issues);
+  }
   if (typeof input === 'string') locateIssues(input, issues);
 
   return {
@@ -645,6 +650,25 @@ function validateApprovals(node: unknown, path: string, issues: ManifestIssue[])
   }
 }
 
+/** The warning for one rewritten deprecated shape. */
+function deprecationIssue({ id, path }: AppliedFix): ManifestIssue {
+  const summary = DEPRECATIONS.find((d) => d.id === id)?.summary ?? id;
+  return { path, message: `Deprecated: ${summary} \`kortix validate --fix\` rewrites it.`, severity: 'warning', fix: id };
+}
+
+/**
+ * One file's deprecation warnings, with that file's own line and column. A
+ * caller that validates a merged document (`imports:`) adds these per file:
+ * the merged document is already in the latest shape.
+ */
+export function deprecationIssues(text: string): ManifestIssue[] {
+  const doc = parseDocument(text);
+  if (doc.errors.length > 0) return [];
+  const issues = applyDeprecations(doc).map(deprecationIssue);
+  locateIssues(text, issues);
+  return issues;
+}
+
 /** The current manifest reference, named in every retired-format error. */
 export const MANIFEST_DOCS_URL = 'https://kortix.com/docs/developers#kortixyaml-reference';
 
@@ -654,11 +678,8 @@ export const MANIFEST_DOCS_URL = 'https://kortix.com/docs/developers#kortixyaml-
  * would only add noise). Returns whether to validate the body.
  */
 function validateVersionKey(value: unknown, issues: ManifestIssue[]): boolean {
-  if (value === undefined || value === null) return true;
-  if (value === 3) {
-    issues.push({ path: 'kortix_version', message: '`kortix_version` is obsolete and ignored. Remove it.', severity: 'warning' });
-    return true;
-  }
+  // `3` is the deprecation `drop-kortix-version`.
+  if (value === undefined || value === null || value === 3) return true;
   issues.push({
     path: 'kortix_version',
     message: `\`kortix_version: ${JSON.stringify(value)}\` is a retired manifest format. Kortix reads one kortix.yaml format with no version: remove \`kortix_version\` and rewrite the file (${MANIFEST_DOCS_URL}).`,

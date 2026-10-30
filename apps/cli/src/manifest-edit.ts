@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { parseDocument, stringify as stringifyYaml } from 'yaml';
-import { dropVersionLine, manifestCandidatePaths } from '@kortix/manifest-schema';
+import { fixManifestText, manifestCandidatePaths } from '@kortix/manifest-schema';
 import { resolveLocalManifestImports } from './manifest-imports.ts';
 
 type YamlDocument = ReturnType<typeof parseDocument>;
@@ -15,7 +15,7 @@ type YamlComments = { commentBefore?: string | null; comment?: string | null };
  *
  * Edits are text surgery or go through the `yaml` package's Document API
  * (mutating the parsed AST in place), which preserves comments natively.
- * Every write drops the obsolete `kortix_version` line (`writeManifest`).
+ * Every write saves the latest shape, comments kept (`writeManifest` → `fixManifestText`).
  */
 
 /** Resolve the on-disk manifest (kortix.yaml, else kortix.yml), or the
@@ -31,7 +31,7 @@ function resolveManifest(cwd: string = process.cwd()): { path: string; exists: b
 
 /** Write a manifest file (the root or an imported one). */
 function writeManifest(file: string, text: string): void {
-  writeFileSync(file, dropVersionLine(text), 'utf8');
+  writeFileSync(file, fixManifestText(text).text, 'utf8');
 }
 
 export function manifestFile(cwd: string = process.cwd()): string {

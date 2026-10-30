@@ -8,7 +8,117 @@
     "kortix_version": {
       "const": 3,
       "deprecated": true,
-      "description": "Obsolete and ignored. Remove it."
+      "description": "Deprecated: obsolete, the format has no version. Delete the line."
+    },
+    "sandboxes": {
+      "type": "array",
+      "deprecated": true,
+      "description": "Deprecated: use `sandbox.templates`.",
+      "items": {
+        "type": "object",
+        "required": [
+          "slug"
+        ],
+        "properties": {
+          "slug": {
+            "allOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+              },
+              {
+                "not": {
+                  "const": "default"
+                }
+              }
+            ],
+            "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 64 characters. `default` is reserved."
+          },
+          "name": {
+            "type": "string",
+            "description": "The label in the template picker. Default: the slug."
+          },
+          "entrypoint": {
+            "type": "string",
+            "description": "Overrides the container entrypoint. Default: the image's."
+          },
+          "image": {
+            "description": "An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both. Neither: the platform base image."
+          },
+          "dockerfile": {
+            "anyOf": [
+              {
+                "not": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              {
+                "type": "string",
+                "pattern": "\\S",
+                "not": {
+                  "pattern": "^/|(^|/)\\.\\.($|/)"
+                }
+              }
+            ],
+            "description": "A repository path to a Dockerfile. `kortix validate` lints it: no `COPY` from the repository, no `RUN` heredoc, a Debian-family base image."
+          },
+          "cpu": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "vCPU cores. Above 32 is a warning, and Kortix uses 32. Default: the platform default."
+          },
+          "memory": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "GiB of memory. Above 128 is a warning, and Kortix uses 128. Default: the platform default."
+          },
+          "disk": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "GiB of disk. Above 500 is a warning, and Kortix uses 500. Default: the platform default."
+          },
+          "container_runtime": {
+            "type": "boolean",
+            "default": false,
+            "description": "`true`: Docker runs inside the sandbox."
+          },
+          "residential_proxy": {
+            "description": "`true`, or `{ country: us }`: the sandbox's web traffic leaves through a residential IP address, billed per GB from credits. Kortix hosts and package registries connect directly. Sessions start only where the deployment offers it. Not part of the image.",
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "country": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z]{2}$",
+                    "description": "ISO 3166-1 alpha-2 country code of the IP address."
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "not": {
+          "required": [
+            "image",
+            "dockerfile"
+          ],
+          "properties": {
+            "image": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "dockerfile": {
+              "type": "string",
+              "pattern": "\\S"
+            }
+          }
+        }
+      }
     },
     "imports": {
       "type": "array",
@@ -3505,7 +3615,21 @@
           },
           "workspace": {
             "description": "What new sessions of this agent get in /workspace. Any other key under `workspace` is an error.",
-            "type": "object",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "branch",
+                  "runtime",
+                  "read"
+                ],
+                "deprecated": true,
+                "description": "Deprecated: `branch` is `{ project_repository: true }`, `runtime` is `{ project_repository: false }`."
+              },
+              {
+                "type": "object"
+              }
+            ],
             "properties": {
               "project_repository": {
                 "type": "boolean",
@@ -3546,6 +3670,151 @@
             },
             "additionalProperties": false,
             "description": "Only `{ version: 1, default: deny, rules: [] }`. It validates with a warning: Kortix does not enforce it."
+          },
+          "disable": {
+            "type": "boolean",
+            "deprecated": true,
+            "description": "Deprecated: use `enabled` (the opposite value)."
+          },
+          "env": {
+            "description": "Deprecated: use `secrets` (same value).",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              {
+                "type": "string",
+                "anyOf": [
+                  {
+                    "enum": [
+                      "all",
+                      "*",
+                      "none",
+                      ""
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                  },
+                  {
+                    "pattern": "^\\s*$(?![\\s\\S])"
+                  }
+                ]
+              }
+            ],
+            "deprecated": true
+          },
+          "kortix_cli": {
+            "description": "Deprecated: use `kortix_permissions` (same value).",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "project.read",
+                    "project.write",
+                    "project.delete",
+                    "project.session.read",
+                    "project.session.start",
+                    "project.session.stop",
+                    "project.session.bindings.write",
+                    "project.members.read",
+                    "project.members.manage",
+                    "project.trigger.read",
+                    "project.trigger.create",
+                    "project.trigger.update",
+                    "project.trigger.delete",
+                    "project.trigger.fire",
+                    "project.gateway.logs.read",
+                    "project.gateway.spend.read",
+                    "project.usage.read",
+                    "project.gateway.budget.set",
+                    "project.gateway.keys.manage",
+                    "project.agent.read",
+                    "project.agent.write",
+                    "project.skill.read",
+                    "project.skill.write",
+                    "project.command.read",
+                    "project.command.write",
+                    "project.file.read",
+                    "project.file.write",
+                    "project.settings.write",
+                    "project.sandbox.write",
+                    "project.model.read",
+                    "project.model.write",
+                    "project.gitops.read",
+                    "project.gitops.push",
+                    "project.gitops.merge",
+                    "project.gitops.ref.any",
+                    "project.gitops.ref.delete",
+                    "project.secret.read",
+                    "project.secret.write",
+                    "project.connector.read",
+                    "project.connector.connections.manage",
+                    "project.connector.write",
+                    "project.app.read",
+                    "project.app.write",
+                    "project.app.deploy",
+                    "project.app.admin",
+                    "project.review.read",
+                    "project.review.submit",
+                    "project.review.act",
+                    "project.room.read",
+                    "project.room.write",
+                    "project.artifact.read",
+                    "project.artifact.comment",
+                    "project.artifact.write",
+                    "project.artifact.manage",
+                    "project.artifact.public",
+                    "project.credentials.issue",
+                    "project.cr.open",
+                    "project.cr.merge",
+                    "project.customize.read",
+                    "project.customize.write",
+                    "*"
+                  ]
+                }
+              },
+              {
+                "type": "string",
+                "anyOf": [
+                  {
+                    "enum": [
+                      "all",
+                      "*",
+                      "none",
+                      ""
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                  },
+                  {
+                    "pattern": "^\\s*$(?![\\s\\S])"
+                  }
+                ]
+              }
+            ],
+            "deprecated": true
+          },
+          "connectors_personal": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "deprecated": true,
+            "description": "Deprecated: use `connectors_required` (same value)."
+          },
+          "repository_access": {
+            "type": "boolean",
+            "deprecated": true,
+            "description": "Deprecated: use `workspace: { project_repository: <bool> }`."
           }
         },
         "additionalProperties": false,

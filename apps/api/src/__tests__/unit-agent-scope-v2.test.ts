@@ -14,7 +14,7 @@ agents:
     kortix_permissions: all
     skills: all
   scout:
-    kortix_permissions: [project.cr.open]
+    kortix_permissions: [project.gitops.push]
     connectors: [github]
     skills: [research]
 `;
@@ -32,7 +32,7 @@ describe('applyAgentScopeV2 — agents map scope edit', () => {
     const scout = (r.raw.agents as Record<string, any>).scout;
     expect(scout.connectors).toEqual(['github', 'linear']);
     // kortix_permissions + skills untouched.
-    expect(scout.kortix_permissions).toEqual(['project.cr.open']);
+    expect(scout.kortix_permissions).toEqual(['project.gitops.push']);
     expect(scout.skills).toEqual(['research']);
   });
 
@@ -65,7 +65,7 @@ describe('applyAgentScopeV2 — agents map scope edit', () => {
     expect(scout).not.toHaveProperty('secrets');
     expect(scout).not.toHaveProperty('connectors');
     // Non-scope fields still preserved.
-    expect(scout.kortix_permissions).toEqual(['project.cr.open']);
+    expect(scout.kortix_permissions).toEqual(['project.gitops.push']);
   });
 
   test('undeclared agent → notFound (route maps to 404)', () => {

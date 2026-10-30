@@ -193,6 +193,7 @@ describe('manifest-edit — YAML (Document-AST editing, comment-preserving)', ()
   // `kortix connectors add` on a starter manifest re-indented every section
   // comment and re-flowed lists, because a missing section went through a
   // whole-document re-serialization.
+  // Already in the latest shape: a write changes nothing but its own edit (a deprecated shape would be rewritten too).
   const STARTER = [
     'project:',
     '  description: "A long description that a re-serializer would fold onto a second line, which it must not"',
@@ -203,10 +204,12 @@ describe('manifest-edit — YAML (Document-AST editing, comment-preserving)', ()
     '# Governance only.',
     'agents:',
     '  kortix:',
+    '    tools: all',
     '    skills: [a, b]',
     '',
     '  # The AP agent.',
     '  ap-agent:',
+    '    tools: all',
     '    connectors: []',
     '',
     'triggers:',

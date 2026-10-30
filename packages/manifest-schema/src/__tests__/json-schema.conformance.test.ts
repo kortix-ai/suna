@@ -45,8 +45,8 @@ interface Fixture {
 
 const FIXTURES: Fixture[] = [
   {
-    name: '[[sandboxes]] renamed shape is a hard error',
-    valid: false,
+    name: 'deprecated top-level sandboxes list reads as sandbox.templates',
+    valid: true,
     input: 'sandboxes:\n  - slug: py\n    image: python:3.12-slim\n',
   },
   {
@@ -618,9 +618,9 @@ const FIXTURES: Fixture[] = [
       'default_agent: w\nagents:\n  w:\n    opencode:\n      mode: primary\n',
   },
   {
-    name: 'flat `disable` rejected',
-    valid: false,
-    input: 'default_agent: w\nagents:\n  w:\n    disable: true\n',
+    name: 'deprecated `disable` reads as `enabled`',
+    valid: true,
+    input: 'default_agent: w\nagents:\n  w:\n    prompt: x\n    disable: false\n',
   },
   {
     name: '`permission` flat on agent block rejected',
@@ -628,8 +628,8 @@ const FIXTURES: Fixture[] = [
     input: 'default_agent: w\nagents:\n  w:\n    permission: x\n',
   },
   {
-    name: '`env` on agent block rejected (renamed to `secrets`)',
-    valid: false,
+    name: 'deprecated `env` on an agent reads as `secrets`',
+    valid: true,
     input: 'default_agent: w\nagents:\n  w:\n    env: [STRIPE_KEY]\n',
   },
   {

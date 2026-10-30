@@ -11,19 +11,23 @@ import type { ManifestIssue } from '@kortix/manifest-schema';
 /** The most issues a health report (and a compiled agent set's `manifest_issues`) lists. */
 export const MANIFEST_ISSUE_LIMIT = 50;
 
-/** One reported issue: a validation issue without its internal flags. */
-export type ReportedManifestIssue = Pick<ManifestIssue, 'path' | 'message' | 'severity' | 'line' | 'column'>;
+/** A validation issue and the repo file it is in (absent: the root manifest). */
+export type FileManifestIssue = ManifestIssue & { file?: string };
+/** One reported issue: a validation issue without its internal flags, plus its file and its deprecation fix id. */
+export type ReportedManifestIssue = Pick<ManifestIssue, 'path' | 'message' | 'severity' | 'line' | 'column' | 'fix'> & { file?: string };
 
 /** `issues` as reported: errors first, at most `MANIFEST_ISSUE_LIMIT`. */
-export function reportedManifestIssues(issues: readonly ManifestIssue[]): ReportedManifestIssue[] {
+export function reportedManifestIssues(issues: readonly FileManifestIssue[]): ReportedManifestIssue[] {
   return [...issues.filter((i) => i.severity === 'error'), ...issues.filter((i) => i.severity !== 'error')]
     .slice(0, MANIFEST_ISSUE_LIMIT)
-    .map(({ path, message, severity, line, column }) => ({
+    .map(({ path, message, severity, line, column, fix, file }) => ({
       path,
       message,
       severity,
       ...(line !== undefined ? { line } : {}),
       ...(column !== undefined ? { column } : {}),
+      ...(fix !== undefined ? { fix } : {}),
+      ...(file !== undefined ? { file } : {}),
     }));
 }
 
@@ -61,7 +65,7 @@ export function manifestHealthWithout(
 }
 
 /** The health of a manifest that was read, from its validation issues. */
-export function manifestHealthOf(path: string, issues: readonly ManifestIssue[]): ManifestHealth {
+export function manifestHealthOf(path: string, issues: readonly FileManifestIssue[]): ManifestHealth {
   const errors = issues.filter((issue) => issue.severity === 'error').length;
   return {
     path,

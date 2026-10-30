@@ -68,8 +68,11 @@ export interface ManifestImportReaderSync {
 
 export interface ManifestSourceFile {
   path: string;
+  /** The latest shape (deprecated shapes rewritten). */
   raw: Record<string, unknown>;
   revision?: string | null;
+  /** The file as written, when the resolver read it: its deprecation warnings come from here. */
+  text?: string;
 }
 
 /** For each collection: entry id (slug / map key) → path of the declaring file. */
@@ -251,8 +254,10 @@ export function resolveManifestImportsSync(
           );
         }
         let raw: Record<string, unknown>;
+        let text: string;
         try {
-          raw = parseManifestText(reader.read(entry.path));
+          text = reader.read(entry.path);
+          raw = parseManifestText(text);
         } catch (error) {
           if (error instanceof ImportReadPending) throw error;
           throw new ManifestImportError(
@@ -268,7 +273,7 @@ export function resolveManifestImportsSync(
             `${entry.path}: ${stray.map((key) => `"${key}"`).join(', ')} cannot be in an imported file — an imported file declares ${ALL_IMPORTABLE_KEYS.join(', ')} or imports`,
           );
         }
-        const imported: ManifestSourceFile = { path: entry.path, raw, revision: entry.revision };
+        const imported: ManifestSourceFile = { path: entry.path, raw, revision: entry.revision, text };
         files.push(imported);
         visit(imported, [...stack, entry.path]);
       }

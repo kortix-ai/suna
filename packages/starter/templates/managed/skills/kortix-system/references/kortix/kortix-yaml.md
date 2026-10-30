@@ -243,6 +243,11 @@ error:
 Each rule only takes access away. The project page shows the issues with
 **Fix with My Kortix**. Every session's system prompt lists them.
 
+A deprecated key is not an error: it still works, and `kortix validate`
+warns with its replacement and a fix id. Run `kortix validate --fix` to
+rewrite every deprecated key (and the files `imports:` names) to the latest
+shape, comments kept. Never write a deprecated key in new config.
+
 ## Edits from the dashboard and the CLI
 
 `kortix.yaml` owns what it declares. The web app, the API and the CLI

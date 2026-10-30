@@ -35,7 +35,11 @@ export interface ConfigureThread {
   pending: boolean;
 }
 
-export function useConfigureThread(projectId: string): ConfigureThread {
+/**
+ * `resetOnNavigate`: free the button once the new session opens. For a control that
+ * stays on screen (the sidebar); an overlay closes instead, so it keeps `pending`.
+ */
+export function useConfigureThread(projectId: string, { resetOnNavigate = false }: { resetOnNavigate?: boolean } = {}): ConfigureThread {
   const closeCustomize = useSettingsPanelStore((s) => s.close);
   const [pending, setPending] = useState(false);
   const newSession = useNewProjectSession(projectId);
@@ -66,11 +70,12 @@ export function useConfigureThread(projectId: string): ConfigureThread {
           create: { pending_prompt: pendingPrompt },
           onNavigate: () => {
             closeCustomize();
+            if (resetOnNavigate) setPending(false);
           },
         });
       });
     },
-    [pending, newSession, closeCustomize, guardedLeave],
+    [pending, newSession, closeCustomize, guardedLeave, resetOnNavigate],
   );
 
   return { start, pending };
