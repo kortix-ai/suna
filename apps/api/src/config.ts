@@ -277,9 +277,6 @@ const envSchema = z.object({
   // disables title generation entirely — nothing else writes `metadata.name`,
   // so sessions then stay untitled and clients fall back to their display chain.
   SESSION_TITLE_GENERATION_ENABLED: optBoolTrue,
-  // Generative UI kill switch. On by default; false => no session is taught the genui catalog,
-  // whatever the project flag says. Blocks already in transcripts still render.
-  GENUI_ENABLED: optBoolTrue,
   // Operator switch for the session-log journal ingest (`POST …/sessions/:s/log/journal`).
   // On by default. Off answers 503: each daemon keeps its unacknowledged changes and
   // retries with backoff, so turning it back on loses nothing the boxes still hold.
@@ -817,9 +814,10 @@ const envSchema = z.object({
   // ── Residential proxy ────────────────────────────────────────────────────
   // Operator switch, off by default. Turn it on in an environment only after
   // that environment's Platinum serves `network.residential_proxy`: an older
-  // Platinum drops the field and the box keeps its data-center address. Off,
-  // the `residential_proxy` project flag is unavailable and the billing worker
-  // does not run (feature-flags/registry.ts, workers/residential-proxy-billing-worker.ts).
+  // Platinum drops the field and the box keeps its data-center address. Off, a
+  // sandbox template's `residential_proxy` fails its session closed and the
+  // billing worker does not run (platform/services/residential-proxy.ts,
+  // workers/residential-proxy-billing-worker.ts). Dev sets it in deploy-dev.yml.
   KORTIX_PLATINUM_RESIDENTIAL_PROXY: optBoolFalse,
 
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
@@ -1306,7 +1304,6 @@ export const config = {
   KORTIX_RELAY_HEADERS_TIMEOUT_MS: env.KORTIX_RELAY_HEADERS_TIMEOUT_MS,
   KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS: env.KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
-  GENUI_ENABLED: env.GENUI_ENABLED,
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
   SESSION_LOG_RESTORE_DEFAULT_ENABLED: env.SESSION_LOG_RESTORE_DEFAULT_ENABLED,

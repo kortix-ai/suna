@@ -15,8 +15,11 @@ import { unwrap } from './shared';
  * `'monitor'` is deprecated: the monitor box was removed, and the API answers
  * 400 to a new monitor trigger. An App with a schedule or a `type: app`
  * trigger replaces it. The member stays until the next major.
+ *
+ * `'change_request'` fires when a change request of the project merges; its
+ * `filter.base` names the branch (any branch when absent).
  */
-export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor' | 'event' | 'app';
+export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor' | 'event' | 'app' | 'change_request';
 
 /**
  * @deprecated The monitor box was removed; the API sends `null`. Removed in the next major.
@@ -233,7 +236,7 @@ export interface ProjectTriggerListing {
    */
   triggers_paused?: boolean;
   /**
-   * The account's Pause all automations (`PATCH /accounts/:id/automations`):
+   * The account's Pause all triggers (`PATCH /accounts/:id/automations`):
    * true stops every automatic fire in every project of the account, this one
    * included. Manual `fire` still works. Older servers omit it.
    */
@@ -420,8 +423,8 @@ export async function deleteProjectTrigger(projectId: string, slug: string) {
 }
 
 /**
- * The account's Pause all automations: `paused` stops every automatic fire in
- * every project of the account — schedules, reminders, webhooks, app events and
+ * The account's Pause all triggers: `paused` stops every automatic fire in
+ * every project of the account — schedules, loops (reminders), webhooks, app events and
  * monitors. A manual fire still runs.
  */
 export interface AccountAutomationsStatus {
@@ -437,7 +440,7 @@ export async function getAccountAutomations(accountId: string) {
   return unwrap(await backendApi.get<AccountAutomationsStatus>(`/accounts/${accountId}/automations`));
 }
 
-/** Pause or resume every automation of the account. Needs account.write (owners and admins by default). */
+/** Pause or resume every trigger of the account. Needs account.write (owners and admins by default). */
 export async function setAccountAutomationsPaused(accountId: string, paused: boolean) {
   return unwrap(
     await backendApi.patch<AccountAutomationsStatus>(`/accounts/${accountId}/automations`, { paused }, { showErrors: false }),
@@ -496,7 +499,7 @@ export interface ProjectTriggerDryRunResult {
 }
 
 /** What fired a run. */
-export type ProjectTriggerRunSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event' | 'app';
+export type ProjectTriggerRunSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event' | 'app' | 'change_request';
 
 /**
  * A run's fire outcome. `fired` = a session was started or prompted;

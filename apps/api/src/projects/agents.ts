@@ -16,13 +16,13 @@
  *      Default: none. Account-scoped admin actions are NEVER grantable.
  *
  * The effective grant at session birth is `declared ∩ launching-user role`
- * (agent ≤ human). The default `kortix` agent is granted everything (`"all"`),
+ * (agent ≤ human). The starter `worker` agent is granted everything (`"all"`),
  * which ∩ the user = exactly the user's own permissions.
  *
  * Example (kortix.yaml, v2):
  *
  *   agents:
- *     kortix: {}                          # default GP agent — connectors/kortix_permissions = "all" (∩ user)
+ *     worker: {}                          # default GP agent — connectors/kortix_permissions = "all" (∩ user)
  *     release-bot:
  *       connectors: ["github"]            # which connectors
  *       kortix_permissions: ["project.trigger.create", "project.gitops.push"]   # Kortix permissions

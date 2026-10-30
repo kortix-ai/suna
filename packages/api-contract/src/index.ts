@@ -58,7 +58,6 @@ export const FeatureFlagMapSchema = z.object({
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
   pooled_provider_secrets: z.boolean(),
-  genui: z.boolean(),
   us_region: z.boolean(),
   event_triggers: z.boolean(),
   notification_center: z.boolean(),
@@ -97,6 +96,8 @@ export const FeatureFlagViewSchema = z.object({
   overridden: z.boolean(),
   /** Internal-only flag, listed only while on. Only a platform operator can change it. */
   operator_only: z.boolean().optional(),
+  /** Work in progress: not recommended yet. Absent on servers older than this field. */
+  wip: z.boolean().optional(),
   /** `organization`: one value for every project of the organization; changing it needs `account.write`. */
   scope: z.enum(['project', 'organization']).optional(),
 });
@@ -194,6 +195,8 @@ export const ProjectSchema = z.object({
     session_log: z.literal(true).optional(),
     /** Not a flag (every new session runs pi; OpenCode is sunset); always `true` for older SDK, CLI and mobile clients. */
     pi_harness: z.literal(true).optional(),
+    /** Not a flag (generative UI is always on); always `true` for older SDK, web and mobile clients, which render blocks only while it is on. */
+    genui: z.literal(true).optional(),
     /** Not a flag (the Kortix connectors catalog is the only connectors path); always `true` for older SDK and hosts. */
     connectors_v2: z.literal(true).optional(),
     /** Not a flag (integrations.sh is part of the one catalog); always `true` for older SDK and hosts. */
@@ -1859,7 +1862,7 @@ export const TriggerSchema = z.object({
   slug: z.string(),
   path: z.string(),
   name: z.string(),
-  type: z.enum(['cron', 'webhook', 'monitor', 'event', 'app']),
+  type: z.enum(['cron', 'webhook', 'monitor', 'event', 'app', 'change_request']),
   agent: z.string(),
   /** Wire-form model (`provider/model`) or null for "Default". */
   model: z.string().nullable(),
@@ -1972,7 +1975,7 @@ export type Trigger = z.infer<typeof TriggerSchema>;
 export const TriggerListSchema = z.object({
   triggers: z.array(TriggerSchema),
   triggers_paused: z.boolean(),
-  /** The account's Pause all automations: true stops every project's triggers. Older servers omit it. */
+  /** The account's Pause all triggers: true stops every project's triggers. Older servers omit it. */
   account_automations_paused: z.boolean().optional(),
   errors: z.array(z.object({ slug: z.string(), path: z.string(), error: z.string() })),
 });
@@ -1987,7 +1990,7 @@ export type TriggerList = z.infer<typeof TriggerListSchema>;
 export const TriggerRunSchema = z.object({
   run_id: z.string(),
   slug: z.string(),
-  source: z.enum(['cron', 'webhook', 'manual', 'monitor', 'reminder', 'event', 'app']),
+  source: z.enum(['cron', 'webhook', 'manual', 'monitor', 'reminder', 'event', 'app', 'change_request']),
   /** The fire's outcome. `fired` = a session was started or prompted. */
   status: z.enum(['queued', 'running', 'fired', 'failed', 'skipped', 'rejected']),
   /** The agent turn's outcome; null when the run started no turn. */

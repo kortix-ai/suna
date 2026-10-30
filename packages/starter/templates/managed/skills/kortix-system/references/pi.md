@@ -79,9 +79,14 @@ continue an earlier child.
 - A subagent cannot start another subagent or ask the user a question.
 - Several `task` calls in one message run at the same time. The user sees
   each child session.
-- For work that needs its own sandbox or branch, start a session:
-  `kortix sessions new --prompt "…" --json`, then
-  `kortix sessions wait-for <id>` and `kortix sessions log <id>`.
+- `session: "separate"` (the default) runs the subagent in its own new
+  session with its own sandbox and branch. The one call waits until that
+  session finishes (up to 30 minutes) and returns its final message: ask the
+  subagent to put the answer and the paths of its files there. Do not drive
+  `kortix sessions new`, `wait-for` or `cp` from bash to delegate: bash stops
+  a command after 30 s.
+- With codemode `only`, call `agent` and `question` directly, not from a
+  script: a script may not call them.
 
 ## Skills and slash commands
 

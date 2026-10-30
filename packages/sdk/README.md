@@ -1564,11 +1564,9 @@ Other freshness tiers keep their existing behavior.
 
 ## Generative UI (`@kortix/sdk/genui`)
 
-Generative UI is on by default for every project (the `genui` project flag), and
-experimental. The agent may answer with ` ```openui ` blocks: cards, comparisons,
-charts, maps, tabs. Render them with the headless renderer and your own
-components, or with the bundled defaults
-([guide](https://kortix.com/docs/#generative-ui)):
+Generative UI is on for every project: the agent may answer with ` ```openui ` blocks:
+cards, comparisons, charts, maps, tabs. Render them with the headless renderer and your own
+components, or with the bundled defaults ([guide](https://kortix.com/docs/#generative-ui)):
 
 ```tsx
 import { genuiVersionFromClassName } from '@kortix/sdk/genui';

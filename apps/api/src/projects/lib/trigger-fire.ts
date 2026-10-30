@@ -13,6 +13,7 @@ import { renderSessionKey } from './trigger-payload';
 import { keepRunFailure } from '../trigger-execution-store';
 import { TRIGGER_REUSE_RETIRED_AT } from './trigger-run-outcome';
 import { disableSessionReminder, reminderPromptText } from './session-reminders';
+import { triggerTargetOf } from './runtime-triggers';
 import { accountMemberRow } from '../../iam/membership-read';
 import type { TriggerFireSource } from './trigger-webhook-auth';
 import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './trigger-create-claim';
@@ -51,13 +52,13 @@ export async function resolveTriggerActor(project: ProjectRow): Promise<string |
 export const PRIVATE_CHANNEL_TRIGGER = {
   error:
     'A trigger from the project config cannot post into a private channel: anyone who edits the config would decide what runs there. ' +
-    'Move the trigger to a public channel, or set a reminder in the private thread.',
+    'Move the trigger to a public channel, or ask an agent in the private thread to set a loop.',
   errorCode: 'private_channel_trigger',
 } as const;
 
 /** A reminder into a private channel whose author is no longer in it. */
 export const REMINDER_AUTHOR_NOT_IN_CHANNEL = {
-  error: 'This reminder posts into a private channel, and the person who set it is no longer a member of that channel.',
+  error: 'This loop posts into a private channel, and the person who set it is no longer a member of that channel.',
   errorCode: 'reminder_author_not_in_channel',
 } as const;
 
@@ -390,8 +391,10 @@ export async function fireGitTrigger(input: {
       if (overlap) return { status: 'skipped', reason: overlap };
     }
   }
+  // Dispatch on the target (lib/runtime-triggers.ts), never on the slug or the source.
+  const target = triggerTargetOf(spec);
   // An App target is a call to the App, not a session: no actor, model or prompt.
-  if (spec.target?.app) return fireAppTarget(input, spec.target);
+  if (target.kind === 'app') return fireAppTarget(input, spec.target!);
   // The session's owning identity (created_by / billing / audit). Automated runs
   // never impersonate a picked human — the agent's declared scope governs access.
   // See resolveTriggerActor().
@@ -399,14 +402,15 @@ export async function fireGitTrigger(input: {
   if (!automation) {
     return { status: 'failed', error: 'No account owner available to own the session', retryable: false };
   }
+  // A session target wakes one existing session, whatever its source: a loop's
+  // schedule, a webhook, a connector or App event, a merged change request.
+  if (target.kind === 'session') return fireSessionReminder(input, automation);
   // A config trigger never runs into a private channel (PRIVATE_CHANNEL_TRIGGER).
-  const runSpace = spec.reminder ? null : triggerRunSpace(await liveTriggerSpace(project.projectId, spec.slug), spec.agent);
+  const runSpace = triggerRunSpace(await liveTriggerSpace(project.projectId, spec.slug), spec.agent);
   if (runSpace?.kind === 'channel' && runSpace.visibility === 'private') {
     return { status: 'failed', ...PRIVATE_CHANNEL_TRIGGER, retryable: false };
   }
   const actor = automation;
-
-  if (spec.reminder) return fireSessionReminder(input, actor);
 
   const sessionKey = renderSessionKey(spec, payload);
   const queued = await queueExistingTriggerSession(input, actor, sessionKey);
@@ -508,7 +512,7 @@ async function fireSessionReminder(
     await disableSessionReminder(project.projectId, spec.slug, new Date());
     return {
       status: 'failed',
-      error: "The reminder's author is no longer a member of this account, so the reminder is now paused",
+      error: "The loop's author is no longer a member of this account, so the loop is now paused",
       errorCode: 'reminder_author_left',
       retryable: false,
     };
@@ -516,7 +520,7 @@ async function fireSessionReminder(
   const runAs = author ?? (sessionId ? await memberSessionCreator(project, sessionId) : null) ?? actor;
   const outcome = sessionId
     ? await enqueueTriggerPrompt({
-        project, sessionId, actor: runAs, text: reminderPromptText(spec), source: 'reminder',
+        project, sessionId, actor: runAs, text: reminderPromptText(spec, input.renderedPrompt), source: 'reminder',
         triggerSlug: spec.slug, model: null,
         idempotencyKey: input.idempotencyKey ?? null,
         bindTurnIdentity: !!author,
@@ -532,7 +536,7 @@ async function fireSessionReminder(
   await disableSessionReminder(project.projectId, spec.slug, new Date());
   return {
     status: 'failed',
-    error: 'The reminder session is deleted or failed, so the reminder is now paused',
+    error: 'The loop\'s session is deleted or failed, so the loop is now paused',
     errorCode: 'reminder_session_gone',
     retryable: false,
   };
@@ -561,8 +565,8 @@ async function fireReminderSuccessor(
     body: {
       agent_name: spec.agent,
       initial_prompt:
-        `${reminderPromptText(spec)}\n\n` +
-        `This reminder belonged to session ${failedSessionId}, which failed. You continue its work: ` +
+        `${reminderPromptText(spec, input.renderedPrompt)}\n\n` +
+        `This loop belonged to session ${failedSessionId}, which failed. You continue its work: ` +
         'read what it kept in Files (/drives) before you act.',
       metadata: { reminder_successor_of: failedSessionId },
     },
@@ -573,7 +577,7 @@ async function fireReminderSuccessor(
   if (result.error || (result.status !== 'queued' && result.status !== 'pending' && !successorId)) {
     return {
       status: 'failed',
-      error: String(result.error?.body.error ?? 'The reminder session failed and no successor session could start'),
+      error: String(result.error?.body.error ?? 'The loop\'s session failed and no successor session could start'),
       errorCode: 'reminder_successor_failed',
       retryable: result.retryable === true,
     };

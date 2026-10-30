@@ -127,7 +127,7 @@ async function executeTriggerExecution(
     .from(projects)
     .where(eq(projects.projectId, row.projectId))
     .limit(1);
-  // The project's own pause, then the account's Pause all automations (KRTX-1721).
+  // The project's own pause, then the account's Pause all triggers (KRTX-1721).
   const paused = project && project.status === 'active' ? await automaticFirePauseReason(project) : null;
   if (!project || project.status !== 'active' || paused) {
     const reason = !project
@@ -168,7 +168,8 @@ async function executeTriggerExecution(
         project,
         payload,
         renderedPrompt,
-        source: 'cron',
+        // The slot's own origin (`cron`, or `reminder` for a loop's slot).
+        source: row.source === 'reminder' ? 'reminder' : 'cron',
         idempotencyKey,
       }),
       triggerFireTimeoutMs(),

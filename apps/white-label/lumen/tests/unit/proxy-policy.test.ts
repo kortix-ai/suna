@@ -479,7 +479,7 @@ describe("proxy responses: the operator's Kortix identity never reaches a member
     const session = { session_id: 's1', ...ids, owner_email: OPERATOR, opencode_model: 'kortix/x' };
     const cases: Array<[string, unknown]> = [
       [P, { project_id: 'p1', name: 'Firm', ...ids, repo_url: 'https://github.com/managed-x/p1', manifest_path: 'kortix.yaml', description: 'A Kortix project.' }],
-      [`${P}/detail`, { manifest_raw: 'kortix_version: 2', experimental_features: [{ key: 'genui', enabled: true, description: 'KORTIX_GENUI=1 in kortixd' }] }],
+      [`${P}/detail`, { manifest_raw: 'kortix_version: 2', experimental_features: [{ key: 'agent_rooms', enabled: true, description: 'KORTIX_FEATURE_FLAGS lists it in kortixd' }] }],
       [S, session],
       [`${P}/sessions`, [session]],
       [`${S}/snapshot`, { ...ids, session }],
@@ -488,7 +488,7 @@ describe("proxy responses: the operator's Kortix identity never reaches a member
     for (const [path, body] of cases) {
       expect(redactsIdentity(path)).toBe(true);
       const out = JSON.stringify(redactIdentity(path, body));
-      expect(out).not.toMatch(/acc_op|u_op|managed-x|manifest_path|Kortix project|kortix_version|KORTIX_GENUI/);
+      expect(out).not.toMatch(/acc_op|u_op|managed-x|manifest_path|Kortix project|kortix_version|KORTIX_FEATURE_FLAGS/);
     }
   });
 

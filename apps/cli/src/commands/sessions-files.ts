@@ -169,7 +169,7 @@ export function buildPromptWithFiles(prompt: string, sandboxPaths: string[]): st
 export const SESSION_CONTRACT = [
   '--- session contract ---',
   'You are a specialized work session. Do the task above yourself, in this sandbox, with your own tools.',
-  'Do not spawn other sessions (no `kortix sessions new`) — the coordinator that started you manages the fleet.',
+  'Do not spawn other sessions (no `kortix sessions new`) — the coordinator that started you manages the fleet. `kortix goals` commands (verify, handover) are the exception: they start goal sessions for you.',
   'For Python use the preinstalled `uv` (`uv run` / `uvx` / `uv pip`), never bare `pip`.',
   'Write your deliverables to files under /workspace/out/ and state the exact paths in your final reply.',
 ].join('\n');

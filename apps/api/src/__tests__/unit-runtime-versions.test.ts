@@ -88,7 +88,7 @@ describe('runtime version drift guards', () => {
 
     expect(merged).toContain(`agent-browser@${AGENT_BROWSER_VERSION}`);
     expect(merged).toContain(`@firecrawl/anydoc@${ANYDOC_VERSION}`);
-    expect(merged).toContain(`playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`);
+    expect(merged).toContain(`playwright@${PLAYWRIGHT_VERSION} install --with-deps --no-shell chromium`);
     expect(merged).toContain(BUN_VERSION);
     for (const digest of [
       PNPM_SHA256_AMD64,

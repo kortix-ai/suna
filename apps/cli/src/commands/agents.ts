@@ -377,8 +377,9 @@ function parseGrantSet(raw: string): 'all' | string[] {
     .filter(Boolean);
 }
 
-function renderGrantSet(value: AgentGrantSetV2 | undefined, fallback: string): string {
+function renderGrantSet(value: AgentGrantSetV2 | { exclude: string[] } | undefined, fallback: string): string {
   if (value === undefined) return fallback;
+  if (!Array.isArray(value) && typeof value === 'object') return value.exclude.length > 0 ? `all except ${value.exclude.join(', ')}` : 'all';
   if (value === 'all') return 'all';
   if (value === 'none') return 'none';
   return value.length === 0 ? 'none' : value.join(', ');
@@ -411,6 +412,7 @@ async function agentsScope(
     const cfg = await ctx.client.get<AgentConfigResponse>(
       `/projects/${ctx.projectId}/agents/${encodeURIComponent(agent)}/config`,
     );
+    if (cfg.builtin) return printBuiltinAgent(cfg, opts.json);
     const block = cfg.block ?? {};
     const assigned = (block as { policy_sets?: Record<string, string> }).policy_sets ?? {};
     const permissions = block.kortix_permissions ?? block.kortix_cli;
@@ -502,6 +504,38 @@ async function agentsScope(
   return 0;
 }
 
+/**
+ * A built-in agent (My Kortix, slug `meta`) has no kortix.yaml block: the
+ * config GET answers `block: null`. Print what it actually holds, never the
+ * block defaults (`secrets all`), and never a "Change it" hint: every write
+ * answers 409 builtin_agent_managed.
+ */
+function printBuiltinAgent(cfg: AgentConfigResponse, json: boolean): number {
+  const key = cfg.builtin ?? 'my_kortix';
+  if (json) {
+    emitJson({
+      agent: cfg.agent,
+      builtin: key,
+      editable: false,
+      secrets: 'none',
+      connectors: [],
+      connectors_required: [],
+      apps: 'none',
+      kortix_permissions: 'as_user',
+    });
+    return 0;
+  }
+  process.stdout.write(
+    `\n  ${C.bold}My Kortix${C.reset} ${C.dim}(${cfg.agent}, built in)${C.reset}\n` +
+      `  ${C.dim}${pad('kortix permissions', 20)}${C.reset} yours, in this project\n` +
+      `  ${C.dim}${pad('secrets', 20)}${C.reset} none\n` +
+      `  ${C.dim}${pad('connectors', 20)}${C.reset} none\n` +
+      `  ${C.dim}${pad('apps', 20)}${C.reset} none\n\n` +
+      `  ${C.dim}Kortix maintains its prompt, tools and model. To remove it, set ${C.reset}builtin_agents: { ${key}: false }${C.dim} in kortix.yaml.${C.reset}\n\n`,
+  );
+  return 0;
+}
+
 /** `--policy-set gmail=read_only` (repeatable) → `{ gmail: 'read_only' }`;
  *  `<slug>=base` → `null`, which the route reads as "back to base rules". */
 export function parsePolicySetFlags(
@@ -583,6 +617,7 @@ async function agentsConfig(
       emitJson(cfg);
       return 0;
     }
+    if (cfg.builtin) return printBuiltinAgent(cfg, false);
     if (!cfg.editable) {
       process.stdout.write(
         `  ${C.yellow}!${C.reset}  ${C.dim}kortix_version ${cfg.schema_version} manifest — this block is read-only. Run \`kortix projects upgrade\` to move it to kortix.yaml.${C.reset}\n`,

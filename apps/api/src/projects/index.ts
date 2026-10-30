@@ -86,6 +86,7 @@ import { registerArtifactRoutes } from './routes/artifacts';
 import { registerArtifactCommentRoutes } from './routes/artifact-comments';
 import { registerLinkPreviewRoutes } from './routes/link-preview';
 import { registerSessionRemindersRoutes } from './routes/session-reminders';
+import { registerRuntimeTriggersRoutes } from './routes/runtime-triggers';
 import { registerProjectSpacesRoutes } from './routes/project-spaces';
 import { registerProjectMemoryRoutes } from './routes/project-memory';
 import { registerChangeRequestsRoutes } from './routes/change-requests';
@@ -94,6 +95,7 @@ import { registerChangeRequestActionsRoutes } from './routes/change-request-acti
 import { registerMarketplaceInstallSessionRoutes } from './routes/marketplace-install-session';
 import { registerReviewItemsRoutes } from './routes/review-items';
 import { registerAgentScopeRoutes } from './routes/agent-scope';
+import { registerAgentCapabilitiesRoutes } from './routes/agent-capabilities';
 import { registerAgentConfigRoutes } from './routes/agent-config';
 import { registerProjectSkillsRoutes } from './routes/project-skills';
 import { registerGatewayRoutes } from './routes/gateway';
@@ -182,6 +184,7 @@ export function registerAllProjectRoutes(): void {
   registerArtifactCommentRoutes();
   registerLinkPreviewRoutes();
   registerSessionRemindersRoutes();
+  registerRuntimeTriggersRoutes();
   registerProjectSpacesRoutes();
   registerProjectMemoryRoutes();
   registerChangeRequestsRoutes();
@@ -191,6 +194,7 @@ export function registerAllProjectRoutes(): void {
   registerReviewItemsRoutes();
   registerAgentScopeRoutes();
   registerAgentConfigRoutes();
+  registerAgentCapabilitiesRoutes();
   registerProjectSkillsRoutes();
   registerGatewayRoutes();
   registerChannelBindingsRoutes();

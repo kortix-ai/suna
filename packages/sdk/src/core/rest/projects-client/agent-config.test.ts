@@ -51,6 +51,13 @@ describe('AgentConfigBlock', () => {
     };
     expect(block.connectors_required).toEqual(['gmail']);
   });
+
+  test('accepts a space slug (and empty string to clear)', () => {
+    const grouped: AgentConfigBlock = { space: 'engineering' };
+    const cleared: AgentConfigBlock = { space: '' };
+    expect(grouped.space).toBe('engineering');
+    expect(cleared.space).toBe('');
+  });
 });
 
 describe('updateAgentConfig', () => {
@@ -64,6 +71,11 @@ describe('updateAgentConfig', () => {
       connectors_required: ['gmail'],
     });
     expect(calls[0]?.body).not.toHaveProperty('connectors_personal');
+  });
+
+  test('sends the agent space through to the PUT body', async () => {
+    await updateAgentConfig('project-1', 'support', { skills: 'all', space: 'engineering' });
+    expect(calls[0]?.body).toMatchObject({ space: 'engineering' });
   });
 
   test('a GET -> PUT round trip sends the block `file` back unchanged', async () => {
@@ -145,6 +157,26 @@ describe('grantSecretToAgent', () => {
 });
 
 describe('getAgentConfig', () => {
+  // The agent page owns every state of this read (not found, the writer's
+  // error page), so a failure must not also reach the host's global error
+  // toast: a mistyped agent URL showed the empty state and a red toast.
+  test('a 404 reaches the caller, not the global onError', async () => {
+    const errors: unknown[] = [];
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token', onError: (e) => errors.push(e) });
+    globalThis.fetch = mock(async () =>
+      new Response(JSON.stringify({ error: 'No agent "kortx" declared in kortix.yaml' }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      }),
+    ) as unknown as typeof fetch;
+    try {
+      await expect(getAgentConfig('project-1', 'kortx')).rejects.toThrow();
+      expect(errors).toHaveLength(0);
+    } finally {
+      configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+    }
+  });
+
   test('normalizes a deprecated response alias to canonical', async () => {
     nextBody = {
       agent: 'support',

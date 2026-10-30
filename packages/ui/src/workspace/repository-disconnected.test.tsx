@@ -80,6 +80,6 @@ describe('ProjectRepositoryDisconnectedAlertView', () => {
     expect(html).toContain('GitHub disconnected');
     expect(html).toContain('Reconnect GitHub');
     expect(html).toContain('Open Git settings');
-    expect(html).toContain('/projects/p1/customize/settings?section=git');
+    expect(html).toContain('/projects/p1/admin/git');
   });
 });

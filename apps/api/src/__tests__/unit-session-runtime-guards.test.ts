@@ -1416,9 +1416,9 @@ describe('project session runtime guards', () => {
 
     expect(response.status).toBe(201);
     const created = await response.json();
-    // The fixture project declares `default_agent: 'kortix'` — a meta-session
+    // The fixture project is blank, so it synthesizes `default_agent: 'worker'` — a meta-session
     // spawn resolves to it, never to another platform meta coordinator.
-    expect(created.agent_name).toBe('kortix');
+    expect(created.agent_name).toBe('worker');
     expect(created.metadata?.sandbox_slug).not.toBe('meta');
     expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
   });

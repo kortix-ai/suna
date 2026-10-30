@@ -1,7 +1,7 @@
 /**
  * /projects/[id]/settings — the project's settings.
  *
- * The project's own settings page is `/customize/settings` (General, Git
+ * The project's own settings are Project admin, `/admin/general` (General, Git
  * repository, Sandbox templates, Feature flags, Upgrades). This URL used to
  * open the merged ACCOUNT settings overlay on Profile instead, so a person
  * looking for "Delete project" met a danger zone that offered "Delete
@@ -21,5 +21,5 @@ export default async function ProjectSettingsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  redirect(`/projects/${id}/customize/settings`);
+  redirect(`/projects/${id}/admin/general`);
 }

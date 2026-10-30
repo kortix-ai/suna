@@ -24,6 +24,7 @@ import { ProjectManifestUpgradeAlert } from './footer/project-manifest-upgrade-a
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
 import { CustomizeSidebarModal } from './customize-sidebar-modal';
+import { NewAgentModalProvider } from '../../internal/layout/project-capability-nav';
 import { ProjectMemoryNavItem } from './footer/project-memory-nav';
 import { ProjectNavItems } from './project-nav-items';
 import { ProjectSessionList } from './project-session-list';
@@ -144,7 +145,8 @@ export function ProjectSidebar({
   }, [channels, handleNewSession]);
 
   return (
-    <>
+    // The New agent modal mounts beside <Sidebar>, outside the mobile sheet.
+    <NewAgentModalProvider projectId={projectId}>
     <Sidebar
       collapsible="offcanvas"
       variant="inset"
@@ -372,6 +374,6 @@ export function ProjectSidebar({
     />
     <ConnectMcpModal open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
     <CustomizeSidebarModal projectId={projectId} />
-    </>
+    </NewAgentModalProvider>
   );
 }
