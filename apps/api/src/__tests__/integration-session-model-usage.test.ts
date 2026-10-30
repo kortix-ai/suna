@@ -120,6 +120,47 @@ describe('sessionModelUsage', () => {
     });
   });
 
+  // 2026-10-30 prod: a session with 13,316 requests and 1,377 message turns took
+  // 7.8 s per read. Each request's turn lookup read and sorted every earlier turn,
+  // because its sort order did not match the session index.
+  test('a long session reads one turn per request, not every earlier turn', async () => {
+    await session('long');
+    await db.execute(sql`
+      insert into kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id, message_id, state, end_reason, started_at)
+      select 'long-' || ${tag} || '-' || n, ${sid('long')}, ${SANDBOX}::uuid, ${PROJECT}::uuid, ${ACCOUNT}::uuid,
+             'msg_long_' || n, 'ended', 'completed', ${at(0).toISOString()}::timestamptz + make_interval(secs => n)
+      from generate_series(1, 4000) n
+    `);
+    // Two fallback answers per turn, so both turn lookups (spend and fallbacks) run for every request.
+    await db.execute(sql`
+      insert into kortix.gateway_request_logs
+        (request_id, account_id, project_id, session_id, requested_model, resolved_model,
+         provider, status, ok, final_cost, billing_mode, metadata, created_at)
+      select 'long-request-' || ${tag} || '-' || n, ${ACCOUNT}::uuid, ${PROJECT}::uuid,
+             ${sid('long')}, 'model-a', 'model-b', 'kortix', 200, true, 0, 'none',
+             '{"servedModel":"model-b","fallbackFrom":"model-a"}'::jsonb,
+             ${at(0).toISOString()}::timestamptz + make_interval(secs => 0.75 + n * 0.5)
+      from generate_series(1, 8000) n
+    `);
+    const usage = await withDbTransaction(async () => {
+      await db.execute(sql`set local statement_timeout = '500ms'`);
+      return usageOf('long');
+    });
+    const turn = {
+      served_models: ['model-b'],
+      fallback_from: 'model-a',
+      billed_cost: 0,
+      fallbacks: [
+        { requested_model: 'model-a', served_model: 'model-b', error_code: 'upstream_error' },
+        { requested_model: 'model-a', served_model: 'model-b', error_code: 'upstream_error' },
+      ],
+    };
+    expect(Object.keys(usage.turns)).toHaveLength(4000);
+    expect(usage.turns.msg_long_1).toEqual(turn);
+    expect(usage.turns.msg_long_4000).toEqual(turn);
+  });
+
   test('a turn its own model answered names that model and no fallback', async () => {
     await session('direct');
     await turn('direct', 'msg_direct_1', 0, 30);
