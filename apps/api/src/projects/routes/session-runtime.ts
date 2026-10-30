@@ -18,7 +18,6 @@ import { SessionStartResultSchema, SessionTurnStatusSchema, projectsApp } from '
 import {
   sessionUsesCurrentRepository,
 } from '../lib/repository-generation';
-import { captureJournallessSessionLogOnWake } from '../lib/session-transcript-capture';
 import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
 import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
@@ -173,12 +172,6 @@ export function registerSessionRuntimeRoutes(): void {
         signal: c.req.raw.signal,
       });
       stl.mark(`open-session:${result.start.stage}`);
-      // THE RUNTIME IS UP. A box without a journal gets what is already in it
-      // into the session log, once: capture otherwise runs only at turn end.
-      // Fire-and-forget and self-limiting (at most 3 attempts per session per
-      // process, none for a session with a journal). It cannot fail or delay
-      // this response.
-      if (result.start.stage === 'ready') void captureJournallessSessionLogOnWake(sessionId);
       stl.log({
         waitMs,
         repositoryMode: usesCurrentRepository ? 'current' : 'previous',
