@@ -579,19 +579,17 @@ describe('slash-command data', () => {
     expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
   });
 
-  test('a runtime without session.commands / session.attach lists neither', () => {
+  test('a runtime without session.commands lists no project commands', () => {
     const commands = [{ name: 'review', description: 'Review the diff' }];
     const ids = (capabilities: readonly string[] | null) =>
       commandItems(commands, capabilities).map((item) => item.id);
 
-    const pi = ids(['file.import', 'session.subagents']);
-    expect(pi).not.toContain('runtime:review');
-    expect(pi).not.toContain('builtin:attach');
-    expect(pi).toContain('builtin:new');
+    const without = ids(['file.import', 'session.subagents']);
+    expect(without).not.toContain('runtime:review');
+    expect(without).toContain('builtin:new');
 
-    for (const all of [null, ['session.commands', 'session.attach']]) {
+    for (const all of [null, ['session.commands']]) {
       expect(ids(all)).toContain('runtime:review');
-      expect(ids(all)).toContain('builtin:attach');
     }
   });
 

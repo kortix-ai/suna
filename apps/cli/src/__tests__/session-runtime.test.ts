@@ -7,7 +7,7 @@ import {
   SessionRuntimeError,
   waitForSessionReady,
 } from '../session-runtime.ts';
-import { auth, session } from './support/attach-fixtures.ts';
+import { auth, session } from './support/session-fixtures.ts';
 
 type StartReply = { stage: string; reason?: string };
 

@@ -22,7 +22,7 @@ function key(name: string, mods: { ctrl?: boolean; shift?: boolean; option?: boo
 describe('connect hint', () => {
   test('is the same pair of commands the web panel prints', () => {
     expect(CLI_INSTALL_COMMAND).toBe('curl -fsSL https://kortix.com/install | bash');
-    expect(connectCommand('abc-123')).toBe('kortix sessions connect abc-123');
+    expect(connectCommand('abc-123')).toBe('kortix sessions shell abc-123');
   });
 });
 

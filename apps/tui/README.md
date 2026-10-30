@@ -38,8 +38,7 @@ On the first run the launcher asks, downloads the `kortix-tui` matching this
 CLI's version from the same GitHub release, verifies it against the release's
 `.sha256`, writes it to `~/.kortix/tui/<version>/kortix-tui`, and execs it with
 `stdio: 'inherit'` so the child owns the real tty. Later runs exec the cached
-copy directly. `apps/cli/src/tui-bin.ts` holds the resolution; it is the same
-managed-binary shape as `src/opencode-bin.ts`.
+copy directly. `apps/cli/src/tui-bin.ts` holds the resolution.
 
 Resolution order, highest first:
 
@@ -107,7 +106,7 @@ saved). `Ctrl+H` reopens it later to switch hosts.
 | Bun ≥ 1.3 | `@opentui/core` ships a Bun-FFI native renderer. |
 | 80 × 24 minimum | Below 100 columns the terminal panel replaces the split instead of sharing it; below 60 columns the sidebar is hidden and `Ctrl+P` is the way around. |
 | Kitty keyboard protocol for `Shift+Enter` | A legacy terminal sends a bare `\r` for both `Enter` and `Shift+Enter` and cannot tell them apart. `Ctrl+J` is the portable newline and always works. |
-| `Alt` = `Option` on macOS | Terminal.app and iTerm2 send `Alt+T` as the two bytes `ESC t`, which arrive as `meta`, not `option`. The keymap matches either, so `Alt+T`, `Alt+F`, `Alt+O` work in both. In Terminal.app, turn on *Use Option as Meta key*. |
+| `Alt` = `Option` on macOS | Terminal.app and iTerm2 send `Alt+T` as the two bytes `ESC t`, which arrive as `meta`, not `option`. The keymap matches either, so `Alt+T` and `Alt+F` work in both. In Terminal.app, turn on *Use Option as Meta key*. |
 | A real tty | `script` on macOS gives the child no controlling tty; use a pty (see [Driving it headlessly](#driving-it-headlessly)). |
 
 ## Environment variables
@@ -233,7 +232,6 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `Alt+a` | Open the apps screen. |
 | `Alt+c` | Open the customize screen. |
 | `Alt+u` | Open the account screen: members, invites, billing. |
-| `Alt+o` | Hand this OpenCode session to the stock opencode TUI. Returning repaints the app. |
 | `Alt+h / Ctrl+h` | Switch host. Ctrl+H needs the kitty keyboard protocol: the byte it sends is Backspace. |
 | `Esc` | Close the overlay, leave the screen, or move focus back to the composer. |
 
@@ -249,7 +247,6 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `/` | Filter the session list. Esc clears it. |
 | `r` | Rename the selected session. |
 | `d` | Delete the selected session (asks first). |
-| `a` | Attach the selected OpenCode session in the stock opencode TUI. |
 | `n` | Create a session in this project. |
 | `y / Enter` | Confirm the delete. |
 | `n` | Decline the delete. |
@@ -285,7 +282,7 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 
 | Keys | Action |
 | --- | --- |
-| `Alt+y` | Copy `kortix sessions connect <id>` to the clipboard. |
+| `Alt+y` | Copy `kortix sessions shell <id>` to the clipboard. |
 | `Alt+x` | Close the terminal panel. |
 | `Alt+Enter` | Reconnect the terminal now. |
 | `any other key` | Every other key goes to the remote shell, Ctrl+C included. Quit the TUI with Ctrl+Q; Tab, Alt+T, Alt+P and Alt+L still move focus, toggle the panel, and open the Ports and Links panels. |
@@ -439,7 +436,7 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `PgUp` | Page up. |
 | `Enter` | Open the row. |
 
-_155 bindings._
+_153 bindings._
 
 ## Tests
 
@@ -457,9 +454,9 @@ pnpm --filter @kortix/cli test        # src/commands/tui.test.ts + src/tui-bin.t
 Every byte of Kortix data comes through `@kortix/sdk`. The one other workspace
 dependency is `@kortix/cli`, which publishes no barrel, so the TUI deep-imports
 five of its modules and nothing else (`SPEC.md` §2 has the table): `src/api/
-config.ts` and `src/api/sdk.ts` for hosts and tokens, `src/web-url.ts` for the
-web links the account screen prints, and `src/attach-opencode.ts` +
-`src/api/auth.ts` for `Alt+O`.
+config.ts` for hosts and tokens, `src/web-url.ts` for the web links the account
+screen prints, and `src/port-forward.ts`, `src/session-runtime.ts` and
+`src/api/auth.ts` for the Ports panel.
 
 `@kortix/cli` does NOT depend on `@kortix/tui` — that edge was removed when the
 TUI became its own binary, so the dependency runs one way only. The six
@@ -577,24 +574,11 @@ boot and drops to the login screen with this line; the fix is
 - **A session sits on `provisioning` for minutes.** A cold sandbox boot is
   minutes, not seconds. The header prints the live `/start` stage; the terminal
   panel and the files screen wait for `ready` rather than failing.
-- **The first attach is slow.** `Alt+O` downloads the exact `opencode` build the
-  sandbox runs into `~/.kortix/opencode/<version>/` once, then reuses it. While
-  opencode has the terminal the TUI is suspended and paints nothing; on exit it
-  repaints on the same session.
-- **A pi session has no `/attach` and no project commands.** The TUI reads the
-  session runtime's `/kortix/health` capabilities once the runtime is up. A
-  runtime without `session.attach` drops `/attach` from the `/` palette and
-  both attach keys from the help overlay (`?`), and `Alt+O` or sidebar `a`
-  shows a toast instead of attaching (`Alt+T` still opens a shell). Sidebar
-  `a` on a session that is not open learns the harness only after its sandbox
-  is up: it wakes the sandbox, then refuses. A runtime without `session.commands` lists no project
-  commands in the palette.
-- **Leaving opencode is `Ctrl+C` twice WITHIN one second.** The interval is the
-  whole trick: measured, two presses 0.3 s apart exit it and the Kortix TUI
-  repaints, while the same two spaced three seconds apart are two separate
-  interrupts and opencode stays. `Esc` does not leave it either.
+- **A session lists no project commands.** The TUI reads the session runtime's
+  `/kortix/health` capabilities once the runtime is up. A runtime without
+  `session.commands` lists no project commands in the `/` palette.
 - **The terminal is left in a broken state.** Every exit path calls
-  `renderer.destroy()`, and attach resumes in a `finally`. If a crash ever
+  `renderer.destroy()`. If a crash ever
   escapes it, `reset` restores the shell; report the stack trace, because that
   path is a bug.
 - **Nothing renders, or the frame is blank.** The screen needs at least 80×24.

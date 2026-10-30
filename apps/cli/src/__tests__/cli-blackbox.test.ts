@@ -374,69 +374,6 @@ function startCliE2eServer() {
         archived = true;
         return Response.json({ ok: true, archived: true, repo_deleted: true });
       }
-      if (url.pathname === '/v1/projects/proj_e2e/sessions/sess_connect' && req.method === 'GET') {
-        return Response.json({
-          session_id: 'sess_connect',
-          account_id: 'account_1',
-          project_id: 'proj_e2e',
-          branch_name: 'session-sess_connect',
-          base_ref: 'main',
-          sandbox_provider: 'daytona',
-          sandbox_id: 'row-sandbox-id',
-          sandbox_url: `${url.origin}/v1/p/ext-sess-connect/8000`,
-          opencode_session_id: 'ses_oc',
-          name: 'Connect target',
-          custom_name: null,
-          agent_name: 'default',
-          status: 'running',
-          error: null,
-          metadata: {},
-          created_at: '2026-01-01T00:00:00.000Z',
-          updated_at: '2026-01-02T00:00:00.000Z',
-        });
-      }
-      if (url.pathname === '/v1/projects/proj_e2e/sessions/sess_stale' && req.method === 'GET') {
-        return Response.json({
-          session_id: 'sess_stale',
-          account_id: 'account_1',
-          project_id: 'proj_e2e',
-          branch_name: 'session-sess_stale',
-          base_ref: 'main',
-          sandbox_provider: 'daytona',
-          sandbox_id: 'row-sandbox-id',
-          sandbox_url: `${url.origin}/v1/p/ext-sess-stale/8000`,
-          opencode_session_id: 'ses_stale',
-          name: 'Stale pin target',
-          custom_name: null,
-          agent_name: 'default',
-          status: 'running',
-          error: null,
-          metadata: {},
-          created_at: '2026-01-01T00:00:00.000Z',
-          updated_at: '2026-01-02T00:00:00.000Z',
-        });
-      }
-      if (url.pathname === '/v1/projects/proj_e2e/sessions/sess_stale' && req.method === 'PATCH') {
-        return Response.json({
-          session_id: 'sess_stale',
-          opencode_session_id: entry.body && typeof entry.body === 'object'
-            ? (entry.body as { opencode_session_id?: string }).opencode_session_id
-            : null,
-        });
-      }
-      if (url.pathname === '/v1/p/ext-sess-connect/8000/session/ses_oc' && req.method === 'GET') {
-        return Response.json({ id: 'ses_oc', title: 'Connected through proxy' });
-      }
-      if (url.pathname === '/v1/p/ext-sess-stale/8000/session/ses_stale' && req.method === 'GET') {
-        return Response.json({ error: 'Session not found: ses_stale' }, { status: 404 });
-      }
-      if (url.pathname === '/v1/p/ext-sess-stale/8000/session' && req.method === 'GET') {
-        return Response.json([{ id: 'ses_live', title: 'Live root' }]);
-      }
-      if (url.pathname === '/v1/p/ext-sess-stale/8000/session/ses_live' && req.method === 'GET') {
-        return Response.json({ id: 'ses_live', title: 'Live root' });
-      }
-
       if (url.pathname === '/v1/marketplace/items' && req.method === 'GET') {
         const query = url.searchParams.get('query') ?? '';
         const items = ['agent-browser']
