@@ -18,6 +18,7 @@ import { appCan } from '../../apps/app-shared';
 import { UnifiedMarkdown } from '../../markdown';
 import Loading from '../../primitives/loading';
 import { useFilePreviewStore } from '../../internal/stores/file-preview-store';
+import { framePolicy } from '../../files/viewer/preview-policy';
 import { cn } from '../../lib/utils';
 import { SpaceRoom } from './space-room';
 
@@ -159,7 +160,9 @@ function BlockBody({ projectId, block }: { projectId: string; block: SpaceBlock 
         <iframe
           src={block.url}
           title={block.label || 'Embed'}
-          sandbox="allow-scripts allow-same-origin"
+          // A Kortix origin (the app, the API, the sandbox proxy) gets an opaque origin: the
+          // frame can never reach the page's tokens. Any other site keeps its own origin.
+          sandbox={framePolicy('app', block.url).sandbox}
           className="border-border h-64 w-full border-t"
         />
       ) : (

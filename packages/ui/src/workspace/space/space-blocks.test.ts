@@ -80,6 +80,14 @@ test('iframe block renders a sandboxed frame for its url', () => {
   expect(html).toContain('sandbox=');
 });
 
+test('iframe block on a Kortix origin gets an opaque origin: no allow-same-origin', () => {
+  // A relative URL resolves to the page origin, the same origin as the app and its tokens.
+  const html = render([{ type: 'iframe', label: 'Embed', url: '/v1/p/sbx1/8000/' }]);
+  expect(html).toContain('<iframe');
+  expect(html).toContain('sandbox="allow-scripts');
+  expect(html).not.toContain('allow-same-origin');
+});
+
 test('iframe block with no url degrades to a notice', () => {
   const html = render([{ type: 'iframe', label: 'Embed' }]);
   expect(html).not.toContain('<iframe');

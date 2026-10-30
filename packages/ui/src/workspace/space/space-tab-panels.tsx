@@ -36,6 +36,7 @@ import { Button } from '../../primitives/button';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
 import { Skeleton } from '../../primitives/skeleton';
+import { framePolicy } from '../../files/viewer/preview-policy';
 import { SpaceBlocks } from './space-blocks';
 import { SpaceRoom } from './space-room';
 
@@ -473,7 +474,8 @@ function LinkTab({ tab }: { tab: SpaceTab }) {
       <iframe
         src={url}
         title={tab.label || hostOf(url)}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        // As a board's iframe block: a Kortix origin gets an opaque origin (space-blocks.tsx).
+        sandbox={framePolicy('app', url).sandbox}
         className="bg-background h-full w-full"
       />
     );
