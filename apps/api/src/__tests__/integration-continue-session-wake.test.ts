@@ -72,9 +72,10 @@ async function statuses(sessionId: string): Promise<{ session: string; sandbox: 
   return { session: session!.status as string, sandbox: sandbox!.status as string };
 }
 
-function deliver(sessionId: string) {
+function deliver(sessionId: string, opencodeEnv?: Record<string, string | null>) {
   return continueSession({
     source: 'ui',
+    opencodeEnv,
     sessionId,
     projectId: project.project_id,
     text: 'hello',
@@ -116,10 +117,10 @@ describe('the pre-delivery wake', () => {
 
   test('a pending delivery puts the session back to stopped', async () => {
     const sessionId = await fixture('stopped');
-    // Ready, but with no sandbox to converge: the env sync cannot run and the
-    // delivery ends `pending` before any POST.
+    // Since #11144 only explicit env overrides sync before delivery. A ready
+    // runtime without a sandbox cannot sync the override, so no POST occurs.
     openSessionImpl = async () => ({ stage: 'ready', sandbox: null, opencode_session_id: null });
-    expect(await deliver(sessionId)).toBe('pending');
+    expect(await deliver(sessionId, { WAKE_TEST: 'override' })).toBe('pending');
     expect((await statuses(sessionId)).session).toBe('stopped');
   });
 
@@ -140,7 +141,7 @@ describe('the pre-delivery wake', () => {
       );
       return { stage: 'ready', sandbox: null, opencode_session_id: null };
     };
-    expect(await deliver(sessionId)).toBe('pending');
+    expect(await deliver(sessionId, { WAKE_TEST: 'override' })).toBe('pending');
     expect(await statuses(sessionId)).toEqual({ session: 'running', sandbox: 'active' });
   });
 

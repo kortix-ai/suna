@@ -1,14 +1,15 @@
 /**
- * Channel connectors — chat platforms (Slack today; Telegram/Teams next) as
- * first-class connectors. Unlike the spec-driven providers, a channel's
- * catalog is a FIXED, hand-curated set of actions (the platform's stable API
- * surface), and its credential is the platform's existing install token,
- * resolved server-side from the install-store (no connection_credentials row, no
- * data migration). Each action is a plain `http` binding against the platform's
- * API base, so the gateway's existing executeCall runs them unchanged. The
- * Slack catalog mirrors the in-sandbox `slack` CLI 1:1 for full parity. See
- * KORTIX-206.
+ * Channel connectors — the chat platforms of `@kortix/shared/channel-descriptors`
+ * (Slack, Teams, Email, Telegram) as first-class connectors. Unlike the
+ * spec-driven providers, a channel's catalog is a FIXED, hand-curated set of
+ * actions (the platform's stable API surface), and its credential is the
+ * platform's existing install token, resolved server-side from the
+ * install-store (no connection_credentials row, no data migration). Each
+ * action is a plain `http` binding against the platform's API base, so the
+ * gateway's existing executeCall runs them unchanged. The Slack catalog
+ * mirrors the in-sandbox `slack` CLI 1:1 for full parity. See KORTIX-206.
  */
+import { CHANNELS, type ChannelPlatformId, channelConnectorSlug, isChannelPlatform } from '@kortix/shared/channel-descriptors';
 import { config } from '../config';
 import type { ConnectorAuth } from './call';
 import type { ActionBinding, NormalizedAction, Risk } from './types';
@@ -23,24 +24,13 @@ import type { ActionBinding, NormalizedAction, Risk } from './types';
  * `slack thread` resolve against the wrong catalog and fail with
  * `action_not_found`.
  */
-export const SLACK_CHANNEL_CONNECTOR_SLUG = 'kortix_slack';
-export const TEAMS_CHANNEL_CONNECTOR_SLUG = 'kortix_teams';
-export const EMAIL_CHANNEL_CONNECTOR_SLUG = 'kortix_email';
-export const TELEGRAM_CHANNEL_CONNECTOR_SLUG = 'kortix_telegram';
+export const SLACK_CHANNEL_CONNECTOR_SLUG = channelConnectorSlug('slack');
+export const TEAMS_CHANNEL_CONNECTOR_SLUG = channelConnectorSlug('teams');
+export const EMAIL_CHANNEL_CONNECTOR_SLUG = channelConnectorSlug('email');
+export const TELEGRAM_CHANNEL_CONNECTOR_SLUG = channelConnectorSlug('telegram');
 
 export function channelDefaultSlug(platform: string): string {
-  switch (platform) {
-    case 'slack':
-      return SLACK_CHANNEL_CONNECTOR_SLUG;
-    case 'teams':
-      return TEAMS_CHANNEL_CONNECTOR_SLUG;
-    case 'email':
-      return EMAIL_CHANNEL_CONNECTOR_SLUG;
-    case 'telegram':
-      return TELEGRAM_CHANNEL_CONNECTOR_SLUG;
-    default:
-      return platform;
-  }
+  return isChannelPlatform(platform) ? channelConnectorSlug(platform) : platform;
 }
 
 /**
@@ -52,41 +42,26 @@ export function channelAuth(platform: string): ConnectorAuth {
   return { type: 'bearer', in: 'header', name: null, prefix: null };
 }
 
-// `ChannelPlatform` + the platform allow-list are owned by projects/connectors.ts
-// (the parser layer the connector builds on). This module just maps a platform
-// string → its catalog / API base, so it takes plain strings and returns []/''
-// for anything it doesn't know.
+// The platform list is the channel descriptor's (`@kortix/shared/channel-descriptors`).
+// This module maps a platform string → its catalog / API base, so it takes
+// plain strings and returns []/'' for anything it doesn't know.
+
+/** Per-platform API base, read at call time from `config` where it is configurable. */
+const API_BASE: Record<ChannelPlatformId, () => string> = {
+  slack: () => 'https://slack.com/api',
+  teams: () => 'https://graph.microsoft.com/v1.0',
+  email: () => config.RESEND_API_URL,
+  telegram: () => config.TELEGRAM_API_URL,
+};
 
 /** Per-platform API base — the connector's baseUrl, where http bindings resolve. */
 export function channelApiBase(platform: string): string {
-  switch (platform) {
-    case 'slack':
-      return 'https://slack.com/api';
-    case 'teams':
-      return 'https://graph.microsoft.com/v1.0';
-    case 'email':
-      return config.RESEND_API_URL;
-    case 'telegram':
-      return config.TELEGRAM_API_URL;
-    default:
-      return '';
-  }
+  return isChannelPlatform(platform) ? API_BASE[platform]() : '';
 }
 
 /** Human label for a channel connector (UI default name). */
 export function channelLabel(platform: string): string {
-  switch (platform) {
-    case 'slack':
-      return 'Slack';
-    case 'teams':
-      return 'Microsoft Teams';
-    case 'email':
-      return 'Email';
-    case 'telegram':
-      return 'Telegram';
-    default:
-      return platform;
-  }
+  return isChannelPlatform(platform) ? CHANNELS[platform].label : platform;
 }
 
 /** One curated channel action — normalized into an http-bound NormalizedAction. */
@@ -100,7 +75,7 @@ interface ChannelActionDef {
   name: string;
   description: string;
   risk: Risk;
-  /** JSON-schema properties using Slack's NATIVE param names (passed through verbatim). */
+  /** JSON-schema properties using the platform's NATIVE param names (passed through verbatim). */
   properties: Record<string, Record<string, unknown> & { type: string; description: string }>;
   required: string[];
   /** Curated defaults the provider does not apply itself; the caller's args always win. */
@@ -164,6 +139,8 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
       },
       blocks: { type: 'array', description: 'Optional Block Kit blocks for a rich message.' },
       thread_ts: { type: 'string', description: 'Optional parent message ts to reply in-thread.' },
+      // The in-sandbox `slack send` sets it on every post.
+      mrkdwn: { type: 'boolean', description: 'Format `text` as mrkdwn (default true).' },
     },
     required: ['channel'],
   },
@@ -679,11 +656,12 @@ const TELEGRAM_ACTIONS: ChannelActionDef[] = [
     verb: 'POST',
     name: 'Send message',
     description:
-      'Send a text message to a Telegram chat, at most 4096 characters; split longer answers. Set `reply_parameters.message_id` to reply to a message and `message_thread_id` to post in a forum topic. `parse_mode: "HTML"` enables <b>, <i>, <code>, <pre> and <a href>.',
+      `Send a text message to a Telegram chat, at most ${CHANNELS.telegram.messageChars} characters; split longer answers. ` +
+      'Set `reply_parameters.message_id` to reply to a message and `message_thread_id` to post in a forum topic. `parse_mode: "HTML"` enables <b>, <i>, <code>, <pre> and <a href>.',
     risk: 'write',
     properties: {
       chat_id: TELEGRAM_CHAT_ID,
-      text: { type: 'string', description: 'Message text, 1-4096 characters.' },
+      text: { type: 'string', description: `Message text, 1-${CHANNELS.telegram.messageChars} characters.` },
       reply_parameters: { type: 'object', description: 'Optional `{ "message_id": <id> }` to reply to.' },
       message_thread_id: { type: 'integer', description: 'Optional forum topic id.' },
       parse_mode: { type: 'string', description: 'Optional `HTML` or `MarkdownV2`.' },
@@ -701,7 +679,7 @@ const TELEGRAM_ACTIONS: ChannelActionDef[] = [
     properties: {
       chat_id: TELEGRAM_CHAT_ID,
       message_id: { type: 'integer', description: 'Id of the message to edit.' },
-      text: { type: 'string', description: 'New text, 1-4096 characters.' },
+      text: { type: 'string', description: `New text, 1-${CHANNELS.telegram.messageChars} characters.` },
       parse_mode: { type: 'string', description: 'Optional `HTML` or `MarkdownV2`.' },
     },
     required: ['chat_id', 'message_id', 'text'],
@@ -755,9 +733,15 @@ const TELEGRAM_ACTIONS: ChannelActionDef[] = [
   },
 ];
 
-/** The fixed catalog for a channel platform (empty for an unknown platform). */
+const CHANNEL_ACTIONS: Record<ChannelPlatformId, ChannelActionDef[]> = {
+  slack: SLACK_ACTIONS,
+  teams: TEAMS_ACTIONS,
+  email: EMAIL_ACTIONS,
+  telegram: TELEGRAM_ACTIONS,
+};
+
 /**
- * Merge a Slack action's curated defaults under the caller's args. Read live at
+ * Merge a channel action's curated defaults under the caller's args. Read live at
  * call time, so it covers connectors materialized before a default existed.
  */
 export function withChannelDefaults(
@@ -765,22 +749,27 @@ export function withChannelDefaults(
   actionPath: string,
   args: Record<string, unknown>,
 ): Record<string, unknown> {
-  const actions = platform === 'slack' ? SLACK_ACTIONS : platform === 'telegram' ? TELEGRAM_ACTIONS : null;
-  const defaults = actions?.find((a) => a.path === actionPath)?.defaults;
+  const actions = isChannelPlatform(platform) ? CHANNEL_ACTIONS[platform] : [];
+  const defaults = actions.find((a) => a.path === actionPath)?.defaults;
   return defaults ? { ...defaults, ...args } : args;
 }
 
+/**
+ * Why `args` do not fit a channel action, or null: the first argument the
+ * action does not declare. Read from the catalog in code, not from the
+ * materialized row, so an argument a release adds is accepted before every
+ * project re-syncs. An action the catalog does not have declares nothing.
+ */
+export function undeclaredChannelArg(platform: string, actionPath: string, args: Record<string, unknown>): string | null {
+  const actions = isChannelPlatform(platform) ? CHANNEL_ACTIONS[platform] : [];
+  const declared = Object.keys(actions.find((a) => a.path === actionPath)?.properties ?? {});
+  const extra = Object.keys(args).find((key) => !declared.includes(key));
+  if (extra === undefined) return null;
+  const takes = declared.length ? `It takes ${declared.join(', ')}.` : 'It takes no arguments.';
+  return `${actionPath} takes no argument "${extra.slice(0, 64)}". ${takes}`;
+}
+
+/** The fixed catalog for a channel platform (empty for an unknown platform). */
 export function channelCatalog(platform: string): NormalizedAction[] {
-  switch (platform) {
-    case 'slack':
-      return SLACK_ACTIONS.map(toAction);
-    case 'teams':
-      return TEAMS_ACTIONS.map(toAction);
-    case 'email':
-      return EMAIL_ACTIONS.map(toAction);
-    case 'telegram':
-      return TELEGRAM_ACTIONS.map(toAction);
-    default:
-      return [];
-  }
+  return isChannelPlatform(platform) ? CHANNEL_ACTIONS[platform].map(toAction) : [];
 }

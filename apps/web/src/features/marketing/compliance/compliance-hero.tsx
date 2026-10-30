@@ -1,26 +1,17 @@
 'use client';
 
-import { cn } from '@kortix/ui';
+import { useTranslations } from '@/i18n/use-translations';
+
 import Link from '@/components/site-link';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { cn } from '@kortix/ui';
 import { UsersThreeIcon } from '@phosphor-icons/react/dist/ssr';
 import { useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
-import {
-  accessProject,
-  accessRows,
-  auditRows,
-  auditStream,
-  groupRows,
-  heldCall,
-  hero,
-  ssoRows,
-  steps,
-  type StepId,
-} from './content';
 import { Status, Window } from '@/features/marketing/enterprise/parts';
+import { localizeMarketingContent as localizeContent, type StepId } from './content';
 
 /*
  * The /compliance hero, in the home page's SandBandHero layout: the two-tone
@@ -37,8 +28,11 @@ const row = 'flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py
 const frame = 'flex-none';
 
 function SsoStep() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { ssoRows } = localizeContent(tMarketing);
+
   return (
-    <Window title="Arcadia · Identity" className={frame}>
+    <Window title={tMarketing('texte5ef926b9bd7')} className={frame}>
       <ul className="flex flex-col divide-y">
         {ssoRows.map((r) => (
           <li key={r.k} className={row}>
@@ -55,8 +49,11 @@ function SsoStep() {
 }
 
 function DirectoryStep() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { groupRows } = localizeContent(tMarketing);
+
   return (
-    <Window title="Arcadia · Groups" className={frame}>
+    <Window title={tMarketing('text50e40164f19a')} className={frame}>
       <ul className="flex flex-col divide-y">
         {groupRows.map((r) => (
           <li key={r.k} className={row}>
@@ -69,20 +66,25 @@ function DirectoryStep() {
                 <span className="text-muted-foreground text-sm">{r.v}</span>
               </div>
             </div>
-            <span className="text-muted-foreground rounded-sm border px-2 py-0.5 text-xs">From your directory</span>
+            <span className="text-muted-foreground rounded-sm border px-2 py-0.5 text-xs">
+              {tMarketing('texta67b277c1791')}
+            </span>
           </li>
         ))}
       </ul>
       <p className="text-muted-foreground border-t px-4 py-3 text-sm sm:px-6">
-        Removed in your directory, removed here.
+        {tMarketing('texta10bcc5c788a')}
       </p>
     </Window>
   );
 }
 
 function AccessStep() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { accessProject, accessRows } = localizeContent(tMarketing);
+
   return (
-    <Window title={`Arcadia · ${accessProject} → Access`} className={frame}>
+    <Window title={tMarketing('text64354af1e35e', { project: accessProject })} className={frame}>
       <ul className="flex flex-col divide-y">
         {accessRows.map((r) => (
           <li key={r.who} className={row}>
@@ -102,15 +104,21 @@ function AccessStep() {
 }
 
 function ApprovalsStep() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { heldCall } = localizeContent(tMarketing);
+
   return (
-    <Window title="Arcadia · Review" className={frame}>
+    <Window title={tMarketing('text8049c8d2d39f')} className={frame}>
       <div className="flex flex-col gap-4 px-4 py-4 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 flex-col">
             <code className="text-foreground font-mono text-sm font-medium">{heldCall.call}</code>
-            <span className="text-muted-foreground text-sm">Asked by {heldCall.agent}</span>
+            <span className="text-muted-foreground text-sm">
+              {tMarketing('text2931d4b0626e')}
+              {heldCall.agent}
+            </span>
           </div>
-          <Status tone="wait">Ask</Status>
+          <Status tone="wait">{tMarketing('textb8c209cdead6')}</Status>
         </div>
         <dl className="bg-muted/50 flex flex-col gap-1 rounded-md px-3 py-2 font-mono text-xs">
           {heldCall.args.map((a) => (
@@ -126,8 +134,12 @@ function ApprovalsStep() {
           </span>
           {/* A picture of the controls, not controls: nothing to click. */}
           <span aria-hidden className="flex gap-2">
-            <span className="text-foreground rounded-md border px-3 py-1 text-sm">Deny</span>
-            <span className="bg-foreground text-background rounded-md px-3 py-1 text-sm">Approve</span>
+            <span className="text-foreground rounded-md border px-3 py-1 text-sm">
+              {tMarketing('text05a2d7332eb9')}
+            </span>
+            <span className="bg-foreground text-background rounded-md px-3 py-1 text-sm">
+              {tMarketing('text6007acbe30b2')}
+            </span>
           </span>
         </div>
       </div>
@@ -136,12 +148,17 @@ function ApprovalsStep() {
 }
 
 function AuditStep() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { auditRows, auditStream } = localizeContent(tMarketing);
+
   return (
-    <Window title="Arcadia · Audit log" className={frame}>
+    <Window title={tMarketing('text81a42b091ada')} className={frame}>
       <ul className="flex flex-col divide-y">
         {auditRows.map((r) => (
           <li key={`${r.t}-${r.action}`} className="flex items-start gap-4 px-4 py-3 sm:px-6">
-            <span className="text-muted-foreground w-10 shrink-0 font-mono text-xs leading-5 tabular-nums">{r.t}</span>
+            <span className="text-muted-foreground w-10 shrink-0 font-mono text-xs leading-5 tabular-nums">
+              {r.t}
+            </span>
             <div className="flex min-w-0 flex-1 flex-col">
               <span className="text-foreground text-sm">{r.who}</span>
               <code className="text-muted-foreground font-mono text-xs break-all">{r.action}</code>
@@ -167,6 +184,9 @@ const STEP_VIEWS: Record<StepId, () => ReactNode> = {
 };
 
 function Walkthrough() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { steps } = localizeContent(tMarketing);
+
   const reduced = Boolean(useReducedMotion());
   const [selected, setSelected] = useState(0);
   const [held, setHeld] = useState(false);
@@ -193,13 +213,15 @@ function Walkthrough() {
   };
 
   const step = steps[selected];
+  // An element, not a call: a call runs the view's hooks here, and their count changes per step.
+  const StepView = STEP_VIEWS[step.id];
   const fade = 'animate-in fade-in duration-slower ease-out';
 
   return (
     <div className="flex w-full flex-col items-center gap-8 lg:gap-10">
       <div
         role="tablist"
-        aria-label="How an admin sets up the controls"
+        aria-label={tMarketing('text109e9aeb5205')}
         onKeyDown={onKeyDown}
         className="flex flex-wrap justify-center gap-2"
       >
@@ -232,9 +254,12 @@ function Walkthrough() {
       >
         {/* A fixed height, set by the tallest step, keeps the band still while the steps change. */}
         <div key={step.id} className={cn('flex min-h-90 flex-col justify-center', fade)}>
-          {STEP_VIEWS[step.id]()}
+          <StepView />
         </div>
-        <p key={`line-${step.id}`} className={cn('text-foreground px-4 text-center text-base text-balance', fade)}>
+        <p
+          key={`line-${step.id}`}
+          className={cn('text-foreground px-4 text-center text-base text-balance', fade)}
+        >
           {step.line}
         </p>
       </div>
@@ -243,6 +268,9 @@ function Walkthrough() {
 }
 
 export function ComplianceHero() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { hero } = localizeContent(tMarketing);
+
   const openDemo = useRequestDemo();
   return (
     <section id="hero" className="relative">
@@ -252,14 +280,20 @@ export function ComplianceHero() {
             <span className="text-foreground block">{hero.title}</span>
             <span className="text-muted-foreground block">{hero.titleMuted}</span>
           </h1>
-          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">{hero.sub}</p>
+          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
+            {hero.sub}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2.5 pt-2">
           <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>
-            <Link href="/pricing">Compare plans</Link>
+            <Link href="/pricing">{tMarketing('text30d9abfd7c7a')}</Link>
           </MarketingButton>
-          <MarketingButton size="md" className="hit-area-y-1" onClick={() => openDemo({ source: 'compliance-hero' })}>
-            Talk to sales
+          <MarketingButton
+            size="md"
+            className="hit-area-y-1"
+            onClick={() => openDemo({ source: 'compliance-hero' })}
+          >
+            {tMarketing('textcfd0b0225710')}
           </MarketingButton>
         </div>
       </div>

@@ -15,7 +15,7 @@
  * - The MFA step-up registers an existing subscription again, at aal2.
  * - Sign-out or a change of person clears the Push mirror (2. below).
  *
- * Only while the `notification_center` flag is on for the project in the URL
+ * Only while notification_center or both Artifact comment flags are on in the project in the URL
  * (`useNotificationHostGate`; on a page without one: for any cached project):
  *
  * 1. Web Push: this browser subscribes while "Enable notifications" is on and
@@ -77,6 +77,7 @@ import {
 const HIDDEN_POLL_MS = 60_000;
 
 const ARRIVAL_LABEL = {
+  artifact: 'arrival.openArtifact',
   room: 'arrival.openConversation',
   session: 'arrival.openSession',
   reminders: 'arrival.openReminders',

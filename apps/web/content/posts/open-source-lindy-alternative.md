@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/open-source-lindy-alternative"
 ---
-Lindy puts a working agent in Slack within an afternoon and gives the first week away free; Kortix, the open-source AI Operating System, is what a team still holds when that week ends. The agent's instructions, its memory and its review gate sit in a repository the team owns. Rent or own comes down to what stops when the credits do. The files answer that question faster than the invoice.
+Lindy puts a working agent in Slack within an afternoon and gives the first week away free; Kortix CompanyOS is what a team still holds when that week ends. The agent's instructions, its memory and its review gate sit in a repository the team owns. Rent or own comes down to what stops when the credits do. The files answer that question faster than the invoice.
 
 ```logos
 label: 'Compared here:'

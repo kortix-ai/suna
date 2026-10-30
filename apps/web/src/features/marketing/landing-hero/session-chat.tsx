@@ -1,12 +1,16 @@
 'use client';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { BrandGlyph } from '@/features/marketing/kit/brand-glyph';
 import { cn } from '@kortix/ui';
+import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import Loading from '@kortix/ui/loading';
 import { Switch } from '@kortix/ui/switch';
 import {
   CalendarDotsIcon,
+  CaretDownIcon,
   CheckIcon,
   ClockIcon,
   FilesIcon,
@@ -97,6 +101,8 @@ export function SessionChat({ step, play }: { step: number; play: boolean }) {
 }
 
 function Chat({ step, play }: { step: number; play: boolean }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   const landed = useBeats(play, TIMES[step]);
   const reduced = Boolean(useReducedMotion());
   const scroller = useRef<HTMLDivElement>(null);
@@ -128,7 +134,7 @@ function Chat({ step, play }: { step: number; play: boolean }) {
 
   return (
     <section
-      aria-label="Session"
+      aria-label={tMarketing('text6959b4159575')}
       className="bg-background relative flex flex-1 flex-col overflow-hidden"
     >
       <header className="flex h-14 shrink-0 items-center justify-between pr-5 pl-6">
@@ -170,14 +176,13 @@ function Typing({ text }: { text: string }) {
 /* ── Step 1: Describe your goal ─────────────────────────────────────────── */
 
 function Goal({ at, enter }: { at: At; enter?: string }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   return (
     <>
       {at('send') ? <Prompt className={enter}>{DRAFT[0]}</Prompt> : null}
       {at('reply') ? (
-        <Reply className={cn('pt-3', enter)}>
-          I will find deals with no activity in 7 days, check each owner, and draft follow-ups in
-          the team&apos;s tone.
-        </Reply>
+        <Reply className={cn('pt-3', enter)}>{tMarketing('textb442d509019c')}</Reply>
       ) : null}
       {at('skill') ? (
         <Chain>
@@ -214,19 +219,17 @@ function Goal({ at, enter }: { at: At; enter?: string }) {
 /* ── Step 2: Connect your tools ─────────────────────────────────────────── */
 
 function Connect({ at, enter }: { at: At; enter?: string }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   return (
     <>
       {at('call') ? (
-        <Chain>
-          <StepRow
-            className={enter}
-            icon={PlugIcon}
-            verb={at('deals') ? 'Searched deals' : 'Calling'}
-            object="hubspot.search_deals"
-            result={at('deals') ? '7 deals' : undefined}
-            running={!at('deals')}
-          />
-        </Chain>
+        <WorkGroup
+          className={enter}
+          label={at('deals') ? tMarketing('textb1e19e0edf15') : tMarketing('textd6320415db95')}
+          running={!at('deals')}
+          steps={[{ icon: PlugIcon, verb: 'Searched deals', object: 'hubspot.search_deals', result: '7 deals' }]}
+        />
       ) : null}
       {at('connect') ? (
         <ConnectCard
@@ -241,24 +244,19 @@ function Connect({ at, enter }: { at: At; enter?: string }) {
         />
       ) : null}
       {at('done') ? (
-        <Chain>
-          <StepRow
-            className={enter}
-            icon={PencilSimpleIcon}
-            verb="Created tasks"
-            object="hubspot.create_task"
-            result="7 tasks"
-          />
-        </Chain>
+        <WorkGroup
+          className={enter}
+          label={tMarketing('text850aad6d0dc3')}
+          steps={[{ icon: PencilSimpleIcon, verb: 'Created tasks', object: 'hubspot.create_task', result: '7 tasks' }]}
+        />
       ) : null}
-      {at('summary') ? (
-        <Reply className={enter}>
-          7 deals went quiet. Each owner has a follow-up task in HubSpot with a drafted email.
-        </Reply>
-      ) : null}
+      {at('summary') ? <Reply className={enter}>{tMarketing('text3677cb6d7d0e')}</Reply> : null}
     </>
   );
 }
+
+/** A third-party logo is drawn for a white ground: white in both themes (color.md, logo tile rule). */
+const LOGO_TILE = 'bg-white';
 
 function ConnectCard({
   state,
@@ -267,43 +265,42 @@ function ConnectCard({
   state: 'idle' | 'connecting' | 'connected';
   className?: string;
 }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   return (
-    <div className={cn('bg-card flex items-center gap-3 rounded-lg border px-4 py-3', className)}>
-      <span className="bg-background flex size-9 items-center justify-center rounded-md border">
+    <div className={cn('bg-card flex items-center gap-3.5 rounded-lg border p-4', className)}>
+      <span className={`flex size-10 shrink-0 items-center justify-center rounded-md border ${LOGO_TILE}`}>
         <BrandGlyph slug="hubspot" />
       </span>
-      <span className="flex min-w-0 flex-col">
-        <span className="text-sm font-medium">HubSpot</span>
-        <span className="text-muted-foreground text-xs">
-          {state === 'connected'
-            ? 'Connected for this project'
-            : 'Connect to read deals and owners.'}
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-sm font-medium">{tMarketing('text5f5f6ddd5dbf')}</span>
+        <span className="text-muted-foreground truncate text-xs">
+          {state === 'connected' ? tMarketing('text2e2c3d4fb3f5') : tMarketing('textf668c1eac45f')}
         </span>
       </span>
       {state === 'idle' ? (
-        <Button size="xs" className="ml-auto" tabIndex={-1}>
-          Connect
+        <Button size="sm" tabIndex={-1}>
+          {tMarketing('text1a2303ede074')}
         </Button>
-      ) : (
-        <span
-          key={state}
-          className={cn('text-muted-foreground ml-auto flex items-center gap-1.5 text-xs', ENTER)}
-        >
-          {state === 'connecting' ? (
-            <Loading className="size-3" />
-          ) : (
-            <span aria-hidden className="bg-kortix-green size-1.5 rounded-full" />
-          )}
-          {state === 'connecting' ? 'Connecting' : 'Connected'}
+      ) : state === 'connecting' ? (
+        <span className={cn('text-muted-foreground flex items-center gap-1.5 text-xs', ENTER)}>
+          <Loading className="size-3" />
+          {tMarketing('textd403c686f6a1')}
         </span>
+      ) : (
+        <Badge variant="outline" className={ENTER}>
+          <span data-slot="status-dot" aria-hidden className="bg-kortix-green rounded-full" />
+          {tMarketing('text22965568d22a')}
+        </Badge>
       )}
     </div>
   );
 }
 
 /**
- * The inline permission prompt: the call, then Deny / Allow once / Allow for
- * session. Answered, it stays in the thread as the record of who allowed what.
+ * The inline permission prompt: what the agent wants to do, in words, with
+ * the call under it, then Deny / Allow once / Allow for session. Answered, it
+ * folds to one line: the record of who allowed what.
  */
 function ApprovalCard({
   state,
@@ -312,43 +309,43 @@ function ApprovalCard({
   state: 'ask' | 'allowing' | 'allowed';
   className?: string;
 }) {
-  const allowed = state === 'allowed';
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
+  if (state === 'allowed') {
+    return (
+      <div className={cn('flex items-center gap-2 text-sm', className)}>
+        <ShieldCheckIcon className="text-ring size-4 shrink-0" aria-hidden />
+        <span>{tMarketing('texta04bce7e92b4')}</span>
+        <span className="text-muted-foreground">{tMarketing('texta423f5bc1b99')}</span>
+      </div>
+    );
+  }
   return (
-    <div className={cn('bg-popover overflow-hidden rounded-md border', className)}>
-      <div className="flex items-center gap-2 border-b px-3 py-2">
-        {allowed ? (
-          <ShieldCheckIcon className="text-kortix-green size-4" aria-hidden />
-        ) : (
-          <ShieldWarningIcon className="text-kortix-orange size-4" aria-hidden />
-        )}
-        <span className="text-xs font-medium">
-          {allowed ? 'Allowed for this session' : 'Approval needed'}
+    <div className={cn('bg-card overflow-hidden rounded-lg border', className)}>
+      <div className="flex items-start gap-3 p-4">
+        <span className="bg-kortix-orange/15 text-kortix-orange flex size-8 shrink-0 items-center justify-center rounded-md">
+          <ShieldWarningIcon className="size-4" aria-hidden />
         </span>
-        <span className="text-muted-foreground text-xs">
-          {allowed ? 'by Member 1' : 'HubSpot rule: Ask'}
+        <span className="flex min-w-0 flex-col gap-1">
+          <span className="flex items-baseline gap-2">
+            <span className="text-sm font-medium">{tMarketing('text9928dd82f38f')}</span>
+            <span className="text-muted-foreground text-xs">{tMarketing('text4a86400223cc')}</span>
+          </span>
+          <span className="text-sm">{tMarketing('textdcb9b0684259')}</span>
+          <span className="text-muted-foreground font-mono text-xs">{tMarketing('text622bdac4d5b2')}</span>
         </span>
       </div>
-      <div className="flex items-center gap-3 px-3 py-2.5">
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="font-mono text-xs">hubspot.create_task</span>
-          <span className="text-muted-foreground text-xs">
-            Create 7 follow-up tasks for deal owners
-          </span>
-        </span>
-        {allowed ? null : (
-          <>
-            <Button size="xs" variant="ghost" tabIndex={-1}>
-              Deny
-            </Button>
-            <Button size="xs" variant="outline" tabIndex={-1}>
-              Allow once
-            </Button>
-            <Button size="xs" tabIndex={-1}>
-              {state === 'allowing' ? <Loading className="size-3" /> : null}
-              Allow for session
-            </Button>
-          </>
-        )}
+      <div className="bg-muted/40 flex items-center justify-end gap-2 border-t px-4 py-2.5">
+        <Button size="xs" variant="ghost" className="mr-auto" tabIndex={-1}>
+          {tMarketing('text05a2d7332eb9')}
+        </Button>
+        <Button size="xs" variant="outline" tabIndex={-1}>
+          {tMarketing('text168511d24d9e')}
+        </Button>
+        <Button size="xs" tabIndex={-1}>
+          {state === 'allowing' ? <Loading className="size-3" /> : null}
+          {tMarketing('textec9f8a9109ec')}
+        </Button>
       </div>
     </div>
   );
@@ -357,6 +354,8 @@ function ApprovalCard({
 /* ── Step 3: Automate work 24/7 ─────────────────────────────────────────── */
 
 function Automate({ at, enter }: { at: At; enter?: string }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   return (
     <>
       {at('send') ? <Prompt className={cn('mt-3', enter)}>{DRAFT[2]}</Prompt> : null}
@@ -372,53 +371,41 @@ function Automate({ at, enter }: { at: At; enter?: string }) {
         </Chain>
       ) : null}
       {at('card') ? <TriggerCard className={enter} /> : null}
-      {at('reply') ? (
-        <Reply className={enter}>Done. It runs every weekday at 08:00 in this session.</Reply>
-      ) : null}
-      {at('later') ? <Divider className={enter}>Tomorrow, 08:00</Divider> : null}
+      {at('reply') ? <Reply className={enter}>{tMarketing('text03f02a504991')}</Reply> : null}
+      {at('later') ? <Divider className={enter}>{tMarketing('text7ec9b6226b38')}</Divider> : null}
       {at('started') ? (
         <Prompt
           className={enter}
           above={
             <span className="text-muted-foreground flex h-6 items-center gap-1.5 rounded-md border px-2 text-xs">
               <ClockIcon className="size-3.5" aria-hidden />
-              Started by schedule
-              <span className="text-foreground">Quiet deals follow-up</span>
+              {tMarketing('textc6ea096aec0c')}
+              <span className="text-foreground">{tMarketing('text1a9d4ff40228')}</span>
             </span>
           }
         >
-          Find the deals that went quiet and draft a follow-up for each owner.
+          {tMarketing('textd44914710143')}
         </Prompt>
       ) : null}
       {at('run') ? (
-        <Chain>
-          <StepRow
-            className={cn('mt-3', enter)}
-            icon={PlugIcon}
-            verb="Searched deals"
-            object="hubspot.search_deals"
-            result="4 deals"
-          />
-          <StepRow
-            className={enter}
-            icon={PencilSimpleIcon}
-            verb={at('ran') ? 'Created tasks' : 'Creating tasks'}
-            object="hubspot.create_task"
-            result={at('ran') ? '4 tasks' : undefined}
-            running={!at('ran')}
-          />
-        </Chain>
+        <WorkGroup
+          className={cn('mt-3', enter)}
+          label={at('ran') ? tMarketing('textc5e0ccf193cb') : tMarketing('text1f60c85be705')}
+          running={!at('ran')}
+          steps={[
+            { icon: PlugIcon, verb: 'Searched deals', object: 'hubspot.search_deals', result: '4 deals' },
+            { icon: PencilSimpleIcon, verb: 'Created tasks', object: 'hubspot.create_task', result: '4 tasks' },
+          ]}
+        />
       ) : null}
-      {at('report') ? (
-        <Reply className={enter}>
-          4 more deals went quiet since yesterday. Follow-ups are in HubSpot.
-        </Reply>
-      ) : null}
+      {at('report') ? <Reply className={enter}>{tMarketing('text1283f8047db5')}</Reply> : null}
     </>
   );
 }
 
 function TriggerCard({ className }: { className?: string }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   return (
     <div className={cn('bg-card divide-y rounded-lg border', className)}>
       <div className="flex items-center gap-3 px-4 py-3">
@@ -427,12 +414,12 @@ function TriggerCard({ className }: { className?: string }) {
         </span>
         <span className="flex flex-col">
           <span className="text-sm font-medium">{TITLE}</span>
-          <span className="text-muted-foreground text-xs">Weekdays at 08:00</span>
+          <span className="text-muted-foreground text-xs">{tMarketing('text914233b97ca1')}</span>
         </span>
         <span className="text-muted-foreground ml-auto font-mono text-xs">0 8 * * 1-5</span>
-        <Switch checked aria-label="Trigger is on" tabIndex={-1} />
+        <Switch checked aria-label={tMarketing('textfb8d3b01db07')} tabIndex={-1} />
       </div>
-      <p className="text-muted-foreground px-4 py-2 text-xs">Next run: tomorrow at 08:00</p>
+      <p className="text-muted-foreground px-4 py-2 text-xs">{tMarketing('text3591d25578ce')}</p>
     </div>
   );
 }
@@ -442,38 +429,34 @@ function TriggerCard({ className }: { className?: string }) {
 const PEOPLE = ['M1', 'M2', 'M3'];
 
 function Share({ at, enter }: { at: At; enter?: string }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   return (
     <>
-      {at('shared') ? <Divider className={enter}>Shared with Sales · 3 people</Divider> : null}
-      {at('joined') ? <Divider className={enter}>Member 2 joined</Divider> : null}
+      {at('shared') ? <Divider className={enter}>{tMarketing('text54504b6c40af')}</Divider> : null}
+      {at('joined') ? <Divider className={enter}>{tMarketing('text2a828efad849')}</Divider> : null}
       {at('member') ? (
         <Prompt
           className={enter}
           above={
             <span className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
               <Initials label="M2" />
-              Member 2
+              {tMarketing('text682761f025aa')}
             </span>
           }
         >
-          I&apos;ll take the two enterprise deals. Can you move them to me?
+          {tMarketing('textf984dc613fd8')}
         </Prompt>
       ) : null}
       {at('update') ? (
-        <Chain>
-          <StepRow
-            className={cn('mt-3', enter)}
-            icon={PlugIcon}
-            verb={at('reply') ? 'Updated deals' : 'Updating deals'}
-            object="hubspot.update_deal"
-            result={at('reply') ? '2 deals' : undefined}
-            running={!at('reply')}
-          />
-        </Chain>
+        <WorkGroup
+          className={cn('mt-3', enter)}
+          label={at('reply') ? tMarketing('text24c939b23dfe') : tMarketing('text6cfe7973316d')}
+          running={!at('reply')}
+          steps={[{ icon: PlugIcon, verb: 'Updated deals', object: 'hubspot.update_deal', result: '2 deals' }]}
+        />
       ) : null}
-      {at('reply') ? (
-        <Reply className={enter}>Done. Member 2 owns the two enterprise deals now.</Reply>
-      ) : null}
+      {at('reply') ? <Reply className={enter}>{tMarketing('texted18f67bfab0')}</Reply> : null}
     </>
   );
 }
@@ -488,10 +471,12 @@ function Initials({ label }: { label: string }) {
 
 /** The header's participant stack: overlapping initials. */
 function Participants({ className }: { className?: string }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   return (
     <span
       role="img"
-      aria-label="Member 1, Member 2, Member 3"
+      aria-label={tMarketing('textc2b0576b422f')}
       className={cn('flex -space-x-1', className)}
     >
       {PEOPLE.map((p) => (
@@ -503,25 +488,26 @@ function Participants({ className }: { className?: string }) {
 
 /** The Share control's panel: the Sales group picked. Opens with no motion, like every popover. */
 function SharePanel() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   return (
     <div className="bg-popover absolute top-13 right-5 z-10 flex w-80 flex-col gap-3 rounded-xl border p-4 shadow-lg">
       <div className="flex flex-col gap-0.5">
-        <p className="text-sm font-medium">Session access</p>
-        <p className="text-muted-foreground text-xs">
-          Anyone with access can read and continue it.
-        </p>
+        <p className="text-sm font-medium">{tMarketing('textbc9424d3f527')}</p>
+        <p className="text-muted-foreground text-xs">{tMarketing('text5afaa091082e')}</p>
       </div>
       <div className="bg-muted flex items-center gap-2.5 rounded-lg px-2 py-1.5">
         <span className="bg-background text-muted-foreground flex size-6 items-center justify-center rounded-md">
           <UsersIcon className="size-3.5" aria-hidden />
         </span>
         <span className="flex-1 text-sm">
-          Sales <span className="text-muted-foreground text-xs">· group · 3 people</span>
+          {tMarketing('text8de4e0ea7370')}
+          <span className="text-muted-foreground text-xs">{tMarketing('textc0711810e523')}</span>
         </span>
         <CheckIcon className="size-4" aria-hidden />
       </div>
       <Button size="sm" className="self-end" tabIndex={-1}>
-        Share
+        {tMarketing('text29887a5ff984')}
       </Button>
     </div>
   );
@@ -560,6 +546,68 @@ function Divider({ children, className }: { children: ReactNode; className?: str
       <span className="bg-border h-px flex-1" />
       {children}
       <span className="bg-border h-px flex-1" />
+    </div>
+  );
+}
+
+type WorkStep = { icon: Icon; verb: string; object: string; result?: string };
+
+/**
+ * One line that says what the agent did, in words; the tool calls behind it
+ * fold under it. Closed by default, like the app's turn fold: the reader sees
+ * the outcome, and opens it for the calls.
+ */
+function WorkGroup({
+  label,
+  steps,
+  running,
+  className,
+}: {
+  label: string;
+  steps: readonly WorkStep[];
+  running?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={cn('flex flex-col', className)}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="group/work hover:text-foreground flex w-fit items-center gap-2.5 text-sm"
+      >
+        <span className="flex size-4 flex-none items-center justify-center">
+          {running ? <Loading className="size-3.5" /> : <SolidCheckIcon className="text-ring" />}
+        </span>
+        <span>{label}</span>
+        <span className="text-muted-foreground text-xs">
+          {steps.length} {steps.length === 1 ? 'step' : 'steps'}
+        </span>
+        <CaretDownIcon
+          aria-hidden
+          className={cn(
+            'text-muted-foreground group-hover/work:text-foreground duration-normal size-3 transition-transform ease-out',
+            open && 'rotate-180',
+          )}
+        />
+      </button>
+      <div
+        className={cn(
+          'duration-normal grid transition-[grid-template-rows] ease-out motion-reduce:transition-none',
+          open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+        )}
+      >
+        <div className="min-h-0 overflow-hidden" inert={!open}>
+          <div className="pt-2.5 pl-6.5">
+            <Chain>
+              {steps.map((step) => (
+                <StepRow key={step.object} {...step} />
+              ))}
+            </Chain>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

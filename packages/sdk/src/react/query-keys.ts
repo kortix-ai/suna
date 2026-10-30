@@ -550,6 +550,8 @@ export const qk = {
     roomList: (id: string) => [...qk.project.rooms(id), 'list'] as const,
     /** `listRooms({ mine: true })` — the caller's conversations with unread counts. */
     roomConversations: (id: string) => [...qk.project.rooms(id), 'mine'] as const,
+    /** `findRoomByName` — the room of a space (named like its slug), or null. */
+    spaceRoom: (id: string, name: string) => [...qk.project.rooms(id), 'name', name] as const,
     /** `getRoom` — one conversation and its members. */
     room: (id: string, roomId: string) => [...qk.project.rooms(id), 'room', roomId] as const,
     /** `listRoomMessages` — the newest messages of one conversation. */
@@ -561,6 +563,8 @@ export const qk = {
      *  of every `sessionReminders` key, so invalidating it refreshes the
      *  project page and every session's reminder chip together. */
     reminders: (id: string) => [...qk.project.scope(id), 'reminders'] as const,
+    /** `listUnifiedTriggers` — `GET /projects/:id/triggers/all`: kortix.yaml and runtime triggers in one list. */
+    unifiedTriggers: (id: string) => [...qk.project.scope(id), 'unified-triggers'] as const,
     /** `listProjectSpaces` — the project's channels and the caller's DMs. */
     spaces: (id: string) => [...qk.project.scope(id), 'spaces'] as const,
     /** `listProjectSessionGroups` — the project's session groups, in order. */
@@ -608,6 +612,10 @@ export const qk = {
     artifact: (id: string, artifactId: string, version: string = 'current') => [...qk.project.artifacts(id), 'one', artifactId, version] as const,
     /** `listArtifactVersions`. */
     artifactVersions: (id: string, artifactId: string) => [...qk.project.artifacts(id), 'versions', artifactId] as const,
+    artifactComments: (id: string, artifactId: string, status?: string, version?: string) => [...qk.project.artifacts(id), 'comments', artifactId, ...(status ? [status] : []), ...(version ? [{ version }] : [])] as const,
+    artifactCommentContext: (id: string, artifactId: string, options: { version?: string; agent?: string } = {}) => [...qk.project.artifactComments(id, artifactId), 'context', JSON.stringify(options)] as const,
+    artifactActivity: (id: string, artifactId: string, options?: { limit?: number; cursor?: string }) => [...qk.project.artifacts(id), 'activity', artifactId, ...(options ? [JSON.stringify(options)] : [])] as const,
+    artifactActivityInfinite: (id: string, artifactId: string, limit: number) => [...qk.project.artifactActivity(id, artifactId), 'infinite', limit] as const,
     /** `readArtifactFile` of a doc's Markdown at one entry version. Immutable,
      *  so outside the `artifacts` prefix: a write never refetches it. */
     artifactText: (id: string, artifactId: string, entryVersion: string) => [...qk.project.scope(id), 'artifact-text', artifactId, entryVersion] as const,

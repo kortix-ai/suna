@@ -1,6 +1,5 @@
 import { copySessionLog, withForkAttachmentCleanup } from '../session-log-fork';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
-import { writeSessionLogFromMirror } from '../session-log-capture';
 import { captureJournallessSessionLog } from './session-transcript-capture';
 import { randomUUID } from 'node:crypto';
 import { SESSION_INITIAL_CONTEXT_MAX_CHARS, SessionCreateInputSchema } from '@kortix/api-contract';
@@ -71,6 +70,7 @@ import {
 
 import { type ProjectRow, type ProjectSessionRow, type RequestAuditContext, normalizeString } from './serializers';
 import { normalizeJsonObject } from '../../shared/json';
+import { resolveBuiltinAgents } from './platform-meta-agent';
 import { isUuid } from '../../shared/validate';
 import {
   canonicalConnectorAlias,
@@ -536,11 +536,15 @@ async function resolveSessionAgent(params: {
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
-  // The meta coordinator is a per-project experimental opt-in
-  // (`meta_agent`). Flag off: agent resolution below is byte-for-byte the
-  // pre-meta behavior, and an explicit "meta" request is an ordinary (unknown)
-  // agent name.
-  const metaAgentEnabled = resolveFeatureFlag(project.metadata, 'meta_agent');
+  // My Kortix (slug `meta`) is on unless kortix.yaml sets
+  // `builtin_agents.my_kortix: false` (no key: the legacy `meta_agent` switch).
+  // Off: agent resolution below is the pre-meta behavior, and a session that
+  // would run `meta` is refused with 409 builtin_agent_disabled. Without the
+  // refusal it ran with My Kortix's grant, prompt and sandbox anyway.
+  const metaAgentEnabled = resolveBuiltinAgents(
+    loadedAgents.builtinAgents ?? {},
+    resolveFeatureFlag(project.metadata, 'meta_agent'),
+  ).my_kortix;
   // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
   // the meta coordinator, and an omitted agent still defaults to it. The one
   // exception is a caller that IS a meta session: its omitted agent resolves
@@ -569,6 +573,18 @@ async function resolveSessionAgent(params: {
           manifestDefaultAgent: normalizeString(loadedAgents.defaultAgent),
           mirroredDefaultAgent,
         });
+  if (!metaAgentEnabled && isMetaAgentName(agentName)) {
+    return {
+      error: {
+        status: 409,
+        body: {
+          error:
+            'My Kortix is off in this project. Pick a project agent, or set `builtin_agents: { my_kortix: true }` in kortix.yaml.',
+          code: 'builtin_agent_disabled',
+        },
+      },
+    };
+  }
   const platformMetaAgent = metaAgentEnabled && isMetaAgentName(agentName);
   if (platformMetaAgent && callerIsMeta) {
     return {
@@ -576,7 +592,7 @@ async function resolveSessionAgent(params: {
         status: 400,
         body: {
           error:
-            'The meta coordinator cannot spawn another meta coordinator — pick a project agent',
+            'My Kortix cannot start another My Kortix session. Pick a project agent.',
           code: 'META_AGENT_RECURSION',
         },
       },
@@ -1005,6 +1021,11 @@ function resolveSessionIdentity(params: {
         sessionId,
         actorUserId: userId,
         authorSessionId: input.callerSessionId ?? null,
+        ...(input.metadata?.source === 'system:artifact-comment' ? {
+          source: 'system:artifact-comment' as const,
+          artifactId: input.artifactId,
+          artifactCommentDelivery: input.metadata.artifactCommentDelivery as { job_id: string; target_key: string } | undefined,
+        } : {}),
       })
     : null;
   if (pendingPromptConversion?.error) {
@@ -1622,6 +1643,7 @@ async function provisionCreatedSession(params: {
 }
 
 export async function createProjectSession(input: {
+  artifactId?: string;
   attachmentSourceCommandId?: string;
   /** The `create_session` command to link the new session to, atomically. */
   createCommandId?: string;
@@ -1825,10 +1847,6 @@ export async function createProjectSession(input: {
       return { error: { status: 409, body: { error: 'Source history capture is incomplete' } } };
     }
     input.forkCaptureComplete = capture?.head_complete === true;
-    const converted = await writeSessionLogFromMirror(body.fork_from_session_id);
-    if (converted.outcome === 'failed' || converted.outcome === 'invalid' || converted.outcome === 'too_large') {
-      return { error: { status: 409, body: { error: 'Source history capture is unavailable' } } };
-    }
   }
 
   const { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion } = identity;

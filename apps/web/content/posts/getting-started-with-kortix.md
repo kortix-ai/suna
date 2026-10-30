@@ -12,7 +12,7 @@ Four commands get you from an empty directory to a shipped project: install the 
 
 ## What lands in your project
 
-`kortix init` writes the platform onto your disk: a `kortix.yaml` manifest, starter agents, and the runtime configuration that reads them ([Kortix on GitHub](https://github.com/kortix-ai/suna)). Kortix is the open-source AI Operating System. The directory it creates holds all of it: agents, the skills they draw on, your company's memory, and the connector setup, each one a file you can read in an editor ([Kortix docs](https://kortix.com/docs)). Change a line, and the company changes by that one diff. Revert the line, and the change is gone.
+`kortix init` writes the platform onto your disk: a `kortix.yaml` manifest, starter agents, and the runtime configuration that reads them ([Kortix on GitHub](https://github.com/kortix-ai/suna)). Kortix is the open-source CompanyOS. The directory it creates holds all of it: agents, the skills they draw on, your company's memory, and the connector setup, each one a file you can read in an editor ([Kortix docs](https://kortix.com/docs)). Change a line, and the company changes by that one diff. Revert the line, and the change is gone.
 
 Each file has a job. An agent is an OpenCode agent with scoped reach into tools, written per role or task. A skill records how your company handles one piece of work, so you write it once and any session can load it. Memory is the living company brain, kept in plain files today. Watch a session run and diff what a skill or an agent proposes before it lands ([Kortix about](https://kortix.com/about)).
 

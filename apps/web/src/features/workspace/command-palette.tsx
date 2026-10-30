@@ -1,5 +1,6 @@
 'use client';
 
+import { useChromeOffered } from '@kortix/ui/internal/chrome/use-chrome-offered';
 import { SessionSharedIcon } from '@kortix/ui/workspace/projects/session-shared-icon';
 import {
   AlertDialog,
@@ -1252,7 +1253,6 @@ export function CommandPalette() {
         // who can act on reviews gets the list.
         'review-changes': customizeTabs.split(' ').includes('review'),
         // Customize tabs with their own row: shown exactly when the tab is.
-        'proj-reminders': customizeTabs.split(' ').includes('reminders'),
         'proj-repo': customizeTabs.split(' ').includes('files'),
       },
     };
@@ -1345,9 +1345,10 @@ export function CommandPalette() {
   // No `flags` argument any more: Marketplace, Review and Voice were the only
   // flag-gated rail rows and all three moved to `/projects/<id>/config`, whose
   // own sub-nav composes them. Nothing left in the rail varies by flag.
+  const chromeOffered = useChromeOffered(open);
   const allSettingsGroups = useMemo(
-    () => settingsPaletteGroups({ hasProject: !!projectId }, (key) => tSettingsRail(key as never)),
-    [projectId, tSettingsRail],
+    () => settingsPaletteGroups({ hasProject: !!projectId, chromeOffered }, (key) => tSettingsRail(key as never)),
+    [projectId, chromeOffered, tSettingsRail],
   );
 
   const filteredSettingsGroups = useMemo(

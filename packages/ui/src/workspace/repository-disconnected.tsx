@@ -16,7 +16,7 @@ import {
   useRepositoryDisconnect,
   type RepositoryDisconnect,
 } from '../internal/components/repository-disconnected';
-import { customizePath } from '../lib/routes';
+import { adminPath } from '../lib/routes';
 import { Button } from '../primitives/button';
 import { UiLink as Link } from '../providers/ui-provider';
 import {
@@ -57,7 +57,7 @@ export function ProjectRepositoryDisconnectedAlertView({
       <SidebarAlertActions>
         <ReconnectGitHubButton projectId={projectId} className="w-full" />
         <Button asChild size="sm" variant="ghost" className="w-full">
-          <Link href={customizePath(projectId, 'settings?section=git')}>{t('openSettings')}</Link>
+          <Link href={adminPath(projectId, 'git')}>{t('openSettings')}</Link>
         </Button>
       </SidebarAlertActions>
     </SidebarAlert>

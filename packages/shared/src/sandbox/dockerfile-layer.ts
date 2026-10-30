@@ -6,17 +6,16 @@
  * makes the result *connectable* by the Kortix dashboard:
  *
  *   1. apt-get install ca-certificates curl git nodejs npm
- *   2. npm install -g opencode-ai@<pinned-version>
- *   3. COPY the kortix-agent + kortix-entrypoint binaries to /usr/local/bin
- *   4. ENV KORTIX_WORKSPACE=/workspace, WORKDIR /workspace, EXPOSE 8000
- *   5. ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]
+ *   2. COPY the kortix-agent + kortix-entrypoint binaries to /usr/local/bin
+ *   3. ENV KORTIX_WORKSPACE=/workspace, WORKDIR /workspace, EXPOSE 8000
+ *   4. ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]
  *
  * The project workspace is NOT baked in — the daemon git-clones it at boot
  * via `KORTIX_PROJECT_AUTO_CLONE`. That keeps the image identity decoupled
  * from project source code, so a code change never invalidates a snapshot
  * and most projects share a single global default image.
  *
- * Steps 1-2 require apt (Debian/Ubuntu family base). Step 5 means the
+ * Step 1 requires apt (Debian/Ubuntu family base). Step 4 means the
  * user's ENTRYPOINT is always overridden — see docs/dockerfile.mdx for
  * the user-facing constraint list.
  */
@@ -43,6 +42,7 @@ import {
   UV_VERSION,
   assertPiSystemPackage,
 } from '../runtime-versions';
+import { SANDBOX_DESKTOP_INSTALL_COMMAND } from './desktop';
 import {
   SANDBOX_SHELL_TOOL_APT_LIST,
   SANDBOX_SHELL_TOOL_LINK_COMMAND,
@@ -50,7 +50,6 @@ import {
 import {
   SANDBOX_CLI_OWNERSHIP_COMMAND,
   SANDBOX_MANAGED_SKILLS_DIR,
-  SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND,
   SANDBOX_RUNTIME_ASSETS_STATE_COMMAND,
   SANDBOX_RUNTIME_ASSETS_STATE_PATH,
 } from './platform-binaries';
@@ -82,7 +81,7 @@ import {
  */
 /**
  * The `kortix` user's toolchain directories — everything the runtime resolves
- * from PATH (opencode via pnpm-global, pnpm itself, uv-managed Python, bun). Shared
+ * from PATH (pnpm-global tools, pnpm itself, uv-managed Python, bun). Shared
  * between the toolchain layer's `ENV PATH` and the staged entrypoint script.
  * Some providers discard `ENV` at boot, so the entrypoint restores this value.
  */
@@ -110,7 +109,7 @@ export const KORTIX_SHELL_PROFILE_PATH = '/etc/profile.d/zz-kortix.sh';
  * (kortix-sandbox-agent-server routes/pty.ts). A login shell sources
  * /etc/profile. Debian's /etc/profile resets PATH for every login shell
  * (non-root: `/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games`), so
- * `opencode`, `pnpm`, `python`, and `bun` were `command not found` in the
+ * `pnpm`, `python`, and `bun` were `command not found` in the
  * terminal of every Debian-based custom template. Ubuntu's /etc/profile does
  * not touch PATH. The agent's own shells are non-login `bash -c` and were never
  * affected.
@@ -185,68 +184,16 @@ export const PLATFORM_DEFAULT_USER_DOCKERFILE = [
 
 /**
  * Inputs for the toolchain half of the layer — everything that installs into
- * the image from the NETWORK (apt, pip, npm, bun, Playwright) plus the
- * build-time opencode warm-ups. The warm-up script is optional: without it this
- * renders against an empty build context for the CLI's local sandbox; snapshot
- * builders stage it to enable the cache-only warm-up steps.
+ * the image from the NETWORK (apt, pip, npm, bun, Playwright). It renders
+ * against an empty build context.
  */
 export interface KortixToolchainLayerOpts {
-  /**
-   * Pinned opencode CLI version (matches platform-wide `OPENCODE_VERSION`).
-   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
-   */
-  opencodeVersion: string;
   /**
    * Pinned `agent-browser` CLI version. Optional — defaults to
    * `DEFAULT_AGENT_BROWSER_VERSION`. The builder passes the platform-wide
    * `AGENT_BROWSER_VERSION` so the pin is centralized and fingerprinted.
    */
   agentBrowserVersion?: string;
-  /**
-   * Build-context path to the cache-only OpenCode warm-up script.
-   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
-   */
-  opencodeWarmupScriptPath?: string;
-  /**
-   * Path (in the build context) to the canonical starter `.kortix/opencode`
-   * config tree (pty plugin + standard tools + skills). When provided, the
-   * layer warms a real opencode PROJECT INSTANCE against it at build time so the
-   * costly first-instance work (Bun plugin auto-install/transpile, models.dev
-   * fetch, ripgrep) is cached into the image instead of paid on the session hot
-   * path. Optional — omit to skip the instance warm-up.
-   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
-   */
-  opencodeConfigPath?: string;
-  /**
-   * True iff this image is the platform's SHARED default (no user Dockerfile —
-   * `PLATFORM_DEFAULT_USER_DOCKERFILE`). Gates the post-warm-up /workspace WIPE.
-   *
-   * The wipe exists to clear the starter opencode config the warm-up stages into
-   * /workspace, and for the shared default that is ALL /workspace holds, so
-   * "delete everything" is exact. On a CUSTOM template it is not: the user's
-   * Dockerfile ran FIRST and `WORKDIR /workspace` is a documented convention, so
-   * any image that seeds data/caches/a toolchain there had it silently deleted by
-   * a step it never asked for (and one wrapped in `set +e … true`, so it couldn't
-   * even fail loudly). Custom templates therefore get a TARGETED cleanup of only
-   * what the warm-up itself staged.
-   *
-   * KNOWN GAP (narrow, deliberately not closed here). A surviving /workspace is
-   * safe for the daemon's boot clone: materializeRepo (agent-server/src/git.ts)
-   * clones into a temp dir and `rm -rf`s + renames over the target, so a non-empty
-   * /workspace is replaced wholesale rather than cloned INTO — no dirty-target
-   * failure. The one exception is a custom image that bakes a `.git` at the
-   * /workspace ROOT (not a subdir): materializeRepo keys its "using baked repo
-   * checkout (warm)" fast path purely on `${target}/.git` existing. A FRESH session
-   * still re-materializes correctly (the baked HEAD != the session's baseSha →
-   * `mismatched`), but a restart/resume has no baseSha to compare and would reuse
-   * the user's unrelated repo as the project checkout. Previously the wipe hid this
-   * by deleting that .git. The safe close is in the DAEMON, not here: have the fast
-   * path require a platform-written marker (the seed path is the
-   * only things that legitimately bake a /workspace/.git) instead of inferring
-   * ownership from a bare .git. Tracked rather than fixed in this change because it
-   * alters boot semantics for the warm-seed paths too and wants its own rollout.
-   */
-  isSharedDefault?: boolean;
   /**
    * kortix.yaml `container_runtime: true`. The provider bakes the guest
    * kernel's full module tree (Platinum `kernel_modules: container`); the guest
@@ -295,17 +242,10 @@ export interface KortixArtifactLayerOpts {
    */
   slackCliPath: string;
   /**
-   * Path (in the build context) to the baked full gateway model catalog JSON.
-   * COPY'd into the image so the no-restart warm seed — which has no sandbox
-   * token / projectId to fetch the catalog at PARK — gets the full model picker
-   * instead of the daemon's minimal fallback. Optional; omit to skip.
-   */
-  catalogPath?: string;
-  /**
    * Build-context path to the staged managed `kortix-*` skill overlay, baked
    * at {@link SANDBOX_MANAGED_SKILLS_DIR}.
    *
-   * REQUIRED, unlike `catalogPath`. Optional is how this diverged in the first
+   * REQUIRED. Optional is how this diverged in the first
    * place: the meta image passed a path, the standard layer had no field at
    * all, and every ordinary session sandbox — dev, prod and preview alike —
    * booted with nothing to overlay and downloaded the whole overlay on its
@@ -323,9 +263,7 @@ export interface BuildLayeredDockerfileOpts
 
 /**
  * The network-install half of the Kortix runtime layer: the apt floor, the
- * uv-managed Python, opencode + its baked config deps, bun, the
- * build-time opencode warm-ups (incl. the optional per-project repo bake), and
- * agent-browser + its Playwright Chromium.
+ * uv-managed Python, bun, and agent-browser + its Playwright Chromium.
  *
  * Renders against an EMPTY build context — it stages nothing. Ends with a
  * trailing newline so it concatenates directly onto `kortixArtifactLayer`.
@@ -333,70 +271,6 @@ export interface BuildLayeredDockerfileOpts
 // Single-quote a value for safe embedding in a build-time bash RUN.
 const shq = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
 
-
-/**
- * Warm a real opencode PROJECT INSTANCE at build time. The first time opencode
- * creates an instance for a project dir it loads that dir's .kortix/opencode
- * surface — importing the pty plugin + tools — which makes Bun auto-install /
- * transpile the plugin dep tree and opencode fetch its model catalog +
- * ripgrep. On a fresh VM that's a one-time ~6s stall (up to ~60s when npm /
- * GitHub are contended) that gates runtimeReady right on the session hot path.
- * We pay it ONCE here, against the canonical starter config staged at the SAME
- * runtime path (/workspace) so Bun's content-addressed transpile cache hits at
- * boot. For the SHARED default image we then wipe /workspace (the session
- * clones into it). The repo is
- * already baked at /workspace. We restore its exact pre-warm state, then the
- * daemon boots from it with NO clone. For a CUSTOM template we remove only the config we
- * staged: /workspace is the user's. Either way the warmed caches under
- * the `kortix` user's home persist in the image layer. Measured: cold first-instance
- * 6–60s → ~2–4s after this bake. Requires opencode + bun + the baked config
- * deps to already be present in the image (either from the toolchain layer
- * above, or inherited via FROM on the fast path), so it must come after them.
- * Required: a warm-up failure stops the image build. Shipping an unwarmed image
- * moves the same initialization onto every session's startup path.
- *
- * Returns `[]` when there's no starter config to warm against.
- */
-function buildOpencodeInstanceWarmupLines(opts: {
-  opencodeConfigPath?: string;
-  opencodeWarmupScriptPath?: string;
-  isSharedDefault?: boolean;
-}): string[] {
-  const { opencodeConfigPath, opencodeWarmupScriptPath, isSharedDefault } = opts;
-  if (!opencodeConfigPath || !opencodeWarmupScriptPath) return [];
-  const cleanup = isSharedDefault ? 'wipe' : 'targeted';
-  return [
-    `COPY --chown=kortix:kortix ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
-    // Same "does it actually bundle" check as the opencode-config-deps
-    // verification above, but exercised against the REAL starter plugin
-    // files (the pty plugin) with the baked config deps — what OpenCode
-    // imports on a session's first prompt. The Kortix tools are hosted by the
-    // daemon (services/tools), so the starter carries no `tools/` to check.
-    // Deliberately its own RUN step: a plugin that cannot bundle breaks every
-    // session's first prompt, so the image build must fail before it reaches
-    // the warm-up readiness probe below.
-    // E2B's Dockerfile parser does not preserve COPY --chown. Correct the
-    // ownership explicitly before the standard kortix user changes this tree.
-    'RUN sudo chown -R kortix:kortix /opt/kortix/warm-config',
-    'RUN cd /opt/kortix/warm-config/.kortix/opencode \\',
-    '    && rm -rf node_modules \\',
-    '    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\',
-    '    && bun build plugins/*.ts --target=bun --outdir=/tmp/opencode-plugins-bundle-check \\',
-    '    && rm -rf /tmp/opencode-plugins-bundle-check \\',
-    '    && echo "opencode-config-deps: starter plugin files bundle cleanly"',
-    '',
-    `COPY --chown=kortix:kortix ${opencodeWarmupScriptPath} /tmp/kortix-opencode-warmup`,
-    // Stage the canonical starter opencode config so the instance warm-up
-    // has the pty plugin to load. In repo mode the script hides any
-    // repository-controlled `.kortix` tree and points OPENCODE_CONFIG_DIR at
-    // this canonical tree. Git cleanup restores the repository tree afterward.
-    // The warm-up script records whether the starter config in /workspace is
-    // ours and limits cleanup accordingly.
-    // Three cases, and only one of them may delete indiscriminately:
-    `RUN bash /tmp/kortix-opencode-warmup instance ${cleanup} && rm -f /tmp/kortix-opencode-warmup`,
-    '',
-  ];
-}
 
 /** pi's global agent dir in the image; the daemon's KORTIX_PI_AGENT_DIR default. */
 export const PI_AGENT_DIR = '/opt/kortix/pi-agent';
@@ -439,11 +313,7 @@ export function piSystemPackageWarmLines(packages: readonly string[]): string[] 
 
 export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
   const {
-    opencodeVersion,
     agentBrowserVersion = DEFAULT_AGENT_BROWSER_VERSION,
-    opencodeWarmupScriptPath,
-    opencodeConfigPath,
-    isSharedDefault,
     containerRuntime,
   } = opts;
 
@@ -486,14 +356,17 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && rm -rf /var/lib/apt/lists/* \\',
     `    && ${SANDBOX_SHELL_TOOL_LINK_COMMAND}`,
     '',
+    // The session desktop (Xvfb + XFCE + voxl on :6901). See desktop.ts.
+    `RUN ${SANDBOX_DESKTOP_INSTALL_COMMAND}`,
+    '',
     'RUN useradd --create-home --shell /bin/bash --user-group kortix \\',
     // E2B's Dockerfile parser removes the backslash from a quoted `\\n`.
     // Use echo so every provider writes the same valid sudoers line.
     "    && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\",
     '    && chmod 0440 /etc/sudoers.d/kortix \\',
-    '    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\',
+    '    && mkdir -p /workspace /opt/kortix /opt/pw-browsers \\',
     '        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\',
-    '    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix',
+    '    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /home/kortix',
     ...(containerRuntime
       ? [
           'RUN apt-get update && apt-get install -y --no-install-recommends kmod \\',
@@ -594,13 +467,9 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     //
     // ── LAYER ORDER IS LOAD-BEARING — DO NOT MOVE THIS DOWN ───────────────────
     // This ~150MB Chromium download sits DIRECTLY on top of the deterministic
-    // apt + pip floors and DELIBERATELY ABOVE everything below it: the opencode
-    // install, the `opencode serve` migration-bake, the config-deps bun install,
-    // the per-project warm-repo clone, and the opencode instance warm-up. Several
-    // of those layers are NON-DETERMINISTIC by construction — the migration-bake
-    // writes a sqlite db with live timestamps, the config-deps install churns
-    // node_modules mtimes, and the warm-repo clone bakes a fresh short-lived git
-    // credential into its RUN text on every single invocation. The providers'
+    // apt + pip floors and DELIBERATELY ABOVE everything below it: a
+    // NON-DETERMINISTIC layer (an install that churns mtimes, a RUN text with a
+    // fresh credential) must never sit above it. The providers'
     // build caches are CONTENT-ADDRESSED (Daytona especially — it has no
     // Docker-style instruction-text cache and no `swapAgent` fast path), so ANY
     // non-deterministic layer BUSTS the cache for everything chained BELOW it.
@@ -608,7 +477,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // The kortix-agent SOURCE feeds the snapshot fingerprint (see
     // AGENT_RUNTIME_ARTIFACTS in apps/api/src/snapshots/templates.ts), so any
     // agent-server code change mints a BRAND-NEW snapshot name → a full rebuild on
-    // Daytona (no agent-swap). If Chromium sat below the migration-bake (as it did
+    // Daytona (no agent-swap). If Chromium sat below a non-deterministic layer (as it did
     // through v0.10.11), every such rebuild MISSED cache and re-downloaded ~150MB
     // from cdn.playwright.dev — overrunning the session-ready window and breaking
     // fresh-sandbox boots (the v0.10.11 "session never starts" incident). Keeping
@@ -618,7 +487,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // loop + 30-min timeout below are the SAFETY NET for that one cold fetch.
     'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\',
     '    AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \\',
-    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\',
+    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage,--test-type,--disable-infobars \\',
     // Playwright's browser download defaults to a 30s socket timeout
     // (NET_DEFAULT_TIMEOUT in playwright-core), which a ~150MB Chrome-for-Testing
     // fetch can miss under any network hiccup / contended CDN — observed live as
@@ -636,7 +505,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // below still hard-fails the build if every attempt came up empty, so a total
     // failure never ships a browser-less image.
     '    && for pw_try in 1 2 3 4 5; do \\',
-    `        pnpm dlx playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium && break; \\`,
+    `        pnpm dlx playwright@${PLAYWRIGHT_VERSION} install --with-deps --no-shell chromium && break; \\`,
     '        echo "playwright chromium install attempt $pw_try failed, retrying..."; \\',
     '        sleep $((pw_try*10)); \\',
     '    done \\',
@@ -646,6 +515,16 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && ln -sf "$pw_chrome" /home/kortix/.local/bin/chromium \\',
     '    && mkdir -p /home/kortix/.agent-browser/browsers \\',
     '    && ln -sf "$(dirname "$pw_chrome")" /home/kortix/.agent-browser/browsers/chrome-linux64 \\',
+    // One browser on the machine: no separate headless shell (~260 MB). Its
+    // path, where Playwright's headless launches look, is the same Chromium.
+    // The markers stop a later `playwright install` from fetching it anyway.
+    '    && pw_rev="${pw_chrome#/opt/pw-browsers/chromium-}" && pw_rev="${pw_rev%%/*}" \\',
+    '    && pw_shell_dir="/opt/pw-browsers/chromium_headless_shell-${pw_rev}" \\',
+    '    && case "$(uname -m)" in x86_64) pw_shell=chrome-headless-shell-linux64/chrome-headless-shell ;; *) pw_shell=chrome-linux/headless_shell ;; esac \\',
+    '    && mkdir -p "$(dirname "${pw_shell_dir}/${pw_shell}")" \\',
+    '    && ln -sf "$pw_chrome" "${pw_shell_dir}/${pw_shell}" \\',
+    '    && touch "${pw_shell_dir}/INSTALLATION_COMPLETE" "${pw_shell_dir}/DEPENDENCIES_VALIDATED" \\',
+    '    && test -x "${pw_shell_dir}/${pw_shell}" \\',
     '    && chromium --version \\',
     // Assert agent-browser RESOLVES the browser via its env-independent cache —
     // match the resolved path (deterministic), not the browser NAME (which is
@@ -653,36 +532,6 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // "Launch test" may itself fail under cross-arch QEMU emulation; we read the
     // detection line, not the launch verdict, so the gate is emulation-safe.
     "    && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'",
-    '',
-    `RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@${opencodeVersion}" \\`,
-    '    && command -v opencode \\',
-    '    && opencode --version \\',
-    `    && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \\`,
-    '    && test -x "$opencode_native" \\',
-    '    && test "$(wc -c < "$opencode_native")" -gt 50000000 \\',
-    `    && test "$("$opencode_native" --version)" = "${opencodeVersion}" \\`,
-    '    && ln -sfn "$opencode_native" /opt/kortix/opencode.current \\',
-    '    && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \\',
-    `    && test "$(/usr/local/bin/opencode-kortix --version)" = "${opencodeVersion}"`,
-    '',
-    // Bake OpenCode's "one time database migration" at BUILD time. The first time
-    // opencode serves, it migrates its sqlite schema — logged as "Performing one
-    // time database migration (may take a few minutes)" — before it answers any
-    // request. On a fresh VM that runs on the session hot path, adding ~15-35s
-    // before opencode replies to /session; on a restored warm snapshot that
-    // window is exactly what surfaces as the FE's "sandbox not ready" 503s.
-    // opencode's db
-    // lives in the baked `kortix` home, so we
-    // run opencode here once to complete the migration and bake the migrated db
-    // into the image layer. Every boot afterwards — cold or warm-snapshot restore —
-    // then finds an already-migrated db and answers in ~2-3s. Env MUST match the
-    // daemon's spawn (apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts). The
-    // build fails if OpenCode cannot serve. A platform image without this state
-    // moves the database migration onto every session's startup path.
-    ...(opencodeWarmupScriptPath ? [
-      `COPY --chown=kortix:kortix ${opencodeWarmupScriptPath} /tmp/kortix-opencode-warmup`,
-      'RUN bash /tmp/kortix-opencode-warmup migration && rm -f /tmp/kortix-opencode-warmup',
-    ] : []),
     '',
     // Bun runtime for the agent CLIs (slack, …).
     // Download one versioned release artifact and verify its checksum before
@@ -706,64 +555,13 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // RTF/EPUB/CSV/PDF → GFM). Baked so it works with zero runtime download —
     // the upstream skill's `npx -y` would fetch from npm on the session hot
     // path. Pure napi prebuilt binaries via platform optionalDependencies; no
-    // build scripts, so no --allow-build. Sits BELOW Chromium/opencode so a
-    // version bump re-uses their cached layers, and ABOVE the config-deps
-    // install (first non-deterministic layer downstream).
+    // build scripts, so no --allow-build. Sits BELOW Chromium so a
+    // version bump re-uses its cached layer.
     `RUN pnpm add -g "@firecrawl/anydoc@${ANYDOC_VERSION}" \\`,
     '    && command -v anydoc \\',
     `    && test "$(anydoc --version)" = "${ANYDOC_VERSION}"`,
     '',
-    // Pre-install the OpenCode tool/plugin dependencies once, at image-build time,
-    // into a stable baked location. The cloned config dir's plugin + tools import
-    // @opencode-ai/plugin (+ its effect/zod/@opencode-ai/sdk tree) and
-    // @mendable/firecrawl-js / @tavily/core / replicate, and OpenCode runs
-    // `bun install` in that dir the first time a session opens — but node_modules/
-    // bun.lock are gitignored, so that boot install would otherwise fetch over the
-    // network (a 1.5–6s — sometimes minutes — stall on the session hot path). The
-    // daemon's ensureOpencodeConfigDeps() links this baked node_modules + bun.lock
-    // into the resolved config dir before opencode starts, making the boot install a
-    // verified OFFLINE no-op. The same user-local caches warm Bun.
-    //
-    // CRITICAL — @opencode-ai/plugin is pinned to the OPENCODE BINARY version
-    // (`opencodeVersion`), NOT the version declared in the project/starter
-    // package.json. OpenCode loads the plugin SDK that matches its OWN binary: it
-    // overwrites whatever @opencode-ai/plugin the config dir pins with its binary
-    // version, fetching it over the network if absent. Baking the stale starter pin
-    // (e.g. 1.17.9 while the binary is 1.17.11) therefore left opencode re-fetching
-    // the matching plugin on EVERY boot — the ~5–8s "opencode-session-created" gap.
-    // Baking the binary version makes opencode find it already present → no fetch.
-    // Bump RUNTIME_LAYER_VERSION in templates.ts when this step changes.
-    // NOTE: this dependency set (and the "axios"/"form-data" security overrides
-    // below) is duplicated in packages/starter/templates/base/harnesses/opencode/package.json.
-    // Keep both in sync —
-    // a version bump made in only one place is exactly how this file's axios
-    // override once diverged and shipped a bundle-breaking install (see the
-    // verification RUN step right below, added after that incident).
-    'RUN mkdir -p /opt/kortix/opencode-config-deps \\',
-    '    && cd /opt/kortix/opencode-config-deps \\',
-    `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"${opencodeVersion}","@tavily/core":"^0.7.3","bun-pty":"0.4.11","replicate":"^1.4.0","zod":"4.1.8"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\`,
-    '    && bun install',
-    '',
-    // Verify the baked tree is actually usable by OpenCode's own runtime
-    // bundler (Bun, invoked live by ToolRegistry the first time a session
-    // resolves its tools) — not just that `bun install` exited 0. A CVE-driven
-    // axios override bump here once produced an installed tree that resolved
-    // fine but failed to BUNDLE at session runtime
-    // (`AggregateError: N errors building ".../axios/lib/utils.js"`), which
-    // silently baked into every sandbox cloned from this image until a user
-    // hit it on their very first prompt. Bundling the override targets here,
-    // at build time, turns that failure mode into a build failure instead —
-    // An unbundlable dependency tree must fail the image build before warm-up.
-    'RUN cd /opt/kortix/opencode-config-deps \\',
-    '    && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \\',
-    '    && rm -rf /tmp/opencode-deps-bundle-check \\',
-    '    && echo "opencode-config-deps: baked tree bundles cleanly"',
-    '',
     ...piSystemPackageLines(PI_SYSTEM_PACKAGES),
-    // Placed AFTER the agent-browser/Chromium layer above — see that block's
-    // comment for why the order matters (this step's RUN text is never
-    // cache-stable, so nothing cache-sensitive may sit downstream of it).
-    ...buildOpencodeInstanceWarmupLines({ opencodeConfigPath, opencodeWarmupScriptPath, isSharedDefault }),
     // The staged-artifact tail lives in `kortixArtifactLayer`. The split is
     // here — everything above installs from the network into an empty build
     // context; everything below COPYs bytes the caller had to stage first.
@@ -772,8 +570,8 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
 
 /**
  * The staged-artifact half of the Kortix runtime layer: the COPYs of Kortix's
- * own build outputs (agent + CLI binaries, entrypoint, slack-cli, the optional
- * LLM catalog, scaffold.git), the unpack/shim RUN
+ * own build outputs (agent + CLI binaries, entrypoint, slack-cli,
+ * scaffold.git), the unpack/shim RUN
  * that puts them on PATH, and the container's ENV/WORKDIR/EXPOSE/ENTRYPOINT.
  *
  * Every path here must exist in the build context — see
@@ -786,7 +584,6 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     entrypointScriptPath,
     machineDocPath,
     slackCliPath,
-    catalogPath,
     managedSkillsPath,
   } = opts;
 
@@ -798,9 +595,6 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     `COPY ${machineDocPath} /MACHINE.md`,
     // The channel shims delegate Connector calls to the compiled `kortix` CLI.
     `COPY ${slackCliPath}/ /opt/kortix/apps/sandbox/slack-cli/`,
-    // Full gateway model catalog, baked at build so the token-less no-restart
-    // warm seed serves the full picker (daemon reads KORTIX_LLM_CATALOG_FILE).
-    ...(catalogPath ? [`COPY ${catalogPath} /opt/kortix/llm-catalog.json`] : []),
     // Canonical scaffold repo (bare). Its root commit matches every seeded
     // project's root (pinned dates, seed.ts), enabling local-clone +
     // delta-fetch repo materialization in the daemon (git.ts).
@@ -815,11 +609,9 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     // Fail the build loudly if the CLI didn't land — every sandbox must ship it.
     '    && kortix --version \\',
     // The daemon converges this file in place and runs as `kortix`, so it needs
-    // the DIRECTORY; and opencode must not autoupdate itself for ANY caller in
-    // the box. See platform-binaries.ts — both are asserted on every image.
+    // the DIRECTORY. See platform-binaries.ts — asserted on every image.
     `    && ${SANDBOX_CLI_OWNERSHIP_COMMAND} \\`,
-    `    && ${SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND} \\`,
-    '    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral',
+    '    && chown -R kortix:kortix /opt/kortix /workspace',
     '',
     // The overlay arrives ALREADY kortix-owned, below the `chown -R` above: a
     // recursive chown in a later layer rewrites every inode it touches and
@@ -879,9 +671,38 @@ export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
 }
 
 /**
+ * kortix.yaml `residential_proxy`: the session sandbox's web traffic leaves
+ * through a residential IP address. `country` is an ISO 3166-1 alpha-2 code,
+ * lowercase. A boot setting, not part of the image.
+ */
+export interface SandboxResidentialProxy {
+  country?: string;
+}
+
+const COUNTRY_RE = /^[a-z]{2}$/i;
+
+/**
+ * Read `residential_proxy`: `true` → on; a table → on, with its `country` when
+ * that is a valid code (an invalid one is dropped with a warning, the proxy
+ * stays on: a template that asks for a residential IP never boots without one
+ * because of a typo). `false`, absent or any other value → off.
+ */
+export function parseResidentialProxy(value: unknown, slug = ''): SandboxResidentialProxy | undefined {
+  if (value === true) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const country = (value as Record<string, unknown>).country;
+  if (country === undefined) return {};
+  if (typeof country === 'string' && COUNTRY_RE.test(country.trim())) return { country: country.trim().toLowerCase() };
+  console.warn(`[sandbox-templates] "${slug}" residential_proxy.country is not an ISO 3166-1 alpha-2 code — ignored`);
+  return {};
+}
+
+/**
  * A sandbox template defines one bootable image. Projects can declare multiple
  * via `sandbox.templates` in kortix.yaml; sessions pick one by slug. The platform
- * default template is always available without any config.
+ * default template is always available without any config. An entry with
+ * neither `dockerfile` nor `image` builds the platform base
+ * (`PLATFORM_DEFAULT_USER_DOCKERFILE`) with its own size and settings.
  */
 export interface SandboxTemplate {
   /** Stable identifier the session creator references. Unique per project. */
@@ -905,6 +726,8 @@ export interface SandboxTemplate {
   containerRuntime?: boolean;
   /** kortix.yaml `entrypoint`: the command the sandbox image starts with. */
   entrypoint?: string;
+  /** kortix.yaml `residential_proxy`. Not part of the image identity. */
+  residentialProxy?: SandboxResidentialProxy;
   /**
    * True iff this is the platform default (no user customization). Never
    * declared in kortix.yaml — the platform synthesizes one of these.
@@ -1070,7 +893,12 @@ function parseSandboxTemplate(row: Record<string, unknown>): SandboxTemplate | n
     spec,
     ...(row.container_runtime === true ? { containerRuntime: true } : {}),
     ...(typeof row.entrypoint === 'string' && row.entrypoint.trim() ? { entrypoint: row.entrypoint.trim() } : {}),
+    ...withResidentialProxy(parseResidentialProxy(row.residential_proxy, slugRaw)),
   };
+}
+
+function withResidentialProxy(value: SandboxResidentialProxy | undefined): { residentialProxy?: SandboxResidentialProxy } {
+  return value ? { residentialProxy: value } : {};
 }
 
 function sanitizeRelPath(value: string): string {

@@ -4,6 +4,7 @@
 // for someone's private folder.
 
 import { logger } from '../lib/logger';
+import { recordDriveCommitAuthor } from '../artifacts/events-store';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -44,6 +45,8 @@ import {
   grantsCovering,
   pathWithinFolder,
   folderKnownToTree,
+  planFolderMounts,
+  sessionMountCandidates,
   personalFolderOf,
   NO_PRIVATE_CHANNEL_FOLDERS,
   PRIVATE_CHANNELS_DIR,
@@ -58,6 +61,7 @@ import {
   enforceProjectMounts,
   ensureProjectDrive,
   getDrive,
+  listFolderGrants,
   moveDriveFolder,
   openConflictRows,
   readDriveVolume,
@@ -75,6 +79,7 @@ import {
   readVolumeFile,
   removeVolumeFile,
   restoreVolume,
+  sandboxMountLimit,
   statVolumeFile,
   writeVolumeFile,
   FILE_CHANGED_MESSAGE,
@@ -543,6 +548,10 @@ drivesApp.openapi(
         writeVolumeFile(volume, path, body, { overwrite: true, ...(ifMatch ? { ifMatch } : {}) }),
       ),
     );
+    await recordDriveCommitAuthor(caller.drive.driveId, written.commit, {
+      userId: caller.userId,
+      sessionId: callerKortixSessionId(c),
+    });
     noteDriveWrite(caller.drive.driveId);
     // The version this write made, as storage answered it: a read afterwards
     // could name a later save's version and let the next save clobber it.
@@ -821,6 +830,98 @@ drivesApp.openapi(
     return c.body(null, 204);
   },
 );
+
+// GET /v1/drives/:driveId/agents/:agentName/mounts
+const AgentMountSchema = z.object({
+  /** The Files folder, e.g. `/Company/Reports`. */
+  path: z.string(),
+  /** Where a session sees it, e.g. `/drives/Company/Reports`. */
+  mountPath: z.string(),
+  readOnly: z.boolean(),
+  /** `agent`: shared with this agent. `project`: shared with everyone in the project. */
+  via: z.enum(['agent', 'project']),
+  /** The agent's own grant on this folder, to change or remove; absent when it comes through the project. */
+  grantId: z.string().optional(),
+  level: LevelSchema,
+});
+
+const MountPlanSchema = z.object({ mounts: z.array(AgentMountSchema), skipped: z.array(z.string()), slots: z.number() });
+
+/** The folders a new session mounts through an agent (when named) and through the project, planned as a boot plans them. */
+async function mountPlan(c: DriveContext, agentName: string | null) {
+  const caller = await loadDrive(c);
+  need(caller, '/', 'read');
+  const { drive } = caller;
+  const [grants, agentId, slots] = await Promise.all([
+    listFolderGrants(drive),
+    agentName ? projectAgentServiceAccount(drive.projectId!, agentName) : Promise.resolve(null),
+    sandboxMountLimit(),
+  ]);
+  const candidates = sessionMountCandidates(grants, {
+    agentId,
+    owner: null,
+    groupIds: new Set(),
+    own: null,
+    channelFolder: null,
+    privateChannelFolders: privateFolders(caller),
+  });
+  const plan = planFolderMounts(candidates, slots, privateFolders(caller));
+  const ownGrant = (path: string) =>
+    agentId ? grants.find((g) => g.principalType === 'agent' && g.principalId === agentId && g.path === path) : undefined;
+  const projectGrant = (path: string) =>
+    grants.find((g) => g.principalType === 'project' && g.path === path && g.source !== 'system');
+  return {
+    mounts: plan.mounts.map((m) => {
+      const viaAgent = candidates.some((x) => x.path === m.path && x.priority === 0);
+      const grant = agentName ? ownGrant(m.path) : projectGrant(m.path);
+      const level = candidates
+        .filter((x) => x.path === m.path)
+        .reduce<FolderLevel>((acc, x) => (RANK_OF[x.level] > RANK_OF[acc] ? x.level : acc), 'read');
+      return {
+        path: m.path,
+        mountPath: m.mountPath,
+        readOnly: m.readOnly,
+        via: viaAgent ? ('agent' as const) : ('project' as const),
+        ...(grant?.grantId ? { grantId: grant.grantId } : {}),
+        level,
+      };
+    }),
+    skipped: plan.skipped,
+    slots,
+  };
+}
+
+drivesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{driveId}/mounts',
+    tags: ['drives'],
+    summary: 'The folders every session mounts',
+    description:
+      "The Files folders every new session of the project mounts: the ones shared with everyone in the project, where each appears and read-only or not. `grantId` is the project grant to change or remove (absent for the ones Kortix made, such as Company). An agent adds its own folders (`/agents/{agentName}/mounts`); a person's own folders join the sessions they start.",
+    ...auth,
+    request: { params: DriveParams },
+    responses: { 200: json(MountPlanSchema, 'Project mounts'), ...errors(401, 404) },
+  }),
+  async (c) => c.json(await mountPlan(c, null)),
+);
+
+drivesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{driveId}/agents/{agentName}/mounts',
+    tags: ['drives'],
+    summary: 'The folders an agent mounts',
+    description:
+      "The Files folders a new session of this agent mounts, where, and read-only or not: the folders shared with the agent and with everyone in the project, planned the way a session boots (a folder inside a mounted one at the same level or less is not mounted twice). A person's own folder and folders shared with them join a session they start and are not listed. `skipped` names folders past the sandbox's mount slots.",
+    ...auth,
+    request: { params: DriveParams.extend({ agentName: z.string().min(1).max(128) }) },
+    responses: { 200: json(MountPlanSchema, 'Agent mounts'), ...errors(401, 404) },
+  }),
+  async (c) => c.json(await mountPlan(c, c.req.param('agentName') ?? '')),
+);
+
+const RANK_OF: Record<FolderLevel, number> = { read: 1, write: 2, manage: 3 };
 
 // GET /v1/drives/:driveId/principals
 drivesApp.openapi(

@@ -233,33 +233,35 @@ export async function clearOpenQuestions(
  * So the answer arrives as a new turn, and it has to carry its own context: the
  * fresh opencode has no memory of asking. Quoting the question is what makes
  * the reply legible instead of a bare "yes" with nothing to attach it to.
+ *
+ * Several questions are paired by position: each answer under its own
+ * question, so an answer to only some of them says which.
  */
 export function renderAnswerPrompt(questions: unknown, answers: unknown): string {
-  const asked = Array.isArray(questions)
-    ? questions
-        .map((q) => {
-          const text =
-            q && typeof q === 'object'
-              ? ((q as { text?: unknown; question?: unknown }).text ??
-                (q as { question?: unknown }).question)
-              : q;
-          return typeof text === 'string' ? text.trim() : null;
-        })
-        .filter((t): t is string => !!t)
-    : [];
-
-  const given = Array.isArray(answers)
-    ? answers
-        .map((a) => (Array.isArray(a) ? a.join(', ') : typeof a === 'string' ? a : null))
-        .filter((t): t is string => !!t && t.trim().length > 0)
-    : [];
+  const asked = Array.isArray(questions) ? questions.map(questionText) : [];
+  const given = Array.isArray(answers) ? answers.map(answerText) : [];
+  if (asked.length > 1) {
+    return `You asked:\n${asked.map((q, i) => [...(q ? [`> ${q}`] : []), given[i] ?? '(no answer given)'].join('\n')).join('\n\n')}`;
+  }
 
   const lines: string[] = [];
-  if (asked.length > 0) {
+  if (asked[0]) {
     lines.push('You asked:');
-    for (const q of asked) lines.push(`> ${q}`);
+    lines.push(`> ${asked[0]}`);
     lines.push('');
   }
-  lines.push(given.length > 0 ? given.join('\n') : '(no answer given)');
+  const said = given.filter((t): t is string => t !== null);
+  lines.push(said.length > 0 ? said.join('\n') : '(no answer given)');
   return lines.join('\n');
+}
+
+function questionText(q: unknown): string | null {
+  const text =
+    q && typeof q === 'object' ? ((q as { text?: unknown }).text ?? (q as { question?: unknown }).question) : q;
+  return typeof text === 'string' && text.trim() ? text.trim() : null;
+}
+
+function answerText(a: unknown): string | null {
+  const text = Array.isArray(a) ? a.join(', ') : typeof a === 'string' ? a : null;
+  return text?.trim() ? text : null;
 }

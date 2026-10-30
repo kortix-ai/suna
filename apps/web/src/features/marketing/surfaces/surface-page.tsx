@@ -36,7 +36,10 @@ export function SurfacePage({ id }: { id: SurfaceId }) {
         title={content.how.title}
         titleMuted={content.how.titleMuted}
         tabs={content.how.tabs}
-        panels={content.how.tabs.map((tab) => <Fragment key={tab.id}>{panels[tab.id]?.()}</Fragment>)}
+        panels={content.how.tabs.map((tab) => {
+          const Panel = panels[tab.id];
+          return <Fragment key={tab.id}>{Panel ? <Panel /> : null}</Fragment>;
+        })}
       />
       <OtherSurfaces current={id} />
       <FaqSection title="Questions." titleMuted="Answered from the code." items={content.faq} />
@@ -54,7 +57,9 @@ function Hero({ content }: { content: SurfaceContent }) {
             <span className="text-foreground block">{hero.title}</span>
             <span className="text-muted-foreground block">{hero.titleMuted}</span>
           </h1>
-          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">{hero.sub}</p>
+          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
+            {hero.sub}
+          </p>
         </div>
         <div className="flex flex-col gap-4 pt-2">
           <div className="flex flex-wrap items-center gap-2.5">
@@ -125,7 +130,10 @@ function OtherSurfaces({ current }: { current: SurfaceId }) {
   const others = SURFACE_ORDER.filter((s) => s.id !== current);
   return (
     <section id="everywhere" className="scroll-mt-16 py-14 lg:py-20">
-      <Heading title="Use it from anywhere." titleMuted="The same agents, files and sessions on every surface." />
+      <Heading
+        title="Use it from anywhere."
+        titleMuted="The same agents, files and sessions on every surface."
+      />
       <Band className="mt-12">
         <ul className="bg-border grid grid-cols-1 gap-px sm:grid-cols-2 lg:grid-cols-4">
           {others.map((surface) => (
@@ -141,7 +149,7 @@ function OtherSurfaces({ current }: { current: SurfaceId }) {
                   <ArrowRightIcon
                     aria-hidden
                     className={cn(
-                      'text-muted-foreground size-4 transition-[translate,color] duration-moderate ease-out',
+                      'text-muted-foreground duration-moderate size-4 transition-[translate,color] ease-out',
                       'group-hover/cell:text-foreground group-hover/cell:translate-x-0.5',
                     )}
                   />

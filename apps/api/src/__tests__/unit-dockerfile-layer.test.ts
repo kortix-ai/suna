@@ -8,7 +8,6 @@ import {
   BUN_VERSION,
   NODE_VERSION,
   NPM_VERSION,
-  OPENCODE_VERSION,
   PLAYWRIGHT_VERSION,
   PNPM_SHA256_AMD64,
   PNPM_VERSION,
@@ -27,7 +26,6 @@ import {
 } from '../snapshots/dockerfile-layer';
 
 const COMMON = {
-  opencodeVersion: OPENCODE_VERSION,
   agentBrowserVersion: AGENT_BROWSER_VERSION,
   agentBinaryPath: 'kortix-agent.gz',
   cliBinaryPath: 'kortix.gz',
@@ -35,7 +33,6 @@ const COMMON = {
   machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
   managedSkillsPath: 'managed-skills',
-  opencodeWarmupScriptPath: 'kortix-opencode-warmup',
 };
 
 describe('buildLayeredDockerfile', () => {
@@ -69,14 +66,10 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain(`test "$(npm --version)" = "${NPM_VERSION}"`);
     expect(merged).toContain(`test "$(bun --version)" = "${BUN_VERSION}"`);
     expect(merged).toContain(
-      `pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}"`,
-    );
-    expect(merged).toContain(
       `pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}"`,
     );
     expect(merged).toContain(`pnpm add -g "@firecrawl/anydoc@${ANYDOC_VERSION}"`);
     expect(merged).toContain(`test "$(anydoc --version)" = "${ANYDOC_VERSION}"`);
-    expect(merged).not.toContain('npm install -g opencode-ai');
     expect(merged).not.toContain('npm install -g agent-browser');
     expect(merged).not.toContain('npx -y');
   });
@@ -97,7 +90,7 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain("echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix");
     expect(merged).not.toContain("NOPASSWD:ALL\\n");
     expect(merged).toContain(
-      'chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral',
+      'chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /home/kortix',
     );
     expect(merged).not.toContain('ENV HOME=');
     expect(merged).not.toContain('XDG_DATA_HOME=');
@@ -112,7 +105,6 @@ describe('buildLayeredDockerfile', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: user, ...COMMON });
     expect(merged.startsWith('FROM ubuntu:24.04\nRUN apt-get install -y foo')).toBe(true);
     expect(merged).toContain('Kortix runtime layer (auto-injected)');
-    expect(merged).toContain(`opencode-ai@${OPENCODE_VERSION}`);
     expect(merged).toContain(`agent-browser@${AGENT_BROWSER_VERSION}`);
     expect(merged).toContain('uv python install --default 3.12.13');
     expect(merged).not.toContain('uv venv');
@@ -137,7 +129,7 @@ describe('buildLayeredDockerfile', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
     // Chromium comes from Playwright (cross-arch; Chrome for Testing has no
     // linux-arm64 build) and pulls its OS libs via --with-deps.
-    expect(merged).toContain(`playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`);
+    expect(merged).toContain(`playwright@${PLAYWRIGHT_VERSION} install --with-deps --no-shell chromium`);
     // Wired BOTH ways: the documented env var → a stable symlink, AND
     // agent-browser's own auto-detected cache (env-independent, #422-proof).
     expect(merged).toContain('AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium');
@@ -178,75 +170,6 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('&& test -n "$pw_chrome"');
   });
 
-  test('the Chromium layer sits BEFORE the opencode instance re-warm', () => {
-    // Cache-order invariant: the opencode instance re-warm's RUN text is never
-    // cache-stable, so Chromium must sit ahead of it — keeping Chromium's own
-    // content-addressed cache key independent of it and identical across every
-    // bake. Chromium re-downloading here is what a mis-ordered layer costs.
-    const merged = buildLayeredDockerfile({
-      userDockerfile: 'FROM ubuntu:24.04',
-      ...COMMON,
-      opencodeConfigPath: 'kortix-opencode-config',
-    });
-    const chromiumIdx = merged.indexOf(
-      `playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`,
-    );
-    const opencodeWarmupIdx = merged.indexOf('kortix-opencode-warmup instance');
-    expect(chromiumIdx).toBeGreaterThanOrEqual(0);
-    expect(opencodeWarmupIdx).toBeGreaterThanOrEqual(0);
-    expect(chromiumIdx).toBeLessThan(opencodeWarmupIdx);
-  });
-
-  test('hard-fails the bake if opencode-config-deps cannot be bundled by Bun', () => {
-    const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
-    // Regression coverage for the incident where `bun install` exited 0 but
-    // the installed tree (a CVE-driven axios override) failed to BUNDLE at
-    // session runtime, silently baking a broken image. This must be its own
-    // RUN step, not folded into a `set +e` block — an unbundlable dependency
-    // tree has to fail the image build.
-    const verifyIdx = merged.indexOf(
-      'bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js',
-    );
-    expect(verifyIdx).toBeGreaterThanOrEqual(0);
-    const precedingRun = merged.lastIndexOf('RUN', verifyIdx);
-    const stepText = merged.slice(precedingRun, verifyIdx);
-    expect(stepText).not.toContain('set +e');
-    // Must run after the install it's verifying, not before.
-    const installIdx = merged.indexOf('bun install');
-    expect(installIdx).toBeGreaterThanOrEqual(0);
-    expect(installIdx).toBeLessThan(verifyIdx);
-  });
-
-  test('also verifies the real starter plugin files bundle when opencodeConfigPath is provided', () => {
-    const withConfig = buildLayeredDockerfile({
-      userDockerfile: 'FROM ubuntu:24.04',
-      ...COMMON,
-      opencodeConfigPath: 'kortix-opencode-config',
-      catalogPath: 'kortix-llm-catalog.json',
-    });
-    const verifyIdx = withConfig.indexOf('bun build plugins/*.ts');
-    expect(verifyIdx).toBeGreaterThanOrEqual(0);
-    const ownershipIdx = withConfig.indexOf(
-      'RUN sudo chown -R kortix:kortix /opt/kortix/warm-config',
-    );
-    expect(ownershipIdx).toBeGreaterThanOrEqual(0);
-    expect(ownershipIdx).toBeLessThan(verifyIdx);
-    const precedingRun = withConfig.lastIndexOf('RUN', verifyIdx);
-    const stepText = withConfig.slice(precedingRun, verifyIdx);
-    expect(stepText).not.toContain('set +e');
-    // Without opencodeConfigPath there's no starter plugin tree to verify, so
-    // this stricter check is correctly absent — only the axios/form-data
-    // override check (always present) still runs.
-    const withoutConfig = buildLayeredDockerfile({
-      userDockerfile: 'FROM ubuntu:24.04',
-      ...COMMON,
-    });
-    expect(withoutConfig).not.toContain('bun build plugins/*.ts');
-    expect(withoutConfig).toContain(
-      'bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js',
-    );
-  });
-
   test('does NOT bake the project workspace into the image', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM scratch', ...COMMON });
     expect(merged).not.toContain('kortix-workspace.tar.gz');
@@ -275,7 +198,9 @@ WORKDIR /workspace
     expect(merged).toContain('FROM ubuntu:24.04');
     expect(merged).toContain('WORKDIR /workspace');
     expect(merged).not.toContain('having them in your base');
-    expect(merged.match(/apt-get update/g)?.length).toBe(1);
+    // The user's block is gone: only the Kortix layer's own apt-get updates remain.
+    const layerOnly = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    expect(merged.match(/apt-get update/g)?.length).toBe(layerOnly.match(/apt-get update/g)?.length);
   });
 
   test('result ends with a trailing newline', () => {
@@ -462,6 +387,43 @@ describe('container_runtime', () => {
     expect(off).not.toContain('kmod');
     // Runs as root, after the kortix user exists, before the image drops to it.
     expect(on.indexOf('KORTIX_CONTAINER_RUNTIME')).toBeGreaterThan(on.indexOf('useradd --create-home'));
+  });
+});
+
+// kortix.yaml `residential_proxy: true | { country }`: a boot setting on the
+// template, never an image input. A template that asks never loses the ask to
+// a typo (fail closed): a bad country is dropped, the proxy stays on.
+describe('residential_proxy', () => {
+  test('extractSandboxTemplates reads true, a country, and off', () => {
+    const out = extractSandboxTemplates({
+      sandbox: {
+        templates: [
+          { slug: 'on', residential_proxy: true },
+          { slug: 'country', image: 'python:3.12-slim', residential_proxy: { country: 'US' } },
+          { slug: 'bad-country', image: 'python:3.12-slim', residential_proxy: { country: 'usa' } },
+          { slug: 'empty-table', image: 'python:3.12-slim', residential_proxy: {} },
+          { slug: 'off', image: 'python:3.12-slim', residential_proxy: false },
+          { slug: 'absent', image: 'python:3.12-slim' },
+          { slug: 'string', image: 'python:3.12-slim', residential_proxy: 'yes' },
+        ],
+      },
+    });
+    expect(out.map((t) => [t.slug, t.residentialProxy])).toEqual([
+      ['on', {}],
+      ['country', { country: 'us' }],
+      ['bad-country', {}],
+      ['empty-table', {}],
+      ['off', undefined],
+      ['absent', undefined],
+      ['string', undefined],
+    ]);
+  });
+
+  test('an entry with neither image nor dockerfile parses: the platform base image', () => {
+    const [tpl] = extractSandboxTemplates({ sandbox: { templates: [{ slug: 'web', residential_proxy: true }] } });
+    expect(tpl).toMatchObject({ slug: 'web', residentialProxy: {} });
+    expect(tpl?.image).toBeUndefined();
+    expect(tpl?.dockerfile).toBeUndefined();
   });
 });
 

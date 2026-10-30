@@ -66,6 +66,22 @@ try/catching every call.
 | model catalogs | `GET /v1/projects/:id/llm-catalog` (full runtime), `GET /v1/projects/:id/model-picker` (compact connected UI picker) | ✅ |
 | experimental flags / onboarding | `GET/PUT /v1/projects/:id/{experimental,onboarding}` | ✅ |
 
+### 2b. Artifact comments and activity ✅
+
+`project(id).artifacts.comments.{list,get,create,reply,setStatus,edit,remove,send}`
+and `.artifacts.activity` wrap the authenticated Artifact comment and activity
+routes. The `get` lookup takes a project-scoped thread id. User and session
+authors have separate identity shapes. `ArtifactCommentMention` distinguishes
+resolved people, sessions, and project agents. `useArtifactComments` owns comment
+writes and refreshes both tabs; `useArtifactActivity` reads cursor pages.
+`useArtifactCommentContext` supplies permissions, insertion tokens, selected
+version identity, and eligible Send targets. `readArtifactCommentSnapshot`
+pins text to the context's Files commit. Historical comment hooks reject
+writes. `useInfiniteArtifactActivity` owns complete cursor-page state and
+deduplicates timeline items.
+Both hooks have a mounted 10-second polling fallback. Requires the default-off
+`artifact_comments` project flag and `artifacts`.
+
 ### 3. Project secrets / env  ✅
 `GET/POST/PUT/DELETE /v1/projects/:id/secrets[/:name]` · personal overrides · OAuth credential flow (`/oauth/:provider/{start,poll}`) · git-credential. → SDK `projects-client/secrets.ts`.
 
@@ -292,6 +308,15 @@ Telegram: facade `project(id).channels.telegram.*`; hooks live in `@kortix/ui` (
 | `removeUser` | `removeTelegramUser` | `DELETE .../channels/telegram/allowed-users/:userId` |
 | `dismissAccessRequest` | `dismissTelegramAccessRequest` | `DELETE .../channels/telegram/access-requests/:userId` |
 | `userPhoto` (JPEG `Blob`, 404 → `null`) | `getTelegramUserPhoto` | `GET .../channels/telegram/users/:userId/photo?v=` |
+
+Channel access (any platform): the same five routes, keyed by `platform: ChannelAccessPlatform` (`'telegram'` today). No facade; a platform's facade keeps its own methods (`project(id).channels.telegram.*` above). The edits return `ChannelAccessList` (`allowed_user_ids?`, `access_request_count?`).
+| function | REST |
+|---|---|
+| `listChannelUsers(projectId, platform)` (`{allowed, requests}`) | `GET /v1/projects/:id/channels/:platform/users` |
+| `allowChannelUser(projectId, platform, userId)` | `POST .../channels/:platform/allowed-users` `{user_id}` |
+| `removeChannelUser(projectId, platform, userId)` | `DELETE .../channels/:platform/allowed-users/:userId` |
+| `dismissChannelAccessRequest(projectId, platform, userId)` | `DELETE .../channels/:platform/access-requests/:userId` |
+| `getChannelUserPhoto(projectId, platform, userId, version?, signal?)` (`Blob`, 404 → `null`) | `GET .../channels/:platform/users/:userId/photo?v=` |
 
 ### 18. Account audit log (Enterprise)  ✅ (client + facade) / 🟡 (hooks)
 Event list + CSV/JSONL export + outbound SIEM webhook CRUD, gated server-side on `audit.read`/`account.write` + the account's `auditAccess` entitlement. `projects-client/audit.ts` ✅; facade `kortix.accounts.audit.{log, export, webhooks: {list,create,update,remove}}` ✅ (accountId-first, like the rest of `kortix.accounts.*`); no hooks yet (this is an admin-console surface, low priority for the agent-product hooks):

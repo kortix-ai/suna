@@ -1296,6 +1296,97 @@
       "when": 1793093398130,
       "tag": "20261027092958_project_session_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1793101077645,
+      "tag": "20261027113757_chrome_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1793288256822,
+      "tag": "20261029153736_artifact_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1793291783968,
+      "tag": "20261029163623_artifact_activity",
+      "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1793296200000,
+      "tag": "20261029175000_connector_call_status_approved",
+      "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1793296201000,
+      "tag": "20261029175001_connector_held_calls",
+      "breakpoints": true
+    },
+    {
+      "idx": 190,
+      "version": "7",
+      "when": 1793296202000,
+      "tag": "20261029175002_connector_held_calls_sweep_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "7",
+      "when": 1793309438986,
+      "tag": "20261029213038_artifact_activity_tables_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "7",
+      "when": 1793312793000,
+      "tag": "20261029222633_artifact_comment_routing",
+      "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "7",
+      "when": 1793312797000,
+      "tag": "20261029222637_artifact_comment_delivery_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "7",
+      "when": 1793312801000,
+      "tag": "20261029222641_artifact_comment_tables_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 195,
+      "version": "7",
+      "when": 1793325065135,
+      "tag": "20261030015105_drop_session_transcript_mirror",
+      "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "7",
+      "when": 1793356273031,
+      "tag": "20261030103113_job_queue_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "7",
+      "when": 1793365474468,
+      "tag": "20261030130434_artifact_bindings",
+      "breakpoints": true
     }
   ]
 }

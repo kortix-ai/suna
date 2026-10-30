@@ -45,8 +45,8 @@ describe('withoutNotificationParam', () => {
     expect(withoutNotificationParam('/projects/p1?a=1&notification=n1&b=2#top')).toBe(
       '/projects/p1?a=1&b=2#top',
     );
-    expect(withoutNotificationParam('/projects/p1/customize/triggers')).toBe(
-      '/projects/p1/customize/triggers',
+    expect(withoutNotificationParam('/projects/p1/admin/triggers')).toBe(
+      '/projects/p1/admin/triggers',
     );
   });
 });
@@ -148,10 +148,14 @@ describe('tags and types', () => {
     expect(rowDestination(row({ session_id: 'ses-b' }))).toBe('session');
     const alert = { kind: 'automation_failed', session_id: null } as const;
     expect(
+      rowDestination(row({ ...alert, trigger_slug: 'reminder.0a1b2c3d4e5f', url: '/projects/p1/admin/loops?notification=n1' })),
+    ).toBe('reminders');
+    // A row stored before 2026-10-28 carries the old path.
+    expect(
       rowDestination(row({ ...alert, trigger_slug: 'reminder.0a1b2c3d4e5f', url: '/projects/p1/reminders?notification=n1' })),
     ).toBe('reminders');
     expect(
-      rowDestination(row({ ...alert, trigger_slug: 'nightly', url: '/projects/p1/customize/triggers?notification=n1' })),
+      rowDestination(row({ ...alert, trigger_slug: 'nightly', url: '/projects/p1/admin/triggers?notification=n1' })),
     ).toBe('triggers');
   });
 
@@ -159,6 +163,12 @@ describe('tags and types', () => {
     expect(badgeCount(1)).toBe('1');
     expect(badgeCount(99)).toBe('99');
     expect(badgeCount(100)).toBe('99+');
+  });
+
+  test('an Artifact comment opens its Artifact and keeps the thread query when marking read', () => {
+    const notification = row({ kind: 'artifact_comment', artifact_id: 'a1', artifact_thread_id: 't1', session_id: null, url: '/projects/p1/artifacts/a1?thread=t1&notification=n1' });
+    expect(rowDestination(notification)).toBe('artifact');
+    expect(withoutNotificationParam(notification.url)).toBe('/projects/p1/artifacts/a1?thread=t1');
   });
 });
 

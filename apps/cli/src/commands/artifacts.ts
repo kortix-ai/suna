@@ -4,17 +4,24 @@
 import { readFile, readdir, stat, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
 import {
+  ApiError as SdkApiError,
   createArtifact,
+  createArtifactComment,
   deleteArtifact,
   getArtifact,
+  getArtifactCommentThread,
   listAccountMembers,
   listArtifactTypes,
   listArtifactVersions,
+  listArtifactComments,
+  listArtifactActivity,
   listArtifacts,
   readArtifactFile,
   restoreArtifactVersion,
+  replyArtifactComment,
   saveArtifact,
   setArtifactPinned,
+  setArtifactCommentStatus,
   shareArtifactPath,
   updateArtifact,
   type Artifact,
@@ -22,11 +29,14 @@ import {
   type ArtifactListScope,
   type ArtifactType,
   type ArtifactVisibility,
+  type ArtifactCommentAuthor,
 } from '@kortix/sdk';
 import { withKortixScope } from '../api/sdk.ts';
+import { ApiError as CliApiError } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
 import { emitJson, fail, missing, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue, takeFlagValues } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
+import { artifactCommentAnchor } from './artifact-comment-anchor.ts';
 
 const HELP = help`Usage: kortix artifacts <subcommand> [options]
 
@@ -48,7 +58,11 @@ Subcommands:
                              goes up in several saves. Prints the link.
                              --title "<title>" (default: the doc's # heading or
                              the page's <title>), --description "<sentence>",
-                             --visibility private|project|public (default private)
+                             --visibility private|project|public (default private),
+                             --space <slug>, --agent <name> (where it is grouped;
+                             default agent: this session's agent; spaces are
+                             Work in progress, shown only with the project flag
+                             \`project_channels\` on)
   add <path>                 Share a folder already in Files (it holds an
                              index.md or index.html; an index file stands for
                              its folder). Same options.
@@ -59,7 +73,9 @@ Subcommands:
                              (the entry_version from \`info\` or \`pull\`).
   ls                         Artifacts you may view, newest first.
                              --mine, --shared (others shared), --pinned,
-                             --type doc|html, --search "<text>"
+                             --type doc|html, --search "<text>",
+                             --space <slug> (bound to that space; flag
+                             \`project_channels\`)
   info <artifact>            Title, type, path in Files, files, links.
   cat <artifact> [<path>]    Print one file (default the entry).
                              --version <id> reads an old version.
@@ -69,9 +85,24 @@ Subcommands:
                              --with <email|user-id> (repeat) shares a private
                              artifact with those people; --with "" clears.
   rename <artifact> "<title>"
+  bind <artifact>            Group it: --space <slug>, --agent <name>, or
+                             --clear (project-wide). Grouping only: it grants
+                             nothing.
   versions <artifact>        Every save, newest first (from the Files history).
   restore <artifact> <version-id>
                              Write that version back, as a new save.
+  comments <artifact>        Open threads. --all includes resolved threads;
+                             --resolved shows only resolved threads.
+  comment <artifact> "<text>" [--quote "<text>" | --selector "<css>"]
+                             Open a thread on the whole artifact, an exact
+                             quote (up to 32 characters), or an HTML selector.
+                             A missing quote exits nonzero without posting.
+                             Selector defaults: centered point (0.5, 0.5),
+                             viewport width 1280, scroll (0, 0), empty snippet.
+  reply <thread-id> "<text>"  Reply to a thread by its full id.
+  resolve <thread-id> / reopen <thread-id>
+                             Resolve a thread or open it again.
+  activity <artifact>        Events and saves, newest first. --limit 1–100.
   pin <artifact> / unpin <artifact>
   rm <artifact>              Stop sharing it. Its files stay in Files.
 
@@ -99,7 +130,7 @@ Examples:
 
 const TYPES = ['doc', 'html'];
 const VISIBILITIES = ['private', 'project', 'public'];
-const KNOWN = ['types', 'publish', 'add', 'ls', 'list', 'info', 'cat', 'pull', 'open', 'share', 'rename', 'versions', 'restore', 'pin', 'unpin', 'rm', 'delete'];
+const KNOWN = ['types', 'publish', 'add', 'ls', 'list', 'info', 'cat', 'pull', 'open', 'share', 'rename', 'bind', 'versions', 'restore', 'comments', 'comment', 'reply', 'resolve', 'reopen', 'activity', 'pin', 'unpin', 'rm', 'delete'];
 
 /** The files to publish: a folder's tree, or one file as `index.md` / `index.html`. */
 async function collectFiles(path: string): Promise<Record<string, ArtifactFileInput>> {
@@ -161,6 +192,10 @@ function printLinks(a: Artifact) {
   process.stdout.write(`  ${C.dim}view${C.reset}    ${a.view_url}  ${C.dim}(signed, 12 h)${C.reset}\n`);
 }
 
+function commentAuthor(author: ArtifactCommentAuthor): string {
+  return author.kind === 'session' ? `${author.agent_name ?? 'Agent'}${author.title ? ` · ${author.title}` : ''} (${author.session_id})` : author.name ?? author.user_id;
+}
+
 export async function runArtifacts(argv: string[]): Promise<number> {
   const helpCode = splitHelp(argv, HELP);
   if (helpCode !== null) return helpCode;
@@ -170,6 +205,8 @@ export async function runArtifacts(argv: string[]): Promise<number> {
     json: boolean; projectArg?: string; hostArg?: string; type?: string; title?: string; description?: string;
     visibility?: string; id?: string; baseVersion?: string; version?: string; search?: string;
     with: string[]; mine: boolean; shared: boolean; pinned: boolean; starter: boolean;
+    space?: string; agent?: string; clear: boolean;
+    quote?: string; selector?: string; all: boolean; resolved: boolean; limit?: string;
   };
   try {
     f = {
@@ -189,6 +226,14 @@ export async function runArtifacts(argv: string[]): Promise<number> {
       shared: takeFlagBool(rest, ['--shared']),
       pinned: takeFlagBool(rest, ['--pinned']),
       starter: takeFlagBool(rest, ['--starter']),
+      space: takeFlagValue(rest, ['--space']),
+      agent: takeFlagValue(rest, ['--agent']),
+      clear: takeFlagBool(rest, ['--clear']),
+      quote: takeFlagValue(rest, ['--quote']),
+      selector: takeFlagValue(rest, ['--selector']),
+      all: takeFlagBool(rest, ['--all']),
+      resolved: takeFlagBool(rest, ['--resolved']),
+      limit: takeFlagValue(rest, ['--limit']),
     };
   } catch (err) {
     return fail((err as Error).message);
@@ -198,6 +243,11 @@ export async function runArtifacts(argv: string[]): Promise<number> {
   if (!KNOWN.includes(sub)) return fail(`unknown subcommand "${sub}". Run \`kortix artifacts --help\`.`);
   if (f.type && !TYPES.includes(f.type)) return fail(`--type must be doc or html.`);
   if (f.visibility && !VISIBILITIES.includes(f.visibility)) return fail(`--visibility must be private, project or public.`);
+  if (f.space !== undefined && !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(f.space)) return fail(`--space "${f.space}" is not a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).`);
+  if (f.agent !== undefined && !/^[a-z0-9][a-z0-9_-]{0,127}$/.test(f.agent)) return fail(`--agent "${f.agent}" is not an agent name.`);
+  if (f.all && f.resolved) return fail('Use --all or --resolved, not both.');
+  if (f.quote !== undefined && f.selector !== undefined) return fail('Use --quote or --selector, not both.');
+  if (f.limit !== undefined && (!/^\d+$/.test(f.limit) || Number(f.limit) < 1 || Number(f.limit) > 100)) return fail('--limit must be an integer from 1 to 100.');
 
   const ctx = await resolveProjectContext({ projectArg: f.projectArg, hostArg: f.hostArg });
   if (!ctx) return 1;
@@ -211,6 +261,8 @@ export async function runArtifacts(argv: string[]): Promise<number> {
     ...(f.title ? { title: f.title } : {}),
     ...(f.description ? { description: f.description } : {}),
     ...(f.visibility ? { visibility: f.visibility as ArtifactVisibility } : {}),
+    ...(f.space ? { space: f.space } : {}),
+    ...(f.agent ? { agent: f.agent } : {}),
   };
 
   try {
@@ -233,6 +285,56 @@ export async function runArtifacts(argv: string[]): Promise<number> {
       };
 
       switch (sub) {
+        case 'comments': {
+          const id = await resolve(a0);
+          if (!id) return a0 ? 1 : missing('an artifact id');
+          const threads = await listArtifactComments(pid, id, { status: f.all ? 'all' : f.resolved ? 'resolved' : 'open' });
+          if (f.json) return out(threads, '');
+          if (!threads.length) return out(null, 'No matching comment threads.');
+          for (const thread of threads) {
+            const delivery = thread.agent_state === 'paused'
+              ? thread.agent_error ? ` · Delivery failed: ${thread.agent_error}` : ' · Waiting for a person'
+              : '';
+            process.stdout.write(`${thread.thread_id}  ${thread.status}${delivery}\n`);
+            for (const comment of thread.comments) process.stdout.write(`  ${commentAuthor(comment.author)}: ${comment.deleted_at ? '[deleted]' : comment.body}\n`);
+          }
+          return 0;
+        }
+        case 'comment': {
+          const id = await resolve(a0);
+          if (!id) return a0 ? 1 : missing('an artifact id');
+          if (!a1?.trim()) return missing('comment text');
+          const versions = await listArtifactVersions(pid, id);
+          const version = versions[0]?.id;
+          if (!version) return fail('The artifact has no saved Files version to anchor.');
+          const text = f.quote === undefined ? '' : await (await readArtifactFile(pid, id, { version })).text();
+          const anchor = artifactCommentAnchor(version, { quote: f.quote, selector: f.selector }, text);
+          const thread = await createArtifactComment(pid, id, { anchor, body: a1 });
+          return out(thread, status.ok(`Opened thread ${thread.thread_id}`));
+        }
+        case 'reply':
+        case 'resolve':
+        case 'reopen': {
+          if (!a0) return missing('a thread id');
+          if (sub === 'reply' && !a1?.trim()) return missing('reply text');
+          const thread = await getArtifactCommentThread(pid, a0);
+          if (sub === 'reply') {
+            const comment = await replyArtifactComment(pid, thread.artifact_id, thread.thread_id, { body: a1! });
+            return out(comment, status.ok(`Replied to ${thread.thread_id}`));
+          }
+          const changed = await setArtifactCommentStatus(pid, thread.artifact_id, thread.thread_id, sub === 'resolve' ? 'resolved' : 'open');
+          return out(changed, status.ok(`${sub === 'resolve' ? 'Resolved' : 'Reopened'} ${thread.thread_id}`));
+        }
+        case 'activity': {
+          const id = await resolve(a0);
+          if (!id) return a0 ? 1 : missing('an artifact id');
+          const page = await listArtifactActivity(pid, id, { ...(f.limit ? { limit: Number(f.limit) } : {}) });
+          if (f.json) return out(page, '');
+          for (const item of page.items) process.stdout.write(`${item.at}  ${pad(item.type, 20)}${item.actor.name ?? item.actor.id ?? 'System'}\n`);
+          if (!page.items.length) process.stdout.write('No activity yet.\n');
+          if (page.older_versions) process.stdout.write('Older saves may be unavailable in this history.\n');
+          return 0;
+        }
         case 'types': {
           const types = await listArtifactTypes(pid);
           if (a0) {
@@ -288,7 +390,7 @@ export async function runArtifacts(argv: string[]): Promise<number> {
         case 'ls':
         case 'list': {
           const scope: ArtifactListScope = f.pinned ? 'pinned' : f.mine ? 'mine' : f.shared ? 'shared' : 'all';
-          const list = await listArtifacts(pid, { scope, type: f.type as ArtifactType | undefined, q: f.search });
+          const list = await listArtifacts(pid, { scope, type: f.type as ArtifactType | undefined, q: f.search, space: f.space });
           if (f.json) return out(list, '');
           if (!list.length) return out(null, 'No artifacts yet. Publish one with `kortix artifacts publish <file>`.');
           for (const a of list) {
@@ -369,6 +471,13 @@ export async function runArtifacts(argv: string[]): Promise<number> {
           const a = await updateArtifact(pid, id, { title: a1 });
           return out(a, status.ok(`Renamed to "${a.title}"`));
         }
+        case 'bind': {
+          const id = await resolve(a0);
+          if (!id) return a0 ? 1 : missing('an artifact id');
+          if (!f.clear && f.space === undefined && f.agent === undefined) return missing('--space <slug>, --agent <name> or --clear');
+          const a = await updateArtifact(pid, id, f.clear ? { space: null, agent: null } : { ...(f.space ? { space: f.space } : {}), ...(f.agent ? { agent: f.agent } : {}) });
+          return out(a, status.ok(`"${a.title}" is in ${a.space ?? (a.agent ? `${a.agent}'s space` : 'no space (project-wide)')}`));
+        }
         case 'versions': {
           const id = await resolve(a0);
           if (!id) return a0 ? 1 : missing('an artifact id');
@@ -405,6 +514,10 @@ export async function runArtifacts(argv: string[]): Promise<number> {
     if (code === 'version_conflict') {
       process.stderr.write(`${status.err((err as Error).message)}\n`);
       return 3;
+    }
+    if (err instanceof SdkApiError && typeof err.status === 'number' && ['comments', 'comment', 'reply', 'resolve', 'reopen', 'activity'].includes(sub)) {
+      const message = err.status === 403 ? `HTTP 403: ${err.message}` : err.message;
+      return surfaceApiError(new CliApiError(err.status, message, err.details));
     }
     return surfaceApiError(err);
   }

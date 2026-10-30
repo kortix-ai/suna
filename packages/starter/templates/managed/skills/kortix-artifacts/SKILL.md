@@ -180,6 +180,32 @@ If the request also asks to share ("so the team can review it"), share the
 artifact you saved: `kortix artifacts share <id> --visibility project`.
 </update>
 
+<comments>
+After a hand-off, run `kortix artifacts comments <id>`. Read the open threads,
+fix each issue, reply with the change in one sentence, then resolve the thread:
+
+    kortix artifacts reply <thread_id> "Changed the forecast to the confirmed figure."
+    kortix artifacts resolve <thread_id>
+
+Never resolve a thread you did not address. Reply with a question instead.
+When a fact needs a person's confirmation, comment to `@name`. Never comment
+only to report status. Stop when a thread shows "Waiting for a person".
+
+When asked to review, open one thread per issue, anchored to an exact quote:
+
+    kortix artifacts comment <id> "Confirm the source for this figure, @name." --quote "Revenue rose."
+
+Quotes contain at most 32 characters. A missing quote exits nonzero and creates
+no thread. The CLI reads a pinned Files history version before it posts.
+Omit the anchor flag for a comment on the whole artifact. For an HTML element,
+use `--selector "#chart"`; the CLI records its center (0.5, 0.5), viewport width
+1280, scroll (0, 0), and an empty snippet. These are defaults, not measured geometry.
+
+`comments --all` includes resolved threads; `--resolved` shows only resolved
+threads. `reopen <thread_id>` opens one again. `activity <id> --limit 20 --json`
+lists events and saves. Add `--json` to any comment command for structured output.
+</comments>
+
 <quality>
 - Say the answer first: the doc's opening paragraph, the deck's title slide,
   the dashboard's header.
@@ -201,6 +227,10 @@ artifact you saved: `kortix artifacts share <id> --visibility project`.
 | `kortix artifacts info <id>` / `open <id>` | details, path, links |
 | `kortix artifacts cat <id> [path] [--version v]` / `pull <id> <dir>` | read |
 | `kortix artifacts share <id> --visibility … [--with …]` | share |
+| `kortix artifacts comments <id> [--all\|--resolved]` | read threads |
+| `kortix artifacts comment <id> "text" [--quote "text"\|--selector "css"]` | open one thread |
+| `kortix artifacts reply <thread_id> "text"` / `resolve <thread_id>` / `reopen <thread_id>` | address threads |
+| `kortix artifacts activity <id> [--limit N]` | events and saves |
 | `kortix artifacts versions` / `restore` / `rename` / `pin` / `unpin` / `rm` | manage |
 
 Add `--json` for machine-readable output. Permissions (a role's, and for an
@@ -209,6 +239,7 @@ agent its `kortix_permissions` in kortix.yaml):
 | Permission | Lets you |
 |---|---|
 | `project.artifact.read` | list, open, read versions and files |
+| `project.artifact.comment` | read artifacts and activity; open threads, reply, edit your comments, resolve your threads |
 | `project.artifact.write` | publish, add, save, restore; rename and share your own |
 | `project.artifact.manage` | rename, share or stop sharing anyone's |
 | `project.artifact.public` | give an artifact a public link |

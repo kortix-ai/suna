@@ -53,51 +53,121 @@ scattered.
 ## How it works
 
 <Steps>
-<Step title="Run on a schedule">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent on a schedule. Each firing spawns a fresh
-**session** in its own sandbox. One run pulls the current feedback, reconciles it
-against the existing themes in Linear, and updates them. Nothing carries over
-between runs except what's written to Linear.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the clustering skill and the weekly trigger, and opens a change request for you to review. Prefer
+clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Give the agent the clustering rules">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a feedback clustering agent in this project.
 
-How we group feedback lives as **skills** and **memory** that travel with the
-agent: what makes two differently-worded requests the same theme, how to pick a
-representative quote, how to title an issue, and how to match new feedback to an
-existing theme instead of creating a duplicate. As our themes evolve, we write it
-down and the clustering stays consistent.
+1. Create the agent agents/user-feedback.md. Its job is to turn user feedback into one Linear issue per theme. It may use the Plain and Linear connectors and read the #feedback Slack channel.
 
-</Step>
-<Step title="Connect the sources and Linear">
+2. Create the skill skills/feedback-clustering/SKILL.md with these rules:
+   - Read the open issues in the Feedback team in Linear first, so new feedback joins an existing theme.
+   - Read recent Plain threads, our G2 reviews and the #feedback channel, all read-only.
+   - Two mentions are one theme when they ask for the same capability or fix, even in different words or from different sources.
+   - For each theme, pick the clearest verbatim quote and an action-oriented title.
+   - Update the matching issue's quotes, mention count and sources, or create one new issue. Never create a duplicate.
+   - Never set priority, assign an owner or close an issue.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger feedback-sweep to kortix.yaml. It runs the user-feedback agent every Monday at 06:00 with the prompt "Load the feedback-clustering skill and run one complete feedback sweep into the Feedback team in Linear."
 
-- **Read support from Plain** — recent threads, for the requests and complaints
-  users raise directly.
-- **Read public reviews** — G2 and the app stores, for what users say in the open.
-- **Read the Slack feedback channel** — the internal channel where the team drops
-  what they hear.
-- **Write to Linear** — create a new issue for a new theme, or update the count and
-  quotes on an existing one.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent is **read-only** on every source and its only write is to Linear, where
-it creates and updates issues. It does not set priority, assign owners, or close
-issues — those stay with people. Credentials are encrypted in the Secrets Manager
-and injected at runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect your support inbox, your issue
+tracker and Slack. Credentials are brokered server-side and never enter the
+agent's machine.
+
+<ToolList>
+  <ToolNeed name="Plain" domain="plain.com" tag="Required" alternatives={[['Intercom', 'intercom.com'], ['Zendesk', 'zendesk.com']]}>
+    Reads recent support threads, read-only.
+  </ToolNeed>
+  <ToolNeed name="G2" domain="g2.com" tag="Optional" alternatives={[['Slack', 'slack.com']]}>
+    Supplies public reviews to cluster with the other feedback.
+  </ToolNeed>
+  <ToolNeed name="Linear" domain="linear.app" tag="Required" alternatives={[['Jira', 'atlassian.com'], ['Productboard', 'productboard.com']]}>
+    Creates or updates one issue per feedback theme.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Keep one issue per theme">
+<Step title="Run it once with this prompt">
 
-With that in place, each run gathers the latest feedback, clusters it, and keeps
-one Linear issue per theme current: representative quotes, a running count, and
-the sources it came from. The same request stops being scattered across three
-systems and becomes one quantified issue the team can weigh against the rest.
+Merge the change request, then start a session with the **user-feedback** agent
+and send this prompt. Check the themes it created before you let the schedule
+take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one feedback sweep.
+
+1. Read the open issues in the Feedback team in Linear.
+2. Read the last 7 days of Plain threads, our G2 reviews and the #feedback channel. Change nothing in them.
+3. Cluster the feedback into themes by the underlying request, not the wording.
+4. For each theme, update the matching Linear issue's quotes, count and sources, or create a new issue in Feedback.
+5. Do not set priority, assign anyone or close anything. Tell me which issues you created and updated.`}
+/>
+
+</Step>
+<Step title="Let the weekly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every Monday at 06:00, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: feedback-sweep
+    name: Feedback theme sweep
+    on:
+      cron: "0 0 6 * * 1"
+    run:
+      agent: user-feedback
+      prompt: Load the feedback-clustering skill and run one complete feedback sweep into the Feedback team in Linear.`}
+/>
+
+</Step>
+<Step title="Leave priority to people">
+
+The sources stay read-only, and the agent's only write is creating and updating
+Linear issues. It never sets priority, assigns an owner or closes an issue, even
+one that looks like a duplicate. People weigh each theme against the roadmap.
+
+</Step>
+<Step title="Read the sweep summary">
+
+Each run ends with a list of the Linear issues it created and updated. This is what a run looks like
+in the session:
+
+<ExampleRun
+  title="Feedback theme sweep · Mon 06:00"
+  message="Load the feedback-clustering skill and run one complete feedback sweep into the Feedback team in Linear."
+  worked="Worked for 4m 33s"
+  tools={[
+    'linear · list issues',
+    'plain · list threads',
+    'web · fetch G2 reviews',
+    'slack · read history → #feedback',
+    'linear · update issue × 6',
+    'linear · create issue × 2',
+  ]}
+  note="Illustrative example. Your counts depend on your feedback volume."
+>
+  Read **63** pieces of feedback and found **8** themes. Updated **6** existing
+  issues and created **2** new ones in Feedback. The largest theme, bulk export,
+  now has **27** mentions across three sources.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -108,6 +178,25 @@ systems and becomes one quantified issue the team can weigh against the rest.
   lives as **skills** and **memory**. The agent quantifies the themes; people own
   what to build.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Weekly theme digest"
+  code="After each sweep, post the five themes with the most new mentions to #product, with one quote each."
+/>
+
+<CopyBlock
+  title="Close the loop with users"
+  code="When a theme's Linear issue is marked done, list the Plain threads behind it so support can tell those users."
+/>
+
+<CopyBlock
+  title="Add app store reviews"
+  code="Also read our App Store and Google Play reviews as a source, the same way as G2."
+/>
 
 ## Guardrails
 

@@ -7,7 +7,6 @@ const dockerfile = buildMetaSandboxDockerfile({
   agentBinaryPath: 'artifacts/kortix-agent.gz',
   cliBinaryPath: 'artifacts/kortix.gz',
   entrypointScriptPath: 'artifacts/kortix-entrypoint.sh',
-  catalogPath: 'artifacts/llm-catalog.json',
   managedSkillsPath: 'artifacts/managed-skills',
 });
 
@@ -15,24 +14,25 @@ describe('buildMetaSandboxDockerfile', () => {
   test('contains only the platform coordination runtime', () => {
     expect(dockerfile).toContain('FROM debian:bookworm-slim');
     expect(dockerfile).toContain('pnpm runtime set node 22.23.1 --global');
-    expect(dockerfile).toContain('opencode-ai@1.18.23');
-    expect(dockerfile).toContain(
-      "opencode_native=\"$(sed -n 's/^# cmd-shim-target=//p' \"$(command -v opencode)\" | tail -n 1)\"",
-    );
     expect(dockerfile).not.toContain('pnpm list -g');
     expect(dockerfile).not.toContain('pnpm root -g');
-    expect(dockerfile).toContain('test "$(wc -c < "$opencode_native")" -gt 50000000');
-    expect(dockerfile).toContain('ln -sfn "$opencode_native" /opt/kortix/opencode.current');
-    expect(dockerfile).toContain(
-      'ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix',
-    );
     expect(dockerfile).toContain('PNPM_HOME=/home/kortix/.local/share/pnpm');
     expect(dockerfile).toContain('PATH="/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:${PATH}"');
     expect(dockerfile).toContain('/usr/local/bin/kortix-agent');
     expect(dockerfile).toContain('/usr/local/bin/kortix');
     expect(dockerfile).toContain('/workspace/AGENTS.md');
-    expect(dockerfile).toContain('# Meta\n');
-    expect(dockerfile).toContain('NEVER do project work in this sandbox.');
+    expect(dockerfile).toContain('# My Kortix\n');
+    expect(dockerfile).toContain('You are My Kortix: the one agent this person talks to in this project.');
+    expect(dockerfile).toContain('NEVER do project work in this sandbox');
+    expect(dockerfile).toContain('`kortix sessions new --agent <name> --prompt "<task>"`');
+    expect(dockerfile).toContain('`kortix agents config <name> --file -`');
+    expect(dockerfile).toContain('show the user the before and after, and ask once.');
+    expect(dockerfile).toContain('Load the `kortix-goals` skill.');
+    // The meta box has no /drives, where `kortix goals ls|status` refuse.
+    expect(dockerfile).toContain('Never run `kortix goals ls` or `kortix goals status` here');
+    expect(dockerfile).not.toContain('Then follow it with `kortix goals ls`');
+    expect(dockerfile).toContain('Every App, Artifact or Goal you create names the agent or the space it belongs to.');
+    expect(dockerfile).toContain('It cannot mint tokens. You never hold more than the user does in this project.');
     expect(dockerfile).toContain(
       'Move files between sessions with `kortix sessions cp <session-id>:<path> <session-id>:<path>`.',
     );
@@ -46,7 +46,7 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain(
       'Specialized sessions run full sandboxes with Python (via `uv` — tell them to use `uv run`/`uvx`/`uv pip`,',
     );
-    expect(dockerfile).toContain('Read the `kortix-cli` skill before coordinating');
+    expect(dockerfile).toContain('Read the `kortix-system` skill before you coordinate');
     expect(dockerfile).toContain(
       'Wait for a session with `kortix sessions wait-for <session-id> --timeout 120`',
     );
@@ -57,13 +57,11 @@ describe('buildMetaSandboxDockerfile', () => {
       'It cannot access another project, account administration, project secrets, or connectors.',
     );
     expect(dockerfile).not.toContain('artifacts/AGENTS.md');
-    expect(dockerfile).toContain('/ephemeral/kortix-master/opencode');
-    expect(dockerfile).toContain('/opt/kortix/llm-catalog.json');
+    expect(dockerfile).not.toContain('llm-catalog');
     expect(dockerfile).toContain(
       'COPY --chown=kortix:kortix artifacts/managed-skills /opt/kortix/managed-skills',
     );
     expect(dockerfile).toContain('KORTIX_PROJECT_AUTO_CLONE=0');
-    expect(dockerfile).toContain('KORTIX_OPENCODE_PROCESS_TRANSPORT=rest');
 
     expect(dockerfile).not.toContain('playwright');
     expect(dockerfile).not.toContain('chromium');

@@ -386,11 +386,14 @@ export function ImageGenTool({ call }: ToolProps) {
   const grid = useMemo(() => imageGenGrid(views), [views]);
   const maxHeight = useMaxImageHeight();
   const view = views[0]!;
-  const solo = views.length === 1 && view.images.length === 1;
+  // One tile: a lone image, or one left beside calls the image cap refused.
+  const solo = grid.tiles.length === 1;
 
   // The card carries no prompt and no model (R29): the frames are the content,
   // their status (busy, loading, an error) the only text.
-  if (views.length === 1 && !view.images.length) {
+  // The image cap refused every call before any request: nothing was asked for, so nothing to show.
+  if (!grid.tiles.length) return null;
+    if (views.length === 1 && !view.images.length) {
     // The whole call failed or stopped.
     return (
       <View className="w-full max-w-md">
@@ -472,8 +475,17 @@ export function ImageGenTool({ call }: ToolProps) {
     </View>
   );
   const starts = grid.rows.map((_, row) => grid.rows.slice(0, row).reduce((sum, n) => sum + n, 0));
-  const rects = grid.rows.map((count, row) => aspectRatioValue(views[grid.tiles[starts[row]!]!.call]!.aspectRatio) * BENTO_SCALE[count]!);
-  if (grid.rows.length === 1) {
+  // A strip row (portrait tiles) is its tiles side by side: n·r.
+  const rects = grid.rows.map(
+    (count, row) => aspectRatioValue(views[grid.tiles[starts[row]!]!.call]!.aspectRatio) * (grid.strip ? count : BENTO_SCALE[count]!),
+  );
+  const stripRow = (count: number, start: number, style: object, testID: string) => (
+    <View key={start} testID={testID} style={{ ...style, flexDirection: 'row', gap }}>
+      {Array.from({ length: count }, (_, i) => tile(start + i, 1))}
+    </View>
+  );
+  const row = grid.strip ? stripRow : bentoRow;
+  if (grid.rows.length === 1 && !grid.strip) {
     return (
       <View className="w-full">{bentoRow(grid.rows[0]!, 0, capped(rects[0]!, maxHeight), 'image-gen-bento')}</View>
     );
@@ -481,9 +493,10 @@ export function ImageGenTool({ call }: ToolProps) {
   // Five or more (R38): rows of bento patterns (5 = 3+2, 8 = 4+4) in one
   // column, as wide as its tallest row allows under the cap. The column has
   // no ratio of its own: its height is its rows and the gaps between them.
+  // A strip (portrait tiles) is this column at any count, each row side by side.
   return (
     <View testID="image-gen-grid" className="w-full" style={{ width: '100%', maxWidth: maxHeight * Math.min(...rects), gap }}>
-      {grid.rows.map((count, row) => bentoRow(count, starts[row]!, { width: '100%', aspectRatio: rects[row] }, `image-gen-row-${row}`))}
+      {grid.rows.map((count, at) => row(count, starts[at]!, { width: '100%', aspectRatio: rects[at] }, `image-gen-row-${at}`))}
     </View>
   );
 }

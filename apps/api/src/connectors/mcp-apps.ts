@@ -25,6 +25,7 @@
  * the marks belong to their owners.
  */
 import type { OAuth2ApplicationInput } from '@kortix/api-contract';
+import { CHANNEL_PLATFORM_IDS, CHANNELS } from '@kortix/shared/channel-descriptors';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { composioVisibleToolkits, publicToolkit } from './composio-catalog-search';
@@ -320,10 +321,14 @@ export const KORTIX_APPS: ReadonlyArray<{
   icon: string | null;
   categories: string[];
 }> = [
-  { app: 'slack', name: 'Slack', domain: 'slack.com', description: 'Message the agent in Slack: mentions, DMs and channels, through the Kortix Slack app.', icon: '/connector-icons/slack.svg', categories: ['communication'] },
-  { app: 'teams', name: 'Microsoft Teams', domain: 'teams.microsoft.com', description: 'Message the agent in Microsoft Teams chats and channels, through the Kortix Teams app.', icon: '/connector-icons/teams.svg', categories: ['communication'] },
-  { app: 'email', name: 'Email', domain: 'email.kortix', description: 'Give the project an inbox: people email the agent and it replies.', icon: '/connector-icons/email.svg', categories: ['communication'] },
-  { app: 'telegram', name: 'Telegram', domain: 'telegram.org', description: 'Message the agent from Telegram through a bot you own.', icon: '/connector-icons/telegram.svg', categories: ['communication'] },
+  ...CHANNEL_PLATFORM_IDS.map((app) => ({
+    app,
+    name: CHANNELS[app].label,
+    domain: CHANNELS[app].catalog.domain,
+    description: CHANNELS[app].catalog.description,
+    icon: `/connector-icons/${app}.svg`,
+    categories: ['communication'],
+  })),
   { app: 'computer', name: 'Computer', domain: 'computer.kortix', description: 'Let agents work with the files, terminal and apps on your own computer, with the access you allow.', icon: '/connector-icons/computer.svg', categories: ['developer-tools'] },
 ];
 

@@ -1,4 +1,7 @@
 'use client';
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { useTranslations } from '@/i18n/use-translations';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 
 import { MANIFEST } from '@/features/marketing/framework/content';
 import { cn } from '@kortix/ui';
@@ -10,13 +13,16 @@ import { FrameworkWindow, type FrameworkFocus } from './framework-window';
 import { SessionChat } from './session-chat';
 import { H, W } from './session-window';
 
-/** The 1-based line range of a top-level kortix.yaml block, up to the next top-level key. */
+/** The 1-based line range of a top-level kortix.yaml block, with the comment
+ *  right above it, up to the next top-level key. */
 function block(key: string): FrameworkFocus {
   const lines: readonly string[] = MANIFEST;
-  const from = lines.indexOf(`${key}:`);
-  let to = lines.findIndex((line, i) => i > from && /^[a-z]/.test(line));
+  const at = lines.indexOf(`${key}:`);
+  let from = at;
+  while (lines[from - 1]?.startsWith('#')) from--;
+  let to = lines.findIndex((line, i) => i > at && /^[a-z]/.test(line));
   if (to < 0) to = lines.length;
-  while (!lines[to - 1]?.trim()) to--;
+  while (!lines[to - 1]?.trim() || lines[to - 1].startsWith('#')) to--;
   return { file: 'kortix.yaml', from: from + 1, to };
 }
 
@@ -25,8 +31,8 @@ const LAST_TRIGGER = MANIFEST.indexOf('  - slug: weekly-post') + 1;
 type Layer = 'session' | 'framework';
 type Step = { label: string; layer: Layer; focus?: FrameworkFocus };
 
-/** Two modes, four steps each, played in one loop of eight. */
-const MODES: { label: string; steps: Step[] }[] = [
+/** Two modes, played in one loop: four Workspace steps, then four Framework steps. */
+const sourceMODES: { label: string; steps: Step[] }[] = [
   {
     label: 'Workspace',
     steps: [
@@ -51,18 +57,19 @@ const MODES: { label: string; steps: Step[] }[] = [
   },
 ];
 
-const PER_MODE = 4;
-const TOTAL = MODES.length * PER_MODE;
+/** Every step of both modes in play order: `mode` and `step` index into MODES. */
+const ORDER = sourceMODES.flatMap((m, mode) => m.steps.map((_, step) => ({ mode, step })));
+const TOTAL = ORDER.length;
+/** The index in ORDER of a mode's first step. */
+const firstOf = (mode: number) => ORDER.findIndex((o) => o.mode === mode);
 const LAYERS: Layer[] = ['session', 'framework'];
 /** How long each step shows, in ms. The longest chat step needs ~6.5 s of it. */
 const STEP_MS = 7500;
 
-const stepAt = (index: number) => MODES[Math.floor(index / PER_MODE)].steps[index % PER_MODE];
-
 /**
  * The hero walkthrough, built as a video player: the mode switch
  * (Workspace | Framework) above, then one 1264 × 860 stage and the step
- * strip under it in a single frame: the four steps of the mode and pause. The
+ * strip under it in a single frame: the steps of the mode and pause. The
  * active chapter's top edge is the timeline, on the seam with the stage.
  *
  * Workspace is one session chat across its four steps (session-chat.tsx):
@@ -75,6 +82,15 @@ const stepAt = (index: number) => MODES[Math.floor(index / PER_MODE)].steps[inde
  * motion: no auto-advance, no timeline, every scene in its final state.
  */
 export function WorkspaceFramework() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { MODES } = localizeUiCatalog(
+    { MODES: sourceMODES },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
+  const stepAt = (index: number) => MODES[ORDER[index].mode].steps[ORDER[index].step];
+
   const [index, setIndex] = useState(0);
   // A layer remounts each time it becomes the shown one, so its scene starts over.
   const [entries, setEntries] = useState<Record<Layer, number>>({ session: 0, framework: 0 });
@@ -85,8 +101,7 @@ export function WorkspaceFramework() {
   const bar = useRef<HTMLSpanElement>(null);
   const timer = useRef<Animation | null>(null);
 
-  const mode = Math.floor(index / PER_MODE);
-  const step = index % PER_MODE;
+  const { mode, step } = ORDER[index];
   const current = stepAt(index);
 
   const go = (next: number) => {
@@ -132,14 +147,18 @@ export function WorkspaceFramework() {
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
-      {/* The mode switch, centred above the frame: the navbar's site-switcher pattern. */}
-      <div role="group" aria-label="View" className="bg-muted flex items-center rounded-md p-0.5">
+      {/* The mode switch, centred above the frame: a segmented control, since it toggles a view. */}
+      <div
+        role="group"
+        aria-label={tMarketing('textdcc839a4015c')}
+        className="bg-muted flex items-center rounded-md p-0.5"
+      >
         {MODES.map((m, i) => (
           <button
             key={m.label}
             type="button"
             aria-pressed={mode === i}
-            onClick={() => go(i * PER_MODE)}
+            onClick={() => go(firstOf(i))}
             className="text-muted-foreground hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground outline-ring duration-moderate flex h-7 items-center rounded-sm px-3 text-xs font-medium transition-colors focus-visible:outline-2"
           >
             {m.label}
@@ -152,7 +171,10 @@ export function WorkspaceFramework() {
         className="bg-background/20 ring-border w-full rounded-2xl p-1.5 ring-1 sm:p-2"
         role="region"
         aria-roledescription="walkthrough"
-        aria-label={`Kortix ${MODES[mode].label.toLowerCase()}: ${current.label}`}
+        aria-label={tMarketing('text94a8aad616b5', {
+          mode: MODES[mode].label,
+          step: current.label,
+        })}
       >
         <div className="bg-background overflow-hidden rounded-xl border">
           {/* The stage: every layer stays mounted, the shown one fades in. */}
@@ -200,7 +222,7 @@ export function WorkspaceFramework() {
                     <button
                       type="button"
                       aria-current={active ? 'step' : undefined}
-                      onClick={() => go(mode * PER_MODE + i)}
+                      onClick={() => go(firstOf(mode) + i)}
                       className={cn(
                         'outline-ring hover:text-foreground flex min-w-0 flex-1 items-center gap-2.5 px-3 py-3 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 sm:px-4',
                         active ? 'text-foreground' : 'text-muted-foreground',
@@ -220,7 +242,7 @@ export function WorkspaceFramework() {
                       >
                         <span
                           ref={bar}
-                          className="bg-foreground block size-full origin-left"
+                          className="bg-ring block size-full origin-left"
                           style={{ transform: reduced ? 'scaleX(1)' : 'scaleX(0)' }}
                         />
                       </span>

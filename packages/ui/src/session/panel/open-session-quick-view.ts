@@ -55,7 +55,7 @@ export function openSessionQuickView(
   // for behind the close button. The panel toggle still opens the panel;
   // this path is only the "show me this one tool" intent.
   if (isMobileViewport()) {
-    useKortixComputerStore.getState().openMobileTool(view);
+    useKortixComputerStore.getState().openMobileTool(view, target);
     track('panel_opened', { source, surface: 'mobile-tool', view });
     return;
   }
@@ -70,8 +70,8 @@ export function openSessionQuickView(
   // on /projects/:id/sessions/:id.
   const activePanelSessionId = getActivePanelSessionId();
 
-  // Reminders is an Easy detail with no Advanced tab: it takes the request path in both modes.
-  if (panelMode === 'advanced' && view !== 'reminders') {
+  // Reminders and Desktop are Easy details with no Advanced tab: they take the request path in both modes.
+  if (panelMode === 'advanced' && view !== 'reminders' && view !== 'desktop') {
     if (activePanelSessionId) {
       // `SessionPanelView` calls the file explorer 'explorer'; its 'files'
       // member is the git-changes diff view. The quick-view vocabulary uses

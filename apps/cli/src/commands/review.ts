@@ -96,7 +96,11 @@ Submit options:
   --title <text>     One-line title (required).
   --summary <text>   The body a reviewer reads.
   --risk <r>         ${RISKS.join(' | ')} (default: none).
-  --detail <json>    Structured payload, a JSON object.
+  --detail <json>    Structured payload, a JSON object. An output names
+                     its files: {"files":[{"path":"/drives/me/cut.mp4",
+                     "note":"Final cut"}],"preview":"<text>"}. The inbox
+                     plays the first image, video or audio file under
+                     /drives and lists the rest.
   --agent <name>     Which agent produced it.
   --session <id>     Originating session; it must be one of this
                      project's sessions. Inside a session it defaults to
@@ -288,6 +292,9 @@ async function reviewShow(
   if (item.acted_at)
     rows.push(['acted', `${item.acted_at}${item.acted_by ? ` by ${item.acted_by}` : ''}`]);
   if (item.feedback) rows.push(['feedback', item.feedback]);
+  // A decided connector call says what the agent does next: read the run
+  // outcome, or repeat the call when the gate held no input.
+  if (typeof item.detail?.next_step === 'string') rows.push(['next', item.detail.next_step]);
   const labelW = Math.max(...rows.map(([label]) => label.length)) + 1;
 
   process.stdout.write(`\n  ${C.bold}${item.title}${C.reset}\n`);

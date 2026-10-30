@@ -1,5 +1,7 @@
 import { Band, Heading } from '@/features/marketing/kit/page-frame';
-import Link from 'next/link';
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { useTranslations } from '@/i18n/use-translations';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -7,13 +9,15 @@ import {
   ShieldCheckIcon,
   UsersThreeIcon,
 } from '@phosphor-icons/react/dist/ssr';
+import Link from 'next/link';
 
 // The three pillars, in the founder's order and words (kortix-brand D16):
 // Multiplayer AI; Company as code (extensible); Sovereign and
 // open ("own your data and run on your own infra"). Every fact is a claims.md
 // row: Channels, Permissions, Path to `main`, Connectors, Source, Hosting,
-// Models, Secrets. No "pi" in this copy (D20).
-const PILLARS = [
+// Models, Secrets. Company as code names pi and pi extensions (D27,
+// which narrows D20); the other pillars do not name pi.
+const sourcePILLARS = [
   {
     id: 'multiplayer',
     href: '/multiplayer',
@@ -34,10 +38,10 @@ const PILLARS = [
     icon: CodeIcon,
     name: 'Company as code',
     line: 'Extensible to the core.',
-    body: 'We treat your whole company like code. Every agent, skill, rule, connector and piece of context is a file in one git repo, and the agents and their harness are open source, so you can extend anything.',
+    body: 'We treat your whole company like code. Every agent, skill, rule, connector and piece of context is a file in one git repo. Every agent is a custom pi agent on a minimal open-source harness, so you can extend anything with pi extensions.',
     facts: [
       'Every agent and skill a file in git',
-      'An open-source agent harness',
+      'Custom pi agents and pi extensions',
       '3,000+ apps, plus MCP, OpenAPI and raw HTTP',
       'A CLI and a TypeScript SDK',
     ],
@@ -60,11 +64,18 @@ const PILLARS = [
 
 /** The three pillars: each name is the cell's headline, its meaning under it. */
 export function PillarsBand() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { PILLARS } = localizeUiCatalog(
+    { PILLARS: sourcePILLARS },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
   return (
     <section id="pillars" className="scroll-mt-16 py-14 lg:py-20">
       <Heading
-        title="Multiplayer. Company as code. Sovereign."
-        titleMuted="The AI OS your whole company owns."
+        title={tMarketing('textbf8abe5b1667')}
+        titleMuted="The CompanyOS you own."
       />
       <Band className="mt-12">
         <ul className="bg-border grid grid-cols-1 gap-px lg:grid-cols-3">
@@ -92,9 +103,11 @@ export function PillarsBand() {
                 href={href}
                 className="text-foreground hover:text-muted-foreground outline-ring duration-normal inline-flex w-fit items-center gap-1.5 rounded-sm text-sm font-medium transition-colors ease-out focus-visible:outline-2 focus-visible:outline-offset-2"
               >
-                Learn more
+                {tMarketing('text1445799c033a')}
                 <ArrowRightIcon className="size-3.5" aria-hidden />
-                <span className="sr-only">about {name}</span>
+                <span className="sr-only">
+                  {tMarketing('texta4262e1c9bcb')} {name}
+                </span>
               </Link>
             </li>
           ))}

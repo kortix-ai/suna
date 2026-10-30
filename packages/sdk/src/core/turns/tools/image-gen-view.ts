@@ -87,6 +87,13 @@ export interface ImageGenView {
     /** Seconds until the image limit resets (`retry-after`). */
     retryAfterSeconds?: number;
     /**
+     * The tool's own image cap refused the whole call before any request
+     * (`Image limit for this turn reached …`, `… for this session …`): no
+     * image was asked of a model. `imageGenGrid` gives such a call no slot,
+     * and a host draws nothing for it.
+     */
+    limit?: 'turn' | 'session';
+    /**
      * True only for a trailing `[image_model_unavailable]`,
      * `[provider_not_connected]` or `[provider_reauth_required]` code: a
      * model connection in the project's settings fixes the call.
@@ -99,12 +106,21 @@ type ImageGenFrame = ImageGenView['images'][number];
 
 const SQUARE = '1 / 1';
 const CONNECT_CODES = new Set(['image_model_unavailable', 'provider_not_connected', 'provider_reauth_required']);
-const TRAILING_CODE = /\s*\[([a-z][a-z0-9_]*)\]\s*$/;
-const TRAILING_PROVIDER = /\s*\[provider:([^\]\s]+)\]\s*$/;
+const TRAILING_CODE = /\[([a-z][a-z0-9_]*)\]$/;
+/** The tool's cap refusal (`admit` in the image_gen tool), thrown before any request. */
+const IMAGE_CAP = /^Image limit for this (turn|session) reached\b/;
+/** The trailing `[provider:<id>]` token, found without a regex (CodeQL js/polynomial-redos). */
+function trailingProvider(text: string): { index: number; id: string } | null {
+  if (!text.endsWith(']')) return null;
+  const index = text.lastIndexOf('[provider:');
+  if (index < 0) return null;
+  const id = text.slice(index + '[provider:'.length, -1);
+  return id && !/[\]\s]/.test(id) ? { index, id } : null;
+}
 /** Before the provider token: only ChatGPT's own texts named ChatGPT or Codex for these codes. */
 const LEGACY_CHATGPT_CODES = new Set(['provider_not_connected', 'provider_reauth_required']);
 const NAMES_CHATGPT = /\b(ChatGPT|Codex)\b/;
-const TRAILING_RETRY = /\s*Retry after (\d+) s\.\s*$/;
+const TRAILING_RETRY = /Retry after (\d+) s\.$/;
 const REFUSAL_PREFIX = /^Image generation failed \(\d+\):\s*/;
 /**
  * The exact texts a stop leaves on the call: pi's tool loop when the turn's
@@ -139,7 +155,7 @@ function imageOutput(text: string): { imagePath: string | null; directUrl: strin
   } catch {
     // not JSON
   }
-  const bare = text.replace(/^["'`]+|["'`]+$/g, '').trim();
+  const bare = stripQuotes(text).trim();
   if (IMAGE_EXT.test(bare) && !/\s/.test(bare)) {
     return { imagePath: bare.startsWith('workspace/') ? `/${bare}` : bare, directUrl: null };
   }
@@ -182,17 +198,30 @@ function inputOf(call: ToolCallBlock): Record<string, unknown> {
   return {};
 }
 
+/** `text` without its leading and trailing quotes and backticks, in linear time. */
+function stripQuotes(text: string): string {
+  const quote = (c: string | undefined) => c === '"' || c === "'" || c === '`';
+  let start = 0;
+  let end = text.length;
+  while (start < end && quote(text[start])) start++;
+  while (end > start && quote(text[end - 1])) end--;
+  return text.slice(start, end);
+}
+
 function failure(text: string): NonNullable<ImageGenView['error']> {
   let rest = text.trim();
   const code = TRAILING_CODE.exec(rest);
-  if (code) rest = rest.slice(0, code.index);
-  const named = code && TRAILING_PROVIDER.exec(rest);
-  if (named) rest = rest.slice(0, named.index);
+  // Each trailing pattern is anchored at the end with no leading `\s*`, and the
+  // whitespace is trimmed here: a leading `\s*` backtracks quadratically on long runs.
+  if (code) rest = rest.slice(0, code.index).trimEnd();
+  const named = code ? trailingProvider(rest) : null;
+  if (named) rest = rest.slice(0, named.index).trimEnd();
   const retry = TRAILING_RETRY.exec(rest);
-  if (retry) rest = rest.slice(0, retry.index);
+  if (retry) rest = rest.slice(0, retry.index).trimEnd();
   rest = rest.replace(REFUSAL_PREFIX, '').trim();
+  const cap = IMAGE_CAP.exec(rest);
   const provider = named
-    ? named[1]
+    ? named.id
     : code && LEGACY_CHATGPT_CODES.has(code[1]!) && NAMES_CHATGPT.test(rest)
       ? 'openai-codex'
       : undefined;
@@ -202,6 +231,7 @@ function failure(text: string): NonNullable<ImageGenView['error']> {
     ...(code && { code: code[1] }),
     ...(provider && { provider }),
     ...(retry && { retryAfterSeconds: Number(retry[1]) }),
+    ...(cap && { limit: cap[1] as 'turn' | 'session' }),
   };
   // The tool joins the gateway's message and suggestion with a space: split after the first sentence.
   const cut = rest.search(/(?<=[.!?])\s+/);
@@ -418,6 +448,24 @@ function imageGenGridRows(count: number): number[] {
   return [...rows(3, (count - 4) / 3), 2, 2];
 }
 
+/**
+ * The rows of a strip of `count` portrait images: every row its tiles side by
+ * side, up to four, the rows as even as they split, the longer first
+ * (5 = 3+2, 7 = 4+3, 10 = 4+3+3). A portrait tile in a bento's large slot is
+ * taller than the grid is wide.
+ */
+function imageGenStripRows(count: number): number[] {
+  if (count <= 0) return [];
+  const n = Math.ceil(count / 4);
+  return Array.from({ length: n }, (_, row) => Math.floor(count / n) + (row < count % n ? 1 : 0));
+}
+
+/** `'9 / 16'` → `true`: taller than wide. */
+function isPortrait(ratio: string): boolean {
+  const [w, h] = ratio.split('/').map((part) => Number(part.trim()));
+  return Boolean(w && h && h > w);
+}
+
 /** One slot of an image grid: the frame, the index of its call in the run, and whether it is that call's first. */
 export interface ImageGenGridTile {
   image: ImageGenView['images'][number];
@@ -431,17 +479,26 @@ export interface ImageGenGrid {
    * How many tiles each row holds, top to bottom: up to four is one bento;
    * five and more are rows of three, or of four when that divides evenly, and
    * one or two rows of two for the rest (5 = 3+2, 6 = 3+3, 7 = 3+2+2, 8 = 4+4).
+   * In a strip, each row's tiles stand side by side instead (see `strip`).
    */
   rows: number[];
+  /**
+   * The run's first call asks for portrait images: every row is its tiles side
+   * by side, up to four, the rows as even as they split (5 = 3+2, 7 = 4+3,
+   * 10 = 4+3+3). No bento: a large portrait tile is taller than the grid is wide.
+   */
+  strip: boolean;
 }
 
 /**
  * The one grid of a run of `image_gen` calls (`sessionLogImageGenRuns`), tiles
  * in call order. A call that failed or stopped as a whole keeps one slot per
- * prompt, each showing its failure, so nothing after it moves.
+ * prompt, each showing its failure, so nothing after it moves. A call the
+ * image cap refused (`error.limit`) takes no slot: no image was asked for.
  */
 export function imageGenGrid(views: readonly ImageGenView[]): ImageGenGrid {
   const tiles = views.flatMap((view, call) => {
+    if (!view.images.length && view.error?.limit) return [];
     const images = view.images.length
       ? view.images
       : (view.prompts.length ? view.prompts : ['']).map((prompt) => ({
@@ -454,7 +511,8 @@ export function imageGenGrid(views: readonly ImageGenView[]): ImageGenGrid {
         }));
     return images.map((image, i) => ({ image, call, first: i === 0 }));
   });
-  return { tiles, rows: imageGenGridRows(tiles.length) };
+  const strip = tiles.length > 0 && isPortrait(views[tiles[0]!.call]!.aspectRatio);
+  return { tiles, rows: strip ? imageGenStripRows(tiles.length) : imageGenGridRows(tiles.length), strip };
 }
 
 const IMAGE_GEN = /^image[-_]gen$/;

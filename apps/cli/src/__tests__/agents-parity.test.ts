@@ -145,6 +145,19 @@ function startServer(
           block: REVIEWER_BLOCK,
         });
       }
+      if (p === '/agents/meta/config' && req.method === 'GET') {
+        // The built-in view (agent-config.ts builtinAgentConfigView).
+        return Response.json({
+          agent: 'meta',
+          builtin: 'my_kortix',
+          schema_version: 3,
+          editable: false,
+          default_agent: defaultAgent,
+          block: null,
+          harness: 'pi',
+          ignored_settings: [],
+        });
+      }
       if (p === '/agents/egress/config' && req.method === 'GET') {
         return Response.json({
           agent: 'egress',
@@ -309,6 +322,33 @@ describe('kortix agents — default, scope, config', () => {
     const r = await runCli(['agents', 'default', 'ghost', '--project', PROJECT], config);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('Agent "ghost" is not declared');
+  });
+
+  test('scope and config on My Kortix print the built-in grant, not the block defaults', async () => {
+    const config = writeConfig(startServer());
+    const scope = await runCli(['agents', 'scope', 'meta', '--project', PROJECT], config);
+    expect(scope.code).toBe(0);
+    expect(scope.stdout).toContain('My Kortix');
+    expect(scope.stdout).toContain('secrets              none');
+    expect(scope.stdout).toContain('connectors           none');
+    expect(scope.stdout).toContain('builtin_agents: { my_kortix: false }');
+    expect(scope.stdout).not.toContain('all (default)');
+    expect(scope.stdout).not.toContain('Change it');
+
+    const json = await runCli(['agents', 'scope', 'meta', '--json', '--project', PROJECT], config);
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.stdout)).toMatchObject({
+      agent: 'meta',
+      builtin: 'my_kortix',
+      secrets: 'none',
+      connectors: [],
+      apps: 'none',
+    });
+
+    const cfg = await runCli(['agents', 'config', 'meta', '--project', PROJECT], config);
+    expect(cfg.code).toBe(0);
+    expect(cfg.stdout).toContain('My Kortix');
+    expect(cfg.stdout).not.toContain('kortix projects upgrade');
   });
 
   test('scope --show prints the block; a write PUTs only the named fields', async () => {

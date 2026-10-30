@@ -73,7 +73,7 @@ export async function claimDueScheduleSlots(input: {
         eq(projectTriggerRuntime.triggerType, 'cron'),
         lte(projectTriggerRuntime.nextFireAt, input.now),
         sql`coalesce(${projects.metadata} ->> 'triggers_paused', 'false') <> 'true'`,
-        // Pause all automations (KRTX-1721): the slot stays due and unclaimed,
+        // Pause all triggers (KRTX-1721): the slot stays due and unclaimed,
         // so resuming fires a missed slot once.
         accountAutomationsRunSql(projects.accountId),
         // An auto-paused trigger (KRTX-1721) stays due and unclaimed until it is resumed.
@@ -144,6 +144,8 @@ export async function claimDueScheduleSlots(input: {
           slug: candidate.slug,
           scheduleRevision,
           scheduledFor,
+          // The run's real origin: a loop's slot is `reminder`, every other slot `cron`.
+          source: spec.reminder ? 'reminder' : 'cron',
           status: missed ? 'skipped' : 'queued',
           lastError: missed,
           completedAt: missed ? input.now : null,
@@ -395,6 +397,10 @@ export async function markTriggerExecutionFailed(input: {
  * delivery makes `queued` strictly the transient in-flight state, so a queue-age
  * alarm only fires on a real stall. Does NOT advance `last_fired_at` (already
  * advanced at fire time).
+ *
+ * Updates only: a trigger deleted while its prompt waited stays deleted. An
+ * upsert here re-created a reminder as a row with no definition, which the
+ * catalog never fills or prunes (2026-10-29).
  */
 export async function markTriggerRuntimeDelivered(input: {
   projectId: string;
@@ -402,23 +408,9 @@ export async function markTriggerRuntimeDelivered(input: {
   when: Date;
 }): Promise<void> {
   await db
-    .insert(projectTriggerRuntime)
-    .values({
-      projectId: input.projectId,
-      slug: input.slug,
-      lastStatus: 'fired',
-      lastError: null,
-      lastAttemptAt: input.when,
-      updatedAt: input.when,
-    })
-    .onConflictDoUpdate({
-      target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
-      set: {
-        ...keepRunFailure('fired'),
-        lastAttemptAt: input.when,
-        updatedAt: input.when,
-      },
-    });
+    .update(projectTriggerRuntime)
+    .set({ ...keepRunFailure('fired'), lastAttemptAt: input.when, updatedAt: input.when })
+    .where(and(eq(projectTriggerRuntime.projectId, input.projectId), eq(projectTriggerRuntime.slug, input.slug)));
   // The prompt reached its session: a fire failure streak is over (KRTX-1742).
   await clearTriggerAlert({ projectId: input.projectId, slug: input.slug, source: 'fire' });
 }
@@ -451,20 +443,11 @@ export async function markTriggerRuntimeDeliveryFailed(input: {
   error: string;
 }): Promise<void> {
   const lastError = input.error.slice(0, 1000);
+  // Updates only, like markTriggerRuntimeDelivered.
   await db
-    .insert(projectTriggerRuntime)
-    .values({
-      projectId: input.projectId,
-      slug: input.slug,
-      lastStatus: 'failed',
-      lastError,
-      lastAttemptAt: input.when,
-      updatedAt: input.when,
-    })
-    .onConflictDoUpdate({
-      target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
-      set: { lastStatus: 'failed', lastError, lastAttemptAt: input.when, updatedAt: input.when },
-    });
+    .update(projectTriggerRuntime)
+    .set({ lastStatus: 'failed', lastError, lastAttemptAt: input.when, updatedAt: input.when })
+    .where(and(eq(projectTriggerRuntime.projectId, input.projectId), eq(projectTriggerRuntime.slug, input.slug)));
 }
 
 /** A stored run payload larger than this is replaced by a size marker (KRTX-1743). */
@@ -615,13 +598,4 @@ async function purgeExpiredTriggerRunBatch(now: Date): Promise<number> {
     ),
   );
   return doomed.length;
-}
-
-export async function countUncatalogedTriggerProjects(): Promise<number> {
-  const rows = await db
-    .select({ count: sql<number>`count(distinct ${projectTriggerRuntime.projectId})` })
-    .from(projectTriggerRuntime)
-    .innerJoin(projects, eq(projects.projectId, projectTriggerRuntime.projectId))
-    .where(and(eq(projects.status, 'active'), isNull(projectTriggerRuntime.scheduleRevision)));
-  return Number(rows[0]?.count ?? 0);
 }

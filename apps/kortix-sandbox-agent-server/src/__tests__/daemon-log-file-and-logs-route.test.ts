@@ -7,12 +7,11 @@
  * nobody kept (E2B envd). Every line now also lands in a file on the box.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { Config } from '@/lib/config/config'
-import type { Opencode } from '@/harness/open-code/lifecycle'
 import type { HarnessDiagnosticsService } from '@/harness/contract/diagnostics'
 import {
   DAEMON_LOG_BUFFER_CAP_BYTES,
@@ -25,7 +24,8 @@ import {
   logger,
 } from '@/lib/log/logger'
 import { createLogsRouter } from '@/routes/kortix/logs'
-import { createOpenCodeDiagnosticsService } from '@/harness/open-code/diagnostics'
+import { createPiConfigReleases } from '@/harness/pi/config-release'
+import { createPiDiagnosticsService } from '@/harness/pi/diagnostics'
 
 let root: string
 const savedEnv = { file: process.env.KORTIX_DAEMON_LOG_FILE, max: process.env.KORTIX_DAEMON_LOG_MAX_BYTES }
@@ -146,15 +146,15 @@ describe('daemon log file sink', () => {
 describe('GET /kortix/logs', () => {
   const token = 'sandbox-token'
   const cfg = { sandboxToken: token } as Config
+  // The production pi diagnostics: the daemon log is its one source.
+  const piDiagnostics = () => createPiDiagnosticsService(() => null, () => null, createPiConfigReleases({ cfg, env: {} }))
 
-  test('tails the daemon log for the service caller, and both sources on demand', async () => {
+  test('tails the daemon log for the service caller, and every source on demand', async () => {
     enableDaemonLogFile()
     logger.info('[test] first')
     logger.info('[test] second')
     await __flushDaemonLogFileForTests()
-    mkdirSync(join(root, '.local', 'share', 'opencode', 'log'), { recursive: true })
-    writeFileSync(join(root, '.local', 'share', 'opencode', 'log', 'opencode.log'), 'oc-1\noc-2\n')
-    const app = createLogsRouter(cfg, createOpenCodeDiagnosticsService({} as Opencode, root))
+    const app = createLogsRouter(cfg, piDiagnostics())
 
     const agent = await app.request('http://d/?tail=1', { headers: { Authorization: `Bearer ${token}` } })
     expect(agent.status).toBe(200)
@@ -166,17 +166,16 @@ describe('GET /kortix/logs', () => {
     const all = await app.request('http://d/?source=all&tail=5', { headers: { Authorization: `Bearer ${token}` } })
     expect(all.status).toBe(200)
     const allText = await all.text()
-    expect(allText).toContain('==> ')
-    expect(allText).toContain('oc-2')
     expect(allText).toContain('[test] first')
+    expect(allText).toContain('[test] second')
 
     const bad = await app.request('http://d/?source=nope', { headers: { Authorization: `Bearer ${token}` } })
     expect(bad.status).toBe(400)
   })
 
   test('404 when no requested source exists on disk', async () => {
-    const app = createLogsRouter(cfg, createOpenCodeDiagnosticsService({} as Opencode, root))
-    const res = await app.request('http://d/?source=opencode', { headers: { Authorization: `Bearer ${token}` } })
+    const app = createLogsRouter(cfg, piDiagnostics())
+    const res = await app.request('http://d/?source=daemon', { headers: { Authorization: `Bearer ${token}` } })
     expect(res.status).toBe(404)
   })
 

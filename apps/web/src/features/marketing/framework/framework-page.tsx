@@ -1,6 +1,9 @@
 import { Band, Heading } from '@/features/marketing/kit/page-frame';
 import { FaqSection } from '@/features/marketing/landing-sections/faq-section';
+
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@kortix/ui';
+
 import {
   ArrowDownIcon,
   CheckIcon,
@@ -13,7 +16,7 @@ import type { ComponentType, ReactNode } from 'react';
 
 import { FrameworkHero } from './framework-hero';
 import { FrameworkTabs } from './framework-tabs';
-import { architecture, faqItems, pillars } from './model';
+import { localizeMarketingContent as localizeModel } from './model';
 
 /**
  * `/framework` ("Company as code" in the menu): Kortix as a backend
@@ -21,8 +24,7 @@ import { architecture, faqItems, pillars } from './model';
  * from kortix.yaml to a running agent, four pillars, one tab per part, the
  * architecture, then the FAQ.
  *
- * Copy: `model.ts`, which cites the code or doc behind every line. English
- * only for now. `content.ts` holds the Arcadia sample project the home hero
+ * Copy: `model.ts`, which cites the code or doc behind every line. Translated through the marketing catalog. `content.ts` holds the Arcadia sample project the home hero
  * also renders.
  */
 
@@ -36,6 +38,9 @@ const PILLAR_ICONS: Record<string, Glyph> = {
 };
 
 function Pillars() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { pillars } = localizeModel(tMarketing);
+
   return (
     <section id="pillars" className="scroll-mt-16 py-14 lg:py-20">
       <Heading title={pillars.title} titleMuted={pillars.titleMuted} />
@@ -103,13 +108,19 @@ function Down() {
 }
 
 function Architecture() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { architecture } = localizeModel(tMarketing);
+
   const a = architecture;
   return (
     <section id="architecture" className="scroll-mt-16 py-14 lg:py-20">
       <Heading title={a.title} titleMuted={a.titleMuted} />
       <Band className="mt-12">
         <div className="bg-card px-4 py-8 lg:px-11 lg:py-14">
-          <figure aria-label="The Kortix architecture" className="mx-auto flex max-w-5xl flex-col">
+          <figure
+            aria-label={tMarketing('text5da7f20a76af')}
+            className="mx-auto flex max-w-5xl flex-col"
+          >
             <Box k={a.clients.k} v={a.clients.v}>
               <ul className="mt-2 flex flex-wrap gap-1.5">
                 {a.clients.chips.map((chip) => (
@@ -140,6 +151,9 @@ function Architecture() {
 }
 
 export function FrameworkPage(): ReactNode {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { faqItems } = localizeModel(tMarketing);
+
   return (
     <main className="bg-background relative mx-auto w-full max-w-[1440px]">
       <div
@@ -155,7 +169,7 @@ export function FrameworkPage(): ReactNode {
       <FrameworkTabs />
       <Architecture />
       <FaqSection
-        title="Framework questions."
+        title={tMarketing('textac99bcb21f10')}
         titleMuted="Answered from the docs."
         items={faqItems}
       />

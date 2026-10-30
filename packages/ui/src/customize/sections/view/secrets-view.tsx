@@ -21,6 +21,8 @@ import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Badge } from '../../../primitives/badge';
 import { Button } from '../../../primitives/button';
 import { Checkbox } from '../../../primitives/checkbox';
+import { Switch } from '../../../primitives/switch';
+import { plainGrantSwitch } from '../../shared/access-list';
 import { ConfirmDialog } from '../../../primitives/confirm-dialog';
 import {
   DropdownMenu,
@@ -85,6 +87,13 @@ import { errorToast, infoToast, successToast, warningToast } from '../../../prim
 import { EmptyState } from '../../../primitives/empty-state';
 import { ErrorState } from '../../../primitives/error-state';
 import { CapabilityPageShell } from '../../shared/capability-page-shell';
+import {
+  type AgentGrant,
+  GrantModeTabs,
+  withCatalog,
+  grantOrphans,
+  type ResourceScope,
+} from '../../shared/agent-resource-scope';
 import { AudienceFields } from '../add-account-fields';
 import { NewEntityMenu } from '../../shared/new-entity-menu';
 import {
@@ -234,8 +243,21 @@ type SecretSavePlan = {
   optimistic: OptimisticProjectSecretInput;
 };
 
-export function SecretsView({ projectId }: { projectId: string }) {
+export function SecretsView({
+  projectId,
+  surface = { kind: 'global' },
+  grant,
+}: {
+  projectId: string;
+  /** `global` (default) is the project's secrets; `agent` is the same screen
+   *  for one agent, with a grant checkbox on every row. */
+  surface?: ResourceScope;
+  /** Required in `agent` scope: the agent's `secrets` grant, by identifier. */
+  grant?: AgentGrant;
+}) {
+  const agentGrant = surface.kind === 'agent' ? grant : undefined;
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tAgentScope = useI18nTranslations('agentScope');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tSecrets = useTranslations('secrets');
@@ -264,7 +286,15 @@ export function SecretsView({ projectId }: { projectId: string }) {
   // role that holds `project.secret.write` without the manager role saw a
   // read-only page, and one denied the leaf saw editable controls that 403.
   const canManage = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE).allowed === true;
-  const allRows = useMemo(() => buildRows(normalized), [normalized]);
+  const projectRows = useMemo(() => buildRows(normalized), [normalized]);
+  // An agent's grant governs only what reaches its sandbox: environment
+  // variables and network-enforced secrets. Model logins, connector and git
+  // credentials are used by Kortix services (the model and connector settings
+  // decide who may use them), and a disabled secret reaches nothing.
+  const allRows = useMemo(
+    () => (agentGrant ? projectRows.filter((r) => r.strategy === 'runtime' || r.strategy === 'egress') : projectRows),
+    [agentGrant, projectRows],
+  );
   const viewerId = useUiViewerId() ?? null;
   const tSharing = useI18nTranslations('accessSharing');
 
@@ -312,6 +342,24 @@ export function SecretsView({ projectId }: { projectId: string }) {
     );
   }, [allRows, query]);
 
+  // Agent scope: granted identifiers this project no longer declares (deleted,
+  // renamed, or never a project secret). Listed after the rows with a Missing
+  // mark so the editor can revoke them; a search hides them, since they hold
+  // nothing to match but the name.
+  const orphans = useMemo(
+    () =>
+      agentGrant && !query.trim()
+        ? grantOrphans(agentGrant.value, projectRows.map((r) => r.identifier))
+        : [],
+    [agentGrant, projectRows, query],
+  );
+
+  // Agent mode: one switch per row, at the row's end, like every Access view.
+  // Turning one off under All keeps the rest (`plainGrantSwitch`).
+  const grantSwitch = agentGrant?.set
+    ? plainGrantSwitch(agentGrant.value, allRows.map((r) => r.identifier), agentGrant.set)
+    : undefined;
+
   const configure = useConfigureThread(projectId);
   const openCreate = () => {
     setDialogRow(null);
@@ -342,7 +390,14 @@ export function SecretsView({ projectId }: { projectId: string }) {
     <SplitSheetMain>
     <CapabilityPageShell
       title={tI18nComplete.raw('textd8707d411d99')}
-      description={tI18nComplete.raw('texteca47e3afa10')}
+      description={
+        agentGrant ? tI18nComplete.raw('textbb74cc7dce98') : tI18nComplete.raw('texteca47e3afa10')
+      }
+      filters={
+        agentGrant ? (
+          <GrantModeTabs grant={withCatalog(agentGrant, allRows.map((r) => r.identifier))} label={tAgentScope('secretsAccess')} />
+        ) : undefined
+      }
       search={
         /* Hidden until there is a list to search, the same rule Triggers
            uses: a filter over nothing is a control that cannot do anything. */
@@ -415,7 +470,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
               </InfoBanner>
             )}
 
-            {filtered.length === 0 ? (
+            {filtered.length === 0 && orphans.length === 0 ? (
               query.trim() ? (
                 <p className="text-muted-foreground px-3 py-6 text-center text-xs">
                   {tI18nComplete.raw('texta8897de42124')}
@@ -425,8 +480,12 @@ export function SecretsView({ projectId }: { projectId: string }) {
                 <EmptyState
                   icon={KeyRound}
                   size="sm"
-                  title={tI18nComplete.raw('text5aa40906d187')}
-                  description={tI18nComplete.raw('text234482872368')}
+                  title={agentGrant && projectRows.length > 0 ? tAgentScope('sandboxSecretsEmptyTitle') : tI18nComplete.raw('text5aa40906d187')}
+                  description={
+                    agentGrant && projectRows.length > 0
+                      ? tAgentScope('sandboxSecretsEmptyDescription')
+                      : tI18nComplete.raw('text234482872368')
+                  }
                   action={
                     canManage ? (
                       <Button variant="outline" size="sm" className="gap-1.5" onClick={openCreate}>
@@ -445,6 +504,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
                     <TableHead>{tI18nComplete.raw('text8e37953d23da')}</TableHead>
                     <TableHead>{tI18nComplete.raw('textec5ba0abb717')}</TableHead>
                     <TableHead>{tSharing('whoCanUse')}</TableHead>
+                    {grantSwitch ? <TableHead className="w-24 text-right">{tAgentScope('thisAgent')}</TableHead> : null}
                     <TableHead className="w-[52px]">
                       <span className="sr-only">{tI18nComplete.raw('textff8059dc6752')}</span>
                     </TableHead>
@@ -455,6 +515,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
                     <SecretTableRow
                       key={row.identifier}
                       row={row}
+                      grantSwitch={grantSwitch}
                       canManage={canManage}
                       viewerId={viewerId}
                       busy={removeShared.isPending && removeShared.variables === row.identifier}
@@ -464,6 +525,11 @@ export function SecretsView({ projectId }: { projectId: string }) {
                       onDeleteMine={() => deleteMine.mutate(row.key)}
                     />
                   ))}
+                  {agentGrant
+                    ? orphans.map((identifier) => (
+                        <MissingSecretRow key={identifier} identifier={identifier} grantSwitch={grantSwitch} />
+                      ))
+                    : null}
                 </TableBody>
               </Table>
             )}
@@ -772,8 +838,53 @@ function SecretMarks({ row }: { row: SecretRow }) {
   );
 }
 
+/**
+ * A granted identifier the project no longer declares: its name, the Missing
+ * mark, and the grant checkbox to revoke it. It has no value, delivery or
+ * audience, so those cells stay empty.
+ */
+function MissingSecretRow({
+  identifier,
+  grantSwitch,
+}: {
+  identifier: string;
+  grantSwitch?: ReturnType<typeof plainGrantSwitch>;
+}) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const control = grantSwitch?.(identifier);
+  return (
+    <TableRow>
+      <TableCell className="max-w-[260px] align-middle">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <code className="text-foreground truncate font-mono text-xs">{identifier}</code>
+            <Badge variant="destructive" size="xs">
+              {tI18nComplete.raw('text6be36ca49ee8')}
+            </Badge>
+          </div>
+          <span className="text-muted-foreground truncate text-xs">
+            {tI18nComplete.raw('textfecc36d012be')}
+          </span>
+        </div>
+      </TableCell>
+      <TableCell colSpan={3} />
+      <TableCell className="text-right align-middle">
+        {control ? (
+          <Switch
+            checked={control.checked}
+            onCheckedChange={control.onCheckedChange}
+            aria-label={tI18nComplete('textd4170e74c3b0', { value0: identifier })}
+          />
+        ) : null}
+      </TableCell>
+      <TableCell />
+    </TableRow>
+  );
+}
+
 function SecretTableRow({
   row,
+  grantSwitch,
   canManage,
   viewerId,
   busy,
@@ -783,6 +894,8 @@ function SecretTableRow({
   onDeleteMine,
 }: {
   row: SecretRow;
+  /** Agent mode: the row's switch, at its end. */
+  grantSwitch?: ReturnType<typeof plainGrantSwitch>;
   canManage: boolean;
   viewerId: string | null;
   busy: boolean;
@@ -870,6 +983,14 @@ function SecretTableRow({
           </div>
         ) : null}
       </TableCell>
+      {grantSwitch ? (
+        <TableCell className="text-right align-middle">
+          <Switch
+            {...grantSwitch(row.identifier)}
+            aria-label={tI18nComplete('textd4170e74c3b0', { value0: row.identifier })}
+          />
+        </TableCell>
+      ) : null}
       <TableCell>
         {!canManageShared ? null : (
           <DropdownMenu>

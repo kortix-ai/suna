@@ -9,6 +9,8 @@ import { cn } from '../lib/utils';
 import * as React from 'react';
 import { useImperativeHandle } from 'react';
 
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? React.useEffect : React.useLayoutEffect;
+
 interface UseAutosizeTextAreaProps {
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   minHeight?: number;
@@ -26,6 +28,17 @@ export const useAutosizeTextArea = ({
   const [currentHeight, setCurrentHeight] = React.useState(minHeight);
   const previousContentRef = React.useRef(triggerAutoSize);
   const resizeTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Size an empty textarea before the first paint. Otherwise it paints at the
+  // browser's `rows` height and the resize below snaps it 100 ms later: a
+  // visible jump (the New agent modal's "What it does" field).
+  useIsomorphicLayoutEffect(() => {
+    const textAreaElement = textAreaRef.current;
+    if (!textAreaElement) return;
+    textAreaElement.style.minHeight = `${minHeight + 6}px`;
+    if (maxHeight > minHeight) textAreaElement.style.maxHeight = `${maxHeight}px`;
+    if (textAreaElement.value.trim() === '') textAreaElement.style.height = `${minHeight}px`;
+  }, [textAreaRef, minHeight, maxHeight]);
 
   React.useEffect(() => {
     const offsetBorder = 6;

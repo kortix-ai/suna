@@ -90,7 +90,6 @@ export type SurfaceContent = {
 export const SURFACE_ORDER: readonly { id: SurfaceId; href: string; name: string; line: string }[] = [
   { id: 'desktop', href: '/desktop', name: 'Desktop', line: 'macOS, Windows and Linux, with Quick Entry.' },
   { id: 'mobile', href: '/mobile', name: 'Mobile', line: 'iPhone, iPad and Android.' },
-  { id: 'cli', href: '/cli', name: 'CLI', line: 'One binary for people, scripts and agents.' },
   { id: 'slack', href: '/slack', name: 'Slack', line: 'Mention it in a thread.' },
   { id: 'teams', href: '/teams', name: 'Microsoft Teams', line: 'Chats, group chats and channels.' },
 ];
@@ -107,8 +106,8 @@ const DESKTOP: SurfaceContent = {
       { label: 'Linux', href: '/download/linux', icon: 'linux' },
     ],
     note: 'macOS 10.15 or later, one universal build · Windows 64-bit · Linux AppImage, x86_64',
-    caption: '⌘⇧Space opens Quick Entry over any app.',
-    captionMuted: 'The agent still works on its own cloud computer.',
+    caption: 'A real session in the desktop app.',
+    captionMuted: 'The agent fixed the bug, proved it with tests and opened a change request.',
   },
   pillars: {
     title: 'A native app, not a browser tab.',
@@ -221,8 +220,8 @@ const MOBILE: SurfaceContent = {
       { label: 'Google Play', href: GOOGLE_PLAY_URL, external: true, icon: 'googleplay' },
     ],
     note: 'iOS 16.4 or later · iPad supported · Android on Google Play',
-    caption: 'Approve a step from your pocket.',
-    captionMuted: 'The agent waits until you decide.',
+    caption: 'The app as it ships.',
+    captionMuted: 'Six screens from the App Store listing.',
   },
   pillars: {
     title: 'Your agents, wherever you are.',
@@ -270,10 +269,10 @@ const MOBILE: SurfaceContent = {
       {
         id: 'permission',
         title: 'Answer a permission',
-        description: 'Deny, Allow once, Allow always.',
+        description: 'Deny, Allow once, Always allow.',
         body: [
           'When an agent’s rules say ask, the turn stops and a card sits above the composer. It shows the tool and what it will run.',
-          'Choose Deny, Allow once or Allow always. The turn continues as soon as you decide.',
+          'Choose Deny, Allow once or Always allow. The turn continues as soon as you decide.',
         ],
       },
       {

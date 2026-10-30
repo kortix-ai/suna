@@ -263,12 +263,15 @@ export function registerTurnQuestionsRoutes(): void {
           ? await resolveTokenPrincipal(bearerToken(c.req.header('Authorization')), sessionId).catch(() => null)
           : null;
       const chat = principal && pendingId ? { pendingId, principal } : null;
+      // A Slack or Teams button names the stored question only when the runtime
+      // named it, for the same reason.
+      const buttonsFor = runtimeRequestId ? pendingId : null;
       const result = notificationCenter
-        ? await relayTurnQuestion(sessionId, questions, chat).catch((err): { ok: false; error: string } => {
+        ? await relayTurnQuestion(sessionId, questions, chat, buttonsFor).catch((err): { ok: false; error: string } => {
             logger.warn('[turn-question] relay failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
             return { ok: false, error: 'relay_failed' };
           })
-        : await relayTurnQuestion(sessionId, questions, chat);
+        : await relayTurnQuestion(sessionId, questions, chat, buttonsFor);
 
       // Release the runtime's BLOCKING `question` call for a chat-channel session
       // — see channels/question-release.ts. Keyed on the session's own metadata,

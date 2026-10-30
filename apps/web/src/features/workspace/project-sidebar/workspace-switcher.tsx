@@ -86,6 +86,7 @@ import { isAccountCreationRestricted } from '@/lib/config';
 import { cn } from '@kortix/ui';
 import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
+import { useAppsModalStore } from '@kortix/ui/internal/stores/apps-modal-store';
 import { getProject, type KortixAccount } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
@@ -95,6 +96,7 @@ import {
   SignOutIcon as LogOut,
   PencilSimpleIcon,
   PlusIcon,
+  PuzzlePieceIcon,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -348,6 +350,14 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                     the recipe every menu row in the design system uses for a
                     trailing keystroke. */}
                 <DropdownMenuShortcut>{settingsShortcutLabel()}</DropdownMenuShortcut>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                onSelect={() => deferAfterClose(() => useAppsModalStore.getState().setOpen(true))}
+                size="sm"
+              >
+                <PuzzlePieceIcon />
+                {t('workspace.appsAndExtensions')}
               </DropdownMenuItem>
 
               {/* A modal, not a route: the user stays in the workspace. It

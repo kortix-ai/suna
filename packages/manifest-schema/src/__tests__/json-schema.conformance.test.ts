@@ -209,10 +209,34 @@ channels:
     input: 'kortix_version = 1\n[[connectors]]\nslug = "gh"\nprovider = "pipedream"\n',
   },
   {
-    name: 'v1: sandbox template missing both image and dockerfile',
+    name: 'v1: sandbox template with neither image nor dockerfile (the platform base image)',
     format: 'toml',
-    valid: false,
+    valid: true,
     input: 'kortix_version = 1\n[[sandbox.templates]]\nslug = "py"\n',
+  },
+  {
+    name: 'v1: sandbox template with residential_proxy and a country',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\nsandbox:\n  templates:\n    - slug: web\n      residential_proxy: { country: us }\n',
+  },
+  {
+    name: 'v1: sandbox template with residential_proxy: true',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\nsandbox:\n  templates:\n    - slug: web\n      residential_proxy: true\n',
+  },
+  {
+    name: 'v1: sandbox template residential_proxy country is not alpha-2',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\nsandbox:\n  templates:\n    - slug: web\n      residential_proxy: { country: usa }\n',
+  },
+  {
+    name: 'v1: sandbox template residential_proxy is a string',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\nsandbox:\n  templates:\n    - slug: web\n      residential_proxy: "yes"\n',
   },
   {
     name: 'v1: sandbox template with both image and dockerfile',
@@ -1443,13 +1467,14 @@ connectors:
 ];
 
 // Blank companions are absent values for sandbox selection, not competing keys.
+// At most one may be set; neither is the platform base image.
 for (const image of [undefined, '', '   ', 'python:3.12']) {
   for (const dockerfile of [undefined, '', '   ', 'Dockerfile']) {
     FIXTURES.push({
       name: `sandbox nonblank XOR: image=${JSON.stringify(image)}, dockerfile=${JSON.stringify(dockerfile)}`,
       format: 'yaml',
       input: `kortix_version: 1\nsandbox:\n  templates:\n    - ${JSON.stringify({ slug: 'worker', image, dockerfile })}\n`,
-      valid: Number(Boolean(image?.trim())) + Number(Boolean(dockerfile?.trim())) === 1,
+      valid: Number(Boolean(image?.trim())) + Number(Boolean(dockerfile?.trim())) <= 1,
     });
   }
 }
@@ -1718,7 +1743,10 @@ describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles t
       }
     ).properties.connectors.items.properties;
     expect(connectorProperties.name).toMatchObject({ type: 'string', pattern: '\\S' });
-    expect(connectorProperties.authorization_strategy).toMatchObject({
+    // A copy: Bun's toMatchObject writes `expect.any(String)` into the object it
+    // checks, and json-schema.sync.test.ts renders the same shared schema later
+    // in this process. The pattern then rendered as `{}` (v0.14.9, v0.14.10 lanes).
+    expect(structuredClone(connectorProperties.authorization_strategy)).toMatchObject({
       type: 'string',
       anyOf: [
         { enum: ['project', 'user'] },

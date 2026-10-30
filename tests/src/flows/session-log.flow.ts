@@ -4,8 +4,8 @@
  * gzipped JSON body. Maps to spec §7 `SLOG-1`. The operator switch (503) needs
  * the API's env and is covered in
  * apps/api/src/__tests__/integration-session-log-ingest.test.ts.
- * `SLOG-2` is the read path (P4.2, P8.2): a mirror-only session converted by its
- * first read, the same v1 reads after the journal writes the log, and `GET …/log`. `SLOG-3` is the restore claim (P6.1); its operator
+ * `SLOG-2` is the read path (P4.2, P8.2): the v1 reads and `GET …/log` of a log the journal
+ * wrote. `SLOG-3` is the restore claim (P6.1); its operator
  * switch (503) is covered in
  * apps/api/src/__tests__/integration-session-log-restore.test.ts.
  * `SLOG-4` is the switch preflight (P7.1): the loss report of a stored log on another harness.
@@ -208,7 +208,7 @@ flow(
     const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId, userId: ctx.P.OWNER.userId! });
     ctx.track("session", sessionId, { projectId: project.id });
     const child = `ses_${sessionId.replaceAll("-", "").slice(0, 20)}child`;
-    // An old session: its history only in the v1 mirror, as the pre-journal capture stored it.
+    // A stopped session; the step below journals its history the way its daemon does.
     const { root, messages } = await seedSessionTranscript(ctx.env, {
       projectId: project.id, accountId, sessionId, ensureSandbox: false,
       messages: (r) => syntheticConversation(r, child, 6),
@@ -240,15 +240,7 @@ flow(
     };
 
     try {
-      let converted: Awaited<ReturnType<typeof v1Reads>>;
-      await ctx.step("the first read of the mirror-only session converts it into the log: every v1 read answers, and the open bundle's log leg holds the root thread", async () => {
-        converted = await v1Reads();
-        if (converted.bodies.length < 6) throw new Error(`expected at least 3 sync pages, got ${converted.bodies.length - 3}`);
-        const leg = converted.log as { known: boolean; page: { thread_id: string; messages: unknown[]; has_more: boolean } | null };
-        if (!leg?.known || leg.page?.thread_id !== root || leg.page.messages.length === 0) throw new Error(`log leg: ${JSON.stringify(leg)?.slice(0, 300)}`);
-      });
-
-      await ctx.step("the session daemon then journals fromV1 of the same rows under producer opencode → 200, every message acknowledged", async () => {
+      await ctx.step("the session daemon journals fromV1 of its rows under producer opencode → 200, every message acknowledged", async () => {
         const rows = messages.map((m) => ({ runtime_session_id: (m.info.sessionID as string) ?? root, info: m.info, parts: m.parts })) as unknown as V1Row[];
         const log = fromV1({ session_id: sessionId, root_id: root, rows }, { harness: "opencode" });
         const producer = { harness: "opencode", harness_version: "1.18.23", adapter_version: "1.0.0" };
@@ -259,11 +251,11 @@ flow(
           .status(200).body().has("$.acked.length", puts.length);
       });
 
-      await ctx.step("the journal's log answers the same v1 bodies as the converted mirror, apart from captured_at", async () => {
-        const journaled = await v1Reads();
-        for (let i = 0; i < converted!.bodies.length; i++) {
-          if (!Bun.deepEquals(journaled.bodies[i], converted!.bodies[i])) throw new Error(`v1 read ${i} differs after the journal:\n${JSON.stringify(journaled.bodies[i])}\n---\n${JSON.stringify(converted!.bodies[i])}`);
-        }
+      await ctx.step("every v1 read answers from the log, and the open bundle's log leg holds the root thread", async () => {
+        const reads = await v1Reads();
+        if (reads.bodies.length < 6) throw new Error(`expected at least 3 sync pages, got ${reads.bodies.length - 3}`);
+        const leg = reads.log as { known: boolean; page: { thread_id: string; messages: unknown[]; has_more: boolean } | null };
+        if (!leg?.known || leg.page?.thread_id !== root || leg.page.messages.length === 0) throw new Error(`log leg: ${JSON.stringify(leg)?.slice(0, 300)}`);
       });
 
       await ctx.step("GET …/log pages the root thread backwards by seq and reads the child thread by thread=", async () => {
@@ -472,7 +464,8 @@ flow(
         ...["session.rewind", "session.fork", "session.mcp", "session.todo", "session.shell", "session.attach", "session.config"].map((feature) => ({ feature, status: "lost" })),
       ];
 
-      await ctx.step("restore off: preflight to pi → 200 available without a restore, and the whole history (4 live messages) is the first loss", async () => {
+      await ctx.step("disable restore: preflight to pi → 200 available without a restore, and the whole history (4 live messages) is the first loss", async () => {
+        await setFeatureAsOperator(ctx, project.id, "session_log_restore", false);
         (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
           session_id: sessionId, from: "opencode", to: "pi", available: true, reason: null, restores: false,
           losses: [{ feature: "history", used: 4, status: "lost" }, ...losses], unsupported,

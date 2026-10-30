@@ -56,6 +56,10 @@ Default to static for every UI. Server logic for a UI (queries, writes,
 webhooks, integrations, schedules) lives in the backend App, not in a second
 server.
 
+Every UI an App renders follows the `kortix-design` skill. Load it before
+you write the first className or user-facing string. It owns the token plan,
+the states, the motion and the screenshot check before deploy.
+
 ## Where the code lives
 
 Default: one folder per App, `apps/<slug>/`, named after its `kortix.yaml` key:

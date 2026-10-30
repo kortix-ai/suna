@@ -19,10 +19,12 @@ export type SessionInvocationSource =
   | 'trigger:event'
   | 'trigger:app'
   | 'trigger:reminder'
+  | 'trigger:change_request'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
   | 'system:secret-submitted'
   | 'system:connector-connected'
+  | 'system:artifact-comment'
   /** A message another participant posted in a room the session joined (`projects/rooms`). */
   | 'system:room-message'
   /** The continuation of a turn a provider-originated `runtime_gone` cut short
@@ -53,6 +55,9 @@ export type SessionLifecyclePostCreateAction =
       source: SessionInvocationSource;
       text: string;
       userId?: string | null;
+      /** A channel message's files, and the model its image needs. Absent on older rows and on text. */
+      parts?: PromptPartWire[];
+      overrides?: PromptOverridesWire;
     }
   | {
       /** Resolve at execution time so queued creates never capture stale access. */
@@ -81,6 +86,7 @@ export type SessionLifecycleStatus =
   | 'deleted';
 
 export interface CreateSessionCommand {
+  artifactId?: string;
   /** Internal retained-upload authority from an already accepted create command. */
   attachmentSourceCommandId?: string;
   /**

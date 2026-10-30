@@ -33,7 +33,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
   const pooledProviderSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
-  const genui = useFeatureFlag(projectId, 'genui');
   const usRegion = useFeatureFlag(projectId, 'us_region');
   const eventTriggers = useFeatureFlag(projectId, 'event_triggers');
   const notificationCenter = useFeatureFlag(projectId, 'notification_center');
@@ -45,9 +44,11 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const agentRooms = useFeatureFlag(projectId, 'agent_rooms');
   const goals = useFeatureFlag(projectId, 'goals');
   const artifacts = useFeatureFlag(projectId, 'artifacts');
+  const artifactComments = useFeatureFlag(projectId, 'artifact_comments');
   const emailChannel = useFeatureFlag(projectId, 'email_channel');
   const workspaceVolume = useFeatureFlag(projectId, 'workspace_volume');
   const sessionGroups = useFeatureFlag(projectId, 'session_groups');
+  const chrome = useFeatureFlag(projectId, 'chrome');
 
   return {
     flags: {
@@ -57,7 +58,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,
       pooled_provider_secrets: pooledProviderSecrets.enabled,
-      genui: genui.enabled,
       us_region: usRegion.enabled,
       event_triggers: eventTriggers.enabled,
       notification_center: notificationCenter.enabled,
@@ -69,11 +69,13 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       agent_rooms: agentRooms.enabled,
       goals: goals.enabled,
       artifacts: artifacts.enabled,
+      artifact_comments: artifactComments.enabled,
       email_channel: emailChannel.enabled,
       workspace_volume: workspaceVolume.enabled,
       session_groups: sessionGroups.enabled,
+      chrome: chrome.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: sessionGroups.isLoading,
+    isLoading: chrome.isLoading,
   };
 }

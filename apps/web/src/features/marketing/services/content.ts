@@ -1,9 +1,11 @@
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 /**
  * The /services sales page: AI Transformation, done for you, sold as one
  * flat monthly membership. The idea: we map
  * your company (what people do, how they work), unify your data, automate the
- * work and build your custom apps. A standalone page with its own shell;
- * the AI OS site and this page link through `SiteSwitcher`.
+ * work and build your custom apps. It shares the site navbar; the CompanyOS
+ * site and this page link through its `SiteSwitcher`.
  *
  * COMMERCIAL TERMS (founder, 2026-10-27, kortix-brand decisions.md D15):
  *  - The team is "we" / "our team". The roles (Deployment Strategists,
@@ -26,7 +28,7 @@
  *  - Approval: "approval rules you set" (claims.md: gates are off until set).
  *  - No customer names or counts. Proof = the claims.md rows only.
  *
- * English only for now, like the /enterprise sections.
+ * Localized through the marketing catalog.
  */
 
 export const PRICE = { now: '$20,000', per: '/month' } as const;
@@ -34,11 +36,11 @@ export const PRICE = { now: '$20,000', per: '/month' } as const;
 export const GUARANTEE = 'Not loving it in the first 2 weeks? Get 50% back, no questions asked.';
 
 export const hero = {
-  title: 'AI Transformation, done for you.',
-  titleMuted: 'We map your company, unify your data and build your apps.',
-  sub: 'Our team works inside your company, from strategy to shipped software, on Kortix. One flat monthly fee. You own every line.',
-  /** One quiet line under the buttons. */
-  terms: `${PRICE.now} a month, flat · Strategy and build, one team · Everything in a repo you own`,
+  title: 'AI adopted across your company.',
+  titleMuted: 'Built for you. Owned by you.',
+  sub: 'Our team maps how your company works, connects your data and ships the agents and apps that run it, on Kortix. Everything lives in a git repo you own.',
+  /** One quiet line under the buttons. The price waits for the pricing section. */
+  terms: 'Strategy and build, one team · One flat monthly fee · Everything in a repo you own',
   /** The logo row: products built on Kortix (case-studies/content.ts naming rules). */
   logosLabel: 'Built on Kortix',
   logos: [
@@ -54,12 +56,37 @@ export const hero = {
   logosLink: 'See the work',
 } as const;
 
+/** Why companies buy this: the gap between the mandate and the team. */
+export const problem = {
+  title: 'You have the mandate.',
+  titleMuted: 'Not the team to carry it out.',
+  items: [
+    {
+      id: 'pilots',
+      k: 'Pilots stay pilots',
+      v: 'A chatbot here, a trial there. None of it reaches the work people do every week.',
+    },
+    {
+      id: 'data',
+      k: 'The data is scattered',
+      v: 'Every team runs its own tools. No agent can work from facts that live in ten places.',
+    },
+    {
+      id: 'owner',
+      k: 'Nobody owns it',
+      v: 'A consultancy leaves a deck. An AI team of your own means hiring before anything ships.',
+    },
+  ],
+  answer:
+    'We do the whole job, inside your company: map the work, connect the data, ship the agents and apps, and train your team to run them.',
+} as const;
+
 /** We build on our own product. Claims: claims.md rows Source, Connectors, Hosting. */
 export const platform = {
   title: 'Built on Kortix.',
-  titleMuted: 'The open-source AI Operating System we make.',
+  titleMuted: 'The open-source CompanyOS we make.',
   body: [
-    'Everything we build runs on **Kortix, our own AI Operating System**. Your agents, skills, company memory, connectors and apps live in **one git repo you own**.',
+    'Everything we build runs on **Kortix CompanyOS, our own operating system**. Your agents, skills, company memory, connectors and apps live in **one git repo you own**.',
     'When we step back, nothing leaves with us: **your team keeps running it on Kortix**, in our cloud, your VPC or your own on-prem network.',
   ],
   cells: [
@@ -68,7 +95,7 @@ export const platform = {
     { k: 'Connectors', v: '3,000+ apps, plus MCP, OpenAPI and raw HTTP.' },
     { k: 'Open source', v: 'Read it, fork it, audit it. No black box.' },
   ],
-  link: 'See the AI OS',
+  link: 'See the CompanyOS',
 } as const;
 
 export const caseCta = 'See what we would build for your company.';
@@ -78,35 +105,9 @@ export const intro = {
   body: 'Book an intro call with the team. We look at how your company works and pick the first function together.',
 } as const;
 
-/** How an engagement starts. No durations: none is set (ACCURACY). */
-export const onboarding = {
-  title: 'How it works.',
-  titleMuted: 'Join, map, ship. Then the next function.',
-  items: [
-    {
-      id: 'join',
-      n: '01',
-      k: 'Join',
-      v: 'One flat monthly membership. Book an intro call first if you want to meet the team.',
-    },
-    {
-      id: 'map',
-      n: '02',
-      k: 'We map your company',
-      v: 'We interview your leaders and the people who do the work, then write a ranked roadmap: what to automate first, second and third.',
-    },
-    {
-      id: 'ship',
-      n: '03',
-      k: 'We ship, function by function',
-      v: 'We unify the data, put agents on the work, build the apps and train the team. Then we move to the next function.',
-    },
-  ],
-} as const;
-
 export const stages = {
   title: 'What we do.',
-  titleMuted: 'Map, unify, automate, build, teach.',
+  titleMuted: 'Map, unify, automate, build, teach. One function at a time.',
   items: [
     {
       id: 'map',
@@ -145,7 +146,7 @@ export const stages = {
       id: 'build',
       n: '04',
       k: 'Build custom apps',
-      v: 'We build the internal apps, dashboards and tools your teams need on top of the unified data, on the Kortix AI Operating System.',
+      v: 'We build the internal apps, dashboards and tools your teams need on top of the unified data, on Kortix CompanyOS.',
       get: [
         'Internal apps your teams use every day',
         'Dashboards on live company data',
@@ -248,49 +249,6 @@ export const compare = {
   ],
 } as const;
 
-export const benefits = {
-  title: 'Membership benefits.',
-  titleMuted: 'Why companies join instead of hiring.',
-  items: [
-    {
-      id: 'team',
-      icon: 'team',
-      k: 'Inside your company',
-      v: 'Our team works in your teams and your tools.',
-    },
-    {
-      id: 'flat',
-      icon: 'flat',
-      k: 'One flat fee',
-      v: 'One price every month. No day rates, no change orders.',
-    },
-    {
-      id: 'one-team',
-      icon: 'path',
-      k: 'Strategy to shipped software',
-      v: 'The people who map your company build its agents and apps.',
-    },
-    {
-      id: 'function',
-      icon: 'os',
-      k: 'Function by function',
-      v: 'We finish one function, then move to the next.',
-    },
-    {
-      id: 'own',
-      icon: 'repo',
-      k: 'You own all of it',
-      v: 'Every agent, skill and app lives in one git repo you own.',
-    },
-    {
-      id: 'trained',
-      icon: 'cloud',
-      k: 'Your team, trained',
-      v: 'Your people run it and build the next agents without us.',
-    },
-  ],
-} as const;
-
 export const pricing = {
   title: 'One membership.',
   titleMuted: 'Everything included.',
@@ -347,12 +305,12 @@ export const faq = {
     {
       id: 'platform',
       q: 'What do you build it on?',
-      a: 'On Kortix, the open-source AI Operating System we make. Every agent, skill, connector and app lives in a git repo you own, so your team can run and extend it without us.',
+      a: 'On Kortix CompanyOS the open-source operating system we make. Every agent, skill, connector and app lives in a git repo you own, so your team can run and extend it without us.',
     },
     {
       id: 'own',
       q: 'Who owns what you build?',
-      a: 'You do. Every agent, skill, connector and app lives in a git repo you own, on the open-source Kortix AI Operating System. Every session and file of context stays yours.',
+      a: 'You do. Every agent, skill, connector and app lives in a git repo you own, on the open-source Kortix CompanyOS. Every session and file of context stays yours.',
     },
     {
       id: 'host',
@@ -377,3 +335,25 @@ export const closing = {
   title: 'Map it. Build it. Run it.',
   titleMuted: 'Start with one function this month.',
 } as const;
+
+export function localizeMarketingContent(tMarketing: import('@/i18n/translator').UiTranslator) {
+  return localizeUiCatalog(
+    {
+      PRICE,
+      GUARANTEE,
+      hero,
+      platform,
+      caseCta,
+      intro,
+      problem,
+      stages,
+      functions,
+      compare,
+      pricing,
+      faq,
+      closing,
+    },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+}

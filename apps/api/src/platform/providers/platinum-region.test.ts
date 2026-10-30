@@ -168,6 +168,118 @@ describe('us_region: region on the Platinum create', () => {
   });
 });
 
+// `residential_proxy`: the same create, with the sandbox template's network option.
+describe('residential_proxy: network on the Platinum create', () => {
+  test('no option ⇒ no network field, and the box records the proxy off', async () => {
+    const result = await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1 });
+
+    expect(createCalls()[0].body && 'network' in createCalls()[0].body!).toBe(false);
+    expect(result.metadata?.residentialProxy).toBe(false);
+  });
+
+  test('the option ⇒ network.residential_proxy with its bypass hosts, and the box records the proxy on', async () => {
+    const bypass = ['api.example.com', 'gateway.example.com'];
+    const result = await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1, residentialProxy: { bypass } });
+
+    expect(createCalls()[0].body?.network).toEqual({ residential_proxy: { bypass } });
+    expect(result.metadata?.residentialProxy).toBe(true);
+  });
+
+  test('a country ⇒ network.residential_proxy.country', async () => {
+    const bypass = ['api.example.com'];
+    await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1, residentialProxy: { bypass, country: 'us' } });
+
+    expect(createCalls()[0].body?.network).toEqual({ residential_proxy: { bypass, country: 'us' } });
+  });
+
+  test('a Platinum with no residential provider fails the session with a configuration message', async () => {
+    const { classifySandboxProvisioningFailure } = await import('../services/sandbox-provisioning-error');
+    createSequence = [{
+      error: platinumHttpError(
+        'platinum POST /v1/sandboxes -> 400 {"error":"no residential proxy provider","code":"residential_proxy_unavailable"}',
+      ),
+    }];
+    const error = await new PlatinumProvider()
+      .create({ ...baseOpts, residentialProxy: { bypass: [] } })
+      .catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(Error);
+    const failure = classifySandboxProvisioningFailure(error);
+    expect(failure).toMatchObject({ category: 'sandbox-provider', transient: false, isCapacity: false });
+    expect(failure.userMessage).toStartWith(
+      'This sandbox template asks for a residential IP, which this deployment does not offer',
+    );
+  });
+});
+
+describe('sub_path image derivation', () => {
+  test('provisioning survives more than three derivation responses without changing create identity', async () => {
+    const { retrySandboxProvisionCreate } = await import('../services/sandbox-init-state');
+    const error = platinumHttpError(
+      'platinum POST /v1/sandboxes -> 503 {"error":"the sub_path image is still being derived; retry shortly","code":"unavailable","retry_after":2}',
+    );
+    createSequence = [{ error }, { error }, { error }, { error },
+      { result: { id: 'sbx_ready', state: 'running' } }];
+    const sleep = spyOn(Bun, 'sleep').mockResolvedValue(undefined);
+    try {
+      const result = await retrySandboxProvisionCreate(new PlatinumProvider(), baseOpts);
+      expect(result.attempts).toBe(5);
+      expect(result.result.externalId).toBe('sbx_ready');
+      const posts = createCalls();
+      expect(posts).toHaveLength(5);
+      expect(new Set(posts.map((call) => call.headers['Idempotency-Key'])).size).toBe(1);
+      expect(new Set(posts.map((call) => JSON.stringify(call.body))).size).toBe(1);
+      expect(sleep.mock.calls).toEqual([[10_000], [10_000], [10_000], [10_000]]);
+    } finally {
+      sleep.mockRestore();
+    }
+  });
+
+  test('persistent derivation stops at the existing image-building bound', async () => {
+    const { retrySandboxProvisionCreate } = await import('../services/sandbox-init-state');
+    createSequence = [{ error: platinumHttpError(
+      'platinum POST /v1/sandboxes -> 503 {"error":"the sub_path image is still being derived; retry shortly","code":"unavailable"}',
+    ) }];
+    const sleep = spyOn(Bun, 'sleep').mockResolvedValue(undefined);
+    try {
+      await expect(retrySandboxProvisionCreate(new PlatinumProvider(), baseOpts)).rejects.toMatchObject({
+        name: 'SnapshotStillBuildingError',
+      });
+      expect(createCalls()).toHaveLength(30);
+      expect(sleep).toHaveBeenCalledTimes(29);
+    } finally {
+      sleep.mockRestore();
+    }
+  });
+
+  for (const location of [undefined, 'us-east']) {
+    test(`503 derivation in progress uses image-building patience (${location ?? 'home'})`, async () => {
+      createSequence = [{ error: platinumHttpError(
+        'platinum POST /v1/sandboxes -> 503 {"error":"the sub_path image is still being derived; retry shortly","code":"unavailable","retry_after":2}',
+      ) }];
+      const provider = new PlatinumProvider();
+      await expect(provider.create({ ...baseOpts, location })).rejects.toMatchObject({
+        name: 'SnapshotStillBuildingError',
+      });
+      expect(createCalls()).toHaveLength(1);
+    });
+  }
+
+  for (const response of [
+    '503 {"error":"temporarily unavailable","code":"unavailable"}',
+    '500 {"error":"the sub_path image is still being derived; retry shortly","code":"unavailable"}',
+    '503 {"error":"the sub_path image is still being derived; retry shortly","code":"capacity"}',
+    '503 not JSON',
+  ]) {
+    test(`unrelated provider refusal is not image building: ${response}`, async () => {
+      const error = platinumHttpError(`platinum POST /v1/sandboxes -> ${response}`);
+      createSequence = [{ error }];
+      await expect(new PlatinumProvider().create(baseOpts)).rejects.toBe(error);
+      expect(createCalls()).toHaveLength(1);
+    });
+  }
+});
+
 describe('us_region: a template not yet copied to the region', () => {
   // The 409 bodies Platinum sends (platinum apps/api/src/api/sandboxes.ts,
   // create path): `replicating` while a copy runs, `failed` while a failed

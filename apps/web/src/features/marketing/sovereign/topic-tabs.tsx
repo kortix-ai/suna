@@ -1,8 +1,10 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
+
 import { useRef, useState, type KeyboardEvent } from 'react';
 
-import { topics } from './content';
+import { localizeMarketingContent as localizeContent } from './content';
 import { TOPIC_PANELS } from './topic-panels';
 
 /**
@@ -11,6 +13,9 @@ import { TOPIC_PANELS } from './topic-panels';
  * the selected topic on the right as two short sentences over one visual.
  */
 export function TopicTabs() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { topics } = localizeContent(tMarketing);
+
   const [selected, setSelected] = useState(0);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const tabs = topics.tabs;
@@ -26,6 +31,7 @@ export function TopicTabs() {
 
   const tab = tabs[selected];
 
+  const Panel = TOPIC_PANELS[tab.id];
   return (
     <section id="how-it-works" className="scroll-mt-16 py-14 lg:py-20">
       <div className="kx-rail-fade relative border-y px-4 lg:px-17">
@@ -38,7 +44,7 @@ export function TopicTabs() {
 
             <div
               role="tablist"
-              aria-label="How sovereign Kortix works"
+              aria-label={tMarketing('text20c0a1a03b2b')}
               aria-orientation="vertical"
               onKeyDown={onKeyDown}
               className="mt-10 flex flex-col gap-6"
@@ -58,8 +64,12 @@ export function TopicTabs() {
                   onClick={() => setSelected(i)}
                   className="outline-ring duration-moderate w-full rounded-sm text-left opacity-50 transition-opacity ease-out hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-4 aria-selected:opacity-100"
                 >
-                  <h3 className="text-foreground text-base font-medium text-pretty">{item.title}</h3>
-                  <p className="text-muted-foreground mt-1 text-sm text-balance">{item.description}</p>
+                  <h3 className="text-foreground text-base font-medium text-pretty">
+                    {item.title}
+                  </h3>
+                  <p className="text-muted-foreground mt-1 text-sm text-balance">
+                    {item.description}
+                  </p>
                 </button>
               ))}
             </div>
@@ -83,7 +93,7 @@ export function TopicTabs() {
                   </p>
                 ))}
               </div>
-              {TOPIC_PANELS[tab.id]()}
+              {Panel ? <Panel /> : null}
             </div>
           </div>
         </div>

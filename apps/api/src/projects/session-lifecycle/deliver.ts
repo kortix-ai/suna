@@ -218,8 +218,8 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
 
     const deadline = Date.now() + READY_DEADLINE_MS;
     let opened: Awaited<ReturnType<typeof openOnce>>;
-    // The provision signals when the box goes active (`runtime-active-signal`),
-    // so this loop re-opens at once instead of up to 3 s later.
+    // The box going active wakes this loop on any replica
+    // (`runtime-active-signal`), so it re-opens at once instead of up to 3 s later.
     let boxActive = false;
     for (;;) {
       opened = await openOnce();
@@ -242,16 +242,16 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
         boxActive;
     }
 
-    // Converge the box BEFORE the prompt goes on the wire — every time, not only
-    // when this prompt carries an `opencodeEnv` override. The proxied
-    // `prompt_async` route has always done this (sandbox-proxy/pre-prompt-env-sync);
-    // this wake path did it only behind `if (command.opencodeEnv)`, so an ordinary
-    // `session.send()` prompt onto a box that had to be WOKEN reached OpenCode
-    // with whatever the box had at boot: a stale gateway base URL after a
-    // KORTIX_URL rotation, stale secrets, a stale model catalog. The sync is
-    // cheap and self-deduping (revision + model signature); an unchanged box
-    // costs one skipped push.
-    {
+    // The box converges before the prompt reaches it in the proxy:
+    // `sendPrompt` posts the Kortix turn route on the daemon port, which is a
+    // turn start (`isTurnStartEnvSync`), so `runPrePromptEnvSync` resolves and
+    // pushes the running agent's env first — the fast path above relies on it
+    // alone. Only an `opencodeEnv` override needs its own push here: the proxy
+    // never sees it. A second sync here cost every woken first prompt one
+    // more full env resolve (prod 2026-10-29: 1.0–1.3 s in the company project).
+    // It was added on 2026-08-23, when this POST went to OpenCode's own port and
+    // skipped the proxy's sync.
+    if (command.opencodeEnv) {
       const sandbox = opened.sandbox as {
         external_id?: string | null;
         provider?: string | null;

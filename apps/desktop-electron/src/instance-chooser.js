@@ -64,7 +64,7 @@ function openInstanceChooser({ mode, error = null, parent, store }) {
       minimizable: !parent,
       maximizable: false,
       fullscreenable: false,
-      title: 'Kortix',
+      title: 'Kortix CompanyOS',
       backgroundColor: '#141414',
       webPreferences: {
         preload: path.join(__dirname, 'instance-chooser-preload.js'),

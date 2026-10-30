@@ -7,6 +7,8 @@ import { findChatThread } from '../core/threads';
 import { stripTeamsMentions } from './util';
 
 const PLATFORM = 'teams';
+/** A deleted project's install is no install: its tombstone keeps the row. */
+const liveProject = and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active'));
 
 export function teamsChannelCtx(tenantId: string, conversationId: string): ChannelCtx {
   return { teamId: tenantId, channelId: conversationId, platform: PLATFORM };
@@ -27,7 +29,7 @@ export async function listTenantProjects(
   const rows = await db
     .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
     .from(projects)
-    .where(inArray(projects.projectId, ids));
+    .where(and(inArray(projects.projectId, ids), eq(projects.status, 'active')));
   const byId = new Map(rows.map((r) => [r.projectId, r]));
   return ids.flatMap((id) => {
     const row = byId.get(id);
@@ -54,6 +56,7 @@ export async function resolveConversationProject(
     const [installed] = await db
       .select({ projectId: chatInstalls.projectId })
       .from(chatInstalls)
+      .innerJoin(projects, liveProject)
       .where(
         and(
           eq(chatInstalls.platform, PLATFORM),
@@ -68,6 +71,7 @@ export async function resolveConversationProject(
   const [install] = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
+    .innerJoin(projects, liveProject)
     .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.workspaceId, tenantId)))
     .limit(1);
   return install?.projectId ?? null;
@@ -114,6 +118,7 @@ async function resolveBoundProject(tenantId: string, conversationId: string): Pr
   const [installed] = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
+    .innerJoin(projects, liveProject)
     .where(
       and(
         eq(chatInstalls.platform, PLATFORM),

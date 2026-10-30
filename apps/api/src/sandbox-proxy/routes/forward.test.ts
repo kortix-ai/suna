@@ -82,14 +82,14 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
 // The ledger identity the proxy begins the turn under.
-let begunTurns: Array<{ runtimeSessionId: string; messageId: string | null }> = [];
+let begunTurns: Array<{ runtimeSessionId: string; messageId: string | null; source?: string }> = [];
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async (
     _target: unknown,
-    turn: { runtimeSessionId: string; messageId: string | null },
+    turn: { runtimeSessionId: string; messageId: string | null; source?: string },
   ) => {
-    begunTurns.push({ runtimeSessionId: turn.runtimeSessionId, messageId: turn.messageId });
+    begunTurns.push({ runtimeSessionId: turn.runtimeSessionId, messageId: turn.messageId, source: turn.source });
     return 'granted';
   },
   acceptSandboxTurn: async () => true,
@@ -482,6 +482,14 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     expect(fetchLog[1].body).toBe(JSON.stringify(body));
     expect(begunTurns[0]?.messageId).toBe(client.id);
     expect(res.headers.get('X-Kortix-Effective-Message-Id')).toBe(client.id);
+  });
+
+  test("a prompt the API forwards for a queued row begins its turn under the row's source; a client's names none", async () => {
+    installFetch([]);
+    const body = bodyOf({ parts: [{ type: 'text', text: 'from the chat' }] });
+    await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', jsonHeaders(), body, 'http://app.local', undefined, undefined, { promptSource: 'telegram' });
+    await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', jsonHeaders(), body, 'http://app.local');
+    expect(begunTurns.map((turn) => turn.source)).toEqual(['telegram', undefined]);
   });
 
   test('a noReply prompt is forwarded with its flag and never begins a turn', async () => {

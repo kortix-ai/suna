@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-25"
 slug: "/kortix-vs-paperclip"
 ---
-Paperclip is an open-source control plane for a team of AI agents you already run, and Kortix is the open-source AI Operating System that runs them too. Paperclip hands those agents an org chart, a task board and a budget you set per agent, then runs each agent's own CLI on the Paperclip host unless you attach an environment. Kortix takes the same ambition one layer down, hosting the agents, giving each session its own cloud computer, and landing the work as a change request a person reviews. The choice is how much of the stack you want the software to carry.
+Paperclip is an open-source control plane for a team of AI agents you already run, and Kortix is the open-source CompanyOS that runs them too. Paperclip hands those agents an org chart, a task board and a budget you set per agent, then runs each agent's own CLI on the Paperclip host unless you attach an environment. Kortix takes the same ambition one layer down, hosting the agents, giving each session its own cloud computer, and landing the work as a change request a person reviews. The choice is how much of the stack you want the software to carry.
 
 ```logos
 label: 'Compared here:'

@@ -7,7 +7,7 @@ canonical: "https://kortix.com/blog/kortix-vs-librechat"
 author: "team"
 tags: ["Comparisons"]
 ---
-LibreChat is the strong self-hosted chat interface teams use to reach many model providers from one window; Kortix is the open-source AI Operating System a company adopts when work has to leave the chat window. Both point at the models you choose, and both self-host. They part ways when a team needs one shared brain across every agent and every session, and a way to review work before it lands.
+LibreChat is the strong self-hosted chat interface teams use to reach many model providers from one window; Kortix is the open-source CompanyOS a company adopts when work has to leave the chat window. Both point at the models you choose, and both self-host. They part ways when a team needs one shared brain across every agent and every session, and a way to review work before it lands.
 
 ```logos
 label: 'Compared here:'

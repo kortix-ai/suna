@@ -5,7 +5,7 @@ import { slotCredsFromStatus } from '../lib/supabase';
 
 const ports = computePorts(0);
 const creds = slotCredsFromStatus(ports, {});
-const names = ['INTERNAL_KORTIX_ENV', ...['API', 'WEB'].flatMap(app => ['', '_DEV', '_STAGING'].map(suffix => `SUNA_${app}_DOTENV_PRIVATE_KEY${suffix}`))];
+const names = ['INTERNAL_KORTIX_ENV', ...['API', 'WEB'].flatMap(app => ['', '_DEV', '_STAGING'].map(suffix => `SUNA_${app}_DOTENV_PRIVATE_KEY${suffix}`)), 'KORTIX_WORKERS_ENABLED'];
 const original = names.map(name => process.env[name]);
 afterEach(() => names.forEach((name, index) => {
   const value = original[index];
@@ -14,6 +14,31 @@ afterEach(() => names.forEach((name, index) => {
 }));
 
 describe('cold sandbox launch environment', () => {
+  test('branch databases default to API-only and skip provider snapshot prebuilds', () => {
+    delete process.env.KORTIX_WORKERS_ENABLED;
+    const env = apiLaunchEnv(ports, creds, { dbMode: 'branch' });
+    expect(env.KORTIX_WORKERS_ENABLED).toBe('false');
+    expect(env.KORTIX_SKIP_STARTUP_PREBUILD).toBe('true');
+  });
+  test('branch background workers require an explicit opt-in', () => {
+    process.env.KORTIX_WORKERS_ENABLED = 'true';
+    const env = apiLaunchEnv(ports, creds, { dbMode: 'branch' });
+    expect(env.KORTIX_WORKERS_ENABLED).toBe('true');
+    expect(env.KORTIX_SKIP_STARTUP_PREBUILD).toBeUndefined();
+  });
+  test('an explicit worker kill switch applies to every database mode', () => {
+    process.env.KORTIX_WORKERS_ENABLED = 'false';
+    for (const dbMode of ['shared', 'branch', 'isolated'] as const) {
+      expect(apiLaunchEnv(ports, creds, { dbMode }).KORTIX_WORKERS_ENABLED).toBe('false');
+      expect(apiLaunchEnv(ports, creds, { dbMode }).KORTIX_SKIP_STARTUP_PREBUILD).toBe('true');
+    }
+  });
+  test('shared and isolated databases preserve worker-enabled defaults', () => {
+    delete process.env.KORTIX_WORKERS_ENABLED;
+    for (const dbMode of ['shared', 'isolated'] as const) {
+      expect(apiLaunchEnv(ports, creds, { dbMode }).KORTIX_WORKERS_ENABLED).toBe('true');
+    }
+  });
   test('all services default to dev without an invoking deployment environment', () => {
     delete process.env.INTERNAL_KORTIX_ENV;
     for (const env of [apiLaunchEnv(ports, creds), webLaunchEnv(ports, creds), gatewayLaunchEnv(ports)]) {

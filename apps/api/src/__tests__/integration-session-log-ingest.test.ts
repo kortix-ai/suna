@@ -22,6 +22,8 @@ const PROJECT = crypto.randomUUID();
 const OWNER = crypto.randomUUID();
 const SESSION = crypto.randomUUID();
 const OTHER = crypto.randomUUID();
+const RESTART = crypto.randomUUID();
+const BULK = crypto.randomUUID();
 // A daemon journal revision: max(Date.now() * 1000, last + 1), past int4.
 const REV = 1_791_681_474_704_000;
 const T = '2026-10-11T10:00:00.000Z';
@@ -65,6 +67,13 @@ const stored = (id: string) =>
     .from(sessionLogMessages)
     .where(and(eq(sessionLogMessages.sessionId, SESSION), eq(sessionLogMessages.messageId, id)))
     .then((rows) => rows[0]);
+/** `db;dur=…;desc="n=N"` out of a `Server-Timing` header: every statement of the request. */
+const dbStatementCount = (res: Response): number => {
+  const entry = (res.headers.get('Server-Timing') ?? '').split(',').find((part) => part.trim().startsWith('db;'));
+  const match = /desc="n=(\d+)"/.exec(entry ?? '');
+  if (!match) throw new Error(`no db statement count in Server-Timing: ${res.headers.get('Server-Timing')}`);
+  return Number(match[1]);
+};
 const messageCount = async () =>
   (await db.select({ id: sessionLogMessages.messageId }).from(sessionLogMessages).where(eq(sessionLogMessages.sessionId, SESSION))).length;
 
@@ -72,7 +81,7 @@ beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'session-log-ingest' });
   await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'session-log-ingest', repoUrl: 'https://example.test/session-log.git' });
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner' });
-  for (const sessionId of [SESSION, OTHER]) {
+  for (const sessionId of [SESSION, OTHER, RESTART, BULK]) {
     await db.insert(projectSessions).values({ sessionId, accountId: ACCOUNT, projectId: PROJECT, branchName: sessionId, createdBy: OWNER });
     // A session PAT authenticates only while its sandbox row is live (the session lease).
     await db.insert(sessionSandboxes).values({ sandboxId: sessionId, sessionId, accountId: ACCOUNT, projectId: PROJECT, status: 'active', config: {}, metadata: {} });
@@ -128,6 +137,100 @@ describe('journal', () => {
     expect(await stored('msg_u1')).toEqual(before);
     expect(await messageCount()).toBe(2);
     expect(await durable()).toEqual(firstDurable!);
+  });
+
+  test('a restarted daemon re-sends every message with new revs: an unchanged one gets no row version and no row lock, a changed one is written, a durable turn is left alone', async () => {
+    const send = (rev: number, puts: Array<ReturnType<typeof message>>) =>
+      journal(batch({ puts: puts.map((m, i) => ({ rev: rev + i, message: m })), threads: [thread('main')] }), tokens[RESTART]!, RESTART);
+    const history = Array.from({ length: 20 }, (_, i) => message(`msg_r${i}`, i, { blocks: [{ type: 'text', id: `blk_r${i}`, text: `turn ${i}` }] }));
+    // msg_r1 answers the turn of msg_r0: its first acknowledgement marks the turn durable.
+    history[1] = message('msg_r1', 1, { role: 'assistant', reply_to: 'msg_r0', finish: 'stop', completed_at: T, blocks: [{ type: 'text', id: 'blk_r1', text: 'turn 1' }] });
+    await db.insert(sessionTurns).values({ turnToken: `turn-${RESTART}`, sessionId: RESTART, sandboxId: RESTART, projectId: PROJECT, accountId: ACCOUNT, messageId: 'msg_r0', state: 'active' });
+    expect((await send(REV, history)).status).toBe(200);
+    // xmin: the row version; xmax: the last transaction that locked or replaced it (0: none since the insert).
+    const versions = async () =>
+      new Map(
+        (await db.execute<{ message_id: string; xmin: string; xmax: string; rev: string }>(
+          sql`SELECT message_id, xmin::text, xmax::text, rev::text FROM kortix.session_log_messages WHERE session_id = ${RESTART}`,
+        )).map((r) => [r.message_id, r]),
+      );
+    const turn = async () =>
+      (await db.execute<{ xmin: string; xmax: string; durable: string | null }>(
+        sql`SELECT xmin::text, xmax::text, log_durable_at::text AS durable FROM kortix.session_turns WHERE session_id = ${RESTART}`,
+      ))[0]!;
+    const before = await versions();
+    expect([...before.values()].every((r) => r.xmax === '0')).toBe(true);
+    const durable = await turn();
+    expect(durable.durable).not.toBeNull();
+
+    const edited = message('msg_r19', 19, { blocks: [{ type: 'text', id: 'blk_r19', text: 'turn 19, edited' }] });
+    const res = await send(REV + 1_000, [...history.slice(0, 19), edited]);
+    expect(res.status).toBe(200);
+    expect((await res.json()).acked).toHaveLength(20);
+
+    const after = await versions();
+    for (const m of history.slice(0, 19)) expect(after.get(m.message_id)).toEqual(before.get(m.message_id)!);
+    expect(after.get('msg_r19')!.xmin).not.toBe(before.get('msg_r19')!.xmin);
+    expect(after.get('msg_r19')!.rev).toBe(String(REV + 1_000 + 19));
+    expect((await db.select({ record: sessionLogMessages.record }).from(sessionLogMessages)
+      .where(and(eq(sessionLogMessages.sessionId, RESTART), eq(sessionLogMessages.messageId, 'msg_r19'))))[0]!.record).toEqual(edited);
+    // The re-sent reply finds its turn durable already: no new row version, no lock.
+    expect(await turn()).toEqual(durable);
+  });
+
+  test('a batch of 500 changed puts costs a constant number of statements; a seq collision inside it answers the same 422 as one put at a time', async () => {
+    // v0.14.10 rollout: a new daemon changed every record's hash, so a restart's re-send was all changed puts,
+    // one INSERT each (467–927 statements per request, up to 25 s in prod).
+    const send = (rev: number, puts: Array<ReturnType<typeof message>>) =>
+      journal(batch({ puts: puts.map((m, i) => ({ rev: rev + i, message: m })), threads: [thread('main')] }), tokens[BULK]!, BULK);
+    const history = (text: string) => Array.from({ length: 500 }, (_, i) => message(`msg_b${i}`, i, { blocks: [{ type: 'text', id: `blk_b${i}`, text: `${text} ${i}` }] }));
+    const rows = () =>
+      db.execute<{ message_id: string; rev: string; seq: number; text: string }>(
+        sql`SELECT message_id, rev::text, seq, record->'blocks'->0->>'text' AS text FROM kortix.session_log_messages WHERE session_id = ${BULK} ORDER BY seq`,
+      ).then((r) => [...r]);
+
+    // The first write, then a restart that changed every record: each of the 500 puts is written.
+    for (const [rev, text] of [[REV, 'turn'], [REV + 1_000, 'turn, converted again']] as const) {
+      const res = await send(rev, history(text));
+      expect(res.status).toBe(200);
+      expect((await res.json()).acked).toHaveLength(500);
+      // Auth, the lock, the session, the threads, the batch: 15 statements at any batch size (one INSERT per put: 513).
+      expect(dbStatementCount(res)).toBeLessThan(40);
+      const stored = await rows();
+      expect(stored).toHaveLength(500);
+      expect(stored.every((r, i) => r.message_id === `msg_b${i}` && r.rev === String(rev + i) && r.text === `${text} ${i}`)).toBe(true);
+    }
+    const written = await rows();
+    const seqMax = 499;
+
+    // A new message on a seq another message holds (msg_b3), in the middle of the batch.
+    const taken = history('clash');
+    taken[250] = message('msg_b_new', 3);
+    let res = await send(REV + 2_000, taken);
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'seq_conflict', message_id: 'msg_b_new', rev: REV + 2_000 + 250, thread_id: 'main', seq: 3, seq_max: seqMax });
+    expect(await rows()).toEqual(written);
+
+    // Two new messages of the batch claim one free seq: the second is the pair that collides.
+    const twice = history('clash');
+    twice[100] = message('msg_b_first', 700);
+    twice[400] = message('msg_b_second', 700);
+    res = await send(REV + 3_000, twice);
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'seq_conflict', message_id: 'msg_b_second', rev: REV + 3_000 + 400, thread_id: 'main', seq: 700, seq_max: seqMax });
+    expect(await rows()).toEqual(written);
+
+    // One message twice in a batch: the higher rev wins, as one put at a time.
+    res = await journal(batch({
+      puts: [
+        { rev: REV + 4_001, message: message('msg_b0', 0, { blocks: [{ type: 'text', id: 'blk_b0', text: 'higher' }] }) },
+        { rev: REV + 4_000, message: message('msg_b0', 0, { blocks: [{ type: 'text', id: 'blk_b0', text: 'lower' }] }) },
+        { rev: REV + 4_002, message: message('msg_b1', 1, { blocks: [{ type: 'text', id: 'blk_b1', text: 'edited' }] }) },
+      ],
+    }), tokens[BULK]!, BULK);
+    expect(res.status).toBe(200);
+    const [b0, b1] = await rows();
+    expect([b0!.rev, b0!.text, b1!.rev, b1!.text]).toEqual([String(REV + 4_001), 'higher', String(REV + 4_002), 'edited']);
   });
 
   test('a lone UTF-16 surrogate is stored as U+FFFD, never a 500 (KRTX-211 poison batch)', async () => {
@@ -365,7 +468,7 @@ describe('journal', () => {
     }), tokens[OTHER]!, OTHER);
     expect(res.status).toBe(200);
     const rows = await db.select({ token: sessionTurns.turnToken, at: sessionTurns.logDurableAt }).from(sessionTurns).where(eq(sessionTurns.accountId, ACCOUNT));
-    const durable = Object.fromEntries(rows.filter((r) => r.token !== `turn-${SESSION}`).map((r) => [r.token.replace(/-[0-9a-f-]{36}$/, ''), r.at !== null]));
+    const durable = Object.fromEntries(rows.filter((r) => r.token !== `turn-${SESSION}` && r.token !== `turn-${RESTART}`).map((r) => [r.token.replace(/-[0-9a-f-]{36}$/, ''), r.at !== null]));
     expect(durable).toEqual({
       pi_prompt: false, pi_summarize: true, pi_later: false, other_session: false, oc_summarize: true, oc_idless: false,
       r_refused: false, r_prompt: false, x_summarize: true, x_delivery: false, z_later: false,
@@ -458,6 +561,6 @@ test('RLS stays on with no policy on the session-log tables', async () => {
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'kortix' AND c.relkind = 'r' AND c.relname LIKE 'session_log%' ORDER BY 1`)) as unknown as Array<{ name: string; rls: boolean; policies: number }>;
   expect(rows).toEqual(
-    ['session_log_backfill_state', 'session_log_blobs', 'session_log_messages', 'session_log_threads', 'session_logs'].map((name) => ({ name, rls: true, policies: 0 })),
+    ['session_log_blobs', 'session_log_messages', 'session_log_threads', 'session_logs'].map((name) => ({ name, rls: true, policies: 0 })),
   );
 });

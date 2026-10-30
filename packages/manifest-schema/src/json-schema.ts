@@ -73,6 +73,9 @@ import {
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
+  SPACE_HEADER_ITEMS,
+  SPACE_SLUG_RE,
+  SPACE_TAB_TYPES,
   KORTIX_TOOL_NAMES,
   KORTIX_TOOL_PREFIX,
   TOOL_NAME_RE,
@@ -416,8 +419,6 @@ function opencodeSchema(): JsonSchemaFragment {
 
 /** One `[[sandbox.templates]]` entry. */
 function sandboxTemplateSchema(): JsonSchemaFragment {
-  const image = { required: ['image'], properties: { image: NON_BLANK_STRING } };
-  const dockerfile = { required: ['dockerfile'], properties: { dockerfile: NON_BLANK_STRING } };
   const clamped = (what: string, max: number) =>
     `${what}. Above ${max} is a warning, and Kortix uses ${max}. Default: the platform default.`;
   return {
@@ -431,9 +432,12 @@ function sandboxTemplateSchema(): JsonSchemaFragment {
       name: { type: 'string', description: 'The label in the template picker. Default: the slug.' },
       entrypoint: { type: 'string', description: "Overrides the container entrypoint. Default: the image's." },
       image: {
-        description: 'An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both.',
+        description:
+          'An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both. Neither: the platform base image.',
       },
       dockerfile: {
+        // Blank is absent (`validateSandboxTemplates`); a set path must stay inside the repository.
+        anyOf: [{ not: NON_BLANK_STRING }, relativePathSchema()],
         description:
           'A repository path to a Dockerfile. `kortix validate` lints it: no `COPY` from the repository, no `RUN` heredoc, a Debian-family base image.',
       },
@@ -441,12 +445,22 @@ function sandboxTemplateSchema(): JsonSchemaFragment {
       memory: { type: 'integer', minimum: SANDBOX_MEMORY_BOUNDS.min, description: clamped('GiB of memory', SANDBOX_MEMORY_BOUNDS.max) },
       disk: { type: 'integer', minimum: SANDBOX_DISK_BOUNDS.min, description: clamped('GiB of disk', SANDBOX_DISK_BOUNDS.max) },
       container_runtime: { type: 'boolean', default: false, description: '`true`: Docker runs inside the sandbox.' },
+      residential_proxy: {
+        description:
+          "`true`, or `{ country: us }`: the sandbox's web traffic leaves through a residential IP address, billed per GB from credits. Kortix hosts and package registries connect directly. Sessions start only where the deployment offers it. Not part of the image.",
+        oneOf: [
+          { type: 'boolean' },
+          {
+            type: 'object',
+            properties: {
+              country: { type: 'string', pattern: '^[A-Za-z]{2}$', description: 'ISO 3166-1 alpha-2 country code of the IP address.' },
+            },
+          },
+        ],
+      },
     },
-    // Exactly one of image/dockerfile (`validateSandboxTemplates`).
-    oneOf: [
-      { ...image, not: dockerfile },
-      { ...dockerfile, properties: { dockerfile: relativePathSchema() }, not: image },
-    ],
+    // At most one non-blank image/dockerfile (`validateSandboxTemplates`); neither is the platform base image.
+    not: { required: ['image', 'dockerfile'], properties: { image: NON_BLANK_STRING, dockerfile: NON_BLANK_STRING } },
   };
 }
 
@@ -1024,7 +1038,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
         additionalProperties: { type: 'string', pattern: POLICY_SET_NAME_RE.source },
       },
       secrets: grantSetSchema(),
-      skills: grantSetSchema(),
+      skills: excludableGrantSchema('Skills this agent may load.'),
       apps: {
         ...grantSetSchema({ type: 'string', pattern: APP_GRANT_ENTRY_PATTERN }),
         description:
@@ -1198,6 +1212,8 @@ function appBlockV2Schema(): JsonSchemaFragment {
           listed: { type: 'boolean' },
           preview: { type: 'string', enum: ['live', 'none'] },
           parent: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' },
+          space: { type: ['string', 'null'], pattern: SPACE_SLUG_RE.source, description: 'The space the App is grouped in. Grouping only.' },
+          agent: { type: ['string', 'null'], pattern: SLUG_RE.source, description: 'The agent that owns the App. Grouping only.' },
         },
         additionalProperties: false,
       },
@@ -1335,6 +1351,17 @@ function namedGrantSchema(description: string, grant: JsonSchemaFragment = grant
   return { ...grant, default: 'none', description };
 }
 
+/** `agents.<name>.skills` / `.extensions` (v3): a named grant, or `{ exclude: [...] }`. */
+function excludableGrantSchema(description: string): JsonSchemaFragment {
+  return {
+    description: `${description} "all", "none" (default), a list of names, or { exclude: [names] } for every name but those.`,
+    oneOf: [
+      grantSetSchema(),
+      { type: 'object', required: ['exclude'], properties: { exclude: { type: 'array', items: NON_BLANK_STRING } }, additionalProperties: false },
+    ],
+  };
+}
+
 /** v3 pi package source: an exact npm pin or a repository path, alone or in pi's filter form. */
 function piSourceV3Schema(): JsonSchemaFragment {
   const source = { type: 'string', anyOf: [{ pattern: PI_PACKAGE_NPM_RE.source }, { pattern: REPO_PATH_PATTERN, not: { pattern: '^npm:' } }] };
@@ -1399,12 +1426,12 @@ function agentBlockV3Schema(): JsonSchemaFragment {
           { type: 'object', required: ['exclude'], properties: { exclude: names }, additionalProperties: false },
         ],
       },
-      skills: namedGrantSchema('Registered skills and Kortix skills the agent may load.'),
+      skills: excludableGrantSchema('Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those.'),
       subagents: namedGrantSchema(
-        'Agents this agent may start with the `task` tool: declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent.',
+        'Agents this agent may start with the `agent` tool (alias `task`): declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent.',
       ),
       commands: namedGrantSchema('Registered commands the agent runs.'),
-      extensions: namedGrantSchema('Registered extensions that a session of the agent loads.'),
+      extensions: excludableGrantSchema('Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those.'),
       connectors: namedGrantSchema('Connector slugs the agent may call.', v2.properties.connectors),
       connectors_required: { ...v2.properties.connectors_required, description: 'Connector slugs, a subset of `connectors`. Sessions do not check it.' },
       policy_sets: {
@@ -1431,6 +1458,11 @@ function agentBlockV3Schema(): JsonSchemaFragment {
         additionalProperties: false,
       },
       sandbox: { ...v2.properties.sandbox, description: 'A template slug, or `default` for the platform image. Default: `sandbox.default`.' },
+      space: {
+        type: 'string',
+        pattern: SPACE_SLUG_RE.source,
+        description: 'The space the agent works in (a key of the top-level `spaces` map, or a bare slug). Grouping only.',
+      },
       network_egress: {
         ...v2.properties.network_egress,
         description: 'Only `{ version: 1, default: deny, rules: [] }`. It validates with a warning: Kortix does not enforce it.',
@@ -1585,6 +1617,79 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
             pattern: '^[0-9]+[mhd]$',
             default: '24h',
             description: 'An integer and `m`, `h` or `d`, such as `30m`, `4h` or `7d`. Kortix clamps it to 5 minutes through 30 days.',
+          },
+        },
+        additionalProperties: false,
+      },
+      spaces: {
+        type: ['object', 'null'],
+        description: 'Spaces: channels with a room (always the first tab) and configured tabs. Agents join one with `agents.<name>.space`.',
+        propertyNames: { pattern: SPACE_SLUG_RE.source },
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            label: { type: 'string' },
+            description: { type: 'string' },
+            order: { type: 'number' },
+            header: {
+              type: 'array',
+              description: 'What the space header shows, in order. Absent: every item.',
+              items: { type: 'string', enum: [...SPACE_HEADER_ITEMS] },
+            },
+            tabs: {
+              type: 'array',
+              description: 'The tabs after the room, in order. Absent: the default set.',
+              items: {
+                type: 'object',
+                required: ['type'],
+                properties: {
+                  type: { type: 'string', enum: [...SPACE_TAB_TYPES] },
+                  label: { type: 'string' },
+                  path: { type: 'string', description: 'files: a project folder path.' },
+                  app: { type: 'string', description: 'app: a Kortix App slug.' },
+                  artifact: { type: 'string', description: 'artifact: an artifact_id.' },
+                  url: { type: 'string', pattern: '^https?://', description: 'link: an http(s) url.' },
+                  embed: { type: 'boolean', description: 'link: embed the page in a sandboxed frame.' },
+                  blocks: {
+                    type: 'array',
+                    description: 'board: the grid blocks, in order.',
+                    items: {
+                      type: 'object',
+                      required: ['type'],
+                      properties: {
+                        type: { type: 'string', enum: ['chat', 'artifact', 'app', 'iframe', 'text'] },
+                        label: { type: 'string' },
+                        room: { type: 'string' },
+                        path: { type: 'string' },
+                        app: { type: 'string' },
+                        url: { type: 'string' },
+                        text: { type: 'string' },
+                      },
+                      additionalProperties: false,
+                    },
+                  },
+                },
+                additionalProperties: false,
+                allOf: [
+                  { if: { properties: { type: { const: 'files' } } }, then: { required: ['path'] } },
+                  { if: { properties: { type: { const: 'app' } } }, then: { required: ['app'] } },
+                  { if: { properties: { type: { const: 'artifact' } } }, then: { required: ['artifact'] } },
+                  { if: { properties: { type: { const: 'link' } } }, then: { required: ['url'] } },
+                ],
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      builtin_agents: {
+        type: 'object',
+        description: 'Built-in agents the platform adds to this project. Absent = on.',
+        properties: {
+          my_kortix: {
+            type: 'boolean',
+            default: true,
+            description: 'My Kortix, the built-in agent you talk to. false removes it from this project.',
           },
         },
         additionalProperties: false,

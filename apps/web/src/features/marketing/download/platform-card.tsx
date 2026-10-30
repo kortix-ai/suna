@@ -3,7 +3,7 @@ import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 
-import type { Platform } from './detect-os';
+import type { Platform } from '@kortix/ui/internal/lib/detect-os';
 
 type CardRowBase = {
   id: Platform;

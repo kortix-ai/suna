@@ -4,27 +4,41 @@
  * A chat platform plugs in as a `ChannelPort`: what the platform does for the
  * core, addressed by a `ChannelTarget` (one conversation). The adapter hands
  * the core one `ChannelMessage` per inbound message: its target, its persisted
- * keys, the follow-up text and how a new session would start. The adapter
- * keeps what only its platform has: webhook verification and intake, the
- * sender gate, commands, typing, prompts and the wording of every notice.
+ * keys, its envelope (`ChannelEnvelope`) and how a new session would start. The
+ * core renders the envelope (`channelPromptText`), with the revived note when
+ * it starts a thread over. The adapter keeps what only its platform has: webhook
+ * verification and intake, the sender gate, commands, typing, the envelope's
+ * fields and the wording of every notice.
  *
  *   a message whose create started → nothing: the lifecycle delivers it (a retry)
  *   a known thread       → a follow-up into its session
  *   its session is gone  → forget the thread, start a new session ("revived")
  *   a new thread         → claim the first create, start one session bound to it;
  *                          a racing message waits for that session and follows up
+ *   a message's files    → read after the retry guard and attached to its prompt (ChannelFile)
  *
  * A platform adapter supplies its port and keeps its own intake. Adapters that
  * predate the core still route themselves.
  * Session-addressed notices (a failed run, a failed start) go through session-notice.ts.
  * The agent's questions (post, buttons, taps) go through questions.ts.
  */
-import { chatEventDedup } from '@kortix/db';
+import { chatEventDedup, projectSessions } from '@kortix/db';
 import type { CHANNEL_PLATFORMS } from '@kortix/manifest-schema';
+import { type ChannelEnvelope, channelPromptText, isModelNativeAttachmentMime } from '@kortix/shared';
 import { eq } from 'drizzle-orm';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { logger } from '../../lib/logger';
-import { createCommandStatus, createSession, deliverThroughQueue, resolveProjectAutomationActor } from '../../projects/surface';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
+import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
+import {
+  createCommandStatus,
+  createSession,
+  deliverThroughQueue,
+  resolveProjectAutomationActor,
+  resolveSessionAgentName,
+} from '../../projects/surface';
 import { db } from '../../shared/db';
+import { type ImageTurn, imageTurnModel, NO_VISION_NOTE, promptModelOverride } from '../vision-model';
 import type { RuntimeQuestion, TurnErrorCode } from '@kortix/api-contract/transcript';
 import type { ConnectorPrincipal } from '../../connectors/router-contract';
 import type { QuestionPort } from './questions';
@@ -128,6 +142,12 @@ export interface ChannelPort {
   questions?: QuestionPort;
   /** Runs before every follow-up into an existing session; absent = deliver. */
   prepareFollowUp?(target: ChannelTarget, thread: { sessionId: string; projectId: string }): Promise<FollowUpVerdict>;
+  /**
+   * The model a follow-up into `thread` runs on, and the model its image turn starts from:
+   * the chat's choice, else the session's pin, checked as the gateway runs it.
+   * Null or absent: no model is sent. A throw is logged, and no model is sent.
+   */
+  turnModel?(target: ChannelTarget, thread: { sessionId: string; projectId: string }): Promise<string | null>;
 }
 
 /** One verified, deduped, sender-gated inbound message. */
@@ -146,10 +166,45 @@ export interface ChannelMessage {
     /** `chat_event_dedup` key that lets one message per thread create its session. */
     createClaim: string;
   };
-  followUp: { text: string };
-  /** How the thread's session starts. `revived`: its earlier session is gone. Null drops the message (the adapter logs why). */
-  plan(revived: boolean): Promise<ChannelSessionPlan | null>;
+  /** The message as the agent and the session view read it, rendered by the core. */
+  followUp: ChannelEnvelope;
+  /** The message's own files, never a quoted message's. Read once per attempt, after the retry guard, on the way into a session. */
+  files?: readonly ChannelFile[];
+  /** How the thread's session starts. Null drops the message (the adapter logs why). */
+  plan(): Promise<ChannelSessionPlan | null>;
 }
+
+/** One file of an inbound message. The adapter lists it from the stored event, with no network call. */
+export interface ChannelFile {
+  /**
+   * Kortix's word for the file (`photo`, `document`, `voice message`), never the sender's. A note
+   * names the file by it, and the file is called by it (`voice_message.ogg`).
+   */
+  kind: string;
+  /**
+   * The sender's name for the file. The core keeps only a plain extension of it (`report.pdf` →
+   * `document.pdf`). The adapter puts the name itself in the message text, which the agent treats as untrusted.
+   */
+  name?: string;
+  /** The declared type. The core keeps a known bare `type/subtype`, else `application/octet-stream`. */
+  mime: string;
+  /** The size the platform states. Over the room left in the message, `read` never runs. */
+  size?: number;
+  /**
+   * The bytes, at most `maxBytes`, or why there are none: the agent is told, and the text still goes.
+   * Throws only when the platform does not answer: the core retries the message, and on its last
+   * attempt sends it without the file. Never put a platform URL or a credential in the bytes.
+   */
+  read(maxBytes: number): Promise<Uint8Array | 'too_large' | 'unavailable'>;
+}
+
+/**
+ * All the file bytes one message attaches. They ride base64 in the queued prompt row (~10.4 MiB at
+ * this cap), under the 12 MiB a web prompt's `data:` parts may hold (session-lifecycle/prompt-parts.ts).
+ */
+// ponytail: the bytes live in Postgres (the queued row; on a new chat, the create command too).
+// Upgrade: store a follow-up's files with sessionAttachmentStore and send the reference (50 MiB).
+export const CHANNEL_FILES_MAX_BYTES = 8 * 1024 * 1024;
 
 export interface ChannelSessionPlan {
   project: Parameters<typeof createSession>[0]['project'];
@@ -162,8 +217,8 @@ export interface ChannelSessionPlan {
   metadata: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   mayManageSystemConnections?: boolean;
-  /** The first prompt, delivered once the session is bound to the thread. */
-  prompt: string;
+  /** The first prompt, delivered once the session is bound to the thread. The core renders it. */
+  prompt: ChannelEnvelope;
 }
 
 /** Up to 8 s for a racing message's create to bind the thread. */
@@ -175,6 +230,7 @@ const defaultLifecycle = {
   createSession,
   deliverThroughQueue,
   resolveProjectAutomationActor,
+  imageTurnModel,
   sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
 };
 let lifecycle = defaultLifecycle;
@@ -211,27 +267,39 @@ export async function routeChannelMessage(
     });
     return;
   }
+  // A message's files: read once per attempt, after the retry guard, and only on the way into a session.
+  let reading: Promise<MessageFiles> | undefined;
+  const files = () => (reading ??= readMessageFiles(target, message.files ?? [], run));
   const existing = await findChatThread(target);
   if (existing) {
-    if ((await followUp(port, message, existing, run)) !== 'no-session') return;
+    if ((await followUp(port, message, existing, run, files)) !== 'no-session') return;
     // Its session is gone, or it belongs to another project. Drop only that
     // mapping: a racing message may have bound a new session since our read.
     await dropChatThread(target, existing.sessionId);
   }
 
-  const plan = await message.plan(existing !== null);
+  const plan = await message.plan();
   if (!plan) return;
   const userId = plan.userId ?? (await lifecycle.resolveProjectAutomationActor(plan.project.accountId));
   if (!userId) {
     logger.warn('[channel] no automation actor for the project', { platform: target.platform, projectId: target.projectId });
     return;
   }
+  // Before the claim: a read that throws holds no claim, and a racing message's 8 s wait does not grow.
+  // `revived`: the thread's earlier session is gone, and the agent is told it has no history.
+  const first = await withFiles(channelPromptText(plan.prompt, { revived: existing !== null }), await files(), async () => ({
+    projectId: target.projectId,
+    accountId: plan.project.accountId,
+    userId,
+    currentModel: await startModel(plan, userId),
+    visibility: plan.visibility,
+  }));
 
   const claim = await claimThreadCreate(keys.createClaim);
   if (!claim) {
     const thread = await waitForThreadSession(target);
     if (thread) {
-      await followUpJustBound(port, message, thread, run);
+      await followUpJustBound(port, message, thread, run, files);
       return;
     }
     if (!run.finalAttempt) throw new Error(`${target.platform} thread create in flight`);
@@ -245,7 +313,7 @@ export async function routeChannelMessage(
   const bound = await findChatThread(target);
   if (bound) {
     await releaseThreadCreate(keys.createClaim, claim);
-    await followUpJustBound(port, message, bound, run);
+    await followUpJustBound(port, message, bound, run, files);
     return;
   }
 
@@ -271,7 +339,7 @@ export async function routeChannelMessage(
           threadId: target.threadId,
           createClaim: { key: keys.createClaim, token: claim.toISOString() },
         },
-        { type: 'deliver_prompt', source: target.platform, text: plan.prompt, userId },
+        { type: 'deliver_prompt', source: target.platform, ...first, userId },
       ],
     });
   } catch (error) {
@@ -323,8 +391,9 @@ async function followUpJustBound(
   message: ChannelMessage,
   thread: { sessionId: string; projectId: string },
   run: { finalAttempt: boolean },
+  files: () => Promise<MessageFiles>,
 ): Promise<void> {
-  if ((await followUp(port, message, thread, run)) !== 'no-session') return;
+  if ((await followUp(port, message, thread, run, files)) !== 'no-session') return;
   if (!run.finalAttempt) throw new Error(`${message.target.platform} thread session cannot take the message`);
   logger.warn('[channel] the thread session a racing message bound cannot take this one; dropped', {
     platform: message.target.platform,
@@ -337,29 +406,50 @@ function createStarted(status: Awaited<ReturnType<typeof createCommandStatus>>):
   return status === 'queued' || status === 'running' || status === 'succeeded';
 }
 
-/** Forget a conversation (a `/new` command): the next message starts a new session. */
-export async function forgetChatThread(target: ChannelTarget, createClaim: string): Promise<void> {
-  await dropChatThread(target);
+/**
+ * Forget a conversation (a `/new` command): the next message starts a new session. `sessionId`: only
+ * while the thread still maps to it, so a session a racing message bound since stays. `claimHeld`: a
+ * create held the thread, and may still bind it.
+ */
+export async function forgetChatThread(target: ChannelTarget, createClaim: string, sessionId?: string): Promise<{ claimHeld: boolean }> {
+  await dropChatThread(target, sessionId);
   // Its create claim too, or the next message waits on it. A create still in
   // flight may then race that message: two sessions, for a reset the sender asked for.
-  await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, createClaim));
+  const claims = await db
+    .delete(chatEventDedup)
+    .where(eq(chatEventDedup.eventId, createClaim))
+    .returning({ expiresAt: chatEventDedup.expiresAt });
+  return { claimHeld: claims.some((c) => c.expiresAt.getTime() > Date.now()) };
 }
 
 async function followUp(
   port: ChannelPort,
-  { target, keys, followUp: { text } }: ChannelMessage,
+  { target, keys, followUp: envelope }: ChannelMessage,
   thread: { sessionId: string; projectId: string },
   run: { finalAttempt: boolean },
+  files: () => Promise<MessageFiles>,
 ): Promise<Awaited<ReturnType<typeof deliverThroughQueue>> | 'refused'> {
   const verdict = port.prepareFollowUp ? await port.prepareFollowUp(target, thread) : 'deliver';
   if (verdict === 'refuse') return 'refused';
   if (verdict === 'restart') return 'no-session';
+  // pi keeps a prompt's model for the prompts after it (harness/pi/runtime.ts), so every follow-up names one.
+  const model = port.turnModel
+    ? await port.turnModel(target, thread).catch((error) => {
+        logger.warn('[channel] the turn model was not read; the prompt goes without one', {
+          platform: target.platform,
+          projectId: target.projectId,
+          error: error instanceof Error ? error.name : 'unknown',
+        });
+        return null;
+      })
+    : null;
+  const prompt = await withFiles(channelPromptText(envelope), await files(), () => sessionImageTurn(target.projectId, thread.sessionId, model), model);
   const outcome = await lifecycle.deliverThroughQueue({
     source: target.platform,
     idempotencyKey: keys.followUp,
     projectId: target.projectId,
     sessionId: thread.sessionId,
-    text,
+    ...prompt,
   });
   if (outcome === 'delivered' || outcome === 'queued') await touchChatThread(target);
   if (outcome === 'failed') {
@@ -377,4 +467,169 @@ async function waitForThreadSession(thread: ChatThreadKey): Promise<{ sessionId:
     if (poll === CREATE_WAIT_POLLS) return null;
     await lifecycle.sleep(CREATE_WAIT_POLL_MS);
   }
+}
+
+type PromptPart = NonNullable<Parameters<typeof deliverThroughQueue>[0]['parts']>[number]; // PromptPartWire is not on projects/surface.ts
+type Prompt = Pick<Parameters<typeof deliverThroughQueue>[0], 'text' | 'parts' | 'overrides'>;
+interface MessageFiles { parts: PromptPart[]; notes: string[]; hasImage: boolean; hasAudio: boolean }
+
+const CAP_MB = CHANNEL_FILES_MAX_BYTES / (1024 * 1024);
+/** Nothing in the sandbox image or the gateway turns speech into text; an agent can install a tool for one turn. */
+const NO_SPEECH_NOTE = 'A recording is attached. No speech-to-text tool is preinstalled: transcribe it with one you install (for example faster-whisper), or tell the sender you cannot listen to it and ask them to type the message.';
+
+/**
+ * The types Kortix passes on, each with its extension for a file whose name has none. Telegram reports
+ * the type the sender's app declared, so any other type becomes `application/octet-stream`.
+ */
+const MIME_EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'audio/mpeg': 'mp3',
+  'audio/ogg': 'ogg',
+  'audio/mp4': 'm4a',
+  'audio/wav': 'wav',
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+  'video/webm': 'webm',
+  'application/pdf': 'pdf',
+  'application/json': 'json',
+  'application/zip': 'zip',
+  'text/plain': 'txt',
+  'text/csv': 'csv',
+  'text/markdown': 'md',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+};
+
+/**
+ * Kortix's name for a file: its kind and the extension of the sender's name, else of its type. The name
+ * becomes a workspace path and the `<file filename>` the agent reads after the lines Kortix vouches for.
+ */
+function fileName(file: ChannelFile, mime: string): string {
+  const extension = /\.([a-z0-9]{1,10})$/.exec(file.name?.toLowerCase() ?? '')?.[1] ?? MIME_EXTENSIONS[mime];
+  return `${file.kind.replaceAll(' ', '_')}${extension ? `.${extension}` : ''}`;
+}
+
+/**
+ * A known `type/subtype`, lower case, no parameters, else `application/octet-stream`. The type reaches the
+ * `<file mime>` the agent reads after the lines Kortix vouches for, and `parseStagedPromptDataUrl` needs
+ * the URL's type and the part's to match.
+ */
+function bareMime(mime: string): string {
+  const bare = mime.split(';')[0]!.trim().toLowerCase();
+  return bare in MIME_EXTENSIONS ? bare : 'application/octet-stream';
+}
+
+const modelPin = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+/**
+ * The model a new session starts with, resolved as createSession resolves it (session-create.ts
+ * `resolveSessionModel`): the requested model, else the agent's, project's or account's default,
+ * else the platform default for an account that may use managed models.
+ */
+// ponytail: the agent is the request's, else the project's mirrored default (`metadata.default_agent`);
+// createSession reads the manifest's first. Upgrade: pass the manifest default when a channel names none.
+async function startModel(plan: ChannelSessionPlan, userId: string): Promise<string | null> {
+  const requested = modelPin(plan.body.opencode_model);
+  if (requested) return requested;
+  const { accountId, projectId } = plan.project;
+  const freeModelsOnly = !(await accountMayUseManagedModels(accountId).catch(() => false));
+  const agentName = resolveSessionAgentName({
+    requestedAgent: modelPin(plan.body.agent_name),
+    manifestDefaultAgent: null,
+    mirroredDefaultAgent: modelPin((plan.project.metadata as Record<string, unknown> | null)?.default_agent),
+  });
+  const resolved = await resolveEffectiveModel({ userId, accountId, projectId, agentName, explicit: null, freeModelsOnly }).catch(() => null);
+  return resolved?.model ?? (freeModelsOnly ? null : platformDefaultModelId() || null);
+}
+
+/** Each file as a `data:` part, or a note that says why it is missing. Throws to retry when a platform does not answer. */
+async function readMessageFiles(target: ChannelTarget, files: readonly ChannelFile[], run: { finalAttempt: boolean }): Promise<MessageFiles> {
+  const read: MessageFiles = { parts: [], notes: [], hasImage: false, hasAudio: false };
+  let room = CHANNEL_FILES_MAX_BYTES;
+  for (const file of files) {
+    const mime = bareMime(file.mime);
+    let bytes: Awaited<ReturnType<ChannelFile['read']>> = 'too_large';
+    if (file.size === undefined || file.size <= room) {
+      try {
+        bytes = await file.read(room);
+      } catch (error) {
+        // Never the adapter's error: its message may name a URL that carries a credential.
+        if (!run.finalAttempt) throw new Error(`${target.platform} file download unreachable`);
+        logger.warn('[channel] a file did not download on the last attempt; the message goes without it', {
+          platform: target.platform,
+          projectId: target.projectId,
+          error: error instanceof Error ? error.name : 'unknown',
+        });
+        bytes = 'unavailable';
+      }
+    }
+    if (typeof bytes !== 'string' && bytes.byteLength > room) bytes = 'too_large';
+    if (typeof bytes === 'string') {
+      read.notes.push(bytes === 'too_large'
+        ? `The ${file.kind} was not attached: a chat message brings at most ${CAP_MB} MB of files. Tell the sender, and ask for a smaller file or the text.`
+        : `The ${file.kind} was not attached: Kortix could not download it. Ask the sender to send it again.`);
+      continue;
+    }
+    room -= bytes.byteLength;
+    read.parts.push({ type: 'file', mime, filename: fileName(file, mime), url: `data:${mime};base64,${Buffer.from(bytes).toString('base64')}` });
+    read.hasImage ||= mime.startsWith('image/') && isModelNativeAttachmentMime(mime);
+    read.hasAudio ||= mime.startsWith('audio/');
+  }
+  return read;
+}
+
+/**
+ * An existing session's image turn, from `model` (the port's turn model), else the session's pin.
+ * Null: the session is gone (the delivery then answers `no-session`).
+ */
+async function sessionImageTurn(projectId: string, sessionId: string, model: string | null): Promise<ImageTurn | null> {
+  const [row] = await db
+    .select({
+      accountId: projectSessions.accountId,
+      createdBy: projectSessions.createdBy,
+      visibility: projectSessions.visibility,
+      metadata: projectSessions.metadata,
+    })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  if (!row) return null;
+  return {
+    projectId,
+    sessionId,
+    accountId: row.accountId,
+    visibility: row.visibility,
+    userId: row.createdBy ?? (await lifecycle.resolveProjectAutomationActor(row.accountId)),
+    currentModel: model ?? modelPin((row.metadata as Record<string, unknown> | null)?.opencode_model),
+  };
+}
+
+/**
+ * The prompt for a message. With no file it is the text alone, as before. Otherwise the notes follow
+ * the text, then one text part precedes the files. Text first: the session view reads the header at
+ * the start. pi joins text parts with nothing between them (runtime.ts:188), so the part ends with a line break.
+ * `model`: the turn's model; an image turn's pick replaces it. The only writer of `overrides`.
+ */
+async function withFiles(text: string, files: MessageFiles, turn: () => Promise<ImageTurn | null>, model: string | null = null): Promise<Prompt> {
+  let overrides: Prompt['overrides'] = model ? { model: promptModelOverride(model) } : undefined;
+  if (!files.parts.length && !files.notes.length) return overrides ? { text, overrides } : { text };
+  const lines = [...files.notes, ...(files.hasAudio ? [NO_SPEECH_NOTE] : [])].map((note) => `- ${note}`);
+  if (files.hasImage) {
+    const imageTurn = await turn();
+    const pick = imageTurn ? await lifecycle.imageTurnModel(imageTurn) : { model: null, blind: false };
+    if (pick.model) overrides = { model: promptModelOverride(pick.model) };
+    if (pick.blind) lines.push(NO_VISION_NOTE);
+  }
+  const full = [text, ...lines].join('\n');
+  return {
+    text: full,
+    ...(files.parts.length ? { parts: [{ type: 'text', text: `${full}\n` }, ...files.parts] } : {}),
+    ...(overrides ? { overrides } : {}),
+  };
 }

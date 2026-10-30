@@ -51,13 +51,12 @@ mock.module('@kortix/ui/internal/hooks/channels/use-channels-installations', () 
   useUpdateEmailPolicy: disconnect,
   useTelegramInstall: disconnected,
   useConnectTelegram: disconnect,
-  useSetTelegramAllowedUsers: disconnect,
   useDisconnectTelegram: disconnect,
-  useTelegramUsers: disconnected,
-  useTelegramUserPhoto: disconnected,
-  useAllowTelegramUser: disconnect,
-  useRemoveTelegramUser: disconnect,
-  useDismissTelegramAccessRequest: disconnect,
+  useChannelUsers: disconnected,
+  useChannelUserPhoto: disconnected,
+  useAllowChannelUser: disconnect,
+  useRemoveChannelUser: disconnect,
+  useDismissChannelAccessRequest: disconnect,
 }));
 mock.module('@kortix/ui/internal/hooks/use-channel-bindings', () => ({
   useChannelBindings: () => ({ data: { bindings: [] }, isLoading: false }),

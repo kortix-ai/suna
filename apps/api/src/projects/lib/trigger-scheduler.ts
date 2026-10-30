@@ -12,7 +12,7 @@ import { renderPromptTemplate } from './trigger-payload';
 import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
 import { raiseTriggerAlert } from './trigger-alerts';
 import { runProjectConnectorSweep } from './trigger-connector-sweep';
-import { schedulerHealth, triggerFireTimeoutMs, triggerScheduleClaimLimit, triggerExecutionConcurrency, connectorSweepIntervalMs, initialCatalogBackfillIncomplete, mapWithConcurrency, schedulerSweepIsStale, automaticFirePauseReason, withTimeout } from './trigger-scheduler-state';
+import { schedulerHealth, triggerFireTimeoutMs, triggerScheduleClaimLimit, triggerExecutionConcurrency, connectorSweepIntervalMs, mapWithConcurrency, schedulerSweepIsStale, automaticFirePauseReason, withTimeout } from './trigger-scheduler-state';
 
 export let triggerSweepRunning = false;
 let triggerExecutionDrainRunning = false;
@@ -127,7 +127,7 @@ async function executeTriggerExecution(
     .from(projects)
     .where(eq(projects.projectId, row.projectId))
     .limit(1);
-  // The project's own pause, then the account's Pause all automations (KRTX-1721).
+  // The project's own pause, then the account's Pause all triggers (KRTX-1721).
   const paused = project && project.status === 'active' ? await automaticFirePauseReason(project) : null;
   if (!project || project.status !== 'active' || paused) {
     const reason = !project
@@ -168,7 +168,8 @@ async function executeTriggerExecution(
         project,
         payload,
         renderedPrompt,
-        source: 'cron',
+        // The slot's own origin (`cron`, or `reminder` for a loop's slot).
+        source: row.source === 'reminder' ? 'reminder' : 'cron',
         idempotencyKey,
       }),
       triggerFireTimeoutMs(),
@@ -329,24 +330,16 @@ export function runProjectTriggerSchedulerTick(): void {
   // Connector reconcile backstop — slower cadence than the trigger sweep so
   // we don't re-read every manifest each tick. Catches out-of-band manifest
   // edits (raw git push / CLI) and heals any DB drift / retries error rows.
+  // One pass per interval, on a new leader too: the catalog is in the
+  // database, so a new leader has nothing to backfill. Passes back to back
+  // until a full cycle completed kept the prod leader near 100 % CPU for
+  // 2-3 h after every leader change, and for good on one row the catalog
+  // could not fill (2026-10-29).
   if (Date.now() - lastConnectorSweepAt >= connectorSweepIntervalMs()) {
     lastConnectorSweepAt = Date.now();
-    runProjectConnectorSweep()
-      .then(() => {
-        if (initialCatalogBackfillIncomplete(schedulerHealth)) {
-          // On a new scheduler release, drain the bounded catalog batches
-          // continuously instead of waiting two minutes between each batch.
-          // Once both cursors complete a full cycle with no pending rows, the
-          // normal connector cadence resumes. Individual project failures
-          // retry on that bounded cadence; a permanently inaccessible repo
-          // must not force an unbounded full-fleet reconciliation loop.
-          lastConnectorSweepAt = 0;
-        }
-      })
-      .catch((error) => {
-        lastConnectorSweepAt = 0;
-        console.error('[project-connectors] sweep failed:', error);
-      });
+    runProjectConnectorSweep().catch((error) => {
+      console.error('[project-connectors] sweep failed:', error);
+    });
   }
 }
 

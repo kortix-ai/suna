@@ -2470,7 +2470,11 @@ flow(
 //      a declared connector with no credential answers `connector_not_connected`
 //      and lists as `needs_auth`;
 //   5. the turn-stream relay says WHY a step was not relayed;
-//   6. ten consecutive calls after a mid-session connector add keep the grant.
+//   6. ten consecutive calls after a mid-session connector add keep the grant;
+//   7. a Telegram send reaches any chat until a Telegram chat binds the
+//      session, then only that chat (`conversation_not_in_project`), from the
+//      session and from a session it started; an argument the action does not
+//      declare is refused (`invalid_args`).
 flow(
   'CONN-27',
   {
@@ -2517,8 +2521,11 @@ flow(
     });
 
     const sessionId = randomUUID();
+    // A session the fixture session starts (`spawned_by_session`).
+    const childSessionId = randomUUID();
     const openapiSlug = `ke2e-openapi-${Date.now().toString(36)}`;
     let tokenId: string | null = null;
+    let childTokenId: string | null = null;
     let session = ctx.client;
     const call = (connector: string, action: string) =>
       session.post(
@@ -2677,6 +2684,135 @@ flow(
       );
 
       await ctx.step(
+        'a Telegram send reaches any chat while no Telegram chat is bound to the session, only the bound chat after a bind (from the session and from a session it started, and in the chat a reply quotes), and never with an argument the action does not declare',
+        async () => {
+          const connector = await db.query<{ connector_id: string }>(
+            `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+             VALUES ($1, $2, 'kortix_telegram', 'Telegram', 'channel', $3::jsonb, 'active') RETURNING connector_id`,
+            [team.id, p.id, JSON.stringify({ platform: 'telegram' })],
+          );
+          await db.query(
+            `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+             VALUES ($1, $2, $3, 'project', 'Telegram', 'active', true, $4::jsonb)`,
+            [team.id, p.id, connector.rows[0]?.connector_id, JSON.stringify({ provider: 'channel', connector_slug: 'kortix_telegram' })],
+          );
+          await db.query(
+            `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+             VALUES ($1, 'send_message', 'Send message', null, $2::jsonb, 'write', $3::jsonb)`,
+            [
+              connector.rows[0]?.connector_id,
+              JSON.stringify({ type: 'object', properties: { chat_id: { type: 'string' }, text: { type: 'string' } }, required: ['chat_id', 'text'] }),
+              JSON.stringify({ kind: 'http', method: 'POST', path: '/sendMessage' }),
+            ],
+          );
+          // The bot on record makes the account a connected one.
+          const bot = `ke2e-bot-${sessionId.slice(0, 8)}`;
+          await db.query(`INSERT INTO kortix.chat_installs (platform, workspace_id, project_id) VALUES ('telegram', $1, $2)`, [
+            bot,
+            p.id,
+          ]);
+          const send = (chatId: number, extra: Record<string, unknown> = {}) =>
+            session.post(
+              '/v1/connectors/projects/:projectId/call',
+              { connector: 'kortix_telegram', action: 'send_message', args: { chat_id: chatId, text: 'ke2e', ...extra } },
+              { params: { projectId: p.id }, timeoutMs: 60_000 },
+            );
+          // The seeded connector has no base URL: a send that passes every
+          // check, the chat check included, fails building its request, and
+          // nothing reaches Telegram.
+          const passedEveryCheck = (r: Awaited<ReturnType<typeof send>>) =>
+            r.status(500).body().has('$.status', 'error').has('$.reason', 'http connector has no base_url');
+          passedEveryCheck(await send(444555666));
+          // A forum topic of a group binds the session, as a reminder's successor adopts its chat.
+          await db.query(
+            `INSERT INTO kortix.chat_threads (project_id, platform, workspace_id, thread_id, session_id)
+             VALUES ($1, 'telegram', $2, '-100777888:42', $3)`,
+            [p.id, bot, sessionId],
+          );
+          const other = await send(444555666);
+          other
+            .status(403)
+            .body()
+            .has('$.ok', false)
+            .has('$.status', 'denied')
+            .has('$.reason', 'conversation_not_in_project')
+            .has(
+              '$.message',
+              'This session answers Telegram chat -100777888 only. It does not send to, edit or delete messages in other chats.',
+            );
+          passedEveryCheck(await send(-100777888));
+          // A reply that quotes a message of another chat is a write there too.
+          (await send(-100777888, { reply_parameters: { chat_id: 444555666, message_id: 5 } }))
+            .status(403)
+            .body()
+            .has('$.reason', 'conversation_not_in_project')
+            .has(
+              '$.message',
+              'This session answers Telegram chat -100777888 only. It does not send to, edit or delete messages in other chats.',
+            );
+          // A session this one starts answers the same chat: its own
+          // session-bound token reaches the bound chat and no other.
+          const childMinted = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', {
+            name: `CONN-27 child ${childSessionId.slice(0, 8)}`,
+          });
+          childMinted.status(201);
+          const childCredential = childMinted.json<{ token_id: string; secret_key: string }>();
+          childTokenId = childCredential.token_id;
+          await db.query(
+            `INSERT INTO kortix.project_sessions
+               (session_id, account_id, project_id, branch_name, agent_name, status, metadata, created_by, visibility)
+             VALUES ($1, $2, $3, $6, 'kortix', 'running', $4::jsonb, $5, 'project')`,
+            [
+              childSessionId,
+              team.id,
+              p.id,
+              JSON.stringify({ source: 'agent', spawned_by_session: sessionId }),
+              ownerUserId,
+              `session/${childSessionId}`,
+            ],
+          );
+          await db.query(
+            `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+             VALUES ($1::uuid, $1, $2, $3, 'active')`,
+            [childSessionId, team.id, p.id],
+          );
+          await db.query(
+            `UPDATE kortix.account_tokens SET account_id = $2, user_id = $3, project_id = $4, session_id = $5 WHERE token_id = $1`,
+            [childTokenId, team.id, ownerUserId, p.id, childSessionId],
+          );
+          const child = ctx.client.withBearer(childCredential.secret_key, 'SESSION_TOKEN');
+          const childSend = (chatId: number) =>
+            child.post(
+              '/v1/connectors/projects/:projectId/call',
+              { connector: 'kortix_telegram', action: 'send_message', args: { chat_id: chatId, text: 'ke2e' } },
+              { params: { projectId: p.id }, timeoutMs: 60_000 },
+            );
+          (await childSend(444555666))
+            .status(403)
+            .body()
+            .has('$.reason', 'conversation_not_in_project')
+            .has(
+              '$.message',
+              'This session answers Telegram chat -100777888 only. It does not send to, edit or delete messages in other chats.',
+            );
+          passedEveryCheck(await childSend(-100777888));
+          // `body` would replace the request the chat check read: an argument
+          // the action does not declare is refused before every check.
+          const overridden = await send(-100777888, { body: { chat_id: 444555666, text: 'ke2e' } });
+          overridden
+            .status(400)
+            .body()
+            .has('$.ok', false)
+            .has('$.status', 'denied')
+            .has('$.reason', 'invalid_args')
+            .has(
+              '$.message',
+              'send_message takes no argument "body". It takes chat_id, text, reply_parameters, message_thread_id, parse_mode, reply_markup.',
+            );
+        },
+      );
+
+      await ctx.step(
         'narrowing the agent in kortix.yaml applies on the next call, and the denial names agent, grant and manifest',
         async () => {
           const put = await ctx.client.as(ctx.P.OWNER).put(
@@ -2818,13 +2954,13 @@ flow(
       );
     } finally {
       await db
-        .query(`DELETE FROM kortix.account_tokens WHERE token_id = $1`, [tokenId])
+        .query(`DELETE FROM kortix.account_tokens WHERE token_id::text = ANY($1::text[])`, [[tokenId, childTokenId].filter(Boolean)])
         .catch(() => undefined);
       await db
-        .query(`DELETE FROM kortix.session_sandboxes WHERE session_id = $1`, [sessionId])
+        .query(`DELETE FROM kortix.session_sandboxes WHERE session_id::text = ANY($1::text[])`, [[sessionId, childSessionId]])
         .catch(() => undefined);
       await db
-        .query(`DELETE FROM kortix.project_sessions WHERE session_id = $1`, [sessionId])
+        .query(`DELETE FROM kortix.project_sessions WHERE session_id::text = ANY($1::text[])`, [[sessionId, childSessionId]])
         .catch(() => undefined);
       await db.end().catch(() => undefined);
     }
@@ -4238,8 +4374,8 @@ flow(
         if (!everyoneRow) throw new Error(`no everyone row: ${listed.stdout.slice(0, 800)}`);
       });
 
-      await ctx.step('`kortix access grant --everyone --agent kortix` writes a project principal agent grant', async () => {
-        await kortix(owner, ['access', 'grant', '--everyone', '--agent', 'kortix']);
+      await ctx.step('`kortix access grant --everyone --agent worker` writes a project principal agent grant', async () => {
+        await kortix(owner, ['access', 'grant', '--everyone', '--agent', 'worker']);
         const grants = await ctx.client
           .as(ctx.P.OWNER)
           .get('/v1/projects/:projectId/resource-grants', { params: { projectId: project.id } });
@@ -4248,8 +4384,8 @@ flow(
         assert({
           kind: 'body',
           description: 'the agent grant names everyone in the project',
-          pass: rows.some((g) => g.resource_id === 'kortix' && g.principal_type === 'project'),
-          expected: { resource_id: 'kortix', principal_type: 'project' },
+          pass: rows.some((g) => g.resource_id === 'worker' && g.principal_type === 'project'),
+          expected: { resource_id: 'worker', principal_type: 'project' },
           actual: rows,
         });
       });
@@ -4681,7 +4817,7 @@ flow(
         const r = await expectHeld('charges_create');
         r.body().has(
           '$.approval_instructions',
-          'Share approval_url with a human. Retry this exact call once they approve it. Next time pass approval_context (CLI: --reason) describing the effect, so the approver can judge it.',
+          'Share approval_url with a human. Approval alone does not run the call: after approval, repeat this exact call (same arguments and account) within 15 minutes, and it runs once. Next time pass approval_context (CLI: --reason) describing the effect, so the approver can judge it.',
         );
       });
 
@@ -6353,6 +6489,115 @@ flow(
       await db.query(`DELETE FROM kortix.session_sandboxes WHERE session_id = $1`, [sessionId]).catch(() => {});
       await db.query(`DELETE FROM kortix.project_sessions WHERE session_id = $1`, [sessionId]).catch(() => {});
       await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1`, [p.id]).catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);
+
+// ── CONN-42 — Approve runs a sessionless held call once, as its caller ──────
+// A PAT created with `project_id` is a project-scoped caller: the gate holds
+// its input, Approve runs the call in the job-queue worker, and the caller
+// reads the outcome by id. The provider is a runner-local stub: local only.
+flow(
+  'CONN-42',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: [
+      'POST /v1/accounts/tokens',
+      'DELETE /v1/accounts/tokens/:tokenId',
+      'POST /v1/connectors/projects/:projectId/call',
+      'POST /v1/projects/:projectId/approvals/:executionId',
+      'GET /v1/projects/:projectId/review/items/:reviewItemId',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') {
+      await ctx.step('deployed targets cannot reach a runner-local provider stub: skipped', async () => {});
+      return;
+    }
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    const { createServer } = await import('node:http');
+    const db = await connectFlowDb(ctx);
+    const hits: string[] = [];
+    const upstream = createServer((req, res) => {
+      hits.push(`${req.method} ${req.url}`);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"charge":"ch_synthetic","done":true}');
+    });
+    const port = await new Promise<number>((resolve) => upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)));
+    const slug = `ke2e-held-${Date.now().toString(36)}`;
+    const owner = ctx.client.as(ctx.P.OWNER);
+    let tokenId = '';
+    let pat: ReturnType<typeof ctx.client.withBearer> | null = null;
+    let executionId = '';
+    const callAsPat = () =>
+      pat!.post('/v1/connectors/projects/:projectId/call', { connector: slug, action: 'charges_create', args: { amount: 4242 } }, { params: { projectId: p.id }, timeoutMs: 60_000 });
+    const readItem = () =>
+      pat!.get('/v1/projects/:projectId/review/items/:reviewItemId', { params: { projectId: p.id, reviewItemId: `call:${executionId}` } });
+    type RunDetail = { next_step: string; run?: { state: string; finished_at: string | null; outcome: { status?: string; output_preview?: string } | null } };
+
+    try {
+      await ctx.step('seed an OpenAPI write on a runner-local stub behind a require_approval rule', async () => {
+        const connectorId = await seedOpenApiConnector(db, { accountId: team.id, projectId: p.id, slug, name: 'KE2E Held', auth: { type: 'none' } });
+        await db.query(
+          `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+           VALUES ($1, 'charges_create', 'charges_create', 'charges_create', '{"type":"object"}'::jsonb, 'write', $2::jsonb)`,
+          [connectorId, JSON.stringify({ kind: 'openapi', method: 'POST', path: '/charges', server: `http://127.0.0.1:${port}` })],
+        );
+        await db.query(`INSERT INTO kortix.connector_policies (connector_id, match, action, position) VALUES ($1, 'charges_*', 'require_approval', 0)`, [connectorId]);
+      });
+
+      await ctx.step('a PAT created with project_id → 201 and the project id on the token', async () => {
+        const minted = await owner.post('/v1/accounts/tokens', { name: ctx.fixtures.name('held-pat'), account_id: team.id, project_id: p.id });
+        minted.status(201).body().has('$.project_id', p.id);
+        const credential = minted.json<{ token_id: string; secret_key: string }>();
+        tokenId = credential.token_id;
+        pat = ctx.client.withBearer(credential.secret_key, 'PROJECT_PAT');
+      });
+
+      await ctx.step('the PAT call → 202 runs_on_approval:true, "do not repeat", the by-id outcome path, no upstream request', async () => {
+        const r = await callAsPat();
+        r.status(202).body().has('$.status', 'pending_approval').has('$.runs_on_approval', true);
+        const body = r.json<{ execution_id: string; approval_instructions: string }>();
+        executionId = body.execution_id;
+        const rule = `Kortix runs this exact call once a human approves. Do not repeat the call. Read the outcome at GET /v1/projects/${p.id}/review/items/call:${executionId}.`;
+        if (!body.approval_instructions.startsWith(`Share approval_url with a human. ${rule}`)) throw new Error(`instructions: ${body.approval_instructions}`);
+        if (body.approval_instructions.includes('Approval alone does not run')) throw new Error('a held gate still tells the caller to repeat');
+        if (hits.length !== 0) throw new Error(`a held call reached the upstream: ${hits.join(', ')}`);
+      });
+
+      await ctx.step('a repeat while held → 202 with the same execution_id and the "already waiting" answer', async () => {
+        const r = await callAsPat();
+        r.status(202).body().has('$.execution_id', executionId).has('$.runs_on_approval', true);
+        if (!r.json<{ approval_instructions: string }>().approval_instructions.startsWith('This exact call is already waiting for approval or running.')) throw new Error(r.text());
+        if (hits.length !== 0) throw new Error('a repeat reached the upstream');
+      });
+
+      await ctx.step('the owner approves → 200; the by-id read reaches run.state ok with the redacted result', async () => {
+        (await owner.post('/v1/projects/:projectId/approvals/:executionId', { decision: 'approve' }, { params: { projectId: p.id, executionId } })).status(200);
+        const r = await waitFor(readItem, {
+          until: (res) => res.statusCode === 200 && ['ok', 'error', 'refused', 'unknown'].includes(res.json<{ review_item: { detail: RunDetail } }>().review_item.detail.run?.state ?? ''),
+          timeoutMs: 45_000,
+          intervalMs: 1_000,
+          description: 'the held call run settles',
+        });
+        r.status(200).body().has('$.review_item.status', 'approved').has('$.review_item.detail.run.state', 'ok');
+        const detail = r.json<{ review_item: { detail: RunDetail } }>().review_item.detail;
+        if (!detail.run?.outcome?.output_preview?.includes('ch_synthetic')) throw new Error(`outcome: ${JSON.stringify(detail.run)}`);
+        if (!detail.run.finished_at) throw new Error('no finished_at');
+        if (!detail.next_step.includes('ran once') || !detail.next_step.includes('Do not repeat it')) throw new Error(`next_step: ${detail.next_step}`);
+      });
+
+      await ctx.step('the provider stub received exactly one request', async () => {
+        if (hits.length !== 1 || hits[0] !== 'POST /charges') throw new Error(`upstream saw: ${JSON.stringify(hits)}`);
+      });
+    } finally {
+      upstream.close();
+      if (tokenId) await owner.del('/v1/accounts/tokens/:tokenId', { params: { tokenId } }).catch(() => undefined);
+      await db.query('DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2', [p.id, slug]).catch(() => {});
       await db.end().catch(() => {});
     }
   },

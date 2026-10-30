@@ -14,6 +14,7 @@ import {
   getTemplateById,
   updateTemplate,
 } from '../../snapshots/templates';
+import { parseResidentialProxy, type SandboxResidentialProxy } from '@kortix/shared/sandbox';
 import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { SandboxTemplateSchema, projectsApp } from '../lib/app';
@@ -92,6 +93,9 @@ export function registerSandboxTemplatesRoutes(): void {
               cpu: z.number().optional().openapi({ description: 'CPU cores.' }),
               memory_gb: z.number().optional().openapi({ description: 'Memory in GB.' }),
               disk_gb: z.number().optional().openapi({ description: 'Disk in GB.' }),
+              residential_proxy: z.union([z.boolean(), z.object({ country: z.string().optional() })]).nullable().optional().openapi({
+                description: "Residential IP: true, false, or { country } (ISO 3166-1 alpha-2). Sessions start only where the deployment offers it.",
+              }),
             }) } } },
         },
       responses: {
@@ -132,6 +136,8 @@ export function registerSandboxTemplatesRoutes(): void {
     const cpu = typeof body.cpu === 'number' ? body.cpu : undefined;
     const memoryGb = typeof body.memory_gb === 'number' ? body.memory_gb : undefined;
     const diskGb = typeof body.disk_gb === 'number' ? body.disk_gb : undefined;
+    const residentialProxy = bodyResidentialProxy(body.residential_proxy);
+    if (residentialProxy === 'invalid') return c.json({ error: RESIDENTIAL_PROXY_BODY_ERROR }, 400);
     if (templateBuildProviders().length === 0) {
       return c.json({ error: 'No sandbox template provider is enabled' }, 503);
     }
@@ -148,6 +154,7 @@ export function registerSandboxTemplatesRoutes(): void {
         cpu,
         memoryGb,
         diskGb,
+        residentialProxy,
         source: 'ui',
       });
       // Kick a build in the background so the template is ready for the next session.
@@ -188,6 +195,9 @@ export function registerSandboxTemplatesRoutes(): void {
               cpu: z.number().optional().openapi({ description: 'CPU cores.' }),
               memory_gb: z.number().optional().openapi({ description: 'Memory in GB.' }),
               disk_gb: z.number().optional().openapi({ description: 'Disk in GB.' }),
+              residential_proxy: z.union([z.boolean(), z.object({ country: z.string().optional() })]).nullable().optional().openapi({
+                description: "Residential IP: true, false, or { country } (ISO 3166-1 alpha-2). Sessions start only where the deployment offers it.",
+              }),
             }) } } },
         },
       responses: {
@@ -206,6 +216,8 @@ export function registerSandboxTemplatesRoutes(): void {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE);
 
     const body = await readJsonObject(c);
+    const residentialProxy = bodyResidentialProxy(body.residential_proxy);
+    if (residentialProxy === 'invalid') return c.json({ error: RESIDENTIAL_PROXY_BODY_ERROR }, 400);
 
     const patch = {
       name: typeof body.name === 'string' ? body.name.trim() : undefined,
@@ -219,6 +231,7 @@ export function registerSandboxTemplatesRoutes(): void {
       cpu: 'cpu' in body ? (typeof body.cpu === 'number' ? body.cpu : null) : undefined,
       memoryGb: 'memory_gb' in body ? (typeof body.memory_gb === 'number' ? body.memory_gb : null) : undefined,
       diskGb: 'disk_gb' in body ? (typeof body.disk_gb === 'number' ? body.disk_gb : null) : undefined,
+      residentialProxy,
     };
 
     // Ownership check BEFORE the write. updateTemplate keys the UPDATE on
@@ -364,4 +377,17 @@ export function registerSandboxTemplatesRoutes(): void {
     }, 202);
   },
   );
+}
+
+const RESIDENTIAL_PROXY_BODY_ERROR = '`residential_proxy` must be true, false, or { "country": "<ISO 3166-1 alpha-2 code>" }.';
+
+/** `residential_proxy` in a create or PATCH body: undefined = not sent, null = off. */
+function bodyResidentialProxy(value: unknown): SandboxResidentialProxy | null | undefined | 'invalid' {
+  if (value === undefined) return undefined;
+  if (value === null || value === false) return null;
+  if (value === true) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) return 'invalid';
+  const country = (value as { country?: unknown }).country;
+  if (country !== undefined && !(typeof country === 'string' && /^[A-Za-z]{2}$/.test(country.trim()))) return 'invalid';
+  return parseResidentialProxy(value) ?? null;
 }

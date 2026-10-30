@@ -1,4 +1,7 @@
 'use client';
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { useTranslations } from '@/i18n/use-translations';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { CaseStudies } from '@/features/marketing/case-studies/case-studies';
@@ -8,39 +11,32 @@ import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Band, Block, CellGrid, Heading, PageFrame } from '@/features/marketing/kit/page-frame';
 import { FaqSection } from '@/features/marketing/landing-sections/faq-section';
 import {
-  benefits,
-  caseCta,
-  closing,
-  compare,
-  faq,
-  functions,
-  GUARANTEE,
-  hero,
-  intro,
-  onboarding,
-  platform,
-  PRICE,
-  pricing,
-  stages,
+  caseCta as sourcecaseCta,
+  closing as sourceclosing,
+  compare as sourcecompare,
+  faq as sourcefaq,
+  functions as sourcefunctions,
+  GUARANTEE as sourceGUARANTEE,
+  hero as sourcehero,
+  intro as sourceintro,
+  platform as sourceplatform,
+  PRICE as sourcePRICE,
+  pricing as sourcepricing,
+  problem as sourceproblem,
+  stages as sourcestages,
 } from '@/features/marketing/services/content';
 import { cn } from '@kortix/ui';
 import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import {
   ArrowRightIcon,
-  GitBranchIcon,
-  GraduationCapIcon,
-  PathIcon,
-  ReceiptIcon,
-  StackIcon,
-  UsersThreeIcon,
 } from '@phosphor-icons/react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 /**
- * `/services`: the AI Transformation sales page. Standalone: the `(sales)`
- * group's shell replaces the site nav. Copy, the commercial terms and the
+ * `/services`: the AI Transformation sales page, under the site navbar (the
+ * `(sales)` group's shell keeps its own footer). Copy, the commercial terms and the
  * accuracy gate: `features/marketing/services/content.ts`.
  *
  * "Join now" is a Stripe Payment Link (`NEXT_PUBLIC_SERVICES_CHECKOUT_URL`,
@@ -57,15 +53,6 @@ const CHECKOUT_URL = process.env.NEXT_PUBLIC_SERVICES_CHECKOUT_URL;
 /** A third-party logo is drawn for a white ground: white in both themes (color.md, logo tile rule). */
 const LOGO_TILE_BACKGROUND = 'bg-white';
 
-const BENEFIT_ICONS = {
-  team: UsersThreeIcon,
-  flat: ReceiptIcon,
-  path: PathIcon,
-  os: StackIcon,
-  repo: GitBranchIcon,
-  cloud: GraduationCapIcon,
-} as const;
-
 /** "Join now": the Stripe checkout when it is configured, else the intro call. */
 function JoinButton({
   variant,
@@ -74,6 +61,8 @@ function JoinButton({
   variant?: 'primary' | 'secondary';
   className?: string;
 }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   const openDemo = useRequestDemo();
   if (!CHECKOUT_URL) {
     return (
@@ -83,13 +72,13 @@ function JoinButton({
         className={className}
         onClick={() => openDemo({ source: 'services' })}
       >
-        Join now
+        {tMarketing('text028e666e2c79')}
       </MarketingButton>
     );
   }
   return (
     <MarketingButton size="md" variant={variant} className={className} asChild>
-      <a href={CHECKOUT_URL}>Join now</a>
+      <a href={CHECKOUT_URL}>{tMarketing('text028e666e2c79')}</a>
     </MarketingButton>
   );
 }
@@ -119,6 +108,13 @@ function IntroButton({
   variant?: 'primary' | 'secondary';
   className?: string;
 }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { intro } = localizeUiCatalog(
+    { intro: sourceintro },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
   const openDemo = useRequestDemo();
   return (
     <MarketingButton
@@ -127,12 +123,19 @@ function IntroButton({
       className={className}
       onClick={() => openDemo({ source: 'services' })}
     >
-      Book an intro call
+      {tMarketing('text6def5bd6334e')}
     </MarketingButton>
   );
 }
 
 function Price({ className }: { className?: string }): ReactNode {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { PRICE } = localizeUiCatalog(
+    { PRICE: sourcePRICE },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
   return (
     <p className={cn('flex flex-wrap items-baseline gap-x-3', className)}>
       <span className="text-5xl font-medium tracking-tight tabular-nums">{PRICE.now}</span>
@@ -142,6 +145,41 @@ function Price({ className }: { className?: string }): ReactNode {
 }
 
 export default function ServicesPage() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const {
+    caseCta,
+    closing,
+    compare,
+    faq,
+    functions,
+    GUARANTEE,
+    hero,
+    intro,
+    platform,
+    PRICE,
+    pricing,
+    problem,
+    stages,
+  } = localizeUiCatalog(
+    {
+      caseCta: sourcecaseCta,
+      closing: sourceclosing,
+      compare: sourcecompare,
+      faq: sourcefaq,
+      functions: sourcefunctions,
+      GUARANTEE: sourceGUARANTEE,
+      hero: sourcehero,
+      intro: sourceintro,
+      platform: sourceplatform,
+      PRICE: sourcePRICE,
+      pricing: sourcepricing,
+      problem: sourceproblem,
+      stages: sourcestages,
+    },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
   return (
     <PageFrame>
       {/* ── hero: one promise, one ask, the logos ──────────────────────────── */}
@@ -169,13 +207,14 @@ export default function ServicesPage() {
           <div className="flex flex-wrap justify-center gap-2.5 pt-2">
             <IntroButton variant="primary" className="hit-area-y-1" />
             <MarketingButton size="md" variant="secondary" className="hit-area-y-1" asChild>
-              <a href="#pricing">See pricing</a>
+              <a href="#case-studies">{hero.logosLink}</a>
             </MarketingButton>
           </div>
           <p className="text-muted-foreground text-sm text-pretty">{hero.terms}</p>
         </div>
 
-        <div className="relative mt-14 flex flex-wrap items-center justify-center gap-3">
+        {/* The proof sits right under the ask: products built on Kortix. */}
+        <div className="relative mt-10 flex flex-wrap items-center justify-center gap-3">
           <span className="text-muted-foreground text-sm">{hero.logosLabel}</span>
           {hero.logos.map((logo) => (
             <span
@@ -193,26 +232,32 @@ export default function ServicesPage() {
               />
             </span>
           ))}
-          <a
-            href="#case-studies"
-            className="text-foreground hover:text-muted-foreground outline-ring duration-normal inline-flex items-center gap-1.5 rounded-sm text-sm font-medium transition-colors ease-out focus-visible:outline-2 focus-visible:outline-offset-2"
-          >
-            {hero.logosLink}
-            <ArrowRightIcon aria-hidden className="size-3.5" />
-          </a>
         </div>
+
       </section>
 
-      {/* ── how it works: join, map, ship (designjoy's three steps) ─────── */}
-      <Block id="how-it-works">
-        <Heading title={onboarding.title} titleMuted={onboarding.titleMuted} />
+      {/* ── proof first: the work, then the ask again ────────────────────── */}
+      <CaseStudies allLink />
+      <div className="flex flex-col items-start gap-5 px-8 pb-8 sm:flex-row sm:items-center sm:justify-between lg:px-28">
+        <p className="text-foreground text-lg font-medium text-balance">{caseCta}</p>
+        <div className="flex flex-wrap gap-2.5">
+          <IntroButton variant="primary" />
+        </div>
+      </div>
+
+      {/* ── the problem: a mandate without a team ────────────────────────── */}
+      <Block id="problem">
+        <Heading title={problem.title} titleMuted={problem.titleMuted} />
         <Band className="mt-12">
-          <CellGrid items={onboarding.items} cols="lg:grid-cols-3" />
+          <CellGrid items={problem.items} cols="lg:grid-cols-3" />
+          <p className="text-foreground border-t p-6 text-base font-medium text-pretty lg:p-8">
+            {problem.answer}
+          </p>
         </Band>
       </Block>
 
       {/* ── what we do: map, unify, automate, build, teach ──────────────── */}
-      <Block id="how">
+      <Block id="how-it-works">
         <Heading title={stages.title} titleMuted={stages.titleMuted} />
         <Band className="mt-12">
           <ol className="divide-y">
@@ -244,15 +289,6 @@ export default function ServicesPage() {
           </ol>
         </Band>
       </Block>
-
-      <CaseStudies allLink />
-      <div className="flex flex-col items-start gap-5 px-8 pb-8 sm:flex-row sm:items-center sm:justify-between lg:px-28">
-        <p className="text-foreground text-lg font-medium text-balance">{caseCta}</p>
-        <div className="flex flex-wrap gap-2.5">
-          <IntroButton variant="primary" />
-          <JoinButton variant="secondary" />
-        </div>
-      </div>
 
       {/* ── every function, and what agents take over ────────────────────── */}
       <Block id="functions">
@@ -294,7 +330,7 @@ export default function ServicesPage() {
             <thead>
               <tr className="border-b">
                 <th scope="col" className="w-1/4 py-4 pr-6 font-normal">
-                  <span className="sr-only">Compare</span>
+                  <span className="sr-only">{tMarketing('texte888155d8c7d')}</span>
                 </th>
                 {compare.columns.map((col, i) => (
                   <th
@@ -339,25 +375,6 @@ export default function ServicesPage() {
             </tbody>
           </table>
         </div>
-      </Block>
-
-      {/* ── membership benefits ───────────────────────────────────────────── */}
-      <Block id="benefits">
-        <Heading title={benefits.title} titleMuted={benefits.titleMuted} />
-        <Band className="mt-12">
-          <ul className="bg-border grid grid-cols-1 gap-px sm:grid-cols-2 lg:grid-cols-3">
-            {benefits.items.map((item) => {
-              const Icon = BENEFIT_ICONS[item.icon];
-              return (
-                <li key={item.id} className="bg-background flex flex-col gap-3 p-6 lg:p-8">
-                  <Icon className="text-foreground size-5" aria-hidden />
-                  <h3 className="text-foreground text-base font-medium text-pretty">{item.k}</h3>
-                  <p className="text-muted-foreground text-sm text-pretty">{item.v}</p>
-                </li>
-              );
-            })}
-          </ul>
-        </Band>
       </Block>
 
       {/* ── pricing: one plan, the guarantee, the intro call ──────────────── */}

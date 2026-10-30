@@ -38,6 +38,7 @@ export function TopicTabs({
 
   const tab = tabs[selected];
 
+  const Panel = panels[tab.id];
   return (
     <section id="how-it-works" className="scroll-mt-16 py-14 lg:py-20">
       <div className="kx-rail-fade relative border-y px-4 lg:px-17">
@@ -70,8 +71,12 @@ export function TopicTabs({
                   onClick={() => setSelected(i)}
                   className="outline-ring duration-moderate w-full rounded-sm text-left opacity-50 transition-opacity ease-out hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-4 aria-selected:opacity-100"
                 >
-                  <h3 className="text-foreground text-base font-medium text-pretty">{item.title}</h3>
-                  <p className="text-muted-foreground mt-1 text-sm text-balance">{item.description}</p>
+                  <h3 className="text-foreground text-base font-medium text-pretty">
+                    {item.title}
+                  </h3>
+                  <p className="text-muted-foreground mt-1 text-sm text-balance">
+                    {item.description}
+                  </p>
                 </button>
               ))}
             </div>
@@ -95,7 +100,7 @@ export function TopicTabs({
                   </p>
                 ))}
               </div>
-              {panels[tab.id]()}
+              {Panel ? <Panel /> : null}
             </div>
           </div>
         </div>

@@ -11,10 +11,30 @@ import {
   pushFromOtherBackend,
   serverPreferences,
   shouldPresentInForeground,
+  artifactNotificationPath,
 } from './push';
 
 /** The payload of a server from before the inbox (KRTX-1742). */
 const DATA = { type: 'completion', projectId: 'proj-1', sessionId: 'sess-1' };
+const ARTIFACT_PROJECT = '11111111-1111-4111-8111-111111111111';
+const ARTIFACT_ID = '22222222-2222-4222-8222-222222222222';
+const ARTIFACT_PATH = `/projects/${ARTIFACT_PROJECT}/artifacts/${ARTIFACT_ID}`;
+const ARTIFACT_DATA = { kind: 'artifact_comment', projectId: ARTIFACT_PROJECT, url: ARTIFACT_PATH };
+
+test('Artifact push parsing adds its web path without routing through a native session', () => {
+  expect(parsePushData({ ...ARTIFACT_DATA, sessionId: 'legacy-session' })).toEqual({ kind: 'artifact_comment', projectId: ARTIFACT_PROJECT, sessionId: null, notificationId: null, artifactPath: ARTIFACT_PATH });
+  expect(deliveryForKind('artifact_comment', true)).toEqual({ channelId: 'session-attention', iosSound: 'kortix_attention.wav' });
+});
+
+test('Artifact push links reject external origins, other projects, redirects, traversal, and malformed query values', () => {
+  const thread = '33333333-3333-4333-8333-333333333333';
+  const path = `${ARTIFACT_PATH}?thread=${thread}`;
+  expect(artifactNotificationPath(path, ARTIFACT_PROJECT)).toBe(path);
+  for (const bad of [`https://evil.example.test${path}`, `//evil.example.test${path}`, `/projects/${thread}/artifacts/${ARTIFACT_ID}`, `${ARTIFACT_PATH}?redirect=https://evil.example.test`, `${ARTIFACT_PATH}?thread=invalid`, `${path}&thread=${thread}`, `${ARTIFACT_PATH}#other`, `/projects/${ARTIFACT_PROJECT}/artifacts/../artifacts/${ARTIFACT_ID}`]) {
+    expect(artifactNotificationPath(bad, ARTIFACT_PROJECT)).toBeNull();
+    expect(parsePushData({ ...ARTIFACT_DATA, url: bad })).toBeNull();
+  }
+});
 /** The payload of a server with the inbox: `type` keeps the old name for installed apps. */
 const INBOX_DATA = {
   notificationId: 'note-1',
@@ -33,7 +53,7 @@ const ALERT_DATA = {
   projectId: 'proj-1',
   sessionId: null,
   triggerSlug: 'nightly-report',
-  url: '/projects/proj-1/customize/triggers?notification=note-2',
+  url: '/projects/proj-1/admin/triggers?notification=note-2',
 };
 
 describe('ANDROID_CHANNELS', () => {
@@ -97,7 +117,7 @@ describe('parsePushData', () => {
 
   test('accepts every inbox kind', () => {
     for (const kind of INBOX_NOTIFICATION_KINDS) {
-      expect(parsePushData({ ...INBOX_DATA, kind, type: kind })?.kind).toBe(kind);
+      expect(parsePushData(kind === 'artifact_comment' ? ARTIFACT_DATA : { ...INBOX_DATA, kind, type: kind })?.kind).toBe(kind);
     }
   });
 

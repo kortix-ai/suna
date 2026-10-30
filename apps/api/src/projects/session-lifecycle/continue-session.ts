@@ -57,9 +57,18 @@ export async function continueSession(
   // rely on for dedupe.
   commandId?: string,
   tl?: ProvisionTimeline,
-  beforeSend?: () => Promise<void>,
+  beforeSend?: () => Promise<void | Pick<ContinueSessionCommand, 'text' | 'parts'>>,
 ): Promise<SessionDeliveryOutcome> {
-  const { sessionId, text } = command;
+  const { sessionId } = command;
+  let text = command.text;
+  const revalidateBeforeSend = beforeSend ? async () => {
+    const refreshed = await beforeSend();
+    if (refreshed) {
+      text = refreshed.text;
+      command.text = refreshed.text;
+      command.parts = refreshed.parts;
+    }
+  } : undefined;
   const idempotencyKey = commandId ?? randomUUID();
   // The fast-path target is one JOINED read of the session and its sandbox, and
   // it does not depend on the session read below — so it goes out with it
@@ -219,7 +228,7 @@ export async function continueSession(
     sandboxRecord?: SandboxRecord,
   ): Promise<SendOutcome> => {
     await repairLegacyBeforeDelivery(externalId, opencodeSessionId);
-    await beforeSend?.();
+    await revalidateBeforeSend?.();
     await turnIdentity;
     let bodyBytes = 0;
     const delivery = await postPrompt(
@@ -241,6 +250,7 @@ export async function continueSession(
         wireMessageId: command.wireMessageId,
         materializationKey: command.materializationKey,
         noReply: command.noReply,
+        source: command.source,
         accountId: session.accountId,
         projectId: session.projectId,
         sandboxRecord,
@@ -336,7 +346,7 @@ export async function continueSession(
         error: err instanceof Error ? err.message : String(err),
       }),
     );
-  const outcome = await deliverAfterWake({ command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, identityBound: turnIdentity, tl })
+  const outcome = await deliverAfterWake({ command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend: revalidateBeforeSend, identityBound: turnIdentity, tl })
     .catch(async (err) => {
       if (wokeFrom) await undoWake();
       throw err;

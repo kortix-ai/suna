@@ -22,7 +22,9 @@ checks the cross-key rules. Unknown keys are errors.
 | `connectors` | List of connectors (the `kortix-connectors` skill). |
 | `apps` | Map of Apps and their settings (the `kortix-apps` skill). |
 | `triggers` | List of triggers (below). |
-| `policy`, `policies`, `approvals` | Connector call policies and how long a held call waits (`approvals.ttl`: `30m`, `4h`, `7d`; default 24h). |
+| `policy`, `policies`, `approvals` | Connector call policies and how long a held call stays decidable (`approvals.ttl`: `30m`, `4h`, `7d`; default 24h). Approve runs the held call once, as its caller, and resumes the agent with the result: the agent does not repeat it. A caller without a project-scoped token repeats it within 15 minutes. |
+| `builtin_agents` | `my_kortix: false` removes My Kortix, the built-in agent (slug `meta`). Absent = on. |
+| `spaces` | Work in progress: channels per area of work (below). |
 | `agents` | Map of agent name → agent block. At least one. |
 
 ## Agent block
@@ -39,12 +41,33 @@ checks the cross-key rules. Unknown keys are errors.
 | `enabled` | `false`: no session can start with this agent. Default `true`. |
 | `codemode` | `on` (default), `only`, `off`. |
 | `tools` | `all` (default), `none`, a list, or `{ exclude: [names] }`. |
-| `skills`, `subagents`, `commands`, `extensions` | `all`, `none` (default) or registered names. Kortix skills count as registered. |
+| `skills`, `extensions` | `all`, `none` (default), registered names, or `{ exclude: [names] }`: every one but those. Kortix skills count as registered. |
+| `subagents`, `commands` | `all`, `none` (default) or registered names. `subagents` is who this agent may call with the `agent` tool. |
 | `connectors`, `secrets`, `apps` | `all`, `none` (default) or names. |
 | `policy_sets` | Connector slug → policy set name for this agent. |
 | `kortix_permissions` | `all`, `none` (default) or a list of `project.*` values. |
 | `workspace` | `{ project_repository: true }` checks out the repository in `/workspace`. Default `false`. |
 | `sandbox` | A template slug, or `default`. |
+| `space` | Work in progress: the space the agent works in. Grouping only, never a grant. |
+| `network_egress` | Only `{ version: 1, default: deny, rules: [] }`. Declared, not enforced. |
+
+## spaces (work in progress)
+
+A space is a channel for one area of work: a room, then configured tabs
+(`goals`, `apps`, `artifacts`, `files`, `app`, `artifact`, `link`, `board`).
+It grants nothing. Spaces show only while the project flag
+`project_channels` is on; it is off by default, and while it is off the
+keys are kept but have no effect. A space's room needs `agent_rooms` (off
+by default); a Goals tab needs `goals` (off by default). Do not build a space
+unless the user asks and `kortix projects features` lists
+`project_channels` on.
+
+```yaml
+spaces:
+  sales: { label: Sales, order: 1, tabs: [{ type: apps }, { type: files, path: sales }] }
+agents:
+  closer: { space: sales, prompt: You run the sales pipeline. }
+```
 
 ## Registries
 
@@ -150,6 +173,11 @@ triggers:
   - slug: handle-reply
     on: { event: reply.received, app: inbox-poller }
     run: { prompt: "Answer {{ event.data.subject }}." }
+  - slug: verify-prod          # flat form: a merged change request has no on: shape
+    type: change_request
+    filter: { base: main }     # optional: merges into main only
+    agent: writer
+    prompt: "CR #{{ change_request.number }} merged. Verify prod."
 ```
 
 | `on:` | Fires |
@@ -172,6 +200,9 @@ triggers:
   long-lived session), `keyed` (with `session_key`), `pinned` (with
   `session_id`).
 - `run:` takes `prompt` or `app`, never both.
+- `type: change_request` fires once per merged change request of the
+  project. `filter.base` is the branch it must merge into (any when absent);
+  other `filter` keys match the payload as on any trigger.
 - Webhook auth: `X-Kortix-Signature: sha256=<hex>` or GitHub's
   `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with the secret), or the
   secret as `X-Kortix-Token` or `Authorization: Bearer`. Add
@@ -190,6 +221,7 @@ Prompt variables, `{{ dotted.path }}` (a missing value renders empty):
 | Schedule | `cron.schedule`, `cron.timezone`, `cron.scheduled_for`, `cron.last_scheduled_for` (empty on the first fire). No `fired_at`. |
 | Webhook | `fired_at`, `body.*`, `headers.content_type`, `headers.user_agent`, `headers.forwarded_for` |
 | App event | `event.name`, `event.data.*`, `event.id`, `event.emitted_at`, `app.slug` |
+| Change request merged | `fired_at`, `change_request.cr_id`, `.number`, `.title`, `.base_ref`, `.head_ref`, `.merge_commit_sha` |
 
 ## Edits from the dashboard and the CLI
 

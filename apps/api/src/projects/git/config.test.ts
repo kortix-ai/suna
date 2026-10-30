@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { loadProjectConfig } from './config';
+import { listManagedSkills } from '../../skills/catalog';
 import { getStarterFiles } from '@kortix/starter';
 import { isSelectableAgent } from '@kortix/sdk/projects-client';
 import { projectConfigAgentsToRuntimeAgents } from '@kortix/sdk';
@@ -134,13 +135,13 @@ afterEach(async () => {
 });
 
 describe('loadProjectConfig characterization', () => {
-  test('a fresh starter offers only its customer agent while keeping automation registered', async () => {
+  test('a fresh starter declares one agent, worker, and offers it', async () => {
     const files = getStarterFiles({ projectName: 'Picker regression' });
     await push(Object.fromEntries(files.map((file) => [file.path, file.content])), 'seed a fresh starter');
     const config = await loadProjectConfig(project);
-    expect(config.agents.map((agent) => agent.name)).toContain('harness-reflector');
-    expect(config.agents.filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['kortix']);
-    expect(projectConfigAgentsToRuntimeAgents({ ...config, agents: config.agents.map((agent) => ({ ...agent, source: undefined })) }).filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['kortix']);
+    expect(config.agents.map((agent) => agent.name)).toEqual(['worker']);
+    expect(config.agents.filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['worker']);
+    expect(projectConfigAgentsToRuntimeAgents({ ...config, agents: config.agents.map((agent) => ({ ...agent, source: undefined })) }).filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['worker']);
   });
 
   test('hidden primary agents stay registered but are excluded from pickers', async () => {
@@ -159,6 +160,60 @@ describe('loadProjectConfig characterization', () => {
     const config = await loadProjectConfig(project);
     expect(config.agents.map((agent) => agent.name)).toEqual(['assistant', 'internal']);
     expect(config.agents.filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['assistant']);
+  });
+
+  test('v3 spaces: agents carry their space, and spaces list header and tabs, dropping unknown tab types', async () => {
+    await push(
+      {
+        'kortix.yaml': [
+          'kortix_version: 3',
+          'default_agent: assistant',
+          'spaces:',
+          '  ops:',
+          '    label: Ops',
+          '    order: 2',
+          '  eng:',
+          '    label: Engineering',
+          '    description: Ship it.',
+          '    order: 1',
+          '    header: [agents, new_session]',
+          '    tabs:',
+          '      - type: goals',
+          '      - type: link',
+          '        label: Status',
+          '        url: https://status.example.com',
+          '        embed: true',
+          '      - type: board',
+          '        blocks:',
+          '          - type: text',
+          '            text: Hello',
+          '      - type: video',
+          'agents:',
+          '  assistant:',
+          '    mode: primary',
+          '    space: eng',
+          '',
+        ].join('\n'),
+      },
+      'declare v3 spaces',
+    );
+    const config = await loadProjectConfig(project);
+    expect(config.agents.map((agent) => [agent.name, agent.space])).toEqual([['assistant', 'eng']]);
+    expect(config.spaces).toEqual([
+      {
+        name: 'eng',
+        label: 'Engineering',
+        description: 'Ship it.',
+        order: 1,
+        header: ['agents', 'new_session'],
+        tabs: [
+          { type: 'goals' },
+          { type: 'link', label: 'Status', url: 'https://status.example.com', embed: true },
+          { type: 'board', blocks: [{ type: 'text', text: 'Hello' }] },
+        ],
+      },
+      { name: 'ops', label: 'Ops', order: 2 },
+    ]);
   });
 
   test('imported agents: every registered agent is listed, a disabled one with enabled: false, attributed to its declaring file', async () => {
@@ -239,6 +294,7 @@ opencode:
         description: null,
         mode: null,
         model: null,
+        space: null,
         source: 'opencode',
         enabled: true,
       },
@@ -248,6 +304,7 @@ opencode:
         description: 'The zeta agent',
         mode: 'primary',
         model: 'test/zeta-model',
+        space: null,
         source: 'opencode',
         enabled: true,
       },
@@ -257,6 +314,7 @@ opencode:
         description: 'The alpha agent',
         mode: null,
         model: null,
+        space: null,
         source: 'opencode',
         enabled: true,
       },
@@ -266,7 +324,11 @@ opencode:
   test('pins the skills list and its ordering (sorted by slug, path normalized)', async () => {
     const config = await loadProjectConfig(project);
 
-    expect(config.skills).toEqual([
+    // Every manifest version lists the Kortix skills kortixd injects into each session.
+    expect(config.skills.filter((s) => s.name.startsWith('kortix-')).map((s) => s.name)).toEqual(
+      listManagedSkills().map((s) => s.name).sort(),
+    );
+    expect(config.skills.filter((s) => !s.name.startsWith('kortix-'))).toEqual([
       {
         name: 'alpha',
         path: '.kortix/opencode/skills/alpha/SKILL.md',
@@ -318,6 +380,30 @@ description: "Runs deploys: say \\"go\\""
     const skill = config.skills.find((s) => s.path === 'skills/quoted/SKILL.md');
     expect(skill?.name).toBe('Quoted "Skill"');
     expect(skill?.description).toBe('Runs deploys: say "go"');
+  });
+
+  // The agent editor writes an agent's `.md` frontmatter with `stringifyYaml`,
+  // which folds a long double-quoted scalar over several lines. A line reader
+  // took only the first line and kept its opening quote, so every agent list
+  // showed `"Generic … handles coding` while the editor showed the text.
+  test('reads a folded multi-line frontmatter scalar back to its text', async () => {
+    await push(
+      {
+        '.kortix/opencode/agents/long.md': `---
+description: "Generic knowledge worker. Hands-on: handles coding
+  / research / content tasks end-to-end."
+mode: primary
+---
+Long body.
+`,
+      },
+      'add the folded agent',
+    );
+    const config = await loadProjectConfig(project);
+
+    const agent = config.agents.find((a) => a.name === 'long');
+    expect(agent?.description).toBe('Generic knowledge worker. Hands-on: handles coding / research / content tasks end-to-end.');
+    expect(agent?.mode).toBe('primary');
   });
 
   // A plain scalar (the writer emits one when the text needs no quoting) may

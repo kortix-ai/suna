@@ -233,9 +233,10 @@ export async function checkoutLocalSessionBranch(target: string, branch: string)
   logger.info('[git] created local session branch from baked checkout', { branch })
 }
 
+/** Never `lost+found`: a volume's ext4 root has one only root can list or remove (EACCES as the runtime user). */
 export async function clearDirContents(dir: string, keep?: string): Promise<void> {
   for (const entry of await readdir(dir)) {
-    if (entry === keep) continue
+    if (entry === keep || entry === 'lost+found') continue
     await rm(join(dir, entry), { recursive: true, force: true })
   }
 }
@@ -401,19 +402,23 @@ function refuseVolumeClear(target: string, why: string): never {
 }
 
 /**
- * pnpm puts its store at the root of the project's filesystem when $HOME is on
- * another one: on a volume that is `/workspace/.pnpm-store`, inside the
- * checkout, where `git add -A` would commit it. Hide it the way the CLI hides
- * its own files (`.git/info/exclude`: never committed). Never throws.
+ * Hide what a volume puts in the checkout the way the CLI hides its own files
+ * (`.git/info/exclude`: never committed). Never throws.
+ * - pnpm puts its store at the root of the project's filesystem when $HOME is
+ *   on another one: `/workspace/.pnpm-store`, where `git add -A` would commit it.
+ * - The ext4 root's `lost+found`, when the entrypoint could not remove it: every
+ *   `git status` would warn that it cannot open it.
  */
-export async function excludeVolumePnpmStore(target: string): Promise<void> {
+export async function excludeVolumeEntries(target: string): Promise<void> {
   const exclude = join(target, '.git', 'info', 'exclude')
   try {
     const existing = await readFile(exclude, 'utf8').catch(() => '')
-    if (existing.split(/\r?\n/).includes('/.pnpm-store/')) return
+    const lines = existing.split(/\r?\n/)
+    const missing = ['/.pnpm-store/', '/lost+found/'].filter((e) => !lines.includes(e))
+    if (!missing.length) return
     await mkdir(join(target, '.git', 'info'), { recursive: true })
-    await appendFile(exclude, `${existing && !existing.endsWith('\n') ? '\n' : ''}/.pnpm-store/\n`)
+    await appendFile(exclude, `${existing && !existing.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`)
   } catch (err) {
-    logger.warn('[git] could not hide the pnpm store on the workspace volume', { error: (err as Error).message })
+    logger.warn('[git] could not hide volume entries from git', { error: (err as Error).message })
   }
 }

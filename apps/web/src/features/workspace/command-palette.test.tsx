@@ -24,8 +24,10 @@ import {
 
 // No `flags` any more: the three flag-gated rail rows (Marketplace, Review,
 // Voice) moved to `/projects/<id>/config` with the rest of project
-// configuration, so nothing left in the derived list varies by flag.
-const IN_A_PROJECT: SettingsPaletteParams = { hasProject: true };
+// configuration. One row varies by platform instead: Kortix in Chrome, offered
+// only where the platform switch is on. These tests describe that platform.
+const IN_A_PROJECT: SettingsPaletteParams = { hasProject: true, chromeOffered: true };
+const NO_PROJECT: SettingsPaletteParams = { hasProject: false, chromeOffered: true };
 
 function tabsFor(params: SettingsPaletteParams): SettingsTab[] {
   return settingsPaletteGroups(params).flatMap((group) => group.items.map((item) => item.tab));
@@ -135,8 +137,7 @@ describe('offered tabs survive the panel filter', () => {
   });
 
   test('with NO project, every offered tab is allowed', () => {
-    const params: SettingsPaletteParams = { hasProject: false };
-    const offered = tabsFor(params);
+    const offered = tabsFor(NO_PROJECT);
     expect(offered.length).toBeGreaterThan(0);
     for (const tab of offered) {
       expect(isSettingsTabAllowed(tab, allowedParams(false))).toBe(true);
@@ -144,7 +145,7 @@ describe('offered tabs survive the panel filter', () => {
   });
 
   test('with NO project, every live tab but Computer is offered — all of them are personal', () => {
-    const offered = tabsFor({ hasProject: false });
+    const offered = tabsFor(NO_PROJECT);
     // Computer pairs a machine from a project, so it needs one open.
     expect([...offered].sort()).toEqual(SETTINGS_TABS.filter((tab) => tab !== 'computer').sort());
     for (const tab of offered) expect(ACCOUNT_SCOPED_SETTINGS_TABS).toContain(tab);
@@ -155,6 +156,15 @@ describe('offered tabs survive the panel filter', () => {
     for (const tab of ['general', 'secrets', 'repositories', 'sandbox', 'models']) {
       expect(offered).not.toContain(tab);
     }
+  });
+
+  test('Kortix in Chrome is offered only where the platform offers it', () => {
+    // Staging and prod until launch: the browser list answers 404, so no row
+    // leads to a page that cannot load.
+    expect(tabsFor({ hasProject: true })).not.toContain('chrome');
+    expect(tabsFor({ hasProject: false })).not.toContain('chrome');
+    expect(tabsFor(IN_A_PROJECT)).toContain('chrome');
+    expect(tabsFor(NO_PROJECT)).toContain('chrome');
   });
 
   // The "Billing disappears when billing is off" case is gone with the tab.
@@ -332,7 +342,7 @@ describe('the registry no longer carries palette settings destinations', () => {
 
     // Nothing does any more. `nav-accounts` left this list when the account
     // surfaces moved to `/accounts/[id]`; `proj-customize` left it when
-    // project configuration moved to `/projects/[id]/customize/settings`. Every settings
+    // project configuration moved to `/projects/[id]/admin/general`. Every settings
     // destination in the palette is either a derived row (which opens the
     // overlay by tab id, not by href) or a plain navigation.
     expect(resolved.map((entry) => entry.id).sort()).toEqual([]);
@@ -357,7 +367,7 @@ describe('the registry no longer carries palette settings destinations', () => {
     // rail.
     //
     // `proj-config-feature-flags` outlived the other two by a day. It was
-    // still shipping on 2026-09-03 with `href: '/projects/{projectId}/customize/settings
+    // still shipping on 2026-09-03 with `href: '/projects/{projectId}/admin/general
     // ?section=feature-flags'`, so typing "feature flag" offered it under
     // Navigation — above the derived row that works — and selecting it
     // navigated to a deleted route. `menu-registry-destinations.test.ts` now
@@ -414,7 +424,7 @@ describe('the registry no longer carries palette settings destinations', () => {
     // because it is no longer a settings destination.
     // `resolveSettingsOverlayHref` must not claim its href — that is what
     // would re-open the retired overlay tabs.
-    const href = '/projects/{projectId}/customize/triggers';
+    const href = '/projects/{projectId}/admin/triggers';
     const item = paletteItems.find((entry) => entry.id === 'proj-triggers');
     expect(item?.href).toBe(href);
     expect(item?.kind).toBe('navigate');

@@ -193,30 +193,31 @@ function ImageGenFrame({
         }
       : undefined;
   return (
-    <div className={cn('group relative', fill && 'h-full')}>
-      <ImageFrame
-        aspectRatio={image.aspectRatio}
-        fill={fill}
-        maxHeight={fill ? undefined : IMAGE_MAX_HEIGHT}
-        openLabel={image.prompt ? t('openFullScreenPrompt', { prompt: image.prompt }) : t('openFullScreen')}
-        src={src}
-        alt={image.prompt || t('generating')}
-        pending={generating || (!src && !blobError)}
-        label={
-          generating ? (
-            busy
-          ) : blobError ? (
-            <ImageUnavailable onRetry={retry} />
-          ) : !src ? (
-            <BusyLabel seed={seed} label={t('loading')} />
-          ) : null
-        }
-        onOpen={openFullScreen}
-        naturalRatio={naturalRatio}
-        onNaturalSize={onNaturalSize}
-      />
+    <ImageFrame
+      className="group"
+      aspectRatio={image.aspectRatio}
+      fill={fill}
+      maxHeight={fill ? undefined : IMAGE_MAX_HEIGHT}
+      openLabel={image.prompt ? t('openFullScreenPrompt', { prompt: image.prompt }) : t('openFullScreen')}
+      src={src}
+      alt={image.prompt || t('generating')}
+      pending={generating || (!src && !blobError)}
+      label={
+        generating ? (
+          busy
+        ) : blobError ? (
+          <ImageUnavailable onRetry={retry} />
+        ) : !src ? (
+          <BusyLabel seed={seed} label={t('loading')} />
+        ) : null
+      }
+      onOpen={openFullScreen}
+      naturalRatio={naturalRatio}
+      onNaturalSize={onNaturalSize}
+    >
       {src && openFullScreen ? (
         // The one hint that the image opens full screen, on hover only; the whole frame is the button.
+        // A child of the frame: a tall image narrows the frame, and the hint stays on its corner.
         <span
           data-image-gen-expand=""
           aria-hidden="true"
@@ -225,7 +226,7 @@ function ImageGenFrame({
           <ArrowsOutSimpleIcon className="size-3.5" />
         </span>
       ) : null}
-    </div>
+    </ImageFrame>
   );
 }
 
@@ -265,6 +266,8 @@ const cappedWidth = (rect: number) => `min(100%, calc(${IMAGE_MAX_HEIGHT} * ${re
  * Five or more images (R38): ONE grid of six columns whose rows are the
  * bento patterns (`imageGenGrid().rows`: 5 = 3+2, 8 = 4+4, …). Every tile sits
  * in the same grid, placed by line numbers, so a tile is never re-parented.
+ * A strip (portrait tiles, `imageGenGrid().strip`) uses this grid at any count,
+ * with twelve columns: each row is its tiles side by side, one track tall.
  *
  * The grid is as wide as its tallest row allows under the cap (`width`), and
  * each row is exactly `width / rects[k]` tall (`rects[k]` = its tile ratio ×
@@ -275,17 +278,18 @@ const cappedWidth = (rect: number) => `min(100%, calc(${IMAGE_MAX_HEIGHT} * ${re
  * summed below 1, e.g. 16:9 tiles.) A two-track row subtracts the gap between
  * its tracks, so a large tile spanning both is the row's height.
  */
-function gridPlacement(rows: number[], rects: number[]) {
+function gridPlacement(rows: number[], rects: number[], strip: boolean) {
   const width = `min(100cqw, ${IMAGE_MAX_HEIGHT} * ${Math.min(...rects)})`;
   const tracks: string[] = [];
   const places: CSSProperties[] = [];
   rows.forEach((count, row) => {
     const track = tracks.length + 1;
     const height = `${width} / ${rects[row]}`;
-    if (count === 2) tracks.push(`calc(${height})`);
+    if (strip || count === 2) tracks.push(`calc(${height})`);
     else tracks.push(`calc((${height} - var(--spacing)) / 2)`, `calc((${height} - var(--spacing)) / 2)`);
     for (let i = 0; i < count; i++) {
-      if (count === 2) places.push({ gridColumn: `${1 + 3 * i} / span 3`, gridRow: `${track}` });
+      if (strip) places.push({ gridColumn: `${1 + (12 / count) * i} / span ${12 / count}`, gridRow: `${track}` });
+      else if (count === 2) places.push({ gridColumn: `${1 + 3 * i} / span 3`, gridRow: `${track}` });
       else if (count === 4) places.push({ gridColumn: `${1 + 3 * (i % 2)} / span 3`, gridRow: `${track + Math.floor(i / 2)}` });
       else if (i === 0) places.push({ gridColumn: '1 / span 4', gridRow: `${track} / span 2` });
       else places.push({ gridColumn: '5 / span 2', gridRow: `${track + i - 1}` });
@@ -307,7 +311,8 @@ export function ImageGenTool({ call }: ToolProps) {
   );
   const grid = useMemo(() => imageGenGrid(views), [views]);
   const view = views[0]!;
-  const solo = views.length === 1 && view.images.length === 1;
+  // One tile: a lone image, or one left beside calls the image cap refused.
+  const solo = grid.tiles.length === 1;
   // One fix per card, even when several frames failed for the same reason.
   const repairable =
     views.find((one) => one.error?.connectModel)?.error ??
@@ -316,6 +321,8 @@ export function ImageGenTool({ call }: ToolProps) {
 
   // The card carries no prompt and no model (R29): the frames are the content,
   // their status (busy, loading, an error) the only text.
+  // The image cap refused every call before any request: nothing was asked for, so nothing to show.
+  if (!grid.tiles.length) return null;
   if (views.length === 1 && !view.images.length) {
     // The whole call failed or stopped.
     return (
@@ -370,19 +377,20 @@ export function ImageGenTool({ call }: ToolProps) {
   }
 
   const count = grid.tiles.length;
-  const bento = grid.rows.length === 1 ? BENTO[count]! : null;
+  const bento = !grid.strip && grid.rows.length === 1 ? BENTO[count]! : null;
+  // A row's rectangle over its tile ratio: a strip row is its tiles side by side.
   const rowRects = grid.rows.map((size, row) => {
     const firstTile = grid.tiles[grid.rows.slice(0, row).reduce((sum, n) => sum + n, 0)]!;
-    return ratioValue(views[firstTile.call]!.aspectRatio) * BENTO[size]!.scale;
+    return ratioValue(views[firstTile.call]!.aspectRatio) * (grid.strip ? size : BENTO[size]!.scale);
   });
-  const placed = bento ? null : gridPlacement(grid.rows, rowRects);
+  const placed = bento ? null : gridPlacement(grid.rows, rowRects, grid.strip);
 
   return (
     // An inline-size container: the merged grid sizes its rows from its width (`cqw`).
     <figure className={cn('flex w-full flex-col gap-2', !bento && '@container')}>
       <div
-        {...(bento ? { 'data-image-gen-bento': count } : { 'data-image-gen-grid': grid.rows.join('+') })}
-        className={cn('grid min-h-0 w-full gap-1', bento ? bento.grid : 'grid-cols-6')}
+        {...(bento ? { 'data-image-gen-bento': count } : { 'data-image-gen-grid': grid.rows.join('+'), ...(grid.strip && { 'data-image-gen-strip': '' }) })}
+        className={cn('grid min-h-0 w-full gap-1', bento ? bento.grid : grid.strip ? 'grid-cols-12' : 'grid-cols-6')}
         style={placed ? placed.style : { aspectRatio: rowRects[0], width: cappedWidth(rowRects[0]!) }}
       >
         {grid.tiles.map((tile, i) => (

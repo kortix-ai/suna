@@ -5,14 +5,25 @@
  * import the other (a `index.ts` ⇄ `json-schema.ts` cycle broke bun's
  * bundler: circular top-level `const` access threw "Cannot access before
  * initialization"). `index.ts` re-exports everything here for backward
- * compatibility with existing consumers of `@kortix/manifest-schema`.
+ * compatibility with existing consumers of `@kortix/manifest-schema`. Its one
+ * import, the channel descriptor, has no imports of its own.
  */
+import { CHANNEL_PLATFORM_IDS, channelConnectorSlug } from '@kortix/shared/channel-descriptors';
 
 /** The slug reserved for the platform-shared default sandbox template. */
 export const RESERVED_SANDBOX_SLUG = 'default';
 
 /** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors). */
 export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+
+/** Regex matching a space slug (a `spaces.<slug>` key, an agent's `space`, a binding's `space`). Tighter than SLUG_RE so every space slug is also a valid room name: the space's room is the project room with that name. */
+export const SPACE_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/;
+
+/** The tab types of a space. The room tab is implicit: always first, never listed. */
+export const SPACE_TAB_TYPES = ['goals', 'apps', 'artifacts', 'files', 'board', 'app', 'artifact', 'link'] as const;
+
+/** What a space header shows, in order. Absent = every item. */
+export const SPACE_HEADER_ITEMS = ['agents', 'members', 'needs_you', 'new_session', 'ask_my_kortix'] as const;
 
 /** Regex matching every legal env-var name. */
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
@@ -89,7 +100,8 @@ export function reservedEnvNameReason(name: string): string | null {
   return null;
 }
 
-export const TRIGGER_TYPES = ['cron', 'webhook', 'event', 'app'] as const;
+/** `change_request`: a merged change request of the project fires it (`filter.base` names the branch). */
+export const TRIGGER_TYPES = ['cron', 'webhook', 'event', 'app', 'change_request'] as const;
 
 /** What a `type: monitor` entry answers since the monitor box was removed. */
 export const MONITOR_REMOVED_MESSAGE =
@@ -175,17 +187,16 @@ export const CONNECTOR_AUTH_TYPES = [
 ] as const;
 /** The exclusive owner model for connections under one connector. */
 export const CONNECTOR_AUTHORIZATION_STRATEGIES = ['project', 'user'] as const;
-/** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
-export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'telegram'] as const;
+/** Platforms a `channel` connector can target: the channel descriptor's ids (`@kortix/shared/channel-descriptors`). */
+export const CHANNEL_PLATFORMS = CHANNEL_PLATFORM_IDS;
 /**
- * Platform-owned slugs and the only provider allowed to use each — mirrors
- * connectors.ts RESERVED_SLUG_PROVIDERS so a user app can't shadow the built-in
- * catalog (the bug that made `slack thread` 404; see KORTIX-206).
+ * Platform-owned slugs and the only provider allowed to use each, so a user
+ * app can't shadow the built-in catalog (the bug that made `slack thread` 404;
+ * see KORTIX-206). Every `kortix_<platform>` of CHANNEL_PLATFORMS is here, in
+ * that order: the key order is the published JSON schema's order.
  */
 export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, string>> = {
-  kortix_slack: 'channel',
-  kortix_teams: 'channel',
-  kortix_email: 'channel',
+  ...Object.fromEntries(CHANNEL_PLATFORMS.map((platform) => [channelConnectorSlug(platform), 'channel'])),
   computer: 'computer',
 };
 export const CONNECTOR_POLICY_ACTIONS = ['always_run', 'require_approval', 'block'] as const;
@@ -280,6 +291,7 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   // Artifacts: read = gallery and viewer; write = publish and edit; manage =
   // anyone's sharing; public = public links.
   'project.artifact.read',
+  'project.artifact.comment',
   'project.artifact.write',
   'project.artifact.manage',
   'project.artifact.public',
@@ -414,6 +426,9 @@ export const HARNESS_TOOL_NAMES = [
   'websearch',
   'skill',
   'lsp',
+  // pi: the subagent tool (`task` is its alias) and the codemode tool.
+  'agent',
+  'codemode',
   // OpenCode internals: the unknown-tool fallback, code mode, plan mode.
   'invalid',
   'execute',
@@ -479,6 +494,7 @@ export const KORTIX_SKILL_NAMES = [
   'kortix-channel-memory',
   'kortix-computer',
   'kortix-connectors',
+  'kortix-design',
   'kortix-drives',
   'kortix-genui',
   'kortix-goals',

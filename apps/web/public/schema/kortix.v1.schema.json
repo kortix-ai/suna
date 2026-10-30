@@ -106,9 +106,24 @@
                 "description": "Overrides the container entrypoint. Default: the image's."
               },
               "image": {
-                "description": "An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both."
+                "description": "An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both. Neither: the platform base image."
               },
               "dockerfile": {
+                "anyOf": [
+                  {
+                    "not": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "\\S",
+                    "not": {
+                      "pattern": "^/|(^|/)\\.\\.($|/)"
+                    }
+                  }
+                ],
                 "description": "A repository path to a Dockerfile. `kortix validate` lints it: no `COPY` from the repository, no `RUN` heredoc, a Debian-family base image."
               },
               "cpu": {
@@ -130,57 +145,42 @@
                 "type": "boolean",
                 "default": false,
                 "description": "`true`: Docker runs inside the sandbox."
+              },
+              "residential_proxy": {
+                "description": "`true`, or `{ country: us }`: the sandbox's web traffic leaves through a residential IP address, billed per GB from credits. Kortix hosts and package registries connect directly. Sessions start only where the deployment offers it. Not part of the image.",
+                "oneOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "country": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z]{2}$",
+                        "description": "ISO 3166-1 alpha-2 country code of the IP address."
+                      }
+                    }
+                  }
+                ]
               }
             },
-            "oneOf": [
-              {
-                "required": [
-                  "image"
-                ],
-                "properties": {
-                  "image": {
-                    "type": "string",
-                    "pattern": "\\S"
-                  }
+            "not": {
+              "required": [
+                "image",
+                "dockerfile"
+              ],
+              "properties": {
+                "image": {
+                  "type": "string",
+                  "pattern": "\\S"
                 },
-                "not": {
-                  "required": [
-                    "dockerfile"
-                  ],
-                  "properties": {
-                    "dockerfile": {
-                      "type": "string",
-                      "pattern": "\\S"
-                    }
-                  }
-                }
-              },
-              {
-                "required": [
-                  "dockerfile"
-                ],
-                "properties": {
-                  "dockerfile": {
-                    "type": "string",
-                    "pattern": "\\S",
-                    "not": {
-                      "pattern": "^/|(^|/)\\.\\.($|/)"
-                    }
-                  }
-                },
-                "not": {
-                  "required": [
-                    "image"
-                  ],
-                  "properties": {
-                    "image": {
-                      "type": "string",
-                      "pattern": "\\S"
-                    }
-                  }
+                "dockerfile": {
+                  "type": "string",
+                  "pattern": "\\S"
                 }
               }
-            ]
+            }
           },
           "description": "Named sandbox images."
         },
@@ -216,7 +216,8 @@
                   "cron",
                   "webhook",
                   "event",
-                  "app"
+                  "app",
+                  "change_request"
                 ],
                 "description": "Required in the flat form: the trigger without `on` and `run`. `type` next to `on` is an error."
               },
@@ -1236,7 +1237,7 @@
           "slug": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
-            "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email` and `computer` are reserved for the built-in connectors."
+            "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_telegram` and `computer` are reserved for the built-in connectors."
           },
           "name": {
             "type": "string",
@@ -1520,6 +1521,32 @@
               "properties": {
                 "slug": {
                   "const": "kortix_email"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "channel"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "slug": {
+                  "const": "kortix_telegram"
                 }
               }
             },
@@ -1845,6 +1872,7 @@
                     "project.room.read",
                     "project.room.write",
                     "project.artifact.read",
+                    "project.artifact.comment",
                     "project.artifact.write",
                     "project.artifact.manage",
                     "project.artifact.public",
@@ -1947,6 +1975,7 @@
                     "project.room.read",
                     "project.room.write",
                     "project.artifact.read",
+                    "project.artifact.comment",
                     "project.artifact.write",
                     "project.artifact.manage",
                     "project.artifact.public",

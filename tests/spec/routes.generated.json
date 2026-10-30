@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 965,
+  "count": 991,
   "routes": [
     {
       "method": "GET",
@@ -1232,6 +1232,30 @@
     },
     {
       "method": "POST",
+      "path": "/v1/chrome/attach"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/chrome/connections"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/chrome/connections/:id"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/chrome/connections/:id"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chrome/panel-session"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chrome/release"
+    },
+    {
+      "method": "POST",
       "path": "/v1/cli/device/decide"
     },
     {
@@ -1460,6 +1484,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/drives/:driveId/agents/:agentName/mounts"
+    },
+    {
+      "method": "GET",
       "path": "/v1/drives/:driveId/conflicts"
     },
     {
@@ -1489,6 +1517,10 @@
     {
       "method": "POST",
       "path": "/v1/drives/:driveId/files/move"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/mounts"
     },
     {
       "method": "GET",
@@ -1880,6 +1912,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/agents/:agentName/capabilities"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/agents/:agentName/config"
     },
     {
@@ -2060,6 +2096,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/artifact-comment-threads/:threadId"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/artifacts"
     },
     {
@@ -2081,6 +2121,42 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/activity"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/:commentId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/:commentId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/replies"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/context"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/send"
     },
     {
       "method": "GET",
@@ -2133,6 +2209,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/branches"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capabilities"
     },
     {
       "method": "GET",
@@ -2661,6 +2741,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/jwks.json"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/link-preview"
     },
     {
       "method": "GET",
@@ -3428,11 +3512,31 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/triggers/all"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/triggers/event-apps"
     },
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/triggers/event-types"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/triggers/runtime"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/triggers/runtime/:id"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/triggers/runtime/:id"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/triggers/runtime/:id/run"
     },
     {
       "method": "POST",

@@ -1,7 +1,9 @@
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 /**
  * `/multiplayer` copy, laid out like the home page and /security: a hero with
  * one shared-session walkthrough, four pillars, one tab per topic, the places
- * people work from, then the FAQ. English only.
+ * people work from, then the FAQ. Localized.
  *
  * Every line was checked on 2026-10-28 against the source named above its
  * block. Standing rules (kortix-brand `claims.md`): approval rules are off
@@ -65,25 +67,41 @@ export const pillars = {
       id: 'agents',
       name: 'Agents',
       line: 'The same agents for everyone.',
-      facts: ['A change reaches running sessions', 'You choose who may run each one', 'It acts as itself, not as you'],
+      facts: [
+        'A change reaches running sessions',
+        'You choose who may run each one',
+        'It acts as itself, not as you',
+      ],
     },
     {
       id: 'skills',
       name: 'Skills',
       line: 'Your playbooks, written once.',
-      facts: ['Markdown files in the project', 'One skill serves many agents', 'Edits land through review'],
+      facts: [
+        'Markdown files in the project',
+        'One skill serves many agents',
+        'Edits land through review',
+      ],
     },
     {
       id: 'memory',
       name: 'Drive and memory',
       line: 'What the company knows.',
-      facts: ['A Company folder for every member', 'Memory as Markdown files', 'Read with the folder’s rights'],
+      facts: [
+        'A Company folder for every member',
+        'Memory as Markdown files',
+        'Read with the folder’s rights',
+      ],
     },
     {
       id: 'connectors',
       name: 'Connectors',
       line: 'Connect an app once.',
-      facts: ['Share an account with the project', 'Or keep it to Only you', 'Allow, Ask or Block per action'],
+      facts: [
+        'Share an account with the project',
+        'Or keep it to Only you',
+        'Allow, Ask or Block per action',
+      ],
     },
   ],
 } as const;
@@ -169,7 +187,11 @@ export const tabs = {
 /* Tab visuals. Sample data: Arcadia, Member N. */
 export const shareOptions = [
   { id: 'private', k: 'Only you', v: 'The owner. This is the default.' },
-  { id: 'restricted', k: 'Specific people', v: 'The owner, plus the members and groups they pick.' },
+  {
+    id: 'restricted',
+    k: 'Specific people',
+    v: 'The owner, plus the members and groups they pick.',
+  },
   { id: 'project', k: 'Whole project', v: 'Every member of the project.' },
 ] as const;
 
@@ -193,11 +215,20 @@ export const agentPick = [
 export const reach = {
   private: {
     title: 'Your private session',
-    items: ['Your own Drive folder', 'Accounts set to Only you', 'Secrets set to Only you', 'Everything shared with the project'],
+    items: [
+      'Your own Drive folder',
+      'Accounts set to Only you',
+      'Secrets set to Only you',
+      'Everything shared with the project',
+    ],
   },
   shared: {
     title: 'Shared session or scheduled run',
-    items: ['The Company folder', 'Accounts shared with the project', 'Secrets for everyone in the project'],
+    items: [
+      'The Company folder',
+      'Accounts shared with the project',
+      'Secrets for everyone in the project',
+    ],
   },
   note: 'In every case, the agent also needs access to the connector or secret.',
 } as const;
@@ -210,11 +241,31 @@ export const surfaces = {
   titleMuted: 'Every surface reads the same projects and sessions.',
   items: [
     { id: 'web', k: 'Web app', v: 'The main place to work.', href: '/docs/guide#everywhere' },
-    { id: 'desktop', k: 'Desktop', v: 'Quick Entry starts a session from any app.', href: '/desktop' },
-    { id: 'mobile', k: 'Mobile', v: 'Follow sessions and get notified when one needs you.', href: '/mobile' },
-    { id: 'cli', k: 'CLI', v: 'Run sessions and review change requests from a terminal.', href: '/cli' },
+    {
+      id: 'desktop',
+      k: 'Desktop',
+      v: 'Quick Entry starts a session from any app.',
+      href: '/desktop',
+    },
+    {
+      id: 'mobile',
+      k: 'Mobile',
+      v: 'Follow sessions and get notified when one needs you.',
+      href: '/mobile',
+    },
+    {
+      id: 'cli',
+      k: 'CLI',
+      v: 'Run sessions and review change requests from a terminal.',
+      href: '/docs/developers#cli',
+    },
     { id: 'slack', k: 'Slack', v: 'Mention the bot. One thread is one session.', href: '/slack' },
-    { id: 'teams', k: 'Microsoft Teams', v: 'Mention the app in a chat or a channel.', href: '/teams' },
+    {
+      id: 'teams',
+      k: 'Microsoft Teams',
+      v: 'Mention the app in a chat or a channel.',
+      href: '/teams',
+    },
   ],
 } as const;
 
@@ -272,3 +323,23 @@ export const faqItems = [
       'Every action is recorded. When an agent acts, the row names the person it acted for. Reading, exporting and streaming the audit log depend on the plan.',
   },
 ] as const;
+
+export function localizeMarketingContent(tMarketing: import('@/i18n/translator').UiTranslator) {
+  return localizeUiCatalog(
+    {
+      hero,
+      walk,
+      pillars,
+      tabs,
+      shareOptions,
+      joinPolicies,
+      roles,
+      agentPick,
+      reach,
+      surfaces,
+      faqItems,
+    },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+}

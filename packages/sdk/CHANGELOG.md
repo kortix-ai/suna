@@ -5,6 +5,69 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (built-in skills)
+- `getBuiltinSkill(name)` and the `BuiltinSkill` / `BuiltinSkillReference` types: one skill Kortix
+  ships (`GET /v1/skills/:name`), with its description, the full SKILL.md body, the feature flag
+  that gates it, and its reference files. A built-in skill is not a file in the project's repo.
+  `getBuiltinSkill(name, { full: true })` also inlines each reference file's `content`.
+
+### Added (project catalog, project mounts)
+- `getProjectCapabilities(projectId)` and the `ProjectCapabilities` type: every tool, skill and
+  extension any agent of the project can be given (`GET /projects/:id/capabilities`).
+- `listProjectMounts(driveId)`, `projectMountsQueryOptions` and `useProjectMounts`: the Files folders
+  every new session of the project mounts (`GET /drives/:driveId/mounts`).
+- `FeatureFlagView.wip`: the flag is work in progress and not recommended yet. Optional.
+
+### Added (agent mounts)
+- `listAgentMounts(driveId, agentName)`, `agentMountsQueryOptions` and `useAgentMounts`, with the
+  `AgentMount` and `AgentMountPlan` types: the Files folders a new session of an agent mounts, at
+  which `/drives/...` path, read-only or not, and through the agent's own grant or the project's
+  (`GET /drives/:driveId/agents/:agentName/mounts`).
+
+### Added (spaces)
+- Spaces are channels: `kortix.yaml` `spaces.<slug>` (label, description, order, `header`, `tabs`) and
+  `agents.<name>.space`. `ProjectConfigSummary.spaces`, each agent's `space`, and `AgentConfigBlock.space`.
+- Types `ProjectSpace`, `SpaceTab`, `SpaceTabType`, `SpaceBlock`, `SpaceHeaderItem`, `SpaceGroup` and
+  `ResourceBinding`; helpers `listSpaces`, `groupBySpace`, `bindingSpace`, `agentsInSpace`, `spaceTabs`,
+  `spaceTabKey`, `spaceHeader`, and the constants `PROJECT_WIDE_SPACE`, `DEFAULT_SPACE_TABS`,
+  `DEFAULT_SPACE_HEADER`.
+
+### Added (portrait image grids)
+- `ImageGenGrid.strip`: `true` when the run's first call asks for portrait images (taller than
+  wide). Every row of a strip is its tiles side by side, up to four, the rows as even as they split
+  (5 = 3+2, 7 = 4+3, 10 = 4+3+3), and `imageGenGrid(views).rows` follows that split. Before, a
+  portrait run took the bento rows: the large tile of a row of three was about 1.19 × the grid's
+  width tall, and a run of ten 9:16 images took about four screens.
+- `ImageGenView.error.limit`: `'turn'` or `'session'` when the tool's own image cap refused the
+  whole call before any request (`Image limit for this turn reached …`). `imageGenGrid` gives such
+  a call no slot, and a host draws nothing for it. Before, each refused prompt took a grid slot that
+  showed the refusal text.
+
+### Changed (no v1 transcript reads, P8.3)
+- No hook and no SDK read sends `GET …/transcript` any more. `useSession`, `useSessionSync`
+  (root, `savedChild`, turn end, older pages), `readSavedSessionCopy` and
+  `loadSessionExportMessages` read only the session log (`GET …/log`). A 404 with
+  `code: 'session_log_missing'` keeps the session on the log with nothing in it. A failed read (a
+  5xx, the network, a 404 without a code, an invalid page) keeps the copy on screen and re-reads
+  the page after 2 s, 10 s and 30 s, or after the API's `Retry-After` (at most 60 s). Without a log
+  in the store, `useSession().hasOlder` / `loadOlder` page the runtime. Before, a 404 without a
+  code or a failed read fell back to the v1 saved copy, and `useSessionSync` re-read the v1 copy
+  3 s after each turn end.
+- `readSavedSessionCopy` returns `envelope: null` always; `SavedSessionCopy.envelope` is
+  deprecated.
+- `loadSessionExportMessages` throws when the log answers no page and the runtime has no
+  messages, instead of reading the v1 copy.
+- The deprecated v1 reads (`getSessionTranscript`, `getSessionTranscriptSync`, `transcript`,
+  `transcriptSync`) stay exported for older code; nothing in the SDK calls them.
+
+### Added (channel access for any chat platform)
+- `listChannelUsers`, `allowChannelUser`, `removeChannelUser`, `dismissChannelAccessRequest` and
+  `getChannelUserPhoto`: the allowed users and access requests of a chat platform's bot, keyed by
+  `platform: ChannelAccessPlatform` (`'telegram'` today). They call the same routes as the Telegram
+  functions, which keep their signatures and error texts.
+- The types `ChannelAccessPlatform`, `ChannelUser`, `ChannelAccessRequest`, `ChannelUsers` and
+  `ChannelAccessList` (`allowed_user_ids?`, `access_request_count?`: what an edit returns).
+
 ### Added (image generation card)
 - `imageGenView(call, live?)` and the `ImageGenView` / `ImageGenPhase` types: what an `image_gen`
   card draws from its `ToolCallBlock`, for any image model and for one to four images per call.
@@ -96,6 +159,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `getPublicResponse` and the `PublicResponse` type: the anonymous read of a shared response
   (`GET /public/responses/:token`); `prompt` is null unless the sharer included it. Throws `HostBoundaryError` with `status` 404 or 410.
 
+### Changed (generative UI is always on)
+- `FeatureFlagKey` `'genui'` is deprecated and no longer a flag: absent from `FEATURE_FLAG_KEYS`
+  and from the feature-flag catalog. The API sends `experimental.genui: true` for every project,
+  and `useFeatureFlag(id, 'genui')` reports `true`. `KortixProject.experimental.genui` is optional
+  in the type.
+
 ### Changed (pi runs every new session; OpenCode is sunset)
 - `FeatureFlagKey` `'pi_harness'` is deprecated and no longer a flag: absent from `FEATURE_FLAG_KEYS`
   and from the feature-flag catalog. The API sends `experimental.pi_harness: true` for every
@@ -115,9 +184,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the feature-flag catalog. The API sends `experimental.session_log: true` for every project, so
   `useFeatureFlag(id, 'session_log')` reports `true` once the project detail loads, as before.
   `KortixProject.experimental.session_log` is optional in the type.
-- `GET …/sessions/:id/log` answers `503` `{ code: 'session_log_converting' }` with `Retry-After: 60`
-  for an old session whose history is still only in the v1 mirror and over the conversion size cap;
-  retry after the delay.
+- `GET …/sessions/:id/log` no longer answers `503` `{ code: 'session_log_converting' }`: the API
+  stopped converting the v1 mirror on a read (Session Log Plan P8.2, Release B2). A session with no
+  stored log answers `404` `{ code: 'session_log_missing' }`. A client that still retries a `503`
+  after `Retry-After` keeps working.
 
 ### Added (custom LLM providers)
 - `listCustomLlmProviders(projectId)`, `putCustomLlmProvider(projectId, providerId, input)` and

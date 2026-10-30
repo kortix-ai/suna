@@ -1,6 +1,7 @@
 // Projects — project CRUD, detail, feature flags, warm pool, onboarding.
 
 import type { CatalogModel } from '@kortix/llm-catalog';
+import type { ManifestSpace } from './manifest-spaces';
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import { retiredEndpointError } from '../../http/api/errors';
 import type { SandboxProviderName } from '../platform-client/types';
@@ -25,7 +26,7 @@ import {
  * the same list, so other packages can assert the two have not drifted.
  *
  * `review_center`, `agent_tunnel`, `session_transcript_history`, `teams`,
- * `config_releases`, `apps`, `llm_gateway`, `pi_harness`, `agentmail_email`, `connectors_v2` and `connectors_api_discover` are deprecated. `agent_tunnel` graduated like
+ * `config_releases`, `apps`, `llm_gateway`, `pi_harness`, `genui`, `agentmail_email`, `connectors_v2` and `connectors_api_discover` are deprecated. `agent_tunnel` graduated like
  * `review_center` below: a paired computer is a connector account and needs no
  * flag. So did `session_transcript_history`: every session saves its
  * transcript and shows it while its computer is off. And `teams`: every
@@ -33,7 +34,9 @@ import {
  * runs its base branch's config release. And `apps`: Apps is generally
  * available — every project can create and deploy Apps. And `llm_gateway`:
  * the LLM gateway is the only model path for every project. And `pi_harness`:
- * every new session runs pi. And `agentmail_email`: every project can
+ * every new session runs pi. And `genui`: generative UI is on for every
+ * project, and every session lists the kortix-genui system skill.
+ * And `agentmail_email`: every project can
  * connect an email inbox. And `connectors_v2` with `connectors_api_discover`:
  * the Kortix connectors catalog is the only connectors path; the API sends a
  * constant `true` for both.
@@ -74,6 +77,7 @@ export type FeatureFlagKey =
   | 'pooled_provider_secrets'
   /** @deprecated Graduated — every new session runs pi; OpenCode is sunset. The API sends `true` for every project. Removed in the next major. */
   | 'pi_harness'
+  /** @deprecated Graduated — generative UI is on for every project. The API sends `true` for every project. Removed in the next major. */
   | 'genui'
   /** @deprecated Graduated — every session runs its base branch's config release. Removed in the next major. */
   | 'config_releases'
@@ -98,14 +102,17 @@ export type FeatureFlagKey =
   | 'goals'
   | 'workspace_volume'
   | 'artifacts'
+  | 'artifact_comments'
   /** The email channel: a Resend inbox that starts and continues sessions. Experimental, off by default. */
   | 'email_channel'
   /** Session groups: named folders of the project's sessions that every member shares. Experimental, off by default. */
   | 'session_groups'
+  /** Kortix in Chrome: a session drives its owner's own Chrome through the extension. Experimental; on where the platform offers it. */
+  | 'chrome'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
-/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `pi_harness`) sends a constant `true`. */
+/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `pi_harness`, `genui`) sends a constant `true`. */
 type GraduatedFeatureFlagKey =
   | 'agent_tunnel'
   | 'teams'
@@ -121,6 +128,7 @@ type GraduatedFeatureFlagKey =
   | 'ephemeral_sandboxes'
   | 'session_log'
   | 'pi_harness'
+  | 'genui'
   | 'agentmail_email'
   | 'monitors'
   | 'connectors_v2'
@@ -140,7 +148,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'warm_sessions',
   'secrets_egress',
   'pooled_provider_secrets',
-  'genui',
   'us_region',
   'event_triggers',
   'notification_center',
@@ -152,8 +159,10 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'goals',
   'workspace_volume',
   'artifacts',
+  'artifact_comments',
   'email_channel',
   'session_groups',
+  'chrome',
 ] as const;
 
 /**
@@ -183,6 +192,8 @@ export interface FeatureFlagView {
    * `403` with `feature_operator_only`. Absent on servers older than this field.
    */
   operator_only?: boolean;
+  /** Work in progress: not recommended yet. Absent on servers older than this field. */
+  wip?: boolean;
   /**
    * Always `project`: every flag is set per project. A server from
    * 2026-10-12 sent `organization` for `volumes` and the withdrawn `stateless_sessions`.
@@ -266,6 +277,10 @@ export interface ProjectConfigSummary {
   default_agent?: string | null;
   /** @deprecated Use `default_agent`. */
   open_code_default_agent: string | null;
+  /** Which built-in agents the project runs (`builtin_agents` in kortix.yaml;
+   *  absent there = on). `my_kortix` is My Kortix, the agent named `meta`.
+   *  Absent from an older API. */
+  builtin_agents?: { my_kortix: boolean };
   agent_discovery: 'opencode' | 'declarative';
   agents: Array<{
     name: string;
@@ -286,6 +301,9 @@ export interface ProjectConfigSummary {
     platform?: boolean;
     /** Agent-specific sandbox template. null or absent inherits the project default. */
     sandbox?: string | null;
+    /** The space from `kortix.yaml` `agents.<name>.space`. Grouping only.
+     *  null/absent is Project-wide (see `groupBySpace`). */
+    space?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
      *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
      *  OpenCode-discovered agents (not governed by `agents:`). */
@@ -305,6 +323,9 @@ export interface ProjectConfigSummary {
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
   env: { required: string[]; optional: string[] };
+  /** The spaces from `kortix.yaml` top-level `spaces:`. Absent on older
+   *  servers. `listSpaces(config)` adds the ones agents name. */
+  spaces?: ManifestSpace[];
 }
 
 export interface ProjectDetail {

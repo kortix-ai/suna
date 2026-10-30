@@ -25,6 +25,7 @@ import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flag
 // The request reader `requestAuditContext` lives in `middleware/request-audit.ts`.
 // Re-exported here so every importer and mock keeps working.
 export { requestAuditContext } from '../../middleware/request-audit';
+import { CHANNEL_ACCESS_PLATFORMS } from '../../shared/channel-access-platforms';
 import { normalizeJsonObject } from '../../shared/json';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
@@ -341,15 +342,17 @@ export function serializeProject(
     // and SDKs from before then read false as the removed native model mode.
     // `session_log` graduated on 2026-10-22 and stays `true` too: older SDKs, CLIs
     // and mobile builds read false as "serve the v1 transcript". `pi_harness`
-    // graduated on 2026-10-23: every new session runs pi. `connectors_v2` and
-    // `connectors_api_discover` graduated on 2026-10-24: older SDKs and hosts
-    // read false as "show the legacy catalog".
+    // graduated on 2026-10-23: every new session runs pi. `genui` graduated on
+    // 2026-10-24: older web, SDK and mobile clients render blocks only while it is true.
+    // `connectors_v2` and `connectors_api_discover` graduated on 2026-10-24: older SDKs and
+    // hosts read false as "show the legacy catalog".
     experimental: {
       ...resolveFeatureFlags(row.metadata),
       apps: true,
       llm_gateway: true,
       session_log: true,
       pi_harness: true,
+      genui: true,
       connectors_v2: true,
       connectors_api_discover: true,
     },
@@ -391,9 +394,10 @@ export function serializeProject(
 
 export function publicProjectMetadata(metadata: unknown): Record<string, unknown> {
   if (!metadata || typeof metadata !== 'object') return {};
-  // Telegram allowed user ids and access requests are personal data: only the
-  // Telegram channel routes serve them.
-  const { telegram: _telegram, ...source } = metadata as Record<string, unknown>;
+  // Channel allowed user ids and access requests are personal data: only the
+  // channel access routes serve them.
+  const source = { ...(metadata as Record<string, unknown>) };
+  for (const platform of CHANNEL_ACCESS_PLATFORMS) delete source[platform];
   if (!source.git || typeof source.git !== 'object') return source;
   const git = source.git as Record<string, unknown>;
   if (!Object.hasOwn(git, 'fast_boot')) return source;
@@ -893,6 +897,7 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
     daytona_state: t.daytonaState,
     provider_state: t.providerState,
     ready: t.ready,
+    residential_proxy: t.residentialProxy,
     ...(t.providerCoverage ? { provider_coverage: t.providerCoverage } : {}),
   };
 }

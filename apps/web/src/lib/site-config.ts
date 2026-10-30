@@ -94,7 +94,7 @@ export const siteConfig = {
     ] as NavLink[],
   },
   hero: {
-    description: 'Kortix – the open-source AI Operating System.',
+    description: 'Kortix CompanyOS – the open-source operating system for your company.',
   },
   footerLinks: [
     {

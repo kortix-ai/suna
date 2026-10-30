@@ -1,4 +1,7 @@
 'use client';
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { useTranslations } from '@/i18n/use-translations';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 
 import Link from '@/components/site-link';
 import { YamlLine } from '@/features/marketing/code-panel';
@@ -17,7 +20,7 @@ import {
 import { useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
-import { hero, shipped, shipTerminal, walk, walkFiles, type Excerpt, type WalkStep } from './model';
+import { localizeMarketingContent as localizeModel, type Excerpt, type WalkStep } from './model';
 
 /*
  * The /framework hero, in the home page's SandBandHero layout: the two-tone
@@ -123,6 +126,8 @@ function Row({ k, children }: { k: string; children: ReactNode }) {
 /* What Kortix runs from each excerpt, drawn like the product's own surfaces. */
 
 function AgentCard() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   return (
     <div className="flex flex-col gap-5 p-5">
       <div className="flex items-center gap-3">
@@ -130,8 +135,10 @@ function AgentCard() {
           <RobotIcon className="size-5" aria-hidden />
         </span>
         <div className="min-w-0">
-          <p className="text-foreground font-mono text-sm font-medium">eng-triage</p>
-          <p className="text-muted-foreground text-sm">Triages every new GitHub issue.</p>
+          <p className="text-foreground font-mono text-sm font-medium">
+            {tMarketing('textc055fa5fff72')}
+          </p>
+          <p className="text-muted-foreground text-sm">{tMarketing('textf98ee81bceda')}</p>
         </div>
       </div>
       <Row k="Tools">
@@ -143,80 +150,97 @@ function AgentCard() {
       <Row k="Skills">
         <Chips items={['triage-issue']} mono />
       </Row>
+      <Row k="Extensions">
+        <Chips items={['triage-policy']} mono />
+      </Row>
       <p className="text-muted-foreground flex items-center gap-2 border-t pt-4 text-sm">
         <GitBranchIcon className="size-4 shrink-0" aria-hidden />
-        The repository in /workspace, on its own branch
+        {tMarketing('text9fad6f07633c')}
       </p>
     </div>
   );
 }
 
 function ApprovalCard() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { shipped } = localizeModel(tMarketing);
+
   return (
     <div className="flex flex-col gap-4 p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <code className="text-foreground font-mono text-sm">linkedin.create_post</code>
         <span className="bg-kortix-yellow/15 text-foreground inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 text-sm font-medium">
           <span aria-hidden className="bg-kortix-yellow size-1.5 rounded-full" />
-          Needs approval
+          {tMarketing('textdb0e960b68b5')}
         </span>
       </div>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
-        <dt className="text-muted-foreground font-mono text-xs leading-5">agent</dt>
-        <dd className="text-foreground font-mono text-xs leading-5">marketing</dd>
-        <dt className="text-muted-foreground font-mono text-xs leading-5">text</dt>
-        <dd className="text-foreground min-w-0">
-          This week we shipped a faster checkout for every Arcadia order…
+        <dt className="text-muted-foreground font-mono text-xs leading-5">
+          {tMarketing('textd4f0bc5a29de')}
+        </dt>
+        <dd className="text-foreground font-mono text-xs leading-5">
+          {tMarketing('texte2a530e251d3')}
         </dd>
+        <dt className="text-muted-foreground font-mono text-xs leading-5">
+          {tMarketing('text982d9e3eb996')}
+        </dt>
+        <dd className="text-foreground min-w-0">{tMarketing('textde7ebd226449')}</dd>
       </dl>
       <div className="flex flex-wrap items-center gap-2 border-t pt-4">
         {/* A picture of the card, not a control: the labels are not buttons. */}
         <span className="bg-foreground text-background rounded-md px-3 py-1.5 text-sm font-medium">
-          Approve
+          {tMarketing('text6007acbe30b2')}
         </span>
         <span className="text-foreground rounded-md border px-3 py-1.5 text-sm font-medium">
-          Deny
+          {tMarketing('text05a2d7332eb9')}
         </span>
-        <span className="text-muted-foreground ms-auto text-xs">Expires in 24 h</span>
+        <span className="text-muted-foreground ms-auto text-xs">
+          {tMarketing('textdd9f8e935ed2')}
+        </span>
       </div>
-      <p className="text-muted-foreground text-sm">
-        The login stays in Kortix. The computer never holds it.
-      </p>
+      <p className="text-muted-foreground text-sm">{tMarketing('text66a1e0999795')}</p>
     </div>
   );
 }
 
 function SessionCard() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
   return (
     <div className="flex flex-col gap-4 p-5">
       <div className="flex items-center gap-2">
         <CalendarBlankIcon className="text-muted-foreground size-4" aria-hidden />
-        <span className="text-foreground text-sm font-medium">Tuesday 10:00, Europe/Berlin</span>
+        <span className="text-foreground text-sm font-medium">
+          {tMarketing('text0c9edb438b6e')}
+        </span>
       </div>
       <div className="flex flex-col gap-3 rounded-md border p-4">
         <div className="flex items-start justify-between gap-3">
           <p className="text-foreground text-sm font-medium text-pretty">
-            Draft this week’s LinkedIn post from merged pull requests.
+            {tMarketing('textb8a8023af3cf')}
           </p>
           <span className="text-foreground flex shrink-0 items-center gap-1.5 text-xs">
             <span aria-hidden className="bg-kortix-green size-1.5 rounded-full" />
-            Running
+            {tMarketing('textf4ccae29e1bb')}
           </span>
         </div>
         <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs">
-          <span>agent: marketing</span>
-          <span>trigger: weekly-post</span>
+          <span>{tMarketing('textb6b779e41308')}</span>
+          <span>{tMarketing('texta17bcc0bdbe1')}</span>
         </div>
       </div>
-      <p className="text-muted-foreground text-sm">A new session, on its own cloud computer.</p>
+      <p className="text-muted-foreground text-sm">{tMarketing('text62e4d6cd9c52')}</p>
     </div>
   );
 }
 
 function ShippedCard() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { shipped } = localizeModel(tMarketing);
+
   return (
     <div className="flex flex-col gap-4 p-5">
-      <p className="text-foreground text-sm font-medium">arcadia · main</p>
+      <p className="text-foreground text-sm font-medium">{tMarketing('text03199169b217')}</p>
       <ul className="flex flex-col divide-y">
         {shipped.map((row) => (
           <li key={row.k} className="flex flex-col gap-1 py-2.5 first:pt-0 last:pb-0">
@@ -227,13 +251,13 @@ function ShippedCard() {
       </ul>
       <p className="text-muted-foreground flex items-center gap-2 text-sm">
         <CheckIcon className="text-kortix-green size-4 shrink-0" weight="bold" aria-hidden />
-        Live for every new session
+        {tMarketing('text446559c1e209')}
       </p>
     </div>
   );
 }
 
-const RESULT: Record<WalkStep['id'], { title: string; body: () => ReactNode }> = {
+const sourceRESULT: Record<WalkStep['id'], { title: string; body: () => ReactNode }> = {
   agents: { title: 'Customize · Agents', body: () => <AgentCard /> },
   connectors: { title: 'Review · Approvals', body: () => <ApprovalCard /> },
   triggers: { title: 'Sessions', body: () => <SessionCard /> },
@@ -253,6 +277,14 @@ function Arrow() {
 }
 
 function Walkthrough() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { RESULT } = localizeUiCatalog(
+    { RESULT: sourceRESULT },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+  const { shipTerminal, walk, walkFiles } = localizeModel(tMarketing);
+
   const reduced = Boolean(useReducedMotion());
   const [selected, setSelected] = useState(0);
   const [held, setHeld] = useState(false);
@@ -286,7 +318,7 @@ function Walkthrough() {
       <div className="flex flex-col items-center gap-5">
         <div
           role="tablist"
-          aria-label="From kortix.yaml to a running agent"
+          aria-label={tMarketing('textdf4e708536e6')}
           onKeyDown={onKeyDown}
           className="flex flex-wrap justify-center gap-2"
         >
@@ -330,14 +362,14 @@ function Walkthrough() {
         <div key={`file-${step.id}`} className={cn('flex min-w-0', fade)}>
           {step.id === 'ship' ? (
             <Pane
-              title="terminal · arcadia"
+              title={tMarketing('text204d33e194d5')}
               icon={<TerminalIcon className="size-4 shrink-0" aria-hidden />}
             >
               <Terminal lines={shipTerminal} />
             </Pane>
           ) : (
             <Pane
-              title="arcadia / kortix.yaml"
+              title={tMarketing('textc09203535f8d')}
               icon={<FileTextIcon className="size-4 shrink-0" aria-hidden />}
             >
               <YamlExcerpt excerpt={walkFiles[step.id]} />
@@ -359,6 +391,9 @@ function Walkthrough() {
 }
 
 export function FrameworkHero() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { hero } = localizeModel(tMarketing);
+
   return (
     <section id="hero" className="relative">
       <div className="relative flex flex-col gap-7.5 px-8 pt-32 pb-18 lg:px-28 lg:pt-40">
@@ -374,11 +409,13 @@ export function FrameworkHero() {
         <div className="flex flex-wrap gap-2.5 pt-2">
           <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>
             <a href="https://github.com/kortix-ai/suna" target="_blank" rel="noreferrer">
-              View on GitHub
+              {tMarketing('text20672423d716')}
             </a>
           </MarketingButton>
           <MarketingButton size="md" className="hit-area-y-1" asChild>
-            <Link href="/docs/developers#kortixyaml-reference">Read the kortix.yaml reference</Link>
+            <Link href="/docs/developers#kortixyaml-reference">
+              {tMarketing('text6773a5e43e46')}
+            </Link>
           </MarketingButton>
         </div>
       </div>

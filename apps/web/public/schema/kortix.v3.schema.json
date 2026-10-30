@@ -128,9 +128,24 @@
                 "description": "Overrides the container entrypoint. Default: the image's."
               },
               "image": {
-                "description": "An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both."
+                "description": "An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both. Neither: the platform base image."
               },
               "dockerfile": {
+                "anyOf": [
+                  {
+                    "not": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "\\S",
+                    "not": {
+                      "pattern": "^/|(^|/)\\.\\.($|/)"
+                    }
+                  }
+                ],
                 "description": "A repository path to a Dockerfile. `kortix validate` lints it: no `COPY` from the repository, no `RUN` heredoc, a Debian-family base image."
               },
               "cpu": {
@@ -152,57 +167,42 @@
                 "type": "boolean",
                 "default": false,
                 "description": "`true`: Docker runs inside the sandbox."
+              },
+              "residential_proxy": {
+                "description": "`true`, or `{ country: us }`: the sandbox's web traffic leaves through a residential IP address, billed per GB from credits. Kortix hosts and package registries connect directly. Sessions start only where the deployment offers it. Not part of the image.",
+                "oneOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "country": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z]{2}$",
+                        "description": "ISO 3166-1 alpha-2 country code of the IP address."
+                      }
+                    }
+                  }
+                ]
               }
             },
-            "oneOf": [
-              {
-                "required": [
-                  "image"
-                ],
-                "properties": {
-                  "image": {
-                    "type": "string",
-                    "pattern": "\\S"
-                  }
+            "not": {
+              "required": [
+                "image",
+                "dockerfile"
+              ],
+              "properties": {
+                "image": {
+                  "type": "string",
+                  "pattern": "\\S"
                 },
-                "not": {
-                  "required": [
-                    "dockerfile"
-                  ],
-                  "properties": {
-                    "dockerfile": {
-                      "type": "string",
-                      "pattern": "\\S"
-                    }
-                  }
-                }
-              },
-              {
-                "required": [
-                  "dockerfile"
-                ],
-                "properties": {
-                  "dockerfile": {
-                    "type": "string",
-                    "pattern": "\\S",
-                    "not": {
-                      "pattern": "^/|(^|/)\\.\\.($|/)"
-                    }
-                  }
-                },
-                "not": {
-                  "required": [
-                    "image"
-                  ],
-                  "properties": {
-                    "image": {
-                      "type": "string",
-                      "pattern": "\\S"
-                    }
-                  }
+                "dockerfile": {
+                  "type": "string",
+                  "pattern": "\\S"
                 }
               }
-            ]
+            }
           },
           "description": "Named sandbox images."
         },
@@ -237,7 +237,8 @@
                   "cron",
                   "webhook",
                   "event",
-                  "app"
+                  "app",
+                  "change_request"
                 ],
                 "description": "Required in the flat form: the trigger without `on` and `run`. `type` next to `on` is an error."
               },
@@ -1258,7 +1259,7 @@
           "slug": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
-            "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email` and `computer` are reserved for the built-in connectors."
+            "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_telegram` and `computer` are reserved for the built-in connectors."
           },
           "name": {
             "type": "string",
@@ -1630,6 +1631,32 @@
               "properties": {
                 "slug": {
                   "const": "kortix_email"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "channel"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "slug": {
+                  "const": "kortix_telegram"
                 }
               }
             },
@@ -2337,6 +2364,22 @@
               "parent": {
                 "type": "string",
                 "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+              },
+              "space": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+                "description": "The space the App is grouped in. Grouping only."
+              },
+              "agent": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                "description": "The agent that owns the App. Grouping only."
               }
             },
             "additionalProperties": false
@@ -2451,6 +2494,8 @@
             "websearch",
             "skill",
             "lsp",
+            "agent",
+            "codemode",
             "invalid",
             "execute",
             "plan_exit"
@@ -2644,6 +2689,206 @@
           "pattern": "^[0-9]+[mhd]$",
           "default": "24h",
           "description": "An integer and `m`, `h` or `d`, such as `30m`, `4h` or `7d`. Kortix clamps it to 5 minutes through 30 days."
+        }
+      },
+      "additionalProperties": false
+    },
+    "spaces": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Spaces: channels with a room (always the first tab) and configured tabs. Agents join one with `agents.<name>.space`.",
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "order": {
+            "type": "number"
+          },
+          "header": {
+            "type": "array",
+            "description": "What the space header shows, in order. Absent: every item.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "agents",
+                "members",
+                "needs_you",
+                "new_session",
+                "ask_my_kortix"
+              ]
+            }
+          },
+          "tabs": {
+            "type": "array",
+            "description": "The tabs after the room, in order. Absent: the default set.",
+            "items": {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "goals",
+                    "apps",
+                    "artifacts",
+                    "files",
+                    "board",
+                    "app",
+                    "artifact",
+                    "link"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "files: a project folder path."
+                },
+                "app": {
+                  "type": "string",
+                  "description": "app: a Kortix App slug."
+                },
+                "artifact": {
+                  "type": "string",
+                  "description": "artifact: an artifact_id."
+                },
+                "url": {
+                  "type": "string",
+                  "pattern": "^https?://",
+                  "description": "link: an http(s) url."
+                },
+                "embed": {
+                  "type": "boolean",
+                  "description": "link: embed the page in a sandboxed frame."
+                },
+                "blocks": {
+                  "type": "array",
+                  "description": "board: the grid blocks, in order.",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "chat",
+                          "artifact",
+                          "app",
+                          "iframe",
+                          "text"
+                        ]
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "room": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "app": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "files"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "path"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "app"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "app"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "artifact"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "artifact"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "link"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "url"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "builtin_agents": {
+      "type": "object",
+      "description": "Built-in agents the platform adds to this project. Absent = on.",
+      "properties": {
+        "my_kortix": {
+          "type": "boolean",
+          "default": true,
+          "description": "My Kortix, the built-in agent you talk to. false removes it from this project."
         }
       },
       "additionalProperties": false
@@ -2869,39 +3114,59 @@
             ]
           },
           "skills": {
-            "description": "Registered skills and Kortix skills the agent may load.",
+            "description": "Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. \"all\", \"none\" (default), a list of names, or { exclude: [names] } for every name but those.",
             "oneOf": [
               {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "\\S"
-                }
-              },
-              {
-                "type": "string",
-                "anyOf": [
+                "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
+                "oneOf": [
                   {
-                    "enum": [
-                      "all",
-                      "*",
-                      "none",
-                      ""
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  {
+                    "type": "string",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "all",
+                          "*",
+                          "none",
+                          ""
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                      },
+                      {
+                        "pattern": "^\\s*$(?![\\s\\S])"
+                      }
                     ]
-                  },
-                  {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
-                  },
-                  {
-                    "pattern": "^\\s*$(?![\\s\\S])"
                   }
                 ]
+              },
+              {
+                "type": "object",
+                "required": [
+                  "exclude"
+                ],
+                "properties": {
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  }
+                },
+                "additionalProperties": false
               }
-            ],
-            "default": "none"
+            ]
           },
           "subagents": {
-            "description": "Agents this agent may start with the `task` tool: declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent.",
+            "description": "Agents this agent may start with the `agent` tool (alias `task`): declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent.",
             "oneOf": [
               {
                 "type": "array",
@@ -2965,36 +3230,56 @@
             "default": "none"
           },
           "extensions": {
-            "description": "Registered extensions that a session of the agent loads.",
+            "description": "Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. \"all\", \"none\" (default), a list of names, or { exclude: [names] } for every name but those.",
             "oneOf": [
               {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "\\S"
-                }
-              },
-              {
-                "type": "string",
-                "anyOf": [
+                "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
+                "oneOf": [
                   {
-                    "enum": [
-                      "all",
-                      "*",
-                      "none",
-                      ""
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  {
+                    "type": "string",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "all",
+                          "*",
+                          "none",
+                          ""
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                      },
+                      {
+                        "pattern": "^\\s*$(?![\\s\\S])"
+                      }
                     ]
-                  },
-                  {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
-                  },
-                  {
-                    "pattern": "^\\s*$(?![\\s\\S])"
                   }
                 ]
+              },
+              {
+                "type": "object",
+                "required": [
+                  "exclude"
+                ],
+                "properties": {
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  }
+                },
+                "additionalProperties": false
               }
-            ],
-            "default": "none"
+            ]
           },
           "connectors": {
             "description": "Connector slugs the agent may call.",
@@ -3167,6 +3452,7 @@
                     "project.room.read",
                     "project.room.write",
                     "project.artifact.read",
+                    "project.artifact.comment",
                     "project.artifact.write",
                     "project.artifact.manage",
                     "project.artifact.public",
@@ -3217,6 +3503,11 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
             "description": "A template slug, or `default` for the platform image. Default: `sandbox.default`."
+          },
+          "space": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+            "description": "The space the agent works in (a key of the top-level `spaces` map, or a bare slug). Grouping only."
           },
           "network_egress": {
             "type": "object",

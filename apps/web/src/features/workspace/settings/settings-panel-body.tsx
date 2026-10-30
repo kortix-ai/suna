@@ -25,6 +25,7 @@ import { useIsMobile, cn, hasOpenFloatingLayer, hasOpenNestedDialog } from '@kor
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useSettingsPanelStore, type MembersTab } from '@kortix/ui/internal/stores/settings-panel-store';
 import { getProjectDetail } from '@kortix/sdk';
+import { isTextEntry } from './text-entry';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -53,6 +54,8 @@ import { SessionsTab } from './tabs/sessions-tab';
 import { SnapshotsTab } from '@kortix/ui/customize/settings/tabs/snapshots-tab';
 import { TokensTab } from '@kortix/ui/customize/settings/tabs/tokens-tab';
 import type { RailGroup, RailItem } from '@kortix/ui/customize/settings/type';
+import { ChromeConnectionsTab } from '@kortix/ui/customize/settings/tabs/chrome-connections-tab';
+import { useChromeOffered } from '@kortix/ui/internal/chrome/use-chrome-offered';
 import { useSettingsAccountId } from './use-settings-account-id';
 
 export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
@@ -62,6 +65,8 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   'sessions',
   'preferences',
   'connected',
+  // The browsers a person connected are theirs, in any project or none.
+  'chrome',
   // Your own API keys are yours in ONE account (the read is account-scoped —
   // see `tabs/tokens-tab.tsx`), but never in one project, so this renders with
   // or without a project open like the three above it.
@@ -164,9 +169,13 @@ export function SettingsPanelBody({ projectId }: { projectId?: string }) {
   // account-scoped tabs — see `ACCOUNT_SCOPED_SETTINGS_TABS` above.
   const resolvedAccountId = useSettingsAccountId(project?.account_id);
 
+  // Kortix in Chrome exists only where the platform switch is on (local, dev
+  // until launch): the browser list answers 404 elsewhere.
+  const chromeOffered = useChromeOffered(open);
   const isTabAllowed = useCallback(
-    (t: SettingsTab) => isSettingsTabAllowed(t, { hasProject: !!projectId }),
-    [projectId],
+    (t: SettingsTab) =>
+      isSettingsTabAllowed(t, { hasProject: !!projectId }) && (t !== 'chrome' || chromeOffered),
+    [projectId, chromeOffered],
   );
 
   const groups = useMemo(() => {
@@ -287,7 +296,8 @@ export function SettingsPanelView({
         animation="none"
         aria-describedby={undefined}
         onEscapeKeyDown={(event) => {
-          if (hasOpenFloatingLayer() || hasOpenNestedDialog()) {
+          // Escape in a text field belongs to the field (cancel a rename), not the dialog.
+          if (hasOpenFloatingLayer() || hasOpenNestedDialog() || isTextEntry(event.target)) {
             event.preventDefault();
           }
         }}
@@ -507,6 +517,7 @@ function SettingsTabPane({
     sessions: () => <SessionsTab projectId={projectId} />,
     preferences: () => <PreferencesTab />,
     connected: () => <ConnectedAccountsTab accountId={accountId} />,
+    chrome: () => <ChromeConnectionsTab />,
     tokens: () => <TokensTab accountId={accountId} />,
     credits: () => <CreditsTab accountId={accountId} />,
     plan: () => <PlanTab accountId={accountId} />,

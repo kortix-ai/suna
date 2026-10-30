@@ -33,6 +33,9 @@ const EXTENSION_PROTOCOL_PREFIXES = [
 
 const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/scripts\/inpage\.js$/,
+  // Injected extension content script; KRTX-3704's onMessage TypeError has
+  // only this source, never a first-party _next bundle or resolved source.
+  /^app:\/\/\/js\/content\.js$/,
   // CookieYes (https://www.cookieyes.com) cookie-consent SDK runtime, served
   // from its own CDN workspace directory
   // `https://cdn-cookieyes.com/client_data/<workspace-id>/…`: `script.js` is
@@ -675,8 +678,9 @@ export function isCaptchaInterceptorNoise(input: {
 
 /**
  * An injected wallet provider rejecting a pending request with the EIP-1474
- * default internal error, `{ code: -32603, message: 'Internal JSON-RPC error.' }`
- * (the wording of the wallet RPC error library). The rejected value is a plain
+ * default internal error, `{ code: -32603, message: 'Internal JSON-RPC error.' }`,
+ * or the exact missing-account error captured in KRTX-2150 (code 4001).
+ * Both use the wallet provider's own wording. The rejected value is a plain
  * object with no `stack`, so Sentry reports a frameless synthetic
  * "Object captured as promise rejection with keys: code, message" and the
  * extension-stack anchor above cannot see it. Better Stack, Kortix Frontend
@@ -694,7 +698,11 @@ function isWalletInternalRpcRejectionNoise(input: {
   if (!serialized || typeof serialized !== 'object') return false;
   const value = serialized as Record<string, unknown>;
   if (Object.keys(value).sort().join(',') !== 'code,message') return false;
-  if (value.code !== -32603 || value.message !== 'Internal JSON-RPC error.') return false;
+  // KRTX-2150 recurred with a second frameless wallet payload (2026-10-29).
+  // Match the exact pair, not EIP-1193 code 4001 alone (user rejection).
+  const internal = value.code === -32603 && value.message === 'Internal JSON-RPC error.';
+  const missingAccount = value.code === 4001 && value.message === 'wallet must has at least one account';
+  if (!internal && !missingAccount) return false;
   return !sourcesOf(input).some((source) => isBrowserBundleSource(source) || isFirstPartyResolvedSource(source));
 }
 
@@ -739,6 +747,16 @@ function isWalletProviderDisconnectedRejectionNoise(input: {
 }
 
 export const EXTENSION_RULES: readonly NoiseRule[] = [
+  {
+    // Talisman's injected page.js rejects before wallet onboarding (KRTX-3678).
+    // Require its exact message and response frame; page.js alone is ambiguous.
+    id: 'talisman-onboarding',
+    appliesTo: 'sentry',
+    match: ({ message, frames }) =>
+      normalizeString(message) === 'Talisman extension has not been configured yet. Please continue with onboarding.' &&
+      !frames.some((frame) => isFirstPartyResolvedSource(frame.filename)) &&
+      frames.some((frame) => frame.filename === 'app:///page.js' && frame.function === 'ne.handleResponse'),
+  },
   {
     id: 'injected-app-source',
     appliesTo: 'both',

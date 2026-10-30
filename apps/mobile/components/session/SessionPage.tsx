@@ -458,16 +458,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
   // The transcript, from the SDK: the saved copy first, one tail read once the
   // runtime is bound, then the live stream. The newest page only: `loadOlder`
-  // pulls the next older page (COR-144). No `mirror`: the SDK reads the saved
-  // copy with the web's one saved-history read. After the connecting view
-  // (`readSavedSessionCopy`) it answers from the copy that view read, and the
-  // snapshot `useSession` starts asks for no window: one download per open.
-  // A sub-agent reads its own window.
-  // The session log first: no v1 copy is read while the session log answers (`useSession`
-  // reads its page; the SDK's saved-copy read asks `GET …/log` before any v1 window). A
-  // sub-agent's thread loads by `useSessionLogThread`, and older pages are the log's
-  // (`GET …/log?before_seq=`). Only a session whose log answers 404 (a server older than the
-  // log) reads the v1 copy.
+  // pulls the next older page (COR-144). The saved copy is the session log
+  // (`useSession` reads its page): a sub-agent's thread loads by
+  // `useSessionLogThread`, and older pages are the log's (`GET …/log?before_seq=`).
+  // No v1 transcript (`GET …/transcript`) is read, whatever the log answers.
   const kortixSessionScope = projectId && projectSessionId ? `${projectId}/${projectSessionId}` : undefined;
   const onLog = useSessionLogRecord({ sessionId: projectSessionId ?? '' }) !== null;
   // The session stream (R5.3): while it is up, the SDK's tail and ask polls

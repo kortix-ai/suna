@@ -138,3 +138,11 @@ c16b74338b9c53744201aac00694984253a52f0e:apps/api/src/__tests__/unit-email-chann
 c16b74338b9c53744201aac00694984253a52f0e:apps/api/src/connectors/mcp-tools.json:generic-api-key:1
 c16b74338b9c53744201aac00694984253a52f0e:apps/api/src/connectors/one-click-mcp.json:generic-api-key:17
 c16b74338b9c53744201aac00694984253a52f0e:apps/api/src/connectors/one-click-mcp.json:generic-api-key:403
+# apps/api/src/__tests__/integration-held-call-store.test.ts briefly held a
+# made-up fixture credential (no Stripe key). #11123 renamed it to
+# 'test-credential'; the commit that added it stays in the release history
+# that gitleaks scans. The next two lines are the commits where this comment
+# itself quoted the fixture (#11128 on dev, its staging cherry-pick).
+5ff9561db6f034631d87e14e5da9a5e5fdf4d1d3:.gitleaksignore:stripe-access-token:142
+86568ba13c873221ae9bed0257f77d80089df580:.gitleaksignore:stripe-access-token:142
+4aedc2099e18a97b46283e64b4920d5330d34589:apps/api/src/__tests__/integration-held-call-store.test.ts:stripe-access-token:151

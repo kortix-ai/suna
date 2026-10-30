@@ -1,5 +1,7 @@
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 /**
- * Case studies for the AI OS home page and /services: eight cards in one horizontal row. No
+ * Case studies for the CompanyOS home page and /services: eight cards in one horizontal row. No
  * card links anywhere, by founder decision.
  *
  * ACCURACY AND NAMING (read before editing):
@@ -51,7 +53,12 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
   items: [
     {
       id: 'hkai-sci',
-      logo: { src: '/media/case-studies/cityu.svg', alt: 'City University of Hong Kong', width: 262, height: 147 },
+      logo: {
+        src: '/media/case-studies/cityu.svg',
+        alt: 'City University of Hong Kong',
+        width: 262,
+        height: 147,
+      },
       category: 'Research',
       org: 'Hong Kong Institute of AI for Science, City University of Hong Kong',
       title: 'SciencePal: a science agent for researchers.',
@@ -130,7 +137,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         'Candidate research agents',
         'Client and pitch materials',
         'Internal operations automated',
-        'The whole firm on one AI OS',
+        'The whole firm on one CompanyOS',
       ],
     },
     {
@@ -163,3 +170,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     },
   ],
 };
+
+export function localizeMarketingContent(tMarketing: import('@/i18n/translator').UiTranslator) {
+  return localizeUiCatalog({ caseStudies }, tMarketing, MARKETING_RELEASE_TRANSLATION_KEYS);
+}

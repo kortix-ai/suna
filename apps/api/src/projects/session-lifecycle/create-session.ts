@@ -351,6 +351,8 @@ export async function executeQueuedCreate(
   return executeCreateSession({
     attachmentSourceCommandId: row.commandId,
     createCommandId: row.commandId,
+    idempotencyKey: row.idempotencyKey,
+    artifactId: row.artifactId ?? undefined,
     source: row.source as CreateSessionCommand['source'],
     project,
     userId,
@@ -388,13 +390,32 @@ async function executeCreateSession(
     source: command.source,
     ...(command.metadata ?? {}),
   };
+  let parentActor = command.parentActor;
+  let callerSessionId = command.callerSessionId;
+  let body = command.body;
+  if (command.source === 'system:artifact-comment') {
+    const { ArtifactCommentAuthorityError, revalidateArtifactCommentCreate } = await import('../../artifacts/comment-authority');
+    try {
+      const current = await revalidateArtifactCommentCreate(command);
+      parentActor = current.actor;
+      callerSessionId = current.callerSessionId;
+      const { rebuildArtifactCommentCreatePrompt } = await import('../../artifacts/comment-delivery');
+      const reference = command.metadata!.artifactCommentDelivery as { job_id: string; target_key: string };
+      body = { ...body, initial_prompt: undefined, initialPrompt: undefined,
+        pending_prompt: { text: await rebuildArtifactCommentCreatePrompt(reference.job_id, reference.target_key), agent: command.body.agent_name } };
+    } catch (error) {
+      if (!(error instanceof ArtifactCommentAuthorityError)) throw error;
+      return { status: 'failed', retryable: false, error: { status: error.status, body: { error: error.message, code: error.code } } };
+    }
+  }
   const result = await createProjectSession({
     attachmentSourceCommandId: command.attachmentSourceCommandId,
     createCommandId: command.createCommandId,
+    artifactId: command.artifactId,
     project: command.project,
     userId: command.userId,
     requestingPrincipalType: command.requestingPrincipalType,
-    body: command.body,
+    body,
     metadata,
     extraEnvVars: command.extraEnvVars,
     request: command.request,
@@ -402,8 +423,8 @@ async function executeCreateSession(
     authType: command.authType,
     apiKeyType: command.apiKeyType,
     inSession: command.inSession,
-    callerSessionId: command.callerSessionId,
-    parentActor: command.parentActor,
+    callerSessionId,
+    parentActor,
     mayManageSystemConnections: command.mayManageSystemConnections,
   });
 
@@ -461,6 +482,8 @@ export async function applyPostCreateActions(input: {
           sessionId: input.sessionId,
           text: action.text,
           userId: action.userId ?? undefined,
+          ...(action.parts ? { parts: action.parts } : {}),
+          ...(action.overrides ? { overrides: action.overrides } : {}),
         });
         if (outcome !== 'delivered' && outcome !== 'queued') {
           return { ok: false, error: `initial prompt delivery ${outcome}` };

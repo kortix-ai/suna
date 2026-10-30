@@ -1,9 +1,9 @@
 ---
 title: Guide
-description: "A plain-language guide to Kortix, the open-source AI Operating System: every part of it, how it works and how to set it up."
+description: "A plain-language guide to Kortix CompanyOS: every part of it, how it works and how to set it up."
 ---
 
-Kortix is an open-source AI Operating System. It is two things:
+Kortix is an open-source CompanyOS. It is two things:
 
 1. **A backend framework and server for agents.** Your agents, their skills and their access are code in one git repo. Kortix runs them.
 2. **A workspace and command center for people.** Your team starts work, reviews and approves what agents do, and manages the agents from the Kortix apps.
@@ -15,7 +15,7 @@ This page covers every part of Kortix, in the order you meet it.
 - **A project is a git repo.** Kortix hosts the repo for you, or you connect your own on GitHub.
 - **`kortix.yaml` declares the project.** It lists the agents and the skills, tools, connectors and triggers they use. See [kortix.yaml reference](/docs/developers#kortixyaml-reference).
 - **Every session runs on its own isolated cloud computer.** A session never touches your laptop or another session. See [Computers](/docs/guide#computers).
-- **Triggers run agents 24/7.** A schedule, a webhook or an App event starts a session, with nobody at the keyboard. See [Automations](/docs/guide#automations).
+- **Triggers run agents 24/7.** A schedule, a webhook or an App event starts a session, with nobody at the keyboard. See [Triggers](/docs/guide#triggers).
 - **Developers build on the same backend.** The [REST API](/docs/developers#rest-api), the [CLI](/docs/developers#cli), [`@kortix/sdk`](/docs/developers#sdk) and [`@kortix/ui`](/docs/developers#kortix-ui) reach every project and session.
 
 ## A workspace for people
@@ -50,7 +50,7 @@ When an agent changes the project itself, for example a skill or its memory, it 
 | Skills | Written playbooks an agent follows for a specific task. | [Skills](/docs/guide#skills) |
 | Drive | Shared folders for people and agents, including the company's memory. | [Drive](/docs/guide#drive) |
 | Connectors | Governed access to the apps, APIs and services your team uses. | [Connectors](/docs/guide#connectors) |
-| Automations | Schedules, webhooks and app events that start agents, plus reminders. | [Automations](/docs/guide#automations) |
+| Triggers | Schedules, webhooks, events and merged change requests that start an agent or wake a session. | [Triggers](/docs/guide#triggers) |
 | Outcomes | An agent owns an objective until an independent check confirms it is met. | [Outcomes](/docs/guide#outcomes) |
 | Computers | Each session gets its own cloud computer. You can also connect your own machine. | [Computers](/docs/guide#computers) |
 | Apps | Sites, services and backends that agents build and deploy from a project. | [Apps](/docs/guide#apps) |
@@ -149,7 +149,7 @@ Roles and groups are on the [Teams](/docs/guide#teams) page.
 | Where | What is there |
 | --- | --- |
 | **New session** | Starts a session with an agent. |
-| **Customize** | Project settings, one tab each: **Agents**, **Skills**, **Connectors**, **Triggers**, **Reminders**, **Models**, **Secrets**, **Repo**, **Review**, **Members** and **Settings**. |
+| **Customize** | **My Kortix**, your **Agents**, **Review**, **Members**, **Models** and **Settings**. Settings opens **Project admin**: the project's libraries (**Connectors**, **Secrets**, **Skills**, **Tools**, **Extensions**, **Drives**, **Triggers**, **Models**, **Repo**) and its settings. |
 | **Drive** | Shared folders: **My files**, **Company**, and **All files** for admins. |
 | **Apps** | The project's Apps. |
 | **Sessions** | Your sessions. |
@@ -180,12 +180,9 @@ Access is deny-by-default. An agent gets no connector, secret, skill, App or pro
 
 ### The built-in agent
 
-Every new project starts with an agent called `kortix`. It is the default agent: a session that names no other agent runs it. It has access to all connectors, secrets, skills and Kortix permissions in the project. You can edit its instructions to fit your company.
+You talk to **My Kortix**, the built-in agent. It routes each task to the project agent made for it and runs it with your permissions.
 
-A new project also includes two helper agents:
-
-- `harness-reflector` reviews recent sessions and improves the project's instructions, skills, tools and memory. It proposes every improvement as a change request and never merges it. See [Skills](/docs/guide#skills).
-- `session-reviewer` helps it. It reviews one session and reports what went wrong.
+Every new project starts with one agent called `worker`, the general-purpose agent My Kortix routes work to. It is the default agent: a session that names no other agent runs it. It has access to all connectors, secrets, skills and Kortix permissions in the project. You can edit its instructions to fit your company. A project created before this keeps its `kortix` agent.
 
 ### Create your own agent
 
@@ -304,7 +301,7 @@ Once merged, new sessions use the improved skill. Running sessions pick it up as
 </Step>
 </Steps>
 
-Every new project includes the `harness-reflector` agent. It reviews recent sessions, then improves skills, instructions, tools and memory. It bundles its work into one change request titled `harness: …` and never merges it. A daily schedule runs it, but the schedule ships switched off. Turning it on is a one-line change to the project config, merged like any other change.
+A project may add a reflection agent: an agent that a schedule runs to review recent sessions and improve skills, instructions, tools and memory through one change request it never merges. A new project has none. The `kortix-harness-refinement` skill is its protocol.
 
 ## Apps
 
@@ -335,7 +332,7 @@ Project managers, account owners and account admins can open every App in the pr
 A server App runs in one of two modes:
 
 - **Always on.** It runs around the clock, and Kortix restarts it when it stops. Use it for live updates, background work and databases.
-- **On demand.** It stops after a quiet period. The next visitor or automation wakes it. A stopped on-demand App uses no compute.
+- **On demand.** It stops after a quiet period. The next visitor or trigger wakes it. A stopped on-demand App uses no compute.
 
 A new App is always on. A static App has nothing to run, so neither mode applies.
 
@@ -437,7 +434,7 @@ An agent can use a connector only when the agent has been given access to it. Th
 - **Everyone in the project.** A shared account that every member and every allowed agent can use.
 - **Specific people, groups, or agents.** A shared account for a chosen audience.
 
-Automations never use a private account. They need an account shared with the whole project. See [Automations](/docs/guide#automations).
+Triggers never use a private account. They need an account shared with the whole project. See [Triggers](/docs/guide#triggers).
 
 ### Set it up
 
@@ -480,11 +477,13 @@ Open **Review** → **Needs you**, follow the approval link, or use the approval
 The page shows what the app will receive, with private values hidden.
 </Step>
 <Step title="Decide">
-Choose **Approve** or **Deny**, with an optional note to the agent. The agent then continues.
+Choose **Approve** or **Deny**, with an optional note to the agent. Approve runs the action once, as the agent that asked, and Kortix resumes the agent with the result.
 </Step>
 </Steps>
 
 - An approval covers one exact action. A changed detail needs a new approval.
+- An approval runs the action once. The agent does not send it again. Kortix checks the project's rules again when it runs the action, and a **Block** rule still wins.
+- A script that signs in with a project token gets the same: Approve runs its call, and the script reads the outcome. A script with any other token must send the same call again within 15 minutes after approval.
 - A held action expires when nobody decides within 24 hours, unless your project sets another time.
 - A project manager, or the person who started the session, decides.
 - There is no "approve everything for this session". An action that must run unattended needs an **Allow** rule.
@@ -507,19 +506,34 @@ Your browser opens the Kortix consent screen. Approve the app only when you conn
 
 To remove access, open **Settings** → **Personal access keys** → **Connected apps** and select **Revoke access**.
 
-## Automations
+## Triggers
 
-<video src="/media/guide/automations.mp4" aria-label="Automations in Kortix: creating a daily scheduled trigger" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
+{/* The section was "Automations" until 2026-10-28; published links name #automations. */}
+<a id="automations" />
 
-An automation starts agent work with nobody at the keyboard. In Kortix, an automation is a **trigger**. A trigger has two parts: what starts it, and what the agent should do. Each run is a new session on its own cloud computer.
+<video src="/media/guide/automations.mp4" aria-label="Triggers in Kortix: creating a daily scheduled trigger" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
-### The kinds of trigger
+A trigger starts agent work with nobody at the keyboard. It has two parts: a **source**, what fires it, and a **target**, what a fire does.
 
-| Trigger | Starts when | Good for |
+| Source | Fires when | Good for |
 | --- | --- | --- |
-| **Schedule** | A time arrives, or a fixed period passes. | Daily reports, weekly reviews, regular checks. |
+| **Schedule** | A time arrives, or a fixed period passes (`cron`, `every`, `at`, `in`). | Daily reports, weekly reviews, regular checks. |
+| **App event** | One of your own Kortix Apps reports something. | Sources that fit none of the others. See [Apps](/docs/guide#apps). |
+| **Connector event** | Something happens in a connected app. Beta: turn on **Connector events** under **Project admin → Feature flags**. | New issues, new messages, new orders. |
 | **Webhook** | Another system sends a signed request to the trigger's address. | Form tools, payment systems, code hosts. |
-| **App event** | One of your own Kortix Apps reports something. | Sources that fit none of the above. See [Apps](/docs/guide#apps). |
+| **Change request merged** | A change request of the project merges, into one branch or any. | Release notes, a check after a deploy. |
+
+| Target | A fire | Called |
+| --- | --- | --- |
+| **Agent** | Starts a new session of that agent, on its own cloud computer. | A trigger |
+| **Session** | Wakes one session that already exists, with its full history. | A loop |
+
+Any source works with either target. A trigger lives in one of two places:
+
+- **In `kortix.yaml`**, under `triggers:`. It changes through a commit, so it is reviewed like code. The page and the API mark it **kortix.yaml**.
+- **Created at runtime**, in the database. An agent or a person creates it with one command or API call: no commit, and it is gone when you remove it. Every loop is one. The page marks it **Created at runtime**.
+
+<a id="the-kinds-of-trigger" />
 
 To react to something outside Kortix, use a webhook when the other system can send one. Otherwise, use a schedule that checks it.
 
@@ -534,7 +548,7 @@ A few rules keep this safe:
 
 - **App events are marked.** A session that an App event starts opens with a line that says the content is automated, not user input. The agent treats it as data, not as orders.
 - **Shared accounts only.** A private connector account never feeds a trigger. Use an account shared with the whole project.
-- **Nobody to ask.** If an automated session waits on a person, it waits at most 30 minutes, then stops. Use connector rules that let the needed actions run. See [Connectors](/docs/guide#connectors).
+- **Nobody to ask.** If a session that a trigger started waits on a person, it waits at most 30 minutes, then stops. Use connector rules that let the needed actions run. See [Connectors](/docs/guide#connectors).
 - **Who can see the runs.** By default, only people who manage triggers, plus account owners and admins, can open the sessions. You can choose **Selected teammates** or **Whole project** instead.
 - **One run at a time.** A schedule skips a run while its previous run is still going.
 
@@ -542,31 +556,44 @@ A few rules keep this safe:
 
 <Steps>
 <Step title="Open Triggers">
-Open your project, then **Triggers**. The tabs are **All**, **Schedules** and **Webhooks**. **App events** appears once the project has one.
+Open your project, then **Project admin → Triggers**. The tabs are **All**, **Schedules**, **Webhooks**, and one for each other source the project uses. Runtime triggers list under **Created at runtime**.
 </Step>
 <Step title="Create the trigger">
-Select **New trigger**, then **Set up manually**. Under **When**, choose a schedule or a webhook.
+Select **New trigger**, then **Set up manually**. Under **When**, choose **Schedule**, **App event**, **Connector event**, **Webhook** or **Change request merged**. A source the project cannot use yet says why and links to the fix: **Apps** when no App sends events, **Feature flags** while connector events are off. This adds the trigger to `kortix.yaml`.
 </Step>
 <Step title="Write the instruction">
 Under **Then**, write what the agent should do, and pick the agent and the model.
 </Step>
 <Step title="Create and test">
-Choose **Create trigger**. Select **Run now** to try it once.
+Choose **Create**. Select **Run now** to try it once.
 </Step>
 </Steps>
 
-A webhook also needs a signing secret, stored as a project secret.
+A webhook also needs a signing secret, stored as a project secret. A **Change request merged** trigger takes an optional branch: empty fires on every merge. In `kortix.yaml` it reads:
 
-### Reminders
+```yaml
+triggers:
+  - slug: verify-prod
+    type: change_request
+    filter: { base: main }   # optional: only merges into main
+    agent: kortix
+    prompt: "Change request #{{ change_request.number }} merged into {{ change_request.base_ref }}. Verify prod."
+```
 
-A reminder is different from a trigger. It does not start a new session. It sends a message into one session that already exists, later, once or on repeat. For example: "in 24 hours, check whether the vendor replied." The session wakes with its full history and continues. Reminders are on by default. Your project's **Reminders** page lists them.
+To create one at runtime, use the CLI: `kortix triggers add "<prompt>"` with a source flag (`--runtime --every 1h`, `--on webhook --secret-env NAME`, `--on cr-merged --cr <id>`) and a target (`--session <id>`, the default inside a session, or `--agent <name>`). `kortix triggers ls` lists both kinds; `pause`, `resume`, `run` and `rm` take a runtime id (`trigger.<hex>`) or a `kortix.yaml` slug.
 
-### Keeping automations under control
+<a id="reminders" />
+
+### Loops
+
+A loop is a trigger that wakes the session that created it. It does not start a new session. It sends a message into one session that already exists, later, once or on repeat. For example: "in 24 hours, check whether the vendor replied." The session wakes with its full history and continues. A session can also be woken by a webhook, an event or a merged change request: `kortix triggers add "…" --on cr-merged --cr <id>`. Loops are on by default (flag key `reminders`). **Project admin → Triggers** lists them under **Created at runtime**, and the session shows the triggers that wake it. `kortix loop`, `kortix loops`, `kortix remind` and `kortix reminders` still work with the same flags.
+
+### Keeping triggers under control
 
 - **Run limits.** A trigger starts at most 60 runs an hour unless you set another limit under **Options** → **Run limits**. You can add a daily limit too.
 - **Auto-pause.** A trigger that hits its hourly limit for 2 hours in a row pauses itself. It shows **Paused** until you select **Resume**.
 - **Failures.** A failed run shows **Last run didn’t finish**. When a trigger's runs start failing, an account owner's phone gets one notification.
-- **Pause everything.** **Account settings** → **Settings** → **Automations** → **Pause all automations** stops every schedule, webhook, event and reminder in every project.
+- **Pause everything.** **Account settings** → **Settings** → **Triggers** → **Pause all triggers** stops every schedule, webhook, event and loop in every project.
 
 ## Computers
 
@@ -604,6 +631,30 @@ A sandbox template sets what is installed on the cloud computer and how large it
 #### Previews
 
 Any website or tool that the agent starts on its computer is reachable from outside it. The session page's preview panel offers common ports, such as **App preview** and **Frontend preview**, plus any other port. A preview asks you to sign in to Kortix first. To show it to someone outside Kortix, the session owner creates a public link.
+
+#### Desktop
+
+Every cloud computer has a desktop. Select the **Desktop** button in the session header to watch it live. The desktop has one browser, and you share it with the agent: you see each page it visits, and the browser on the dock opens that same window with the same tabs and logins. Kortix has control by default. Select **Take over** to click and type yourself, for example to sign in to a site for the agent, or to use the terminal or the file manager on the dock. Select **Return control** to hand it back. The desktop resizes to fit the panel.
+
+A session on a custom sandbox template gets the desktop when the template's base image is Ubuntu 24.04.
+
+#### Residential IP address
+
+Some websites block or limit traffic from data centers. A sandbox template can send its web traffic through a residential IP address instead of the cloud computer's own address: set `residential_proxy: true` on the template in `kortix.yaml`, or check **Residential IP** on a template in **Customize** → **Settings** → **Sandbox templates**. Sessions on that template use it.
+
+```yaml
+sandbox:
+  default: web
+  templates:
+    - slug: web
+      residential_proxy: true
+```
+
+- Traffic through the residential address is billed per GB from your credits. It shows as **Residential proxy** in the credit history.
+- Kortix's own services and common package registries connect directly. That traffic is not billed as proxy traffic.
+- UDP is blocked while it is on, so QUIC and WebRTC cannot reveal the computer's own address. Browsers and tools fall back to TCP.
+- Sessions start only where your deployment offers a residential IP. Elsewhere they do not start; they never use the computer's own address instead.
+- `{ country: us }` instead of `true` picks the country of the address. The details are in the [kortix.yaml reference](/docs/developers#residential-ip).
 
 #### When you delete a session
 
@@ -654,7 +705,7 @@ Only you, at the computer, can widen access. Narrowing it works from anywhere an
 
 #### Share it with your team
 
-Open **Customize → Connectors → Computers → Accounts** and select **Share** on your computer's row. Pick people, groups or the whole project. A computer shared with everyone also serves automations that run with nobody present. Your **Access** setting still applies: in **Ask each time**, every approval is yours to give.
+Open **Project admin → Connectors → Computers → Accounts** and select **Share** on your computer's row. Pick people, groups or the whole project. A computer shared with everyone also serves triggers that run with nobody present. Your **Access** setting still applies: in **Ask each time**, every approval is yours to give.
 
 ## Models
 
@@ -686,7 +737,7 @@ A provider key belongs to the whole project.
 
 A session that names no model uses the first of these that is set:
 
-1. The model chosen for the session, the [channel](/docs/guide#channels) or the [automation](/docs/guide#automations).
+1. The model chosen for the session, the [channel](/docs/guide#channels) or the [trigger](/docs/guide#triggers).
 2. The model pinned to the agent.
 3. The project default.
 4. The account default, for every project that has no default of its own.
@@ -704,10 +755,10 @@ On the Credits plan or Enterprise, a session runs on the platform default model.
 Choose a model in the composer's model picker. A stopped session uses the new model when it starts again. Switching a running session restarts the agent on its computer and ends the turn in progress.
 </Step>
 <Step title="Connect your own provider">
-Open **Customize → Models → Providers** and paste a key. For a ChatGPT subscription, choose **Use your ChatGPT subscription** in the model picker, then **Connect ChatGPT**.
+Open **Project admin → Models → Providers** and paste a key. For a ChatGPT subscription, choose **Use your ChatGPT subscription** in the model picker, then **Connect ChatGPT**.
 </Step>
 <Step title="Set a budget">
-Open **Customize → Models → Costs**. Set a limit per day, week or month. Choose **Block** to refuse new requests at the limit, or **Warn only** to let them run.
+Open **Project admin → Models → Costs**. Set a limit per day, week or month. Choose **Block** to refuse new requests at the limit, or **Warn only** to let them run.
 </Step>
 </Steps>
 
@@ -723,71 +774,84 @@ Account owners, admins and project managers get an email at 80% and at 100% of a
 
 #### Fallback models
 
-Open **Customize → Models → Routing** to list up to 8 models that the gateway tries in order when a model fails. When a fallback model answers, the composer shows **Running on** and its name. A request on your own key moves to a Kortix-billed model only when your own fallback list names that model.
+Open **Project admin → Models → Routing** to list up to 8 models that the gateway tries in order when a model fails. When a fallback model answers, the composer shows **Running on** and its name. A request on your own key moves to a Kortix-billed model only when your own fallback list names that model.
 
 The fallback list also takes over when the requested model is unknown or retired. Every successful gateway answer names the model you asked for (`x-kortix-requested-model`) and the model that answered (`x-kortix-model`). When they differ, a fallback model answered.
 
 ## Outcomes
 
-An outcome in Kortix is a **Goal**: an objective an agent owns until a separate check confirms it is met. The agent plans the work, does it, follows up with people and waits when it must.
+An outcome in Kortix is a **Goal**: what you want plus a definition of done. The agent assigned to it works it, wake after wake, until a separate verifier session confirms it is done.
+
+Three things work together:
+
+| Thing | Answers |
+| --- | --- |
+| Agent | who works it. The agent's grants decide what the goal may touch. |
+| Loop or trigger | when work starts: the heartbeat, your answer, a merged change request. |
+| Goal | what done means: a folder in Files. |
 
 ### How it works
 
 #### The goal folder
 
-Each goal is a folder in Kortix Drive, in your own folder or in a shared company folder. The folder is the goal's memory. If a session ends, a new one continues from the folder alone. It holds:
+Each goal is a folder in Files, `Goals/<slug>/` in the company folder by default. Share it or keep it private with normal [Files sharing](/docs/guide#drive). The folder is the goal's memory and shared context: every session that works the goal reads it and adds to it. It holds:
 
-- the goal file: the objective, its success criteria, the open items and the status;
-- a log, with one line per action;
-- notes: your original request, the constraints and one thread per person;
-- `docs/` for material, and `evidence/` for proof.
+- `GOAL.md`: the goal, its done criteria, the person it is for (the assigned user), the assigned agent, the state, links to related files, artifacts, Apps, change requests and sessions, and the limits;
+- `log.md`: one line per action, each handover and each verifier finding;
+- `evidence/`: the proof for each criterion and the verifier's report.
 
-You can open and edit these files. Your edits win. See [Drive](/docs/guide#drive).
+You can open and edit these files. Your edits win.
 
-#### Plan
+#### States
 
-The agent writes 2 to 6 success criteria that someone else can check. Each one names its proof. It records your constraints, such as a spending limit. Anything outside a constraint becomes a question for you, not an action.
+A goal moves through: draft, active, waiting on you, verifying, done. A person can stop it from any state. It never ends because it is hard, slow or blocked.
 
-#### Work
+#### Work and wake
 
-The agent acts on the most useful open item on each turn. It can hand heavy or parallel work to worker sessions, each doing one item.
+One owner session works the goal at a time. Nothing runs between turns. These wake it:
 
-#### Chase
+- the heartbeat loop, every 4 hours while the goal is open;
+- your answer to the question it asked you;
+- a change request it opened, when it merges;
+- the verifier's verdict.
 
-- It asks once, precisely: what it needs, why, and how to send it.
-- It uses the channels your project already has, such as Slack. It keeps one thread per person and asks you to reply there.
-- It follows up when an answer is late, and each follow-up is firmer: a reminder, then the cost of the delay, then a short daily ping.
-- It chases outside parties, such as a vendor or a bank, the same way.
+When the owner session's context is full, it writes a handover to `log.md` and a fresh session continues.
 
-#### Wake
+#### Ask
 
-Nothing runs between turns. Three things wake the goal: a daily heartbeat reminder, a reply from a person, or a step the agent scheduled for itself. If the session's computer fails, the next heartbeat starts a new session that takes over.
+When only you can unblock it, the goal asks you and waits in **Waiting on you**. Answer on the Goal page or in the channel it used. Your answer wakes it.
 
 #### Check
 
-The agent never judges its own work. When every criterion has its proof, it starts a separate verifier session that did none of the work. The verifier checks each proof and writes PASS or FAIL. The goal is done only when everything passes. A FAIL sends the goal back to work.
+The agent never judges its own work. When every criterion has its proof, the goal starts a separate verifier session that did none of the work. The verifier checks each criterion, writes PASS or FAIL per criterion to `evidence/verification.md`, and gives the verdict. Only a PASS on every criterion makes the goal done. A FAIL sends it back to work, with the findings in `log.md`.
 
-A goal moves through these states: draft, active, waiting on a person, waiting on an outside event, verifying, then done. It ends early only when you say stop. It never ends because it is hard, slow or blocked. A blocked goal waits and chases.
+#### Permissions
+
+The goal decides nothing about access. An email, a Slack message or a connector call goes through the assigned agent's grants and the connector's approval rules, as in any session. When the agent lacks a grant, the goal asks you for it.
+
+#### Limits
+
+`GOAL.md` caps the work, so a stuck goal does not use up credits: at most 12 wakes per UTC day (then the heartbeat waits for the next day) and at most 10 sessions in total. You can change `heartbeat`, `max_wakes_per_day` and `max_sessions` in `GOAL.md`.
 
 ### Set it up
 
 <Steps>
 <Step title="Turn on the features">
-Goals is an experimental feature that needs Platinum. It is off by default: turn on **Goals** in **Customize** → **Settings** → **Feature flags**.
+Goals is an experimental feature that needs Platinum. It is off by default: turn on **Goals** in **Customize** → **Settings** → **Feature flags**. It also needs Volumes and Loops.
 </Step>
 <Step title="State the outcome">
-In a chat, describe the outcome, for example "make sure…" or "keep at it until…". Say if it belongs to your team or company. Otherwise it goes in your own folder.
+In a chat, describe the outcome, for example "make sure…" or "keep at it until…". In a chat that is already under way, say "make this a goal". On the Goals page, **New goal** starts one from the outcome.
 </Step>
 <Step title="Read the plan">
-The agent replies with the outcome, the success criteria, the first thing it needs from you, and where to watch it.
+The agent replies with the outcome, the done criteria, the first thing it needs from you, and where to watch it.
 </Step>
 <Step title="Watch it">
-Open the **Goals** page in the project sidebar for status, health, the next wake and what the goal waits on. In the session, the **Goal** button in the header shows the same.
+Open the **Goals** page in the project sidebar: state, the assigned user and agent, the last and next wake. **Assigned to me** shows the goals that are for you. A goal's page shows its definition, log, evidence, links, sessions, and the buttons to answer, share or stop it.
 </Step>
 </Steps>
 
 <Callout type="warning">
-Do not delete the session that coordinates an open goal. If you delete it, the goal stops waking.
+Do not delete the owner session of an open goal. If you delete it, the goal stops waking.
 </Callout>
 
 ## Channels
@@ -828,11 +892,20 @@ Each channel has a join policy. It decides who may join a session that started t
 
 When an agent asks for a decision, the card shows the title, a summary, a risk note and buttons, such as **Approve** and **Deny**. Every card also has **View in Kortix**. When an agent wants to use a connected tool that needs approval, the card shows what it will do. A project manager, or the person who started the session, selects **Approve** or **Deny**.
 
+#### Questions in the thread
+
+When the agent asks a question, Kortix posts it with one button per option. In Teams, several questions or a multi-select question arrive as one form. You can also reply with your own answer.
+
+- Every click and every form submit reaches the agent, also when several people answer.
+- The message then shows the answer and who gave it, in place of the buttons.
+- A button on a question whose session was deleted, or whose chat started a new session with `/new`, answers nothing and starts no session.
+- A button you press before you link your account does not run after you link. Press it again.
+
 ### Set it up
 
 <Steps>
 <Step title="Connect Slack or Teams">
-Open **Customize → Connectors** and select the **Channels** scope. Select **Add to Slack**, or connect **Microsoft Teams**. For Teams, a tenant admin grants consent once, and the Kortix app appears in your organization's Teams catalog.
+Open **Project admin → Connectors** and select the **Channels** scope. Select **Add to Slack**, or connect **Microsoft Teams**. For Teams, a tenant admin grants consent once, and the Kortix app appears in your organization's Teams catalog.
 </Step>
 <Step title="Add the bot">
 Invite the bot to a Slack channel, or add the Kortix app to a Teams chat or channel. A direct message with the bot needs no invite.
@@ -847,6 +920,8 @@ The agent replies in the thread, with live progress.
 
 When one Slack workspace or Teams tenant serves several projects, the first message in a new channel shows a project picker. The choice binds the channel to that project.
 
+Deleting a project disconnects Slack and Teams from it. Its channels go to the one project still connected, or show the picker again. A reply in one of its Slack threads gets no answer.
+
 #### Telegram
 
 People message a Telegram bot, and the agent answers in the chat.
@@ -856,7 +931,7 @@ People message a Telegram bot, and the agent answers in the chat.
 In Telegram, message **@BotFather**, send `/newbot`, and copy the token it gives you.
 </Step>
 <Step title="Connect it">
-Open **Customize → Connectors**, select the **Channels** scope, and select **Connect** on Telegram. Paste the **Bot token** and the **Allowed Telegram user ids**. Kortix keeps the token on the server.
+Open **Project admin → Connectors**, select the **Channels** scope, and select **Connect** on Telegram. Paste the **Bot token** and the **Allowed Telegram user ids**. Kortix keeps the token on the server.
 </Step>
 <Step title="Message the bot">
 A message from an allowed user starts a session. Anyone else gets a reply that shows their user ID. When they write to the bot in a private chat, they also appear under **Allowed users → Wants access**. A project manager allows them with one click or dismisses the request. You can still add a user by ID.
@@ -864,10 +939,24 @@ A message from an allowed user starts a session. Anyone else gets a reply that s
 </Steps>
 
 - **One chat is one session.** In a forum group, each topic is its own session. After `/new`, your next message starts a new session.
+- **Messages arrive in the order you send them.** Kortix hands one chat's messages and taps to the agent one at a time, in Telegram's order. A tap on a button waits for the messages you sent before it. A message that fails holds the next ones for one retry, usually 10 to 30 seconds; then they go on without it.
+- **Photos, files, voice notes and videos reach the agent.** Kortix downloads up to 8 MB of files per message into the session's workspace. In the session, the message shows each photo and file above its text, as a file you attach in Kortix shows. The agent sees a photo when the project has a model that reads images. A larger file does not arrive, and the agent tells you. No speech-to-text tool is preinstalled, so a voice note takes the agent about a minute: it installs one to transcribe the recording. Each photo of an album arrives as its own message, and a sticker arrives as its emoji.
+- **Commands run in Kortix, not in the agent.** `/help` (also `/start`) lists them. `/status` shows the chat's project, agent, model and session. `/stop` stops the agent's run. `/new` stops the run and starts a new conversation. `/model` lists the models, and `/model <id>` switches the chat to one. `/agent` lists the agents, and `/agent <name>` switches the chat to one. `/model default` and `/agent default` go back to the project default.
+- **Commands open menus.** `/model` and `/agent` without an argument list the choices as buttons, 8 per page, after **Project default** on the first page, with **More ›** and **‹ Back**. `/help` and `/status` add buttons that run a command, such as **New conversation**, **Stop** and **Change model**. A tap changes the menu message to the result.
+- **A menu works once.** A pick, **Stop** or **New conversation** takes the menu's buttons off. Only a menu Kortix sent takes taps. A tap on a used menu, on one whose option or session is gone, on a copy forwarded into another chat, or on a menu older than 30 days answers "This menu is out of date": send the command again.
+- **Kortix keeps 11 verbs:** `new`, `reset`, `stop`, `cancel`, `status`, `model`, `models`, `agent`, `agents`, `help` and `start`. Every other message goes to the agent, also one that starts with `/`, and a command for another bot, such as `/status@other_bot`.
+- **Any allowed user can run every command.** In a group, every member sees the reply, also members who are not allowed. A reply can show the project name, model ids and a link to the session; the link opens only for people with access to the project.
+- **`/stop` and `/new` stop the current run of the chat's session only when this chat started it.** Kortix records where each run's message came from. A run started anywhere else (the web, the API, an automation, Kortix itself) keeps going, and the reply links to it. This chat's run also keeps going while a message from outside the chat waits behind it. A message this chat sent before `/stop` can still run after it.
+- **`/model` and `/agent` apply to the whole chat.** The topics of a forum group share one model and one agent. A chat uses only models and provider keys the whole project shares, never one person's key or ChatGPT subscription. Messages you send after the reply use the new model. A new agent applies to the next session: send `/new`.
+- **A command in a photo's caption runs the command.** Kortix does not send the photo or file to the agent: send it again without the command.
+- **`/new` while the chat's session still starts** does not stop that session: it still answers your earlier message here. While Kortix is still creating it, it can also take your next message. The reply says so; send `/new` again.
+- **Kortix adds its commands to the bot's menu.** Connecting the bot puts them first and keeps every entry you set in @BotFather. When an entry of yours has the same name, or the menu would pass Telegram's 100 commands, Kortix leaves its own entry out. Disconnecting the bot, or connecting another bot in its place, removes only the entries Kortix added.
 - **Questions come with buttons.** When the agent asks one question with up to 6 options, Kortix posts one button per option. Several questions, a multi-select question or a longer list arrive as a numbered list. Tap a button, or reply with your own answer.
 - **A question follows the connector's rules.** Kortix posts it only where the agent may send a Telegram message without approval. Otherwise the agent asks in its own words, and that message waits for approval or is refused.
+- **A chat's agent writes only in that chat.** A session that a chat started, or that a chat continues, sends, edits and deletes messages only in that chat and its topics, and quotes only messages from there. So does every session it starts, and the session that takes over its failed reminder. A session from the web or an automation can send to any chat of the bot. A connector call takes only the arguments its action lists; Kortix refuses any other.
 - **Telegram has no account link.** The allowed-user list decides who may talk to the bot. Only an allowed user's tap counts.
 - **An access request keeps only who asked:** the user ID, the username, the name and when they last wrote, never the message. Kortix keeps the newest 20 requests for 30 days. Disconnecting the bot deletes them.
+- **Deleting the project disconnects the bot.** The bot answers no one: Kortix deletes its token, and removes its webhook unless that webhook now points at another project.
 - **In a group, the bot reads only commands, replies to it and mentions.** To let it read every message, send `/setprivacy` to @BotFather, or make the bot a group admin.
 
 ## Everywhere
@@ -1168,6 +1257,7 @@ Enterprise is not a plan. It turns on extra features on either plan: single sign
 | Models on your own key | Nothing for the first $1,000 of usage a month. After that, 5% of each request's list price. A ChatGPT subscription is never charged. With an Enterprise license, there is no fee. |
 | Session machines | The size the machine reserves, for the seconds it runs. App machines count too. |
 | Web tools | Each web search, image search or web scraping request that goes through Kortix. |
+| Residential proxy | The data a session sends and receives through a residential IP address, per GB. Only for sandbox templates that ask for it. See [Residential IP address](/docs/guide#residential-ip-address). |
 
 A stopped or sleeping machine costs nothing. The default machine costs about $0.11 an hour, about 11 credits.
 
@@ -1210,7 +1300,7 @@ Manage the payment method and invoices under **Manage billing**. Only owners and
 
 ### Running out
 
-When the balance reaches zero, agents pause and automations stop starting sessions. The account's Apps stop too, and visitors see an **App paused** page.
+When the balance reaches zero, agents pause and triggers stop starting sessions. The account's Apps stop too, and visitors see an **App paused** page.
 
 To continue, add credits or update the payment method. On Free, you can also subscribe to Credits or wait for the next monthly grant. A member who cannot add credits can select **Ask an owner**. Every owner and admin then gets an email with the balance.
 
@@ -1220,4 +1310,4 @@ To continue, add credits or update the payment method. On Free, you can also sub
 | --- | --- |
 | **Billing → Plan** | Plan, wallet, spend this period, auto top-up |
 | **Billing → Usage** | Kortix charges and the credit history |
-| **Customize → Models → Costs** in a project | Model spend and budgets for that project |
+| **Project admin → Models → Costs** in a project | Model spend and budgets for that project |

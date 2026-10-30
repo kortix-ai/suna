@@ -3,7 +3,6 @@ import type { Config } from '@/lib/config/config'
 import type { HarnessControlOperations } from '@/harness/contract/control'
 import { logger } from '@/lib/log/logger'
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
-import { legacyAbortFields, legacyRuntimeSessionId } from './legacy-names'
 
 // POST /kortix/abort interrupts the pinned session's current turn.
 // /kortix/abort/after-tool arms or disarms an interrupt at the next tool boundary.
@@ -18,7 +17,7 @@ export function createAbortRouter(cfg: Config, control: HarnessControlOperations
     const auth = verifyKortixUserContext(c.req.header(KORTIX_USER_CONTEXT_HEADER), cfg.sandboxToken)
     if (!auth.ok) return c.json({ error: 'unauthorized', reason: auth.reason }, 401)
     const body = await c.req.json().catch(() => null) as Record<string, unknown> | null
-    const runtimeSessionId = body?.runtime_session_id ?? legacyRuntimeSessionId(body)
+    const runtimeSessionId = body?.runtime_session_id
     if (!validId(body?.prompt_id) || !validId(runtimeSessionId) || !validId(body?.turn_message_id)) {
       return c.json({ error: 'prompt_id, runtime_session_id and turn_message_id are required' }, 400)
     }
@@ -67,7 +66,7 @@ export function createAbortRouter(cfg: Config, control: HarnessControlOperations
     switch (result.outcome) {
       case 'not-pinned': return c.json(result.body, 409)
       case 'failed': return c.json(result.body, 502)
-      case 'aborted': return c.json({ ...result.body, ...legacyAbortFields(result.body.runtime_session_id) })
+      case 'aborted': return c.json(result.body)
     }
   })
 

@@ -23,7 +23,7 @@ import { parseConnectorHeaders } from './connector-headers';
 import { normalizeImportPath } from './imports';
 import { appDisplayIssues, appReleaseConfigIssues, resolveAppReleaseConfig } from '@kortix/shared/app-config';
 import { appReleaseInputFromBlock } from './app-config';
-import { parseTriggerFilter } from './trigger-filter';
+import { parseChangeRequestFilter, parseTriggerFilter } from './trigger-filter';
 import { validateManifestBodyV3 } from './index.v3';
 import { validateAgentPolicySetRefs, validateConnectorPolicySets } from './policy-sets';
 import {
@@ -133,6 +133,7 @@ export {
 export { normalizeTriggerEntry, normalizeTriggerList } from './trigger-shape';
 export {
   TRIGGER_FILTER_OPERATORS,
+  parseChangeRequestFilter,
   parseTriggerFilter,
   triggerFilterValueMatches,
   type TriggerFilter,
@@ -220,6 +221,7 @@ export {
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
+  SPACE_SLUG_RE,
   HARNESS_TOOL_NAMES,
   KORTIX_TOOL_NAMES,
   DEFAULT_ON_KORTIX_TOOLS,
@@ -242,12 +244,23 @@ export {
 } from './constants';
 
 export {
+  AGENT_BLOCK_KEYS_V3,
   type AgentBlockV3,
   type AgentToolsV3,
   type CodemodeV3,
   type CommandV3,
+  type ExcludableGrantSetV3,
+  excludedNamesV3,
   type ExtensionV3,
+  grantedNamesV3,
   type ManifestV3,
+  SPACE_HEADER_ITEMS,
+  SPACE_TAB_TYPES,
+  type SpaceBlockV3,
+  type SpaceHeaderItem,
+  type SpaceTabType,
+  type SpaceTabV3,
+  type SpaceV3,
 } from './index.v3';
 
 // Re-exported for backward compatibility — the v2 types + validators lived
@@ -930,13 +943,7 @@ function validateSandboxTemplates(node: unknown, path: string, issues: ManifestI
         severity: 'error',
       });
     }
-    if (!hasImage && !hasDockerfile) {
-      issues.push({
-        path: where,
-        message: 'set one of `image` or `dockerfile`.',
-        severity: 'error',
-      });
-    }
+    // Neither: the template builds the platform base image with its own size and settings.
     if (hasImage && typeof entry.image === 'string') {
       const img = entry.image.trim();
       if (img.endsWith(':latest')) {
@@ -969,6 +976,7 @@ function validateSandboxTemplates(node: unknown, path: string, issues: ManifestI
         severity: 'error',
       });
     }
+    validateResidentialProxy(entry.residential_proxy, `${where}.residential_proxy`, issues);
     if (entry.gpu !== undefined) {
       issues.push({
         path: `${where}.gpu`,
@@ -976,6 +984,41 @@ function validateSandboxTemplates(node: unknown, path: string, issues: ManifestI
         severity: 'warning',
       });
     }
+  });
+}
+
+/**
+ * `residential_proxy: true` or `residential_proxy: { country: us }` on a
+ * sandbox template. The deployment decides whether it can serve it, which the
+ * manifest cannot know: a template that asks for it always gets the warning
+ * that its sessions do not start where no residential IP is offered.
+ */
+function validateResidentialProxy(value: unknown, path: string, issues: ManifestIssue[]): void {
+  if (value === undefined || value === false) return;
+  if (value !== true && !isTable(value)) {
+    issues.push({ path, message: '`residential_proxy` must be true, false, or a table with `country`.', severity: 'error' });
+    return;
+  }
+  if (isTable(value)) {
+    for (const key of Object.keys(value)) {
+      if (key !== 'country') {
+        issues.push({ path: `${path}.${key}`, message: 'unknown key; `residential_proxy` takes `country`.', severity: 'warning' });
+      }
+    }
+    const country = value.country;
+    if (country !== undefined && !(typeof country === 'string' && /^[A-Za-z]{2}$/.test(country.trim()))) {
+      issues.push({
+        path: `${path}.country`,
+        message: '`country` must be an ISO 3166-1 alpha-2 code, such as `us` or `de`.',
+        severity: 'error',
+      });
+    }
+  }
+  issues.push({
+    path,
+    message:
+      "Sessions of this template start only on a deployment that offers a residential IP address (Platinum with the residential proxy on). Elsewhere they fail to start; they never fall back to the sandbox's own address.",
+    severity: 'warning',
   });
 }
 
@@ -1443,8 +1486,9 @@ export function validateTriggers(rawNode: unknown, path: string, issues: Manifes
       issues.push({ path: `${where}.overlap`, message: 'overlap must be "skip" or "allow".', severity: 'error' });
     }
     // The payload filter (KRTX-1721): a value (equals) or one operator per path.
+    // A change_request trigger's `filter.base` is the merge's target branch (parseChangeRequestFilter).
     if (entry.filter !== undefined) {
-      const parsed = parseTriggerFilter(entry.filter);
+      const parsed = type === 'change_request' ? parseChangeRequestFilter(entry.filter) : parseTriggerFilter(entry.filter);
       if ('error' in parsed) issues.push({ path: `${where}.filter`, message: `${parsed.error}.`, severity: 'error' });
     }
     // The misfire bound (KRTX-1743): cron only, a duration of at least 60s.

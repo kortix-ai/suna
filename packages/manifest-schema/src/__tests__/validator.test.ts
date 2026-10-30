@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { validateManifest, formatIssues } from '../index.ts';
 
-function summarize(input: string | Record<string, unknown>) {
-  const result = validateManifest(input);
+function summarize(input: string | Record<string, unknown>, format?: Parameters<typeof validateManifest>[1]) {
+  const result = validateManifest(input, format);
   const errorPaths = result.issues.filter((i) => i.severity === 'error').map((i) => i.path);
   const warningPaths = result.issues.filter((i) => i.severity === 'warning').map((i) => i.path);
   return { ...result, errorPaths, warningPaths };
@@ -136,13 +136,58 @@ dockerfile = ".kortix/Dockerfile.x"
     expect(errorPaths).toContain('sandbox.templates[0]');
   });
 
-  test('rejects entries with neither image nor dockerfile', () => {
-    const { errorPaths } = summarize(`
+  test('accepts an entry with neither image nor dockerfile: the platform base image', () => {
+    const { valid, errorPaths } = summarize(`
 kortix_version = 1
 [[sandbox.templates]]
-slug = "empty"
+slug = "web"
+cpu = 4
 `);
-    expect(errorPaths).toContain('sandbox.templates[0]');
+    expect(valid).toBe(true);
+    expect(errorPaths).toEqual([]);
+  });
+
+  describe('residential_proxy', () => {
+    const template = (value: string) => summarize(`kortix_version: 1
+sandbox:
+  templates:
+    - slug: web
+      residential_proxy: ${value}
+`, 'yaml');
+    const NOTICE = 'sandbox.templates[0].residential_proxy';
+
+    test('true and a table with an ISO 3166-1 alpha-2 country are valid, with the deployment notice', () => {
+      for (const value of ['true', '{ country: us }', '{ country: DE }', '{}']) {
+        const result = template(value);
+        expect(result.valid).toBe(true);
+        expect(result.errorPaths).toEqual([]);
+        expect(result.warningPaths).toEqual([NOTICE]);
+      }
+    });
+
+    test('false is off: no notice', () => {
+      const result = template('false');
+      expect(result.valid).toBe(true);
+      expect(result.warningPaths).toEqual([]);
+    });
+
+    test('a country that is not a two-letter code is an error', () => {
+      for (const value of ['{ country: usa }', '{ country: 1 }', '{ country: "" }']) {
+        expect(template(value).errorPaths).toContain(`${NOTICE}.country`);
+      }
+    });
+
+    test('another type is an error', () => {
+      for (const value of ['"yes"', '1', '[us]']) {
+        expect(template(value).errorPaths).toContain(NOTICE);
+      }
+    });
+
+    test('an unknown key warns and does not block', () => {
+      const result = template('{ country: us, city: berlin }');
+      expect(result.valid).toBe(true);
+      expect(result.warningPaths).toContain(`${NOTICE}.city`);
+    });
   });
 
   test('rejects "default" as a reserved slug', () => {
@@ -812,10 +857,24 @@ describe('apps: release config (processes, services, mounts, vm, deploy, labels)
   dash:
     type: static
     display: { parent: nope }`)).toEqual([
-      'apps.db.display.hidden: is not a display field (listed, preview, parent).',
+      'apps.db.display.hidden: is not a display field (listed, preview, parent, space, agent).',
       'apps.db.display.preview: must be live or none.',
       'apps.db.display.parent: an App cannot be its own parent.',
       'apps.dash.display.parent: names no App in this file.',
+    ]);
+  });
+  test('display.space and display.agent bind an App to a space or an agent (grouping only)', () => {
+    expect(issues(`  db:
+    type: static
+    display: { space: ops, agent: builder }
+  web:
+    type: static
+    display: { space: null, agent: null }`)).toEqual([]);
+    expect(issues(`  db:
+    type: static
+    display: { space: "Not A Slug", agent: 42 }`)).toEqual([
+      'apps.db.display.space: must be a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).',
+      'apps.db.display.agent: must be an agent name.',
     ]);
   });
 });

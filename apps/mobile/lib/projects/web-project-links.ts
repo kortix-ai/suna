@@ -21,13 +21,13 @@ export function projectCustomizeWebUrl(frontendUrl: string, projectId: string): 
 export const CONNECTORS_RETURN_URL = 'kortix://connectors';
 export const CONNECTORS_DONE_URI = 'kortix://connectors/done';
 
-/** `${frontendUrl}/projects/<projectId>/customize/connectors[?return_to=…]`, id encoded. */
+/** `${frontendUrl}/projects/<projectId>/admin/connectors[?return_to=…]`, id encoded. */
 export function projectConnectorsWebUrl(
   frontendUrl: string,
   projectId: string,
   returnTo?: string
 ): string {
-  const url = `${projectCustomizeWebUrl(frontendUrl, projectId)}/connectors`;
+  const url = `${frontendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(projectId)}/admin/connectors`;
   return returnTo ? `${url}?return_to=${encodeURIComponent(returnTo)}` : url;
 }
 

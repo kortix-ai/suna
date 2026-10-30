@@ -9,7 +9,7 @@ updated: "2026-10-21"
 slug: "/secure-ai-agent-tool-access"
 cover: "/banner.png"
 ---
-Handing an agent a Stripe key is a decision about where that key lives. The model's instructions are the least reliable part of the arrangement, since everything in a context window competes with them. Kortix is the open-source AI Operating System. Its position is simple: connector credentials stay outside the sandbox, and the rules that govern each call sit in the project repository, where a reviewer can read them.
+Handing an agent a Stripe key is a decision about where that key lives. The model's instructions are the least reliable part of the arrangement, since everything in a context window competes with them. Kortix is the open-source CompanyOS. Its position is simple: connector credentials stay outside the sandbox, and the rules that govern each call sit in the project repository, where a reviewer can read them.
 
 ## The blast radius belongs to the tools
 
@@ -60,7 +60,7 @@ The manifest is checked before it runs. `kortix validate` reads it against the s
 
 ## Allow, Ask and Block run at call time
 
-The three actions on a connector are Allow, Ask and Block. Kortix evaluates them when a call is made. An Ask holds the call: the agent's turn pauses and resumes when a person decides. That approval covers one exact request, with the same connector, action, arguments and account, so a changed argument needs a new decision. The approval shows the redacted arguments the provider will receive. The decision goes back into the session ([connectors](https://kortix.com/docs/connect/connectors)). Every action is recorded. Reading, exporting and streaming the audit log depend on the plan.
+The three actions on a connector are Allow, Ask and Block. Kortix evaluates them when a call is made. An Ask stops the call: the agent's turn pauses and resumes when a person decides, and an approved call runs when the agent sends it again. That approval covers one exact request, with the same connector, action, arguments and account, so a changed argument needs a new decision. The approval shows the redacted arguments the provider will receive. The decision goes back into the session ([connectors](https://kortix.com/docs/connect/connectors)). Every action is recorded. Reading, exporting and streaming the audit log depend on the plan.
 
 Approval gates you set. Off until you set them. `policy.default_mode` falls back to `allow_all`, which runs every action no rule matched, reads and writes alike ([connectors](https://kortix.com/docs/connect/connectors)). It is the first thing to change on a project that can touch money. Setting `default_mode: risk` holds writes and destructive actions while reads run. A connector rule or a project-wide rule then narrows one action at a time. Rules can test arguments too, so a message to one domain can run while every other recipient waits.
 

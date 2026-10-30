@@ -4,6 +4,7 @@ import { attachmentMime } from '../../internal/lib/attachment-mime';
 import { AttachmentPreview } from './attachment-preview';
 import { getFileCategory } from '../../files/viewer/preview-policy';
 import { uiRoutes } from '../../lib/routes';
+import { remindersHref } from '../../internal/lib/capability-tab-routes';
 import { MessageSenderAbove } from '../participants/session-participants';
 import { MessageAuthorLabel } from './message-author-label';
 import { MESSAGE_TEXT_CLASS, RowToolbar } from './message-row';
@@ -22,6 +23,8 @@ import {
 
 import { useTranslations } from '../../i18n';
 import {
+  channelPromptTail,
+  isChannelFileLabel,
   expandPastedContent,
   neutralizePastedTags,
   sanitizePromptUploadFilename,
@@ -157,10 +160,11 @@ export const BUBBLE_SURFACE = cn(
 
 /**
  * Where a channel message came from, in the pill's hover card: the platform,
- * the channel or chat it was posted in, and who posted it. A Slack prompt
- * written before channel names were recorded carries a bare id (`C0DEV`); the
- * project's Slack bindings name it, read only while this card is open. A Teams
- * conversation id names nothing a person reads, so Teams shows no channel row.
+ * the channel or chat it was posted in (an email's subject, labelled Subject),
+ * and who posted it. A Slack prompt written before channel names were recorded
+ * carries a bare id (`C0DEV`); the project's Slack bindings name it, read only
+ * while this card is open. A Teams conversation id names nothing a person
+ * reads, so Teams shows no channel row.
  */
 export function ChannelOrigin({ info, platform }: { info: ChannelMessageInfo; platform: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -171,12 +175,13 @@ export function ChannelOrigin({ info, platform }: { info: ChannelMessageInfo; pl
     ? data?.bindings.find((b) => b.platform === 'slack' && b.channelId === info.context)
     : undefined;
   const channel = info.platform === 'Teams' ? '' : (binding && slackConversationName(binding)) || info.context;
+  const place = info.platform === 'Email' ? tI18nComplete('text68971283841a') : tI18nComplete('textce4683e7013a');
   return (
     <SourceCard
       mark={<ChannelBrandMark platform={info.platform} className="size-3.5 shrink-0" />}
       title={platform}
       rows={[
-        { label: tI18nComplete('textce4683e7013a'), value: channel },
+        { label: place, value: channel },
         { label: tI18nComplete('text218197693424'), value: info.userName },
       ]}
     />
@@ -185,16 +190,19 @@ export function ChannelOrigin({ info, platform }: { info: ChannelMessageInfo; pl
 
 /**
  * A message that arrived from a chat channel (Slack / Microsoft Teams /
- * Telegram): a source pill — mark, platform, sender — over the same bubble a
- * typed message gets. Every `@name` in the text (`@Kortix`, `@KortixDev`,
- * `@here`) is a `MentionChip`, the chip the composer draws, static because a
- * channel mention opens nothing here. Exported for `channel-message-card.test.tsx`.
+ * Telegram): a source pill — mark, platform, sender — over the files the
+ * sender sent (the strip a composer upload gets) and the same bubble a typed
+ * message gets. Every `@name` in the text (`@Kortix`, `@KortixDev`, `@here`)
+ * is a `MentionChip`, the chip the composer draws, static because a channel
+ * mention opens nothing here. Exported for `channel-message-card.test.tsx`.
  */
 export function ChannelMessage({
   info,
+  attachments = [],
   actions,
 }: {
   info: ChannelMessageInfo;
+  attachments?: NormalizedAttachment[];
   actions?: React.ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -208,7 +216,8 @@ export function ChannelMessage({
         sender={info.userName}
         card={<ChannelOrigin info={info} platform={platform} />}
       />
-      {info.messageText && (
+      <MessageAttachments attachments={attachments} />
+      {info.messageText && !(attachments.length > 0 && isChannelFileLabel(info.messageText)) && (
         <div className={cn(BUBBLE_SURFACE, 'max-w-[80%]')}>
           <div className={BUBBLE_TEXT}>
             {buildMentionSegments({ text: info.messageText }).map((segment, i) =>
@@ -255,15 +264,15 @@ function PlatformPromptMessage({
 }
 
 /**
- * A reminder fire (`[REMINDER reminder.<id> …]`). The pill says Reminder and
- * whether it repeats; its card carries the id and a link to the project's
- * reminders for this session.
+ * A loop fire (`[REMINDER reminder.<id> …]`, the wire name). The pill says
+ * Loop and whether it repeats; its card carries the id and a link to the
+ * project's Loops page, filtered to this session.
  */
 function ReminderMessage({ info, actions }: { info: ReminderPromptInfo; actions?: React.ReactNode }) {
   const t = useTranslations('reminders');
   const ids = useSessionIds();
-  const manageHref =
-    ids.projectId && ids.sessionId ? uiRoutes().customize(ids.projectId, `reminders?session=${ids.sessionId}`) : null;
+  const loopsHref = ids.projectId ? remindersHref(ids.projectId) : null;
+  const manageHref = loopsHref && ids.sessionId ? `${loopsHref}?session=${ids.sessionId}` : null;
   return (
     <PlatformPromptMessage
       data-testid="reminder-turn"
@@ -1750,6 +1759,15 @@ export function UserMessage({
   // scaffolds these prompts with ids and turn instructions the person never
   // typed, so the card shows only the platform, the sender, and their words.
   const channelMessageInfo = useMemo(() => parseChannelMessage(rawText), [rawText]);
+  // Its files: the `<file>` tags Kortix wrote after the sender's text, and nothing else. A tag the sender
+  // typed is text; the image block pi records for a tag repeats it, and names no path when the sender typed one.
+  const channelAttachments = useMemo(
+    () =>
+      channelMessageInfo
+        ? normalizeAttachments([], parseFileReferences(channelPromptTail(rawText, channelMessageInfo.platform)).files)
+        : [],
+    [channelMessageInfo, rawText],
+  );
 
   // Detect trigger_event in user message
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
@@ -1990,7 +2008,7 @@ export function UserMessage({
 
   // Channel messages (Slack / Microsoft Teams / Telegram): a branded card with the sender
   if (channelMessageInfo) {
-    return <ChannelMessage info={channelMessageInfo} actions={actions} />;
+    return <ChannelMessage info={channelMessageInfo} attachments={channelAttachments} actions={actions} />;
   }
 
   if (reminderInfo) {

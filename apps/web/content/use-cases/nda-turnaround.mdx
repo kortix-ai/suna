@@ -56,52 +56,120 @@ the thread to a redline and a summary instead of a blank document.
 ## How it works
 
 <Steps>
-<Step title="Run on a 15-minute cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** checks the watched Gmail label every 15 minutes. Each firing
-spawns a fresh **session** in its own sandbox, seeded with whatever NDA is
-waiting. One NDA maps to one run on one disposable machine — nothing carries
-over between runs beyond what's already sitting in Gmail and Drive.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the NDA playbook skill and the 15-minute trigger, and
+opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent our standard positions">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up an NDA turnaround agent in this project.
 
-Our standard NDA positions live as a **skill** loaded into every session: mutual
-vs. one-way, confidentiality duration, governing law, non-solicit scope, remedies,
-the residuals clause, return-or-destroy obligations, assignment, and
-indemnification. The agent checks against that standard instead of a generic
-sense of what an NDA should say.
+1. Create the agent agents/nda-turnaround.md. Its job is to give each new inbound NDA a first-pass review, a redline and a flag summary for counsel. It may use the Gmail, Google Drive and Google Docs connectors.
 
-</Step>
-<Step title="Connect what the review needs">
+2. Create the skill skills/nda-playbook/SKILL.md with these rules:
+   - An NDA is new when its thread under the NDAs label has no draft reply and no saved copy in Legal/NDAs. Work the oldest one first.
+   - Save the attachment into Legal/NDAs, named for the counterparty and date, and read the full document in Google Docs.
+   - Our standard: mutual, 2 to 3 years of confidentiality, our home jurisdiction, no non-solicit or one of 12 months or less for employees only, return or destruction within 30 days, and no indemnification on us. Flag anything else.
+   - Redline every flagged clause as a Docs suggested edit. Never edit the document directly.
+   - Draft, never send, a Gmail reply to counsel on the original thread: what is routine, what is flagged and why, and a link to the redlined Doc. Never sign anything or send anything to the counterparty.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent:
+3. Add a cron trigger nda-check to kortix.yaml. It runs the nda-turnaround agent every 15 minutes with the prompt "Load the nda-playbook skill and review the oldest unprocessed NDA under the NDAs label."
 
-- **Reads the watched label in Gmail** — to find a new inbound NDA that hasn't
-  already been processed.
-- **Saves the document to Google Drive** — into a dedicated NDA folder, so
-  there's a durable copy to review and redline.
-- **Redlines in Google Docs** — every non-standard clause gets a suggested edit,
-  never a direct change.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent's only outputs are a **Docs suggestion** and a **Gmail draft** — never a
-sent reply, never an applied edit, never a signature. Counsel reviews both and
-decides what goes back to the counterparty. Credentials are encrypted in the
-secrets manager and injected at runtime, scoped to the agents you grant them to or written to
-logs.
+Open **Connectors** in your project and connect your email, your drive and
+your documents. Credentials are brokered server-side and never enter the
+agent's machine.
+
+<ToolList>
+  <ToolNeed name="Gmail" domain="gmail.com" tag="Required" alternatives={[['Microsoft Outlook', 'outlook.com']]}>
+    Picks up inbound NDAs from the watched label.
+  </ToolNeed>
+  <ToolNeed name="Google Drive" domain="drive.google.com" tag="Required" alternatives={[['Google Docs', 'docs.google.com'], ['Dropbox', 'dropbox.com'], ['Box', 'box.com']]}>
+    Saves each NDA and its redlines to the NDA folder.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Counsel picks it up already redlined">
+<Step title="Run it once with this prompt">
 
-With that in place, an NDA that lands at 9:03am has a redline and a flag summary
-waiting by 9:15 — the routine terms noted, the non-standard ones marked with the
-section and the reason, a proposed replacement already drafted. Counsel reviews,
-adjusts if needed, and sends. Nothing reaches the counterparty without that
-review.
+Merge the change request, then start a session with the **nda-turnaround** agent
+and send this prompt. Read the suggested edits and the draft reply before you let
+the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Review the oldest unprocessed NDA under the NDAs label in Gmail.
+
+1. Find threads under the NDAs label with an attachment, no draft reply and no saved copy in Legal/NDAs.
+2. Save the oldest NDA into Legal/NDAs and open it in Google Docs.
+3. Check every clause against the nda-playbook skill: type, duration, governing law, non-solicit, remedies, residuals, return or destruction, assignment and indemnification.
+4. Add a suggested edit for each non-standard clause. Do not edit the document directly.
+5. Draft a Gmail reply to counsel on the original thread with what is routine, what is flagged and why, and the Doc link. Do not send it.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every 15 minutes, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: nda-check
+    name: NDA turnaround check
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: nda-turnaround
+      prompt: Load the nda-playbook skill and review the oldest unprocessed NDA under the NDAs label.`}
+/>
+
+</Step>
+<Step title="Leave signing and sending to counsel">
+
+The agent's only outputs are suggested edits in the Doc and a draft reply in
+Gmail. It never applies a suggestion, never sends the reply, and never signs,
+executes or messages the counterparty. Counsel reviews the redline and decides
+what goes back.
+
+</Step>
+<Step title="Read the flag summary">
+
+Each run ends with a redlined Doc and a draft reply for counsel. This is what
+a run looks like in the session:
+
+<ExampleRun
+  title="NDA turnaround check · 09:15"
+  message="Load the nda-playbook skill and review the oldest unprocessed NDA under the NDAs label."
+  worked="Worked for 3m 27s"
+  tools={[
+    'gmail · search threads',
+    'gmail · list drafts',
+    'google drive · upload file → Legal/NDAs',
+    'google docs · read document',
+    'google docs · suggest edit × 3',
+    'gmail · create draft',
+  ]}
+  note="Illustrative example. Your flags depend on the NDA you receive."
+>
+  Reviewed a one-way NDA with a **5-year** confidentiality term. Flagged **3**
+  clauses: the duration, a **24-month** non-solicit that covers customers, and
+  the governing law. Each has a suggested edit, and the summary for counsel is
+  saved as a draft on the thread.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -111,6 +179,25 @@ review.
   Gmail, Drive, and Docs. Our standard positions live as a **skill**. The agent
   redlines and flags; it never signs, executes, or sends.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Weekly NDA log"
+  code="Every Monday, write a Google Doc in Legal/NDAs that lists last week's NDAs, their flagged clauses and whether counsel has replied."
+/>
+
+<CopyBlock
+  title="Learn from counsel"
+  code="When counsel rejects one of your suggested edits, propose a change to the nda-playbook skill that records the new position."
+/>
+
+<CopyBlock
+  title="Spot repeat counterparties"
+  code="Before you review an NDA, look in Legal/NDAs for an earlier NDA with the same counterparty and note each clause that changed."
+/>
 
 ## Guardrails
 

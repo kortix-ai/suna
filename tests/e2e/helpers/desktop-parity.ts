@@ -520,29 +520,12 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           .first()
           .click();
         await expect(page).toHaveURL(/\/customize\/agents\/kortix/);
-        await expectSeparateRows(
-          page.locator(
-            '[role="tablist"][aria-orientation="vertical"] [role="tab"]',
-          ),
-        );
-        for (const name of [
-          "Basics",
-          "People",
-          "Triggers",
-          "Skills",
-          "Connectors",
-          "Secrets",
-          "Kortix permissions",
-          "Model",
-          "Tools",
-          "Workspace",
-          "Overview",
-        ]) {
-          const tab = page
-            .locator('[role="tablist"][aria-orientation="vertical"]')
-            .getByRole("tab", { name, exact: true });
+        // The agent page's top tabs (People is the header's Share dialog).
+        // By test id: the Triggers tab's name carries its count.
+        for (const key of ["capabilities", "access", "triggers", "overview"]) {
+          const tab = page.getByTestId(`agent-tab-${key}`);
           await tab.click();
-          await expect(tab).toHaveAttribute("aria-selected", "true");
+          await expect(tab).toHaveAttribute("aria-current", "page");
           await expect(page.locator("main main")).toBeVisible();
           await expect(page.locator("main main")).toContainText(/\S/);
         }
@@ -977,9 +960,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           });
           const rootId = `ses_${sessionId.replaceAll("-", "")}`;
           const now = Date.now() - 60_000;
-          // The web run keeps its history in the session log; the desktop run
-          // seeds an old session's v1 mirror, which its first read converts
-          // into the log (P8.2), so this journey covers both.
+          // The history is in the session log, journaled as a box writes it.
           await seedSessionTranscript(loadEnv(), {
             projectId: project.id,
             accountId: accounts[0].account_id,
@@ -1028,7 +1009,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
                 ];
                 return { info, parts };
               }),
-            ...(!desktop && { log: { bearer: auth.access_token } }),
+            bearer: auth.access_token,
           });
           // Keep the cached conversation mounted. The local test sandbox has
           // no provider behind it, so a real /start eventually marks it stopped.
@@ -2471,9 +2452,11 @@ nativeBrowserTest?.(
       await selectAccountForUi(main, accounts[0].account_id);
       await dismissOnboarding(main);
       await main.getByRole("button", { name: "Collapse sidebar" }).click();
-      const row = main.locator(
-        ".kx-capability-titlebar[data-sidebar-collapsed='true']",
-      );
+      // The Agents index header (`CustomizeHeader`): the one title-bar row
+      // every Customize page draws, now that Customize has no top bar.
+      const row = main
+        .locator("header.kx-titlebar-row[data-sidebar-collapsed='true']")
+        .first();
       await expect(row).toBeVisible();
       const dragPoint = () =>
         row.evaluate((element) => {
@@ -2492,10 +2475,10 @@ nativeBrowserTest?.(
           return null;
         });
       expect(await dragPoint()).not.toBeNull();
-      const tab = row.getByRole("tab").first();
-      await expect(tab).toBeVisible();
+      const control = row.getByRole("button", { name: "New agent" });
+      await expect(control).toBeVisible();
       expect(
-        await tab.evaluate((element) => getComputedStyle(element).webkitAppRegion),
+        await control.evaluate((element) => getComputedStyle(element).webkitAppRegion),
       ).toBe("no-drag");
       const nativeWindow = await app.browserWindow(main);
       await nativeWindow.evaluate((window) => window.setContentSize(720, 480));
@@ -2552,6 +2535,8 @@ nativeBrowserTest?.(
       await selectAccountForUi(main, accounts[0].account_id);
       await dismissOnboarding(main);
       await main.goto(agentUrl);
+      // The Overview's description is its text until clicked, then a field.
+      await main.getByRole("button", { name: "Description", exact: true }).click({ timeout: 60_000 });
       const description = main.getByRole("textbox", { name: /Description/i });
       await expect(description).toBeVisible({ timeout: 60_000 });
       const original = await description.inputValue();

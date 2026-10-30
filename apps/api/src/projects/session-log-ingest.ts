@@ -71,9 +71,14 @@
  *   journal write also takes every other live capture row out of context (`in_context:
  *   false`, column and record): it stays visible, and the model view is the native
  *   store's. Capture rows are never deleted.
- * - Re-puts. A put whose content hash equals the stored row's (a restarted daemon re-sends
- *   every message) is acknowledged and changes nothing, unless the row is a tombstone, a
- *   capture row, or of another generation.
+ * - Re-puts. Every daemon restart (each release) re-sends the whole native store by design: that
+ *   is how converter fixes and failed attachment uploads reach the log. A put whose content hash
+ *   equals the stored row's is acknowledged and changes nothing, unless the row is a tombstone, a
+ *   capture row, or of another generation. One SELECT per batch finds them (`storedUnchanged`):
+ *   they cost no INSERT, no row version and no row lock, and a turn already durable is not
+ *   updated again (one statement per put made a full re-send as slow as the first write). The
+ *   changed puts go in one INSERT per 2,000 rows (`applyPuts`): a release that changes every
+ *   record's hash re-sends a whole store of changed puts (v0.14.10: up to 927 statements, 25 s).
  */
 import { createHash } from 'node:crypto';
 import {
@@ -86,7 +91,7 @@ import {
   type SessionLogPut,
 } from '@kortix/api-contract/session-log';
 import { projectSessions, sessionLogMessages, sessionLogs, sessionLogThreads, sessionTurns } from '@kortix/db';
-import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { uniqueViolationConstraint } from '../shared/postgres-errors';
 import { logger } from '../lib/logger';
@@ -232,7 +237,10 @@ async function applyBatch(
       // Generation 0 only: a restore (P6.2) writes `pi:` replies itself, into a store built from this log.
       if (!capture && batch.generation === 0) await hideConvertedPiThreads(tx, scope.sessionId, batch.puts);
       await dropProvisionalRows(tx, scope.sessionId, batch.puts);
-      for (const [i, put] of batch.puts.entries()) await applyPut(tx, scope.sessionId, batch.generation, put, records[i]!);
+      const hashes = batch.puts.map((p) => sessionLogContentHash(p.message));
+      const unchanged = await storedUnchanged(tx, scope.sessionId, batch.generation, batch.puts, hashes);
+      const changed = batch.puts.flatMap((put, i) => (unchanged[i] ? [] : [{ put, record: records[i]!, contentHash: hashes[i]! }]));
+      await applyPuts(tx, scope.sessionId, batch.generation, changed);
       if (!capture) await markDurableTurns(tx, scope.sessionId, batch.puts);
       const acked = [
         ...batch.puts.map((p) => ({ message_id: p.message.message_id, rev: p.rev })),
@@ -396,65 +404,116 @@ async function hideConvertedPiThreads(tx: Tx, sessionId: string, puts: readonly 
     );
 }
 
-// ponytail: one INSERT per put, so a seq collision names its own pair without
-// parsing the error detail. A batch is at most 1 MB gzipped; batch the inserts
-// if a large boot reconcile (P6) makes the round trips show up.
-/** One put inside the caller's transaction. Also the mirror merge's write (`mergeMirrorIntoLog`, `session-log-capture.ts`). */
-export async function applyPut(tx: Tx, sessionId: string, generation: number, put: SessionLogPut, record: SessionLogPut['message']): Promise<void> {
-  const m = put.message;
-  const createdAt = Date.parse(m.created_at);
-  try {
-    await tx
-      .insert(sessionLogMessages)
-      .values({
-        sessionId,
-        messageId: m.message_id,
-        threadId: m.thread_id,
-        seq: m.seq,
-        role: m.role,
-        kind: m.kind,
-        inContext: m.in_context,
-        // A converted record may carry an empty `created_at`; the record keeps
-        // it, the column (an ordering aid) takes the ingest time.
-        createdAt: Number.isFinite(createdAt) ? new Date(createdAt) : new Date(),
-        v: m.v,
-        producer: m.producer,
-        generation,
-        rev: put.rev,
-        contentHash: sessionLogContentHash(m),
-        deletedAt: null,
-        record: record as unknown as Record<string, unknown>,
-        toolInputOrder: toolInputOrderOf(record),
-      })
-      .onConflictDoUpdate({
-        target: [sessionLogMessages.sessionId, sessionLogMessages.messageId],
-        set: {
-          threadId: sql`excluded.thread_id`,
-          seq: sql`excluded.seq`,
-          role: sql`excluded.role`,
-          kind: sql`excluded.kind`,
-          inContext: sql`excluded.in_context`,
-          createdAt: sql`excluded.created_at`,
-          v: sql`excluded.v`,
-          producer: sql`excluded.producer`,
-          generation: sql`excluded.generation`,
-          rev: sql`excluded.rev`,
-          contentHash: sql`excluded.content_hash`,
-          deletedAt: null,
-          record: sql`excluded.record`,
-          toolInputOrder: sql`excluded.tool_input_order`,
-          updatedAt: sql`now()`,
-        },
-        // An unchanged re-put (a restarted daemon re-sends every message) leaves the row; it is still acknowledged.
-        // A capture row and a row of another generation are always replaced.
-        setWhere: sql`(excluded.generation, excluded.rev) > (${sessionLogMessages.generation}, ${sessionLogMessages.rev})
-          AND (${sessionLogMessages.contentHash} IS DISTINCT FROM excluded.content_hash OR ${sessionLogMessages.deletedAt} IS NOT NULL
-               OR ${sessionLogMessages.rev} < ${SESSION_LOG_CAPTURE_REV_LIMIT} OR ${sessionLogMessages.generation} <> excluded.generation)`,
+/**
+ * Per put: the stored row holds it already (this generation's journal row, live, the same content
+ * hash), so the put writes nothing. These are exactly the puts `insertPuts`'s `setWhere` leaves alone.
+ */
+async function storedUnchanged(tx: Tx, sessionId: string, generation: number, puts: readonly SessionLogPut[], hashes: readonly string[]): Promise<boolean[]> {
+  if (puts.length === 0) return [];
+  const rows = await tx
+    .select({ id: sessionLogMessages.messageId, hash: sessionLogMessages.contentHash })
+    .from(sessionLogMessages)
+    .where(
+      and(
+        eq(sessionLogMessages.sessionId, sessionId),
+        inArray(sessionLogMessages.messageId, puts.map((p) => p.message.message_id)),
+        eq(sessionLogMessages.generation, generation),
+        isNull(sessionLogMessages.deletedAt),
+        gte(sessionLogMessages.rev, SESSION_LOG_CAPTURE_REV_LIMIT),
+      ),
+    );
+  const stored = new Map(rows.map((r) => [r.id, r.hash]));
+  return puts.map((p, i) => stored.get(p.message.message_id) === hashes[i]);
+}
+
+type ChangedPut = { put: SessionLogPut; record: SessionLogPut['message']; contentHash: string };
+
+/** A row binds 16 parameters; Postgres takes at most 65,535 per statement. */
+const INSERT_ROWS = 2_000;
+
+/**
+ * The changed puts of a batch, in order. Two or more go in one INSERT per 2,000 rows, inside a
+ * savepoint. A seq collision rolls the savepoint back, and one INSERT per put then names the pair
+ * that collides, as before (a renumbered thread: rare). A message twice in a batch takes that path
+ * at once: one INSERT cannot touch a row twice, and one at a time the higher rev wins.
+ */
+async function applyPuts(tx: Tx, sessionId: string, generation: number, puts: readonly ChangedPut[]): Promise<void> {
+  if (puts.length > 1 && new Set(puts.map((p) => p.put.message.message_id)).size === puts.length) {
+    try {
+      await tx.transaction(async (savepoint) => {
+        for (let i = 0; i < puts.length; i += INSERT_ROWS) await insertPuts(savepoint, sessionId, generation, puts.slice(i, i + INSERT_ROWS));
       });
-  } catch (err) {
-    if (uniqueViolationConstraint(err) !== SEQ_KEY) throw err;
-    throw new SeqConflict({ error: 'seq_conflict', message_id: m.message_id, rev: put.rev, thread_id: m.thread_id, seq: m.seq });
+      return;
+    } catch (err) {
+      if (uniqueViolationConstraint(err) !== SEQ_KEY) throw err;
+    }
   }
+  for (const p of puts) {
+    try {
+      await insertPuts(tx, sessionId, generation, [p]);
+    } catch (err) {
+      if (uniqueViolationConstraint(err) !== SEQ_KEY) throw err;
+      const m = p.put.message;
+      throw new SeqConflict({ error: 'seq_conflict', message_id: m.message_id, rev: p.put.rev, thread_id: m.thread_id, seq: m.seq });
+    }
+  }
+}
+
+/** One INSERT for `puts` (distinct message ids) inside the caller's transaction. */
+async function insertPuts(tx: Tx, sessionId: string, generation: number, puts: readonly ChangedPut[]): Promise<void> {
+  await tx
+    .insert(sessionLogMessages)
+    .values(
+      puts.map(({ put, record, contentHash }) => {
+        const m = put.message;
+        const createdAt = Date.parse(m.created_at);
+        return {
+          sessionId,
+          messageId: m.message_id,
+          threadId: m.thread_id,
+          seq: m.seq,
+          role: m.role,
+          kind: m.kind,
+          inContext: m.in_context,
+          // A converted record may carry an empty `created_at`; the record keeps
+          // it, the column (an ordering aid) takes the ingest time.
+          createdAt: Number.isFinite(createdAt) ? new Date(createdAt) : new Date(),
+          v: m.v,
+          producer: m.producer,
+          generation,
+          rev: put.rev,
+          contentHash,
+          deletedAt: null,
+          record: record as unknown as Record<string, unknown>,
+          toolInputOrder: toolInputOrderOf(record),
+        };
+      }),
+    )
+    .onConflictDoUpdate({
+      target: [sessionLogMessages.sessionId, sessionLogMessages.messageId],
+      set: {
+        threadId: sql`excluded.thread_id`,
+        seq: sql`excluded.seq`,
+        role: sql`excluded.role`,
+        kind: sql`excluded.kind`,
+        inContext: sql`excluded.in_context`,
+        createdAt: sql`excluded.created_at`,
+        v: sql`excluded.v`,
+        producer: sql`excluded.producer`,
+        generation: sql`excluded.generation`,
+        rev: sql`excluded.rev`,
+        contentHash: sql`excluded.content_hash`,
+        deletedAt: null,
+        record: sql`excluded.record`,
+        toolInputOrder: sql`excluded.tool_input_order`,
+        updatedAt: sql`now()`,
+      },
+      // An unchanged re-put (a restarted daemon re-sends every message) leaves the row; it is still acknowledged.
+      // A capture row and a row of another generation are always replaced.
+      setWhere: sql`(excluded.generation, excluded.rev) > (${sessionLogMessages.generation}, ${sessionLogMessages.rev})
+        AND (${sessionLogMessages.contentHash} IS DISTINCT FROM excluded.content_hash OR ${sessionLogMessages.deletedAt} IS NOT NULL
+             OR ${sessionLogMessages.rev} < ${SESSION_LOG_CAPTURE_REV_LIMIT} OR ${sessionLogMessages.generation} <> excluded.generation)`,
+    });
 }
 
 async function markDurableTurns(tx: Tx, sessionId: string, puts: readonly SessionLogPut[]): Promise<void> {
@@ -469,9 +528,10 @@ async function markDurableTurns(tx: Tx, sessionId: string, puts: readonly Sessio
   if (turnMessageIds.length === 0) return;
   await tx
     .update(sessionTurns)
-    // The first acknowledgement: a daemon that restarts re-sends every message, and a replay is not new durability.
-    .set({ logDurableAt: sql`coalesce(${sessionTurns.logDurableAt}, now())` })
-    .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, turnMessageIds)));
+    // The first acknowledgement only: a daemon that restarts re-sends every message, and a replay is not new
+    // durability. A durable turn is not touched (no new row version, no lock).
+    .set({ logDurableAt: sql`now()` })
+    .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, turnMessageIds), isNull(sessionTurns.logDurableAt)));
 }
 
 /** The boot-reconcile manifest, or null when the session is not this project's. */

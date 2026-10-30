@@ -54,7 +54,9 @@ const uiButtonMock = () => ({
   Button: ({ onClick, children }: { onClick: () => void; children: React.ReactNode }) =>
     createElement('button', { onClick }, children),
 });
-mock.module('@kortix/ui/button', uiButtonMock);
+// The real module keeps exports such as buttonVariants that the page's imports read.
+const realButton = await import('@kortix/ui/button');
+mock.module('@kortix/ui/button', () => ({ ...realButton, ...uiButtonMock() }));
 mock.module('@/components/common/route-loading', () => ({
   RouteLoadingFallback: () => createElement('p', null, 'Loading'),
 }));
@@ -165,9 +167,9 @@ test('a segment that needs a project opens in the last project, never Profile', 
   pending = false;
   failed = false;
   for (const [raw, remembered, expected] of [
-    ['computers', 'p1', '/projects/p1/customize/connectors'],
+    ['computers', 'p1', '/projects/p1/admin/connectors'],
     ['computer', 'p1', '/projects/p1/settings/computer'],
-    ['secrets', 'p1', '/projects/p1/customize/secrets'],
+    ['secrets', 'p1', '/projects/p1/admin/secrets'],
     ['computers', null, '/projects'],
   ] as const) {
     segment = raw;
@@ -207,7 +209,7 @@ test('a project segment waits for the signed-in user before it reads the last pr
   await act(async () => {
     root?.update(createElement(SettingsTabPage));
   });
-  expect(replacements).toEqual(['/projects/p1/customize/connectors']);
+  expect(replacements).toEqual(['/projects/p1/admin/connectors']);
   await act(async () => {
     root?.unmount();
   });

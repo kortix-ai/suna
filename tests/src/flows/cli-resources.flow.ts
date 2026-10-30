@@ -508,6 +508,8 @@ flow(
       'GET /v1/projects/:projectId/sessions',
       'GET /v1/projects/:projectId/sessions/:sessionId',
       'POST /v1/projects/:projectId/sessions/:sessionId/recover',
+      'POST /v1/accounts/tokens',
+      'POST /v1/projects/:projectId/sessions/:sessionId/log/journal',
     ],
   },
   async (ctx) => {
@@ -519,7 +521,8 @@ flow(
       userId: ctx.P.OWNER.userId!,
     });
     ctx.track('session', sessionId, { projectId: project.id });
-    await seedSessionTranscript(ctx.env, { projectId: project.id, accountId: project.accountId, sessionId });
+    const bearer = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-recover-journal') });
+    await seedSessionTranscript(ctx.env, { projectId: project.id, accountId: project.accountId, sessionId, bearer });
     const db = await openFlowDb(ctx.env);
     const row = async () =>
       (await db.query<{ external_id: string | null; recovered: string | null }>(

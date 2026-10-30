@@ -1,5 +1,19 @@
 // Generated from the final user-visible i18n audit. Keys are SHA-256(message)[0:12].
 export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
+  "trigger": 'text683259feabbf',
+  "New trigger": 'texta38f4ea67a30',
+  "Search triggers": 'textcf789cba73dc',
+  "No triggers yet": 'text362ec1f12075',
+  "Start agents or wake sessions on a schedule or an event.": 'text8fbb8c347fc0',
+  "Create a trigger and your agent runs on its own, no prompt needed.": 'texte9acea9f91da',
+  "Have an agent run when a change request merges.": 'text0e8f0fa67e67',
+  "change request trigger": 'text20c14db54300',
+  "New change request trigger": 'textb0d2b95916ce',
+  "Search change request triggers": 'textd025f8dc1334',
+  "No change request triggers yet": 'text1bc4d0bc8d03',
+  "Create one to have an agent run when a change request merges.": 'text3c11a07619e0',
+  "Change request merged": 'text5ffd973e20ed',
+  "Branch": 'text52656e8104ee',
   "Connector events": 'text0ba357fa63f8',
   "Connector event": 'textca395c4d19b2',
   "connector event": 'text6064256ee716',
@@ -11,7 +25,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   "New App event": 'text064694999e1f',
   "Search App events": 'text1934aa0740bb',
   "No App events yet": 'text25db7e5609e5',
-  "An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml.": 'text9f8f92588517',
+  "Create one to have an agent run when one of your Apps sends an event.": 'textd85b56df2c94',
   Drive: 'text6312b4b9baf1',
   Drives: 'text729fe0e7b138',
   '{label} has finished.': 'text27d628c8b427',
@@ -286,7 +300,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Keep model billing with your provider': 'textcd996e5c44e9',
   'Keys are resolved on our side of the wall. The machine the model drives never holds them.':
     'texte6229e214e88',
-  'Kortix – The open-source AI Operating System': 'textce34af36d804',
+  'Kortix CompanyOS – the open-source operating system for your company': 'textce34af36d804',
   'Kortix is building the open AGI platform. A company owns all of it — every agent, all of their data, every skill, every connector, the memory, the whole configuration, on their own infrastructure.':
     'text445cf0a2abfa',
   'Kortix — Presentations': 'textd84b8be91e7b',
@@ -308,6 +322,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Loading your workspace': 'text22cd35468c29',
   Logo: 'textd707dc2f1936',
   Logs: 'textea2100dc89ae',
+  Loops: 'textc08f99e3947d',
   Machine: 'text8f1cc42d7c1c',
   macOS: 'textaed6b7aa2a05',
   Manager: 'text8b2085f74dfa',
@@ -423,7 +438,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Requests are checked against the saved secret .': 'textc6fbb4b00507',
   'research/': 'text2f80158a9d89',
   'Reserving your computer': 'texta7d795204fda',
-  Reminders: 'text7971dd752669',
   Review: 'textaff0766a5290',
   Revoked: 'textf6f738d04392',
   Routing: 'textbcba696f3eb1',
@@ -510,7 +524,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'The in-depth platform walkthrough — the full Kortix surface, from projects and sessions to connectors, channels and change requests.':
     'text7484ed6d3897',
   'The Kortix team': 'text49e7ba9f095d',
-  'The open-source AI Operating System for your company. Every agent, skill, and memory is a file in one versioned repo you own — a workforce of AI agents that does real work, shared across your whole team from Slack, Teams, the web, or the CLI. Self-hostable, any model, your keys.':
+  'The open-source CompanyOS. Every agent, skill, and memory is a file in one versioned repo you own — a workforce of AI agents that does real work, shared across your whole team from Slack, Teams, the web, or the CLI. Self-hostable, any model, your keys.':
     'text2bf70270bfde',
   'The questions people ask before the first session.': 'text2b7df1bf48b2',
   'The record': 'textd9fa05c93112',
@@ -900,7 +914,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'per session': 'textf92898c93eec',
   'per message': 'text83d0be53d592',
   answers: 'text677fe21b65f4',
-  'We are building the open-source AI Operating System. Every company should own all of it.':
+  'We are building the open-source CompanyOS. Every company should own all of it.':
     'text5f58426c214e',
   'One kortix.yaml.': 'text52867b778586',
   'Your AI workforce, as code.': 'textd0dfd435b2f4',

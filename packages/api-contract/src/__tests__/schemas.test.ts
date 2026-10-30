@@ -147,7 +147,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       warm_sessions: false,
       secrets_egress: false,
       pooled_provider_secrets: false,
-      genui: false,
       us_region: false,
       event_triggers: false,
       notification_center: false,
@@ -159,8 +158,10 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       goals: false,
       workspace_volume: false,
       artifacts: false,
+      artifact_comments: false,
       email_channel: false,
       session_groups: false,
+      chrome: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -366,6 +367,13 @@ describe('ProjectSchema', () => {
     const experimental = projectFixture().experimental as Record<string, boolean>;
     expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, pi_harness: true } })).experimental.pi_harness).toBe(true);
     expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, pi_harness: false } }))).toThrow();
+  });
+
+  test('experimental carries the graduated genui key only as a constant true', () => {
+    // Wire compat: the API still sends `genui: true`; older web, SDK and mobile clients render blocks only while it is true.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, genui: true } })).experimental.genui).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, genui: false } }))).toThrow();
   });
 
   test('experimental carries the graduated connectors_v2 and connectors_api_discover keys only as a constant true', () => {
@@ -887,7 +895,6 @@ describe('envelopes', () => {
       'warm_sessions',
       'secrets_egress',
       'pooled_provider_secrets',
-      'genui',
       'us_region',
       'event_triggers',
       'notification_center',
@@ -899,8 +906,10 @@ describe('envelopes', () => {
       'goals',
       'workspace_volume',
       'artifacts',
+      'artifact_comments',
       'email_channel',
       'session_groups',
+      'chrome',
     ]);
   });
 

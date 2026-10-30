@@ -5,6 +5,9 @@ import { createHash } from 'node:crypto';
 import { logger } from '../lib/logger';
 import { isPlatinumConfigured, platinumFetch } from '../shared/platinum';
 import { DEFAULT_SANDBOX_MOUNT_LIMIT } from './access';
+import { parseVolumeWriteCommit, type VolumeWriteCommit } from './volume-commit';
+
+export { parseVolumeWriteCommit, type VolumeWriteCommit } from './volume-commit';
 
 /** A storage failure the drive routes turn into a response. `message` is user-facing. */
 export class DriveStorageError extends Error {
@@ -31,6 +34,14 @@ async function call(path: string, init: RequestInit = {}, allowRangeRefusal = fa
   let res: Response;
   try {
     res = await platinumFetch(path, init);
+    // Reads are safe to replay while storage recovers; writes may have committed.
+    for (const delay of [2_000, 3_000]) {
+      if ((init.method ?? 'GET').toUpperCase() !== 'GET' || res.status !== 503 || init.signal?.aborted) break;
+      await res.body?.cancel();
+      await Bun.sleep(delay);
+      init.signal?.throwIfAborted();
+      res = await platinumFetch(path, init);
+    }
   } catch (err) {
     logger.warn(`[drives] ${init.method ?? 'GET'} ${path} failed:`, { error: err instanceof Error ? err.message : String(err) });
     throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', 'drive_storage_unavailable');
@@ -148,7 +159,7 @@ export async function writeVolumeFile(
   path: string,
   body: Uint8Array<ArrayBuffer>,
   opts: { overwrite: boolean; ifMatch?: string },
-): Promise<{ path: string; size: number; version?: string }> {
+): Promise<{ path: string; size: number; version?: string; commit?: VolumeWriteCommit }> {
   const q = new URLSearchParams({ path, overwrite: String(opts.overwrite) });
   const r = await callJson<{ path: string; size: number; version?: string }>(`${v(volume)}/files/content?${q}`, {
     method: 'PUT',
@@ -158,7 +169,8 @@ export async function writeVolumeFile(
     // same step as the write: two saves from one version cannot both land.
     headers: { 'Content-Type': 'application/octet-stream', ...(opts.ifMatch ? { 'If-Match': opts.ifMatch } : {}) },
   });
-  return { path: r.path ?? path, size: Number(r.size ?? body.byteLength), ...(r.version ? { version: String(r.version) } : {}) };
+  const commit = parseVolumeWriteCommit(r);
+  return { path: r.path ?? path, size: Number(r.size ?? body.byteLength), ...(r.version ? { version: String(r.version) } : {}), ...(commit ? { commit } : {}) };
 }
 
 /** One page of a listing, for callers that walk a whole drive (drive sync). */
@@ -227,7 +239,7 @@ export async function writeVolumeFiles(
   volume: string,
   files: Array<{ path: string; bytes: Uint8Array<ArrayBuffer> }>,
   opts: { overwrite: boolean },
-): Promise<void> {
+): Promise<VolumeWriteCommit | undefined> {
   if (!files.length) return;
   const blocks = new Map<string, Uint8Array<ArrayBuffer>>();
   const planned = files.map((f) => {
@@ -245,7 +257,7 @@ export async function writeVolumeFiles(
   for (let i = 0; i < missing.length; i += BLOCK_CONCURRENCY) {
     await Promise.all(missing.slice(i, i + BLOCK_CONCURRENCY).map((sha) => putVolumeUploadBlock(volume, plan.upload_id, sha, blocks.get(sha)!)));
   }
-  await commitVolumeUpload(volume, plan.upload_id);
+  return parseVolumeWriteCommit(await commitVolumeUpload(volume, plan.upload_id));
 }
 
 export async function moveVolumeFile(volume: string, src: string, dst: string): Promise<void> {
@@ -266,12 +278,21 @@ export interface VolumeCommit {
   kind: string;
   author: { kind: string; id: string | null };
   created_at: string;
+  on_head?: boolean;
+  parent_id?: string | null;
+  base_id?: string | null;
+  merged_from?: string[];
   stats?: { changed_paths?: number; deleted_paths?: number };
 }
 
-export async function listVolumeCommits(volume: string, limit = 100): Promise<VolumeCommit[]> {
-  const r = await callJson<{ commits: VolumeCommit[] }>(`${v(volume)}/commits?limit=${limit}`);
+export async function listVolumeCommits(volume: string, limit = 100, opts: { includeSide?: boolean; before?: string } = {}): Promise<VolumeCommit[]> {
+  const query = new URLSearchParams({ limit: String(limit), ...(opts.includeSide ? { include_side: 'true' } : {}), ...(opts.before ? { before: opts.before } : {}) });
+  const r = await callJson<{ commits: VolumeCommit[] }>(`${v(volume)}/commits?${query}`);
   return r.commits ?? [];
+}
+
+export async function getVolumeCommit(volume: string, commitId: string): Promise<VolumeCommit> {
+  return callJson<VolumeCommit>(`${v(volume)}/commits/${encodeURIComponent(commitId)}`);
 }
 
 export async function restoreVolume(volume: string, to: string): Promise<void> {

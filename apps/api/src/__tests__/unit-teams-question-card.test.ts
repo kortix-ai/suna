@@ -277,6 +277,91 @@ describe('buildQuestionCard — the form reads like the web question UI', () => 
   });
 });
 
+describe('buildQuestionCard — a stored question', () => {
+  const pendingId = crypto.randomUUID();
+  // A blank question or option is not shown, so its index is not a shown one.
+  const blank = { question: ' ', options: [] };
+
+  test('without one, a tap card and a form are byte-identical to before', () => {
+    // Built by the code before the stored question existed (6f0112a86c).
+    const tap = {
+      "type": "AdaptiveCard",
+      "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+      "version": "1.5",
+      "body": [
+        {"type":"TextBlock","text":"\ud83d\udcac  A quick question","wrap":true,"size":"large","weight":"bolder","spacing":"none"},
+        {"type":"TextBlock","text":"Merge?","wrap":true,"weight":"bolder","spacing":"small"},
+        {"type":"TextBlock","text":"**Yes** \u2014 squash","wrap":true,"isSubtle":true,"size":"small","spacing":"small"},
+        {"type":"TextBlock","text":"Tap an option, or just reply in the chat.","wrap":true,"isSubtle":true,"size":"small","spacing":"medium"},
+      ],
+      "actions": [
+        {"type":"Action.Execute","title":"Yes","verb":"teams_answer","data":{"verb":"teams_answer","answer":"Yes","question":"Merge?"}},
+        {"type":"Action.Execute","title":"No","verb":"teams_answer","data":{"verb":"teams_answer","answer":"No","question":"Merge?"}},
+      ],
+    };
+    const form = {
+      "type": "AdaptiveCard",
+      "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+      "version": "1.5",
+      "body": [
+        {"type":"TextBlock","text":"\ud83d\udcdd  2 questions","wrap":true,"size":"large","weight":"bolder","spacing":"none"},
+        {"type":"TextBlock","text":"Answer here, or just reply in the chat.","wrap":true,"isSubtle":true,"size":"small","spacing":"small"},
+        {"type":"TextBlock","text":"1 of 2","wrap":true,"isSubtle":true,"size":"small","spacing":"large"},
+        {"type":"TextBlock","text":"Regions?","wrap":true,"weight":"bolder","size":"small","spacing":"none"},
+        {"type":"Input.ChoiceSet","choices":[{"title":"eu","value":"eu"},{"title":"us","value":"us"}],"isMultiSelect":true,"style":"expanded","placeholder":"Pick one or more","id":"Regions?"},
+        {"type":"Input.Text","placeholder":"Or type your own answer","id":"Regions? (other)"},
+        {"type":"TextBlock","text":"2 of 2","wrap":true,"isSubtle":true,"size":"small","spacing":"large"},
+        {"type":"TextBlock","text":"Notes?","wrap":true,"weight":"bolder","size":"small","spacing":"none"},
+        {"type":"Input.Text","isMultiline":true,"placeholder":"Your answer","id":"Notes?"},
+      ],
+      "actions": [
+        {"type":"Action.Execute","title":"Send answers","verb":"teams_form","data":{"verb":"teams_form","fieldIds":"Regions?,Regions? (other),Notes?"}},
+      ],
+    };
+    expect(JSON.stringify(buildQuestionCard([{ question: 'Merge?', options: [{ label: 'Yes', description: 'squash' }, { label: 'No' }] }]))).toBe(
+      JSON.stringify(tap),
+    );
+    expect(
+      JSON.stringify(
+        buildQuestionCard([
+          { question: 'Regions?', options: [{ label: 'eu' }, { label: 'us' }], multiple: true, custom: true },
+          { question: 'Notes?', options: [] },
+        ]),
+      ),
+    ).toBe(JSON.stringify(form));
+  });
+
+  test('a tap names the stored question and option by their stored index; nothing else changes', () => {
+    const questions = [blank, { question: 'Merge?', options: [{ label: 'Yes' }, { label: ' ' }, { label: 'No' }] }];
+    const card = buildQuestionCard(questions, pendingId) as unknown as Card;
+    expect(card.actions?.map((a) => a.data)).toEqual([
+      { verb: 'teams_answer', answer: 'Yes', question: 'Merge?', kq: `kq:${pendingId}:1.0` },
+      { verb: 'teams_answer', answer: 'No', question: 'Merge?', kq: `kq:${pendingId}:1.2` },
+    ]);
+    const bare = (c: Card) => ({ ...c, actions: c.actions?.map(({ data: { kq, ...data }, ...a }) => ({ ...a, data })) });
+    expect(JSON.stringify(bare(card))).toBe(JSON.stringify(buildQuestionCard(questions)));
+  });
+
+  test('a form names them by stored index: each field id, each choice value and the submit', () => {
+    const questions = [
+      blank,
+      { question: 'Regions?', options: [{ label: 'eu, primary' }, { label: ' ' }, { label: 'us' }], multiple: true, custom: true },
+      { question: 'Notes?', options: [] },
+    ];
+    const card = buildQuestionCard(questions, pendingId) as unknown as Card;
+    const inputs = nodes(card).filter((n) => String(n.type).startsWith('Input.'));
+    expect(inputs.map((i) => i.id)).toEqual(['kq1', 'kq1.text', 'kq2.text']);
+    expect(inputs[0]!.choices).toEqual([
+      { title: 'eu, primary', value: '0' },
+      { title: 'us', value: '2' },
+    ]);
+    expect(card.actions?.[0].data).toEqual({ verb: TEAMS_FORM_VERB, fieldIds: 'kq1,kq1.text,kq2.text', kq: pendingId });
+    // Every label, caption and choice title is the one shown without it.
+    const shown = (c: unknown) => nodes(c).flatMap((n) => [n.text, n.title].filter((t) => typeof t === 'string'));
+    expect(shown(card)).toEqual(shown(buildQuestionCard(questions)));
+  });
+});
+
 describe('buildFormCard — agent-authored forms are unchanged', () => {
   test('a choice field with no style keeps the Adaptive Cards default', async () => {
     // `teams ask --form-file` forms predate `style`; they must not change shape.

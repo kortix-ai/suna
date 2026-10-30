@@ -210,6 +210,35 @@ describe('a denied connector call carries its remedy', () => {
     expect(captured).toHaveLength(1);
   });
 
+  test('CLI: a gate that holds the input says Kortix runs it and not to repeat it', async () => {
+    respondWith = () =>
+      jsonResponse(
+        {
+          ok: false,
+          status: 'pending_approval',
+          execution_id: 'exec-held',
+          retryable: false,
+          approval_url: 'https://app.kortix.test/approve/synthetic-token',
+          approval_instructions: 'Share approval_url with a human.',
+          runs_on_approval: true,
+        },
+        202,
+      );
+    const result = await runCli(['connectors', 'call', 'crm.write', '--project', PROJECT_ID]);
+    expect(result.code).toBe(0);
+    const text = result.payload.approval_instructions as string;
+    expect(text).toContain('Kortix runs this exact call once a human approves. Do not repeat the call.');
+    expect(text).toContain(`kortix review show call:exec-held --project ${PROJECT_ID}`);
+    expect(text).not.toContain('Approval alone does not run the call');
+  });
+
+  test('CLI: a gate without a held input keeps the repeat rule', async () => {
+    respondWith = () =>
+      jsonResponse({ ok: false, status: 'pending_approval', execution_id: 'exec-old', retryable: false }, 202);
+    const result = await runCli(['connectors', 'call', 'crm.write', '--project', PROJECT_ID]);
+    expect(result.payload.approval_instructions).toContain('Approval alone does not run the call');
+  });
+
   test('CLI: an older gated response without an execution id has no broken command', async () => {
     respondWith = () =>
       jsonResponse(

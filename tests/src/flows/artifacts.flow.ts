@@ -24,6 +24,7 @@ type Detail = {
   can_edit: boolean; can_manage: boolean; pinned: boolean; entry_version: string | null;
   view_url: string; public_url: string | null; public_content_url: string | null;
   version: { id: string | null; files: { path: string }[]; view_url: string };
+  participants?: { participants: { user_id: string; is_viewer: boolean }[]; total: number; multi_user: boolean };
 };
 
 /** A 1×1 PNG: binary bytes must survive the CLI's base64 upload unchanged. */
@@ -56,6 +57,7 @@ flow(
     timeoutMs: 300_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
+      'GET /v1/projects/:projectId/link-preview',
       `GET ${TYPES}`, `GET ${LIST}`, `POST ${LIST}`, `POST ${SHARE}`, `GET ${ONE}`, `PUT ${ONE}`, `PATCH ${ONE}`, `DELETE ${ONE}`,
       `PUT ${PIN}`, `DELETE ${PIN}`, `GET ${VERSIONS}`, `POST ${RESTORE}`, `GET ${CONTENT}`,
       'GET /v1/artifacts/s/:token', 'GET /v1/artifacts/s/:token/*', 'GET /v1/artifacts/p/:artifactId', 'GET /v1/artifacts/p/:artifactId/*', 'GET /v1/artifacts/meta/:artifactId',
@@ -154,10 +156,21 @@ flow(
       (await ctx.client.as(ctx.P.NONMEMBER).get(ONE, one())).status([403, 404]);
     });
 
+    await ctx.step("link preview (a doc's link card): ANON → 401, a non-http URL → 400, a private address is refused and answers nulls", async () => {
+      const PREVIEW = '/v1/projects/:projectId/link-preview';
+      (await ctx.client.as(ctx.P.ANON).get(PREVIEW, { params: p, query: { url: 'https://example.com/' } })).status(401);
+      (await owner.get(PREVIEW, { params: p, query: { url: 'javascript:alert(1)' } })).status(400);
+      const r = (await owner.get(PREVIEW, { params: p, query: { url: 'http://127.0.0.1:1/' } })).status(200).json<Record<string, unknown>>();
+      if (r.url !== 'http://127.0.0.1:1/' || r.title !== null || r.description !== null || r.image_url !== null) throw new Error(JSON.stringify(r));
+    });
+
     await ctx.step("shared with the member: they read it, but saving (its file is in OWNER's own folder) and resharing → 403 artifact_read_only", async () => {
       (await owner.patch(ONE, { shared_with_user_ids: [member.userId] }, one())).status(200);
       const a = (await asMember.get(ONE, one())).status(200).json<Detail>();
       if (a.can_edit || a.can_manage) throw new Error(JSON.stringify({ can_edit: a.can_edit, can_manage: a.can_manage }));
+      // Who can open it, as a session lists its people: the owner first, then the member (the viewer).
+      const people = a.participants?.participants.map((p) => [p.user_id, p.is_viewer]);
+      if (JSON.stringify(people) !== JSON.stringify([[ctx.P.OWNER.userId, false], [member.userId, true]]) || a.participants?.total !== 2) throw new Error(JSON.stringify(a.participants));
       (await asMember.put(ONE, { files: { 'index.md': { content: 'x' } } }, one())).status(403).body().has('$.code', 'artifact_read_only');
       (await asMember.patch(ONE, { visibility: 'public' }, one())).status(403);
     });
@@ -167,6 +180,23 @@ flow(
       const list = (await asMember.get(LIST, { params: p })).status(200).json<{ artifacts: Detail[] }>().artifacts;
       if (!list.some((x) => x.artifact_id === doc)) throw new Error('member does not list a project artifact');
       (await asMember.post(SHARE, { path: docPath }, { params: p })).status(404);
+    });
+
+    await ctx.step('binding: published by a person → no space, no agent; PATCH space binds it; list ?space with the space\'s agents finds it, ?unbound leaves it out; a bad slug → 400; the member (no manage) → 403', async () => {
+      const before = (await owner.get(ONE, one())).status(200).json<Detail & { space: string | null; agent: string | null }>();
+      if (before.space !== null || before.agent !== null) throw new Error(`a person's publish got a binding: ${before.space} ${before.agent}`);
+      const bound = (await owner.patch(ONE, { space: 'ops', agent: 'closer' }, one())).status(200).json<{ space: string | null; agent: string | null }>();
+      if (bound.space !== 'ops' || bound.agent !== 'closer') throw new Error(JSON.stringify(bound));
+      const inSpace = (await owner.get(LIST, { params: p, query: { space: 'ops', agent: 'closer' } })).status(200).json<{ artifacts: Detail[] }>().artifacts;
+      if (!inSpace.some((x) => x.artifact_id === doc)) throw new Error('the space filter misses a bound artifact');
+      const other = (await owner.get(LIST, { params: p, query: { space: 'sales' } })).status(200).json<{ artifacts: Detail[] }>().artifacts;
+      if (other.some((x) => x.artifact_id === doc)) throw new Error('another space lists it');
+      const unbound = (await owner.get(LIST, { params: p, query: { unbound: 1 } })).status(200).json<{ artifacts: Detail[] }>().artifacts;
+      if (unbound.some((x) => x.artifact_id === doc)) throw new Error('?unbound lists a bound artifact');
+      (await owner.patch(ONE, { space: 'Not A Slug' }, one())).status(400);
+      (await asMember.patch(ONE, { space: 'sales' }, one())).status(403).body().has('$.code', 'artifact_read_only');
+      // Back to project-wide: the steps below read the artifact as before.
+      (await owner.patch(ONE, { space: null, agent: null }, one())).status(200);
     });
 
     await ctx.step('saving with base_version writes the file in Files; a save from the old version → 409 version_conflict', async () => {
@@ -281,6 +311,8 @@ flow(
         for (const n of [1, 2, 3]) sandbox.writeFile(`deck/cards/${n}.png`, PNG);
         const out = JSON.parse(ok(await run(['artifacts', 'publish', 'deck', '--json']), 'publish').stdout);
         if (out.title !== 'Board update' || out.type !== 'html' || !out.path.endsWith('/Artifacts/board-update') || out.created_by_session_id !== sessionId) throw new Error(JSON.stringify(out));
+        // Grouping without tagging: a session's publish is owned by the session's agent.
+        if (out.agent !== 'default' || out.space !== null) throw new Error(`binding ${out.agent} ${out.space}`);
         page = out.artifact_id;
         for (const n of [1, 2, 3]) {
           const img = await fetch(`${out.view_url}cards/${n}.png`);

@@ -448,7 +448,7 @@
   },
   "src/channels/model-access.ts": {
     "kortix-api/projects-surface": {
-      "count": 2
+      "count": 1
     },
     "no-console": {
       "count": 1
@@ -699,7 +699,7 @@
       "count": 2
     },
     "no-console": {
-      "count": 5
+      "count": 3
     }
   },
   "src/channels/teams/jwt.ts": {
@@ -745,11 +745,6 @@
     },
     "no-console": {
       "count": 7
-    }
-  },
-  "src/channels/telegram-webhook.ts": {
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/channels/vision-model.ts": {
@@ -3077,7 +3072,7 @@
       "count": 2
     },
     "no-restricted-properties": {
-      "count": 11
+      "count": 9
     }
   },
   "src/snapshots/builder-log.ts": {
@@ -3153,7 +3148,7 @@
   },
   "src/snapshots/template-runtime-fingerprint.ts": {
     "no-restricted-properties": {
-      "count": 4
+      "count": 3
     }
   },
   "src/snapshots/templates.ts": {

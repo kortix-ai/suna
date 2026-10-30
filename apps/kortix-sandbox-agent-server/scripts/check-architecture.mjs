@@ -73,23 +73,16 @@ const cases = [
   ['adapter to shared', 'src/harness/pi/boot.ts', "import '../shared/on-boot';", true],
   ['adapter to a service', 'src/harness/pi/boot.ts', "import '@/services/workspace-provider/workspace-provider';", true],
   ['adapter to types', 'src/harness/pi/boot.ts', "import type { InitialTurnClaim } from '@/types/control-plane';", true],
-  ['adapter to another adapter', 'src/harness/pi/boot.ts', "import '../open-code/boot';", false],
-  ['adapter to another adapter, type-only', 'src/harness/pi/boot.ts', "import type { Opencode } from '../open-code/lifecycle';", false],
-  ['adapter to another adapter, dynamic', 'src/harness/pi/boot.ts', "void import('../open-code/boot');", false],
-  ['adapter to another adapter, re-export', 'src/harness/pi/boot.ts', "export * from '../open-code/paths';", false],
   ['adapter to app', 'src/harness/pi/boot.ts', "import '@/app/server';", false],
-  ['adapter to a route', 'src/harness/open-code/boot.ts', "import '@/routes/kortix/health';", false],
-  ['adapter to hono', 'src/harness/open-code/boot.ts', "import { Hono } from 'hono';", false],
-  ['open-code to pi packages', 'src/harness/open-code/boot.ts', "import '@earendil-works/pi-agent-core';", false],
+  ['adapter to a route', 'src/harness/pi/boot.ts', "import '@/routes/kortix/health';", false],
+  ['adapter to hono', 'src/harness/pi/boot.ts', "import { Hono } from 'hono';", false],
   ['pi to pi packages', 'src/harness/pi/runtime.ts', "import '@earendil-works/pi-agent-core';", true],
-  ['open-code to bun:sqlite', 'src/harness/open-code/opencode-db.ts', "import { Database } from 'bun:sqlite';", true],
   ['pi to bun:sqlite', 'src/harness/pi/runtime.ts', "import { Database } from 'bun:sqlite';", false],
-  ['resolver to an adapter', 'src/harness/harness.ts', "import './open-code/boot';", true],
-  ['contract to an adapter', 'src/harness/contract/control.ts', "import '../open-code/boot';", false],
+  ['resolver to an adapter', 'src/harness/harness.ts', "import './pi/service';", true],
+  ['contract to an adapter', 'src/harness/contract/control.ts', "import '../pi/boot';", false],
   ['shared to an adapter, type-only', 'src/harness/shared/on-boot.ts', "import type { PiConfig } from '../pi/config';", false],
   ['shared to the resolver', 'src/harness/shared/agent-env-file.ts', "import '../harness';", true],
   ['shared to the message-id codec', 'src/harness/shared/session-log-boot.ts', "import { mintWireMessageId } from '@kortix/sdk/wire-message-id';", true],
-  ['open-code to the message-id codec', 'src/harness/open-code/session-log.ts', "import { wireIdClock } from '@kortix/sdk/wire-message-id';", false],
   ['route to the message-id codec', 'src/routes/kortix/health.ts', "import { wireIdClock } from '@kortix/sdk/wire-message-id';", false],
 
   // routes/ — controllers
@@ -99,12 +92,12 @@ const cases = [
   ['route to the contract', 'src/routes/kortix/health.ts', "import type { HarnessDiagnosticsService } from '@/harness/contract/diagnostics';", true],
   ['route to lib', 'src/routes/workspace/files.ts', "import '@/lib/git/git';", true],
   ['route to types', 'src/routes/kortix/health.ts', "import type { ConfigReleaseReport } from '@/types/config-release';", true],
-  ['route to an adapter', 'src/routes/kortix/runtime.ts', "import '@/harness/open-code/queries';", false],
+  ['route to an adapter', 'src/routes/kortix/runtime.ts', "import '@/harness/pi/queries';", false],
   ['route to app', 'src/routes/kortix/health.ts', "import '@/app/server';", false],
 
   // app/ and main.ts — the composition root
   ['app to routes', 'src/app/server.ts', "import '@/routes/kortix/health';", true],
-  ['app to an adapter', 'src/app/server.ts', "import '@/harness/open-code/boot';", false],
+  ['app to an adapter', 'src/app/server.ts', "import '@/harness/pi/boot';", false],
   ['main to the resolver', 'src/main.ts', "import '@/harness/harness';", true],
   ['main to an adapter', 'src/main.ts', "import '@/harness/pi/boot';", false],
 
@@ -113,8 +106,12 @@ const cases = [
   ['adapter to app, relative path', 'src/harness/pi/boot.ts', "import '../../app/server';", false],
   ['lib to the harness resolver, relative path', 'src/lib/config/config.ts', "import '../../harness/harness';", false],
 
+  // the image resize worker entrypoint: the photon wasm redirect and pi's worker only
+  ['image resize worker to the photon redirect', 'src/utils/image-resize-worker.ts', "import '@/harness/pi/images';", true],
+  ['image resize worker to another pi file', 'src/utils/image-resize-worker.ts', "import '@/harness/pi/runtime';", false],
+
   // tests reach what they exercise
-  ['test to an adapter', 'src/__tests__/pi-harness.test.ts', "import '@/harness/open-code/boot';", true],
+  ['test to an adapter', 'src/__tests__/pi-harness.test.ts', "import '@/harness/pi/boot';", true],
 ]
 
 // Every service to every other service: rejected. The probe source and target
@@ -201,7 +198,7 @@ for (const [name, code, allowed] of typeOnlyCases) {
 }
 
 // [name, file, code, words the rule must report as unexpected] — E18: OpenCode
-// names only inside harness/open-code/ (kortixd/opencode-names).
+// names nowhere outside the resolver (kortixd/opencode-names).
 const opencodeNameCases = [
   ['a new identifier in a route', 'src/routes/kortix/health.ts', 'const opencodePort = 1', ['opencodePort']],
   ['a string in lib', 'src/lib/log/logger.ts', "const name = 'opencode'", ['opencode']],
@@ -209,12 +206,11 @@ const opencodeNameCases = [
   ['a type reference in the contract', 'src/harness/contract/diagnostics.ts', 'type Probe = OpencodeClient', ['OpencodeClient']],
   ['a word inside a sentence', 'src/app/server.ts', "const e = 'prompt_id and opencode_session_id are required'", ['opencode_session_id']],
   ['a comment', 'src/routes/kortix/health.ts', '// opencode\nexport {}', []],
-  ['the OpenCode adapter', 'src/harness/open-code/boot.ts', 'const opencodePort = 1', []],
   ['the pi adapter, since E2', 'src/harness/pi/boot.ts', 'const opencodePort = 1', ['opencodePort']],
   ['the resolver', 'src/harness/harness.ts', 'const opencodePort = 1', []],
   ['a test file', 'src/__tests__/pi-harness.test.ts', 'const opencodePort = 1', []],
-  ['an allowlisted word in its own file', 'src/routes/kortix/legacy-names.ts', 'const opencodeEnv = 1', []],
-  ['an allowlisted word in another file', 'src/routes/kortix/health.ts', 'const opencodeEnv = 1', ['opencodeEnv']],
+  ['an allowlisted word in its own file', 'src/harness/pi/config.ts', "const dir = 'opencode'", []],
+  ['an allowlisted word in another file', 'src/routes/kortix/health.ts', "const dir = 'opencode'", ['opencode']],
 ]
 for (const [name, file, code, words] of opencodeNameCases) {
   test(`opencode names: ${name}`, async () => {
@@ -226,7 +222,7 @@ for (const [name, file, code, words] of opencodeNameCases) {
 }
 
 test('opencode names: an allowlisted word that no longer occurs is stale', async () => {
-  const file = 'src/routes/kortix/legacy-names.ts'
+  const file = 'src/harness/pi/config.ts'
   const [result] = await eslint.lintText('export {}', { filePath: resolve(root, file) })
   const stale = result.messages.filter((m) => m.ruleId === 'kortixd/opencode-names' && m.messageId === 'stale').map((m) => m.message.split("'")[1])
   assert.deepEqual(stale, OPENCODE_NAMES_ALLOWED[file])

@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-21"
 slug: "/kortix-vs-manus"
 ---
-Manus hands back an artifact you can open, replay and comment on; Kortix is the open-source AI Operating System that keeps the machinery behind it in a repository your team owns. Nothing behind a Manus task comes with you: no configuration in a repo you own, no branch to review, no environment you can rebuild elsewhere. Kortix starts from the other end, with agents, instructions, company memory and the connectors they call all kept as files, and each run on a cloud computer to itself ([Kortix docs](https://kortix.com/docs)).
+Manus hands back an artifact you can open, replay and comment on; Kortix is the open-source CompanyOS that keeps the machinery behind it in a repository your team owns. Nothing behind a Manus task comes with you: no configuration in a repo you own, no branch to review, no environment you can rebuild elsewhere. Kortix starts from the other end, with agents, instructions, company memory and the connectors they call all kept as files, and each run on a cloud computer to itself ([Kortix docs](https://kortix.com/docs)).
 
 ```logos
 label: 'Compared here:'
