@@ -24961,8 +24961,8 @@
     },
     "held": {
       "label": "Messaggi in attesa di te",
-      "title": "Messaggio da @{from}",
-      "titleShutdown": "@{from} chiede di interrompere questa sessione",
+      "title": "Messaggio da {from}",
+      "titleShutdown": "{from} chiede di interrompere questa sessione",
       "waiting": "In attesa della tua approvazione. Scade dopo 5 minuti.",
       "deny": "Nega",
       "approve": "Approva",

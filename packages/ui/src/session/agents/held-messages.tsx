@@ -5,6 +5,7 @@ import { SessionDotMatrix } from '../../primitives/dot-matrix/session-dot-matrix
 import { errorToast } from '../../primitives/toast';
 import { useTranslations } from '../../i18n';
 import { ChatCircleDotsIcon } from '@phosphor-icons/react';
+import { peerHandleLabel } from '@kortix/shared';
 import type { PeerMessage } from '@kortix/sdk';
 import { usePeerMessages } from '@kortix/sdk/react';
 
@@ -41,7 +42,7 @@ export function HeldMessageCard({ message, pending, onApprove, onDeny }: HeldMes
     >
       <ChatCircleDotsIcon aria-hidden className="text-muted-foreground mt-0.5 size-4 shrink-0" />
       <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="text-foreground text-sm font-medium">{t(kind, { from: message.from_handle })}</p>
+        <p className="text-foreground text-sm font-medium">{t(kind, { from: peerHandleLabel(message.from_handle) })}</p>
         <p className="text-foreground line-clamp-2 wrap-break-word">{heldPreview(message)}</p>
         <p className="text-muted-foreground">{t('waiting')}</p>
       </div>

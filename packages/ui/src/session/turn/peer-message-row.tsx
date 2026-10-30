@@ -1,6 +1,7 @@
 'use client';
 
 import type { PeerMessageKind, PeerMessagePromptInfo } from '@kortix/shared';
+import { peerHandleLabel } from '@kortix/shared';
 import {
   ArrowBendDownLeftIcon,
   CaretRightIcon,
@@ -59,7 +60,7 @@ export function PeerMessageRow({ info, actions }: { info: PeerMessagePromptInfo;
   const bodyId = useId();
   const KindIcon = KIND_ICON[info.kind];
   const preview = peerMessagePreview(info);
-  const headline = t(KIND_KEY[info.kind], { from: `@${info.from}` });
+  const headline = t(KIND_KEY[info.kind], { from: peerHandleLabel(info.from) });
   // Nothing more to read than the line says: the row is not a disclosure.
   const expandable = info.text.trim().length > 0 && info.text.trim() !== preview;
   const line = (

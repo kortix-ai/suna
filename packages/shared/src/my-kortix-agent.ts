@@ -12,6 +12,15 @@ export const MY_KORTIX_SANDBOX_SLUG = 'mykortix';
 export const MY_KORTIX_DISPLAY_NAME = 'My Kortix';
 
 /** True for My Kortix under its slug, or the legacy `meta` slug of an older session. */
+/**
+ * How a person reads a session's message handle: My Kortix's own session has
+ * the generated handle `mykortix-<short id>` (or the legacy `meta-…`), shown
+ * as "My Kortix"; a named agent shows as `@name`.
+ */
+export function peerHandleLabel(handle: string): string {
+  return /^(mykortix|meta)-[0-9a-f]{8}$/.test(handle) ? MY_KORTIX_DISPLAY_NAME : `@${handle}`;
+}
+
 export function isMyKortixAgentName(name: string | null | undefined): boolean {
   return name === MY_KORTIX_AGENT_NAME || name === LEGACY_MY_KORTIX_AGENT_NAME;
 }

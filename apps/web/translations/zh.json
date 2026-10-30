@@ -24961,8 +24961,8 @@
     },
     "held": {
       "label": "等你处理的消息",
-      "title": "来自 @{from} 的消息",
-      "titleShutdown": "@{from} 请求停止此会话",
+      "title": "来自 {from} 的消息",
+      "titleShutdown": "{from} 请求停止此会话",
       "waiting": "等待你的批准。5 分钟后过期。",
       "deny": "拒绝",
       "approve": "批准",

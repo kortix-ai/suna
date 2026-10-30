@@ -24961,8 +24961,8 @@
     },
     "held": {
       "label": "Mensagens esperando por você",
-      "title": "Mensagem de @{from}",
-      "titleShutdown": "@{from} pede para parar esta sessão",
+      "title": "Mensagem de {from}",
+      "titleShutdown": "{from} pede para parar esta sessão",
       "waiting": "Aguardando a sua aprovação. Expira em 5 minutos.",
       "deny": "Negar",
       "approve": "Aprovar",

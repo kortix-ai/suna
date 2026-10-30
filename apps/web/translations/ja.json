@@ -24961,8 +24961,8 @@
     },
     "held": {
       "label": "あなたを待っているメッセージ",
-      "title": "@{from} からのメッセージ",
-      "titleShutdown": "@{from} がこのセッションの停止を求めています",
+      "title": "{from} からのメッセージ",
+      "titleShutdown": "{from} がこのセッションの停止を求めています",
       "waiting": "承認を待っています。5 分後に期限切れになります。",
       "deny": "拒否",
       "approve": "承認",

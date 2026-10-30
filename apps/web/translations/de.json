@@ -24961,8 +24961,8 @@
     },
     "held": {
       "label": "Nachrichten, die auf dich warten",
-      "title": "Nachricht von @{from}",
-      "titleShutdown": "@{from} bittet darum, diese Sitzung zu stoppen",
+      "title": "Nachricht von {from}",
+      "titleShutdown": "{from} bittet darum, diese Sitzung zu stoppen",
       "waiting": "Wartet auf deine Freigabe. Sie läuft nach 5 Minuten ab.",
       "deny": "Ablehnen",
       "approve": "Genehmigen",

@@ -9403,8 +9403,8 @@ const catalog = {
     },
     "held": {
       "label": "Messages waiting for you",
-      "title": "Message from @{from}",
-      "titleShutdown": "@{from} asks this session to stop",
+      "title": "Message from {from}",
+      "titleShutdown": "{from} asks this session to stop",
       "waiting": "Waiting for your approval. It expires after 5 minutes.",
       "deny": "Deny",
       "approve": "Approve",
