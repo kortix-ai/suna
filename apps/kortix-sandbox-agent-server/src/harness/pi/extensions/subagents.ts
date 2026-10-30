@@ -64,6 +64,8 @@ export interface KortixHost {
    * would otherwise have no type to name.
    */
   anyProjectAgent?(): boolean
+  /** The agent this session runs as (its resolved name). */
+  currentAgentName?(): string
   /** Run one prompt in a child (separate or same session, see `session`) and return its final answer. */
   spawnSession(input: SpawnSessionInput): Promise<SpawnSessionResult>
   /** The `workflow` tool's limits on this box (`extensions/workflow.ts`). */

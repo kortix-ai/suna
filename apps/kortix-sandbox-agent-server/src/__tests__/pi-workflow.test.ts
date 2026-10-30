@@ -4,13 +4,13 @@
  * `Bun.serve` fake of the Kortix API on a real port answers the routes the box
  * calls: the child-session routes (`POST …/sessions`, `GET …/sessions/:id`,
  * `POST …/prompts`, `GET …/transcript`, `POST …/stop`) and the project files
- * (`GET …/files`, `GET …/files/content`). Each `agent()` of a script is a
+ * (`GET …/files/content`). Each `agent()` of a script is a
  * child session of that fake API, exactly as on a real box. A person's answer
  * to the run approval goes through the runtime's question broker, as the
  * product's reply route sends it.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setSystemTime, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { WorkflowRunMetadata } from '@kortix/api-contract/kortix-tool-card'
@@ -67,11 +67,6 @@ function startFakeApi() {
       const path = url.pathname
       const project = `/v1/projects/${PROJECT_ID}`
       const base = `${project}/sessions`
-      if (req.method === 'GET' && path === `${project}/files`) {
-        const dir = `${url.searchParams.get('path')}/`
-        const entries = [...files.keys()].filter((file) => file.startsWith(dir)).map((file) => ({ path: file, type: 'file' }))
-        return entries.length > 0 ? Response.json({ entries, truncated: false, next_cursor: null }) : Response.json({ error: 'Not found' }, { status: 404 })
-      }
       if (req.method === 'GET' && path === `${project}/files/content`) {
         const file = url.searchParams.get('path')!
         return files.has(file) ? Response.json({ path: file, ref: 'main', content: files.get(file) }) : Response.json({ error: 'File not found' }, { status: 404 })
@@ -170,10 +165,14 @@ afterEach(async () => {
 })
 
 /** A booted pi runtime whose control plane is the fake API, and every tool-part frame it publishes. */
-async function boot(steps: Step[], env: Record<string, string> = {}, opts: { checkout?: boolean } = {}): Promise<{ rt: PiRuntime; frames: ToolFrame[]; workspace: string }> {
+async function boot(steps: Step[], env: Record<string, string> = {}, opts: { checkout?: boolean; files?: Record<string, string> } = {}): Promise<{ rt: PiRuntime; frames: ToolFrame[]; workspace: string }> {
   const workspace = mkdtempSync(join(tmpdir(), 'pi-workflow-box-'))
   dirs.push(workspace)
   if (opts.checkout) mkdirSync(join(workspace, '.git'))
+  for (const [file, content] of Object.entries(opts.files ?? {})) {
+    mkdirSync(join(workspace, file, '..'), { recursive: true })
+    writeFileSync(join(workspace, file), content)
+  }
   const frames: ToolFrame[] = []
   const boxEnv: NodeJS.ProcessEnv = {
     KORTIX_HARNESS: 'pi',
@@ -305,7 +304,7 @@ describe('pi workflow tool', () => {
         JSON.stringify({ a: 'answer: Research topic A', b: 'answer: Research topic B', n: 2 }, null, 2),
         '</workflow_result>',
         'agents: 2 (2 done)',
-        `run_id: ${final.doc.runId} (resume_run_id relaunches it; save_as saves its script)`,
+        `run_id: ${final.doc.runId} (resume_run_id relaunches it)`,
       ].join('\n'),
     )
 
@@ -462,7 +461,7 @@ describe('pi workflow tool', () => {
 
     // The relaunch names only the run: its saved script runs again.
     bFails = false
-    model.script([{ tool: 'workflow', args: { resume_run_id: first.runId } }, { text: 'second done' }])
+    model.script([{ tool: 'workflow', args: { script: '', resume_run_id: first.runId } }, { text: 'second done' }])
     const request = rt.admit({ text: 'retry it', files: [] })
     const asked = await answer(rt, 'Run it')
     expect(asked.questions[0]!.question).toContain(`It relaunches run ${first.runId}: agents that completed there return their saved results.`)
@@ -484,7 +483,7 @@ describe('pi workflow tool', () => {
     expect(part.output).toContain(JSON.stringify(['answer: A', 'answer: B', 'answer: C', 'answer: D'], null, 2))
 
     // A run id this computer never saw: nothing to resume.
-    model.script([{ tool: 'workflow', args: { resume_run_id: 'no-such-run-0000' } }, { text: 'third done' }])
+    model.script([{ tool: 'workflow', args: { script: '', resume_run_id: 'no-such-run-0000' } }, { text: 'third done' }])
     expect(await rt.admit({ text: 'retry the other one', files: [] }).done).toBe('completed')
     expect(lastWorkflowPart(frames).error).toContain('nothing to resume: no run no-such-run-0000 is saved on this computer.')
   })
@@ -565,8 +564,8 @@ describe('pi workflow tool, background: true', () => {
     expect(api.creates).toHaveLength(1)
     const runner = api.creates[0]!
     expect(runner).toMatchObject({ notify_parent_on_turn_end: true, name: 'Two lookups (workflow)' })
-    expect(runner.initial_prompt).toBe('Run the workflow "Two lookups" from this session\'s context: call the workflow tool with { "from_context": true }.')
-    expect(runner.initial_context).toContain('Call the workflow tool once with { "from_context": true }.')
+    expect(runner.initial_prompt).toBe('Run the workflow "Two lookups" from this session\'s context: call the workflow tool with { "script": "" }.')
+    expect(runner.initial_context).toContain('Call the workflow tool once with { "script": "" }.')
     const part = lastWorkflowPart(parent.frames)
     const doc = part.metadata as unknown as WorkflowRunMetadata
     expect(runner.runtime_context).toEqual({
@@ -584,10 +583,10 @@ describe('pi workflow tool, background: true', () => {
     expect(part.output).toStartWith('<workflow_started>\nThe workflow runs in the background in its own runner session child-1.')
     expect(part.output).toContain(`run_id: ${doc.runId}`)
 
-    // The runner: a child session (depth 1) that boots with that context and calls the tool with from_context alone.
+    // The runner: a child session (depth 1) that boots with that context and calls the tool with an empty script alone.
     api.stop()
     api = startFakeApi()
-    const runnerBox = await boot([{ tool: 'workflow', args: { from_context: true } }, { text: 'runner done' }], {
+    const runnerBox = await boot([{ tool: 'workflow', args: { script: '' } }, { text: 'runner done' }], {
       KORTIX_SESSION_ID: 'sess-runner',
       KORTIX_SESSION_CONTEXT: JSON.stringify(runner.runtime_context),
     })
@@ -609,13 +608,13 @@ describe('pi workflow tool, background: true', () => {
     const started = lastWorkflowPart(frames).metadata as unknown as WorkflowRunMetadata
     expect(started.background).toEqual({ sessionId: 'child-1' })
 
-    model.script([{ tool: 'workflow', args: { resume_run_id: started.runId } }, { text: 'relaunched' }])
+    model.script([{ tool: 'workflow', args: { script: '', resume_run_id: started.runId } }, { text: 'relaunched' }])
     expect(await approvedTurn(rt, 'relaunch it')).toBe('completed')
     expect(api.creates).toHaveLength(1)
     expect(api.followUps).toEqual([
       {
         id: 'child-1',
-        text: `Relaunch the workflow: call the workflow tool with { "from_context": true, "resume_run_id": "${started.runId}" }. Then reply with its whole text output, unchanged.`,
+        text: `Relaunch the workflow: call the workflow tool with { "script": "", "resume_run_id": "${started.runId}" }. Then reply with its whole text output, unchanged.`,
       },
     ])
     const part = lastWorkflowPart(frames)
@@ -633,6 +632,33 @@ describe('pi workflow tool, background: true', () => {
   })
 })
 
+describe('pi workflow tool, its call shape', () => {
+  test('the schema requires script and has no save, list or runner field; a call without script, or with an empty one and nothing to run, starts nothing', async () => {
+    const before = model.bodies.length
+    const { rt, frames } = await boot([
+      // The shape a model sent live: a save with no script.
+      { tool: 'workflow', args: { save_as: 'notion-competitors', background: true, max_agents: 3, description: 'Save it', from_context: false } },
+      { tool: 'workflow', args: { script: '' } },
+      { tool: 'workflow', args: { script: '   ', background: true } },
+      { text: 'done' },
+    ])
+    expect(await rt.admit({ text: 'save it', files: [] }).done).toBe('completed')
+    const tool = (model.bodies[before]!.tools as Array<{ function: { name: string; description: string; parameters: { required?: string[]; properties: Record<string, unknown> } } }>).find((t) => t.function.name === 'workflow')!
+    expect(tool.function.parameters.required).toEqual(['script'])
+    expect(Object.keys(tool.function.parameters.properties)).toEqual(['script', 'description', 'args', 'max_agents', 'background', 'resume_run_id', 'name'])
+    expect(tool.function.description).toContain('To save a workflow, the person asks; hand that file change to an agent with access to the project files.')
+    expect(tool.function.description).not.toMatch(/save_as|list_saved|from_context/)
+
+    const [missing, empty, blank] = frames.filter((f) => f.tool === 'workflow' && f.state.status === 'error').map((f) => f.state.error!)
+    expect(missing).toContain('Validation failed for tool "workflow"')
+    expect(missing).toContain('script')
+    expect(empty).toBe('The workflow has no script: pass script, or name, or resume_run_id.')
+    expect(blank).toBe('The workflow has no script: pass script, or name, or resume_run_id.')
+    expect(api.creates).toHaveLength(0)
+    expect(rt.questions.list()).toHaveLength(0)
+  })
+})
+
 describe('pi workflow tool, saved workflows', () => {
   const audit = [
     "export const meta = { name: 'audit', description: 'Audit the given files', phases: [{ title: 'Audit' }] }",
@@ -640,56 +666,45 @@ describe('pi workflow tool, saved workflows', () => {
     "return parallel(args.files.map((f) => () => agent('Audit ' + f)))",
   ].join('\n')
 
-  test('a project checkout: save_as writes .kortix/workflows/<name>.js, list_saved lists it, name runs it with args', async () => {
-    const { rt, frames, workspace } = await boot(
+  test('a project checkout: the description lists the saved names, name with script "" runs one with args, an unknown name names the folder', async () => {
+    const before = model.bodies.length
+    const { rt, frames } = await boot(
       [
-        { tool: 'workflow', args: { script: audit, save_as: 'audit' } },
-        { tool: 'workflow', args: { list_saved: true } },
-        { tool: 'workflow', args: { name: 'audit', args: { files: ['a.ts'] } } },
+        { tool: 'workflow', args: { script: '', name: 'audit', args: { files: ['a.ts'] } } },
+        { tool: 'workflow', args: { script: '', name: 'missing' } },
+        { tool: 'workflow', args: { script: "return agent('x')", name: 'audit' } },
         { text: 'done' },
       ],
       {},
-      { checkout: true },
+      { checkout: true, files: { '.kortix/workflows/audit.js': audit, '.kortix/workflows/triage.js': "return 'ok'" } },
     )
     expect(await approvedTurn(rt)).toBe('completed')
-    expect(readFileSync(join(workspace, '.kortix/workflows/audit.js'), 'utf8')).toBe(`${audit}\n`)
-    const [saved, listed, ran] = frames.filter((f) => f.tool === 'workflow' && f.state.status === 'completed').map((f) => f.state)
-    expect(saved!.output).toStartWith('Saved the workflow as .kortix/workflows/audit.js in this session\'s project checkout. Run it with { "name": "audit" }.')
-    expect(listed!.output).toBe(`Saved workflows (.kortix/workflows/ in this session's project checkout):\n- audit: Audit the given files\nRun one with { "name": "<name>", "args": … }.`)
-    expect(ran!.metadata).toMatchObject({ name: 'audit', title: 'Audit the given files', status: 'done', phases: [{ title: 'Audit', status: 'done' }] })
+    const tool = (model.bodies[before]!.tools as Array<{ function: { name: string; description: string } }>).find((t) => t.function.name === 'workflow')!
+    expect(tool.function.description).toContain('runs the saved workflow .kortix/workflows/<name>.js. Saved: audit, triage.')
+    const ran = frames.filter((f) => f.tool === 'workflow' && f.state.status === 'completed').at(-1)!.state
+    expect(ran.metadata).toMatchObject({ name: 'audit', title: 'Audit the given files', status: 'done', phases: [{ title: 'Audit', status: 'done' }] })
     expect(api.creates.map((c) => c.initial_prompt)).toEqual(['Audit a.ts'])
+    const [unknown, both] = frames.filter((f) => f.tool === 'workflow' && f.state.status === 'error').map((f) => f.state.error!)
+    expect(unknown).toBe(`No saved workflow "missing": there is no missing.js in .kortix/workflows/ in this session's project checkout.`)
+    expect(both).toBe('Pass either a script or a name, not both: with name, pass script "".')
   })
 
-  test('no checkout (My Kortix): saved workflows are read through the API, and save_as hands the file to a session that opens a change request', async () => {
+  test('no checkout (My Kortix): name with script "" reads the saved workflow through the API; an unknown name names the default branch folder', async () => {
     api.files.set('.kortix/workflows/audit.js', audit)
-    api.childrenWork()
     const { rt, frames, workspace } = await boot(
       [
-        { tool: 'workflow', args: { list_saved: true } },
-        { tool: 'workflow', args: { script: audit, save_as: 'audit-2' } },
-        { text: 'done' },
+        { tool: 'workflow', args: { script: '', name: 'audit', args: { files: ['b.ts'] } } },
+        { tool: 'workflow', args: { script: '', name: 'audit-2' } },
+        { text: 'ran' },
       ],
       { KORTIX_META_AGENT: '1' },
     )
-    expect(await rt.admit({ text: 'list and save', files: [] }).done).toBe('completed')
-    const [listed, saved] = frames.filter((f) => f.tool === 'workflow' && f.state.status === 'completed').map((f) => f.state)
-    expect(listed!.output).toBe(`Saved workflows (.kortix/workflows/ on the project's default branch):\n- audit: Audit the given files\nRun one with { "name": "<name>", "args": … }.`)
-    // The save: one background session with the file in its prompt; nothing written on this box.
-    expect(api.creates).toHaveLength(1)
-    expect(api.creates[0]).toMatchObject({ notify_parent_on_turn_end: true, name: 'Save the audit-2 workflow' })
-    expect(api.creates[0]!.initial_prompt).toContain(`Create the file \`.kortix/workflows/audit-2.js\` with exactly the content between the two marker lines below`)
-    expect(api.creates[0]!.initial_prompt).toContain(`-----BEGIN WORKFLOW-----\n${audit}\n-----END WORKFLOW-----`)
-    expect(saved!.output).toContain('The session child-1 writes .kortix/workflows/audit-2.js, commits it and opens a change request.')
-    expect(existsSync(join(workspace, '.kortix'))).toBe(false)
-
-    // Run the saved one by name: read through the API.
-    api.stop()
-    api = startFakeApi()
-    api.files.set('.kortix/workflows/audit.js', audit)
-    const box = await boot([{ tool: 'workflow', args: { name: 'audit', args: { files: ['b.ts'] } } }, { text: 'ran' }], { KORTIX_META_AGENT: '1' })
-    expect(await approvedTurn(box.rt)).toBe('completed')
+    expect(await approvedTurn(rt)).toBe('completed')
     expect(api.creates.map((c) => c.initial_prompt)).toEqual(['Audit b.ts'])
-    expect(lastWorkflowPart(box.frames).metadata).toMatchObject({ name: 'audit', status: 'done' })
+    expect(frames.filter((f) => f.tool === 'workflow' && f.state.status === 'completed').at(-1)!.state.metadata).toMatchObject({ name: 'audit', status: 'done' })
+    expect(lastWorkflowPart(frames).error).toBe(`No saved workflow "audit-2": there is no audit-2.js in .kortix/workflows/ on the project's default branch.`)
+    // The tool never writes a saved workflow, here or through another session.
+    expect(await Bun.file(join(workspace, '.kortix/workflows/audit-2.js')).exists()).toBe(false)
   })
 })
 

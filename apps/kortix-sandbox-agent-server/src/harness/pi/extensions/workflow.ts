@@ -3,7 +3,10 @@
  * dynamic workflows (https://code.claude.com/docs/en/workflows).
  *
  * The model passes a JavaScript script that orchestrates subagents
- * deterministically. An optional first statement `export const meta = { name,
+ * deterministically (`script`, required; `""` with `name` or `resume_run_id`,
+ * whose script runs). The tool takes what Claude Code's Workflow tool takes:
+ * a script, a saved name, args, a relaunch; saving a workflow is a file change
+ * the person asks for, never a tool call. An optional first statement `export const meta = { name,
  * description, phases }` (a pure literal, `workflow-script.ts`) names the run
  * and lists its phases, which the card shows as `pending` until `phase(title)`
  * starts each one. `agent(prompt, opts?)` starts one child, `parallel(thunks)`
@@ -48,7 +51,8 @@
  * (`notify_parent_on_turn_end`) whose `runtime_context` carries the script,
  * args, title, run id and approved cap (`kortix.workflow.*`, chunked to the
  * API's 4,096-character strings). The runner's model calls this tool with
- * `from_context: true`, which reads them from `KORTIX_SESSION_CONTEXT`; its
+ * `script: ""`: an empty script with no `name` in a session whose
+ * `KORTIX_SESSION_CONTEXT` holds a workflow runs that workflow. Its
  * turn keeps its own box alive, and its answer reaches this session as a
  * `<task-notification>` (apps/api `subagent-notice.ts`). This call returns at
  * once with `background: { sessionId }`. Depth: a session at depth d runs
@@ -61,10 +65,11 @@
  * (`Replay`). A background run's records live on its runner's box, so its
  * relaunch is a follow-up prompt to the runner session, and this call waits.
  *
- * Saved workflows: `.kortix/workflows/<name>.js` in the project (`name` runs
- * one, `save_as` saves a script, `list_saved` lists them). A box with a
- * checkout uses its working tree; My Kortix's box reads through the API and
- * saves through a session that has the checkout, which opens a change request.
+ * Saved workflows: `.kortix/workflows/<name>.js` in the project; `name` runs
+ * one. A box with a checkout reads its working tree (and lists the names in
+ * the tool description); My Kortix's box reads the default branch through the
+ * API. The tool never writes one: an agent with the project files writes it
+ * when the person asks, through a change request.
  *
  * The script runs in a QuickJS sandbox of its own (`ownScriptSandbox`), not
  * in pi's shared codemode pool: a workflow waits on children for minutes to
@@ -162,12 +167,11 @@ const RUN_ALWAYS = "Run it, and don't ask again in this session"
 const CANCEL = 'Cancel'
 
 const parameters = Type.Object({
+  script: Type.String({
+    description:
+      'The workflow script; required. Plain JavaScript with top-level await, optionally starting with `export const meta = { name, description, phases }`. Its return value is the tool result. Pass "" with name or resume_run_id: their script runs.',
+  }),
   description: Type.Optional(Type.String({ description: "A short (3-6 words) title of the run, shown as the card title. Default: the script's meta.description." })),
-  script: Type.Optional(
-    Type.String({
-      description: 'The workflow: plain JavaScript with top-level await, optionally starting with `export const meta = { name, description, phases }`. Its return value is the tool result. Omit it with name, from_context, or resume_run_id alone.',
-    }),
-  ),
   args: Type.Optional(Type.Any({ description: 'Any JSON value; the script reads it as `args`. Pass arrays and objects as JSON values, not as a JSON string.' })),
   max_agents: Type.Optional(
     Type.Integer({ minimum: 1, description: 'The number of agent() calls the script makes. The person approves this number, and the run refuses any agent() past it. Default: the limit.' }),
@@ -179,27 +183,19 @@ const parameters = Type.Object({
     }),
   ),
   resume_run_id: Type.Optional(
-    Type.String({ description: "Relaunch an earlier run (the run_id its result names): completed agents return their saved results. Without script, the earlier run's script runs again." }),
+    Type.String({ description: 'Relaunch an earlier run (the run_id its result names): completed agents return their saved results. With script "", the earlier run\'s script runs again.' }),
   ),
-  name: Type.Optional(Type.String({ description: `Run the saved workflow ${SAVED_WORKFLOWS_DIR}/<name>.js (pass args as usual).` })),
-  save_as: Type.Optional(
-    Type.String({ description: `Save the script (or the script of resume_run_id) as ${SAVED_WORKFLOWS_DIR}/<save_as>.js. It does not run it.` }),
-  ),
-  list_saved: Type.Optional(Type.Boolean({ description: 'true: list the saved workflows with their descriptions. It runs nothing.' })),
-  from_context: Type.Optional(Type.Boolean({ description: 'Only in a workflow runner session: run the workflow this session was started with.' })),
+  name: Type.Optional(Type.String({ description: `Run the saved workflow ${SAVED_WORKFLOWS_DIR}/<name>.js, with script "" (pass args as usual).` })),
 })
 
 interface WorkflowParams {
+  script: string
   description?: string
-  script?: string
   args?: unknown
   max_agents?: number
   background?: boolean
   resume_run_id?: string
   name?: string
-  save_as?: string
-  list_saved?: boolean
-  from_context?: boolean
 }
 
 /** A part update or the final result: the live text and the run document. */
@@ -207,24 +203,23 @@ type WorkflowUpdate = { content: Array<{ type: 'text'; text: string }>; details:
 
 function describe(agentNames: string[], limits: WorkflowLimits, saved: string[]): string {
   return [
-    'Run a workflow: a JavaScript script that orchestrates many subagents deterministically, with loops, fan-out and stages. Each agent() is its own new Kortix session with its own computer, linked to this session. The script holds the plan and the intermediate results; you receive only its return value. The person watches the run live in its card.',
-    'Use it for work that splits into independent units: review many files, research several questions, draft from several angles, then cross-check and synthesize. For one subagent, use the agent tool.',
+    'Run a workflow: a JavaScript script that orchestrates many subagents deterministically, with loops, fan-out and stages. Each agent() is its own new Kortix session with its own computer, linked to this session. You receive only the script\'s return value; the person watches the run live in its card. Use it for work that splits into independent units; for one subagent, use the agent tool.',
     '',
     'Script (plain JavaScript with top-level await, not TypeScript):',
-    '- Optional first statement: `export const meta = { name, description, phases: [{ title, detail? }] }`, a plain literal. The phases show as pending until phase(title) starts each one; give each the exact title you pass to phase().',
-    '- agent(prompt, { label?, phase?, agent?, model?, schema?, stallMs? }) starts one subagent and resolves to its final answer as a string. With `schema` (a JSON Schema object) it resolves to the parsed JSON that matches it: the subagent is told to answer JSON and is corrected up to 5 times. The prompt must be complete: the subagent sees nothing of this conversation. ' +
-      `\`agent\` is a named agent type${agentNames.length > 0 ? ` (${agentNames.join(', ')})` : ''}; without it the subagent runs as the current agent. \`model\` is a model id for this one agent. A subagent with no new output for \`stallMs\` (default ${DEFAULT_STALL_MS / 60_000} min) starts over in a new session, up to 6 attempts.`,
-    '- agent() resolves to null when its session was stopped. It throws when it failed (its session failed, its JSON never matched, it stalled 6 times, or a limit refused it): awaited directly, that ends the run with the error; inside parallel() or pipeline() it becomes null and the run goes on.',
-    `- parallel([() => agent(...), ...]) runs the functions at once and resolves to their results in order. pipeline(items, stage1, stage2, ...) sends each item through the stages, each item on its own; a stage gets (previousResult, item, index). At most ${MAX_ITEMS} items per call.`,
-    '- phase(title) groups the agents that follow. log(text) shows a progress line. args is the call\'s `args` value.',
+    '- Optional first statement: `export const meta = { name, description, phases: [{ title, detail? }] }`, a plain literal. Give each phase the exact title you pass to phase().',
+    '- agent(prompt, { label?, phase?, agent?, model?, schema?, stallMs? }) starts one subagent and resolves to its final answer. With `schema` (a JSON Schema object) it resolves to the parsed JSON that matches it. The prompt must be complete: the subagent sees nothing of this conversation. ' +
+      `\`agent\` is a named agent type${agentNames.length > 0 ? ` (${agentNames.join(', ')})` : ''}; without it the subagent runs as the current agent. A subagent with no new output for \`stallMs\` (default ${DEFAULT_STALL_MS / 60_000} min) starts over, up to ${STALL_ATTEMPTS} attempts.`,
+    '- agent() resolves to null when its session was stopped and throws when it failed: awaited directly, that ends the run; inside parallel() or pipeline() it becomes null.',
+    `- parallel([() => agent(...), ...]) runs the functions at once. pipeline(items, stage1, stage2, ...) sends each item through the stages; a stage gets (previousResult, item, index). At most ${MAX_ITEMS} items per call.`,
+    "- phase(title) groups the agents that follow. log(text) shows a progress line. args is the call's `args`.",
     '- No fetch, files, timers, Date.now() or Math.random(): subagents do the work, the script only routes it.',
     '',
     'Running it:',
-    '- The person approves each run before any agent starts: the title, the phases and the agent count. Set max_agents to the number of agent() calls your script makes; it is the hard cap they approve. Say in one line what will run before you call it.',
-    '- background: true for a run you expect to take long (many agents, or more than a few minutes): it runs in its own runner session, the call returns at once, and the result arrives later in this session as a <task-notification> message. Do not poll for it. Without it, the call waits for the result, up to 2 hours.',
-    '- resume_run_id relaunches an earlier run (its result names the run_id): completed agents return their saved results, and the first agent whose prompt changed or that failed runs again, with every agent after it. Pass script to relaunch an edited version.',
-    `- Saved workflows are ${SAVED_WORKFLOWS_DIR}/<name>.js in the project: name runs one (with args), save_as: "<name>" saves the script without running it, list_saved: true lists them.${saved.length > 0 ? ` Saved now: ${saved.join(', ')}.` : ''}`,
-    `- Limits: ${limits.maxAgents} agent() calls per run, ${Math.max(1, limits.maxParallel)} at once (the rest wait), 2 hours per run. Stopping the turn stops every subagent of a run that waits in this turn.`,
+    '- Say in one line what will run before you call it. The person approves each run (title, phases, agent count): set max_agents to the number of agent() calls.',
+    '- background: true for a long run (many agents, or more than a few minutes): the call returns at once, and the result arrives later as a <task-notification> message. Do not poll for it. Without it, the call waits, up to 2 hours.',
+    '- resume_run_id with script "" relaunches an earlier run (pass an edited script instead to change it): completed agents return their saved results; the first agent whose prompt changed or that failed runs again, with every agent after it.',
+    `- name with script "" runs the saved workflow ${SAVED_WORKFLOWS_DIR}/<name>.js.${saved.length > 0 ? ` Saved: ${saved.join(', ')}.` : ''} To save a workflow, the person asks; hand that file change to an agent with access to the project files.`,
+    `- Limits: ${limits.maxAgents} agent() calls per run, ${Math.max(1, limits.maxParallel)} at once (the rest wait), 2 hours per run.`,
     '',
     'Example:',
     '```js',
@@ -264,15 +259,13 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
       // A script may not call it (nestedCallGate), so with codemode `only` the model calls it directly, like `agent`.
       ...(host.codemodeOnly?.() ? { exposure: 'model-only' as const } : {}),
       execute: (toolCallId: string, params: WorkflowParams, signal: AbortSignal | undefined, onUpdate?: (update: WorkflowUpdate) => void) =>
-        execute(host, toolCallId, params ?? {}, signal, onUpdate),
+        execute(host, toolCallId, params ?? { script: '' }, signal, onUpdate),
     })
   })
 }
 
-/** One `workflow` call: list, save, or plan a run, ask for it, and run it here or in a runner. */
+/** One `workflow` call: plan a run, ask for it, and run it here or in a runner. */
 async function execute(host: KortixHost, toolCallId: string, params: WorkflowParams, signal: AbortSignal | undefined, onUpdate?: (update: WorkflowUpdate) => void): Promise<WorkflowUpdate> {
-  if (params.list_saved) return listSaved(host)
-  if (params.save_as !== undefined) return save(host, params, signal)
   const store = new RunStore(host.workflowStateDir())
   const plan = await planRun(host, store, params)
   if (plan.background && !plan.limits.controlPlane) throw new Error('This session cannot start a separate session, so background: true is not possible here. Run the workflow without it.')
@@ -311,7 +304,7 @@ interface Plan {
   name?: string
   /** The script came from a saved workflow (`name`). */
   saved: boolean
-  /** The whole script, meta block included (what a resume or a save keeps). */
+  /** The whole script, meta block included (what a resume keeps). */
   script: string
   /** The script without its meta block: what runs. */
   body: string
@@ -322,6 +315,7 @@ interface Plan {
   /** The count the call (or its runner context) named; absent = none given. */
   planned?: number
   background: boolean
+  /** A runner session runs the workflow of its own context. */
   fromContext: boolean
   /** Any project agent may be named (My Kortix, or its runner). */
   anyAgent: boolean
@@ -332,26 +326,29 @@ interface Plan {
 async function planRun(host: KortixHost, store: RunStore, params: WorkflowParams): Promise<Plan> {
   const limits = host.workflowLimits()
   if (limits.refusal) throw new Error(limits.refusal)
-  const context = params.from_context ? runnerContextOf(host) : null
-  if (params.script?.trim() && params.name?.trim()) throw new Error('Pass either script or name, not both.')
-  if (params.background && params.from_context) throw new Error('A runner session runs its workflow in the foreground: omit background.')
+  const given = typeof params.script === 'string' ? params.script.trim() : ''
+  // A runner session's empty-script call runs the workflow its context holds (a relaunch included).
+  const context = !given && !params.name?.trim() ? runnerContextOf(host) : null
+  if (given && params.name?.trim()) throw new Error('Pass either a script or a name, not both: with name, pass script "".')
+  if (params.background && context) throw new Error('A runner session runs its workflow in the foreground: omit background.')
   const previous = params.resume_run_id?.trim() ? store.load(params.resume_run_id.trim()) : null
   if (params.resume_run_id?.trim() && !previous) {
     throw new Error(`nothing to resume: no run ${params.resume_run_id.trim()} is saved on this computer. Start the workflow over as a new run: omit resume_run_id.`)
   }
   if (previous && params.background && !previous.background) throw new Error('This run ran in the foreground, and it resumes there: omit background.')
-  if (previous?.background && (params.script?.trim() || params.name?.trim())) {
-    throw new Error("A background run resumes in its runner session with its own script. Omit script and name, or start a new run without resume_run_id.")
+  if (previous?.background && (given || params.name?.trim())) {
+    throw new Error('A background run resumes in its runner session with its own script. Pass script "" and no name, or start a new run without resume_run_id.')
   }
   const name = (context?.name ?? (params.name?.trim() ? checkSavedName(params.name) : undefined)) || undefined
-  let script = context?.script || params.script?.trim() || ''
+  let script = context?.script || given
   if (!script && name) {
-    const read = await savedWorkflows(host).read(name)
-    if (read === null) throw new Error(`No saved workflow "${name}" (${SAVED_WORKFLOWS_DIR}/${name}.js). list_saved: true lists them.`)
+    const saved = savedWorkflows(host)
+    const read = await saved.read(name)
+    if (read === null) throw new Error(`No saved workflow "${name}": there is no ${name}.js in ${saved.where}.`)
     script = read.trim()
   }
   if (!script && previous) script = previous.script
-  if (!script) throw new Error('The workflow has no script: pass script, name, or resume_run_id.')
+  if (!script) throw new Error('The workflow has no script: pass script, or name, or resume_run_id.')
   const { meta, body } = splitMeta(script)
   if (!body.trim()) throw new Error('The workflow script has no body after its meta block.')
   const planned = context?.planned ?? params.max_agents ?? (previous ? previous.maxAgents : undefined)
@@ -776,7 +773,7 @@ class WorkflowRun {
     const body = status === 'done' ? `<workflow_result>\n${resultText(value)}\n</workflow_result>` : `<workflow_error>\n${error ?? `The workflow ${status}.`}\n</workflow_error>`
     const relaunch =
       status === 'done'
-        ? `run_id: ${this.doc.runId} (resume_run_id relaunches it; save_as saves its script)`
+        ? `run_id: ${this.doc.runId} (resume_run_id relaunches it)`
         : `run_id: ${this.doc.runId}. To retry, call workflow with resume_run_id: "${this.doc.runId}": completed agents return their saved results, and the failed or stopped agent and every agent after it run again.`
     return { content: [{ type: 'text', text: [body, ...agentLines(this.doc.agents), relaunch].join('\n') }], details: structuredClone(this.doc) }
   }
@@ -863,7 +860,7 @@ function agentLines(agents: WorkflowRunAgent[]): string[] {
 
 const RUNNER_PROMPT = [
   'You are a workflow runner: a Kortix session that runs one workflow for another session and reports its result.',
-  'Call the workflow tool once with { "from_context": true }. It reads the script, its args and its title from this session; pass nothing else. Do not do the work yourself, and do not start other agents.',
+  'Call the workflow tool once with { "script": "" }. It reads the script, its args and its title from this session; pass nothing else. Do not do the work yourself, and do not start other agents.',
   'When the call returns, your final message is its whole text output, unchanged, with nothing before or after it.',
 ].join('\n')
 
@@ -883,7 +880,7 @@ function buildRunnerContext(plan: Plan): Record<string, string | number | boolea
   // A saved workflow's runner reads it by name from the project's default branch.
   if (plan.name && contextBytes(base) <= RUNNER_CONTEXT_BUDGET) return base
   throw new Error(
-    `The script and args are ${contextBytes(withScript)} bytes; a background run carries at most ${RUNNER_CONTEXT_BUDGET}. Run it without background, or save it with save_as, merge it, and run it by name in the background.`,
+    `The script and args are ${contextBytes(withScript)} bytes; a background run carries at most ${RUNNER_CONTEXT_BUDGET}. Run it without background. A saved workflow (${SAVED_WORKFLOWS_DIR}/<name>.js on the default branch) runs by name in the background at any size.`,
   )
 }
 
@@ -912,10 +909,11 @@ interface RunnerContext {
   anyAgent: boolean
 }
 
-function runnerContextOf(host: KortixHost): RunnerContext {
+/** The workflow a runner session was started with, or null: this session is no runner. */
+function runnerContextOf(host: KortixHost): RunnerContext | null {
   const context = host.sessionContext()
   const runId = context[CONTEXT.runId]
-  if (typeof runId !== 'string' || !runId) throw new Error('This session has no workflow in its context: from_context is only for a workflow runner session. Pass script or name instead.')
+  if (typeof runId !== 'string' || !runId) return null
   const args = unchunked(context, CONTEXT.args)
   let parsedArgs: unknown
   try {
@@ -937,12 +935,17 @@ function runnerContextOf(host: KortixHost): RunnerContext {
 }
 
 async function startRunner(host: KortixHost, store: RunStore, plan: Plan, context: Record<string, string | number | boolean>, run: WorkflowRun, signal: AbortSignal): Promise<WorkflowUpdate> {
+  // My Kortix's run goes on in a My Kortix runner (the API allows exactly that one level): same rights, and its
+  // hand-off to any project agent. Another agent's runner is that agent itself, with its own `subagents` grant.
+  const ownAgent = host.anyProjectAgent?.() === true ? host.currentAgentName?.() : undefined
+  const ask = `Run the workflow "${plan.title}" from this session's context: call the workflow tool with { "script": "" }.`
   const result = await host.spawnSession({
     session: 'separate',
-    agent: INLINE_AGENT,
+    agent: ownAgent ?? INLINE_AGENT,
     systemPrompt: RUNNER_PROMPT,
     title: `${plan.title} (workflow)`,
-    prompt: `Run the workflow "${plan.title}" from this session's context: call the workflow tool with { "from_context": true }.`,
+    // A named runner brings its own prompt, so the runner's instructions ride with the task.
+    prompt: ownAgent ? `${RUNNER_PROMPT}\n\n${ask}` : ask,
     background: true,
     runtimeContext: context,
     signal,
@@ -978,7 +981,7 @@ async function resumeInRunner(host: KortixHost, plan: Plan, runner: string, run:
     agent: INLINE_AGENT,
     systemPrompt: RUNNER_PROMPT,
     title: `${plan.title} (workflow)`,
-    prompt: `Relaunch the workflow: call the workflow tool with { "from_context": true, "resume_run_id": "${plan.previous!.runId}" }. Then reply with its whole text output, unchanged.`,
+    prompt: `Relaunch the workflow: call the workflow tool with { "script": "", "resume_run_id": "${plan.previous!.runId}" }. Then reply with its whole text output, unchanged.`,
     waitMs: WORKFLOW_DEADLINE_MS,
     signal,
   })
@@ -993,64 +996,4 @@ function savedWorkflows(host: KortixHost): SavedWorkflows {
   const api = host.projectApi()
   if (api) return apiWorkflows(api)
   throw new Error('This session has no project checkout and no Kortix API, so it has no saved workflows.')
-}
-
-async function listSaved(host: KortixHost): Promise<WorkflowUpdate> {
-  const saved = savedWorkflows(host)
-  const names = (await saved.list()).slice(0, 100)
-  const lines = await Promise.all(
-    names.map(async (name) => {
-      const script = await saved.read(name).catch(() => null)
-      let description: string | undefined
-      try {
-        description = script ? splitMeta(script).meta?.description : undefined
-      } catch {
-        description = '(its meta block is not a plain literal)'
-      }
-      return `- ${name}${description ? `: ${description}` : ''}`
-    }),
-  )
-  const text = names.length > 0 ? [`Saved workflows (${saved.where}):`, ...lines, 'Run one with { "name": "<name>", "args": … }.'].join('\n') : `No saved workflows in ${saved.where}.`
-  return { content: [{ type: 'text', text }], details: undefined }
-}
-
-async function save(host: KortixHost, params: WorkflowParams, signal: AbortSignal | undefined): Promise<WorkflowUpdate> {
-  const name = checkSavedName(params.save_as ?? '')
-  const store = new RunStore(host.workflowStateDir())
-  const previous = params.resume_run_id?.trim() ? store.load(params.resume_run_id.trim()) : null
-  if (params.resume_run_id?.trim() && !previous) throw new Error(`No run ${params.resume_run_id.trim()} is saved on this computer, so its script cannot be saved.`)
-  const script = params.script?.trim() || previous?.script
-  if (!script) throw new Error('save_as needs the script to save: pass script, or resume_run_id of a run whose script to save.')
-  const { meta } = splitMeta(script)
-  const file = `${SAVED_WORKFLOWS_DIR}/${name}.js`
-  const checkout = host.projectCheckout()
-  if (checkout) {
-    const path = checkoutWorkflows(checkout).save(name, script)
-    const text = `Saved the workflow as ${path} in this session's project checkout. Run it with { "name": "${name}" }. Commit it and open a change request so that the project's other sessions can run it.`
-    return { content: [{ type: 'text', text }], details: undefined }
-  }
-  if (!host.workflowLimits().controlPlane) throw new Error('This session has no project checkout and cannot start a session that has one, so it cannot save a workflow.')
-  // The API commits a session's change only to its own branch: a session with the checkout writes it and opens a change request.
-  const result = await host.spawnSession({
-    session: 'separate',
-    agent: INLINE_AGENT,
-    systemPrompt: SUBAGENT_PROMPT,
-    title: `Save the ${name} workflow`,
-    prompt: [
-      `Save a workflow script in the project repository. Create the file \`${file}\` with exactly the content between the two marker lines below (not the markers), and change nothing else.`,
-      `Commit it on this session's branch, push, and open a change request titled "Add the ${name} workflow"${meta?.description ? ` with the description "${meta.description}"` : ''} (\`kortix cr open --title "…"\`).`,
-      'Reply with the change request number and its link, in one line.',
-      '-----BEGIN WORKFLOW-----',
-      script,
-      '-----END WORKFLOW-----',
-    ].join('\n'),
-    background: true,
-    ...(signal ? { signal } : {}),
-  })
-  if (result.status !== 'completed' || !result.sessionId) throw new Error(`The session that saves the workflow did not start: ${result.error ?? result.status}.`)
-  const text = [
-    `This computer has no project files, and the Kortix API takes a new project file only through a change request. The session ${result.sessionId} writes ${file}, commits it and opens a change request. Its answer, with the change request, arrives in this session as a <task-notification> message.`,
-    `Once the change request is merged, run the workflow with { "name": "${name}" }.`,
-  ].join('\n')
-  return { content: [{ type: 'text', text }], details: undefined }
 }

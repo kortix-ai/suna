@@ -1588,6 +1588,7 @@ export class PiRuntime {
       codemodeOnly: () => this.codemodeMode === 'only',
       // My Kortix's box (the coordinator): its config declares only itself, and every hand-off names a project agent.
       anyProjectAgent: () => this.env.KORTIX_META_AGENT === '1',
+      currentAgentName: () => this.agentName,
       spawnSession: (input) => this.resolveSpawn(input),
       workflowLimits: () => {
         const cloud = this.cloudTarget()

@@ -110,6 +110,7 @@ import type { Actor } from '../../iam/actor';
 import { loadVisibleSession, sessionIsTombstoned } from './session-visibility';
 import { HUMAN_SESSION_SURFACES } from './session-surface';
 import { subagentNotifyMetadata } from './subagent-notice';
+import { isWorkflowRunnerContext, sessionIsWorkflowRunner } from './workflow-runner';
 import type { SessionInvocationSource } from '../session-lifecycle/types';
 /** Every status a failed create answers with. Routes that create a session
  *  declare these, so the published spec lists them. */
@@ -586,7 +587,13 @@ async function resolveSessionAgent(params: {
     };
   }
   const platformMetaAgent = metaAgentEnabled && isMyKortixAgentName(agentName);
-  if (platformMetaAgent && callerIsMeta) {
+  // My Kortix's own background workflow runs in a My Kortix runner (workflow-runner.ts); a runner never starts another.
+  const myKortixWorkflowRunner =
+    platformMetaAgent &&
+    callerIsMeta &&
+    isWorkflowRunnerContext(body.runtime_context) &&
+    !(await sessionIsWorkflowRunner(input.callerSessionId!));
+  if (platformMetaAgent && callerIsMeta && !myKortixWorkflowRunner) {
     return {
       error: {
         status: 400,

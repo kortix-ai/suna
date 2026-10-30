@@ -8,17 +8,15 @@
  *    record ({@link Replay}).
  *  - The session's "don't ask again" answer: `<state>/consent.json`. One box
  *    is one session, so the file is the session's.
- *  - Saved workflows: `.kortix/workflows/<name>.js` in the project repository.
- *    A box with a project checkout reads and writes the working tree. A box
- *    without one (My Kortix) reads through the Kortix API with the session
- *    token: `GET /v1/projects/:id/files?path=.kortix/workflows&depth=1` and
- *    `GET /v1/projects/:id/files/content?path=…`. The API takes no new file
- *    from a session token (`PUT …/files/content` writes only an existing file
- *    on the session's own branch), so such a box saves through a session that
- *    has the checkout and opens a change request (`workflow.ts`).
+ *  - Saved workflows: `.kortix/workflows/<name>.js` in the project repository,
+ *    read only. A box with a project checkout reads the working tree. A box
+ *    without one (My Kortix) reads the default branch through the Kortix API
+ *    with the session token (`GET /v1/projects/:id/files/content?path=…`).
+ *    Nothing here writes one: an agent with the project files commits it
+ *    through a change request when the person asks.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 /** The repository folder of saved workflows. */
@@ -148,7 +146,6 @@ export class Replay {
 export interface SavedWorkflows {
   /** Where the files live, for the tool text. */
   where: string
-  list(): Promise<string[]>
   /** The script, or null when no such workflow exists. */
   read(name: string): Promise<string | null>
 }
@@ -160,24 +157,13 @@ export function checkSavedName(name: string): string {
 }
 
 /** Saved workflows in a project checkout's working tree. */
-export function checkoutWorkflows(root: string): SavedWorkflows & { save(name: string, script: string): string } {
+export function checkoutWorkflows(root: string): SavedWorkflows {
   const dir = join(root, SAVED_WORKFLOWS_DIR)
   return {
     where: `${SAVED_WORKFLOWS_DIR}/ in this session's project checkout`,
-    list: async () => listCheckout(root),
     read: async (name) => {
       const path = join(dir, `${checkSavedName(name)}.js`)
       return existsSync(path) ? readFileSync(path, 'utf8') : null
-    },
-    save: (name, script) => {
-      const file = `${checkSavedName(name)}.js`
-      // As Claude Code: never write through a symlink.
-      for (const path of [join(root, '.kortix'), dir, join(dir, file)]) {
-        if (existsSync(path) && lstatSync(path).isSymbolicLink()) throw new Error(`${path} is a symlink; a workflow is never saved through one.`)
-      }
-      mkdirSync(dir, { recursive: true })
-      writeFileSync(join(dir, file), script.endsWith('\n') ? script : `${script}\n`)
-      return `${SAVED_WORKFLOWS_DIR}/${file}`
     },
   }
 }
@@ -207,17 +193,6 @@ export function apiWorkflows(api: ProjectApi): SavedWorkflows {
   const headers = { authorization: `Bearer ${api.token}` }
   return {
     where: `${SAVED_WORKFLOWS_DIR}/ on the project's default branch`,
-    list: async () => {
-      const res = await fetch(`${base}?path=${encodeURIComponent(SAVED_WORKFLOWS_DIR)}&depth=1`, { headers })
-      if (res.status === 404) return []
-      if (res.status !== 200) throw new Error(`the project files could not be listed: the API answered ${res.status}`)
-      const body = (await res.json().catch(() => null)) as { entries?: Array<{ path?: string; type?: string }> } | null
-      return (body?.entries ?? [])
-        .filter((entry) => entry.type === 'file' && typeof entry.path === 'string' && entry.path.endsWith('.js'))
-        .map((entry) => entry.path!.split('/').at(-1)!.slice(0, -3))
-        .filter((name) => SAVED_NAME.test(name))
-        .sort()
-    },
     read: async (name) => {
       const path = `${SAVED_WORKFLOWS_DIR}/${checkSavedName(name)}.js`
       const res = await fetch(`${base}/content?path=${encodeURIComponent(path)}`, { headers })
