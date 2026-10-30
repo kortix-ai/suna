@@ -45,6 +45,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { registerSessionFailureNotifier } from '../shared/session-failure-notifier';
+import { registerTurnLostNotifier } from '../shared/turn-lost-notifier';
 import type { ProjectSessionRow } from './lib/serializers';
 import { buildSessionTranscriptDigest } from './lib/session-transcript';
 import { readSessionsWorking } from './lib/session-working-read';
@@ -163,6 +164,22 @@ export async function notifyParentOfFailedStart(sessionId: string, message: stri
 }
 
 registerSessionFailureNotifier(notifyParentOfFailedStart);
+
+/**
+ * The reaper settled a turn of `sessionId` without its box (`runtime_gone`):
+ * the turn-end relay never ran. Tell a waiting parent once; the notice key
+ * names the lost turn.
+ */
+export function notifyParentOfLostTurn(sessionId: string, turnToken: string): Promise<boolean> {
+  return notifyParentOfSubagentTurn({
+    sessionId,
+    status: 'error',
+    errorInfo: { name: 'runtime_gone', message: 'Its computer stopped before it finished. Start it again, or hand the work to another agent.' },
+    turnMessageId: `lost:${turnToken}`,
+  });
+}
+
+registerTurnLostNotifier(notifyParentOfLostTurn);
 
 /**
  * Before a stop (`POST …/sessions/:id/stop`): when `sessionId` is a background

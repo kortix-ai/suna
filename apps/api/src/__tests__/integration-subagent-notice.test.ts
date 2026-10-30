@@ -25,7 +25,8 @@ mock.module('../projects/session-lifecycle/drain', () => ({
 }));
 
 const { db } = await import('../shared/db');
-const { notifyParentOfFailedStart, notifyParentOfSubagentTurn, stoppedSubagentNotice } = await import('../projects/subagent-notice');
+const { notifyParentOfFailedStart, notifyParentOfLostTurn, notifyParentOfSubagentTurn, stoppedSubagentNotice } = await import('../projects/subagent-notice');
+const { notifyTurnLost } = await import('../shared/turn-lost-notifier');
 const { enqueueContinueSessionCommand } = await import('../projects/session-lifecycle/store');
 
 const ACCOUNT_ID = crypto.randomUUID();
@@ -200,5 +201,23 @@ describe('a background subagent turn end', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.payload.text).toContain('status: failed\n');
     expect(rows[0]!.payload.text).toContain('<task_error>\nSandbox provisioning failed: capacity\n</task_error>');
+  });
+
+  test('a turn the reaper settled without its box tells the parent, once per lost turn', async () => {
+    await insertSession(CHILD, { parent: PARENT, metadata: background });
+    transcript = [msg('user', 'go')];
+    // The reaper's hook (sandbox-turn-lifecycle.ts clearSandboxTurn) reaches the registered relay.
+    notifyTurnLost(CHILD, 'turn-lost-1');
+    let rows: Awaited<ReturnType<typeof parentRows>> = [];
+    for (let i = 0; i < 100 && rows.length === 0; i += 1) {
+      rows = await parentRows();
+      if (rows.length === 0) await Bun.sleep(20);
+    }
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.payload.text).toContain('status: error\n');
+    expect(rows[0]!.payload.text).toContain('Its computer stopped before it finished.');
+    // The same lost turn reported again writes nothing.
+    expect(await notifyParentOfLostTurn(CHILD, 'turn-lost-1')).toBe(false);
+    expect(await parentRows()).toHaveLength(1);
   });
 });
