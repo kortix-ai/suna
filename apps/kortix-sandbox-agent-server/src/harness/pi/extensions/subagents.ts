@@ -36,12 +36,19 @@
  *
  * `name` makes the child addressable: `send_message({ to: name })` reaches
  * it, and `list_agents` lists it (metadata `agent_handle`, unique among this
- * session's live children). In an `agent_teams` project, a named spawn from
- * depth 0 starts a TEAMMATE instead: metadata `team_lead` = this session,
- * always in the background, told about `send_message` and the shared task
- * list (`team-tasks.ts`), and told to claim tasks. `fork: true` starts the
- * child from a copy of this session's conversation (`fork_from_session_id`)
- * instead of a fresh context; a fork is never a teammate.
+ * session's children that still work). A `name` that an earlier child of this
+ * session holds and that child finished its turn is a FOLLOW-UP to that child,
+ * the same as its `task_id` (`cloud-subagent.ts`): reuse first, as Claude Code
+ * continues an agent instead of starting a second one. `team: true` (with a
+ * name, flag `agent_teams`, depth 0 only) starts a TEAMMATE: metadata
+ * `team_lead` = this session, always in the background, told about
+ * `send_message` and the shared task list (`team-tasks.ts`), and told to claim
+ * tasks. A name without `team` is never a teammate. A teammate runs an
+ * existing agent; its name and the role in its prompt are context for that
+ * one child session, and nothing is saved: the team lives in this session.
+ * `fork: true` starts the child from a copy of this session's conversation
+ * (`fork_from_session_id`) instead of a fresh context; a fork is never a
+ * teammate.
  *
  * Named subagent types: `general` (every workspace tool), `explore` (read-only
  * search), and every compiled agent whose `mode` is `subagent` or `all`. A
@@ -67,7 +74,7 @@ export interface KortixHost {
   subagentDepth(): number
   /** The box can start separate child sessions (it has a control plane). */
   separateSessions(): boolean
-  /** The lead session id when a named spawn starts a teammate (flag `agent_teams`, depth 0); null otherwise. */
+  /** The lead session id when a `team: true` spawn may start a teammate (flag `agent_teams`, depth 0); null otherwise. */
   teamLeadForSpawn(): string | null
   /** Where the running turn's prompt came from (`../prompt-origin.ts`); `human` outside a turn. */
   turnOrigin(): PromptOrigin
@@ -184,6 +191,8 @@ export interface SpawnSessionResult {
   model: { providerID: string; modelID: string }
   /** Where the child ran. */
   session?: SubagentSession
+  /** The call named an earlier child of this session that had finished: it continued that child instead of starting one. */
+  continued?: true
   /** Why the child ran somewhere other than the call asked for. */
   notice?: string
   /** The child made no progress for `SpawnSessionInput.stallMs` and was stopped. */
@@ -248,7 +257,13 @@ const parameters = Type.Object({
   name: Type.Optional(
     Type.String({
       description:
-        'A short name for the subagent (letters, digits, "-", "_"), such as "auditor". It makes the subagent addressable: send_message({ to: name }) reaches it while it runs and after it finishes, and task_stop({ name }) stops it. Unique among your running subagents.',
+        'A short name for the subagent (letters, digits, "-", "_"), such as "auditor". It makes the subagent addressable: send_message({ to: name }) reaches it while it runs and after it finishes, and task_stop({ name }) stops it. The name of a subagent you started earlier that has finished continues THAT subagent (the same as its task_id): it keeps its context. The name of one that still works is refused.',
+    }),
+  ),
+  team: Type.Optional(
+    Type.Boolean({
+      description:
+        'true: start it as a teammate of your team: it shares your task list (task_* tools), messages teammates by name, and always reports to you when it goes idle. Needs a name and the agent_teams feature, and only a top-level session leads a team. Omitted: a plain subagent, also when it has a name.',
     }),
   ),
   fork: Type.Optional(
@@ -284,6 +299,7 @@ type SubagentParams = {
   session?: SubagentSession
   run_in_background?: boolean
   name?: string
+  team?: boolean
   fork?: boolean
 }
 interface InlineAgent {
@@ -307,7 +323,8 @@ function describe(types: Map<string, SubagentType>, anyProjectAgent = false, top
     '- Write a complete prompt: the subagent sees nothing of this conversation.',
     '- Launch several subagents in one message when their work is independent.',
     '- The result is not shown to the user; summarize what matters in your own reply.',
-    '- To continue a previous task with its context, pass the task_id its output returned. A separate-session task needs no subagent_type then.',
+    '- Reuse first. To continue work that builds on an earlier hand-off, continue THAT agent: send_message to its name, or agent with its task_id. It keeps its context and its computer is already warm. Start a new agent only for independent or parallel work.',
+    '- A follow-up with task_id (or the name of a finished subagent) needs no subagent_type: the subagent keeps its own agent and instructions.',
     '',
     'Session (where the subagent runs):',
     '- session: "separate" (default): the subagent gets its own new Kortix session with its own computer. It is linked to this session as its parent, the user sees it in the sidebar, and it keeps running after your turn ends. Use it for real tasks, long or parallel work, and any whole job you hand to another agent.',
@@ -320,13 +337,15 @@ function describe(types: Map<string, SubagentType>, anyProjectAgent = false, top
     '- Check on one: list_agents (scope "mine"), or `kortix sessions info <task_id>`. Message one while it works: send_message({ to: name or task_id }). Stop one: task_stop({ task_id } or { name }). Send a finished one a follow-up: call this tool with its task_id.',
     '',
     'Names and forks:',
-    '- name (for example "auditor") makes the subagent addressable by send_message and task_stop. Give one to every subagent you may want to talk to later.',
+    '- name (for example "auditor") makes the subagent addressable by send_message and task_stop. Give one to every subagent you may want to talk to later. Calling agent again with the name of a finished subagent continues it; a name that still works is refused.',
     '- fork: true starts the subagent from a copy of this conversation, so it knows everything you know; a short prompt is enough. A fork runs as your own agent.',
     ...(teams
       ? [
           '',
           'Agent teams (on in this project):',
-          '- A subagent you start with a name (and without fork) is a TEAMMATE: its own session that keeps running, works through the team task list (task_create, task_list, task_update) and talks to you and the other teammates with send_message. Name each teammate by its role.',
+          '- Start a teammate with team: true and a name. Only then is it a TEAMMATE: its own session that keeps running, works through the team task list (task_create, task_list, task_update) and talks to you and the other teammates with send_message. A name without team is a plain subagent.',
+          '- Use a team only when several agents must share one task list. Name each teammate by its role. Run each on the project agent whose description fits the role (subagent_type); use the default agent with the role in the prompt only when none fits.',
+          '- A teammate\'s role is context for its own session only: no agent and no project setting changes, and nothing is saved. The team lives in this session.',
           '- Start with 3-5 teammates. Create the tasks first, then the teammates; they claim the tasks. Wait for their messages instead of doing their tasks yourself. When the work is done, send each a shutdown_request.',
         ]
       : []),
@@ -343,7 +362,7 @@ const BACKGROUND_STARTED = (taskId: string, name?: string) =>
   [
     `The subagent${name ? ` "${name}"` : ''} runs in the background in its own session. Its final report arrives later as a new message in this session.`,
     'Do not wait or poll for it: continue with other work, or end your turn.',
-    `Message it while it works: send_message({ to: "${name ?? taskId}" }). Stop it: task_stop({ ${name ? `name: "${name}"` : `task_id: "${taskId}"`} }). Send it a follow-up after it finished: call agent with task_id ${taskId}.`,
+    `Message it while it works: send_message({ to: "${name ?? taskId}" }). Stop it: task_stop({ ${name ? `name: "${name}"` : `task_id: "${taskId}"`} }). Send it a follow-up after it finished: send_message({ to: "${name ?? taskId}" }), or agent with task_id ${taskId}. Do not start a new agent for follow-up work.`,
   ].join('\n')
 
 /** The tool result of a teammate spawn. */
@@ -353,6 +372,10 @@ const TEAMMATE_STARTED = (taskId: string, name: string) =>
     'Its messages and its final report arrive in this session as new messages. Do not wait or poll: create tasks, start the other teammates, or end your turn.',
     `Message it: send_message({ to: "${name}" }). Stop it: task_stop({ name: "${name}" }), or ask it first with send_message type "shutdown_request".`,
   ].join('\n')
+
+/** The first line of a follow-up result: the same session continues, with its context. */
+export const CONTINUED_NOTE = (taskId: string, name?: string) =>
+  `This continued your earlier subagent${name ? ` "${name}"` : ''} in its same session (${taskId}): it keeps its context and its computer. No new session was started.`
 
 /** A new child needs a named type or an inline spec. */
 export const SUBAGENT_SPEC_REQUIRED = 'Set subagent_type to a named agent, or pass an inline `agent` spec.'
@@ -389,22 +412,27 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
         })
         if (result.status === 'aborted') throw new Error(`The subagent was aborted. task_id: ${result.sessionId}`)
         const handle = shape.teammate?.handle ?? shape.handle
+        // A follow-up (task_id, or the name of a finished child) continues that child as it was: never a new teammate.
+        const followUp = !!params.task_id || result.continued === true
+        const teammate = shape.teammate && !followUp ? shape.teammate : undefined
         const body =
           result.status === 'error'
             ? `<task_error>\n${result.error ?? 'The subagent failed.'}\n</task_error>`
             : result.status === 'started'
-              ? `<task_started>\n${shape.teammate ? TEAMMATE_STARTED(result.sessionId, shape.teammate.handle) : BACKGROUND_STARTED(result.sessionId, handle)}\n</task_started>`
+              ? `<task_started>\n${teammate ? TEAMMATE_STARTED(result.sessionId, teammate.handle) : BACKGROUND_STARTED(result.sessionId, handle)}\n</task_started>`
               : `<task_result>\n${result.text}\n</task_result>`
         const where = result.session ? `\nsession: ${result.session}${result.notice ? ` (${result.notice})` : ''}` : ''
+        const continued = followUp && result.session !== 'same' && result.status !== 'error' ? `\n${CONTINUED_NOTE(result.sessionId, handle)}` : ''
         return {
-          content: [{ type: 'text' as const, text: `task_id: ${result.sessionId} (for resuming to continue this task if needed)${where}\n\n${body}` }],
+          content: [{ type: 'text' as const, text: `task_id: ${result.sessionId} (for resuming to continue this task if needed)${where}${continued}\n\n${body}` }],
           details: {
             sessionId: result.sessionId,
             model: result.model,
             ...(result.session ? { session: result.session } : {}),
             ...(result.status === 'started' ? { background: true } : {}),
             ...(handle ? { name: handle } : {}),
-            ...(shape.teammate ? { teammate: true } : {}),
+            ...(teammate ? { teammate: true } : {}),
+            ...(followUp ? { continued: true } : {}),
             ...(shape.fork ? { fork: true } : {}),
           },
         }
@@ -462,6 +490,7 @@ export const FORK_PROMPT = [
 export function teammateInstructions(handle: string, leadShortId: string): string {
   return [
     `You are "${handle}", a teammate in an agent team. Your lead is session ${leadShortId}; it started you and gave you the task below.`,
+    '- Your name and your role hold for this session only: they change no agent and no project setting.',
     'How the team works:',
     '- The team shares one task list. Run task_list, claim the next pending, unowned, unblocked task with task_update({ seq, claim: true }), do it, mark it task_update({ seq, status: "completed" }), then claim the next. If a claim says the task is taken, claim another one.',
     '- Talk with send_message: to: "parent" reaches your lead, a teammate is reached by its name (list_agents shows them). Messages arrive between your steps; you never need to wait or poll for one.',
@@ -473,6 +502,14 @@ export function teammateInstructions(handle: string, leadShortId: string): strin
   ].join('\n')
 }
 
+/** Why this session cannot start a teammate (`team: true` and no lead). */
+export function teamRefusal(host: KortixHost): string {
+  const omit = 'Omit team to start a plain subagent (a name alone keeps it addressable).'
+  if (host.subagentDepth() > 0) return `Only a top-level session leads a team, and this session is a subagent (level ${host.subagentDepth()}), so it cannot start teammates. ${omit}`
+  if (!host.separateSessions()) return `A teammate runs in its own session, and this session cannot start one (it has no Kortix control plane). ${omit}`
+  return `Agent teams are off in this project: team: true needs the agent_teams feature. ${omit}`
+}
+
 /** The call's name, team, fork and background shape. */
 function spawnShape(params: SubagentParams, host: KortixHost): Pick<SpawnSessionInput, 'background' | 'handle' | 'teammate' | 'fork'> {
   const name = typeof params.name === 'string' && params.name.trim() ? params.name.trim().replace(/^@/, '') : undefined
@@ -481,9 +518,14 @@ function spawnShape(params: SubagentParams, host: KortixHost): Pick<SpawnSession
   if (fork && params.task_id) throw new Error('fork starts a new subagent: omit task_id, or omit fork to send the existing one a follow-up.')
   if (fork && !host.separateSessions()) throw new Error('This session cannot start a separate session, so it cannot fork. Pass session: "same" without fork instead.')
   if (name && params.session === 'same') throw new Error('A name makes a subagent addressable in its own session: omit session, or omit name.')
-  const lead = host.teamLeadForSpawn()
-  if (name && lead && !fork && !params.task_id) {
-    return { teammate: { lead, handle: name, instructions: teammateInstructions(name, lead.slice(0, 8)) }, background: true }
+  // `team: true` is the only way to start a teammate; a follow-up (task_id) continues the child as it was.
+  if (params.team === true && !params.task_id) {
+    if (!name) throw new Error('team: true starts a teammate, and a teammate needs a name: add name (for example "researcher").')
+    if (fork) throw new Error('A fork is never a teammate: omit fork, or omit team.')
+    if (params.session === 'same') throw new Error('A teammate runs in its own session: omit session, or omit team.')
+    const lead = host.teamLeadForSpawn()
+    if (!lead) throw new Error(teamRefusal(host))
+    return { teammate: { lead, handle: name, instructions: teammateInstructions(name, lead.slice(0, 8)) }, handle: name, background: true }
   }
   // The default: a top-level session hands work off and stays free for its person; deeper sessions wait.
   const background =

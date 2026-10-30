@@ -10,7 +10,8 @@
  * notify the parent, the call returns once the child exists, a resume of a
  * background child does not wait, and the live cap counts background children
  * the API lists as working. Names, teammates and forks: the create body's
- * metadata and runtime context, a name clash among live children, and
+ * metadata and runtime context, a name a working child holds, the name of a
+ * finished child as a follow-up to that same child, and
  * `task_stop` by id and by name (`cloudStopChild`). No real time, no network.
  */
 import { describe, expect, test } from 'bun:test'
@@ -448,15 +449,52 @@ describe('cloudSpawnSession — names, teammates, forks', () => {
     })
   })
 
-  test('a name a live child holds refuses the call and names that child; an ended child frees it', async () => {
-    const holder = { session_id: 'child-9', name: 'Review the API', status: 'running', metadata: { agent_handle: 'Reviewer' }, working: { state: 'idle' } }
-    const taken = fakeApi({ children: [holder] })
-    await expect(cloudSpawnSession(api(taken.impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go', background: true, handle: 'reviewer' }, fast)).rejects.toThrow(
-      'The name "reviewer" is taken: your subagent child-9 (Review the API) still runs under it. Message it with send_message({ to: "reviewer" }), stop it with task_stop({ name: "reviewer" }), or pick another name.',
-    )
-    expect(taken.calls.some((c) => c.method === 'POST')).toBe(false)
-    const free = fakeApi({ children: [{ ...holder, status: 'stopped' }] })
+  test('a name a working child holds refuses the call and names that child; a failed child frees it', async () => {
+    const holder = { session_id: 'child-9', parent_session_id: PARENT, name: 'Review the API', status: 'running', metadata: { agent_handle: 'Reviewer' }, working: { state: 'working' } }
+    for (const busy of [holder, { ...holder, working: { state: 'idle' }, board_state: 'needs_input' }, { ...holder, status: 'provisioning', working: undefined }]) {
+      const taken = fakeApi({ children: [busy] })
+      await expect(cloudSpawnSession(api(taken.impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go', background: true, handle: 'reviewer' }, fast)).rejects.toThrow(
+        'The name "reviewer" is taken: your subagent child-9 (Review the API) still works under it. Message it with send_message({ to: "reviewer" }), stop it with task_stop({ name: "reviewer" }), or pick another name.',
+      )
+      expect(taken.calls.some((c) => c.method === 'POST')).toBe(false)
+    }
+    const free = fakeApi({ children: [{ ...holder, status: 'failed' }] })
     expect((await cloudSpawnSession(api(free.impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go', background: true, handle: 'reviewer' }, fast)).status).toBe('started')
+    expect(free.calls.find((c) => c.method === 'POST')!.url).toBe('https://api.example.com/v1/projects/proj-1/sessions')
+  })
+
+  test('the name of a finished child is a follow-up to that child: no new session, the same session gets the prompt', async () => {
+    const finished = { session_id: 'child-9', parent_session_id: PARENT, name: 'Upgrade the manifest', status: 'running', metadata: { agent_handle: 'manifest-upgrader', notify_parent: true }, board_state: 'idle', working: { state: 'idle', since: '2026-10-30T09:00:00.000Z' } }
+    for (const row of [finished, { ...finished, status: 'stopped', board_state: 'stopped' }, { ...finished, status: 'completed', board_state: undefined }]) {
+      const { impl, calls } = fakeApi({ children: [row], rows: [row] })
+      const result = await cloudSpawnSession(api(impl), { title: 'Clean up', agent: 'general', systemPrompt: 'p', prompt: 'now remove the dead config', background: true, handle: 'Manifest-Upgrader' }, fast)
+      expect(result).toEqual({ sessionId: 'child-9', status: 'started', text: '', model: { providerID: 'kortix', modelID: 'default' }, continued: true })
+      const posts = calls.filter((c) => c.method === 'POST')
+      expect(posts.map((c) => c.url)).toEqual(['https://api.example.com/v1/projects/proj-1/sessions/child-9/prompts'])
+      expect(posts[0]!.body.parts).toEqual([{ type: 'text', text: 'now remove the dead config' }])
+    }
+  })
+
+  test('a foreground follow-up by name waits for the same child and returns its new report', async () => {
+    const finished = { session_id: 'child-9', parent_session_id: PARENT, status: 'running', metadata: { agent_handle: 'writer' }, working: { state: 'idle', since: '2026-10-30T09:00:00.000Z' } }
+    const { impl, calls } = fakeApi({ children: [finished], rows: [finished, IDLE], transcript: report('second draft done') })
+    const result = await cloudSpawnSession(api(impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'shorter, please', handle: 'writer' }, fast)
+    expect(result).toMatchObject({ sessionId: 'child-9', status: 'completed', text: 'second draft done', continued: true })
+    expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/sessions'))).toBe(false)
+  })
+
+  test('a teammate name is looked up too, and a fork cannot take the name of a finished child', async () => {
+    const finished = { session_id: 'child-9', parent_session_id: PARENT, status: 'running', metadata: { agent_handle: 'researcher', team_lead: PARENT, notify_parent: true }, board_state: 'idle', working: { state: 'idle' } }
+    const mate = fakeApi({ children: [finished], rows: [finished] })
+    const resumed = await cloudSpawnSession(api(mate.impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'one more source', teammate: { lead: PARENT, handle: 'researcher', instructions: 'You are a teammate.' } }, fast)
+    expect(resumed).toMatchObject({ sessionId: 'child-9', status: 'started', continued: true })
+    expect(mate.calls.filter((c) => c.method === 'POST').map((c) => new URL(c.url).pathname)).toEqual(['/v1/projects/proj-1/sessions/child-9/prompts'])
+
+    const fork = fakeApi({ children: [finished] })
+    await expect(cloudSpawnSession(api(fork.impl), { title: 'x', agent: 'inline', systemPrompt: 'f', prompt: 'try B', background: true, fork: true, handle: 'researcher' }, fast)).rejects.toThrow(
+      'The name "researcher" belongs to your subagent child-9, so a fork cannot take it.',
+    )
+    expect(fork.calls.some((c) => c.method === 'POST')).toBe(false)
   })
 
   test('a name outside the handle form is refused before any call', async () => {

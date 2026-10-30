@@ -1362,7 +1362,7 @@ message during the turn is steered in at the next step as always.
 | `send_message`, `list_agents` | a box with a control plane (`session.messaging`) | `POST …/sessions/:self/peer-messages`, `GET …/sessions/:self/reachable?scope=&project_id=`. `held`, `refused`, `dropped` and an ambiguous `to` (`409`) are results with a card, never errors. |
 | `task_create`, `task_list`, `task_get`, `task_update` | flag `agent_teams`, a lead (depth 0) or a teammate (`kortix.team.lead` in `runtime_context`) (`session.team_tasks`) | the lead's list, `…/sessions/:lead/tasks`; `claim: true` is atomic in the API (`409 task_taken`/`task_blocked`). |
 | `task_stop` | a box with a control plane | stop one child of this session by `task_id` or name (`cloudStopChild`). |
-| `agent` | every session | `name` (metadata `agent_handle`, unique among live children), `fork` (`fork_from_session_id` = this session), `run_in_background` default true for a separate session at depth 0. In an `agent_teams` project a named, non-fork spawn at depth 0 is a teammate: metadata `team_lead`, always background, teammate instructions in `initial_context`. |
+| `agent` | every session | `name` (metadata `agent_handle`), `fork` (`fork_from_session_id` = this session), `run_in_background` default true for a separate session at depth 0. Reuse first: the `name` of a finished child of this session (idle, completed, stopped) is a follow-up to that child, as its `task_id` is, and the result says it continued the same session (`continued: true`); the name of a child that still works is refused. `team: true` (with a name, flag `agent_teams`, depth 0, no fork) starts a teammate: metadata `team_lead`, always background, teammate instructions in `initial_context`; without the flag or deeper it fails with the reason. A name without `team` is never a teammate. |
 | `workflow` | every session | background by default at depth 0; refused in a turn whose prompt is a peer message, a room message or a trigger (`pi/prompt-origin.ts`); `ultracode` in the person's prompt adds a per-turn line asking for a workflow; a plan above 25 agents says "Large workflow" in the approval. |
 
 Each result is a `KortixToolResult`-shaped document (`{ ok, tool, action, card,
@@ -1384,9 +1384,16 @@ agent_not_running`. Saved workflows of the checkout and the bundled
 `deep-research` (`pi/extensions/bundled-workflows.ts`) are `/name` commands.
 
 - **Names.** `agent({ name })` writes metadata `agent_handle` on the child;
-  with flag `agent_teams` on, a named child of a depth-0 session is a
-  teammate (metadata `team_lead` = this session). `to` resolves a handle, a
+  `agent({ name, team: true })` from a depth-0 session with flag
+  `agent_teams` on starts a teammate (metadata `team_lead` = this session).
+  A teammate's name and role are context for its own session only; nothing
+  in `kortix.yaml` changes and no team is saved. `to` resolves a handle, a
   session id or an 8+ character prefix, `parent`/`main`, or `@name`.
+- **Reuse.** The `agent` and `send_message` descriptions tell the model to
+  continue the agent that did the earlier work (`send_message` to its name,
+  or `agent` with its `task_id`) and to start a new one only for independent
+  or parallel work. A delivered message to a finished child or teammate says
+  in its card that it continues in the same session.
 - **Delivery.** A delivered message reaches a working receiver as a steer at
   its next step and starts a turn on an idle one. It carries no authority: it
   never answers a permission request or a question.

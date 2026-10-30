@@ -2163,6 +2163,47 @@ describe('pi subagents extension', () => {
       const part = toolParts(page, 'agent')[0]!
       expect(part.state.status).toBe('completed')
       expect(part.state.output).toContain('<task_started>')
+      expect(part.state.output).toContain('This continued your earlier subagent in its same session (bg-child-7): it keeps its context and its computer. No new session was started.')
+      expect(part.state.metadata).toMatchObject({ sessionId: 'bg-child-7', continued: true })
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('agent with the name of a finished child continues that child: no new session, and the result says so', async () => {
+    const creates: unknown[] = []
+    const prompts: Array<Record<string, any>> = []
+    const finished = { session_id: 'bg-child-9', parent_session_id: 'sess-pi-test', name: 'Upgrade the manifest', status: 'running', board_state: 'idle', metadata: { notify_parent: true, agent_handle: 'manifest-upgrader' }, working: { state: 'idle' } }
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const url = new URL(req.url)
+        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') return Response.json([finished])
+        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+          creates.push(await req.json())
+          return Response.json({ session_id: 'bg-child-10' }, { status: 201 })
+        }
+        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions/bg-child-9') return Response.json(finished)
+        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions/bg-child-9/prompts') {
+          prompts.push((await req.json()) as Record<string, any>)
+          return Response.json({ prompt_id: 'p1', state: 'queued' }, { status: 202 })
+        }
+        return new Response('not found', { status: 404 })
+      },
+    })
+    try {
+      const r = await boot({
+        script: [{ tool: 'agent', args: { description: 'Dead config cleanup', prompt: 'remove the dead config too', subagent_type: 'general', name: 'manifest-upgrader' } }, { text: 'asked the same colleague' }],
+        env: { KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1` },
+      })
+      await promptAndSettle(r, 'also clean up the dead config')
+      expect(creates).toEqual([])
+      expect(prompts.map((p) => p.parts)).toEqual([[{ type: 'text', text: 'remove the dead config too' }]])
+      const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      const part = toolParts(page, 'agent')[0]!
+      expect(part.state.status).toBe('completed')
+      expect(part.state.output).toContain('task_id: bg-child-9 (for resuming to continue this task if needed)\nsession: separate\nThis continued your earlier subagent "manifest-upgrader" in its same session (bg-child-9)')
+      expect(part.state.metadata).toMatchObject({ sessionId: 'bg-child-9', name: 'manifest-upgrader', continued: true, background: true })
     } finally {
       server.stop(true)
     }

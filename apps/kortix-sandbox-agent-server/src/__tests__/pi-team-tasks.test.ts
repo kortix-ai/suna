@@ -22,7 +22,7 @@ const PROJECT_ID = 'proj-pi-teams'
 const LEAD = '1e2d3c4b-0000-4000-8000-000000000001'
 const MATE = '5a6b7c8d-0000-4000-8000-000000000002'
 
-type ToolState = { status: string; output?: string; metadata?: Record<string, any> }
+type ToolState = { status: string; output?: string; error?: string; metadata?: Record<string, any> }
 type ToolFrame = { tool: string; state: ToolState }
 type Seen = { method: string; path: string; auth: string | null; body: any }
 
@@ -259,17 +259,61 @@ describe('pi team tasks: the list', () => {
 })
 
 describe('pi agent teams: the teammate spawn', () => {
-  test('a named spawn at depth 0 starts a background teammate that knows its lead, its name and the task list', async () => {
-    const { rt, frames } = await boot([{ tool: 'agent', args: { description: 'Research', prompt: 'Research the auth flows.', subagent_type: 'general', name: 'researcher', run_in_background: false } }, { text: 'started' }], TEAMS)
+  /** The `agent` tool's description as the model got it on the last request. */
+  const agentDescription = () => {
+    const tools = (model.bodies.at(-1)?.tools ?? []) as Array<{ function?: { name?: string; description?: string } }>
+    return tools.find((tool) => tool.function?.name === 'agent')?.function?.description ?? ''
+  }
+  const finalState = (frames: ToolFrame[], tool = 'agent') => frames.filter((f) => f.tool === tool && (f.state.status === 'completed' || f.state.status === 'error')).at(-1)!.state
+
+  test('team: true with a name at depth 0 starts a background teammate that knows its lead, its name, the task list, and that its role is for this session only', async () => {
+    const { rt, frames } = await boot([{ tool: 'agent', args: { description: 'Research', prompt: 'Research the auth flows.', subagent_type: 'general', name: 'researcher', team: true, run_in_background: false } }, { text: 'started' }], TEAMS)
     await rt.admit({ text: 'start a researcher teammate', files: [] }).done
     const [create] = api.creates
     expect(create.metadata).toEqual({ notify_parent: true, agent_handle: 'researcher', team_lead: LEAD })
     expect(create.runtime_context).toMatchObject({ 'kortix.subagent.depth': 1, 'kortix.agent.handle': 'researcher', 'kortix.team.lead': LEAD })
     expect(create.initial_context).toContain('You are "researcher", a teammate in an agent team. Your lead is session 1e2d3c4b')
     expect(create.initial_context).toContain('task_update({ seq, claim: true })')
-    const part = frames.filter((f) => f.tool === 'agent' && f.state.status === 'completed').at(-1)!.state
+    expect(create.initial_context).toContain('Your name and your role hold for this session only: they change no agent and no project setting.')
+    const part = finalState(frames)
     expect(part.output).toContain('Teammate "researcher" started in its own session (child-1).')
     expect(part.metadata).toMatchObject({ background: true, name: 'researcher', teammate: true })
+    expect(agentDescription()).toContain('Start a teammate with team: true and a name.')
+    expect(agentDescription()).toContain('nothing is saved. The team lives in this session.')
+  })
+
+  test('a name without team is a plain named subagent, also with agent_teams on', async () => {
+    const { rt, frames } = await boot([{ tool: 'agent', args: { description: 'Upgrade', prompt: 'Upgrade the manifest.', subagent_type: 'general', name: 'manifest-upgrader' } }, { text: 'handed off' }], TEAMS)
+    await rt.admit({ text: 'upgrade the manifest', files: [] }).done
+    const [create] = api.creates
+    expect(create.metadata).toEqual({ notify_parent: true, agent_handle: 'manifest-upgrader' })
+    expect(create.runtime_context).not.toHaveProperty('kortix.team.lead')
+    expect(create.initial_context ?? '').not.toContain('teammate')
+    const part = finalState(frames)
+    expect(part.output).toContain('The subagent "manifest-upgrader" runs in the background in its own session.')
+    expect(part.metadata).not.toHaveProperty('teammate')
+  })
+
+  test('team: true is refused with the reason: the flag off, a session below the top, no name, or a fork', async () => {
+    const team = (args: Record<string, unknown>) => ({ tool: 'agent', args: { description: 'Research', prompt: 'Research it.', subagent_type: 'general', name: 'researcher', team: true, ...args } })
+    const off = await boot([team({}), { text: 'done' }], { KORTIX_FEATURE_FLAGS: 'agent_rooms' })
+    await off.rt.admit({ text: 'team', files: [] }).done
+    expect(finalState(off.frames)).toMatchObject({ status: 'error' })
+    expect(finalState(off.frames).error).toContain('Agent teams are off in this project: team: true needs the agent_teams feature. Omit team to start a plain subagent')
+    expect(agentDescription()).not.toContain('Agent teams (on in this project)')
+
+    const mate = await boot([team({ name: 'helper' }), { text: 'done' }], TEAMMATE)
+    await mate.rt.admit({ text: 'team', files: [] }).done
+    expect(finalState(mate.frames).error).toContain('Only a top-level session leads a team, and this session is a subagent (level 1)')
+
+    const nameless = await boot([team({ name: undefined }), team({ fork: true }), { text: 'done' }], TEAMS)
+    await nameless.rt.admit({ text: 'team', files: [] }).done
+    const errors = nameless.frames.filter((f) => f.tool === 'agent' && f.state.status === 'error').map((f) => f.state.error)
+    expect(errors).toEqual([
+      expect.stringContaining('team: true starts a teammate, and a teammate needs a name'),
+      expect.stringContaining('A fork is never a teammate'),
+    ])
+    expect(api.creates).toHaveLength(0)
   })
 
   test('a fork is never a teammate, and a teammate starts no teammates of its own', async () => {
