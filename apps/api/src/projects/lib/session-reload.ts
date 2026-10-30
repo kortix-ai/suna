@@ -39,7 +39,7 @@ import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { invalidateProjectMirror, type GitBackedProject } from '../git';
 import { resolveCommitSha } from '../git/commits';
 import { refreshMirror } from '../git/mirror';
-import { opencodeConfigDirChangedBetween } from '../git/opencode-config-dir';
+import { loadedFilesChangedBetween } from '../git/loaded-files';
 import {
   agentConfigEtag,
   resolveCompiledAgentConfigForSession,
@@ -697,7 +697,7 @@ export async function isSessionConfigDirStale(input: {
   try {
     const mirror = await refreshMirror(input.project);
     const tipSha = await resolveCommitSha(input.project, input.baseRef);
-    return await opencodeConfigDirChangedBetween(mirror, input.project, boxSha, tipSha);
+    return await loadedFilesChangedBetween(mirror, input.project, boxSha, tipSha);
   } catch {
     return null;
   }

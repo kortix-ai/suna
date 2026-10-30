@@ -17,9 +17,6 @@ const ACTIONS = [PROJECT_ACTIONS.PROJECT_AGENT_WRITE, PROJECT_ACTIONS.PROJECT_CO
  * The project's agents and their connector grants and rule sets, plus the two
  * writes: give or take a connector, and pick an agent's rule set on it. Both
  * commit kortix.yaml through `PUT …/agents/{name}/scope`.
- *
- * `supported` is false on a v1 manifest: its agents are a TOML overlay this
- * reader does not parse, and rule sets need v2.
  */
 export function useAgentAccess(projectId: string) {
   const queryClient = useQueryClient();
@@ -37,7 +34,7 @@ export function useAgentAccess(projectId: string) {
   const config = projectQuery.data?.config;
   const grants = useMemo(() => manifestAgentGrants(config?.manifest_raw), [config?.manifest_raw]);
   const agents = useMemo(() => {
-    const names = new Set(Object.keys(grants ?? {}));
+    const names = new Set(Object.keys(grants));
     for (const agent of config?.agents ?? []) if (!agent.hidden) names.add(agent.name);
     return [...names].sort((a, b) => a.localeCompare(b));
   }, [grants, config?.agents]);
@@ -52,14 +49,13 @@ export function useAgentAccess(projectId: string) {
     },
   });
 
-  const grantsOf = (agent: string): AgentGrants | undefined => grants?.[agent];
+  const grantsOf = (agent: string): AgentGrants | undefined => grants[agent];
 
   return {
     isPending: projectQuery.isPending,
     isError: projectQuery.isError,
     error: projectQuery.error,
     refetch: projectQuery.refetch,
-    supported: grants !== null,
     canEdit,
     agents,
     grantsOf,

@@ -39,18 +39,30 @@
  *    a built-in or inline spec has none) and the spec `permission` (the child
  *    runs under its agent's permission policy, never a wider one).
  *
- * Guardrails: at most `maxLive` children wait at once per parent box, and a
- * child at depth `maxDepth` cannot start another separate child (depth rides in
- * `runtime_context` as `kortix.subagent.depth`). Both refuse with an error
- * that names `session: "same"` as the way out. An aborted parent call stops
- * its child.
+ * Background (`run_in_background`): the create body carries
+ * `metadata.notify_parent: true` and the call returns as soon as the child
+ * exists (`status: 'started'`). The API, not this box, tells the parent when
+ * the child finishes: it delivers the child's report into this session as a
+ * new message (apps/api `projects/subagent-notice.ts`), so the notice
+ * survives this box restarting. A `task_id` resumes a background child in the
+ * background.
+ *
+ * Guardrails: at most `maxLive` children run at once per parent: the ones this
+ * box waits on or is creating, plus its background children the API still
+ * lists as working. A child at depth `maxDepth` cannot start another separate
+ * child (depth rides in `runtime_context` as `kortix.subagent.depth`). Both
+ * refuse with an error that names `session: "same"` as the way out. An
+ * aborted parent call stops its child.
  */
+import { SUBAGENT_NOTIFY_PARENT_KEY } from '@kortix/api-contract/runtime-relay'
 import { logger } from '@/lib/log/logger'
 import type { SpawnSessionInput, SpawnSessionResult, SubagentSession } from './extensions/subagents'
 
 /** Why a separate call ran in this session instead. The tool result carries it to the model. */
 export const NO_CONTROL_PLANE_NOTICE =
   'This session has no Kortix control plane to start a separate session from, so the subagent ran inside this session.'
+/** Why a `run_in_background` call waited for its result. */
+export const FOREGROUND_NOTICE = 'Only a separate session runs in the background, so this subagent ran in the foreground.'
 
 /**
  * Where one `agent` call runs. A `task_id` resumes the child where it was
@@ -66,10 +78,16 @@ export function routeSubagent(input: {
   localChild: boolean
   /** The box can reach its control plane (`cloudSubagentApiFrom` is not null). */
   controlPlane: boolean
+  /** The call asked for `run_in_background`. */
+  background?: boolean
 }): { session: SubagentSession; notice?: string } {
-  if (input.taskId) return { session: input.localChild ? 'same' : 'separate' }
-  if (input.requested === 'same') return { session: 'same' }
-  if (!input.controlPlane) return { session: 'same', notice: NO_CONTROL_PLANE_NOTICE }
+  const same = (notice?: string) => {
+    const text = [notice, input.background ? FOREGROUND_NOTICE : undefined].filter(Boolean).join(' ')
+    return text ? { session: 'same' as const, notice: text } : { session: 'same' as const }
+  }
+  if (input.taskId) return input.localChild ? same() : { session: 'separate' }
+  if (input.requested === 'same') return same()
+  if (!input.controlPlane) return same(NO_CONTROL_PLANE_NOTICE)
   return { session: 'separate' }
 }
 
@@ -104,7 +122,7 @@ export interface CloudSubagentApi {
   maxLive: number
   /** Every tool the parent agent may use, set per call. A child gets at most these. Absent: the parent is not narrowed. */
   toolAllowlist?: string[]
-  /** Children this parent is waiting on right now. One counter per box, shared by every call. */
+  /** Children this box is creating or waiting on right now. One counter per box, shared by every call. */
   live: { count: number }
   fetchImpl?: typeof fetch
 }
@@ -201,6 +219,7 @@ interface SessionRow {
   session_id?: string
   status?: string
   parent_session_id?: string | null
+  metadata?: Record<string, unknown> | null
   working?: { state?: string; since?: string | null; pending_delivery?: boolean }
 }
 
@@ -218,8 +237,9 @@ export function childToolAllowlist(own: string[] | undefined, requested: string[
 /**
  * Spawn one real cloud child session for an `agent`-tool call (or send a
  * follow-up to an existing one for `task_id`) and wait for its turn to
- * settle. Returns the same shape as the in-process spawn. A refused call
- * throws, like the in-process gates do.
+ * settle; a background call returns `started` once the child exists. Returns
+ * the same shape as the in-process spawn. A refused call throws, like the
+ * in-process gates do.
  */
 export async function cloudSpawnSession(
   api: CloudSubagentApi,
@@ -241,14 +261,10 @@ export async function cloudSpawnSession(
     )
   }
   const createBody = buildCreateBody(api, input)
-  if (api.live.count >= api.maxLive) {
-    throw new Error(
-      `At most ${api.maxLive} separate subagent sessions run at once for one session, and ${api.live.count} are running. Wait for one to return, or pass session: "same" to run this one inside this session.`,
-    )
-  }
   // Reserved before the first await: parallel `agent` calls in one message all pass through here.
-  api.live.count += 1
+  reserveLiveSlot(api)
   try {
+    await refuseOverLiveCap(api, http)
     let created: Response
     try {
       created = await http.fetchImpl(`${http.origin}/v1/projects/${encodeURIComponent(api.projectId)}/sessions`, {
@@ -270,10 +286,51 @@ export async function cloudSpawnSession(
     }
     // Publish the child id to the tool part NOW, so the UI links the real child while it works.
     input.onSession?.({ sessionId: childId, model })
+    // From here the API lists the child as working, so the slot is released below.
+    if (input.background) return { sessionId: childId, status: 'started', text: '', model }
     return await settleAndRead(http, childId, null, input.signal, model, opts)
   } finally {
     api.live.count -= 1
   }
+}
+
+function liveCapError(api: CloudSubagentApi, running: number): Error {
+  return new Error(
+    `At most ${api.maxLive} separate subagent sessions run at once for one session, and ${running} are running. Wait for one to finish, or pass session: "same" to run this one inside this session.`,
+  )
+}
+
+/** Take one slot of this box's counter, or refuse when the box alone is at the cap. */
+function reserveLiveSlot(api: CloudSubagentApi): void {
+  if (api.live.count >= api.maxLive) throw liveCapError(api, api.live.count)
+  api.live.count += 1
+}
+
+/**
+ * With a slot reserved: refuse when this box's slots plus its background
+ * children the API lists as working pass the cap. The list is the truth after
+ * a box restart, when the counter starts at 0. An unreadable list counts 0:
+ * the counter still bounds one burst.
+ */
+async function refuseOverLiveCap(api: CloudSubagentApi, http: Http): Promise<void> {
+  if (!api.sessionId) return
+  let background = 0
+  try {
+    const res = await http.fetchImpl(
+      `${http.origin}/v1/projects/${encodeURIComponent(http.projectId)}/sessions?parent=${encodeURIComponent(api.sessionId)}&limit=200`,
+      { headers: http.headers },
+    )
+    const rows = res.status === 200 ? ((await res.json().catch(() => [])) as SessionRow[]) : []
+    background = Array.isArray(rows) ? rows.filter(isWorkingBackgroundChild).length : 0
+  } catch (err) {
+    logger.warn('[pi] cloud subagent child list failed; counting only this box', { err: errorText(err) })
+  }
+  if (api.live.count + background > api.maxLive) throw liveCapError(api, api.live.count - 1 + background)
+}
+
+function isWorkingBackgroundChild(row: SessionRow): boolean {
+  if (row.metadata?.[SUBAGENT_NOTIFY_PARENT_KEY] !== true) return false
+  return row.status === 'provisioning' || (row.status === 'running' && row.working?.state === 'working')
 }
 
 /** The create body. Throws on a spec the API would refuse, before any session exists. */
@@ -299,6 +356,8 @@ function buildCreateBody(api: CloudSubagentApi, input: SpawnSessionInput): Recor
     ...(agentName ? { agent_name: agentName } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(instructions ? { initial_context: instructions } : {}),
+    // The API tells this session when a background child finishes (projects/subagent-notice.ts).
+    ...(input.background ? { metadata: { [SUBAGENT_NOTIFY_PARENT_KEY]: true } } : {}),
     runtime_context: {
       [SUBAGENT_DEPTH_KEY]: api.depth + 1,
       ...(tools ? { [SUBAGENT_TOOLS_KEY]: toolsValue ?? '' } : {}),
@@ -306,7 +365,7 @@ function buildCreateBody(api: CloudSubagentApi, input: SpawnSessionInput): Recor
   }
 }
 
-/** `task_id` resume: a follow-up prompt to an existing child of THIS session, then the same wait + read-back. */
+/** `task_id` resume: a follow-up prompt to an existing child of THIS session, then the same wait + read-back (none for a background child). */
 async function resumeChild(
   api: CloudSubagentApi,
   http: Http,
@@ -328,14 +387,12 @@ async function resumeChild(
   if (!row || (api.sessionId && row.parent_session_id !== api.sessionId)) throw notChild
   if (row.working?.state === 'working') throw new Error(`task_id ${childId} is already running`)
   const baseline = row.working?.since ?? null
+  // A background child stays one: the API delivers this turn's report too.
+  const background = row.metadata?.[SUBAGENT_NOTIFY_PARENT_KEY] === true
 
-  if (api.live.count >= api.maxLive) {
-    throw new Error(
-      `At most ${api.maxLive} separate subagent sessions run at once for one session, and ${api.live.count} are running. Wait for one to return, or pass session: "same" to run this one inside this session.`,
-    )
-  }
-  api.live.count += 1
+  reserveLiveSlot(api)
   try {
+    await refuseOverLiveCap(api, http)
     let sent: Response
     try {
       sent = await http.fetchImpl(sessionUrl(http, childId, '/prompts'), {
@@ -355,6 +412,7 @@ async function resumeChild(
       return { sessionId: childId, status: 'error', text: '', error: `follow-up prompt answered ${sent.status}: ${body}`, model }
     }
     input.onSession?.({ sessionId: childId, model })
+    if (background) return { sessionId: childId, status: 'started', text: '', model }
     return await settleAndRead(http, childId, baseline, input.signal, model, opts)
   } finally {
     api.live.count -= 1

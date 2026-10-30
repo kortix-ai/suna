@@ -345,10 +345,6 @@ const catalog = {
           "label": "Feature flags",
           "description": "Features you can switch on before they are generally available."
         },
-        "upgrades": {
-          "label": "Upgrades",
-          "description": "Changes an agent makes to this project. Every run opens a change request for you to review — nothing merges on its own."
-        },
         "profile": {
           "label": "Profile",
           "description": "Your picture, name, email, and organizations."
@@ -860,23 +856,6 @@ const catalog = {
       "wip": "Work in progress",
       "wipNote": "Not recommended yet: it can change or break."
     },
-    "upgrades": {
-      "available": "Available upgrades",
-      "readOnly": "Read-only — running an upgrade needs write access to this project.",
-      "none": "No upgrades available",
-      "upToDateDescription": "This project is already up to date.",
-      "upToDate": "Up to date",
-      "run": "Run",
-      "oneOff": "One-off upgrade",
-      "oneOffDescription": "Describe a single change instead. It runs the same way — a session makes it, validates it, and opens a change request.",
-      "oneOffPlaceholder": "e.g. Rename the release-bot agent to deploy-bot everywhere it's referenced",
-      "runUpgrade": "Run upgrade",
-      "manifestV3": {
-        "title": "Upgrade manifest to v3 (kortix.yaml)",
-        "description": "Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review."
-      },
-      "agentEditorHint": "This project uses a version 1 manifest. Upgrade it to <code>kortix.yaml</code> version 3 to edit this agent's instructions, model, tool permissions and access here."
-    },
     "credits": {
       "loadFailed": "Could not load this account.",
       "resetAt": "Plan credits reset on",
@@ -1176,10 +1155,16 @@ const catalog = {
       "localComputer": "Your computer",
       "appsAndExtensions": "Apps and extensions"
     },
-    "manifestUpgrade": {
-      "title": "Upgrade to v3",
-      "description": "This project runs an older manifest. An agent moves it to <yaml>kortix.yaml</yaml> version 3, refreshes managed skills, and opens a change request. Nothing changes until you approve it.",
-      "start": "Start upgrade"
+    "manifestIssues": {
+      "title": "{file} has {errors, plural, one {# error} other {# errors}} and {warnings, plural, one {# warning} other {# warnings}}",
+      "titleErrors": "{file} has {errors, plural, one {# error} other {# errors}}",
+      "titleWarnings": "{file} has {warnings, plural, one {# warning} other {# warnings}}",
+      "errorsOff": "Agents and triggers with an error are off until it is fixed.",
+      "warningsOnly": "Everything still runs.",
+      "error": "Error",
+      "warning": "Warning",
+      "fix": "Fix with My Kortix",
+      "fixInSession": "Fix in a new session"
     },
     "filter": {
       "grouping": "Grouping",
@@ -3278,7 +3263,6 @@ const catalog = {
       "text472590ae974d": "Provider",
       "text476b90bdc143": "@Kortix",
       "text477d50f7ddbf": "One-click OAuth 2.1 available",
-      "text479d92cbfaa1": "(kortix_version 2) to edit this agent's instructions, model, tool permissions and access here.",
       "text47bd29075f8b": "Content",
       "text47c3d9d2f5c7": "Loading connectors…",
       "text47d2a515ef2f": "Loading...",
@@ -4773,7 +4757,6 @@ const catalog = {
       "textc3b312278ee5": "Make this a default",
       "textc3bb47ef2fd9": "{value0} They keep the access they get via {value1}.",
       "textc3c709a999c1": "Reading memory…",
-      "text7823a1f3af93": "Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review.",
       "textc3d2e79ebdd0": "Connectors",
       "textc3e3a6edeaa5": "Terms and conditions",
       "textc3e58a73609d": "Destructive",
@@ -4809,7 +4792,6 @@ const catalog = {
       "textc61d3d5725a1": "Account · Settings",
       "textc63adab9bd56": "Track tools and referenced files used in this task.",
       "textc63eb6720c6e": "Private",
-      "textc6414eb01d9a": "Changes an agent makes to this workspace. Every run opens a change request for you to review — nothing merges on its own.",
       "textc65feb0006ea": "Worker · {value0}{value1}",
       "textc66feb5eb8f2": "Move up",
       "textc6902b467e2d": "Couldn't display this presentation.",
@@ -5028,7 +5010,6 @@ const catalog = {
       "textd83250185d41": "All connectors",
       "textd8348ec82718": "List Triggers",
       "textd84b8be91e7b": "Kortix — Presentations",
-      "text08edd5b6dcdc": "Upgrade manifest to v3 (kortix.yaml)",
       "text848f54e89660": "Runs",
       "textb098a09c78aa": "Test with payload",
       "text99733344956d": "Payload",
@@ -5124,7 +5105,6 @@ const catalog = {
       "textdc4cbd66fe2d": "audit governed actions approvals trail session",
       "textdc5255461795": "No matches in",
       "textdc6c9309c03e": "Affected services",
-      "textdc7ab144ca89": "Upgrade for the full agent editor",
       "textdc937b598926": "None",
       "textdcc839a4015c": "View",
       "textdcd1d5223f73": "Name",
@@ -5158,7 +5138,6 @@ const catalog = {
       "textdfa16aeaca13": "This workspace’s repository is hosted on {value0}, which does not support collaborator invites from Kortix. Manage access where the repository lives.",
       "textdfe0c2e802b1": "Server error",
       "textdfea74d6d58d": "Move fallback up",
-      "texte02a5941602a": "Upgrades",
       "texte0362b3241c5": "In bounds",
       "texte0603c499aae": "http",
       "texte0687cb3046c": "Anything the agent runs — a site, an app, an API — opens from here.",
@@ -6700,7 +6679,6 @@ const catalog = {
     "connectorsEmptyBody": "Browse the catalogue and install an app. Your agents use it once it has an account.",
     "browseApps": "Browse apps",
     "agentsLoadFailed": "Could not load agents",
-    "agentsNeedsV2": "Agent access is set in kortix.yaml (kortix_version 2 or later). This project uses kortix.toml.",
     "agentsEmpty": "This project has no agents yet.",
     "agentsIntro": "Choose which agents can use this connector, and which rules they get. Each change is committed to kortix.yaml.",
     "agentsReadOnly": "Only people who can edit agents and connectors can change this.",

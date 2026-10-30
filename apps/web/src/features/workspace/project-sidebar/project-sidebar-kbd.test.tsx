@@ -108,8 +108,8 @@ mock.module('@kortix/ui/workspace/sidebar/footer/project-mcp-nav', () => ({
 mock.module('@kortix/ui/workspace/sidebar/footer/project-computer-nav', () => ({
   ProjectComputerNavItem: () => null,
 }));
-mock.module('@kortix/ui/workspace/sidebar/footer/project-manifest-upgrade-alert', () => ({
-  ProjectManifestUpgradeAlert: () => null,
+mock.module('@kortix/ui/workspace/sidebar/footer/project-manifest-issues-alert', () => ({
+  ProjectManifestIssuesAlert: () => null,
 }));
 mock.module('@kortix/ui/workspace/sidebar/footer/project-sandbox-alert', () => ({
   ProjectSandboxAlert: () => null,

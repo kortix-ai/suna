@@ -32,11 +32,11 @@ import { withheldManagedSkills } from '@/services/skills/managed-skills'
 import { loadTools } from '@/services/tools/host'
 import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import type { PiConfig, ProjectInstructions } from './config'
-import { readProjectInstructions, resolvePiProjectConfigDir, resolvePiSkillDirectories, resolvePiV3SkillDirectories } from './config'
+import { readProjectInstructions, resolvePiSkillDirectories } from './config'
 import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
-import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
+import { SUBAGENT_SPEC_REQUIRED, type KortixHost, type SpawnSessionInput, type SpawnSessionResult } from './extensions/subagents'
 import { cloudSpawnSession, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule, type SessionPermissionRule } from './interactions'
 import type { CatalogModel, PiModels, SelectedModel } from './model'
@@ -120,8 +120,6 @@ export interface PromptInput {
   system?: string
   /** `noReply`: the message joins the conversation, no turn runs. */
   noReply?: boolean
-  /** A slash command (`/name arguments`): the user message on the wire becomes the text pi expands it to. */
-  command?: boolean
   /**
    * Every text part was harness context (`synthetic`, KRTX-2597): the
    * transcript renders the message as a notice, never as a user bubble, and
@@ -239,7 +237,7 @@ export interface PiRuntimeOptions {
   hooks?: PiRuntimeHooks
   env?: NodeJS.ProcessEnv
   /** The config release the runtime reads skills, project tools, the root AGENTS.md and the session notice from (config-release.ts). */
-  releases?: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'projectRoot' | 'notice'>
+  releases?: Pick<PiConfigReleases, 'projectRoot' | 'notice'>
 }
 
 /** A child session a system extension spawned (a subagent). Lives beside the root, never in its transcript. */
@@ -361,7 +359,7 @@ export class PiRuntime {
   private cloudSubagents: CloudSubagentApi | null = null
   private readonly now: () => number
   private readonly hooks: PiRuntimeHooks
-  private readonly releases: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'projectRoot' | 'notice'> | null
+  private readonly releases: Pick<PiConfigReleases, 'projectRoot' | 'notice'> | null
   private readonly clock = new MessageIdClock()
   private state: HarnessState = 'down'
   private startError: string | null = null
@@ -674,7 +672,6 @@ export class PiRuntime {
         local = loaded.extensions
       }
       this.pi = await host.createPiSession({
-        projectConfigDir: await this.projectConfigDir(),
         agent,
         sessionManager,
         ref: this.runner,
@@ -682,8 +679,6 @@ export class PiRuntime {
         agentDir: this.cfg.piAgentDir,
         projectPackages: project.entries,
         packageRoot: packageRoot ?? undefined,
-        // v3 reads no `.pi/` or `.agents/skills`: the compiled set is the only config input.
-        discoveryRoot: this.v3() ? null : packageRoot,
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
@@ -1023,10 +1018,10 @@ export class PiRuntime {
   }
 
   /**
-   * The command list a client reads (`GET /command`). v3: every compiled
-   * command, with the agents that enable it. Otherwise pi's prompt templates.
-   * Then the agent's granted skills (`source: 'skill'`): the composer's `/`
-   * menu has no other source for them in a session.
+   * The command list a client reads (`GET /command`): every compiled command,
+   * with the agents that enable it, then the agent's granted skills
+   * (`source: 'skill'`): the composer's `/` menu has no other source for them
+   * in a session.
    * A command shadows a skill of the same name.
    */
   commandList(): Array<{ name: string; description: string; source: 'command' | 'skill'; template: string; hints: string[]; agents?: string[] }> {
@@ -1040,26 +1035,17 @@ export class PiRuntime {
 
   private commandEntries(): Array<{ name: string; description: string; source: 'command'; template: string; hints: string[]; agents?: string[] }> {
     const hints = (template: string) => [...new Set(template.match(/\$(\d+|ARGUMENTS)/g) ?? [])]
-    if (this.v3()) {
-      return Object.entries(this.compiled?.commands ?? {}).map(([name, command]) => ({
-        name,
-        description: command.description ?? '',
-        source: 'command' as const,
-        template: command.template,
-        hints: hints(command.template),
-        agents: command.agents,
-      }))
-    }
-    return (this.pi?.session.promptTemplates ?? []).map((template) => ({
-      name: template.name,
-      description: template.description,
+    return Object.entries(this.compiled?.commands ?? {}).map(([name, command]) => ({
+      name,
+      description: command.description ?? '',
       source: 'command' as const,
-      template: template.content,
-      hints: hints(template.content),
+      template: command.template,
+      hints: hints(command.template),
+      agents: command.agents,
     }))
   }
 
-  /** The prompt a `POST /session/:id/command` body asks for: `/name arguments`, which pi expands. */
+  /** The prompt a `POST /session/:id/command` body asks for: a skill's body, or a compiled command's expanded template. */
   commandPrompt(raw: unknown): PromptInput {
     const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
     const name = typeof body.command === 'string' ? body.command : ''
@@ -1079,30 +1065,18 @@ export class PiRuntime {
         ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
       })
     }
-    const compiled = this.v3() ? this.compiled?.commands?.[name] : undefined
-    if (compiled) {
-      // The agent the command runs on: the body's, else the session's.
-      const agent = (typeof body.agent === 'string' && body.agent.trim()) || this.sessionAgentName
-      if (!compiled.agents.includes(agent)) throw new CommandNotEnabled(name, agent)
-      // Expanded here: pi's template expansion never sees a v3 command.
-      return parsePromptBody({
-        parts: [{ type: 'text', text: expandCommandTemplate(compiled.template, args) }],
-        ...(body.messageID !== undefined ? { messageID: body.messageID } : {}),
-        agent,
-        ...(body.variant !== undefined ? { variant: body.variant } : {}),
-        ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
-      })
-    }
-    return {
-      ...parsePromptBody({
-        parts: [{ type: 'text', text: `/${name}${args ? ` ${args}` : ''}` }],
-        ...(body.messageID !== undefined ? { messageID: body.messageID } : {}),
-        ...(body.agent !== undefined ? { agent: body.agent } : {}),
-        ...(body.variant !== undefined ? { variant: body.variant } : {}),
-        ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
-      }),
-      command: true,
-    }
+    // The entry is a compiled command (`commandEntries`). Expanded here: pi's template expansion never sees it.
+    const compiled = this.compiled!.commands![name]!
+    // The agent the command runs on: the body's, else the session's.
+    const agent = (typeof body.agent === 'string' && body.agent.trim()) || this.sessionAgentName
+    if (!compiled.agents.includes(agent)) throw new CommandNotEnabled(name, agent)
+    return parsePromptBody({
+      parts: [{ type: 'text', text: expandCommandTemplate(compiled.template, args) }],
+      ...(body.messageID !== undefined ? { messageID: body.messageID } : {}),
+      agent,
+      ...(body.variant !== undefined ? { variant: body.variant } : {}),
+      ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
+    })
   }
 
   /** Stop the run in flight. Idempotent: aborting an idle agent is a no-op. */
@@ -1397,11 +1371,6 @@ export class PiRuntime {
       this.turnParent = steered.messageId
       this.publishUserMessage(this.rootId, steered.messageId, steered.input)
       this.hooks.onSteerRead?.({ rootId: this.rootId, messageId: steered.messageId })
-    } else if (event.type === 'message_start' && event.message.role === 'user' && this.active?.input.command) {
-      const { content } = event.message
-      const text = typeof content === 'string' ? content : content.map((block) => (block.type === 'text' ? block.text : '')).join('')
-      const messageID = this.active.messageId
-      this.publish({ type: 'message.part.updated', properties: { sessionID: this.rootId, time: this.now(), part: { id: `${messageID}-p0`, messageID, sessionID: this.rootId, type: 'text', text } } })
     }
     if (event.type === 'message_start' && event.message.role === 'user' && !this.nativeIds.has(event.message)) {
       if (steered) this.nativeIds.set(event.message, steered.messageId)
@@ -1599,7 +1568,9 @@ export class PiRuntime {
    * Route one `agent` call (cloud-subagent.ts `routeSubagent`): `separate`
    * (the default) spawns a REAL Kortix child session with its own sandbox;
    * `same` runs the in-process child. A separate call runs in process, with a
-   * notice in the tool result, when the box has no control plane. A
+   * notice in the tool result, when the box has no control plane. Only a
+   * separate child runs in the background; a background call routed here
+   * waits, and its notice says so. A
    * `task_id` resumes the child where it was created. The result shape is
    * identical either way, so the tool contract and the UI do not change.
    */
@@ -1619,6 +1590,7 @@ export class PiRuntime {
       taskId: input.sessionId,
       localChild: !!input.sessionId && this.children.has(input.sessionId),
       controlPlane: this.cloudSubagents !== null,
+      background: input.background,
     })
     if (route.session === 'separate' && this.cloudSubagents) {
       // The agent and its tools are read per call: a prompt may switch the agent (applyAgent).
@@ -1626,6 +1598,8 @@ export class PiRuntime {
       const result = await cloudSpawnSession({ ...this.cloudSubagents, ...this.cloudParent() }, input)
       return { ...result, session: 'separate' }
     }
+    // An in-process child re-reads its tools and rules from the spec, so a follow-up must name it.
+    if (!input.agent) throw new Error(SUBAGENT_SPEC_REQUIRED)
     if (route.notice) logger.info('[pi] separate subagent session ran in this session', { notice: route.notice })
     const result = await this.spawnSession(input)
     return { ...result, session: 'same', ...(route.notice ? { notice: route.notice } : {}) }
@@ -1999,7 +1973,11 @@ export class PiRuntime {
     return this.compiled?.agent?.[this.agentName]
   }
 
-  /** A kortix.yaml v3 compiled set: no harness folder, no built-in subagent, commands from the set. */
+  /**
+   * A compiled set from kortix.yaml carries `schema: 3` (the wire marker): only
+   * its declared agents run, no built-in subagent. Any other set (My Kortix's,
+   * an older API's) is built-in agents only: `general` and `explore` are offered.
+   */
   private v3(): boolean {
     return this.compiled?.schema === 3
   }
@@ -2050,26 +2028,15 @@ export class PiRuntime {
     return selected.variants.includes(variant) ? (variant as ModelThinkingLevel) : 'off'
   }
 
-  /** Where project tools load from: the release root while a release runs, else the working tree. */
+  /** Where registered skills and project tools load from: the release root while a release runs, else the working tree. */
   private projectRoot(): string | null {
     const released = this.releases?.projectRoot()
     return released !== undefined ? released : this.workspace
   }
 
-  /** The pi-native config dir: the release's `pi/` while a release runs, else the working tree's. v3 has none. */
-  private async projectConfigDir(): Promise<string | null> {
-    if (this.v3()) return null
-    const released = this.releases?.piConfigDir()
-    return released !== undefined ? released : resolvePiProjectConfigDir(this.cfg)
-  }
-
   private async loadSkills(): Promise<Skill[]> {
     if (!this.coding) return []
-    const dirs = (
-      this.v3()
-        ? resolvePiV3SkillDirectories(this.compiled?.skills, this.projectRoot())
-        : resolvePiSkillDirectories(this.cfg, await this.projectConfigDir(), this.releases?.skillDirs() ?? null)
-    ).filter((dir) => existsSync(dir))
+    const dirs = resolvePiSkillDirectories(this.compiled?.skills, this.projectRoot()).filter((dir) => existsSync(dir))
     if (dirs.length === 0) return []
     try {
       // Two directories can carry the same skill (a project's own copy and the managed

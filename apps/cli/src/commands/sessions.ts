@@ -105,8 +105,9 @@ Subcommands:
                                     --all, --json. Aliases: overview, ps.
   new [--prompt "<text>"]           Start a new session, optionally with an
                                     initial prompt. --agent <name> pins the
-                                    session to that agent (default: the
-                                    project's declared default agent).
+                                    session to that agent (default: My
+                                    Kortix; default_agent when My Kortix is
+                                    off, or when My Kortix starts it).
                                     --model <id> overrides the model. A
                                     model on an API key or a ChatGPT
                                     subscription runs on every key you may

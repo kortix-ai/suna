@@ -254,15 +254,13 @@ export function CapabilityLibrary({
     );
     project = project.map((row) => ({ ...row, onOpen: skills.open(row.id) }));
   }
-  // Agents get an extension grant from kortix_version 3; before it the view is the platform list in both modes.
-  const extensionGrant = view !== 'extensions' || (catalog?.schema_version ?? 3) >= 3;
   if (agent && catalog) {
-    if (extensionGrant) project = withSwitches(view, project, catalog, agent.editor);
+    project = withSwitches(view, project, catalog, agent.editor);
     builtin = withSwitches(view, builtin, catalog, agent.editor);
   }
 
   const grant =
-    agent && rows && extensionGrant && (view !== 'extensions' || rows.project.length > 0)
+    agent && rows && (view !== 'extensions' || rows.project.length > 0)
       ? capabilityModeGrant(
           agent.editor.draft[view],
           rows.ids,
@@ -287,9 +285,7 @@ export function CapabilityLibrary({
   // The agent's own view: the project's items, then Kortix's, folded.
   const agentSections = (
     <>
-      {view !== 'extensions' || extensionGrant ? (
-        <AccessGroup title={t('groups.project')} items={project} empty={search ? t('noMatch') : empty} />
-      ) : null}
+      <AccessGroup title={t('groups.project')} items={project} empty={search ? t('noMatch') : empty} />
       <BuiltinGroup items={builtin} defaultOpen={project.length === 0 || !!search.trim()} />
     </>
   );

@@ -18,7 +18,7 @@ function ok(result: CliResult, label: string): CliResult {
 }
 
 const AGENTS = [
-  'kortix_version: 3', 'project:', '  name: artifact-cli-review', 'default_agent: reviewer', 'agents:',
+  'project:', '  name: artifact-cli-review', 'default_agent: reviewer', 'agents:',
   '  reviewer:', '    kortix_permissions: [project.session.read, project.artifact.comment]',
   '  reader:', '    kortix_permissions: [project.session.read, project.artifact.read]', '',
 ].join('\n');

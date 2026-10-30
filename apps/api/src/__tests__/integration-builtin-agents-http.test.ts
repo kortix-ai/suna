@@ -13,8 +13,7 @@ import { createAccountToken } from '../repositories/account-tokens';
 import { insertIntoView } from './helpers/compat-views';
 import { createLocalGitUpstream, type LocalGitUpstream } from './helpers/local-git-upstream';
 
-const manifest = (builtin: string) => `kortix_version: 3
-default_agent: kortix
+const manifest = (builtin: string) => `default_agent: kortix
 ${builtin}agents:
   kortix:
     description: The project agent.

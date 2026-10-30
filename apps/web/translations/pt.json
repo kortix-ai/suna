@@ -553,10 +553,6 @@
           "label": "Sinalizadores de recursos",
           "description": "Recursos que você pode ativar antes de estarem disponíveis para todos."
         },
-        "upgrades": {
-          "label": "Atualizações",
-          "description": "Alterações que um agente faz neste projeto. Cada execução abre uma solicitação de alteração para sua revisão. Nada é mesclado automaticamente."
-        },
         "profile": {
           "label": "Perfil",
           "description": "Sua imagem, nome, e-mail e organizações."
@@ -1349,23 +1345,6 @@
       "wip": "Work in progress",
       "wipNote": "Not recommended yet: it can change or break."
     },
-    "upgrades": {
-      "available": "Atualizações disponíveis",
-      "readOnly": "Somente leitura — executar uma atualização exige acesso de gravação a este projeto.",
-      "none": "Nenhuma atualização disponível",
-      "upToDateDescription": "Este projeto já está atualizado.",
-      "upToDate": "Atualizado",
-      "run": "Executar",
-      "oneOff": "Atualização avulsa",
-      "oneOffDescription": "Descreva uma única alteração. Uma sessão a realiza, valida e abre uma solicitação de alteração.",
-      "oneOffPlaceholder": "ex. Renomeie o agente release-bot para deploy-bot em todas as referências",
-      "runUpgrade": "Executar atualização",
-      "manifestV3": {
-        "title": "Atualizar o manifesto para v3 (kortix.yaml)",
-        "description": "Leva o kortix.toml ou um kortix.yaml da versão 2 para a versão 3: o projeto regista habilidades, ferramentas, comandos e extensões, e cada agente ativa-os pelo nome. Atualiza as habilidades gerenciadas pela plataforma e abre uma solicitação de alteração para revisão."
-      },
-      "agentEditorHint": "Este projeto usa um manifesto da versão 1. Atualize-o para <code>kortix.yaml</code> versão 3 para editar aqui as instruções, o modelo, as permissões de ferramentas e o acesso deste agente."
-    },
     "plan": {
       "managedByAdmin": "Gerenciado por um administrador da conta",
       "adminOnly": "Somente administradores desta conta podem alterar o plano ou comprar créditos.",
@@ -1697,10 +1676,16 @@
       "localComputer": "Seu computador",
       "appsAndExtensions": "Apps e extensões"
     },
-    "manifestUpgrade": {
-      "title": "Atualizar para v3",
-      "description": "Este projeto usa um manifesto anterior. Um agente leva-o para <yaml>kortix.yaml</yaml> versão 3, atualiza as competências geridas e abre um pedido de alteração. Nada muda até à sua aprovação.",
-      "start": "Iniciar atualização"
+    "manifestIssues": {
+      "title": "{file} tem {errors, plural, one {# erro} other {# erros}} e {warnings, plural, one {# aviso} other {# avisos}}",
+      "titleErrors": "{file} tem {errors, plural, one {# erro} other {# erros}}",
+      "titleWarnings": "{file} tem {warnings, plural, one {# aviso} other {# avisos}}",
+      "errorsOff": "Os agentes e triggers com um erro ficam desativados até ser corrigido.",
+      "warningsOnly": "Tudo continua a funcionar.",
+      "error": "Erro",
+      "warning": "Aviso",
+      "fix": "Corrigir com My Kortix",
+      "fixInSession": "Corrigir numa nova sessão"
     },
     "filter": {
       "grouping": "Agrupamento",
@@ -10923,7 +10908,6 @@
       "text18093cad2644": "Modal",
       "text180bbb19a1b2": "O runbook que vive na cabeça de uma pessoa",
       "text1814e0a6cb50": "Ver modelos disponíveis",
-      "text1815aa434bc6": "# Versão 2 do schema. O runtime é o OpenCode.",
       "text1815ae76cdc7": "Não implantado",
       "text1829231e85b1": "Todos os membros desta conta voltarão a ver o logo, o ícone, o favicon e o nome do Kortix. As imagens enviadas serão excluídas.",
       "text1836d8d61ae9": "{value0} removido de {value1}",
@@ -12217,7 +12201,6 @@
       "text11ef24ea6e15": "Não foi possível renomear a conta",
       "text0223e507afd3": "Para usar outra conta, adicione-a às contas deste conector nas configurações do projeto e defina-a como padrão.",
       "text073fce23e704": "      memory/ e abra uma solicitação de alteração",
-      "text0922e6bf143c": "harnesses/opencode/opencode.jsonc",
       "text3ed7c1e32705": "Ler um tracker e reescrevê-lo são ações diferentes. Defina a gravação como Ask e a execução ficará parada na chamada, mostrando exatamente quais issues ela quer mesclar ou fechar; depois retoma quando você aprovar.",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "Créditos debitados",
@@ -12550,7 +12533,6 @@
       "text47931699ba90": "Cronograma atualizado",
       "text4795dc5fb288": "A conexão atual continuará funcionando até que uma substituição seja salva.",
       "text479974eaff88": "{value0}: {value1} com sucesso, {value2} falharam. {value3}: {value4}{value5}",
-      "text479d92cbfaa1": "(kortix_versão 2) para editar as instruções, modelo, permissões de ferramenta e acesso deste agente aqui.",
       "text47a8467a2faa": "Não foi possível carregar as alterações",
       "text47b31f661d3f": "Falha ao atualizar a função",
       "text47bd29075f8b": "Conteúdo",
@@ -13457,7 +13439,6 @@
       "text61dac62928db": "Agendado:",
       "text61e8d44ad423": "Começar",
       "text61eedf5451c2": "    timezone: UTC",
-      "text61f28ba7b5a4": "kortix_version: 2",
       "text61ff61757ef1": "Como o acesso funciona nesta conta.",
       "text6201111b83a0": "e",
       "text6201f8d3134e": "Eventos do monitor ingeridos",
@@ -15864,7 +15845,6 @@
       "texta743aa4452d3": "Falha ao atualizar o proprietário da autorização",
       "texta756e5fb5f6b": "A TI não precisa de um dashboard. Precisa de uma lista, com um motivo defensável em cada linha, em um formato em que aprová-la realmente faça algo.",
       "texta757b331fa9a": "statusText",
-      "texta757f937ab97": "(kortix_version 2) para editar aqui a disponibilidade, o modelo, as permissões de ferramentas e o acesso deste agente.",
       "texta76a1fd4cef5": "Webhook de cobrança da Stripe recebido",
       "texta76ce82a9749": "Cache",
       "texta76e13b98392": "Restaurar",
@@ -15955,7 +15935,6 @@
       "texta9f78a15820d": "Comparação de regra {value0} condição {value1}",
       "textaa000c983975": "Recurso de grupos",
       "textaa023456aca4": "Conectar o ChatGPT",
-      "textaa132a97a22a": "  config_dir: harnesses/opencode",
       "textaa1c8a0b1716": "Clicar em salvar limpará todas as notificações de manutenção e restaurará o acesso normal.",
       "textaa2025f803e6": "O agente tem shell e sistema de arquivos. Pode instalar um pacote, baixar uma amostra, executá-la, analisar a saída e tentar novamente — o ciclo de trabalho real de um analista, em vez de uma única tentativa com ferramentas fixas.",
       "textaa2e1a551c0a": "Ele reúne. Você decide.",
@@ -16857,7 +16836,6 @@
       "textc3bf78fdd3b9": "Não foi possível enviar sua inscrição",
       "textc3c25857485f": "Faz",
       "textc3c709a999c1": "Lendo a memória…",
-      "text7823a1f3af93": "Leva o kortix.toml ou um kortix.yaml da versão 2 para a versão 3: o projeto regista habilidades, ferramentas, comandos e extensões, e cada agente ativa-os pelo nome. Atualiza as habilidades gerenciadas pela plataforma e abre uma solicitação de alteração para revisão.",
       "textc3d2e79ebdd0": "Conectores",
       "textc3e3a6edeaa5": "Termos e condições",
       "textc3e58a73609d": "Destrutivo",
@@ -16950,7 +16928,6 @@
       "textc634dcb25574": "Lançamento",
       "textc63adab9bd56": "Acompanhe as ferramentas e os arquivos referenciados usados nesta tarefa.",
       "textc63eb6720c6e": "Privado",
-      "textc6414eb01d9a": "Alterações que um agente faz neste espaço de trabalho. Cada execução abre uma solicitação de alteração para você revisar — ​​nada se funde sozinho.",
       "textc6479e2f4970": "Atualizar alterações",
       "textc65feb0006ea": "Trabalhador · {value0}{value1}",
       "textc661a1039aa0": "no máximo",
@@ -17593,7 +17570,6 @@
       "textd83a0d814c59": "API Status mostra um \"Enabled\" verde, o parâmetro \"SCIM Username\" está mapeado para Email e o provisionamento está ativado sem a retenção de aprovação do administrador.",
       "textd84b8be91e7b": "Kortix — Apresentações",
       "textd84ee1e1e08b": "tente kortix init ou / para ver os comandos",
-      "text08edd5b6dcdc": "Atualizar o manifesto para v3 (kortix.yaml)",
       "text848f54e89660": "Execuções",
       "textb098a09c78aa": "Testar com payload",
       "text99733344956d": "Payload",
@@ -17775,7 +17751,6 @@
       "textdc70ef3b3338": "Só vale a pena conectar um canal se a resposta chegar onde a pergunta foi feita. Os arquivos vão nos dois sentidos, e as decisões de que um agente precisa são botões na thread, não um link para outro lugar.",
       "textdc76dd6b1aff": "Entrar na CLI do Kortix",
       "textdc78f4d17256": "sem MFA — não perderá o acesso, mas considere pedir que faça a adesão:",
-      "textdc7ab144ca89": "Faça upgrade para usar o editor completo de agentes",
       "textdc7ea87fdc45": "Arquivos, nos dois sentidos",
       "textdc8659db6d41": "Enter",
       "textdc8d7c5c602b": "Registro de origem",
@@ -17898,7 +17873,6 @@
       "textdfea74d6d58d": "Mover fallback para cima",
       "textdffb64dc7001": "Limites",
       "texte01d77b4a0bd": "O problema",
-      "texte02a5941602a": "Atualizações",
       "texte030ac604b81": "Implantação e postura",
       "texte0362b3241c5": "Dentro dos limites",
       "texte03abcb2b624": "Conectores e janela de atualização",
@@ -21869,7 +21843,6 @@
     "connectorsEmptyBody": "Explore o catálogo e instale um app. Seus agentes o usam quando ele tiver uma conta.",
     "browseApps": "Explorar apps",
     "agentsLoadFailed": "Não foi possível carregar os agentes",
-    "agentsNeedsV2": "O acesso dos agentes é definido no kortix.yaml (kortix_version 2 ou posterior). Este projeto usa kortix.toml.",
     "agentsEmpty": "Este projeto ainda não tem agentes.",
     "agentsIntro": "Escolha quais agentes podem usar este conector e quais regras recebem. Cada mudança é gravada no kortix.yaml.",
     "agentsReadOnly": "Só quem pode editar agentes e conectores pode alterar isto.",

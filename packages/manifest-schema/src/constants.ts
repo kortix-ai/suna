@@ -477,7 +477,7 @@ export function selectedKortixTools(tools: unknown): string[] {
   return KORTIX_TOOL_NAMES.filter((name) => Object.hasOwn(listed, name) || isDefaultOnKortixTool(name));
 }
 
-// ─── kortix_version 3 registries ────────────────────────────────────────────
+// ─── Registries ─────────────────────────────────────────────────────────────
 
 /** A skill, command or extension name (the Agent Skills name rule). */
 export const REGISTRY_NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;

@@ -202,7 +202,7 @@ export function SecretsSection({ draft, set, options }: GrantSectionProps) {
 }
 
 /**
- * A kortix_version 3 grant over a project registry: the declared subagents
+ * A grant over a project registry: the declared subagents
  * this agent may start, the registered commands it may run, the registered
  * extensions a session of it loads. One card, the same All · Pick · None
  * control as Skills.

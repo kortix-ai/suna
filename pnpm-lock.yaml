@@ -315,9 +315,6 @@ importers:
       sharp:
         specifier: 0.35.5
         version: 0.35.5(@types/node@20.19.43)
-      smol-toml:
-        specifier: 1.9.0
-        version: 1.9.0
       stripe:
         specifier: ^14.0.0
         version: 14.25.0

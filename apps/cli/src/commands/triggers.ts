@@ -54,7 +54,7 @@ A trigger is a source (a schedule, a webhook, a connector event, an App event,
 or a merged change request) plus a target (an agent, or one session to wake).
 A loop is a trigger that wakes the session that created it.
 
-Manage the [[triggers]] declared in your project's kortix.yaml — cron
+Manage the triggers declared in your project's kortix.yaml — cron
 schedules, webhooks, connector events, App events, and merged change requests. add/rm/enable/disable edit the LOCAL
 manifest (the source of truth); \`kortix ship\` applies them. When kortix.yaml
 lists \`imports:\`, rm/enable/disable edit the file that declares the trigger;
@@ -137,7 +137,7 @@ Add options:
   --type <cron|webhook|event|app>
                            Trigger type (default cron).
   --prompt <text>          Initial prompt for the spawned session (required).
-  --agent <name>           Logical agent to run (default: project default_agent).
+  --agent <name>           Agent to run (default: My Kortix; default_agent when My Kortix is off).
   --cron <expr>            6-field cron (cron type), seconds first, at most
                            once a minute. e.g. "0 0 9 * * 1-5".
   --run-at <iso>           Run ONCE at this instant instead of on a cron.

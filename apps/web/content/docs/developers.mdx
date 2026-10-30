@@ -96,7 +96,7 @@ Click **Create project**. To work on it from a terminal, run `kortix projects cl
 
 ```text
 my-agent/
-├── kortix.yaml        the manifest (kortix_version: 3): one agent and its grants
+├── kortix.yaml        the manifest: one agent and its grants
 ├── agents/            the agent's prompt: worker.md
 ├── skills/            11 skills, one folder each, with a SKILL.md
 ├── memory/MEMORY.md   the project memory
@@ -706,34 +706,39 @@ Through the API, `DELETE /v1/projects/<project-id>` answers `{ "ok": true, "dele
 
 ## kortix.yaml reference
 
-`kortix.yaml` is the manifest at the root of a project repository. It defines the project's agents and everything each agent may use. This section lists every key of `kortix_version: 3`.
+`kortix.yaml` is the manifest at the root of a project repository. It defines the project's agents and everything each agent may use. This section lists every key.
+
+The format has no version number. It changes in two ways only, so a file that is valid today stays valid:
+
+1. **A new key is optional,** and leaving it out keeps today's behavior.
+2. **A replaced key is deprecated, never removed.** The old key keeps working: Kortix reads it as the key that replaced it. `kortix validate` shows a warning with the replacement and a fix id. `kortix validate --fix` rewrites every deprecated key in the file and the files it imports, and keeps comments. Every Kortix write saves the latest shape. [Deprecated keys](#deprecated-keys) lists them.
 
 The smallest useful manifest:
 
 ```yaml
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
-kortix_version: 3
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.schema.json
 default_agent: assistant
 
 agents:
   assistant:
     description: Answers questions about the project.
     prompt: You answer questions about this project. Read the files before you answer.
+    tools: all                               # omitted: all, with a warning
     skills: all                              # omitted: no skills
     workspace: { project_repository: true }  # omitted: no repository in /workspace
 ```
 
-Every other key is optional. This agent may call every tool, and no tool call waits for a person: an omitted `permission` is `allow`.
+Every key is optional. No tool call of this agent waits for a person: an omitted `permission` is `allow`. A file with no `agents` runs My Kortix, the built-in agent, only.
 
 ### File and schema
 
-Put `kortix.yaml` at the root of the project repository. Start it with the schema line, so a YAML editor validates and completes every key:
+Put `kortix.yaml` at the root of the project repository. Kortix reads `kortix.yaml`, else `kortix.yml`, and the files it names. Start the file with the schema line, so a YAML editor validates and completes every key:
 
 ```yaml
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.schema.json
 ```
 
-`kortix schema --version 3` prints the same schema. `kortix schema --version 3 --url` prints its URL.
+`kortix schema` prints the same schema. `kortix schema --url` prints its URL.
 
 Validate before you push:
 
@@ -750,10 +755,10 @@ kortix validate --scopes                         # every grantable kortix_permis
 | `--scopes` | Print the grantable `kortix_permissions` entries and the renamed ones, then exit. |
 | `--no-dockerfile-lint` | Skip the checks on sandbox template Dockerfiles. |
 
-- `kortix validate` exits `0` with no errors, `1` with one or more errors, and `2` when the file is missing or unreadable.
+- `kortix validate` prints one line per issue: the file, line and column (`kortix.yaml:14:7`), the key path, and the fix. It exits `0` with no errors, `1` with one or more errors, and `2` when the file is missing or unreadable.
 - `kortix ship` runs the same checks before it commits.
 - The change request merge runs the schema check on the merged manifest. An error blocks the merge with `422` `MANIFEST_INVALID`. A warning never blocks.
-- An unknown key is an error. This holds at the top level and in agent blocks, commands, extensions, `workspace`, App blocks, trigger `on` and `run`, and imported files. The message names the key that replaces it, when one exists. An unknown key under `env` is a warning.
+- An unknown key is an error. This holds at the top level and in agent blocks, commands, extensions, `workspace`, App blocks, trigger `on` and `run`, and imported files. The message names the closest key (`Did you mean "prompt"?`) or the key that replaces it. An unknown key under `env` is a warning.
 
 `kortix validate` and `kortix ship` also check the files around the manifest. Each of these is an error:
 
@@ -769,13 +774,68 @@ They warn when the files in Git exceed 512 MiB, or when one file reaches 10 MiB.
 `kortix.yaml` is in Git. Never write a secret value in it. Set values in **Secrets** and connector logins in **Connectors**. Connector `headers` are plain text.
 </Callout>
 
+### When kortix.yaml has a problem
+
+Kortix shows the issues of the file on the default branch in three places:
+
+1. **`kortix validate`** prints each issue with its file, line and column.
+2. **The project** shows a banner with the errors, and the warnings a person has to act on. **Fix with My Kortix** starts a session in which My Kortix fixes the file and opens a change request for you to review. A warning with a fix id (a deprecated key, an older format) is not in the banner: the next change Kortix writes to the file heals it.
+3. **The agent of every session** gets the same list in its system prompt, with the line and the fix of each issue. It can fix the file through a change request.
+
+Kortix refuses to write a file with an error, an unknown key included: `kortix ship`, the change request merge, the API routes that write the manifest and the file editor in the web app stop on it. A file with an error that reaches the default branch another way, such as a direct push, never stops the project. Kortix runs what is valid and takes away only the broken part:
+
+| The error is in | What runs |
+| --- | --- |
+| An unknown key, anywhere | Kortix ignores the key. |
+| An agent or a trigger | That agent or trigger is off. A session that names the agent fails with an error that names the issue. A trigger that is off does not fire. |
+| A connector, App, skill, tool, command, extension, space or sandbox template | That entry is not available. |
+| `project` or `default_agent` | The key takes its default. |
+| Any other key (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, `builtin_agents`), a YAML syntax error, or an unknown `kortix_version` | Only My Kortix runs, so that it can fix the file. |
+
+Each rule takes access away. No error gives an agent more than the file grants.
+
+### Older formats
+
+A project made before this format still works, with no change:
+
+- a `kortix.yaml` with `kortix_version: 2`;
+- a `kortix.toml` (`kortix_version = 1`) with no `kortix.yaml` beside it.
+
+Kortix reads the file and the files it points at as the format on this page: each agent's `.md` frontmatter becomes the agent's keys, its body the prompt, and the OpenCode `permission` and commands become `permission` and `commands`. The settings that have no place in this format, such as an OpenCode plugin, are listed as warnings. `kortix validate` reports one warning, `fix: legacy-format`, and then validates the converted file.
+
+`kortix validate --fix` converts the files for good: it writes `kortix.yaml`, keeps only the prompt in each agent `.md`, and deletes `kortix.toml` and the OpenCode files it replaces. The first change Kortix itself writes to the project, such as a new trigger, makes the same conversion in that commit. The other `kortix` commands that edit `kortix.yaml` ask you to run `kortix validate --fix` first.
+
+`kortix_version` with any other value is an error, and only My Kortix runs.
+
+### Deprecated keys
+
+Each row still works. `kortix validate --fix` writes the replacement with the same meaning.
+
+| Fix id | Deprecated | Write instead |
+| --- | --- | --- |
+| `legacy-format` | A `kortix_version: 2` file, or a `kortix.toml` | The converted files: run `kortix validate --fix` (see [Older formats](#older-formats)). |
+| `drop-kortix-version` | `kortix_version: 3` | Nothing: delete the line. |
+| `tools-explicit` | An agent without `tools` (it gets every tool) | `tools: all`, or the list of tools it needs |
+| `agent-disable` | `disable: true` | `enabled: false` |
+| `agent-env` | An agent's `env` | `secrets` |
+| `agent-kortix-cli` | `kortix_cli` | `kortix_permissions` |
+| `agent-connectors-personal` | `connectors_personal` | `connectors_required` |
+| `agent-repository-access` | `repository_access: true` | `workspace: { project_repository: true }` |
+| `agent-workspace-mode` | `workspace: branch` or `workspace: runtime` | `workspace: { project_repository: true }` or `false` |
+| `sandbox-templates` | The top-level `sandboxes` list | `sandbox.templates` |
+| `sandbox-singular` | Image keys (`image`, `dockerfile`, `context`, …) set on `sandbox` itself | One `sandbox.templates` entry, named as `sandbox.default` |
+| `acp-runtimes` | `runtimes`, and an agent's `runtime` and `agent` | Nothing: delete them. Every session runs pi. |
+| `permission-renamed` | A renamed Kortix permission, such as `project.cr.open` | Its new name (`kortix validate --scopes` lists them) |
+| `tool-retired` | A retired Kortix tool name in `tools` | Nothing: the name is removed. |
+
+When a deprecated key and its replacement are both set with different values, Kortix does not guess: it is an error.
+
 ### Example project
 
 A support project: two agents, one skill, one tool, two commands, one extension, one connector with a read-only rule set, and a weekly trigger.
 
 ```yaml
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
-kortix_version: 3
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.schema.json
 default_agent: support
 
 project:
@@ -847,6 +907,7 @@ agents:
       bash:
         "*": allow
         "git push *": ask
+    tools: all
     skills: [refund-policy, kortix-cli]
     subagents: [researcher]
     commands: all
@@ -921,11 +982,12 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 
 - **A grant** is `all` (or `*`), `none` (or `""`), or a list of names. A list that contains `*` means all.
 - **Omitted means none.** An omitted `skills`, `subagents`, `commands`, `extensions`, `connectors`, `secrets`, `apps` or `kortix_permissions` grants nothing.
-- **Three keys are open by default:** `tools` is `all`, `permission` is `allow`, and `codemode` is `on`.
+- **Three keys are open by default:** `tools` is `all` (`kortix validate` warns when an agent omits it), `permission` is `allow`, and `codemode` is `on`.
 - **`workspace.project_repository` defaults to `false`.** Set `true` on every agent that reads or changes the repository, runs its scripts, or opens change requests.
 - **Names must exist.** A listed skill, command, extension, subagent or tool that is not registered or built in is an error.
+- **`secrets` reaches the sandbox.** A granted secret is an environment variable or a network-enforced secret in the agent's sandbox. Model logins, connector and git credentials stay with Kortix services: the agent's model and connector settings decide their use.
 - **Built in, with no entry.** The Kortix skills: `kortix-cli`, `kortix-memory` and the other `kortix-*` skills. The Kortix tools: `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `memory`, `show`. See [Kortix tools](/docs/developers#kortix-tools). The built-in tools: `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `task`. An agent loads a Kortix skill only when its `skills` grant names it or is `all`.
-- **Only declared agents run.** There are no built-in agents.
+- **My Kortix is built in.** A session or trigger that names no agent runs My Kortix. `builtin_agents: { my_kortix: false }` turns it off; then such a session runs `default_agent`. A session My Kortix starts without naming an agent also runs `default_agent`.
 - **Extensions** are packages for the agent runtime. A package holds runtime extensions, skills, prompts or themes. The change request merge builds npm packages, and a session never installs them. A session loads its extensions when its runtime starts, so a change reaches a running session at its next start.
 
 {/* generated:kortix-yaml:start */}
@@ -936,13 +998,12 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `kortix_version` | `3` | required | `3`. A higher version is an error. |
 | `imports` | list | — | YAML files or folders whose collections merge into this file. See [imports](#imports). |
-| `default_agent` | string | required | The agent a session or trigger runs when it names none. A declared agent that is enabled and whose `mode` is `primary` or `all`. |
+| `default_agent` | string | — | The agent that runs when nothing names one and My Kortix is off, and the agent My Kortix starts when it names none. A session or trigger that names no agent runs My Kortix while it is on. A declared agent that is enabled and whose `mode` is `primary` or `all`. |
 | `project` | map | — | `name`: the project's name. A push that changes it renames the project, and a rename in Kortix commits it here. `description`: text for people who read the repository. |
 | `env` | map | — | The secret names the project expects. Values live in Secrets, never in this file. See [env keys](#env-keys). |
 | `sandbox` | map | the platform image | Sandbox templates and the project's default template. See [sandbox keys](#sandbox-keys). |
-| `triggers` | list | — | Schedules, webhooks, connector and App events and merged change requests that start agent work. See [triggers keys](#triggers-keys) and [Triggers](/docs/guide#triggers). |
+| `triggers` | list | — | Schedules, webhooks and App events that start agent work. See [triggers keys](#triggers-keys) and [Triggers](/docs/guide#triggers). |
 | `connectors` | list | — | Apps and APIs agents can call. See [connectors keys](#connectors-keys) and [Connectors](/docs/guide#connectors). |
 | `apps` | map | — | App slug → App block. See [apps keys](#apps-keys). |
 | `skills` | map | the Kortix skills | Skill name → repository folder. The Kortix skills (`kortix-*`) are always registered. See [skills entries](#skills-entries). |
@@ -952,7 +1013,9 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `policy` | map | — | The decision for a connector call that no rule matches. See [policy keys](#policy-keys). |
 | `policies` | list | — | Connector rules for the whole project. They run before every policy set and base rule. See [policy keys](#policy-keys). |
 | `approvals` | map | — | How long a held connector call waits for a decision. See [policy keys](#policy-keys). |
-| `agents` | map | required | Agent name → agent block. At least 1 agent, here or in an imported file. A name is lowercase letters, digits, `-` and `_`, at most 128 characters. See [Agent keys](#agent-keys). |
+| `spaces` | map | — | Spaces: channels with a room (always the first tab) and configured tabs. Agents join one with `agents.<name>.space`. |
+| `builtin_agents` | map | — | Built-in agents the platform adds to this project. Absent = on. |
+| `agents` | map | — | Agent name → agent block, here or in an imported file. A name is lowercase letters, digits, `-` and `_`, at most 128 characters. See [Agent keys](#agent-keys). |
 
 ### Agent keys
 
@@ -974,19 +1037,20 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `enabled` | boolean | `true` | `false`: no session starts with the agent, and no agent starts it as a subagent. |
 | `codemode` | `on`, `only`, `off` | `on` | `on`: the model gets every tool plus `codemode`, which runs one JavaScript script that calls the other tools. `only`: `codemode` alone. `off`: no `codemode`. A script's calls follow the agent's `permission`. |
 | `tools` | `all`, `none`, list or map | `all` | The tools the agent may call: built-in tools, Kortix tools and registered tools. A list allows only those. `{ exclude: [bash] }` allows every tool but those. |
-| `skills` | grant | `none` | Registered skills and Kortix skills the agent may load. |
-| `subagents` | grant | `none` | Agents this agent may start with the `task` tool: declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent. |
+| `skills` | grant or map | — | Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. "all", "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
+| `subagents` | grant | `none` | Agents this agent may start with the `agent` tool (alias `task`): declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent. |
 | `commands` | grant | `none` | Registered commands the agent runs. |
-| `extensions` | grant | `none` | Registered extensions that a session of the agent loads. |
+| `extensions` | grant or map | — | Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. "all", "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
 | `connectors` | grant | `none` | Connector slugs the agent may call. |
 | `connectors_required` | list | — | Connector slugs, a subset of `connectors`. Sessions do not check it. |
 | `policy_sets` | map | the base rules | Connector slug → the name of a policy set on that connector. See [Connector rules and approvals](#connector-rules-and-approvals). |
-| `secrets` | grant | `none` | Secret names the agent's sandbox receives: environment variables and network-enforced secrets. Model logins, connector and git credentials are used by Kortix services; the agent's model and connector settings decide their use. |
+| `secrets` | grant | `none` | Secret names the agent's sandbox receives. |
 | `apps` | grant | `none` | App slugs the agent may open when the App's access is restricted or private. |
 | `kortix_permissions` | grant | `none` | Project permissions (`project.*`) the agent holds, whoever starts the session. `kortix validate --scopes` prints them. An account permission is an error. See [Agents](/docs/guide#agents). |
-| `workspace` | map | — | What new sessions of this agent get in /workspace. Any other key under `workspace` is an error. |
+| `workspace` | `branch`, `runtime`, `read` | — | What new sessions of this agent get in /workspace. Any other key under `workspace` is an error. |
 | `workspace.project_repository` | boolean | `false` | `true`: new sessions check out the project repository in `/workspace`, on their own session branch. `false`: no checkout, and repository calls answer `403` `session_repository_access_denied`. Project tools still load. |
 | `sandbox` | string | `sandbox.default` | A template slug, or `default` for the platform image. |
+| `space` | string | — | The space the agent works in (a key of the top-level `spaces` map, or a bare slug). Grouping only. |
 | `network_egress` | map | — | Only `{ version: 1, default: deny, rules: [] }`. It validates with a warning: Kortix does not enforce it. |
 
 ### Registry entries
@@ -1086,7 +1150,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `run.path` | string | — | With `run.app`: the request path. Starts with `/`. |
 | `run.method` | `POST`, `GET` | — | With `run.app`: the request method. |
 | `run.payload` | map | — | With `run.app`: the request body. |
-| `type` | `cron`, `webhook`, `app` | — | Required in the flat form: the trigger without `on` and `run`. `type` next to `on` is an error. |
+| `type` | `cron`, `webhook`, `app`, `change_request` | — | Required in the flat form: the trigger without `on` and `run`. `type` next to `on` is an error. |
 | `agent` | string | — | Flat form of `run.agent`. |
 | `session_mode` | `fresh`, `reuse`, `pinned`, `keyed` | — | Flat form of `run.session`. |
 | `session_key` | string | — | Flat form of `run.session_key`. |
@@ -1131,8 +1195,8 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `policy.default_mode` | `allow_all`, `risk` | `allow_all` | `allow_all`: the call runs. `risk`: a read runs, and a write or a delete waits for approval. |
-| `policies[].match` | string | — | Required. A glob over `<connector-slug>.<tool>`, such as `gmail.send_*` or `*.delete*`. Case-insensitive. |
-| `policies[].action` | `always_run`, `require_approval`, `block` | — | Required. What a matching call does. |
+| `policies[].match` | string | required | Required. A glob over `<connector-slug>.<tool>`, such as `gmail.send_*` or `*.delete*`, or a `/regex/flags`. Case-insensitive. |
+| `policies[].action` | `always_run`, `require_approval`, `block` | required | Required. What a matching call does. |
 | `policies[].conditions` | list | — | Every condition must hold. Each is `{ arg, match, negate }`: `arg` is a dot path into the call's arguments, `match` is a glob or a `/regex/`, and `negate: true` inverts it. |
 | `approvals.ttl` | string | `24h` | An integer and `m`, `h` or `d`, such as `30m`, `4h` or `7d`. Kortix clamps it to 5 minutes through 30 days. |
 
@@ -1247,7 +1311,6 @@ What each place on the sandbox keeps:
 
 ```yaml
 # kortix.yaml
-kortix_version: 3
 default_agent: assistant
 imports:
   - triggers/          # every .yaml and .yml file below this folder
@@ -1283,7 +1346,7 @@ error imports: triggers "weekly-report" is declared in both triggers/a.yaml and 
 
 ### Kortix tools
 
-Kortix maintains six tools. A `kortix_version: 3` project registers all six with no entry. Every agent gets them unless its `tools` narrows them. The sandbox runs the same module on both harnesses, with the same name, arguments and output.
+Kortix maintains six tools. Every project registers all six with no entry. Every agent gets them unless its `tools` narrows them. The sandbox runs the same module on both harnesses, with the same name, arguments and output.
 
 | Tool | What it does |
 | --- | --- |
@@ -1295,8 +1358,7 @@ Kortix maintains six tools. A `kortix_version: 3` project registers all six with
 | `show` | Presents a file, image, URL, document, or text to the person in the session. Each shown item whose path is an image file (png, jpg, jpeg, webp, gif, avif, svg) of at most 32 MiB carries `sha256`, the lowercase hex SHA-256 of its bytes, when the file is read within 2 s. |
 
 - **See what a session gets:** run `kortix tools ls` from the project root.
-- **A `kortix_version: 2` project** selects Kortix tools under `tools:` as `<name>: kortix:<name>`. With no `tools:` key, in the root file or in any imported file, it gets all six. With a `tools:` key, even an empty one, it gets the Kortix tools the key lists, plus `image_gen`. Deleting a line removes that tool from every agent, except `image_gen`, which loads when its line is missing.
-- **Own a Kortix tool:** `kortix tools eject <name>` writes the source the sandbox runs to `tools/<name>.ts` and points the tool at it. The copy imports only `node:*` modules. `web_search`, `image_search`, and `scrape_webpage` call the Kortix API with `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env`. `image_gen` calls the Kortix LLM gateway with `KORTIX_LLM_BASE_URL` and `KORTIX_TOKEN`. `memory` and `show` work on files in the project checkout. In a v2 project with no `tools:` key, the eject creates one and also lists the other five Kortix tools as `kortix:<name>`, so it removes nothing.
+- **Own a Kortix tool:** `kortix tools eject <name>` writes the source the sandbox runs to `tools/<name>.ts` and points the tool at it. The copy imports only `node:*` modules. `web_search`, `image_search`, and `scrape_webpage` call the Kortix API with `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env`. `image_gen` calls the Kortix LLM gateway with `KORTIX_LLM_BASE_URL` and `KORTIX_TOKEN`. `memory` and `show` work on files in the project checkout.
 - **`context.turnId`** is optional in the `context` a tool's `execute(args, context)` receives: the turn the call belongs to, when the harness names it. pi sets it, and it is the same for every call of one turn, also for calls from a `codemode` script or a subagent. `context.signal` can differ per call. Key a per-turn limit on `turnId`. An OpenCode session does not set it.
 
 ### Generate images
@@ -1433,60 +1495,6 @@ A gateway key (`kortix_gw_…`) also calls the image endpoints:
 
 Both take `{ model, prompt, aspect_ratio, quality, background, images }`. `model` defaults to `auto`. `images` is for edits only: `[{ "image_url": "data:image/png;base64,..." }]`. The gateway makes one image per request and drops every other field. A legacy `size` (`1024x1024`, `1536x1024`, `1024x1536`) is read as the matching ratio when `aspect_ratio` is absent. The answer is `{ created, model, provider, data: [{ b64_json, mime_type }], size, usage }` for every provider. `size` and `usage` are present when the provider reports them.
 
-### Migrate to v3
-
-A project created in Kortix starts on `kortix_version: 3`. Projects on `kortix_version: 1` (`kortix.toml`) or `kortix_version: 2` keep running unchanged. Upgrading is opt-in, and it lands as a change request.
-
-**From Kortix.** Select the upgrade alert in the project sidebar. Or open **Customize → Settings → Upgrades** and select **Run** on **Upgrade manifest to v3 (kortix.yaml)**. The alert shows only to people who can write to the project. Or run:
-
-```bash
-kortix projects upgrade [<id>]
-```
-
-Each one starts a session with the project's default agent. The agent converts the manifest with `kortix migrate`, runs `kortix validate` and opens a change request. It never merges it: a person reviews and merges it. Starting the upgrade needs permission to start sessions in the project.
-
-**By hand.** In a checkout of a v1 or v2 project:
-
-```bash
-kortix migrate            # preview: the plan and the new kortix.yaml; nothing changes
-kortix migrate --write    # apply it
-kortix validate
-```
-
-`kortix migrate` does this:
-
-- From v1, each `[[agents]]` entry and each agent `.md` becomes an agent. A grant v1 omitted is written as `all`, because v1 meant all. `env` becomes `secrets`. `default_agent` comes from the old harness config, else the first agent. `kortix.toml` is deleted.
-- It moves each agent's `.md` frontmatter into its block. The `.md` keeps the prompt alone and becomes `prompt_file`.
-- It copies the project-wide `permission` of the old harness config onto every agent that sets none, and deletes that config file.
-- It turns `permission.task` into `subagents`.
-- It turns the `skills/<name>/` folders into the `skills` registry.
-- It turns the harness folder's command files into the `commands` registry. Each command is enabled on the agent its frontmatter names, else on `default_agent`.
-- It turns plugins and `harnesses.pi.packages` into `extensions`, enabled on every agent that loaded them, and `harnesses.pi.codemode` into `codemode`.
-- It sets `workspace: { project_repository: true }` on every agent that had the repository, because v3 defaults to `false`.
-- It keeps a split manifest split. Each entry stays in its file, and the new registries go to `kortix.yaml`.
-
-It lists what it cannot carry over under **Not carried over**. It refuses to write a result that does not validate. `--json` prints the plan as JSON. Then commit, push, and open a change request.
-
-What changes from v1 and v2:
-
-| v1 or v2 | v3 |
-| --- | --- |
-| `agents.<name>.file` and the agent `.md` frontmatter | `prompt_file` or `prompt`, and the behavior keys on the agent block |
-| `agents.<name>.disable` | `enabled: false` |
-| `agents.<name>.env` | `secrets` |
-| `agents.<name>.kortix_cli` | `kortix_permissions` |
-| `agents.<name>.connectors_personal` | `connectors_required` |
-| `agents.<name>.repository_access` | `workspace.project_repository` |
-| Top-level and agent `harnesses` | `extensions`, enabled with `agents.<name>.extensions`, and `agents.<name>.codemode` |
-| Top-level `permission` | `agents.<name>.permission` |
-| `permission.skill`, `permission.task` | `skills`, `subagents` |
-| Harness config folders (`harnesses/`, `pi.config_dir`) | None: v3 reads no harness folder |
-| `tools.<name>: kortix:<name>` | None: every Kortix tool is registered. Narrow an agent with `tools` |
-| `channels` | None: channels are connected in the dashboard, and each one is a `channel` connector |
-| `sandboxes` | `sandbox.templates` |
-| `[[agents]]`, `[[triggers]]` and the other `kortix.toml` tables | The YAML maps and lists on this page |
-| `workspace.project_repository` omitted: `true` | Omitted: `false` |
-| A grant omitted in v1: all | Omitted: none |
 ## CLI
 
 `kortix` is the Kortix command line. It does from a terminal what the web app does: create and clone projects, run sessions, review change requests, and configure agents, connectors and secrets. Use it on your own machine, in CI, from a coding agent, and inside a session sandbox, where it is already installed and signed in.
@@ -1613,7 +1621,7 @@ kortix cr ls && kortix cr diff 1              # read its change request
 kortix cr merge 1 && git pull                 # merge it and pull the result
 ```
 
-- `kortix init` writes a `kortix_version: 3` project. Its fields are on [kortix.yaml reference](/docs/developers#kortixyaml-reference).
+- `kortix init` writes a project from the starter. Its fields are on [kortix.yaml reference](/docs/developers#kortixyaml-reference).
 - `kortix projects clone <project_id> my-agent` gets an existing project instead. It clones with your Kortix login and installs a git credential helper, so plain `git pull` and `git push` work in the clone.
 - `kortix ship` commits every change (`git add -A`) and asks for missing secrets. Then it pushes the current branch to the branch with the same name and asks you to connect declared connectors. `kortix deploy` is the same command.
 - `1` is the change request number from `kortix cr ls`. `kortix cr request-changes 1 --message "…"` sends the note to the session that opened it.
@@ -1782,8 +1790,8 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 
 | Command | What it does | See |
 | --- | --- | --- |
-| `init [project-name]` | Create a project directory from the starter, with a `kortix_version: 3` `kortix.yaml`. | [The everyday loop](#the-everyday-loop) |
-| `projects <subcommand>` | List, create, clone, link, use, rename and delete projects. Also feature flags (`features`), project CLI tokens (`cli-tokens`) and the upgrade to `kortix_version: 3` (`upgrade`). | [Which project a command uses](#which-project-a-command-uses) |
+| `init [project-name]` | Create a project directory from the starter, with its `kortix.yaml`. | [The everyday loop](#the-everyday-loop) |
+| `projects <subcommand>` | List, create, clone, link, use, rename and delete projects. Also feature flags (`features`) and project CLI tokens (`cli-tokens`). | [Which project a command uses](#which-project-a-command-uses) |
 
 **Session, within the project**
 
@@ -1798,10 +1806,9 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 | Command | What it does | See |
 | --- | --- | --- |
 | `ship` | Validate, commit and push the current branch. A folder with no link and no default project gets a new project. `kortix deploy` is the same command. | [Commit and push](/docs/developers#commit-and-push) |
-| `validate` | Check `kortix.yaml` and the sandbox template Dockerfiles. | [Check and validate](#check-and-validate) |
-| `migrate [--write]` | Convert the project manifest to `kortix_version: 3`. It prints the plan; `--write` applies it. | [Migrate to v3](/docs/developers#migrate-to-v3) |
+| `validate` | Check `kortix.yaml` and the sandbox template Dockerfiles. One line per issue: `<file>:<line>:<col>  <severity>  <path>  <message>`. | [Check and validate](#check-and-validate) |
 | `doctor [--no-session]` | Check the login and the project, then start a throwaway session and wait for an agent reply. | [Check and validate](#check-and-validate) |
-| `schema --version 3` | Print the `kortix.yaml` JSON Schema. | [Check and validate](#check-and-validate) |
+| `schema [--url]` | Print the `kortix.yaml` JSON Schema. | [Check and validate](#check-and-validate) |
 
 **Agents and connectors**
 
@@ -1940,7 +1947,7 @@ The commands below are `kortix sessions <subcommand>`. `kortix sessions --help` 
 | Command | Effect |
 | --- | --- |
 | `kortix validate` | Check `kortix.yaml` against the schema, lint each `sandbox.templates` Dockerfile, and warn about large files in git. Exit `0` valid, `1` errors, `2` file not found. `--file <path>`, `--json`, `--no-dockerfile-lint`. `--scopes` prints every grantable `kortix_permissions` value. `kortix ship` runs the same checks. |
-| `kortix schema --version 3` | Print the `kortix.yaml` JSON Schema. `--url` prints its URL instead: `https://kortix.com/schema/kortix.v3.schema.json`. |
+| `kortix schema` | Print the `kortix.yaml` JSON Schema. `--url` prints its URL instead: `https://kortix.com/schema/kortix.schema.json`. |
 | `kortix doctor` | Check the login and project, then start a throwaway session, send `ping` and wait for a reply. `--no-session`, `--keep-session`, `--prompt "<text>"`, `--timeout <seconds>`: how long to wait for the sandbox (default 180). Exit `0` pass, `1` fail. |
 | `kortix system-skills list` | List the Kortix system skills. |
 | `kortix system-skills get <name>` | Print one skill and the paths of its reference files. `--full` adds every reference file. |

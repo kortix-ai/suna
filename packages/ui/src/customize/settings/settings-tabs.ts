@@ -113,10 +113,6 @@ export type SettingsTab =
   // the config page, while `/settings/sandbox` opens this overlay.
   | 'sandbox'
   | 'feature-flags'
-  // Upgrades MOVED here outright on 2026-09-02 (Jay: "move this upgrade
-  // section over the settings panel") — it is no longer a section of
-  // `/projects/<id>/config`. `UpgradesView` has one mount now, this one.
-  | 'upgrades'
   // The two connect pages, at the foot of the rail (KRTX-1997). Each was a
   // dialog reachable only from a dismissible sidebar promo; a dismissed promo
   // left no way back. `computer` is singular on purpose: `computers` is a
@@ -130,11 +126,11 @@ export type SettingsTab =
 //
 // The project's own configuration left too — General, Members, Secrets,
 // Channels, Repositories, Models, Sandbox templates, Snapshots, Marketplace,
-// Review, Voice, Feature flags (was `experimental`) and Upgrades. All thirteen
+// Review, Voice and Feature flags (was `experimental`). All twelve
 // became sections of the Customize bar's Settings tab, `/projects/[id]/config
 // ?section=<key>`, and that page was itself retired on 2026-09-02: each id now
 // resolves through `GRADUATED` to a capability page, or is a live tab of this
-// overlay again (`workspace`, `sandbox`, `feature-flags`, `upgrades`).
+// overlay again (`workspace`, `sandbox`, `feature-flags`).
 // Nothing routes to `/config` any more — `menu-registry-destinations.test.ts`
 // fails on a palette row that tries.
 
@@ -161,7 +157,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   // Account group was removed on 2026-09-03 (Marko) — a wallet and a
   // subscription belong to the account page, `/accounts/[id]`, and both ids
   // resolve there through `ACCOUNT_GRADUATED`.
-  // `workspace`, `sandbox`, `feature-flags` and `upgrades` are still in the
+  // `workspace`, `sandbox` and `feature-flags` are still in the
   // type — `settings-panel.tsx` keeps their panes mountable — but NOT here:
   // the overlay's Workspace group was removed on 2026-09-03 (Marko), so no
   // route or palette row may open them. Each id resolves through `GRADUATED`
@@ -202,8 +198,8 @@ export const GRADUATED: Record<string, (projectId: string) => string> = {
   webhooks: (p) => capabilityTabHref(p, 'triggers'),
 
   // ── Project configuration → the Customize bar's Settings tab ────────────
-  // `/projects/<id>/config` holds General, Sandbox templates, Feature flags
-  // and Upgrades. It was retired on 2026-09-02 for the overlay's Workspace
+  // `/projects/<id>/config` holds General, Sandbox templates and Feature
+  // flags. It was retired on 2026-09-02 for the overlay's Workspace
   // group and brought back on 2026-09-03 (Marko), and the overlay group went
   // — so every id that ever named one of these sections, the overlay's own
   // tab ids included, lands on the page. Review, the one section that was an
@@ -222,9 +218,6 @@ export const GRADUATED: Record<string, (projectId: string) => string> = {
   'feature-flags': (p) => adminPath(p, 'feature-flags'),
   // `experimental` was renamed Feature flags on the way.
   experimental: (p) => adminPath(p, 'feature-flags'),
-  upgrades: (p) => adminPath(p, 'upgrades'),
-  // `upgrade`, singular, is the old Customize id for the Upgrades pane.
-  upgrade: (p) => adminPath(p, 'upgrades'),
   review: (p) => capabilityTabHref(p, 'review'),
   // Secrets, Channels, and Models graduated a SECOND time — off the Settings
   // sub-nav entirely and onto their own top-level Customize tab. `models` and
@@ -332,7 +325,7 @@ export const RENAMED: Record<string, SettingsTab> = {
   connected: 'profile',
   'api-keys': 'tokens',
   // Every project-configuration spelling (`general`, `git`, `snapshots`,
-  // `experimental`, `upgrade`, …) is in `GRADUATED` above: they name the
+  // `experimental`, …) is in `GRADUATED` above: they name the
   // Customize bar's Settings tab, not a tab of this overlay.
 };
 
@@ -372,7 +365,7 @@ export function isProjectGraduatedSection(rawSection: string | null | undefined)
  * `/settings/<id>`; anything unrecognized returns `null`.
  *
  * There is no rename map left. Every id that used to be renamed INTO the
- * overlay (`settings`, `git`, `upgrade`, the seven `llm-*` ids) now names a
+ * overlay (`settings`, `git`, the seven `llm-*` ids) now names a
  * surface outside it, so all of them are entries in `GRADUATED` above.
  *
  * **`accountId` is optional and is checked FIRST.** It is the caller's

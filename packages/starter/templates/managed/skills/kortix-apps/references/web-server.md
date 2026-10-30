@@ -24,8 +24,9 @@ kortix apps deploy --image nginx:1.27-alpine --slug nginx \
   --command '["nginx","-g","daemon off;"]' --port 80
 ```
 
-`dockerfile` and `oci_image` require `--command` and `--port`. A server App
-supports one public HTTP port, HTTP streaming, SSE, and WebSockets.
+`dockerfile` and `oci_image` require `--command`, and `--port` unless the App
+is worker-only (`processes`, no service). Each HTTP service (the primary port
+and every named service, below) supports HTTP streaming, SSE, and WebSockets.
 
 ## Lifecycle
 
@@ -56,7 +57,7 @@ pay (event `app_stopped_unfunded`). The run mode decides what bills:
 
 The CLI prints a line such as `Runs 24/7 on 1 vCPU / 2 GB`; tell the user the
 run mode, never a price. To use less compute, use `--on-demand` or a smaller
-machine (`--memory-gb 1`).
+machine (`kortix apps set <slug> --memory-gb 1`, applied at the next deploy).
 
 ```bash
 kortix apps deploy apps/api --slug api --type dockerfile --on-demand \

@@ -28,13 +28,12 @@ export function linkFilePath(cwd = process.cwd()): string {
 }
 
 /** Is the cwd plausibly a Kortix project? We require either an existing
- *  `.kortix/` directory (from `kortix init`) or a manifest (`kortix.toml`
- *  or `kortix.yaml`) at the root. Refusing to auto-create `.kortix/` from a
+ *  `.kortix/` directory (from `kortix init`) or a manifest (`kortix.yaml`
+ *  or `kortix.yml`) at the root. Refusing to auto-create `.kortix/` from a
  *  random directory prevents stray folders. */
 export function isKortixProject(cwd = process.cwd()): boolean {
   return (
     existsSync(resolve(cwd, '.kortix')) ||
-    existsSync(resolve(cwd, 'kortix.toml')) ||
     existsSync(resolve(cwd, 'kortix.yaml')) ||
     existsSync(resolve(cwd, 'kortix.yml'))
   );

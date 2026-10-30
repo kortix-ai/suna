@@ -32,7 +32,6 @@ import type { RuntimeCapability } from '@kortix/sdk';
 import {
   ActivityIcon as Activity,
   AlarmIcon as AlarmClock,
-  ArrowCircleUpIcon as ArrowUpCircle,
   SquaresFourIcon as Blocks,
   RobotIcon as Bot,
   CalendarIcon as Calendar,
@@ -556,17 +555,6 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/admin/feature-flags',
     requiresProject: true,
     keywords: 'feature flags flag experimental labs beta toggle enable disable',
-  },
-  {
-    id: 'proj-config-upgrades',
-    label: 'Settings · Upgrades',
-    icon: ArrowUpCircle,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/admin/upgrades',
-    requiresProject: true,
-    keywords: 'upgrades upgrade migrate migration manifest runner kortix yaml version bump',
   },
   {
     id: 'proj-models',

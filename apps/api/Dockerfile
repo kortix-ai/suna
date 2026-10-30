@@ -89,7 +89,7 @@ ARG KORTIX_VERSION=dev
 ARG KORTIX_COMMIT=unknown
 
 # Minimal workspace so bun resolves the `@kortix/*` packages the CLI imports
-# to their source, then compile (inlines them + smol-toml into one binary).
+# to their source, then compile (inlines them into one binary).
 COPY apps/cli ./apps/cli
 COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/manifest-schema ./packages/manifest-schema
