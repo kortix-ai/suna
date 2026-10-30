@@ -14,9 +14,9 @@ import { theme } from '../../theme.ts';
 /** The CLI installer. Same one-liner `kortix.com/install` serves. */
 export const CLI_INSTALL_COMMAND = 'curl -fsSL https://kortix.com/install | bash';
 
-/** The command that opens THIS session in the user's own terminal. */
+/** The command that opens a shell in THIS session from the user's own terminal. */
 export function connectCommand(sessionId: string): string {
-  return `kortix sessions connect ${sessionId}`;
+  return `kortix sessions shell ${sessionId}`;
 }
 
 export interface ConnectHintProps {

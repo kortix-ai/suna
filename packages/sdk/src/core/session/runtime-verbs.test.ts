@@ -284,6 +284,18 @@ describe('session runtime verbs on a box with the session-log actions (runtime.a
     ]);
   });
 
+  test('compact() translates a turn that outran the proxy into a plain message, without the proxy diagnostic', async () => {
+    const box = actionsBox({
+      'GET /kortix/runtime/pending': { body: { statuses: {}, permissions: [], questions: [] } },
+      'POST /kortix/runtime/sessions/ses_root/compact': { status: 504, body: { code: 'LONG_TURN_PROXY_TIMEOUT', error: 'ALB prompt_async SSE' } },
+    });
+    const error = await box.verbs.compact({ providerID: 'kortix', modelID: 'm' }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).code).toBe('LONG_TURN_PROXY_TIMEOUT');
+    expect((error as ApiError).message).toBe('Compaction has not finished. Check the session status before trying again.');
+    expect(box.requests.filter((r) => r.method === 'POST')).toHaveLength(1);
+  });
+
   test.each(['busy', 'compacting'])('compact() refuses a %s root and posts nothing', async (status) => {
     const box = actionsBox({
       'GET /kortix/runtime/pending': { body: { statuses: { ses_root: status }, permissions: [], questions: [] } },
@@ -315,3 +327,23 @@ function rewrite(fetch: typeof globalThis.fetch, prefix: string): typeof globalT
   return (async (request: Request) =>
     fetch(new Request(request.url.replace(prefix, '/v1/p/sbx_1/8000'), request))) as typeof globalThis.fetch;
 }
+
+describe('liveLog()', () => {
+  test("a box with the session-log actions answers a page of its own log", async () => {
+    const page = { generation: 3, thread_id: 'ses_root', messages: [{ message_id: 'msg_1', seq: 4 }], has_more: true };
+    const { fetch, requests } = fakeRuntime({
+      'GET /kortix/health': { body: { capabilities: ['runtime.actions.v1'] } },
+      'GET /kortix/runtime/log?thread=ses_child&before_seq=9&limit=5': { body: page },
+    });
+    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
+    expect(await verbs.liveLog({ thread: 'ses_child', before_seq: 9, limit: 5 })).toEqual(page as never);
+    expect(requests.map((r) => r.path)).toEqual(['/kortix/health', '/kortix/runtime/log?thread=ses_child&before_seq=9&limit=5']);
+  });
+
+  test('an older box answers null: the caller reads the stored log', async () => {
+    const { fetch, requests } = fakeRuntime({});
+    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
+    expect(await verbs.liveLog()).toBeNull();
+    expect(requests).toEqual([]);
+  });
+});

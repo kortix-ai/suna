@@ -69,7 +69,6 @@ export interface SidebarViewProps {
   onNavigate(screen: SidebarScreen): void;
   onRename(sessionId: string, name: string): void;
   onDelete(sessionId: string): void;
-  onAttach(sessionId: string): void;
   onFilterChange?(query: string): void;
   /** The cursor reached the last session row — the caller may page. */
   onReachEnd?(): void;
@@ -114,7 +113,6 @@ export function SidebarView({
   onNavigate,
   onRename,
   onDelete,
-  onAttach,
   onFilterChange,
   onReachEnd,
 }: SidebarViewProps) {
@@ -280,10 +278,6 @@ export function SidebarView({
     }
     if (matchesSidebarBinding(key, 'sidebar.delete')) {
       if (currentSessionId) setMode('confirm-delete');
-      return;
-    }
-    if (matchesSidebarBinding(key, 'sidebar.attach')) {
-      if (currentSessionId) onAttach(currentSessionId);
     }
   });
 

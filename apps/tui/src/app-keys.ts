@@ -17,9 +17,7 @@
  *     `TERMINAL_RESERVED_CHORDS` — Tab, Shift+Tab, Alt+T, Alt+P, Alt+L, Ctrl+Q — and nothing
  *     else. `Ctrl+C` is the shell's; a shell without `Ctrl+C` is not a shell.
  *  3. An open overlay owns the keyboard, except for quit: `?` must not be a
- *     room with no door. A suspended renderer (attach mode) owns it outright,
- *     because nothing of ours is on screen and `Ctrl+C` twice is how opencode
- *     itself is left.
+ *     room with no door.
  */
 
 import type { KeyEvent } from '@opentui/core';
@@ -54,7 +52,6 @@ export type AppKeyAction =
   | { kind: 'toggle-sidebar' }
   | { kind: 'overlay'; overlay: Exclude<Overlay, null> }
   | { kind: 'new-session' }
-  | { kind: 'attach' }
   | { kind: 'switch-host' }
   | { kind: 'route'; route: Route }
   /** Leave the current screen for the session. */
@@ -68,8 +65,6 @@ export interface AppKeyState {
   overlay: Overlay;
   /** A Ctrl+C is already pending. */
   quitArmed: boolean;
-  /** The renderer is suspended for attach mode. */
-  attaching: boolean;
 }
 
 /** True when the app must not steal this key from the region that has focus. */
@@ -86,10 +81,8 @@ export function globalKeyBlocked(focus: Focus): boolean {
  * exception the caller applies: quitting does not need it.
  */
 export function globalKeyAction(key: KeyEvent, state: AppKeyState): AppKeyAction | null {
-  // Attach mode is opaque: opencode has the terminal, and `Ctrl+C` twice is
-  // how the user leaves IT. An overlay is not — it is ours, it is on screen,
-  // and a user who opens `?` and reaches for `Ctrl+C` must not be trapped.
-  if (state.attaching) return null;
+  // An overlay is ours and on screen: a user who opens `?` and reaches for
+  // `Ctrl+C` must not be trapped.
   if (state.overlay) {
     if (!matchesBinding(key, 'quit')) return null;
     return key.name === 'q' || state.quitArmed ? { kind: 'quit' } : { kind: 'arm-quit' };
@@ -124,7 +117,6 @@ export function globalKeyAction(key: KeyEvent, state: AppKeyState): AppKeyAction
   }
   if (matchesBinding(key, 'switcher')) return { kind: 'overlay', overlay: 'switcher' };
   if (matchesBinding(key, 'session.new')) return { kind: 'new-session' };
-  if (matchesBinding(key, 'attach')) return { kind: 'attach' };
   if (matchesBinding(key, 'hosts')) return { kind: 'switch-host' };
 
   for (const [id, route] of SCREEN_BINDINGS) {
