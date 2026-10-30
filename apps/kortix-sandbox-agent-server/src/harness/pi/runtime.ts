@@ -51,7 +51,7 @@ import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-i
 import { PI_HARNESS_VERSION } from './version'
 import { promptImages } from './images'
 import type { PiSessionSnapshot } from './session-log'
-import { flushSessionLogJournal } from '../shared/session-log-journal'
+import { flushSessionLogJournal, reliveSessionLogMessage } from '../shared/session-log-journal'
 
 export type { CompiledAgent }
 
@@ -455,6 +455,8 @@ export class PiRuntime {
   private contextId: string | undefined
   /** The running turn's prompt reached pi: a later user message of the turn is steered or injected. */
   private turnPromptMapped = false
+  /** The running turn's prompt went to the v2 stream again at its real seq (`reliveSessionLogMessage`). */
+  private turnPromptRelived = false
 
   constructor(opts: PiRuntimeOptions) {
     this.cfg = opts.cfg
@@ -842,6 +844,8 @@ export class PiRuntime {
       // so a box that sleeps before anyone answers still has it.
       const slot: { retracted?: boolean } = {}
       this.waiting.set(messageId, slot)
+      // Queued now: the v2 stream gets it at its queued seq (session-log.ts).
+      reliveSessionLogMessage(messageId)
       const done = (this.queue = this.queue.then(async () => {
         if (this.waiting.get(messageId) === slot) this.waiting.delete(messageId)
         if (slot.retracted) return
@@ -862,6 +866,8 @@ export class PiRuntime {
     const outcome = new Promise<TurnOutcome>((r) => (resolve = r))
     const turn: Turn = { messageId, input, agent: agentName, resolve, outcome }
     this.waiting.set(messageId, turn)
+    // Queued now: the v2 stream gets it at its queued seq (session-log.ts).
+    reliveSessionLogMessage(messageId)
     this.pendingTurns += 1
     this.queue = this.queue
       .then(() => this.runTurn(turn))
@@ -1165,6 +1171,7 @@ export class PiRuntime {
     this.active = turn
     this.turnParent = turn.messageId
     this.turnPromptMapped = false
+    this.turnPromptRelived = false
     this.steerReads.clear()
     this.status = 'busy'
     this.hooks.onTurnBegin?.({ rootId: this.rootId, messageId: turn.messageId })
@@ -1402,6 +1409,11 @@ export class PiRuntime {
         this.turnPromptMapped = true
         this.nativeIds.set(event.message, this.active.messageId)
       }
+    }
+    // pi appended the prompt's entry before the reply starts: its queued put gives way to its real seq at once.
+    if (event.type === 'message_start' && event.message.role === 'assistant' && this.active && this.turnPromptMapped && !this.turnPromptRelived) {
+      this.turnPromptRelived = true
+      reliveSessionLogMessage(this.active.messageId)
     }
     if (event.type === 'message_end' && event.message.role === 'assistant' && this.adapter) this.nativeIds.set(event.message, this.adapter.messageId)
     if (event.type === 'message_end' && event.message.role === 'assistant') {
@@ -2343,10 +2355,19 @@ export class PiRuntime {
     })
   }
 
+  /** Admitted root prompts pi has not appended yet, in run order: the turn starting now, then the waiting ones. */
+  private queuedIds(entryMessageIds: Record<string, string>): string[] {
+    const appended = new Set(Object.values(entryMessageIds))
+    const waiting = [...this.waiting].filter(([, slot]) => !slot.retracted).map(([id]) => id)
+    const ids = new Set([...(this.active ? [this.active.messageId] : []), ...waiting])
+    return [...ids].filter((id) => !appended.has(id) && !!this.transcript.messageById(id))
+  }
+
   /** What the session-log adapter (session-log.ts) reads; null while the runtime is down. */
   sessionLogSnapshot(): PiSessionSnapshot | null {
     const manager = this.pi?.session.sessionManager
     if (!manager || this.state !== 'ok') return null
+    const entryMessageIds = this.entryMessageIds()
     return {
       sessionId: this.sessionId,
       rootId: this.rootId,
@@ -2354,7 +2375,7 @@ export class PiRuntime {
       header: manager.getHeader(),
       entries: manager.getEntries(),
       leafId: manager.getLeafId(),
-      entryMessageIds: this.entryMessageIds(),
+      entryMessageIds,
       entrySeqs: this.entrySeqs,
       transcript: this.transcript.all(),
       children: [...this.children.values()].map((child) => {
@@ -2376,6 +2397,7 @@ export class PiRuntime {
       busy: this.status === 'busy' || this.active !== null,
       reply: replying(this.agent, this.adapter),
       pending: { questions: this.questions.records(), permissions: this.permissions.records() },
+      queued: this.queuedIds(entryMessageIds),
       agent: this.sessionAgentName,
       model: this.selected ? { provider: this.selected.providerID, model: this.selected.modelID } : null,
     }

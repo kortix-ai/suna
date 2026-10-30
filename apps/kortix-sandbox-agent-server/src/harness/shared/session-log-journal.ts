@@ -281,6 +281,18 @@ export class SessionLogJournal {
     return offset ? { ...message, seq: message.seq + offset } : message
   }
 
+  /** The session fields as this journal sends them: the boot's overlay and the restored harness history on top. */
+  private presented(session: SessionLogSessionPatch): SessionLogSessionPatch {
+    const presented = { ...session, ...this.options.session }
+    if (session.harness) presented.harness = carryHarness(this.options.harness, session.harness)
+    return presented
+  }
+
+  /** How the box's own log reads present the log: as this journal sends it to apps/api. */
+  view(): SessionLogView {
+    return { generation: this.options.generation, session: (session) => this.presented(session), message: (message) => this.shifted(message) }
+  }
+
   /** Why the journal is off for this boot (`404`, `409`), or null while it runs. */
   get disabled(): string | null {
     return this.off
@@ -376,6 +388,14 @@ export class SessionLogJournal {
     if (row.due) this.publishLive()
   }
 
+  /** A live message whose seq changed (a queued prompt whose turn started): put it again, at its seq now. */
+  relive(messageId: string): void {
+    const row = this.live.get(messageId)
+    if (!row || this.collected(messageId)) return
+    row.due = true
+    this.publishLive()
+  }
+
   /** A live message the harness removed before the journal collected it (a retracted prompt, a revert): its tombstone, if a put went out. */
   private liveRemoved(id: unknown): void {
     const row = typeof id === 'string' ? this.live.get(id) : undefined
@@ -401,7 +421,10 @@ export class SessionLogJournal {
         if (!known) continue
         row.due = false
         const harness = this.port.capabilities.harness as FromV1Options['harness']
-        const message = this.shifted(liveMessageFromV1({ info: row.info, parts: [...row.parts.values()] }, known, harness))
+        const { queued, ...at } = known
+        const live = liveMessageFromV1({ info: row.info, parts: [...row.parts.values()] }, at, harness)
+        // A queued seq is above every real one already: never shifted (it would pass MAX_SAFE_INTEGER).
+        const message = queued ? live : this.shifted(live)
         row.sent = true
         sessionLogEventBus().publish('log.message', { rev: nextRev(), message } satisfies SessionLogMessageEvent, thread)
       } catch (err) {
@@ -448,8 +471,7 @@ export class SessionLogJournal {
       threads.push(thread)
     }
     if (changes.session) {
-      const session = { ...changes.session, ...this.options.session }
-      if (changes.session.harness) session.harness = carryHarness(this.options.harness, changes.session.harness)
+      const session = this.presented(changes.session)
       this.session = { ...this.session, ...session }
       sessionLogEventBus().publish('log.state', { generation: this.options.generation, session } satisfies SessionLogStateEvent)
     }
@@ -887,7 +909,22 @@ function parseJson(text: string): unknown {
 
 // ── The boot's journal ────────────────────────────────────────────────────
 
+/** The generation, session fields and seqs apps/api stores for the box's log. */
+export interface SessionLogView {
+  generation: number
+  session(session: SessionLogSessionPatch): SessionLogSessionPatch
+  message(message: SessionLogMessage): SessionLogMessage
+}
+
+/** Without a journal (no apps/api to write to): the log as the adapter builds it, at generation 0. */
+const UNJOURNALED: SessionLogView = { generation: 0, session: (session) => session, message: (message) => message }
+
 let active: SessionLogJournal | null = null
+
+/** How the box's own log reads (`GET /kortix/runtime/log`) present the log: as this boot's journal sends it. */
+export function sessionLogView(): SessionLogView {
+  return active?.view() ?? UNJOURNALED
+}
 
 /** Start this boot's journal. An adapter calls it once its native store is ready (after a restore, with its cursors). */
 export function startSessionLogJournal(port: SessionLogPort, options: SessionLogJournalOptions): SessionLogJournal | null {
@@ -903,6 +940,11 @@ export function startSessionLogJournal(port: SessionLogPort, options: SessionLog
 /** Before a turn's end is relayed. True when there is nothing left to acknowledge. */
 export function flushSessionLogJournal(): Promise<boolean> {
   return active ? active.flush() : Promise.resolve(true)
+}
+
+/** A live message's seq changed (a queued prompt whose turn started): the v2 stream gets it again at once. */
+export function reliveSessionLogMessage(messageId: string): void {
+  active?.relive(messageId)
 }
 
 /** Every daemon stop path, before the harness stops. */
