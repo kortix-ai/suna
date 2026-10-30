@@ -39,8 +39,8 @@ async function enableArtifacts(ctx: FlowContext, projectId: string): Promise<boo
   return r.json<{ experimental: Record<string, boolean> }>().experimental.artifacts === true;
 }
 
-async function get(url: string) {
-  const res = await fetch(url, { redirect: 'manual' });
+async function get(url: string, headers?: HeadersInit) {
+  const res = await fetch(url, { redirect: 'manual', headers });
   return { status: res.status, headers: res.headers, text: await res.text() };
 }
 
@@ -57,6 +57,7 @@ flow(
     timeoutMs: 300_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
+      'GET /v1/drives',
       'GET /v1/projects/:projectId/link-preview',
       `GET ${TYPES}`, `GET ${LIST}`, `POST ${LIST}`, `POST ${SHARE}`, `GET ${ONE}`, `PUT ${ONE}`, `PATCH ${ONE}`, `DELETE ${ONE}`,
       `PUT ${PIN}`, `DELETE ${PIN}`, `GET ${VERSIONS}`, `POST ${RESTORE}`, `GET ${CONTENT}`,
@@ -87,6 +88,19 @@ flow(
       });
       return;
     }
+    const providerBase = process.env.PLATINUM_API_URL?.replace(/\/+$/, '');
+    const providerKey = process.env.PLATINUM_API_KEY;
+    if (!providerBase || !providerKey || providerKey.startsWith('encrypted:')) throw new Error('ART-1 needs decrypted Files credentials for owned-volume cleanup');
+    const provider = (method: string, path: string) => fetch(`${providerBase}${path}`, {
+      method, headers: { Authorization: `Bearer ${providerKey}` }, redirect: 'error', signal: AbortSignal.timeout(30_000),
+    });
+    let volumeName = '';
+    try {
+    await ctx.step('capture the owned project Files volume identity before any publish', async () => {
+      const drives = (await owner.get('/v1/drives', { query: p })).status(200).json<{ drives: { driveId: string }[] }>().drives;
+      if (drives.length !== 1) throw new Error(`Expected one owned project drive, got ${drives.length}`);
+      volumeName = `kd-${drives[0]!.driveId.replace(/-/g, '').slice(0, 20)}`;
+    });
 
     await ctx.step('GET types → doc and html, each with a format and a starter', async () => {
       const types = (await owner.get(TYPES, { params: p })).status(200).json<{ types: { type: string; starter: string; format: string }[] }>().types;
@@ -141,6 +155,44 @@ flow(
       const css = await get(`${a.view_url}style.css`);
       if (css.status !== 200 || css.text !== 'h1{color:red}' || !css.headers.get('content-type')?.startsWith('text/css')) throw new Error(`css ${css.status}`);
       if ((await get(`${a.view_url}nope.js`)).status !== 404) throw new Error('unknown path served');
+    });
+
+    await ctx.step('signed HTML annotate=1 injects one bridge only with comments enabled; CSP is unchanged, source validators are removed, public/doc/CSS views stay unchanged', async () => {
+      const a = (await owner.get(ONE, one(page))).status(200).json<Detail>();
+      const annotatedUrl = `${a.view_url}?annotate=1`;
+      const off = await get(annotatedUrl);
+      if (off.status !== 200 || off.text.includes('id="kortix-annotate.js"')) throw new Error('flag-off signed page was annotated');
+      (await owner.patch('/v1/projects/:projectId/features', { feature: 'artifact_comments', enabled: true }, { params: p })).status(200).body().has('$.experimental.artifact_comments', true);
+      const normal = await get(a.view_url);
+      const annotated = await get(annotatedUrl, { Range: 'bytes=0-3' });
+      if (normal.status !== 200 || annotated.status !== 200 || !annotated.text.includes('<h1>Deck</h1>')) throw new Error('annotated HTML is not the full saved page');
+      if (annotated.text.split('id="kortix-annotate.js"').length !== 2 || normal.text.includes('id="kortix-annotate.js"')) throw new Error('signed annotation script count');
+      const bareAnnotated = await get(`${a.view_url.replace(/\/$/, '')}?annotate=1`);
+      if (bareAnnotated.status !== 301 || !bareAnnotated.headers.get('location')?.endsWith('/?annotate=1')) throw new Error('signed redirect dropped annotation opt-in');
+      if (annotated.headers.get('content-security-policy') !== normal.headers.get('content-security-policy')) throw new Error('annotation changed CSP');
+      if (!normal.headers.get('etag') || annotated.headers.get('cache-control') !== 'private, no-store') throw new Error('source ETag or annotation cache contract');
+      for (const name of ['etag', 'content-length', 'content-range', 'accept-ranges', 'last-modified']) {
+        if (annotated.headers.has(name)) throw new Error(`annotation retained source ${name}`);
+      }
+      if ((await get(`${a.view_url}?annotate=0`)).text.includes('id="kortix-annotate.js"')) throw new Error('nonliteral opt-in annotated');
+      const css = await get(`${a.view_url}style.css`, { Range: 'bytes=0-3' });
+      const annotatedCss = await get(`${a.view_url}style.css?annotate=1`, { Range: 'bytes=0-3' });
+      if (css.status !== annotatedCss.status || css.text !== annotatedCss.text || annotatedCss.text.includes('kortix-annotate.js')) throw new Error('annotation changed ranged CSS');
+      for (const name of ['etag', 'content-range', 'content-type']) {
+        if (css.headers.get(name) !== annotatedCss.headers.get(name)) throw new Error(`annotation changed CSS ${name}`);
+      }
+      const docView = (await owner.get(ONE, one())).status(200).json<Detail>();
+      const annotatedDoc = await get(`${docView.view_url}?annotate=1`);
+      if (annotatedDoc.status !== 200 || !annotatedDoc.text.includes('class="kx-doc"') || annotatedDoc.text.includes('id="kortix-annotate.js"')) throw new Error('a doc view received the HTML bridge');
+      if ((await get(`${a.view_url.replace(/\/s\/[^.]+/, '/s/forged')}?annotate=1`)).status !== 404) throw new Error('a forged annotation token served');
+      const publicPage = (await owner.patch(ONE, { visibility: 'public' }, one(page))).status(200).json<Detail>();
+      if (!publicPage.public_content_url) throw new Error('public HTML lacks its URL');
+      const publicView = await get(`${publicPage.public_content_url}?annotate=1`);
+      const publicMeta = await get(`${ctx.env.apiUrl}/artifacts/meta/${page}?annotate=1`);
+      if (publicView.status !== 200 || publicView.text.includes('id="kortix-annotate.js"') || publicMeta.status !== 200 || JSON.parse(publicMeta.text).artifact_id !== page) throw new Error('public annotation opt-in changed the public page or metadata');
+      (await owner.patch(ONE, { visibility: 'private' }, one(page))).status(200);
+      (await owner.patch('/v1/projects/:projectId/features', { feature: 'artifact_comments', enabled: false }, { params: p })).status(200);
+      if ((await get(annotatedUrl)).text.includes('id="kortix-annotate.js"')) throw new Error('disabling comments kept annotation active');
     });
 
     await ctx.step('a private artifact is invisible to a project member: list leaves it out, GET → 404; NONMEMBER → 403/404', async () => {
@@ -247,6 +299,12 @@ flow(
       (await owner.del(ONE, one(again.artifact_id))).status(200);
       (await owner.del(ONE, one(page))).status(200);
     });
+    } finally {
+      if (volumeName) await ctx.step('delete only the owned Files volume → 204 and provider read-back → 404', async () => {
+        if ((await provider('DELETE', `/v1/volumes/${volumeName}?missing_ok=true`)).status !== 204) throw new Error('Owned Files volume deletion failed');
+        if ((await provider('GET', `/v1/volumes/${volumeName}`)).status !== 404) throw new Error('Owned Files volume remains after deletion');
+      });
+    }
   },
 );
 
