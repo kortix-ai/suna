@@ -813,9 +813,10 @@ const envSchema = z.object({
   // ── Residential proxy ────────────────────────────────────────────────────
   // Operator switch, off by default. Turn it on in an environment only after
   // that environment's Platinum serves `network.residential_proxy`: an older
-  // Platinum drops the field and the box keeps its data-center address. Off,
-  // the `residential_proxy` project flag is unavailable and the billing worker
-  // does not run (feature-flags/registry.ts, workers/residential-proxy-billing-worker.ts).
+  // Platinum drops the field and the box keeps its data-center address. Off, a
+  // sandbox template's `residential_proxy` fails its session closed and the
+  // billing worker does not run (platform/services/residential-proxy.ts,
+  // workers/residential-proxy-billing-worker.ts). Dev sets it in deploy-dev.yml.
   KORTIX_PLATINUM_RESIDENTIAL_PROXY: optBoolFalse,
 
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
