@@ -18,6 +18,7 @@ import {
   uploadDriveFile,
 } from './drives';
 
+const realFetch = globalThis.fetch;
 type Call = { url: string; method: string; headers: Record<string, string>; body: unknown };
 let calls: Call[] = [];
 let next: { status: number; body: BodyInit | null; type: string } = { status: 200, body: '{}', type: 'application/json' };
@@ -315,7 +316,7 @@ function installBlockServer(missing: (blocks: string[]) => string[], server: Blo
       const fail = server.failBlock?.(blockCalls++);
       if (fail) return json(fail, { error: true, message: 'block refused' });
       const sha = url.split('/blocks/')[1]!;
-      if ((await hex(init.body as Blob)) !== sha) return json(400, { error: true, message: 'sha mismatch' });
+      if ((await hex(new Blob([init.body as Uint8Array<ArrayBuffer>]))) !== sha) return json(400, { error: true, message: 'sha mismatch' });
       return new Response(null, { status: 204 });
     }
     if (url.endsWith('/commit')) return json(200, { path: server.plan!.path, size: server.plan!.size });
@@ -399,4 +400,44 @@ test('an aborted block upload stops and throws an ABORTED ApiError', async () =>
   expect((error as ApiError).code).toBe('ABORTED');
   expect(server.calls.filter((c) => c.url.includes('/blocks/')).length).toBe(0);
   expect(server.calls.some((c) => c.url.endsWith('/commit'))).toBe(false);
+});
+
+// Bun cannot send a slice of a file-backed Blob as a fetch body (the socket
+// closes): every block goes up as bytes. Over a real socket, from a real file.
+test('a file-backed Blob above 64 MiB uploads over a real socket', async () => {
+  const { openAsBlob } = await import('node:fs');
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const dir = await mkdtemp(join(tmpdir(), 'sdk-drive-upload-'));
+  const received = new Map<string, number>();
+  const server = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      const url = new URL(req.url);
+      const body = new Uint8Array(await req.arrayBuffer());
+      if (url.pathname.endsWith('/files/upload')) {
+        const plan = JSON.parse(new TextDecoder().decode(body)) as { blocks: string[] };
+        return Response.json({ uploadId: 'up.1', missing: plan.blocks, expiresAt: null });
+      }
+      if (url.pathname.includes('/blocks/')) {
+        const sha = url.pathname.split('/blocks/')[1]!;
+        if ((await hex(new Blob([body]))) !== sha) return Response.json({ message: 'sha mismatch' }, { status: 400 });
+        received.set(sha, body.byteLength);
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({ path: '/a/big.bin', size: 1 });
+    },
+  });
+  try {
+    globalThis.fetch = realFetch;
+    configureKortix({ backendUrl: server.url.origin, getToken: async () => 'tok' });
+    await writeFile(join(dir, 'big.bin'), new Uint8Array(await bigFile().arrayBuffer()));
+    await uploadDriveFile(D, '/a/big.bin', await openAsBlob(join(dir, 'big.bin')));
+    expect([...received.values()].reduce((a, b) => a + b, 0)).toBe(64 * MiB + 1.5 * MiB);
+  } finally {
+    server.stop(true);
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+    await rm(dir, { recursive: true, force: true });
+  }
 });

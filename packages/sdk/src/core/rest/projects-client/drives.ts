@@ -419,12 +419,13 @@ async function uploadInBlocks(
       const sha = missing[next++]!;
       const index = firstIndex.get(sha);
       if (index === undefined) throw new ApiError('The server asked for a block this file does not have', { code: 'UPLOAD_PLAN_MISMATCH' });
-      const block = blockAt(index);
+      // Bytes, not the Blob slice: Bun cannot send a slice of a file-backed Blob (the socket closes).
+      const block = new Uint8Array(await blockAt(index).arrayBuffer());
       await withRetries(
         () => backendApi.putRaw(`${base}/${encodeURIComponent(plan.uploadId)}/blocks/${sha}`, block, { signal, showErrors: false }),
         'Failed to upload file',
       );
-      sent += block.size;
+      sent += block.byteLength;
       options?.onProgress?.(sent, file.size);
     }
   };
