@@ -30,7 +30,6 @@ import { MESSAGE_READ_CODE, STEER_NO_ACTIVE_TURN_CODE } from '@kortix/api-contra
 import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
 import {
   WORKSPACE,
-  runtimeServesActions,
   runtimeVerbPaths,
   sessionRuntimeFetch,
   type ResolvedSessionRuntime,
@@ -444,15 +443,13 @@ export class SteerNotTaken extends Error {
 }
 
 /**
- * One message of the session's root: from the box's own session log when it
- * serves the session-log actions, else through the transcript route. `null`
- * when the runtime answers that it does not hold it; throws when it could not
- * be asked (the landing proof's "unknown").
+ * One message of the session's root, through the transcript route. `null` when
+ * the runtime answers that it does not hold it; throws when it could not be
+ * asked (the landing proof's "unknown"). Not the box's session log: a prompt
+ * admitted behind a running turn enters the log only when its turn starts.
  */
 export async function readRuntimeMessage(session: ResolvedSessionRuntime, messageId: string): Promise<unknown> {
-  const native = await runtimeServesActions(session.externalId, async () => session.endpoint);
-  const path = native ? runtimeVerbPaths.logMessage(messageId) : runtimeVerbPaths.message(session.opencodeSessionId, messageId);
-  const res = await sessionRuntimeFetch(session.endpoint, 'GET', path);
+  const res = await sessionRuntimeFetch(session.endpoint, 'GET', runtimeVerbPaths.message(session.opencodeSessionId, messageId));
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`runtime message read failed (${res.status})`);
   return res.json();

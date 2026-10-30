@@ -202,7 +202,7 @@ export async function continueSession(
         readMessage: async (messageId) => {
           const endpoint = await sandboxOpencodeEndpoint(externalId, userId);
           if (!endpoint) throw new Error('no runtime endpoint');
-          return readRuntimeMessage({ endpoint, opencodeSessionId, externalId }, messageId);
+          return readRuntimeMessage({ endpoint, opencodeSessionId }, messageId);
         },
       });
       if (landing === 'unknown') {

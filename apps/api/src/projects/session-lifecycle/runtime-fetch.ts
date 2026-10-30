@@ -57,7 +57,6 @@ export const runtimeVerbPaths = {
   steer: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/steer`,
   /** The session-log actions (`runtime.actions.v1`). */
   questionReply: (requestId: string) => `/kortix/runtime/questions/${segment(requestId)}/reply`,
-  logMessage: (messageId: string) => `/kortix/runtime/log/messages/${segment(messageId)}`,
 } as const;
 
 const CAPABILITIES_TTL_MS = 5 * 60_000;

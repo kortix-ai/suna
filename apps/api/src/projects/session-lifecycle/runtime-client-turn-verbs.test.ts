@@ -177,17 +177,7 @@ describe('session runtime reads', () => {
     expect(await readRuntimeMessage(session, 'msg_a')).toBeNull();
     pages[path] = () => new Response('down', { status: 503 });
     await expect(readRuntimeMessage(session, 'msg_a')).rejects.toThrow('runtime message read failed (503)');
-    expect(fetched.filter((call) => call !== 'GET /kortix/health').every((call) => call === `GET ${path}`)).toBe(true);
-  });
-
-  test('a box with the session-log actions answers the read from its own log', async () => {
-    pages['/kortix/health'] = { capabilities: ['runtime.turns.v1', 'runtime.actions.v1'] };
-    const path = '/kortix/runtime/log/messages/msg_a';
-    pages[path] = { message_id: 'msg_a', role: 'user', blocks: [] };
-    expect(await readRuntimeMessage(session, 'msg_a')).toEqual({ message_id: 'msg_a', role: 'user', blocks: [] });
-    pages[path] = resourceMissing;
-    expect(await readRuntimeMessage(session, 'msg_a')).toBeNull();
-    expect(fetched.filter((call) => call !== 'GET /kortix/health')).toEqual([`GET ${path}`, `GET ${path}`]);
+    expect(fetched.every((call) => call === `GET ${path}`)).toBe(true);
   });
 });
 
