@@ -1,13 +1,12 @@
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
+import { createRoot, type Container, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { PeerMessage, SessionTask } from '@kortix/sdk';
 import { IntlTestProvider } from '../../test-utils/intl';
-import { TooltipProvider } from '../../primitives/tooltip';
-import { resolveEffectiveBusy } from '../status/session-chat-busy';
 
 // Synthetic values only: every id, name and text below is invented.
 
@@ -19,7 +18,38 @@ const originals = ['window', 'document', 'IS_REACT_ACT_ENVIRONMENT'].map((key) =
 Object.defineProperty(globalThis, 'window', { value: windowObject, configurable: true });
 Object.defineProperty(globalThis, 'document', { value: windowObject.document, configurable: true });
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
+// Radix (the popover, its focus and dismiss layers) reads these by bare global name, and
+// happy-dom dispatches only its own event classes (the floating-panel-motion.test.tsx setup).
+const radixGlobals = [
+  'navigator',
+  'customElements',
+  'getComputedStyle',
+  'requestAnimationFrame',
+  'cancelAnimationFrame',
+  'Event',
+  'CustomEvent',
+  'FocusEvent',
+  'KeyboardEvent',
+  'MouseEvent',
+  'PointerEvent',
+  // The DOM classes the focus scope and floating-ui test against.
+  ...Object.getOwnPropertyNames(windowObject).filter((key) => /^[A-Z]/.test(key) && !(key in globalThis)),
+];
+const radixOriginals = radixGlobals.map((key) => ({ key, descriptor: Object.getOwnPropertyDescriptor(globalThis, key) }));
+const shims: Record<string, unknown> = {
+  getComputedStyle: windowObject.getComputedStyle.bind(windowObject),
+  requestAnimationFrame: (cb: () => void) => setTimeout(cb, 0),
+  cancelAnimationFrame: (id: number) => clearTimeout(id),
+};
+for (const key of radixGlobals) {
+  const value = key in shims ? shims[key] : Reflect.get(windowObject, key);
+  if (value !== undefined) Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
+}
 afterAll(() => {
+  for (const { key, descriptor } of radixOriginals) {
+    if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+    else Reflect.deleteProperty(globalThis, key);
+  }
   for (const { key, descriptor } of originals) {
     if (descriptor) Object.defineProperty(globalThis, key, descriptor);
     else Reflect.deleteProperty(globalThis, key);
@@ -43,7 +73,11 @@ mock.module('@kortix/sdk/react', () => ({
   }),
 }));
 
-const { AgentStripView, stripRuns, runSessionIds } = await import('./agent-strip');
+// Imported after the globals above: Radix picks its layout effect when its module loads,
+// and a module loaded before `document` exists never mounts a portal.
+const { TooltipProvider } = await import('../../primitives/tooltip');
+const { resolveEffectiveBusy } = await import('../status/session-chat-busy');
+const { AgentsLineView, AgentsPanel, stripRuns, runSessionIds } = await import('./agent-strip');
 const { agentRowOf } = await import('./agent-model');
 const { TasksPanel, groupTasks } = await import('./tasks-panel');
 const { HeldMessageList, heldPreview } = await import('./held-messages');
@@ -52,6 +86,7 @@ const { SessionPromptContext } = await import('./session-prompt');
 const { parseWorkflowRun } = await import('../tool/tools/workflow-run');
 
 let renderer: ReactTestRenderer | undefined;
+const roots: Root[] = [];
 beforeEach(() => {
   runsBySession = {};
   controls = [];
@@ -59,7 +94,25 @@ beforeEach(() => {
 afterEach(async () => {
   if (renderer) await act(async () => renderer?.unmount());
   renderer = undefined;
+  for (const root of roots.splice(0)) await act(async () => root.unmount());
+  windowObject.document.body.innerHTML = '';
 });
+
+/** Render into the happy-dom page (portals land in its body), as a person's browser would. */
+async function mountDom(node: ReactNode) {
+  const host = windowObject.document.createElement('div');
+  windowObject.document.body.appendChild(host);
+  const root = createRoot(host as unknown as Container);
+  roots.push(root);
+  await act(async () => root.render(wrap(node)));
+  const body = windowObject.document.body;
+  return {
+    line: () => body.querySelector('[data-testid="agents-line"]') as unknown as HTMLButtonElement | null,
+    popover: () => body.querySelector('[data-testid="agents-line-popover"]'),
+    rows: () => [...body.querySelectorAll('[data-testid="agents-line-row"]')] as unknown as HTMLElement[],
+    byLabel: (label: string) => body.querySelector(`[aria-label="${label}"]`) as unknown as HTMLButtonElement | null,
+  };
+}
 
 function wrap(node: ReactNode) {
   return (
@@ -137,105 +190,176 @@ function run(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe('AgentStripView — rows and groups', () => {
-  test('renders nothing when the session started no agent', () => {
-    expect(renderToStaticMarkup(wrap(<AgentStripView {...baseProps} />))).toBe('');
+describe('AgentsLineView — the line', () => {
+  test('renders nothing when the session started no agent and no run', async () => {
+    expect(renderToStaticMarkup(wrap(<AgentsLineView {...baseProps} />))).toBe('');
+    // A team task list alone is not an agent: still nothing on the line.
+    expect(renderToStaticMarkup(wrap(<AgentsLineView {...baseProps} tasks={[task(1, 'pending')]} />))).toBe('');
   });
 
-  test('the header counts agents and working ones; teammates sit under Team', () => {
+  test('while an agent works: the count and how many work', () => {
+    const html = renderToStaticMarkup(
+      wrap(<AgentsLineView {...baseProps} agents={[row('namer', 'working')]} team={[row('editor', 'idle')]} />),
+    );
+    expect(textOf(html)).toContain('2 agents · 1 working');
+    expect(html).toContain('data-testid="agents-line"');
+    // One line, no box: the trigger is the ghost button of the under-row, with no border class.
+    expect(html).not.toMatch(/class="[^"]*(?<![\w:-])border(?![\w-])/);
+  });
+
+  test('when every agent ended: the newest agent is named done', () => {
     const html = renderToStaticMarkup(
       wrap(
-        <AgentStripView
+        <AgentsLineView
           {...baseProps}
-          agents={[row('helper', 'working', { result_excerpt: 'Reading the pricing page' })]}
-          team={[row('writer', 'needs_input', { attention: 'question' }), row('editor', 'idle')]}
+          agents={[
+            row('namer', 'completed', { last_activity_at: '2026-10-30T11:10:00.000Z' }),
+            row('poet', 'idle', { last_activity_at: '2026-10-30T11:40:00.000Z' }),
+          ]}
         />,
       ),
     );
-    const text = textOf(html);
-    expect(text).toContain('3 agents · 1 working · 1 needs you');
-    expect(text).toContain('Team');
-    expect(text).toContain('helper');
-    expect(text).toContain('Reading the pricing page');
-    expect(text).toContain('writer');
-    // A working or waiting agent can be stopped; an idle one cannot.
-    expect(html).toContain('aria-label="Stop helper"');
-    expect(html).toContain('aria-label="Stop writer"');
-    expect(html).not.toContain('aria-label="Stop editor"');
-    expect(html).toContain('aria-label="Open helper"');
+    expect(textOf(html)).toContain('2 agents · poet done');
   });
 
-  test('more than three idle agents fold into one "N idle agents" row', () => {
-    const idle = ['i1', 'i2', 'i3', 'i4', 'i5'].map((id) => row(id, 'idle'));
-    const text = textOf(renderToStaticMarkup(wrap(<AgentStripView {...baseProps} agents={[row('w', 'working'), ...idle]} />)));
-    expect(text).toContain('2 idle agents');
-    expect(text).toContain('i3');
-    expect(text).not.toContain('i4');
+  test('an agent that waits on the person says so; a running workflow counts in', () => {
+    const waiting = textOf(
+      renderToStaticMarkup(wrap(<AgentsLineView {...baseProps} agents={[row('a', 'working'), row('b', 'needs_input')]} />)),
+    );
+    expect(waiting).toContain('2 agents · needs you');
+    const flow = textOf(renderToStaticMarkup(wrap(<AgentsLineView {...baseProps} runs={[parseWorkflowRun(run())!]} />)));
+    expect(flow).toContain('1 workflow running');
+    expect(flow).not.toContain('agents');
+  });
+
+  test('compact: the count only, the whole text in the label', () => {
+    const html = renderToStaticMarkup(wrap(<AgentsLineView {...baseProps} compact agents={[row('a', 'working'), row('b', 'idle')]} />));
+    // The visible text: the count alone (the mark's word is for screen readers).
+    expect(html).toContain('truncate">2 agents</span>');
+    expect(html).toContain('aria-label="Agents: 2 agents"');
+  });
+
+  test('keyboard: the line is a focusable button that opens the popover; Escape closes it', async () => {
+    const dom = await mountDom(<AgentsLineView {...baseProps} agents={[row('namer', 'working')]} />);
+    const line = dom.line()!;
+    // A native button: Enter and Space activate it, as a click does.
+    expect(line.tagName).toBe('BUTTON');
+    expect(line.getAttribute('type')).toBe('button');
+    expect(line.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(line.getAttribute('aria-expanded')).toBe('false');
+    line.focus();
+    expect(windowObject.document.activeElement as unknown).toBe(line);
+    expect(dom.popover()).toBeNull();
+
+    await act(async () => line.click());
+    expect(line.getAttribute('aria-expanded')).toBe('true');
+    expect(dom.popover()).not.toBeNull();
+    expect(dom.rows()).toHaveLength(1);
+
+    // Focus moves to the panel itself (no row tooltip opens); one Escape closes it.
+    const focused = windowObject.document.activeElement!;
+    expect(focused as unknown).toBe(dom.popover());
+    await act(async () => {
+      focused.dispatchEvent(new windowObject.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    });
+    expect(dom.popover()).toBeNull();
+    expect(line.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  test('a row opens its agent and closes the popover', async () => {
+    const opened: string[] = [];
+    const dom = await mountDom(
+      <AgentsLineView {...baseProps} defaultOpen agents={[row('namer', 'working')]} onOpen={(target) => opened.push(target.sessionId)} />,
+    );
+    await act(async () => dom.byLabel('Open namer')!.click());
+    expect(opened).toEqual(['namer']);
+    expect(dom.popover()).toBeNull();
+  });
+});
+
+describe('AgentsPanel — the popover rows', () => {
+  const panel = (props: Partial<ComponentProps<typeof AgentsPanel>>) =>
+    renderToStaticMarkup(wrap(<AgentsPanel {...baseProps} live={false} {...props} />));
+
+  test('one row per agent: state mark, handle, short state, "runs as" the agent display name', () => {
+    const html = panel({
+      agents: [
+        row('namer', 'working', { agent_name: 'mykortix' }),
+        row('poet', 'idle', { agent_name: 'kortix', result_excerpt: 'A haiku about the release' }),
+      ],
+    });
+    const text = textOf(html);
+    expect(html.match(/data-testid="agents-line-row"/g)).toHaveLength(2);
+    expect(text).toContain('namer');
+    expect(text).toContain('runs as My Kortix');
+    expect(text).toContain('runs as Kortix');
+    // Never the raw slug as its own word.
+    expect(text).not.toMatch(/\bmykortix\b/);
+    expect(text).toContain('working');
+    expect(text).toContain('done');
+    // The result is a hover hint, never inline.
+    expect(text).not.toContain('A haiku about the release');
+    // Open on every row; Stop only while it works or waits.
+    expect(html).toContain('aria-label="Open namer"');
+    expect(html).toContain('aria-label="Open poet"');
+    expect(html).toContain('aria-label="Stop namer"');
+    expect(html).not.toContain('aria-label="Stop poet"');
+  });
+
+  test('a working row shows how long it works', () => {
+    const since = new Date(Date.now() - 90_000).toISOString();
+    const text = textOf(
+      panel({ agents: [row('namer', 'working', { working: { state: 'working', since, turn_token: null, pending_delivery: false } })] }),
+    );
+    expect(text).toContain('working · 1m');
+  });
+
+  test('a row without a name of its own is called by the agent display name, with no "runs as"', () => {
+    const text = textOf(panel({ agents: [row('x', 'idle', { agent_handle: null, agent_name: 'kortix' })] }));
+    expect(text).toContain('Kortix');
+    expect(text).not.toContain('runs as');
+  });
+
+  test('teammates sit under Team; the Agents header shows only beside another group', () => {
+    const alone = textOf(panel({ agents: [row('helper', 'working')] }));
+    expect(alone).not.toContain('Agents');
+    expect(alone).not.toContain('Team');
+    const both = textOf(panel({ agents: [row('helper', 'working')], team: [row('writer', 'needs_input', { attention: 'question' })] }));
+    expect(both).toContain('Agents');
+    expect(both).toContain('Team');
+    expect(both).toContain('needs you');
+  });
+
+  test('the Tasks tab shows only when the session leads a team, with its open count', async () => {
+    expect(textOf(panel({ team: [row('writer', 'working')] }))).not.toContain('Tasks');
+    const dom = await mountDom(
+      <AgentsPanel {...baseProps} live={false} team={[row('writer', 'working')]} tasks={[task(1, 'pending'), task(2, 'completed')]} />,
+    );
+    const body = windowObject.document.body;
+    const tab = [...body.querySelectorAll('[role="tab"]')].find((node) => node.textContent?.includes('Tasks'))!;
+    expect(tab.textContent).toContain('1');
+    expect(body.querySelector('[aria-label="Team tasks"]')).toBeNull();
+    await act(async () => {
+      // Radix tabs activate on mousedown.
+      tab.dispatchEvent(new windowObject.MouseEvent('mousedown', { bubbles: true, button: 0 }));
+    });
+    expect(body.querySelector('[aria-label="Team tasks"]')).not.toBeNull();
+    expect(dom.rows()).toHaveLength(0);
   });
 
   test('a background workflow run sits under Workflows with its live progress', () => {
     const background = parseWorkflowRun(run({ background: { sessionId: 'ses_runner' }, agents: [] }))!;
     runsBySession = { ses_runner: [run()] };
-    const text = textOf(renderToStaticMarkup(wrap(<AgentStripView {...baseProps} runs={[background]} />)));
+    const html = panel({ runs: [background] });
+    const text = textOf(html);
     expect(text).toContain('Workflows');
     expect(text).toContain('Weekly competitor review');
     // Read from the runner: 2 of its 5 agents are done, and it runs after this turn ended.
     expect(text).toContain('Running in the background · 2 of 5 done');
-    expect(text).toContain('Open run');
-  });
-});
-
-describe('AgentStripView — keyboard', () => {
-  test('↑ ↓ move, Enter opens, x stops, Esc clears', async () => {
-    const opened: string[] = [];
-    const stopped: string[] = [];
-    await act(async () => {
-      renderer = create(
-        wrap(
-          <AgentStripView
-            {...baseProps}
-            agents={[row('first', 'working'), row('second', 'idle')]}
-            onOpen={(target) => opened.push(target.sessionId)}
-            onStop={(target) => stopped.push(target.sessionId)}
-          />,
-        ),
-      );
-    });
-    const strip = () => renderer!.root.findByProps({ 'data-agent-strip': true });
-    const key = async (key: string, extra: Record<string, unknown> = {}) =>
-      act(async () => {
-        strip().props.onKeyDown({ key, target: windowObject.document.body, defaultPrevented: false, preventDefault: noop, stopPropagation: noop, ...extra });
-      });
-    const selected = () =>
-      renderer!.root.findAll((node) => node.type === 'li' && node.props['data-agent-row'] && node.props['data-selected'] === true).map((node) => node.props['data-agent-row']);
-
-    await key('ArrowDown');
-    expect(selected()).toEqual(['first']);
-    await key('x');
-    expect(stopped).toEqual(['first']);
-    await key('ArrowDown');
-    expect(selected()).toEqual(['second']);
-    await key('Enter');
-    expect(opened).toEqual(['second']);
-    // An idle agent has nothing to stop.
-    await key('x');
-    expect(stopped).toEqual(['first']);
-    await key('Escape');
-    expect(selected()).toEqual([]);
-  });
-
-  test('Ctrl+T shows the task list of a team the session leads', async () => {
-    await act(async () => {
-      renderer = create(wrap(<AgentStripView {...baseProps} team={[row('writer', 'working')]} tasks={[task(1, 'pending')]} />));
-    });
-    const has = () => renderer!.root.findAll((node) => node.props['aria-label'] === 'Team tasks').length > 0;
-    expect(has()).toBe(false);
-    await act(async () => {
-      renderer!.root
-        .findByProps({ 'data-agent-strip': true })
-        .props.onKeyDown({ key: 't', ctrlKey: true, target: windowObject.document.body, preventDefault: noop, stopPropagation: noop });
-    });
-    expect(has()).toBe(true);
+    expect(html).toContain('aria-label="Open run"');
+    // Its controls: pause and stop go to the runner.
+    expect(html).toContain('aria-label="Pause the run"');
+    expect(html).toContain('data-testid="agents-line-row"');
   });
 });
 
@@ -376,14 +500,14 @@ describe('WorkflowRunControls', () => {
   });
 });
 
-describe('the strip never holds the composer', () => {
-  test("busy is this session's own turn: working agents in the strip add nothing to it", () => {
+describe('the agents line never holds the composer', () => {
+  test("busy is this session's own turn: working agents on the line add nothing to it", () => {
     // `resolveEffectiveBusy` is the one busy value the composer reads; it takes no child state.
     expect(resolveEffectiveBusy({ isServerBusy: false, isOptimisticCompacting: false, hasRetryingAssistant: false })).toBe(false);
     const html = renderToStaticMarkup(
-      wrap(<AgentStripView {...baseProps} agents={[row('a', 'working'), row('b', 'working')]} runs={[parseWorkflowRun(run())!]} />),
+      wrap(<AgentsPanel {...baseProps} live={false} agents={[row('a', 'working'), row('b', 'working')]} runs={[parseWorkflowRun(run())!]} />),
     );
-    // No control in the strip is disabled while agents work, and nothing claims the page is busy.
+    // No control in the popover is disabled while agents work, and nothing claims the page is busy.
     expect(html).not.toContain('disabled=""');
     expect(html).not.toContain('aria-busy');
   });

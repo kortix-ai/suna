@@ -2,23 +2,24 @@
 
 import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
-import { ButtonGroup } from '../../primitives/button-group';
 import { CountBadge } from '../../primitives/count-badge';
 import { Hint } from '../../primitives/hint';
 import Loading from '../../primitives/loading';
+import { Popover, PopoverContent, PopoverTrigger } from '../../primitives/popover';
 import { StatusDot, type StatusTone } from '../../primitives/status';
+import { Tabs, TabsContent, TabsListCompact, TabsTriggerCompact } from '../../primitives/tabs';
 import { errorToast } from '../../primitives/toast';
 import { useTranslations } from '../../i18n';
+import { agentDisplayName } from '../../internal/components/agent-mark';
 import { cn } from '../../lib/utils';
-import { SubSessionModal } from '../thread/sub-session-modal';
-import { CaretRightIcon, ListChecksIcon, SquareIcon } from '@phosphor-icons/react';
-import { useCallback, useId, useMemo, useState } from 'react';
+import { SubagentDialog } from './subagent-view';
+import { ArrowUpRightIcon, CaretUpIcon, CheckIcon, SquareIcon } from '@phosphor-icons/react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { stopProjectSession, type SessionTask, type WorkflowRunMetadata } from '@kortix/sdk';
 import {
   qk,
   useFeatureFlag,
-  usePeerMessages,
   useSessionChildren,
   useSessionWorkflows,
   useTeamTasks,
@@ -27,16 +28,14 @@ import {
 import { countAgents, parseWorkflowRun, type WorkflowRun, type WorkflowRunAgent } from '../tool/tools/workflow-run';
 import { WorkflowProgress, type AgentStopState } from '../tool/tools/workflow-progress';
 import {
-  foldIdle,
   isActive,
-  moveSelection,
-  stripCounts,
+  lineSummary,
+  shortElapsed,
   stripGroups,
-  stripKeyAction,
   type AgentRow,
   type AgentRowState,
+  type LineMark,
 } from './agent-model';
-import { heldMessages, HeldMessageList } from './held-messages';
 import { TasksPanel } from './tasks-panel';
 import {
   isLargeRun,
@@ -48,55 +47,64 @@ import {
 } from './workflow-run-controls';
 
 /**
- * The agent strip under the session composer: Claude Code's agent panel.
+ * The agents line: one muted control in the composer's under-row, right of the
+ * agent picker (Claude Code's agent panel, folded to one line).
  *
- * One row per agent this session started (its child sessions), the teammates
- * of a team it leads under "Team", and its workflow runs under "Workflows". A
- * row names the agent, its state and one line of what it does or produced; it
- * opens the agent's session in place and stops it. The header counts them
- * ("3 agents · 1 working") and folds the list; more than three idle agents fold
- * into one "N idle agents" row. Nothing here holds the composer: the agents
- * run in their own sessions, and the person keeps talking to this one.
+ *   ● 2 agents · 1 working ⌃        ✓ 2 agents · poet done ⌃
  *
- * Keys while the strip has focus: ↑ ↓ move, Enter opens, x stops, Esc clears
- * the selection, Ctrl+T shows the team's task list.
+ * It names the state of what this session started (its child sessions, the
+ * teammates of a team it leads, its workflow runs) and opens a popover above
+ * the line with one row per agent: open its session, stop it while it works,
+ * and the Tasks tab of a team it leads. It renders nothing while the session
+ * started nothing, and it never holds the composer: the agents run in their own
+ * sessions, and the person keeps talking to this one.
  */
 
-/** How often the child list polls while the strip is mounted. */
+/** How often the child list polls while the line is mounted. */
 const CHILDREN_POLL_MS = 5_000;
 /** A finished workflow run stays listed this long after it ended. */
 const RECENT_RUN_MS = 60 * 60_000;
-/** The strip lists at most this many runs. */
+/** The popover lists at most this many runs. */
 const MAX_RUNS = 5;
 
-const STATE_TONE: Record<AgentRowState, StatusTone> = {
+const DOT_TONE: Record<Exclude<AgentRowState, 'idle' | 'completed'>, StatusTone> = {
   working: 'success',
   needs_input: 'warning',
-  idle: 'neutral',
-  completed: 'success',
   failed: 'destructive',
   stopped: 'neutral',
 };
 
-function StateDot({ state }: { state: AgentRowState }) {
+/**
+ * The state mark of a row or of the line: the live dot while it works, the
+ * attention dot while it waits on the person, a check once its turn ended.
+ * The words beside it say the state; the mark repeats it.
+ */
+function StateMark({ state }: { state: AgentRowState }) {
   const t = useTranslations('multiAgent.strip');
   return (
     <span className="flex size-3 shrink-0 items-center justify-center">
-      <StatusDot
-        tone={STATE_TONE[state]}
-        pulse={state === 'working'}
-        className={cn(state === 'working' && 'motion-reduce:animate-none', state === 'idle' && 'opacity-50')}
-      />
+      {state === 'idle' || state === 'completed' ? (
+        <CheckIcon aria-hidden weight="bold" className="text-kortix-green size-3" />
+      ) : (
+        <StatusDot
+          tone={DOT_TONE[state]}
+          pulse={state === 'working'}
+          className={cn(state === 'working' && 'motion-reduce:animate-none')}
+        />
+      )}
       <span className="sr-only">{t(`state.${state}`)}</span>
     </span>
   );
 }
 
-export interface StripRunEntry {
-  run: WorkflowRun;
-}
+const LINE_STATE: Record<LineMark, AgentRowState> = {
+  needs_input: 'needs_input',
+  working: 'working',
+  failed: 'failed',
+  done: 'completed',
+};
 
-/** The runs the strip lists: running ones, and ones that ended in the last hour; newest first. */
+/** The runs the line lists: running ones, and ones that ended in the last hour; newest first. */
 export function stripRuns(runs: readonly WorkflowRunMetadata[], now: number): WorkflowRun[] {
   const out: WorkflowRun[] = [];
   for (const raw of runs) {
@@ -119,9 +127,9 @@ export function runSessionIds(runs: readonly WorkflowRun[]): Set<string> {
   return ids;
 }
 
-type OpenTarget = { sessionId: string; title: string };
+export type OpenTarget = { sessionId: string; title: string };
 
-export interface AgentStripViewProps {
+export interface AgentsLineViewProps {
   projectId: string | undefined;
   sessionId: string | undefined;
   agents: AgentRow[];
@@ -132,11 +140,34 @@ export interface AgentStripViewProps {
   onOpen: (target: OpenTarget) => void;
   onStop: (row: AgentRow) => void;
   stopping: ReadonlySet<string>;
-  /** First render state of the task list (tests). */
-  defaultTasksOpen?: boolean;
+  /** The line shows the mark and the count only: a narrow toolbar (a channel's thread panel). */
+  compact?: boolean;
+  /** First render state of the popover (tests). */
+  defaultOpen?: boolean;
 }
 
-export function AgentStripView({
+/** The text of the line: `2 agents · 1 working`, `2 agents · poet done`, `1 workflow running`. */
+function useLineText(rows: readonly AgentRow[], runs: readonly WorkflowRun[], compact: boolean) {
+  const t = useTranslations('multiAgent.strip');
+  const summary = lineSummary(rows, runs);
+  const parts: string[] = [];
+  if (summary.agents > 0) parts.push(t('agents', { count: summary.agents }));
+  if (summary.runs > 0) {
+    parts.push(
+      summary.runningRuns > 0
+        ? t('workflowsRunning', { count: summary.runningRuns })
+        : t('workflows', { count: summary.runs }),
+    );
+  }
+  if (!compact && summary.agents > 0) {
+    if (summary.needsInput > 0) parts.push(t('state.needs_input'));
+    else if (summary.working > 0) parts.push(t('working', { count: summary.working }));
+    else if (summary.newest) parts.push(t('newest', { name: summary.newest.handle, state: t(`state.${summary.newest.state}`) }));
+  }
+  return { summary, text: parts.join(' · ') };
+}
+
+export function AgentsLineView({
   projectId,
   sessionId,
   agents,
@@ -146,81 +177,88 @@ export function AgentStripView({
   onOpen,
   onStop,
   stopping,
-  defaultTasksOpen = false,
-}: AgentStripViewProps) {
+  compact = false,
+  defaultOpen = false,
+}: AgentsLineViewProps) {
   const t = useTranslations('multiAgent.strip');
-  const listId = useId();
-  const tasksId = useId();
-  const [collapsed, setCollapsed] = useState(false);
-  const [idleOpen, setIdleOpen] = useState(false);
-  const [tasksOpen, setTasksOpen] = useState(defaultTasksOpen);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [open, setOpen] = useState(defaultOpen);
+  const rows = useMemo(() => [...agents, ...team], [agents, team]);
+  const { summary, text } = useLineText(rows, runs, compact);
 
-  const agentFold = foldIdle(agents, idleOpen, selected);
-  const teamFold = foldIdle(team, idleOpen, selected);
-  const folded = agentFold.folded.length + teamFold.folded.length;
-  const rows = useMemo(() => [...agentFold.shown, ...teamFold.shown], [agentFold.shown, teamFold.shown]);
-  const counts = stripCounts([...agents, ...team]);
-  const runningRuns = runs.filter((run) => run.status === 'running').length;
-  const hasTasks = tasks !== null && (tasks.length > 0 || team.length > 0);
+  if (rows.length === 0 && runs.length === 0) return null;
 
-  const onKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.defaultPrevented) return;
-      const target = event.target as HTMLElement;
-      if (target.closest('input, textarea, [contenteditable="true"]')) return;
-      const action = stripKeyAction(event);
-      if (!action) return;
-      const row = rows.find((candidate) => candidate.sessionId === selected) ?? null;
-      switch (action) {
-        case 'up':
-        case 'down':
-          setSelected((current) => moveSelection(rows.map((r) => r.sessionId), current, action));
-          break;
-        case 'open':
-          // Enter on a focused button activates that button; the strip opens only its own selection.
-          if (!row || target.closest('button')) return;
-          onOpen({ sessionId: row.sessionId, title: row.handle });
-          break;
-        case 'stop':
-          if (!row || !isActive(row.state)) return;
-          onStop(row);
-          break;
-        case 'clear':
-          if (!selected) return;
-          setSelected(null);
-          break;
-        case 'toggleTasks':
-          if (!hasTasks) return;
-          setTasksOpen((open) => !open);
-          break;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-    },
-    [rows, selected, onOpen, onStop, hasTasks],
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          data-testid="agents-line"
+          aria-label={compact ? `${t('label')}: ${text}` : undefined}
+          className="text-muted-foreground hit-area-y-3 min-w-0 shrink gap-1.5 rounded-lg px-2 text-xs font-normal tabular-nums"
+        >
+          <StateMark state={LINE_STATE[summary.mark]} />
+          <span className="max-w-64 min-w-0 truncate">{text}</span>
+          <CaretUpIcon aria-hidden className={cn('size-3 shrink-0', open && 'rotate-180')} />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        aria-label={t('label')}
+        data-testid="agents-line-popover"
+        tabIndex={-1}
+        // Focus the panel, not its first row action: a focused action opens its
+        // tooltip, and the first Escape would close the tooltip, not the popover.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          (event.currentTarget as HTMLElement | null)?.focus();
+        }}
+        className="flex w-[min(360px,calc(100vw-1.5rem))] flex-col p-0"
+      >
+        <AgentsPanel
+          projectId={projectId}
+          sessionId={sessionId}
+          agents={agents}
+          team={team}
+          runs={runs}
+          tasks={tasks}
+          onOpen={(target) => {
+            setOpen(false);
+            onOpen(target);
+          }}
+          onStop={onStop}
+          stopping={stopping}
+          live={open}
+        />
+      </PopoverContent>
+    </Popover>
   );
+}
 
-  if (agents.length === 0 && team.length === 0 && runs.length === 0 && !hasTasks) return null;
+export interface AgentsPanelProps extends Omit<AgentsLineViewProps, 'compact' | 'defaultOpen'> {
+  /** The popover is open: a working row's elapsed time ticks. */
+  live: boolean;
+}
 
-  const summary = [
-    counts.agents > 0 ? t('agents', { count: counts.agents }) : undefined,
-    counts.working > 0 ? t('working', { count: counts.working }) : undefined,
-    counts.needsInput > 0 ? t('needsInput', { count: counts.needsInput }) : undefined,
-    runs.length > 0 ? t('workflows', { count: runs.length, running: runningRuns }) : undefined,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+/** The popover body: Agents, Team, Workflows, and a Tasks tab when this session leads a team. */
+export function AgentsPanel({ projectId, sessionId, agents, team, runs, tasks, onOpen, onStop, stopping, live }: AgentsPanelProps) {
+  const t = useTranslations('multiAgent.strip');
+  const anyWorking = live && [...agents, ...team].some((row) => row.state === 'working');
+  const now = useNow(anyWorking);
+  const sections = [agents.length > 0, team.length > 0, runs.length > 0].filter(Boolean).length;
 
-  const renderRows = (list: AgentRow[]) => (
+  const renderRows = (list: AgentRow[], teammate: boolean) => (
     <ul>
       {list.map((row) => (
-        <AgentStripRow
+        <AgentLineRow
           key={row.sessionId}
           row={row}
-          selected={row.sessionId === selected}
+          teammate={teammate}
+          now={now}
           stopping={stopping.has(row.sessionId)}
-          onSelect={() => setSelected(row.sessionId)}
           onOpen={() => onOpen({ sessionId: row.sessionId, title: row.handle })}
           onStop={() => onStop(row)}
         />
@@ -228,149 +266,143 @@ export function AgentStripView({
     </ul>
   );
 
-  return (
-    <div
-      data-agent-strip
-      role="group"
-      aria-label={t('label')}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSelected(null);
-      }}
-      className="bg-popover focus-visible:ring-ring/50 rounded-md border text-xs outline-none focus-visible:ring-2"
-    >
-      <div className="flex min-h-8 items-center gap-1 pr-1">
-        <button
-          type="button"
-          aria-expanded={!collapsed}
-          aria-controls={listId}
-          onClick={() => setCollapsed((value) => !value)}
-          className="text-muted-foreground hover:text-foreground flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-left tabular-nums transition-colors"
-        >
-          <CaretRightIcon
-            aria-hidden
-            className={cn('size-3 shrink-0 transition-transform motion-reduce:transition-none', !collapsed && 'rotate-90')}
-          />
-          <span className="min-w-0 truncate">{summary || t('label')}</span>
-        </button>
-        {hasTasks && (
-          <Hint label={t('tasksHint')} side="top">
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              aria-expanded={tasksOpen}
-              aria-controls={tasksId}
-              onClick={() => setTasksOpen((open) => !open)}
-              className={cn('text-muted-foreground hover:text-foreground', tasksOpen && 'text-foreground')}
-            >
-              <ListChecksIcon className="size-3.5 shrink-0" />
-              {t('tasks')}
-              {tasks && tasks.length > 0 && <CountBadge count={tasks.filter((task) => task.status !== 'completed').length} />}
-            </Button>
-          </Hint>
-        )}
-      </div>
-      {!collapsed && (
-        <div id={listId} className="space-y-1 border-t px-1 py-1">
-          {hasTasks && tasksOpen && tasks && (
-            <div className="border-b pb-1">
-              <TasksPanel id={tasksId} tasks={tasks} />
-            </div>
-          )}
-          {agentFold.shown.length > 0 && renderRows(agentFold.shown)}
-          {teamFold.shown.length > 0 && (
-            <div>
-              <GroupLabel>{t('team')}</GroupLabel>
-              {renderRows(teamFold.shown)}
-            </div>
-          )}
-          {folded > 0 && (
-            <button
-              type="button"
-              onClick={() => setIdleOpen(true)}
-              className="text-muted-foreground hover:bg-muted/40 hover:text-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-left transition-colors"
-            >
-              <StateDot state="idle" />
-              {t('idleFolded', { count: folded })}
-            </button>
-          )}
-          {idleOpen && folded === 0 && agents.concat(team).filter((row) => row.state === 'idle').length > 3 && (
-            <button
-              type="button"
-              onClick={() => setIdleOpen(false)}
-              className="text-muted-foreground hover:text-foreground w-full cursor-pointer rounded-sm px-2 py-1 text-left transition-colors"
-            >
-              {t('idleCollapse')}
-            </button>
-          )}
-          {runs.length > 0 && (
-            <div>
-              <GroupLabel>{t('workflowsGroup')}</GroupLabel>
-              <ul>
-                {runs.map((run) => (
-                  <WorkflowStripRow key={run.runId || run.title} projectId={projectId} sessionId={sessionId} run={run} onOpen={onOpen} />
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
+  const list = (
+    <div className="max-h-96 overflow-y-auto p-1">
+      {agents.length > 0 && (
+        <section aria-label={t('label')}>
+          {sections > 1 && <GroupLabel>{t('label')}</GroupLabel>}
+          {renderRows(agents, false)}
+        </section>
+      )}
+      {team.length > 0 && (
+        <section aria-label={t('team')}>
+          <GroupLabel>{t('team')}</GroupLabel>
+          {renderRows(team, true)}
+        </section>
+      )}
+      {runs.length > 0 && (
+        <section aria-label={t('workflowsGroup')}>
+          <GroupLabel>{t('workflowsGroup')}</GroupLabel>
+          <ul>
+            {runs.map((run) => (
+              <WorkflowLineRow key={run.runId || run.title} projectId={projectId} sessionId={sessionId} run={run} onOpen={onOpen} />
+            ))}
+          </ul>
+        </section>
       )}
     </div>
+  );
+
+  if (tasks === null) return list;
+  const openTasks = tasks.filter((task) => task.status !== 'completed').length;
+  return (
+    <Tabs defaultValue="agents" className="gap-0">
+      <TabsContent value="agents">{list}</TabsContent>
+      <TabsContent value="tasks" className="max-h-96 overflow-y-auto p-1">
+        <TasksPanel tasks={tasks} />
+      </TabsContent>
+      <div className="border-t p-1">
+        <TabsListCompact animate="none" className="w-full">
+          <TabsTriggerCompact value="agents">{t('label')}</TabsTriggerCompact>
+          <TabsTriggerCompact value="tasks" className="gap-1.5">
+            {t('tasks')}
+            {openTasks > 0 && <CountBadge count={openTasks} />}
+          </TabsTriggerCompact>
+        </TabsListCompact>
+      </div>
+    </Tabs>
   );
 }
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
-  return <div className="text-muted-foreground px-2 pt-1 pb-0.5 text-xs font-medium">{children}</div>;
+  return <div className="text-muted-foreground px-2 pt-1.5 pb-0.5 text-xs font-medium">{children}</div>;
 }
 
-function AgentStripRow({
+/** Row actions: shown on hover and on keyboard focus, always on a touch screen. */
+const ROW_ACTIONS =
+  'flex shrink-0 items-center opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 [@media(hover:none)]:opacity-100';
+
+/** The short state of a row: `working · 1m`, `done`, `needs you`, `failed`. */
+function rowState(row: AgentRow, now: number, t: ReturnType<typeof useTranslations<'multiAgent.strip'>>): string {
+  if (row.state === 'working' && row.workingSinceMs !== null) {
+    return t('workingFor', { elapsed: shortElapsed(now - row.workingSinceMs) });
+  }
+  return t(`state.${row.state}`);
+}
+
+function AgentLineRow({
   row,
-  selected,
+  teammate,
+  now,
   stopping,
-  onSelect,
   onOpen,
   onStop,
 }: {
   row: AgentRow;
-  selected: boolean;
+  teammate: boolean;
+  now: number;
   stopping: boolean;
-  onSelect: () => void;
   onOpen: () => void;
   onStop: () => void;
 }) {
   const t = useTranslations('multiAgent.strip');
-  const line = row.state === 'needs_input' ? (row.line ?? t(`attention.${row.attention ?? 'question'}`)) : row.line;
+  // The result, or what it waits for: one line on hover, never inline.
+  const detail = row.state === 'needs_input' ? (row.line ?? t(`attention.${row.attention ?? 'question'}`)) : row.line;
+  const handle = (
+    <span className="text-foreground min-w-0 truncate font-medium" title={teammate ? undefined : row.handle}>
+      {row.handle}
+    </span>
+  );
+  const state = (
+    <span className="text-muted-foreground shrink-0 tabular-nums">{rowState(row, now, t)}</span>
+  );
   return (
     <li
+      data-testid="agents-line-row"
       data-agent-row={row.sessionId}
-      data-selected={selected || undefined}
-      aria-current={selected || undefined}
-      onMouseDown={onSelect}
-      className={cn(
-        'group flex min-w-0 items-center gap-1 rounded-sm transition-none',
-        selected ? 'bg-muted' : 'hover:bg-muted/40',
-      )}
+      className="group/row hover:bg-hover focus-within:bg-hover flex min-w-0 items-center gap-1 rounded-sm"
     >
-      <button
-        type="button"
-        aria-label={t('openAgent', { name: row.handle })}
-        onClick={onOpen}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-2 py-1 text-left"
-      >
-        <StateDot state={row.state} />
-        <span className={cn('min-w-0 shrink truncate font-medium', row.state === 'idle' ? 'text-muted-foreground' : 'text-foreground')} title={row.handle}>
-          {row.handle}
-        </span>
-        {row.agent && <span className="text-muted-foreground max-w-[30%] shrink-0 truncate">{row.agent}</span>}
-        <span className="text-muted-foreground min-w-0 flex-1 truncate" title={line ?? undefined}>
-          {line ?? t(`state.${row.state}`)}
-        </span>
-      </button>
-      <span className="flex size-6 shrink-0 items-center justify-center">
+      <div onClick={onOpen} className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1.5 pl-2 text-xs">
+        <StateMark state={row.state} />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-baseline gap-2">
+            {teammate ? (
+              <Hint label={t('teamRole')} side="top">
+                {handle}
+              </Hint>
+            ) : (
+              handle
+            )}
+            {detail ? (
+              <Hint label={<span className="block max-w-72 truncate">{detail}</span>} side="top">
+                {state}
+              </Hint>
+            ) : (
+              state
+            )}
+          </div>
+          {row.named && row.agent && (
+            <p className="text-muted-foreground truncate">{t('runsAs', { agent: agentDisplayName(row.agent) })}</p>
+          )}
+        </div>
+      </div>
+      <div className={cn(ROW_ACTIONS, 'pr-1', stopping && 'opacity-100')}>
+        <Hint label={t('openAgent', { name: row.handle })} side="top">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={t('openAgent', { name: row.handle })}
+            onClick={onOpen}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <ArrowUpRightIcon className="size-3.5 shrink-0" />
+          </Button>
+        </Hint>
         {stopping ? (
-          <Loading className="text-muted-foreground size-3" />
+          <span className="flex size-6 items-center justify-center">
+            <Loading className="text-muted-foreground size-3" />
+          </span>
         ) : isActive(row.state) ? (
           <Hint label={t('stopHint')} side="top">
             <Button
@@ -385,7 +417,7 @@ function AgentStripRow({
             </Button>
           </Hint>
         ) : null}
-      </span>
+      </div>
     </li>
   );
 }
@@ -397,8 +429,8 @@ const RUN_STATE: Record<WorkflowRun['status'], AgentRowState> = {
   stopped: 'stopped',
 };
 
-/** One workflow run in the strip: its progress line and controls; it unfolds into its agents. */
-function WorkflowStripRow({
+/** One workflow run: its live progress and controls; it unfolds into its agents. */
+function WorkflowLineRow({
   projectId,
   sessionId,
   run: listed,
@@ -412,6 +444,7 @@ function WorkflowStripRow({
   const t = useTranslations('multiAgent.strip');
   const tw = useTranslations('multiAgent.workflow');
   const [open, setOpen] = useState(false);
+  // A background run's progress is read from its runner, so it keeps moving after this turn ended.
   const { run, controlSessionId } = useLiveWorkflowRun(projectId, sessionId, listed);
   const now = useNow(open && run?.status === 'running');
   const restart = useRestartAgent(projectId, controlSessionId, run);
@@ -424,11 +457,13 @@ function WorkflowStripRow({
   if (!run) return null;
   const counts = countAgents(run.agents);
   const progress = counts.total > 0 ? t('runProgress', { done: counts.done, total: counts.total }) : undefined;
-  const state =
+  const line = (
     run.status === 'running'
       ? [run.paused ? tw('paused') : run.background ? t('runBackground') : t('runRunning'), progress]
-      : [t(`runStatus.${run.status}`), progress];
-  const line = state.filter(Boolean).join(' · ');
+      : [progress]
+  )
+    .filter(Boolean)
+    .join(' · ');
   const live = run.status === 'running';
   const stop: AgentStopState = {
     enabled: !!projectId,
@@ -438,38 +473,48 @@ function WorkflowStripRow({
   };
   const title = run.title || run.name || t('runFallback');
   return (
-    <li data-workflow-run={run.runId}>
-      <div className="flex min-w-0 items-center gap-1 rounded-sm hover:bg-muted/40">
+    <li data-testid="agents-line-row" data-workflow-run={run.runId}>
+      <div className="group/row hover:bg-hover focus-within:bg-hover flex min-w-0 items-center gap-1 rounded-sm">
         <button
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-2 py-1 text-left"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1.5 pl-2 text-left text-xs outline-none"
         >
-          <StateDot state={RUN_STATE[run.status]} />
-          <span className="text-foreground min-w-0 shrink truncate font-medium" title={title}>
-            {title}
-          </span>
-          {isLargeRun(run) && <LargeRunBadge />}
-          <span className="text-muted-foreground min-w-0 flex-1 truncate tabular-nums">{line}</span>
+          <StateMark state={RUN_STATE[run.status]} />
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span className="text-foreground min-w-0 truncate font-medium" title={title}>
+                {title}
+              </span>
+              <span className="text-muted-foreground shrink-0">{t(`state.${RUN_STATE[run.status]}`)}</span>
+            </div>
+            {line && <p className="text-muted-foreground truncate tabular-nums">{line}</p>}
+          </div>
         </button>
-        {run.background && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            onClick={() => onOpen({ sessionId: run.background!.sessionId, title })}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            {t('openRun')}
-          </Button>
-        )}
-        <WorkflowRunControls
-          projectId={projectId}
-          controlSessionId={live ? controlSessionId : undefined}
-          ownerSessionId={sessionId}
-          run={run}
-        />
+        {isLargeRun(run) && <LargeRunBadge />}
+        <div className={cn(ROW_ACTIONS, 'pr-1')}>
+          {run.background && (
+            <Hint label={t('openRun')} side="top">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label={t('openRun')}
+                onClick={() => onOpen({ sessionId: run.background!.sessionId, title })}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <ArrowUpRightIcon className="size-3.5 shrink-0" />
+              </Button>
+            </Hint>
+          )}
+          <WorkflowRunControls
+            projectId={projectId}
+            controlSessionId={live ? controlSessionId : undefined}
+            ownerSessionId={sessionId}
+            run={run}
+          />
+        </div>
       </div>
       {open && run.agents.length > 0 && (
         <div className="pl-5">
@@ -494,20 +539,11 @@ function WorkflowStripRow({
 }
 
 /**
- * The strip of one session, read live: its children (polled every 5 s), its
- * teammates and team tasks (flag `agent_teams`), its workflow runs, and the
- * held messages waiting for the person above it.
+ * The agents of one session, read live: its children (polled every 5 s), its
+ * teammates and team tasks (flag `agent_teams`) and its workflow runs; and the
+ * stop of one agent.
  */
-export function AgentStrip({
-  projectId,
-  sessionId,
-  className,
-}: {
-  projectId: string | undefined;
-  sessionId: string | undefined;
-  /** The wrapper's classes; the strip renders nothing (no wrapper) while it has nothing to show. */
-  className?: string;
-}) {
+export function useAgentsLine(projectId: string | undefined, sessionId: string | undefined) {
   const t = useTranslations('multiAgent.strip');
   const pid = projectId ?? '';
   const sid = sessionId ?? '';
@@ -518,8 +554,6 @@ export function AgentStrip({
   const { data: teammates, dataUpdatedAt: teammatesAt } = useTeammates(projectId, sessionId, { enabled: ready && teams });
   const { data: tasks } = useTeamTasks(projectId, sessionId, { enabled: ready && teams });
   const { data: runData, dataUpdatedAt: runsAt } = useSessionWorkflows(projectId, sessionId, { enabled: ready });
-  const peer = usePeerMessages(projectId, sessionId, 'in');
-  const [open, setOpen] = useState<OpenTarget | null>(null);
   const [stopping, setStopping] = useState<ReadonlySet<string>>(() => new Set());
   const queryClient = useQueryClient();
   const stopMutation = useMutation({
@@ -551,37 +585,62 @@ export function AgentStrip({
     [sid, children, teammates, runs, now],
   );
   const leadsTeam = teams && ((teammates?.length ?? 0) > 0 || (tasks?.length ?? 0) > 0);
+  return {
+    ready,
+    agents: groups.agents,
+    team: groups.team,
+    runs,
+    tasks: leadsTeam ? (tasks ?? []) : null,
+    stopping,
+    stop: (row: AgentRow) => {
+      setStopping((previous) => new Set(previous).add(row.sessionId));
+      stopMutation.mutate(row);
+    },
+  };
+}
 
-  const hasHeld = heldMessages(peer.data).length > 0;
-  const empty = groups.agents.length === 0 && groups.team.length === 0 && runs.length === 0 && !leadsTeam;
-  if (!ready || (empty && !hasHeld && !open)) return null;
+/**
+ * The agents line of one session, for the composer's under-row
+ * (`SessionChatInputProps.underbarSlot`). Nothing renders while the session
+ * started no agent and no workflow run.
+ */
+export function AgentsLine({
+  projectId,
+  sessionId,
+  compact = false,
+}: {
+  projectId: string | undefined;
+  sessionId: string | undefined;
+  compact?: boolean;
+}) {
+  const line = useAgentsLine(projectId, sessionId);
+  const [open, setOpen] = useState<OpenTarget | null>(null);
+  if (!line.ready) return null;
   return (
-    <div className={cn('space-y-1.5', className)}>
-      <HeldMessageList messages={peer.data} approve={peer.approve} deny={peer.deny} />
-      <AgentStripView
+    <>
+      <AgentsLineView
         projectId={projectId}
         sessionId={sessionId}
-        agents={groups.agents}
-        team={groups.team}
-        runs={runs}
-        tasks={leadsTeam ? (tasks ?? []) : null}
+        agents={line.agents}
+        team={line.team}
+        runs={line.runs}
+        tasks={line.tasks}
         onOpen={setOpen}
-        onStop={(row) => {
-          setStopping((previous) => new Set(previous).add(row.sessionId));
-          stopMutation.mutate(row);
-        }}
-        stopping={stopping}
+        onStop={line.stop}
+        stopping={line.stopping}
+        compact={compact}
       />
       {open && (
-        <SubSessionModal
+        <SubagentDialog
           open
           onOpenChange={(next) => {
             if (!next) setOpen(null);
           }}
+          projectId={projectId}
           sessionId={open.sessionId}
           title={open.title}
         />
       )}
-    </div>
+    </>
   );
 }

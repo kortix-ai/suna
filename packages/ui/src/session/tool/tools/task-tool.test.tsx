@@ -17,7 +17,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
  *
  * A task call is a DISCLOSURE row whose body is the sub-agent's live activity.
  * It used to be a plain clickable row: clicking anywhere on it opened
- * `SubSessionModal`, so the one thing the reader wants while a sub-agent runs —
+ * `SubagentDialog`, so the one thing the reader wants while a sub-agent runs —
  * what it is doing — was reachable only by leaving the transcript for a modal,
  * and the `SubAgentActivity` the component already built was dead code on that
  * path. Now the row expands in place and the modal is an explicit action inside
@@ -32,7 +32,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
  * here and a `useState` flip cannot be observed. What IS asserted is everything
  * the click depends on: the action is rendered, it sits in the disclosure body,
  * and the modal it opens is mounted and wired to this call's child session and
- * title. `SubSessionModal` is stubbed so those props are visible in the markup —
+ * title. `SubagentDialog` is stubbed so those props are visible in the markup —
  * the real one renders nothing while closed.
  *
  * `mock.module` is process-wide in this workspace, so both mocks spread the real
@@ -56,10 +56,10 @@ await mock.module('@kortix/sdk/react', () => ({
   },
 }));
 
-const realSubSessionModal = await import('../../thread/sub-session-modal');
-await mock.module('../../thread/sub-session-modal', () => ({
-  ...realSubSessionModal,
-  SubSessionModal: ({
+const realSubagentView = await import('../../agents/subagent-view');
+await mock.module('../../agents/subagent-view', () => ({
+  ...realSubagentView,
+  SubagentDialog: ({
     open,
     sessionId,
     title,
@@ -69,7 +69,7 @@ await mock.module('../../thread/sub-session-modal', () => ({
     title?: string;
   }) => (
     <div
-      data-sub-session-modal
+      data-subagent-dialog
       data-open={String(open)}
       data-session-id={sessionId}
       data-title={title}
@@ -305,7 +305,7 @@ describe('TaskTool — the row expands in place', () => {
     expect(markup).toContain('Agent · explorer');
     expect(markup).not.toContain('Open full view');
     expect(markup).not.toContain('>View</span>');
-    expect(markup).not.toContain('data-sub-session-modal');
+    expect(markup).not.toContain('data-subagent-dialog');
     // Nothing to open and nowhere to go, so the row makes no promise: no
     // trigger, no `role="button"`, no `aria-expanded`, no tab stop. It used to
     // carry all four and do nothing with them.

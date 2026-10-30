@@ -2129,6 +2129,7 @@
     "useSessionSync",
     "useSessionTurnOutcome",
     "useSessionUsage",
+    "useSessionView",
     "useSessionWatch",
     "useSessionWorkflows",
     "useSessionWorking",

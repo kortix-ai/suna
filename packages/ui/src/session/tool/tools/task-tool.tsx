@@ -1,6 +1,6 @@
 'use client';
 
-import { SubSessionModal } from '../../thread/sub-session-modal';
+import { SubagentDialog } from '../../agents/subagent-view';
 import {
   BasicTool,
   firstMeaningfulLine,
@@ -96,7 +96,7 @@ function FullViewAction({ onOpen }: { onOpen: () => void }) {
 /**
  * A task call is a disclosure row: what the sub-agent is doing, in place.
  *
- * This row used to be a plain button that opened `SubSessionModal` on any
+ * This row used to be a plain button that opened `SubagentDialog` on any
  * click. That put the only view of a running sub-agent behind a modal — the
  * reader had to leave the transcript to learn what the agent they just
  * dispatched was up to, and had to close it again to get back — while the
@@ -225,7 +225,7 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
       </BasicTool>
       <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
       {childSessionId && (
-        <SubSessionModal
+        <SubagentDialog
           open={modalOpen}
           onOpenChange={setModalOpen}
           sessionId={childSessionId}

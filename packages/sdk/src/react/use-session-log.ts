@@ -232,12 +232,21 @@ export function useSessionLogSync(
     joinStream?: (options: SessionControlStreamOptions) => { close: () => void };
     /** Test seam: runs a timed retry after `ms`; returns its cancel. */
     schedule?: (run: () => void, ms: number) => () => void;
+    /** Each first-page read's outcome: a page, no log yet (`missing`), or a failed read. */
+    onRead?: (outcome: 'page' | 'missing' | 'failed') => void;
+    /** A new value reads the log again from the start (a host's "Try again"). */
+    revision?: number;
   },
 ): SessionLogSyncState {
   const loader = options.loader === undefined ? loadSessionLogPage : options.loader;
   const joinStream = options.joinStream ?? openSessionStream;
   const schedule = options.schedule ?? scheduleRetry;
   const active = options.enabled && !!loader && !!projectId && !!sessionId;
+  const onRead = useRef(options.onRead);
+  useEffect(() => {
+    onRead.current = options.onRead;
+  });
+  const revision = options.revision ?? 0;
   const key = `${projectId}/${sessionId}`;
   const negotiated: SessionLogDialect = active ? 'v2' : 'v1';
   // The last read answered no page: the session has no log to show yet.
@@ -291,6 +300,7 @@ export function useSessionLogSync(
       if (stopped) return;
       const page = answer === 'missing' ? null : answer;
       onV2 = !!page;
+      onRead.current?.(page ? 'page' : answer === 'missing' ? 'missing' : 'failed');
       if (page) {
         failures = 0;
         setMissingKey(null);
@@ -343,7 +353,8 @@ export function useSessionLogSync(
       stream?.close();
       store().dropSessionLog(sessionId);
     };
-  }, [negotiated, loader, joinStream, schedule, projectId, sessionId]);
+    // `revision` is read only as a dependency: a new value re-runs the whole read.
+  }, [negotiated, loader, joinStream, schedule, projectId, sessionId, revision]);
 
   return state;
 }

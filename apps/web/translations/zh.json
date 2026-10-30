@@ -3115,6 +3115,10 @@
         "usage": {
           "read": "正在查看用量…",
           "change": "正在查看用量…"
+        },
+        "changeRequests": {
+          "read": "正在查看更改请求…",
+          "change": "正在更新更改请求…"
         }
       },
       "status": {
@@ -24923,28 +24927,29 @@
       "label": "智能体",
       "agents": "{count, plural, other {# 个智能体}}",
       "working": "{count} 个工作中",
-      "needsInput": "{count, plural, other {# 个需要你处理}}",
-      "workflows": "{count, plural, other {# 个工作流}}{running, plural, =0 {} other { 运行中}}",
+      "workflows": "{count, plural, other {# 个工作流}}",
+      "workflowsRunning": "{count, plural, other {# 个工作流运行中}}",
+      "newest": "{name} {state}",
       "tasks": "任务",
-      "tasksHint": "显示团队任务 (Ctrl+T)",
       "team": "团队",
       "workflowsGroup": "工作流",
-      "idleFolded": "{count, plural, other {# 个空闲智能体}}",
-      "idleCollapse": "收起空闲智能体",
       "state": {
         "working": "工作中",
         "needs_input": "需要你处理",
-        "idle": "空闲",
+        "idle": "已完成",
         "completed": "已完成",
-        "failed": "未完成",
+        "failed": "失败",
         "stopped": "已停止"
       },
+      "workingFor": "工作中 · {elapsed}",
+      "runsAs": "以 {agent} 运行",
+      "teamRole": "仅限本会话的角色",
       "attention": {
         "question": "有问题要问你",
         "approval": "等待你的批准"
       },
       "openAgent": "打开 {name}",
-      "stopHint": "停止此智能体 (x)",
+      "stopHint": "停止此智能体",
       "stopAgent": "停止 {name}",
       "stopAgentFailed": "无法停止 {name}",
       "stopFailed": "无法停止该智能体",
@@ -24959,6 +24964,21 @@
       "runFallback": "工作流",
       "openRun": "打开运行",
       "runNoAgents": "还没有智能体"
+    },
+    "subagent": {
+      "fallbackTitle": "智能体",
+      "openPage": "打开页面",
+      "close": "关闭",
+      "messagePlaceholder": "给 {name} 发消息…",
+      "messageLabel": "给 {name} 发消息",
+      "send": "发送",
+      "sent": "消息已发送",
+      "sendFailed": "无法发送消息",
+      "loadFailed": "无法加载此智能体的消息",
+      "retry": "重试",
+      "emptyTitle": "暂无内容",
+      "emptyDescription": "它工作时的消息会显示在这里。",
+      "loadOlder": "显示更早的消息"
     },
     "tasks": {
       "label": "团队任务",
@@ -25054,8 +25074,6 @@
         "failed": "失败",
         "stopped": "已停止"
       },
-      "result": "结果",
-      "noResult": "还没有回答。",
       "replyPlaceholder": "回复。智能体会在下一步收到。",
       "replyLabel": "回复 {title}",
       "sendReply": "发送回复",

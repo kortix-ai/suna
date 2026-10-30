@@ -3115,6 +3115,10 @@
         "usage": {
           "read": "Verificando o uso…",
           "change": "Verificando o uso…"
+        },
+        "changeRequests": {
+          "read": "Verificando os pedidos de alteração…",
+          "change": "Atualizando um pedido de alteração…"
         }
       },
       "status": {
@@ -24923,28 +24927,29 @@
       "label": "Agentes",
       "agents": "{count, plural, one {# agente} other {# agentes}}",
       "working": "{count} trabalhando",
-      "needsInput": "{count, plural, one {# precisa de você} other {# precisam de você}}",
-      "workflows": "{count, plural, one {# fluxo de trabalho} other {# fluxos de trabalho}}{running, plural, =0 {} other { em andamento}}",
+      "workflows": "{count, plural, one {# fluxo de trabalho} other {# fluxos de trabalho}}",
+      "workflowsRunning": "{count, plural, one {# fluxo de trabalho em andamento} other {# fluxos de trabalho em andamento}}",
+      "newest": "{name}: {state}",
       "tasks": "Tarefas",
-      "tasksHint": "Mostrar as tarefas da equipe (Ctrl+T)",
       "team": "Equipe",
       "workflowsGroup": "Fluxos de trabalho",
-      "idleFolded": "{count, plural, one {# agente ocioso} other {# agentes ociosos}}",
-      "idleCollapse": "Recolher agentes ociosos",
       "state": {
-        "working": "Trabalhando",
-        "needs_input": "Precisa de você",
-        "idle": "Ocioso",
-        "completed": "Concluído",
-        "failed": "Não terminou",
-        "stopped": "Parado"
+        "working": "trabalhando",
+        "needs_input": "precisa de você",
+        "idle": "concluído",
+        "completed": "concluído",
+        "failed": "falhou",
+        "stopped": "parado"
       },
+      "workingFor": "trabalhando · {elapsed}",
+      "runsAs": "executa como {agent}",
+      "teamRole": "Função só para esta sessão",
       "attention": {
         "question": "Tem uma pergunta para você",
         "approval": "Aguarda a sua aprovação"
       },
       "openAgent": "Abrir {name}",
-      "stopHint": "Parar este agente (x)",
+      "stopHint": "Parar este agente",
       "stopAgent": "Parar {name}",
       "stopAgentFailed": "Não foi possível parar {name}",
       "stopFailed": "Não foi possível parar o agente",
@@ -24959,6 +24964,21 @@
       "runFallback": "Fluxo de trabalho",
       "openRun": "Abrir execução",
       "runNoAgents": "Ainda não há agentes"
+    },
+    "subagent": {
+      "fallbackTitle": "Agente",
+      "openPage": "Abrir página",
+      "close": "Fechar",
+      "messagePlaceholder": "Mensagem para {name}…",
+      "messageLabel": "Mensagem para {name}",
+      "send": "Enviar",
+      "sent": "Mensagem enviada",
+      "sendFailed": "Não foi possível enviar a mensagem",
+      "loadFailed": "Não foi possível carregar as mensagens deste agente",
+      "retry": "Tentar novamente",
+      "emptyTitle": "Nada ainda",
+      "emptyDescription": "As mensagens dele aparecem aqui enquanto trabalha.",
+      "loadOlder": "Mostrar mensagens anteriores"
     },
     "tasks": {
       "label": "Tarefas da equipe",
@@ -25054,8 +25074,6 @@
         "failed": "Falhou",
         "stopped": "Parada"
       },
-      "result": "Resultado",
-      "noResult": "Ainda sem resposta.",
       "replyPlaceholder": "Responda. A resposta chega ao agente no próximo passo dele.",
       "replyLabel": "Responder a {title}",
       "sendReply": "Enviar resposta",
