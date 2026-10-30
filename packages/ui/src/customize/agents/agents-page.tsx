@@ -169,7 +169,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   const subagents = shown.filter((agent) => !agentInMode(agent, 'primary'));
   const card = (agent: Agent, cover?: string) => (
     <AgentCoverCard
-      key={agent.path}
+      key={agent.name}
       slug={agent.name}
       href={agentHref(projectId, agent.name)}
       onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}

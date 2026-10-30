@@ -52,7 +52,7 @@ describe('My Kortix agent', () => {
     expect(config.agents.filter((agent) => agent.name === 'mykortix')).toHaveLength(1);
     expect(config.agents[0]).toMatchObject({
       name: 'mykortix',
-      path: '/workspace/AGENTS.md',
+      path: '',
       // Platform-owned: hosts render it read-only and never open the editor.
       platform: true,
       scope: {

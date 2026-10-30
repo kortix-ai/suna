@@ -110,7 +110,8 @@ export function addMyKortixAgent(config: ProjectConfigSummary): ProjectConfigSum
     agents: [
       {
         name: MY_KORTIX_AGENT_NAME,
-        path: '/workspace/AGENTS.md',
+        // Built in: no file in the project. Its instructions are MY_KORTIX_PROMPT, served in the compiled config.
+        path: '',
         description: MY_KORTIX_DESCRIPTION,
         mode: 'primary',
         source: 'opencode',

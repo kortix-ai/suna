@@ -116,3 +116,38 @@ describe('a session box reads its own project usage', () => {
     }
   });
 });
+
+describe('kortix agents ls', () => {
+  test('a built-in agent shows as "My Kortix, built in", never a file path', async () => {
+    respondWith = () => json({}, 200);
+    const stub = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        const path = new URL(req.url).pathname;
+        if (path.endsWith('/model-defaults')) return json({ agentDefaults: {}, projectDefault: null, accountDefault: null, platformDefault: 'kimi' }, 200);
+        if (path.endsWith('/detail')) {
+          return json({ config: { default_agent: 'mykortix', agents: [{ name: 'mykortix', path: '', platform: true, description: 'The one agent you talk to.' }, { name: 'worker', path: 'agents/worker.md' }] } }, 200);
+        }
+        return json({}, 404);
+      },
+    });
+    try {
+      const proc = Bun.spawn({
+        cmd: [process.execPath, CLI_ENTRY, 'agents', 'ls'],
+        cwd: CLI_ROOT,
+        env: { ...(process.env as Record<string, string>), KORTIX_TOKEN: 'session-agent-token', KORTIX_API_URL: `http://127.0.0.1:${stub.port}/v1`, KORTIX_PROJECT_ID: PROJECT_ID, KORTIX_NO_UPDATE_CHECK: '1', KORTIX_DISABLE_SANDBOX_ENV_FILE: '1', NO_COLOR: '1' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const [code, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+      expect(code).toBe(0);
+      const row = stdout.split('\n').find((line) => line.trim().startsWith('mykortix'));
+      expect(row).toContain('My Kortix, built in');
+      expect(row).toContain('default agent');
+      expect(stdout).not.toContain('AGENTS.md');
+      expect(stdout.split('\n').find((line) => line.trim().startsWith('worker'))).toContain('agents/worker.md');
+    } finally {
+      stub.stop(true);
+    }
+  });
+});

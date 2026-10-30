@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { MY_KORTIX_DISPLAY_NAME } from '@kortix/shared';
 import type {
   AgentConfigBlock,
   AgentConfigResponse,
@@ -196,7 +197,9 @@ function renderAgent(
   if (mode && mode !== 'primary') markers.push(mode);
   if (agent.enabled === false) markers.push('disabled');
   const tail = markers.length > 0 ? ` ${C.dim}· ${markers.join(' · ')}${C.reset}` : '';
-  return `  ${pad(agent.name, width)}   ${C.dim}${agent.path}${C.reset}   ${modelText}${tail}\n`;
+  // A built-in agent has no file: say what it is instead of a path.
+  const where = agent.platform ? `${MY_KORTIX_DISPLAY_NAME}, built in` : agent.path;
+  return `  ${pad(agent.name, width)}   ${C.dim}${where}${C.reset}   ${modelText}${tail}\n`;
 }
 
 async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {

@@ -1,5 +1,6 @@
 'use client';
 
+import { MY_KORTIX_AGENT_NAME } from '@kortix/shared';
 import { adminPath } from '../../lib/routes';
 
 /**
@@ -618,7 +619,7 @@ function AgentActions({
               {isDefault ? tI18nComplete.raw('texte8cb80e5c5cb') : tI18nComplete.raw('texte8f43f910a4e')}
             </DropdownMenuItem>
             <DropdownMenuItem disabled={configure.pending} onSelect={() => setConfirm('edit')}>
-              <AgentMark slug="meta" />
+              <AgentMark slug={MY_KORTIX_AGENT_NAME} />
               {t('askToEditAgent')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />

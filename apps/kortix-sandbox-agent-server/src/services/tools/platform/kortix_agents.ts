@@ -58,7 +58,8 @@ async function list(context: PlatformToolContext) {
           title: agent.name,
           ...(agent.description ? { detail: agent.description } : {}),
           ...(agent.enabled === false ? { badge: 'off' } : agent.builtin ? { badge: 'built in' } : {}),
-          href: agentHref(context.env, agent.name),
+          // A built-in agent (My Kortix) has no agent page: the project home starts it.
+          ...(agent.builtin ? {} : { href: agentHref(context.env, agent.name) }),
         })),
       ),
     },
@@ -80,7 +81,7 @@ async function get(name: string, context: PlatformToolContext) {
         title: field,
         detail: show(settings[field])!,
       })),
-      links: [{ label: 'Open agent', href: agentHref(context.env, name) }],
+      ...(read.value.builtin ? {} : { links: [{ label: 'Open agent', href: agentHref(context.env, name) }] }),
     },
     read.value,
   )

@@ -2585,7 +2585,7 @@ describe('project session runtime guards', () => {
     expect([200, 202]).toContain(res.status);
     await flushUntil(() => sandboxProvisionCalls === 1);
     // The rebuilt env must keep the meta runtime — losing it makes the daemon
-    // clone the project over the meta workspace and wipe /workspace/AGENTS.md.
+    // clone the project over My Kortix's empty workspace.
     expect(lastProvisionInput).toMatchObject({
       agentName: 'mykortix',
       extraEnvVars: {
