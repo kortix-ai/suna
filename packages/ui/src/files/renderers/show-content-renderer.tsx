@@ -271,7 +271,7 @@ export interface ShowContentProps {
   type: string;
   title?: string;
   description?: string;
-  path?: string;
+  path?: string | null;
   url?: string;
   content?: string;
   language?: string;
@@ -325,7 +325,7 @@ export function ShowContentRenderer({
   type,
   title = '',
   description = '',
-  path = '',
+  path: inputPath,
   url = '',
   content = '',
   language = '',
@@ -337,6 +337,7 @@ export function ShowContentRenderer({
   onStatusChange,
   toolbarActions,
 }: ShowContentProps) {
+  const path = inputPath ?? '';
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tImageGen = useTranslations('imageGen');
   const arCSS = showAspectRatioToCSS(aspectRatio);

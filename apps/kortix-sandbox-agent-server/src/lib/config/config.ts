@@ -96,10 +96,10 @@ const Schema = z.object({
   // stalls. Kept for remotes where shallow is unavailable.
   KORTIX_CLONE_FILTER: z.string().default(''),
   // ── Harness selection ────────────────────────────────────────────────────
-  // Which agent runtime this session boots: `opencode` (the default, and what
-  // an unset value means) or `pi`. apps/api sets it from the manifest's
-  // `runtime:` field (session-runtime-env.ts). Anything else fails boot loudly
-  // in resolveHarness — a typo must never silently boot the default.
+  // apps/api sets `pi` on every box (session-runtime-env.ts). A box OpenCode
+  // booted before the sunset says `opencode` or nothing and boots pi too
+  // (resolveHarness). Anything else fails boot loudly — a typo must never
+  // silently boot something.
   KORTIX_HARNESS: z.string().default(''),
 })
 

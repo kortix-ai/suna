@@ -16,8 +16,7 @@ Use Bun only when a project requires it.
 
 ## Installed tools
 
-- Node.js, npm, pnpm, Python, uv, Bun, OpenCode, and the `kortix` CLI are on
-  `PATH`.
+- Node.js, npm, pnpm, Python, uv, Bun, and the `kortix` CLI are on `PATH`.
 - Bundled Python tools run on the pre-installed package floor with plain `python3`.
 - `agent-browser` and Chromium are installed for accessing local pages.
 - Git, curl, tmux, ffmpeg, LibreOffice, Pandoc, LaTeX, Poppler, qpdf, and Tesseract are installed.
@@ -43,10 +42,9 @@ it live in the session's **Desktop** panel, streamed from port 6901.
 
 ## Platform-owned binaries
 
-Kortix owns `kortix` and `opencode` on this machine. Both are converged from
-the platform's signed manifest at every session start, and OpenCode's own
-autoupdate is pinned off. `kortix update` is therefore disabled here and exits
-non-zero. Never install either binary from the internet: a copy in
+Kortix owns `kortix` on this machine. It is converged from the platform's
+signed manifest at every session start. `kortix update` is therefore disabled
+here and exits non-zero. Never install it from the internet: a copy in
 `~/.local/bin` comes first on `PATH`, shadows the managed one, points at the
 public API, and the platform cannot heal it. To move to a newer CLI, restart
 the session.

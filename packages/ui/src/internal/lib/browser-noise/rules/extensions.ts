@@ -33,6 +33,9 @@ const EXTENSION_PROTOCOL_PREFIXES = [
 
 const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/scripts\/inpage\.js$/,
+  // Injected extension content script; KRTX-3704's onMessage TypeError has
+  // only this source, never a first-party _next bundle or resolved source.
+  /^app:\/\/\/js\/content\.js$/,
   // CookieYes (https://www.cookieyes.com) cookie-consent SDK runtime, served
   // from its own CDN workspace directory
   // `https://cdn-cookieyes.com/client_data/<workspace-id>/…`: `script.js` is

@@ -4,10 +4,10 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
-import type { Opencode } from '@/harness/open-code/lifecycle'
+import type { Config } from '@/lib/config/config'
+import { buildDaemonApp } from '@/app/server'
 import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
-import { buildOpenCodeTestApp } from './helpers/open-code-harness'
+import { fakeHarness } from './helpers/daemon-test-app'
 import { logger } from '@/lib/log/logger'
 
 const TOKEN = 'import-test-token'
@@ -35,15 +35,12 @@ function assertImportFailureWarning(response: Response) {
 function config(overrides: Partial<Config> = {}): Config {
   return {
     servicePort: 8000,
-    opencodeInternalPort: 4096,
-    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace,
     projectTarget: workspace,
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,
-    defaultOpencodeConfigDir: '/ephemeral/opencode',
     autoClone: false,
     projectId: '33333333-3333-4333-8333-333333333333',
     apiUrl: 'http://api.test',
@@ -60,14 +57,9 @@ function config(overrides: Partial<Config> = {}): Config {
   }
 }
 
-function opencode(): Opencode {
-  return {
-    getState: () => 'ok',
-    getPid: () => 1,
-    getActivePort: () => 4096,
-    getInternalUrl: () => 'http://127.0.0.1:1',
-    restart: async () => {},
-  } as unknown as Opencode
+/** The import route is the daemon's own: the fake harness throws if it is reached. */
+function buildApp(cfg: Config) {
+  return buildDaemonApp(cfg, fakeHarness(), Date.now())
 }
 
 function b64url(value: string | Buffer): string {
@@ -109,7 +101,7 @@ function descriptor(downloadUrl = 'http://storage.test/signed?token=secret') {
   }
 }
 
-function request(app: ReturnType<typeof buildOpenCodeTestApp>, body: Record<string, unknown>) {
+function request(app: ReturnType<typeof buildApp>, body: Record<string, unknown>) {
   return app.request('http://daemon.test/file/import', {
     method: 'POST',
     headers: {
@@ -190,7 +182,7 @@ describe('POST /file/import', () => {
     // of wall time, succeeded or not (app/slow-request.ts): on a loaded box a
     // passing import logs it too. The timing is the box\'s, not an unasserted
     // warning of this suite — the gate below must exempt exactly that line.
-    const app = buildOpenCodeTestApp(config(), opencode(), Date.now())
+    const app = buildApp(config())
     globalThis.fetch = Object.assign(
       async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
         const url = String(input)
@@ -229,7 +221,7 @@ describe('POST /file/import', () => {
       },
       { preconnect: originalFetch.preconnect },
     )
-    const app = buildOpenCodeTestApp(config(), opencode(), Date.now())
+    const app = buildApp(config())
 
     const response = await request(app, {
       command_id: COMMAND_ID,
@@ -267,7 +259,7 @@ describe('POST /file/import', () => {
             : new Response(bytes),
         { preconnect: originalFetch.preconnect },
       )
-      const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
+      const response = await request(buildApp(config()), {
         command_id: COMMAND_ID,
         attachment_id: ATTACHMENT_ID,
         part_index: 0,
@@ -303,7 +295,7 @@ describe('POST /file/import', () => {
         { preconnect: originalFetch.preconnect },
       )
 
-      const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
+      const response = await request(buildApp(config()), {
         command_id: COMMAND_ID,
         attachment_id: ATTACHMENT_ID,
         part_index: 0,
@@ -323,7 +315,7 @@ describe('POST /file/import', () => {
       calls += 1
       return Response.json(descriptor())
     }, { preconnect: originalFetch.preconnect })
-    const app = buildOpenCodeTestApp(config(), opencode(), Date.now())
+    const app = buildApp(config())
 
     for (const key of ['url', 'target_path', 'headers', 'filename', 'mime', 'size', 'sha256']) {
       const response = await request(app, {
@@ -354,7 +346,7 @@ describe('POST /file/import', () => {
           : new Response(bytes),
       { preconnect: originalFetch.preconnect },
     )
-    const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
+    const response = await request(buildApp(config()), {
       command_id: COMMAND_ID,
       attachment_id: ATTACHMENT_ID,
       part_index: 0,
@@ -380,7 +372,7 @@ describe('POST /file/import', () => {
         },
         { preconnect: originalFetch.preconnect },
       )
-      const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
+      const response = await request(buildApp(config()), {
         command_id: COMMAND_ID,
         attachment_id: ATTACHMENT_ID,
         part_index: 0,
@@ -406,7 +398,7 @@ describe('POST /file/import', () => {
         },
         { preconnect: originalFetch.preconnect },
       )
-      const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
+      const response = await request(buildApp(config()), {
         command_id: COMMAND_ID,
         attachment_id: ATTACHMENT_ID,
         part_index: 0,
@@ -436,7 +428,7 @@ describe('POST /file/import', () => {
           String(input).startsWith('http://api.test/') ? Response.json(descriptor()) : download,
         { preconnect: originalFetch.preconnect },
       )
-      const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
+      const response = await request(buildApp(config()), {
         command_id: COMMAND_ID,
         attachment_id: ATTACHMENT_ID,
         part_index: 0,
@@ -460,7 +452,7 @@ describe('POST /file/import', () => {
       },
       { preconnect: originalFetch.preconnect },
     )
-    const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
+    const response = await request(buildApp(config()), {
       command_id: COMMAND_ID,
       attachment_id: ATTACHMENT_ID,
       part_index: 0,
@@ -480,7 +472,7 @@ describe('POST /file/import', () => {
       },
       { preconnect: originalFetch.preconnect },
     )
-    const app = buildOpenCodeTestApp(config({ apiUrl: 'https://api.test/v1' }), opencode(), Date.now())
+    const app = buildApp(config({ apiUrl: 'https://api.test/v1' }))
     const response = await request(app, {
       command_id: COMMAND_ID,
       attachment_id: ATTACHMENT_ID,
@@ -506,7 +498,7 @@ describe('POST /file/import', () => {
             : new Response(bytes),
         { preconnect: originalFetch.preconnect },
       )
-      const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
+      const response = await request(buildApp(config()), {
         command_id: COMMAND_ID,
         attachment_id: ATTACHMENT_ID,
         part_index: 0,
@@ -533,7 +525,7 @@ describe('POST /file/import', () => {
               : new Response(bytes),
           { preconnect: originalFetch.preconnect },
         )
-        const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
+        const response = await request(buildApp(config()), {
           command_id: COMMAND_ID,
           attachment_id: ATTACHMENT_ID,
           part_index: 0,

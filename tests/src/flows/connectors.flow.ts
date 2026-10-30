@@ -2470,7 +2470,11 @@ flow(
 //      a declared connector with no credential answers `connector_not_connected`
 //      and lists as `needs_auth`;
 //   5. the turn-stream relay says WHY a step was not relayed;
-//   6. ten consecutive calls after a mid-session connector add keep the grant.
+//   6. ten consecutive calls after a mid-session connector add keep the grant;
+//   7. a Telegram send reaches any chat until a Telegram chat binds the
+//      session, then only that chat (`conversation_not_in_project`), from the
+//      session and from a session it started; an argument the action does not
+//      declare is refused (`invalid_args`).
 flow(
   'CONN-27',
   {
@@ -2517,8 +2521,11 @@ flow(
     });
 
     const sessionId = randomUUID();
+    // A session the fixture session starts (`spawned_by_session`).
+    const childSessionId = randomUUID();
     const openapiSlug = `ke2e-openapi-${Date.now().toString(36)}`;
     let tokenId: string | null = null;
+    let childTokenId: string | null = null;
     let session = ctx.client;
     const call = (connector: string, action: string) =>
       session.post(
@@ -2677,6 +2684,135 @@ flow(
       );
 
       await ctx.step(
+        'a Telegram send reaches any chat while no Telegram chat is bound to the session, only the bound chat after a bind (from the session and from a session it started, and in the chat a reply quotes), and never with an argument the action does not declare',
+        async () => {
+          const connector = await db.query<{ connector_id: string }>(
+            `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+             VALUES ($1, $2, 'kortix_telegram', 'Telegram', 'channel', $3::jsonb, 'active') RETURNING connector_id`,
+            [team.id, p.id, JSON.stringify({ platform: 'telegram' })],
+          );
+          await db.query(
+            `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+             VALUES ($1, $2, $3, 'project', 'Telegram', 'active', true, $4::jsonb)`,
+            [team.id, p.id, connector.rows[0]?.connector_id, JSON.stringify({ provider: 'channel', connector_slug: 'kortix_telegram' })],
+          );
+          await db.query(
+            `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+             VALUES ($1, 'send_message', 'Send message', null, $2::jsonb, 'write', $3::jsonb)`,
+            [
+              connector.rows[0]?.connector_id,
+              JSON.stringify({ type: 'object', properties: { chat_id: { type: 'string' }, text: { type: 'string' } }, required: ['chat_id', 'text'] }),
+              JSON.stringify({ kind: 'http', method: 'POST', path: '/sendMessage' }),
+            ],
+          );
+          // The bot on record makes the account a connected one.
+          const bot = `ke2e-bot-${sessionId.slice(0, 8)}`;
+          await db.query(`INSERT INTO kortix.chat_installs (platform, workspace_id, project_id) VALUES ('telegram', $1, $2)`, [
+            bot,
+            p.id,
+          ]);
+          const send = (chatId: number, extra: Record<string, unknown> = {}) =>
+            session.post(
+              '/v1/connectors/projects/:projectId/call',
+              { connector: 'kortix_telegram', action: 'send_message', args: { chat_id: chatId, text: 'ke2e', ...extra } },
+              { params: { projectId: p.id }, timeoutMs: 60_000 },
+            );
+          // The seeded connector has no base URL: a send that passes every
+          // check, the chat check included, fails building its request, and
+          // nothing reaches Telegram.
+          const passedEveryCheck = (r: Awaited<ReturnType<typeof send>>) =>
+            r.status(500).body().has('$.status', 'error').has('$.reason', 'http connector has no base_url');
+          passedEveryCheck(await send(444555666));
+          // A forum topic of a group binds the session, as a reminder's successor adopts its chat.
+          await db.query(
+            `INSERT INTO kortix.chat_threads (project_id, platform, workspace_id, thread_id, session_id)
+             VALUES ($1, 'telegram', $2, '-100777888:42', $3)`,
+            [p.id, bot, sessionId],
+          );
+          const other = await send(444555666);
+          other
+            .status(403)
+            .body()
+            .has('$.ok', false)
+            .has('$.status', 'denied')
+            .has('$.reason', 'conversation_not_in_project')
+            .has(
+              '$.message',
+              'This session answers Telegram chat -100777888 only. It does not send to, edit or delete messages in other chats.',
+            );
+          passedEveryCheck(await send(-100777888));
+          // A reply that quotes a message of another chat is a write there too.
+          (await send(-100777888, { reply_parameters: { chat_id: 444555666, message_id: 5 } }))
+            .status(403)
+            .body()
+            .has('$.reason', 'conversation_not_in_project')
+            .has(
+              '$.message',
+              'This session answers Telegram chat -100777888 only. It does not send to, edit or delete messages in other chats.',
+            );
+          // A session this one starts answers the same chat: its own
+          // session-bound token reaches the bound chat and no other.
+          const childMinted = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', {
+            name: `CONN-27 child ${childSessionId.slice(0, 8)}`,
+          });
+          childMinted.status(201);
+          const childCredential = childMinted.json<{ token_id: string; secret_key: string }>();
+          childTokenId = childCredential.token_id;
+          await db.query(
+            `INSERT INTO kortix.project_sessions
+               (session_id, account_id, project_id, branch_name, agent_name, status, metadata, created_by, visibility)
+             VALUES ($1, $2, $3, $6, 'kortix', 'running', $4::jsonb, $5, 'project')`,
+            [
+              childSessionId,
+              team.id,
+              p.id,
+              JSON.stringify({ source: 'agent', spawned_by_session: sessionId }),
+              ownerUserId,
+              `session/${childSessionId}`,
+            ],
+          );
+          await db.query(
+            `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+             VALUES ($1::uuid, $1, $2, $3, 'active')`,
+            [childSessionId, team.id, p.id],
+          );
+          await db.query(
+            `UPDATE kortix.account_tokens SET account_id = $2, user_id = $3, project_id = $4, session_id = $5 WHERE token_id = $1`,
+            [childTokenId, team.id, ownerUserId, p.id, childSessionId],
+          );
+          const child = ctx.client.withBearer(childCredential.secret_key, 'SESSION_TOKEN');
+          const childSend = (chatId: number) =>
+            child.post(
+              '/v1/connectors/projects/:projectId/call',
+              { connector: 'kortix_telegram', action: 'send_message', args: { chat_id: chatId, text: 'ke2e' } },
+              { params: { projectId: p.id }, timeoutMs: 60_000 },
+            );
+          (await childSend(444555666))
+            .status(403)
+            .body()
+            .has('$.reason', 'conversation_not_in_project')
+            .has(
+              '$.message',
+              'This session answers Telegram chat -100777888 only. It does not send to, edit or delete messages in other chats.',
+            );
+          passedEveryCheck(await childSend(-100777888));
+          // `body` would replace the request the chat check read: an argument
+          // the action does not declare is refused before every check.
+          const overridden = await send(-100777888, { body: { chat_id: 444555666, text: 'ke2e' } });
+          overridden
+            .status(400)
+            .body()
+            .has('$.ok', false)
+            .has('$.status', 'denied')
+            .has('$.reason', 'invalid_args')
+            .has(
+              '$.message',
+              'send_message takes no argument "body". It takes chat_id, text, reply_parameters, message_thread_id, parse_mode, reply_markup.',
+            );
+        },
+      );
+
+      await ctx.step(
         'narrowing the agent in kortix.yaml applies on the next call, and the denial names agent, grant and manifest',
         async () => {
           const put = await ctx.client.as(ctx.P.OWNER).put(
@@ -2818,13 +2954,13 @@ flow(
       );
     } finally {
       await db
-        .query(`DELETE FROM kortix.account_tokens WHERE token_id = $1`, [tokenId])
+        .query(`DELETE FROM kortix.account_tokens WHERE token_id::text = ANY($1::text[])`, [[tokenId, childTokenId].filter(Boolean)])
         .catch(() => undefined);
       await db
-        .query(`DELETE FROM kortix.session_sandboxes WHERE session_id = $1`, [sessionId])
+        .query(`DELETE FROM kortix.session_sandboxes WHERE session_id::text = ANY($1::text[])`, [[sessionId, childSessionId]])
         .catch(() => undefined);
       await db
-        .query(`DELETE FROM kortix.project_sessions WHERE session_id = $1`, [sessionId])
+        .query(`DELETE FROM kortix.project_sessions WHERE session_id::text = ANY($1::text[])`, [[sessionId, childSessionId]])
         .catch(() => undefined);
       await db.end().catch(() => undefined);
     }

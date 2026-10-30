@@ -3072,7 +3072,7 @@
       "count": 2
     },
     "no-restricted-properties": {
-      "count": 11
+      "count": 9
     }
   },
   "src/snapshots/builder-log.ts": {
@@ -3148,7 +3148,7 @@
   },
   "src/snapshots/template-runtime-fingerprint.ts": {
     "no-restricted-properties": {
-      "count": 4
+      "count": 3
     }
   },
   "src/snapshots/templates.ts": {

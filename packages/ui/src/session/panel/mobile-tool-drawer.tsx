@@ -20,6 +20,8 @@
 
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '../../primitives/drawer';
 import { BrowserPanel } from '../../browser/browser-panel';
+import { ArtifactPanelPreview } from '../../artifacts/artifact-session';
+import { parseArtifactUrl } from '../../artifacts/frame-policy';
 import { CloseButton } from './easy/detail-view';
 import { SessionAuditPanel } from './session-audit-panel';
 import { SessionRemindersPanel } from './session-reminders-panel';
@@ -60,13 +62,15 @@ export function MobileToolDrawer({
   projectSessionId?: string;
 }) {
   const view = useKortixComputerStore((s) => s.mobileToolView);
+  const target = useKortixComputerStore((s) => s.mobileToolTarget);
   const closeMobileTool = useKortixComputerStore((s) => s.closeMobileTool);
   const toolMeta = useLocalizedUiCatalog(TOOL_META);
   const meta = view ? toolMeta[view] : null;
+  const artifactUrl = view === 'browser' && target?.url && parseArtifactUrl(target.url) ? target.url : null;
   // Terminal, Browser and Files need the computer: while it boots, the drawer
   // shows the wake status in their place.
   const booting =
-    !!useOptionalSessionPanel()?.booting &&
+    !!useOptionalSessionPanel()?.booting && !artifactUrl &&
     (view === 'terminal' || view === 'browser' || view === 'files' || view === 'desktop');
 
   return (
@@ -90,11 +94,13 @@ export function MobileToolDrawer({
               projectSessionId={projectSessionId}
             />
           )}
-          {!booting && view === 'browser' && (
+          {artifactUrl && <ArtifactPanelPreview key={artifactUrl} url={artifactUrl} onClose={closeMobileTool} />}
+          {!booting && view === 'browser' && !artifactUrl && (
             <BrowserPanel
               tabId={sessionPreviewTabId(sessionId)}
               projectId={projectId}
               projectSessionId={projectSessionId}
+              targetUrl={target?.url}
             />
           )}
           {!booting && view === 'files' && (

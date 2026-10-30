@@ -160,10 +160,11 @@ export const BUBBLE_SURFACE = cn(
 
 /**
  * Where a channel message came from, in the pill's hover card: the platform,
- * the channel or chat it was posted in, and who posted it. A Slack prompt
- * written before channel names were recorded carries a bare id (`C0DEV`); the
- * project's Slack bindings name it, read only while this card is open. A Teams
- * conversation id names nothing a person reads, so Teams shows no channel row.
+ * the channel or chat it was posted in (an email's subject, labelled Subject),
+ * and who posted it. A Slack prompt written before channel names were recorded
+ * carries a bare id (`C0DEV`); the project's Slack bindings name it, read only
+ * while this card is open. A Teams conversation id names nothing a person
+ * reads, so Teams shows no channel row.
  */
 export function ChannelOrigin({ info, platform }: { info: ChannelMessageInfo; platform: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -174,12 +175,13 @@ export function ChannelOrigin({ info, platform }: { info: ChannelMessageInfo; pl
     ? data?.bindings.find((b) => b.platform === 'slack' && b.channelId === info.context)
     : undefined;
   const channel = info.platform === 'Teams' ? '' : (binding && slackConversationName(binding)) || info.context;
+  const place = info.platform === 'Email' ? tI18nComplete('text68971283841a') : tI18nComplete('textce4683e7013a');
   return (
     <SourceCard
       mark={<ChannelBrandMark platform={info.platform} className="size-3.5 shrink-0" />}
       title={platform}
       rows={[
-        { label: tI18nComplete('textce4683e7013a'), value: channel },
+        { label: place, value: channel },
         { label: tI18nComplete('text218197693424'), value: info.userName },
       ]}
     />

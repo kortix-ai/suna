@@ -9,7 +9,7 @@ import { auth, errors, json } from '../../openapi';
 import { canonicalConnectorAlias } from '../../projects/lib/session-connector-bindings';
 import { ATTACHMENT_REF_KEY } from '../attachment-inline';
 import { MAX_CONNECTOR_ATTACHMENT_BYTES, type StageConnectorAttachmentInput } from '../attachments';
-import { handleCall } from '../gateway';
+import { INVALID_ARGS, handleCall } from '../gateway';
 import {
   type ConnectorDenialReason,
   callPolicySetOf,
@@ -323,7 +323,9 @@ const callResponse = async (deps: ConnectorRouterDeps, c: any, p: ConnectorPrinc
             },
         result.reason === 'connector_not_found' || result.reason === 'action_not_found'
           ? 404
-          : 403,
+          : result.reason === INVALID_ARGS
+            ? 400
+            : 403,
       );
     }
     default: {

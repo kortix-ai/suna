@@ -1872,6 +1872,9 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
     // Unchanged, and load-bearing: `findReusableTriggerSession` skips failed
     // sessions, so the next fire of a `session_mode: "reuse"` trigger creates a
     // fresh one instead of re-aiming at a wedged session.
+    await db.execute(sql`
+      INSERT INTO kortix.project_trigger_runtime (project_id, slug, last_status, updated_at)
+      VALUES (${PROJECT_ID}::uuid, 'daily-digest', 'queued', now())`);
     const automation = await enqueueAutomationPrompt('trigger prompt');
     const paged: Array<Record<string, unknown>> = [];
     const { error } = logger;

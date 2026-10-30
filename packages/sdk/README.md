@@ -639,6 +639,7 @@ Send to agent to deliver an edited request.
 `ArtifactCommentMention` identifies a person (`kind: 'user', user_id`), an
 existing session (`kind: 'session', session_id, agent_name`), or a project agent
 (`kind: 'agent', agent_name`). Comments return the server-resolved mentions.
+Agent and session mentions can include their literal `token` for display without agent-run permission.
 
 `useArtifactComments(projectId, artifactId, { status?, enabled? })` returns the
 thread query and `create`, `reply`, `setStatus`, `edit`, `remove`, and `send` writes.
@@ -646,6 +647,33 @@ Each successful write refetches mounted Comments and Activity queries.
 `useArtifactActivity(projectId, artifactId, { limit?, cursor?, enabled? })`
 returns one activity page. Both hooks poll every 10 seconds while mounted and
 visible. A missing project or Artifact id disables reads.
+
+`getArtifactCommentContext(projectId, artifactId, { version?, agent? })` returns
+the current action permissions, literal mention insertion tokens, eligible
+`send_thread_ids` (at most 100), the total eligible `send_thread_count`, and
+the proposed session or new-session target. Hosts show the bounded batch
+and total when more threads remain. A successful Send refreshes the next batch.
+Hosts use
+that response to label Send before it runs. They do not infer the target from
+the Artifact creator or from `created` on a previous handoff.
+
+`readArtifactCommentSnapshot(projectId, artifactId, { version? })` reads the
+context's immutable Files commit and its Markdown. It returns `{ version,
+text }`. An entry ETag is a separate value. A missing saved commit rejects
+with `artifact_comment_snapshot_unavailable`. The project facade exposes
+these readers as `.artifacts.comments.context` and `.snapshot`.
+
+`listArtifactComments` and `useArtifactComments` accept `version` for a
+historical Files commit. Returned action permissions are false for that view.
+The historical hook also rejects writes before making an HTTP request.
+
+`useArtifactCommentContext` shares the comments cache prefix, so every comment
+write refreshes its count, permissions, and Send target. For a complete
+timeline, `useInfiniteArtifactActivity(projectId, artifactId, { limit?, enabled? })`
+owns cursor pages and exposes ordered, deduplicated `items`, `olderVersions`,
+`fetchNextPage`, and the query status. Hosts render those items without keeping
+a second copy of activity pages. Its mounted polling and write invalidation
+match the one-page hook.
 
 ## The facade surface
 

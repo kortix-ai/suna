@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
-import { OPENCODE_VERSION, VOXL_SHA256_AMD64, VOXL_SHA256_ARM64 } from '../../runtime-versions';
+import { VOXL_SHA256_AMD64, VOXL_SHA256_ARM64 } from '../../runtime-versions';
 import {
   KORTIX_LOGO_PATHS,
   KORTIX_SYMBOL_PATH,
@@ -19,7 +19,7 @@ const repoFile = (path: string) =>
 const IMAGES = [
   {
     label: 'standard layer (platform default + custom templates)',
-    dockerfile: kortixToolchainLayer({ opencodeVersion: OPENCODE_VERSION }),
+    dockerfile: kortixToolchainLayer({}),
   },
   { label: 'apps/sandbox/Dockerfile', dockerfile: repoFile('apps/sandbox/Dockerfile') },
 ];

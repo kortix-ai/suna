@@ -72,6 +72,8 @@ let quickQueueControlRequests: Array<{ url: string; method: string; body: Record
 /** When set, the daemon never answers the interrupt arm — the wedged-box case. */
 let quickQueueArmFails = false;
 let capturedKeys: string[] = [];
+/** The source each prompt POST asked the proxy to record on its turn. */
+let capturedSources: Array<string | undefined> = [];
 const seenKeys = new Set<string>();
 let succeededCalls: Array<{ commandId: string; result: unknown }> = [];
 // A delivered row that carries a wire id no longer closes — it stays OPEN as
@@ -230,6 +232,10 @@ mock.module('../../../sandbox-proxy/forward', () => ({
     query: string,
     _headers: Headers,
     body?: ArrayBuffer,
+    _origin?: string,
+    _redirectPrefix?: string,
+    _publicOrigin?: string,
+    opts?: { promptSource?: string },
   ) => {
     const messageMatch = /\/message\/([^/]+)$/.exec(path);
     if (method === 'GET' && messageMatch) {
@@ -273,6 +279,7 @@ mock.module('../../../sandbox-proxy/forward', () => ({
         return Response.json({ status: 'duplicate', deduplicated: true });
       }
       capturedBodies.push(JSON.parse(new TextDecoder().decode(body)));
+      capturedSources.push(opts?.promptSource);
       // The claim outlives only a delivery the daemon ACCEPTED: a 5xx is
       // provable non-delivery and the real proxy releases it, so a retry under
       // the same key after a 500 is forwarded again, not deduped.
@@ -418,12 +425,12 @@ mock.module('../../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
 
-// The wake path converges the box before every delivery (continue-session.ts
-// `continueSession`): it reads the service key and ingress and calls
-// `syncSandboxEnvForPrompt`. The order of that sync is proven in
-// continue-session-runtime-env.test.ts; this file records whether it ran.
+// The proxy converges the box before every delivery. The wake path pushes an
+// `opencodeEnv` override itself (deliver.ts): it reads the service key and
+// ingress and calls `syncSandboxEnvForPrompt`; this file records whether it ran.
 let serviceKeyAvailable = true;
 let envSyncCalls = 0;
+const ENV_OVERRIDE = { KORTIX_TEST_OVERRIDE: '1' };
 mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => (serviceKeyAvailable ? 'svc-key-1' : null),
 }));
@@ -579,6 +586,7 @@ beforeEach(() => {
   quickQueueControlRequests = [];
   quickQueueArmFails = false;
   capturedKeys = [];
+  capturedSources = [];
   seenKeys.clear();
   succeededCalls = [];
   forwardedCalls = [];
@@ -640,6 +648,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       { delivery: 'delivered', setup: () => {}, result: 'succeeded', write: 'succeeded', reason: null, retryable: null },
       { delivery: 'unreachable', setup: () => { sessionRow!.status = 'failed'; }, result: 'queued', write: 'parked', reason: "the session's machine could not be reached", retryable: null },
       { delivery: 'not-landed', setup: () => { runtimeDropsFirstDelivery = true; }, result: 'queued', write: 'requeued', reason: 'prompt accepted by the runtime but never became a message', retryable: null },
+      // An override the box cannot be given (no service key) waits for the next attempt.
       { delivery: 'pending', setup: () => { serviceKeyAvailable = false; }, result: 'queued', write: 'failed', reason: 'the session was not ready in time', retryable: true },
       { delivery: 'no-session', setup: () => { sessionRow = null; }, result: 'failed', write: 'failed', reason: 'that session no longer exists', retryable: false },
       { delivery: 'failed', setup: () => { promptResponsePlan = ['permanent-refusal']; }, result: 'failed', write: 'failed', reason: 'The runtime rejected this prompt.', retryable: false },
@@ -649,6 +658,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       expect(await executeQueuedContinue(baseRow({ payload: {
         text: scenario.delivery === 'not-landed' ? OVER_EDGE_TEXT : 'say hi',
         ...(scenario.delivery === 'not-landed' ? { wireMessageId: SUBMITTED_WIRE_ID } : {}),
+        ...(scenario.delivery === 'pending' ? { opencodeEnv: ENV_OVERRIDE } : {}),
       } }))).toBe(scenario.result);
       expect({
         succeeded: succeededCalls.length,
@@ -671,6 +681,10 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       seenKeys.clear();
     }
   });
+  test("the prompt POST asks the proxy to record the row's source on the turn it starts", async () => {
+    expect(await executeQueuedContinue(baseRow({ source: 'trigger:reminder' }))).toBe('succeeded');
+    expect(capturedSources).toEqual(['trigger:reminder']);
+  });
   // A conversation with people opens with the asking agent's message: it joins
   // the transcript and starts no turn — the people answer it.
   test('a prompt stamped noReply goes out noReply and records it', async () => {
@@ -680,13 +694,19 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies[0]!.noReply).toBe(true);
     expect(forwardedCalls[0]!.noReply).toBe(true);
   });
-  // A box whose env cannot be converged would run the prompt against a stale
-  // gateway URL, stale secrets and a stale model catalog. It waits instead.
-  test('a box whose service key cannot be read is not delivered blind — the prompt stays queued', async () => {
+  // The proxy never sees an `opencodeEnv` override, so a box that cannot be
+  // given it would run the prompt without it. It waits instead.
+  test('an env override onto a box whose service key cannot be read is not delivered blind — the prompt stays queued', async () => {
     serviceKeyAvailable = false;
-    expect(await executeQueuedContinue(baseRow())).toBe('queued');
+    expect(await executeQueuedContinue(baseRow({ payload: { text: 'say hi', opencodeEnv: ENV_OVERRIDE } }))).toBe('queued');
     expect(envSyncCalls).toBe(0);
     expect(capturedBodies).toHaveLength(0);
+  });
+
+  test('an ordinary prompt onto a woken box leaves the env push to the proxy', async () => {
+    expect(await executeQueuedContinue(baseRow())).toBe('succeeded');
+    expect(envSyncCalls).toBe(0);
+    expect(capturedBodies).toHaveLength(1);
   });
 
   test('a direct follow-up (a question answer, a channel reply) goes into a live turn instead of waiting behind it', async () => {
@@ -1914,7 +1934,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
   const releasedRow = (
     name: 'a' | 'b' | 'c' | 'd',
     clientSentAtMs: number,
-    extra: { releasedBatchId?: string; result?: Record<string, unknown> } = {},
+    extra: { releasedBatchId?: string; result?: Record<string, unknown>; opencodeEnv?: Record<string, string> } = {},
   ) =>
     baseRow({
       commandId: `cmd-${name}`,
@@ -1930,6 +1950,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
         // No `remintOnDelivery`: a batch row re-mints at delivery because it
         // is a batch row (`placeQueuedContinue`), even the send that never waited.
         ...(extra.releasedBatchId ? { releasedBatchId: extra.releasedBatchId } : {}),
+        ...(extra.opencodeEnv ? { opencodeEnv: extra.opencodeEnv } : {}),
       },
     });
   /** What a row looks like when the chain's wake claims it after the lane put
@@ -2106,7 +2127,8 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     targetedClaims.set('queue-c', [c]);
     siblingSweeps = [[a, b], [releasedRow('c', NOW_MS - 7 * 60_000, { releasedBatchId: 'b1', ...waited })]];
     promotionResults = ['queue-b'];
-    targetedClaims.set('queue-b', [releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1', ...waited })]);
+    // B carries an env override, which the wake path must push itself.
+    targetedClaims.set('queue-b', [releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1', opencodeEnv: ENV_OVERRIDE, ...waited })]);
     releasedPending = [a, b, c];
     // The box stops answering between A and B: B's delivery ends retryable.
     onPromotion = () => {

@@ -113,8 +113,8 @@ export type ArtifactCommentAuthor =
 
 export type ArtifactCommentMention =
   | { kind: 'user'; user_id: string }
-  | { kind: 'session'; session_id: string; agent_name: string }
-  | { kind: 'agent'; agent_name: string };
+  | { kind: 'session'; session_id: string; agent_name: string; token?: string }
+  | { kind: 'agent'; agent_name: string; token?: string };
 
 export type ArtifactCommentAnchor =
   | { type: 'none'; version: string }
@@ -141,6 +141,9 @@ export interface ArtifactComment {
   created_at: string;
   edited_at: string | null;
   deleted_at: string | null;
+  /** Authoritative action permissions; absent from older APIs. */
+  can_edit?: boolean;
+  can_delete?: boolean;
 }
 
 export interface ArtifactCommentThread {
@@ -165,6 +168,28 @@ export interface ArtifactCommentThread {
   comments: ArtifactComment[];
   outdated: boolean;
   position: { start: number; end: number } | null;
+  /** Historical reads return false for both actions. Absent from older APIs. */
+  can_reply?: boolean;
+  can_resolve?: boolean;
+}
+
+export interface ArtifactCommentContext {
+  can_comment: boolean;
+  can_moderate: boolean;
+  comment_count: number;
+  /** Total eligible threads. One Send request contains at most the first 100 IDs. */
+  send_thread_count: number;
+  send_thread_ids: string[];
+  people: Array<{ user_id: string; name: string; avatar_url: string | null; token: string }>;
+  agents: Array<{ agent_name: string; name: string; session_id: string | null; token: string }>;
+  send_target: { kind: 'session' | 'new'; session_id: string | null; agent_name: string } | null;
+  version: { commit_id: string | null; entry_version: string | null };
+}
+
+export interface ArtifactCommentSnapshot {
+  /** Immutable Files history commit, distinct from an entry ETag. */
+  version: string;
+  text: string;
 }
 
 export interface CreateArtifactCommentInput {
@@ -255,8 +280,21 @@ export interface UpdateArtifactInput extends ArtifactBindingInput {
 
 const base = (projectId: string) => `/projects/${projectId}/artifacts`;
 
-export async function listArtifactComments(projectId: string, artifactId: string, options: { status?: ArtifactCommentStatus | 'all' } = {}) {
+export async function listArtifactComments(projectId: string, artifactId: string, options: { status?: ArtifactCommentStatus | 'all'; version?: string } = {}) {
   return unwrap(await backendApi.get<{ threads: ArtifactCommentThread[] }>(`${base(projectId)}/${artifactId}/comments${query(options)}`)).threads;
+}
+
+/** Current permissions, literal mention tokens, and the proposed Send target. Historical contexts are read-only. */
+export async function getArtifactCommentContext(projectId: string, artifactId: string, options: { version?: string; agent?: string } = {}) {
+  return unwrap(await backendApi.get<ArtifactCommentContext>(`${base(projectId)}/${artifactId}/comments/context${query(options)}`));
+}
+
+/** Read the exact saved text a selection anchor identifies. Never substitutes an entry ETag for its commit. */
+export async function readArtifactCommentSnapshot(projectId: string, artifactId: string, options: { version?: string } = {}): Promise<ArtifactCommentSnapshot> {
+  const context = await getArtifactCommentContext(projectId, artifactId, options);
+  const version = context.version.commit_id;
+  if (!version) throw new ApiError('The Artifact has no saved comment version', { status: 404, code: 'artifact_comment_snapshot_unavailable' });
+  return { version, text: await (await readArtifactFile(projectId, artifactId, { version })).text() };
 }
 
 /** Resolve a thread id without scanning a project's Artifacts. Visibility still applies. */

@@ -35,6 +35,7 @@ import {
   runtimeTruthReport,
   startRuntimeTruthTicker,
   type RuntimeTruthComponent,
+  type RuntimeTruthConfigReleaseState,
 } from '@/services/runtime-assets/runtime-truth'
 import {
   noteRuntimeConvergence,
@@ -43,23 +44,23 @@ import {
   registerHarnessAssets,
   resetHarnessAssetsForTests,
 } from '@/services/runtime-assets/runtime-assets'
-import {
-  configReleaseReport,
-  resetConfigReleaseStateForTests,
-  setRunningConfig,
-} from '@/harness/open-code/config-release'
 import { resolveHarness } from '@/harness/harness'
 
 // Production registers this lookup in main.ts before anything runs.
 beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))
 afterAll(() => resetHarnessAssetsForTests())
 
+/** The running release the harness reports (pi: `harness.releases.report()`), as a test sets it. */
+const NO_RELEASE: RuntimeTruthConfigReleaseState = { release_id: null, desired_release_id: null, source: 'workspace', proven: false, fallback_reason: null }
+let running: RuntimeTruthConfigReleaseState = { ...NO_RELEASE }
+const setRunningConfig = (next: Partial<RuntimeTruthConfigReleaseState>) => { running = { ...running, ...next } }
+const resetConfigReleaseStateForTests = () => { running = { ...NO_RELEASE } }
+const configReleaseReport = (): RuntimeTruthConfigReleaseState => ({ ...running })
+
 /**
- * The fake wiring `harness/open-code/runtime-truth-glue.ts` would
- * install on a real box. Test files are exempt from the boundary lint
- * (eslint.config.mjs), so this can import the real config-release module
- * directly — the point is to prove `runReconcileTick` reads whatever the
- * closure reports, not to re-mock it.
+ * The wiring a harness boot installs on a real box, with only the config
+ * release live: the point is to prove `runReconcileTick` reads whatever the
+ * closure reports.
  */
 function wireConfigReleaseOnly(): void {
   configureRuntimeTruth({
@@ -287,12 +288,11 @@ describe('runtime-truth: end-to-end tick, driving the real owner modules (integr
   })
 
   test('failure #1 healed: a pass that could not reach the managed lineup, THEN one that could, converges catalog from attempted to current across two ticks — no new session', async () => {
-    // Tick 1: opencode has built a config (bundled ids), but the live fetch
+    // Tick 1: the harness has built a config (bundled ids), but the live fetch
     // never succeeded — exactly the 2026-09-26 incident.
     const first = await runReconcileTick('boot')
-    // No deps configured in this unit test (no real opencode/cfg) -> the
-    // catalog signal for THIS component is driven by whatever the real
-    // lifecycle module answers, which with no config built yet is `unknown`.
+    // No deps configured in this unit test (no real harness/cfg) -> the
+    // catalog signal for THIS component is `unknown`.
     expect(first.components.catalog.state).toBe('unknown')
   })
 
@@ -328,7 +328,7 @@ describe('runtime-truth: end-to-end tick, driving the real owner modules (integr
 
   test('config release convergence: applied and proven flows to current; a fallback reason flows to converging', async () => {
     wireConfigReleaseOnly()
-    setRunningConfig({ release_id: 'r1', desired_release_id: 'r1', source: 'release', mode: 'follow-base', proven: true })
+    setRunningConfig({ release_id: 'r1', desired_release_id: 'r1', source: 'release', proven: true })
     const current = await runReconcileTick('periodic')
     expect(current.components.config_release.state).toBe('current')
     expect(current.release_id).toBe('r1')

@@ -397,12 +397,11 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  // /blog and its posts are pages here; the blog's FILES (rss.xml, feed.xml,
-  // llms.txt, sitemap.xml, <slug>.md) are still proxied to the blog app
-  // (next.config.ts rewrites). That deployment serves public files only, so a
-  // kortix.com session never crosses to it: the Supabase cookie and any
+  // /blog is the blog app: next.config.ts proxies /blog and /blog/:path* to
+  // KORTIX_BLOG_ORIGIN. That deployment serves public pages and files only, so
+  // a kortix.com session never crosses to it: the Supabase cookie and any
   // Authorization header stay here.
-  if (pathname.startsWith('/blog/') && pathname.includes('.')) {
+  if (pathname === '/blog' || pathname.startsWith('/blog/')) {
     const requestHeaders = new Headers(request.headers);
     requestHeaders.delete('cookie');
     requestHeaders.delete('authorization');

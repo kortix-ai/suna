@@ -686,6 +686,8 @@ export async function postPrompt(
     onBodyBytes?: (bytes: number) => void;
     /** The target's sandbox row, when the delivery already read it. */
     sandboxRecord?: SandboxRecord;
+    /** The queued row's source: the turn this prompt starts records it. */
+    source?: string;
     /** Hand the message to the RUNNING turn (`POST .../steer`) instead of
      *  starting one. Kortix route only; throws {@link SteerNotTaken}. */
     steer?: boolean;
@@ -821,7 +823,7 @@ export async function postPrompt(
       config.KORTIX_URL ?? '',
       undefined,
       undefined,
-      { record: prompt?.sandboxRecord },
+      { record: prompt?.sandboxRecord, promptSource: prompt?.source },
     );
   };
   try {

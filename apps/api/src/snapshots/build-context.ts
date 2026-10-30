@@ -3,7 +3,7 @@
  *
  * Both providers build the SAME image: the user's Dockerfile + the Kortix
  * runtime layer (agent binary + CLI + entrypoint + slack-cli +
- * opencode/agent-browser). Daytona ships this context to its build service via
+ * agent-browser). Daytona ships this context to its build service via
  * `Image.fromDockerfile(ctx)`; Platinum ships it to `POST /v1/templates/
  * from-build`. Staging the context here — once — guarantees the produced image
  * is byte-identical across providers and keeps the artifact paths in one place.
@@ -35,15 +35,13 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { createGzip } from 'node:zlib';
-import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
+import { AGENT_BROWSER_VERSION } from '@kortix/shared';
 import { buildMetaSandboxDockerfile } from '@kortix/shared/sandbox';
-import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { managedSkillOverlayFiles } from '../runtime-assets/managed-skills';
 import { appCaddyBinaryPath, appdBinaryPath } from '../apps/runtime-artifacts';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
 import { assertCliArtifactAttested } from './cli-artifact-attestation';
 import { buildLayeredDockerfile } from './dockerfile-layer';
-import { stageOpencodeConfigTree } from './opencode-config-stage';
 
 const execFileAsyncBC = promisify(execFile);
 
@@ -64,15 +62,6 @@ const entrypointSrcPath = () => process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
 const slackCliSrcPath = () => process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
-/** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
-// The OpenCode config dir (pty plugin) the image warms for sessions that
-// still run OpenCode. New projects do not get it: the starter ships no harness
-// folder. Staged into the context (see dockerfile-layer.ts `opencodeConfigPath`).
-const opencodeConfigSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/opencode-config');
-/** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
-const opencodeWarmupSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/opencode-warmup.sh');
 const machineDocSrcPath = () => process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.md');
 
@@ -207,10 +196,6 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
   await gzipFile(cliPath, join(contextDir, 'kortix.gz'));
   await copyFile(entrypointPath, join(contextDir, 'kortix-entrypoint'));
   await stageManagedSkills(join(contextDir, 'managed-skills'));
-  await writeFileFs(
-    join(contextDir, 'kortix-llm-catalog.json'),
-    JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
-  );
 
   const dockerfileName = 'Dockerfile';
   const composedPath = join(contextDir, dockerfileName);
@@ -220,7 +205,6 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
       agentBinaryPath: 'kortix-agent.gz',
       cliBinaryPath: 'kortix.gz',
       entrypointScriptPath: 'kortix-entrypoint',
-      catalogPath: 'kortix-llm-catalog.json',
       managedSkillsPath: 'managed-skills',
     }),
   );
@@ -235,7 +219,6 @@ export async function stageRuntimeBuildContext(input: {
   userDockerfile: string;
   runtimeProfile?: RuntimeBuildProfile;
   appContext?: { sourceDir?: string; runtimeSpec: Record<string, unknown> };
-  isShared?: boolean;
   containerRuntime?: boolean;
 }): Promise<StagedContext> {
   switch (input.runtimeProfile) {
@@ -245,12 +228,7 @@ export async function stageRuntimeBuildContext(input: {
     case 'meta':
       return stageMetaBuildContext();
     default:
-      return stageBuildContext(
-        input.snapshotName,
-        input.userDockerfile,
-        input.isShared,
-        input.containerRuntime,
-      );
+      return stageBuildContext(input.snapshotName, input.userDockerfile, input.containerRuntime);
   }
 }
 
@@ -259,15 +237,10 @@ export async function stageRuntimeBuildContext(input: {
  * Stage a build context for `snapshotName` from the user's Dockerfile. Returns
  * the temp dir + composed Dockerfile path. The CALLER is responsible for
  * removing contextDir when done.
- *
- * `isSharedDefault` is the caller's `BuildableTemplate.isShared` — it tells the
- * layer whether /workspace is the platform's to wipe after the opencode warm-up
- * or the user's to leave alone (see `KortixToolchainLayerOpts.isSharedDefault`).
  */
 export async function stageBuildContext(
   snapshotName: string,
   userDockerfile: string,
-  isSharedDefault?: boolean,
   containerRuntime?: boolean,
 ): Promise<StagedContext> {
   const AGENT_BIN_PATH = agentBinPath();
@@ -275,14 +248,11 @@ export async function stageBuildContext(
   const CLI_ATTESTATION_PATH = cliAttestationPath();
   const ENTRYPOINT_PATH = entrypointSrcPath();
   const SLACK_CLI_SRC_PATH = slackCliSrcPath();
-  const OPENCODE_CONFIG_SRC_PATH = opencodeConfigSrcPath();
-  const OPENCODE_WARMUP_SRC_PATH = opencodeWarmupSrcPath();
   const MACHINE_DOC_SRC_PATH = machineDocSrcPath();
   await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
   await assertExists(CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
   await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
   await assertExistsDir(SLACK_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_SLACK_CLI_PATH');
-  await assertExists(OPENCODE_WARMUP_SRC_PATH, 'KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH');
   await assertExists(MACHINE_DOC_SRC_PATH, 'KORTIX_SNAPSHOT_MACHINE_DOC_PATH');
   // Fingerprint/artifact skew guard: the snapshot identity hashes the agent
   // SOURCE (templates.ts AGENT_SRC_DIR), but the image bakes this prebuilt
@@ -316,28 +286,8 @@ export async function stageBuildContext(
     await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
     await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
     await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
-    await copyFile(OPENCODE_WARMUP_SRC_PATH, join(contextDir, 'kortix-opencode-warmup'));
     await copyFile(MACHINE_DOC_SRC_PATH, join(contextDir, 'MACHINE.md'));
     await cp(SLACK_CLI_SRC_PATH, join(contextDir, 'kortix-slack-cli'), { recursive: true });
-    // Stage the starter opencode config for the build-time instance warm-up.
-    // Best effort: if it's missing, skip the warm-up (the build still succeeds and
-    // sessions just pay the first-instance cost at runtime as before).
-    let opencodeConfigPath: string | undefined;
-    if (await isDir(OPENCODE_CONFIG_SRC_PATH)) {
-      opencodeConfigPath = 'kortix-opencode-config';
-      await stageOpencodeConfigTree(OPENCODE_CONFIG_SRC_PATH, join(contextDir, opencodeConfigPath));
-    }
-
-    // Bake the FULL gateway model catalog into the image. The no-restart warm seed
-    // has no sandbox token / projectId to fetch the catalog at PARK, so without this
-    // its opencode picker would fall back to the daemon's minimal (~11) set. Computed
-    // server-side at build time → full picker, no token, no runtime fetch. The shared
-    // seed's captureEnv (builder.ts) points KORTIX_LLM_CATALOG_FILE at the COPY target.
-    await writeFileFs(
-      join(contextDir, 'kortix-llm-catalog.json'),
-      JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
-    );
-
     // Canonical scaffold repo baked at /opt/kortix/scaffold.git. Built from the
     // DEFAULT starter with the SAME pinned commit metadata the project seeder
     // uses (git-backends/seed.ts), so its root SHA equals every seeded project's
@@ -360,18 +310,13 @@ export async function stageBuildContext(
     const composedPath = join(contextDir, dockerfileName);
     const composed = buildLayeredDockerfile({
       userDockerfile,
-      opencodeVersion: OPENCODE_VERSION,
       agentBrowserVersion: AGENT_BROWSER_VERSION,
       agentBinaryPath: 'kortix-agent.gz',
       cliBinaryPath: 'kortix.gz',
       entrypointScriptPath: 'kortix-entrypoint',
       machineDocPath: 'MACHINE.md',
       slackCliPath: 'kortix-slack-cli',
-      opencodeConfigPath,
-      opencodeWarmupScriptPath: 'kortix-opencode-warmup',
-      catalogPath: 'kortix-llm-catalog.json',
       managedSkillsPath: 'managed-skills',
-      isSharedDefault,
       containerRuntime,
     });
 
@@ -435,15 +380,7 @@ async function assertContextComplete(
   const required = [
     'scaffold.git',
     'kortix-agent.gz',
-    'kortix-opencode-warmup',
     'MACHINE.md',
-    // The baked model catalog is what keeps `opencode serve` off the network at
-    // boot: the daemon reads /opt/kortix/llm-catalog.json instead of fetching
-    // the gateway's ~400KB /models. If it silently fails to stage, the image
-    // still builds and every session on it pays a synchronous cross-region
-    // fetch that gates opencode's port bind. That is invisible in build logs and
-    // shows up only as "boot got slower", so assert it here.
-    'kortix-llm-catalog.json',
     // The managed skill overlay. A miss here is the defect this guard exists
     // for: the image still builds, and every box on it silently downloads the
     // overlay on its first reconcile instead of booting with it.
@@ -555,14 +492,6 @@ async function assertExists(path: string, envVarHint: string): Promise<void> {
     throw new Error(
       `Required artifact missing: ${path}. Set ${envVarHint} or run \`bun run build\` in apps/kortix-sandbox-agent-server.`,
     );
-  }
-}
-
-async function isDir(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).isDirectory();
-  } catch {
-    return false;
   }
 }
 

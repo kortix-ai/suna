@@ -366,9 +366,9 @@ export async function mayWrite(row: ArtifactRow, viewer: Viewer): Promise<boolea
 }
 
 /** The entry file's current version (its ETag): what `base_version` names. Null when the file is gone. */
-export async function entryVersion(row: ArtifactRow): Promise<string | null> {
+export async function entryVersion(row: ArtifactRow, at?: string): Promise<string | null> {
   const drive = await driveOf(row);
-  return readDriveVolume(drive, async (volume) => (await statVolumeFile(volume, entryPath(row))).version, () => null)
+  return readDriveVolume(drive, async (volume) => (await statVolumeFile(volume, entryPath(row), at)).version, () => null)
     .catch((err) => {
       if (err instanceof DriveStorageError && err.status === 404) return null;
       throw err;

@@ -65,8 +65,8 @@ function hermeticWorkspaceEnv(): Record<string, string | undefined> {
   delete env.BASH_ENV;
   delete env.ENV;
   // The same CI-shape rule for the two host files a Kortix sandbox image bakes:
-  // the session env file the daemon's readiness gate reads, and the image's
-  // baked model catalog. Neither exists on a laptop or a GitHub runner, so the
+  // the session env file the daemon's readiness gate reads, and the baked model
+  // catalog older images carry (OpenCode reads it). Neither exists on a laptop or a GitHub runner, so the
   // suites are written against their absence; point the overrides at paths
   // that do not exist instead of asking every suite to know about them.
   env.KORTIX_PT_ENV_PATH = '/nonexistent/kortix-test-pt-env';
