@@ -78,6 +78,9 @@ function deliver(sessionId: string) {
     sessionId,
     projectId: project.project_id,
     text: 'hello',
+    // Exercise the pre-delivery env-sync refusal without waiting through the
+    // separate 45-second retry budget for a temporarily incomplete target.
+    opencodeEnv: {},
     userId: crypto.randomUUID(),
   });
 }
