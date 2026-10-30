@@ -79,7 +79,24 @@ desktop() {
         echo "desktop not running"; return 1
       fi
       ;;
-    *) echo "usage: kortix-desktop start|stop|status" >&2; return 2 ;;
+    browser)
+      # The desktop has one browser, the agent's: the dock and every link
+      # (exo-open, xdg-open) land in agent-browser's Chromium, so Kortix and
+      # whoever takes over share its window, tabs and logins. Listing the tabs
+      # starts it when none runs. A link opens in a new tab, or in a blank one;
+      # the dock re-selects the agent's tab, which raises the window and moves
+      # nothing.
+      local tab
+      tab="$(agent-browser tab --json | jq -r '.data.tabs[] | select(.active) | "\(.tabId) \(.url)"')"
+      if [ -z "${2:-}" ]; then
+        agent-browser tab "${tab%% *}"
+      elif [ "${tab#* }" = about:blank ]; then
+        agent-browser open "$2"
+      else
+        agent-browser tab new "$2"
+      fi
+      ;;
+    *) echo "usage: kortix-desktop start|stop|status|browser [url]" >&2; return 2 ;;
   esac
 }
 if [ "$(basename "$0")" = kortix-desktop ]; then
@@ -526,8 +543,12 @@ fi
 # The desktop never blocks or fails the boot. The daemon, its tools and every
 # terminal inherit DISPLAY, so GUI programs and agent-browser (headed) open on
 # the desktop the user watches. An image without one keeps headless Chromium.
+# The desktop inherits the same variables, so the dock reaches the agent's
+# browser instead of launching a second one (`kortix-desktop browser`). That
+# browser fills the screen and opens no start tab of its own.
 if [ -e /usr/local/bin/kortix-desktop ]; then
-  export DISPLAY=:1 AGENT_BROWSER_HEADED=true
+  export DISPLAY=:1 AGENT_BROWSER_HEADED=true \
+    AGENT_BROWSER_ARGS="${AGENT_BROWSER_ARGS:+${AGENT_BROWSER_ARGS},}--start-maximized,--no-startup-window"
   ( /usr/local/bin/kortix-desktop start || true ) 9>&- >&2 &
 fi
 
