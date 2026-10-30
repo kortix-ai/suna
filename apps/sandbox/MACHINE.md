@@ -36,7 +36,8 @@ it live in the session's **Desktop** panel, streamed from port 6901.
   `xdg-open <url>` open your default `agent-browser` session, so the user
   shares your window, tabs and logins. To have the user sign in to a site,
   open the page and ask them to take over. A tab they open becomes your
-  active tab.
+  active tab. Leave the browser open when you finish: `agent-browser close`
+  closes the user's window and drops its logins.
 - For a run the user should not see, use another session:
   `agent-browser --session hidden --headed false …`. Changing the default
   session's flags restarts the browser the user shares.

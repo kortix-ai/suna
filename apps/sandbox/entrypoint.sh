@@ -36,7 +36,11 @@ DESKTOP_PORT=6901
 DESKTOP_PID=/tmp/kortix-desktop.pid
 DESKTOP_LOG=/tmp/kortix-desktop.log
 desktop() {
-  export DISPLAY="${DISPLAY:-:1}" XDG_RUNTIME_DIR="/tmp/kortix-desktop-xdg"
+  # agent-browser keeps its daemon socket in $XDG_RUNTIME_DIR when that is
+  # set. Pin it to the agent's default, ~/.agent-browser, or the dock would
+  # reach a second daemon and a second browser.
+  export DISPLAY="${DISPLAY:-:1}" XDG_RUNTIME_DIR="/tmp/kortix-desktop-xdg" \
+    AGENT_BROWSER_SOCKET_DIR="${AGENT_BROWSER_SOCKET_DIR:-${HOME}/.agent-browser}"
   case "${1:-status}" in
     run)
       echo $$ > "${DESKTOP_PID}"
