@@ -167,6 +167,7 @@ export function SessionPanelProvider({
   children: ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tDesktop = useTranslations('sessionDesktop');
   const tReminders = useTranslations('reminders');
   const { steps, outputs, context, apps, files, isRunning, outcome } = usePanelDerivations({
     sessionId, projectId, projectSessionId, isSessionBusy,
@@ -567,7 +568,7 @@ export function SessionPanelProvider({
   const openDesktop = useCallback(() => {
     openDetail({
       key: 'desktop',
-      title: 'Desktop',
+      title: tDesktop('title'),
       hideHeader: true,
       padded: false,
       body: (
@@ -577,7 +578,7 @@ export function SessionPanelProvider({
       ),
     });
     setPanelSplit(70);
-  }, [openDetail, closeDetail, setPanelSplit, projectId, projectSessionId]);
+  }, [openDetail, closeDetail, setPanelSplit, projectId, projectSessionId, tDesktop]);
 
   /**
    * The opt-in File Explorer (Marko's ask). Never a default view and never a
