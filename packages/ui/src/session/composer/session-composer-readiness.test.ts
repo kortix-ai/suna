@@ -9,24 +9,9 @@ import {
 } from './session-composer-readiness';
 
 describe('sessionComposerReadiness', () => {
-  // A routine wake is silent. Opening a session wakes its computer in the
-  // background; a send goes out as soon as it is up, and its turn already
-  // shows it working. A bar about the computer adds nothing to that.
-  test('a submitted prompt clears the idle notice and says nothing while its computer starts', () => {
-    expect(sessionComposerReadiness({
-      runtimeReady: false,
-      connection: 'waking',
-      pendingPrompt: true,
-    })).toEqual({
-      ready: false,
-      notice: null,
-      retryable: false,
-    });
-  });
-
-  test('a pending prompt cannot hide a startup failure or keep the ready notice visible', () => {
-    expect(sessionComposerReadiness({ runtimeReady: false, pendingPrompt: true, unreachable: true }).retryable).toBe(true);
-    expect(sessionComposerReadiness({ runtimeReady: true, pendingPrompt: true }).notice).toBeNull();
+  test('a startup failure is announced, and a ready runtime shows no notice', () => {
+    expect(sessionComposerReadiness({ runtimeReady: false, unreachable: true }).retryable).toBe(true);
+    expect(sessionComposerReadiness({ runtimeReady: true }).notice).toBeNull();
   });
   // The connection projection replaces the settle TIMER this file used to
   // carry. A timer was the same mistake in miniature: it guessed how long to
@@ -35,57 +20,32 @@ describe('sessionComposerReadiness', () => {
   // actually said.
   test('a cold load says nothing — unknown is not a fault', () => {
     expect(
-      sessionComposerReadiness({ runtimeReady: false, connection: 'unknown' }).notice,
+      sessionComposerReadiness({ runtimeReady: false }).notice,
     ).toBeNull();
   });
 
   test('a running sandbox we have not reached yet says nothing either', () => {
     // The reported bug: a reload of a live, mid-turn session announced
     // "Waking this session up…" before anything had answered.
-    const readiness = sessionComposerReadiness({ runtimeReady: false, connection: 'connecting' });
+    const readiness = sessionComposerReadiness({ runtimeReady: false });
     expect(readiness.notice).toBeNull();
     expect(readiness.ready).toBe(false);
   });
 
-  // RC-3 — a box the control plane says is down (`connection === 'waking'`) is
-  // PARKED, not actively booting. It resumes on the next send, so the composer
-  // states that honestly instead of showing a "waking" spinner-lie: no infinite
-  // spinner, no retry, and the copy names what a send does.
-  // The page's own /start is bringing a stopped computer up. "Idle — your next
-  // message wakes it" would be false, and a routine wake says nothing.
-  test('a computer the page is starting says nothing, and never claims idle', () => {
-    const readiness = sessionComposerReadiness({ runtimeReady: false, connection: 'waking', starting: true });
-    expect(readiness.notice).toBeNull();
-    expect(readiness.ready).toBe(false);
-    expect(readiness.retryable).toBe(false);
-  });
-
-  test('a parked/idle box gets an honest idle state, not a waking spinner', () => {
-    const readiness = sessionComposerReadiness({ runtimeReady: false, connection: 'waking' });
-    expect(readiness.notice).toMatch(/computer is asleep/i);
-    expect(readiness.notice).not.toMatch(/waking/i);
-    expect(readiness.notice).toMatch(/next message wakes.*delivered/i);
-    expect(readiness.ready).toBe(false);
-    // No retry: there is nothing to reset — the box is simply parked, and a
-    // send (not a retry button) is what wakes it.
-    expect(readiness.retryable).toBe(false);
-  });
-
-  test('a parked box never escalates to the "taking longer than usual" stall copy', () => {
-    // The SDK no longer arms the boot-stall clock for a parked box, so `stalled`
-    // stays false; the composer therefore never reaches the stall branch.
-    const readiness = sessionComposerReadiness({
-      runtimeReady: false,
-      connection: 'waking',
-      stalled: false,
+  // A computer sleeps and wakes without a word. The next send wakes it and is
+  // delivered, so the user never needs to know it slept: no asleep line, no
+  // moon, no retry.
+  test('a sleeping or waking computer says nothing', () => {
+    expect(sessionComposerReadiness({ runtimeReady: false })).toEqual({
+      ready: false,
+      notice: null,
+      retryable: false,
     });
-    expect(readiness.notice).not.toMatch(/taking longer/i);
   });
 
   test('an unreachable runtime is still announced', () => {
     const readiness = sessionComposerReadiness({
       runtimeReady: false,
-      connection: 'unreachable',
       unreachable: true,
     });
     expect(readiness.notice).toMatch(/lost contact/i);
@@ -145,11 +105,8 @@ describe('sessionComposerReadiness', () => {
     );
   });
 
-  test('no server turn is silent too, until the box is asleep or lost', () => {
+  test('no server turn is silent too, until the box is lost', () => {
     expect(sessionComposerReadiness({ runtimeReady: false, serverTurnLive: false }).notice).toBeNull();
-    expect(
-      sessionComposerReadiness({ runtimeReady: false, serverTurnLive: false, connection: 'waking' }).notice,
-    ).toBe(SESSION_NOTICE.idle);
   });
 
   // Suppressing the waking notice must not leave the composer SILENT. An open
@@ -380,8 +337,4 @@ describe('resolveLastTurnWorking', () => {
       resolveLastTurnWorking({ isChildSession: true, projectionBusy: true, rawSlotBusy: false }),
     ).toBe(false);
   });
-});
-
-test('a queued send does not ask the user to send another message to wake the session', () => {
-  expect(sessionComposerReadiness({ runtimeReady: false, connection: 'waking', pendingDelivery: true }).notice).toBeNull();
 });

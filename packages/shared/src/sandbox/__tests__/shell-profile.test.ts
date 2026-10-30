@@ -181,16 +181,19 @@ describe('every image that runs the web terminal bakes the hook as root', () => 
     expect(kortixToolchainLayer({})).not.toContain(KORTIX_SHELL_PROFILE_PATH);
   });
 
-  test('the meta image (debian:bookworm-slim) writes it before its entrypoint', () => {
+  test('the My Kortix image writes it as root, before its entrypoint', () => {
     const meta = buildMetaSandboxDockerfile({
       agentBinaryPath: 'kortix-agent.gz',
       cliBinaryPath: 'kortix.gz',
       entrypointScriptPath: 'kortix-entrypoint',
+      machineDocPath: 'MACHINE.md',
+      slackCliPath: 'kortix-slack-cli',
       managedSkillsPath: 'managed-skills',
     });
     const at = meta.indexOf(kortixShellProfileRun());
     expect(at).toBeGreaterThan(-1);
-    expect(meta).not.toMatch(/^USER /m);
+    const lastUserBefore = meta.slice(0, at).match(/^USER \S+/gm)?.at(-1);
+    expect(lastUserBefore).toBe('USER root');
     expect(at).toBeLessThan(meta.indexOf('ENTRYPOINT'));
   });
 });

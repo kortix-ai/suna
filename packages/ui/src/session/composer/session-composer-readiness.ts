@@ -27,7 +27,7 @@
  * saying what is going on.
  */
 
-import { SESSION_NOTICE, type SessionConnection } from '@kortix/sdk';
+import { SESSION_NOTICE } from '@kortix/sdk';
 
 export interface SessionComposerReadiness {
   /** The runtime is up. False means a submit becomes a queued inbox row rather
@@ -108,11 +108,6 @@ const RUNTIME_UNREACHABLE_NOTICE = SESSION_NOTICE.unreachableMidTurn;
 
 export function sessionComposerReadiness(input: {
   runtimeReady: boolean;
-  /** A prompt sent from this page is waiting for the computer. Its turn
-   *  already shows it working; do not ask for another message. */
-  pendingPrompt?: boolean;
-  /** A queued status already describes this send; do not ask for another. */
-  pendingDelivery?: boolean;
   /**
    * The CONTROL PLANE holds an open turn for this session right now — pass
    * `serverHoldsOpenTurn(working)`, never `working.source === 'server'`.
@@ -137,27 +132,6 @@ export function sessionComposerReadiness(input: {
    * "indistinguishable from stuck" failure this module exists to prevent.
    */
   stalled?: boolean;
-  /**
-   * This page's own `/start` is bringing the computer up: its stage is
-   * `provisioning` or `starting`, or it has not answered yet. A stopped
-   * computer is then WAKING, not idle, and the composer must not claim the
-   * next message is what wakes it.
-   */
-  starting?: boolean;
-  /**
-   * The shared connection projection (`projectSessionConnection`).
-   *
-   * This is what replaced a settle TIMER here. The timer was the same mistake
-   * this module keeps having to unlearn: it guessed how long to stay quiet
-   * instead of asking whether anything was actually wrong, so it was always
-   * either too short (the notice flashed over a live session) or too long (a
-   * genuinely parked box announced itself late).
-   *
-   * `unknown` and `connecting` are WAITS. Only `waking` with no wake under
-   * way — the control plane saying the box is down, and nothing bringing it
-   * up — earns a notice: the asleep one.
-   */
-  connection?: SessionConnection;
 }): SessionComposerReadiness {
   if (input.runtimeReady) return { ready: true, notice: null, retryable: false };
   if (input.serverTurnLive) {
@@ -186,22 +160,11 @@ export function sessionComposerReadiness(input: {
       retryable: true,
     };
   }
-  if (input.connection === 'waking') {
-    // A PARKED / idle box: the control plane says the sandbox is not up, and
-    // nothing is actively booting — a genuine boot-stall is caught by `stalled`
-    // above, and the SDK no longer arms the stall clock for a parked box
-    // (`setOpenCodeHealth({ parked })`), so this never escalates to an infinite
-    // "taking longer than usual" spinner. The box resumes on the next SEND, so
-    // say exactly that: an honest idle state (RC-3). A wake already under way
-    // says nothing: opening the session wakes its computer in the background,
-    // and a send goes out as soon as it is up.
-    const waking = input.pendingPrompt || input.pendingDelivery || input.starting;
-    return { ready: false, notice: waking ? null : SESSION_NOTICE.idle, retryable: false };
-  }
-  // A wait is not a fault, and a routine wake is silent: `unknown` means
+  // A wait is not a fault, and sleep and wake are silent: `unknown` means
   // nothing has answered, `connecting` that the box is up and the runtime has
-  // not reached us yet, and a waking box comes up in the background while a
-  // send queues. A wake that goes wrong speaks through `stalled` or
+  // not reached us yet, and `waking` that the box is parked or coming up. A
+  // parked box wakes on the next send, so the user never needs to know it
+  // slept. A wake that goes wrong speaks through `stalled` or
   // `unreachable` above.
   return { ready: false, notice: null, retryable: false };
 }
