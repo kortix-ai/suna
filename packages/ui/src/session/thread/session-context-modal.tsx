@@ -15,12 +15,13 @@ import { Close } from '../../icons/close';
 import { useModelPricingLookup } from '../../internal/lib/model-pricing';
 import { cn } from '../../lib/utils';
 import { type ProjectSession, type Session, type SessionLogBlock, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
-import { formatUsdAsCredits } from '@kortix/shared';
+import { formatSessionCostUsd } from '../../internal/billing/session-cost-format';
 import {
   useSessionLog,
   useSessionLogOlder,
   useSessionLogThread,
   useSessionMessages,
+  useSessionUsage,
   type ProviderListResponse,
   type SessionMessagesSource,
 } from '@kortix/sdk/react';
@@ -34,6 +35,7 @@ import {
 import { getSessionContextMetrics, sessionStartedAt } from './session-context-metrics';
 import type { ServedModelNotice } from '../turn/served-model';
 import { SubSessionSection } from './session-context-sub-sessions';
+import { SpawnedSessionSection } from './session-context-spawned-sessions';
 
 // ============================================================================
 // Context breakdown estimation
@@ -234,10 +236,10 @@ function SessionContextModalBody({
   allSessions,
   servedModel,
   billedCost,
-}: Omit<SessionContextModalProps, 'open' | 'onOpenChange'>) {
+  onClose,
+}: Omit<SessionContextModalProps, 'open' | 'onOpenChange'> & { onClose: () => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
-  const tCredits = useTranslations('settings.credits');
   const pricingLookup = useModelPricingLookup(providers);
   // The numbers read the session log's root thread: the `fromV1` view of the
   // v1 rows while v2 is off, the API's record on v2. The raw explorer and Copy
@@ -265,6 +267,28 @@ function SessionContextModalBody({
     () => getSessionContextMetrics(thread, providers, pricingLookup),
     [thread, providers, pricingLookup],
   );
+
+  // What the session and every session it spawned cost, from the gateway's
+  // ledger: the amount billed, in USD. A sub-agent in the session's sandbox
+  // bills under the session itself. A chat with no source has no ids: the
+  // transcript's estimate stands in, as it does when the read fails.
+  const usageQuery = useSessionUsage(source.projectId || null, source.sessionId || null);
+  const ledger = usageQuery.data;
+  const estimatedCost = billedCost ?? metrics.totalCost;
+  const totalCost = ledger ? ledger.total.cost : usageQuery.isError || !source.sessionId ? estimatedCost : null;
+  const ownLedger = ledger?.sessions[0];
+  const spawnedCount = ledger ? ledger.sessions.length - 1 : 0;
+  const costMeta = ledger
+    ? spawnedCount > 0 && ownLedger
+      ? t('costSplit', {
+          own: formatSessionCostUsd(ownLedger.cost),
+          spawned: formatSessionCostUsd(ledger.total.cost - ownLedger.cost),
+          count: spawnedCount,
+        })
+      : undefined
+    : totalCost != null
+      ? t.raw('costEstimated')
+      : undefined;
 
   const ctx = metrics.context;
   const fmt = useMemo(() => createFormatter(), []);
@@ -343,10 +367,8 @@ function SessionContextModalBody({
           />
           <OverviewStat
             label={t.raw('statCost')}
-            value={tCredits('creditCount', {
-              count: (billedCost ?? metrics.totalCost) * 100,
-              formatted: formatUsdAsCredits(billedCost ?? metrics.totalCost),
-            })}
+            value={totalCost == null ? '—' : formatSessionCostUsd(totalCost)}
+            meta={costMeta}
           />
           <OverviewStat label={t.raw('statMessages')} value={counts.all.toLocaleString()} />
         </div>
@@ -425,6 +447,7 @@ function SessionContextModalBody({
                   label: t.raw('detailCache'),
                   value: `${fmt.number(ctx?.cacheRead)} / ${fmt.number(ctx?.cacheWrite)}`,
                 },
+                { label: t.raw('detailModelRequests'), value: fmt.number(ownLedger?.request_count) },
                 { label: t.raw('detailUserMessages'), value: counts.user.toLocaleString() },
                 {
                   label: t.raw('detailAssistantMessages'),
@@ -444,6 +467,8 @@ function SessionContextModalBody({
             </dl>
           </section>
         </div>
+
+        <SpawnedSessionSection usage={ledger} projectId={source.projectId} onNavigate={onClose} />
 
         <SubSessionSection
           source={source}
@@ -513,6 +538,7 @@ export function SessionContextModal({
           allSessions={allSessions}
           servedModel={servedModel}
           billedCost={billedCost}
+          onClose={() => onOpenChange(false)}
         />
       </ModalContent>
     </Modal>
