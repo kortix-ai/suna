@@ -2880,7 +2880,6 @@
     },
     "unified": {
       "welcome": "Bienvenue sur Kortix CompanyOS",
-      "tagline": "Le CompanyOS open source",
       "email": "E-mail",
       "emailPlaceholder": "Votre adresse e-mail",
       "password": "Mot de passe",

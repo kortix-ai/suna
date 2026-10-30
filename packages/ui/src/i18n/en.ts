@@ -1678,7 +1678,6 @@ const catalog = {
     },
     "unified": {
       "welcome": "Welcome to Kortix CompanyOS",
-      "tagline": "The open-source CompanyOS",
       "email": "Email",
       "emailPlaceholder": "Your email address",
       "password": "Password",
@@ -8203,6 +8202,10 @@ const catalog = {
       "outdated": "Outdated",
       "outdatedHint": "This passage cannot be located in the current document.",
       "newComment": "New comment",
+      "annotationMode": "Pin a comment",
+      "annotationModeHint": "Click an element to pin a comment. Drag to mark a region.",
+      "annotationLoading": "Loading annotations…",
+      "annotationUnavailable": "Annotations are unavailable. Choose {refresh} in {actions} to try again.",
       "commentLabel": "Comment",
       "commentPlaceholder": "Leave feedback or mention someone…",
       "replyLabel": "Reply",

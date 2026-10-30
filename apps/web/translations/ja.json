@@ -2880,7 +2880,6 @@
     },
     "unified": {
       "welcome": "Kortix CompanyOSへようこそ",
-      "tagline": "オープンソースのCompanyOS",
       "email": "メールアドレス",
       "emailPlaceholder": "メールアドレスを入力",
       "password": "パスワード",
