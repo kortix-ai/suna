@@ -36,7 +36,7 @@ import { readProjectInstructions, resolvePiSkillDirectories } from './config'
 import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
-import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
+import { SUBAGENT_SPEC_REQUIRED, type KortixHost, type SpawnSessionInput, type SpawnSessionResult } from './extensions/subagents'
 import { cloudSpawnSession, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule, type SessionPermissionRule } from './interactions'
 import type { CatalogModel, PiModels, SelectedModel } from './model'
@@ -1556,7 +1556,9 @@ export class PiRuntime {
    * Route one `agent` call (cloud-subagent.ts `routeSubagent`): `separate`
    * (the default) spawns a REAL Kortix child session with its own sandbox;
    * `same` runs the in-process child. A separate call runs in process, with a
-   * notice in the tool result, when the box has no control plane. A
+   * notice in the tool result, when the box has no control plane. Only a
+   * separate child runs in the background; a background call routed here
+   * waits, and its notice says so. A
    * `task_id` resumes the child where it was created. The result shape is
    * identical either way, so the tool contract and the UI do not change.
    */
@@ -1576,6 +1578,7 @@ export class PiRuntime {
       taskId: input.sessionId,
       localChild: !!input.sessionId && this.children.has(input.sessionId),
       controlPlane: this.cloudSubagents !== null,
+      background: input.background,
     })
     if (route.session === 'separate' && this.cloudSubagents) {
       // The agent and its tools are read per call: a prompt may switch the agent (applyAgent).
@@ -1583,6 +1586,8 @@ export class PiRuntime {
       const result = await cloudSpawnSession({ ...this.cloudSubagents, ...this.cloudParent() }, input)
       return { ...result, session: 'separate' }
     }
+    // An in-process child re-reads its tools and rules from the spec, so a follow-up must name it.
+    if (!input.agent) throw new Error(SUBAGENT_SPEC_REQUIRED)
     if (route.notice) logger.info('[pi] separate subagent session ran in this session', { notice: route.notice })
     const result = await this.spawnSession(input)
     return { ...result, session: 'same', ...(route.notice ? { notice: route.notice } : {}) }

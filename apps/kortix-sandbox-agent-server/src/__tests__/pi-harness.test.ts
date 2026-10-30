@@ -2087,6 +2087,85 @@ describe('pi subagents extension', () => {
     }
   })
 
+  test('run_in_background: the call returns the child task_id at once, asks the API to notify this session, and the turn goes on', async () => {
+    const creates: Array<Record<string, any>> = []
+    const reads: string[] = []
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const url = new URL(req.url)
+        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+          creates.push((await req.json()) as Record<string, any>)
+          return Response.json({ session_id: 'bg-child-1' }, { status: 201 })
+        }
+        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+          reads.push(`list ${url.searchParams.get('parent')}`)
+          return Response.json([])
+        }
+        reads.push(`${req.method} ${url.pathname}`)
+        return new Response('not found', { status: 404 })
+      },
+    })
+    try {
+      const r = await boot({
+        script: [
+          { tool: 'agent', args: { description: 'Audit logs', prompt: 'audit the logs', subagent_type: 'general', run_in_background: true } },
+          { text: 'parent keeps working' },
+        ],
+        env: { KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1` },
+      })
+      await promptAndSettle(r, 'start it in the background')
+      expect(creates).toHaveLength(1)
+      expect(creates[0]!.metadata).toEqual({ notify_parent: true })
+      // The live cap read the child list; nothing polled or read back the child.
+      expect(reads).toContain('list sess-pi-test')
+      expect(reads.filter((read) => read.includes('bg-child-1'))).toEqual([])
+      const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      const part = toolParts(page, 'agent')[0]!
+      expect(part.state.status).toBe('completed')
+      expect(part.state.metadata).toMatchObject({ sessionId: 'bg-child-1', session: 'separate', background: true })
+      expect(part.state.output).toContain('task_id: bg-child-1 (for resuming to continue this task if needed)\nsession: separate\n')
+      expect(part.state.output).toContain('<task_started>\nThe subagent runs in the background in its own session.')
+      expect(part.state.output).toContain('kortix sessions stop bg-child-1')
+      expect(JSON.stringify(page)).toContain('parent keeps working')
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('a follow-up to a separate background child needs only its task_id, and returns at once', async () => {
+    const prompts: Array<Record<string, any>> = []
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const url = new URL(req.url)
+        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') return Response.json([])
+        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions/bg-child-7') {
+          return Response.json({ session_id: 'bg-child-7', parent_session_id: 'sess-pi-test', status: 'stopped', metadata: { notify_parent: true }, working: { state: 'idle' } })
+        }
+        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions/bg-child-7/prompts') {
+          prompts.push((await req.json()) as Record<string, any>)
+          return Response.json({ prompt_id: 'p1', state: 'queued' }, { status: 202 })
+        }
+        return new Response('not found', { status: 404 })
+      },
+    })
+    try {
+      const r = await boot({
+        script: [{ tool: 'agent', args: { description: 'Count on', prompt: 'now the tests', task_id: 'bg-child-7' } }, { text: 'follow-up sent' }],
+        env: { KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1` },
+      })
+      await promptAndSettle(r, 'follow up')
+      expect(prompts.map((p) => p.parts)).toEqual([[{ type: 'text', text: 'now the tests' }]])
+      const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      const part = toolParts(page, 'agent')[0]!
+      expect(part.state.status).toBe('completed')
+      expect(part.state.output).toContain('<task_started>')
+    } finally {
+      server.stop(true)
+    }
+  })
+
   test('session "same" runs the child in this session: no session create', async () => {
     let creates = 0
     const server = Bun.serve({

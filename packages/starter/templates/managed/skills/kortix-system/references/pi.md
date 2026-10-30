@@ -84,7 +84,12 @@ Arguments: `description`, `prompt`, `subagent_type` (a declared agent) or
   session with its own sandbox and branch. The one call waits until that
   session finishes (up to 30 minutes) and returns its final message: ask the
   subagent to put the answer and the paths of its files there. A separate
-  child may delegate again, at most 2 levels deep; at most 4 wait at once.
+  child may delegate again, at most 2 levels deep; at most 4 run at once.
+- `run_in_background: true` (separate sessions only) returns the child's
+  `task_id` at once. Keep working or end your turn: the child's final
+  report arrives later as a new message in this session, one per finished
+  turn of the child. Never poll or wait for it. A follow-up with only the
+  `task_id` also returns at once. Use it for long or parallel work.
 - `session: "same"` runs it inside this session: no boot, no new sandbox.
   It cannot start a subagent or ask the user a question.
 - Several `agent` calls alone in one message run at the same time. The user
