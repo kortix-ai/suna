@@ -1830,7 +1830,6 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 | `review <subcommand>` | The review inbox: change requests, held connector calls and submitted outputs. | [Git](/docs/developers#git) |
 | `triggers <subcommand>` | Every trigger, `kortix.yaml` and runtime: `ls` lists both, `add` writes `kortix.yaml` (with `--on`, `--session` or `--runtime` it creates a runtime trigger), `fire`, `enable`, `disable`, `run`, `pause`, `resume` and `rm` take a slug or a runtime id. | [Triggers](/docs/guide#triggers) |
 | `loops <subcommand>` | A schedule into one session (a loop: a trigger that wakes the session that created it). `kortix loop "…" --in 24h` adds one. Alias: `reminders`. | [Triggers](/docs/guide#triggers) |
-| `chrome <subcommand>` | Attach your connected Chrome to the session, and release it. The browser then answers on port 9333 for any DevTools Protocol client. | [Kortix in Chrome](/docs/connect/chrome) |
 | `capture <subcommand>` | Search the Capture timeline of the person you act for. Capture is off until an account admin turns it on. | [Capture](/docs/capture) |
 
 **Access and permissions**

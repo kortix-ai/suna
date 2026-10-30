@@ -359,7 +359,7 @@ describe('pi harness', () => {
     const r = await boot({ script: [{ stall: true }], env: { KORTIX_PI_NO_PROGRESS_MS: '100' } })
     const root = r.service.runtime()!.rootId
     const messageID = 'msg_0198e2a4b0f0ABCDEFGHIJKLMN'
-    const events = await r.bearer('/kortix/opencode/events?since=0')
+    const events = await r.bearer('/kortix/runtime/events?since=0')
     expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'answer me' }] })).status).toBe(204)
     await waitFor(() => !r.service.runtime()!.busy(), 3_000)
     const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
@@ -398,7 +398,7 @@ describe('pi harness', () => {
     expect(before.capabilities).not.toContain('session.rewind')
     expect(before.capabilities).not.toContain('session.attach')
     expect(before.runtimeReady).toBe(false)
-    expect(before.opencode).toBe('down')
+    expect(before.harness.state).toBe('down')
     expect((await r.user('/session')).status).toBe(503)
 
     await r.service.lifecycle.start()
@@ -406,7 +406,7 @@ describe('pi harness', () => {
     expect(after.runtimeReady).toBe(true)
     expect(after.status).toBe('ok')
     expect(after.harness).toMatchObject({ state: 'ok', ready: true, error: null })
-    expect(after.opencode).toBe('ok')
+    expect(after.harness.state).toBe('ok')
     expect(after.harness.details.model).toBe(`kortix/${MODEL_ID}`)
     // The host facts every harness reports (E19): pi's runtime_truth is the
     // pure read — identity real, components unknown until pi runs the ticker.
@@ -496,9 +496,8 @@ describe('pi harness', () => {
     // pi writes no OpenCode-named identity fields.
     expect(state.identity.opencode_session_id).toBeUndefined()
     expect(state.identity.opencode_version).toBeUndefined()
-    // `/kortix/opencode/*` is the pre-W3 path of the same router, for an older API.
-    const legacy = (await r.bearer('/kortix/opencode/state').then((res) => res.json())) as Record<string, any>
-    expect(legacy.identity.runtime_session_id).toBe(root)
+    // The pre-W3 mount `/kortix/opencode/*` is gone.
+    expect((await r.bearer('/kortix/opencode/state')).status).toBe(404)
     expect(state.statuses.value[root]).toEqual({ type: 'idle' })
     expect(state.agents.value[0].name).toBe('build')
     const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
@@ -669,7 +668,7 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
     // Both mounts serve the verbs; an unauthenticated call is refused.
     expect((await r.app.request(`/kortix/runtime/sessions/${root}/abort`, { method: 'POST' })).status).toBe(401)
-    expect((await post(`/kortix/opencode/sessions/${root}/abort`, {})).status).toBe(200)
+    expect((await post(`/kortix/runtime/sessions/${root}/abort`, {})).status).toBe(200)
   })
 
   test('the catalogs are the project\'s: pi serves no config, agent or provider document', async () => {
@@ -748,7 +747,7 @@ describe('pi harness', () => {
     const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
     const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
     expect(tool.state).toMatchObject({ status: 'completed', output: expect.stringContaining('gated') })
-    const stream = await r.bearer('/kortix/opencode/events?since=0')
+    const stream = await r.bearer('/kortix/runtime/events?since=0')
     const text = await readSse(stream, (t) => t.includes('event: permission.replied'))
     expect(text).toContain('event: permission.asked')
     expect(text).toContain('event: permission.replied')
@@ -775,7 +774,7 @@ describe('pi harness', () => {
     expect(tool.state.status).not.toBe('running')
     const texts = page.messages.flatMap((m) => m.parts).filter((p) => p.type === 'text').map((p) => p.text)
     expect(texts).toContain('second prompt answered')
-    const text = await readSse(await r.bearer('/kortix/opencode/events?since=0'), (t) => t.includes('event: question.rejected'))
+    const text = await readSse(await r.bearer('/kortix/runtime/events?since=0'), (t) => t.includes('event: question.rejected'))
     expect(text).toContain('event: question.rejected')
   })
 
@@ -1297,7 +1296,7 @@ describe('pi harness', () => {
     const root = r.service.runtime()!.rootId
     const calls = gateway.requests.length
     const messageID = 'msg_0198e2a4b0d1ABCDEFGHIJKLMN'
-    const events = await r.bearer('/kortix/opencode/events?since=0')
+    const events = await r.bearer('/kortix/runtime/events?since=0')
     expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'answer me' }] })).status).toBe(204)
     await waitFor(() => !r.service.runtime()!.busy())
     expect(gateway.requests.length - calls).toBe(3)
@@ -1349,7 +1348,7 @@ describe('pi harness', () => {
     const root = r.service.runtime()!.rootId
     const calls = gateway.requests.length
     const messageID = 'msg_0198e2a4b0d6ABCDEFGHIJKLMN'
-    const events = await r.bearer('/kortix/opencode/events?since=0')
+    const events = await r.bearer('/kortix/runtime/events?since=0')
     expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'answer me' }] })).status).toBe(204)
     await waitFor(() => !r.service.runtime()!.busy(), 10_000)
     expect(gateway.requests.length - calls).toBe(8)
@@ -2136,7 +2135,7 @@ describe('pi subagents extension', () => {
     expect(state.statuses.value).toEqual({ [root]: { type: 'idle' }, [childId]: { type: 'idle' } })
 
     // The stream carried the child id on the RUNNING task part, so the UI links the child while it works.
-    const text = await readSse(await r.bearer('/kortix/opencode/events?since=0'), (t) => t.includes(`"sessionID":"${childId}"`) && t.includes('parent done'))
+    const text = await readSse(await r.bearer('/kortix/runtime/events?since=0'), (t) => t.includes(`"sessionID":"${childId}"`) && t.includes('parent done'))
     const running = text
       .split('\n')
       .filter((line) => line.startsWith('data: '))
@@ -2982,7 +2981,7 @@ describe('pi compaction', () => {
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
     await promptAndSettle(r, 'BETA question')
-    const events = await r.bearer('/kortix/opencode/events?since=0')
+    const events = await r.bearer('/kortix/runtime/events?since=0')
 
     expect(await summarize(r, root).then((res) => res.json())).toBe(true)
     const text = await readSse(events, (t) => t.includes('event: session.compacted'))
@@ -3265,7 +3264,7 @@ describe('pi compaction', () => {
     const r = await boot({ script: [{ text: 'first answer' }, overflow, ...SUMMARY, { text: 'answer after compaction' }], prepare: compactEverything })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
-    const events = await r.bearer('/kortix/opencode/events?since=0')
+    const events = await r.bearer('/kortix/runtime/events?since=0')
     const messageID = 'msg_0198e2a4b0e1ABCDEFGHIJKLMN'
     expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'BETA question' }] })).status).toBe(204)
     await waitFor(() => r.service.runtime()!.idle())
@@ -3284,7 +3283,7 @@ describe('pi compaction', () => {
     const overflow = { status: 400, message: "This model's maximum context length is 64000 tokens. However, your messages resulted in 70000 tokens." }
     const r = await boot({ script: [overflow] })
     const root = r.service.runtime()!.rootId
-    const events = await r.bearer('/kortix/opencode/events?since=0')
+    const events = await r.bearer('/kortix/runtime/events?since=0')
     const messageID = 'msg_0198e2a4b0e2ABCDEFGHIJKLMN'
     expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'ALPHA question' }] })).status).toBe(204)
     await waitFor(() => r.service.runtime()!.idle())
@@ -3323,7 +3322,7 @@ describe('pi compaction', () => {
     const r = await boot({ script: [{ text: 'first answer' }, { cut: '' }, overflow, ...SUMMARY, { text: 'answer after the retry compacted' }], prepare: compactEverything })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
-    const events = await r.bearer('/kortix/opencode/events?since=0')
+    const events = await r.bearer('/kortix/runtime/events?since=0')
     expect((await prompt(r, root, { messageID: 'msg_0198e2a4b0e4ABCDEFGHIJKLMN', parts: [{ type: 'text', text: 'BETA question' }] })).status).toBe(204)
     await waitFor(() => r.service.runtime()!.idle())
     const text = await readSse(events, (t) => t.includes('event: session.idle') && t.includes('answer after the retry compacted'))
