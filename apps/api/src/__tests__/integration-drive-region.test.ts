@@ -309,6 +309,12 @@ describe('moving a drive to another region', () => {
     expect(old.files.has('/Company/after.md')).toBe(false);
   });
 
+  test('a drive deleted since the run listed it is reported and skipped, not a crash', async () => {
+    const report = await moveDriveToRegion(crypto.randomUUID(), 'us-east', { apply: true });
+    expect(report.outcome).toBe('skipped');
+    expect(report.reason).toBe('the drive no longer exists');
+  });
+
   test('a drive a running box mounts does not move, and nothing changes', async () => {
     const p = await projectWith(false);
     const drive = await driveOf(p.project_id);
