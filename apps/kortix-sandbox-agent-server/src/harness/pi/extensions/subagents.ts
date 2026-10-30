@@ -258,7 +258,7 @@ const parameters = Type.Object({
     }),
   ),
   prompt: Type.String({ description: 'The task for the agent to perform' }),
-  subagent_type: Type.Optional(Type.String({ description: 'The named agent to use for this task. Omitted: the general-purpose agent `general`, where available. Ignored when you pass an inline `agent` spec.' })),
+  subagent_type: Type.Optional(Type.String({ description: 'The named agent to use for this task. Omitted: the general-purpose agent `general` (for the platform coordinator: the project's default agent). Ignored when you pass an inline `agent` spec.' })),
   agent: Type.Optional(inlineAgent),
   task_id: Type.Optional(Type.String({ description: 'Set only to resume a previous task: the task_id a previous task output returned. The task resumes in the session it was created in.' })),
   session: Type.Optional(
@@ -515,6 +515,8 @@ function resolveSpawn(params: SubagentParams, host: KortixHost): Omit<SpawnSessi
     if (params.task_id) return { title: params.description, agent: '', systemPrompt: '' }
     // No type named: the general-purpose agent, where this session may start it.
     if (types.has('general')) return resolveSpawn({ ...params, subagent_type: 'general' }, host)
+    // The platform coordinator has no built-ins: its child names no agent, so the API runs the project's default agent.
+    if (anyProjectAgent && params.session !== 'same') return { title: `${params.description} (default agent)`, agent: INLINE_AGENT, systemPrompt: SUBAGENT_PROMPT }
     throw new Error(anyProjectAgent ? "Set subagent_type to a project agent's name (kortix_agents list shows them), or pass an inline `agent` spec." : SUBAGENT_SPEC_REQUIRED)
   }
   const type = types.get(params.subagent_type)
