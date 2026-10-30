@@ -24118,9 +24118,9 @@
   },
   "sessionDesktop": {
     "title": "Bureau",
-    "openInNewTab": "Ouvrir dans un nouvel onglet",
-    "unavailable": "Le bureau ne fonctionne pas sur cet ordinateur.",
-    "startHint": "Demandez à Kortix d’exécuter",
+    "openTab": "Ouvrir dans un nouvel onglet",
+    "offline": "Le bureau ne fonctionne pas sur cet ordinateur.",
+    "start": "Demandez à Kortix d’exécuter",
     "retry": "Réessayer",
     "takeOver": "Prendre le contrôle",
     "userControl": "Vous avez le contrôle",

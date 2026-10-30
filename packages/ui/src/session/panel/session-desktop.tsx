@@ -93,7 +93,7 @@ export function SessionDesktop({
             size="icon"
             className="size-7"
             disabled={!live}
-            aria-label={t('openInNewTab')}
+            aria-label={t('openTab')}
             onClick={() => src && window.open(src, '_blank', 'noopener,noreferrer')}
           >
             <ArrowSquareOutIcon className="size-3.5" />
@@ -115,9 +115,9 @@ export function SessionDesktop({
           {state === 'off' ? (
             <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm">
               <MonitorIcon className="size-10 opacity-20" />
-              <p>{t('unavailable')}</p>
+              <p>{t('offline')}</p>
               <p className="text-xs">
-                {t('startHint')} <code>kortix-desktop start</code>.
+                {t('start')} <code>kortix-desktop start</code>.
               </p>
               <Button
                 variant="secondary"

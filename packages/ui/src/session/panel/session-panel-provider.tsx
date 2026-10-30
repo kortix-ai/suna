@@ -167,8 +167,8 @@ export function SessionPanelProvider({
   children: ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const tReminders = useTranslations('reminders');
   const tDesktop = useTranslations('sessionDesktop');
+  const tReminders = useTranslations('reminders');
   const { steps, outputs, context, apps, files, isRunning, outcome } = usePanelDerivations({
     sessionId, projectId, projectSessionId, isSessionBusy,
   });

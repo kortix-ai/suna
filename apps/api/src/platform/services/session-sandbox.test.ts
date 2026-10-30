@@ -915,9 +915,9 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
-    const { provider: _provider, ...automaticOpts } = baseOpts();
-
-    await provisionSessionSandbox(automaticOpts);
+    // createProjectSession forwards the balancer's provider together with an
+    // explicit false lock. The provider's presence alone must not pin it.
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum', providerLocked: false });
     await opened;
 
     expect(providerNamesRequested).toEqual(['platinum', 'daytona']);

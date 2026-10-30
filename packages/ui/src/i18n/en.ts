@@ -8284,9 +8284,9 @@ const catalog = {
   },
   "sessionDesktop": {
     "title": "Desktop",
-    "openInNewTab": "Open in new tab",
-    "unavailable": "The desktop is not running on this computer.",
-    "startHint": "Ask Kortix to run",
+    "openTab": "Open in new tab",
+    "offline": "The desktop is not running on this computer.",
+    "start": "Ask Kortix to run",
     "retry": "Retry",
     "takeOver": "Take over",
     "userControl": "You have control",

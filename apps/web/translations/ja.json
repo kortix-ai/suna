@@ -24118,14 +24118,14 @@
   },
   "sessionDesktop": {
     "title": "デスクトップ",
-    "openInNewTab": "新しいタブで開く",
-    "unavailable": "このコンピューターではデスクトップが起動していません。",
-    "startHint": "Kortix に次のコマンドを実行するよう依頼してください：",
+    "openTab": "新しいタブで開く",
+    "offline": "このコンピューターではデスクトップが起動していません。",
+    "start": "Kortix に次のコマンドの実行を依頼してください：",
     "retry": "再試行",
     "takeOver": "操作を引き継ぐ",
     "userControl": "あなたが操作中",
     "agentControl": "Kortix が操作中",
-    "returnControl": "操作を返す",
+    "returnControl": "操作を戻す",
     "escape": "Esc"
   }
 }
