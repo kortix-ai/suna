@@ -229,7 +229,7 @@ const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
 
 /**
  * The capability a permission rule names for this call (`RUNTIME_PERMISSION_CAPABILITIES`); any other tool is its own.
- * `memory`'s `view` command only reads, so it is `read`; its other commands are `edit`.
+ * `memory` (a project's ejected copy of the retired Kortix tool): `view` only reads, so it is `read`; its other commands are `edit`.
  */
 export function toolCapability(tool: string, args?: unknown): string {
   if (tool === 'memory') return (args as { command?: unknown } | null | undefined)?.command === 'view' ? 'read' : 'edit'

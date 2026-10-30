@@ -31,6 +31,7 @@ import {
   REGISTRY_NAME_MAX,
   REGISTRY_NAME_RE,
   RETIRED_KORTIX_TOOLS,
+  RETIRED_KORTIX_TOOL_HINTS,
   SLUG_RE,
   SPACE_HEADER_ITEMS,
   SPACE_SLUG_RE,
@@ -788,7 +789,8 @@ function validateToolGrantV3(value: unknown, where: string, known: Set<string>, 
   const retired = missing.filter((name) => RETIRED_KORTIX_TOOLS.includes(name));
   const unknown = missing.filter((name) => !RETIRED_KORTIX_TOOLS.includes(name));
   if (retired.length > 0) {
-    issues.push({ path: where, message: `removed: ${retired.join(', ')}. Agents reach connectors with the \`kortix connectors\` CLI. Delete these names.`, severity: 'warning' });
+    const hints = [...new Set(retired.map((name) => RETIRED_KORTIX_TOOL_HINTS[name]).filter(Boolean))];
+    issues.push({ path: where, message: `removed: ${retired.join(', ')}. ${hints.join(' ')} Delete these names.`.replace(/\s+/g, ' '), severity: 'warning' });
   }
   if (unknown.length > 0) {
     issues.push({ path: where, message: `not a harness, Kortix or registered tool: ${unknown.join(', ')}.`, severity: 'error' });
