@@ -29,7 +29,9 @@ mock.module('../platform/services/maintenance-setting', () => ({ maintenanceSett
 mock.module('../platform/services/runtime-settings', () => ({ refreshRuntimeSettings: async () => {} }));
 mock.module('../platform/services/github-app-identity', () => ({ refreshAppIdentity: async () => {} }));
 mock.module('../platform/services/managed-git-backend', () => ({ refreshGitBackend: async () => {} }));
+const broadcast = await import('../shared/pg-broadcast');
 mock.module('../shared/pg-broadcast', () => ({
+  ...broadcast,
   startConfigBaseMoveBroadcast: async () => false,
   onSessionChanged: record('onSessionChanged'),
 }));

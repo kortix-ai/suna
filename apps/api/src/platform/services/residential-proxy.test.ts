@@ -12,12 +12,17 @@ const KEYS = [
   'KORTIX_PLATINUM_RESIDENTIAL_PROXY',
   'KORTIX_CONFIG_ARCHIVE_S3_BUCKET',
   'KORTIX_PROJECT_SNAPSHOT_S3_BUCKET',
+  'KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID',
+  'KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY',
 ] as const;
 let saved: Partial<typeof config>;
 beforeEach(() => {
   saved = Object.fromEntries(KEYS.map((key) => [key, config[key]]));
   config.PLATINUM_API_KEY = 'pt_test_key';
   config.KORTIX_PLATINUM_RESIDENTIAL_PROXY = true;
+  // Presigning is local only when credentials do not fall through to instance metadata.
+  config.KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID = 'unit-test-access-key';
+  config.KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY = 'unit-test-secret-key';
   config.KORTIX_URL = 'https://api.example.com';
   config.LLM_GATEWAY_BASE_URL = 'https://gateway.example.com:8443/v1';
   // No object store: each test that wants one configures it.
