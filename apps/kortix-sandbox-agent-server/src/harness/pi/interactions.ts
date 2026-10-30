@@ -216,10 +216,11 @@ function resolveRule(config: PermissionRuleConfig | undefined, subject: string |
 /**
  * pi's tools whose name is not their capability: `write` and the Kortix tools
  * that write files (`KORTIX_EDIT_TOOLS`) are `edit`; the search and scrape
- * tools reach the web.
+ * tools reach the web; `workflow` starts subagents, as `task` does.
  */
 const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
   write: 'edit',
+  workflow: 'task',
   web_search: 'websearch',
   image_search: 'websearch',
   scrape_webpage: 'webfetch',

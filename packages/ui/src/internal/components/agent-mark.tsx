@@ -4,7 +4,7 @@ import type { CSSProperties } from 'react';
 
 import { cn } from '../lib/utils';
 import { Hint } from '../../primitives/hint';
-import { isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
+import { isMyKortixAgentName, MY_KORTIX_DISPLAY_NAME } from '@kortix/shared';
 import { pixelMark } from '../lib/pixel-mark';
 
 /** Mark size → tile size. The mark is a multiple of 7, so each pixel lands on
@@ -112,7 +112,7 @@ export function AgentMark({
  * agent page, the index and the hover hint name an agent the same way.
  */
 export function agentDisplayName(slug: string): string {
-  if (isMetaAgentName(slug)) return META_AGENT_DISPLAY_NAME;
+  if (isMyKortixAgentName(slug)) return MY_KORTIX_DISPLAY_NAME;
   const words = slug.replace(/[-_]+/g, ' ').trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }

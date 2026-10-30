@@ -167,6 +167,73 @@ describe('narrateStep - a codemode script is a script, not the tool name', () =>
   });
 });
 
+describe('narrateStep - pi agent, workflow and the My Kortix platform tools narrate in plain words', () => {
+  /** A platform tool call whose output is the tool's `KortixToolResult` JSON. */
+  function platform(tool: string, action: string, result?: Record<string, unknown>): ToolPart {
+    return part(tool, { action }, result ? JSON.stringify({ tool, action, card: { title: 't', status: 'done' }, ...result }) : undefined);
+  }
+
+  it('resolves each to its own family, never the other fallback', () => {
+    expect(familyForTool('agent')).toBe('delegate');
+    expect(familyForTool('workflow')).toBe('workflow');
+    for (const t of ['kortix_agents', 'kortix_sessions', 'kortix_schedules', 'kortix_connectors', 'kortix_people', 'kortix_access', 'kortix_usage']) {
+      expect(familyForTool(t)).toBe('platform');
+    }
+  });
+
+  it("pi's agent tool is a hand-off, like its alias task", () => {
+    expect(narrateStep('delegate', [part('agent', { description: 'Find the bug' })])).toBe('Asked a helper agent');
+    expect(narrateStep('delegate', [part('agent'), part('task')])).toBe('Worked with 2 helper agents');
+  });
+
+  it('narrates one workflow and several workflows', () => {
+    expect(narrateStep('workflow', [part('workflow')])).toBe('Ran a workflow');
+    expect(narrateStep('workflow', [part('workflow'), part('workflow')])).toBe('Ran 2 workflows');
+  });
+
+  it('a read action checks, any other action updates, named by the tool', () => {
+    expect(narrateStep('platform', [platform('kortix_agents', 'list', { ok: true })])).toBe('Checked your agents');
+    expect(narrateStep('platform', [platform('kortix_agents', 'create', { ok: true })])).toBe('Updated your agents');
+    expect(narrateStep('platform', [platform('kortix_people', 'invite', { ok: true })])).toBe('Updated the members');
+    expect(narrateStep('platform', [platform('kortix_usage', 'show', { ok: true })])).toBe('Checked your usage');
+    expect(narrateStep('platform', [platform('kortix_access', 'check', { ok: true })])).toBe('Checked who has access');
+    // A call still running has no output yet; the action alone decides the verb.
+    expect(narrateStep('platform', [part('kortix_schedules', { action: 'pause' })])).toBe('Updated your schedules');
+  });
+
+  it('the messaging and team task tools narrate by tool, not by an action input', () => {
+    for (const t of ['send_message', 'list_agents', 'task_stop']) {
+      expect(familyForTool(t)).toBe('platform');
+    }
+    expect(narrateStep('platform', [part('send_message', { to: 'reviewer', message: 'hi' })])).toBe('Sent a message');
+    expect(narrateStep('platform', [part('send_message'), part('send_message')])).toBe('Sent 2 messages');
+    expect(narrateStep('platform', [part('list_agents')])).toBe('Checked the other agents');
+    expect(narrateStep('platform', [part('task_stop', { session_id: 's' })])).toBe('Stopped an agent');
+    const refused = platform('send_message', '', { ok: false, error: { kind: 'denied', message: 'no' } });
+    expect(narrateStep('platform', [refused])).toBe('Sending a message needs a permission');
+    const failed = platform('send_message', '', { ok: false, error: { kind: 'failed', message: 'boom' } });
+    expect(narrateStep('platform', [failed])).toBe("Couldn't send a message");
+  });
+
+  it('a group of several platform tools names the project', () => {
+    expect(narrateStep('platform', [platform('kortix_agents', 'list', { ok: true }), platform('kortix_sessions', 'list', { ok: true })])).toBe('Checked your project');
+    expect(narrateStep('platform', [platform('kortix_agents', 'list', { ok: true }), platform('kortix_sessions', 'stop', { ok: true })])).toBe('Updated your project');
+  });
+
+  it('a refused or failed result never narrates as done', () => {
+    const denied = platform('kortix_people', 'invite', { ok: false, error: { kind: 'denied', message: 'needs a permission' } });
+    expect(narrateStep('platform', [denied])).toBe('Updating the members needs a permission');
+    const failed = platform('kortix_agents', 'list', { ok: false, error: { kind: 'failed', message: 'boom' } });
+    expect(narrateStep('platform', [failed])).toBe("Couldn't check your agents");
+  });
+
+  it('a failed call says so', () => {
+    const errored = { ...part('kortix_agents', { action: 'create' }), state: { status: 'error', input: { action: 'create' }, error: 'boom' } } as unknown as ToolPart;
+    expect(narrateFailedStep('platform', [errored])).toBe("Couldn't update your agents");
+    expect(narrateFailedStep('workflow', [part('workflow')])).toBe('A workflow hit a problem');
+  });
+});
+
 describe('narrationToolName', () => {
   it('strips the MCP server prefix and title-cases', () => {
     expect(narrationToolName('linear/create_issue')).toBe('Create Issue');
@@ -831,6 +898,8 @@ describe('narrateFailedStep (W7)', () => {
     'ask',
     'retired',
     'script',
+    'workflow',
+    'platform',
     'other',
   ];
 

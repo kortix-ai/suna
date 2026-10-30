@@ -163,6 +163,9 @@ export {
   roomMessages,
   roomMembers,
   sessionIdleWatches,
+  // Cross-session messages and agent-team tasks (@kortix/api-contract/multi-agent)
+  sessionPeerMessages,
+  sessionTasks,
   // Artifacts: published HTML pages (flag artifacts)
   artifacts,
   artifactCommentThreads,

@@ -19,7 +19,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { grantFromLoadedAgents, type LoadedAgents } from '../projects/agents';
-import { platformMetaAgentGrant } from '../projects/lib/platform-meta-agent';
+import { myKortixAgentGrant } from '../projects/lib/my-kortix-agent';
 import { remintDecisionFor } from '../projects/lib/session-token-grant';
 import { agentGrantDiffers } from '../projects/lib/secret-grant';
 
@@ -57,19 +57,19 @@ describe('grantFromLoadedAgents — the reserved meta coordinator', () => {
     // Was: { agent: 'meta', permissions: [], connectors: [], env: [] } — the
     // unlisted-agent default-deny, which the per-prompt re-mint then wrote onto
     // the session token.
-    expect(grantFromLoadedAgents('meta', GOVERNED)).toEqual(platformMetaAgentGrant());
+    expect(grantFromLoadedAgents('meta', GOVERNED)).toEqual(myKortixAgentGrant());
   });
 
   test('resolves to the platform grant on an UNGOVERNED project', () => {
     // Was: null (UNRESTRICTED), which made the re-mint refuse the prompt.
-    expect(grantFromLoadedAgents('meta', UNGOVERNED)).toEqual(platformMetaAgentGrant());
+    expect(grantFromLoadedAgents('meta', UNGOVERNED)).toEqual(myKortixAgentGrant());
   });
 
   test('resolves to the platform grant even when the manifest is unreadable', () => {
     // Fail-closed still holds: the platform grant is a fixed, known value that
     // never depends on repository content, so an unreadable manifest cannot
     // widen it.
-    expect(grantFromLoadedAgents('meta', UNREADABLE)).toEqual(platformMetaAgentGrant());
+    expect(grantFromLoadedAgents('meta', UNREADABLE)).toEqual(myKortixAgentGrant());
   });
 
   test('carries no connectors and no secrets, on every manifest shape', () => {
@@ -82,7 +82,7 @@ describe('grantFromLoadedAgents — the reserved meta coordinator', () => {
 
   test('the per-prompt re-mint is now a no-op for a meta session', () => {
     // What the token holds at mint vs. what a prompt now resolves.
-    const stored = platformMetaAgentGrant();
+    const stored = myKortixAgentGrant();
     const running = grantFromLoadedAgents('meta', GOVERNED);
     expect(agentGrantDiffers(stored, running)).toBe(false);
     expect(remintDecisionFor(stored, running)).toEqual({ action: 'skip' });
@@ -91,7 +91,7 @@ describe('grantFromLoadedAgents — the reserved meta coordinator', () => {
   test('BEFORE the fix the same re-mint destroyed the grant (regression guard)', () => {
     // The exact decision the old resolution produced. Kept as an explicit
     // statement of what must never happen again.
-    const stored = platformMetaAgentGrant();
+    const stored = myKortixAgentGrant();
     const oldResolution = { agent: 'meta', permissions: [], connectors: [], env: [] };
     expect(remintDecisionFor(stored, oldResolution)).toEqual({
       action: 'write',
@@ -120,7 +120,7 @@ describe('grantFromLoadedAgents — no other principal is widened', () => {
   });
 
   test('an agent named meta-something is NOT the reserved coordinator', () => {
-    // The reserved name is exact (`isMetaAgentName`). A near-miss must fall
+    // The reserved name is exact (`isMyKortixAgentName`). A near-miss must fall
     // through to ordinary manifest resolution.
     expect(grantFromLoadedAgents('meta-worker', GOVERNED)).toEqual({
       agent: 'meta-worker',

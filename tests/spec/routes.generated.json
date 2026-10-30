@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 995,
+  "count": 1006,
   "routes": [
     {
       "method": "GET",
@@ -3175,6 +3175,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/idle-notice"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/inbound"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/log"
     },
@@ -3225,6 +3229,22 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/participants"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/peer-messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/peer-messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/peer-messages/:messageId/approve"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/peer-messages/:messageId/deny"
     },
     {
       "method": "PUT",
@@ -3293,6 +3313,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/question"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reachable"
     },
     {
       "method": "POST",
@@ -3373,6 +3397,26 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/stop"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/tasks"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/tasks"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/tasks/:seq"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/tasks/:seq"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/tasks/:seq"
     },
     {
       "method": "GET",

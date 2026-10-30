@@ -132,7 +132,7 @@ unbootable.
 
 **The meta coordinator is the exception.** A session whose agent is `meta`
 (`meta_agent` flag) is never assigned the project's release. It gets the `meta`
-variant: the platform's own governance (`buildPlatformMetaOpenCodeConfig`) on
+variant: the platform's own governance (`buildMyKortixConfig`) on
 the image default config dir, with no archive. Its release ID does not change
 when the base branch moves. Its box holds no project checkout and the meta
 image has no `bun`, so a config dir whose tools import a dependency can never

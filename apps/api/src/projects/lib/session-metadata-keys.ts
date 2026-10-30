@@ -118,6 +118,10 @@ export const OWNER_MANAGED_SESSION_METADATA_KEYS = ['unattended', SUBAGENT_NOTIF
 
 export const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [
   ...SERVER_MANAGED_SESSION_METADATA_KEYS,
+  // Agent teams: the lead is fixed when the lead creates the teammate
+  // (`teamCreateMetadataError`); a later PATCH would let a session join
+  // another session's team.
+  'team_lead',
   'workspace_mode',
   'repository_access',
   'repository_generation',

@@ -21,10 +21,14 @@ export const RUNTIME_ASSETS_STATE_PATH = '/opt/kortix/runtime-assets-state.json'
  * them. A kortixd test fails when the daemon imports a file not listed here.
  */
 export const KORTIXD_SHARED_SOURCES = [
+  'packages/shared/src/peer-message-prompt.ts',
+  'packages/shared/src/room-prompt.ts',
   'packages/shared/src/ssrf-guard.ts',
   'packages/api-contract/src/compiled-agent-config-env.ts',
   'packages/api-contract/src/egress-shim-rules.ts',
   'packages/api-contract/src/fallback-models.ts',
+  'packages/api-contract/src/kortix-tool-card.ts',
+  'packages/api-contract/src/multi-agent.ts',
   'packages/api-contract/src/permission-rules.ts',
   'packages/api-contract/src/runtime-relay.ts',
   'packages/api-contract/src/sandbox-layout.ts',

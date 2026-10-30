@@ -1,27 +1,30 @@
 import { describe, expect, test } from 'bun:test';
+import { canonicalAgentName, isMyKortixAgentName } from '@kortix/shared';
+import { KORTIX_PLATFORM_TOOL_NAMES } from '@kortix/api-contract/kortix-tool-card';
+import { KORTIX_TOOL_NAMES } from '@kortix/manifest-schema';
 
 import {
-  addPlatformMetaAgent,
-  buildPlatformMetaOpenCodeConfig,
+  addMyKortixAgent,
+  buildMyKortixConfig,
   builtinAgentConfigView,
   declaredBuiltinAgents,
   enabledBuiltinAgentKey,
   MY_KORTIX_DESCRIPTION,
   MY_KORTIX_PROMPT,
-  platformMetaAgentGrant,
+  myKortixAgentGrant,
   resolveBuiltinAgents,
-  resolvePlatformMetaSandbox,
-} from '../projects/lib/platform-meta-agent';
+  resolveMyKortixSandbox,
+} from '../projects/lib/my-kortix-agent';
 import { grantFromLoadedAgents } from '../projects/agents';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { manifestHealthWithout } from '../projects/lib/manifest-health';
 
-describe('platform meta agent', () => {
+describe('My Kortix agent', () => {
   test('adds one reserved meta agent and replaces a project collision', () => {
-    const config = addPlatformMetaAgent({
+    const config = addMyKortixAgent({
       agents: [
         {
-          name: 'meta',
+          name: 'mykortix',
           path: '/project/AGENTS.md',
           source: 'opencode',
           description: 'project override',
@@ -42,10 +45,10 @@ describe('platform meta agent', () => {
       agent_discovery: 'opencode',
     });
 
-    expect(config.agents.filter((agent) => agent.name === 'meta')).toHaveLength(1);
+    expect(config.agents.filter((agent) => agent.name === 'mykortix')).toHaveLength(1);
     expect(config.agents[0]).toMatchObject({
-      name: 'meta',
-      path: '/workspace/AGENTS.md',
+      name: 'mykortix',
+      path: '',
       // Platform-owned: hosts render it read-only and never open the editor.
       platform: true,
       scope: {
@@ -54,34 +57,32 @@ describe('platform meta agent', () => {
         kortix_permissions: 'all',
       },
     });
-    expect(config.open_code_default_agent).toBe('meta');
-    expect(config.default_agent).toBe('meta');
+    expect(config.open_code_default_agent).toBe('mykortix');
+    expect(config.default_agent).toBe('mykortix');
   });
 
-  test('defines the My Kortix agent that follows the platform guide', () => {
-    expect(JSON.parse(buildPlatformMetaOpenCodeConfig())).toEqual({
-      agent: {
-        meta: {
-          description: MY_KORTIX_DESCRIPTION,
-          mode: 'primary',
-          prompt: MY_KORTIX_PROMPT,
-        },
-      },
+  test('defines My Kortix with the platform prompt and every Kortix and platform tool', () => {
+    const config = JSON.parse(buildMyKortixConfig());
+    expect(config.agent).toEqual({
+      mykortix: { description: MY_KORTIX_DESCRIPTION, mode: 'primary', prompt: MY_KORTIX_PROMPT },
     });
+    expect(config.kortix_tools).toEqual([...KORTIX_TOOL_NAMES, ...KORTIX_PLATFORM_TOOL_NAMES]);
+    // The guide ships in the prompt now: the meta image carries no AGENTS.md to point at.
+    expect(MY_KORTIX_PROMPT).not.toContain('/workspace/AGENTS.md');
     expect(MY_KORTIX_DESCRIPTION).toBe(
       'The one agent you talk to. It routes each task to the agent made for it and runs it, with your permissions.',
     );
   });
 
   test('forces the meta sandbox and rejects an explicit alternate sandbox', () => {
-    expect(resolvePlatformMetaSandbox(undefined)).toBe('meta');
-    expect(resolvePlatformMetaSandbox('meta')).toBe('meta');
-    expect(() => resolvePlatformMetaSandbox('node22')).toThrow('META_SANDBOX_LOCKED');
+    expect(resolveMyKortixSandbox(undefined)).toBe('mykortix');
+    expect(resolveMyKortixSandbox('mykortix')).toBe('mykortix');
+    expect(() => resolveMyKortixSandbox('node22')).toThrow('META_SANDBOX_LOCKED');
   });
 
   test('grants the coordinator every project action without secrets or connectors', () => {
-    expect(platformMetaAgentGrant()).toEqual({
-      agent: 'meta',
+    expect(myKortixAgentGrant()).toEqual({
+      agent: 'mykortix',
       permissions: 'all',
       connectors: [],
       env: [],
@@ -102,11 +103,11 @@ describe('platform meta agent', () => {
   });
 
   test('`meta` is a built-in only while My Kortix is on', () => {
-    expect(enabledBuiltinAgentKey('meta', { my_kortix: true })).toBe('my_kortix');
-    expect(enabledBuiltinAgentKey('meta', { my_kortix: false })).toBeNull();
+    expect(enabledBuiltinAgentKey('mykortix', { my_kortix: true })).toBe('my_kortix');
+    expect(enabledBuiltinAgentKey('mykortix', { my_kortix: false })).toBeNull();
     expect(enabledBuiltinAgentKey('kortix', { my_kortix: true })).toBeNull();
     expect(builtinAgentConfigView('my_kortix', 'kortix')).toMatchObject({
-      agent: 'meta',
+      agent: 'mykortix',
       schema_version: 3,
       builtin: 'my_kortix',
       editable: false,
@@ -117,12 +118,12 @@ describe('platform meta agent', () => {
 
   test('a kortix.yaml that turns My Kortix off strips a meta session to no project action', () => {
     const governed = { specs: [], errors: [], defaultAgent: 'kortix' };
-    expect(grantFromLoadedAgents('meta', governed)).toEqual(platformMetaAgentGrant());
-    expect(grantFromLoadedAgents('meta', { ...governed, builtinAgents: { my_kortix: true } })).toEqual(
-      platformMetaAgentGrant(),
+    expect(grantFromLoadedAgents('mykortix', governed)).toEqual(myKortixAgentGrant());
+    expect(grantFromLoadedAgents('mykortix', { ...governed, builtinAgents: { my_kortix: true } })).toEqual(
+      myKortixAgentGrant(),
     );
-    expect(grantFromLoadedAgents('meta', { ...governed, builtinAgents: { my_kortix: false } })).toEqual({
-      agent: 'meta',
+    expect(grantFromLoadedAgents('mykortix', { ...governed, builtinAgents: { my_kortix: false } })).toEqual({
+      agent: 'mykortix',
       permissions: [],
       connectors: [],
       env: [],
@@ -139,5 +140,23 @@ describe('platform meta agent', () => {
     expect(resolveFeatureFlag({ experimental: {} }, 'meta_agent')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
     expect(resolveFeatureFlag({ experimental: { meta_agent: true } }, 'meta_agent')).toBe(true);
+  });
+});
+
+describe('the slug before the rename (`meta`)', () => {
+  // Sessions, tokens and boxes from before 2026-10-30 carry `meta`: every read accepts it, nothing writes it.
+  test('is still My Kortix, and resolves to the new slug and sandbox', () => {
+    expect(isMyKortixAgentName('meta')).toBe(true);
+    expect(isMyKortixAgentName('mykortix')).toBe(true);
+    expect(isMyKortixAgentName('worker')).toBe(false);
+    expect(canonicalAgentName('meta')).toBe('mykortix');
+    expect(enabledBuiltinAgentKey('meta', { my_kortix: true })).toBe('my_kortix');
+    expect(resolveMyKortixSandbox('meta')).toBe('mykortix');
+    expect(myKortixAgentGrant().agent).toBe('mykortix');
+  });
+
+  test('a project agent named `meta` is replaced by My Kortix, like one named `mykortix`', () => {
+    const config = addMyKortixAgent({ default_agent: 'worker', agents: [{ name: 'meta' }, { name: 'worker' }] } as never);
+    expect(config.agents.map((agent) => agent.name)).toEqual(['mykortix', 'worker']);
   });
 });

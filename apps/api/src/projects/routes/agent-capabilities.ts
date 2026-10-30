@@ -16,7 +16,7 @@ import { projectsApp } from '../lib/app';
 import { projectBuiltinAgents } from '../lib/builtin-agents';
 import { featureFlagsEnvValue } from '../lib/feature-flag-env';
 import { withProjectGitAuth } from '../lib/git';
-import { enabledBuiltinAgentKey } from '../lib/platform-meta-agent';
+import { enabledBuiltinAgentKey } from '../lib/my-kortix-agent';
 import { readManifest } from '../triggers';
 
 const ToolSchema = z.object({

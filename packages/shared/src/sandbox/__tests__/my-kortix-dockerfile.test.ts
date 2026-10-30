@@ -3,9 +3,9 @@ import { describe, expect, test } from 'bun:test';
 import { PNPM_SHA256_AMD64, PNPM_SHA256_ARM64, PNPM_VERSION } from '../../runtime-versions';
 import { SANDBOX_DESKTOP_INSTALL_COMMAND } from '../desktop';
 import { kortixWorkstationTooling } from '../dockerfile-layer';
-import { buildMetaSandboxDockerfile } from '../meta-dockerfile';
+import { buildMyKortixSandboxDockerfile } from '../my-kortix-dockerfile';
 
-const dockerfile = buildMetaSandboxDockerfile({
+const dockerfile = buildMyKortixSandboxDockerfile({
   agentBinaryPath: 'artifacts/kortix-agent.gz',
   cliBinaryPath: 'artifacts/kortix.gz',
   entrypointScriptPath: 'artifacts/kortix-entrypoint.sh',
@@ -14,8 +14,8 @@ const dockerfile = buildMetaSandboxDockerfile({
   managedSkillsPath: 'artifacts/managed-skills',
 });
 
-describe('buildMetaSandboxDockerfile', () => {
-  test('is the Kortix defaults plus My Kortix\'s guide, on the platform default\'s base', () => {
+describe('buildMyKortixSandboxDockerfile', () => {
+  test('is the Kortix defaults on the platform default\'s base, with no guide baked in', () => {
     expect(dockerfile).toContain('FROM ubuntu:24.04');
     expect(dockerfile).toContain('pnpm runtime set node 22.23.1 -g');
     expect(dockerfile).not.toContain('pnpm list -g');
@@ -24,43 +24,8 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain('PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH');
     expect(dockerfile).toContain('/usr/local/bin/kortix-agent');
     expect(dockerfile).toContain('/usr/local/bin/kortix');
-    expect(dockerfile).toContain('/workspace/AGENTS.md');
-    expect(dockerfile).toContain('# My Kortix\n');
-    expect(dockerfile).toContain('You are My Kortix: the one agent this person talks to in this project.');
-    expect(dockerfile).toContain('NEVER do project work in this sandbox');
-    expect(dockerfile).toContain('`kortix sessions new --agent <name> --prompt "<task>"`');
-    expect(dockerfile).toContain('`kortix agents config <name> --file -`');
-    expect(dockerfile).toContain('show the user the before and after, and ask once.');
-    expect(dockerfile).toContain('Load the `kortix-goals` skill.');
-    // The meta box has no /drives, where `kortix goals ls|status` refuse.
-    expect(dockerfile).toContain('Never run `kortix goals ls` or `kortix goals status` here');
-    expect(dockerfile).not.toContain('Then follow it with `kortix goals ls`');
-    expect(dockerfile).toContain('Every App, Artifact or Goal you create names the agent or the space it belongs to.');
-    expect(dockerfile).toContain('It cannot mint tokens. You never hold more than the user does in this project.');
-    expect(dockerfile).toContain(
-      'Move files between sessions with `kortix sessions cp <session-id>:<path> <session-id>:<path>`.',
-    );
-    expect(dockerfile).toContain(
-      'To spawn a session with input files, use `kortix sessions new --with-file <local path> --prompt "<task>"`.',
-    );
-    expect(dockerfile).toContain('Each file lands in /workspace/incoming/ before the prompt is delivered');
-    expect(dockerfile).toContain(
-      'Specialized sessions do their task themselves and never spawn sessions.',
-    );
-    expect(dockerfile).toContain(
-      'Specialized sessions run full sandboxes with Python (via `uv` — tell them to use `uv run`/`uvx`/`uv pip`,',
-    );
-    expect(dockerfile).toContain('Read the `kortix-system` skill before you coordinate');
-    expect(dockerfile).toContain(
-      'Wait for a session with `kortix sessions wait-for <session-id> --timeout 120`',
-    );
-    expect(dockerfile).toContain(
-      'It grants every project action allowed to the user who started this session.',
-    );
-    expect(dockerfile).toContain(
-      'It cannot access another project, account administration, project secrets, or connectors.',
-    );
-    expect(dockerfile).not.toContain('artifacts/AGENTS.md');
+    // My Kortix's instructions ship in the API-served config (MY_KORTIX_PROMPT), not in the image.
+    expect(dockerfile).not.toContain('AGENTS.md');
     expect(dockerfile).not.toContain('llm-catalog');
     expect(dockerfile).toContain(
       'COPY --chown=kortix:kortix artifacts/managed-skills /opt/kortix/managed-skills',

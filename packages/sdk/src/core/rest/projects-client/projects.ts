@@ -110,6 +110,8 @@ export type FeatureFlagKey =
   | 'session_groups'
   /** Kortix in Chrome: a session drives its owner's own Chrome through the extension. Experimental; on where the platform offers it. */
   | 'chrome'
+  /** Agent teams: a lead session with named teammates and a shared task list. Experimental, off by default. */
+  | 'agent_teams'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -164,6 +166,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'email_channel',
   'session_groups',
   'chrome',
+  'agent_teams',
 ] as const;
 
 /**
@@ -281,7 +284,7 @@ export interface ProjectConfigSummary {
   /** @deprecated Use `default_agent`. */
   open_code_default_agent: string | null;
   /** Which built-in agents the project runs (`builtin_agents` in kortix.yaml;
-   *  absent there = on). `my_kortix` is My Kortix, the agent named `meta`.
+   *  absent there = on). `my_kortix` is My Kortix, the agent named `mykortix`.
    *  Absent from an older API. */
   builtin_agents?: { my_kortix: boolean };
   agent_discovery: 'opencode' | 'declarative';

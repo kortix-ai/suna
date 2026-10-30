@@ -12,6 +12,22 @@ describe('toolKind', () => {
     ['grep', 'grep'],
     ['question', 'question'],
     ['task', 'task'],
+    // pi's subagent tool; `task` is its deprecated alias.
+    ['agent', 'task'],
+    // pi's workflow tool: a script that runs several agents.
+    ['workflow', 'workflow'],
+    // My Kortix platform tools (`@kortix/api-contract/kortix-tool-card`).
+    ['kortix_agents', 'platform'],
+    ['kortix_sessions', 'platform'],
+    ['kortix_schedules', 'platform'],
+    ['kortix_connectors', 'platform'],
+    ['kortix_people', 'platform'],
+    ['kortix_access', 'platform'],
+    ['kortix_usage', 'platform'],
+    // The multi-agent tools (`@kortix/api-contract/multi-agent`): the same `KortixToolResult` card.
+    ['send_message', 'platform'],
+    ['list_agents', 'platform'],
+    ['task_stop', 'platform'],
     // OpenCode built-ins and aliases
     ['list', 'list'],
     ['ls', 'list'],

@@ -212,6 +212,8 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
 export interface UseSessionChildrenOptions extends Pick<ListProjectSessionsOptions, 'limit' | 'q'> {
   /** Set false until the parent is expanded — children load lazily. */
   enabled?: boolean;
+  /** Poll every this many ms while the page is visible (a live agent list). Omit for no poll. */
+  refetchInterval?: number;
 }
 
 /**
@@ -238,6 +240,7 @@ export function useSessionChildren(
     getNextPageParam: projectSessionsPageParam,
     enabled: options?.enabled ?? true,
     ...contract('inventory'),
+    ...(options?.refetchInterval ? { refetchInterval: options.refetchInterval, refetchIntervalInBackground: false } : {}),
   });
   return { ...query, sessions: flattenProjectSessionPages(query.data) };
 }
