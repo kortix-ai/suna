@@ -50,6 +50,7 @@ describe('loading', () => {
     expect(named).toContain('kortix_agents')
     expect(named).toContain('kortix_usage')
     expect(named).not.toContain('kortix_people')
+    expect(Object.keys(PLATFORM_TOOLS)).toContain('kortix_change_requests')
   })
 })
 
@@ -163,6 +164,75 @@ describe('kortix_people and kortix_access', () => {
     fakeKortix(ROSTER)
     const result = await run('kortix_access', { action: 'who_can_grant' })
     expect(result.card.rows?.map((row) => row.title)).toEqual(['Sam', 'ada@example.com'])
+  })
+})
+
+describe('kortix_change_requests', () => {
+  const CR = `{"cr_id":"cr-uuid-3","number":3,"title":"Upgrade the manifest","description":"Moves kortix.yaml to the current format.","status":"open","base_ref":"refs/heads/main","head_ref":"refs/heads/kortix/session-a","origin_session_id":"ses_9","created_by":"u_sam","created_at":"2026-10-30T09:00:00.000Z"}`
+  const SHOW = `'cr show 3 --json') echo '{"change_request":${CR},"merge_preview":{"can_merge":true,"can_fast_forward":true,"conflicts":[],"is_up_to_date":false}}' ;;`
+
+  test('list: the open change requests with number, title, author and status, each linked to Review', async () => {
+    fakeKortix(`'cr ls --status=open --json') echo '{"change_requests":[${CR}]}' ;;
+  ${ROSTER}`)
+    const result = await run('kortix_change_requests', { action: 'list' })
+    expect(result.ok).toBe(true)
+    expect(result.card.title).toBe('1 open change request')
+    expect(result.card.rows).toEqual([{ title: '#3 Upgrade the manifest', detail: 'Sam', badge: 'open', href: '/projects/proj_1/review?id=cr%3Acr-uuid-3' }])
+    expect(result.data).toEqual({
+      change_requests: [{ number: 3, cr_id: 'cr-uuid-3', title: 'Upgrade the manifest', author: 'Sam', status: 'open', from: 'kortix/session-a', into: 'main', session_id: 'ses_9', opened_at: '2026-10-30T09:00:00.000Z' }],
+    })
+  })
+
+  test('get: the summary, how many files it changes and whether it can merge', async () => {
+    fakeKortix(`${SHOW}
+  'cr diff 3 --json') printf '%s\n' '{"cr":${CR},"patch":"diff --git a/kortix.yaml b/kortix.yaml\\n--- a/kortix.yaml\\n+++ b/kortix.yaml\\n-old: 1\\n+new: 1\\n+more: 2\\ndiff --git a/README.md b/README.md\\n+line\\n"}' ;;
+  ${ROSTER}`)
+    const result = await run('kortix_change_requests', { action: 'get', id: '#3' })
+    expect(result.card.title).toBe('#3 Upgrade the manifest')
+    expect(result.card.subtitle).toBe('Moves kortix.yaml to the current format.')
+    expect(result.card.rows).toEqual([
+      { title: '2 files changed', detail: '+3 −1' },
+      { title: 'Ready to merge, no conflicts.', badge: 'ready' },
+      { title: 'Opened by Sam' },
+      { title: 'Status', badge: 'open' },
+    ])
+    expect(result.data).toMatchObject({ number: 3, files_changed: 2, additions: 3, deletions: 1, can_merge: true, conflicts: [] })
+    expect(result.card.links).toContainEqual({ label: 'Session that made it', href: '/projects/proj_1/sessions/ses_9' })
+  })
+
+  test('merge: an open one merges with its message as --message=<text>; a closed one is refused before any merge', async () => {
+    fakeKortix(`${SHOW}
+  'cr merge 3 --message=- tidy up') echo 'Merged CR #3 (fast-forward) abc1234'; echo 'Also merged #4, #5: their commits landed with it.' ;;
+  'cr show 4 --json') echo '{"change_request":{"cr_id":"cr-uuid-4","number":4,"title":"Old","status":"closed"},"merge_preview":null}' ;;`)
+    const merged = await run('kortix_change_requests', { action: 'merge', id: '3', message: '- tidy up' })
+    expect(merged.ok).toBe(true)
+    expect(merged.card.title).toBe('Merged #3 Upgrade the manifest')
+    expect(merged.card.subtitle).toBe('#4, #5 merged with it: their changes were part of it.')
+    expect(merged.data).toMatchObject({ number: 3, status: 'merged', also_merged: ['#4', '#5'] })
+    const refused = await run('kortix_change_requests', { action: 'merge', id: '4' })
+    expect(refused.error).toEqual({ kind: 'invalid', message: 'Change request #4 is closed: only an open one merges.' })
+    expect(argvs()).toEqual(['cr show 3 --json', 'cr merge 3 --message=- tidy up', 'cr show 4 --json'])
+  })
+
+  test('close: closes an open one; a refusal names who can grant it', async () => {
+    fakeKortix(`${SHOW}
+  'cr close 3') echo '{"kortix_error":{"kind":"denied","status":403,"action":"project.review.act"}}' >&2; exit 1 ;;
+  ${ROSTER}`)
+    const result = await run('kortix_change_requests', { action: 'close', id: '3' })
+    expect(result.ok).toBe(false)
+    expect(result.card.status).toBe('denied')
+    expect(result.error?.message).toContain('project.review.act')
+    expect(result.card.subtitle).toBe('Sam, ada@example.com can grant it.')
+  })
+
+  test('an option-shaped or missing id never reaches the CLI (CWE-88)', async () => {
+    fakeKortix(`'cr merge') echo 'merged something' ;;`)
+    for (const id of ['--project', '-h', '#-1', 'a b', '']) {
+      for (const action of ['get', 'merge', 'close']) {
+        expect((await run('kortix_change_requests', { action, id })).error?.kind).toBe('invalid')
+      }
+    }
+    expect(readFileSync(calls, 'utf8')).toBe('')
   })
 })
 

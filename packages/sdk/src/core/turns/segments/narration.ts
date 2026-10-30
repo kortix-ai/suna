@@ -250,6 +250,7 @@ const PLATFORM_OBJECT: Record<string, { read: string; change: string }> = {
   kortix_people: { read: 'the members', change: 'the members' },
   kortix_access: { read: 'who has access', change: 'access' },
   kortix_usage: { read: 'your usage', change: 'your usage' },
+  kortix_change_requests: { read: 'the change requests', change: 'a change request' },
   send_message: { read: 'a message', change: 'a message' },
   list_agents: { read: 'the other agents', change: 'the other agents' },
   task_stop: { read: 'an agent', change: 'an agent' },

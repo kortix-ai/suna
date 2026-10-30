@@ -13,6 +13,7 @@ import imageGen from './kortix/image_gen'
 import imageSearch from './kortix/image_search'
 import kortixAccess from './platform/kortix_access'
 import kortixAgents from './platform/kortix_agents'
+import kortixChangeRequests from './platform/kortix_change_requests'
 import kortixConnectors from './platform/kortix_connectors'
 import kortixPeople from './platform/kortix_people'
 import kortixSchedules from './platform/kortix_schedules'
@@ -56,6 +57,7 @@ export const PLATFORM_TOOLS: Readonly<Record<string, KortixTool>> = {
   kortix_people: kortixPeople,
   kortix_access: kortixAccess,
   kortix_usage: kortixUsage,
+  kortix_change_requests: kortixChangeRequests,
 }
 
 export interface HostedTool extends KortixTool {

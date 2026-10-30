@@ -176,7 +176,7 @@ describe('narrateStep - pi agent, workflow and the My Kortix platform tools narr
   it('resolves each to its own family, never the other fallback', () => {
     expect(familyForTool('agent')).toBe('delegate');
     expect(familyForTool('workflow')).toBe('workflow');
-    for (const t of ['kortix_agents', 'kortix_sessions', 'kortix_schedules', 'kortix_connectors', 'kortix_people', 'kortix_access', 'kortix_usage']) {
+    for (const t of ['kortix_agents', 'kortix_sessions', 'kortix_schedules', 'kortix_connectors', 'kortix_people', 'kortix_access', 'kortix_usage', 'kortix_change_requests']) {
       expect(familyForTool(t)).toBe('platform');
     }
   });
@@ -196,6 +196,8 @@ describe('narrateStep - pi agent, workflow and the My Kortix platform tools narr
     expect(narrateStep('platform', [platform('kortix_agents', 'create', { ok: true })])).toBe('Updated your agents');
     expect(narrateStep('platform', [platform('kortix_people', 'invite', { ok: true })])).toBe('Updated the members');
     expect(narrateStep('platform', [platform('kortix_usage', 'show', { ok: true })])).toBe('Checked your usage');
+    expect(narrateStep('platform', [platform('kortix_change_requests', 'get', { ok: true })])).toBe('Checked the change requests');
+    expect(narrateStep('platform', [platform('kortix_change_requests', 'merge', { ok: true })])).toBe('Updated a change request');
     expect(narrateStep('platform', [platform('kortix_access', 'check', { ok: true })])).toBe('Checked who has access');
     // A call still running has no output yet; the action alone decides the verb.
     expect(narrateStep('platform', [part('kortix_schedules', { action: 'pause' })])).toBe('Updated your schedules');
