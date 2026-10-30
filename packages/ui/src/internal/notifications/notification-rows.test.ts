@@ -160,6 +160,12 @@ describe('tags and types', () => {
     expect(badgeCount(99)).toBe('99');
     expect(badgeCount(100)).toBe('99+');
   });
+
+  test('an Artifact comment opens its Artifact and keeps the thread query when marking read', () => {
+    const notification = row({ kind: 'artifact_comment', artifact_id: 'a1', artifact_thread_id: 't1', session_id: null, url: '/projects/p1/artifacts/a1?thread=t1&notification=n1' });
+    expect(rowDestination(notification)).toBe('artifact');
+    expect(withoutNotificationParam(notification.url)).toBe('/projects/p1/artifacts/a1?thread=t1');
+  });
 });
 
 describe('openedNotificationId', () => {

@@ -28,7 +28,7 @@ import { haptics } from '@/lib/haptics';
 import { KIND_LABEL } from '@/lib/notifications/inbox';
 import { DEVICE_KIND_SWITCH } from '@/lib/notifications/push';
 import { carryOverLegacyKinds } from '@/lib/notifications/registration';
-import { useHasNotificationCenterProject } from '@/lib/projects/hooks';
+import { useHasNotificationInboxProject } from '@/lib/projects/hooks';
 import { useNotificationStore, type NotificationPreferences } from '@/stores/notification-store';
 
 type ToggleKey = 'onCompletion' | 'onError' | 'onQuestion' | 'onPermission' | 'playSound';
@@ -51,6 +51,7 @@ const KIND_ICON: Record<InboxNotificationKind, AppIcon> = {
   capture_device_down: XCircleIcon,
   capture_device_recovered: ArrowCounterClockwiseIcon,
   message: ChatCircleIcon,
+  artifact_comment: ChatCircleIcon,
 };
 
 /**
@@ -64,7 +65,7 @@ const KIND_ICON: Record<InboxNotificationKind, AppIcon> = {
  *   (`NotificationCenterPage`).
  */
 export default function NotificationsScreen() {
-  return useHasNotificationCenterProject() ? <NotificationCenterPage /> : <DeviceNotificationsPage />;
+  return useHasNotificationInboxProject() ? <NotificationCenterPage /> : <DeviceNotificationsPage />;
 }
 
 function DeviceNotificationsPage() {

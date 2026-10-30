@@ -11,7 +11,7 @@ cover: "/banner.png"
 ---
 Every company is being told to "adopt AI." But most AI tools stop at the conversation. You ask a question, you get an answer, and the moment you close the tab the work is gone. That is a faster way to think. It is not a company running on AI.
 
-Kortix is the **open-source AI Operating System for the agents that do your work**: one place to build a workforce of agents, connect them to your tools, run them on your terms, and keep every result accountable to a human.
+Kortix is the **open-source CompanyOS for the agents that do your work**: one place to build a workforce of agents, connect them to your tools, run them on your terms, and keep every result accountable to a human.
 
 Underneath that is an idea we think is right for the next decade of software: **your company's AI operation should be files in a git repo.** That means files you own, version, review, and run, rather than a pile of settings in someone else's dashboard.
 

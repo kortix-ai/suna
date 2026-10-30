@@ -1,4 +1,4 @@
-# Kortix Mobile App
+# Kortix CompanyOS mobile app
 
 > ## Runtime layer
 >

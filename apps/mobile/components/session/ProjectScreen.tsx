@@ -97,7 +97,7 @@ import { useReviewNeedsYou } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
 import { runtimeSessionsOf, sessionParentId } from '@kortix/sdk';
 import { KortixProjectProvider, useNotificationInbox, useSessionsNeedingInput } from '@kortix/sdk/react';
-import { NOTIFICATION_INBOX_LIMIT } from '@/lib/notifications/inbox';
+import { NOTIFICATION_INBOX_LIMIT, notificationInboxEnabled } from '@/lib/notifications/inbox';
 import { carryOverLegacyKinds } from '@/lib/notifications/registration';
 import { useSavedCopy } from '@/hooks/useSavedCopy';
 import type { ProjectSession } from '@/lib/projects/projects-client';
@@ -213,6 +213,7 @@ export function ProjectScreen() {
   // is behind the project's `notification_center` flag, off by default.
   // Unknown while the project loads: off.
   const notificationCenterOn = project?.experimental?.notification_center === true;
+  const notificationInboxOn = notificationInboxEnabled(project);
   // This phone's opt-outs reach the user's record once, only for a user who
   // opens such a project.
   useEffect(() => {
@@ -277,7 +278,7 @@ export function ProjectScreen() {
   const inbox = useNotificationInbox({
     userId,
     limit: NOTIFICATION_INBOX_LIMIT,
-    enabled: isFocused && notificationCenterOn,
+    enabled: isFocused && notificationInboxOn,
   });
   const notificationsUnreadCount = inbox.unreadCount;
   const inboxRef = useRef(inbox);
@@ -802,8 +803,8 @@ export function ProjectScreen() {
   // A second tap finds `inbox` on top and does nothing (`drawerRouteMove`).
   const openNotifications = useCallback(() => navigateProjectRoute(PROJECT_INBOX_ROUTE), [navigateProjectRoute]);
   const homeNotifications = useMemo(
-    () => (notificationCenterOn ? { unreadCount: notificationsUnreadCount, onOpen: openNotifications } : undefined),
-    [notificationCenterOn, notificationsUnreadCount, openNotifications]
+    () => (notificationInboxOn ? { unreadCount: notificationsUnreadCount, onOpen: openNotifications } : undefined),
+    [notificationInboxOn, notificationsUnreadCount, openNotifications]
   );
   const homeContent = useMemo(
     () => (

@@ -9,7 +9,6 @@ import {
   BUN_VERSION,
   OPENCODE_SDK_VERSION,
   OPENCODE_USER_AGENT,
-  OPENCODE_VERSION,
   PLAYWRIGHT_VERSION,
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
@@ -51,7 +50,6 @@ describe('runtime version drift guards', () => {
   test('sandbox Dockerfile reads runtime pins from the shared manifest', () => {
     const dockerfile = readRepoFile('apps/sandbox/Dockerfile');
     expect(dockerfile).toContain('COPY packages/shared/src/runtime-versions.json');
-    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').opencode");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').agentBrowser");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').playwright");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').bun");
@@ -79,7 +77,6 @@ describe('runtime version drift guards', () => {
   test('generated snapshot Dockerfile uses canonical runtime pins', () => {
     const merged = buildLayeredDockerfile({
       userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
-      opencodeVersion: OPENCODE_VERSION,
       agentBrowserVersion: AGENT_BROWSER_VERSION,
       agentBinaryPath: 'kortix-agent.gz',
       cliBinaryPath: 'kortix.gz',
@@ -89,7 +86,6 @@ describe('runtime version drift guards', () => {
       managedSkillsPath: 'managed-skills',
     });
 
-    expect(merged).toContain(`opencode-ai@${OPENCODE_VERSION}`);
     expect(merged).toContain(`agent-browser@${AGENT_BROWSER_VERSION}`);
     expect(merged).toContain(`@firecrawl/anydoc@${ANYDOC_VERSION}`);
     expect(merged).toContain(`playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`);

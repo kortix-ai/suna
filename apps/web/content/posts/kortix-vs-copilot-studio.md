@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-21"
 slug: "/kortix-vs-copilot-studio"
 ---
-Microsoft Copilot Studio is a capable low-code studio for building agents inside a Microsoft 365 tenant, and Kortix, the open-source AI Operating System, asks a different question about the same work: where is the agent defined, versioned and run? In Copilot Studio the answer is Microsoft's cloud at every step. The agent is built in the studio, stored in a Power Platform solution, published into Microsoft's surfaces and billed to the tenant in Copilot Credits. In Kortix the answer is a file in a repo your team owns.
+Microsoft Copilot Studio is a capable low-code studio for building agents inside a Microsoft 365 tenant, and Kortix CompanyOS asks a different question about the same work: where is the agent defined, versioned and run? In Copilot Studio the answer is Microsoft's cloud at every step. The agent is built in the studio, stored in a Power Platform solution, published into Microsoft's surfaces and billed to the tenant in Copilot Credits. In Kortix the answer is a file in a repo your team owns.
 
 ```logos
 label: 'Compared here:'

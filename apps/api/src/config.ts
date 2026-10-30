@@ -810,6 +810,14 @@ const envSchema = z.object({
   // unavailable (feature-flags/registry.ts).
   KORTIX_CHROME_ENABLED: optBoolFalse,
 
+  // ── Residential proxy ────────────────────────────────────────────────────
+  // Operator switch, off by default. Turn it on in an environment only after
+  // that environment's Platinum serves `network.residential_proxy`: an older
+  // Platinum drops the field and the box keeps its data-center address. Off,
+  // the `residential_proxy` project flag is unavailable and the billing worker
+  // does not run (feature-flags/registry.ts, workers/residential-proxy-billing-worker.ts).
+  KORTIX_PLATINUM_RESIDENTIAL_PROXY: optBoolFalse,
+
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
   TUNNEL_SIGNING_SECRET: optStr,
   TUNNEL_ENABLED: optBoolTrue,
@@ -1546,6 +1554,7 @@ export const config = {
   // ─── Tunnel (Reverse-Tunnel to Local Machine) ──────────────────────────────
   TUNNEL_SIGNING_SECRET: env.TUNNEL_SIGNING_SECRET,
   KORTIX_CHROME_ENABLED: env.KORTIX_CHROME_ENABLED,
+  KORTIX_PLATINUM_RESIDENTIAL_PROXY: env.KORTIX_PLATINUM_RESIDENTIAL_PROXY,
   TUNNEL_ENABLED: env.TUNNEL_ENABLED,
   TUNNEL_HEARTBEAT_INTERVAL_MS: env.TUNNEL_HEARTBEAT_INTERVAL_MS,
   TUNNEL_HEARTBEAT_MAX_MISSED: env.TUNNEL_HEARTBEAT_MAX_MISSED,

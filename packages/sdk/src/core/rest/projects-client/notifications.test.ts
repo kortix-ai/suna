@@ -42,6 +42,14 @@ beforeEach(() => {
 
 configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok' });
 
+test('Artifact comment notifications support bell, push and digest preferences', async () => {
+  expect(INBOX_NOTIFICATION_KINDS).toContain('artifact_comment');
+  expect(DEFAULT_NOTIFICATION_PREFERENCES.artifact_comment).toEqual({ push: true, email: true });
+  nextResponse = { status: 200, body: { kinds: { artifact_comment: { push: false, email: true } } } };
+  await updateNotificationPreferences({ kinds: { artifact_comment: { push: false } } });
+  expect(calls[0]?.body).toEqual({ kinds: { artifact_comment: { push: false } } });
+});
+
 test('registerDeviceToken POSTs the token, platform and preferences', async () => {
   nextResponse = { status: 200, body: { success: true, message: 'Device token registered' } };
   const result = await registerDeviceToken({

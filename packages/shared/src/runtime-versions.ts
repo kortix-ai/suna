@@ -21,6 +21,10 @@ export type RuntimeVersions = {
   agentBrowser: string;
   playwright: string;
   anydoc: string;
+  /** tembo/voxl commit the sandbox desktop streamer is built from (apps/sandbox/voxl/release.sh). */
+  voxl: string;
+  voxlSha256Amd64: string;
+  voxlSha256Arm64: string;
   /** pi packages every pi session loads, as pi sources: `npm:<name>@<exact version>`. */
   piSystemPackages: string[];
 };
@@ -66,6 +70,11 @@ export const OPENCODE_USER_AGENT = `opencode/${OPENCODE_VERSION}`;
 export const AGENT_BROWSER_VERSION = RUNTIME_VERSIONS.agentBrowser;
 export const PLAYWRIGHT_VERSION = RUNTIME_VERSIONS.playwright;
 export const ANYDOC_VERSION = RUNTIME_VERSIONS.anydoc;
+export const VOXL_VERSION = RUNTIME_VERSIONS.voxl;
+export const VOXL_SHA256_AMD64 = RUNTIME_VERSIONS.voxlSha256Amd64;
+export const VOXL_SHA256_ARM64 = RUNTIME_VERSIONS.voxlSha256Arm64;
+/** The GitHub release apps/sandbox/voxl/release.sh publishes for VOXL_VERSION. */
+export const VOXL_RELEASE_URL = `https://github.com/kortix-ai/suna/releases/download/voxl-${VOXL_VERSION.slice(0, 12)}-kortix.2`;
 
 // An exact npm pin. Each spec is inlined into the image's install RUN line, so
 // the pattern also keeps every shell metacharacter out.

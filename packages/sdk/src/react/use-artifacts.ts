@@ -20,11 +20,13 @@ import {
   restoreArtifactVersion,
   setArtifactPinned,
   setArtifactCommentStatus,
+  sendArtifactComments,
   updateArtifact,
   type ArtifactDetail,
   type ArtifactCommentStatus,
   type ArtifactCommentBodyInput,
   type CreateArtifactCommentInput,
+  type SendArtifactCommentsInput,
   type ArtifactListScope,
   type ArtifactType,
   type PublishArtifactInput,
@@ -84,6 +86,10 @@ export function useArtifactComments(
       deleteArtifactComment(...commentScope(projectId, artifactId), threadId, commentId),
     onSuccess: refresh,
   });
+  const send = useMutation({
+    mutationFn: (input: SendArtifactCommentsInput) => sendArtifactComments(...commentScope(projectId, artifactId), input),
+    onSuccess: refresh,
+  });
   return {
     ...query,
     create: create.mutateAsync,
@@ -91,7 +97,8 @@ export function useArtifactComments(
     setStatus: (threadId: string, status: ArtifactCommentStatus) => setStatus.mutateAsync({ threadId, status }),
     edit: (threadId: string, commentId: string, input: ArtifactCommentBodyInput) => edit.mutateAsync({ threadId, commentId, input }),
     remove: (threadId: string, commentId: string) => remove.mutateAsync({ threadId, commentId }),
-    isWriting: create.isPending || reply.isPending || setStatus.isPending || edit.isPending || remove.isPending,
+    send: send.mutateAsync,
+    isWriting: create.isPending || reply.isPending || setStatus.isPending || edit.isPending || remove.isPending || send.isPending,
   };
 }
 

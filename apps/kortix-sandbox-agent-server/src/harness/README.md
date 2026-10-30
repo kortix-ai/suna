@@ -37,7 +37,9 @@ will be deleted. Until then:
 
 `KORTIX_HARNESS` (`opencode` | `pi`; unset means `opencode`) is set by apps/api
 at provisioning (`buildSessionRuntimeEnv`): always `pi`. Unset still means
-`opencode`, so a box that booted OpenCode before the sunset keeps it.
+`opencode`, so a box that booted OpenCode before the sunset keeps it. Images
+built after 2026-10-30 carry no OpenCode binary, its config deps or its
+config dir: a new box is meant to run `pi` only.
 `loadConfig` reads it BEFORE the adapter loads its own environment, so only the
 selected adapter's variables are parsed. There is no per-request switching: one
 box, one harness, for the life of the box. A new box of an OpenCode session

@@ -51,7 +51,7 @@ The allowance has a hard edge. Microsoft enforces prepaid capacity at 125%, then
 
 ## What the layer costs when you own it
 
-[Kortix](https://kortix.com) is the open-source AI Operating System we build. Agents, skills, company memory, and connectors are files in one git repo the team owns ([Kortix docs](https://kortix.com/docs)). Session work reaches `main` through a change request. Merge is default-deny for agents, so a person reads the diff before anything lands.
+[Kortix](https://kortix.com) is the open-source CompanyOS we build. Agents, skills, company memory, and connectors are files in one git repo the team owns ([Kortix docs](https://kortix.com/docs)). Session work reaches `main` through a change request. Merge is default-deny for agents, so a person reads the diff before anything lands.
 
 The bill is smaller and shaped differently. Credits pay for the cloud computer each session runs on. It bills per second and costs nothing while it is stopped. Paid plans start at $50 a month, and the pricing page puts a month of credits at about 1,830 agent-computer hours ([Kortix pricing](https://kortix.com/pricing)). Model calls go to your provider. Bring your own keys and the first $1,000 a month is free, then Kortix adds 5%, paid from credits. Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free.
 

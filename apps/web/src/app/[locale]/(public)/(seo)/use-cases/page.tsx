@@ -23,7 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
     keywords: [
       'Kortix use cases',
       'AI agent case studies',
-      'AI Operating System',
+      'CompanyOS',
       'AI workforce',
       'loop engineering',
       'agent automation',

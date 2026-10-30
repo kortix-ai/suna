@@ -95,7 +95,7 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'Directory group': 'text40122a2e224d',
   'Kortix group': 'textbe48764b76b6',
   'How the controls work': 'textb94889fabdda',
-  'One AI Operating System for the whole company.': 'textaad5984748e1',
+  'One CompanyOS for every team.': 'textaad5984748e1',
   'Roll Kortix out team by team. Agents run around the clock on schedules and webhooks, on Kortix Cloud or your own infrastructure, with any model.':
     'text4a2b00a85ec6',
   'One account for every team.': 'text66a1ba850934',
@@ -171,8 +171,8 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'chat.tsx': 'text2e9f6a751196',
   'How the Kortix framework works': 'text75a6752caf95',
   'Company as code.': 'text54202672e6dc',
-  'A project is a git repo. kortix.yaml declares its agents, connectors, triggers and rules. Kortix runs every session on its own cloud computer, and you build your own experience with @kortix/sdk and @kortix/ui.':
-    'textaa6353a6496a',
+  'A project is a git repo. Every agent in it is a custom pi agent: a minimal open-source harness you extend with pi extensions. kortix.yaml declares the agents, connectors, triggers and rules. Kortix deploys them to the cloud and runs every session on its own computer. Build your own experience with @kortix/sdk and @kortix/ui.':
+    'textc4f9c303bb96',
   'One file in one repo.': 'texte3eadbf1c440',
   'Declare an agent': 'text55aafe971acb',
   'Connect an app': 'textbf6c07f87075',
@@ -185,6 +185,8 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'Allow, Ask or Block, per tool and per app call.': 'text5d1e2c1f4d47',
   'Triggers, 24/7': 'text6f3576da5a31',
   'A schedule or a webhook starts the agent.': 'textde2b60f5d4f3',
+  'pi extensions': 'text615544b5a953',
+  'Extend the harness with TypeScript.': 'text74bf85229fd2',
   'A computer per session': 'text45815d89cab4',
   'pi runs the agent on its own cloud computer.': 'texte2e57a269982',
   'Changes through review': 'text3f729bd6d7b5',
@@ -196,7 +198,7 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'Open proposals': 'text23caaccd7b6e',
   'Updated by an agent': 'text5ac2ceb659a9',
   'Needs attention': 'textc1ebc7817870',
-  'AI OS': 'text40866a29060e',
+  'CompanyOS': 'text40866a29060e',
   Services: 'text604dce445e32',
   Site: 'textfa7955814e32',
   arcadia: 'text3259138318d8',
@@ -255,8 +257,8 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'See the architecture': 'text95b74a4f4d4b',
   'Everyone works with the same agents, skills, memory and connectors. Start a session in the web app, in Slack or in Microsoft Teams.':
     'textcdd1c348fade',
-  'We treat your whole company like code. Every agent, skill, rule, connector and piece of context is a file in one git repo, and the agents and their harness are open source, so you can extend anything.':
-    'text26cae676d911',
+  'We treat your whole company like code. Every agent, skill, rule, connector and piece of context is a file in one git repo. Every agent is a custom pi agent on a minimal open-source harness, so you can extend anything with pi extensions.':
+    'text77ece565fe55',
   'Kortix is open source. Run it on Kortix Cloud, in your VPC or on your own on-prem network, with any model and your own keys.':
     'textc61528adb57c',
   'Multiplayer. Company as code. Sovereign.': 'textbf8abe5b1667',
@@ -432,7 +434,7 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   Pricing: 'textdfe95783edfe',
   'Book a call': 'text5461243c8731',
   Footer: 'text26c87bb51e69',
-  'The AI OS': 'text4370c8845eed',
+  'The CompanyOS': 'text4370c8845eed',
   Security: 'text8f6fb4eb7f42',
   Terms: 'textede548996483',
   Privacy: 'text54a57c3147c4',

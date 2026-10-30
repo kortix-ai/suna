@@ -6,7 +6,7 @@
 //
 // A role's permission set is a list of ~44 dotted leaf actions. Showing 44
 // checkboxes made "what can this role do?" unanswerable at a glance, so the
-// matrix shows AREAS with two checkboxes each — View and Edit — and expands a
+// matrix shows View and Edit per area, plus Comment for Artifacts, and expands a
 // cell back to its leaf actions on save. The wire format is unchanged:
 // `createRole` / `updateRolePermissions` still receive the same leaf strings,
 // and the IAM engine is untouched.
@@ -16,12 +16,13 @@
 // are only partially present both stay editable in the "Advanced" disclosure,
 // which auto-opens when the loaded role needs it.
 //
-// The AREAS, the View/Edit split and the IMPLICATIONS all come from the server:
+// The areas, permission levels and implications all come from the server:
 // `GET /accounts/:id/iam/permissions` returns `area`, `level` and `implies` per
 // action. This used to be hardcoded here — ~150 lines of tables plus an
 // implication graph the client invented and the engine did not enforce, so the
 // editor could write a role the engine then read differently. Now it is the
-// engine's own data and this module owns only the words (`AREA_COPY`).
+// engine's own data. This module owns the words and displays the Artifact
+// comment action separately from edit actions without changing its implications.
 //
 // Checking a leaf checks everything it implies; unchecking a leaf unchecks
 // everything that implies it, so the matrix can never show a state the engine
@@ -32,7 +33,7 @@ import type { Permission } from '@/lib/iam-client';
 // ─── The area table (§7 mapping) ────────────────────────────────────────────
 
 export type CapabilityScope = 'project' | 'account';
-export type CellKind = 'view' | 'edit';
+export type CellKind = 'view' | 'comment' | 'edit';
 
 export interface AreaDef {
   /** Stable id used by `applyCell`. */
@@ -43,6 +44,7 @@ export interface AreaDef {
   /** Extra note rendered under the row (implication warnings). */
   note?: string;
   view: readonly string[];
+  comment: readonly string[];
   edit: readonly string[];
 }
 
@@ -129,20 +131,21 @@ export function buildAreaTable(
   scope: CapabilityScope,
   permissions: readonly Permission[] | undefined,
 ): AreaDef[] {
-  const byArea = new Map<string, { view: string[]; edit: string[] }>();
+  const byArea = new Map<string, { view: string[]; comment: string[]; edit: string[] }>();
   for (const entry of inScope(scope, permissions)) {
     let cell = byArea.get(entry.area);
     if (!cell) {
-      cell = { view: [], edit: [] };
+      cell = { view: [], comment: [], edit: [] };
       byArea.set(entry.area, cell);
     }
-    if (entry.level === 'view') cell.view.push(entry.action);
+    if (entry.action === 'project.artifact.comment' && entry.level === 'edit') cell.comment.push(entry.action);
+    else if (entry.level === 'view') cell.view.push(entry.action);
     else if (entry.level === 'edit') cell.edit.push(entry.action);
   }
   // An area whose only leaves are `admin` gets no row — its leaves live in
   // Advanced, and an empty row would read as "nothing here".
   return [...byArea]
-    .filter(([, cell]) => cell.view.length + cell.edit.length > 0)
+    .filter(([, cell]) => cell.view.length + cell.comment.length + cell.edit.length > 0)
     .map(([key, cell]) => ({ key, ...areaCopy(key), ...cell }));
 }
 
@@ -208,8 +211,9 @@ export interface CellFold {
 export interface AreaFold {
   area: AreaDef;
   view: CellFold;
+  comment: CellFold;
   edit: CellFold;
-  /** True when either cell is a partial subset — the row shows a note. */
+  /** True when a cell is a partial subset — the row shows a note. */
   partial: boolean;
 }
 
@@ -242,6 +246,7 @@ function mappedLeaves(areas: readonly AreaDef[]): Set<string> {
   const out = new Set<string>();
   for (const area of areas) {
     for (const leaf of area.view) out.add(leaf);
+    for (const leaf of area.comment) out.add(leaf);
     for (const leaf of area.edit) out.add(leaf);
   }
   return out;
@@ -297,8 +302,9 @@ export function foldSelection(
 
   const areas: AreaFold[] = table.map((area) => {
     const view = cellFold('view', area.view, available, selected);
+    const comment = cellFold('comment', area.comment, available, selected);
     const edit = cellFold('edit', area.edit, available, selected);
-    return { area, view, edit, partial: view.state === 'partial' || edit.state === 'partial' };
+    return { area, view, comment, edit, partial: [view, comment, edit].some((cell) => cell.state === 'partial') };
   });
 
   const mapped = mappedLeaves(table);
@@ -326,6 +332,7 @@ export function foldSelection(
   const reachable = new Set<string>();
   for (const area of areas) {
     for (const leaf of area.view.leaves) reachable.add(leaf);
+    for (const leaf of area.comment.leaves) reachable.add(leaf);
     for (const leaf of area.edit.leaves) reachable.add(leaf);
   }
   for (const leaf of unmapped) reachable.add(leaf.action);
@@ -348,6 +355,7 @@ export function expandFold(fold: CapabilityFold): Set<string> {
   const out = new Set<string>();
   for (const area of fold.areas) {
     for (const leaf of area.view.present) out.add(leaf);
+    for (const leaf of area.comment.present) out.add(leaf);
     for (const leaf of area.edit.present) out.add(leaf);
   }
   for (const leaf of fold.unmapped) if (leaf.selected) out.add(leaf.action);
@@ -424,7 +432,7 @@ export function applyCell(
 ): Set<string> {
   const area = buildAreaTable(scope, permissions).find((a) => a.key === areaKey);
   if (!area) return new Set(selected);
-  const leaves = kind === 'view' ? area.view : area.edit;
+  const leaves = area[kind];
   return checked
     ? addLeaves(permissions, selected, leaves, availableIn(scope, permissions))
     : removeLeaves(permissions, selected, leaves);
@@ -462,7 +470,7 @@ export function applyBulk(
   const leaves: string[] = [];
   for (const area of table) {
     leaves.push(...area.view);
-    if (action === 'edit-all') leaves.push(...area.edit);
+    if (action === 'edit-all') leaves.push(...area.comment, ...area.edit);
   }
   return addLeaves(permissions, selected, leaves, availableIn(scope, permissions));
 }
