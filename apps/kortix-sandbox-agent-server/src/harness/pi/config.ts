@@ -140,8 +140,8 @@ export function resolvePiSkillDirectories(
   // working tree is read only while releases are not in play.
   if (releaseSkillDirs) return [managedSkillsDir(), ...releaseSkillDirs, ...piSkills]
   const workspace = cfg.projectTarget || cfg.workspace || '/workspace'
-  // The layout is packages/manifest-schema/src/layout.ts `skillDirs`; pi may not
-  // import the OpenCode adapter's copy (harness/open-code/project-layout.ts).
+  // The layout is packages/manifest-schema/src/layout.ts `skillDirs`; kortixd
+  // imports no `@kortix/*` package, so pi lists the dirs itself.
   return [managedSkillsDir(), join(workspace, 'skills'), ...piSkills, join(workspace, '.kortix', 'opencode', 'skills')]
 }
 
