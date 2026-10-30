@@ -281,7 +281,7 @@ export const SUBAGENT_NOTIFY_PARENT_KEY = 'notify_parent' as const;
  * | `PUT /sessions/:id/grants` | `RuntimeGrantsBody` | `200 { grants }` |
  * | `GET /commands` | none | `200 { commands: RuntimeCommandInfo[] }` |
  * | `GET /pending` | none | `200 RuntimePending` |
- * | `GET /log?thread=&after_seq=&before_seq=&limit=` | none | `200 { generation, thread_id, messages: SessionLogMessage[], has_more }` |
+ * | `GET /log?thread=&after_seq=&before_seq=&limit=` | none | `200 { generation, thread_id, messages: SessionLogMessage[], has_more }`; with `RUNTIME_LOG_CAPABILITY`, a whole `SessionLogPage` |
  * | `GET /log/messages/:messageId` | none | `200 SessionLogMessage`; `404` |
  * | `GET /log/blobs/:sha256` | none | the attachment bytes; `404` |
  * | `GET /workspace` | none | `200 RuntimeWorkspaceInfo` |
@@ -291,6 +291,17 @@ export const SUBAGENT_NOTIFY_PARENT_KEY = 'notify_parent' as const;
  * while a turn runs (the journal sends at most 5 s later).
  */
 export const RUNTIME_ACTIONS_CAPABILITY = 'runtime.actions.v1' as const;
+
+/**
+ * The box's log reads stand in for the API's copy:
+ *  - `GET /kortix/runtime/log` answers a whole `SessionLogPage` (`session`, `generation`, thread heads),
+ *    at the seqs the API stores;
+ *  - a prompt the box admitted and pi has not appended yet (queued behind a running turn) is in
+ *    the log from its admission, at a provisional seq above every real one, on `GET /log`,
+ *    `GET /log/messages/:id` and the v2 stream; its real seq replaces it when its turn starts;
+ *  - `GET /kortix/health` `harness.session.root_thread_id` names the log's root thread.
+ */
+export const RUNTIME_LOG_CAPABILITY = 'runtime.log.v1' as const;
 
 /** `POST /kortix/runtime/permissions/:id/reply`. `always` grants the capability for the session. */
 export const RuntimePermissionReplyBodySchema = z.object({
@@ -569,6 +580,8 @@ export const HarnessHealthSchema = z.object({
     id: z.string().nullable(),
     /** apps/api asked this box to create the root at boot. */
     required: z.boolean(),
+    /** The root thread of the box's session log (`RUNTIME_LOG_CAPABILITY`); null while the runtime is down. */
+    root_thread_id: z.string().nullable().optional(),
   }),
   /** Present only for `?turn=1`. */
   turn: z

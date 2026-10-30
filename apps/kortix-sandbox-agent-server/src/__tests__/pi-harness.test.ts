@@ -4239,6 +4239,46 @@ describe('pi session log on the v2 stream (P4.3)', () => {
     for (const p of batches.flatMap((b) => b.puts)) expect(onStream.get(`${p.message.message_id}@${p.rev}`)).toEqual(p.message)
   })
 
+  test('a prompt queued behind a running turn is on the stream at its queued seq from admission, then at its real seq; GET /log shows the seqs the API stores', async () => {
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'first done' }, { text: 'second done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
+    })
+    const rt = r.service.runtime()!
+    const root = rt.rootId
+    // A 422 re-sequenced this thread on an earlier boot: the API stores every seq 5 higher.
+    expect(startSessionLogJournal(createPiSessionLogPort(() => r.service.runtime()?.sessionLogSnapshot() ?? null), { generation: 3, seq_offsets: { [root]: 5 } })).not.toBeNull()
+    const stream = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitFor(() => rt.permissions.list().length === 1)
+    const queued = 'msg_0198e2a4b0f1QUEUEDPROMPTBC'
+    expect((await prompt(r, root, { messageID: queued, parts: [{ type: 'text', text: 'second' }] })).status).toBe(204)
+    const page = (await r.user('/kortix/runtime/log').then((res) => res.json())) as { generation: number; messages: SessionLogMessage[] }
+    expect(page.generation).toBe(3)
+    const native = piSessionLog(rt.sessionLogSnapshot()!).log.threads[0]!.messages
+    expect(page.messages.slice(0, -1).map((m) => m.seq)).toEqual(native.slice(-(page.messages.length - 1)).map((m) => m.seq + 5))
+    expect(page.messages.at(-1)).toMatchObject({ message_id: queued, seq: Number.MAX_SAFE_INTEGER })
+    const admitted = await readSse(stream, (t) => t.includes(queued))
+    // The puts of the queued prompt, in stream order (a read may stop mid-stream: no whole-stream checks).
+    const puts = (raw: string) =>
+      raw
+        .split('\n\n')
+        .filter((f) => f.includes('event: log.message') && f.includes(queued))
+        .map((f) => (JSON.parse(f.slice(f.indexOf('data: ') + 6)) as { payload: { message?: SessionLogMessage } }).payload.message)
+        .filter((m): m is SessionLogMessage => m?.message_id === queued)
+    // Unshifted: the queued seq is above every real one already.
+    expect(puts(admitted).map((m) => m.seq)).toEqual([Number.MAX_SAFE_INTEGER])
+    expect(puts(admitted)[0]).toMatchObject({ role: 'user', blocks: [{ type: 'text', text: 'second' }] })
+    expect((await r.user(`/kortix/runtime/permissions/${rt.permissions.list()[0]!.id}/reply`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reply: 'once' }) })).status).toBe(200)
+    await waitFor(() => !rt.busy())
+    const replay = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
+    const started = await readSse(replay, (t) => puts(t).some((m) => m.seq < 1_000_000))
+    // Its turn started: the next put carries its real seq, shifted as the API stores it, before the journal collects.
+    const real = puts(started).find((m) => m.seq < 1_000_000)!
+    const stored = piSessionLog(rt.sessionLogSnapshot()!).log.threads[0]!.messages.find((m) => m.message_id === queued)!
+    expect(real.seq).toBe(stored.seq + 5)
+  })
+
   test('a permission request reaches the stream as log.state pending at once, and leaves it when answered', async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'done' }],
@@ -4286,11 +4326,13 @@ describe('pi session log on the v2 stream (P4.3)', () => {
     const answers = [...finals.values()].filter((p) => p.message.role === 'assistant').map((p) => p.message)
     expect(answers).toHaveLength(2)
 
-    // The user put: complete, at the seq the API receives, before the first assistant put.
-    const userLive = putsOf(user.message_id)[0]!
-    expect(userLive.payload.rev).toBeLessThan(finals.get(user.message_id)!.rev)
-    expect(userLive.payload.message).toMatchObject({ status: 'complete', seq: user.seq, thread_id: root })
-    expect(userLive.seq).toBeLessThan(putsOf(answers[0]!.message_id)[0]!.seq)
+    // The user puts: at the queued seq from admission, then at the seq the API receives, both before the first assistant put.
+    const [admitted, userLive] = putsOf(user.message_id)
+    expect(admitted!.payload.message).toMatchObject({ status: 'complete', seq: Number.MAX_SAFE_INTEGER, thread_id: root })
+    expect(admitted!.payload.rev).toBeLessThan(userLive!.payload.rev)
+    expect(userLive!.payload.rev).toBeLessThan(finals.get(user.message_id)!.rev)
+    expect(userLive!.payload.message).toMatchObject({ status: 'complete', seq: user.seq, thread_id: root })
+    expect(userLive!.seq).toBeLessThan(putsOf(answers[0]!.message_id)[0]!.seq)
 
     for (const answer of answers) {
       const own = putsOf(answer.message_id)
@@ -5482,6 +5524,46 @@ describe('session-log actions (runtime.actions.v1)', () => {
     expect((await call(r, '/log?thread=ses_missing', undefined, 'GET')).status).toBe(404)
     expect((await call(r, `/log/blobs/${'0'.repeat(64)}`, undefined, 'GET')).status).toBe(404)
     expect((await call(r, '/log/blobs/not-a-digest', undefined, 'GET')).status).toBe(400)
+  })
+
+  test('GET /log answers a whole page; a prompt queued behind a running turn is in the log from admission, then at its real seq', async () => {
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'first done' }, { text: 'second done' }], env: { KORTIX_COMPILED_AGENT_CONFIG: askBash } })
+    const rt = r.service.runtime()!
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { capabilities: string[]; harness: { session: { root_thread_id?: string | null } } }
+    expect(health.capabilities).toContain('runtime.log.v1')
+    expect(health.harness.session.root_thread_id).toBe(rt.rootId)
+    expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitFor(() => rt.permissions.list().length === 1)
+    const queued = 'msg_0198e2a4b0f1QUEUEDPROMPTAB'
+    expect((await prompt(r, rt.rootId, { messageID: queued, parts: [{ type: 'text', text: 'second' }] })).status).toBe(204)
+    type Page = LogPage & { session: Record<string, unknown>; generation: number; threads: Array<Record<string, unknown>> }
+    const page = (await call(r, '/log', undefined, 'GET').then((res) => res.json())) as Page
+    // The API's page shape: the session record without threads, the generation (0 without a journal), the thread heads.
+    expect(page.generation).toBe(0)
+    expect(page.session).toHaveProperty('pending')
+    expect(page.session).not.toHaveProperty('threads')
+    expect(page.threads.map((t) => t.thread_id)).toEqual([rt.rootId])
+    expect(page.threads.every((t) => !('messages' in t))).toBe(true)
+    const last = page.messages.at(-1)!
+    expect(last).toMatchObject({ message_id: queued, thread_id: rt.rootId, role: 'user', seq: Number.MAX_SAFE_INTEGER, blocks: [{ type: 'text', text: 'second' }] })
+    expect(page.messages.slice(0, -1).every((m) => m.seq < 1_000_000)).toBe(true)
+    expect(await call(r, `/log/messages/${queued}`, undefined, 'GET').then((res) => res.json())).toEqual(last)
+    // An older page never holds a queued prompt.
+    const older = (await call(r, `/log?before_seq=${page.messages[0]!.seq + 1}`, undefined, 'GET').then((res) => res.json())) as Page
+    expect(older.messages.some((m) => m.message_id === queued)).toBe(false)
+    expect((await call(r, `/permissions/${rt.permissions.list()[0]!.id}/reply`, { reply: 'once' })).status).toBe(200)
+    await waitFor(() => !rt.busy())
+    const settled = (await call(r, '/log', undefined, 'GET').then((res) => res.json())) as Page
+    const prompts = settled.messages.filter((m) => m.message_id === queued)
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0]!.seq).toBeLessThan(1_000_000)
+    const turns = settled.messages.filter((m) => m.kind === 'turn' && m.blocks.some((b) => b.type === 'text'))
+    expect(turns.map((m) => [m.role, (m.blocks.find((b) => b.type === 'text') as { text: string }).text])).toEqual([
+      ['user', 'first'],
+      ['assistant', 'first done'],
+      ['user', 'second'],
+      ['assistant', 'second done'],
+    ])
   })
 
   test('a prompt image is served by its sha256 from the blob route', async () => {
