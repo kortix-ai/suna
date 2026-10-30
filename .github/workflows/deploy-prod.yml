@@ -33,6 +33,11 @@ on:
   push:
     branches: [prod]
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: 'Optional immutable prod commit required by the daily controller'
+        required: false
+        type: string
   # Promotion is review-gated: promote.yml opens a PR into `prod`, and a human
   # MERGES it after approval. That merge is a real `push` to `prod` (above) and
   # triggers this pipeline normally — so no workflow_run hook is needed (and we
@@ -67,6 +72,14 @@ jobs:
         run: |
           if [ "$GITHUB_REF" != "refs/heads/prod" ]; then
             echo "::error::deploy-prod.yml runs only from refs/heads/prod, not $GITHUB_REF."
+            exit 1
+          fi
+      - name: Require the dispatched immutable production commit
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          if [ -n "$EXPECTED_SHA" ] && [ "$GITHUB_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::prod moved: expected $EXPECTED_SHA, workflow resolved $GITHUB_SHA."
             exit 1
           fi
       # Both Terraform jobs below skip when this variable is empty, and
