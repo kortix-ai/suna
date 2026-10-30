@@ -231,7 +231,7 @@ describe('team tasks', () => {
     expect(lost[0]!.reason.code).toBe('task_taken');
     const [stored] = await listTasks(LEAD);
     expect(stored!.status).toBe('in_progress');
-    expect(['x', 'y']).toContain(stored!.owner_handle);
+    expect(['x', 'y']).toContain(stored!.owner_handle ?? '');
   });
 
   test('a blocked task cannot be claimed until its blocker completes; deleting a blocker unblocks', async () => {

@@ -246,6 +246,13 @@ export async function resolveRecipient(self: SessionRow, to: string, projectId: 
   return { kind: 'none' };
 }
 
+async function visibleOnly(found: Resolution, userId: string): Promise<Resolution> {
+  if (found.kind === 'none') return found;
+  const rows = found.kind === 'one' ? [found.row] : found.rows;
+  const visible = await maySeeSessions(userId, [...(await loadSessionAccessRows(rows.map((row) => row.sessionId))).values()]);
+  return one(rows.filter((row) => visible.has(row.sessionId)));
+}
+
 // ── Sending ─────────────────────────────────────────────────────────────────
 
 function newMessageId(): string {
@@ -377,7 +384,10 @@ export async function sendPeerMessage(input: { sender: SessionRow; body: PeerMes
     const [project] = await db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
     if (!project || project.accountId !== sender.accountId) throw new PeerMessageError(404, 'Project not found', 'project_not_found');
   }
-  const resolved = await resolveRecipient(sender, body.to, projectId);
+  const found = await resolveRecipient(sender, body.to, projectId);
+  // A session the caller's person may not see does not exist for this send:
+  // not as a recipient, not as a candidate, not in a note.
+  const resolved = await visibleOnly(found, caller.userId);
   if (resolved.kind === 'none') {
     throw new PeerMessageError(404, `No session "${body.to}" to send to. Call list_agents to see who you can reach.`, 'recipient_not_found');
   }
