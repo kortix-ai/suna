@@ -82,6 +82,7 @@ import { VISIBILITY_ICON, relativeTime } from './artifact-meta';
 import { AskAgentSheet } from './ask-agent-sheet';
 import { DocEditor, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
+import { useArtifactAnnotations } from './use-artifact-annotations';
 import { useArtifactSelectionCapture } from './use-artifact-selection-capture';
 import { useArtifactUnshare } from './use-artifact-unshare';
 
@@ -155,6 +156,8 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const artifact = query.data;
   const mutations = useArtifactMutations(projectId);
   const frame = useRef<HTMLDivElement>(null);
+  const [claimedFrame, setClaimedFrame] = useState<HTMLIFrameElement | null>(null);
+  const [annotationMode, setAnnotationMode] = useState<'text' | 'comment'>('text');
   const [docStatus, setDocStatus] = useState<DocSaveStatus>('saved');
   // Bumped by a conflict's Reload: the editor opens again on the version now in Files.
   const [reloads, setReloads] = useState(0);
@@ -176,9 +179,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const [renaming, setRenaming] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const versions = useArtifactVersions(projectId, artifactId, historyOpen);
-  const viewUrl = artifact?.version.view_url;
   const viewingOld = !!artifact?.version.id;
-  const frameKey = artifact ? artifactFrameKey(artifact, artifact.version.id) : null;
   const canEdit = !!artifact?.can_edit && !viewingOld;
   const isDoc = artifact?.type === 'doc';
   const sidebar = useOptionalSidebar();
@@ -194,6 +195,31 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     version,
     enabled: discussionEnabled,
   });
+  const annotationVersion =
+    discussionEnabled && artifact && !isDoc ? context.data?.version.commit_id : null;
+  const annotated = useArtifact(
+    annotationVersion ? projectId : null,
+    annotationVersion ? artifactId : null,
+    annotationVersion ?? undefined,
+  );
+  const annotationEnabled = !!annotationVersion;
+  const annotatedUrl = annotationEnabled ? annotated.data?.version.view_url : null;
+  const viewUrl = annotatedUrl
+    ? (() => {
+        const url = new URL(annotatedUrl);
+        url.searchParams.set('annotate', '1');
+        return url.toString();
+      })()
+    : annotationEnabled
+      ? null
+      : artifact?.version.view_url;
+  const frameKey = artifact
+    ? artifactFrameKey(
+        artifact,
+        annotationEnabled ? annotationVersion : artifact.version.id,
+        annotationEnabled,
+      )
+    : null;
   const removal = useArtifactUnshare(
     discussionEnabled
       ? async () => {
@@ -215,6 +241,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const pendingAnchor = selection.anchor;
   const openVersion = (next: string | undefined) => {
     selection.clear();
+    setAnnotationMode('text');
     setVersion(next);
   };
   const openComments = (comments.data ?? []).filter(
@@ -238,6 +265,24 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     },
     [scope, version, comments.data, clearSelection],
   );
+  const htmlAnnotations = useArtifactAnnotations({
+    enabled: annotationEnabled,
+    frame: claimedFrame,
+    slot: frame,
+    version: annotationVersion,
+    canComment: context.data?.can_comment === true && !version,
+    mode: annotationMode,
+    threads: comments.data,
+    focusedThreadId,
+    focusRevision,
+    onCandidate: (anchor) => {
+      selection.begin();
+      if (!selection.publish(anchor)) return;
+      defaultPanel.current = scope;
+      setDiscussionOpen(true);
+    },
+    onFocus: focusThread,
+  });
   const requestedThread = search.get('thread');
   const requestedFocus = useRef('');
   useEffect(() => {
@@ -261,6 +306,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
         projectId={projectId}
         artifact={artifact}
         comments={comments}
+        displayThreads={annotationEnabled ? htmlAnnotations.threads : undefined}
         context={context.data}
         contextLoading={context.isLoading}
         contextError={context.isError}
@@ -492,6 +538,41 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 </Button>
               ) : null}
             </ButtonGroup>
+            {annotationEnabled && context.data?.can_comment && !version ? (
+              <Hint
+                label={
+                  htmlAnnotations.status === 'ready'
+                    ? t('discussion.annotationModeHint')
+                    : htmlAnnotations.status === 'loading'
+                      ? t('discussion.annotationLoading')
+                      : t('discussion.annotationUnavailable', {
+                          refresh: t('refresh'),
+                          actions: t('actions'),
+                        })
+                }
+              >
+                <span tabIndex={htmlAnnotations.status === 'ready' ? undefined : 0}>
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    aria-label={t('discussion.annotationMode')}
+                    aria-pressed={annotationMode === 'comment' && htmlAnnotations.status === 'ready'}
+                    aria-busy={htmlAnnotations.status === 'loading'}
+                    className="aria-pressed:bg-accent"
+                    disabled={htmlAnnotations.status !== 'ready'}
+                    onClick={() =>
+                      setAnnotationMode((mode) => (mode === 'comment' ? 'text' : 'comment'))
+                    }
+                  >
+                    {htmlAnnotations.status === 'loading' ? (
+                      <Loading className="size-3.5" />
+                    ) : (
+                      <PushPinIcon className="size-3.5" aria-hidden />
+                    )}
+                  </Button>
+                </span>
+              </Hint>
+            ) : null}
             {discussionEnabled ? (
               <Hint label={t(discussionOpen ? 'discussion.hidePanel' : 'discussion.showPanel')}>
                 <Button
@@ -529,7 +610,12 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     </DropdownMenuItem>
                   )}
                   {!isDoc && viewUrl && frameKey ? (
-                    <DropdownMenuItem onSelect={() => reloadFrame(frameKey, viewUrl)}>
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        htmlAnnotations.reset();
+                        reloadFrame(frameKey, viewUrl);
+                      }}
+                    >
                       <ArrowClockwiseIcon /> {t('refresh')}
                     </DropdownMenuItem>
                   ) : null}
@@ -681,15 +767,35 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
               </div>
             ) : (
               <div className="bg-muted relative min-w-0 flex-1">
-                {viewUrl ? (
+                {annotationEnabled && annotated.isError ? (
+                  <div className="grid h-full place-items-center p-4">
+                    <ErrorState
+                      title={t('discussion.contextLoadError')}
+                      action={
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void annotated.refetch()}
+                        >
+                          {t('discussion.retry')}
+                        </Button>
+                      }
+                    />
+                  </div>
+                ) : viewUrl ? (
                   <ArtifactFrame
                     ref={frame}
+                    onFrame={setClaimedFrame}
                     frameKey={frameKey!}
                     src={viewUrl}
                     title={artifact.title}
                     className="absolute inset-0 size-full border-0"
                   />
-                ) : null}
+                ) : (
+                  <div className="grid h-full place-items-center">
+                    <Loading className="size-4" />
+                  </div>
+                )}
               </div>
             )}
           </ArtifactDiscussionLayout>
