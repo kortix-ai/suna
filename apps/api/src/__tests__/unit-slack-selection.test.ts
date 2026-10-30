@@ -26,7 +26,7 @@ mock.module('../shared/db', () => ({
 }));
 // selection.ts pulls these in at import; stub so the import is cheap + side-effect-free.
 // `projectConfig` is mutable so governance tests can flip a project between
-// legacy (no fixed catalog) and declarative (`[[agents]]` adopted). `enabled`
+// legacy (no fixed catalog) and declarative (`agents` declared). `enabled`
 // mirrors the config summary's wire field: a registered agent may be disabled.
 let projectConfig: { agents: Array<{ name: string; description?: string | null; mode?: string | null; enabled?: boolean }>; agent_discovery?: string } = { agents: [] };
 mock.module('../projects/lib/git', () => ({ withProjectGitAuth: async (p: unknown) => p }));
@@ -103,7 +103,7 @@ describe('setChannelAgent / setChannelModel', () => {
   });
 });
 
-describe('setChannelAgent — governance validation (declared [[agents]] projects)', () => {
+describe('setChannelAgent — governance validation (projects that declare agents)', () => {
   test('governed project rejects a name that is not a declared agent', async () => {
     projectConfig = { agents: [{ name: 'reviewer' }], agent_discovery: 'declarative' };
     // 1st shift: projectId lookup. 2nd shift: loadProjectAgentGovernance's own

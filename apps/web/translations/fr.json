@@ -553,10 +553,6 @@
           "label": "Indicateurs de fonctionnalités",
           "description": "Fonctionnalités que vous pouvez activer avant leur disponibilité générale."
         },
-        "upgrades": {
-          "label": "Mises à niveau",
-          "description": "Modifications apportées par un agent à cet projet. Chaque exécution ouvre une demande de modification à examiner. Rien n'est fusionné automatiquement."
-        },
         "profile": {
           "label": "Profil",
           "description": "Votre image, votre nom, votre adresse e-mail et vos organisations."
@@ -1349,23 +1345,6 @@
       "wip": "Work in progress",
       "wipNote": "Not recommended yet: it can change or break."
     },
-    "upgrades": {
-      "available": "Mises à niveau disponibles",
-      "readOnly": "Lecture seule — l’exécution d’une mise à niveau nécessite un accès en écriture à cet projet.",
-      "none": "Aucune mise à niveau disponible",
-      "upToDateDescription": "Cet projet est déjà à jour.",
-      "upToDate": "À jour",
-      "run": "Exécuter",
-      "oneOff": "Mise à niveau ponctuelle",
-      "oneOffDescription": "Décrivez plutôt une seule modification. Une session l’effectue, la valide et ouvre une demande de modification.",
-      "oneOffPlaceholder": "p. ex. Renommer partout l’agent release-bot en deploy-bot",
-      "runUpgrade": "Exécuter la mise à niveau",
-      "manifestV3": {
-        "title": "Mettre à niveau le manifeste vers v3 (kortix.yaml)",
-        "description": "Fait passer kortix.toml ou un kortix.yaml de version 2 à la version 3 : le projet enregistre les compétences, outils, commandes et extensions, et chaque agent les active par leur nom. Actualise les compétences gérées par la plateforme et ouvre une demande de modification à examiner."
-      },
-      "agentEditorHint": "Ce projet utilise un manifeste de version 1. Passez à <code>kortix.yaml</code> version 3 pour modifier ici les instructions, le modèle, les permissions d’outils et les accès de cet agent."
-    },
     "plan": {
       "managedByAdmin": "Géré par un administrateur du compte",
       "adminOnly": "Seuls les administrateurs de ce compte peuvent modifier son forfait ou acheter des crédits.",
@@ -1697,10 +1676,16 @@
       "localComputer": "Votre ordinateur",
       "appsAndExtensions": "Apps et extensions"
     },
-    "manifestUpgrade": {
-      "title": "Passer à la v3",
-      "description": "Ce projet utilise un ancien manifeste. Un agent le fait passer à <yaml>kortix.yaml</yaml> version 3, actualise les compétences gérées et ouvre une demande de modification. Aucun changement ne prend effet avant votre approbation.",
-      "start": "Démarrer la mise à niveau"
+    "manifestIssues": {
+      "title": "{file} contient {errors, plural, one {# erreur} other {# erreurs}} et {warnings, plural, one {# avertissement} other {# avertissements}}",
+      "titleErrors": "{file} contient {errors, plural, one {# erreur} other {# erreurs}}",
+      "titleWarnings": "{file} contient {warnings, plural, one {# avertissement} other {# avertissements}}",
+      "errorsOff": "Les agents et triggers en erreur restent désactivés jusqu’à sa correction.",
+      "warningsOnly": "Tout continue de fonctionner.",
+      "error": "Erreur",
+      "warning": "Avertissement",
+      "fix": "Corriger avec My Kortix",
+      "fixInSession": "Corriger dans une nouvelle séance"
     },
     "filter": {
       "grouping": "Regroupement",
@@ -11025,7 +11010,6 @@
       "text18093cad2644": "Fenêtre modale",
       "text180bbb19a1b2": "Le runbook qui vit dans la tête d’une seule personne",
       "text1814e0a6cb50": "Voir les modèles disponibles",
-      "text1815aa434bc6": "# Version 2 du schéma. L’environnement d’exécution est OpenCode.",
       "text1815ae76cdc7": "Non déployée",
       "text1829231e85b1": "Tous les membres de ce compte verront à nouveau le logo, l’icône, le favicon et le nom de Kortix. Les images importées seront supprimées.",
       "text1836d8d61ae9": "{value0} supprimé de {value1}",
@@ -12319,7 +12303,6 @@
       "text11ef24ea6e15": "Impossible de renommer le compte",
       "text0223e507afd3": "Pour utiliser un autre compte, ajoutez-le aux comptes de ce connecteur dans les paramètres du projet et définissez-le par défaut.",
       "text073fce23e704": "      memory/ et ouvre une demande de modification",
-      "text0922e6bf143c": "harnesses/opencode/opencode.jsonc",
       "text3ed7c1e32705": "Lire un tracker et le réécrire sont deux actions différentes. Réglez l’écriture sur Ask : l’exécution s’arrête sur l’appel et vous montre exactement quels tickets elle veut fusionner ou clôturer, puis reprend après votre approbation.",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "Crédits débités",
@@ -12652,7 +12635,6 @@
       "text47931699ba90": "Calendrier mis à jour",
       "text4795dc5fb288": "Votre connexion actuelle reste fonctionnelle jusqu’à l’enregistrement d’un remplacement.",
       "text479974eaff88": "{value0} : {value1} réussite(s), {value2} échec(s). {value3} : {value4}{value5}",
-      "text479d92cbfaa1": "(kortix_version 2) pour modifier les instructions, le modèle, les autorisations de l'outil et l'accès de cet agent ici.",
       "text47a8467a2faa": "Impossible de charger les modifications",
       "text47b31f661d3f": "Échec de la mise à jour du rôle",
       "text47bd29075f8b": "Contenu",
@@ -13559,7 +13541,6 @@
       "text61dac62928db": "Planifié :",
       "text61e8d44ad423": "Commencer",
       "text61eedf5451c2": "    timezone: UTC",
-      "text61f28ba7b5a4": "kortix_version: 2",
       "text61ff61757ef1": "Fonctionnement des accès dans ce compte.",
       "text6201111b83a0": "et",
       "text6201f8d3134e": "Événements du moniteur ingérés",
@@ -15966,7 +15947,6 @@
       "texta743aa4452d3": "Échec de la mise à jour du propriétaire de l’autorisation",
       "texta756e5fb5f6b": "Ce dont l’IT a besoin n’est pas d’un tableau de bord. C’est d’une liste, avec une justification défendable sur chaque ligne, dans un format où l’approbation déclenche réellement une action.",
       "texta757b331fa9a": "statusText",
-      "texta757f937ab97": "(kortix_version 2) pour modifier ici la disponibilité, le modèle, les autorisations des outils et l’accès de cet agent.",
       "texta76a1fd4cef5": "Webhook de facturation Stripe reçu",
       "texta76ce82a9749": "Cache",
       "texta76e13b98392": "Restaurer",
@@ -16057,7 +16037,6 @@
       "texta9f78a15820d": "Comparaison de la règle {value0} condition {value1}",
       "textaa000c983975": "Ressource Groups",
       "textaa023456aca4": "Connecter ChatGPT",
-      "textaa132a97a22a": "  config_dir: harnesses/opencode",
       "textaa1c8a0b1716": "Cliquer sur Enregistrer effacera toutes les notifications de maintenance et rétablira l’accès normal.",
       "textaa2025f803e6": "L’agent dispose d’un shell et d’un système de fichiers. Il peut installer un package, récupérer un échantillon, l’exécuter, examiner le résultat et recommencer — la boucle de travail réelle d’un analyste, plutôt qu’un seul essai avec un ensemble d’outils fixe.",
       "textaa2e1a551c0a": "Il rassemble. Vous décidez.",
@@ -16959,7 +16938,6 @@
       "textc3bf78fdd3b9": "Impossible d’envoyer votre candidature",
       "textc3c25857485f": "Fait",
       "textc3c709a999c1": "Lecture de la mémoire…",
-      "text7823a1f3af93": "Fait passer kortix.toml ou un kortix.yaml de version 2 à la version 3 : le projet enregistre les compétences, outils, commandes et extensions, et chaque agent les active par leur nom. Actualise les compétences gérées par la plateforme et ouvre une demande de modification à examiner.",
       "textc3d2e79ebdd0": "Connecteurs",
       "textc3e3a6edeaa5": "Conditions générales",
       "textc3e58a73609d": "Destructif",
@@ -17052,7 +17030,6 @@
       "textc634dcb25574": "Comptabilisation",
       "textc63adab9bd56": "Suivez les outils et les fichiers référencés utilisés dans cette tâche.",
       "textc63eb6720c6e": "Privé",
-      "textc6414eb01d9a": "Modifications apportées par un agent à cet espace de travail. Chaque exécution ouvre une demande de modification que vous pouvez examiner : rien ne fusionne tout seul.",
       "textc6479e2f4970": "Actualiser les modifications",
       "textc65feb0006ea": "Travailleur · {value0}{value1}",
       "textc661a1039aa0": "au maximum",
@@ -17695,7 +17672,6 @@
       "textd83a0d814c59": "API Status affiche « Enabled » en vert, le paramètre « SCIM Username » est mappé sur Email et le provisioning est activé sans blocage par approbation administrateur.",
       "textd84b8be91e7b": "Kortix — Présentations",
       "textd84ee1e1e08b": "essayez kortix init, ou / pour afficher les commandes",
-      "text08edd5b6dcdc": "Mettre à niveau le manifeste vers v3 (kortix.yaml)",
       "text848f54e89660": "Exécutions",
       "textb098a09c78aa": "Tester avec un payload",
       "text99733344956d": "Payload",
@@ -17877,7 +17853,6 @@
       "textdc70ef3b3338": "Un canal ne mérite d’être connecté que si la réponse arrive là où la question a été posée. Les fichiers circulent dans les deux sens, et les décisions dont l’agent a besoin sont des boutons dans le fil, pas un lien vers un autre endroit.",
       "textdc76dd6b1aff": "Se connecter à la CLI Kortix",
       "textdc78f4d17256": "sans A2F — leur accès ne sera pas bloqué, mais pensez à leur demander de s’inscrire :",
-      "textdc7ab144ca89": "Passez à l’offre supérieure pour accéder à l’éditeur d’agents complet",
       "textdc7ea87fdc45": "Les fichiers, dans les deux sens",
       "textdc8659db6d41": "Entrée",
       "textdc8d7c5c602b": "Registre source",
@@ -18000,7 +17975,6 @@
       "textdfea74d6d58d": "Monter le secours",
       "textdffb64dc7001": "Limites",
       "texte01d77b4a0bd": "Le problème",
-      "texte02a5941602a": "Mises à niveau",
       "texte030ac604b81": "Déploiement et posture",
       "texte0362b3241c5": "Dans les limites",
       "texte03abcb2b624": "Connecteurs et fenêtre de mise à jour",
@@ -21971,7 +21945,6 @@
     "connectorsEmptyBody": "Parcourez le catalogue et installez une app. Vos agents l’utilisent dès qu’elle a un compte.",
     "browseApps": "Parcourir les apps",
     "agentsLoadFailed": "Impossible de charger les agents",
-    "agentsNeedsV2": "L’accès des agents se règle dans kortix.yaml (kortix_version 2 ou plus). Ce projet utilise kortix.toml.",
     "agentsEmpty": "Ce projet n’a pas encore d’agents.",
     "agentsIntro": "Choisissez quels agents peuvent utiliser ce connecteur et quelles règles ils reçoivent. Chaque modification est enregistrée dans kortix.yaml.",
     "agentsReadOnly": "Seules les personnes pouvant modifier agents et connecteurs peuvent changer ceci.",
@@ -24091,7 +24064,23 @@
       "panelTitle": "Commentaires et activité",
       "resizePanel": "Redimensionner le panneau des commentaires",
       "unshareComments": "{count, plural, one {# commentaire sera supprimé.} other {# commentaires seront supprimés.}}",
-      "systemActor": "Système"
+      "systemActor": "Système",
+      "draw": "Dessiner un commentaire",
+      "drawPen": "Crayon",
+      "drawArrow": "Flèche",
+      "drawRectangle": "Rectangle",
+      "drawBlack": "Noir",
+      "drawRed": "Rouge",
+      "drawBlue": "Bleu",
+      "drawUndo": "Annuler le trait",
+      "drawPageChanged": "La page a changé. Annulez et dessinez à nouveau.",
+      "drawLimit": "Limite de dessin atteinte. Annulez un trait pour continuer.",
+      "openScreenshot": "Ouvrir la capture",
+      "drawingScreenshot": "Capture du commentaire",
+      "screenshotReadFailed": "Impossible de charger la capture.",
+      "screenshotMissing": "Capture indisponible. Le dessin est enregistré.",
+      "screenshotCaptureFailed": "Impossible de capturer l’écran. Votre commentaire contiendra le dessin sans image.",
+      "sendScreenshotLimit": "Ce lot dépasse 20 captures ou 12 Mio par requête encodée. Envoyez moins de pièces jointes ou utilisez un modèle textuel."
     }
   },
   "emailConnect": {

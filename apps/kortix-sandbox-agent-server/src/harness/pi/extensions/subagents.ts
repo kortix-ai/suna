@@ -5,7 +5,7 @@
  * (`subagent_type`) or an inline ephemeral agent defined in the call (`agent`,
  * no manifest entry). It keeps the `task` contract end to end, because the
  * product renders it: input `{ description, prompt, subagent_type?,
- * agent?, task_id?, session? }`, the child session id in the tool part's
+ * agent?, task_id?, session?, run_in_background? }`, the child session id in the tool part's
  * `metadata.sessionId` (the web client's `getChildSessionId` → `TaskTool`
  * preview and full view), and an output that starts `task_id: <id>` so the
  * model can resume the same child.
@@ -23,10 +23,14 @@
  * A separate call the box cannot serve (no control plane) runs in this
  * session, and the result says so.
  * A `task_id` resumes the child in the session mode it was created in.
- * `background: true` (a new separate session only) returns as soon as the child
- * exists: the API wakes this session with the child's answer when its turn ends
- * (`notify_parent_on_turn_end`, apps/api `subagent-notice.ts`). The part
- * metadata carries `{ sessionId, background: true }`.
+ *
+ * `run_in_background: true` (separate sessions only) returns as soon as the
+ * child exists, with its `task_id`. The API delivers the child's final report
+ * into this session as a new message when it finishes, so the parent keeps
+ * working or ends its turn meanwhile. Checking on and stopping a child is the
+ * Kortix CLI the agent already runs (`kortix sessions info|log|stop`); a
+ * follow-up is `agent` with the `task_id`. Default false: the call waits for
+ * the report, as every existing prompt expects.
  *
  * Named subagent types: `general` (every workspace tool), `explore` (read-only
  * search), and every compiled agent whose `mode` is `subagent` or `all`. A
@@ -109,6 +113,8 @@ export interface SpawnSessionInput {
   sessionId?: string
   /** The session the call asks for; `separate` when absent. Ignored on a resume (`sessionId`). */
   session?: SubagentSession
+  /** Return once the child exists; the API delivers its report later. Separate sessions only. */
+  background?: boolean
   title: string
   /** The agent name the child's messages carry. */
   agent: string
@@ -122,12 +128,6 @@ export interface SpawnSessionInput {
   /** The compiled `permission` block for the child's tools. */
   permission?: unknown
   prompt: string
-  /**
-   * A new separate session that runs on its own: the spawn returns once the
-   * child exists, and the API notifies this session when the child's turn
-   * ends. Ignored for `same` and for a resume.
-   */
-  background?: boolean
   /** More `runtime_context` keys for a new separate session (the workflow runner's script). The subagent keys win. */
   runtimeContext?: Record<string, string | number | boolean>
   /**
@@ -145,7 +145,8 @@ export interface SpawnSessionInput {
 
 export interface SpawnSessionResult {
   sessionId: string
-  status: 'completed' | 'error' | 'aborted'
+  /** `started`: a background child that is still running; its report arrives later as a message. */
+  status: 'completed' | 'error' | 'aborted' | 'started'
   text: string
   error?: string
   model: { providerID: string; modelID: string }
@@ -153,8 +154,6 @@ export interface SpawnSessionResult {
   session?: SubagentSession
   /** Why the child ran somewhere other than the call asked for. */
   notice?: string
-  /** The child runs on; its answer arrives later as a notification (`SpawnSessionInput.background`). */
-  background?: boolean
   /** The child made no progress for `SpawnSessionInput.stallMs` and was stopped. */
   stalled?: true
 }
@@ -224,15 +223,15 @@ const parameters = Type.Object({
         'Where the subagent runs. "separate" (default): its own new Kortix session with its own computer, linked to this session, visible in the sidebar, and it keeps running after your turn. Use it for real tasks, long or parallel work, or a whole job handed to another agent. "same": inside this session, instant and with no extra computer. Use it for quick lookups and small sub-steps.',
     }),
   ),
-  background: Type.Optional(
+  run_in_background: Type.Optional(
     Type.Boolean({
       description:
-        'true: start the subagent in its own new session and return at once, without its result. Its final answer arrives later in this session as a <task-notification> message. Only for a new separate session; ignored with session "same" and with task_id.',
+        'Set to true to run the subagent in the background: the call returns its task_id at once, and its final report arrives later as a new message in this session. Do not wait or poll for it. Needs session "separate". Default false: the call waits for the report.',
     }),
   ),
 })
 
-type SubagentParams = { description: string; prompt: string; subagent_type?: string; agent?: InlineAgent; task_id?: string; session?: SubagentSession; background?: boolean }
+type SubagentParams = { description: string; prompt: string; subagent_type?: string; agent?: InlineAgent; task_id?: string; session?: SubagentSession; run_in_background?: boolean }
 interface InlineAgent {
   instructions: string
   description?: string
@@ -254,16 +253,17 @@ function describe(types: Map<string, SubagentType>, anyProjectAgent = false): st
     '- Write a complete prompt: the subagent sees nothing of this conversation.',
     '- Launch several subagents in one message when their work is independent.',
     '- The result is not shown to the user; summarize what matters in your own reply.',
-    '- To continue a previous task with its context, pass the task_id its output returned.',
+    '- To continue a previous task with its context, pass the task_id its output returned. A separate-session task needs no subagent_type then.',
     '',
     'Session (where the subagent runs):',
     '- session: "separate" (default): the subagent gets its own new Kortix session with its own computer. It is linked to this session as its parent, the user sees it in the sidebar, and it keeps running after your turn ends. Use it for real tasks, long or parallel work, and any whole job you hand to another agent.',
     '- session: "same": the subagent runs inside this session, on this computer. It starts instantly and costs no extra computer. Use it for quick lookups and small sub-steps.',
     '- If a separate session is not possible here, the subagent runs in this session and the result says so.',
     '',
-    'Background (background: true):',
-    '- The subagent starts in its own new session and the call returns at once with its task_id. Its final answer arrives later in this session as a <task-notification> message, also after your turn has ended. Do not poll or wait for it.',
-    '- Use it for long work you do not need before you answer. Without it, the call waits for the subagent\'s result.',
+    'Background (run_in_background: true, separate sessions only):',
+    '- The call returns the task_id at once. Keep working, or end your turn: the final report arrives later as a new message that starts with "A background subagent you started has finished".',
+    '- Do not wait, sleep or poll for it. Start several in one message for parallel work.',
+    '- Check on one: `kortix sessions info <task_id>` and `kortix sessions log <task_id>`. Stop one: `kortix sessions stop <task_id>`. Send one a follow-up: call this tool with its task_id (it runs in the background again).',
   ].join('\n')
 }
 
@@ -271,6 +271,17 @@ function describe(types: Map<string, SubagentType>, anyProjectAgent = false): st
 export function subagents(host: KortixHost): InlineExtension {
   return { name: 'kortix-subagents', factory: (pi) => register(pi, host) }
 }
+
+/** The tool result of a background call: where the report will come from, and how to steer the child meanwhile. */
+const BACKGROUND_STARTED = (taskId: string) =>
+  [
+    'The subagent runs in the background in its own session. Its final report arrives later as a new message in this session.',
+    'Do not wait or poll for it: continue with other work, or end your turn.',
+    `Check on it: \`kortix sessions info ${taskId}\`. Stop it: \`kortix sessions stop ${taskId}\`. Send it a follow-up: call agent with task_id ${taskId}.`,
+  ].join('\n')
+
+/** A new child needs a named type or an inline spec. */
+export const SUBAGENT_SPEC_REQUIRED = 'Set subagent_type to a named agent, or pass an inline `agent` spec.'
 
 /** The child agent name an inline ephemeral spec runs under; labels the child's messages. */
 export const INLINE_AGENT = 'inline'
@@ -290,26 +301,31 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
       ...(name === 'agent' && host.codemodeOnly?.() ? { exposure: 'model-only' as const } : {}),
       async execute(_toolCallId: string, params: SubagentParams, signal: AbortSignal | undefined, onUpdate?: (update: { content: never[]; details: unknown }) => void) {
         const spawn = resolveSpawn(params, host)
-        const background = params.background === true && params.session !== 'same' && !params.task_id
         const result = await host.spawnSession({
           ...(params.task_id ? { sessionId: params.task_id } : {}),
           ...(params.session ? { session: params.session } : {}),
+          ...(params.run_in_background ? { background: true } : {}),
           ...spawn,
           prompt: params.prompt,
-          ...(background ? { background: true } : {}),
           signal,
           // The running part carries the child id at once, so the product links the child while it works.
-          onSession: (session) => onUpdate?.({ content: [], details: { ...session, ...(background ? { background: true } : {}) } }),
+          onSession: (session) => onUpdate?.({ content: [], details: session }),
         })
         if (result.status === 'aborted') throw new Error(`The subagent was aborted. task_id: ${result.sessionId}`)
+        const body =
+          result.status === 'error'
+            ? `<task_error>\n${result.error ?? 'The subagent failed.'}\n</task_error>`
+            : result.status === 'started'
+              ? `<task_started>\n${BACKGROUND_STARTED(result.sessionId)}\n</task_started>`
+              : `<task_result>\n${result.text}\n</task_result>`
         const where = result.session ? `\nsession: ${result.session}${result.notice ? ` (${result.notice})` : ''}` : ''
         return {
-          content: [{ type: 'text' as const, text: `task_id: ${result.sessionId} (for resuming to continue this task if needed)${where}\n\n${resultBody(result)}` }],
+          content: [{ type: 'text' as const, text: `task_id: ${result.sessionId} (for resuming to continue this task if needed)${where}\n\n${body}` }],
           details: {
             sessionId: result.sessionId,
             model: result.model,
             ...(result.session ? { session: result.session } : {}),
-            ...(result.background ? { background: true } : {}),
+            ...(result.status === 'started' ? { background: true } : {}),
           },
         }
       },
@@ -318,20 +334,6 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
     // Deprecated alias: OpenCode's name. Same handler, so old prompts and sessions keep working.
     pi.registerTool(tool('task', `Deprecated alias of \`agent\`; prefer \`agent\`. ${description}`))
   })
-}
-
-/** The tool output after the `task_id` line: the child's report, its error, or the background hand-off. */
-function resultBody(result: SpawnSessionResult): string {
-  if (result.status === 'error') return `<task_error>\n${result.error ?? 'The subagent failed.'}\n</task_error>`
-  if (result.background) {
-    return [
-      '<task_started>',
-      'The subagent runs in the background in its own session. Its final answer arrives in this session as a <task-notification> message when its turn ends, also after your turn has ended.',
-      'Do not poll or wait for it. Continue with other work, or end your turn.',
-      '</task_started>',
-    ].join('\n')
-  }
-  return `<task_result>\n${result.text}\n</task_result>`
 }
 
 /** The spawn input for a call: an inline ephemeral agent, else the named subagent type. */
@@ -349,7 +351,10 @@ function resolveSpawn(params: SubagentParams, host: KortixHost): Omit<SpawnSessi
   const types = subagentTypes(host)
   const anyProjectAgent = host.anyProjectAgent?.() === true
   if (!params.subagent_type) {
-    throw new Error(anyProjectAgent ? "Set subagent_type to a project agent's name (kortix_agents list shows them), or pass an inline `agent` spec." : 'Set subagent_type to a named agent, or pass an inline `agent` spec.')
+    // A follow-up to an existing child (`task_id`) keeps that child's own agent: a
+    // separate child ignores the spec, and the runtime refuses an in-process one without it.
+    if (params.task_id) return { title: params.description, agent: '', systemPrompt: '' }
+    throw new Error(anyProjectAgent ? "Set subagent_type to a project agent's name (kortix_agents list shows them), or pass an inline `agent` spec." : SUBAGENT_SPEC_REQUIRED)
   }
   const type = types.get(params.subagent_type)
   // A project agent this box does not compile: the API authorizes the name and the child runs as it.

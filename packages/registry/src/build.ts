@@ -1,10 +1,10 @@
 /**
  * `buildRegistry` — turn a Kortix repo into a shadcn-format registry.json.
  *
- * Auto-detects the OpenCode primitives in the repo (skills, agents, commands,
- * tools) and emits one item per primitive, each with `files` carrying a
- * repo-relative `path` and an `@alias` `target` so it reinstalls into the
- * right place in any consuming project.
+ * Auto-detects the skills (each `SKILL.md` folder under `skills/`) and the
+ * agent prompts (`agents/<name>.md`) in the repo and emits one item per
+ * primitive, each with `files` carrying a repo-relative `path` and an `@alias`
+ * `target` so it reinstalls into the right place in any consuming project.
  *
  * Authors can publish *anything else* — arbitrary files, whole folders, even a
  * full-project bundle — by hand-writing a partial registry in
@@ -20,17 +20,8 @@ import {
   type RegistryItemFile,
   type RegistryJson,
 } from './schema';
-import {
-  manifestOpencodeDir,
-  parseFrontmatter,
-  projectNameFromManifest,
-} from './manifest';
-import {
-  AGENTS_DIR,
-  LEGACY_OPENCODE_CONFIG_DIR,
-  OPENCODE_CONFIG_DIR,
-  SKILLS_DIR,
-} from '@kortix/manifest-schema/layout';
+import { parseFrontmatter, projectNameFromManifest } from './manifest';
+import { AGENTS_DIR, SKILLS_DIR } from '@kortix/manifest-schema/layout';
 import { buildTarget } from './paths';
 import { groupSkillFiles } from './skills';
 
@@ -44,7 +35,7 @@ export interface BuildSource {
 }
 
 export interface BuildOptions {
-  /** Registry name. Defaults to the kortix.toml project name or "registry". */
+  /** Registry name. Defaults to the kortix.yaml `project.name` or "registry". */
   name?: string;
   /** Public homepage of the registry. */
   homepage?: string;
@@ -112,17 +103,12 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
   const source = opts.source ?? nodeFsSource(root);
   const files = source.listFiles();
 
-  const manifestRaw = readOptional(source, 'kortix.yaml') ?? readOptional(source, 'kortix.toml');
-  const explicitDir = manifestOpencodeDir(manifestRaw);
-  // The legacy layout kept agents/ and skills/ in the OpenCode config dir.
-  const configDir = explicitDir ?? LEGACY_OPENCODE_CONFIG_DIR;
-  // OpenCode-only commands and tools: the manifest's dir, else both defaults.
-  const opencodeDirs = explicitDir ? [explicitDir] : [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR];
+  const manifestRaw = readOptional(source, 'kortix.yaml') ?? readOptional(source, 'kortix.yml');
   const name = opts.name ?? projectNameFromManifest(manifestRaw) ?? 'registry';
 
   const items: RegistryItem[] = [];
   const seenNames = new Set<string>();
-  const counts: Record<string, number> = { skill: 0, agent: 0, command: 0, tool: 0, extra: 0 };
+  const counts: Record<string, number> = { skill: 0, agent: 0, extra: 0 };
 
   const add = (item: RegistryItem, kind: string) => {
     if (seenNames.has(item.name)) return;
@@ -131,10 +117,9 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
     counts[kind] = (counts[kind] ?? 0) + 1;
   };
 
-  // --- skills: skills/**/SKILL.md, then the legacy <cd>/skills/**/SKILL.md
-  // (the dir holding SKILL.md is the skill; a name found twice keeps the first)
-  const skills = [SKILLS_DIR, `${configDir}/skills`].flatMap((root) => groupSkillFiles(files, root));
-  for (const sk of skills) {
+  // --- skills: skills/**/SKILL.md (the dir holding SKILL.md is the skill; a
+  // name found twice keeps the first)
+  for (const sk of groupSkillFiles(files, SKILLS_DIR)) {
     const meta = parseFrontmatter(readOptional(source, sk.skillMd));
     const defaultProjectInstall =
       meta.defaultProjectInstall === 'true'
@@ -166,26 +151,22 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
     );
   }
 
-  // --- agents: agents/<file>.md, then the legacy <cd>/agent(s)/<file>.md
-  // --- commands (OpenCode only): <opencode dir>/command(s)/<file>.md
-  collectFlatMd(files, source, [AGENTS_DIR, `${configDir}/agents`, `${configDir}/agent`], 'registry:agent', name, add, 'agent', buildTarget.agent);
-  collectFlatMd(files, source, opencodeDirs.flatMap((dir) => [`${dir}/commands`, `${dir}/command`]), 'registry:command', name, add, 'command', buildTarget.command);
-
-  // --- tools: <opencode dir>/tools/<file>.ts
-  const toolRe = new RegExp(`^(?:${opencodeDirs.map(escapeRe).join('|')})/tools/([^/]+)\\.ts$`);
+  // --- agents: agents/<file>.md
+  const agentRe = new RegExp(`^${escapeRe(AGENTS_DIR)}/([^/]+)\\.md$`);
   for (const file of files) {
-    const m = file.match(toolRe);
+    const m = file.match(agentRe);
     if (!m) continue;
+    const meta = parseFrontmatter(readOptional(source, file));
     add(
       {
         name: m[1],
-        type: 'registry:tool',
-        title: m[1],
-        description: `Custom OpenCode tool: ${m[1]}`,
-        files: [{ path: file, type: 'registry:file', target: buildTarget.tool(`${m[1]}.ts`) }],
-        meta: { source: name, primitive: 'tool' },
+        type: 'registry:agent',
+        title: meta.name || m[1],
+        description: meta.description || undefined,
+        files: [{ path: file, type: 'registry:file', target: buildTarget.agent(`${m[1]}.md`) }],
+        meta: { source: name, primitive: 'agent' },
       },
-      'tool',
+      'agent',
     );
   }
 
@@ -208,37 +189,6 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
     },
     counts,
   };
-}
-
-function collectFlatMd(
-  files: string[],
-  source: BuildSource,
-  dirs: string[],
-  type: RegistryItem['type'],
-  registryName: string,
-  add: (item: RegistryItem, kind: string) => void,
-  kind: string,
-  target: (file: string) => string,
-): void {
-  for (const dir of dirs) {
-    const re = new RegExp(`^${escapeRe(dir)}/([^/]+)\\.md$`);
-    for (const file of files) {
-      const m = file.match(re);
-      if (!m) continue;
-      const meta = parseFrontmatter(readOptional(source, file));
-      add(
-        {
-          name: m[1],
-          type,
-          title: meta.name || m[1],
-          description: meta.description || undefined,
-          files: [{ path: file, type: 'registry:file', target: target(`${m[1]}.md`) }],
-          meta: { source: registryName, primitive: kind, mode: meta.mode },
-        },
-        kind,
-      );
-    }
-  }
 }
 
 /** Expand an author-declared item: a file `path` that is a directory becomes

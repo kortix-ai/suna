@@ -30,7 +30,6 @@ let dockerLog: string;
 /** A minimal manifest that PASSES the schema, so any error is the lint's. */
 const MANIFEST = (extra: string) =>
   [
-    'kortix_version: 2',
     'default_agent: kortix',
     'project:',
     '  name: fixture',
@@ -227,21 +226,21 @@ describe('kortix validate — sandbox Dockerfile lint', () => {
 
 describe('kortix validate — local wiring', () => {
   test('reports all missing references in one JSON report', async () => {
-    writeFileSync(join(tmp, 'kortix.yaml'), `kortix_version: 2
-default_agent: kortix
+    writeFileSync(join(tmp, 'kortix.yaml'), `default_agent: kortix
 project:
   name: fixture
+skills:
+  known: skills/missing
 agents:
   kortix:
-    file: agents/missing.md
-    skills: [missing]
+    prompt_file: agents/missing.md
     connectors: [missing]
     secrets: [MISSING]
 `);
     const r = await runCli(['validate', '--json']);
     expect(r.code).toBe(1);
     const paths = JSON.parse(r.stdout).issues.map((issue: { path: string }) => issue.path);
-    for (const path of ['agents.kortix.file', 'agents.kortix.skills[0]', 'agents.kortix.connectors[0]', 'agents.kortix.secrets[0]'])
+    for (const path of ['agents.kortix.prompt_file', 'skills.known', 'agents.kortix.connectors[0]', 'agents.kortix.secrets[0]'])
       expect(paths).toContain(path);
   });
 
@@ -249,11 +248,12 @@ agents:
     mkdirSync(join(tmp, 'agents'));
     mkdirSync(join(tmp, 'skills', 'known'), { recursive: true });
     writeFileSync(join(tmp, 'agents', 'kortix.md'), '# Agent');
-    writeFileSync(join(tmp, 'skills', 'known', 'SKILL.md'), '# Skill');
-    writeFileSync(join(tmp, 'kortix.yaml'), `kortix_version: 2
-default_agent: kortix
+    writeFileSync(join(tmp, 'skills', 'known', 'SKILL.md'), '---\nname: known\n---\n# Skill');
+    writeFileSync(join(tmp, 'kortix.yaml'), `default_agent: kortix
 project:
   name: fixture
+skills:
+  known: skills/known
 env:
   required: [KNOWN]
 connectors:
@@ -262,6 +262,7 @@ connectors:
     url: https://example.test/mcp
 agents:
   kortix:
+    prompt_file: agents/kortix.md
     skills: [known]
     connectors: [known]
     secrets: [KNOWN]

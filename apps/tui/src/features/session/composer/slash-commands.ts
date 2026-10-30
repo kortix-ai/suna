@@ -15,7 +15,7 @@ import { runtimeSupports } from '@kortix/sdk';
 import type { ListItem } from '../../../ui/index.ts';
 
 /** A built-in the app owns: the composer just reports it. */
-export type AppCommandId = 'new' | 'terminal' | 'files' | 'help' | 'quit' | 'attach' | 'stop';
+export type AppCommandId = 'new' | 'terminal' | 'files' | 'help' | 'quit' | 'stop';
 /** A built-in the composer owns: it opens one of its own pickers. */
 export type PickerCommandId = 'model' | 'effort' | 'agent';
 
@@ -39,7 +39,6 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
   { name: 'agent', description: 'Pick the agent', target: 'picker' },
   { name: 'terminal', description: 'Toggle the terminal panel', target: 'app' },
   { name: 'files', description: 'Browse the session files', target: 'app' },
-  { name: 'attach', description: 'Attach this session in the opencode TUI', target: 'app' },
   { name: 'help', description: 'Show the keymap', target: 'app' },
   { name: 'quit', description: 'Leave the TUI', target: 'app' },
 ] as const;
@@ -72,8 +71,7 @@ const BUILTIN_PREFIX = 'builtin:';
  * apps/web), and one bad response must not take the composer down.
  *
  * `capabilities` is the runtime's `/kortix/health` list: a runtime without
- * `session.commands` (pi) gets no project rows, and one without
- * `session.attach` no `/attach` row. Null hides nothing.
+ * `session.commands` gets no project rows. Null hides nothing.
  */
 export function commandItems(
   commands: readonly RuntimeCommand[] | undefined,
@@ -91,7 +89,6 @@ export function commandItems(
     });
   }
   for (const builtin of BUILTIN_COMMANDS) {
-    if (builtin.name === 'attach' && !runtimeSupports(capabilities, 'session.attach')) continue;
     items.push({
       id: `${BUILTIN_PREFIX}${builtin.name}`,
       label: `/${builtin.name}`,

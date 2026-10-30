@@ -1,6 +1,6 @@
 ---
 name: kortix-chrome
-description: Drive the USER'S OWN Chrome (their real logged-in session) from a Kortix session, over CDP, through the Kortix Chrome extension. Load this when the task needs the user's logins or real browser state ("my browser", "my Chrome", "while I'm logged in", "check my inbox / dashboard / account", a site that needs the user's login, 2FA or cookies), or when a site blocks or captchas the sandbox's cloud browser. For public pages and anything that needs no login, use the sandbox browser (the `agent-browser` skill) instead.
+description: Drive the USER'S OWN Chrome (their real logged-in session) from a Kortix session, over CDP, through the Kortix Chrome extension. Load this when the task needs the user's logins or real browser state ("my browser", "my Chrome", "while I'm logged in", "check my inbox / dashboard / account", a site that needs the user's login, 2FA or cookies), or when a site blocks or captchas the sandbox's cloud browser. For public pages and anything that needs no login, use the sandbox browser (`agent-browser`) instead.
 metadata:
   kortix-feature-flag: chrome
 ---
@@ -53,8 +53,8 @@ asking*, *ask first* (your first `use` shows a prompt in Chrome and waits up to
   you to act in it, and never navigate a tab of theirs away from its page.
 - **Only tabs it opens**: you see your own tabs and nothing else. If the user
   asks about their other tabs, say so in one line and tell them where to change
-  it: the Kortix extension popup → Tabs → All tabs, or Settings → Chrome
-  extension in Kortix. Then run `kortix chrome use` again.
+  it: the Kortix extension's options → Tabs → All tabs, or Kortix Settings →
+  Kortix in Chrome. Then run `kortix chrome use` again.
 </tabs>
 
 

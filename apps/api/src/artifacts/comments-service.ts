@@ -1,5 +1,5 @@
 import { artifactCommentThreads, artifactComments, artifactCommentWriteLimits, artifacts } from '@kortix/db';
-import { artifactCommentAnchorSchema, reanchorArtifactText, type ArtifactCommentAnchor } from '@kortix/shared/artifact-comments';
+import { artifactCommentAnchorSchema, artifactCommentMarksSchema, reanchorArtifactText, type ArtifactCommentAnchor } from '@kortix/shared/artifact-comments';
 import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { Actor } from '../iam/actor';
 import { db } from '../shared/db';
@@ -10,6 +10,8 @@ import { hydrateCommentAuthors } from './comment-authors';
 import { resolveArtifactCommentMentions } from './comment-mentions';
 import { hydrateArtifactCommentMentions } from './comment-tokens';
 import { dispatchArtifactCommentJobs, enqueueArtifactCommentRouting } from './comment-delivery';
+import { randomUUID } from 'node:crypto';
+import { prepareArtifactCommentScreenshot, attachArtifactCommentScreenshot, abandonArtifactCommentScreenshot, cleanupArtifactCommentScreenshotKeys } from './comment-screenshot-objects';
 
 export class ArtifactCommentError extends Error {
   constructor(readonly status: 400 | 403 | 404 | 409 | 429, message: string, readonly code: string, readonly retryAfterSeconds = 60) {
@@ -68,6 +70,7 @@ function commentView(row: Comment, access: ArtifactCommentAccess, rootDeleted = 
     mentions: row.deletedAt ? [] : hydrateArtifactCommentMentions(row.mentions),
     marks: row.deletedAt ? [] : row.marks,
     screenshot_key: row.deletedAt ? null : row.screenshotKey,
+    ...(!row.deletedAt && row.screenshotKey ? { screenshot_url: `/projects/${access.artifact.projectId}/artifacts/${access.artifact.artifactId}/comments/${row.commentId}/screenshot` } : {}),
     created_at: row.createdAt.toISOString(),
     edited_at: row.editedAt?.toISOString() ?? null,
     deleted_at: row.deletedAt?.toISOString() ?? null,
@@ -179,14 +182,14 @@ async function sessionCommentQuota(tx: Transaction, access: ArtifactCommentAcces
   }
 }
 
-async function write<T>(actor: Actor, access: ArtifactCommentAccess, apply: (tx: Transaction) => Promise<T>): Promise<T> {
+async function write<T>(actor: Actor, access: ArtifactCommentAccess, apply: (tx: Transaction) => Promise<T>, chargeQuota = true): Promise<T> {
   return db.transaction(async (tx) => {
     // ponytail: one short row lock per Artifact serializes quotas and deletes; use per-author locks if contention is measured.
     const [artifact] = await tx.select().from(artifacts)
       .where(and(eq(artifacts.artifactId, access.artifact.artifactId), eq(artifacts.projectId, access.artifact.projectId)))
       .for('update');
     if (!artifact || artifact.accountId !== actor.accountId || artifact.accountId !== access.artifact.accountId || !canView(artifact, access.viewer)) throw new ArtifactCommentError(404, 'Artifact not found', 'not_found');
-    await writeQuota(tx, actor, access);
+    if (chargeQuota) await writeQuota(tx, actor, access);
     return apply(tx);
   });
 }
@@ -202,57 +205,80 @@ async function loadThread(tx: Transaction, access: ArtifactCommentAccess, thread
   return thread;
 }
 
-export async function createArtifactCommentThread(actor: Actor, access: ArtifactCommentAccess, input: { anchor?: unknown; body: string }) {
+export interface ArtifactCommentBodyInput { body: string; marks?: unknown; screenshot_base64?: unknown }
+function marksFor(value: unknown, anchor: ArtifactCommentAnchor) {
+  const parsed = artifactCommentMarksSchema.safeParse(value ?? []);
+  if (!parsed.success || value === null || parsed.data.length && anchor.type !== 'region') {
+    throw new ArtifactCommentError(400, 'Invalid comment marks', 'invalid_marks');
+  }
+  return parsed.data;
+}
+
+async function prepareImage(actor: Actor, access: ArtifactCommentAccess, commentId: string, value: unknown, threadId?: string) {
+  if (value === undefined) return undefined;
+  await write(actor, access, async tx => { if (threadId) await loadThread(tx, access, threadId); await sessionCommentQuota(tx, access); });
+  return prepareArtifactCommentScreenshot(access.artifact.projectId, commentId, value);
+}
+
+export async function createArtifactCommentThread(actor: Actor, access: ArtifactCommentAccess, input: ArtifactCommentBodyInput & { anchor?: unknown }) {
   const parsed = artifactCommentAnchorSchema.safeParse(input.anchor);
   if (!parsed.success || (access.artifact.type === 'doc' && parsed.data.type !== 'text' && parsed.data.type !== 'none')) {
     throw new ArtifactCommentError(400, 'Invalid comment anchor', 'invalid_anchor');
   }
   const body = bodyText(input.body);
+  const marks = marksFor(input.marks, parsed.data);
   const mentions = await resolveArtifactCommentMentions(access.artifact, body);
-  const who = author(actor, access);
-  const thread = await write(actor, access, async (tx) => {
-    await sessionCommentQuota(tx, access);
-    const [thread] = await tx.insert(artifactCommentThreads).values({
-      artifactId: access.artifact.artifactId,
-      projectId: access.artifact.projectId,
-      anchor: parsed.data,
-      anchorVersion: parsed.data.version,
-      createdByUserId: who.userId,
-      createdBySessionId: who.sessionId,
-    }).returning();
-    const [comment] = await tx.insert(artifactComments).values({
-      threadId: thread!.threadId,
-      authorUserId: who.userId,
-      authorSessionId: who.sessionId,
-      body,
-      mentions,
-      createdAt: sql`clock_timestamp()`,
-    }).returning();
-    await recordArtifactEvent(tx, access.artifact, who, 'thread_opened', { thread_id: thread!.threadId, comment_id: comment!.commentId });
-    await enqueueArtifactCommentRouting(tx, access.artifact, actor, access.sessionId, thread!.threadId, comment!.commentId, false);
-    const [updated] = await tx.select().from(artifactCommentThreads).where(eq(artifactCommentThreads.threadId, thread!.threadId));
-    Object.assign(thread!, updated!);
-    return threadView(thread!, [comment!], access);
-  });
+  const who = author(actor, access), commentId = randomUUID();
+  const screenshot = await prepareImage(actor, access, commentId, input.screenshot_base64);
+  let thread;
+  try {
+    thread = await write(actor, access, async (tx) => {
+      await sessionCommentQuota(tx, access);
+      const [thread] = await tx.insert(artifactCommentThreads).values({
+        artifactId: access.artifact.artifactId, projectId: access.artifact.projectId, anchor: parsed.data,
+        anchorVersion: parsed.data.version, createdByUserId: who.userId, createdBySessionId: who.sessionId,
+      }).returning();
+      const [comment] = await tx.insert(artifactComments).values({
+        commentId, threadId: thread!.threadId, authorUserId: who.userId, authorSessionId: who.sessionId,
+        body, mentions, marks, screenshotKey: screenshot?.objectKey ?? null, createdAt: sql`clock_timestamp()`,
+      }).returning();
+      if (screenshot) await attachArtifactCommentScreenshot(tx, screenshot);
+      await recordArtifactEvent(tx, access.artifact, who, 'thread_opened', { thread_id: thread!.threadId, comment_id: comment!.commentId });
+      await enqueueArtifactCommentRouting(tx, access.artifact, actor, access.sessionId, thread!.threadId, comment!.commentId, false);
+      const [updated] = await tx.select().from(artifactCommentThreads).where(eq(artifactCommentThreads.threadId, thread!.threadId));
+      Object.assign(thread!, updated!);
+      return threadView(thread!, [comment!], access);
+    }, !screenshot);
+  } catch (error) { if (screenshot) await abandonArtifactCommentScreenshot(screenshot); throw error; }
   await dispatchArtifactCommentJobs(`artifact-comments:${thread.thread_id}:${thread.comments[0]!.comment_id}`);
   return (await hydrateThreads(access, [thread]))[0]!;
 }
 
-export async function replyArtifactCommentThread(actor: Actor, access: ArtifactCommentAccess, threadId: string, body: string) {
-  const text = bodyText(body);
+export async function replyArtifactCommentThread(actor: Actor, access: ArtifactCommentAccess, threadId: string, body: string | ArtifactCommentBodyInput) {
+  const input = typeof body === 'string' ? { body } : body;
+  const text = bodyText(input.body);
+  const [rootThread] = await db.select().from(artifactCommentThreads).where(and(eq(artifactCommentThreads.threadId, threadId), eq(artifactCommentThreads.artifactId, access.artifact.artifactId)));
+  if (!rootThread) throw new ArtifactCommentError(404, 'Comment thread not found', 'not_found');
+  const marks = marksFor(input.marks, rootThread.anchor as ArtifactCommentAnchor);
   const mentions = await resolveArtifactCommentMentions(access.artifact, text);
-  const who = author(actor, access);
-  const comment = await write(actor, access, async (tx) => {
-    await loadThread(tx, access, threadId);
-    await sessionCommentQuota(tx, access);
-    const [comment] = await tx.insert(artifactComments).values({
-      threadId, body: text, mentions, authorUserId: who.userId, authorSessionId: who.sessionId, createdAt: sql`clock_timestamp()`,
-    }).returning();
-    await tx.update(artifactCommentThreads).set({ updatedAt: sql`now()` }).where(eq(artifactCommentThreads.threadId, threadId));
-    await recordArtifactEvent(tx, access.artifact, who, 'replied', { thread_id: threadId, comment_id: comment!.commentId });
-    await enqueueArtifactCommentRouting(tx, access.artifact, actor, access.sessionId, threadId, comment!.commentId, true);
-    return commentView(comment!, access);
-  });
+  const who = author(actor, access), commentId = randomUUID();
+  const screenshot = await prepareImage(actor, access, commentId, input.screenshot_base64, threadId);
+  let comment;
+  try {
+    comment = await write(actor, access, async (tx) => {
+      await loadThread(tx, access, threadId);
+      await sessionCommentQuota(tx, access);
+      const [comment] = await tx.insert(artifactComments).values({
+        commentId, threadId, body: text, mentions, marks, screenshotKey: screenshot?.objectKey ?? null,
+        authorUserId: who.userId, authorSessionId: who.sessionId, createdAt: sql`clock_timestamp()`,
+      }).returning();
+      if (screenshot) await attachArtifactCommentScreenshot(tx, screenshot);
+      await tx.update(artifactCommentThreads).set({ updatedAt: sql`now()` }).where(eq(artifactCommentThreads.threadId, threadId));
+      await recordArtifactEvent(tx, access.artifact, who, 'replied', { thread_id: threadId, comment_id: comment!.commentId });
+      await enqueueArtifactCommentRouting(tx, access.artifact, actor, access.sessionId, threadId, comment!.commentId, true);
+      return commentView(comment!, access);
+    }, !screenshot);
+  } catch (error) { if (screenshot) await abandonArtifactCommentScreenshot(screenshot); throw error; }
   await dispatchArtifactCommentJobs(`artifact-comments:${threadId}:${comment.comment_id}`);
   return (await hydrateCommentAuthors(access.artifact, [comment]))[0]!;
 }
@@ -285,6 +311,7 @@ export async function setArtifactCommentThreadStatus(actor: Actor, access: Artif
 export async function changeArtifactComment(actor: Actor, access: ArtifactCommentAccess, threadId: string, commentId: string, body: string | null) {
   const text = body === null ? null : bodyText(body);
   const mentions = text === null ? [] : await resolveArtifactCommentMentions(access.artifact, text);
+  let removedScreenshot: string | null = null;
   const comment = await write(actor, access, async (tx) => {
     await loadThread(tx, access, threadId);
     const [comment] = await tx.select().from(artifactComments)
@@ -292,6 +319,7 @@ export async function changeArtifactComment(actor: Actor, access: ArtifactCommen
     if (!comment) throw new ArtifactCommentError(404, 'Comment not found', 'not_found');
     if (comment.deletedAt) throw deleted();
     if (!own(actor, access, comment.authorUserId, comment.authorSessionId) && !(text === null && access.viewer.manageAny)) throw forbidden();
+    if (text === null) removedScreenshot = comment.screenshotKey;
     const [updated] = await tx.update(artifactComments).set(text === null
       ? { body: '', mentions: [], marks: [], screenshotKey: null, deletedAt: sql`now()` }
       : { body: text, mentions, editedAt: sql`now()` })
@@ -300,5 +328,6 @@ export async function changeArtifactComment(actor: Actor, access: ArtifactCommen
     if (text === null) await recordArtifactEvent(tx, access.artifact, author(actor, access), 'comment_deleted', { thread_id: threadId, comment_id: commentId });
     return commentView(updated!, access);
   });
+  if (removedScreenshot) await cleanupArtifactCommentScreenshotKeys([removedScreenshot]);
   return (await hydrateCommentAuthors(access.artifact, [comment]))[0]!;
 }

@@ -18,6 +18,7 @@
 import { describe, expect, test } from 'bun:test';
 import { config } from '../config';
 import { myKortixSnapshotName, reapSupersededMyKortixSnapshots } from './builder';
+import { myKortixReapProtection } from './runtime-images';
 
 /**
  * No-op protection lookup: "nothing was built recently".
@@ -146,6 +147,42 @@ describe('meta snapshot reap — fail-closed protection', () => {
     await reapSupersededMyKortixSnapshots(provider, keep, async () => new Set([protectedName]));
 
     expect(provider.deleted).toEqual([stale]);
+  });
+});
+
+describe('meta snapshot reap — served images across the rename', () => {
+  test('the first deploy after the rename keeps the legacy images sessions still boot, and reaps the other legacy ones', async () => {
+    // Old replicas still boot `kortix-meta-<env>-*` and every session start
+    // falls back to it while the first `kortix-mykortix-*` image builds. The
+    // served list holds both prefixes, so the reap that follows that build
+    // must leave the served legacy image alone.
+    const env = config.INTERNAL_KORTIX_ENV;
+    const servedLegacy = `kortix-meta-${env}-${'1'.repeat(16)}`;
+    const servedLegacyOlder = `kortix-meta-${env}-${'2'.repeat(16)}`;
+    const staleLegacy = `kortix-meta-${env}-${'3'.repeat(16)}`;
+    const keep = myKortixSnapshotName(HASH_B);
+    const provider = fakeProvider([keep, servedLegacy, servedLegacyOlder, staleLegacy]);
+
+    await reapSupersededMyKortixSnapshots(provider, keep, (names, withinMs) =>
+      myKortixReapProtection(names, withinMs, {
+        recentlyBuilt: async () => new Set(),
+        readServed: async () => [{ snapshotName: servedLegacy, contentHash: null }, { snapshotName: servedLegacyOlder, contentHash: null }],
+      }),
+    );
+
+    expect(provider.deleted).toEqual([staleLegacy]);
+  });
+
+  test('served images of both prefixes are protected together, with the recent builds', async () => {
+    const env = config.INTERNAL_KORTIX_ENV;
+    const servedNew = myKortixSnapshotName(HASH_A);
+    const servedLegacy = `kortix-meta-${env}-${'1'.repeat(16)}`;
+    const recent = myKortixSnapshotName('9'.repeat(64));
+    const protectedSet = await myKortixReapProtection([recent, servedNew, servedLegacy], 60_000, {
+      recentlyBuilt: async () => new Set([recent]),
+      readServed: async () => [{ snapshotName: servedNew, contentHash: null }, { snapshotName: servedLegacy, contentHash: null }],
+    });
+    expect([...protectedSet].sort()).toEqual([recent, servedNew, servedLegacy].sort());
   });
 });
 

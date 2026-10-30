@@ -12,19 +12,26 @@
  *
  * Errors are structured (path + severity + message + optional line/col) so
  * callers can render them however they want. The validator is pure: no I/O,
- * no DB calls, just `(rawToml: string | object) → ManifestValidationResult`.
+ * no DB calls, just `(raw YAML string | object) → ManifestValidationResult`.
+ *
+ * There is one manifest format and it has no version number: it changes only by
+ * adding optional keys whose defaults keep today's behavior. A breaking change
+ * is never made in place. `kortix_version: 3` is obsolete and ignored (warning);
+ * any other value is a retired format (error).
  */
 
 import { Cron } from 'croner';
 import { normalizeTriggerList } from './trigger-shape';
-import { TomlError } from 'smol-toml';
-import { type ManifestFormat, parseManifestText } from './format';
+import { Document, isMap, LineCounter, parseDocument } from 'yaml';
+import { type AppliedFix, applyDeprecations, DEPRECATIONS } from './deprecations';
+import { legacyFormatMessage, legacyFormatOf } from './legacy';
+import { areValidConditions, isValidMatcher, MAX_CONDITIONS_PER_POLICY } from './policy-rules';
 import { parseConnectorHeaders } from './connector-headers';
 import { normalizeImportPath } from './imports';
 import { appDisplayIssues, appReleaseConfigIssues, resolveAppReleaseConfig } from '@kortix/shared/app-config';
 import { appReleaseInputFromBlock } from './app-config';
 import { parseChangeRequestFilter, parseTriggerFilter } from './trigger-filter';
-import { validateManifestBodyV3 } from './index.v3';
+import { validateManifestBody } from './index.v3';
 import { validateAgentPolicySetRefs, validateConnectorPolicySets } from './policy-sets';
 import {
   CHANNEL_PLATFORMS,
@@ -52,21 +59,7 @@ import {
   MONITOR_REMOVED_MESSAGE,
   parseDurationSeconds,
 } from './constants';
-// The 7 below (v2-only enums/regex) are no longer consumed directly in this
-// file — validateAgentMdFrontmatter and friends moved to ./index.v2.ts, which
-// imports them itself — but are kept in the re-export block just below for
-// `@kortix/manifest-schema` backward compatibility.
-import {
-  rejectChannelsV2,
-  validateAgentsV2,
-  validateDefaultAgentV2,
-  validateHarnessesV2,
-  validateRuntimeV2,
-  validateToolsV2,
-  validateTriggerAgentRefsV2,
-  warnUnknownAgentTools,
-  type AppBlockV2,
-} from './index.v2';
+import { type AppBlockV2 } from './index.v2';
 
 /**
  * The shortest gap between two fires of a cron trigger (KRTX-1721). Every fire
@@ -91,37 +84,45 @@ export function cronIntervalError(cron: string, timezone = 'UTC'): string | null
 export {
   AGENTS_DIR,
   AGENT_FILE_PATTERN,
-  HARNESSES_DIR,
-  LEGACY_MEMORY_DIR,
-  LEGACY_OPENCODE_CONFIG_DIR,
   MEMORY_DIR,
-  OPENCODE_CONFIG_DIR,
   SKILLS_DIR,
   TOOL_FILE_PATTERN,
-  agentFileCandidates,
   defaultAgentFile,
-  legacyConfigDir,
-  manifestOpencodeConfigDir,
-  opencodeConfigDirCandidates,
-  piConfigDirCandidates,
   safeAgentFile,
   safeToolFile,
   safeRepoPath,
-  skillDirs,
 } from './layout';
 
 export {
-  type ManifestFormat,
-  type ManifestCandidate,
-  MANIFEST_FILENAME_TOML,
-  MANIFEST_FILENAME_YAML,
+  MANIFEST_FILENAME,
   manifestCandidatePaths,
-  manifestFormatForPath,
   parseManifestText,
   serializeManifestObject,
 } from './format';
 
 export { slugifySlug } from './slug';
+export {
+  type LegacyChange,
+  type LegacyConversion,
+  type LegacyRepo,
+  convertLegacyManifest,
+  convertLegacyManifestAsync,
+  legacyFormatMessage,
+  legacyFormatOf,
+  parseJsonc,
+  parseLegacyToml,
+  renderManifest,
+  splitFrontmatter,
+} from './legacy';
+export { type AppliedFix, type Deprecation, DEPRECATIONS, applyDeprecations, fixManifestText } from './deprecations';
+export {
+  type PolicyArgCondition,
+  FORBIDDEN_ARG_SEGMENTS,
+  MAX_CONDITIONS_PER_POLICY,
+  areValidConditions,
+  isRegexMatcher,
+  isValidMatcher,
+} from './policy-rules';
 export {
   MAX_POLICY_SETS_PER_CONNECTOR,
   MAX_RULES_PER_POLICY_SET,
@@ -158,7 +159,6 @@ export {
   MAX_IMPORT_DEPTH,
   MAX_IMPORT_FILES,
   ManifestImportError,
-  ROOT_ONLY_KEYS,
   hasManifestImports,
   normalizeImportPath,
   resolveManifestImports,
@@ -271,10 +271,8 @@ export {
 // cycle that `constants.ts` had to break.
 export {
   type AgentModeV2,
-  type WorkspaceModeV2,
   type AgentWorkspaceV2,
   type ProjectRepositoryResult,
-  projectRepositoryDefault,
   resolveProjectRepository,
   type RuntimeV2,
   type PermissionActionV2,
@@ -282,33 +280,13 @@ export {
   type PermissionConfigObjectV2,
   type PermissionConfigV2,
   type GrantSetV2,
-  type AgentToolsV2,
-  type AgentBlockV2,
   type AppBlockV2,
   type AppResourcesV2,
-  type ManifestV2,
-  type HarnessesV2,
   type PiPackageEntryV2,
-  resolveAgentTools,
   resolveGrantSet,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
 } from './index.v2';
-
-/**
- * Maximum manifest schema version this validator understands.
- *
- * v1 = `[[agents]]` array overlay, TOML or YAML, `[[channels]]` allowed.
- * v2 = `agents:` map — GOVERNANCE ONLY (connectors/secrets/skills/kortix_permissions/
- * workspace/enabled) plus `file`, the path of the agent's `.md`; agent behavior
- * (mode/model/temperature/top_p/steps/variant/color/hidden/permission/prompt)
- * lives entirely in that `.md` frontmatter + body, never in this manifest.
- * YAML-only, `[[channels]]` removed, deny-by-default grant sets. (decision
- * 2026-07-05: "one home per concern").
- * v3 = YAML-only agent behavior (model, prompt or prompt_file, permission)
- * compiled into the existing harness config channel; v1/v2 stay unchanged.
- */
-const KNOWN_SCHEMA_VERSION = 3;
 
 /**
  * True when `v` is a value the runtime's `coerceBool` recognizes for an
@@ -329,14 +307,74 @@ function isEnabledValue(v: unknown): boolean {
 export interface ManifestIssue {
   /** Dot-path to the offending value, e.g. `triggers[1].cron`. */
   path: string;
-  /** Human-readable message. */
+  /** Human-readable message: what is wrong and how to fix it. */
   message: string;
-  /** `error` blocks push/merge; `warning` is advisory. */
+  /**
+   * `error` blocks writing the file (`kortix validate`, `kortix ship`, the
+   * change-request merge gate, the editor). A running project never stops on
+   * one: `usableManifest` applies the file without the broken part. `warning`
+   * is advisory.
+   */
   severity: 'error' | 'warning';
-  /** Optional 1-indexed line within the original TOML text. */
+  /** A key the format does not have. A running project ignores it. */
+  unknownKey?: true;
+  /** A deprecated shape: the id of the rewrite (`DEPRECATIONS`) that `kortix validate --fix` applies. */
+  fix?: string;
+  /** Optional 1-indexed line within the original YAML text. */
   line?: number;
   /** Optional 1-indexed column. */
   column?: number;
+}
+
+/** Collections whose entries a running project turns off (`enabled: false`) on an error. */
+const OFF_COLLECTIONS = new Set(['agents', 'triggers']);
+/** Collections whose entries a running project drops on an error. */
+const DROP_COLLECTIONS = new Set(['connectors', 'apps', 'skills', 'tools', 'commands', 'extensions', 'spaces', 'sandbox.templates']);
+/** Settings a running project resets to their default on an error. None of them grants access. */
+const RESET_KEYS = new Set(['project', 'default_agent', 'runtime']);
+
+/**
+ * What a running project applies, given the validator's issues. A key the
+ * format does not have is ignored. An agent or trigger with an error is turned
+ * off; a connector, app, skill, tool, command, extension, space or sandbox
+ * template with an error is dropped. Each of these only takes access away.
+ * `project`, `default_agent` and `runtime` fall back to their defaults. An
+ * error anywhere else (`sandbox`, `env`, `approvals`, `policy`, `imports`, a
+ * retired format, …) returns `{}`: the project runs its built-in agents only,
+ * so My Kortix can still start and fix the file. Pure: `raw` is not changed.
+ */
+export function usableManifest(raw: Record<string, unknown> | null, issues: readonly ManifestIssue[]): Record<string, unknown> {
+  // A legacy file is usable only once converted (`convertLegacyManifest`); unconverted it means nothing here.
+  if (!raw || legacyFormatOf(raw)) return {};
+  const out = structuredClone(raw);
+  const drop = new Map<string, Set<string>>();
+  for (const issue of issues) {
+    if (issue.severity !== 'error' || issue.unknownKey) continue;
+    const m = /^(?:(sandbox)\.)?([a-z_]+)(?:\.([^.[]+)|\[(\d+)\])?/.exec(issue.path);
+    const collection = m ? (m[1] ? `${m[1]}.${m[2]}` : m[2]!) : '';
+    const id = m?.[3] ?? m?.[4];
+    const container = collection === 'sandbox.templates' ? (out.sandbox as Record<string, unknown> | undefined)?.templates : out[collection];
+    const entry = id !== undefined && container && typeof container === 'object' ? (container as Record<string, unknown>)[id] : undefined;
+    if (OFF_COLLECTIONS.has(collection) && isTable(entry)) {
+      entry.enabled = false;
+    } else if (DROP_COLLECTIONS.has(collection) && entry !== undefined) {
+      if (!drop.has(collection)) drop.set(collection, new Set());
+      drop.get(collection)!.add(id!);
+    } else if (!m?.[1] && RESET_KEYS.has(m?.[2] ?? '')) {
+      delete out[m![2]!];
+    } else {
+      return {};
+    }
+  }
+  for (const [collection, ids] of drop) {
+    const holder = collection === 'sandbox.templates' ? (out.sandbox as Record<string, unknown>) : out;
+    const key = collection === 'sandbox.templates' ? 'templates' : collection;
+    const value = holder[key];
+    holder[key] = Array.isArray(value)
+      ? value.filter((_, index) => !ids.has(String(index)))
+      : Object.fromEntries(Object.entries(value as Record<string, unknown>).filter(([name]) => !ids.has(name)));
+  }
+  return out;
 }
 
 export interface ManifestValidationResult {
@@ -349,115 +387,43 @@ export interface ManifestValidationResult {
 }
 
 /**
- * Validate a manifest. Accepts either the raw manifest string (canonical input
- * for CLI / git pushes) or an already-parsed object. When given a string, pass
- * the `format` so it's parsed with the right parser — defaults to TOML for
- * backward compatibility; pass `'yaml'` for a `kortix.yaml`.
+ * Validate a manifest: the raw kortix.yaml text (CLI, git pushes) or an
+ * already-parsed object.
  */
-export function validateManifest(
-  input: string | Record<string, unknown>,
-  format: ManifestFormat = 'toml',
-): ManifestValidationResult {
+export function validateManifest(input: string | Record<string, unknown>): ManifestValidationResult {
   const issues: ManifestIssue[] = [];
-  let parsed: Record<string, unknown> | null = null;
-
+  let doc: Document;
   if (typeof input === 'string') {
-    try {
-      parsed = parseManifestText(input, format);
-    } catch (err) {
-      // Both parsers expose a source position, in different shapes: TomlError
-      // carries flat line/column; the yaml package's YAMLParseError carries a
-      // `linePos` array of { line, col }.
-      const pos = err as {
-        line?: unknown;
-        column?: unknown;
-        linePos?: Array<{ line?: number; col?: number }>;
-      };
-      const line = typeof pos.line === 'number' ? pos.line : pos.linePos?.[0]?.line;
-      const column = typeof pos.column === 'number' ? pos.column : pos.linePos?.[0]?.col;
-      issues.push({
-        path: err instanceof TomlError ? '<toml>' : `<${format}>`,
-        message: `Syntax error: ${err instanceof Error ? err.message : String(err)}`,
-        severity: 'error',
-        line: typeof line === 'number' ? line : undefined,
-        column: typeof column === 'number' ? column : undefined,
-      });
+    doc = parseDocument(input);
+    const error = doc.errors[0];
+    if (error) {
+      const pos = error.linePos?.[0];
+      issues.push({ path: '<yaml>', message: `Syntax error: ${error.message}`, severity: 'error', line: pos?.line, column: pos?.col });
       return { valid: false, parsed: null, issues };
     }
   } else {
-    parsed = input;
+    doc = new Document(input);
   }
+  const asObject = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  let parsed = typeof input === 'string' ? asObject(doc.toJS()) : input;
 
-  const version = validateRoot(parsed, format, issues);
-
-  if (version === 3) {
-    validateManifestBodyV3(parsed, format, issues);
-  } else if (version !== undefined && version >= 2) {
-    validateManifestBodyV2(parsed, format, issues);
-  } else {
-    validateManifestBodyV1(parsed, format, issues);
+  if (validateVersionKey(parsed.kortix_version, issues)) {
+    // Deprecated shapes are rewritten in memory: the body is checked, and `parsed` returned, in the latest shape.
+    const fixed = applyDeprecations(doc);
+    if (fixed.length > 0) {
+      parsed = asObject(doc.toJS());
+      issues.push(...fixed.map(deprecationIssue));
+    }
+    validateManifestBody(parsed, issues);
   }
+  if (typeof input === 'string') locateIssues(input, issues);
 
   return {
     valid: !issues.some((i) => i.severity === 'error'),
     parsed,
     issues,
   };
-}
-
-/**
- * kortix_version 1 section validators — UNCHANGED from before v2 existed.
- * Byte-for-byte the same calls as always; v1 manifests must keep validating
- * identically no matter what v2 support is added alongside it.
- */
-function validateManifestBodyV1(
-  parsed: Record<string, unknown>,
-  format: ManifestFormat,
-  issues: ManifestIssue[],
-): void {
-  validateProject(parsed.project, 'project', issues);
-  validateEnv(parsed.env, 'env', issues);
-  validateOpenCode(parsed.opencode, 'opencode', issues);
-  validateSandbox(parsed.sandbox, 'sandbox', issues, format);
-  rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
-  validateTriggers(parsed.triggers, 'triggers', issues, format);
-  validateConnectors(parsed.connectors, 'connectors', issues, 1, format);
-  validateAgents(parsed.agents, 'agents', issues, format);
-  validateChannels(parsed.channels, 'channels', issues, format);
-  rejectRetiredApps(parsed.apps, 'apps', issues);
-}
-
-/**
- * kortix_version 2 section validators. Every v1 top-level section keeps its
- * v1 shape/validation (project, env, opencode, sandbox, triggers, connectors);
- * `agents` becomes a name→block map (§2.2), `channels`
- * is removed (§2.5), and `default_agent` + `runtime` are new top-level keys
- * (§2.1/§2.3).
- */
-function validateManifestBodyV2(
-  parsed: Record<string, unknown>,
-  format: ManifestFormat,
-  issues: ManifestIssue[],
-): void {
-  validateImports(parsed.imports, 'imports', issues);
-  validateProject(parsed.project, 'project', issues);
-  validateEnv(parsed.env, 'env', issues);
-  validateOpenCode(parsed.opencode, 'opencode', issues);
-  validateOpenCode(parsed.pi, 'pi', issues);
-  validateSandbox(parsed.sandbox, 'sandbox', issues, format);
-  rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
-  validateTriggers(parsed.triggers, 'triggers', issues, format);
-  validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
-  validateAppsV2(parsed.apps, 'apps', issues);
-  rejectChannelsV2(parsed.channels, 'channels', issues);
-  validateRuntimeV2(parsed.runtime, 'runtime', issues);
-  validateHarnessesV2(parsed.harnesses, 'harnesses', issues);
-  validateToolsV2(parsed.tools, 'tools', issues);
-  const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
-  warnUnknownAgentTools(parsed.agents, parsed.tools, issues);
-  validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
-  validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
-  validateAgentPolicySetRefs(parsed.agents, parsed.connectors, 'agents', issues);
 }
 
 /**
@@ -498,17 +464,9 @@ export function formatIssues(issues: ManifestIssue[], opts: { color?: boolean } 
     .join('\n');
 }
 
-/**
- * A format-appropriate "this section must be a list" hint. Legacy TOML uses
- * `[[key]]` table-arrays; YAML (every v2 manifest, and any v1 YAML) uses a
- * plain `key:` list — so a YAML author who malforms a section should never be
- * told to "use `[[triggers]]`". Defaults to TOML so v1 TOML messages stay
- * byte-for-byte identical.
- */
-function listSectionHint(key: string, format: ManifestFormat = 'toml'): string {
-  return format === 'yaml'
-    ? `\`${key}\` must be a list of entries — write it as a YAML \`${key}:\` list, not a map or scalar.`
-    : `\`${key}\` must be an array of tables — use \`[[${key}]]\`.`;
+/** "This section must be a list" hint. */
+function listSectionHint(key: string): string {
+  return `\`${key}\` must be a list of entries — write it as a YAML \`${key}:\` list, not a map or scalar.`;
 }
 
 // ─── Section validators ───────────────────────────────────────────────────
@@ -534,7 +492,6 @@ export function validateGrantList(
   label: string,
   issues: ManifestIssue[],
   checkAction: boolean,
-  version: 1 | 2 = 1,
 ): void {
   if (value === undefined || value === null) return;
   if (typeof value === 'string') {
@@ -584,11 +541,8 @@ export function validateGrantList(
       } else if (LEGACY_TOLERATED_KORTIX_PERMISSIONS.includes(s)) {
         issues.push({
           path: `${where}[${k}]`,
-          message:
-            version === 2
-              ? `"${s}" is a deprecated, no-op Kortix permission (removed from enforcement) and is not tolerated in kortix_version 2 — remove it from the manifest.`
-              : `"${s}" is a deprecated, no-op Kortix permission (removed from enforcement — granting or omitting it has no effect). Remove it from the manifest.`,
-          severity: version === 2 ? 'error' : 'warning',
+          message: `"${s}" is a retired Kortix permission (no longer enforced). Remove it from the manifest.`,
+          severity: 'error',
         });
       } else {
         issues.push({
@@ -601,165 +555,165 @@ export function validateGrantList(
   });
 }
 
+/** Validate an agent's project-permission grant (`kortix_permissions`). The old alias `kortix_cli` is a retired agent key. */
+export function validateKortixPermissionFields(entry: Record<string, unknown>, where: string, issues: ManifestIssue[]): void {
+  validateGrantList(entry.kortix_permissions, `${where}.kortix_permissions`, 'kortix_permissions', issues, true);
+}
+
+/** `agents.x[0].y` → ['agents', 'x', 0, 'y']. */
+function issuePathKeys(path: string): Array<string | number> {
+  return [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]!));
+}
+
 /**
- * Validate an agent's project-permission grant. `kortix_permissions` is the
- * canonical key. `kortix_cli` is its deprecated alias (the pre-rename name —
- * the list never had anything to do with the CLI): still accepted, always
- * flagged with a warning. Both keys on one agent must resolve to the same
- * grant; different values are an error because the parser could only honor
- * one of them silently.
+ * Give every issue without a position the 1-indexed line and column of its
+ * path in the YAML text: the key of a map entry, the item of a list, else the
+ * nearest existing parent.
  */
-export function validateKortixPermissionFields(
-  entry: Record<string, unknown>,
-  where: string,
-  issues: ManifestIssue[],
-  version: 1 | 2,
-): void {
-  const canonical = entry.kortix_permissions;
-  const legacy = entry.kortix_cli;
-  validateGrantList(canonical, `${where}.kortix_permissions`, 'kortix_permissions', issues, true, version);
-  validateGrantList(legacy, `${where}.kortix_cli`, 'kortix_cli', issues, true, version);
-  if (legacy === undefined || legacy === null) return;
-  const hasCanonical = canonical !== undefined && canonical !== null;
-  if (hasCanonical && !sameGrantValue(canonical, legacy)) {
-    issues.push({
-      path: `${where}.kortix_cli`,
-      message: 'kortix_cli is the deprecated alias of kortix_permissions and must match it when both are present — remove kortix_cli.',
-      severity: 'error',
-    });
+export function locateIssues(text: string, issues: ManifestIssue[]): void {
+  if (!issues.some((issue) => issue.line === undefined)) return;
+  const lineCounter = new LineCounter();
+  const doc = parseDocument(text, { lineCounter });
+  const start = (keys: Array<string | number>): number | undefined => {
+    const parent = keys.length > 1 ? doc.getIn(keys.slice(0, -1), true) : doc.contents;
+    const last = keys[keys.length - 1];
+    if (isMap(parent)) {
+      const pair = parent.items.find((item) => (item.key as { value?: unknown } | null)?.value === last);
+      return (pair?.key as { range?: [number, number, number] } | null)?.range?.[0];
+    }
+    return (doc.getIn(keys, true) as { range?: [number, number, number] } | undefined)?.range?.[0];
+  };
+  for (const issue of issues) {
+    if (issue.line !== undefined) continue;
+    const keys = issuePathKeys(issue.path);
+    for (let n = keys.length; n > 0; n--) {
+      const offset = start(keys.slice(0, n));
+      if (offset === undefined) continue;
+      const pos = lineCounter.linePos(offset);
+      issue.line = pos.line;
+      issue.column = pos.col;
+      break;
+    }
+  }
+}
+
+/** ` Did you mean "tools"?` when one allowed key is at most 2 edits away, else ''. */
+export function didYouMean(key: string, allowed: readonly string[]): string {
+  const distance = (a: string, b: string): number => {
+    const row = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      let prev = row[0]!;
+      row[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const next = Math.min(row[j]! + 1, row[j - 1]! + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+        prev = row[j]!;
+        row[j] = next;
+      }
+    }
+    return row[b.length]!;
+  };
+  const best = allowed.map((candidate) => [candidate, distance(key, candidate)] as const).sort((x, y) => x[1] - y[1])[0];
+  return best && best[1] <= 2 ? ` Did you mean "${best[0]}"?` : '';
+}
+
+/**
+ * Approval rules `{ match, action, conditions }` (the top-level `policies` and a
+ * connector's `policies`). A bad rule is an error: the runtime skips it, which
+ * could silently drop a `block`.
+ */
+function validatePolicyRules(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node === undefined || node === null) return;
+  const error = (at: string, message: string): void => void issues.push({ path: at, message, severity: 'error' });
+  if (!Array.isArray(node)) return error(path, listSectionHint(path));
+  node.forEach((rule, index) => {
+    const at = `${path}[${index}]`;
+    if (!isTable(rule)) return error(at, 'must be a map: { match, action, conditions }.');
+    const match = typeof rule.match === 'string' ? rule.match.trim() : '';
+    if (!match) error(`${at}.match`, 'is required: a glob such as `github.*`, or a `/regex/flags`.');
+    else if (!isValidMatcher(match)) error(`${at}.match`, 'is not a valid matcher: the /regex/ does not compile, or it nests quantifiers such as `(a+)+`.');
+    const action = typeof rule.action === 'string' ? rule.action.trim().toLowerCase() : '';
+    if (!(CONNECTOR_POLICY_ACTIONS as readonly string[]).includes(action)) {
+      error(`${at}.action`, `must be one of: ${CONNECTOR_POLICY_ACTIONS.join(', ')} (got "${action || 'unset'}").`);
+    }
+    if (!areValidConditions(rule.conditions)) {
+      error(`${at}.conditions`, `must be a list of at most ${MAX_CONDITIONS_PER_POLICY} { arg, match, negate }: \`arg\` a dotted name (not __proto__, constructor or prototype), \`match\` a glob or /regex/, \`negate\` true or false.`);
+    }
+  });
+}
+
+/** `policy`: the decision for a connector call no rule matches. A bad `default_mode` would fall back to `allow_all`. */
+function validatePolicySettings(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node === undefined || node === null) return;
+  if (!isTable(node)) {
+    issues.push({ path, message: '`policy` must be a map: { default_mode: risk | allow_all }.', severity: 'error' });
     return;
+  }
+  if (node.default_mode === undefined) return;
+  const mode = typeof node.default_mode === 'string' ? node.default_mode.trim().toLowerCase() : '';
+  if (mode !== 'risk' && mode !== 'allow_all') {
+    issues.push({ path: `${path}.default_mode`, message: `must be risk or allow_all (got "${mode || 'unset'}").`, severity: 'error' });
+  }
+}
+
+/** `approvals.ttl`: how long a held call waits. A bad value only means the 24 h default applies. */
+function validateApprovals(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node === undefined || node === null) return;
+  const warn = (at: string, message: string): void => void issues.push({ path: at, message, severity: 'warning' });
+  if (!isTable(node)) return warn(path, '`approvals` must be a map: { ttl }. It is ignored.');
+  if (node.ttl !== undefined && !(typeof node.ttl === 'string' && /^\d+[mhd]$/.test(node.ttl.trim()))) {
+    warn(`${path}.ttl`, 'must be an integer and m, h or d, such as 30m, 4h or 7d. The 24h default applies.');
+  }
+}
+
+/** The warning for one rewritten deprecated shape. */
+function deprecationIssue({ id, path }: AppliedFix): ManifestIssue {
+  const summary = DEPRECATIONS.find((d) => d.id === id)?.summary ?? id;
+  return { path, message: `Deprecated: ${summary} \`kortix validate --fix\` rewrites it.`, severity: 'warning', fix: id };
+}
+
+/**
+ * One file's deprecation warnings, with that file's own line and column. A
+ * caller that validates a merged document (`imports:`) adds these per file:
+ * the merged document is already in the latest shape.
+ */
+export function deprecationIssues(text: string): ManifestIssue[] {
+  const doc = parseDocument(text);
+  if (doc.errors.length > 0) return [];
+  const issues = applyDeprecations(doc).map(deprecationIssue);
+  locateIssues(text, issues);
+  return issues;
+}
+
+/** The current manifest reference, named in every retired-format error. */
+export const MANIFEST_DOCS_URL = 'https://kortix.com/docs/developers#kortixyaml-reference';
+
+/**
+ * `kortix_version` is obsolete. `3` is the deprecation `drop-kortix-version`.
+ * `1` and `2` are the legacy formats: one warning, and the body is left to the
+ * converter (`./legacy.ts`), which needs the files the manifest points at. Any
+ * other value is one error. Returns whether to validate the body.
+ */
+function validateVersionKey(value: unknown, issues: ManifestIssue[]): boolean {
+  // `3` is the deprecation `drop-kortix-version`.
+  if (value === undefined || value === null || value === 3) return true;
+  // A legacy format still works: a reader converts it with the files it points at (`./legacy.ts`).
+  const legacy = legacyFormatOf({ kortix_version: value });
+  if (legacy) {
+    issues.push({ path: 'kortix_version', message: legacyFormatMessage(legacy), severity: 'warning', fix: 'legacy-format' });
+    return false;
   }
   issues.push({
-    path: `${where}.kortix_cli`,
-    message: hasCanonical
-      ? 'kortix_cli is deprecated and duplicates kortix_permissions — remove kortix_cli.'
-      : 'kortix_cli is deprecated — rename it to kortix_permissions (same value).',
-    severity: 'warning',
+    path: 'kortix_version',
+    message: `\`kortix_version: ${JSON.stringify(value)}\` is not a format Kortix knows. kortix.yaml has no version: delete the line (${MANIFEST_DOCS_URL}).`,
+    severity: 'error',
   });
-}
-
-/** Grant-set equality: "all"/"none" case-insensitive, lists as trimmed sets. */
-function sameGrantValue(a: unknown, b: unknown): boolean {
-  const norm = (v: unknown): string => {
-    if (typeof v === 'string') {
-      const t = v.trim().toLowerCase();
-      return t === '' ? 'none' : t;
-    }
-    if (Array.isArray(v)) {
-      const items = v.map((x) => (typeof x === 'string' ? x.trim() : JSON.stringify(x)));
-      return JSON.stringify([...new Set(items)].sort());
-    }
-    return JSON.stringify(v);
-  };
-  return norm(a) === norm(b);
-}
-
-/** `[[agents]]` — the per-agent scoping overlay (name + connectors + kortix_permissions). */
-function validateAgents(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
-  if (node == null) return;
-  if (!Array.isArray(node)) {
-    issues.push({
-      path,
-      message: listSectionHint('agents', format),
-      severity: 'error',
-    });
-    return;
-  }
-  const seen = new Set<string>();
-  node.forEach((entry, i) => {
-    const where = `${path}[${i}]`;
-    if (!isTable(entry)) {
-      issues.push({ path: where, message: 'must be a table.', severity: 'error' });
-      return;
-    }
-    const name = typeof entry.name === 'string' ? entry.name.trim() : '';
-    if (!name) {
-      issues.push({ path: `${where}.name`, message: 'name is required.', severity: 'error' });
-    } else if (!SLUG_RE.test(name)) {
-      issues.push({
-        path: `${where}.name`,
-        message: `"${name}" is not a valid agent name (lowercase letters, digits, dashes, underscores).`,
-        severity: 'error',
-      });
-    } else if (seen.has(name)) {
-      issues.push({
-        path: `${where}.name`,
-        message: `duplicate agent name "${name}".`,
-        severity: 'error',
-      });
-    } else {
-      seen.add(name);
-    }
-    validateGrantList(entry.connectors, `${where}.connectors`, 'connectors', issues, false);
-    validateKortixPermissionFields(entry, where, issues, 1);
-    // `env` (project-secret allowlist) shares the same array | "all" | "none"
-    // shape as connectors/kortix_permissions (runtime parseGrantSet, no per-entry
-    // action check). Omitted defaults to "all" at runtime (back-compat — a
-    // NEW dimension must not starve existing agents), so absence is not an
-    // error here either; validateGrantList already no-ops on undefined/null.
-    validateGrantList(entry.env, `${where}.env`, 'env', issues, false);
-    // `apps` (spec 2026-09-22 §2.5): App slugs an agent session may open when
-    // the App is restricted/private. Omitted = none.
-    validateGrantList(entry.apps, `${where}.apps`, 'apps', issues, false);
-  });
-}
-
-/**
- * Validate `kortix_version` and resolve which section-validator set applies.
- * Returns the parsed version number so the caller can dispatch to the v1 or
- * v2 body validators — `undefined` only when the field itself is missing or
- * not a valid positive integer (nothing sensible to dispatch on).
- */
-function validateRoot(
-  raw: Record<string, unknown>,
-  format: ManifestFormat,
-  issues: ManifestIssue[],
-): number | undefined {
-  const versionRaw = raw.kortix_version;
-  if (versionRaw == null) {
-    issues.push({
-      path: 'kortix_version',
-      message: 'kortix_version is required — add `kortix_version = 1` at the top.',
-      severity: 'error',
-    });
-    return undefined;
-  }
-  const version = typeof versionRaw === 'number' ? versionRaw : Number.NaN;
-  if (!Number.isFinite(version) || version < 1 || Math.floor(version) !== version) {
-    issues.push({
-      path: 'kortix_version',
-      message: `kortix_version must be a positive integer (got ${JSON.stringify(versionRaw)}).`,
-      severity: 'error',
-    });
-    return undefined;
-  }
-  if (version > KNOWN_SCHEMA_VERSION) {
-    issues.push({
-      path: 'kortix_version',
-      message: `Unsupported schema version ${version}. This tool understands up to v${KNOWN_SCHEMA_VERSION}; upgrade the CLI or pin the manifest.`,
-      severity: 'error',
-    });
-    return version;
-  }
-  // v2's nested permission trees, per-value secret scoping, and approval lists
-  // are genuinely awkward in TOML (spec §2.7) — TOML sunsets at v1. Point at
-  // the migration path rather than silently misparsing.
-  if (version >= 2 && format === 'toml') {
-    issues.push({
-      path: 'kortix_version',
-      message:
-        'kortix_version 2 and 3 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml, or run `kortix migrate --write` to convert it to a kortix_version 3 kortix.yaml.',
-      severity: 'error',
-    });
-    return version;
-  }
-  return version;
+  return false;
 }
 
 export function validateProject(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return; // optional
   if (!isTable(node)) {
-    issues.push({ path, message: '[project] must be a table.', severity: 'error' });
+    issues.push({ path, message: '`project` must be a map.', severity: 'error' });
     return;
   }
   expectStringOrAbsent(node.name, `${path}.name`, issues);
@@ -769,7 +723,7 @@ export function validateProject(node: unknown, path: string, issues: ManifestIss
 export function validateEnv(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return;
   if (!isTable(node)) {
-    issues.push({ path, message: '[env] must be a table.', severity: 'error' });
+    issues.push({ path, message: '`env` must be a map.', severity: 'error' });
     return;
   }
   for (const key of ['required', 'optional'] as const) {
@@ -804,20 +758,11 @@ export function validateEnv(node: unknown, path: string, issues: ManifestIssue[]
     if (!['required', 'optional'].includes(key)) {
       issues.push({
         path: `${path}.${key}`,
-        message: `Unknown [env] key "${key}". Expected one of: required, optional.`,
+        message: `Unknown \`env\` key "${key}". Expected one of: required, optional.`,
         severity: 'warning',
       });
     }
   }
-}
-
-function validateOpenCode(node: unknown, path: string, issues: ManifestIssue[]): void {
-  if (node == null) return;
-  if (!isTable(node)) {
-    issues.push({ path, message: '[opencode] must be a table.', severity: 'error' });
-    return;
-  }
-  expectRelativePathOrAbsent(node.config_dir, `${path}.config_dir`, issues);
 }
 
 /**
@@ -826,12 +771,12 @@ function validateOpenCode(node: unknown, path: string, issues: ManifestIssue[]):
  * carries no direct image keys — those belonged to the removed singular
  * `[sandbox]` table, so any that linger are flagged as legacy.
  */
-export function validateSandbox(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+export function validateSandbox(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return;
   if (!isTable(node)) {
     issues.push({
       path,
-      message: '`[sandbox]` must be a table holding `[[sandbox.templates]]` entries.',
+      message: '`sandbox` must be a map holding a `sandbox.templates` list.',
       severity: 'error',
     });
     return;
@@ -844,11 +789,11 @@ export function validateSandbox(node: unknown, path: string, issues: ManifestIss
   if (stray.length > 0) {
     issues.push({
       path,
-      message: `The singular \`[sandbox]\` table is no longer supported. Define each image under \`[[sandbox.templates]]\` (array of tables) with a named slug, and remove the \`${stray.join('`, `')}\` key${stray.length === 1 ? '' : 's'} from \`[sandbox]\`.`,
+      message: `Image keys set on \`sandbox\` itself (\`${stray.join('`, `')}\`) are not read next to \`sandbox.templates\`. Move them into a \`sandbox.templates\` entry with a slug.`,
       severity: 'error',
     });
   }
-  validateSandboxTemplates(node.templates, `${path}.templates`, issues, format);
+  validateSandboxTemplates(node.templates, `${path}.templates`, issues);
 
   // `default` selects which template EVERY session in the project boots
   // (UI, triggers, channels) without passing `sandbox_slug`. It must name a
@@ -875,7 +820,7 @@ export function validateSandbox(node: unknown, path: string, issues: ManifestIss
       if (!slugs.includes(want)) {
         issues.push({
           path: `${path}.default`,
-          message: `\`default\` = "${want}" does not match any \`[[sandbox.templates]]\` slug (or the reserved "${RESERVED_SANDBOX_SLUG}").`,
+          message: `\`default\` = "${want}" does not match any \`sandbox.templates\` slug (or the reserved "${RESERVED_SANDBOX_SLUG}").`,
           severity: 'error',
         });
       }
@@ -883,13 +828,13 @@ export function validateSandbox(node: unknown, path: string, issues: ManifestIss
   }
 }
 
-function validateSandboxTemplates(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+function validateSandboxTemplates(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
       path,
       message:
-        listSectionHint('sandbox.templates', format),
+        listSectionHint('sandbox.templates'),
       severity: 'error',
     });
     return;
@@ -1019,25 +964,6 @@ function validateResidentialProxy(value: unknown, path: string, issues: Manifest
     message:
       "Sessions of this template start only on a deployment that offers a residential IP address (Platinum with the residential proxy on). Elsewhere they fail to start; they never fall back to the sandbox's own address.",
     severity: 'warning',
-  });
-}
-
-function rejectLegacySandboxes(node: unknown, path: string, issues: ManifestIssue[]): void {
-  if (node === undefined) return;
-  issues.push({
-    path,
-    message:
-      '`[[sandboxes]]` has been renamed to `[[sandbox.templates]]`. The fields are unchanged — rename each `[[sandboxes]]` header to `[[sandbox.templates]]` and remove the old block.',
-    severity: 'error',
-  });
-}
-
-function rejectRetiredApps(node: unknown, path: string, issues: ManifestIssue[]): void {
-  if (node === undefined) return;
-  issues.push({
-    path,
-    message: 'The hosted `apps` manifest section has been removed. Delete this section.',
-    severity: 'error',
   });
 }
 
@@ -1407,7 +1333,7 @@ function validateOnRunShape(entry: Record<string, unknown>, where: string, issue
   if (entry.type !== undefined) push('type', 'is implied by `on`; remove it.');
 }
 
-export function validateTriggers(rawNode: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
+export function validateTriggers(rawNode: unknown, path: string, issues: ManifestIssue[]): void {
   if (rawNode == null) return;
   if (Array.isArray(rawNode)) rawNode.forEach((entry, i) => { if (isTable(entry)) validateOnRunShape(entry, `${path}[${i}]`, issues); });
   // One set of rules for both shapes: an `on:` / `run:` entry is checked as the flat fields it means.
@@ -1415,7 +1341,7 @@ export function validateTriggers(rawNode: unknown, path: string, issues: Manifes
   if (!Array.isArray(node)) {
     issues.push({
       path,
-      message: listSectionHint('triggers', format),
+      message: listSectionHint('triggers'),
       severity: 'error',
     });
     return;
@@ -1664,12 +1590,14 @@ export function validateTriggers(rawNode: unknown, path: string, issues: Manifes
   });
 }
 
-export function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: 1 | 2 = 1, format: ManifestFormat = 'toml'): void {
+export { validatePolicyRules, validatePolicySettings, validateApprovals };
+
+export function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
       path,
-      message: listSectionHint('connectors', format),
+      message: listSectionHint('connectors'),
       severity: 'error',
     });
     return;
@@ -1805,33 +1733,17 @@ export function validateConnectors(node: unknown, path: string, issues: Manifest
       const cm = typeof entry.credential === 'string' ? entry.credential.trim().toLowerCase() : '';
       if (cm === 'per_user') {
         // `per_user` (each member brings their own) was removed 2026-07-05.
-        // v1 tolerates it as a legacy value — it always resolves to `shared`
-        // at runtime and is never round-tripped back into git. v2 is a clean
-        // break: reject it outright, same as the removed CLI actions.
         issues.push({
           path: `${where}.credential`,
-          message:
-            version === 2
-              ? 'credential "per_user" is not supported in kortix_version 2 — connectors are always "shared"; remove this key.'
-              : 'credential "per_user" was removed — it is tolerated here for now and resolves to "shared", but should be removed from the manifest.',
-          severity: version === 2 ? 'error' : 'warning',
+          message: 'credential "per_user" was removed: connectors are always "shared". Remove this key.',
+          severity: 'error',
         });
       } else if (cm !== 'shared') {
-        // The runtime (apps/api's connectors.ts `parseConnectorEntry`)
-        // HARD-REJECTS any credential value that isn't "shared" or the
-        // tolerated legacy "per_user" — the whole `[[connectors]]` entry
-        // fails to parse there, it is not advisory. v2 mirrors that as a
-        // real error (same clean-break intent as the `per_user` branch
-        // above and every other v2 removed-field rejection). v1 keeps this
-        // a warning — consistent with this function's other v1-only soft
-        // checks (mcp `transport`, openapi `spec`) — so a hand-edited v1
-        // manifest is never hard-blocked by the CR-merge gate over a value
-        // the runtime would separately reject at sync time; the author
-        // still sees the warning either way.
+        // The runtime (apps/api connectors.ts `parseConnectorEntry`) rejects the whole entry.
         issues.push({
           path: `${where}.credential`,
-          message: `credential should be "shared" (got "${cm || 'unset'}"); the runtime rejects anything else.`,
-          severity: version === 2 ? 'error' : 'warning',
+          message: `credential must be "shared" (got "${cm || 'unset'}").`,
+          severity: 'error',
         });
       }
     }
@@ -1849,22 +1761,11 @@ export function validateConnectors(node: unknown, path: string, issues: Manifest
       }
     }
     if (entry.agent_scope !== undefined) {
-      // The connector-side agent gate was removed 2026-07 (wave-2 of the
-      // agent-first cut): connector access is now purely the agent's own `connectors`
-      // grant (`[[agents]].connectors` in v1, `agents.<name>.connectors` in
-      // v2). The runtime (apps/api's connectors.ts `parseConnectorEntry`) no
-      // longer reads `agent_scope` at all — it parses fine and is simply
-      // dropped, never round-tripped back into git (unit-connectors-parse
-      // "agent_scope is retired" test). Same clean-break pattern as the
-      // `credential: per_user` removal above: v1 tolerates the stray legacy
-      // key as a deprecation warning, v2 is a hard error.
+      // Removed 2026-07: connector access is the agent's own `connectors` grant.
       issues.push({
         path: `${where}.agent_scope`,
-        message:
-          version === 2
-            ? 'agent_scope is not supported in kortix_version 2 — connector access is set on the agent (`connectors` grant); remove this key.'
-            : 'agent_scope is no longer used — connector access is set on the agent (`connectors` grant), not on the connector. This key is ignored at runtime; remove it from the manifest.',
-        severity: version === 2 ? 'error' : 'warning',
+        message: 'agent_scope was removed: connector access is set on the agent (`connectors` grant). Remove this key.',
+        severity: 'error',
       });
     }
     if ((provider === 'pipedream' || provider === 'composio') && entry.auth !== undefined) {
@@ -1931,110 +1832,10 @@ export function validateConnectors(node: unknown, path: string, issues: Manifest
         });
       }
     }
-    validateConnectorPolicySets(entry, where, issues, version);
-    // Optional [[connectors.policies]]
-    if (entry.policies !== undefined) {
-      const policies = entry.policies;
-      if (!Array.isArray(policies)) {
-        issues.push({
-          path: `${where}.policies`,
-          message: 'connectors.policies must be an array of tables.',
-          severity: 'error',
-        });
-      } else {
-        policies.forEach((p, j) => {
-          const pwhere = `${where}.policies[${j}]`;
-          if (!isTable(p)) {
-            issues.push({ path: pwhere, message: 'must be a table.', severity: 'error' });
-            return;
-          }
-          if (typeof p.match !== 'string' || !p.match.trim()) {
-            issues.push({
-              path: `${pwhere}.match`,
-              message: 'match glob is required.',
-              severity: 'error',
-            });
-          }
-          const action = typeof p.action === 'string' ? p.action.trim().toLowerCase() : '';
-          if (!(CONNECTOR_POLICY_ACTIONS as readonly string[]).includes(action)) {
-            issues.push({
-              path: `${pwhere}.action`,
-              message: `action must be one of: ${CONNECTOR_POLICY_ACTIONS.join(', ')} (got "${action || 'unset'}").`,
-              severity: 'error',
-            });
-          }
-        });
-      }
-    }
+    validateConnectorPolicySets(entry, where, issues);
+    validatePolicyRules(entry.policies, `${where}.policies`, issues);
   });
 }
-
-function validateChannels(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
-  if (node == null) return;
-  if (!Array.isArray(node)) {
-    issues.push({
-      path,
-      message: listSectionHint('channels', format),
-      severity: 'error',
-    });
-    return;
-  }
-  const seenPlatforms = new Set<string>();
-  node.forEach((entry, i) => {
-    const where = `${path}[${i}]`;
-    if (!isTable(entry)) {
-      issues.push({ path: where, message: 'must be a table.', severity: 'error' });
-      return;
-    }
-    const platform = typeof entry.platform === 'string' ? entry.platform.trim() : '';
-    if (!platform) {
-      issues.push({
-        path: `${where}.platform`,
-        message: 'platform is required (e.g. "slack").',
-        severity: 'error',
-      });
-    } else if (seenPlatforms.has(platform)) {
-      issues.push({
-        path: `${where}.platform`,
-        message: `duplicate platform "${platform}" — one [[channels]] entry per platform per project.`,
-        severity: 'error',
-      });
-    } else {
-      seenPlatforms.add(platform);
-    }
-    if (entry.enabled !== undefined && !isEnabledValue(entry.enabled)) {
-      issues.push({
-        path: `${where}.enabled`,
-        message: 'enabled must be a boolean.',
-        severity: 'error',
-      });
-    }
-    if (entry.events !== undefined) {
-      if (!Array.isArray(entry.events)) {
-        issues.push({
-          path: `${where}.events`,
-          message: 'events must be an array of strings.',
-          severity: 'error',
-        });
-      } else {
-        entry.events.forEach((ev, j) => {
-          if (typeof ev !== 'string') {
-            issues.push({
-              path: `${where}.events[${j}]`,
-              message: 'must be a string.',
-              severity: 'error',
-            });
-          }
-        });
-      }
-    }
-  });
-}
-
-// ─── kortix_version 2 types + validators ──────────────────────────────────
-// Extracted to ./index.v2.ts (thermo-nuclear-review FIX 1) — re-exported
-// below for backward compatibility, and imported here for dispatch from
-// validateManifestBodyV2. See index.v2.ts's header for the cycle rationale.
 
 // ─── Primitive helpers ────────────────────────────────────────────────────
 
@@ -2133,13 +1934,7 @@ function expectBoundedIntOrAbsent(
 export {
   type JsonSchemaFragment,
   KORTIX_SCHEMA_BASE_URL,
-  KORTIX_V1_JSON_SCHEMA,
-  KORTIX_V2_JSON_SCHEMA,
-  KORTIX_V3_JSON_SCHEMA,
   KORTIX_JSON_SCHEMA,
-  buildManifestV1Schema,
-  buildManifestV2Schema,
-  buildManifestV3Schema,
   buildManifestSchema,
   manifestJsonSchema,
 } from './json-schema';

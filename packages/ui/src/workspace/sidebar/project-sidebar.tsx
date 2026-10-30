@@ -20,7 +20,7 @@ import { ComputerConnectModal } from '../../internal/tunnel/computer-connect';
 import { ConnectMcpModal } from '../../internal/layout/connect-mcp-modal';
 import { ProjectMcpNavItem } from './footer/project-mcp-nav';
 import { ProjectComputerNavItem } from './footer/project-computer-nav';
-import { ProjectManifestUpgradeAlert } from './footer/project-manifest-upgrade-alert';
+import { ProjectManifestIssuesAlert } from './footer/project-manifest-issues-alert';
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
 import { CustomizeSidebarModal } from './customize-sidebar-modal';
@@ -331,7 +331,7 @@ export function ProjectSidebar({
                   left the sidebar: it stays in Settings → Connected. */}
               <ProjectRepositoryDisconnectedAlert projectId={projectId} />
               <ProjectSandboxAlert projectId={projectId} />
-              <ProjectManifestUpgradeAlert projectId={projectId} />
+              <ProjectManifestIssuesAlert projectId={projectId} />
               <SidebarBalanceWarning accountId={accountId} />
               {/* Connect MCP over Connect your computer: one block, 1px seam,
                   inner corners rounded-sm. Either row can be absent (dismissed,

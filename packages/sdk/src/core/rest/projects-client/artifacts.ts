@@ -128,6 +128,83 @@ export type ArtifactCommentAnchor =
     scroll: { x: number; y: number }; offset: { x: number; y: number; width: number; height: number };
   };
 
+export interface ArtifactCommentMark {
+  tool: "pen" | "arrow" | "rectangle";
+  color: "black" | "red" | "blue";
+  points: Array<{ x: number; y: number }>;
+  /** Stroke width relative to the region width, 0.001–0.05. */
+  width: number;
+}
+
+/** Validate stored marks without changing the published unknown[] response type. */
+export function parseArtifactCommentMarks(
+  value: unknown,
+): ArtifactCommentMark[] | null {
+  try {
+    if (!Array.isArray(value) || value.length > 64) return null;
+    const marks: ArtifactCommentMark[] = [];
+    let total = 0;
+    for (const mark of value) {
+      if (
+        !mark ||
+        typeof mark !== "object" ||
+        Array.isArray(mark) ||
+        Object.keys(mark).some(
+          (key) => !["tool", "color", "points", "width"].includes(key),
+        )
+      )
+        return null;
+      if (
+        !["pen", "arrow", "rectangle"].includes(mark.tool) ||
+        !["black", "red", "blue"].includes(mark.color) ||
+        !Number.isFinite(mark.width) ||
+        mark.width < 0.001 ||
+        mark.width > 0.05 ||
+        !Array.isArray(mark.points)
+      )
+        return null;
+      if (
+        mark.points.length < 2 ||
+        mark.points.length > (mark.tool === "pen" ? 1024 : 2) ||
+        (total += mark.points.length) > 8192
+      )
+        return null;
+      const points: Array<{ x: number; y: number }> = [];
+      for (const point of mark.points) {
+        if (
+          !point ||
+          typeof point !== "object" ||
+          Array.isArray(point) ||
+          Object.keys(point).some((key) => key !== "x" && key !== "y") ||
+          !Number.isFinite(point.x) ||
+          !Number.isFinite(point.y) ||
+          point.x < 0 ||
+          point.x > 1 ||
+          point.y < 0 ||
+          point.y > 1
+        )
+          return null;
+        points.push({ x: point.x, y: point.y });
+      }
+      if (
+        mark.tool !== "pen" &&
+        points[0].x === points[1].x &&
+        points[0].y === points[1].y
+      )
+        return null;
+      marks.push({
+        tool: mark.tool,
+        color: mark.color,
+        width: mark.width,
+        points,
+      });
+    }
+    return marks;
+  } catch {
+    return null;
+  }
+}
+
 export interface ArtifactComment {
   comment_id: string;
   thread_id: string;
@@ -138,6 +215,8 @@ export interface ArtifactComment {
   mentions: ArtifactCommentMention[];
   marks: unknown[];
   screenshot_key: string | null;
+  /** Protected API path; read with readArtifactCommentScreenshot. */
+  screenshot_url?: string | null;
   created_at: string;
   edited_at: string | null;
   deleted_at: string | null;
@@ -196,9 +275,16 @@ export interface CreateArtifactCommentInput {
   /** Text quotes and their prefix/suffix are at most 32 UTF-16 code units each. */
   anchor: ArtifactCommentAnchor;
   body: string;
+  marks?: ArtifactCommentMark[];
+  screenshot_base64?: string;
 }
 
 export interface ArtifactCommentBodyInput { body: string }
+
+export interface ReplyArtifactCommentInput extends ArtifactCommentBodyInput {
+  marks?: ArtifactCommentMark[];
+  screenshot_base64?: string;
+}
 
 export interface SendArtifactCommentsInput {
   thread_ids: string[];
@@ -306,7 +392,7 @@ export async function createArtifactComment(projectId: string, artifactId: strin
   return unwrap(await backendApi.post<{ thread: ArtifactCommentThread }>(`${base(projectId)}/${artifactId}/comments`, input)).thread;
 }
 
-export async function replyArtifactComment(projectId: string, artifactId: string, threadId: string, input: ArtifactCommentBodyInput) {
+export async function replyArtifactComment(projectId: string, artifactId: string, threadId: string, input: ReplyArtifactCommentInput) {
   return unwrap(await backendApi.post<{ comment: ArtifactComment }>(`${base(projectId)}/${artifactId}/comments/${threadId}/replies`, input)).comment;
 }
 
@@ -424,6 +510,32 @@ export async function readArtifactFile(
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { error?: string; message?: string } | null;
     throw new ApiError(body?.error || body?.message || 'Could not read the artifact', { status: response.status });
+  }
+  return response.blob();
+}
+
+
+/** Read a private screenshot through the authenticated API on every request. */
+export async function readArtifactCommentScreenshot(
+  projectId: string,
+  artifactId: string,
+  commentId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<Blob> {
+  const url = `${stripTrailingSlashes(platformConfig().backendUrl)}${base(projectId)}/${artifactId}/comments/${encodeURIComponent(commentId)}/screenshot`;
+  const response = await authenticatedFetch(url, { signal: options.signal });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+      code?: string;
+    } | null;
+    throw new ApiError(body?.error || "Could not read the comment screenshot", {
+      status: response.status,
+      code: body?.code,
+      details: body,
+      data: body,
+      response,
+    });
   }
   return response.blob();
 }

@@ -631,6 +631,12 @@ a bare thread id with the same visibility checks. Activity returns
 `{ items, next_cursor, older_versions }`; pass `next_cursor` as `cursor` to
 read the next page. Unknown historical save authors remain `System`.
 
+Comments and replies also accept optional `marks` and `screenshot_base64`. Marks are normalized pen, arrow, or rectangle geometry relative to a region anchor. PNG and WebP screenshots are limited to 2 MiB decoded. `parseArtifactCommentMarks` validates the published `marks: unknown[]` response without changing that existing type. Invalid stored marks return `null`; an empty array is valid.
+
+`readArtifactCommentScreenshot(projectId, artifactId, commentId, { signal? })` returns a `Blob` through the authenticated API. The project facade exposes `project.artifacts.comments.readScreenshot(artifactId, commentId)`. Every read checks Artifact visibility. A missing, deleted, or inaccessible screenshot answers `404`. The optional `screenshot_url` response field is a protected relative API path, not a public image URL. `useArtifactCommentScreenshot(projectId, artifactId, commentId)` reads the same authenticated blob for a mounted thumbnail, without retaining it after unmount. A browser host creates an object URL from the returned blob and revokes it when the image leaves the screen. Editing comment text does not change its marks or screenshot. A failed page capture can still save the marks and anchor without a screenshot.
+
+Send attaches screenshot bytes only when the target model supports images. Image batches allow at most 20 files, 100 MiB of decoded attachments, and 12 MiB of serialized image parts. A refused batch returns `413` with code `artifact_comment_screenshot_limit`. `ApiError.details.limits` retains the API fields `max_files`, `max_total_bytes`, `max_screenshot_bytes`, and optional `max_parts_bytes`. Text-only targets receive the protected screenshot references in the comment context.
+
 `sendArtifactComments` sends selected threads to an agent. Reuse `batch_id`
 when retrying the same handoff. An omitted id is generated once by the SDK.
 The result identifies the target session. A newly reserved session remains
@@ -1417,7 +1423,7 @@ for per-release changes.
 
 Agent configuration accepts `repository_access?: boolean`.
 The API stores it in `kortix.yaml` as `agents.<name>.workspace.project_repository` and always writes the value.
-On a `kortix_version: 3` project an omitted value is `false`. `GET` returns the resolved value.
+An omitted value is `false`. `GET` returns the resolved value.
 Set `false` to run new sessions without the project repository or repository API access.
 Git, secret, connector, and tool permissions remain separate. Existing sessions retain their saved policy.
 `AgentConfigBlock.workspace` is deprecated. The SDK maps legacy `branch`/`runtime` to the boolean field.

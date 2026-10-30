@@ -315,9 +315,8 @@ async function forwardAuthorized(
         // (../projects/managed-repo-seed.ts). Provisioning now guarantees one
         // at birth and `kortix ship` refuses to push without one, but a plain
         // `git push` straight at this proxy can still land a default branch
-        // with no kortix.yaml — which produces a project with no declared
-        // agents, no skills, and manifest detection falling back to v1
-        // `kortix.toml`. That used to be discovered as an unexplained
+        // with no kortix.yaml — which produces a project that runs its
+        // built-in agents only. That used to be discovered as an unexplained
         // session-start failure, long after the push.
         //
         // This cannot REJECT the push: the proxy streams the pack straight to
@@ -333,14 +332,14 @@ async function forwardAuthorized(
           try {
             const repoPath = await refreshMirror(gitProject);
             const listed = await runGit(
-              ['ls-tree', gitProject.defaultBranch, '--', 'kortix.yaml', 'kortix.yml', 'kortix.toml'],
+              ['ls-tree', gitProject.defaultBranch, '--', 'kortix.yaml', 'kortix.yml'],
               repoPath,
             );
             if (!listed.stdout.trim()) {
               console.error(
                 `[git-proxy] MANIFEST MISSING after push to ${projectId}: ` +
-                  `${gitProject.defaultBranch} has no kortix.yaml. This project cannot ` +
-                  `declare agents or skills and session start will fail.`,
+                  `${gitProject.defaultBranch} has no kortix.yaml. This project runs ` +
+                  `its built-in agents only.`,
               );
             }
           } catch (err) {

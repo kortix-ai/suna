@@ -48,14 +48,16 @@
  * has nobody to ask and does not ask.
  *
  * Background (`background: true`): the call starts ONE runner child session
- * (`notify_parent_on_turn_end`) whose `runtime_context` carries the script,
+ * as a background subagent (`SpawnSessionInput.background`, the create body's
+ * `metadata.notify_parent: true`) whose `runtime_context` carries the script,
  * args, title, run id and approved cap (`kortix.workflow.*`, chunked to the
  * API's 4,096-character strings). The runner's model calls this tool with
  * `script: ""`: an empty script with no `name` in a session whose
  * `KORTIX_SESSION_CONTEXT` holds a workflow runs that workflow. Its
- * turn keeps its own box alive, and its answer reaches this session as a
- * `<task-notification>` (apps/api `subagent-notice.ts`). This call returns at
- * once with `background: { sessionId }`. Depth: a session at depth d runs
+ * turn keeps its own box alive, and when that turn ends the API delivers its
+ * answer into this session once, as a background-subagent report (apps/api
+ * `projects/subagent-notice.ts`). This call returns at once with
+ * `background: { sessionId }`. Depth: a session at depth d runs
  * agents at d + 2 in the background, so the API's cap must allow it.
  *
  * Resume (`resume_run_id`): each run's agents are recorded in start order
@@ -63,7 +65,9 @@
  * returns saved results (`cached: true`, no session) until the first agent
  * whose prompt changed or that failed; that one and every later one run again
  * (`Replay`). A background run's records live on its runner's box, so its
- * relaunch is a follow-up prompt to the runner session, and this call waits.
+ * relaunch is a follow-up prompt to the runner session. The runner stays a
+ * background subagent: this call returns at once, and the relaunch's answer
+ * arrives the same way as the first run's.
  *
  * Saved workflows: `.kortix/workflows/<name>.js` in the project; `name` runs
  * one. A box with a checkout reads its working tree (and lists the names in
@@ -179,7 +183,7 @@ const parameters = Type.Object({
   background: Type.Optional(
     Type.Boolean({
       description:
-        'true: run it in its own runner session and return at once; the result arrives in this session as a <task-notification> message. Use it for runs you expect to take long (many agents, or more than a few minutes). Default false: the call waits for the result.',
+        'true: run it in its own runner session and return at once; the result arrives later in this session as a new message ("A background subagent you started has finished"). Use it for runs you expect to take long (many agents, or more than a few minutes). Default false: the call waits for the result.',
     }),
   ),
   resume_run_id: Type.Optional(
@@ -216,7 +220,7 @@ function describe(agentNames: string[], limits: WorkflowLimits, saved: string[])
     '',
     'Running it:',
     '- Say in one line what will run before you call it. The person approves each run (title, phases, agent count): set max_agents to the number of agent() calls.',
-    '- background: true for a long run (many agents, or more than a few minutes): the call returns at once, and the result arrives later as a <task-notification> message. Do not poll for it. Without it, the call waits, up to 2 hours.',
+    '- background: true for a long run (many agents, or more than a few minutes): the call returns at once, and the result arrives later as a new message ("A background subagent you started has finished"). Do not poll for it. Without it, the call waits, up to 2 hours.',
     '- resume_run_id with script "" relaunches an earlier run (pass an edited script instead to change it): completed agents return their saved results; the first agent whose prompt changed or that failed runs again, with every agent after it.',
     `- name with script "" runs the saved workflow ${SAVED_WORKFLOWS_DIR}/<name>.js.${saved.length > 0 ? ` Saved: ${saved.join(', ')}.` : ''} To save a workflow, the person asks; hand that file change to an agent with access to the project files.`,
     `- Limits: ${limits.maxAgents} agent() calls per run, ${Math.max(1, limits.maxParallel)} at once (the rest wait), 2 hours per run.`,
@@ -792,7 +796,7 @@ class WorkflowRun {
     }
   }
 
-  /** A background run started: the runner session holds it now. */
+  /** A background run started (or relaunched): the runner session holds it now. */
   handedOff(sessionId: string): WorkflowUpdate {
     this.dispose()
     this.doc.background = { sessionId }
@@ -802,7 +806,7 @@ class WorkflowRun {
           type: 'text',
           text: [
             '<workflow_started>',
-            `The workflow runs in the background in its own runner session ${sessionId}. Its result arrives in this session as a <task-notification> message when the run ends, also after your turn has ended.`,
+            `The workflow runs in the background in its own runner session ${sessionId}. Its result arrives in this session as a new message ("A background subagent you started has finished") when the run ends, also after your turn has ended.`,
             'Do not poll or wait for it. Continue with other work, or end your turn and tell the person it runs.',
             '</workflow_started>',
             `run_id: ${this.doc.runId} (resume_run_id relaunches it in its runner session)`,
@@ -954,7 +958,7 @@ async function startRunner(host: KortixHost, store: RunStore, plan: Plan, contex
       run.publish()
     },
   })
-  if (result.status !== 'completed' || !result.sessionId || !result.background) {
+  if (result.status !== 'started' || !result.sessionId) {
     throw new Error(`The workflow runner session did not start: ${result.error ?? `it answered ${result.status}`}. No agent started.`)
   }
   store.save({
@@ -971,7 +975,12 @@ async function startRunner(host: KortixHost, store: RunStore, plan: Plan, contex
   return run.handedOff(result.sessionId)
 }
 
-/** A background run's relaunch: a follow-up prompt to its runner session, which holds the records. The call waits for it. */
+/**
+ * A background run's relaunch: a follow-up prompt to its runner session, which
+ * holds the records. The runner is a background subagent, so the follow-up
+ * returns `started` at once and the API delivers the relaunch's answer like
+ * the first run's. A runner that answers in the foreground is the result.
+ */
 async function resumeInRunner(host: KortixHost, plan: Plan, runner: string, run: WorkflowRun, signal: AbortSignal): Promise<WorkflowUpdate> {
   run.doc.background = { sessionId: runner }
   run.publish()
@@ -985,6 +994,7 @@ async function resumeInRunner(host: KortixHost, plan: Plan, runner: string, run:
     waitMs: WORKFLOW_DEADLINE_MS,
     signal,
   })
+  if (result.status === 'started') return run.handedOff(runner)
   return run.relaunched(runner, result)
 }
 

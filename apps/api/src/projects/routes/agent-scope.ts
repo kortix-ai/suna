@@ -1,14 +1,9 @@
 // Agent-scope CRUD — the dashboard surface for the inheritance PYRAMID's first
 // step: bind specific secrets, connectors and Kortix Apps to a specific agent.
-// Writes the `[[agents]].env` / `.connectors` / `.apps` allowlists straight into
-// the manifest (same git round-trip the connector/policy editors use), so a
+// Writes the `agents.<name>.secrets` / `.connectors` / `.apps` allowlists straight
+// into the manifest (same git round-trip the connector/policy editors use), so a
 // non-technical admin never hand-edits config. The agent's declared scope is what members assigned
 // to it (Members → Resource access) inherit.
-//
-// NOTE: `applyAgentScope` (agents.ts) operates on the `[[agents]]` array shape
-// — a legacy v1 kortix.toml manifest. A v2 kortix.yaml's `agents:` map isn't
-// an array, so `manifest.raw.agents` here reads as `[]` and this route 404s
-// with "agent not found" for v2 projects (see below).
 //
 // Manager-gated: an agent's scope decides what flows to everyone who inherits
 // it, so it's a governance control, not an editor convenience.
@@ -25,7 +20,7 @@ import { projectSecrets } from '@kortix/db';
 import { GrantSecretToAgentInputSchema, GrantSecretToAgentResultSchema } from '@kortix/api-contract';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { auth, boundedIssues, errors, json } from '../../openapi';
-import { applyAgentScope, extractAgents, grantsByAgent } from '../agents';
+import { extractAgents, grantsByAgent } from '../agents';
 import { projectBuiltinAgents } from '../lib/builtin-agents';
 import { builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/my-kortix-agent';
 import { extractConnectors } from '../connectors';
@@ -176,19 +171,16 @@ export function registerAgentScopeRoutes(): void {
       }
       const builtinKey = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw, loaded.row.metadata));
       if (builtinKey) return c.json(builtinAgentWriteRefusal(builtinKey), 409);
-      // Read before the edit below mutates `manifest.raw` (v1 in place).
+      // Read before the edit below replaces `manifest.raw`.
       const grantsBefore = grantsByAgent(extractAgents(manifest));
 
       // The agent must already be declared — this route SCOPES an existing agent,
-      // it doesn't create the roster entry (that's the fuller /config editor). v1
-      // stores agents as a `[[agents]]` array; v2 (kortix.yaml) as an `agents:`
-      // map. The v1-only path treated a v2 map as an empty array, so EVERY scope
-      // edit on a YAML project 404'd "agent not found" — branch on the schema.
+      // it doesn't create the roster entry (that's the fuller /config editor).
       // Every set this request assigns must exist on a connector the agent is
       // granted after this edit. Checked before the edit: the schema check in
       // applyAgentScopeV2 would report an unknown set as a generic
       // invalid_scope.
-      if (manifest.schemaVersion >= 2 && policy_sets !== undefined) {
+      if (policy_sets !== undefined) {
         const agents = manifest.raw.agents;
         const block =
           agents && typeof agents === 'object' && !Array.isArray(agents) && Object.hasOwn(agents, agentName)
@@ -200,51 +192,19 @@ export function registerAgentScopeRoutes(): void {
           if (refusal) return c.json(refusal, 400);
         }
       }
-      if (manifest.schemaVersion >= 2) {
-        const applied = applyAgentScopeV2(manifest, agentName, {
-          env,
-          connectors,
-          connectorsRequired,
-          apps,
-          policySets: policy_sets,
-        });
-        if (!applied.ok) {
-          return applied.notFound
-            ? c.json({ error: applied.error, code: 'agent_not_found' }, 404)
-            : c.json({ error: applied.error, code: 'invalid_scope', ...boundedIssues(applied.issues) }, 400);
-        }
-        manifest.raw = applied.raw;
-      } else {
-        const current = Array.isArray(manifest.raw.agents)
-          ? (manifest.raw.agents as Record<string, unknown>[])
-          : [];
-        if (connectorsRequired !== undefined) {
-          return c.json(
-            {
-              error: 'connectors_required requires a v2 (kortix.yaml) manifest',
-              code: 'unsupported_in_v1',
-            },
-            400,
-          );
-        }
-        // v1 `[[agents]]` has no `apps` key — `applyAgentScope` would drop it
-        // silently and answer 200 with a grant that was never written.
-        if (apps !== undefined) {
-          return c.json(
-            { error: 'apps requires a v2 (kortix.yaml) manifest', code: 'unsupported_in_v1' },
-            400,
-          );
-        }
-        if (policy_sets !== undefined) {
-          return c.json(
-            { error: 'policy_sets requires a v2 (kortix.yaml) manifest', code: 'unsupported_in_v1' },
-            400,
-          );
-        }
-        const applied = applyAgentScope(current, agentName, { env, connectors }, manifest.path);
-        if (!applied.ok) return c.json({ error: applied.error, code: 'agent_not_found' }, 404);
-        manifest.raw.agents = applied.agents;
+      const applied = applyAgentScopeV2(manifest, agentName, {
+        env,
+        connectors,
+        connectorsRequired,
+        apps,
+        policySets: policy_sets,
+      });
+      if (!applied.ok) {
+        return applied.notFound
+          ? c.json({ error: applied.error, code: 'agent_not_found' }, 404)
+          : c.json({ error: applied.error, code: 'invalid_scope', ...boundedIssues(applied.issues) }, 400);
       }
+      manifest.raw = applied.raw;
 
       // Shape-validate through the real parser before committing — a malformed
       // grant set is a clean 400, never a broken manifest.
@@ -433,9 +393,7 @@ export function registerAgentScopeRoutes(): void {
 
       const applied = grantSecretToAgentV2(manifest, agentName, identifier, projectIdentifiers);
       if (!applied.ok) {
-        return applied.unsupportedV1
-          ? c.json({ error: applied.error, code: 'manifest_v1_unsupported' }, 400)
-          : c.json({ error: applied.error, code: 'invalid_grant', ...boundedIssues(applied.issues) }, 400);
+        return c.json({ error: applied.error, code: 'invalid_grant', ...boundedIssues(applied.issues) }, 400);
       }
       if (applied.alreadyGranted) {
         return c.json({

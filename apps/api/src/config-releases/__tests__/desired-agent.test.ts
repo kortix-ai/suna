@@ -35,10 +35,10 @@ function releaseFor(variant: ConfigReleaseVariant): ConfigRelease {
   return {
     release_id: `${variant}-release`,
     source_commit: TIP,
-    config_dir: '.kortix/opencode',
+    config_dir: null,
     config_tree_id: 'd'.repeat(40),
     archive: { url: '/archive', bytes: 10 },
-    files: [['opencode.json', '100644', 'e'.repeat(40)]],
+    files: [['kortix.yaml', '100644', 'e'.repeat(40)]],
     compiled_governance: `{"variant":"${variant}"}`,
     compiled_governance_etag: `etag-${variant}`,
     reason: null,

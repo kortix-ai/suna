@@ -16,8 +16,8 @@ const keys = () => projectSettingsSections().map((s) => s.key);
 /**
  * The sections of `/projects/[id]/admin/general` — the Customize bar's Settings
  * tab. None is flag-gated. They arrived here from the settings
- * overlay's `Workspace` and `Agent` rail groups, plus its pinned Upgrades row
- * and its `experimental` row; `rail.test.ts` pins that they left there.
+ * overlay's `Workspace` and `Agent` rail groups, plus its `experimental`
+ * row; `rail.test.ts` pins that they left there.
  * Models, Channels, Secrets, and Members graduated a SECOND time onto their
  * own top-level Customize tabs and are not here — see
  * `capability-tab-routes.test.ts`. Repositories merged INTO General, under a
@@ -27,16 +27,11 @@ const keys = () => projectSettingsSections().map((s) => s.key);
  */
 describe('projectSettingsSections', () => {
   test('it holds every section, in order', () => {
-    expect(keys()).toEqual(['general', 'git', 'sandbox', 'feature-flags', 'upgrades']);
+    expect(keys()).toEqual(['general', 'git', 'sandbox', 'feature-flags']);
   });
 
   test('Review is not a section — it is a capability tab', () => {
     expect(keys()).not.toContain('review');
-  });
-
-  test('Upgrades is last, where the rail pinned it', () => {
-    const all = keys();
-    expect(all[all.length - 1]).toBe('upgrades');
   });
 
   test('no section appears twice', () => {
@@ -65,13 +60,6 @@ describe('projectSettingsSections', () => {
     expect(section?.label).toBe('Feature flags');
     expect(section?.gate).toBe('feature-flags');
     expect(parseProjectSettingsSection('experimental')).toBeNull();
-  });
-
-  test('Upgrades is the agent-driven upgrade runner, not billing', () => {
-    // The name is the trap: it opens a change request against this
-    // workspace's own repo. Its one description says so, and nothing else in
-    // the app says it.
-    expect(projectSettingsSection('upgrades')?.description).toContain('change request');
   });
 
   test('Sandbox templates and Snapshots merged into one section', () => {
@@ -160,7 +148,6 @@ describe('the sub-nav is flat', () => {
   test('the list order IS the rail order — one pass, nothing re-sorted', () => {
     expect(projectSettingsSections().map((s) => s.key)).toEqual(['general', 'git', 'sandbox',
       'feature-flags',
-      'upgrades',
     ]);
   });
 });

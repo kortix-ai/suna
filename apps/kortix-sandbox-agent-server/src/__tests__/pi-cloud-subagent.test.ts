@@ -6,13 +6,17 @@
  * live-child cap, abort → stop, and task_id resume as a follow-up prompt.
  * Also routeSubagent: the per-call `session` choice, its default, the
  * fallback when separate is off or has no control plane, and task_id resume
- * per mode. No real time, no network.
+ * per mode. Background (`run_in_background`): the create body asks the API to
+ * notify the parent, the call returns once the child exists, a resume of a
+ * background child does not wait, and the live cap counts background children
+ * the API lists as working. No real time, no network.
  */
 import { describe, expect, test } from 'bun:test'
 import {
   childToolAllowlist,
   cloudSpawnSession,
   cloudSubagentApiFrom,
+  FOREGROUND_NOTICE,
   NO_CONTROL_PLANE_NOTICE,
   routeSubagent,
   subagentContextFrom,
@@ -40,12 +44,13 @@ function api(fetchImpl: typeof fetch, over: Partial<CloudSubagentApi> = {}): Clo
 type Call = { url: string; method: string; headers: Record<string, string>; body?: any }
 
 /**
- * A fake API: POST /sessions answers `create`; GET /sessions/:id answers the
- * next row of `rows`; GET …/transcript answers `transcript`; POST …/prompts
- * and …/stop answer 202.
+ * A fake API: POST /sessions answers `create`; GET /sessions (the child list)
+ * answers `children`; GET /sessions/:id answers the next row of `rows`; GET
+ * …/transcript answers `transcript`; POST …/prompts and …/stop answer 202.
  */
 function fakeApi(opts: {
   create?: { status: number; body: unknown }
+  children?: unknown[]
   rows?: unknown[]
   transcript?: { status: number; body: unknown }
 }) {
@@ -62,6 +67,7 @@ function fakeApi(opts: {
       return new Response(JSON.stringify(create.body), { status: create.status })
     }
     if (method === 'POST') return new Response('{}', { status: 202 })
+    if (path.endsWith('/sessions')) return new Response(JSON.stringify(opts.children ?? []), { status: 200 })
     if (path.endsWith('/transcript')) {
       const t = opts.transcript ?? { status: 200, body: { messages: [] } }
       return new Response(JSON.stringify(t.body), { status: t.status })
@@ -229,7 +235,7 @@ describe('cloudSpawnSession — guardrails', () => {
     const parent = api(impl, { maxLive: 1 })
     const first = cloudSpawnSession(parent, { title: 'a', agent: 'general', systemPrompt: '', prompt: 'go' }, fast)
     await expect(cloudSpawnSession(parent, { title: 'b', agent: 'general', systemPrompt: '', prompt: 'go' }, fast)).rejects.toThrow(
-      'At most 1 separate subagent sessions run at once for one session, and 1 are running. Wait for one to return, or pass session: "same"',
+      'At most 1 separate subagent sessions run at once for one session, and 1 are running. Wait for one to finish, or pass session: "same"',
     )
     expect((await first).status).toBe('completed')
     expect(parent.live.count).toBe(0)
@@ -245,6 +251,69 @@ describe('cloudSpawnSession — guardrails', () => {
     )
     expect(result).toMatchObject({ sessionId: 'child-1', status: 'aborted' })
     expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/sessions/child-1/stop'))).toBe(true)
+  })
+})
+
+describe('cloudSpawnSession — background', () => {
+  const BG = { notify_parent: true }
+
+  test('a background call asks the API to notify the parent and returns once the child exists', async () => {
+    const { impl, calls } = fakeApi({})
+    const seen: unknown[] = []
+    const parent = api(impl)
+    const result = await cloudSpawnSession(
+      parent,
+      { title: 'Audit', agent: 'reviewer', systemPrompt: 'p', prompt: 'audit the logs', background: true, onSession: (s) => seen.push(s) },
+      fast,
+    )
+    expect(result).toEqual({ sessionId: 'child-1', status: 'started', text: '', model: { providerID: 'kortix', modelID: 'default' } })
+    expect(seen).toEqual([{ sessionId: 'child-1', model: { providerID: 'kortix', modelID: 'default' } }])
+    expect(calls.find((c) => c.method === 'POST')!.body).toEqual({
+      initial_prompt: 'audit the logs',
+      name: 'Audit',
+      agent_name: 'reviewer',
+      metadata: { notify_parent: true },
+      runtime_context: { 'kortix.subagent.depth': 1 },
+    })
+    // No wait, no read-back: only the child list (the cap) and the create.
+    expect(calls.map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual(['GET /v1/projects/proj-1/sessions', 'POST /v1/projects/proj-1/sessions'])
+    expect(parent.live.count).toBe(0)
+  })
+
+  test('the live cap counts background children the API lists as working, and only those', async () => {
+    const working = [
+      { status: 'provisioning', metadata: BG },
+      { status: 'running', metadata: BG, working: { state: 'working' } },
+      // Not counted: finished, stopped, or a foreground child (this box counts those itself).
+      { status: 'running', metadata: BG, working: { state: 'idle' } },
+      { status: 'stopped', metadata: BG },
+      { status: 'running', metadata: {}, working: { state: 'working' } },
+    ]
+    const full = fakeApi({ children: working })
+    const parent = api(full.impl, { maxLive: 2 })
+    await expect(cloudSpawnSession(parent, { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go', background: true }, fast)).rejects.toThrow(
+      'At most 2 separate subagent sessions run at once for one session, and 2 are running.',
+    )
+    expect(full.calls.some((c) => c.method === 'POST')).toBe(false)
+    expect(parent.live.count).toBe(0)
+
+    const room = fakeApi({ children: working.slice(1) })
+    expect((await cloudSpawnSession(api(room.impl, { maxLive: 2 }), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go', background: true }, fast)).status).toBe('started')
+  })
+
+  test('a blocking call counts the working background children too', async () => {
+    const { impl, calls } = fakeApi({ children: [{ status: 'provisioning', metadata: BG }] })
+    await expect(cloudSpawnSession(api(impl, { maxLive: 1 }), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go' }, fast)).rejects.toThrow('and 1 are running')
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+  })
+
+  test('a task_id resume of a background child sends the follow-up and does not wait', async () => {
+    const own = { session_id: 'child-7', parent_session_id: PARENT, status: 'stopped', metadata: BG, working: { state: 'idle', since: '2026-10-24T09:00:00.000Z' } }
+    const { impl, calls } = fakeApi({ rows: [own] })
+    const result = await cloudSpawnSession(api(impl), { sessionId: 'child-7', title: 'x', agent: 'general', systemPrompt: '', prompt: 'now the tests' }, fast)
+    expect(result).toMatchObject({ sessionId: 'child-7', status: 'started' })
+    expect(calls.find((c) => c.method === 'POST')!.url).toBe('https://api.example.com/v1/projects/proj-1/sessions/child-7/prompts')
+    expect(calls.some((c) => c.url.includes('/transcript'))).toBe(false)
   })
 })
 
@@ -345,6 +414,15 @@ describe('routeSubagent — where one agent call runs', () => {
 
   test('separate with no control plane runs in this session and says why', () => {
     expect(routeSubagent({ ...ready, controlPlane: false })).toEqual({ session: 'same', notice: NO_CONTROL_PLANE_NOTICE })
+  })
+
+  test('run_in_background runs only in a separate session; elsewhere it waits and says why', () => {
+    expect(routeSubagent({ ...ready, background: true })).toEqual({ session: 'separate' })
+    expect(routeSubagent({ ...ready, background: true, requested: 'same' })).toEqual({ session: 'same', notice: FOREGROUND_NOTICE })
+    expect(routeSubagent({ ...ready, background: true, controlPlane: false })).toEqual({
+      session: 'same',
+      notice: `${NO_CONTROL_PLANE_NOTICE} ${FOREGROUND_NOTICE}`,
+    })
   })
 
   test('a task_id resumes the child in the mode it was created in, whatever the call asks', () => {

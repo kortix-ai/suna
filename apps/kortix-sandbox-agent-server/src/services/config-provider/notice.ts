@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { z } from 'zod'
 
 /**
  * Telling the SESSION, in words, which config it runs.
@@ -7,9 +8,10 @@ import { dirname } from 'node:path'
  * A config release is served from a read-only directory under
  * `/opt/kortix/config`. `/workspace` is a separate, editable checkout that may
  * be behind the commit the release was built from. Without being told, an
- * agent reads `/workspace/skills` or `/workspace/harnesses/pi`, sees
+ * agent reads `/workspace/kortix.yaml` or `/workspace/skills`, sees
  * different bytes from the ones it is running, and edits files that change
- * nothing.
+ * nothing. When kortix.yaml has issues, the notice lists them, so the agent
+ * can fix the file through a change request.
  *
  * CHANNEL: the agent's system prompt. pi appends this file to it, as it does
  * the `secret-capabilities.ts` file. Chosen over posting a message into the
@@ -52,6 +54,59 @@ export interface ConfigReleaseNotice {
    * it.
    */
   agentRepoint?: string | null
+  /** The compiled set's `manifest_issues` (`manifestIssuesOf`): kortix.yaml's problems at the release's commit. */
+  manifestIssues?: readonly ManifestIssue[]
+}
+
+/** The API sends at most this many issues; the notice lists at most this many. */
+const MAX_MANIFEST_ISSUES = 50
+
+/** One kortix.yaml issue, as the compiled set's `manifest_issues` carries it (apps/api): errors first. */
+const ManifestIssueSchema = z.object({
+  path: z.string(),
+  message: z.string(),
+  severity: z.enum(['error', 'warning']),
+  line: z.number().int().positive().optional(),
+  column: z.number().int().positive().optional(),
+})
+export type ManifestIssue = z.infer<typeof ManifestIssueSchema>
+
+/**
+ * The `manifest_issues` of a parsed compiled set, or none. An entry of another
+ * shape is skipped. An API from before the field sends none.
+ */
+export function manifestIssuesOf(set: unknown): ManifestIssue[] {
+  const raw = (set as { manifest_issues?: unknown } | null | undefined)?.manifest_issues
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((entry) => {
+    const issue = ManifestIssueSchema.safeParse(entry)
+    return issue.success ? [issue.data] : []
+  })
+}
+
+/** `kortix.yaml:<line>:<col> <severity> <path> <message>`, on one line. */
+function issueLine(issue: ManifestIssue): string {
+  const at = issue.line ? `kortix.yaml:${issue.line}${issue.column ? `:${issue.column}` : ''}` : 'kortix.yaml'
+  return [at, issue.severity, issue.path, issue.message.replace(/\s+/g, ' ').trim()].filter(Boolean).join(' ')
+}
+
+function renderManifestIssues(issues: readonly ManifestIssue[]): string[] {
+  if (issues.length === 0) return []
+  const errors = issues.filter((issue) => issue.severity === 'error').length
+  const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+  const truncated = issues.length >= MAX_MANIFEST_ISSUES
+  return [
+    '',
+    '## kortix.yaml has issues',
+    '',
+    `kortix.yaml on the base branch has ${truncated ? 'at least ' : ''}${count(errors, 'error')} and ${count(issues.length - errors, 'warning')}:`,
+    '',
+    ...issues.slice(0, MAX_MANIFEST_ISSUES).map((issue) => `- ${issueLine(issue)}`),
+    '',
+    ...(errors > 0 ? ['An agent or trigger with an error is off until the error is fixed.'] : []),
+    'To fix kortix.yaml: edit `/workspace/kortix.yaml`, run `kortix validate` until it reports no error,',
+    'then commit, push a session branch and open a change request against the base branch.',
+  ]
 }
 
 /** Commits are named by their first 12 characters, as every Kortix surface does. */
@@ -89,6 +144,7 @@ export function renderConfigReleaseNotice(notice: ConfigReleaseNotice): string {
     `- \`${reload}\` refreshes the \`/workspace\` checkout and moves this`,
     "  session onto the base branch's current config, in one command.",
     ...(repoint ? ['', '## This session\'s agent', '', repoint] : []),
+    ...renderManifestIssues(notice.manifestIssues ?? []),
     '',
   ].join('\n')
 }

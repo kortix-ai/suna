@@ -52,7 +52,7 @@ export type { SandboxTemplateView } from './template-prebuilds';
 export { resolveTemplateBySlug as resolveTemplate };
 export { listSnapshotBuilds, reconcileStaleBuilds, buildLogProviderCandidates, shouldReconcileProviderState, recentlyBuiltStrict } from './builder-log';
 export type { ProjectSnapshotBuildSummary } from './builder-log';
-export { MY_KORTIX_RUNTIME_SPEC, ensureMyKortixSandboxImage, myKortixSnapshotName, reapSupersededMyKortixSnapshots } from './runtime-images';
+export { MY_KORTIX_RUNTIME_SPEC, ensureMyKortixSandboxImage, myKortixSnapshotName, reapSupersededMyKortixSnapshots, settleMyKortixImageBuilds } from './runtime-images';
 export { kickPreBuild, kickRoutedPreBuild, templateBuildProviders, kickProjectTemplatePrebuilds } from './template-prebuilds';
 
 export type SnapshotBuildSource =

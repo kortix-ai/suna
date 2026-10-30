@@ -109,7 +109,6 @@ import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } fro
 import type { Actor } from '../../iam/actor';
 import { loadVisibleSession, sessionIsTombstoned } from './session-visibility';
 import { HUMAN_SESSION_SURFACES } from './session-surface';
-import { subagentNotifyMetadata } from './subagent-notice';
 import { isWorkflowRunnerContext, sessionIsWorkflowRunner } from './workflow-runner';
 import type { SessionInvocationSource } from '../session-lifecycle/types';
 /** Every status a failed create answers with. Routes that create a session
@@ -1187,10 +1186,6 @@ function buildSessionCreateMetadata(params: {
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
-    // A background subagent (kortixd `agent` tool, `background: true`): its
-    // turn end wakes the caller with its answer (`subagent-notice.ts`). Only a
-    // session-bound caller, for this child of its own; ignored otherwise.
-    ...subagentNotifyMetadata(input.callerSessionId, body.notify_parent_on_turn_end),
     ...(sessionSource && sessionSource !== invocationSource ? { source: sessionSource } : {}),
     repository_access: repositoryAccess,
     repository_generation: repositoryGeneration(project.metadata as Record<string, unknown>),

@@ -170,7 +170,7 @@ describe('getStarterFiles', () => {
     const agents = manifest.slice(manifest.indexOf('\nagents:\n'));
     const names = [...agents.matchAll(/^  ([a-z][a-z0-9-]*):$/gm)].map((m) => m[1]);
     expect(names).toEqual(['worker']);
-    // One explicit, uncommented line per agent: v3 defaults it to false.
+    // One explicit, uncommented line per agent: the format defaults it to false.
     expect(agents.match(/^    workspace: \{ project_repository: true \}/gm)?.length).toBe(names.length);
   });
 

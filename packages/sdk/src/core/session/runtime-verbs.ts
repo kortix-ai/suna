@@ -20,8 +20,10 @@ import type {
   RuntimeQuestionRequest,
 } from '../runtime/transcript-types';
 import {
+  runtimeActionError,
   runtimeActionPaths,
   runtimeServesActions,
+  type RuntimeLogPage,
   type RuntimePending,
   type RuntimePendingRecord,
 } from './runtime-actions';
@@ -186,6 +188,21 @@ export function createRuntimeVerbs(input: RuntimeVerbsInput) {
     /** Each thread's status and the permission requests and questions that wait on a person. */
     pendingRequests,
 
+    /**
+     * One page of a thread of the box's own session log, ahead of the stored log while a turn
+     * runs: the root by default, the newest `limit` before `before_seq`. Null on a box without
+     * the session-log actions: read the stored log instead.
+     */
+    liveLog: async (query: { thread?: string; before_seq?: number; limit?: number } = {}): Promise<RuntimeLogPage | null> => {
+      if (!(await native())) return null;
+      const params = new URLSearchParams();
+      if (query.thread) params.set('thread', query.thread);
+      if (query.before_seq !== undefined) params.set('before_seq', String(query.before_seq));
+      if (query.limit !== undefined) params.set('limit', String(query.limit));
+      const suffix = params.size ? `?${params}` : '';
+      return action<RuntimeLogPage>('GET', `/kortix/runtime/log${suffix}`, undefined, 'Reading the session log failed');
+    },
+
     /** Answer a permission request: allow this call, allow the capability for the session, or deny. */
     answerPermission: async (requestId: string, reply: RuntimePermissionReply, message?: string): Promise<void> => {
       if (await native()) {
@@ -239,11 +256,28 @@ export function createRuntimeVerbs(input: RuntimeVerbsInput) {
           code: 'SESSION_BUSY',
           status: 409,
         });
+      // A turn that started after the status read can outlast the proxy. Say so
+      // without the proxy's internal diagnostic, and never resubmit.
+      const unfinished = (status?: number) =>
+        new ApiError('Compaction has not finished. Check the session status before trying again.', {
+          code: 'LONG_TURN_PROXY_TIMEOUT', status,
+        });
       if (await native()) {
         const { statuses } = await pendingRequests();
         const status = statuses[input.rootId];
         if (status && status !== 'idle') throw busy();
-        await action('POST', runtimeActionPaths.compact(input.rootId), undefined, 'Compacting the session failed');
+        const response = await input.fetch(new Request(`${base}${runtimeActionPaths.compact(input.rootId)}`, { method: 'POST' }));
+        if (!response.ok) {
+          const text = await response.text().catch(() => '');
+          let code: unknown;
+          try {
+            code = (JSON.parse(text) as { code?: unknown }).code;
+          } catch {
+            // Not JSON: no code.
+          }
+          if (code === 'LONG_TURN_PROXY_TIMEOUT') throw unfinished(response.status);
+          throw await runtimeActionError(new Response(text, { status: response.status }), 'Compacting the session failed');
+        }
         return chosen;
       }
       const statuses = unwrap(await client.session.status(), 'Reading the session status failed');
@@ -252,13 +286,9 @@ export function createRuntimeVerbs(input: RuntimeVerbsInput) {
       const result = await client.session.summarize({
         sessionID: input.rootId, providerID: chosen.providerID, modelID: chosen.modelID,
       });
-      // A turn that started after the status read can outlast the proxy. Say so
-      // without the proxy's internal diagnostic, and never resubmit.
       if (result.error && typeof result.error === 'object' && 'code' in result.error
         && result.error.code === 'LONG_TURN_PROXY_TIMEOUT') {
-        throw new ApiError('Compaction has not finished. Check the session status before trying again.', {
-          code: 'LONG_TURN_PROXY_TIMEOUT', status: result.response?.status,
-        });
+        throw unfinished(result.response?.status);
       }
       unwrap(result, 'Compacting the session failed');
       return chosen;

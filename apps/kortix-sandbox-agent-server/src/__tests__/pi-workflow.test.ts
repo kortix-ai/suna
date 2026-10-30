@@ -1,5 +1,5 @@
 /**
- * The `workflow` tool and the `agent` tool's `background: true`, through the
+ * The `workflow` tool, through the
  * production pi runtime: pi boots against a local fake model gateway, and a
  * `Bun.serve` fake of the Kortix API on a real port answers the routes the box
  * calls: the child-session routes (`POST …/sessions`, `GET …/sessions/:id`,
@@ -100,7 +100,7 @@ function startFakeApi() {
       }
       if (req.method === 'GET' && path === `${base}/${id}`) {
         reads.push(id)
-        const row = { parent_session_id: PARENT_SESSION }
+        const row = { parent_session_id: PARENT_SESSION, metadata: child.body.metadata ?? null }
         if (now.fail) return Response.json({ ...row, status: 'failed' })
         if (now.stop) return Response.json({ ...row, status: 'stopped' })
         if (now.stall) {
@@ -279,7 +279,7 @@ describe('pi workflow tool', () => {
       ['Research topic A', 'Topic A (Research two topics workflow)', 1],
       ['Research topic B', 'Topic B (Research two topics workflow)', 1],
     ])
-    for (const create of api.creates) expect(create).not.toHaveProperty('notify_parent_on_turn_end')
+    for (const create of api.creates) expect(create).not.toHaveProperty('metadata')
 
     const docs = workflowDocs(frames)
     const final = docs.at(-1)!
@@ -560,10 +560,10 @@ describe('pi workflow tool, background: true', () => {
     expect(request.questions[0]!.question).toContain('It runs in the background: this chat stays free, and the result arrives here when the run ends.')
     expect(await turn.done).toBe('completed')
 
-    // ONE runner session, created to notify this session, with the run in its context. Nobody waits on it.
+    // ONE runner session, a background subagent the API reports back from, with the run in its context. Nobody waits on it.
     expect(api.creates).toHaveLength(1)
     const runner = api.creates[0]!
-    expect(runner).toMatchObject({ notify_parent_on_turn_end: true, name: 'Two lookups (workflow)' })
+    expect(runner).toMatchObject({ metadata: { notify_parent: true }, name: 'Two lookups (workflow)' })
     expect(runner.initial_prompt).toBe('Run the workflow "Two lookups" from this session\'s context: call the workflow tool with { "script": "" }.')
     expect(runner.initial_context).toContain('Call the workflow tool once with { "script": "" }.')
     const part = lastWorkflowPart(parent.frames)
@@ -601,8 +601,7 @@ describe('pi workflow tool, background: true', () => {
     expect(ran.output).toStartWith(`<workflow_result>\n${JSON.stringify(['answer: Look up x', 'answer: Look up y'], null, 2)}\n</workflow_result>`)
   })
 
-  test('resume_run_id of a background run is a follow-up prompt to its runner session, and the call waits for its answer', async () => {
-    api.behave((_prompt, turn) => ({ answer: turn === 1 ? 'first run' : '<workflow_result>\n"relaunched"\n</workflow_result>\nagents: 1 (1 done)' }))
+  test('resume_run_id of a background run is a follow-up prompt to its runner session, and the call returns at once like the first run', async () => {
     const { rt, frames } = await boot([runWorkflow("return agent('x')", undefined, { background: true }), { text: 'started' }])
     expect(await approvedTurn(rt)).toBe('completed')
     const started = lastWorkflowPart(frames).metadata as unknown as WorkflowRunMetadata
@@ -617,9 +616,11 @@ describe('pi workflow tool, background: true', () => {
         text: `Relaunch the workflow: call the workflow tool with { "script": "", "resume_run_id": "${started.runId}" }. Then reply with its whole text output, unchanged.`,
       },
     ])
+    // One read: the runner row that says it is a background child. No wait, no read-back.
+    expect(api.reads).toEqual(['child-1'])
     const part = lastWorkflowPart(frames)
-    expect(part.metadata).toMatchObject({ status: 'done', resumedFrom: started.runId, background: { sessionId: 'child-1' } })
-    expect(part.output).toBe('<workflow_result>\n"relaunched"\n</workflow_result>\nagents: 1 (1 done)\n(runner session child-1)')
+    expect(part.metadata).toMatchObject({ status: 'running', resumedFrom: started.runId, background: { sessionId: 'child-1' } })
+    expect(part.output).toStartWith('<workflow_started>\nThe workflow runs in the background in its own runner session child-1.')
   })
 
   test('a session one level below the cap refuses background, because the runner\'s agents would be past it', async () => {
@@ -705,25 +706,5 @@ describe('pi workflow tool, saved workflows', () => {
     expect(lastWorkflowPart(frames).error).toBe(`No saved workflow "audit-2": there is no audit-2.js in .kortix/workflows/ on the project's default branch.`)
     // The tool never writes a saved workflow, here or through another session.
     expect(await Bun.file(join(workspace, '.kortix/workflows/audit-2.js')).exists()).toBe(false)
-  })
-})
-
-describe('pi agent tool, background: true', () => {
-  test('returns at once with the child id, never waits on the child, and asks the API to notify this session', async () => {
-    // The child never settles: a waiting call would hang until the test times out.
-    api.childrenWork()
-    const call: Step = { tool: 'agent', args: { description: 'Long research', prompt: 'research it all', subagent_type: 'general', background: true } }
-    const { rt, frames } = await boot([call, { text: 'parent done' }])
-    expect(await rt.admit({ text: 'start it', files: [] }).done).toBe('completed')
-    expect(api.creates).toHaveLength(1)
-    expect(api.creates[0]).toMatchObject({ initial_prompt: 'research it all', notify_parent_on_turn_end: true })
-    expect(api.reads).toEqual([])
-    const part = frames.filter((f) => f.tool === 'agent').at(-1)!
-    expect(part.state.status).toBe('completed')
-    expect(part.state.metadata).toMatchObject({ sessionId: 'child-1', background: true, session: 'separate' })
-    expect(part.state.output).toStartWith('task_id: child-1 (for resuming to continue this task if needed)\nsession: separate\n\n<task_started>\n')
-    expect(part.state.output).toContain('arrives in this session as a <task-notification> message')
-    // The running part named the child while the call ran.
-    expect(frames.some((f) => f.tool === 'agent' && f.state.status === 'running' && f.state.metadata?.sessionId === 'child-1' && f.state.metadata?.background === true)).toBe(true)
   })
 })

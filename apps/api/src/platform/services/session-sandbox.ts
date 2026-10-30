@@ -580,7 +580,7 @@ export async function provisionSessionSandbox(opts: {
     targetProvider: string,
   ): Promise<EnsureSandboxImageResult> =>
     isMyKortixSandboxSlug(slug)
-      ? ensureMyKortixSandboxImage({ source: 'session-start', provider: targetProvider })
+      ? ensureMyKortixSandboxImage({ source: 'session-start', provider: targetProvider, projectId })
       : ensureSandboxImage(gitProject, {
           slug,
           accountId,

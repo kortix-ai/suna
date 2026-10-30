@@ -17,4 +17,4 @@ it; My Kortix routes each task to the agent that fits.
 
 Add an agent, a skill or a trigger by asking My Kortix, in **Customize** and **Project admin**, or by
 editing `kortix.yaml`. Check the file with `kortix validate`. The full reference
-is at https://kortix.com/docs/project/manifest.
+is at https://kortix.com/docs/developers#kortixyaml-reference.

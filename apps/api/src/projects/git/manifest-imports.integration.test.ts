@@ -53,7 +53,6 @@ async function push(files: Record<string, string>, message: string): Promise<voi
 }
 
 const ROOT = `# Acme — root manifest
-kortix_version: 2
 default_agent: kortix
 imports:
   - .kortix/triggers/
@@ -136,7 +135,9 @@ describe('kortix.yaml imports over a real git repository', () => {
   test('read: the project config summary sees imported agents; manifest_raw stays the root text', async () => {
     const config = await loadProjectConfig(project);
     expect(config.manifest_raw).toBe(ROOT);
-    expect(config.manifest_version).toMatchObject({ version: 2 });
+    // Validated as merged: the imported agent and triggers count, and none has an error.
+    expect(config.manifest_health).toMatchObject({ path: 'kortix.yaml', errors: 0 });
+    expect(config.agents.map((agent) => agent.name)).toEqual(['galileo', 'kortix']);
   });
 
   test('write: editing an imported trigger commits ONLY the file that declares it', async () => {
@@ -155,7 +156,6 @@ describe('kortix.yaml imports over a real git repository', () => {
     expect(await remoteFile('kortix.yaml')).toBe(ROOT);
     const weekly = parseManifestText(
       (await remoteFile('.kortix/triggers/reports/weekly.yaml')) ?? '',
-      'yaml',
     );
     expect((weekly.triggers as Array<Record<string, unknown>>)[0]?.enabled).toBe(false);
 
@@ -186,7 +186,7 @@ describe('kortix.yaml imports over a real git repository', () => {
       '.kortix/triggers/dockets.yaml',
       'kortix.yaml',
     ]);
-    const root = parseManifestText((await remoteFile('kortix.yaml')) ?? '', 'yaml');
+    const root = parseManifestText((await remoteFile('kortix.yaml')) ?? '');
     expect((root.triggers as Array<{ slug: string }>).map((t) => t.slug)).toEqual([
       'root-trigger',
       'brand-new',

@@ -61,7 +61,6 @@ function runCli(args: string[]): Promise<RunResult> {
 describe('root dispatch characterization (KRTX-1341)', () => {
   const ALIASES: Array<[string, string]> = [
     ['session', 'sessions'],
-    ['attach', 'connect'],
     ['t', 'tui'],
     ['deploy', 'ship'],
     ['perms', 'permissions'],

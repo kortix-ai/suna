@@ -13,6 +13,7 @@
  * and both routes refuse a request that names one (`400`). Add the key here in
  * the same change that adds the server reader.
  */
+import { SUBAGENT_NOTIFY_PARENT_KEY } from '@kortix/api-contract/runtime-relay';
 import { WARM_SESSION_LOCATION_KEY } from './warm-sessions';
 
 export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
@@ -63,11 +64,6 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // but still not the client's to write.
   'spawned_by_session',
   'on_behalf_of_cleared_at',
-  // A background subagent's "notify my parent at turn end" flag
-  // (`subagent-notice.ts`). Set only from the `notify_parent_on_turn_end` create
-  // field of a session-bound caller: a client value would push this session's
-  // answer into whatever `spawned_by_session` names.
-  'notify_parent_on_turn_end',
   // The session a failed reminder's successor replaces (`trigger-fire.ts`).
   // Telegram write confinement follows it (connectors/channel-write-scope.ts).
   'reminder_successor_of',
@@ -115,8 +111,10 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
  *
  * - `unattended`: the server answers the session's blocking questions at once
  *   (`channels/question-release.ts`), removing the owner's confirmation step.
+ * - `notify_parent`: each finished turn is delivered into the parent session
+ *   (`projects/subagent-notice.ts`, a background subagent).
  */
-export const OWNER_MANAGED_SESSION_METADATA_KEYS = ['unattended'] as const;
+export const OWNER_MANAGED_SESSION_METADATA_KEYS = ['unattended', SUBAGENT_NOTIFY_PARENT_KEY] as const;
 
 export const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [
   ...SERVER_MANAGED_SESSION_METADATA_KEYS,

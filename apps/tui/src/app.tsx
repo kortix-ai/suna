@@ -38,13 +38,6 @@ import {
 import { type ResolvedHost, hostOrigin } from './auth/hosts.ts';
 import { AccountScreen } from './features/account/index.ts';
 import { AppsScreen } from './features/apps/index.ts';
-import { attachResultToast } from './features/attach/attach-status.tsx';
-import {
-  type AttachStatus,
-  type RunAttachResult,
-  attachRefusal,
-  runAttach,
-} from './features/attach/attach.ts';
 import { CustomizeScreen } from './features/customize/index.ts';
 import { FilesScreen } from './features/files/index.ts';
 import { HelpOverlay } from './features/help/index.ts';
@@ -142,8 +135,6 @@ export interface AppProps {
   onSwitchHost?: () => void;
   /** A boot-time workaround (a dead default project) to show once. */
   bootNotice?: string | null;
-  /** Test seam for attach mode. Production uses the real `runAttach`. */
-  attachImpl?: typeof runAttach;
 }
 
 export function App({
@@ -156,7 +147,6 @@ export function App({
   onQuit,
   onSwitchHost,
   bootNotice = null,
-  attachImpl = runAttach,
 }: AppProps) {
   // A SIGWINCH re-renders through this hook, and the re-render is what
   // repaints: every region's width/height is derived from it.
@@ -180,15 +170,11 @@ export function App({
   const [toast, setToast] = useState<{ message: string; kind: ToastKind; seq: number } | null>(
     null,
   );
-  const [attachStatus, setAttachStatus] = useState<AttachStatus | null>(null);
-  const [attaching, setAttaching] = useState(false);
   // Hoisted from `SessionView`'s `usePorts()` — see the note on `onMetrics`
   // just below for why overlays live at the root and state flows up to it.
   const [portsApi, setPortsApi] = useState<UsePortsResult | null>(null);
   const onPortsApi = useCallback((api: UsePortsResult) => setPortsApi(api), []);
   const [links, setLinks] = useState<LinkRow[]>([]);
-  // The open session's runtime capabilities, hoisted from `SessionView`.
-  const [capabilities, setCapabilities] = useState<readonly string[] | null>(null);
 
   const wide = dimensions.width >= SPLIT_MIN_COLUMNS;
   const showSidebar = sidebarVisible(dimensions.width, sidebarHidden);
@@ -209,7 +195,6 @@ export function App({
   useEffect(() => {
     setPortsApi(null);
     setLinks([]);
-    setCapabilities(null);
   }, [sessionId]);
 
   useEffect(() => {
@@ -277,74 +262,23 @@ export function App({
     }
   }, [projectId, sessions.refetch, openSession, pushToast]);
 
-  /**
-   * Hand the terminal to the stock opencode TUI and take it back on exit.
-   *
-   * `renderer.suspend()`/`resume()` are the two methods `runAttach` needs
-   * (`@opentui/core/renderer.d.ts:588-589`); `suspend()` leaves the alternate
-   * screen before the child starts and `resume()` re-enters and repaints.
-   * Nothing else renders while it is suspended, which is why `attaching` gates
-   * the key handler too.
-   */
-  const attach = useCallback(
-    async (targetSessionId: string) => {
-      if (!projectId) {
-        pushToast('No project selected.', 'error');
-        return;
-      }
-      if (attaching) return;
-      const refusal = attachRefusal(targetSessionId, sessionId, capabilities);
-      if (refusal) {
-        pushToast(refusal, 'error');
-        return;
-      }
-      setAttaching(true);
-      setOverlay(null);
-      try {
-        const result: RunAttachResult = await attachImpl({
-          renderer: {
-            suspend: () => renderer.suspend(),
-            resume: () => renderer.resume(),
-          },
-          host,
-          projectId,
-          sessionId: targetSessionId,
-          onStatus: setAttachStatus,
-        });
-        const { message, kind } = attachResultToast(result);
-        pushToast(message, kind);
-      } catch (error) {
-        pushToast(`Attach failed: ${errorText(error)}`, 'error');
-      } finally {
-        setAttachStatus(null);
-        setAttaching(false);
-      }
-    },
-    [projectId, attaching, sessionId, capabilities, attachImpl, renderer, host, pushToast],
-  );
-
   const runCommand = useCallback(
-    (command: 'new' | 'terminal' | 'files' | 'help' | 'quit' | 'attach' | 'stop') => {
+    (command: 'new' | 'terminal' | 'files' | 'help' | 'quit' | 'stop') => {
       if (command === 'new') return void createSession();
       if (command === 'terminal') return toggleTerminal();
       if (command === 'files') return setRoute('files');
       if (command === 'help') return setOverlay('help');
       if (command === 'quit') return onQuit();
-      if (command === 'attach') {
-        if (sessionId) void attach(sessionId);
-        else pushToast('Open a session first.', 'error');
-        return;
-      }
       // `stop` is handled inside the composer, which already called `cancel`.
       pushToast('Stopping the current turn…');
     },
-    [createSession, toggleTerminal, onQuit, sessionId, attach, pushToast],
+    [createSession, toggleTerminal, onQuit, pushToast],
   );
 
   useKeyboard((key) => {
     // The decision is a pure function (`app-keys.ts`); this handler only
     // performs it. That is what makes the gating rules assertable.
-    const action = globalKeyAction(key, { focus, route, overlay, quitArmed, attaching });
+    const action = globalKeyAction(key, { focus, route, overlay, quitArmed });
     if (!action) return;
     if (action.kind !== 'quit' && action.kind !== 'arm-quit') key.preventDefault();
     if (quitArmed && action.kind !== 'quit' && action.kind !== 'arm-quit') setQuitArmed(false);
@@ -367,9 +301,6 @@ export function App({
         return setOverlay(action.overlay);
       case 'new-session':
         return void createSession();
-      case 'attach':
-        if (sessionId) return void attach(sessionId);
-        return pushToast('Open a session first.', 'error');
       case 'switch-host':
         if (onSwitchHost) return onSwitchHost();
         return pushToast('Host switching needs the login screen.', 'error');
@@ -390,11 +321,9 @@ export function App({
     .filter((row) => row.state === 'forwarding')
     .map((row) => row.sandboxPort);
   const portsHint = forwardedPorts.length ? `⇄ ${forwardedPorts.join(', ')} · ` : '';
-  const hints = attaching
-    ? 'opencode has the terminal…'
-    : quitArmed
-      ? 'Press Ctrl+C again to quit'
-      : `${portsHint}${focusHints(focus)}${sidebarHidden ? ' · Alt+B sidebar' : ''} · ? help`;
+  const hints = quitArmed
+    ? 'Press Ctrl+C again to quit'
+    : `${portsHint}${focusHints(focus)}${sidebarHidden ? ' · Alt+B sidebar' : ''} · ? help`;
 
   return (
     <box
@@ -442,7 +371,6 @@ export function App({
                 setSessionId(null);
                 setRoute('session');
               }}
-              onAttach={(id) => void attach(id)}
               onToast={pushToast}
             />
           </Panel>
@@ -470,7 +398,6 @@ export function App({
             onToast={pushToast}
             onPortsApi={onPortsApi}
             onLinks={setLinks}
-            onCapabilities={setCapabilities}
           />
         ) : null}
 
@@ -521,14 +448,6 @@ export function App({
         right={hints}
       />
 
-      {attachStatus ? (
-        <Toast
-          key={`attach:${attachStatus.stage}`}
-          message={`${attachStatus.stage} — ${attachStatus.detail}`}
-          timeoutMs={0}
-        />
-      ) : null}
-
       {toast ? (
         <Toast
           key={`toast:${toast.seq}`}
@@ -538,7 +457,7 @@ export function App({
         />
       ) : null}
 
-      {overlay === 'help' ? <HelpOverlay onClose={() => setOverlay(null)} capabilities={capabilities} /> : null}
+      {overlay === 'help' ? <HelpOverlay onClose={() => setOverlay(null)} /> : null}
 
       {overlay === 'switcher' ? (
         <Switcher

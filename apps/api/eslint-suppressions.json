@@ -789,7 +789,7 @@
   },
   "src/config-releases/release-tree.ts": {
     "kortix-api/projects-surface": {
-      "count": 3
+      "count": 2
     },
     "no-restricted-properties": {
       "count": 1
@@ -1621,11 +1621,6 @@
     }
   },
   "src/projects/lib/access-requests.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
-  "src/projects/lib/compile-agent-config.ts": {
     "no-console": {
       "count": 1
     }

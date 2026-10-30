@@ -72,7 +72,11 @@ const PLATFORM_WRITTEN_DIRS = new Set(['node_modules'])
 export interface ReleaseManifest {
   release_id: string
   source_commit: string
-  /** The OpenCode config dir the API reports inside the release (a pre-sunset layout), or null when the repository has none. */
+  /**
+   * The OpenCode config dir a daemon built before the sunset recorded for the
+   * release; its platform-written files there still verify (`isPlatformWritten`).
+   * Null for every release this daemon builds: it reads no harness config dir.
+   */
   config_dir: string | null
   config_tree_id: string
   /** The API path of the archive, to rebuild a tampered copy. '' when the release has none (v3, over the cap). */

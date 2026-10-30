@@ -493,7 +493,20 @@ describe("proxy responses: the operator's Kortix identity never reaches a member
     const session = { session_id: 's1', ...ids, owner_email: OPERATOR, opencode_model: 'kortix/x' };
     const cases: Array<[string, unknown]> = [
       [P, { project_id: 'p1', name: 'Firm', ...ids, repo_url: 'https://github.com/managed-x/p1', manifest_path: 'kortix.yaml', description: 'A Kortix project.' }],
-      [`${P}/detail`, { manifest_raw: 'kortix_version: 2', experimental_features: [{ key: 'agent_rooms', enabled: true, description: 'KORTIX_FEATURE_FLAGS lists it in kortixd' }] }],
+      [
+        `${P}/detail`,
+        {
+          manifest_raw: 'default_agent: worker',
+          manifest_health: {
+            path: 'kortix.yaml',
+            state: 'issues',
+            errors: 1,
+            warnings: 0,
+            issues: [{ path: 'agents.worker.promt', message: 'unknown agent key "promt". Did you mean "prompt"?', severity: 'error', line: 3, column: 5 }],
+          },
+          experimental_features: [{ key: 'agent_rooms', enabled: true, description: 'KORTIX_FEATURE_FLAGS lists it in kortixd' }],
+        },
+      ],
       [S, session],
       [`${P}/sessions`, [session]],
       [`${S}/snapshot`, { ...ids, session }],
@@ -502,7 +515,7 @@ describe("proxy responses: the operator's Kortix identity never reaches a member
     for (const [path, body] of cases) {
       expect(redactsIdentity(path)).toBe(true);
       const out = JSON.stringify(redactIdentity(path, body));
-      expect(out).not.toMatch(/acc_op|u_op|managed-x|manifest_path|Kortix project|kortix_version|KORTIX_FEATURE_FLAGS/);
+      expect(out).not.toMatch(/acc_op|u_op|managed-x|manifest_path|Kortix project|default_agent|kortix\.yaml|promt|KORTIX_FEATURE_FLAGS/);
     }
   });
 

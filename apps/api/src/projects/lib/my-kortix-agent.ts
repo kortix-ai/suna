@@ -34,8 +34,7 @@ export const MY_KORTIX_DESCRIPTION =
 
 /**
  * The `builtin_agents` values a manifest sets explicitly. Only booleans count;
- * an absent key (or a v1/v2 manifest, whose validator refuses the key) says
- * nothing.
+ * an absent key says nothing.
  */
 export function declaredBuiltinAgents(
   manifest: Record<string, unknown> | null | undefined,
@@ -81,11 +80,12 @@ export function enabledBuiltinAgentKey(
  * declared-roster 404 keeps every host and the CLI from reporting
  * `No agent "meta" declared in kortix.yaml` for an agent the project lists.
  */
-export function builtinAgentConfigView(key: BuiltinAgentKey, schemaVersion: number, defaultAgent: string | null) {
+export function builtinAgentConfigView(key: BuiltinAgentKey, defaultAgent: string | null) {
   return {
     agent: BUILTIN_AGENTS[key].agent,
     builtin: key,
-    schema_version: schemaVersion,
+    // Wire constant: clients released before the one manifest format read it.
+    schema_version: 3,
     editable: false,
     default_agent: defaultAgent,
     block: null,

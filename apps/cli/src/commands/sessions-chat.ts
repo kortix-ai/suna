@@ -1,6 +1,5 @@
 import { createInterface } from 'node:readline';
 import {
-  type MessageWithParts,
   type SessionLogBlock,
   type SessionLogMessage,
   type SessionLogPage,
@@ -11,7 +10,6 @@ import {
   classifySessionLogMessage,
   findSessionAttachments,
   sessionLogCallStatus,
-  sessionLogOfV1Rows,
   sessionModelPin,
   sessionListStatus,
   toolCallError,
@@ -92,9 +90,9 @@ export async function loadSessionForChat(
     );
   }
 
-  // The state check + `ensureReady()` live in the print-free core so
-  // `attach-opencode.ts` (the library `apps/tui` calls) runs exactly the same
-  // resolution. This function only maps its failures onto the CLI's output.
+  // The state check + `ensureReady()` live in the print-free core
+  // (`session-runtime.ts`). This function only maps its failures onto the
+  // CLI's output.
   let runtime: SessionRuntime;
   try {
     runtime = await resolveSessionRuntime({
@@ -159,26 +157,12 @@ function blockToText(block: SessionLogBlock, streaming: boolean): string {
 }
 
 /** A session-log message's blocks as text; a still-streaming genui block never prints the cut-off note. */
-function logMessageText(message: SessionLogMessage): string {
+export function logMessageText(message: SessionLogMessage): string {
   const streaming = message.status === 'streaming';
   return message.blocks
     .map((block) => blockToText(block, streaming))
     .filter((text) => text.length > 0)
     .join('\n');
-}
-
-/** A v1 message's text, as `sessions chat` prints it. */
-/** The turn error a v1 reply carries, worded as `sessions chat` prints it
- *  (the gateway's own sentence), or null. */
-export function extractMessageError(msg: MessageWithParts): string | null {
-  const message = sessionLogOfV1Rows('', msg.info.sessionID, [msg]).threads[0]?.messages[0];
-  const error = message ? classifySessionLogMessage(message).error : null;
-  return error ? `${error.name}: ${error.message}` : null;
-}
-
-export function extractMessageText(msg: MessageWithParts): string {
-  const message = sessionLogOfV1Rows('', msg.info.sessionID, [msg]).threads[0]?.messages[0];
-  return message ? logMessageText(message) : '';
 }
 
 /**
@@ -223,10 +207,24 @@ export function printLogMessage(message: SessionLogMessage): void {
   if (error) process.stdout.write(`  ${C.red}error: ${error.name}: ${error.message}${C.reset}\n`);
 }
 
-/** Print one v1 message (`sessions chat`), through the same block renderer. */
-export function printMessage(msg: MessageWithParts): void {
-  const message = sessionLogOfV1Rows('', msg.info.sessionID, [msg]).threads[0]?.messages[0];
-  if (message) printLogMessage(message);
+/** A reply the turn's error ended (the SDK's classification, as `printLogMessage` shows it). */
+function replyFailed(message: SessionLogMessage): boolean {
+  return Boolean(classifySessionLogMessage(message).error);
+}
+
+/**
+ * The newest `limit` messages of the session's root thread, oldest first: the box's own log
+ * while its daemon serves one (it holds the running turn), else the stored session log.
+ */
+async function readRecentMessages(
+  target: Pick<SessionRuntime, 'auth' | 'handle'>,
+  limit: number,
+): Promise<SessionLogMessage[]> {
+  return withKortixScope(target.auth, async () => {
+    const live = await target.handle.liveLog({ limit });
+    if (live) return live.messages;
+    return (await target.handle.log({ limit }))?.messages ?? [];
+  });
 }
 
 /** Promise-based readline `question` (single line). */
@@ -364,10 +362,8 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   );
   // Replay any prior conversation so the REPL has context on screen.
   try {
-    const history = await withKortixScope(resolved.auth, async () =>
-      (await resolved.handle.messages({ conversationId: runtimeSessionId, limit: 20 })).messages,
-    );
-    for (const msg of history) printMessage(msg);
+    const history = await readRecentMessages(resolved, 20);
+    for (const msg of history) printLogMessage(msg);
   } catch {
     /* no history / sandbox warming — start fresh */
   }
@@ -443,20 +439,17 @@ async function queuePrompt(
 async function waitForInitialReply(resolved: ResolvedSession, json: boolean): Promise<number> {
   for (let attempt = 0; attempt < 120; attempt += 1) {
     try {
-      const messages = await withKortixScope(resolved.auth, async () =>
-        (await resolved.handle.messages({ conversationId: resolved.runtimeSessionId, limit: 10 })).messages,
-      );
+      // A finished step is not the reply while the turn runs on: wait for the root to go idle.
+      const { statuses } = await withKortixScope(resolved.auth, () => resolved.handle.pendingRequests());
+      const status = statuses[resolved.runtimeSessionId];
+      const messages = status && status !== 'idle' ? [] : await readRecentMessages(resolved, 10);
       for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = messages[index];
-        if (!message || message.info.role !== 'assistant') continue;
-        const info = message.info as MessageWithParts['info'] & {
-          time?: { completed?: number };
-          error?: unknown;
-        };
-        if (info.time?.completed == null && !info.error) break;
-        if (json) emitJson(messageToJson(message));
-        else printMessage(message);
-        return info.error ? 1 : 0;
+        if (!message || message.role !== 'assistant') continue;
+        if (message.status === 'streaming') break;
+        if (json) emitJson(logMessageToJson(message));
+        else printLogMessage(message);
+        return replyFailed(message) ? 1 : 0;
       }
     } catch (err) {
       if (attempt === 119) return surfaceApiError(err);
@@ -637,23 +630,18 @@ running session.
 The messages come from the session log (kortix.session/2) the server stores
 at the end of every turn, so a stopped session is never woken up just to be
 read. A running session adds the messages of the turn it runs now, read live
-from its sandbox. A session with no stored log yet is read live while it runs,
-else nothing: the stored log is the only saved copy, and the v1 transcript route
-is not read. The source is noted on stderr when the session is not read live.
+from its sandbox's own session log. A session with no stored log yet is read
+live while it runs, else nothing. The source is noted on stderr when the
+session is not read live.
 
   --limit, -n <N>   How many recent messages to show, per thread (default 10).
   --json            Emit the session log as JSON for scripting: the session
-                    record with "schema": "kortix.session/2", "source" ("log",
-                    or "v1" for a running session with no stored log, read
-                    live and converted), and
-                    "threads" (root and sub-agents), each with its newest
+                    record with "schema": "kortix.session/2", "source": "log",
+                    and "threads" (root and sub-agents), each with its newest
                     messages and "has_more". A running turn's messages
                     the log does not hold yet carry
                     "ext": {"kortix": {"data": {"provisional": true}}}
                     (their seq is not stored yet).
-  --schema v1       Deprecated: emit the old JSON (role / text / parts per
-                    root message) of a running session, read live from its
-                    sandbox. Goes in the next release.
   --project <id>    Operate on this project id (default: linked).
   --host <name>     Operate against a non-default Kortix host.
   -h, --help        Show this help.
@@ -669,11 +657,9 @@ them is currently doing. Aliases: \`messages\`, \`history\`.`;
  *
  * SOURCES. The stored session log (`GET …/log`) first: it answers while the box
  * is stopped, and holds every thread. It is journaled at each turn end, so a
- * running session appends the messages of its open turn from the live read. A
- * session with no stored log is read live while it runs, converted to the same
- * records (`sessionLogOfV1Rows`), so `--json` has one shape; stopped, it has
- * nothing to print. The v1 transcript route is not read (P8.3). `--schema v1`
- * keeps the old v1 JSON of a live read for one release.
+ * running session appends the messages of its open turn from the box's own log
+ * (`handle.liveLog`). A session with no stored log is read from the box while it
+ * runs; stopped, it has nothing to print.
  */
 export async function runSessionsLog(argv: string[]): Promise<number> {
   const rest = [...argv];
@@ -687,6 +673,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   let limitRaw: string | undefined;
   let schemaRaw: string | undefined;
   let json = false;
+  // `--schema v2` is the only output; `--schema v1` (the OpenCode-shaped rows) is gone.
   try {
     projectArg = takeFlagValue(rest, ['--project']);
     hostArg = takeFlagValue(rest, ['--host']);
@@ -707,13 +694,9 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err(`Invalid --limit "${limitRaw}".`)}\n`);
     return 2;
   }
-  const schema = schemaRaw ?? 'v2';
-  if (schema !== 'v1' && schema !== 'v2') {
-    process.stderr.write(`${status.err(`Invalid --schema "${schemaRaw}": use v2 (default) or v1.`)}\n`);
+  if (schemaRaw !== undefined && schemaRaw !== 'v2') {
+    process.stderr.write(`${status.err(`Invalid --schema "${schemaRaw}": the output is kortix.session/2 (v2).`)}\n`);
     return 2;
-  }
-  if (schema === 'v1') {
-    process.stderr.write(`${C.dim}--schema v1 is deprecated and goes in the next release; the default is kortix.session/2.${C.reset}\n`);
   }
   const opts: CtxOpts = { projectArg, hostArg };
 
@@ -749,15 +732,12 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     );
   }
 
-  let live: { messages: MessageWithParts[]; runtimeSessionId: string } | null = null;
+  let live: { thread_id: string; messages: SessionLogMessage[]; has_more: boolean } | null = null;
   let liveError: unknown = null;
   if (session.status === 'running') {
     try {
       const runtime = await resolveSessionRuntime({ auth, client, projectId, session });
-      const messages = await withKortixScope(auth, async () =>
-        (await runtime.handle.messages({ conversationId: runtime.runtimeSessionId, limit })).messages,
-      );
-      live = { messages, runtimeSessionId: runtime.runtimeSessionId };
+      live = await withKortixScope(auth, () => runtime.handle.liveLog({ limit }));
     } catch (err) {
       // A box that is not answering — still waking, just parked, mid-restart —
       // is not a reason to show nothing: the stored copy below is the same
@@ -769,33 +749,26 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   const why = liveError !== null ? 'its sandbox is not answering' : `session is ${session.status}`;
 
   let stored: StoredSessionLog | null = null;
-  if (schema === 'v2') {
-    const handle = kortixFromAuth(auth).session(projectId, session.session_id);
-    try {
-      stored = await readStoredSessionLog((query) => withKortixScope(auth, () => handle.log(query)), limit);
-    } catch (err) {
-      return surfaceApiError(err);
-    }
+  const handle = kortixFromAuth(auth).session(projectId, session.session_id);
+  try {
+    stored = await readStoredSessionLog((query) => withKortixScope(auth, () => handle.log(query)), limit);
+  } catch (err) {
+    return surfaceApiError(err);
   }
 
   let output: SessionLogOutput;
   if (stored) {
     let threads = stored.threads;
     if (live) {
-      const liveThread = sessionLogOfV1Rows(session.session_id, live.runtimeSessionId, live.messages).threads[0];
-      if (liveThread) threads = withLiveTurn(threads, liveThread, limit);
+      threads = withLiveTurn(threads, liveThreadOf(live), limit);
     } else {
       process.stderr.write(`${C.dim}Stored session log — ${why}.${C.reset}\n`);
     }
     output = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, source: 'log', ...stored.session, threads };
   } else {
     if (!live) {
-      // The stored session log is the only saved copy: no v1 transcript (`GET …/transcript`, P8.3).
+      // The stored session log is the only saved copy.
       if (liveError !== null) return surfaceApiError(liveError);
-      if (schema === 'v1') {
-        process.stderr.write(`${status.err(`--schema v1 reads only a running session's sandbox, and session ${session.session_id} is not running. Drop --schema v1 to read its stored session log.`)}\n`);
-        return 1;
-      }
       process.stderr.write(
         `${status.err(`No saved transcript for session ${session.session_id} yet.`)}\n` +
           `  ${C.dim}It is saved at the end of every turn. Start the session with ` +
@@ -803,14 +776,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
       );
       return 1;
     }
-    const { messages, runtimeSessionId } = live;
-    const hasMore = messages.length >= limit;
-    if (json && schema === 'v1') {
-      process.stdout.write(`${JSON.stringify(messages.map(messageToJson), null, 2)}\n`);
-      return 0;
-    }
-    const converted = sessionLogOfV1Rows(session.session_id, runtimeSessionId, messages);
-    output = { ...converted, source: 'v1', threads: converted.threads.map((thread) => ({ ...thread, has_more: hasMore })) };
+    output = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, source: 'log', threads: [{ ...liveThreadOf(live), has_more: live.has_more }] };
   }
 
   if (json) {
@@ -848,7 +814,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
  * the box is up, whatever the agent does), so it is named as such. A live read adds what the
  * agent does now (`deriveActivity`): `working` or `idle`.
  */
-export function logHeaderState(status: ProjectSession['status'], live: MessageWithParts[] | null): string {
+export function logHeaderState(status: ProjectSession['status'], live: SessionLogMessage[] | null): string {
   const sandbox = `sandbox ${status}`;
   return live ? `${sandbox} · ${deriveActivity(live, status).working ? 'working' : 'idle'}` : sandbox;
 }
@@ -856,7 +822,22 @@ export function logHeaderState(status: ProjectSession['status'], live: MessageWi
 type LogThread = SessionLogThread & { has_more: boolean };
 
 /** What `sessions log --json` prints: the session record, where it came from, and every thread read. */
-type SessionLogOutput = Record<string, unknown> & { schema: string; source: 'log' | 'v1'; threads: LogThread[] };
+type SessionLogOutput = Record<string, unknown> & { schema: string; source: 'log'; threads: LogThread[] };
+
+/** A page of the box's own log as the root thread `withLiveTurn` merges. */
+export function liveThreadOf(live: { thread_id: string; messages: SessionLogMessage[] }): SessionLogThread {
+  return {
+    schema: SESSION_LOG_SCHEMA,
+    v: SESSION_LOG_MINOR,
+    thread_id: live.thread_id,
+    parent_thread_id: null,
+    spawned_by: null,
+    agent: null,
+    title: null,
+    created_at: live.messages[0]?.created_at ?? new Date(0).toISOString(),
+    messages: live.messages,
+  };
+}
 
 export interface StoredSessionLog {
   /** The session record without its threads. */
@@ -958,43 +939,30 @@ export function withLiveTurn(threads: LogThread[], live: SessionLogThread, limit
 /** The log route's largest page (`limit` at most 500); the route answers 400 above it. */
 const SAVED_WINDOW_MAX = 500;
 
+/** The `--json` status of a tool call: the words this output has always used. */
+const JSON_TOOL_STATUS: Record<string, string> = { complete: 'completed', error: 'error', running: 'running', pending: 'pending' };
+
 /** Compact, ANSI-free shape of a message for `--json` consumption. */
-function messageToJson(msg: MessageWithParts): Record<string, unknown> {
-  const info = msg.info as MessageWithParts['info'] & {
-    time?: { created?: number; completed?: number };
-    error?: { name?: string; message?: string } | null;
-    agent?: string;
-  };
-  const text = msg.parts
-    .filter(
-      (p) =>
-        p.type === 'text' &&
-        !(p as { synthetic?: boolean }).synthetic &&
-        typeof (p as { text?: string }).text === 'string',
-    )
-    .map((p) => (p as { text: string }).text)
+function logMessageToJson(message: SessionLogMessage): Record<string, unknown> {
+  const text = message.blocks
+    .filter((block): block is Extract<SessionLogBlock, { type: 'text' }> => block.type === 'text' && !block.synthetic)
+    .map((block) => block.text)
     .join('\n');
-  const parts = msg.parts.map((p) => {
-    if (p.type === 'tool') {
-      const state = (p as { state?: { status?: string } }).state;
-      return { type: 'tool', tool: (p as { tool?: string }).tool, status: state?.status };
-    }
-    if (p.type === 'file') {
-      return { type: 'file', filename: (p as { filename?: string }).filename };
-    }
-    return { type: p.type };
+  const parts = message.blocks.map((block) => {
+    if (block.type === 'tool_call') return { type: 'tool', tool: block.name, status: JSON_TOOL_STATUS[block.status] ?? block.status };
+    if (block.type === 'attachment') return { type: 'file', filename: block.name };
+    return { type: block.type };
   });
+  const error = classifySessionLogMessage(message).error;
   return {
-    role: info.role,
-    created: info.time?.created ? new Date(info.time.created).toISOString() : null,
-    completed: info.time?.completed ? new Date(info.time.completed).toISOString() : null,
-    error: info.error ?? null,
+    role: message.role,
+    created: message.created_at,
+    completed: message.status === 'streaming' ? null : message.completed_at,
+    error: error ? { name: error.name, message: error.message } : null,
     text,
     parts,
   };
 }
-
-type AssistantReply = MessageWithParts & { info: Extract<MessageWithParts['info'], { role: 'assistant' }> };
 
 /**
  * Put `text` in the session's prompt inbox (`handle.send`), then wait for the
@@ -1007,31 +975,26 @@ export async function sendAndWaitForReply(
   text: string,
   extra?: { agent?: string },
   timeoutMs = 10 * 60_000,
-): Promise<AssistantReply> {
+): Promise<SessionLogMessage> {
   // One assistant message per model step: the window must hold the prompt
   // and a long turn's replies. ponytail: a turn over ~200 steps outgrows it;
-  // read by `after` the prompt if that happens.
-  const tip = () =>
-    withKortixScope(target.auth, async () =>
-      (await target.handle.messages({ conversationId: target.runtimeSessionId, limit: 200 })).messages,
-    );
-  const before = new Set((await tip()).map((message) => message.info.id));
+  // read by `before_seq` past the prompt if that happens.
+  const tip = () => readRecentMessages(target, 200);
+  const before = new Set((await tip()).map((message) => message.message_id));
   await withKortixScope(target.auth, () => target.handle.send(text, extra));
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 1_000));
     const messages = await tip();
-    const prompt = messages.find((message) => message.info.role === 'user' && !before.has(message.info.id));
+    const prompt = messages.find((message) => message.role === 'user' && !before.has(message.message_id));
     if (!prompt) continue;
     const reply = [...messages]
       .reverse()
-      .find((message) => message.info.role === 'assistant' && message.info.parentID === prompt.info.id) as
-      | AssistantReply
-      | undefined;
-    if (!reply || (reply.info.time.completed == null && !reply.info.error)) continue;
-    const { statuses } = await withKortixScope(target.auth, () => target.handle.pending());
+      .find((message) => message.role === 'assistant' && message.reply_to === prompt.message_id);
+    if (!reply || reply.status === 'streaming') continue;
+    const { statuses } = await withKortixScope(target.auth, () => target.handle.pendingRequests());
     const status = statuses[target.runtimeSessionId];
-    if (!status || status.type === 'idle') return reply;
+    if (!status || status === 'idle') return reply;
   }
   throw new Error('Timed out waiting for the reply.');
 }
@@ -1048,12 +1011,12 @@ async function sendAndPrint(
   try {
     const reply = await sendAndWaitForReply(resolved, text, extra);
     if (json) {
-      emitJson(messageToJson({ info: reply.info, parts: reply.parts }));
-      return reply.info.error ? 1 : 0;
+      emitJson(logMessageToJson(reply));
+      return replyFailed(reply) ? 1 : 0;
     }
     process.stdout.write(`${' '.repeat(12)}\r`); // clear "…thinking"
-    printMessage({ info: reply.info, parts: reply.parts });
-    return reply.info.error ? 1 : 0;
+    printLogMessage(reply);
+    return replyFailed(reply) ? 1 : 0;
   } catch (err) {
     if (!json) process.stdout.write(`${' '.repeat(12)}\r`);
     return surfaceApiError(err);
@@ -1225,22 +1188,15 @@ async function fetchSessionActivity(
 ): Promise<SessionActivity | null> {
   try {
     const handle = kortixFromAuth(auth).session(projectId, s.session_id);
-    const ready = await withKortixScope(auth, () =>
-      handle.ensureReady({ readyTimeoutMs: SESSION_ACTIVITY_PHASE_TIMEOUT_MS }),
-    );
+    await withKortixScope(auth, () => handle.ensureReady({ readyTimeoutMs: SESSION_ACTIVITY_PHASE_TIMEOUT_MS }));
     // Fetch a small recent window (not just the last message): an assistant turn
     // can start — or dispatch a subagent batch that leaves a user-role message
     // newest — after the user's prompt, and classifying off ONLY the last message
     // then mislabels a busy session as "queued".
-    const msgs = await withKortixScope(auth, async () =>
-      (
-        await handle.messages({
-          conversationId: ready.runtimeSessionId,
-          limit: 6,
-          signal: AbortSignal.timeout(SESSION_ACTIVITY_PHASE_TIMEOUT_MS),
-        })
-      ).messages,
-    );
+    const msgs = await Promise.race([
+      readRecentMessages({ auth, handle }, 6),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('activity read timed out')), SESSION_ACTIVITY_PHASE_TIMEOUT_MS)),
+    ]);
     if (msgs.length === 0) return { working: false, summary: 'no messages yet' };
     return deriveActivity(msgs, s.status);
   } catch {
@@ -1256,7 +1212,7 @@ async function fetchSessionActivity(
  * so a still-booting box isn't reported as an idle/queued agent.
  */
 export function deriveActivity(
-  messages: MessageWithParts[],
+  messages: SessionLogMessage[],
   status: ProjectSession['status'],
 ): SessionActivity {
   // Lifecycle states before the agent can run describe the BOX, not a turn.
@@ -1269,72 +1225,41 @@ export function deriveActivity(
 
   const last = messages[messages.length - 1];
   if (!last) return { working: false, summary: 'no messages yet' };
-  const lastInfo = last.info as MessageWithParts['info'] & {
-    time?: { created?: number; completed?: number };
-  };
-  const at = lastInfo.time?.created ? new Date(lastInfo.time.created).toISOString() : undefined;
+  const at = last.created_at || undefined;
 
   // A running/pending tool ANYWHERE in the window means the agent is actively
   // working — even when the newest message is a (subagent) user-role prompt.
   let runningTool: string | undefined;
   let lastTool: string | undefined;
-  for (const msg of messages) {
-    for (const p of msg.parts) {
-      if (p.type !== 'tool') continue;
-      lastTool = (p as { tool?: string }).tool;
-      const st = (p as { state?: { status?: string } }).state?.status;
-      if (st === 'running' || st === 'pending') runningTool = (p as { tool?: string }).tool;
+  for (const message of messages) {
+    for (const block of message.blocks) {
+      if (block.type !== 'tool_call') continue;
+      lastTool = block.name;
+      if (block.status === 'running' || block.status === 'pending') runningTool = block.name;
     }
   }
   if (runningTool) {
-    return {
-      working: true,
-      tool: runningTool,
-      summary: `running ${runningTool}…`,
-      last_role: 'assistant',
-      last_at: at,
-    };
+    return { working: true, tool: runningTool, summary: `running ${runningTool}…`, last_role: 'assistant', last_at: at };
   }
 
-  // The most-recent assistant turn: if it hasn't completed (and didn't error) the
-  // agent is still generating — report "working", not "queued", even if a later
-  // user-role message is technically newest.
-  let latestAssistant:
-    | (MessageWithParts['info'] & { time?: { completed?: number }; error?: unknown })
-    | undefined;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    if (!message) continue;
-    const info = message.info;
-    if (info.role === 'assistant') {
-      latestAssistant = info as MessageWithParts['info'] & {
-        time?: { completed?: number };
-        error?: unknown;
-      };
-      break;
-    }
-  }
-  if (latestAssistant && latestAssistant.time?.completed == null && !latestAssistant.error) {
+  // The most-recent assistant turn: if it is still streaming the agent is
+  // generating — report "working", not "queued", even if a later user-role
+  // message is technically newest.
+  const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
+  if (latestAssistant?.status === 'streaming') {
     return { working: true, summary: 'working…', last_role: 'assistant', last_at: at };
   }
 
   // Newest message is the user's and no assistant turn has started — genuinely
   // queued, waiting for the agent to pick it up.
-  if (lastInfo.role === 'user') {
+  if (last.role === 'user') {
     return { working: true, summary: 'queued — agent picking up…', last_role: 'user', last_at: at };
   }
 
-  // Otherwise the last assistant turn is done (or failed) — summarize its reply. A turn still
-  // streaming returned "working…" above, so a cut-off note here is real.
-  const completed = lastInfo.time?.completed;
-  const text = last.parts
-    .filter(
-      (p) =>
-        p.type === 'text' &&
-        !(p as { synthetic?: boolean }).synthetic &&
-        typeof (p as { text?: string }).text === 'string',
-    )
-    .map((p) => genuiToMarkdown((p as { text: string }).text))
+  // Otherwise the last assistant turn is done (or failed) — summarize its reply.
+  const text = last.blocks
+    .filter((block): block is Extract<SessionLogBlock, { type: 'text' }> => block.type === 'text' && !block.synthetic)
+    .map((block) => genuiToMarkdown(block.text))
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -1342,7 +1267,7 @@ export function deriveActivity(
     working: false,
     summary: text ? truncate(text, 64) : lastTool ? `idle (last: ${lastTool})` : 'idle',
     last_role: 'assistant',
-    last_at: completed ? new Date(completed).toISOString() : at,
+    last_at: last.completed_at ?? at,
   };
 }
 

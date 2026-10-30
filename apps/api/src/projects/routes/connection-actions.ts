@@ -146,7 +146,7 @@ export function registerConnectionActionsRoutes(): void {
     async (c: any) => {
       // Who may use an account is a person's decision (iam/assignments.ts
       // `assertWriterMayAssign`). Checked on the request, so a session that
-      // borrows its launcher's authority (meta, a v1 project) is refused too.
+      // borrows its launcher's authority (meta, a project with no agents) is refused too.
       if (isProjectSessionPrincipal(c)) {
         return c.json(
           {

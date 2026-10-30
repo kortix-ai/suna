@@ -1,29 +1,28 @@
 import { describe, expect, test } from 'bun:test';
+import type { SessionLogMessage } from '@kortix/sdk';
 
-import { deriveActivity, extractMessageText } from './sessions-chat';
+import { deriveActivity, logMessageText } from './sessions-chat';
 
-describe('extractMessageText', () => {
+const reply = (text: string, over: Partial<SessionLogMessage> = {}): SessionLogMessage => ({
+  schema: 'kortix.session/2', v: 1, message_id: 'm1', thread_id: 's', seq: 1, role: 'assistant', kind: 'turn', status: 'complete',
+  in_context: true, model: null, usage: null, finish: null, error: null, created_at: new Date(1).toISOString(), completed_at: null,
+  producer: { harness: 'pi', harness_version: '1', adapter_version: '1' }, blocks: [{ type: 'text', id: 'b1', text }], ...over,
+});
+
+describe('logMessageText', () => {
   test('prints openui blocks as markdown', () => {
-    const msg = {
-      info: { id: 'm1', role: 'assistant' },
-      parts: [{ id: 'p1', type: 'text', text: 'Here.\n\n```openui\nroot = Stack([b])\nb = Badge("ok")\n```' }],
-    } as unknown as Parameters<typeof extractMessageText>[0];
-    expect(extractMessageText(msg)).toBe('Here.\n\n[ok]');
+    expect(logMessageText(reply('Here.\n\n```openui\nroot = Stack([b])\nb = Badge("ok")\n```'))).toBe('Here.\n\n[ok]');
   });
 
   const CUT = 'Here.\n\n```openui\nroot = Stack([a, b])\na = Badge("kept")\nb = Callout("info", "unfin';
-  const message = (info: Record<string, unknown>) =>
-    ({ info: { id: 'm1', role: 'assistant', ...info }, parts: [{ id: 'p1', type: 'text', text: CUT }] }) as unknown as Parameters<
-      typeof extractMessageText
-    >[0];
 
   test('a message still streaming never prints the cut-off note', () => {
-    expect(extractMessageText(message({ time: { created: 1 } }))).toBe('Here.\n\n[kept]');
+    expect(logMessageText(reply(CUT, { status: 'streaming' }))).toBe('Here.\n\n[kept]');
   });
 
   test('a finished or failed message that lost its last statement says so', () => {
-    expect(extractMessageText(message({ time: { created: 1, completed: 2 } }))).toBe('Here.\n\n[kept]\n\n*Response was cut off.*');
-    expect(extractMessageText(message({ time: { created: 1 }, error: { name: 'Aborted' } }))).toBe(
+    expect(logMessageText(reply(CUT))).toBe('Here.\n\n[kept]\n\n*Response was cut off.*');
+    expect(logMessageText(reply(CUT, { status: 'aborted', error: { code: 'Aborted', message: 'aborted' } }))).toBe(
       'Here.\n\n[kept]\n\n*Response was cut off.*',
     );
   });
@@ -31,23 +30,12 @@ describe('extractMessageText', () => {
 
 describe('deriveActivity', () => {
   test('the status summary shows openui blocks as markdown, never source', () => {
-    const msgs = [
-      {
-        info: { id: 'a1', role: 'assistant', sessionID: 's', time: { created: 1, completed: 2 } },
-        parts: [{ type: 'text', text: 'Done.\n\n```openui\nroot = Stack([b])\nb = Badge("shipped")\n```' }],
-      },
-    ] as unknown as Parameters<typeof deriveActivity>[0];
-    const activity = deriveActivity(msgs, 'running');
+    const activity = deriveActivity([reply('Done.\n\n```openui\nroot = Stack([b])\nb = Badge("shipped")\n```')], 'running');
     expect(activity.summary).toBe('Done. [shipped]');
   });
 
   test('a turn still streaming reports working, never a cut-off note', () => {
-    const msgs = [
-      {
-        info: { id: 'a1', role: 'assistant', sessionID: 's', time: { created: 1 } },
-        parts: [{ type: 'text', text: '```openui\nroot = Stack([a, b])\na = Badge("kept")\nb = Callout("info", "unfin' }],
-      },
-    ] as unknown as Parameters<typeof deriveActivity>[0];
+    const msgs = [reply('```openui\nroot = Stack([a, b])\na = Badge("kept")\nb = Callout("info", "unfin', { status: 'streaming' })];
     expect(deriveActivity(msgs, 'running').summary).toBe('working…');
   });
 });
