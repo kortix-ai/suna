@@ -29,12 +29,14 @@ import {
   type ArtifactDiscussionActivity,
 } from './artifact-activity-timeline';
 import { ArtifactCommentComposer, type CommentMentionOption } from './artifact-comment-composer';
+import { ArtifactCommentImage } from './artifact-comment-image';
 import { ArtifactCommentThreadView } from './artifact-comment-thread';
 import {
   groupCommentThreads,
   threadDeleted,
   type CommentFilter,
 } from './artifact-discussion-logic';
+import type { ArtifactDrawingDraft } from './artifact-drawing-draft';
 
 const EMPTY_THREADS: ArtifactCommentThread[] = [];
 
@@ -61,6 +63,7 @@ export interface ArtifactDiscussionSidebarProps {
   focusRevision?: number;
   onFocusThread: (threadId: string) => void;
   pendingAnchor?: ArtifactCommentAnchor | null;
+  pendingDrawing?: ArtifactDrawingDraft | null;
   selectionCapture?: 'idle' | 'pending' | 'failed';
   onClearAnchor: (expected?: ArtifactCommentAnchor) => void;
   readOnly?: boolean;
@@ -123,6 +126,7 @@ export function ArtifactDiscussionSidebar({
   focusRevision = 0,
   onFocusThread,
   pendingAnchor,
+  pendingDrawing,
   selectionCapture = 'idle',
   onClearAnchor,
   readOnly = false,
@@ -244,8 +248,12 @@ export function ArtifactDiscussionSidebar({
     try {
       const result = await action();
       onSuccess?.(result);
-    } catch {
-      const message = error ?? t('commentFailed');
+    } catch (cause) {
+      const code = cause && typeof cause === 'object' && 'code' in cause ? cause.code : null;
+      const message =
+        code === 'artifact_comment_screenshot_limit'
+          ? t('sendScreenshotLimit')
+          : (error ?? t('commentFailed'));
       setErrors((current) => ({ ...current, [key]: message }));
       if (
         !key.startsWith('new') &&
@@ -264,9 +272,17 @@ export function ArtifactDiscussionSidebar({
     const selected = pendingAnchor;
     const anchor = selected ?? { type: 'none' as const, version: readableVersion };
     const text = draft('new');
+    const drawing = pendingDrawing?.anchor === selected ? pendingDrawing : null;
     void perform(
       'new',
-      () => comments.create({ body: text, anchor }),
+      () =>
+        comments.create({
+          body: text,
+          anchor,
+          ...(drawing
+            ? { marks: drawing.marks, screenshot_base64: drawing.screenshot_base64 }
+            : {}),
+        }),
       (thread) => {
         setDraft('new', '');
         setFilter('open');
@@ -521,6 +537,16 @@ export function ArtifactDiscussionSidebar({
                   </Hint>
                 </div>
               ) : null}
+              {pendingDrawing && pendingDrawing.anchor === pendingAnchor ? (
+                <div className="space-y-2">
+                  <ArtifactCommentImage image={pendingDrawing.image} />
+                  {pendingDrawing.imageFailed ? (
+                    <p role="status" className="text-muted-foreground text-xs">
+                      {t('screenshotCaptureFailed')}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               <ArtifactCommentComposer
                 value={draft('new')}
                 onChange={(value) => setDraft('new', value)}
@@ -585,6 +611,9 @@ export function ArtifactDiscussionSidebar({
           </Button>
           {retryingSend ? (
             <>
+              <p role="alert" className="text-destructive text-xs">
+                {errors.send}
+              </p>
               <p className="text-muted-foreground text-xs">{t('sendRetryHint')}</p>
               <Button
                 type="button"

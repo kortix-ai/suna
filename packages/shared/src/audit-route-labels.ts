@@ -531,6 +531,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/projects/:projectId/artifacts/:artifactId/comments/context': { action: 'project.artifact.comment.context', title: 'Read artifact comment context' },
   'GET /v1/projects/:projectId/artifacts/:artifactId/comments': { action: 'project.artifact.comment.list', title: 'Listed artifact comment threads' },
   'GET /v1/projects/:projectId/artifact-comment-threads/:threadId': { action: 'project.artifact.comment.read', title: 'Read artifact comment thread' },
+  'GET /v1/projects/:projectId/artifacts/:artifactId/comments/:commentId/screenshot': { action: 'project.artifact.comment.screenshot', title: 'Read artifact comment screenshot' },
   'POST /v1/projects/:projectId/artifacts/:artifactId/comments': { action: 'project.artifact.comment.create', title: 'Opened artifact comment thread' },
   'POST /v1/projects/:projectId/artifacts/:artifactId/comments/send': { action: 'project.artifact.comment.send', title: 'Sent artifact comments to an agent' },
   'POST /v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/replies': { action: 'project.artifact.comment.reply', title: 'Replied to artifact comment thread' },

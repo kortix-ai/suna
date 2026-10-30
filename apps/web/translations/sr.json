@@ -23989,7 +23989,23 @@
       "panelTitle": "Коментари и активност",
       "resizePanel": "Промени величину панела коментара",
       "unshareComments": "{count, plural, one {# коментар ће бити обрисан.} few {# коментара ће бити обрисана.} other {# коментара ће бити обрисано.}}",
-      "systemActor": "Систем"
+      "systemActor": "Систем",
+      "draw": "Nacrtaj povratne informacije",
+      "drawPen": "Olovka",
+      "drawArrow": "Strelica",
+      "drawRectangle": "Pravougaonik",
+      "drawBlack": "Crna",
+      "drawRed": "Crvena",
+      "drawBlue": "Plava",
+      "drawUndo": "Poništi potez",
+      "drawPageChanged": "Stranica se promenila. Otkaži i nacrtaj ponovo.",
+      "drawLimit": "Dostignuto je ograničenje crteža. Poništi potez da nastaviš.",
+      "openScreenshot": "Otvori snimak ekrana",
+      "drawingScreenshot": "Snimak povratnih informacija",
+      "screenshotReadFailed": "Učitavanje snimka ekrana nije uspelo.",
+      "screenshotMissing": "Snimak ekrana nije dostupan. Crtež je sačuvan.",
+      "screenshotCaptureFailed": "Snimanje ekrana nije uspelo. Komentar će sadržati crtež bez slike.",
+      "sendScreenshotLimit": "Ova grupa prelazi 20 snimaka ekrana ili 12 MiB po kodiranom zahtevu. Pošalji manje slika ili koristi model samo za tekst."
     }
   },
   "emailConnect": {

@@ -18,7 +18,7 @@
 // threads' tokens, reach its files. Any other root under `/Channels` is an
 // ordinary folder. An artifact rooted there is viewed only
 // by them, whatever its sharing, and is never `project` or `public`.
-import { artifacts, projectSessions } from '@kortix/db';
+import { artifactComments, artifactCommentThreads, artifacts, projectSessions } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { signStableChannelState } from '../channels/core/signed-state';
@@ -612,7 +612,20 @@ export async function setPinned(row: ArtifactRow, userId: string, pinned: boolea
 
 /** Stop sharing: the artifact leaves Artifacts and every link stops working. Its files stay in Files. */
 export async function unshare(row: ArtifactRow): Promise<void> {
-  await db.delete(artifacts).where(eq(artifacts.artifactId, row.artifactId));
+  const keys = await db.transaction(async tx => {
+    const [locked] = await tx.select({ id: artifacts.artifactId }).from(artifacts)
+      .where(and(eq(artifacts.artifactId, row.artifactId), eq(artifacts.accountId, row.accountId))).for('update');
+    if (!locked) return [];
+    const screenshots = await tx.select({ key: artifactComments.screenshotKey }).from(artifactComments)
+      .innerJoin(artifactCommentThreads, eq(artifactCommentThreads.threadId, artifactComments.threadId))
+      .where(eq(artifactCommentThreads.artifactId, row.artifactId));
+    await tx.delete(artifacts).where(eq(artifacts.artifactId, row.artifactId));
+    return screenshots.flatMap(image => image.key ? [image.key] : []);
+  });
+  if (keys.length) {
+    const { cleanupArtifactCommentScreenshotKeys } = await import('./comment-screenshot-objects');
+    await cleanupArtifactCommentScreenshotKeys(keys);
+  }
 }
 
 export function isArtifactType(value: string): value is ArtifactType {
