@@ -1,5 +1,5 @@
 {
-  "id": "9dfdf9f6-b86f-40e5-b85a-fb6f996816e3",
+  "id": "a3b92843-1313-4130-93b1-cb2934327eb5",
   "prevId": "efb05a16-5f2c-4bb2-80cb-26ab4a863767",
   "version": "7",
   "dialect": "postgresql",
@@ -13250,6 +13250,18 @@
           "primaryKey": false,
           "notNull": true
         },
+        "platinum_volume_region": {
+          "name": "platinum_volume_region",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "platinum_volume_move": {
+          "name": "platinum_volume_move",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "conflict_scan_head": {
           "name": "conflict_scan_head",
           "type": "text",
@@ -17180,6 +17192,12 @@
           "type": "text",
           "primaryKey": true,
           "notNull": true
+        },
+        "region": {
+          "name": "region",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "reason": {
           "name": "reason",
@@ -27872,28 +27890,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "session_turns_message_time_idx": {
-          "name": "session_turns_message_time_idx",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "started_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"session_turns\".\"message_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

@@ -27,6 +27,7 @@ import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { normalizeDrivePath } from '../drives/access';
 import { folderAccess, folderAccessAtLeast, pathWithinFolder, PRIVATE_CHANNELS_DIR, privateChannelFolderOf, type FolderLevel } from '../drives/folders';
 import {
+  driveVolume,
   ensurePersonalFolder,
   ensureProjectDrive,
   getDrive,
@@ -39,6 +40,7 @@ import {
   type DriveRow,
 } from '../drives/service';
 import {
+  type DriveVolume,
   DriveStorageError,
   listVolumeCommits,
   listVolumeFiles,
@@ -246,7 +248,7 @@ function slugify(value: string): string {
   return value.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'untitled';
 }
 
-async function exists(volume: string, path: string): Promise<boolean> {
+async function exists(volume: DriveVolume, path: string): Promise<boolean> {
   try {
     await statVolumeFile(volume, path);
     return true;
@@ -337,7 +339,7 @@ export async function share(
     refuseWiderThanChannel(await privateFolderOfRoot(scope.projectId, target.root), input.visibility);
   }
   const type = typeOfEntry(target.entry)!;
-  const text = await (await readVolumeFile(drive.platinumVolumeName, join(target.root, target.entry))).text();
+  const text = await (await readVolumeFile(driveVolume(drive), join(target.root, target.entry))).text();
   const binding = await bindingAtCreate(author, input);
   return db.transaction(async (tx) => {
     const [row] = await tx.insert(artifacts).values({
@@ -500,7 +502,7 @@ export async function listFiles(row: ArtifactRow, at?: string): Promise<Array<{ 
 export async function readArtifactFile(row: ArtifactRow, rel: string, at?: string | null, range?: string): Promise<Response> {
   if (!row.folder && rel !== row.entry) throw new DriveStorageError(404, 'File not found');
   const drive = await driveOf(row);
-  return readVolumeFile(drive.platinumVolumeName, join(row.root, rel), range, at ?? undefined);
+  return readVolumeFile(driveVolume(drive), join(row.root, rel), range, at ?? undefined);
 }
 
 export async function getArtifact(projectId: string, artifactId: string): Promise<ArtifactRow | null> {

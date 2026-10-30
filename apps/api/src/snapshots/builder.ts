@@ -39,7 +39,7 @@ import { logger } from '../lib/logger';
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
+import { resolveSessionPlacement } from '../platform/services/sandbox-region';
 import { preparePlatinumTemplateRegion } from './providers/platinum-templates';
 
 type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
@@ -399,7 +399,7 @@ export async function templateRegionResident(
   if (provider !== 'platinum') return true;
   try {
     const readMetadata = deps.readMetadata ?? readProjectMetadata;
-    const region = resolveSessionSandboxRegion(await readMetadata(projectId));
+    const region = (await resolveSessionPlacement(projectId, await readMetadata(projectId))).location;
     if (!region) return true;
     await (deps.prepare ?? preparePlatinumTemplateRegion)(snapshotName, region, { timeoutMs });
     return true;
