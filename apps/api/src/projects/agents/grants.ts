@@ -124,6 +124,7 @@ function grantFromSpec(agentName: string, spec: AgentSpec): AgentGrant | null {
       connectors: spec.connectors,
       env: spec.env,
       ...appsGrantOf(spec),
+      ...(spec.policySets ? { policySets: spec.policySets } : {}),
     }),
   );
 }

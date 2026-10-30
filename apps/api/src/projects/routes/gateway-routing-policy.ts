@@ -7,7 +7,8 @@ import {
 import { clampGenerationConfig } from '@kortix/llm-catalog';
 import { resolveCandidates } from '../../llm-gateway/resolution/resolve-candidates';
 import { catalogModelForWireModel } from '../../llm-gateway/models/catalog-models';
-import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
+import { platformDefaultModelId, platformVisionModelId, servedManagedModels } from '../../llm-gateway/models/served-managed-models';
+import { effectiveFallbackPolicies } from '../../llm-gateway/routing/policy-config';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import {
@@ -27,11 +28,13 @@ import {
 import { invalidateAccountModelDefaults } from '../../llm-gateway/resolution/default-model';
 import { parseProjectRoutingPolicyInput } from '../../llm-gateway/routing/project-policy';
 import { resolveGatewayRoute } from '../../llm-gateway/routing';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 type RoutingContext = { projectId: string; accountId: string; userId: string };
 
 function operatorFallbackFor(model: string) {
-  const policy = config.LLM_GATEWAY_FALLBACK_POLICIES.find((candidate) =>
+  const policies = effectiveFallbackPolicies(config.LLM_GATEWAY_FALLBACK_POLICIES, servedManagedModels().map((m) => m.id));
+  const policy = policies.find((candidate) =>
     candidate.models.includes(model),
   );
   return policy
@@ -84,7 +87,7 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
     effective: {
       defaultModel: effectiveDefault,
       defaultModelSource,
-      visionModel: stored?.visionModel ?? config.LLM_GATEWAY_VISION_MODEL ?? null,
+      visionModel: stored?.visionModel ?? (platformVisionModelId() || null),
       defaultFallback: {
         models: [...(route.fallbackModels ?? [])],
         fallbackOn: route.fallbackOn ?? 'transient',
@@ -92,7 +95,7 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
     },
     platform: {
       defaultModel: platformDefaultModelId(),
-      visionModel: config.LLM_GATEWAY_VISION_MODEL ?? null,
+      visionModel: platformVisionModelId() || null,
       defaultFallback: operatorFallbackFor(platformDefaultModelId()),
     },
     capabilities: { write: canWrite },
@@ -164,9 +167,12 @@ export function registerGatewayRoutingPolicyRoutes(): void {
         PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
       );
       let policy;
+      let body: unknown;
       try {
-        policy = parseProjectRoutingPolicyInput(await c.req.json());
+        body = await c.req.json();
+        policy = parseProjectRoutingPolicyInput(body);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Invalid routing policy',
@@ -196,8 +202,14 @@ export function registerGatewayRoutingPolicyRoutes(): void {
       // own reasoning_options, or a max-output-tokens above its limit.output.
       // An entry that clamps to nothing (every field dropped) is dropped
       // entirely rather than stored as an empty object.
+      // A body without the key (the CLI's flag mode, an older client) keeps
+      // the stored settings; only an explicit map replaces them.
+      const generationConfig =
+        body && typeof body === 'object' && 'modelGenerationConfig' in body
+          ? policy.modelGenerationConfig
+          : ((await getProjectRoutingPolicy(projectId))?.modelGenerationConfig ?? {});
       const clampedGenerationConfig = Object.fromEntries(
-        Object.entries(policy.modelGenerationConfig)
+        Object.entries(generationConfig)
           .map(
             ([model, entry]) =>
               [model, clampGenerationConfig(entry, catalogModelForWireModel(model))] as const,

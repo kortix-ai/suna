@@ -69,7 +69,9 @@ describe('audit route labels', () => {
   });
 
   test('every label names a route that exists', () => {
-    const known = new Set([...liveKeys, ...manifestKeys, ...entrypointKeys]);
+    // Mounted only when PLATINUM_WEBHOOK_SECRET is set (#10937); its audit rows still need a title.
+    const conditional = ['POST /v1/webhooks/sandbox/platinum'];
+    const known = new Set([...liveKeys, ...manifestKeys, ...entrypointKeys, ...conditional]);
     expect([...labelled].filter((key) => !known.has(key)).sort()).toEqual([]);
   });
 });

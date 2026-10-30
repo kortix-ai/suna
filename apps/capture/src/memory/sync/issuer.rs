@@ -168,6 +168,7 @@ fn http() -> reqwest::blocking::Client {
     reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(30))
+        .user_agent(super::user_agent())
         .build()
         .expect("issuer HTTP client")
 }
@@ -772,6 +773,27 @@ pub fn status(paths: &MemoryPaths, configured_url: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Cloudflare in front of Kortix answers 403 to a request without a User-Agent.
+    #[test]
+    fn every_issuer_request_names_the_app_in_its_user_agent() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let seen = std::thread::spawn(move || {
+            let (mut c, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let n = c.read(&mut buf).unwrap();
+            let _ = c.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}");
+            String::from_utf8_lossy(&buf[..n]).to_lowercase()
+        });
+        let _ = http().post(format!("http://{addr}/v1/capture/device/authorize")).body("{}").send();
+        let request = seen.join().unwrap();
+        assert!(
+            request.contains("user-agent: kortix-capture/"),
+            "{request}"
+        );
+    }
 
     #[test]
     fn issuer_url_prefers_settings_and_trims() {

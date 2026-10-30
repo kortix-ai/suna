@@ -1,8 +1,6 @@
-import { config } from '../config';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { servableProjectCatalog } from '../llm-gateway/models/servable-catalog';
-import { platformDefaultModelId } from '../llm-gateway/models/served-managed-models';
-import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
+import { platformDefaultModelId, platformVisionModelId } from '../llm-gateway/models/served-managed-models';
 import { isModelServableForAccount } from '../llm-gateway/resolution/default-model';
 import { accountMayUseManagedModels } from '../billing/services/entitlements';
 
@@ -158,7 +156,7 @@ async function replacementCandidates(input: {
     ([, m]) => m.enabled !== false && (!needsVision || capabilityReadsImages(m)),
   );
   const preferred = [
-    ...(needsVision ? [config.LLM_GATEWAY_VISION_MODEL?.trim()] : []),
+    ...(needsVision ? [platformVisionModelId()] : []),
     catalog.defaultModel,
     platformDefaultModelId(),
   ].filter((m): m is string => !!m);
@@ -245,8 +243,6 @@ export async function channelTurnModel(input: {
   // would have skipped exactly those. The probe is cached per person, session
   // and model, so a burst of chat costs one resolution.
   if (!hasImage && !currentModel) return null;
-
-  if (!(await projectLlmGatewayEnabledById(projectId).catch(() => false))) return null;
 
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId).catch(() => false));
   const probe = async (model: string): Promise<boolean> => {
@@ -339,4 +335,36 @@ export async function channelTurnModel(input: {
  */
 export function promptModelOverride(model: string): { providerID: string; modelID: string } {
   return { providerID: 'kortix', modelID: wireModelId(model) };
+}
+
+/** Who a channel image turn runs as, and the model its session runs (null: the platform default). */
+export interface ImageTurn {
+  projectId: string;
+  accountId: string;
+  userId: string | null;
+  currentModel: string | null;
+  visibility: string;
+  sessionId?: string;
+}
+
+/**
+ * The model of a channel turn whose message carries an image, and whether no model in reach reads
+ * it. pi gives an image only to a model that reads images, so the gateway's image reroute never
+ * sees one: the channel picks before the turn (channels/core/conversation.ts).
+ */
+export async function imageTurnModel(turn: ImageTurn): Promise<{ model: string | null; blind: boolean }> {
+  const model = await channelTurnModel({
+    projectId: turn.projectId,
+    accountId: turn.accountId,
+    userId: turn.userId,
+    currentModel: turn.currentModel,
+    hasImage: true,
+    // A shared session counts no one's personal keys, as the gateway resolves it.
+    personalUserId: turn.visibility === 'private' ? turn.userId : null,
+    // ponytail: codex replacements fail closed. The agent-grant reader (model-access.ts
+    // `agentGrantEnvFor`) imports Slack code. Upgrade: move it into this file.
+    agentGrantEnv: async () => [],
+    ...(turn.sessionId ? { sessionId: turn.sessionId } : {}),
+  });
+  return { model, blind: !model && !modelReadsImages(turn.projectId, turn.currentModel ?? platformDefaultModelId()) };
 }

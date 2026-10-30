@@ -18,7 +18,7 @@ import { admitInboxPrompt, boundaryWaitDecision, hasLaterReleasedSibling, sessio
 import { abortRuntimeTurn } from './abort-runtime-turn';
 import { markTurnResumed, markTurnStopRequested } from '../session-turn-ledger';
 import { openUserAbove } from './forwarded-placement';
-import { type InterruptedTurn, findInterruptedTurn, interruptedTurnContinuationText } from './redelivery';
+import { type InterruptedTurn, findInterruptedTurn, interruptedTurnContinuationParts, interruptedTurnContinuationText } from './redelivery';
 import {
   armQuickQueueInterrupt,
   queuedContinueHasStagedRevert,
@@ -28,7 +28,8 @@ import { DELIVERY_FAILURE_COPY } from './types';
 import {
   remintWireMessageId,
 } from './inbox-placement';
-import { deliverQueuedContinue, deliverSteer } from './queued-continue-delivery';
+import { deliverQueuedContinue, deliverSteer, refreshArtifactCommentQueuedPrompt } from './queued-continue-delivery';
+import { PromptDeliveryRefused } from './prompt-delivery-refusal';
 import { drainSessionLifecycleQueue } from './drain';
 
 const ANSWER_CHECK_RETRY_BASE_MS = 5_000;
@@ -135,7 +136,7 @@ export async function executeQueuedContinue(
   row: SessionLifecycleCommandRow,
 ): Promise<'succeeded' | 'queued' | 'failed'> {
   const payload = row.payload as unknown as QueuedContinueSessionPayload;
-  const text = typeof payload.text === 'string' ? payload.text : '';
+  let text = typeof payload.text === 'string' ? payload.text : '';
   const hasBody = !!text || (payload.parts?.length ?? 0) > 0;
   if (!row.sessionId || !hasBody) {
     await markCommandFailed(row, 'continue_session command missing sessionId or body', {
@@ -143,6 +144,19 @@ export async function executeQueuedContinue(
       attempts: row.attempts,
     });
     return 'failed';
+  }
+  if (row.source === 'system:artifact-comment') {
+    try {
+      text = (await refreshArtifactCommentQueuedPrompt(row)).text;
+      payload.text = text;
+      payload.parts = undefined;
+    } catch (error) {
+      const retryable = !(error instanceof PromptDeliveryRefused);
+      await markCommandFailed(row, error instanceof Error ? error.message : 'Artifact comment delivery validation failed', {
+        retryable, attempts: row.attempts, sessionId: row.sessionId,
+      });
+      return retryable ? 'queued' : 'failed';
+    }
   }
   const tl = new ProvisionTimeline(row.commandId, 'deliver');
   const admitted = await admitQueuedContinue(row, tl);
@@ -173,6 +187,7 @@ export async function executeQueuedContinue(
         { status: 'skipped', reason: 'consumed_in_band' },
         row.sessionId,
       );
+      await wakeAfterAdmission(row);
       return 'succeeded';
     }
   }
@@ -180,10 +195,14 @@ export async function executeQueuedContinue(
   const placement = await placeQueuedContinue(row, payload, tl);
   // A turn a runtime loss cut short gets its continuation, never the original
   // prompt a second time (KRTX-1732). The row keeps its own author and picks.
+  // The continuation is harness context, not a user prompt (KRTX-2597): its
+  // part is marked `synthetic` so the transcript renders it as a notice and
+  // never as a user bubble.
   const resume = 'outcome' in placement ? undefined : placement.resume;
   const outcome = 'outcome' in placement
     ? placement.outcome
-    : await deliverQueuedContinue(row, resume ? { ...payload, parts: undefined } : payload,
+    : await deliverQueuedContinue(row, resume
+      ? { ...payload, parts: interruptedTurnContinuationParts(resume) } : payload,
       resume ? interruptedTurnContinuationText(resume) : text, placement.wireMessageId,
       placement.placedIntoLiveTurn, placement.underPlaced, tl, noReply);
   // Only a delivery marks the turn resumed. A placement outcome posted nothing:
@@ -197,7 +216,11 @@ export async function executeQueuedContinue(
   }
   // If the batch's LAST row then fails for good, the rows already posted
   // noReply stay unanswered until the user retries it or sends again.
-  if (noReply && outcome === 'succeeded') await wakeAfterAdmission(row);
+  // A skipped placement (staged revert, already answered) posted nothing, so
+  // no turn end wakes the next row either. A failure wakes it in
+  // `markCommandFailed` when it dead-letters.
+  const skipped = 'outcome' in placement && placement.outcome === 'succeeded';
+  if (skipped || (noReply && outcome === 'succeeded')) await wakeAfterAdmission(row);
   return outcome;
 }
 

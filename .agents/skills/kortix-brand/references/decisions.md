@@ -10,6 +10,187 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-29
+
+### D29 Kortix CompanyOS is the product name on every identity surface; the Promise says "AI agents"
+- **Date:** 2026-10-29
+- **Decision:** Every surface that names the product says "Kortix CompanyOS": the page-title suffix (`<page> | Kortix CompanyOS`), the session tab title, Open Graph `siteName`, the PWA manifest `name`, the docs title, the MCP server title, the OAuth resource name, the agent-discovery title, the desktop window title, the sign-in and trial welcome screens, the README, the GitHub repo description and topics, and the GitHub org description. "AI Operating System" and "AI OS" leave the structured data (`alternateName`), the keywords, the launch film and the test fixtures too. Running text keeps "Kortix" as the short name ("Sign in with Kortix", "Connect Slack to Kortix"). Four names stay "Kortix" because a longer name truncates or breaks: the PWA `short_name`, the mobile home-screen name (`app.json`), the desktop `productName` (it names the user-data folder and the installer files), and the Slack and Teams bot mention name (`@Kortix`); the Slack app name and the Teams full name are "Kortix CompanyOS". The agent is still named Kortix. The Promise line reads "Hand it an outcome, AI agents run it 24/7".
+- **Why:** founder, 2026-10-29: "lets call it CompanyOS everywhere-- lets rename everywhere lets rename the entire product into Kortix CompanyOS hardcore", "even the README of the repo & the git repo itself we will rename to company-os or similar, dont do rename yet there but like all GH descriptions, the readme itself etc.", and on the hero subhead: "say Ai Agents".
+- **Where:** `packages/ui/src/internal/lib/site-metadata.ts`, `apps/web/src/app/[locale]/layout.tsx`, `apps/web/public/manifest.json`, `apps/web/blume.config.ts`, `apps/api/src/mcp/index.ts`, `apps/api/src/oauth/discovery.ts`, `apps/web/src/lib/agent-discovery.ts`, `apps/desktop-electron/src/main.js`, the `welcome` strings in every locale catalog, `apps/mobile/locales/en.json`, the Slack and Teams manifests, `README.md`, the hero subhead (`sand-band-hero.tsx`), [positioning.md](verbal/positioning.md) Promise row. The repository is still `kortix-ai/suna`; renaming it is a later step.
+- **Supersedes:** D28's "old names kept in `alternateName` and keywords" and its launch-film exclusion; D18's Promise wording ("agents" becomes "AI agents").
+- **Source:** the `framework-pi` branch.
+
+### D28 The category is CompanyOS; the product is Kortix CompanyOS
+- **Date:** 2026-10-29
+- **Decision:** "AI Operating System" and "AI OS" are retired as the category. The category is **CompanyOS** (one word, capital C, capital OS). The product name is **Kortix CompanyOS**. The tagline is "The open-source CompanyOS". Page titles read "Kortix CompanyOS – the open-source operating system for your company". The site switcher reads "CompanyOS | Services". The hero keeps its shape: "The sovereign CompanyOS", "The <word> CompanyOS". The company stays Kortix (`Organization` name). Structured data keeps "Kortix AI Operating System" and "Kortix AI OS" as `alternateName`, and the meta keywords keep "AI Operating System", so existing search traffic still finds the site. Sentences about other vendors "becoming AI operating systems" keep the generic phrase. Blog post slugs do not change.
+- **Why:** founder, 2026-10-29: "let's rebrand everywhere and call it company os", then "Kortix CompanyOS".
+- **Where:** the web app (titles, metadata, hero, nav, enterprise, services, about, open-source, launch, llms.txt), 60 blog posts, the docs, every locale catalog, `packages/ui` site metadata and tagline, the CLI banner, `scripts/install.sh`, the email footer, the Slack and Teams app manifests, the starter template, README, MANIFESTO, package descriptions, [positioning.md](verbal/positioning.md), [voice-and-tone.md](verbal/voice-and-tone.md), [concepts.md](verbal/concepts.md). Not changed: the launch film (the `launch-film` worktree deletes it), SDK test fixtures.
+- **Supersedes:** D10's category name ("AI Operating System") and the category noun in the D16 and D21 hero lines. D19 ("the Operating System for SuperIntelligence" on `/about`) is not affected. D10's idea (an operating system is the layer everything runs on) stays.
+- **Source:** the `framework-pi` branch.
+
+### D27 Company as code names pi: custom pi agents, pi extensions, deployed to the cloud
+- **Date:** 2026-10-29
+- **Decision:** The framework surfaces lead with pi as the minimal agent harness Kortix runs on. Every agent you declare is a custom pi agent. You extend it with pi extensions: TypeScript in the repository or a pi package pinned from npm, registered under `extensions` in `kortix.yaml` and enabled per agent. Kortix deploys the agents to the cloud, one computer per session. `/framework` carries this in the hero sub, the pillar "Custom pi agents", the tab "pi extensions" (with a real extension file in the Arcadia sample) and the FAQ. The home Company as code pillar now names pi and pi extensions too. The home hero's Framework window header reads "Agents run on pi"; its steps do not include a pi extensions step (founder: "just feels forced"). The hero headline and the Multiplayer and Sovereign pillars still do not name pi.
+- **Why:** founder, 2026-10-29: "https://kortix.com/framework should definetly reference PI & explain that u write custom PI agents that get deployed to the cloud, with pi extensions & all like very imp piece", and on the home Company as code pillar: "also in here like saying that wouldnt be bad I guess", then: "also in the framework tab on the homepage, show the pi extensions and whatnot or indications of pi and that pi is used. make the kortix yaml as legit as possible in the example thing".
+- **Where:** `apps/web/src/features/marketing/framework/` (`model.ts`, `content.ts`, `framework-panels.tsx`), `landing-hero/framework-window.tsx`, `landing-sections/pillars-band.tsx`, `landing-sections/framework-band.tsx`, [claims.md](verbal/claims.md) row "Extensions".
+- **Supersedes:** D20 for the Company as code pillar.
+- **Source:** the `framework-pi` branch.
+
+### D26 Email card: one logo, one left edge, one type scale
+- **Date:** 2026-10-29
+- **Decision:** The symbol shows once, 20 px wide, in the header row; the card has no logo. The header carries no label: no email names its type ("Sign in", "Password reset", "Billing") anywhere above the title, and `renderEmail` has no `kicker` input. Every block inside the card sits on one left edge with a 40 px inset (24 px on mobile). The type scale has four steps: title 24 px / 600 / line height 1.25 / tracking −0.48 px, body 15 px / 400 / 1.6, label 13 px, small 12 px; emphasis is 500. The one-time code uses the sans face with tabular digits, never the mono face. The footer is centered: tagline, social icons, `kortix.com`.
+- **Why:** founder, 2026-10-29: the logo twice "looks a bit weird", the code must not be mono, and the title and description hierarchy was "not proper".
+- **Where:** `visual/visual-system.json` (`email`), `scripts/generate-tokens.ts`, `apps/api/src/lib/email/template.tsx`.
+- **Supersedes:** D25 for the card logo, the centered card and the 28/16 sizes. The Barebone frame stands.
+- **Source:** the `email-redesign` branch.
+
+### D25 Transactional email uses the React Email Barebone layout
+- **Date:** 2026-10-29
+- **Decision:** The email shell copies the React Email demo template 01-Barebone (activation / password-reset), built with `@react-email/components` and rendered with `renderToStaticMarkup`. A grey page (`--card`), a 640 px white frame (`--background`) with a header row (the symbol 23 px wide on the left, the kicker on the right), one grey card with radius 8 holding the symbol (48 px wide), a 28 px title, 16 px body text in a 380 px column, the button and the note, then a white footer with the tagline, three social icons (X, LinkedIn, GitHub, served from `apps/web/public/email`) and a `kortix.com` link. The `mobile:` variants ship as one `<style>` media query at 600 px. The logo is the Brandmark PNG (the symbol), not the lockup. Colors stay on the token roles: Barebone's three text greys collapse onto `--foreground` and `--muted-foreground`; the font stays the system stack (D8a), not Inter. The copy-paste link under the button is gone; the plain-text part keeps the URL.
+- **Why:** founder, 2026-10-29: the shipped email was "not good UI-wise"; use React Email and make it "exactly the same" as the Barebone templates.
+- **Where:** `visual/visual-system.json` (`email`), `scripts/generate-tokens.ts`, `apps/api/src/lib/email/template.tsx`, `visual/layout.md` Email layout, `visual/brandmark.md` email logo.
+- **Supersedes:** the layout numbers and the lockup logo of the 2026-10-01 email entries (Q27, Q51); the light-only and color-role rules stand.
+- **Source:** the `email-redesign` branch.
+
+---
+
+## 2026-10-27
+
+### D24 The framework surfaces explain Kortix as a backend framework and name pi
+- **Date:** 2026-10-28
+- **Decision:** The home hero band is a slider: the workspace on the left, the same sample project as code on the right (its repository with `kortix.yaml` open). A home band ("A workspace for your team. A framework underneath.") and the `/framework` page explain Kortix as a backend framework for agents: a project is a git repository, `kortix.yaml` declares agents, skills, tools and triggers, every session runs the open-source pi coding agent on its own computer, triggers run agent loops 24/7, and `@kortix/sdk` and `@kortix/ui` compose your own experience. `/framework` carries the architecture diagram (clients, the Kortix API, the project repository, the session computer, the LLM gateway). These framework surfaces may name pi; the hero headline, the pillars and other core copy still do not (D20).
+- **Why:** founder, 2026-10-28: "what doesnt come out enough on the homepage is like that u have the WORKSPACE UI for humans... But everything is code & KORTIX FRAMEWORK, Kortix.YAML & PI CODING AGENT as basis", and "a FRAMEWORK pAGE IN full that shows the technical architecture diagram".
+- **Where:** `apps/web/src/features/marketing/landing-hero/workspace-framework.tsx`, `framework-window.tsx`, `landing-sections/framework-band.tsx`, `features/marketing/framework/`.
+- **Supersedes:** D20 for the framework surfaces only.
+- **Source:** the `services-page` branch.
+
+### D23 The home "Run any model" tab names the managed models with their versions
+- **Date:** 2026-10-27
+- **Decision:** The home How it works tab "Run any model" shows the provider marks (any provider with your own keys) and names the Kortix-managed models with their versions, today "DeepSeek V4.1 Flash" and "GLM 5.3 Flash", served with zero data retention. The names live in one constant, `MANAGED_MODELS` in `step-providers.tsx`; it follows Platinum Inference's `GET /v1/inference/models`. Everywhere else the families-only rule in [claims.md](verbal/claims.md) holds. The separate home sections "Need an internal app?" and "Every model, one bill." are removed: Apps and models are tabs of How it works.
+- **Why:** founder, 2026-10-27: "it should just be model-agnostic: connect any model provider ... show the actual logos ... say we offer deepseek v4 1 ... fold all of these ideas fully into how kortix works".
+- **Where:** `apps/web/src/features/marketing/landing-sections/how-it-works-tabs.tsx`, `step-apps.tsx`.
+- **Status:** reverted 2026-10-28 by the design cleanup on the `services-page` branch ("cleaner home and services sections"): the tab shows the model-slot panel again and names no versions. The families-only rule holds everywhere.
+- **Supersedes:** the families-only rule for this one tab.
+- **Source:** the `services-page` branch.
+
+### D22 `/about` is the vision page: SuperIntelligence, AGI and self-improving companies run by AI
+- **Date:** 2026-10-27
+- **Decision:** `/about` is about SuperIntelligence and AGI: Kortix builds every layer (operating system, agent harness, infrastructure, governance, the 24/7 loop, then training and evals) so companies can run on AI at scale, improve as they operate, and stay their own. Its sections: the hero (D19), "The thesis." (companies will run on AI, they will improve themselves, they have to be owned), "Every layer, A to Z.", "Self-improving companies." and the mission line. On this page only, and only as direction (future tense or "we are building"), copy may say "AGI", "SuperIntelligence", "self-improving companies" and "run by AI". It still never says "self-driving company" or "autonomous company" (positioning.md, retired lines). Elsewhere the idea appears at most as one line, e.g. the home Outcomes sub: "Every run makes the next one better."
+- **Why:** founder, 2026-10-27: "THE WHOLE ABOUT PAGE SHOULD BE ABOUT SI/AGI & how we are building all the infrastructure, harness, architecture, operating system, a to z so u can run it on scale to build self improving autonomous self driving organizations, that are run by AI", and "I don't want to say that [in the home hero], but I want to add that aspect".
+- **Where:** `apps/web/src/features/marketing/about/content.ts`, `about-page.tsx`; `apps/web/src/features/marketing/landing-sections/use-cases-section.tsx` (the one home line); [positioning.md](verbal/positioning.md) AGI rule.
+- **Supersedes:** the `/about` sections "What we believe." and "Build, host, manage, monitor."
+- **Source:** the `services-page` branch.
+
+### D21 The home hero cycles the pillars: "The sovereign / multiplayer / extensible AI Operating System"
+- **Date:** 2026-10-27
+- **Decision:** The home hero title is "The <word> AI Operating System", the word cycling through sovereign, multiplayer, extensible and open (the three pillars, D16, plus "open", founder 2026-10-27: "also add open"). The muted line "for companies that own their …" is gone. Because the hero now names the pillars, the compact three-column pillar band moves down the page, right under the case studies (founder: "move that elsewhere", then "move it up under CASE STUDIES"). Screen readers read "The sovereign, multiplayer, extensible and open AI Operating System".
+- **Why:** founder, 2026-10-27: "The sovereign/multiplayer/extensible AI Operating Systems, maybe these 3 instead as switcher … & then remove the for companies that own their".
+- **Where:** `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`.
+- **Supersedes:** D16's fixed hero line "The sovereign AI Operating System" and the rotating "own their" line.
+- **Source:** the `services-page` branch.
+
+### D20 Core marketing copy does not name pi
+- **Date:** 2026-10-27
+- **Decision:** The home hero, the pillars and other core marketing copy do not name pi. The Company as code pillar reads "Extensible to the core." and says the agent harness is open source and yours to extend. pi stays named in docs, the changelog, developer pages and claims.md row "Harness".
+- **Why:** founder, 2026-10-27: "remove the PI everywhere in core context as nobody will know what it is out of box".
+- **Where:** `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`, `apps/web/src/features/marketing/landing-sections/pillars-band.tsx`.
+- **Supersedes:** D16's "Extensible, powered by pi." pillar line and its naming of pi in the home copy.
+- **Source:** the `services-page` branch.
+
+### D19 The `/about` hero: "We are building the Operating System for SuperIntelligence"
+- **Date:** 2026-10-27
+- **Decision:** The `/about` hero reads "We are building the Operating System for SuperIntelligence. One you own end to end, every part of it." "SuperIntelligence" (capital S and I, founder: "write SI in big letters") is founder vision: it appears in the `/about` hero only, in the future or progressive tense ("we are building"), never as a category, a page title elsewhere or a product claim.
+- **Why:** founder, 2026-10-27: "We are building the Operating System for SuperIntelligence that you can own e2e every aspect".
+- **Where:** `apps/web/src/features/marketing/about/content.ts` (`hero`); [positioning.md](verbal/positioning.md) rule on "AGI", which this extends.
+- **Supersedes:** the `/about` hero line "We are building the open-source AI Operating System."
+- **Source:** the `services-page` branch.
+
+### D18 The home page adds the Promise: "Hand it an outcome, agents run it 24/7"
+- **Date:** 2026-10-27
+- **Decision:** Beside the sovereign category line (D16), the home page says what Kortix does for a company: hand it an outcome and agents run it 24/7. The hero subhead opens with it, and the Outcomes section's header carries the outcome loop (Outcome, Plan, Work, Verify, Learn, 24/7) above each team's outcomes; there is no separate 24/7 section, built from triggers, sessions, change requests and memory. No early-access label: the founder states it works today. The copy says "agents" and "AI-native operating system for your company", never "AI workers", "AI employees", "self-driving" or "autonomous company".
+- **Why:** founder, 2026-10-27: "not on the edge of like AI-native Company OS, OS to run your company in loops let agents run 24/7 … run company 24/7 on ai employees", then "combine all this stuff with like the outcome engine … runs company outcome 24/7". "AI employees" is held back because it sits beside the retired "AI Worker" line and implies no human gate; the founder may override.
+- **Where:** [positioning.md](verbal/positioning.md) row "Promise" and its rule; `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`, `apps/web/src/features/marketing/landing-sections/use-cases-section.tsx` (the Outcomes header).
+- **Supersedes:** nothing; it adds a layer to D10 and D16.
+- **Source:** the `services-page` branch.
+
+### D17 Compliance copy says "SOC 2 Type I verified" and never mentions Type II
+- **Date:** 2026-10-27
+- **Decision:** Every surface states SOC 2 as "SOC 2 Type I verified". Type II is not mentioned anywhere: no "in progress" seal, row, line or footnote. GDPR stays "a posture Kortix runs, not a certificate". No ISO, no HIPAA.
+- **Why:** founder, 2026-10-27: "no whether mention Type ii in progress, just say Soc 2 type 1 verified".
+- **Where:** [claims.md](verbal/claims.md) row "Compliance" and the SOC 2 rule; `/security`, `/enterprise`, `/contact`, `/services`, the home trust band, the a1o page, the README and the open-source blog post.
+- **Supersedes:** the "two facts" SOC 2 rule in claims.md (Type I held, Type II in progress).
+- **Source:** the `services-page` branch.
+
+### D16 The home hero says "The sovereign AI Operating System", and the home page leads with three pillars
+- **Date:** 2026-10-27
+- **Decision:** The home page hero opens on "The sovereign AI Operating System". Right after the hero, the home page leads with three pillars, in this order and with these names: **Multiplayer AI** ("One AI for the whole team."), **Company as code** ("Extensible, powered by pi."), **Sovereign and open** ("Own your data and your infrastructure."). "Open source" stays in the pillar and in sentences. pi is named as the open-source agent harness every session runs.
+- **Why:** founder, 2026-10-27: "today we are launching the sovereign AI Operating System", then "what has to come forward are the 3 CORE PIECES … MULTIPLAYER AI. COMPANY AS CODE / EXTENSIBLE POWERED BY PI & SOVEREIGN/OPEN".
+- **Where:** `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`, `apps/web/src/features/marketing/landing-sections/pillars-band.tsx`, [claims.md](verbal/claims.md) row "Harness".
+- **Supersedes:** D10's tagline in the home hero only. Page titles, README, CLI banner, auth screen and meta descriptions keep "The open-source AI Operating System" until the founder extends this decision.
+- **Source:** the `services-page` branch.
+
+### D15 `/services` sells "AI Transformation" for a flat $20,000 a month, with a quiet guarantee
+- **Date:** 2026-10-27
+- **Decision:** The site sells two things: the AI OS (every product page) and AI Transformation, a done-for-you service, on `/services`. `/services` is a standalone sales page with its own shell and an AI OS | Services switcher. The page says "we" and "our team". The roles (Deployment Strategists, Forward Deployed Engineers) appear once, in the FAQ, with no headcount and no "full time". The page sells three things in one membership: AI Strategy (an audit, baselines, a ranked roadmap), AI Transformation (map the company, unify its data, automate the work with agents, build custom software) and AI Education (we teach the customer's existing team). The price is a flat $20,000 a month: no discount, no "limited time", no strike-through. The guarantee stays low-key, one line, never a card or a headline: "Not loving it in the first 2 weeks? Get 50% back, no questions asked." "Join now" is a Stripe Payment Link. "AI Transformation" is the service's name on `/services` only.
+- **Why:** founder, 2026-10-27: "make it a custom sales experience", "the actual Stripe 1 click checkout as well as the book intro call", "call it an AI TRANSFORMATION service … we map your org, what humans do, how they operate & we automate", the guarantee "more lowkey", then "the 5k off makes it too fishy, remove that and keep it at 20k, say DEPLOYMENT STRATEGIST & FORWARD DEPLOYED ENGINEER e2e", then "take away the fulltime thing … we dont specify the 1 DS & 1 FDE, just keep it more general", "remove all that overindexing on FDE/strategist", "bring ai strategy and ai education into it. we teach our existing team".
+- **Where:** `apps/web/src/features/marketing/services/content.ts` (terms and accuracy gate), `apps/web/src/app/[locale]/(public)/(sales)/`, `apps/web/src/features/marketing/kit/site-switcher.tsx`, [claims.md](verbal/claims.md) row "Services offer", [voice-and-tone.md](verbal/voice-and-tone.md) Don't say row.
+- **Supersedes:** the "no price outside `/pricing`" practice and the "AI transformation" ban, for `/services` only. Every other surface keeps both.
+- **Source:** the `services-page` branch.
+
+## 2026-10-25
+
+### D14 Empty states of a tab, folder or list draw `EmptyArt`
+- **Date:** 2026-10-25
+- **Decision:** The empty state of a tab, a folder or a list is `EmptyState` with `media={<EmptyArt icon={…} />}`: the stacked-card illustration (`packages/ui/src/primitives/empty-art.tsx`) with one Phosphor glyph on the front card (no glyph: a document, for an empty folder). Then one title, one sentence, and outline buttons with a leading icon (`Button variant="outline" size="sm"`). No other decorative tile, illustration or card.
+- **Why:** Jay, 2026-10-25: the channel tabs (Memory, Links, Triggers, Apps, Threads) and the Files folders draw one picture for "nothing here yet", so every empty tab reads the same. One muted line on a full-height tab read as a broken page.
+- **Where:** `visual/layout.md` (States), `verbal/voice-and-tone.md` section 4, `kortix-design-system` (Required primitives, Which component for which state, Dos and Don'ts). Shipped in `packages/ui/src/workspace/spaces/space-links.tsx`, `space-triggers.tsx`, `space-threads-tab.tsx`, `packages/ui/src/workspace/memory/memory-empty.tsx`, `apps/web/src/features/apps/space-apps-view.tsx`, `apps/web/src/features/drives/space-folder-view.tsx`, `packages/ui/src/files/project/components/drive-explorer.tsx`.
+- **Supersedes:** D4g ("one muted line, no icon tile") and Q4 ("the pixel mark as a sibling above `EmptyState size=\"sm\"`") for the empty state of a tab, a folder or a list.
+- **Source:** Jay Suthar, the `project-channels` branch.
+
+### R1 Role badges: one hue per rank, the owner purple
+- **Date:** 2026-10-25
+- **Decision:** Role badges read as a ladder: owner `royal` (`bg-kortix-purple/15`), account admin `info` (blue), project manager `success` (green), custom role `secondary` and member `default` (neutral ink), no access `muted`. Every role badge is borderless (`ring-0`) and sans (`normal-case`). `kortix-purple` gets its one meaning: the owner.
+- **Why:** Jay, 2026-10-25: a project member in muted text read as "no access", and the owner in grey did not read as the top of the hierarchy. "The owner should be royal."
+- **Where:** `packages/ui/src/primitives/badge.tsx` (`royal`), `ROLE_TONE` in `apps/web/src/features/accounts/hub/member-table.tsx`, `visual/color.md` (Accents and status).
+- **Supersedes:** the `kortix-purple` "Reserved" row in `visual/color.md`.
+- **Source:** Jay Suthar, account Members and project access tables.
+
+---
+
+## 2026-10-19
+
+### K9 `@kortix/ui`: the shared Tailwind v4 component library
+- **Date:** 2026-10-19
+- **Decision:** `packages/ui` (`@kortix/ui`) is the one React component library for `apps/web`, Kortix Apps and SDK hosts. Components are the `apps/web/src/components/ui` files, moved with the same Tailwind v4 class strings, under `packages/ui/src/primitives/`. `apps/web` imports `@kortix/ui/<name>` and the module entries directly; it keeps no re-export shims (`tests/unit/web-no-ui-shims.test.ts`). Styles ship as `@kortix/ui/tokens.css` (generated, `:root` and `.dark`), `@kortix/ui/theme.css` (the `@theme inline` keys, utilities and keyframes moved out of `apps/web/src/app/globals.css`), `@kortix/ui/styles.css` (prebuilt `dist/styles.css` for hosts without Tailwind) and `@kortix/ui/fonts.css` (Roobert, Kortix-owned surfaces only, D8). White-label hosts override the CSS variables and never fork a component. The kit-styled `Popover`, `OptionList`, `Select` and `FilterBar` of K8 are deleted. A host composes a filter bar from `popover` and `command`; `FilterBar` / `FilterBarItem` in `tabs` are the pill row. `kit.css` (`k-*`) stays the kit for plain HTML without React and is not part of `@kortix/ui`.
+- **Why:** two styling systems for one component set drift. One package keeps `apps/web`, the white-label demo and every SDK host on the same components.
+- **Where:** `packages/ui`, `packages/ui/README.md`, `packages/ui/skills/kortix-ui/SKILL.md` (the package skill, mirrored for Kortix sessions in `packages/starter/templates/managed/skills/kortix-ui/`), `packages/ui/src/session` (`@kortix/ui/session`), `apps/web/content/docs/sdk/ui.mdx`, `scripts/generate-tokens.ts`.
+- **Supersedes:** K8. `sync-kortix-brand` in `kortix-ai/company` copies only `visual/fonts.css`, `visual/tokens.css` and `visual/kit.css`, so no App copied the deleted K8 files.
+- **Source:** the `kortix-ui` branch.
+
+### K8 (SUPERSEDED by K9) `@kortix/ui`: the interactive components for Apps
+- **Date:** 2026-10-19
+- **Decision:** `packages/ui` (`@kortix/ui`, private) holds the interactive components that CSS cannot provide: `Popover`, `OptionList` (search, ↑/↓, Enter, Home/End), `Select` and `FilterBar` (Linear-style chips behind one Filter button). They are built on the Radix Popover that `apps/web` uses and are styled only by `kit.css` (`k-popover-panel`, `k-options`, `k-option`, `k-select-trigger`, `k-filter-bar`, `k-chip`). Kortix Apps get them through `sync-kortix-brand` in `kortix-ai/company`.
+- **Why:** the sales App rendered 8 filters as segmented controls and native selects, which took half the screen. Marko asked for proper components shared from suna.
+- **Where:** `packages/ui`, `visual/kit.css`.
+- **Supersedes:** none.
+- **Source:** the sales App filter bar in `kortix-ai/company`.
+
+### K7 `kit.css` adds the field
+- **Date:** 2026-10-19
+- **Decision:** `kit.css` adds `k-input` (input, textarea), `k-field` (label above a field) and `k-check` (checkbox row), copied from `inputSurfaceClasses` and `inputFocusClasses` in `input.tsx`.
+- **Why:** the sales App has forms, and an App without the field primitive writes its own field CSS.
+- **Where:** `visual/kit.css`.
+- **Supersedes:** none.
+- **Source:** the sales App refactor in `kortix-ai/company`.
+
+### K6 `kit.css`: the UI primitives as portable CSS classes
+- **Date:** 2026-10-19
+- **Decision:** `visual/kit.css` carries the `@/components/ui` primitives (Card, Button, Badge, status dot, banner, segmented control, table, list, stat, meter, popover, empty state) as `k-*` classes that read only `tokens.css` variables. HTML outside `apps/web` loads `fonts.css`, `tokens.css` and `kit.css` in that order and composes these classes before it writes its own CSS.
+- **Why:** every Kortix App and internal dashboard wrote its own palette and component CSS (the factory-status App shipped GitHub status hexes), so each read as a second product.
+- **Where:** `visual/kit.css`, `SKILL.md` Standalone HTML row.
+- **Supersedes:** none.
+- **Source:** the factory dashboard rebuild in `kortix-ai/company`.
+
 ## 2026-10-09
 
 ### D13 A backend is an App of kind `convex`
@@ -33,7 +214,7 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 ### D10 The category line is "AI Operating System"
 - **Decision:** The category is "AI Operating System", short form "AI OS". The tagline is "The open-source AI Operating System". The brand name stays "Kortix". "AI Management System" is retired. The comparative line, the manifesto line and the mission do not change. "Autonomous Company Operating System" stays retired for its word "Autonomous".
 - **Why:** The founder chose it on 2026-10-04 with the instruction to use it everywhere: git, marketing, product, CLI, email and the brand kit. An operating system is the layer that agents, skills, memory, connectors, computers, channels and triggers run on. The marketing site is rebuilt on this line in the same branch.
-- **Where:** `verbal/positioning.md`, `verbal/voice-and-tone.md`, `verbal/concepts.md`, README, GitHub About, `apps/web/src/lib/site-metadata.ts`, the landing `content.ts`, `apps/cli/src/banner.ts`, `BRAND_FOOTER`, the Slack and Teams manifests, every `apps/web/translations/*.json`.
+- **Where:** `verbal/positioning.md`, `verbal/voice-and-tone.md`, `verbal/concepts.md`, README, GitHub About, `packages/ui/src/internal/lib/site-metadata.ts`, the landing `content.ts`, `apps/cli/src/banner.ts`, `BRAND_FOOTER`, the Slack and Teams manifests, every `apps/web/translations/*.json`.
 - **Supersedes:** D1 (the category and tagline only; D1's retired-line list stays).
 - **Source:** founder decision, branch `webpage` (2026-10-04).
 

@@ -77,7 +77,7 @@ describe('waitForDaemonRuntimeReady', () => {
     const calls: Array<{ url: string; headers: unknown }> = [];
     const ready = await waitForDaemonRuntimeReady({
       previewUrl: 'http://127.0.0.1:1/',
-      providerHeaders: { 'e2b-traffic-access-token': 'tok' },
+      providerHeaders: { 'x-provider-traffic-token': 'tok' },
       deps: {
         fetchImpl: fakeHealthFetch(['fail', { opencode: 'starting' }, { opencode: 'ok' }], calls),
         sleep: clock.sleep,
@@ -85,12 +85,12 @@ describe('waitForDaemonRuntimeReady', () => {
       },
     });
     expect(ready).toBe(true);
-    // Every probe carries the provider headers: without the traffic token an
-    // E2B box answers every probe as unreachable.
+    // Every probe carries the provider headers: a provider edge that needs its
+    // traffic token answers every probe without it as unreachable.
     expect(calls).toHaveLength(3);
     for (const call of calls) {
       expect(call.url).toBe('http://127.0.0.1:1/kortix/health');
-      expect(call.headers).toEqual({ 'e2b-traffic-access-token': 'tok' });
+      expect(call.headers).toEqual({ 'x-provider-traffic-token': 'tok' });
     }
   });
 

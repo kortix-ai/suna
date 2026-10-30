@@ -92,7 +92,9 @@ app.use('*', async (c, next) => {
 });
 
 mock.module('../lib/app', () => ({ projectsApp: app }));
+const realAccess = await import('../lib/access');
 mock.module('../lib/access', () => ({
+  ...realAccess,
   loadProjectForUser: async () => ({
     userId: callerId,
     row: {
@@ -168,7 +170,6 @@ mock.module('../lib/session-connector-bindings', () => ({
 mock.module('../../feature-flags/registry', () => ({
   resolveFeatureFlag: () => true,
 }));
-mock.module('../../llm-gateway/enablement', () => ({ projectLlmGatewayEnabled: () => true }));
 const realEntitlements = await import('../../billing/services/entitlements');
 mock.module('../../billing/services/entitlements', () => ({
   ...realEntitlements,

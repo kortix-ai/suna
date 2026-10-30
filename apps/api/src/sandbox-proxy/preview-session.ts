@@ -91,12 +91,14 @@ function base64urlDecode(s: string): Buffer {
   return Buffer.from(padded.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
 }
 
+type PreviewCredentialPurpose = 'session' | 'ticket';
+
 /**
  * Domain-separated from every other use of API_KEY_SECRET, so a preview cookie
- * can never be replayed as an API key hash or an actor context and vice versa.
+ * can never be replayed as a navigation ticket, API key hash or actor context.
  */
-function signingKey(): Buffer {
-  return createHmac('sha256', config.API_KEY_SECRET).update('preview-session:v1').digest();
+function signingKey(purpose: PreviewCredentialPurpose): Buffer {
+  return createHmac('sha256', config.API_KEY_SECRET).update(`preview-${purpose}:v1`).digest();
 }
 
 /**
@@ -105,10 +107,10 @@ function signingKey(): Buffer {
  */
 type Unexpired<T> = T extends unknown ? Omit<T, 'exp'> : never;
 
-export function mintPreviewSession(session: Unexpired<PreviewSession>, ttlSeconds: number): string {
+export function mintPreviewSession(session: Unexpired<PreviewSession>, ttlSeconds: number, purpose: PreviewCredentialPurpose = 'session'): string {
   const payload = { ...session, exp: Math.floor(Date.now() / 1000) + ttlSeconds };
   const payloadB64 = base64urlEncode(Buffer.from(JSON.stringify(payload), 'utf8'));
-  const mac = base64urlEncode(createHmac('sha256', signingKey()).update(payloadB64).digest());
+  const mac = base64urlEncode(createHmac('sha256', signingKey(purpose)).update(payloadB64).digest());
   return `${payloadB64}.${mac}`;
 }
 
@@ -119,6 +121,7 @@ export function mintPreviewSession(session: Unexpired<PreviewSession>, ttlSecond
 export function verifyPreviewSession(
   value: string | null | undefined,
   target: { sandboxLabel: string; port: number },
+  purpose: PreviewCredentialPurpose = 'session',
 ): PreviewSession | null {
   if (!value || typeof value !== 'string') return null;
   const parts = value.split('.');
@@ -126,7 +129,7 @@ export function verifyPreviewSession(
   const [payloadB64, mac] = parts as [string, string];
   if (!payloadB64 || !mac) return null;
 
-  const expected = base64urlEncode(createHmac('sha256', signingKey()).update(payloadB64).digest());
+  const expected = base64urlEncode(createHmac('sha256', signingKey(purpose)).update(payloadB64).digest());
   const a = Buffer.from(mac);
   const b = Buffer.from(expected);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;

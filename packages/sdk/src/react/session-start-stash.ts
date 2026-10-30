@@ -14,7 +14,7 @@
  * create (or via `startSessionWithPrompt`), and only the model/agent/variant
  * hand-off still travels here. An empty prompt therefore round-trips — see
  * the picks-only test — and `useSession`'s replay sends nothing for it. A
- * host without one (apps/whitelabel-demo, the golden thin-SDK reference)
+ * host without one (apps/white-label/lumen, the golden thin-SDK reference)
  * writes the full stash and the replay path delivers it exactly as always.
  */
 

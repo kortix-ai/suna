@@ -25,6 +25,7 @@ export function adminLedgerRows(entries: AdminLedgerEntry[]): CreditTransactionR
     // The column is nullable. Null is "unknown", not "permanent", so the cell
     // stays empty rather than asserting something the row does not say.
     isExpiring: entry.isExpiring ?? undefined,
+    expiresAt: entry.expiresAt,
     amount: amount(entry.amount),
     balanceAfter: amount(entry.balanceAfter),
   }));

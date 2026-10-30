@@ -134,7 +134,6 @@ export function useResolvedConfig(i: {
   session?: { metadata?: Record<string, unknown> | null } | null;
   /** The model of the session's newest user message (`latestPromptModel` from @kortix/sdk). */
   lastPromptModel?: { providerID: string; modelID: string };
-  gatewayEnabled?: boolean;
 }): ResolvedConfig {
   const store = useLocalConfigStore();
   const [pickedAgent, setPickedAgent] = useState<string | null>(null);
@@ -166,7 +165,6 @@ export function useResolvedConfig(i: {
       ...sessionModelCandidates({
         session: i.session,
         lastPromptModel: i.lastPromptModel,
-        gatewayEnabled: i.gatewayEnabled ?? true,
       }),
       store.agentModels[agentSlot],
     ],

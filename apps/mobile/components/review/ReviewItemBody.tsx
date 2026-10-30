@@ -13,9 +13,11 @@ import { fileStatusMeta } from '@/components/diff/PatchDiffView';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Icon } from '@/components/ui/icon';
+import { ClockIcon } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import type { ChangeRequestDiff } from '@/lib/projects/projects-client';
 import { splitFilePath } from '@/lib/review/review-detail';
+import { formatApprovalExpiresIn } from '@/lib/review/review-meta';
 import { openLink } from '@/lib/utils/open-link';
 
 /** Files listed before "N more files": the rest are one tap away on the web. */
@@ -37,6 +39,32 @@ function Lines({ lines }: { lines: string[] }) {
         <Text key={`${index}-${line}`}>{line}</Text>
       ))}
     </View>
+  );
+}
+
+/** "Expires in 3h" while the call waits; under one hour a clock glyph in the
+ *  warning accent leads it (an accent paints a glyph, never text). The reason
+ *  once it expired. Nothing for a call with no expiry. */
+function ApprovalExpiry({ item }: { item: ReviewItem }) {
+  if (item.status === 'expired') {
+    return (
+      <Section>
+        <Text variant="muted">This approval expired. Ask the agent to request it again.</Text>
+      </Section>
+    );
+  }
+  const left =
+    item.status === 'needs_you' || item.status === 'waiting'
+      ? formatApprovalExpiresIn(item.expiresAt)
+      : null;
+  if (!left) return null;
+  return (
+    <Section>
+      <View className="flex-row items-center gap-1.5">
+        {left.soon ? <Icon as={ClockIcon} size={14} className="text-kortix-orange" /> : null}
+        <Text variant="muted">Expires in {left.time}</Text>
+      </View>
+    </Section>
   );
 }
 
@@ -67,6 +95,7 @@ export function ReviewBody({
     case 'approval':
       return (
         <>
+          <ApprovalExpiry item={item} />
           {item.detail.actions.map((action) => (
             // One action: the sheet title already names it.
             <Section key={action.id} title={action.title === item.title ? undefined : action.title}>

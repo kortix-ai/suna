@@ -124,9 +124,6 @@ interface SettingsNavPageProps {
   /** Open a Customize row's page (Schedules, Secrets, Members) as a sub-page over this one. */
   onOpenPage: (pageId: SubPageId) => void;
   onOpenDrawer?: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
 function githubRepoWebUrl(repoUrl: string | null | undefined): string | null {
@@ -372,9 +369,6 @@ export function SettingsNavPage({
   onBack,
   onOpenPage,
   onOpenDrawer,
-  onOpenRightDrawer,
-  isDrawerOpen,
-  isRightDrawerOpen,
 }: SettingsNavPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -483,9 +477,6 @@ export function SettingsNavPage({
         title={project?.name || page.label}
         onBack={onBack}
         onOpenDrawer={onBack ? undefined : onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
       />
 
       <PageContent>

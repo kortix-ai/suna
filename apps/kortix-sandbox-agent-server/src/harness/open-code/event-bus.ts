@@ -18,6 +18,7 @@ function sessionOf(payload: unknown): string | undefined {
     return bus.publish(event.type, event.properties ?? {}, sessionOf(event.properties))
   }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const OPENCODE_EVENT_RECOVERY = [
   "GET /kortix/runtime/state",
   "GET /kortix/runtime/messages/:sessionId?limit=20",

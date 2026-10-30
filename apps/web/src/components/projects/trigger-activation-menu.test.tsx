@@ -12,8 +12,8 @@ import { describe, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 let leaves: Record<string, { allowed: boolean }> = {};
-const projectCan = await import('@/lib/use-project-can');
-mock.module('@/lib/use-project-can', () => ({
+const projectCan = await import('@kortix/ui/internal/lib/use-project-can');
+mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   ...projectCan,
   useProjectCans: (_projectId: string, actions: readonly string[]) =>
     Object.fromEntries(actions.map((action) => [action, leaves[action] ?? { allowed: false }])),
@@ -21,8 +21,8 @@ mock.module('@/lib/use-project-can', () => ({
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
 const { PROJECT_ACTIONS } = await import('@kortix/sdk');
-const { TooltipProvider } = await import('@/components/ui/tooltip');
-const { TriggerActivationMenu } = await import('./schedule-view');
+const { TooltipProvider } = await import('@kortix/ui/tooltip');
+const { TriggerActivationMenu } = await import('@kortix/ui/customize/triggers/schedule-view');
 
 const { PROJECT_WRITE, PROJECT_TRIGGER_CREATE, PROJECT_TRIGGER_FIRE, PROJECT_TRIGGER_UPDATE } =
   PROJECT_ACTIONS;
@@ -42,7 +42,7 @@ function render(next: Record<string, { allowed: boolean }>): string {
 
 describe('the pause-all gear', () => {
   test('a role with project.write + project.trigger.update gets the gear', () => {
-    expect(render(grant(PROJECT_WRITE, PROJECT_TRIGGER_UPDATE))).toContain('Pause all');
+    expect(render(grant(PROJECT_WRITE, PROJECT_TRIGGER_UPDATE))).toContain('aria-label="More"');
   });
 
   test('project.trigger.update without project.write gets no gear: the route loads the project for write', () => {

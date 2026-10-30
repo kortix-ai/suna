@@ -62,9 +62,15 @@ flow(
       (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/content", { params: { projectId: p.id }, query: { path: "ke2e-no-such-file.txt" } }))
         .status(404).body().has("$.error", "File not found");
     });
-    await ctx.step("absolute and traversal paths → 404 File not found", async () => {
+    await ctx.step("absolute, traversal and NUL-containing paths → 404 File not found", async () => {
       // No `../`: an edge WAF answers that itself (403) before the API sees it.
-      for (const path of ["/workspace/AGENTS.md", "..", "ke2e/.."]) {
+      for (const path of ["/workspace/AGENTS.md", "..", "ke2e/..", "\0", "\0a", "a\0b", "a\0"]) {
+        (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/content", { params: { projectId: p.id }, query: { path } }))
+          .status(404).body().has("$.error", "File not found");
+      }
+    });
+    await ctx.step("the repository root under any spelling → 404 File not found, never a 500 (KRTX-3403)", async () => {
+      for (const path of [".", "./", "./.", ".//", "././"]) {
         (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/content", { params: { projectId: p.id }, query: { path } }))
           .status(404).body().has("$.error", "File not found");
       }
@@ -423,6 +429,12 @@ flow(
         });
       r.status(404);
     });
+    await ctx.step("the repository root under any spelling → 404 File not found, never a 500 (KRTX-3403)", async () => {
+      for (const path of [".", "./", "./.", ".//", "././"]) {
+        (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/raw", { params: { projectId: p.id }, query: { path } }))
+          .status(404).body().has("$.error", "File not found");
+      }
+    });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
@@ -622,5 +634,169 @@ flow(
       r.status(200);
       if (r.json<unknown[]>().length !== 1000) throw new Error(`recursive list returned ${r.json<unknown[]>().length}`);
     });
+  },
+);
+
+flow('FILE-14', { domain: 'files', routes: ['GET /v1/projects/:projectId/files/content', 'PUT /v1/projects/:projectId/files/content'] }, async (ctx) => {
+  const p = await ctx.fixtures.sharedProject();
+  const params = { projectId: p.id };
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const read = await owner.get('/v1/projects/:projectId/files/content', { params, query: { path: 'README.md' } });
+  read.status(200);
+  const original = read.json<{ ref: string; content: string; revision: string }>();
+  const body = { path: 'README.md', ref: original.ref, content: original.content + '\nowner file edit regression\n', expected_revision: original.revision };
+  await ctx.step('owner commits a viewed file and reads the persisted edit', async () => {
+    (await owner.put('/v1/projects/:projectId/files/content', body, { params })).status(200).body().exists('$.commit_sha');
+    const after = await owner.get('/v1/projects/:projectId/files/content', { params, query: { path: body.path } });
+    after.status(200).body().has('$.content', body.content);
+  });
+  await ctx.step('non-JSON writes return 400 instead of throwing', async () => {
+    (await owner.put('/v1/projects/:projectId/files/content', JSON.stringify(body), {
+      params, raw: true, headers: { 'Content-Type': 'text/plain' },
+    })).status(400);
+    const after = await owner.get('/v1/projects/:projectId/files/content', { params, query: { path: body.path } });
+    after.status(200).body().has('$.content', body.content);
+  });
+  await ctx.step('stale revision cannot overwrite the committed edit', async () => {
+    (await owner.put('/v1/projects/:projectId/files/content', body, { params })).status(409);
+  });
+  await ctx.step('anonymous and unrelated users cannot commit', async () => {
+    (await ctx.client.as(ctx.P.ANON).put('/v1/projects/:projectId/files/content', body, { params })).status(401);
+    (await ctx.client.as(ctx.P.NONMEMBER).put('/v1/projects/:projectId/files/content', body, { params })).status([403, 404]);
+  });
+});
+
+/**
+ * FILE-15 — a member scoped out of an agent reads none of its file, however
+ * the path is spelled (KRTX-3403). The visibility check and the git read must
+ * canonicalize a path the same way: before, the check stripped one `./` and
+ * git stripped `./` plus empty and trailing segments, so `.//agents/x.md` read
+ * the hidden file and `files/archive?path=.` zipped the whole repository.
+ */
+flow(
+  "FILE-15",
+  {
+    domain: "files",
+    requires: ["database"],
+    routes: [
+      "GET /v1/projects/:projectId/resource-grants",
+      "POST /v1/projects/:projectId/resource-grants",
+      "GET /v1/projects/:projectId/files/content",
+      "GET /v1/projects/:projectId/files/raw",
+      "GET /v1/projects/:projectId/files/history",
+      "GET /v1/projects/:projectId/files/archive",
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== "local") return; // the agent file is pushed straight to the bare repository
+    const { execFileSync } = await import("node:child_process");
+    const { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { Client: PgClient } = await import("pg");
+    const team = await ctx.fixtures.team();
+    const project = await team.project({ managedGit: true });
+    const params = { projectId: project.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const member = async () => {
+      const m = await team.addMember("member");
+      await team.grantProjectRole(project.id, m.userId!, "manager");
+      return m;
+    };
+    const granted = await member();
+    const scopedOut = ctx.client.as(await member());
+    const AGENT = "agents/ke2e-hidden-bot.md";
+    const BODY = "---\ndescription: ke2e hidden agent\n---\nhidden instructions\n";
+    const SPELLINGS = [
+      AGENT,
+      `./${AGENT}`,
+      `.//${AGENT}`,
+      `././${AGENT}`,
+      "agents//ke2e-hidden-bot.md",
+      "agents/./ke2e-hidden-bot.md",
+      `${AGENT}/`,
+    ];
+
+    const db = new PgClient({ connectionString: ctx.env.databaseUrl! });
+    await db.connect();
+    const work = mkdtempSync(join(tmpdir(), "ke2e-file15-"));
+    try {
+      await ctx.step("the owner declares agent ke2e-hidden-bot (agents/ke2e-hidden-bot.md) and scopes it to one member", async () => {
+        const { rows } = await db.query("SELECT repo_url, default_branch FROM kortix.projects WHERE project_id = $1", [project.id]);
+        const git = (...a: string[]) => execFileSync("git", a, { cwd: work, stdio: "pipe" });
+        git("clone", "-q", "--branch", String(rows[0]?.default_branch || "main"), String(rows[0]?.repo_url), ".");
+        if (existsSync(join(work, "kortix.toml"))) rmSync(join(work, "kortix.toml"));
+        writeFileSync(
+          join(work, "kortix.yaml"),
+          "kortix_version: 2\nproject:\n  name: ke2e-file15\ndefault_agent: kortix\nagents:\n  kortix: {}\n  ke2e-hidden-bot: {}\n",
+        );
+        mkdirSync(join(work, "agents"), { recursive: true });
+        writeFileSync(join(work, AGENT), BODY);
+        git("add", "-A");
+        git("-c", "user.name=KE2E", "-c", "user.email=ke2e@kortix.invalid", "commit", "-qm", "hidden agent");
+        git("push", "-q", "origin", "HEAD");
+        const catalog = await owner.get("/v1/projects/:projectId/resource-grants", { params });
+        catalog.status(200);
+        const agent = catalog.json<{ resources: { agents: Array<{ id: string }> } }>().resources.agents.find((a) => a.id === "ke2e-hidden-bot");
+        if (!agent) throw new Error(`ke2e-hidden-bot is not grantable: ${catalog.text().slice(0, 400)}`);
+        (await owner.post(
+          "/v1/projects/:projectId/resource-grants",
+          { resource_type: "agent", resource_id: agent.id, principal_type: "member", principal_id: granted.userId },
+          { params },
+        )).status(201);
+      });
+
+      // Each step tries every spelling and lists every wrong answer at once.
+      const failIfAny = (wrong: string[]) => {
+        if (wrong.length) throw new Error(`${wrong.length} wrong answers:\n${wrong.join("\n")}`);
+      };
+
+      await ctx.step("the scoped-out member gets 404 File not found from content, raw and history under every spelling", async () => {
+        const wrong: string[] = [];
+        for (const path of SPELLINGS) {
+          for (const route of ["content", "raw", "history"] as const) {
+            const r = await scopedOut.get(`/v1/projects/:projectId/files/${route}`, { params, query: { path } });
+            const error = r.statusCode === 404 ? r.json<{ error?: string }>().error : undefined;
+            if (error !== "File not found") wrong.push(`${route} ${JSON.stringify(path)} → ${r.statusCode} ${r.text().slice(0, 60)}`);
+          }
+        }
+        failIfAny(wrong);
+      });
+
+      await ctx.step("a glob, a pathspec-magic path or the agents/ folder: files/history gives the scoped-out member none of the hidden file's commits", async () => {
+        const wrong: string[] = [];
+        for (const path of ["agents/ke2e-hidden-bot.m*", "agents/ke2e-hidden-bot.m?", "*hidden-bot*", "agents/[k]e2e-hidden-bot.md", ":/agents/ke2e-hidden-bot.md", "agents", "agents/", "./agents"]) {
+          const r = await scopedOut.get("/v1/projects/:projectId/files/history", { params, query: { path } });
+          const commits = r.statusCode === 200 ? r.json<{ commits?: unknown[] }>().commits ?? [] : [];
+          if (![200, 404].includes(r.statusCode) || commits.length > 0) wrong.push(`history ${JSON.stringify(path)} → ${r.statusCode}, ${commits.length} commits`);
+        }
+        failIfAny(wrong);
+      });
+
+      await ctx.step("the scoped-out member cannot archive the repository root or agents/ under any spelling → 403", async () => {
+        const wrong: string[] = [];
+        for (const path of [".", "./", ".//", "./.", "agents", "./agents", "agents/", "agents//", "./agents/."]) {
+          const r = await scopedOut.get("/v1/projects/:projectId/files/archive", { params, query: { path } });
+          if (r.statusCode !== 403) wrong.push(`archive ${JSON.stringify(path)} → ${r.statusCode}`);
+        }
+        failIfAny(wrong);
+      });
+
+      await ctx.step("the granted member and the owner read the file under every spelling → 200, the same text", async () => {
+        const wrong: string[] = [];
+        const granted200 = await ctx.client.as(granted).get("/v1/projects/:projectId/files/content", { params, query: { path: AGENT } });
+        if (granted200.statusCode !== 200 || granted200.json<{ content?: string }>().content !== BODY) wrong.push(`granted content → ${granted200.statusCode}`);
+        for (const path of SPELLINGS) {
+          const text = await owner.get("/v1/projects/:projectId/files/content", { params, query: { path } });
+          if (text.statusCode !== 200 || text.json<{ content?: string }>().content !== BODY) wrong.push(`owner content ${JSON.stringify(path)} → ${text.statusCode}`);
+          const raw = await owner.get("/v1/projects/:projectId/files/raw", { params, query: { path } });
+          if (raw.statusCode !== 200 || raw.text() !== BODY) wrong.push(`owner raw ${JSON.stringify(path)} → ${raw.statusCode}`);
+        }
+        failIfAny(wrong);
+      });
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+      await db.end();
+    }
   },
 );

@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import type { CSSProperties } from 'react';
 import type { TwoTone } from './content';
 

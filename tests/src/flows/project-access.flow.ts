@@ -23,6 +23,7 @@ import { assert } from '../core/expect';
 import { flow } from '../core/flow';
 import { withDb } from '../fixtures/chat';
 import { adminUpdateUserEmail } from '../fixtures/supabase';
+import { waitForMailpit } from '../fixtures/mailpit';
 
 // ─── Per-user project access (list / grant / revoke) ─────────────────────
 
@@ -1081,6 +1082,20 @@ flow(
         .has('$.status', 'invited')
         .has('$.project_role', 'manager')
         .exists('$.invite_id');
+    });
+    const member = await team.addMember('member');
+    await ctx.step('invite an existing user → immediate access and an added-to-project email', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/access/invite',
+        { email: member.email, role: 'member' },
+        { params: { projectId: p.id } },
+      );
+      r.status(200).body().has('$.project_role', 'member');
+      if (!ctx.env.mailpitUrl || !member.email) throw new Error('Mailpit and recipient are required');
+      const messages = await waitForMailpit(ctx.env.mailpitUrl, member.email, (mails) =>
+        mails.some((mail) => mail.Subject === `Open "${p.name}" on Kortix`),
+      );
+      assert({ kind: 'mail', description: 'existing member receives notification', expected: true, actual: messages.length > 0, pass: messages.length > 0 });
     });
     await ctx.step('missing email → 400', async () => {
       const r = await ctx.client

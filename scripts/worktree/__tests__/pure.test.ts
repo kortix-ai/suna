@@ -146,7 +146,6 @@ describe('launch envs', () => {
   test('api routes sandbox LLM through the local gateway proxy port', () => {
     const env = apiLaunchEnv(ports, creds);
     expect(env.PORT).toBe(String(ports.api));
-    expect(env.LLM_GATEWAY_ENABLED).toBe('true');
     expect(env.LLM_GATEWAY_PROXY_PORT).toBe(String(ports.gateway));
     expect(env.GATEWAY_INTERNAL_TOKEN).toBe(DEV_GATEWAY_INTERNAL_TOKEN);
     expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('false');

@@ -125,4 +125,27 @@ describe('kortix sessions status', () => {
     expect(row('weeks')).toMatch(/dddd4444\s+weeks\s+.*45d ago$/);
     expect(r.stdout).not.toContain('-0000-');
   });
+  test('canonical idle and working never probe or wake the computer; lifecycle stays explicit', async () => {
+    const rows = ['idle', 'working'].map((state) => ({
+      ...session(state, state, MINUTE), status: 'running', metadata: {},
+      working: { state, since: null, turn_token: null, pending_delivery: state === 'working' },
+    }));
+    const config = writeConfig(startServer(rows));
+    const text = await runCli(['sessions', 'status', '--project', PROJECT], config);
+    expect(text.code).toBe(0);
+    expect(text.stdout).toContain('1 done');
+    expect(text.stdout).toContain('1 running');
+    expect(text.stdout).toContain('computer: running');
+    expect(paths).toEqual([`/v1/projects/${PROJECT}/sessions`]);
+    expect(text.stdout.split('\n').find((line) => line.includes('idle  idle'))).toContain('○');
+    paths = [];
+    const result = await runCli(['sessions', 'status', '--json', '--project', PROJECT], config);
+    expect(result.code).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.find((s: { session_id: string }) => s.session_id === 'idle')).toMatchObject({
+      status: 'running', display_status: 'done', working: rows[0]?.working, activity: { working: false, summary: 'idle' },
+    });
+    expect(paths).toEqual([`/v1/projects/${PROJECT}/sessions`]);
+  });
+
 });

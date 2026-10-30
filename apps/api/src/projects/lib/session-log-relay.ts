@@ -20,11 +20,11 @@
  * `rev`: `max(now µs, last + 1)` per API process, the journal's shape, so it rises within a
  * stream and across a reconnect to this process.
  *
- * `seq`: what `fromV1` of the v1 mirror gives the message (`v1Seqs`), over the stored rows plus the
- * frames of the running turn, so a put and the record P2.7 stores for the same message agree. The
- * mirror is read on the first message that needs a seq and again after each `kortix.turn` (the
- * capture runs at the turn end). A message `fromV1` folds into another (a compaction summary) has
- * no seq and gets no put.
+ * `seq`: what `fromV1` gives the message (`v1Seqs`) over the stored session log's v1 rows plus the
+ * frames of the running turn, so a put and the record the capture of a box without a journal
+ * stores for the same message agree (`writeSessionLogFromRead`). The log is read on the first
+ * message that needs a seq and again after each `kortix.turn` (the capture runs at the turn end).
+ * A message `fromV1` folds into another (a compaction summary) has no seq and gets no put.
  *
  * Limits: a part frame replayed after a reconnect for a message whose `message.updated` came before
  * the cursor waits for that message's next `message.updated`. A delta extends the cached part, so a
@@ -40,12 +40,11 @@ import {
   type V1Row,
 } from '@kortix/api-contract/session-log';
 import type { KortixMessageInfo, KortixPart } from '@kortix/api-contract/transcript';
-import { sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
-import { eq, sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { readCapturedSessionLog } from '../session-log-capture';
 
 type J = Record<string, any>;
 export type RuntimeEnvelope = Record<string, unknown>;
+/** The stored history `v1Seqs` reads: the v1 root and rows. */
 export type V1Mirror = { root_id: string | null; rows: V1Row[] };
 type Row = { info: KortixMessageInfo | null; parts: Map<string, KortixPart & J> };
 
@@ -60,26 +59,10 @@ export const nextRev = (): number => (lastRev = Math.max(Date.now() * 1000, last
 export const dropV1Transcript = (envelope: RuntimeEnvelope): RuntimeEnvelope[] =>
   isV1TranscriptEvent(String(envelope.type)) ? [] : [envelope];
 
-/**
- * The session's v1 mirror rows as `v1Seqs` needs them: every row of every runtime session, with
- * only the tool and compaction parts (the thread and seq rules read no other part).
- */
-export async function readV1MirrorForSeqs(sessionId: string): Promise<V1Mirror> {
-  const [mirror] = await db
-    .select({ root: sessionTranscriptMirrors.runtimeSessionId })
-    .from(sessionTranscriptMirrors)
-    .where(eq(sessionTranscriptMirrors.sessionId, sessionId))
-    .limit(1);
-  if (!mirror) return { root_id: null, rows: [] };
-  const rows = await db
-    .select({
-      runtime_session_id: sessionTranscriptMessages.runtimeSessionId,
-      info: sessionTranscriptMessages.info,
-      parts: sql<unknown[]>`jsonb_path_query_array(${sessionTranscriptMessages.parts}, '$[*] ? (@.type == "tool" || @.type == "compaction")')`,
-    })
-    .from(sessionTranscriptMessages)
-    .where(eq(sessionTranscriptMessages.sessionId, sessionId));
-  return { root_id: mirror.root, rows: rows as unknown as V1Row[] };
+/** The session log's v1 rows and root, as `v1Seqs` needs them (no v1 mirror table is read). */
+export async function readStoredV1ForSeqs(sessionId: string): Promise<V1Mirror> {
+  const { rows, root_id } = await readCapturedSessionLog(sessionId);
+  return { root_id, rows };
 }
 
 /**
@@ -91,7 +74,7 @@ export function createV1LogConverter(options: {
   harness?: 'opencode' | 'pi';
   readMirror?: (sessionId: string) => Promise<V1Mirror>;
 }): (envelope: RuntimeEnvelope) => Promise<RuntimeEnvelope[]> {
-  const { sessionId, harness = 'opencode', readMirror = readV1MirrorForSeqs } = options;
+  const { sessionId, harness = 'opencode', readMirror = readStoredV1ForSeqs } = options;
   const live = new Map<string, Row>();
   const removed = new Set<string>();
   const seqs = new Map<string, number>();

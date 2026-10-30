@@ -1,7 +1,7 @@
 'use client';
 
 import type { PricingPlan } from '@/features/billing/pricing-plans';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { CheckCircleIcon } from '@phosphor-icons/react';
 
 interface PricingPlanCardProps {

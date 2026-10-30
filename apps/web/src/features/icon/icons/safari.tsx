@@ -2,7 +2,7 @@
 
 import { useId } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /** Safari brand mark, full colour. Source: gilbarbara/logos (CC0), `logos:safari`. */
 export const Safari = ({ className }: { className?: string }) => {

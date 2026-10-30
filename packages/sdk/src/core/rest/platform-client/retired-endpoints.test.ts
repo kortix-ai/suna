@@ -95,7 +95,7 @@ const THROWS: Array<
   [
     'createInstance',
     () => createInstance({ provider: 'justavps' }),
-    'Retired instance provisioning is unavailable. Create a project session with daytona, platinum, or e2b.',
+    'Retired instance provisioning is unavailable. Create a project session on platinum (or the legacy daytona fallback).',
     false,
   ],
   ['getInvite', () => getInvite('invite-1'), retired('getInvite', INVITES_INSTEAD), true],

@@ -25,7 +25,7 @@ import {
   storedSandboxTurns,
 } from '../session-turn-ledger';
 import { INBOX_HOLD_MS } from '../session-lifecycle/inbox-rows';
-import { interruptedTurnContinuationText, requeueAbandonedPrompt } from '../session-lifecycle/redelivery';
+import { interruptedTurnContinuationParts, interruptedTurnContinuationText, requeueAbandonedPrompt } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { enqueueContinueSessionCommand } from '../session-lifecycle/store';
 import { mintWireMessageId } from '../wire-message-id';
@@ -260,16 +260,20 @@ async function enqueueTurnContinuation(input: {
   const ledgerTurn = await readNewestPromptTurn(input.sessionId, [input.messageId]);
   if (isRequestedStopName(ledgerTurn?.endError?.name)) return false;
   const clientMessageId = `resume_${input.turnToken}`;
+  const interruptedAt = {
+    endedAt: input.stoppedAt,
+    cause: REAPER_TURN_CAUSES.boxStoppedMidTurn.message,
+  };
   await enqueueContinueSessionCommand({
     source: 'system:auto-recovery',
     projectId: session.projectId,
     accountId: session.accountId,
     sessionId: input.sessionId,
     idempotencyKey: `prompt:${input.sessionId}:${clientMessageId}`,
-    text: interruptedTurnContinuationText({
-      endedAt: input.stoppedAt,
-      cause: REAPER_TURN_CAUSES.boxStoppedMidTurn.message,
-    }),
+    text: interruptedTurnContinuationText(interruptedAt),
+    // Harness context, not a user prompt (KRTX-2597): the transcript renders
+    // the continuation as a notice and never as a user bubble.
+    parts: interruptedTurnContinuationParts(interruptedAt),
     resumesTurn: input.turnToken,
     wireMessageId: mintWireMessageId({ nowMs: Date.now() }).id,
     remintOnDelivery: true,

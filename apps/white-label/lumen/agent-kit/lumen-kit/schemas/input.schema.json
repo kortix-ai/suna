@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "input",
+  "type": "object",
+  "required": ["schema", "run_id", "batch_id", "kit_version", "kind", "role", "role_path", "matter_dir", "batch_dir", "documents"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "enum": ["input/1"] },
+    "run_id": { "type": "string" },
+    "batch_id": { "type": "string" },
+    "kit_version": { "type": "string" },
+    "kind": { "enum": ["review", "column", "ask", "contract_review", "diligence_map", "diligence_reduce", "draft"] },
+    "role": { "enum": ["lumen-counsel", "lumen-extractor", "lumen-reviewer", "lumen-drafter"] },
+    "role_path": { "type": "string" },
+    "matter_dir": { "type": "string" },
+    "batch_dir": { "type": "string" },
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["doc_id", "filename", "text_path"],
+        "additionalProperties": false,
+        "properties": {
+          "doc_id": { "type": "string" },
+          "filename": { "type": "string" },
+          "text_path": { "type": "string" },
+          "original_path": { "type": "string" }
+        }
+      }
+    },
+    "columns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "label", "prompt", "format"],
+        "additionalProperties": false,
+        "properties": {
+          "key": { "type": "string" },
+          "label": { "type": "string" },
+          "prompt": { "type": "string" },
+          "format": { "enum": ["text", "yes_no", "date", "money", "tag", "verbatim", "number", "percent", "list"] },
+          "options": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "question": { "type": "string" },
+    "playbook_path": { "type": "string" },
+    "perspective": { "type": "string" },
+    "template_path": { "type": "string" },
+    "fields": { "type": "object" },
+    "rows_dir": { "type": "string" }
+  }
+}

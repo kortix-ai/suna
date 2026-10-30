@@ -21,7 +21,7 @@ test('convex: the dashboard is a Dockerfile App in apps/<name>/dashboard, a tab 
   const files = convex.files!('crm-data');
   expect(Object.keys(files)).toEqual(['apps/crm-data/dashboard/Dockerfile', 'apps/crm-data/dashboard/start.js']);
   expect(files['apps/crm-data/dashboard/Dockerfile']).toContain('ENV BACKEND=crm-data');
-  expect(files['apps/crm-data/dashboard/Dockerfile']).toMatch(/^FROM ghcr\.io\/get-convex\/convex-dashboard@sha256:[0-9a-f]{64}$/m);
+  expect(files['apps/crm-data/dashboard/Dockerfile']).toMatch(/^FROM ghcr\.io\/convex\/convex-dashboard@sha256:[0-9a-f]{64}$/m);
   expect(convex.secrets!('crm-data')).toEqual([{ name: 'CRM_DATA_ADMIN_KEY', app: 'crm-data', command: ['sh', '-c', 'cd /convex && ./generate_admin_key.sh'] }]);
 });
 

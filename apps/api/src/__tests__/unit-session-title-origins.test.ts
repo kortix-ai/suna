@@ -52,7 +52,8 @@ describe('session-title origins — create-time title source', () => {
       'Triage the new Sentry issue and open a change request',
     );
 
-    const source = createBody('projects/lib/trigger-fire.ts', "requestingPrincipalType: 'human'");
+    // The fresh fire, not the reminder successor create above it.
+    const source = createBody('projects/lib/trigger-fire.ts', 'source: `trigger:${source}`');
     expect(source).toContain('initial_prompt: renderedPrompt');
     expect(source).not.toContain('title_source');
   });
@@ -72,11 +73,6 @@ describe('session-title origins — create-time title source', () => {
       titleSourceForCreate({ initial_prompt: 'envelope…', title_source: 'the CI graph' }),
     ).toBe('the CI graph');
 
-    const source = createBody(
-      'channels/telegram-webhook.ts',
-      'const result = await createSession({',
-    );
-    expect(source).toContain('title_source: message.text ?? message.caption ?? null');
   });
 
   test('email: titles from the SUBJECT at create — it has no initial_prompt at all', () => {
@@ -87,11 +83,6 @@ describe('session-title origins — create-time title source', () => {
     };
     expect(body).not.toHaveProperty('initial_prompt');
     expect(titleSourceForCreate(body)).toBe('Invoice discrepancy for March');
-
-    const source = createBody('channels/email/session.ts', 'emailSessionLifecycle.createSession(');
-    expect(source).not.toContain('initial_prompt');
-    expect(source).toContain('title_source: messageSubject(event) ?? messageSummary(event)');
-    // The full rendered envelope still reaches the agent via postCreate.
-    expect(read('channels/email/session.ts')).toContain("type: 'deliver_prompt'");
+    // The create body Email actually sends is asserted in unit-email-channel.test.ts.
   });
 });

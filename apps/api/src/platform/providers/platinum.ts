@@ -85,6 +85,7 @@ import {
 import { providerAutoStopBackstopMinutes } from './contract';
 import { classifyPtyWebSocketPath } from './pty-ingress';
 import { sandboxOwnershipMarker } from '../sandbox-ownership';
+import { RESIDENTIAL_PROXY_NOT_OFFERED_MESSAGE } from '../services/sandbox-provisioning-error';
 
 const AGENT_PORT = 8000;
 const START_CONFLICT_GRACE_MS = 30_000;
@@ -379,6 +380,26 @@ function regionalTemplateRefusal(error: unknown): { region: string; state: strin
 }
 
 /**
+ * A create in a requested region refused because a volume it mounts (a drive)
+ * lives in another region. Volumes never cross regions, and a drive is opened
+ * through PLATINUM_API_URL, so it lives in the home region. Platinum names the
+ * owner (`409 volume_in_other_region` with `region`); a control plane without
+ * the volume directory answers `404 volume_not_found` instead, owner unknown.
+ */
+function volumeRegionRefusal(error: unknown): { volumeRegion: string | null } | null {
+  const http = platinumHttp(error);
+  if (http.status === 404 && http.code === 'volume_not_found') return { volumeRegion: null };
+  if (http.status !== 409 || http.code !== 'volume_in_other_region') return null;
+  let body: { region?: unknown } = {};
+  try {
+    body = JSON.parse(http.body ?? '') as typeof body;
+  } catch {
+    // code parsed from this body, so it is JSON
+  }
+  return { volumeRegion: typeof body.region === 'string' ? body.region : null };
+}
+
+/**
  * A definitive 409 whose body signals the deterministic NAME is already
  * taken. Because the name is derived solely from (sandboxId, attempt) and
  * never reused across sandboxes/attempts, the only way Platinum can already
@@ -516,6 +537,10 @@ export class PlatinumProvider implements SandboxProvider {
       // (`api_url`), and every later call by id goes straight to it
       // (shared/platinum.ts).
       ...(opts.location ? { region: opts.location } : {}),
+      // The sandbox template's `residential_proxy` (platform/services/residential-proxy.ts).
+      // Platinum answers 400 residential_proxy_unavailable when it has no
+      // residential provider; the session then does not start.
+      ...(opts.residentialProxy ? { network: { residential_proxy: opts.residentialProxy } } : {}),
       // Database + instance ownership. The versioned marker also excludes
       // these boxes from older clients' environment-wide orphan sweeps.
       metadata: {
@@ -571,6 +596,27 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await postCreate();
     } catch (err) {
+      const elsewhere = opts.location && createBody.volumes ? volumeRegionRefusal(err) : null;
+      if (elsewhere && !opts.locationRequired) {
+        // A box must run where its drives live. With no region the create goes
+        // to the home control plane, which holds the drive (or routes the
+        // create to the region that does). A drive missing everywhere still
+        // fails loudly there. A warm box keeps its region and fails below.
+        const fallback = {
+          requested: opts.location!,
+          state: 'volume_in_other_region',
+          volumeRegion: elsewhere.volumeRegion,
+          at: new Date().toISOString(),
+        };
+        // Stable message: alert on it.
+        logger.warn('[platinum] region fallback: a mounted volume lives in another region; the box boots where it lives', {
+          ...fallback,
+          template,
+          sandboxId: opts.sandboxId ?? opts.name,
+        });
+        const home = await this.provisionFromTemplate(template, { ...opts, location: undefined });
+        return { ...home, metadata: { ...home.metadata, regionFallback: fallback } };
+      }
       // A full fleet stays a capacity error (retried, "try again in a minute").
       if (createBody.volumes && isVolumeRejection(err) && !/no capacity/i.test(platinumHttp(err).body ?? '')) {
         // Mounts a session cannot run without (its drives, its state): fail
@@ -579,9 +625,27 @@ export class PlatinumProvider implements SandboxProvider {
         if (workloadType === 'app') {
           throw new Error(`[apps] The machine's volume could not be mounted (storage refused: ${reason}). The machine did not start without it.`);
         }
+        if (opts.volumes?.['/workspace']) {
+          throw new Error(
+            `[workspace] This session’s workspace volume or drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
+          );
+        }
         throw new Error(
           `[drives] This session’s drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
         );
+      }
+      const refusal = platinumHttp(err);
+      if (refusal.status === 400 && refusal.code === 'residential_proxy_unavailable') {
+        throw new Error(RESIDENTIAL_PROXY_NOT_OFFERED_MESSAGE);
+      }
+      if (refusal.status === 503 && refusal.code === 'unavailable' && refusal.body) {
+        const body: unknown = JSON.parse(refusal.body);
+        if (body && typeof body === 'object' && 'error' in body &&
+          body.error === 'the sub_path image is still being derived; retry shortly') {
+          throw new SnapshotStillBuildingError(
+            `Sandbox image snapshot ${template} is building: Platinum is deriving the sub_path image`,
+          );
+        }
       }
       const regional = regionalTemplateRefusal(err);
       if (regional?.state === 'replicating') {
@@ -777,6 +841,9 @@ export class PlatinumProvider implements SandboxProvider {
         // we asked for — so an operator reading the session row sees the truth.
         ...(sandbox.region ? { platinumRegion: sandbox.region } : {}),
         ...(sandbox.api_url ? { platinumApiUrl: sandbox.api_url } : {}),
+        // Always written, so a rebuilt box never keeps its predecessor's value
+        // (the row's metadata is merged). The warm pool matches on it.
+        residentialProxy: Boolean(opts.residentialProxy),
         // Persisted into session_sandboxes.metadata by the caller
         // (buildSandboxInitSuccessMetadata spreads this in verbatim) so a
         // LATER top-level provisioning call's restorePlatinumCreateAttempt
@@ -1269,12 +1336,17 @@ export class PlatinumProvider implements SandboxProvider {
       // reload the live half may be the standby, and matching only 4096 would
       // send it upstream unrewritten (see shared/opencode-ports).
       effectivePort: isOpencodePort(request.port) || ptyWebsocket ? AGENT_PORT : request.port,
+      // Platinum's edge drops custom headers on a WebSocket upgrade, so every
+      // daemon socket (PTY, the Kortix in Chrome bridge) carries the signed user
+      // context in the query instead.
       websocket: ptyWebsocket
         ? {
             userContextQueryParam: '__kortix_user_context',
             queryDefaults: { cursor: '0' },
           }
-        : undefined,
+        : request.transport === 'websocket' && request.port === AGENT_PORT
+          ? { userContextQueryParam: '__kortix_user_context' }
+          : undefined,
     };
   }
 

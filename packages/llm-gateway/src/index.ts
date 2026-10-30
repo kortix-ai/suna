@@ -17,6 +17,8 @@ export type {
 } from './pipeline/inflight-budget';
 export type { AdmittedBodyResult } from './pipeline/read-bounded-body';
 export { DEFAULT_IMAGE_WINDOW, applyImageWindow } from './pipeline/image-window';
+export { MAX_HOLD_SECONDS, SETUP_HOLD_SECONDS } from './pipeline/route-memory';
+export { CircuitBreakers, upstreamBreakers } from './pipeline/circuit-breaker';
 export type { ImageWindowOptions, ImageWindowResult } from './pipeline/image-window';
 export type { ChatCompletionRequest, GatewayDeps } from './pipeline';
 export {
@@ -84,6 +86,7 @@ export type { ModelFallbackPolicyEngine } from './routing';
 export { providerKindForNpm } from './catalog';
 
 export type {
+  AdmitResult,
   AuthedPrincipal,
   AuthorizeResult,
   BillingMode,

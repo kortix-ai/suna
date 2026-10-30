@@ -13,7 +13,10 @@
  *   above the stored message's. Every pair of the batch is acknowledged, applied
  *   or not, after commit. A higher put revives a tombstoned message.
  * - `seq` is unique per thread (`session_log_messages_thread_seq_key`). A put
- *   that collides rolls the whole batch back and answers 422 with its pair.
+ *   that collides rolls the whole batch back and answers 422 with its pair and
+ *   the thread's `seq_max` (tombstones included). The daemon then numbers that
+ *   thread above `seq_max` and sends the batch again (a box that lost its native
+ *   store with restore off numbers from 1 again: `session-log-journal.ts` in kortixd).
  * - Durable turns. The first acknowledged assistant message of a turn that is not
  *   streaming sets `session_turns.log_durable_at`: the turn whose `message_id` (the
  *   client-minted user message id) is the assistant message's `reply_to`. No
@@ -68,9 +71,12 @@
  *   journal write also takes every other live capture row out of context (`in_context:
  *   false`, column and record): it stays visible, and the model view is the native
  *   store's. Capture rows are never deleted.
- * - Re-puts. A put whose content hash equals the stored row's (a restarted daemon re-sends
- *   every message) is acknowledged and changes nothing, unless the row is a tombstone, a
- *   capture row, or of another generation.
+ * - Re-puts. Every daemon restart (each release) re-sends the whole native store by design: that
+ *   is how converter fixes and failed attachment uploads reach the log. A put whose content hash
+ *   equals the stored row's is acknowledged and changes nothing, unless the row is a tombstone, a
+ *   capture row, or of another generation. One SELECT per batch finds them (`storedUnchanged`):
+ *   they cost no INSERT, no row version and no row lock, and a turn already durable is not
+ *   updated again (one statement per put made a full re-send as slow as the first write).
  */
 import { createHash } from 'node:crypto';
 import {
@@ -83,11 +89,11 @@ import {
   type SessionLogPut,
 } from '@kortix/api-contract/session-log';
 import { projectSessions, sessionLogMessages, sessionLogs, sessionLogThreads, sessionTurns } from '@kortix/db';
-import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { uniqueViolationConstraint } from '../shared/postgres-errors';
 import { logger } from '../lib/logger';
-import { jsonbSafeValue } from './lib/jsonb-safe';
+import { jsonbSafeValue } from '../shared/jsonb-safe';
 import { offloadLargeTexts } from './session-log-blobs';
 import { toolInputOrderOf } from './session-log-input-order';
 
@@ -127,7 +133,7 @@ const NO_SESSION = { status: 404, body: { error: 'Session not found' } } as cons
 const BUSY = { status: 429, body: { error: 'Session log busy' } } as const;
 
 class SeqConflict extends Error {
-  constructor(readonly body: SessionLogJournalSeqConflict) {
+  constructor(readonly body: Omit<SessionLogJournalSeqConflict, 'seq_max'>) {
     super('seq_conflict');
   }
 }
@@ -160,7 +166,7 @@ export const sessionLogContentHash = (message: unknown): string =>
  * then re-sent forever (243 5xx in a day, one 730 kB batch retried 171 times,
  * KRTX-211; the same shape with NULs, KRTX-2178). Replace every bad code unit
  * with U+FFFD before anything is hashed or written, the way a terminal renders
- * it. `jsonbSafeValue` (`lib/jsonb-safe.ts`) is the KRTX-1701-reviewed walker
+ * it. `jsonbSafeValue` (`shared/jsonb-safe.ts`) is the KRTX-1701-reviewed walker
  * the transcript mirror shares; unlike `toWellFormed`, it also strips NUL,
  * which is a well-formed string Postgres still refuses.
  */
@@ -229,7 +235,11 @@ async function applyBatch(
       // Generation 0 only: a restore (P6.2) writes `pi:` replies itself, into a store built from this log.
       if (!capture && batch.generation === 0) await hideConvertedPiThreads(tx, scope.sessionId, batch.puts);
       await dropProvisionalRows(tx, scope.sessionId, batch.puts);
-      for (const [i, put] of batch.puts.entries()) await applyPut(tx, scope.sessionId, batch.generation, put, records[i]!);
+      const hashes = batch.puts.map((p) => sessionLogContentHash(p.message));
+      const unchanged = await storedUnchanged(tx, scope.sessionId, batch.generation, batch.puts, hashes);
+      for (const [i, put] of batch.puts.entries()) {
+        if (!unchanged[i]) await applyPut(tx, scope.sessionId, batch.generation, put, records[i]!, hashes[i]!);
+      }
       if (!capture) await markDurableTurns(tx, scope.sessionId, batch.puts);
       const acked = [
         ...batch.puts.map((p) => ({ message_id: p.message.message_id, rev: p.rev })),
@@ -238,9 +248,18 @@ async function applyBatch(
       return { status: 200 as const, body: { acked } };
     });
   } catch (err) {
-    if (err instanceof SeqConflict) return { status: 422, body: err.body };
+    if (err instanceof SeqConflict) return { status: 422, body: { ...err.body, seq_max: await threadSeqMax(scope.sessionId, err.body.thread_id) } };
     throw err;
   }
+}
+
+/** The highest seq a thread holds, tombstones included; read after the rollback. */
+async function threadSeqMax(sessionId: string, threadId: string): Promise<number> {
+  const [row] = await db
+    .select({ max: sql<number | null>`max(${sessionLogMessages.seq})` })
+    .from(sessionLogMessages)
+    .where(and(eq(sessionLogMessages.sessionId, sessionId), eq(sessionLogMessages.threadId, threadId)));
+  return Number(row?.max ?? 0);
 }
 
 /**
@@ -384,10 +403,32 @@ async function hideConvertedPiThreads(tx: Tx, sessionId: string, puts: readonly 
     );
 }
 
-// ponytail: one INSERT per put, so a seq collision names its own pair without
-// parsing the error detail. A batch is at most 1 MB gzipped; batch the inserts
-// if a large boot reconcile (P6) makes the round trips show up.
-async function applyPut(tx: Tx, sessionId: string, generation: number, put: SessionLogPut, record: SessionLogPut['message']): Promise<void> {
+/**
+ * Per put: the stored row holds it already (this generation's journal row, live, the same content
+ * hash), so the put writes nothing. These are exactly the puts `applyPut`'s `setWhere` leaves alone.
+ */
+async function storedUnchanged(tx: Tx, sessionId: string, generation: number, puts: readonly SessionLogPut[], hashes: readonly string[]): Promise<boolean[]> {
+  if (puts.length === 0) return [];
+  const rows = await tx
+    .select({ id: sessionLogMessages.messageId, hash: sessionLogMessages.contentHash })
+    .from(sessionLogMessages)
+    .where(
+      and(
+        eq(sessionLogMessages.sessionId, sessionId),
+        inArray(sessionLogMessages.messageId, puts.map((p) => p.message.message_id)),
+        eq(sessionLogMessages.generation, generation),
+        isNull(sessionLogMessages.deletedAt),
+        gte(sessionLogMessages.rev, SESSION_LOG_CAPTURE_REV_LIMIT),
+      ),
+    );
+  const stored = new Map(rows.map((r) => [r.id, r.hash]));
+  return puts.map((p, i) => stored.get(p.message.message_id) === hashes[i]);
+}
+
+// ponytail: one INSERT per changed put, so a seq collision names its own pair without
+// parsing the error detail. Batch the inserts if a long turn's changed puts make the round trips show up.
+/** One put inside the caller's transaction. */
+async function applyPut(tx: Tx, sessionId: string, generation: number, put: SessionLogPut, record: SessionLogPut['message'], contentHash: string): Promise<void> {
   const m = put.message;
   const createdAt = Date.parse(m.created_at);
   try {
@@ -408,7 +449,7 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
         producer: m.producer,
         generation,
         rev: put.rev,
-        contentHash: sessionLogContentHash(m),
+        contentHash,
         deletedAt: null,
         record: record as unknown as Record<string, unknown>,
         toolInputOrder: toolInputOrderOf(record),
@@ -456,9 +497,10 @@ async function markDurableTurns(tx: Tx, sessionId: string, puts: readonly Sessio
   if (turnMessageIds.length === 0) return;
   await tx
     .update(sessionTurns)
-    // The first acknowledgement: a daemon that restarts re-sends every message, and a replay is not new durability.
-    .set({ logDurableAt: sql`coalesce(${sessionTurns.logDurableAt}, now())` })
-    .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, turnMessageIds)));
+    // The first acknowledgement only: a daemon that restarts re-sends every message, and a replay is not new
+    // durability. A durable turn is not touched (no new row version, no lock).
+    .set({ logDurableAt: sql`now()` })
+    .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, turnMessageIds), isNull(sessionTurns.logDurableAt)));
 }
 
 /** The boot-reconcile manifest, or null when the session is not this project's. */

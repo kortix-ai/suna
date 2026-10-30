@@ -3,7 +3,7 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
-import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
+import { SessionBusyIndicator } from '@kortix/ui/session';
 
 /**
  * /debug/thinking

@@ -31,7 +31,7 @@ export function getSupabase(): SupabaseClient {
  * On a self-host box `SUPABASE_URL` is the INTERNAL Docker hostname
  * (`http://supabase-kong:8000`) so server->Supabase calls stay on the fast
  * internal network. But supabase-js bakes that same base URL into every signed
- * URL it returns — and no external client (nor a remote E2B sandbox) can
+ * URL it returns — and no external client (nor a remote sandbox) can
  * resolve `supabase-kong`, so uploads and attachment/image fetches silently
  * fail. `SUPABASE_PUBLIC_URL` is the box's public origin
  * (e.g. `https://sampleco.kortix.cloud`, which Caddy proxies `/storage/v1*` ->

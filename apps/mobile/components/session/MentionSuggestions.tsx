@@ -12,7 +12,6 @@
 
 import React from 'react';
 import { ScrollView, View } from 'react-native';
-import { useColorScheme } from 'nativewind';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Text } from '@/components/ui/text';
@@ -26,6 +25,7 @@ import {
 } from '@/lib/icons';
 import type { AppIcon } from '@/lib/icons';
 import { THEME } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 import type { MentionItem } from './useMentions';
 
 /** About five rows, then the list scrolls. */
@@ -63,8 +63,8 @@ export function SuggestionRow({
   selected: boolean;
   onPress: () => void;
 }) {
-  const { colorScheme } = useColorScheme();
-  const colors = THEME[colorScheme === 'dark' ? 'dark' : 'light'];
+  const tone = useTone();
+  const colors = THEME[tone];
   return (
     <PressableSurface
       onPress={onPress}

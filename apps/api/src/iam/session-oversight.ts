@@ -16,6 +16,7 @@
 import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { accountGroupMembers, accounts, iamRoles, roleAssignments } from '@kortix/db';
 import { db } from '../shared/db';
+import { isImpersonatingAccount } from '../shared/impersonation';
 import { ttlMemo } from '../shared/ttl-memo';
 
 /** The account roles oversight reaches. Same set as `isImplicitManager`. */
@@ -148,9 +149,15 @@ export function invalidateSessionOversight(): void {
  * Does this human user hold session oversight in this account? Fails closed:
  * a lookup error answers `false`, so an outage can only hide sessions, never
  * reveal them.
+ *
+ * A platform admin acting as this account (act-as impersonation) holds it: the
+ * grant exists to debug the account, and a member's private session is the
+ * usual thing to debug. Checked before the memo, like `authorize`, so the
+ * answer never reaches the operator's own requests.
  */
 export async function hasAccountSessionOversight(userId: string, accountId: string): Promise<boolean> {
   if (!userId || !accountId) return false;
+  if (isImpersonatingAccount(userId, accountId)) return true;
   try {
     return await oversightCache.get(userId, accountId);
   } catch (err) {

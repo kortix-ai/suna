@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+"""Lumen's agent tools. Every command prints one JSON object. Exit 0 ok, 2 usage error, 3 validation failure."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+from lumen_kit.cli import main  # noqa: E402
+
+sys.exit(main(sys.argv[1:]))

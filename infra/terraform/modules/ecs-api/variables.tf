@@ -320,3 +320,15 @@ variable "capture_device_role_arn" {
   type        = string
   default     = ""
 }
+
+variable "service_discovery" {
+  description = "Cloud Map registration: { namespace_id }. When set, every task registers an A record <container_name>.<namespace> so callers inside the VPC reach it without the ALB or Cloudflare. null = no registration. An object, so count stays known when the namespace is created in the same apply."
+  type        = object({ namespace_id = string })
+  default     = null
+}
+
+variable "extra_security_group_ids" {
+  description = "More security groups for the tasks, besides the module's own. Environment roots use them for VPC-internal rules, because the module's inline rules are authoritative."
+  type        = list(string)
+  default     = []
+}

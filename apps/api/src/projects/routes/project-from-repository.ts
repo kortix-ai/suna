@@ -42,6 +42,7 @@ import {
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { getCatalogItemDetail } from '../../marketplace/catalog';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 export function registerProjectFromRepositoryRoutes(): void {
   // POST /v1/projects/link-repository
@@ -134,6 +135,7 @@ export function registerProjectFromRepositoryRoutes(): void {
           defaultBranch: normalizeString(body.default_branch ?? body.defaultBranch),
         });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
       }
       // Same "degrade, never fail the create" rationale as projects.ts's provision
@@ -189,6 +191,7 @@ export function registerProjectFromRepositoryRoutes(): void {
           409,
         );
       }
+      rethrowDatabaseError(error);
       return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
     }
 
@@ -316,6 +319,7 @@ export function registerProjectFromRepositoryRoutes(): void {
           installation_ids: error.installationIds,
         }, 409);
       }
+      rethrowDatabaseError(error);
       const message = (error as Error).message || 'GitHub is not configured on the server';
       return c.json({ error: message }, 503);
     }
@@ -383,6 +387,7 @@ export function registerProjectFromRepositoryRoutes(): void {
         if (error instanceof GitHubPersonalAccountCreateUnsupportedError) {
           return c.json({ error: error.message, code: error.code }, 409);
         }
+        rethrowDatabaseError(error);
         return c.json({ error: (error as Error).message || 'Failed to create GitHub repository' }, 502);
       }
     }
@@ -409,6 +414,7 @@ export function registerProjectFromRepositoryRoutes(): void {
           auth: createAuth,
         });
       } catch (error) {
+        rethrowDatabaseError(error);
         // The repository exists but Kortix cannot write to it, so there is no
         // usable project to hand back. Say which step failed.
         return c.json({
@@ -454,6 +460,7 @@ export function registerProjectFromRepositoryRoutes(): void {
         auth: githubAuth.auth,
       });
     } catch (err) {
+      rethrowDatabaseError(err);
       const message = (err as Error).message || 'Failed to scaffold the starter';
       console.warn(`[projects/create-repo] Failed to scaffold the starter into ${repo.full_name}:`, message);
       return c.json({ error: `Failed to scaffold the starter: ${message}` }, 502);

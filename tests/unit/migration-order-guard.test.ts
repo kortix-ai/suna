@@ -74,6 +74,17 @@ describe('migration-order guard', () => {
     expect(r.stderr).toContain('check skipped');
   });
 
+  it('allows a stage-fix branch that carries a migration origin/dev already has', () => {
+    // A release fix lands on dev first, then is cherry-picked onto staging.
+    const { add, push, git } = repo();
+    const staging = git('rev-parse', 'HEAD').stdout.trim();
+    git('switch', '-q', 'dev');
+    git('update-ref', 'refs/remotes/origin/dev', add('20261007140000000_fix.sql'));
+    git('switch', '-q', '-c', 'stage-fix', staging);
+    expect(push(add('20261007140000000_fix.sql'), 'refs/heads/stage-fix/x').status).toBe(0);
+    expect(push(add('20261007100000000_not_on_dev.sql'), 'refs/heads/stage-fix/x').status).toBe(1);
+  });
+
   it('allows a branch with no new migration', () => {
     expect(repo().push('HEAD').status).toBe(0);
   });

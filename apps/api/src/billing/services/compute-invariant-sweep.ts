@@ -12,7 +12,7 @@ import {
 } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { type ProviderName, type SandboxStatus, getProvider } from '../../platform/providers';
+import { type SandboxStatus, tryGetProvider } from '../../platform/providers';
 import {
   REAP_BATCH_SIZE,
   REAP_CONCURRENCY,
@@ -212,9 +212,11 @@ export async function reconcileOrphanComputeSessions(
 
       let providerStatus: SandboxStatus | null = null;
       if (!decision.reason && decision.needsProviderStatus) {
-        providerStatus = await getProvider(provider as ProviderName)
-          .getStatus(externalId as string)
-          .catch(() => null);
+        // A legacy `e2b` row has no provider (E2B support is discontinued):
+        // it stays unresolved, so the unresolved rule below closes its window.
+        providerStatus = await (tryGetProvider(provider ?? '')
+          ?.getStatus(externalId as string)
+          .catch(() => null) ?? null);
         // 'unknown' is the STEADY state for a box deleted out from under us
         // (44 of 66 open prod rows answered unknown), so track how long it has
         // been continuously unresolvable rather than treating it as transient.

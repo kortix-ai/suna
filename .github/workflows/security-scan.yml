@@ -9,6 +9,10 @@ name: Security Scan
 # live in ci.yml (PR dependency scan) and deploy-*.yml (image scan before ship).
 
 on:
+  # A release merge into `prod` scans the prod tree so prod-ref alerts close
+  # when the fix ships (2026-10-23, SOC 2 CC7.1).
+  push:
+    branches: [prod]
   schedule:
     # Re-registered 2026-09-25: the schedule belonged to a user who left the org,
     # and GitHub stopped dispatching it after 2026-08-03. See db-drift.yml.
@@ -55,14 +59,14 @@ jobs:
         env:
           TRIVY_SKIP_DB_UPDATE: "false"
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
 
   trivy-image:
     name: Trivy image re-scan
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
@@ -72,21 +76,44 @@ jobs:
       fail-fast: false
       matrix:
         image:
-          - kortix/kortix-api:dev-latest
-          - kortix/kortix-frontend:dev-latest
+          - kortix/kortix-api
+          - kortix/kortix-frontend
     steps:
+      # Push to prod scans the release images (:X.Y.Z, from the VERSION file
+      # at this commit). Every other trigger scans :dev-latest. deploy-prod.yml
+      # retags :X.Y.Z in parallel, so wait up to 30 min for the tag to exist.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: github.ref == 'refs/heads/prod'
+      - name: Resolve image tag
+        id: tag
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/prod" ]; then
+            echo "tag=dev-latest" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          V="$(tr -d '[:space:]' < VERSION)"
+          for _ in $(seq 1 60); do
+            if docker manifest inspect "${{ matrix.image }}:$V" >/dev/null 2>&1; then
+              echo "tag=$V" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::${{ matrix.image }}:$V not published after 30 min"
+          exit 1
       - name: Trivy image scan → SARIF
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           scan-type: image
-          image-ref: ${{ matrix.image }}
+          image-ref: ${{ matrix.image }}:${{ steps.tag.outputs.tag }}
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           format: sarif
           output: trivy-image.sarif
           exit-code: "0"
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image-${{ strategy.job-index }}
@@ -101,17 +128,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Checkov scan → SARIF
-        uses: bridgecrewio/checkov-action@cc0e17d456ef1713bbfd963ebac19dc776775cb2
+        uses: bridgecrewio/checkov-action@6f26dc90000b74feb589a906cdfae540f5119895
         with:
           directory: infra/
           framework: terraform,kubernetes,helm,dockerfile
           output_format: sarif
           output_file_path: checkov.sarif
           soft_fail: true
+      # checkov writes every #checkov:skip into the SARIF as a result with a
+      # `suppressions` entry, and code scanning opens an alert for it anyway
+      # (122 such alerts were open on 2026-10-22). The reviewed skip comment is
+      # the decision record, so upload unsuppressed failures only.
+      - name: Drop in-source suppressed results
+        run: >-
+          jq '.runs[].results |= map(select((.suppressions // []) | length == 0))'
+          checkov.sarif/results_sarif.sarif > checkov-findings.sarif
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         with:
-          sarif_file: checkov.sarif/results_sarif.sarif
+          sarif_file: checkov-findings.sarif
           category: checkov
 
   hadolint:
@@ -138,7 +173,7 @@ jobs:
           output-file: hadolint.sarif
           no-fail: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         with:
           sarif_file: hadolint.sarif
           category: hadolint-${{ strategy.job-index }}

@@ -25,8 +25,6 @@
  * card shows "You ran out of credits" plus a muted "An account owner can add
  * credits." and no buttons at all.
  *
- * `SessionErrorBanner` keeps the pre-parity call signature for existing call
- * sites and renders `TurnErrorDisplay`.
  */
 
 import { memo } from 'react';
@@ -56,13 +54,6 @@ import {
 } from '@/lib/session/turn-error';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 
-export {
-  isInsufficientCreditsError,
-  isUsageLimitError,
-  parseBalance,
-  type TurnSendErrorLike,
-} from '@/lib/session/turn-error';
-export { SessionRetryDisplay, useRetrySecondsLeft, type SessionRetryDisplayProps } from './session-retry-display';
 
 /** Self-hosted builds set this to "false"; billing actions then have nowhere to go. */
 const BILLING_ACTIONS_ENABLED = process.env.EXPO_PUBLIC_BILLING_ENABLED !== 'false';
@@ -170,16 +161,3 @@ function TurnErrorDisplayImpl({ style, ...input }: TurnErrorDisplayProps) {
 
 export const TurnErrorDisplay = memo(TurnErrorDisplayImpl);
 TurnErrorDisplay.displayName = 'TurnErrorDisplay';
-
-export interface SessionErrorBannerProps {
-  errorText: string;
-  /** Unused since the web-parity rebuild; theme comes from the palette. Kept for call sites. */
-  isDark?: boolean;
-  isAbort?: boolean;
-  style?: StyleProp<ViewStyle>;
-}
-
-/** Pre-parity entry point. New code renders `TurnErrorDisplay` directly. */
-export function SessionErrorBanner({ errorText, isAbort, style }: SessionErrorBannerProps) {
-  return <TurnErrorDisplay errorText={errorText} isAbort={isAbort} style={style} />;
-}

@@ -5,7 +5,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import dynamic from 'next/dynamic';
 import { useCallback, useState } from 'react';
 
-import { KortixLogo } from '@/components/ui/kortix-logo';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
 
 import { localizedA1oContent } from './content';
 import { useRollSound } from './use-roll-sound';

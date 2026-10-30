@@ -4,8 +4,8 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { AnimatedBg } from '@/components/ui/animated-bg';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@kortix/ui/button';
+import { Card, CardContent } from '@kortix/ui/card';
 import { GlobeIcon as Globe, EnvelopeIcon as Mail } from '@phosphor-icons/react';
 import Link from 'next/link';
 

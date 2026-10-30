@@ -41,7 +41,7 @@ subscriptionsRouter.openapi(
     request: { body: { content: { 'application/json': { schema: AnyBody } } } },
     responses: {
       200: json(OpaqueSchema, 'Plan change result'),
-      ...errors(400),
+      ...errors(400, 429),
     },
   }),
   async (c) => {
@@ -71,11 +71,11 @@ subscriptionsRouter.openapi(
     request: { body: { content: { 'application/json': { schema: AnyBody } } } },
     responses: {
       200: json(OpaqueSchema, 'Plan change preview'),
-      ...errors(400),
+      ...errors(400, 429),
     },
   }),
   async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body', 'preview');
     const body = await readJsonObject(c);
     return c.json(await previewPlan({ accountId, monthlyUsd: parseMonthlyUsd(body.monthly_usd) }));
   },
@@ -126,7 +126,7 @@ subscriptionsRouter.openapi(
     request: { body: { content: { 'application/json': { schema: AnyBody } } } },
     responses: {
       200: json(z.object({ checkout_url: z.string(), contract_id: z.string() }), 'Checkout to accept the offer'),
-      ...errors(400, 404, 409),
+      ...errors(400, 404, 409, 429),
     },
   }),
   async (c) => {
@@ -152,7 +152,7 @@ subscriptionsRouter.openapi(
     summary: 'Create a Stripe customer portal session',
     ...auth,
     request: { body: { content: { 'application/json': { schema: AnyBody } } } },
-    responses: { 200: json(OpaqueSchema, 'Portal session result') },
+    responses: { 200: json(OpaqueSchema, 'Portal session result'), ...errors(429) },
   }),
   async (c) => {
     const accountId = await resolveBillingWriteAccountId(c, 'body');
@@ -171,7 +171,7 @@ subscriptionsRouter.openapi(
     summary: 'Cancel the active subscription',
     ...auth,
     request: { body: { required: false, content: { 'application/json': { schema: AnyBody } } } },
-    responses: { 200: json(OpaqueSchema, 'Cancellation result') },
+    responses: { 200: json(OpaqueSchema, 'Cancellation result'), ...errors(429) },
   }),
   async (c) => {
     const accountId = await resolveBillingWriteAccountId(c, 'body');
@@ -192,7 +192,7 @@ subscriptionsRouter.openapi(
     summary: 'Reactivate a cancelled subscription',
     ...auth,
     request: { body: { required: false, content: { 'application/json': { schema: AnyBody } } } },
-    responses: { 200: json(OpaqueSchema, 'Reactivation result') },
+    responses: { 200: json(OpaqueSchema, 'Reactivation result'), ...errors(429) },
   }),
   async (c) => {
     const accountId = await resolveBillingWriteAccountId(c, 'body');
@@ -209,7 +209,7 @@ subscriptionsRouter.openapi(
     summary: 'Sync subscription state from Stripe',
     ...auth,
     request: { body: { required: false, content: { 'application/json': { schema: AnyBody } } } },
-    responses: { 200: json(OpaqueSchema, 'Sync result') },
+    responses: { 200: json(OpaqueSchema, 'Sync result'), ...errors(404, 429) },
   }),
   async (c) => {
     const accountId = await resolveBillingWriteAccountId(c, 'body');

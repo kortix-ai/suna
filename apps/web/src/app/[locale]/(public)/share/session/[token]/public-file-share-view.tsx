@@ -13,7 +13,7 @@ import {
   type FileContent,
   type FileContentResult,
   type FileSource,
-} from '@/features/file-viewer';
+} from '@kortix/ui/file-viewer';
 import { downloadFileFromUrl, fileNameFromPath } from './share-file';
 import { SHARE_FILE_IFRAME_CLASS } from './share-layout';
 

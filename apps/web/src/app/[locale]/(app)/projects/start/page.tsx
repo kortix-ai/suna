@@ -1,20 +1,20 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { readLastProjectId, writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { readLastProjectId, writeLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import { SignOutIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
-import { decideDoor } from '@/features/workspace/project-selector/project-selector-model';
+import { decideDoor } from '@kortix/ui/workspace/project-selector/project-selector-model';
 import { useProjectSelectorData } from '@/features/workspace/project-selector/use-project-selector-data';
 
 /**

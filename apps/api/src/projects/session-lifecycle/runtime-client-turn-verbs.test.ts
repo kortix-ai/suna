@@ -135,6 +135,30 @@ describe('postPrompt', () => {
     forwardBody = { deduplicated: true };
     expect(await deliver()).toBe('deduplicated');
   });
+
+  // The proxy's access gates throw their 403. Read as "unreachable", a refused
+  // prompt waited out the whole runtime-down ladder (~13 min) and dead-lettered
+  // as "the session's machine could not be reached".
+  test("a 403 the proxy throws is a refusal, not a down box; a throw that is not the proxy's answer stays unreachable", async () => {
+    const { HTTPException } = await import('hono/http-exception');
+    const { PromptDeliveryRefused } = await import('./prompt-delivery-refusal');
+    forwardAnswers['/session/ses_1/prompt_async'] = () => {
+      throw new HTTPException(403, { message: 'Not authorized to access this session' });
+    };
+    const refused = await deliver().catch((err: unknown) => err);
+    expect(refused).toBeInstanceOf(PromptDeliveryRefused);
+    expect(refused).toMatchObject({ status: 403, message: 'Not authorized to access this session' });
+
+    forwardAnswers['/session/ses_1/prompt_async'] = () => {
+      throw new HTTPException(503, { message: 'upstream down' });
+    };
+    expect(await deliver()).toBe('unreachable');
+
+    forwardAnswers['/session/ses_1/prompt_async'] = () => {
+      throw new TypeError('fetch failed');
+    };
+    expect(await deliver()).toBe('unreachable');
+  });
 });
 
 describe('session runtime reads', () => {

@@ -43,6 +43,8 @@ mock.module('../channels/slack-api', () => ({
 }));
 
 mock.module('../channels/install-store', () => ({
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   loadSlackTokenForProject: async () => 'xoxb-test',
   saveSlackOauthInstall: async () => {},
 }));

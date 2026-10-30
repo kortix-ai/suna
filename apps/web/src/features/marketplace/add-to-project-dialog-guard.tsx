@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * external DOM writer that mutates the document between React's commits makes
  * React's reconciler throw the canonical DOM-mutation DOMException
  * (`insertBefore`/`removeChild` NotFoundError — the class classified as
- * browser noise in `lib/browser-noise/rules/react.ts`). When it races the
+ * browser noise in `packages/ui/src/internal/lib/browser-noise/rules/react.ts`). When it races the
  * Add-to-project dialog's first mount, the nearest error boundary was the
  * root locale one, so one transient throw replaced the whole page with
  * "Something went wrong" (KRTX-1950, observed 1/2 on dev, never on the

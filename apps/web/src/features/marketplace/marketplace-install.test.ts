@@ -1,47 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import { testUiTranslator } from '@/i18n/test-translator';
 import {
-  buildInstallSuccessSummary,
   capabilityCount,
   hasCapabilities,
-  isInstallDisabled,
-  projectMarketplaceHref,
 } from './marketplace-install';
 import { buildTemplateSetupPrompt } from './marketplace-setup-prompt';
-
-describe('buildInstallSuccessSummary', () => {
-  test('singularizes "file" for a single-file install', () => {
-    const summary = buildInstallSuccessSummary('Code Review', { file_count: 1 }, testUiTranslator);
-
-    expect(summary.title).toBe('Added Code Review');
-    expect(summary.description).toBe('Committed 1 file — live in the next session.');
-  });
-
-  test('pluralizes "files" for multi-file installs', () => {
-    const summary = buildInstallSuccessSummary('Bundle', { file_count: 4 }, testUiTranslator);
-
-    expect(summary.description).toBe('Committed 4 files — live in the next session.');
-  });
-
-  test('pluralizes for a zero-file install', () => {
-    const summary = buildInstallSuccessSummary('Empty', { file_count: 0 }, testUiTranslator);
-
-    expect(summary.description).toBe('Committed 0 files — live in the next session.');
-  });
-});
-
-describe('projectMarketplaceHref', () => {
-  test('builds the settings marketplace deep link for a project', () => {
-    expect(projectMarketplaceHref('proj_123')).toBe('/projects/proj_123/settings/marketplace');
-  });
-
-  test('URL-encodes project ids with special characters', () => {
-    expect(projectMarketplaceHref('proj/weird id')).toBe(
-      '/projects/proj%2Fweird%20id/settings/marketplace',
-    );
-  });
-});
 
 describe('buildTemplateSetupPrompt', () => {
   test('tells template setup sessions to read install.md when present', () => {
@@ -90,23 +53,5 @@ describe('capabilityCount', () => {
         network: [],
       }),
     ).toBe(6);
-  });
-});
-
-describe('isInstallDisabled', () => {
-  test('disabled when no item is resolved', () => {
-    expect(isInstallDisabled({ hasItem: false, targetProjectId: 'p1', pending: false })).toBe(true);
-  });
-
-  test('disabled when no target project is chosen', () => {
-    expect(isInstallDisabled({ hasItem: true, targetProjectId: '', pending: false })).toBe(true);
-  });
-
-  test('disabled while a request is pending', () => {
-    expect(isInstallDisabled({ hasItem: true, targetProjectId: 'p1', pending: true })).toBe(true);
-  });
-
-  test('enabled once an item, project, and idle state all line up', () => {
-    expect(isInstallDisabled({ hasItem: true, targetProjectId: 'p1', pending: false })).toBe(false);
   });
 });

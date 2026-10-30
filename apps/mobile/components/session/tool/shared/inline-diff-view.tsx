@@ -1,3 +1,4 @@
+import { useTone } from '@/lib/utils/tone';
 /**
  * Unified diffs under a tool row.
  *
@@ -16,7 +17,6 @@
 
 import React, { memo, useMemo } from 'react';
 import { Text as RNText, ScrollView, View } from 'react-native';
-import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { normalizeLanguage } from '@/lib/code-theme';
 import type { CodeLine } from '@/lib/highlight/shiki';
@@ -52,8 +52,7 @@ function useRowTokens(
   language: string,
   full?: { oldText: string; newText: string },
 ): (CodeLine | undefined)[] {
-  const { colorScheme } = useColorScheme();
-  const scheme = colorScheme === 'dark' ? 'dark' : 'light';
+  const scheme = useTone();
   const oldSource = full ? full.oldText : sideText(diff.rows, 'old');
   const newSource = full ? full.newText : sideText(diff.rows, 'new');
   const lang = normalizeLanguage(language);

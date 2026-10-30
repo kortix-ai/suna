@@ -9,7 +9,7 @@
  * - `useEnterpriseDemo`: an owner or admin turns the Enterprise demo on or off.
  */
 
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 import { useContactSales, useSetEnterpriseDemo } from '@kortix/sdk/react';
 

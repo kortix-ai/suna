@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   KATEX_FENCE_LANGUAGES,
   escapeCurrencyDollars,
+  hasReferenceDefinitionOutsideFences,
   isMathFenceLanguage,
   isMermaidCode,
   normalizeLatexDelimiters,
@@ -170,5 +171,90 @@ describe('isMermaidCode', () => {
   test('a fence with another language is not mermaid', () => {
     expect(isMermaidCode('ts', 'graph TD')).toBe(false);
     expect(isMermaidCode('Mermaid', 'graph TD')).toBe(false);
+  });
+});
+
+describe('hasReferenceDefinitionOutsideFences', () => {
+  const definition = /^ {0,3}\[[^\]\n]{1,999}\]:[ \t]*\S/m;
+
+  test('HTML cannot make a fence-looking line hide a later real definition', () => {
+    for (const marker of ['```', '$$']) {
+      expect(hasReferenceDefinitionOutsideFences(`Use [x].\n\n<!--\n${marker}\n-->\n\n[x]: /url\n\nTail`, definition)).toBe(true);
+    }
+  });
+
+  test('top-level regions may be indented up to three spaces', () => {
+    for (const indent of [' ', '  ', '   ']) {
+      for (const marker of ['```', '~~~', '$$']) {
+        expect(hasReferenceDefinitionOutsideFences(`Intro\n\n${indent}${marker}\n[x]: /url\n${indent}${marker}\n\nTail`, definition)).toBe(false);
+      }
+    }
+  });
+
+  test('finds a definition in a run of fence-free lines', () => {
+    expect(hasReferenceDefinitionOutsideFences('Intro\n\n[r]: https://kortix.com', definition)).toBe(true);
+    expect(hasReferenceDefinitionOutsideFences('', definition)).toBe(false);
+  });
+
+  test('a definition inside a fence or display math is not one', () => {
+    for (const text of [
+      '```md\n[r]: https://kortix.com\n```',
+      '~~~\n[r]: https://kortix.com\n~~~',
+      '$$\n[r]: https://kortix.com\n$$',
+      '```\n[r]: https://kortix.com',
+      '$$\n[r]: https://kortix.com',
+      'Use [text][r].\n\n```md\n[r]: https://kortix.com\n```\n\nAfter',
+    ]) {
+      expect(hasReferenceDefinitionOutsideFences(text, definition)).toBe(false);
+    }
+  });
+
+  test('a definition before or after a region is still found', () => {
+    expect(hasReferenceDefinitionOutsideFences('[r]: https://kortix.com\n\n```\ncode\n```', definition)).toBe(true);
+    expect(hasReferenceDefinitionOutsideFences('```\ncode\n```\n\n[r]: https://kortix.com', definition)).toBe(true);
+  });
+
+  test('a label that spans lines is matched, because a whole run is tested', () => {
+    const spanning = /^\[[\s\S]{1,999}\]:/m;
+    expect(hasReferenceDefinitionOutsideFences('[a\nb]: https://kortix.com\n\n```\ncode\n```', spanning)).toBe(true);
+    expect(hasReferenceDefinitionOutsideFences('```\ncode\n```\n\n[a\nb]: https://kortix.com', spanning)).toBe(true);
+  });
+
+  test('container prefixes inside a run match, as the mobile definition pattern allows', () => {
+    const container = /^[ \t]*(?:(?:>|[*+-]|\d{1,9}[.)])[ \t]*)*\[(?:[^\]\\]|\\[\s\S]){1,999}\]:/m;
+    expect(hasReferenceDefinitionOutsideFences('Use [x].\n\n> [x]: https://kortix.com', container)).toBe(true);
+    expect(hasReferenceDefinitionOutsideFences('Use [x].\n\n1. > [x]: https://kortix.com', container)).toBe(true);
+  });
+
+  test('a definition a container fence cannot own is still found', () => {
+    expect(hasReferenceDefinitionOutsideFences('- item\n\n  ```\n  code\n\n[r]: https://kortix.com', definition)).toBe(
+      true,
+    );
+    expect(hasReferenceDefinitionOutsideFences('> quote\n\n  ```\n  code\n\n[r]: https://kortix.com', definition)).toBe(
+      true,
+    );
+  });
+
+  test('a region keeps its content out of the runs around it', () => {
+    expect(hasReferenceDefinitionOutsideFences('[r]: https://kortix.com\n\n```\n\n```', definition)).toBe(true);
+    expect(hasReferenceDefinitionOutsideFences('```\n[r]: https://kortix.com\n```\n[other]: https://kortix.com', definition)).toBe(
+      true,
+    );
+    expect(hasReferenceDefinitionOutsideFences('```\n```\n[r]: https://kortix.com', definition)).toBe(true);
+  });
+
+  test('closers follow the fenced-code and math rules', () => {
+    expect(hasReferenceDefinitionOutsideFences('```\n[r]: https://kortix.com\n    ```\n[r2]: https://kortix.com', definition)).toBe(
+      false,
+    );
+    expect(hasReferenceDefinitionOutsideFences('```\n[r]: https://kortix.com\n   ```\n[r2]: https://kortix.com', definition)).toBe(
+      true,
+    );
+    expect(hasReferenceDefinitionOutsideFences('$$$\n[r]: https://kortix.com\n$$\n[r2]: https://kortix.com', definition)).toBe(
+      false,
+    );
+    expect(hasReferenceDefinitionOutsideFences('$$$\n[r]: https://kortix.com\n$$$\n[r2]: https://kortix.com', definition)).toBe(
+      true,
+    );
   });
 });

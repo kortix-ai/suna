@@ -8,8 +8,6 @@ import type { Assertion, Captured } from "./result";
 export interface StepRecorder {
   pushRequest(c: Captured): void;
   pushAssertion(a: Assertion): void;
-  /** Route templates touched, for coverage aggregation. */
-  routesHit: Set<string>;
 }
 
 const als = new AsyncLocalStorage<StepRecorder>();

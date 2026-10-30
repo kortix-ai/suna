@@ -76,7 +76,6 @@ async function sessionStartError(): Promise<unknown> {
       repoUrl: 'https://example.test/undecryptable.git',
       baseRef: 'main',
       agentName: 'default',
-      llmGatewayEnabled: false,
     });
     return null;
   } catch (error) {

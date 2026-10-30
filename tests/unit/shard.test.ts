@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { RegisteredFlow } from '../src/core/flow';
@@ -7,6 +8,7 @@ import {
   isPinnedToFirstShard,
   parseShardSpec,
   planShard,
+  SERIAL_WORKER_PENALTY,
 } from '../src/core/shard';
 
 function fakeFlow(
@@ -112,6 +114,16 @@ describe('planShard', () => {
     // Longest-first: the 600s flow alone, the ten 60s flows opposite it.
     expect(loads[0]).toBe(600_000);
     expect(loads[1]).toBe(600_000);
+  });
+
+  it('charges a serial flow the API worker count the release gate runs', () => {
+    // KRTX-2667: the constant read 2 while the gate ran 4 workers.
+    const gate = readFileSync(resolve(import.meta.dirname, '../../.github/workflows/tests-release.yml'), 'utf8');
+    const workers = Number(/KE2E_API_WORKERS:\s*'(\d+)'/.exec(gate)?.[1]);
+    expect(workers).toBeGreaterThan(0);
+    expect(SERIAL_WORKER_PENALTY).toBe(workers);
+    const flows = [fakeFlow('S-1', { serial: true, timeoutMs: 60_000 }), fakeFlow('P-1')];
+    expect(planShard(flows, { current: 1, total: 2 }).loads[0]).toBe(60_000 * workers);
   });
 
   it('degenerates to the whole suite at --shard 1/1', () => {

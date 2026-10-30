@@ -9,11 +9,10 @@
  */
 import * as React from 'react';
 import { View } from 'react-native';
-import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { KortixBottomSheetModal } from '@/components/kortix/sheet';
-import type { SheetRef } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, useSheetHandle, type SheetRef } from '@/components/kortix/sheet';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import type { ProjectSession } from '@/lib/projects/projects-client';
@@ -26,7 +25,7 @@ import {
   spokenRelative,
 } from '@/lib/session/session-list';
 
-export interface SubAgentListSheetProps {
+interface SubAgentListSheetProps {
   subAgents: ProjectSession[];
   onSelect: (session: ProjectSession) => void;
 }
@@ -34,17 +33,9 @@ export interface SubAgentListSheetProps {
 export const SubAgentListSheet = React.forwardRef<SheetRef, SubAgentListSheetProps>(
   function SubAgentListSheet({ subAgents, onSelect }, ref) {
     const insets = useSafeAreaInsets();
-    const modalRef = React.useRef<BottomSheetModal>(null);
     // Read once per open, so the times do not tick while the sheet shows.
     const [now, setNow] = React.useState(() => Date.now());
-
-    React.useImperativeHandle(ref, () => ({
-      open: () => {
-        setNow(Date.now());
-        modalRef.current?.present();
-      },
-      close: () => modalRef.current?.dismiss(),
-    }));
+    const modalRef = useSheetHandle(ref, () => setNow(Date.now()));
 
     return (
       <KortixBottomSheetModal

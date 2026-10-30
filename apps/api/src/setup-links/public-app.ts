@@ -35,10 +35,12 @@ import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { enforceRateLimit } from '../middleware/rate-limit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { resolveSetupLink } from './token';
+import { secretLinkSuperseded } from './mint-secret-link';
 import { watchConnectorCompletion } from './connector-completion-watch';
 import { composioConfigured, composioToolkitLogo } from '../connectors/composio';
 import { connectorConnectedPrompt, notifyConnectorSession } from '../connectors/notify-session';
 import { readJsonObject } from '../shared/http-body';
+import { rethrowDatabaseError } from '../shared/database-errors';
 
 // The connector half of the notification moved to connectors/notify-session.ts so the
 // in-session Connect button's finalize can reuse it. Re-exported: this module is where
@@ -58,6 +60,7 @@ const SecretLinkErrors = errors(400, 404, 409, 410);
 const ConnectorLinkErrors = errors(400, 404, 409, 410, 501, 502);
 
 const SecretLinkSchema = z.object({
+  scope: z.enum(['runtime', 'connector']),
   kind: z.literal('secret'),
   project_name: z.string(),
   requester: z.object({ label: z.string().nullable() }).nullable(),
@@ -103,7 +106,7 @@ const ConnectorFinalizeSchema = z.object({
   label: z.string().nullable().optional(),
 });
 
-// Same shape as createPublicSessionShareRateLimitMiddleware (public-session-shares):
+// Same shape as createInviteAcceptRateLimitMiddleware (middleware/rate-limit.ts):
 // no authenticated identity to key on, so key on the bearer token itself — every
 // legitimate use of one link shares that bucket. `ksl_...` is the wire prefix
 // minted in ./token.ts; anything not shaped like a real token falls back to the
@@ -230,9 +233,14 @@ setupLinksPublicApp.openapi(createRoute({
   );
   if (dead.length > 0) return c.json({ error: deadSecretLinkMessage(dead) }, 409);
 
+  if (await secretLinkSuperseded(resolved.projectId, resolved.payload.fields.map((field) => field.name), resolved.payload.nonce)) {
+    return c.json({ error: 'This link is no longer valid — ask for the latest link' }, 409);
+  }
+
   const requester = await linkRequester(resolved.projectId, resolved.payload.uid);
   return c.json({
     kind: 'secret' as const,
+    scope: resolved.payload.scope,
     project_name: project.name,
     requester: requester ? { label: requester.label } : null,
     fields: resolved.payload.fields.map((f) => ({
@@ -292,6 +300,9 @@ setupLinksPublicApp.openapi(createRoute({
       payload.iat ?? 0,
     );
     if (dead.length > 0) return c.json({ error: deadSecretLinkMessage(dead) }, 409);
+    if (await secretLinkSuperseded(resolved.projectId, payload.fields.map((field) => field.name), payload.nonce)) {
+      return c.json({ error: 'This link is no longer valid — ask for the latest link' }, 409);
+    }
     // "Only the person who asked" — the one audience a link holder may choose.
     // It can only narrow: the default is everyone in the project.
     // The minter must still be in the account: a removed member's links die with them.
@@ -474,14 +485,6 @@ async function resolveConnectorLink(c: Context): Promise<
   if (resolved.payload.kind !== 'connector') {
     return { error: c.json({ error: 'Wrong link type' }, 400) };
   }
-  if (!composioConfigured() && !pipedreamConfigured()) {
-    return {
-      error: c.json(
-        { error: 'No hosted connector authorization provider is configured on this deployment' },
-        501,
-      ),
-    };
-  }
   if (!resolved.payload.app) {
     return { error: c.json({ error: 'This connector has no provider app bound' }, 400) };
   }
@@ -502,8 +505,17 @@ async function resolveConnectorLink(c: Context): Promise<
   // handlers. This check was missed when those were opened up, so a Composio
   // connector produced a link whose own intake page then answered
   // "Connector not found" — the button worked and the modal behind it 404'd.
-  if (!connector || (connector.providerType !== 'pipedream' && connector.providerType !== 'composio')) {
+  if (!connector || !['pipedream', 'composio', 'mcp'].includes(connector.providerType)) {
     return { error: c.json({ error: 'Connector not found' }, 404) };
+  }
+  // An MCP connector signs in through Kortix itself; the others need a hosted provider.
+  if (connector.providerType !== 'mcp' && !composioConfigured() && !pipedreamConfigured()) {
+    return {
+      error: c.json(
+        { error: 'No hosted connector authorization provider is configured on this deployment' },
+        501,
+      ),
+    };
   }
   // Links minted before `owner` existed decode without it. Every one of them
   // authorized the caller's own account, so `me` is the faithful default.
@@ -599,6 +611,7 @@ setupLinksPublicApp.openapi(createRoute({
     });
     return c.json({ connect_url: started.connectUrl });
   } catch (err) {
+    rethrowDatabaseError(err);
     return c.json({ error: err instanceof Error ? err.message : 'Failed to start connect' }, 502);
   }
 });
@@ -664,6 +677,7 @@ setupLinksPublicApp.openapi(createRoute({
     connected = result.connected;
     connectedAs = result.connectedAs ?? null;
   } catch (err) {
+    rethrowDatabaseError(err);
     return c.json({ error: err instanceof Error ? err.message : 'Failed to finalize connect' }, 502);
   }
   // Not connected yet is the NORMAL state while the user is still on
@@ -724,6 +738,7 @@ async function finalizeNamedAccount(
     connected = result.connected;
     connectedAs = result.connectedAs ?? null;
   } catch (err) {
+    rethrowDatabaseError(err);
     return c.json({ error: err instanceof Error ? err.message : 'Failed to finalize connect' }, 502);
   }
   if (!connected) return c.json({ connected: false }, 200);

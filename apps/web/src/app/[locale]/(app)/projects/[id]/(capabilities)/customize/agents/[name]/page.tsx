@@ -2,12 +2,12 @@
 
 import { useParams } from 'next/navigation';
 
-import { AgentPage } from '@/features/workspace/capabilities/agents/agent-page';
+import { AgentPage } from '@kortix/ui/customize/agents/agent-page';
 
 /**
  * /projects/[id]/agent/[name] — one agent, as a page. The Agents tab opened on
  * a single agent: its instructions, model, triggers, grants, and who may use
- * it. See `features/workspace/capabilities/agents/agent-page.tsx`.
+ * it. See `packages/ui/src/customize/agents/agent-page.tsx`.
  *
  * `name` is the manifest key, URL-encoded by `agentHref` — decoded here once
  * so the page and every hook under it work with the real name.

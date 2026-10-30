@@ -7,6 +7,7 @@ import {
   isAppOwnedStorageKey,
   isKeptStorageKey,
 } from './clear-local-storage';
+import { useDiagnosticsStore } from '@kortix/ui/internal/stores/diagnostics-store';
 
 /**
  * A minimal but FUNCTIONAL `Storage` — real `length`/`key(i)` iteration, not
@@ -67,6 +68,8 @@ const EXPECTED_KEEP_KEYS = [
   'kortix-sound-preferences',
   'kortix-user-preferences',
   'kortix-web-notifications',
+  'kortix.mobileAppPromo',
+  'kortix:marko-welcome-dismissed',
 ];
 
 const originalWindow = globalThis.window;
@@ -131,7 +134,7 @@ describe('isKeptStorageKey', () => {
     expect([...KEEP_STORAGE_KEYS].sort()).toEqual([...EXPECTED_KEEP_KEYS].sort());
   });
 
-  test('the three documented device-scoped keys are kept', () => {
+  test('the documented device-scoped keys are kept', () => {
     // Against the LITERAL, not `KEEP_STORAGE_KEYS` — see `EXPECTED_KEEP_KEYS`.
     for (const key of EXPECTED_KEEP_KEYS) {
       expect(isKeptStorageKey(key)).toBe(true);
@@ -183,6 +186,24 @@ describe('clearUserLocalStorage', () => {
       expect(fakeLocalStorage.getItem(key)).not.toBeNull();
     }
     expect(fakeLocalStorage.length).toBe(EXPECTED_KEEP_KEYS.length);
+  });
+
+  test('the promo dismissals survive the sweep — a fresh sign-in must not re-ask (KRTX-2640)', () => {
+    // The real shapes each dismissal is written in: the mobile promo's
+    // persisted zustand payload, and the founder card's plain sentinel. A
+    // swept per-user key rides along as the control — if this test ever goes
+    // green with the control surviving too, the sweep itself broke.
+    fakeLocalStorage.setItem('kortix.mobileAppPromo', '{"state":{"closed":true},"version":1}');
+    fakeLocalStorage.setItem('kortix:marko-welcome-dismissed', '1');
+    fakeLocalStorage.setItem('kortix-browser-recents', '[]');
+
+    clearUserLocalStorage();
+
+    expect(fakeLocalStorage.getItem('kortix.mobileAppPromo')).toBe(
+      '{"state":{"closed":true},"version":1}',
+    );
+    expect(fakeLocalStorage.getItem('kortix:marko-welcome-dismissed')).toBe('1');
+    expect(fakeLocalStorage.getItem('kortix-browser-recents')).toBeNull();
   });
 
   test('leaves a key with no app prefix untouched', () => {
@@ -239,4 +260,11 @@ describe('clearUserLocalStorage', () => {
     expect(() => clearUserLocalStorage()).not.toThrow();
     expect(fakeSessionStorage.length).toBe(0);
   });
+});
+
+test('the diagnostics store persist name is swept at sign-out and not kept', () => {
+  const name = useDiagnosticsStore.persist.getOptions().name;
+  expect(name).toBe('kortix-diagnostics');
+  expect(isAppOwnedStorageKey(name!)).toBe(true);
+  expect(isKeptStorageKey(name!)).toBe(false);
 });

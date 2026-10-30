@@ -6,8 +6,11 @@ predicate="${2:-}"
 max_attempts="${COSIGN_MAX_ATTEMPTS:-3}"
 retry_delay_seconds="${COSIGN_RETRY_DELAY_SECONDS:-10}"
 
-if [ -z "$ref" ] || [ -z "$predicate" ]; then
-  echo "usage: $0 <image-ref> <spdx-predicate>" >&2
+# The predicate is optional: `deploy-prod.yml` signs the release images it
+# retagged (no SBOM is generated there), while `deploy-dev.yml` signs and
+# attests. Same retry handling either way.
+if [ -z "$ref" ]; then
+  echo "usage: $0 <image-ref> [spdx-predicate]" >&2
   exit 2
 fi
 if ! [[ "$max_attempts" =~ ^[1-9][0-9]*$ ]]; then
@@ -56,5 +59,7 @@ run_with_rekor_retry() {
 }
 
 run_with_rekor_retry "image signature" cosign sign --yes "$ref"
-run_with_rekor_retry "SBOM attestation" \
-  cosign attest --yes --type spdxjson --predicate "$predicate" "$ref"
+if [ -n "$predicate" ]; then
+  run_with_rekor_retry "SBOM attestation" \
+    cosign attest --yes --type spdxjson --predicate "$predicate" "$ref"
+fi

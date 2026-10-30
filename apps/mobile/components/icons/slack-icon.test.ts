@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
  */
 const read = (path: string) => readFileSync(`${import.meta.dir}/${path}`, 'utf8');
 const mobileMark = read('slack-icon.tsx');
-const webMark = read('../../../web/src/features/icon/icons/slack.tsx');
+const webMark = read('../../../../packages/ui/src/internal/icons/slack.tsx');
 const userMessage = read('../session/turn/user-message.tsx');
 const sessionTree = read('../session/SessionTreeParts.tsx');
 

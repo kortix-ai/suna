@@ -28,9 +28,10 @@
  * views, JSON viewers, etc.).
  */
 
-import { isKortixAppUrl } from '@/features/session/kortix-app-url';
-import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { createSandboxProxyContext, rewriteSandboxPath } from '@/lib/utils/sandbox-proxy';
+import { parseArtifactUrl } from '@kortix/ui/artifacts';
+import { isKortixAppUrl } from '@kortix/ui/apps';
+import { openSessionQuickView } from '@kortix/ui/session-panel';
+import { createSandboxProxyContext, rewriteSandboxPath } from '@kortix/ui/internal/lib/utils/sandbox-proxy';
 import {
   buildWebProxyUrl,
   isPreviewUrl,
@@ -41,9 +42,9 @@ import {
   proxyUrlToInternal,
   toInternalUrl,
 } from '@/lib/utils/sandbox-url';
-import { enrichPreviewMetadata } from '@/lib/utils/session-context';
-import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-browser-store';
-import { useTabStore } from '@/stores/tab-store';
+import { enrichPreviewMetadata } from '@kortix/ui/internal/lib/utils/session-context';
+import { getActivePanelSessionId, sessionPreviewTabId } from '@kortix/ui/internal/stores/session-browser-store';
+import { useTabStore } from '@kortix/ui/internal/stores/tab-store';
 import { useEffect } from 'react';
 
 // The session's panel is keyed by the OpenCode chatSessionId (registered by the
@@ -76,6 +77,15 @@ export function LocalhostLinkInterceptor() {
 
       const href = anchor.href;
       if (!href) return;
+
+      // An artifact's app link (same origin) opens as the artifact in the session panel,
+      // like a Kortix App; off a session page it navigates as usual.
+      if (parseArtifactUrl(href) && getCurrentSessionId()) {
+        e.preventDefault();
+        e.stopPropagation();
+        openSessionQuickView('browser', 'chat', { url: href });
+        return;
+      }
 
       try {
         if (new URL(href).origin === window.location.origin) return;

@@ -167,6 +167,8 @@ export interface SandboxTemplateView {
   lastError: string | null;
   /** Fresh launch-readiness observations for this exact content identity. */
   providerCoverage?: SandboxTemplateProviderCoverage[];
+  /** `residential_proxy`; null = off. */
+  residentialProxy: ResolvedTemplate['residentialProxy'];
 }
 
 export async function listSandboxTemplates(
@@ -243,6 +245,7 @@ async function toView(
     builtFromCommit: t.builtFromCommit,
     lastBuiltAt: null,
     lastError: null,
+    residentialProxy: t.residentialProxy,
     ...(providerCoverage ? { providerCoverage } : {}),
   };
 }

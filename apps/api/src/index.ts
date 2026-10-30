@@ -1,4 +1,5 @@
 // Expand the aggregate ECS secret before any module reads process.env.
+import { loadManagedLineupAtBoot } from './workers/managed-lineup-worker';
 import './environment-secret';
 
 // ─── Observability (must follow environment hydration) ───────────────────────
@@ -19,6 +20,7 @@ import { dispatchInbound } from './inbound-dispatch';
 import { bootServices, markSchemaReady, shutdown } from './bootstrap';
 import { appWsHandlers } from './apps/ws-proxy';
 import { wsHandlers as tunnelWsHandlers } from './tunnel';
+import { chromeWsHandlers } from './chrome/ws';
 import { previewWsHandlers } from './sandbox-proxy/ws-proxy';
 
 // The assembled app; the server entry below only serves it.
@@ -85,6 +87,8 @@ if (process.env.KORTIX_MODEL_PRICING_LIVE_ENABLED !== '0') {
     console.error('[startup] Model pricing init failed (will retry in 24h):', err),
   );
 }
+// Kortix managed models come from Platinum Inference: read the lineup before serving.
+if (import.meta.main) await loadManagedLineupAtBoot();
 if (process.env.KORTIX_MODEL_CATALOG_LIVE_ENABLED !== '0') {
   runtimeModelCatalog
     .start()
@@ -182,6 +186,10 @@ export default {
         tunnelWsHandlers.onOpen(ws.data.tunnelId, ws as any);
         return;
       }
+      if (ws.data?.type === 'chrome-extension') {
+        chromeWsHandlers.open(ws as any);
+        return;
+      }
       if (ws.data?.type === 'preview-ws') {
         previewWsHandlers.open(ws as any);
         return;
@@ -204,6 +212,10 @@ export default {
         tunnelWsHandlers.onMessage(ws.data.tunnelId, ws as any, message);
         return;
       }
+      if (ws.data?.type === 'chrome-extension') {
+        chromeWsHandlers.message(ws as any, message);
+        return;
+      }
       if (ws.data?.type === 'preview-ws') {
         previewWsHandlers.message(ws as any, message);
         return;
@@ -217,6 +229,10 @@ export default {
     close(ws: { data: any }) {
       if (ws.data?.type === 'tunnel-agent') {
         tunnelWsHandlers.onClose(ws.data.tunnelId, ws as any);
+        return;
+      }
+      if (ws.data?.type === 'chrome-extension') {
+        chromeWsHandlers.close(ws as any);
         return;
       }
       if (ws.data?.type === 'preview-ws') {

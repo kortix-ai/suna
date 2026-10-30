@@ -11,6 +11,7 @@ import { buildNoticeCard } from './cards';
 import { resolveTeamsProjectConversation } from './post';
 import { assertValidTeamsServiceUrl } from '../teams-service-url';
 import { botConnectorToken, graphToken } from '../teams-auth';
+import { logger } from '../../lib/logger';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 import type { TeamsInbound } from './inbound';
 
@@ -84,6 +85,28 @@ function hostedContentConversation(
 export type FileProxyError = { ok: false; error: string; status: number };
 
 /**
+ * Why a Teams token could not be minted (KRTX-2978). Microsoft's token endpoint
+ * answering 400/401 is configuration a person must fix, and its AADSTS code
+ * says which; anything else (network, 5xx) stays the transient 502. The log
+ * carries the status and the code, never the response body or the secret.
+ */
+function tokenFailure(kind: 'bot' | 'Graph', error: unknown): FileProxyError {
+  const message = error instanceof Error ? error.message : String(error);
+  const status = /^Teams token request failed \((\d{3})\)/.exec(message)?.[1];
+  const aadsts = /AADSTS\d+/.exec(message)?.[0];
+  logger.warn('[teams] token mint failed', { kind, status: status ?? null, aadsts: aadsts ?? null });
+  if (status !== '400' && status !== '401') return { ok: false, error: `could not mint a ${kind} token`, status: 502 };
+  const code = aadsts ? ` (${aadsts})` : '';
+  return {
+    ok: false,
+    status: 409,
+    error: kind === 'bot'
+      ? `Microsoft refused the Teams bot token${code}. Renew the Teams bot secret.`
+      : `Microsoft refused the Microsoft Graph token${code}. Renew the Teams bot secret or grant admin consent for Microsoft Graph.`,
+  };
+}
+
+/**
  * Fetch a file an inbound Teams message carried. A Graph hosted-content URL is
  * confined like a read of its conversation: the Graph token is the tenant's,
  * and one tenant can be connected to several projects. A Bot Framework
@@ -116,8 +139,12 @@ export async function downloadTeamsFile(
     // A Bot Framework attachment (an image pasted into the chat): the
     // connector token that posts our cards is the credential that reads it.
     const creds = await loadTeamsBotCredentials(projectId);
-    const token = await botConnectorToken(creds).catch(() => null);
-    if (!token) return { ok: false, error: 'could not mint a bot token', status: 502 };
+    let token: string;
+    try {
+      token = await botConnectorToken(creds);
+    } catch (error) {
+      return tokenFailure('bot', error);
+    }
     headers.Authorization = `Bearer ${token}`;
   } else if (GRAPH_HOST.test(parsed.hostname)) {
     // The tenant comes from the install record the connect paths proved, not
@@ -129,8 +156,12 @@ export async function downloadTeamsFile(
     const gate = await gateChannelRead({ projectId, platform: 'teams', risk: 'read', ...conversation }, ownership);
     if (gate.refusal) return { ok: false, error: gate.refusal.message, status: 403 };
     const creds = await loadTeamsBotCredentials(projectId);
-    const token = await graphToken(tenant, creds).catch(() => null);
-    if (!token) return { ok: false, error: 'could not mint a Graph token', status: 502 };
+    let token: string;
+    try {
+      token = await graphToken(tenant, creds);
+    } catch (error) {
+      return tokenFailure('Graph', error);
+    }
     headers.Authorization = `Bearer ${token}`;
   }
 
@@ -379,8 +410,12 @@ async function uploadToTeamDrive(
   const [tenant] = await provenTeamsTenants(projectId);
   if (!tenant) return { ok: false, error: 'Teams not connected for this project', status: 404 };
   const creds = await loadTeamsBotCredentials(projectId);
-  const token = await graphToken(tenant, creds).catch(() => null);
-  if (!token) return { ok: false, error: 'could not mint a Graph token', status: 502 };
+  let token: string;
+  try {
+    token = await graphToken(tenant, creds);
+  } catch (error) {
+    return tokenFailure('Graph', error);
+  }
 
   // The drive is chosen by the TEAM THAT OWNS THIS CONVERSATION, verified
   // server-side — never by the client-supplied id alone. Without this, a

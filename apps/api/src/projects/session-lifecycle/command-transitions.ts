@@ -1,5 +1,6 @@
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
+import { releaseCreateClaims } from '../../channels/core/threads';
 import { deadLetterCause } from './dead-letter-cause';
 import { logger } from '../../lib/logger';
 import { extendSandboxDeadline } from '../sandbox-deadline';
@@ -211,7 +212,13 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
   if (!next) return null;
   await db
     .update(sessionLifecycleCommands)
-    .set({ availableAt: new Date(), updatedAt: new Date() })
+    // A woken row starts the backoff curve again, so it never sits out the
+    // stale-wait minute (`INBOX_STALE_ORDER_BACKOFF_MS`) after its kick.
+    .set({
+      availableAt: new Date(),
+      result: sql`${sessionLifecycleCommands.result} - 'admission_refusals'`,
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(sessionLifecycleCommands.commandId, next.commandId),
@@ -450,6 +457,19 @@ export async function markCommandFailed(
   const triggerSlug = commandTriggerSlug(row);
   if (triggerSlug && !lease.lockedBy?.startsWith(INLINE_CREATE_LOCK_PREFIX)) {
     await raiseTriggerAlert({ projectId: row.projectId, accountId: row.accountId, slug: triggerSlug, source: 'fire', error });
+  }
+
+  // A channel create given up frees its thread: the next message starts at
+  // once instead of waiting out the claim.
+  if (row.commandType === 'create_session' && Array.isArray(payload.postCreate)) {
+    await releaseCreateClaims(payload.postCreate);
+  }
+
+  // A dead-lettered head opens no turn, so no turn end wakes the prompt behind
+  // it. Make that row due now; the worker tick drains it within ~1 s.
+  if (row.commandType === 'continue_session' && row.sessionId) {
+    await promoteNextInboxRow(row.sessionId).catch((err) =>
+      logger.warn('[session-lifecycle] wake after dead-letter failed', { sessionId: row.sessionId, error: err }));
   }
   return 'dead_lettered';
 }

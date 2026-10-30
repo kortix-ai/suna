@@ -311,11 +311,27 @@ export function activeHostName(): string | null {
 
 // ─── Active account + default project ───────────────────────────────────────
 
+/** The host whose PERSISTED identity state (active account, default
+ *  project) plain commands read. The env-token host is synthetic — the
+ *  delegation env carries neither — so when it wins, the stored active host
+ *  (the one `accounts use` and `projects use` write) is the only place that
+ *  state exists; reading the env host there reports "no active account" and
+ *  `default_project: null` although the config holds both (KRTX-1951,
+ *  KRTX-1804). With an in-sandbox `hosts use` selection or no injected
+ *  token, `activeHost()` already resolves to the stored host. */
+function persistedStateHost(): Host | null {
+  const config = loadConfig();
+  const stored = config.hosts[config.active] ?? null;
+  if (sandboxCliToken() && !markerActive(config)) return stored;
+  return activeHost();
+}
+
 /** The active account for the current invocation (the active host's
- *  stored account), or null when there's no host / no account yet (e.g.
- *  inside a sandbox, where the env host carries no account). */
+ *  stored account), or null when there's no host / no account yet. Inside a
+ *  sandbox this is the stored active host's account — the env host carries
+ *  none, and the stored host is what `accounts use` maintains. */
 export function activeAccount(): ActiveAccount | null {
-  const host = activeHost();
+  const host = persistedStateHost();
   if (!host || !host.account_id) return null;
   return {
     id: host.account_id,
@@ -324,9 +340,11 @@ export function activeAccount(): ActiveAccount | null {
   };
 }
 
-/** The active host's global default project, or null when none is set. */
+/** The active host's global default project, or null when none is set.
+ *  Inside a sandbox this is the stored active host's default — the env host
+ *  never carries one, and the stored host is what `projects use` writes. */
 export function defaultProject(): DefaultProjectRef | null {
-  const host = activeHost();
+  const host = persistedStateHost();
   return host?.default_project ?? null;
 }
 

@@ -6,7 +6,7 @@ import { chooseEffectiveModel } from './effective';
  *
  * Thin adapter over `chooseEffectiveModel` (the single precedence definition) that
  * returns the gateway's `string | undefined` shape. Free tier cannot use managed
- * Kortix models, so a managed chosen default is dropped to the platform default —
+ * Kortix models, so a managed chosen default is dropped —
  * never silently downgraded to a broader layer. A BYOK default (`provider/model`)
  * is kept for free tier (resolved via their key).
  */
@@ -16,14 +16,12 @@ export function chooseDefaultModel(params: {
   agentName?: string | null;
   projectDefault?: string | null;
   freeModelsOnly?: boolean;
-  platformDefault?: string | null;
 }): string | undefined {
   const { model } = chooseEffectiveModel({
     agentDefault: params.agentName ? params.agentDefaults[params.agentName] : null,
     projectDefault: params.projectDefault ?? null,
     accountDefault: params.accountDefault,
     freeModelsOnly: params.freeModelsOnly,
-    platformDefault: params.platformDefault,
   });
   return model ?? undefined;
 }

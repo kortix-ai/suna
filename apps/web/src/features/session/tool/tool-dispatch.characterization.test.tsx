@@ -1,6 +1,5 @@
-import '@/features/session/tool/tools/register';
-import { ToolPartRenderer } from './tool-part-renderer';
-import { ToolRegistry } from './shared/registry';
+import '@kortix/ui/session/tool/tools/register';
+import { ToolPartRenderer, ToolRegistry } from '@kortix/ui/session';
 import type { ToolPart } from '@/ui';
 import { toolCallBlock } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';

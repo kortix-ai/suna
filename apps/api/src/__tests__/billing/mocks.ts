@@ -174,6 +174,7 @@ export function registerGlobalMocks() {
     };
     return {
       db,
+      withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
     // Real shape is a boolean const, not a function. FALSE on purpose: these
     // billing tests drive the no-DB path, and the stub `db` above answers only
     // `select().from().where()`. Flipping this to true sends the code down real

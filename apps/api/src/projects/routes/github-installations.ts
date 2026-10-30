@@ -22,6 +22,7 @@ import {
   consumeGitHubInstallationState,
   countInstallationsLinkedToOtherAccounts,
   createGitHubInstallationInstallUrl,
+  expireAccountGitHealth,
   getAccountGitHubInstallation,
   listAccountGitHubInstallations,
 } from '../lib/git';
@@ -31,6 +32,7 @@ import {
   serializeGitHubInstallations,
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 // GET /v1/projects/github/installation?account_id=...
 // Account-scoped GitHub App install state. The client only receives metadata;
@@ -125,6 +127,10 @@ export async function upsertAccountGitHubInstallation(
   });
 
   if (!row) throw new Error('Failed to save the GitHub installation');
+  // A reconnect: every disconnected project of this account is probed on its
+  // next read instead of after PROBE_INTERVAL_MS, and is repointed to this
+  // installation when it is the one that now mints for its owner.
+  await expireAccountGitHealth(accountId);
   return row;
 }
 
@@ -196,6 +202,7 @@ export function registerGithubInstallationsRoutes(): void {
       try {
         linkable = await listLinkableGitHubAppInstallations(githubUserToken);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: (error as Error).message || 'Failed to list GitHub App installations',
@@ -272,6 +279,7 @@ export function registerGithubInstallationsRoutes(): void {
       try {
         installation = await getGitHubAppInstallation(installationId);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: (error as Error).message || 'Failed to verify GitHub App installation',
@@ -283,6 +291,7 @@ export function registerGithubInstallationsRoutes(): void {
       try {
         await verifyGitHubInstallationAdmin(githubUserToken, installation);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: (error as Error).message || 'GitHub administrator verification failed',
@@ -299,6 +308,7 @@ export function registerGithubInstallationsRoutes(): void {
         );
         return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: (error as Error).message || 'Failed to save the GitHub installation',
@@ -355,6 +365,7 @@ export function registerGithubInstallationsRoutes(): void {
     try {
       installation = await getGitHubAppInstallation(installationId);
     } catch (error) {
+      rethrowDatabaseError(error);
       const message = (error as Error).message || 'Failed to verify GitHub App installation';
       return c.json({ error: message }, 502);
     }
@@ -362,6 +373,7 @@ export function registerGithubInstallationsRoutes(): void {
     try {
       await verifyGitHubInstallationAdmin(githubUserToken, installation);
     } catch (error) {
+      rethrowDatabaseError(error);
       const message = (error as Error).message || 'GitHub administrator verification failed';
       return c.json({ error: message }, githubVerificationStatus(error));
     }
@@ -388,6 +400,7 @@ export function registerGithubInstallationsRoutes(): void {
       );
       return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
     } catch (error) {
+      rethrowDatabaseError(error);
       return c.json(
         {
           error: (error as Error).message || 'Failed to save the GitHub installation',
@@ -511,6 +524,7 @@ export function registerGithubInstallationsRoutes(): void {
       try {
         githubLogin = await resolveGitHubUserLogin(githubUserToken);
       } catch (error) {
+        rethrowDatabaseError(error);
         const message = (error as Error).message || 'GitHub authorization failed';
         // A token GitHub rejects is the caller's problem, and a 502 would reach
         // the browser as a 503 (`EDGE_REWRITTEN_STATUSES`, apps/api/src/index.ts)

@@ -21,6 +21,10 @@ mock.module('../shared/audit', () => ({
   recordAuditEvent: async () => {},
 }));
 
+mock.module('../billing/services/billing-cache', () => ({
+  resolveAccountBilling: async () => ({ plan: { displayName: 'Free' } }),
+}));
+
 mock.module('../billing/services/entitlements', () => ({
   accountHasEntitlement: async () => false,
 }));

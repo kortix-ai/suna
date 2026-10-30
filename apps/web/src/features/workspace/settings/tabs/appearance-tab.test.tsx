@@ -1,6 +1,6 @@
 import { INTERFACE_THEME_OPTIONS } from '@/features/layout/interface-theme';
 import { TERMINAL_THEMES } from '@/lib/interface-themes';
-import { WALLPAPERS } from '@/lib/wallpapers';
+import { WALLPAPERS } from '@kortix/ui/theme';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';

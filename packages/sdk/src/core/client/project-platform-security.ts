@@ -25,6 +25,21 @@ export function bindProjectPlatformSecurity(projectId: string) {
         completeInstall: (input: Parameters<typeof P.completeTeamsInstall>[1]) =>
           P.completeTeamsInstall(projectId, input),
       },
+      telegram: {
+        installation: () => P.getTelegramInstallation(projectId),
+        connect: (input: Parameters<typeof P.connectTelegram>[1]) => P.connectTelegram(projectId, input),
+        /** Replace the whole allowed list. Prefer `allowUser` / `removeUser` for one person. */
+        setAllowedUsers: (userIds: string[]) => P.setTelegramAllowedUsers(projectId, userIds),
+        disconnect: () => P.disconnectTelegram(projectId),
+        /** The allowed users and the people who asked for access, with their Telegram names. */
+        users: () => P.listTelegramUsers(projectId),
+        allowUser: (userId: string) => P.allowTelegramUser(projectId, userId),
+        removeUser: (userId: string) => P.removeTelegramUser(projectId, userId),
+        dismissAccessRequest: (userId: string) => P.dismissTelegramAccessRequest(projectId, userId),
+        /** A user's profile photo through the Kortix API (the bot token stays server-side); null when none. */
+        userPhoto: (...a: DropFirst<Parameters<typeof P.getTelegramUserPhoto>>) =>
+          P.getTelegramUserPhoto(projectId, ...a),
+      },
       email: {
         installation: (connectorSlug?: string | null) =>
           P.getEmailInstallation(projectId, connectorSlug),
@@ -33,6 +48,19 @@ export function bindProjectPlatformSecurity(projectId: string) {
         disconnect: (connectorSlug?: string | null) => P.disconnectEmail(projectId, connectorSlug),
         updatePolicy: (...a: DropFirst<Parameters<typeof P.updateEmailPolicy>>) =>
           P.updateEmailPolicy(projectId, ...a),
+        /** The domains a Resend API key can create inboxes on (no key: the managed domain). */
+        domains: (input?: Parameters<typeof P.listEmailDomains>[1]) => P.listEmailDomains(projectId, input),
+        /** Add a custom domain to your Resend account; returns the DNS records to set. */
+        addDomain: (input: Parameters<typeof P.addEmailDomain>[1]) => P.addEmailDomain(projectId, input),
+        /** Check a custom domain's DNS records again. */
+        verifyDomain: (input: Parameters<typeof P.verifyEmailDomain>[1]) => P.verifyEmailDomain(projectId, input),
+        /** The inboxes: accounts of the email connector. */
+        inboxes: {
+          list: () => P.listEmailInboxes(projectId),
+          add: (input: Parameters<typeof P.addEmailInbox>[1]) => P.addEmailInbox(projectId, input),
+          update: (...a: DropFirst<Parameters<typeof P.updateEmailInbox>>) => P.updateEmailInbox(projectId, ...a),
+          remove: (connectionId: string) => P.removeEmailInbox(projectId, connectionId),
+        },
       },
     },
 

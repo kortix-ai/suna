@@ -469,6 +469,15 @@ pub fn normalize_domain(url: &str) -> Option<String> {
     if host.is_empty() {
         return None;
     }
+    // An internationalized host compares in its ASCII (punycode) form, as the API stores it.
+    let host = if host.is_ascii() {
+        host
+    } else {
+        match url::Host::parse(&host).ok()? {
+            url::Host::Domain(d) => d,
+            _ => return None,
+        }
+    };
     Some(host.strip_prefix("www.").unwrap_or(&host).to_string())
 }
 

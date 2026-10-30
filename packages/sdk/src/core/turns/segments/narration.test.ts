@@ -517,6 +517,41 @@ describe('narrateStep - image_gen must resolve its own action, not always "Made 
     expect(narrateStep('create', [part('image_gen', {})])).toBe('Worked on an image');
   });
 
+  it('counts the images of one batch call: the images it made, else the prompts it asked for', () => {
+    const prompts = ['a fox', 'an owl', 'a hare'];
+    expect(narrateStep('create', [part('image_gen', { action: 'generate', prompts })])).toBe('Made 3 images');
+    expect(narrateStep('create', [part('image_gen', { action: 'edit', prompts: ['a', 'b'] })])).toBe('Edited 2 images');
+    const twoOfThree = JSON.stringify({
+      images: [{ path: '/workspace/output/images/a.png', prompt: 'a fox' }, { path: '/workspace/output/images/c.png', prompt: 'a hare' }],
+      failed: [{ prompt: 'an owl', error: 'Image generation failed (500): Upstream error.' }],
+    });
+    expect(narrateStep('create', [part('image_gen', { action: 'generate', prompts }, twoOfThree)])).toBe('Made 2 images');
+    expect(narrateStep('create', [part('image_gen', { action: 'generate', prompts: ['a fox'] })])).toBe('Made an image');
+    // Two batch calls in one step add up.
+    expect(
+      narrateStep('create', [part('image_gen', { action: 'generate', prompts }), part('image_gen', { action: 'generate', prompts: ['x'] })]),
+    ).toBe('Made 4 images');
+  });
+
+  it('a mixed step counts images, not calls', () => {
+    const line = narrateStep('create', [
+      part('image_gen', { action: 'generate', prompts: ['a', 'b', 'c'] }),
+      part('image_gen', { action: 'edit', prompts: ['d', 'e'] }),
+      part('video_gen', {}),
+    ]);
+    expect(line).toBe('Worked on 5 images and 1 video');
+  });
+
+  it('a batch call that failed as a whole never claims it made its images', () => {
+    const failed = {
+      type: 'tool',
+      tool: 'image_gen',
+      callID: 'c-failed-batch',
+      state: { status: 'error', input: { action: 'generate', prompts: ['a', 'b', 'c'] }, error: 'Image generation failed (500): Upstream error.' },
+    } as unknown as ToolPart;
+    expect(narrateStep('create', [failed])).not.toContain('3 images');
+  });
+
   it('falls back to a vague-but-true sentence when action is missing (grouped)', () => {
     const line = narrateStep('create', [part('image_gen', {}), part('image_gen', {})]);
     expect(line).toBe('Worked on 2 images');
@@ -697,7 +732,7 @@ describe('narrateStep - show/show_user never leak a raw path or URL', () => {
       part('show', {
         title: 'Q3 report',
         path: '/workspace/reports/q3.html',
-        url: 'https://8080-abc123.e2b.app/preview',
+        url: 'https://8080-abc123.preview.example.com/preview',
       }),
     ]);
     expect(line).toBe('Showed you Q3 report');
@@ -718,11 +753,11 @@ describe('narrateStep - show/show_user never leak a raw path or URL', () => {
 
   it('never renders a raw URL — falls back to a domain', () => {
     const line = narrateStep('create', [
-      part('show', { type: 'url', url: 'https://8080-abc123.e2b.app/preview' }),
+      part('show', { type: 'url', url: 'https://8080-abc123.preview.example.com/preview' }),
     ]);
     expect(line).not.toContain('https://');
     expect(line).not.toContain('/preview');
-    expect(line).toBe('Showed you 8080-abc123.e2b.app');
+    expect(line).toBe('Showed you 8080-abc123.preview.example.com');
   });
 
   it('never renders an unparseable url — falls back to the generic "a link" label', () => {

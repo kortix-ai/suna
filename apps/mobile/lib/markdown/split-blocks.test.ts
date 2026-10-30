@@ -188,7 +188,18 @@ describe('splitMarkdownBlocks', () => {
     }
   });
 
-  test('detects definitions behind nested prefixes and escaped brackets', () => {
+  test('a definition inside a fence or display math does not keep the text whole', () => {
+    for (const text of [
+      'Fenced:\n\n```md\n[r]: https://example.com\n```\n\nAfter',
+      'Fenced:\n\n~~~md\n[r]: https://example.com\n~~~\n\nAfter',
+      'Math:\n\n$$\n[r]: https://example.com\n$$\n\nAfter',
+      'Use [text][r].\n\n```md\n[r]: https://example.com\n```\n\nAfter',
+    ]) {
+      expect(expectSameRendering(text).length).toBeGreaterThan(1);
+    }
+  });
+
+  test('a definition behind nested prefixes and escaped brackets is still found', () => {
     for (const text of [
       'Use [x].\n\n> 1. > * [x]: https://example.com',
       'Use [x\\]y].\n\nMore\n\n[x\\]y]: https://example.com',
@@ -207,6 +218,7 @@ describe('splitMarkdownBlocks', () => {
     const started = performance.now();
     splitMarkdownBlocks('[' + 'a'.repeat(50000) + '\n\n' + '- '.repeat(20000) + '[' + 'b'.repeat(5000));
     splitMarkdownBlocks(('[' + 'x'.repeat(998) + '\n').repeat(200));
+    splitMarkdownBlocks('```\n' + '[x]: https://x.co\n\n'.repeat(2000) + '```');
     expect(performance.now() - started).toBeLessThan(250);
   });
 
@@ -374,6 +386,7 @@ describe('splitMarkdown while text streams', () => {
     '~~~\n```\nnot closed by backticks\n~~~\n\n````\n```\ninner\n````\n\n1. one\n2) two\n\n   continued',
     '<div align="center">\n  <img src="a.png">\n\n</div>\n\nAfter the HTML block\n\n<!-- comment\n\nstill comment -->\n\nEnd',
     'See [the docs][docs] first.\n\nMore text\n\n- list\n\n[docs]: https://docs.example.com\n\nTail paragraph',
+    'Plan\n\n[ref]: https://kortix.com\n\n```md\n[r2]: https://kortix.com\n```\n\nUses [a][ref]\n\n$$\n[r3]: https://kortix.com\n$$\n\nDone',
   ];
 
   test('every streamed prefix of the corpus equals a full scan', () => {

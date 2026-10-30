@@ -9,8 +9,10 @@ How a clean, accurate production release happens. Three parts: **what version**
 (the bump philosophy), **how a candidate gets tested** (one Promote dispatch takes
 the `dev` HEAD through staging to a release PR; its one release suite is the
 only gate), and **how prod gets it** (merge → deploy → verify). The release notes you write become the GitHub Release, which
-is exactly what the public **`/changelog`** page renders — so they must reflect
-what actually shipped, nothing invented, nothing missed.
+the public **`/changelog/releases`** page (Release history) renders as written, and the
+weekly **`/changelog`** page merges by section (New / Improved / Fixed) into the
+week the release was published — so they must reflect what actually shipped,
+nothing invented, nothing missed.
 
 Pairs with **kortix-voice** (how the notes read) and **kortix-rollback** (the
 reverse direction). The version source of truth is the root **`VERSION`** file;
@@ -107,11 +109,27 @@ commit already on `staging`.
 ### Step 4 — the release suite is the gate; fix forward
 
 Merge only when `full suite + quality gates` is green on the release PR's head
-SHA. A red suite is fixed **at the root, on `dev`** — never on the release or
-promotion branch, never by weakening a check (the fix-forward traps are in
-[references/fix-forward-traps.md](references/fix-forward-traps.md)). Then
-dispatch Promote again: one new tree, one new run. Nothing runs twice on the
-same tree.
+SHA. Never fix on the release or promotion branch, and never weaken a check
+(the fix-forward traps are in
+[references/fix-forward-traps.md](references/fix-forward-traps.md)).
+
+**The candidate is frozen on `staging`.** A red suite is fixed on the tree
+that was promoted, not on a newer `dev`: every re-promote from `dev` pulls in
+new merges, and on 2026-10-28 five cycles in a row each failed on new `dev`
+drift (Marko: "pin it to whatever got promoted to staging & fix it on staging
+until it's green"). Per fix:
+
+1. Merge the fix into `dev` through a PR, as usual, so `dev` keeps it.
+2. Cherry-pick that commit onto `staging` through a PR:
+   `git switch -c stage-fix/<slug> origin/staging && git cherry-pick <dev sha>`,
+   push, `gh pr create --base staging`, `gh pr merge <n> --merge`. The push to
+   `staging` starts Build Staging and Deploy Staging.
+3. When `/health` on the three staging surfaces serves the new staging SHA,
+   dispatch `promote.yml -f ref=staging` (no `dev` leg). It updates the
+   release branch, and the suite runs once on the new tree.
+
+The next normal Promote from `dev` merges cleanly: `dev` already holds every
+fix that `staging` got.
 
 ### Step 5 — cost every new migration against prod, before merging
 
@@ -204,7 +222,16 @@ never gets past its own bootstrap gives no signal: it is rerun like any other.
 ### Step 9 — prod
 
 Merge the release PR once `full suite + quality gates` is green on its head
-SHA:
+SHA **and** one team member approved it. Since 2026-10-23 the `prod` ruleset
+(20587235) requires 1 approving review with `require_last_push_approval`: an
+approval counts only for the last push, so a re-promote that updates the
+release branch needs a new approval. Under the SOC 2 Change Management Policy
+the person who releases may approve the release PR themselves: one click, and
+that approval authorizes the release (decision of 2026-10-23). Approve as soon
+as the gate goes green. Never bypass the review. The one exception is an
+emergency rollback or fix: an admin bypass then needs an after-the-fact
+approval comment by a second person within 2 business days (compliance rule
+CM-3).
 
 ```bash
 gh pr merge <release-pr> --repo kortix-ai/suna --merge
@@ -261,14 +288,20 @@ written, evidence-backed justification, never silently.
 - **deploy-prod retags; it does not rebuild.** The staging build for the exact
   promoted commit must already be green:
   `gh run list --repo kortix-ai/suna --workflow build-staging.yml --branch staging --limit 3 --json status,conclusion,headSha`.
-- **The `/changelog` page shows only `≥ 1.0.0`** and reads GitHub Release bodies — so a
-  thin/auto-generated body shows up as a thin entry. Write real notes (Step 7).
+- **`/changelog` and `/changelog/releases` show every published `vX.Y.Z` release** and read
+  GitHub Release bodies — so a thin/auto-generated body shows up as a thin entry. The weekly
+  page reads only the bullets under `### New`, `### Improved` and `### Fixed`; a body without
+  those headings shows as its title alone. Write real notes (Step 7).
 - **VERSION is the source of truth**; the version field in `/v1/health` is stamped by
   deploy-prod's task-def, not baked into the image.
 - **A promotion PR is not a normal PR.** Do not squash it, do not push new
   commits onto it to "fix" a failure — fix on `dev` and open a fresh promotion
   (Step 4). Squashing or force-pushing it breaks the SHA trail the migration
   cost pass and the release notes were verified against.
+- **Private channels have their own rollout.** `KORTIX_PRIVATE_CHANNELS_ENABLED`
+  stays unset until its checklist is done, and after it is on, no rollback goes
+  below that release while a private channel exists. The checklist is
+  [references/private-channels-rollout.md](references/private-channels-rollout.md).
 
 ## 5. Undo a bad / premature release
 
@@ -299,7 +332,8 @@ no `vX.Y.Z` Release.
    `staging`, staging served the SHA, and the release PR opened.
 5. `full suite + quality gates` green on the release PR head (every check on
    that commit green); red fixed on `dev` and re-promoted with a new dispatch.
-6. Release PR merged into `prod` with `--merge` (`--admin` only with the
+6. Release PR approved by a team member with write access (the releaser may approve), then
+   merged into `prod` with `--merge` (`--admin` only with the
    owner's explicit OK).
 7. `Deploy Prod` confirmed for the merge SHA; api/gateway/frontend `/health`,
    the three npm packages, the GitHub Release (24 assets), and Better Stack all

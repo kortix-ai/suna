@@ -11,7 +11,18 @@
 import { Linking } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 
+import { isSafeExternalLink } from '@/lib/markdown/safe-link';
 import { IN_APP_BROWSER_OPTIONS, linkTarget } from './link-target';
+
+/**
+ * Opens a link from message markdown when its scheme is http(s) or mailto.
+ * Any other scheme is ignored, and a failed open never becomes an unhandled
+ * rejection.
+ */
+export function openExternalLink(href: unknown) {
+  if (!isSafeExternalLink(href)) return;
+  openLink(href).catch(() => {});
+}
 
 export async function openLink(url: string): Promise<void> {
   const trimmed = url.trim();

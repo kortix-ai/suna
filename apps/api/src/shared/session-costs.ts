@@ -1,3 +1,4 @@
+import { llmValueFields, llmValueBasis } from './llm-value';
 import { numberValue, isoValue, type NumericValue, type TemporalValue } from './cost-values';
 import {
   gatewayRequestLogs,
@@ -196,6 +197,9 @@ interface LegacyComputeAggregateRow {
 }
 
 export interface LegacyGatewaySessionRow {
+  estimated_usage_value?: number | null;
+  priced_requests?: number;
+  unpriced_requests?: number;
   session_id: string;
   llm_cost: number;
   compute_cost: number;
@@ -361,7 +365,11 @@ const llmAggregateFields = {
   outputTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.outputTokens}), 0)::float8`,
   cachedTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cachedTokens}), 0)::float8`,
   cacheWriteTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cacheWriteTokens}), 0)::float8`,
-  modelCount: sql<number>`count(distinct (${gatewayRequestLogs.provider}, ${gatewayRequestLogs.resolvedModel}))::int`,
+  // Refusal rows written by the gateway trace (KRTX-1749: post-auth 4xx and
+  // attributed 401s) carry empty provider/model — they answered nothing. The
+  // pair is real but says nothing about "models used", so keep it out of the
+  // distinct: a session that only saw refusals reports modelCount 0, not 1.
+  modelCount: sql<number>`(count(distinct (${gatewayRequestLogs.provider}, ${gatewayRequestLogs.resolvedModel})) filter (where ${gatewayRequestLogs.provider} <> '' or ${gatewayRequestLogs.resolvedModel} <> ''))::int`,
   lastAt: sql<Date | null>`max(${gatewayRequestLogs.createdAt})`,
 };
 
@@ -894,6 +902,7 @@ export async function listProjectGatewaySessionSpend(input: {
         sessionId: gatewayRequestLogs.sessionId,
         requests: sql<number>`count(*)::int`,
         errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
+        ...llmValueFields,
         cost: totalSpendSql,
         tokens: sql<number>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)::float8`,
         models: sql<number>`count(distinct ${gatewayRequestLogs.requestedModel})::int`,
@@ -932,9 +941,18 @@ export async function listProjectGatewaySessionSpend(input: {
       .groupBy(sandboxComputeSessions.sessionId),
   ]);
 
+  const values = new Map(llmRows.map((row) => [row.sessionId, row]));
   return {
     window_days: input.days,
-    sessions: mergeLegacyGatewaySessionRows(llmRows, computeRows),
+    sessions: mergeLegacyGatewaySessionRows(llmRows, computeRows).map((session) => {
+      const value = values.get(session.session_id);
+      return {
+        ...session,
+        estimated_usage_value: value?.estimated_usage_value ?? null,
+        priced_requests: value?.priced_requests ?? 0,
+        unpriced_requests: value?.unpriced_requests ?? 0,
+      };
+    }),
   };
 }
 
@@ -943,6 +961,9 @@ export interface GatewaySourceSpendRow {
    * the initiator type (`member`, `channel`, `api`, `system`), else
    * `unattributed` for a request that carried no session. */
   source: string;
+  estimated_usage_value: number | null;
+  priced_requests: number;
+  unpriced_requests: number;
   sessions: number;
   requests: number;
   errors: number;
@@ -958,6 +979,7 @@ export interface GatewaySourceSpendRow {
 
 export interface GatewaySourceSpend {
   window_hours: number;
+  valuation: typeof llmValueBasis;
   total: Omit<GatewaySourceSpendRow, 'source' | 'last_at'>;
   sources: GatewaySourceSpendRow[];
 }
@@ -990,6 +1012,7 @@ export async function listProjectGatewaySourceSpend(input: {
 
   const rows = await db
     .select({
+      ...llmValueFields,
       source: sourceSql,
       sessions: sql<number>`count(distinct ${gatewayRequestLogs.sessionId})::int`,
       requests: sql<number>`count(*)::int`,
@@ -1025,6 +1048,9 @@ export async function listProjectGatewaySourceSpend(input: {
       const inputTokens = numberValue(row.inputTokens);
       return {
         source: row.source,
+        estimated_usage_value: row.estimated_usage_value,
+        priced_requests: row.priced_requests,
+        unpriced_requests: row.unpriced_requests,
         sessions: numberValue(row.sessions),
         requests,
         errors: numberValue(row.errors),
@@ -1039,13 +1065,31 @@ export async function listProjectGatewaySourceSpend(input: {
     })
     .sort((left, right) => right.cost - left.cost);
 
-  const sum = (key: 'sessions' | 'requests' | 'errors' | 'cost' | 'kortix_cost' | 'input_tokens' | 'cached_tokens' | 'output_tokens') =>
-    sources.reduce((acc, row) => acc + row[key], 0);
+  const sum = (
+    key:
+      | 'priced_requests'
+      | 'unpriced_requests'
+      | 'sessions'
+      | 'requests'
+      | 'errors'
+      | 'cost'
+      | 'kortix_cost'
+      | 'input_tokens'
+      | 'cached_tokens'
+      | 'output_tokens',
+  ) => sources.reduce((acc, row) => acc + row[key], 0);
   const totalRequests = sum('requests');
   const totalInput = sum('input_tokens');
   return {
     window_hours: hours,
+    valuation: llmValueBasis,
     total: {
+      estimated_usage_value:
+        sum('priced_requests') > 0
+          ? sources.reduce((sum, row) => sum + (row.estimated_usage_value ?? 0), 0)
+          : null,
+      priced_requests: sum('priced_requests'),
+      unpriced_requests: sum('unpriced_requests'),
       sessions: sum('sessions'),
       requests: totalRequests,
       errors: sum('errors'),

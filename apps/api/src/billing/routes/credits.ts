@@ -3,7 +3,8 @@ import type { AppEnv } from '../../types';
 import { PLAN_MAX_MONTHLY_USD, PLAN_MIN_MONTHLY_USD, PLAN_PRESETS } from '../services/tiers';
 import { getCreditBalance } from '../repositories/credit-accounts';
 import { getTransactionsSummary } from '../repositories/transactions';
-import { makeOpenApiApp, json, auth } from '../../openapi';
+import { makeOpenApiApp, json, auth, errors } from '../../openapi';
+import { resolveBillingReadAccountId } from '../http-require-billing-write';
 
 export const creditsRouter = makeOpenApiApp<AppEnv>();
 
@@ -67,10 +68,14 @@ creditsRouter.openapi(
         }),
         'Credit breakdown',
       ),
+      ...errors(403),
     },
   }),
   async (c) => {
-    const accountId = c.get('userId');
+    // The account the caller asked for (account_id), gated by billing.read,
+    // like every sibling billing read; never the caller's personal account by
+    // default (KRTX-2989).
+    const accountId = await resolveBillingReadAccountId(c);
     const balance = await getCreditBalance(accountId);
 
     if (!balance) {
@@ -96,10 +101,11 @@ creditsRouter.openapi(
     request: { query: z.object({ days: z.coerce.number().optional() }) },
     responses: {
       200: json(z.record(z.string(), z.any()), 'Usage summary'),
+      ...errors(403),
     },
   }),
   async (c) => {
-    const accountId = c.get('userId');
+    const accountId = await resolveBillingReadAccountId(c);
     const days = Number(c.req.query('days') ?? 30);
     const summary = await getTransactionsSummary(accountId, days);
     return c.json(summary);

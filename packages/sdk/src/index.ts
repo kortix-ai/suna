@@ -207,6 +207,10 @@ export {
   FEATURE_DISABLED_CODE,
   isFeatureDisabledError,
   featureDisabledKey,
+  REPOSITORY_DISCONNECTED_CODE,
+  isRepositoryDisconnectedError,
+  repositoryDisconnectedReason,
+  type RepositoryDisconnectedReason,
   type ApiErrorFields,
   type BillingErrorUI,
   type FeatureDisabledError,
@@ -339,6 +343,7 @@ export type {
   ProjectCommitDetail,
   ProjectCommitFile,
   ProjectBranch,
+  ProjectBranchSession,
   // Triggers
   ProjectTrigger,
   ProjectTriggerListing,
@@ -416,7 +421,7 @@ export type {
 export {
   // The functions behind `kortix.auth.*` — exported so `Kortix`'s inferred type
   // stays nameable from the root entry (TS2742 in a consumer's declaration
-  // emit otherwise, e.g. apps/whitelabel-demo `next build`).
+  // emit otherwise, e.g. apps/white-label/lumen `next build`).
   signUp,
   signInWithPassword,
   sendMagicLink,
@@ -509,6 +514,7 @@ export * from './core/http/runtime-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
 export * from './core/cache/persisted-query-cache';
+export * from './core/files/image-cache';
 export * from './core/attachments/limits';
 export * from './core/attachments/prompt-attachments';
 export * from './core/runtime/client';
@@ -614,5 +620,8 @@ export {
   resolveComposerModel,
   resolveModelDefault,
   sessionModelCandidates,
+  sessionModelFallback,
+  sessionPickStands,
   type ComposerModelResolution,
+  type SessionModelFallback,
 } from './core/models/composer-model';

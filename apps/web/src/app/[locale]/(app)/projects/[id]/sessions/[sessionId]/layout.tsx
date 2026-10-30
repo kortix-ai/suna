@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
-import { SessionDriveFilesScope } from '@/features/drives/session-drive-files';
+import { SessionDriveFilesScope } from '@kortix/ui/internal/files/session-drive-files';
 import { resolveSessionTabTitle } from '@/features/session/session-tab-title-server';
-import { SessionTabTitleSync } from '@/features/session/session-tab-title-sync';
+import { SessionTabTitleSync } from '@kortix/ui/session/status/session-tab-title-sync';
 
 type SessionRouteProps = {
   children: ReactNode;
@@ -33,8 +33,8 @@ type SessionRouteProps = {
 export async function generateMetadata({ params }: SessionRouteProps): Promise<Metadata> {
   const { id: projectId, sessionId } = await params;
   return {
-    // `absolute` bypasses the root layout's `%s | Kortix` template: the tab
-    // reads "<session name> — Kortix", and a session named "Kortix" must not
+    // `absolute` bypasses the root layout's `%s | Kortix CompanyOS` template: the tab
+    // reads "<session name> — Kortix CompanyOS", and a session named "Kortix" must not
     // come out as "Kortix | Kortix".
     title: { absolute: await resolveSessionTabTitle(projectId, sessionId) },
   };

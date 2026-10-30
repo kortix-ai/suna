@@ -34,6 +34,9 @@ export interface ChangeRequest {
   merge_commit_sha: string | null;
   closed_at: string | null;
   closed_by: string | null;
+  /** A closed request's replacement: the next request opened for the same
+   *  branch, when the caller may read it. Absent on older servers. */
+  superseded_by?: { cr_id: string; number: number } | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -105,6 +108,8 @@ export interface ChangeRequestMergeResponse {
     base_sha_before: string;
     base_sha_after: string;
   };
+  /** Other open requests on the same base whose commits this merge carried; each is now merged. */
+  also_merged?: Array<{ cr_id: string; number: number }>;
 }
 
 export interface ListChangeRequestsOptions {

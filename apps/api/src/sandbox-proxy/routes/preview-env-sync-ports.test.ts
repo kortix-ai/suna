@@ -87,6 +87,7 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
 }));
 mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
+  stoppedSandboxWakePending: async () => false,
 }));
 // Daytona ingress is a pass-through: the effective port IS the addressed port.
 mock.module('../backend', () => ({

@@ -18,6 +18,8 @@ import {
   useRevokeCaptureDevice,
   useSetCaptureEnabled,
   useSetCapturePolicy,
+  useCaptureStorage,
+  useSetCaptureStorage,
 } from './use-capture';
 import * as hooks from './use-capture';
 
@@ -194,6 +196,31 @@ test('policy: read, then a write replaces the cached record without a refetch', 
   await h.settle();
   expect(read!.data?.policy.notice).toBe('Changed');
   expect(h.calls.filter((c) => c === 'GET http://test.local/accounts/a1/capture/policy').length).toBe(1);
+});
+
+test('storage: read the destination, then a write replaces the cached view without a refetch', async () => {
+  const h = harness();
+  h.bodies['GET /storage'] = { mode: 'kortix' };
+  h.bodies['PUT /storage'] = {
+    mode: 's3', endpoint: 'https://s3.example.com', region: 'us-east-1', bucket: 'my-bucket',
+    force_path_style: true, role_arn: '', access_key_id: 'AKIAEXAMPLE', has_secret: true, per_device_scoped: false,
+  };
+  let read: ReturnType<typeof useCaptureStorage>;
+  let write: ReturnType<typeof useSetCaptureStorage>;
+  function Probe() {
+    read = useCaptureStorage('a1');
+    write = useSetCaptureStorage('a1');
+    return null;
+  }
+  await h.mount(Probe);
+  expect(read!.data?.mode).toBe('kortix');
+  await act(async () => {
+    await write!.mutateAsync({ mode: 's3', region: 'us-east-1', bucket: 'my-bucket', force_path_style: true, access_key_id: 'AKIAEXAMPLE', secret_access_key: 'synthetic-secret' });
+  });
+  await h.settle();
+  expect(read!.data?.mode).toBe('s3');
+  expect(read!.data).toMatchObject({ bucket: 'my-bucket', has_secret: true, per_device_scoped: false });
+  expect(h.calls.filter((c) => c === 'GET http://test.local/accounts/a1/capture/storage').length).toBe(1);
 });
 
 test('chunk media: one signed URL read per chunk, for a member too; a null chunk sends nothing', async () => {

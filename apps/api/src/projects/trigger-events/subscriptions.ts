@@ -14,7 +14,9 @@ import { connectionRowIsReachable } from '../lib/connection-access';
 import { loadConnectionAudience } from '../lib/connection-audience';
 import type { GitTriggerSpec } from '../trigger-types';
 import { db } from '../../shared/db';
+import { canonicalJson } from './canonical-json';
 import { EVENT_TRIGGERS_OFF_MESSAGE, eventTriggersOffForProject } from './flag';
+import { appLabel, connectorEventApp, MCP_SOURCE_ID } from './mcp-source';
 import { eventSourceFor, unknownSourceMessage } from './registry';
 import * as store from './store';
 import { EventConnectionNotReadyError, type EventSourceConnection, type EventSourceProvider } from './types';
@@ -23,18 +25,6 @@ type Resolution =
   | { kind: 'ok'; provider: EventSourceProvider; connection: EventSourceConnection }
   | { kind: 'needs_connection'; message: string }
   | { kind: 'error'; message: string };
-
-/** Key-sorted JSON, so equal configs hash equal whatever their key order. */
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, v]) => v !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : 1));
-    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
 
 export function desiredHash(
   provider: string,
@@ -78,6 +68,7 @@ export async function resolveSource(
     .select({
       connectorId: connectors.connectorId,
       name: connectors.name,
+      slug: connectors.slug,
       provider: connectors.providerType,
       config: connectors.config,
     })
@@ -105,14 +96,14 @@ export async function resolveSource(
   if (!provider.configured()) {
     return { kind: 'error', message: 'Event triggers need COMPOSIO_API_KEY on this deployment.', providerId: provider.id };
   }
-  const app = (connector.config as Record<string, unknown> | null)?.app;
-  if (typeof app !== 'string' || !app) {
+  const app = connectorEventApp(connector);
+  if (!app) {
     return { kind: 'error', message: `Connector "${event.connector}" does not name an app.`, providerId: provider.id };
   }
   // People read these messages: name the app as the project's connector does ("GitHub", not "github").
   // A connector named after its own slug (CLI default) says nothing a person can read: name the app instead.
   const name = connector.name?.trim();
-  const label = name && name !== event.connector ? name : app;
+  const label = name && name !== event.connector ? name : provider.id === MCP_SOURCE_ID ? appLabel(app) : app;
   const named = event.account?.trim();
   const needs: Resolution = {
     kind: 'needs_connection',
@@ -161,7 +152,7 @@ export async function resolveSource(
     return { ...needs, providerId: provider.id };
   }
   const connection = { connectionId, connectorSlug: event.connector, app, metadata: row.metadata };
-  if (provider.connectionReady && !provider.connectionReady(connection)) {
+  if (provider.connectionReady && !(await provider.connectionReady(connection))) {
     return {
       kind: 'needs_connection',
       providerId: provider.id,
@@ -193,6 +184,18 @@ async function reconcileOne(
     ? { kind: 'error', message: EVENT_TRIGGERS_OFF_MESSAGE }
     : await resolveSource(projectId, accountId, event);
   const providerId = resolved.providerId ?? prev?.provider ?? 'composio';
+  // The source changed (a connector moved from Composio to Kortix): the old
+  // instance belongs to the old source, and only that source can drop it, once
+  // this row no longer references it.
+  const moved =
+    prev?.externalId && prev.provider !== providerId
+      ? { provider: prev.provider, externalId: prev.externalId }
+      : null;
+  const prevExternalId = moved ? null : (prev?.externalId ?? null);
+  const dropMovedInstance = async () => {
+    const old = moved ? eventSourceFor(moved.provider) : undefined;
+    if (moved && old) await unsubscribeIfUnreferenced(old, moved.externalId);
+  };
   const base = {
     projectId,
     slug: spec.slug,
@@ -212,34 +215,44 @@ async function reconcileOne(
       lastError: resolved.message,
     });
     const provider = eventSourceFor(providerId);
-    if (provider && prev?.externalId) await unsubscribeIfUnreferenced(provider, prev.externalId);
+    if (provider && prevExternalId) await unsubscribeIfUnreferenced(provider, prevExternalId);
+    await dropMovedInstance();
     return;
   }
   const { provider, connection } = resolved;
   const hash = desiredHash(provider.id, connection.connectionId, event.type, event.config);
-  if (prev && prev.status === 'active' && prev.desiredHash === hash) return;
+  if (
+    prev &&
+    prev.status === 'active' &&
+    prev.desiredHash === hash &&
+    (!prevExternalId || !provider.instanceExists || (await provider.instanceExists(prevExternalId)))
+  ) {
+    return;
+  }
   try {
-    const { externalId } = await provider.subscribe({ connection, type: event.type, config: event.config });
+    const { externalId, status } = await provider.subscribe({ connection, type: event.type, config: event.config });
     await store.upsert({
       ...base,
       connectionId: connection.connectionId,
       externalId,
       desiredHash: hash,
-      status: 'active',
-      lastError: null,
+      status: status?.kind ?? 'active',
+      lastError: status?.message ?? null,
     });
-    if (prev?.externalId && prev.externalId !== externalId) {
-      await unsubscribeIfUnreferenced(provider, prev.externalId);
+    if (prevExternalId && prevExternalId !== externalId) {
+      await unsubscribeIfUnreferenced(provider, prevExternalId);
     }
+    await dropMovedInstance();
   } catch (error) {
     await store.upsert({
       ...base,
       connectionId: connection.connectionId,
-      externalId: prev?.externalId ?? null,
+      externalId: prevExternalId,
       desiredHash: hash,
       status: error instanceof EventConnectionNotReadyError ? 'needs_connection' : 'error',
       lastError: errorText(error),
     });
+    await dropMovedInstance();
   }
 }
 

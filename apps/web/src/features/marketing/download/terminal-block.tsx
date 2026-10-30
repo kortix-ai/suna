@@ -1,8 +1,8 @@
 'use client';
 
-import { CopyButton } from '@/components/markdown/copy-button';
+import { CopyButton } from '@kortix/ui/markdown';
 import { getEnv } from '@/lib/env-config';
-import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
+import { useDeploymentCliInstallCommand } from '@kortix/ui/internal/lib/use-deployment-cli-install-command';
 import { TerminalIcon } from '@phosphor-icons/react';
 
 import { TERMINAL } from './content';

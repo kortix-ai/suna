@@ -7,7 +7,8 @@ interpolated keys all read as `{}` and fail test 8028, even though Terraform
 resolves them at apply time. The repo's convention for module resources (the
 ecs-api execution role) is a literal-keyed map with caller context flowing
 through `lookup(var.tags, …)` values. KRTX-1649 moved the audit archive onto
-that convention; this guard keeps it there.
+that convention, and — when the scanner re-flagged the capture-store module's
+four tagged resources — this guard keeps both modules there.
 """
 
 from pathlib import Path
@@ -15,10 +16,23 @@ import re
 import sys
 
 
-MODULE = Path(__file__).parents[1] / "modules" / "audit-archive-bucket" / "main.tf"
-SCANNED_RESOURCES = [
-    ("aws_s3_bucket", "audit_archive"),
-    ("aws_kms_key", "audit_archive"),
+MODULES = [
+    (
+        Path(__file__).parents[1] / "modules" / "audit-archive-bucket" / "main.tf",
+        [
+            ("aws_s3_bucket", "audit_archive"),
+            ("aws_kms_key", "audit_archive"),
+        ],
+    ),
+    (
+        Path(__file__).parents[1] / "modules" / "capture-store" / "main.tf",
+        [
+            ("aws_s3_bucket", "capture"),
+            ("aws_iam_role", "device"),
+            ("aws_sqs_queue", "manifests"),
+            ("aws_sqs_queue", "manifests_dlq"),
+        ],
+    ),
 ]
 OPAQUE_TAGS = re.compile(r"tags\s*=\s*(merge\(|var\.tags\b)")
 
@@ -43,8 +57,8 @@ def resource_body(source: str, resource_type: str, name: str) -> str:
     return source[match.end() : cursor - 1]
 
 
-def assert_tags_are_drata_readable(source: str) -> None:
-    for resource_type, name in SCANNED_RESOURCES:
+def assert_tags_are_drata_readable(source: str, scanned_resources) -> None:
+    for resource_type, name in scanned_resources:
         body = resource_body(source, resource_type, name)
         assert re.search(r"tags\s*=", body), f"{resource_type}.{name} must declare tags (test 8028)"
         assert not OPAQUE_TAGS.search(body), (
@@ -58,7 +72,8 @@ def assert_tags_are_drata_readable(source: str) -> None:
 
 
 def test_module_tags_are_drata_readable() -> None:
-    assert_tags_are_drata_readable(MODULE.read_text())
+    for module, resources in MODULES:
+        assert_tags_are_drata_readable(module.read_text(), resources)
 
 
 def test_opaque_tags_are_rejected() -> None:
@@ -69,7 +84,7 @@ resource "aws_s3_bucket" "audit_archive" {
 }
 """
     try:
-        assert_tags_are_drata_readable(source)
+        assert_tags_are_drata_readable(source, [("aws_s3_bucket", "audit_archive")])
     except AssertionError:
         return
     raise AssertionError("merge(var.tags, …) tags passed the test-8028 guard")
@@ -82,7 +97,7 @@ resource "aws_kms_key" "audit_archive" {
 }
 """
     try:
-        assert_tags_are_drata_readable(source)
+        assert_tags_are_drata_readable(source, [("aws_kms_key", "audit_archive")])
     except AssertionError:
         return
     raise AssertionError("untagged resources passed the test-8028 guard")

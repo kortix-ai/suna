@@ -4,7 +4,7 @@ import { createScopedKortix } from '@kortix/sdk/server';
 
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
-import { sessionTabTitle, sessionTabTitleFromSession } from './session-tab-title';
+import { sessionTabTitle, sessionTabTitleFromSession } from '@kortix/ui/session/status/session-tab-title';
 
 /**
  * Resolve the session tab title on the SERVER, for the route's

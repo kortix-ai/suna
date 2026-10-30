@@ -271,15 +271,20 @@ export async function assertTargetSmokeHealth(
   config: TargetSmokeConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
-  const [api, gateway, frontend] = await Promise.all([
+  const [api, gateway, gatewayBuild, frontend] = await Promise.all([
     healthJson<ApiHealth>(`${config.apiUrl}/health`, fetchImpl),
     healthJson<GatewayHealth>(`${config.gatewayUrl}/health`, fetchImpl),
+    healthJson<{ commit?: string }>(`${config.gatewayUrl}/health/live`, fetchImpl),
     frontendHealthJson(config, fetchImpl),
   ]);
   if (api.status !== 'ok' || api.environment !== config.environment) {
     throw new Error(`${config.environment} API health contract failed: ${JSON.stringify(api)}`);
   }
-  assertGatewayPreflightHealth(gateway);
+  // Public readiness intentionally exposes no operational checks.
+  if (gateway.checks) assertGatewayPreflightHealth(gateway);
+  if (gateway.status !== 'healthy' && gateway.status !== 'degraded') {
+    throw new Error(`${config.environment} gateway health contract failed`);
+  }
   if (frontend.status !== 'ok' || frontend.service !== 'web') {
     throw new Error(
       `${config.environment} frontend health contract failed: ${JSON.stringify(frontend)}`,
@@ -302,11 +307,11 @@ export async function assertTargetSmokeHealth(
   }
   if (
     api.commit !== config.expectedSha ||
-    gateway.commit !== config.expectedSha ||
+    gatewayBuild.commit !== config.expectedSha ||
     frontend.commit !== config.expectedSha
   ) {
     throw new Error(
-      `${config.environment} SHA mismatch: expected=${config.expectedSha} api=${api.commit ?? 'missing'} gateway=${gateway.commit ?? 'missing'} frontend=${frontend.commit ?? 'missing'}`,
+      `${config.environment} SHA mismatch: expected=${config.expectedSha} api=${api.commit ?? 'missing'} gateway=${gatewayBuild.commit ?? 'missing'} frontend=${frontend.commit ?? 'missing'}`,
     );
   }
 }

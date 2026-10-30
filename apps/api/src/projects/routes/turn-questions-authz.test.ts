@@ -64,6 +64,13 @@ describe('GET question route', () => {
     // handler that catches, and reads the row regardless.
     expect(src.indexOf('PROJECT_SESSION_READ')).toBeLessThan(src.indexOf('getOpenQuestion'));
   });
+
+  test('refuses the tombstone BEFORE reading the question (KRTX-2744)', () => {
+    // A deleted session's open question is content of a session the trash
+    // model advertises as gone; the read must never run first.
+    expect(codeOnly(src)).toContain('sessionIsTombstoned');
+    expect(src.indexOf('sessionIsTombstoned')).toBeLessThan(src.indexOf('getOpenQuestion'));
+  });
 });
 
 describe('POST question route', () => {

@@ -22,18 +22,18 @@
  * tab is the active one.
  */
 
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@kortix/ui/label';
+import { RadioGroup, RadioGroupItem } from '@kortix/ui/radio-group';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
+} from '@kortix/ui/select';
+import { Separator } from '@kortix/ui/separator';
+import { SettingsSectionHeader } from '@kortix/ui/settings-section-header';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
 import { useLanguage } from '@/hooks/use-language';
 import { localeNames, locales, type Locale } from '@/i18n/config';
 import {
@@ -41,9 +41,9 @@ import {
   isDesktop,
   setDesktopQuickEntryShortcut,
   type DesktopQuickEntryShortcut,
-} from '@/lib/desktop';
+} from '@kortix/ui/internal/lib/desktop';
 import { useEffect, useState } from 'react';
-import { useUserPreferencesStore, type TabSwitchModifier } from '@/stores/user-preferences-store';
+import { useUserPreferencesStore, type TabSwitchModifier } from '@kortix/ui/internal/stores/user-preferences-store';
 import { useTranslations } from '@/i18n/use-translations';
 import { SETTINGS_SHORTCUT_KEY } from '../settings-shortcut';
 

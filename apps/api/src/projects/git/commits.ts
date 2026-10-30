@@ -136,7 +136,11 @@ export async function listCommits(
   const skip = Math.max(options.skip ?? 0, 0);
   const treePath = normalizeTreePath(options.path ?? null);
 
+  // `--literal-pathspecs`: the path names a file, never a pattern. As a glob,
+  // `agents/x.m*` or `*x*` read the history of a file that the resource
+  // denier hides under its own name (KRTX-3403).
   const args = [
+    '--literal-pathspecs',
     'log',
     ref,
     `--pretty=format:${LOG_FORMAT}`,
@@ -269,7 +273,7 @@ export async function getCommitDiff(
   const repoPath = await refreshMirror(project);
   validateSha(sha);
 
-  const args = ['diff-tree', '-p', '--root', '-M', '--no-color', sha];
+  const args = ['--literal-pathspecs', 'diff-tree', '-p', '--root', '-M', '--no-color', sha];
   const treePath = normalizeTreePath(options.path ?? null);
   if (treePath) args.push('--', treePath);
 

@@ -1,5 +1,5 @@
 /** The app events a project connector can trigger on, from its provider's catalog. */
-import { connectorConnections, connectors } from '@kortix/db';
+import { connectorConnections, connectors, projects } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { defaultConnectionIdForConnector } from '../../connectors/credentials';
 import { logger } from '../../lib/logger';
@@ -8,6 +8,8 @@ import { db } from '../../shared/db';
 import { RESERVED_CONNECTOR_SLUGS } from '../connectors';
 import { eventConfigProblem } from './config-validation';
 import { connectorInfo } from './deliver';
+import { MCP_APPS } from '../../connectors/mcp-apps';
+import { MCP_SOURCE_ID, connectorEventApp, projectConnectorsOfApp } from './mcp-source';
 import { allEventSources, eventSourceFor, unknownSourceMessage } from './registry';
 import { connectionIdentity, resolveSource } from './subscriptions';
 import type { EventApp, EventTypeInfo } from './types';
@@ -25,31 +27,67 @@ export type EventTypeCatalog =
   | { kind: 'unavailable' }
   | { kind: 'provider_error'; message: string };
 
-/** One adapter's events for one app, through the shared cache. No connector needed. */
-export async function listAppEventTypes(source: string, app: string): Promise<EventTypeCatalog> {
+/**
+ * One adapter's events for one app, through the shared cache. No connector
+ * needed. With a project in view, the source must be available to it, and an
+ * adapter with per-connector types adds those of the project's first
+ * connector for the app.
+ */
+export async function listAppEventTypes(
+  source: string,
+  app: string,
+  scope?: { projectId: string },
+): Promise<EventTypeCatalog> {
   const provider = eventSourceFor(source);
   if (!provider || !provider.configured() || !app) return { kind: 'unavailable' };
-  const key = `${provider.id}:${app}`;
-  let cached = eventTypeCache.get(key);
-  if (!cached || cached.expires < Date.now()) {
-    try {
-      cached = { expires: Date.now() + EVENT_TYPE_CACHE_MS, items: await provider.listEventTypes(app) };
-    } catch (error) {
-      return { kind: 'provider_error', message: error instanceof Error ? error.message : String(error) };
+  let items: EventTypeInfo[];
+  if (provider.id === MCP_SOURCE_ID) {
+    // Kortix's own types are static code: nothing to cache, and no cache entry per probed app name.
+    items = await provider.listEventTypes(app);
+  } else {
+    const key = `${provider.id}:${app}`;
+    let cached = eventTypeCache.get(key);
+    if (!cached || cached.expires < Date.now()) {
+      try {
+        cached = { expires: Date.now() + EVENT_TYPE_CACHE_MS, items: await provider.listEventTypes(app) };
+      } catch (error) {
+        return { kind: 'provider_error', message: error instanceof Error ? error.message : String(error) };
+      }
+      eventTypeCache.set(key, cached);
     }
-    eventTypeCache.set(key, cached);
+    items = cached.items;
+  }
+  if (provider.id === MCP_SOURCE_ID && scope) {
+    const [first] = await projectConnectorsOfApp(scope.projectId, app);
+    if (first && provider.listConnectorEventTypes) items = await provider.listConnectorEventTypes({ connectorId: first.connectorId, app });
+    // A catalogue app or a project MCP server has events once it is connected: an empty list, not "no such app".
+    if (items.length === 0 && (first || MCP_APPS.some((a) => a.slug === app))) return { kind: 'ok', provider: provider.id, app, items };
   }
   // An app the adapter offers no event for is not an event app.
-  if (cached.items.length === 0) return { kind: 'app_not_found' };
-  return { kind: 'ok', provider: provider.id, app, items: cached.items };
+  if (items.length === 0) return { kind: 'app_not_found' };
+  return { kind: 'ok', provider: provider.id, app, items };
 }
 
-export async function listConnectorEventTypes(projectId: string, connectorSlug: string, source?: string | null): Promise<EventTypeCatalog> {
+export async function listConnectorEventTypes(
+  projectId: string,
+  connectorSlug: string,
+  source?: string | null,
+): Promise<EventTypeCatalog> {
   const connector = await connectorInfo(projectId, connectorSlug);
   if (!connector.found) return { kind: 'connector_not_found' };
   // A source that is not the connector's provider has no catalog here: the reconciler reports the mismatch.
   if (source && source !== connector.provider) return { kind: 'unavailable' };
   if (!connector.app) return { kind: 'unavailable' };
+  const provider = eventSourceFor(connector.provider);
+  if (provider?.listConnectorEventTypes && connector.connectorId) {
+    if (!provider.configured()) return { kind: 'unavailable' };
+    try {
+      const items = await provider.listConnectorEventTypes({ connectorId: connector.connectorId, app: connector.app });
+      return { kind: 'ok', provider: provider.id, app: connector.app, items };
+    } catch (error) {
+      return { kind: 'provider_error', message: error instanceof Error ? error.message : String(error) };
+    }
+  }
   const catalog = await listAppEventTypes(connector.provider, connector.app);
   // A connector whose app has no events keeps answering with an empty list.
   return catalog.kind === 'app_not_found' ? { kind: 'ok', provider: connector.provider, app: connector.app, items: [] } : catalog;
@@ -88,6 +126,8 @@ export interface EventAppEntry {
   connectors: EventAppConnector[];
   /** Slug to give a new connector for this app: the app's own, unless reserved or taken. */
   newConnectorSlug: string;
+  /** Source `mcp`: the catalogue MCP server to install for this app. Null otherwise. */
+  mcpUrl: string | null;
 }
 
 export interface EventAppConnector {
@@ -101,7 +141,7 @@ async function loadSharedAccounts(
   projectId: string,
   accountId: string,
   rows: { connectorId: string; slug: string; name: string | null; config: unknown; provider: string }[],
-  provider: { connectionReady?: (c: { connectionId: string; connectorSlug: string; app: string; metadata: Record<string, unknown> }) => boolean },
+  provider: { connectionReady?: (c: { connectionId: string; connectorSlug: string; app: string; metadata: Record<string, unknown> }) => boolean | Promise<boolean> },
   app: string,
 ): Promise<EventAppConnector[]> {
   if (rows.length === 0) return [];
@@ -126,16 +166,16 @@ async function loadSharedAccounts(
     out.push({
       slug: row.slug,
       name: row.name?.trim() || app,
-      accounts: accounts
+      accounts: await Promise.all(accounts
         .filter((a) => a.connectorId === row.connectorId && audience(a.connectionId) === 'open')
-        .map((a) => ({
+        .map(async (a) => ({
           label: a.label,
           connectedAs: connectionIdentity(a) === a.label ? null : connectionIdentity(a),
           isDefault: a.connectionId === defaultId,
           connected: provider.connectionReady
-            ? provider.connectionReady({ connectionId: a.connectionId, connectorSlug: row.slug, app, metadata: a.metadata })
+            ? await provider.connectionReady({ connectionId: a.connectionId, connectorSlug: row.slug, app, metadata: a.metadata })
             : true,
-        })),
+        }))),
     });
   }
   return out;
@@ -156,6 +196,7 @@ export async function listEventApps(projectId: string, accountId: string): Promi
     .select({ connectorId: connectors.connectorId, slug: connectors.slug, name: connectors.name, provider: connectors.providerType, config: connectors.config })
     .from(connectors)
     .where(eq(connectors.projectId, projectId));
+  // Apps install from the Kortix catalog: a Composio app stays listed only where the project has one.
   const out: EventAppEntry[] = [];
   for (const provider of allEventSources()) {
     if (!provider.configured()) continue;
@@ -169,18 +210,31 @@ export async function listEventApps(projectId: string, accountId: string): Promi
       }
       eventAppCache.set(provider.id, cached);
     }
-    for (const item of cached.items) {
-      const row = rows.find((r) => r.provider === provider.id && (r.config as Record<string, unknown> | null)?.app === item.app);
+    let items = cached.items;
+    if (provider.id === MCP_SOURCE_ID) {
+      // A project's own MCP server (outside the catalog) is an event app too: its tools are its events.
+      const listed = new Set(items.map((i) => i.app));
+      const custom = rows.filter((r) => r.provider === MCP_SOURCE_ID && !listed.has(connectorEventApp(r) ?? '') && connectorEventApp(r) === r.slug);
+      items = [...items, ...custom.map((r) => ({ app: r.slug, name: r.name?.trim() || r.slug, logo: null, eventCount: 0 }))];
+    }
+    for (const item of items) {
+      const profiles = rows.filter((r) => r.provider === provider.id && connectorEventApp(r) === item.app);
+      const row = profiles[0];
+      if (provider.id !== MCP_SOURCE_ID && !row) continue;
+      const eventCount = provider.id === MCP_SOURCE_ID && row && provider.listConnectorEventTypes
+        ? (await provider.listConnectorEventTypes({ connectorId: row.connectorId, app: item.app })).length
+        : item.eventCount;
       const resolved = row ? await resolveSource(projectId, accountId, { connector: row.slug, type: '', config: {} }) : null;
       const connected = resolved?.kind === 'ok';
-      const profiles = rows.filter((r) => r.provider === provider.id && (r.config as Record<string, unknown> | null)?.app === item.app);
       out.push({
         provider: provider.id,
         ...item,
+        eventCount,
         connector: row?.slug ?? null,
         connected,
         connectors: await loadSharedAccounts(projectId, accountId, profiles, provider, item.app),
         newConnectorSlug: freeConnectorSlug(item.app, rows.map((r) => r.slug)),
+        mcpUrl: provider.id === MCP_SOURCE_ID ? (MCP_APPS.find((a) => a.slug === item.app)?.url ?? null) : null,
       });
     }
   }

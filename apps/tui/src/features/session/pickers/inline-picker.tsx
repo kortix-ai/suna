@@ -25,7 +25,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { matchesBinding } from '../../../keymap.ts';
 import { theme } from '../../../theme.ts';
-import { type ListItem, filterItems } from '../../../ui/index.ts';
+import { type ListItem, filterItems, layoutRow, windowStart } from '../../../ui/index.ts';
 
 export interface InlinePickerProps {
   title: string;
@@ -150,7 +150,7 @@ export function InlinePicker({
 
   const inner = Math.max(width - 4, 10);
   const rows = Math.max(Math.min(maxRows, filtered.length || 1), 1);
-  const start = Math.max(Math.min(index - Math.floor(rows / 2), filtered.length - rows), 0);
+  const start = windowStart(index, filtered.length, rows);
   const visible = filtered.slice(start, start + rows);
 
   return (
@@ -179,11 +179,7 @@ export function InlinePicker({
           const isSelected = start + offset === index && !isHeader;
           const label = isHeader ? item.label : `  ${item.label}`;
           const right = item.right ?? '';
-          const room = Math.max(inner - 1 - (right ? right.length + 1 : 0), 0);
-          const clipped = label.length > room ? `${label.slice(0, Math.max(room - 1, 0))}…` : label;
-          const padded = right
-            ? `${clipped}${' '.repeat(Math.max(room - clipped.length, 0))} ${right}`
-            : clipped;
+          const padded = layoutRow(label, right, inner - 1);
           const fg = isHeader ? theme.faint : isSelected ? theme.fg : theme.dim;
           return (
             <text key={item.id} fg={fg} bg={isSelected ? theme.bg : undefined}>

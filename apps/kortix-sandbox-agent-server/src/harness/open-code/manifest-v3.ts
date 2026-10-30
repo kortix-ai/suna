@@ -14,12 +14,18 @@ import { logger } from '@/lib/log/logger'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { stageExtensionModule, type ExtensionDepsOptions } from './extension-deps'
 
-/** The v3 compiled set in `env`, or null for a v1/v2 session. */
+/**
+ * The v3 compiled set in `env`, or null for a v1/v2 session.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function compiledV3(env: NodeJS.ProcessEnv = process.env): CompiledAgentSet | null {
   return compiledSetV3(compiledAgentConfigFromEnv(env)) as CompiledAgentSet | null
 }
 
-/** A v3 set's commands (`{}` when it has none), or undefined for a v1/v2 session. */
+/**
+ * A v3 set's commands (`{}` when it has none), or undefined for a v1/v2 session.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function v3Commands(env: NodeJS.ProcessEnv = process.env): NonNullable<CompiledAgentSet['commands']> | undefined {
   const set = compiledV3(env)
   return set ? (set.commands ?? {}) : undefined
@@ -30,6 +36,7 @@ export function v3Commands(env: NodeJS.ProcessEnv = process.env): NonNullable<Co
  * no `opencode.json(c)` or `.opencode/` found upward from the working
  * directory, and no `.claude/skills` or `.agents/skills` discovery. Empty for
  * v1/v2, which keep OpenCode's discovery as it was.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function v3OpencodeEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   return compiledV3(env) ? { OPENCODE_DISABLE_PROJECT_CONFIG: '1', OPENCODE_DISABLE_EXTERNAL_SKILLS: '1' } : {}
@@ -40,6 +47,7 @@ export function v3OpencodeEnv(env: NodeJS.ProcessEnv): Record<string, string> {
  * else the set's `default_agent`. A session on a branch can carry an agent name
  * from the default branch's governance that its own ref does not compile (pi
  * falls back the same way, `resolveAgentName`).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function sessionAgentName(set: CompiledAgentSet, env: NodeJS.ProcessEnv): string | null {
   const named = (env.KORTIX_AGENT_NAME ?? '').trim()
@@ -53,6 +61,7 @@ export function sessionAgentName(set: CompiledAgentSet, env: NodeJS.ProcessEnv):
  * `configRoot`. A folder or plugin file that does not exist, or an extension
  * whose dependencies cannot be provided, is logged and skipped; it never
  * fails a boot.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function applyV3(
   out: Record<string, unknown>,
@@ -118,7 +127,10 @@ export async function applyV3(
   if (plugins.length > 0) out.plugin = plugins
 }
 
-/** The `403` body for a `POST /session/:id/command` the agent may not run, or null when it may. */
+/**
+ * The `403` body for a `POST /session/:id/command` the agent may not run, or null when it may.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function commandRefusal(
   set: CompiledAgentSet,
   env: NodeJS.ProcessEnv,

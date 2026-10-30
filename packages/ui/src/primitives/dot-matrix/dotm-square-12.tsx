@@ -1,0 +1,43 @@
+'use client';
+
+import type { CSSProperties } from 'react';
+
+import type { DotAnimationResolver } from '../../lib/dotmatrix-core';
+import { createDotm5x5Component } from '../../lib/dotmatrix-core';
+
+
+// User-defined origin is cell (2,2) in a 1-based 5x5 grid => (row=1,col=1) in zero-based coords.
+const ORIGIN_ROW = 1;
+const ORIGIN_COL = 1;
+const MAX_MANHATTAN = 6;
+
+const animationResolver: DotAnimationResolver = ({ isActive, row, col, reducedMotion, phase }) => {
+  if (!isActive) {
+    return { className: 'dmx-inactive' };
+  }
+
+  const ring = Math.max(
+    0,
+    Math.min(MAX_MANHATTAN, Math.abs(row - ORIGIN_ROW) + Math.abs(col - ORIGIN_COL)),
+  );
+  const style = {
+    '--dmx-center-ripple-ring': ring,
+  } as CSSProperties;
+
+  if (reducedMotion || phase === 'idle') {
+    return {
+      style: {
+        ...style,
+        opacity: 0.2 + (1 - ring / MAX_MANHATTAN) * 0.75,
+      },
+    };
+  }
+
+  return { className: 'dmx-center-origin-ripple', style };
+};
+
+function makeResolver(): DotAnimationResolver {
+  return animationResolver;
+}
+
+export const DotmSquare12 = createDotm5x5Component('DotmSquare12', makeResolver, { speed: 1.35 });

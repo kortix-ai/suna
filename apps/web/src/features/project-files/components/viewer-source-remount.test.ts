@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { workspaceFileSource } from '@/features/files/file-source';
+import { workspaceFileSource } from '@kortix/ui/files';
 
 /**
  * The session Files explorer provides `sandboxExplorerSource`, whose
@@ -25,15 +25,15 @@ import { workspaceFileSource } from '@/features/files/file-source';
  */
 
 const contentRenderer = readFileSync(
-  fileURLToPath(new URL('./file-content-renderer.tsx', import.meta.url)),
+  fileURLToPath(new URL('../../../../../../packages/ui/src/files/project/components/file-content-renderer.tsx', import.meta.url)),
   'utf8',
 );
 const previewModal = readFileSync(
-  fileURLToPath(new URL('./file-preview-modal.tsx', import.meta.url)),
+  fileURLToPath(new URL('../../../../../../packages/ui/src/files/project/components/file-preview-modal.tsx', import.meta.url)),
   'utf8',
 );
 const projectFileSource = readFileSync(
-  fileURLToPath(new URL('../file-source.tsx', import.meta.url)),
+  fileURLToPath(new URL('../../../../../../packages/ui/src/files/project/file-source.tsx', import.meta.url)),
   'utf8',
 );
 

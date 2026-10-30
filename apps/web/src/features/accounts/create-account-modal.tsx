@@ -2,10 +2,10 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -14,9 +14,9 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { Plus } from '@/features/icon/icons/plus';
+} from '@kortix/ui/modal';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { Plus } from '@kortix/ui/internal/icons/plus';
 import { createAccount, type KortixAccount } from '@kortix/sdk';
 import { useMutation } from '@tanstack/react-query';
 import { FormEvent, useState } from 'react';

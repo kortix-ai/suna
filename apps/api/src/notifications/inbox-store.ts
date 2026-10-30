@@ -15,6 +15,10 @@ export interface InboxRowInput {
   projectId?: string | null;
   sessionId?: string | null;
   triggerSlug?: string | null;
+  roomId?: string | null;
+  roomThreadSeq?: number | null;
+  artifactId?: string | null;
+  artifactThreadId?: string | null;
   kind: NotificationKindName;
   title: string;
   body?: string;
@@ -52,6 +56,10 @@ export function createInboxStore(database: Database = defaultDb): InboxStore {
           projectId: row.projectId ?? null,
           sessionId: row.sessionId ?? null,
           triggerSlug: row.triggerSlug ?? null,
+          roomId: row.roomId ?? null,
+          roomThreadSeq: row.roomThreadSeq ?? null,
+          artifactId: row.artifactId ?? null,
+          artifactThreadId: row.artifactThreadId ?? null,
           kind: row.kind,
           title: clip(row.title, INBOX_TITLE_MAX_CHARS) || 'Kortix',
           body: clip(row.body ?? '', INBOX_BODY_MAX_CHARS),

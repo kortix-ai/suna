@@ -46,7 +46,7 @@ test.each([null, 'price_synthetic'])('credit checkout preserves payload for cata
       line_items: catalogPrice ? [{ price: catalogPrice, quantity: 1 }] : [{
         price_data: { currency: 'usd', unit_amount: 2550, product_data: { name: '$25.5 Credits' } }, quantity: 1,
       }],
-      success_url: 'https://example.test/success', cancel_url: 'https://example.test/cancel',
+      success_url: 'https://example.test/success?accountId=acct_synthetic&accountTab=billing', cancel_url: 'https://example.test/cancel',
       metadata: { account_id: 'acct_synthetic', purchase_id: 'purchase_synthetic', type: 'credit_purchase' },
       wallet_options: { link: { display: 'never' } },
     },

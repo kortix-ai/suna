@@ -1,14 +1,14 @@
 'use client';
 
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { SIDEBAR_MAX_WIDTH_PX } from '@/components/ui/sidebar-width';
+import { SidebarInset, SidebarProvider } from '@kortix/ui/sidebar';
+import { SIDEBAR_MAX_WIDTH_PX } from '@kortix/ui/sidebar-width';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { ConnectorConnectionGateDialog } from '@/features/connectors/connector-connection-gate-dialog';
 import { isBillingEnabled } from '@/lib/config';
 import { sweepRetiredDeviceCaches } from '@/lib/device-caches';
-import { pruneAllRegisteredCaches } from '@/lib/storage/managed-storage';
-import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
-import { SubscriptionStoreSync } from '@/stores/subscription-store';
+import { pruneAllRegisteredCaches } from '@kortix/ui/internal/lib/storage/managed-storage';
+import { useOnboardingModeStore } from '@kortix/ui/internal/stores/onboarding-mode-store';
+import { SubscriptionStoreSync } from '@kortix/ui/internal/stores/subscription-store';
 import React from 'react';
 
 /**

@@ -35,7 +35,6 @@ import {
   type ToastType,
 } from '@/lib/ui/toast-model';
 
-export type { ToastAction, ToastOptions, ToastType } from '@/lib/ui/toast-model';
 
 type ShowToast = (message: string, options?: ToastOptions) => string;
 

@@ -8,13 +8,17 @@
  * act dispatch (merge/close) routes through the existing CR flow.
  */
 
-import type { changeRequests, connectorCalls } from '@kortix/db';
+import type { changeRequests, connectorCalls, connectorHeldCalls } from '@kortix/db';
+import { APPROVAL_RERUN_WINDOW_MS } from '../connectors/approval-expiry';
+import { isPlainRecord } from '../connectors/args-preview';
 import type { serializeReviewItem } from './review-items';
 import type { ApprovalResolvers } from './lib/approval-authority';
 
 type ReviewItemDTO = ReturnType<typeof serializeReviewItem>;
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
 type ConnectorCallRow = typeof connectorCalls.$inferSelect;
+/** The run of an approved held call (connectors/held-call-run.ts). */
+export type HeldRun = Pick<typeof connectorHeldCalls.$inferSelect, 'state' | 'finishedAt' | 'outcome'>;
 
 export const CR_ID_PREFIX = 'cr:';
 export const CALL_ID_PREFIX = 'call:';
@@ -49,9 +53,13 @@ const CALL_RISK: Record<'read' | 'write' | 'destructive', ReviewItemDTO['risk']>
  * `resolvers` names who decides (`approvalResolvers`); null when unknown.
  */
 export function connectorCallToReviewItem(
-  ex: ConnectorCallRow,
+  ex: ConnectorCallRow & { connectorName?: string | null },
   options: { canResolve?: boolean; resolvers?: ApprovalResolvers } = {},
-): ReviewItemDTO & { can_resolve: boolean; resolvers: ApprovalResolvers | null } {
+): ReviewItemDTO & {
+  can_resolve: boolean;
+  resolvers: ApprovalResolvers | null;
+  expires_at: string | null;
+} {
   const includeArgsPreview = options.canResolve === true;
   const summary =
     ex.resultSummary && typeof ex.resultSummary === 'object' && !Array.isArray(ex.resultSummary)
@@ -80,12 +88,22 @@ export function connectorCallToReviewItem(
       execution_id: ex.executionId,
       action_path: ex.actionPath,
       connector_id: ex.connectorId,
+      // The display name ("GitHub"); the slug in `action_path` is not a name.
+      ...(ex.connectorName ? { connector_name: ex.connectorName } : {}),
       request_digest: ex.requestDigest,
       risk: ex.risk,
       ...(includeArgsPreview ? { args_preview: argsPreview } : {}),
       // Same gate as the args: the agent's description can quote the payload.
       ...(includeArgsPreview && typeof summary.approval_context === 'string'
         ? { approval_context: summary.approval_context }
+        : {}),
+      // Content Kortix read from the provider (approval-enrichers.ts): the
+      // same gate as the args, because it is the payload.
+      ...(includeArgsPreview && isPlainRecord(summary.resolved_preview)
+        ? { resolved_preview: summary.resolved_preview }
+        : {}),
+      ...(includeArgsPreview && typeof summary.resolved_error === 'string'
+        ? { resolved_error: summary.resolved_error }
         : {}),
       args_preview_complete: includeArgsPreview && summary.args_preview_complete === true,
       args_preview_authorized: includeArgsPreview,
@@ -98,6 +116,112 @@ export function connectorCallToReviewItem(
     metadata: { source: 'connector_call' },
     created_at: ex.createdAt.toISOString(),
     updated_at: ex.createdAt.toISOString(),
+    /** When the approval stops being decidable; null = never. */
+    expires_at: ex.expiresAt?.toISOString() ?? null,
+  };
+}
+
+/**
+ * A decided approval gate (approved or denied by a human), as the by-id read
+ * shows it: the decision and one `next_step` sentence. A gate that held its
+ * input (status `approved`) adds `run`: Kortix runs the call, the caller reads
+ * the outcome. A gate without one (status `ok`) adds whether a repeated call
+ * used the approval and the deadline to repeat it. Null for a row that is not
+ * a decided gate (still pending, expired, or a real run with no approver).
+ */
+export function decidedCallState(ex: ConnectorCallRow, now: Date, run?: HeldRun | null) {
+  if (!ex.approvedBy || !ex.resolvedAt) return null;
+  if (ex.status === 'approved') return heldCallState(ex, ex.approvedBy, ex.resolvedAt, run ?? null);
+  if (ex.status !== 'ok' && ex.status !== 'denied') return null;
+  const summary = isPlainRecord(ex.resultSummary) ? ex.resultSummary : {};
+  // Gates approved before `decision` was written read it from the status.
+  const decision =
+    summary.decision === 'approve' || summary.decision === 'deny'
+      ? summary.decision
+      : ex.status === 'ok'
+        ? 'approve'
+        : 'deny';
+  const decidedAt = ex.resolvedAt.toISOString();
+  const decided = { decision, decided_by: ex.approvedBy, decided_at: decidedAt };
+  if (decision === 'deny') {
+    const note =
+      typeof summary.decision_note === 'string' && summary.decision_note
+        ? ` Message from the approver: ${summary.decision_note}`
+        : '';
+    return {
+      status: 'rejected' as const,
+      summary: `${ex.actionPath} · denied`,
+      detail: { ...decided, next_step: `Denied at ${decidedAt}.${note}` },
+    };
+  }
+  const usedAt = typeof summary.consumed_at === 'string' ? summary.consumed_at : null;
+  const rerunBy = new Date(ex.resolvedAt.getTime() + APPROVAL_RERUN_WINDOW_MS);
+  const rerunByIso = rerunBy.toISOString();
+  const nextStep = usedAt
+    ? `Approved at ${decidedAt}. A repeated call claimed the approval at ${usedAt}. If the content changed after approval, that call asked for a new approval instead of running.`
+    : now < rerunBy
+      ? `Approved at ${decidedAt}. The call has not run. Repeat the exact same call (same arguments and account) before ${rerunByIso}, and it runs once.`
+      : `Approved at ${decidedAt}, but the call was not repeated before ${rerunByIso} and did not run. Repeat it to ask for a new approval.`;
+  return {
+    status: 'approved' as const,
+    summary: `${ex.actionPath} · approved`,
+    detail: { ...decided, approval_used_at: usedAt, rerun_by: rerunByIso, next_step: nextStep },
+  };
+}
+
+/**
+ * The outcome fields a reader of the item sees. The item is readable beyond
+ * the session (a manager in full view), so a call with a session keeps only
+ * the status fields: the session's resume carries the output and the error
+ * text. A sessionless caller has no other read: it keeps `output_preview`
+ * and `message`. No reader sees the connected account.
+ */
+function visibleOutcome(ex: ConnectorCallRow, outcome: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!outcome) return null;
+  const keys = ex.sessionId
+    ? ['status', 'reason', 'upstream_status', 'new_execution_id']
+    : ['status', 'reason', 'upstream_status', 'new_execution_id', 'output_preview', 'message'];
+  return Object.fromEntries(keys.filter((k) => k in outcome).map((k) => [k, outcome[k]]));
+}
+
+/** An approved gate that held its input: what its run did, or that it runs. */
+function heldCallState(ex: ConnectorCallRow, decidedBy: string, resolvedAt: Date, run: HeldRun | null) {
+  const decidedAt = resolvedAt.toISOString();
+  const outcome = visibleOutcome(ex, isPlainRecord(run?.outcome) ? run.outcome : null);
+  const finishedAt = run?.finishedAt?.toISOString() ?? null;
+  const state = run?.state ?? 'queued';
+  const text = (key: string) => (typeof outcome?.[key] === 'string' ? (outcome[key] as string) : null);
+  const approved = `Approved at ${decidedAt}.`;
+  // A call with a session hides `message`: name the failure from the fields it keeps.
+  const upstream = typeof outcome?.upstream_status === 'number' ? `upstream ${outcome.upstream_status}` : null;
+  const failure = ex.sessionId
+    ? ` (${text('reason') ?? upstream ?? 'unknown error'})`
+    : `: ${text('message') ?? 'unknown error'}`;
+  const nextStep =
+    state === 'ok'
+      ? `${approved} The call ran once at ${finishedAt} and succeeded. Do not repeat it.`
+      : state === 'error'
+        ? `${approved} The call ran at ${finishedAt}, but failed${failure}. Check its effect before you repeat it.`
+        : state === 'unknown'
+          ? `${approved} The call may have run: Kortix lost track of it. Check its effect before you repeat it.`
+          : state === 'refused'
+            ? text('reason') === 'content_changed'
+              ? `${approved} The call did not run: the content changed after approval. A new approval ${text('new_execution_id') ?? ''} waits for a human. Do not repeat the call.`
+              : `${approved} The call did not run: ${text('message') ?? text('reason') ?? 'refused'}. Repeat the call to ask for approval again.`
+            : state === 'dispatched'
+              ? `${approved} The call is running. Do not repeat it. Read this item again for the outcome.`
+              : `${approved} Kortix runs the call once. Do not repeat it. Read this item again for the outcome.`;
+  return {
+    status: 'approved' as const,
+    summary: `${ex.actionPath} · approved`,
+    detail: {
+      decision: 'approve' as const,
+      decided_by: decidedBy,
+      decided_at: decidedAt,
+      // The held input never leaves its row. See `visibleOutcome` for the outcome fields.
+      run: { state, finished_at: finishedAt, outcome },
+      next_step: nextStep,
+    },
   };
 }
 

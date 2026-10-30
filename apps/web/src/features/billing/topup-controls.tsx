@@ -1,8 +1,8 @@
 'use client';
 
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@kortix/ui/collapsible';
 import { AutoTopupCard } from '@/features/billing/auto-topup-card';
-import { formatWholeUsd } from '@/features/billing/compute-pricing';
+import { formatWholeUsd } from '@kortix/ui/internal/billing/compute-pricing';
 import { CreditTopupSection } from '@/features/billing/credit-topup-section';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { type AccountState, canOfferTopup } from '@kortix/sdk';

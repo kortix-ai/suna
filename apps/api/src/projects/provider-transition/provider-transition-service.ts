@@ -39,6 +39,7 @@ import {
 } from './provider-transition-view';
 import { emitProviderTransitionEvent } from './provider-transition-metrics';
 import { logger } from '../../lib/logger';
+import { DEPRECATED_PROVIDER_ERROR, isDeprecatedProvider } from '../../platform/providers/deprecated';
 
 type ProjectRow = typeof projects.$inferSelect;
 
@@ -200,7 +201,11 @@ export async function requestProviderTransition(input: {
   if (!row || row.status === 'archived') throw new ProviderTransitionError('project not found', 'not_found');
 
   // Validate the target (enabled provider) — a disabled/unknown target is a hard
-  // 400, never a silently-ignored switch.
+  // 400, never a silently-ignored switch. A deprecated provider (Daytona) is
+  // refused even while it is enabled: no project may be pinned to it.
+  if (isDeprecatedProvider(target)) {
+    throw new ProviderTransitionError(DEPRECATED_PROVIDER_ERROR, 'bad_provider');
+  }
   if (target !== null && !config.isProviderEnabled(target as never)) {
     throw new ProviderTransitionError(`Unknown or disabled sandbox provider: ${target}`, 'bad_provider');
   }

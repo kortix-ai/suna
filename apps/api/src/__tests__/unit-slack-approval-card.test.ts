@@ -42,6 +42,20 @@ describe('approval card action ids', () => {
 });
 
 describe('buildApprovalCardBlocks', () => {
+  test('shows the content Kortix loaded from the provider, or warns when it could not', () => {
+    const loaded = text(
+      buildApprovalCardBlocks({ ...card, resolvedPreview: { to: 'buyer@example.test', body: 'Hello' } }),
+    );
+    expect(loaded).toContain('*Loaded from gmail*');
+    expect(loaded).toContain('`to`  buyer@example.test');
+    expect(loaded).not.toContain("Couldn't load the draft");
+
+    const failed = text(buildApprovalCardBlocks({ ...card, resolvedError: 'unavailable' }));
+    expect(failed).toContain("Couldn't load the draft. Review the agent's description carefully.");
+    expect(failed).not.toContain('Loaded from');
+    expect(text(buildApprovalCardBlocks(card))).not.toContain('Loaded from');
+  });
+
   test("shows the agent's description as unverified, the parameters, and every decision", () => {
     const blocks = buildApprovalCardBlocks(card);
     const rendered = text(blocks);
@@ -93,6 +107,19 @@ describe('buildApprovalOutcomeBlocks', () => {
     expect(rendered).toContain('*Denied*');
     expect(rendered).toContain('<@U123>');
     expect(rendered).toContain('> Ask about Thursday instead.');
+    expect(actionIds(blocks)).toEqual([]);
+  });
+
+  test('an expired approval says so, with no buttons and no decider', () => {
+    const blocks = buildApprovalOutcomeBlocks({
+      actionPath: 'gmail.send_draft',
+      decision: 'expired',
+      decidedBy: '',
+      note: '',
+      approvalContext: null,
+    });
+    expect(text(blocks)).toContain('This approval expired.');
+    expect(text(blocks)).not.toContain(' by ');
     expect(actionIds(blocks)).toEqual([]);
   });
 });

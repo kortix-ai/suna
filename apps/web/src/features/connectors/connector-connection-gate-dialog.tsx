@@ -6,9 +6,9 @@ import { CheckIcon as Check, LockIcon as Lock, UsersIcon as Users } from '@phosp
 import { useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalContent,
@@ -16,12 +16,11 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { usePipedreamConnectMember } from '@/hooks/connectors/use-pipedream-connect-member';
-import { usePipedreamConnectProject } from '@/hooks/connectors/use-pipedream-connect-project';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { type ConnectorGateConnection, useConnectorGateStore } from '@/stores/connector-gate-store';
+} from '@kortix/ui/modal';
+import { usePipedreamConnectMember } from '@kortix/ui/internal/hooks/connectors/use-pipedream-connect-member';
+import { usePipedreamConnectProject } from '@kortix/ui/internal/hooks/connectors/use-pipedream-connect-project';
+import { PROJECT_ACTIONS, useProjectCan } from '@kortix/ui/workspace';
+import { type ConnectorGateConnection, useConnectorGateStore } from '@kortix/ui/internal/stores/connector-gate-store';
 
 export function ConnectorConnectionGateContent({
   connections,
@@ -182,10 +181,13 @@ export function ConnectorConnectionGateDialog() {
     [connectorConnections],
   );
 
-  useEffect(() => {
+  const resetKey = `${isOpen}|${connectionKey}`;
+  const [prevResetKey, setPrevResetKey] = useState(resetKey);
+  if (resetKey !== prevResetKey) {
+    setPrevResetKey(resetKey);
     setConnectedIds(new Set());
     setPendingId(null);
-  }, [isOpen, connectionKey]);
+  }
 
   // Every connect refreshes the lists, not only the last one: an open
   // Connectors page and the session catalogue show each account as it lands.

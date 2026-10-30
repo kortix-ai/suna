@@ -122,8 +122,8 @@ resource "aws_s3_bucket_policy" "this" {
   depends_on = [aws_s3_bucket_public_access_block.this]
 }
 
-# Sandboxes are not in AWS (Daytona: New York / Los Angeles; Platinum: its own
-# hosts), so a plain presigned GET is one TCP flow from the box all the way to
+# Sandboxes are not in AWS (Platinum: its own hosts; the legacy Daytona
+# fallback: New York / Los Angeles), so a plain presigned GET is one TCP flow from the box all the way to
 # this bucket's region. Acceleration ends that flow at the nearest AWS edge —
 # short handshake, fast loss recovery — and carries the rest on the backbone.
 # Opt-in per environment; the API flips its presigned URLs with

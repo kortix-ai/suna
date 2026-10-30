@@ -7,6 +7,7 @@ const STATES: Array<[PreviewState, string, boolean, boolean]> = [
   ['signed-out', 'Sign in to open this preview', true, false],
   ['forbidden', 'This preview address is not signed', true, false],
   ['unknown', 'This preview is no longer available', false, false],
+  ['unavailable', 'This share link is no longer available', false, false],
   ['starting', 'Starting the sandbox', false, true],
   ['not-listening', 'Waiting for port 8081', false, true],
   ['unreachable', 'Port 8081 is not answering', false, true],
@@ -113,5 +114,49 @@ describe('every preview state renders a page a person can read', () => {
   // stopped answering, or an identity page, must not get it.
   test('only starting and not-listening count as building', () => {
     expect([...PREVIEW_BUILDING_STATES].sort()).toEqual(['not-listening', 'starting']);
+  });
+});
+
+// KRTX-3015: the session preview pane frames the proxy with an opaque origin
+// (no `allow-same-origin`), where touching `sessionStorage` throws. The retry
+// script read it first, died, and the waiting page never reloaded itself.
+describe('the waiting page retries inside an opaque-origin frame', () => {
+  function runRetryScript(html: string, frameName = '') {
+    const script = html.slice(html.indexOf('<script>') + '<script>'.length, html.indexOf('</script>'));
+    const timers: Array<() => void> = [];
+    let reloads = 0;
+    const win = { name: frameName } as { name: string; parent?: unknown };
+    win.parent = win;
+    const blocked = {
+      getItem() { throw new Error('SecurityError: sessionStorage is not available'); },
+      setItem() { throw new Error('SecurityError: sessionStorage is not available'); },
+    };
+    const doc = { getElementById: () => null };
+    new Function('sessionStorage', 'location', 'setTimeout', 'document', 'window', script)(
+      blocked,
+      { reload: () => { reloads += 1; } },
+      (fn: () => void) => { timers.push(fn); },
+      doc,
+      win,
+    );
+    return { timers, reloads: () => reloads, win };
+  }
+
+  test('a blocked sessionStorage still schedules the reload and counts it in window.name', () => {
+    const html = previewStatePage({ ...BASE, state: 'not-listening', port: 3100 });
+    const run = runRetryScript(html);
+    expect(run.timers).toHaveLength(1);
+    run.timers[0]();
+    expect(run.reloads()).toBe(1);
+    expect(run.win.name).toContain('1');
+  });
+
+  test('the retry cap still holds when the count lives in window.name', () => {
+    const html = previewStatePage({ ...BASE, state: 'not-listening', port: 3100 });
+    const first = runRetryScript(html);
+    first.timers[0]();
+    // Forty reloads later the page gives up and stops scheduling.
+    const capped = runRetryScript(html, first.win.name.replace(/\d+$/, '40'));
+    expect(capped.timers).toHaveLength(0);
   });
 });

@@ -22,6 +22,7 @@ const PROJECT = crypto.randomUUID();
 const OWNER = crypto.randomUUID();
 const SESSION = crypto.randomUUID();
 const OTHER = crypto.randomUUID();
+const RESTART = crypto.randomUUID();
 // A daemon journal revision: max(Date.now() * 1000, last + 1), past int4.
 const REV = 1_791_681_474_704_000;
 const T = '2026-10-11T10:00:00.000Z';
@@ -72,7 +73,7 @@ beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'session-log-ingest' });
   await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'session-log-ingest', repoUrl: 'https://example.test/session-log.git' });
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner' });
-  for (const sessionId of [SESSION, OTHER]) {
+  for (const sessionId of [SESSION, OTHER, RESTART]) {
     await db.insert(projectSessions).values({ sessionId, accountId: ACCOUNT, projectId: PROJECT, branchName: sessionId, createdBy: OWNER });
     // A session PAT authenticates only while its sandbox row is live (the session lease).
     await db.insert(sessionSandboxes).values({ sandboxId: sessionId, sessionId, accountId: ACCOUNT, projectId: PROJECT, status: 'active', config: {}, metadata: {} });
@@ -128,6 +129,45 @@ describe('journal', () => {
     expect(await stored('msg_u1')).toEqual(before);
     expect(await messageCount()).toBe(2);
     expect(await durable()).toEqual(firstDurable!);
+  });
+
+  test('a restarted daemon re-sends every message with new revs: an unchanged one gets no row version and no row lock, a changed one is written, a durable turn is left alone', async () => {
+    const send = (rev: number, puts: Array<ReturnType<typeof message>>) =>
+      journal(batch({ puts: puts.map((m, i) => ({ rev: rev + i, message: m })), threads: [thread('main')] }), tokens[RESTART]!, RESTART);
+    const history = Array.from({ length: 20 }, (_, i) => message(`msg_r${i}`, i, { blocks: [{ type: 'text', id: `blk_r${i}`, text: `turn ${i}` }] }));
+    // msg_r1 answers the turn of msg_r0: its first acknowledgement marks the turn durable.
+    history[1] = message('msg_r1', 1, { role: 'assistant', reply_to: 'msg_r0', finish: 'stop', completed_at: T, blocks: [{ type: 'text', id: 'blk_r1', text: 'turn 1' }] });
+    await db.insert(sessionTurns).values({ turnToken: `turn-${RESTART}`, sessionId: RESTART, sandboxId: RESTART, projectId: PROJECT, accountId: ACCOUNT, messageId: 'msg_r0', state: 'active' });
+    expect((await send(REV, history)).status).toBe(200);
+    // xmin: the row version; xmax: the last transaction that locked or replaced it (0: none since the insert).
+    const versions = async () =>
+      new Map(
+        (await db.execute<{ message_id: string; xmin: string; xmax: string; rev: string }>(
+          sql`SELECT message_id, xmin::text, xmax::text, rev::text FROM kortix.session_log_messages WHERE session_id = ${RESTART}`,
+        )).map((r) => [r.message_id, r]),
+      );
+    const turn = async () =>
+      (await db.execute<{ xmin: string; xmax: string; durable: string | null }>(
+        sql`SELECT xmin::text, xmax::text, log_durable_at::text AS durable FROM kortix.session_turns WHERE session_id = ${RESTART}`,
+      ))[0]!;
+    const before = await versions();
+    expect([...before.values()].every((r) => r.xmax === '0')).toBe(true);
+    const durable = await turn();
+    expect(durable.durable).not.toBeNull();
+
+    const edited = message('msg_r19', 19, { blocks: [{ type: 'text', id: 'blk_r19', text: 'turn 19, edited' }] });
+    const res = await send(REV + 1_000, [...history.slice(0, 19), edited]);
+    expect(res.status).toBe(200);
+    expect((await res.json()).acked).toHaveLength(20);
+
+    const after = await versions();
+    for (const m of history.slice(0, 19)) expect(after.get(m.message_id)).toEqual(before.get(m.message_id)!);
+    expect(after.get('msg_r19')!.xmin).not.toBe(before.get('msg_r19')!.xmin);
+    expect(after.get('msg_r19')!.rev).toBe(String(REV + 1_000 + 19));
+    expect((await db.select({ record: sessionLogMessages.record }).from(sessionLogMessages)
+      .where(and(eq(sessionLogMessages.sessionId, RESTART), eq(sessionLogMessages.messageId, 'msg_r19'))))[0]!.record).toEqual(edited);
+    // The re-sent reply finds its turn durable already: no new row version, no lock.
+    expect(await turn()).toEqual(durable);
   });
 
   test('a lone UTF-16 surrogate is stored as U+FFFD, never a 500 (KRTX-211 poison batch)', async () => {
@@ -190,7 +230,8 @@ describe('journal', () => {
     expect((await stored('msg_a1'))?.deletedAt).toBeInstanceOf(Date);
   });
 
-  test('a seq another message of the thread holds answers 422 with the pair, and the batch writes nothing', async () => {
+  test('a seq another message of the thread holds answers 422 with the pair and the thread\'s seq_max, and the batch writes nothing', async () => {
+    const [max] = await db.execute(sql`select max(seq)::int as n from kortix.session_log_messages where session_id = ${SESSION} and thread_id = 'main'`);
     const res = await journal(
       batch({
         puts: [
@@ -201,7 +242,8 @@ describe('journal', () => {
       }),
     );
     expect(res.status).toBe(422);
-    expect(await res.json()).toEqual({ error: 'seq_conflict', message_id: 'msg_dup', rev: REV + 31, thread_id: 'main', seq: 1 });
+    // seq_max: the thread's highest seq, tombstones included. The daemon numbers the thread above it.
+    expect(await res.json()).toEqual({ error: 'seq_conflict', message_id: 'msg_dup', rev: REV + 31, thread_id: 'main', seq: 1, seq_max: (max as { n: number }).n });
     expect(await stored('msg_new')).toBeUndefined();
     const [side] = await db.execute(sql`select count(*)::int as n from kortix.session_log_threads where session_id = ${SESSION} and thread_id = 'side'`);
     expect((side as { n: number }).n).toBe(0);
@@ -363,7 +405,7 @@ describe('journal', () => {
     }), tokens[OTHER]!, OTHER);
     expect(res.status).toBe(200);
     const rows = await db.select({ token: sessionTurns.turnToken, at: sessionTurns.logDurableAt }).from(sessionTurns).where(eq(sessionTurns.accountId, ACCOUNT));
-    const durable = Object.fromEntries(rows.filter((r) => r.token !== `turn-${SESSION}`).map((r) => [r.token.replace(/-[0-9a-f-]{36}$/, ''), r.at !== null]));
+    const durable = Object.fromEntries(rows.filter((r) => r.token !== `turn-${SESSION}` && r.token !== `turn-${RESTART}`).map((r) => [r.token.replace(/-[0-9a-f-]{36}$/, ''), r.at !== null]));
     expect(durable).toEqual({
       pi_prompt: false, pi_summarize: true, pi_later: false, other_session: false, oc_summarize: true, oc_idless: false,
       r_refused: false, r_prompt: false, x_summarize: true, x_delivery: false, z_later: false,

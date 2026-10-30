@@ -7,7 +7,8 @@
  * ignore DEFAULT_ICON_WEIGHT.
  *
  * This module closes that gap: every icon below is the SSR icon with
- * DEFAULT_ICON_WEIGHT (src/lib/icons/icon-config.ts) already bound. Server
+ * DEFAULT_ICON_WEIGHT (packages/ui/src/lib/icon-config.ts; the apps/web path
+ * packages/ui/src/lib/icon-config.ts is a shim) already bound. Server
  * components import from here and, exactly like client components, never pass
  * a weight prop — one constant still governs the whole app. An explicit weight
  * (weight="fill" on solid/status icons) still wins.
@@ -19,7 +20,7 @@
 import type { Icon, IconProps } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 
-import { DEFAULT_ICON_WEIGHT } from './icon-config';
+import { DEFAULT_ICON_WEIGHT } from '@kortix/ui';
 
 import {
   ActivityIcon as ActivityBase,
@@ -85,6 +86,7 @@ import {
   RepeatIcon as RepeatBase,
   RobotIcon as RobotBase,
   RocketIcon as RocketBase,
+  RssIcon as RssBase,
   ScalesIcon as ScalesBase,
   ScrollIcon as ScrollBase,
   ShareNetworkIcon as ShareNetworkBase,
@@ -122,6 +124,7 @@ export const AlarmIcon = withDefaultWeight(AlarmBase);
 export const AppleLogoIcon = withDefaultWeight(AppleLogoBase);
 export const ArrowLeftIcon = withDefaultWeight(ArrowLeftBase);
 export const ArrowRightIcon = withDefaultWeight(ArrowRightBase);
+export const RssIcon = withDefaultWeight(RssBase);
 export const ArrowClockwiseIcon = withDefaultWeight(ArrowsClockwiseBase);
 export const AtIcon = withDefaultWeight(AtBase);
 export const AtomIcon = withDefaultWeight(AtomBase);

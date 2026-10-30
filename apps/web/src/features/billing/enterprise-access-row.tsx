@@ -12,10 +12,10 @@
  * mount it inside a `SettingsRowGroup`.
  */
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { SettingsRow } from '@/components/ui/settings-row';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { SettingsRow } from '@kortix/ui/settings-row';
 import { useEnterpriseDemo, useTalkToSales } from '@/features/billing/use-enterprise-sales';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { canManageBilling, type AccountState } from '@kortix/sdk';

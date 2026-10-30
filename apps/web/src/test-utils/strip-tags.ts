@@ -1,4 +1,7 @@
 /**
+ * A copy of packages/ui/src/test-utils/strip-tags.ts: @kortix/ui does not publish
+ * its test utils, so each package keeps its own.
+ *
  * Markup in, visible text out — for assertions against `renderToStaticMarkup`
  * output.
  *

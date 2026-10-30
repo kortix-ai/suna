@@ -1,3 +1,8 @@
+import { z } from 'zod';
+import { createHash } from 'node:crypto';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { configFilePath } from '../api/config.ts';
 import type { ProjectSecret, ProjectSecretsResponse } from '../api/types.ts';
 import {
   
@@ -133,6 +138,7 @@ export async function secretsShare(args: string[], opts: CtxOpts, json = false):
 }
 
 export async function secretsRequest(rest: string[], opts: CtxOpts, json = false): Promise<number> {
+  const show = takeFlagBool(rest, ['--show']);
   let scope: string | undefined;
   let expires: string | undefined;
   try {
@@ -149,22 +155,70 @@ export async function secretsRequest(rest: string[], opts: CtxOpts, json = false
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
+  const cacheKey = createHash('sha256')
+    .update(
+      JSON.stringify([
+        ctx.auth.api_base,
+        ctx.auth.token,
+        ctx.projectId,
+        scope ?? 'connector',
+        [...new Set(names)].sort(),
+      ]),
+    )
+    .digest('hex');
+  const cacheDir = join(dirname(configFilePath()), 'secret-requests');
+  const cacheFile = join(cacheDir, cacheKey + '.json');
+
   let resp: {
     url: string;
     names: string[];
-    scope: string;
+    /** Resolved by current servers; absent on servers older than the disclosure. */
+    scope?: string;
     expires_at: string;
     agent?: string;
-    withheld?: Array<{ name: string; reason: 'agent_grant' | 'session_allowlist' }>;
+    withheld?: Array<{
+      name: string;
+      reason: 'agent_grant' | 'session_allowlist';
+    }>;
     withheld_fix?: string;
   };
   try {
-    resp = await ctx.client.post(`/projects/${ctx.projectId}/secret-requests`, {
-      names,
-      ...(scope ? { scope } : {}),
-      ...(expires ? { expires_in_minutes: Number(expires) } : {}),
-    });
+    if (show) {
+      if (expires) return fail('--show cannot change expiry. Omit --expires.');
+      resp = z.object({
+        kind: z.literal('secret').optional(),
+        url: z.string().url(),
+        names: z.array(z.string()),
+        scope: z.string().optional(),
+        expires_at: z.string().refine((value) => Date.parse(value) > Date.now()),
+        agent: z.string().optional(),
+        withheld: z.array(z.object({ name: z.string(), reason: z.enum(['agent_grant', 'session_allowlist']) })).optional(),
+        withheld_fix: z.string().optional(),
+      }).parse(JSON.parse(readFileSync(cacheFile, 'utf8')));
+    } else {
+      resp = await ctx.client.post(`/projects/${ctx.projectId}/secret-requests`, {
+        names,
+        ...(scope ? { scope } : {}),
+        ...(expires ? { expires_in_minutes: Number(expires) } : {}),
+      });
+      try {
+        mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
+        chmodSync(cacheDir, 0o700);
+        // Tighten an existing file before writing a fresh bearer URL.
+        writeFileSync(cacheFile, '', { flag: 'a', mode: 0o600 });
+        chmodSync(cacheFile, 0o600);
+        writeFileSync(cacheFile, JSON.stringify(resp), { mode: 0o600 });
+      } catch {
+        process.stderr.write(
+          'Warning: could not save intake link locally; retain the printed link.\n',
+        );
+      }
+    }
   } catch (err) {
+    if (show)
+      return fail(
+        'No readable live link saved for these names, scope, host and credential on this device.',
+      );
     return surfaceApiError(err);
   }
 
@@ -173,9 +227,16 @@ export async function secretsRequest(rest: string[], opts: CtxOpts, json = false
     return 0;
   }
 
+  // The web form degrades to "Delivery scope is unavailable" when the API omits
+  // the resolved scope; mirror that here instead of printing "Delivery: undefined".
+  const deliveryLine =
+    resp.scope === 'runtime' || resp.scope === 'connector'
+      ? `Delivery: ${resp.scope} — ${resp.scope === 'runtime' ? 'real value in the sandbox environment' : 'server-side only; never in the sandbox environment'}.`
+      : 'Delivery scope is unavailable. Ask the agent to confirm where this value will be used before saving.';
   process.stdout.write(
     `\n  ${C.bold}Hand this link to whoever has the value${C.reset} ${C.faded}(${resp.names.join(', ')})${C.reset}\n` +
       `  ${C.cyan}${resp.url}${C.reset}\n\n` +
+      `  ${C.dim}${deliveryLine}${C.reset}\n` +
       `  ${C.dim}Web: opens a fill-in modal. Slack: a tappable link.${C.reset}\n` +
       `  ${C.dim}Valid for ${describeLinkValidity(resp.expires_at, Date.now())} (until ${resp.expires_at}).${C.reset}\n` +
       `  ${C.dim}Reuse this link until it expires — do not mint a new one while this one is live.${C.reset}\n\n`,
@@ -185,7 +246,9 @@ export async function secretsRequest(rest: string[], opts: CtxOpts, json = false
   if (resp.withheld && resp.withheld.length > 0) {
     process.stdout.write(
       `  ${status.warn(`This session will not receive ${resp.withheld.map((w) => w.name).join(', ')} after it is saved.`)}\n` +
-        (resp.withheld_fix ? `  ${C.dim}${resp.withheld_fix}${C.reset}\n` : '') +
+        (resp.withheld_fix
+          ? `  ${C.dim}${resp.withheld_fix}${C.reset}\n`
+          : '') +
         '\n',
     );
   }

@@ -1,6 +1,6 @@
 /**
  * runtime sub-sessions in the session lists (web parity:
- * `apps/web/src/features/workspace/project-sidebar/project-session-list.tsx`,
+ * `packages/ui/src/workspace/sidebar/project-session-list.tsx`,
  * `ProjectSubsessionRow` + `SubAgentConnector`).
  *
  * - `SubsessionCountBadge`: the count after a session title — how many direct
@@ -40,7 +40,7 @@ import {
 import { cn } from '@/lib/utils/index';
 
 /** Height of one sub-session row. Fixed, so the trunk length is exact. */
-export const SUBSESSION_ROW_HEIGHT = 40;
+const SUBSESSION_ROW_HEIGHT = 40;
 /** Horizontal reach of an elbow; the row box starts where the curve ends (web: 3.5 spacing). */
 export const CONNECTOR_RUN = 14;
 /** Stroke of the trunk and the elbows (web: `border-2`). */
@@ -51,7 +51,7 @@ export const CONNECTOR_STROKE = 2;
  */
 const TREE_END_INSET = 4;
 /** Rows a tree shows before its "Show N more" row. */
-export const SUBSESSION_TREE_CAP = 5;
+const SUBSESSION_TREE_CAP = 5;
 
 /** Parent session ids whose tree shows every row, for one list. */
 const ExpandedTreesContext = React.createContext<Set<string> | null>(null);
@@ -127,7 +127,7 @@ function SubsessionRow({
   );
 }
 
-export interface SubsessionTreeProps {
+interface SubsessionTreeProps {
   /** The parent project session's id: the key `SubsessionTreeMemory` remembers. */
   parentId: string;
   /** `directSubsessions(parent)`, already ordered. Renders nothing when empty. */

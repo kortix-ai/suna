@@ -1,15 +1,15 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import Hint from '@/components/ui/hint';
-import { useDebounce } from '@/hooks/use-debounce';
+} from '@kortix/ui/dropdown-menu';
+import Hint from '@kortix/ui/hint';
+import { useDebounce } from '@kortix/ui';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { CaretDownIcon, CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { rangeLabel, startOfDay, stepDate } from './reminder-calendar-model';

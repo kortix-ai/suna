@@ -1,10 +1,14 @@
-/** A queued Quick Queue prompt may interrupt only after the active tool finishes. */
+/**
+ * A queued Quick Queue prompt may interrupt only after the active tool finishes.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export interface QuickQueueArm {
   promptId: string
   opencodeSessionId: string
   messageId: string
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface QuickQueueSnapshot {
   state: 'active' | 'idle' | 'stale' | 'unknown'
   runningTool: boolean
@@ -15,7 +19,10 @@ interface MessageWithTools {
   parts: Array<{ type?: unknown; state?: { status?: unknown } }>
 }
 
-/** Match the active root before stopping it; a late arm cannot stop its successor. */
+/**
+ * Match the active root before stopping it; a late arm cannot stop its successor.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function quickQueueSnapshotFromPage(
   inFlight: boolean | null,
   messages: MessageWithTools[] | null,
@@ -68,6 +75,7 @@ interface BoundaryEvent {
   payload: unknown
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export class QuickQueueInterrupt {
   private pending: QuickQueueArm | null = null
   private checking: Promise<void> | null = null

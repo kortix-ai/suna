@@ -146,8 +146,8 @@ git commit -m "feat(mobile): genui dependencies and the Rich answers preference 
 ```bash
 cd apps/mobile
 sed -n 1,90p components/ui/text.tsx      # variants: default h1 h2 h3 h4 p blockquote code lead large small muted
-sed -n 1,66p components/ui/badge.tsx     # variants: default secondary destructive outline; children are <Text>
-sed -n 1,68p components/ui/tabs.tsx      # rn-primitives Tabs: value + onValueChange
+sed -n 1,66p packages/ui/src/primitives/badge.tsx     # variants: default secondary destructive outline; children are <Text>
+sed -n 1,68p packages/ui/src/primitives/tabs.tsx      # rn-primitives Tabs: value + onValueChange
 ```
 
 Facts already checked (2026-10-09): markdown links open through `openExternalLink(href: unknown)` in `components/markdown/markdown-text.tsx`; the app does not use `expo-image` (React Native `Image` it is); `lib/icons/index.ts` exports `InfoIcon`, `WarningIcon`, `CheckCircleIcon`, `ArrowUpRightIcon`, `MinusIcon`, `CaretDownIcon`, `CaretRightIcon`, `SquaresFourIcon`, but **not** `ArrowDownRightIcon` or `MapTrifoldIcon`. Add those two exactly as `SquaresFourIcon` is added:
@@ -268,7 +268,7 @@ import { Pressable, View } from 'react-native';
 import type { GenuiNode } from '@kortix/sdk/genui';
 import type { GenuiComponentProps } from '@kortix/sdk/genui/react';
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
 import { Text } from '@/components/ui/text';
 
 import { GenuiImageView } from './inline';
@@ -346,9 +346,9 @@ export function openGenuiLink(href: unknown): void {
 import { ScrollView, View } from 'react-native';
 import type { GenuiComponentProps } from '@kortix/sdk/genui/react';
 
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import { Icon } from '@/components/ui/icon';
-import { Separator } from '@/components/ui/separator';
+import { Separator } from '@kortix/ui/separator';
 import { Text } from '@/components/ui/text';
 import { ArrowDownRightIcon, ArrowUpRightIcon, MinusIcon } from '@/lib/icons';
 
@@ -487,7 +487,7 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
 import { Image, Pressable, View } from 'react-native';
 import type { GenuiComponentProps } from '@kortix/sdk/genui/react';
 
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { CheckCircleIcon, InfoIcon, WarningIcon } from '@/lib/icons';
@@ -657,8 +657,8 @@ export function AccordionItem({ title, defaultOpen = false, children }: { title:
 import { View } from 'react-native';
 import type { GenuiComponentProps } from '@kortix/sdk/genui/react';
 
-import { AccordionItem } from '@/components/ui/accordion';
-import { Separator } from '@/components/ui/separator';
+import { AccordionItem } from '@kortix/ui/accordion';
+import { Separator } from '@kortix/ui/separator';
 
 import { kids } from './layout';
 
@@ -680,7 +680,7 @@ Add `Accordion: GenuiAccordion,` to `mobileGenuiComponents` (import from `./acco
 
 - [ ] **Step 3: Typecheck and test**
 
-Run the Task 2 Step 5 and Step 6 commands. Expected: same baseline count, nothing under `components/genui` or `components/ui/accordion`; `bun test` PASS.
+Run the Task 2 Step 5 and Step 6 commands. Expected: same baseline count, nothing under `components/genui` or `packages/ui/src/primitives/accordion`; `bun test` PASS.
 
 - [ ] **Step 4: Commit**
 
@@ -1133,7 +1133,7 @@ import { useColorScheme } from 'nativewind';
 
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { allowInlineDocumentLoad } from '@/components/markdown/mermaid/mermaid-html';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@kortix/ui/dialog';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 import { mapDocument, type MapDocumentInput } from './map-html';
@@ -1220,7 +1220,7 @@ import { genuiA11yText } from '@kortix/sdk/genui';
 import type { GenuiComponentProps } from '@kortix/sdk/genui/react';
 
 import { Icon } from '@/components/ui/icon';
-import { Separator } from '@/components/ui/separator';
+import { Separator } from '@kortix/ui/separator';
 import { Text } from '@/components/ui/text';
 import { CaretRightIcon, MapTrifoldIcon } from '@/lib/icons';
 
@@ -1307,7 +1307,7 @@ git commit -m "feat(mobile): genui map as place rows with a fullscreen MapLibre 
 
 - [ ] **Step 1: Settings row (no description, per the mobile rule)**
 
-In `AccountPage.tsx`, add `SquaresFourIcon as SquaresFour,` to the `@/lib/icons` import, `import { Switch } from '@/components/ui/switch';`, `import { useGenuiStore } from '@/stores/genui-store';`, and inside the component:
+In `AccountPage.tsx`, add `SquaresFourIcon as SquaresFour,` to the `@/lib/icons` import, `import { Switch } from '@kortix/ui/switch';`, `import { useGenuiStore } from '@/stores/genui-store';`, and inside the component:
 
 ```tsx
   const genuiEnabled = useGenuiStore((s) => s.enabled);

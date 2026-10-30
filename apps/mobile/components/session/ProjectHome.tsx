@@ -24,7 +24,7 @@
  *   above the keyboard, so the symbol never sits under the composer. It is
  *   large at rest and scales down with the keyboard.
  * - At rest the composer sits at the thread composer's distance from the
- *   bottom (SessionPage pads `insets.bottom`, SessionChatInput adds `pb-3`).
+ *   bottom: `max(insets.bottom, 12)`, the card on the safe-area line (KRTX-2930).
  * - The composer follows the keyboard down to KEYBOARD_GAP above it once it appears.
  *
  * The draft lives in `HomeComposer`, not here: a keystroke re-renders the
@@ -61,6 +61,7 @@ import { Composer } from '@/components/kortix/composer';
 import type { SheetRef } from '@/components/kortix/sheet';
 import { useToast } from '@/components/kortix/toast-provider';
 import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
+import { NotificationsButton } from '@/components/session/NotificationsButton';
 import { ConnectProviderSheet } from '@/components/session/ConnectProviderSheet';
 import { ModelPickerSheet } from '@/components/session/ModelPickerSheet';
 import { ProjectHero } from '@/components/session/ProjectHero';
@@ -86,7 +87,8 @@ import {
   offeredModelCount,
   pickerModelName,
 } from '@/lib/session/model-picker';
-import type { Agent } from '@/lib/session/runtime-data';
+import type { Agent, Command } from '@/lib/session/runtime-data';
+import { SlashCommandSuggestions } from '@/components/session/SessionChatInput';
 
 /** One identity while the project detail loads, so the sheet's agent memo does not churn. */
 const EMPTY_AGENTS: Agent[] = [];
@@ -131,6 +133,12 @@ export interface ProjectHomeProps {
   onSubmitNewSession: (input: ProjectHomeSubmit) => Promise<boolean>;
   onOpenDrawer: () => void;
   /**
+   * The bell at the top right (KRTX-1742): the caller's unread count and the
+   * move to the Notifications page. Omitted while the project's
+   * `notification_center` flag is off: no bell.
+   */
+  notifications?: { unreadCount: number; onOpen: () => void };
+  /**
    * Read-and-clear the draft text and files to seed the composer with, if any
    * — e.g. a project-home send the user cancelled from `SessionConnecting`
    * before it connected (COR-146: `ProjectScreen.handleCancelConnect`). Called
@@ -147,6 +155,7 @@ export function ProjectHome({
   sending = false,
   onSubmitNewSession,
   onOpenDrawer,
+  notifications,
   takeInitialDraft,
 }: ProjectHomeProps) {
   const insets = useSafeAreaInsets();
@@ -209,6 +218,19 @@ export function ProjectHome({
     [projectConfig],
   );
   const defaultAgent = projectConfig?.default_agent ?? projectConfig?.open_code_default_agent ?? null;
+  // `/`: home has no session runtime, so the list is the project config's
+  // skills and commands, the same list web's home composer shows.
+  const homeCommands = React.useMemo<Command[]>(() => {
+    if (!projectConfig) return [];
+    const toCommand = (source: 'skill' | 'command') => (item: { name: string; description?: string | null }): Command => ({
+      name: item.name,
+      description: item.description ?? undefined,
+      source,
+      template: '',
+      hints: [],
+    });
+    return [...projectConfig.skills.map(toCommand('skill')), ...projectConfig.commands.map(toCommand('command'))];
+  }, [projectConfig]);
   const [pickedAgent, setPickedAgent] = React.useState<string | null>(null);
   const lastUsedAgent = useLocalConfigStore((s) => s.selectedAgent);
   const setLastUsedAgent = useLocalConfigStore((s) => s.setAgent);
@@ -246,7 +268,7 @@ export function ProjectHome({
   // default is `@kortix/sdk`'s: `/model-defaults` for this agent, then the
   // provider defaults. A pick equal to the default is no pick
   // (`selectComposerModel`): the session keeps following the default.
-  const { gatewayEnabled, providers, models, modelDefaults, isLoading: modelsLoading, refetchModelCount } =
+  const { providers, models, modelDefaults, isLoading: modelsLoading, refetchModelCount } =
     useComposerModels(projectId);
   const globalDefault = useLocalConfigStore((s) => s.globalDefault) ?? undefined;
   // The pick persists in the store the thread reads (`agentModels`, per
@@ -294,10 +316,9 @@ export function ProjectHome({
     }),
     [levels, variant, variantKey, setStoredVariant],
   );
-  // A gateway project that offers no model: the chip asks to connect one, and
-  // Send opens the connect sheet instead of starting a session (KRTX-251).
+  // A project that offers no model: the chip asks to connect one, and Send
+  // opens the connect sheet instead of starting a session (KRTX-251).
   const modelUnavailable = isModelUnavailable({
-    hasCatalog: gatewayEnabled,
     loading: modelsLoading,
     modelCount: offeredModelCount(models),
   });
@@ -325,7 +346,9 @@ export function ProjectHome({
     [defaultModel, models, setModelForAgent, agentSlot],
   );
 
-  const restingGap = insets.bottom + COMPOSER_BOTTOM_GAP;
+  // The card rests on the safe-area line, as in the thread (KRTX-2930): the
+  // inset already holds the home indicator's clearance, so the 12pt is not stacked on it.
+  const restingGap = Math.max(insets.bottom, COMPOSER_BOTTOM_GAP);
   const { progress } = useReanimatedKeyboardAnimation();
   const composerStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: progress.value * (restingGap - KEYBOARD_GAP) }],
@@ -402,15 +425,18 @@ export function ProjectHome({
 
   return (
     <View className="flex-1 bg-background">
-      {/* Floating menu button — opens the left drawer. */}
-      {/* No header controls: the agent is picked in the model sheet's Agent
-          tab (Jay, 2026-09-23). */}
+      {/* Floating menu button — opens the left drawer. The one header control
+          is the Notifications bell, top right (Jay, 2026-10-16); the agent is
+          picked in the model sheet's Agent tab (Jay, 2026-09-23). */}
       <FloatingMenuButton onPress={onOpenDrawer}>
         {/* Dev builds only: Metro folds `__DEV__` to false, so a release build has no button. */}
         {__DEV__ ? (
-          <Button variant="secondary" size="sm" className="rounded-full" onPress={() => router.push('/genui-debug')}>
-            <Text>Debug GenUI</Text>
+          <Button variant="secondary" size="sm" className="rounded-full" onPress={() => router.push('/debug')}>
+            <Text>Debug</Text>
           </Button>
+        ) : null}
+        {notifications ? (
+          <NotificationsButton unreadCount={notifications.unreadCount} onPress={notifications.onOpen} />
         ) : null}
       </FloatingMenuButton>
 
@@ -431,6 +457,7 @@ export function ProjectHome({
             <HomeComposer
               projectId={projectId}
               initialText={initialDraft.text}
+              commands={homeCommands}
               onSubmit={submitNow}
               autoFocus={focusComposer}
               inputRef={composerInputRef}
@@ -478,12 +505,14 @@ export function ProjectHome({
 function HomeComposer({
   projectId,
   initialText,
+  commands,
   onSubmit,
   onPasteFile,
   ...composer
 }: {
   projectId: string;
   initialText: string;
+  commands: Command[];
   onSubmit: (draft: string, pastes: PastedContent[]) => Promise<void>;
   onPasteFile: (files: AttachedFile[]) => void;
   autoFocus: boolean;
@@ -533,17 +562,33 @@ function HomeComposer({
     }
   }, [onSubmit]);
 
+  // `/name` with no space yet opens the list, as in the thread composer. A pick
+  // writes `/name ` into the draft; the send starts a session with it, as web does.
+  const slashFilter = draft.match(/^\/(\S*)$/)?.[1]?.toLowerCase();
+  const slashMatches = React.useMemo(
+    () =>
+      slashFilter === undefined
+        ? []
+        : commands.filter((c) => c.name.toLowerCase().includes(slashFilter) || c.description?.toLowerCase().includes(slashFilter)),
+    [commands, slashFilter],
+  );
+
   return (
-    <Composer
-      {...composer}
-      value={draft}
-      onChangeText={handleChangeText}
-      onSelectionChange={pasted.onSelectionChange}
-      pastes={pasted.pastes}
-      onRemovePaste={pasted.remove}
-      onOpenPaste={openPastedText}
-      onSubmit={handleSubmit}
-      placeholder="Ask anything"
-    />
+    <View>
+      {slashMatches.length > 0 && (
+        <SlashCommandSuggestions commands={slashMatches} selectedIndex={0} onSelect={(c) => handleChangeText(`/${c.name} `)} />
+      )}
+      <Composer
+        {...composer}
+        value={draft}
+        onChangeText={handleChangeText}
+        onSelectionChange={pasted.onSelectionChange}
+        pastes={pasted.pastes}
+        onRemovePaste={pasted.remove}
+        onOpenPaste={openPastedText}
+        onSubmit={handleSubmit}
+        placeholder="Ask anything"
+      />
+    </View>
   );
 }

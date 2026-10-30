@@ -19,6 +19,11 @@ type Can = { allowed: boolean; reason: string | null; isLoading: boolean; isErro
 const can = (allowed: boolean, isLoading = false): Can => ({ allowed, reason: null, isLoading, isError: false });
 let cans: Record<string, Can> = {};
 const probes: Array<{ target: unknown; actions: readonly string[] }> = [];
+let sendCalls: Array<{ itemId: string; verdict: string }> = [];
+// The Merge/dismiss confirm (`AlertDialog`): its `open` and the footer's
+// two buttons, captured so a test can drive the dialog like the real one.
+let alertOpen: boolean | null = null;
+let alertOnOpenChange: ((open: boolean) => void) | null = null;
 let rows: string[] = [];
 let body: any;
 let previewData: { is_up_to_date: boolean; can_merge: boolean; conflicts: string[] } | undefined;
@@ -36,9 +41,19 @@ const fakes: Record<string, Record<string, unknown>> = {
     },
   },
   '@/components/kortix/sheet': {
-    KortixBottomSheetModal: ({ children, footerComponent }: any) =>
-      React.createElement('Sheet', null, children, footerComponent?.({})),
+    KortixBottomSheetModal: React.forwardRef((props: any, ref: any) => {
+      React.useImperativeHandle(ref, () => ({
+        present() {},
+        // The queued verdict's dialog opens from `onDismiss` after the close.
+        dismiss: () => props.onDismiss?.(),
+      }));
+      return React.createElement('Sheet', null, props.children, props.footerComponent?.({}));
+    }),
     useSheetBackground: () => 'sheet',
+    // The real close-then slot: the queued-verdict dialog depends on its
+    // defer/take semantics, so the mock carries it through rather than
+    // stubbing it.
+    useCloseThen: require('@/components/kortix/use-close-then').useCloseThen,
   },
   '@/components/kortix/settings-list': {
     SettingsGroup: host('Group'),
@@ -68,7 +83,23 @@ const fakes: Record<string, Record<string, unknown>> = {
     reviewDetailRows: () => [],
     splitFilePath: (path: string) => ({ name: path }),
   },
-  '@/lib/review/use-review': { useReviewVerdict: () => ({ mutate() {} }) },
+  '@/lib/review/use-review': { useReviewVerdict: () => ({ mutate: (args: any) => sendCalls.push(args) }) },
+  '@/components/ui/alert-dialog': {
+    AlertDialog: ({ open, onOpenChange, children }: any) => {
+      alertOpen = open;
+      alertOnOpenChange = onOpenChange;
+      return React.createElement('alert-dialog', null, children);
+    },
+    AlertDialogContent: host('alert-content'),
+    AlertDialogHeader: host('alert-header'),
+    AlertDialogTitle: host('alert-title'),
+    AlertDialogDescription: host('alert-description'),
+    AlertDialogFooter: host('alert-footer'),
+    // `asChild` in the real one: render the Button child, wiring its press
+    // to the dialog close.
+    AlertDialogCancel: ({ children }: any) =>
+      React.createElement('alert-cancel', null, React.cloneElement(children, { onPress: () => alertOnOpenChange?.(false) })),
+  },
   '@/lib/utils/open-link': { openLink: async () => {} },
   '@/stores/session-prompt-request-store': {
     useSessionPromptRequestStore: { getState: () => ({ requestSend() {} }) },
@@ -115,12 +146,17 @@ const DECISION = { ...base, id: 'rv-2', kind: 'decision', detail: { options: [] 
 const APPROVAL = { ...base, id: 'call:exec-1', kind: 'approval', detail: { actions: [] } };
 
 let tree: any;
+let sheetRef: any;
 function renderAs(item: unknown, next: Record<string, Can>) {
   cans = next;
   rows = [];
   body = undefined;
+  sendCalls = [];
+  alertOpen = null;
+  alertOnOpenChange = null;
+  sheetRef = React.createRef();
   act(() => {
-    tree = create(<ReviewDetailSheet projectId="proj-1" item={item as never} />);
+    tree = create(<ReviewDetailSheet ref={sheetRef} projectId="proj-1" item={item as never} />);
   });
 }
 afterEach(() => {
@@ -256,5 +292,43 @@ describe('review sheet verdicts', () => {
     act(() => tree.unmount());
     renderAs(CHANGE, MANAGER);
     expect(footer()).toEqual(['Resolve conflicts', 'Request changes']);
+  });
+
+  // The destructive verdicts confirm (KRTX-1720): the tap only queues and
+  // closes the sheet; the request goes out from the dialog's confirm.
+  const pressVerdict = (label: string) => {
+    const button = tree.root
+      .findAllByType('Button')
+      .find((b: any) => b.findAllByType('Text').some((t: any) => String(t.props.children) === label));
+    expect(button).toBeDefined();
+    act(() => button.props.onPress());
+  };
+
+  test('Merge confirms in the dialog before the request goes out', () => {
+    renderAs(CHANGE, MANAGER);
+    act(() => sheetRef.current.open()); // the parent presents the sheet
+    pressVerdict('Merge');
+    // The sheet closed with the verdict queued: no request yet, the dialog up.
+    expect(sendCalls).toEqual([]);
+    expect(alertOpen).toBe(true);
+    const dialog = tree.root.findByType('alert-dialog');
+    const title = dialog.findByType('alert-title').props.children;
+    expect(String(title)).toBe('Merge');
+    const confirm = dialog.findAllByType('Button').find((b: any) =>
+      b.findAllByType('Text').some((t: any) => String(t.props.children) === 'Merge'));
+    act(() => confirm.props.onPress());
+    expect(sendCalls.length).toBe(1);
+    expect(sendCalls[0]).toMatchObject({ itemId: 'cr:42', verdict: 'approve', kind: 'change', number: 7 });
+  });
+
+  test('canceling the Merge confirm sends nothing and closes the dialog', () => {
+    renderAs(CHANGE, MANAGER);
+    act(() => sheetRef.current.open());
+    pressVerdict('Merge');
+    expect(alertOpen).toBe(true);
+    const cancel = tree.root.findByType('alert-cancel').findAllByType('Button')[0];
+    act(() => cancel.props.onPress());
+    expect(sendCalls).toEqual([]);
+    expect(alertOpen).toBe(false);
   });
 });

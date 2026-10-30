@@ -38,12 +38,12 @@ const RUNTIME = ['node:*', 'node:*/**', ...pkg('bun', 'zod', 'tar')]
  * entry here (see ARCHITECTURE.md).
  */
 export const SERVICES = [
+  'chrome',
   'config-provider',
   'drive-sync',
   'egress-shim',
   'event-bus',
   'llm-proxy',
-  'monitor',
   'resources',
   'runtime-assets',
   'sandbox-env',
@@ -56,6 +56,7 @@ export const SERVICES = [
 // tsconfig.json). An aliased file outside the plugin root arrives as an
 // absolute path, one inside it (pnpm layout) as a root-relative path.
 const apiContract = resolve(import.meta.dirname, '../../packages/api-contract/src').split(sep).join('/')
+const SSRF_GUARD = [resolve(import.meta.dirname, '../../packages/shared/src/ssrf-guard.ts').split(sep).join('/'), at('../../packages/shared/src/ssrf-guard.ts')]
 const API_CONTRACT = [`${apiContract}/**`, at('../../packages/api-contract/src/**')]
 // The SDK's import-free message-id codec, reached the same way (pi and the session-log boot mint ids with it).
 const SDK_WIRE_MESSAGE_ID_FILE = 'packages/sdk/src/core/session/wire-message-id.ts'
@@ -75,9 +76,18 @@ const SERVICE_EXTERNALS = {
 /** Harness adapters and the packages only they may load. @type {Record<string, string[]>} */
 export const ADAPTERS = {
   'open-code': ['bun:sqlite'],
-  // quickjs-wasi: codemode's VM, embedded as a file. The pi-coding-agent dist path: a setter pi does not export (pi/codemode.ts).
+  // quickjs-wasi: codemode's VM, embedded as a file. The pi-coding-agent dist paths: a setter and the codemode tool
+  // (for a subagent) pi does not export (pi/codemode.ts).
   // photon-node: pi's image resizer wasm, embedded as a file (pi/images.ts).
-  pi: [...pkg('@earendil-works/*'), ...pkg('typebox'), ...pkg('quickjs-wasi'), ...pkg('@silvia-odwyer/photon-node'), at('node_modules/@earendil-works/pi-coding-agent/dist/config.*'), ...SDK_WIRE_MESSAGE_ID],
+  pi: [
+    ...pkg('@earendil-works/*'),
+    ...pkg('typebox'),
+    ...pkg('quickjs-wasi'),
+    ...pkg('@silvia-odwyer/photon-node'),
+    at('node_modules/@earendil-works/pi-coding-agent/dist/config.*'),
+    at('node_modules/@earendil-works/pi-coding-agent/dist/extensions/codemode/tool.*'),
+    ...SDK_WIRE_MESSAGE_ID,
+  ],
 }
 
 const lib = at('src/lib/**')
@@ -113,6 +123,7 @@ const independentModules = createIndependentModules({
     baseUrl: '.',
     paths: {
       '@/*': [at('src/*')],
+      '@kortix/shared/ssrf-guard': [at('../../packages/shared/src/ssrf-guard.ts')],
       '@kortix/api-contract/*': [at('../../packages/api-contract/src/*')],
       '@kortix/sdk/wire-message-id': [at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)],
     },
@@ -163,7 +174,7 @@ const independentModules = createIndependentModules({
       'routes',
       at('src/routes/**'),
       [at('src/routes/**'), ...harnessCore, ...services, SHARED],
-      [...RUNTIME, ...pkg('hono'), ...API_CONTRACT],
+      [...RUNTIME, ...pkg('hono'), ...API_CONTRACT, ...SSRF_GUARD],
       'Routes import routes/, the harness contract, services and the shared layer. Never app/ or an adapter.',
     ),
     layer(
@@ -179,6 +190,13 @@ const independentModules = createIndependentModules({
       [],
       pkg('@earendil-works/pi-codemode'),
       'The codemode worker entrypoint (scripts/build.sh) imports pi-codemode only.',
+    ),
+    layer(
+      'image-resize-worker',
+      at('src/utils/image-resize-worker.ts'),
+      [at('src/harness/pi/images.ts')],
+      [at('node_modules/@earendil-works/pi-coding-agent/dist/utils/image-resize-worker.*')],
+      "The image resize worker entrypoint (scripts/build.sh) imports the photon wasm redirect (harness/pi/images.ts) and pi's resize worker only.",
     ),
     // Last: a file no layer above matched is in no layer at all (a new
     // top-level folder, an unregistered service or adapter).

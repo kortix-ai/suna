@@ -48,7 +48,7 @@ function openCodeSession(): SessionLog {
   return log('opencode', [root, child], { todos: [{ content: 'ship', status: 'pending' }] });
 }
 
-const OK = { llmGateway: true, restore: true };
+const OK = { restore: true };
 /** Everything OpenCode handles that pi lacks, used or not. */
 const OPENCODE_TO_PI: SwitchGap[] = [
   { feature: 'attachments.user', detail: 'application/pdf', status: 'lost' },
@@ -128,14 +128,15 @@ describe('switchPreflight: the loss report of a harness switch', () => {
     expect(switchPreflight(log('pi', []), 'opencode', OK).unsupported).toEqual([]);
   });
 
-  test('the verdict: the same harness and pi without the gateway are not available; no restore loses the whole history first', () => {
+  test('the verdict: only the same harness is not available; no restore loses the whole history first', () => {
     const session = openCodeSession();
     expect(switchPreflight(session, 'opencode', OK)).toMatchObject({ available: false, reason: 'same_harness', losses: [] });
-    expect(switchPreflight(session, 'pi', { llmGateway: false, restore: true })).toMatchObject({ available: false, reason: 'llm_gateway_off' });
-    const noRestore = switchPreflight(session, 'pi', { llmGateway: true, restore: false });
+    // The LLM gateway serves every project, so pi always has a model path.
+    expect(switchPreflight(session, 'pi', OK)).toMatchObject({ available: true, reason: null });
+    const noRestore = switchPreflight(session, 'pi', { restore: false });
     expect(noRestore).toMatchObject({ available: true, reason: null, restores: false });
     expect(noRestore.losses[0]).toEqual({ feature: 'history', used: 5, status: 'lost' });
-    expect(switchPreflight(log('opencode', []), 'pi', { llmGateway: true, restore: false }).losses).toEqual([]);
+    expect(switchPreflight(log('opencode', []), 'pi', { restore: false }).losses).toEqual([]);
   });
 
   test('deleted messages count as a rewind; a harness name that is an Object key is no manifest', () => {

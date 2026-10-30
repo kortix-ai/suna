@@ -1,25 +1,27 @@
 #!/usr/bin/env bash
 # Kortix brand audit.
 # Mechanical enforcement of the allowlists in references/visual/*.md.
-# Usage: audit.sh [--summary] [path ...]   (default: apps/web/src)
+# Usage: audit.sh [--summary] [path ...]   (default: apps/web/src packages/ui/src)
 #
 # Exit 0 = clean. Exit 1 = violations found.
 # --summary prints one "count<TAB>rule" line per rule that has hits, and nothing else.
 #
 # Profiles. Every path is audited in one of two profiles:
-#   app        apps/web product chrome. Every rule applies.
-#   marketing  paths under /marketing/, /(marketing)/, /(seo)/, /presentations/, /components/home/.
+#   app        apps/web product chrome and @kortix/ui (packages/ui/src). Every rule applies.
+#   marketing  paths under /marketing/, /(marketing)/, /(sales)/, /(seo)/, /presentations/, /components/home/.
 #              Color, dark:, spacing, bracket, easing, weight and motion-property rules
 #              still apply. The type-size ceiling, the radius ceiling and large shadows
 #              are relaxed. The duration ceiling is 500ms. Mono-uppercase eyebrows are allowed.
 #              Marketing keeps a 13px floor for text.
 #
 # What the audit skips (and nothing else):
-#   - globals.css: it defines the system.
+#   - globals.css and packages/ui/src/styles/ (theme.css, tokens.css, moved out
+#     of globals.css): they define the system.
 #   - a line that carries `audit:allow <reason>`: a data row or a prose line that
 #     NAMES a banned token (the /design-system/ page), or the token block of a
 #     standalone page that cannot load tokens.css. Give the reason in the comment.
-#   - tests, stories, *.generated.*, lib/browser-noise.
+#   - tests, stories, *.generated.*, lib/browser-noise, and the generated
+#     packages/ui/src/i18n/en.ts catalog (translation strings, not components).
 #   - named art modules (art layer, D4d) and third-party logo files (escape hatch).
 #
 # grep -a is mandatory: some sources in this repo are classified as binary by
@@ -40,12 +42,12 @@ if [ ${#ARGS[@]} -eq 0 ]; then
   if [ ! -d apps/web/src ]; then
     root=$(git rev-parse --show-toplevel 2>/dev/null) && cd "$root" || exit 2
   fi
-  ARGS=(apps/web/src)
+  ARGS=(apps/web/src packages/ui/src)
 fi
 TARGETS=("${ARGS[@]}")
 FOUND=0
 
-EXCLUDE_RE='(globals\.css|\.test\.|\.stories\.|\.generated\.|/browser-noise/|/lib/blog-posts|node_modules|\.next)'
+EXCLUDE_RE='(globals\.css|packages/ui/src/styles/|\.test\.|\.stories\.|\.generated\.|packages/ui/src/i18n/en\.ts|/browser-noise/|/lib/blog-posts|node_modules|\.next)'
 
 # Art layer (D4d): raw hex, gradients and WebGL live here and only here.
 ART_RE='(/paper-wallpaper-shaders\.|/wallpaper-shaders\.|/wallpaper-background\.|/shader-wallpaper\.|/shader-safe\.|/pixel-kortix-mark\.|/dot-matrix/|/kortix-hyper-logo\.|/prismatic-burst\.|/animated-bg\.|/dotmatrix-loader\.|/kortix-logo\.tsx|/components/brand/brand-logos\.)'
@@ -53,16 +55,17 @@ ART_RE='(/paper-wallpaper-shaders\.|/wallpaper-shaders\.|/wallpaper-background\.
 # Third-party logo files: provider colors are the escape hatch. House glyphs in the
 # same folder (kortix, home, download, solid-check-icon, sidebar-toggle, plus, close,
 # copy, email, monitor, moon, sun, schedule) are audited.
-LOGO_RE='(/features/icon/icons/(apple-cursor|chat-gpt|claude|gemini|github|gmail|linear|microsoft-teams|new-google|notion|open-ai|open-claw|open-code|playstore|slack|telegram|whats-app|zapier)\.)'
+LOGO_RE='(/(features/icon/icons|internal/icons)/(apple-cursor|chat-gpt|claude|gemini|github|gmail|linear|microsoft-teams|new-google|notion|open-ai|open-claw|open-code|playstore|slack|telegram|whats-app|zapier)\.)'
 
 # Escape hatch: a third-party brand color in a named constant next to the component.
 CONST_RE=':[0-9]+: *(export )?const [A-Z][A-Z0-9_]* ='
 
-# The one sanctioned spinner and the one sanctioned uppercase chip.
-LOADING_RE='(/components/ui/(loading|kortix-loader)\.)'
-BADGE_RE='(/components/ui/badge\.)'
+# The one sanctioned spinner and the one sanctioned uppercase chip. They live in
+# packages/ui/src/primitives/ (@kortix/ui).
+LOADING_RE='(/primitives/(loading|kortix-loader)\.)'
+BADGE_RE='(/primitives/badge\.)'
 
-MKT_RE='(/marketing/|/\(marketing\)/|/\(seo\)/|/presentations/|/components/home/)'
+MKT_RE='(/marketing/|/\(marketing\)/|/\(sales\)/|/\(seo\)/|/presentations/|/components/home/)'
 
 # A comment line is prose about the rules, not a violation of them.
 COMMENT_RE=':[0-9]+: *(//|\*|/\*|\{/\*)'
@@ -72,7 +75,7 @@ COMMENT_RE=':[0-9]+: *(//|\*|/\*|\{/\*)'
 scan() {
   local label="$1" pattern="$2" fix="$3" scope="${4:-all}" skip="${5:-}"
   local hits
-  hits=$(grep -raEn --include='*.tsx' --include='*.ts' --include='*.css' "$pattern" "${TARGETS[@]}" 2>/dev/null \
+  hits=$(grep -raEnH --include='*.tsx' --include='*.ts' --include='*.css' "$pattern" "${TARGETS[@]}" 2>/dev/null \
     | grep -avE "$EXCLUDE_RE" \
     | grep -avE "$ART_RE" \
     | grep -avE "$LOGO_RE" \
@@ -101,7 +104,7 @@ scan() {
 scan_files() {
   local label="$1" pattern="$2" fix="$3" files="$4"
   local hits
-  hits=$(grep -raEn --include='*.tsx' --include='*.ts' "$pattern" "${TARGETS[@]}" 2>/dev/null \
+  hits=$(grep -raEnH --include='*.tsx' --include='*.ts' "$pattern" "${TARGETS[@]}" 2>/dev/null \
     | grep -aE "^[^:]*($files)[^/:]*:" \
     | grep -avE "$EXCLUDE_RE" \
     | grep -avE "$COMMENT_RE" \
@@ -222,7 +225,7 @@ scan "Uppercase label in app chrome" \
 # SessionDotMatrix (D4f) is the sanctioned session busy mark. It does not match.
 scan "Icon used as a spinner" \
   '\banimate-(spin|spinner-spin)\b|\b(CircleNotch|SpinnerGap|Spinner)Icon\b' \
-  "Loading is the spinner (import Loading from '@/components/ui/loading'). SessionDotMatrix marks session-scoped work" all "$LOADING_RE"
+  "Loading is the spinner (import Loading from '@kortix/ui/loading'). SessionDotMatrix marks session-scoped work" all "$LOADING_RE"
 
 # ── Motion ──────────────────────────────────────────────────────────────────
 # D3: duration-fast/normal/moderate/slow/slower compile (tokens.css emits

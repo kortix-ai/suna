@@ -1,4 +1,4 @@
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 
 // Post-auth landing goes to a project, never to the projects list. The landing
 // door paints immediately and resolves (or provisions) the project behind the

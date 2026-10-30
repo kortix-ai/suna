@@ -130,6 +130,12 @@ export const SANDBOX_TRANSITIONS = {
    * as `restore` makes one, once the provider confirmed the box removed.
    */
   retireLost: { from: ['stopped'], to: 'stopped' },
+  /**
+   * `retireIdleVolumeBoxes`: the stopped row of a session whose /workspace is a
+   * Platinum volume, idle past KORTIX_SANDBOX_IDLE_DELETE_MINUTES. It becomes a
+   * retired row; the next open claims it for a fresh box on the same volume.
+   */
+  retireIdle: { from: ['stopped'], to: 'stopped' },
   /** A `provisioning` row of a deleted session whose owner lapsed. */
   archiveProvisioning: { from: ['provisioning'], to: 'archived' },
   /** A restart or recovery claimed the row. */

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -228,44 +228,48 @@ async function runDeploy(
 ): Promise<RunResult> {
   // Per-case state: the stub functions read these paths from the environment.
   const dir = mkdtempSync(join(tmpdir(), 'ecs-stabilize-'));
-  const log = join(dir, 'aws-calls.log');
-  writeFileSync(log, '', 'utf8');
-  const clock = join(dir, 'clock');
-  writeFileSync(clock, String(CLOCK_START), 'utf8');
+  try {
+    const log = join(dir, 'aws-calls.log');
+    writeFileSync(log, '', 'utf8');
+    const clock = join(dir, 'clock');
+    writeFileSync(clock, String(CLOCK_START), 'utf8');
 
-  const newDeploymentUp = scenario === 'completed' || scenario === 'draining' || scenario === 'mixed';
-  // Async, so the cases of a describe run side by side: each one owns its
-  // call log and fake clock.
-  const result = await new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {
-    const args = [scriptPath, 'dev-use2', 'kortix/kortix-web:dev-ec6cbdb7', '--service', 'web', ...extraArgs];
-    execFile('bash', args, { cwd: root, encoding: 'utf8', env: {
-      ...process.env,
-      AWS_STUB_LOG: log,
-      FAKE_CLOCK: clock,
-      ...STUB_FUNCTIONS,
-      AWS_STUB_SCENARIO: scenario,
-      // `String.raw` still interpolates ${...}, so the stub uses bare $VARs and
-      // every variable it reads must be set here.
-      AWS_STUB_STOPPED: 'some',
-      // A never-completing rollout reports one running task and one pending.
-      // While old tasks drain, the NEW deployment is complete (1/1) and the
-      // service still counts the draining task (2 running, 1 desired).
-      AWS_STUB_RUNNING: newDeploymentUp ? '1' : '0',
-      AWS_STUB_SERVICE_RUNNING: scenario === 'completed' ? '1' : newDeploymentUp ? '2' : '0',
-      AWS_STUB_PENDING: newDeploymentUp ? '0' : '1',
-      ...env,
-    } }, (error, stdout, stderr) => {
-      const code = (error as { code?: unknown } | null)?.code;
-      done({ status: error ? (typeof code === 'number' ? code : null) : 0, stdout, stderr });
+    const newDeploymentUp = scenario === 'completed' || scenario === 'draining' || scenario === 'mixed';
+    // Async, so the cases of a describe run side by side: each one owns its
+    // call log and fake clock.
+    const result = await new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {
+      const args = [scriptPath, 'dev-use2', 'kortix/kortix-web:dev-ec6cbdb7', '--service', 'web', ...extraArgs];
+      execFile('bash', args, { cwd: root, encoding: 'utf8', env: {
+        ...process.env,
+        AWS_STUB_LOG: log,
+        FAKE_CLOCK: clock,
+        ...STUB_FUNCTIONS,
+        AWS_STUB_SCENARIO: scenario,
+        // `String.raw` still interpolates ${...}, so the stub uses bare $VARs and
+        // every variable it reads must be set here.
+        AWS_STUB_STOPPED: 'some',
+        // A never-completing rollout reports one running task and one pending.
+        // While old tasks drain, the NEW deployment is complete (1/1) and the
+        // service still counts the draining task (2 running, 1 desired).
+        AWS_STUB_RUNNING: newDeploymentUp ? '1' : '0',
+        AWS_STUB_SERVICE_RUNNING: scenario === 'completed' ? '1' : newDeploymentUp ? '2' : '0',
+        AWS_STUB_PENDING: newDeploymentUp ? '0' : '1',
+        ...env,
+      } }, (error, stdout, stderr) => {
+        const code = (error as { code?: unknown } | null)?.code;
+        done({ status: error ? (typeof code === 'number' ? code : null) : 0, stdout, stderr });
+      });
     });
-  });
-  return {
-    status: result.status,
-    stdout: result.stdout,
-    stderr: result.stderr,
-    elapsedS: Number(readFileSync(clock, 'utf8')) - CLOCK_START,
-    awsCalls: readFileSync(log, 'utf8').split('\n').filter(Boolean),
-  };
+    return {
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      elapsedS: Number(readFileSync(clock, 'utf8')) - CLOCK_START,
+      awsCalls: readFileSync(log, 'utf8').split('\n').filter(Boolean),
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 describe.concurrent('ECS rollout stabilization budget', () => {

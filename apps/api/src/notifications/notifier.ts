@@ -36,6 +36,12 @@ export interface DeliverInput {
   projectId?: string | null;
   sessionId?: string | null;
   triggerSlug?: string | null;
+  /** A room message: the room it was posted in. */
+  roomId?: string | null;
+  /** A thread reply: the thread's root seq, so the link opens the thread. */
+  roomThreadSeq?: number | null;
+  artifactId?: string | null;
+  artifactThreadId?: string | null;
   /** Subject: the session title or the trigger name. */
   title: string;
   /** Detail: question text, error, share line. May be empty. */
@@ -109,6 +115,10 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
         projectId: input.projectId ?? null,
         sessionId: input.sessionId ?? null,
         triggerSlug: input.triggerSlug ?? null,
+        roomId: input.roomId ?? null,
+        roomThreadSeq: input.roomThreadSeq ?? null,
+        artifactId: input.artifactId ?? null,
+        artifactThreadId: input.artifactThreadId ?? null,
         kind: input.kind,
         title: input.title,
         body: input.body ?? '',
@@ -135,6 +145,10 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
         projectId: input.projectId ?? null,
         sessionId: input.sessionId ?? null,
         triggerSlug: input.triggerSlug ?? null,
+        roomId: input.roomId ?? null,
+        roomThreadSeq: input.roomThreadSeq ?? null,
+        artifactId: input.artifactId ?? null,
+        artifactThreadId: input.artifactThreadId ?? null,
         accountId: input.accountId,
       });
 
@@ -214,7 +228,7 @@ export function liveNotifierDeps(overrides: Partial<NotifierDeps> = {}): Notifie
     presence: loadSessionPresence,
     listDevices: (userId) => devices.listByUser(userId),
     sendExpo: (messages) =>
-      sendExpoPushMessages(messages, { accessToken: config.EXPO_ACCESS_TOKEN || undefined, store: devices, logger }),
+      sendExpoPushMessages(messages, { accessToken: config.EXPO_ACCESS_TOKEN || undefined, enabled: config.EXPO_PUSH_ENABLED, origin: config.KORTIX_URL, store: devices, logger }),
     sendWebPush: sendWebPushToUser,
     emailAvailable: isNotificationEmailAvailable,
     sendEmailNow: sendImmediateNotificationEmail,

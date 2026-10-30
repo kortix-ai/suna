@@ -16,6 +16,9 @@ export {
   type GitProxyAuth,
 } from './lib/git';
 
+// Idle sessions off a fallback model (consumed by workers/session-model-fallback-worker).
+export { revertIdleSessionFallbacks } from './lib/session-model-fallback-revert';
+
 // A person's pins and archive (consumed by account erasure and offboarding).
 export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/session-user-state';
 
@@ -23,16 +26,22 @@ export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/sessio
 export {
   buildSessionSandboxEnvVars,
   createProjectSession,
+  resolveSessionAgentName,
 } from './lib/sessions';
 
 export {
+  buildContinueSessionCommandValues,
+  createCommandStatus,
   createSession,
   startSession,
   continueSession,
+  deliverThroughQueue,
   drainSessionLifecycleQueue,
   resolveProjectAutomationActor,
   retireWarmProjectSessions,
 } from './session-lifecycle';
+export type { CreateSessionCommand } from './session-lifecycle';
+export { sessionIsTombstoned } from './lib/session-visibility';
 
 // The shutdown hand-back of lifecycle claims (consumed by bootstrap.ts).
 export { handBackClaims } from './session-lifecycle/claim-handover';
@@ -49,6 +58,13 @@ export {
   commitManifest,
 } from './lib/triggers';
 
+// Every declared agent's grant (consumed by the connectors rules matrix).
+export { extractAgents, grantsByAgent, loadProjectAgents } from './agents';
+export { mentionTokens, mentionsMember } from './rooms/envelope';
+export { resolveAndAuthorizeAgentAs } from './lib/agent-access';
+export { loadVisibleSession } from './lib/session-visibility';
+export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
+
 // Project access, the route app and the secret envelope.
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
 
@@ -56,10 +72,14 @@ export { assertProjectCapability, loadProjectForUser } from './lib/access';
 // so the approval page refuses exactly whom the resolve route refuses).
 export { mayResolveApproval } from './lib/approval-authority';
 export { approvalCallerOf } from './lib/http-approval-caller';
-export { approvalTargetSession } from './lib/connector-approval-decision';
+export { approvalTargetSession, expireDueApprovals } from './lib/connector-approval-decision';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
-export { listResolvedProjectSecrets } from './secrets';
+export { listProjectSecretNamesForConsumer, listResolvedProjectSecrets } from './secrets';
+// App events (`type: app` triggers): apps/event-routes.ts appends through these.
+export { ingestAppEvents, parseAppEventsBody, type AppEventInput } from './lib/app-events';
+// One-off App runs (runAfter / runAt) on the trigger engine.
+export { cancelAppRun, insertAppRun } from './lib/app-runs';
 export { currentInstanceId } from './instance-scope';
 
 // What account erasure deletes outside the database (consumed by
@@ -69,12 +89,18 @@ export { sessionAttachmentStore } from './lib/session-attachments';
 export { deleteManagedProjectRepo } from './lib/project-deletion';
 export { isAlreadyNotRunning } from './reaping/policy';
 
+// The stamp the removal gate reads: mark a teardown as Kortix-initiated BEFORE
+// the provider call so its `removed` webhook cannot read as a lost runtime
+// (consumed by ../billing/services account deletion).
+export { markKortixRemovalIntent } from './runtime-identity';
+
 // Offboarding pauses the reminders a departed member set (consumed by
 // ../accounts/core/offboard-member).
 export { disableRemindersAuthoredBy } from './lib/session-reminders';
 
 // Nested `projects.metadata` writes (consumed by ../feature-flags/write).
-export { metadataClearSubtreeKey, metadataMergeSubtree } from './lib/metadata-merge';
+export { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from './lib/metadata-merge';
+export { MANIFEST_PROJECT_NAME_KEY, projectNameAction } from './lib/manifest-project-name';
 
 // Whether any app-event adapter is configured (consumed by ../feature-flags/registry).
 
@@ -89,24 +115,34 @@ export const reconcileEventSubscriptionsFromCatalog: typeof import('./trigger-ev
   async (...args) => (await eventSubscriptions()).reconcileEventSubscriptionsFromCatalog(...args);
 export const releaseProjectEventSubscriptions: typeof import('./trigger-events/subscriptions').releaseProjectEventSubscriptions =
   async (...args) => (await eventSubscriptions()).releaseProjectEventSubscriptions(...args);
+// Kortix-polled app events (consumed by workers/trigger-event-poll-worker.ts). Loading the
+// module registers the delivery queue's job handler. Lazy for the same cycle as above.
+export const runDueEventPolls = async (onSlotFree?: () => void): Promise<number> =>
+  (await import('./trigger-events/mcp-poll')).runDueEventPolls(onSlotFree);
+export const loadEventPoller = async (): Promise<void> => {
+  await import('./trigger-events/mcp-poll');
+};
 
 // Drive sync's last push before a synced box loses a writable folder (consumed by drives/service.ts).
 export { flushDriveSyncBeforeStop } from './reaping/stop-box';
 
-// The transcript mirror's rewind marker (consumed by ../sandbox-proxy).
-export { setTranscriptRewindMarker } from './lib/session-transcript-mirror';
-
 // Close the stored copy of a question a client answered (consumed by ../sandbox-proxy).
 export { clearOpenQuestions } from './lib/pending-questions';
 
-// The stored transcript (the session log behind the `session_log` flag, else
-// the mirror), consumed by the public share route.
+// A chat button answers a stored question, in the turn it blocks or as a
+// follow-up (consumed by channels/telegram).
+export { getPendingQuestion, renderAnswerPrompt, resolvePendingQuestion } from './lib/pending-questions';
+export { releaseRuntimeQuestion } from './session-lifecycle/release-runtime-question';
+
+// The stored transcript (`toV1` of the session log), consumed by the public share route.
 export { readStoredTranscriptWindow } from './session-log-read';
+
+// Abort a session's running turn (consumed by chrome/, on a user's Stop in Chrome, and by
+// channels/core/commands.ts, on a chat's /stop and /new).
+export { abortRuntimeTurn } from './session-lifecycle/abort-runtime-turn';
 
 // The retention purge of session content (consumed by workers/session-log-purge-worker.ts).
 export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
-// The backfill of old sessions into the session log (consumed by workers/session-log-backfill-worker.ts).
-export { backfillSessionLogs } from './session-log-backfill';
 
 // Git reads (consumed by config-releases/publish.ts and config-releases/base-tip.ts).
 export { resolveCommitSha, resolveCommitShaAt } from './git/commits';
@@ -116,3 +152,20 @@ export type { GitBackedProject } from './git/types';
 // Who may stop a running turn (consumed by channels/core/turn-stop.ts and
 // sandbox-proxy/forward/abort-authority.ts).
 export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './session-lifecycle/turn-stop-authority';
+// A chat's /stop and /new: the source of the running turn's prompt (consumed by channels/core/commands.ts).
+export { turnPromptSource } from './lib/notification-recipients';
+// Who may rewind a session (consumed by sandbox-proxy/forward/forward-to-sandbox.ts).
+export { mayRewindSession } from './session-lifecycle/rewind-authority';
+// Wakes the first prompts waiting on a box that went active on any replica (consumed by bootstrap.ts).
+export { signalSessionRuntimeActive } from './session-lifecycle/runtime-active-signal';
+
+export { registerRuntimeFork } from './lib/runtime-session-snapshot';
+
+// `project_channels` on: file every session into `#general`, and the "turned on
+// again" record (consumed by ../feature-flags/toggle-effects).
+export { turnOnChannels } from './lib/project-spaces';
+export { recordChannelsReenabled } from './lib/channels-onboarding';
+
+// Author names written into memory files (consumed by ../memory/layers.ts).
+export { resolveUserIdentities } from './lib/user-identity';
+export { readPublicResponse } from './lib/public-response';

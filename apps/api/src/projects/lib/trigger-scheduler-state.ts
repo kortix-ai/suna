@@ -1,5 +1,6 @@
 import { config } from '../../config';
 import { isPlainObject } from '../../shared/json';
+import { ACCOUNT_AUTOMATIONS_PAUSED_REASON, readAccountAutomationPause } from '../../accounts/automation-pause';
 
 export type TriggerSchedulerTimer = ReturnType<typeof setInterval>;
 
@@ -205,4 +206,17 @@ export function triggerExecutionConcurrency(): number {
  */
 export function triggersPausedForProject(metadata: unknown): boolean {
   return isPlainObject(metadata) && (metadata as Record<string, unknown>).triggers_paused === true;
+}
+
+export const PROJECT_TRIGGERS_PAUSED_REASON = 'project triggers are paused';
+
+/**
+ * Why no automatic fire of this project may run now: its own pause, then its
+ * account's Pause all automations (KRTX-1721, `accounts/automation-pause.ts`).
+ * Null while they run. A manual fire never asks.
+ */
+export async function automaticFirePauseReason(project: { accountId: string; metadata: unknown }): Promise<string | null> {
+  if (triggersPausedForProject(project.metadata)) return PROJECT_TRIGGERS_PAUSED_REASON;
+  if (await readAccountAutomationPause(project.accountId)) return ACCOUNT_AUTOMATIONS_PAUSED_REASON;
+  return null;
 }

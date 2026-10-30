@@ -437,9 +437,8 @@ export function useAdminSetTier() {
 
 /**
  * Every entitlement mutation below invalidates the same two keys the credit
- * mutations do: the paginated accounts list (the row carries `trial`,
- * `managedModelsOverride`, `demoEnterprise` and `enterpriseEntitled`) and the
- * per-account detail subtree.
+ * mutations do: the paginated accounts list (the row carries
+ * `entitlementOverrides`) and the per-account detail subtree.
  */
 function invalidateAdminAccount(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -546,9 +545,7 @@ export function useAdminSetEnterpriseEntitled() {
  * override, and the only one that can express an expiry.
  *
  * Send only the keys the form owns: an entry sets, `null` deletes, an absent
- * key is untouched. The server mirrors a PERMANENT patch onto the four legacy
- * columns and clears the column for a TIMED one, so the three single-purpose
- * mutations above and this one stay consistent with each other.
+ * key is untouched.
  */
 export function useAdminSetOverrides() {
   const queryClient = useQueryClient();
@@ -608,6 +605,7 @@ export interface AdminLedgerEntry {
   type: string;
   description: string | null;
   isExpiring: boolean | null;
+  expiresAt?: string | null;
   createdAt: string | null;
   createdBy: string | null;
 }

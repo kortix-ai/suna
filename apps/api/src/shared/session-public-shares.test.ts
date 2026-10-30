@@ -9,7 +9,6 @@ const {
   publicShareToken,
   serializePublicShare,
   shareIdFromPublicRef,
-  shareUnlocksTranscript,
 } = await import('./session-public-shares');
 const { config } = await import('../config');
 
@@ -22,60 +21,33 @@ const CTX = {
 const SHARE_ID = '11111111-1111-4111-8111-111111111111';
 const TOKEN = 'kps_11111111111141118111111111111111';
 
-describe('transcript share kind', () => {
-  test('{ transcript: true } builds a view-only transcript share with no port or file', () => {
-    const built = buildPublicShareInsert({ transcript: true }, CTX);
-    expect(built.ok).toBe(true);
-    if (!built.ok) return;
-    expect(built.values).toMatchObject({
-      resourceType: 'transcript',
-      label: 'Conversation',
-      port: null,
-      path: '/',
-      filePath: null,
-      mode: 'view',
-      allowWebsocket: false,
-      expiresAt: null,
-    });
-  });
-
-  test('a transcript share keeps a caller label and expiry, and never becomes interactive', () => {
-    const built = buildPublicShareInsert(
-      { transcript: true, label: '  Launch plan  ', mode: 'interactive', expires_at: '2030-01-01T00:00:00.000Z' },
-      CTX,
-    );
-    expect(built.ok).toBe(true);
-    if (!built.ok) return;
-    expect(built.values.label).toBe('Launch plan');
-    expect(built.values.mode).toBe('view');
-    expect(built.values.allowWebsocket).toBe(false);
-    expect(built.values.expiresAt?.toISOString()).toBe('2030-01-01T00:00:00.000Z');
-  });
-
-  test('a transcript share with an invalid expiry → 400', () => {
-    const built = buildPublicShareInsert({ transcript: true, expires_at: 'not-a-date' }, CTX);
-    expect(built).toEqual({ ok: false, status: 400, error: 'expires_at must be an ISO timestamp' });
-  });
-
-  test('a share names one resource: transcript plus a file or a preview → 400', () => {
-    for (const extra of [{ file: { path: '/workspace/a.md' } }, { preview: { port: 3000 } }, { preview_id: 'web' }]) {
+describe('transcript shares are removed (KRTX-2358)', () => {
+  test('{ transcript: true } is refused with a named 400, whatever else the body carries', () => {
+    for (const extra of [
+      {},
+      { label: '  Launch plan  ', mode: 'interactive', expires_at: '2030-01-01T00:00:00.000Z' },
+      { file: { path: '/workspace/a.md' } },
+      { preview: { port: 3000 } },
+      { preview_id: 'web' },
+    ]) {
       const built = buildPublicShareInsert({ transcript: true, ...extra }, CTX);
-      expect(built).toEqual({ ok: false, status: 400, error: 'A public share names one resource' });
+      expect(built).toEqual({ ok: false, status: 400, error: 'Transcript sharing is no longer available' });
     }
   });
 
-  test('only the transcript kind unlocks the conversation', () => {
-    expect(shareUnlocksTranscript({ resourceType: 'transcript' })).toBe(true);
-    expect(shareUnlocksTranscript({ resourceType: 'preview' })).toBe(false);
-    expect(shareUnlocksTranscript({ resourceType: 'file' })).toBe(false);
-    expect(shareUnlocksTranscript({ resourceType: null })).toBe(false);
+  test('truthy legacy transcript fields cannot become preview shares', () => {
+    for (const transcript of ['true', 1, {}, []]) {
+      expect(buildPublicShareInsert({ transcript, preview: { port: 3000 } }, CTX)).toEqual({
+        ok: false, status: 400, error: 'Transcript sharing is no longer available',
+      });
+    }
   });
 
-  test('a transcript share is view-only whatever its stored mode says', () => {
+  test('a legacy transcript share is view-only whatever its stored mode says', () => {
     expect(isViewOnlyShare({ resourceType: 'transcript', mode: 'interactive' })).toBe(true);
   });
 
-  test('a serialized transcript share opens at the web viewer and reads through the public messages route', () => {
+  test('a serialized legacy transcript share keeps its historical viewer URL and messages path', () => {
     const now = new Date('2026-09-26T00:00:00.000Z');
     const share = serializePublicShare(
       {
@@ -95,6 +67,9 @@ describe('transcript share kind', () => {
         expiresAt: null,
         revokedAt: null,
         lastUsedAt: null,
+        messageId: null,
+        snapshot: null,
+        snapshotAt: null,
         createdAt: now,
         updatedAt: now,
       },

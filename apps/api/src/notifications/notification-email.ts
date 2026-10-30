@@ -1,5 +1,5 @@
 // What a notification email says (KRTX-1742): the immediate automation alert
-// and the digest of unread rows. One Kortix shell (lib/email/template.ts);
+// and the digest of unread rows. One Kortix shell (lib/email/template.tsx);
 // voice rules: .agents/skills/kortix-brand/references/verbal/voice-and-tone.md 5.5.
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { config } from '../config';
@@ -28,6 +28,8 @@ export const KIND_LABELS: Record<NotificationKindName, string> = {
   automation_recovered: 'Automation recovered',
   capture_device_down: 'Computer not recording',
   capture_device_recovered: 'Computer recording again',
+  message: 'New message',
+  artifact_comment: 'Artifact comment',
 };
 
 /** The settings pane that holds the per-kind Push and Email switches. */
@@ -43,7 +45,6 @@ export function absoluteAppUrl(path: string): string {
 
 function message(parts: {
   subject: string;
-  kicker: string;
   title: string;
   /** Plain sentences; the first one may name the subject in bold. */
   lead: { text: string; strong?: string };
@@ -63,7 +64,6 @@ function message(parts: {
   return {
     subject: parts.subject,
     html: renderEmail({
-      kicker: parts.kicker,
       title: parts.title,
       body: `
         <p style="${S.p}">${leadHtml}</p>
@@ -101,7 +101,6 @@ export function renderImmediateNotificationEmail(item: NotificationEmailItem): R
   if (item.kind === 'automation_failed') {
     return message({
       subject: `Automation failing: ${item.title}`,
-      kicker: 'Automation alert',
       title: 'An automation is failing',
       lead: { strong: item.title, text: 'is failing.' },
       detail: item.body ? `Error: ${item.body}` : undefined,
@@ -113,7 +112,6 @@ export function renderImmediateNotificationEmail(item: NotificationEmailItem): R
   if (item.kind === 'automation_recovered') {
     return message({
       subject: `Automation working again: ${item.title}`,
-      kicker: 'Automation alert',
       title: 'An automation works again',
       lead: { strong: item.title, text: 'ran successfully after a failure.' },
       next: 'It works again. If it fails again, you get a new alert.',
@@ -131,7 +129,6 @@ function renderCaptureEmail(item: NotificationEmailItem): RenderedEmail {
   if (item.kind === 'capture_device_down') {
     return message({
       subject: `Computer not recording: ${item.title}`,
-      kicker: 'Capture alert',
       title: 'A computer is not recording',
       lead: { strong: item.title, text: 'is not recording.' },
       detail: item.body || undefined,
@@ -142,7 +139,6 @@ function renderCaptureEmail(item: NotificationEmailItem): RenderedEmail {
   }
   return message({
     subject: `Computer recording again: ${item.title}`,
-    kicker: 'Capture alert',
     title: 'A computer records again',
     lead: { strong: item.title, text: 'is recording again.' },
     next: 'No action needed. If it stops again, you get a new alert.',
@@ -159,19 +155,18 @@ export function renderNotificationDigestEmail(input: { items: readonly Notificat
   const moreLine = input.more > 0 ? `And ${input.more} more.` : '';
   const html = rows
     .map((row) => `
-        <div style="text-align:left;margin:0 0 16px;">
-          <div style="${S.kicker}margin:0 0 2px;">${escapeHtml(row.label)}</div>
-          <a href="${escapeHtml(row.href)}" style="${S.strong}text-decoration:underline;">${escapeHtml(row.title)}</a>
-          ${row.body ? `<div style="${S.p}margin:2px 0 0;">${escapeHtml(row.body)}</div>` : ''}
+        <div style="${S.row}">
+          <div style="${S.kicker}margin:0 0 4px;">${escapeHtml(row.label)}</div>
+          <a href="${escapeHtml(row.href)}" style="${S.strong}text-decoration:none;">${escapeHtml(row.title)}</a>
+          ${row.body ? `<div style="${S.kicker}margin:4px 0 0;word-break:break-word;">${escapeHtml(row.body)}</div>` : ''}
         </div>`)
     .join('');
   return message({
     subject: `Review ${total} unread ${noun} in Kortix`,
-    kicker: 'Notification digest',
     title: `${total} unread ${noun}`,
     lead: { text: `${total === 1 ? 'This notification was' : 'These notifications were'} unread for 15 minutes or more.` },
     extra: {
-      html: `${html}${moreLine ? `<p style="${S.p}text-align:left;">${escapeHtml(moreLine)}</p>` : ''}`,
+      html: `<div style="margin:0 0 24px;">${html}</div>${moreLine ? `<p style="${S.p}">${escapeHtml(moreLine)}</p>` : ''}`,
       text: [
         ...rows.map((row) => [`${row.label}: ${row.title}`, ...(row.body ? [row.body] : []), row.href].join('\n')),
         ...(moreLine ? [moreLine] : []),

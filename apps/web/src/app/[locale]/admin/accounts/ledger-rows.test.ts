@@ -13,6 +13,7 @@ const entry = (over: Partial<AdminLedgerEntry> = {}): AdminLedgerEntry => ({
   type: 'admin_grant',
   description: 'goodwill',
   isExpiring: true,
+  expiresAt: '2026-11-24T12:00:00Z',
   createdAt: '2026-08-11T10:00:00.000Z',
   createdBy: 'user_1',
   ...over,
@@ -27,6 +28,7 @@ describe('adminLedgerRows', () => {
       type: 'admin_grant',
       description: 'goodwill',
       isExpiring: true,
+      expiresAt: '2026-11-24T12:00:00Z',
       amount: 25,
       balanceAfter: 27.5,
     });

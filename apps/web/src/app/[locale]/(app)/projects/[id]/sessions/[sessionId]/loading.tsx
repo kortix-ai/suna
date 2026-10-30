@@ -2,9 +2,8 @@
 
 import { useParams } from 'next/navigation';
 
-import { InstantSessionShell } from '@/features/session/instant-session-shell';
-import { SavedSessionSkeleton } from '@/features/session/saved-session-skeleton';
-import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
+import { InstantSessionShell, SavedSessionSkeleton } from '@kortix/ui/workspace';
+import { useFirstPromptPreviewStore } from '@kortix/ui/composer';
 import { isSessionFresh } from '@kortix/sdk';
 import { readStartStash } from '@kortix/sdk/react';
 import ProjectHomeLoading from '../../loading';

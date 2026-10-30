@@ -31,7 +31,7 @@
  * them in `errors` so the UI can render them next to the good ones.
  */
 
-export { GRANTABLE_KORTIX_PERMISSIONS, extractAgents, loadProjectAgents } from './agents/parse';
+export { GRANTABLE_KORTIX_PERMISSIONS, extractAgents, loadProjectAgents, agentNotDeclaredError } from './agents/parse';
 export {
   DEFAULT_AGENT_SENTINEL,
   OPENCODE_BUILTIN_AGENT_NAMES,

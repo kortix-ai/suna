@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 // Real: the page, the SDK leaf catalog and mapping, the schedule formatting.
 // Every other import is a stub.
 
-const source = readFileSync(`${import.meta.dir}/SchedulesPage.tsx`, 'utf8');
+const source = readFileSync(`${import.meta.dir}/SchedulesPage.tsx`, 'utf8') + readFileSync(`${import.meta.dir}/../schedules/ScheduleSheets.tsx`, 'utf8');
 const host = (name: string) => ({ children, ...props }: any) => React.createElement(name, props, children);
 const Empty = () => null;
 
@@ -47,7 +47,7 @@ const fakes: Record<string, Record<string, unknown>> = {
   'react-native': { View: host('View'), Pressable: host('Pressable'), ScrollView: host('ScrollView') },
   nativewind: { useColorScheme: () => ({ colorScheme: 'light' }) },
   'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) },
-  '@gorhom/bottom-sheet': { BottomSheetScrollView: host('SheetScroll') },
+  '@gorhom/bottom-sheet': { BottomSheetScrollView: host('SheetScroll'), BottomSheetTextInput: host('SheetInput') },
   '@kortix/sdk/react': {
     useCans: (target: unknown, actions: readonly string[]) => {
       probes.push({ target, actions });
@@ -83,7 +83,7 @@ const fakes: Record<string, Record<string, unknown>> = {
   },
   '@/components/kortix/confirm-dialog': { useConfirmDialog: () => ({ confirm() {}, dialog: null }) },
   '@/components/kortix/toast-provider': { useToast: () => ({ error() {}, success() {} }) },
-  './TriggerAgentModelFields': {
+  '@/components/pages/TriggerAgentModelFields': {
     AgentPickerField: (props: any) => {
       pickers.push({ field: 'agent', ...props });
       return null;
@@ -93,7 +93,7 @@ const fakes: Record<string, Record<string, unknown>> = {
       return null;
     },
   },
-  './TriggerPromptField': {
+  '@/components/pages/TriggerPromptField': {
     PromptPreview: (props: any) => {
       prompt = props;
       return null;
@@ -119,7 +119,9 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@/lib/utils/mono-font': { MONO_FONT_FAMILY: 'mono' },
   '@/lib/haptics': { haptics: { tap() {}, success() {}, selection() {}, medium() {} } },
 };
-const real = new Set(['react', '@kortix/sdk', '@/lib/projects/triggers-format', '@/lib/projects/schedule-input']);
+fakes['./TriggerAgentModelFields'] = fakes['@/components/pages/TriggerAgentModelFields'];
+fakes['./TriggerPromptField'] = fakes['@/components/pages/TriggerPromptField'];
+const real = new Set(['react', '@kortix/sdk', '@/lib/projects/triggers-format', '@/lib/projects/schedule-input', '@/components/schedules/ScheduleSheets']);
 const stubs: Record<string, Record<string, unknown>> = {};
 for (const [, names, name] of source.matchAll(/import\s+(?:type\s+)?(?:\w+\s*,\s*)?\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/gs)) {
   if (real.has(name)) continue;
@@ -221,5 +223,28 @@ describe('Schedules controls', () => {
     expect(tree.root.findAllByType('PinnedBar')).toHaveLength(0);
     expect(prompt.onEdit).toBeUndefined();
     expect(detailPickers().map((p) => p.disabled)).toEqual([true, true]);
+  });
+});
+
+describe('Schedules sheet characterization', () => {
+  test('create renders recurring presets, timezone, name and prompt fields before a schedule is selected', () => {
+    cans = {};
+    act(() => {
+      tree = create(<SchedulesPage page={{ id: 'page:schedules', label: 'Schedules' }} projectId="proj-1" />);
+    });
+    const rendered = JSON.stringify(tree.toJSON());
+    for (const label of ['Recurring', 'Run once', 'Custom cron', 'Timezone', 'Name', 'Prompt', 'Create schedule', 'Every 5 minutes', 'Every 15 minutes', 'Hourly', 'Daily at 9:00', 'Weekdays at 9:00', 'Mondays at 9:00']) {
+      expect(rendered).toContain(label);
+    }
+    expect(rendered).toContain('Daily digest');
+    expect(rendered).toContain('What should the agent do when this fires?');
+    expect(tree.root.findAllByType('Button').at(-1).props.disabled).toBe(true);
+  });
+
+  test('detail renders the schedule rows, prompt and pinned actions', () => {
+    openAs({ [WRITE]: can(true), [FIRE]: can(true), [UPDATE]: can(true), [DELETE]: can(true) });
+    expect(rows.map((row) => row.label)).toEqual(expect.arrayContaining(['Runs', 'Cron', 'Time zone', 'Last fired', 'Source']));
+    expect(prompt.value).toBe(TRIGGER.prompt_template);
+    expect(barButtons()).toEqual(['Fire now', 'Pause schedule', 'Delete schedule']);
   });
 });

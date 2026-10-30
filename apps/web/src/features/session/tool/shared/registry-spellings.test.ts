@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { ToolRegistry } from './registry';
-import '../tools/register';
+import { ToolRegistry } from '@kortix/ui/session';
+import '@kortix/ui/session/tool/tools/register';
 
 // Each renderer registers one spelling per tool. `get()` owns the variants a
 // runtime emits: `_` or `-`, an `oc-` plugin prefix, an MCP server prefix.

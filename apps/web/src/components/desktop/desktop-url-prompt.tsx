@@ -11,7 +11,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * the Tauri shell and the window reloads onto it. Renders nothing on the web.
  */
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -19,11 +19,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { errorToast } from '@/components/ui/toast';
-import { getFrontendUrl, isDesktop, setFrontendUrl } from '@/lib/desktop';
+} from '@kortix/ui/dialog';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import { errorToast } from '@kortix/ui/toast';
+import { getFrontendUrl, isDesktop, setFrontendUrl } from '@kortix/ui/internal/lib/desktop';
 import { useEffect, useState } from 'react';
 
 export function DesktopUrlPrompt() {

@@ -74,6 +74,7 @@ interface SessionPayload {
   known?: boolean;
   title?: string | null;
   secrets_rev?: string;
+  model_rev?: string;
 }
 
 interface RuntimePayload {
@@ -89,7 +90,7 @@ export function applySessionControlFrame(
   projectId: string,
   sessionId: string,
   frame: SessionControlFrame,
-  memory: { secretsRev?: string; runtimeKey?: string },
+  memory: { secretsRev?: string; runtimeKey?: string; modelRev?: string },
   nowMs: number = Date.now(),
 ): void {
   if (frame.type === 'kortix.control.turn') {
@@ -131,6 +132,14 @@ export function applySessionControlFrame(
         invalidateProjectProviderQueries(queryClient, projectId);
       }
       memory.secretsRev = payload.secrets_rev;
+    }
+    // The model pin moved (a fallback took the session over, or handed it
+    // back): re-read the row so the composer shows and sends the new model.
+    if (typeof payload.model_rev === 'string') {
+      if (memory.modelRev !== undefined && memory.modelRev !== payload.model_rev) {
+        void queryClient.invalidateQueries({ queryKey: qk.project.session(projectId, sessionId) });
+      }
+      memory.modelRev = payload.model_rev;
     }
     return;
   }
@@ -258,7 +267,7 @@ export function useSessionStream(
   const enabled = options.enabled !== false && !!projectId && !!sessionId;
   useEffect(() => {
     if (!enabled) return;
-    const memory: { secretsRev?: string; runtimeKey?: string; runtimeReady?: boolean } = {};
+    const memory: { secretsRev?: string; runtimeKey?: string; runtimeReady?: boolean; modelRev?: string } = {};
     const stream = openSessionStream({
       projectId,
       sessionId,

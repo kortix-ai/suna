@@ -58,6 +58,35 @@ describe('Kortix Capture store', () => {
     expect(caddyfile).toContain('@capture path /kortix-capture /kortix-capture/*');
     expect(caddyfile).toContain('reverse_proxy capture-store:9000');
   });
+
+  test('external mode drops the on-box store and points the API at the operator’s S3 via .env', () => {
+    const { services } = render({ captureStoreExternal: true });
+    // No bundled MinIO: the service and the kortix-api dependency on it are gone
+    // (its mem limit goes with it — applyMemLimits skips an absent service).
+    expect(services['capture-store']).toBeUndefined();
+    expect(services['kortix-api']!.depends_on!['capture-store']).toBeUndefined();
+
+    const env = services['kortix-api']!.environment!;
+    // The external values come from .env through Compose interpolation, not
+    // literals — and never the bundled MinIO root pair.
+    expect(env.KORTIX_CAPTURE_S3_BUCKET).toBe('${KORTIX_CAPTURE_S3_BUCKET:-}');
+    expect(env.KORTIX_CAPTURE_STS_ROLE_ARN).toBe('${KORTIX_CAPTURE_STS_ROLE_ARN:-}');
+    expect(env.KORTIX_CAPTURE_S3_ACCESS_KEY_ID).toBe('${KORTIX_CAPTURE_S3_ACCESS_KEY_ID:-}');
+    expect(env.KORTIX_CAPTURE_S3_ACCESS_KEY_ID).not.toContain('CAPTURE_STORE_ROOT');
+    // The operator (or Terraform) owns the bucket; the box never creates it.
+    expect(env.KORTIX_CAPTURE_S3_CREATE_BUCKET).toBe('false');
+    // Devices upload straight to the store — no on-box passthrough.
+    expect(env).not.toHaveProperty('KORTIX_CAPTURE_S3_PROXY_TARGET');
+  });
+
+  test('external mode removes the @capture passthrough from the Caddyfile, leaving the rest intact', () => {
+    const caddyfile = renderCaddyfile({ captureStoreExternal: true });
+    expect(caddyfile).not.toContain('@capture');
+    expect(caddyfile).not.toContain('capture-store:9000');
+    // The surrounding site blocks survive byte-adjacent.
+    expect(caddyfile).toContain('@llm path /v1/llm*');
+    expect(caddyfile).toContain('header Strict-Transport-Security "max-age=2592000"');
+  });
 });
 
 describe('full self-host Docker distribution', () => {

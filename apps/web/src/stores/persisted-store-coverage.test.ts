@@ -18,11 +18,16 @@
 // generated test by name.
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 
 import { isAppOwnedStorageKey, isKeptStorageKey } from '@/lib/utils/clear-local-storage';
 
 const STORES_DIR = resolve(import.meta.dir);
+// Stores that moved to @kortix/ui. Their web files are one-line re-exports.
+const UI_SRC = resolve(import.meta.dir, '../../../../packages/ui/src');
+const UI_STORES_DIRS = ['internal/stores', 'session/composer/stores', 'files/renderers/presentation'].map((dir) =>
+  resolve(UI_SRC, dir),
+);
 
 /**
  * Every name a call matching `pattern` resolves to in `source`. `pattern`
@@ -105,13 +110,16 @@ function extractExportedHookName(source: string): string | null {
   return match ? match[1] : null;
 }
 
+/** Absolute paths of every store source in both roots. */
 function storeSourceFiles(): string[] {
-  return readdirSync(STORES_DIR, { withFileTypes: true })
-    .filter(
-      (entry) => entry.isFile() && /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name),
-    )
-    .map((entry) => entry.name)
-    .sort();
+  return [STORES_DIR, ...UI_STORES_DIRS].flatMap((dir) =>
+    readdirSync(dir, { withFileTypes: true })
+      .filter(
+        (entry) => entry.isFile() && /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name),
+      )
+      .map((entry) => resolve(dir, entry.name))
+      .sort(),
+  );
 }
 
 interface DiscoveredStore {
@@ -123,8 +131,9 @@ interface DiscoveredStore {
 
 function discoverPersistedStores(): DiscoveredStore[] {
   const discovered: DiscoveredStore[] = [];
-  for (const file of storeSourceFiles()) {
-    const source = readFileSync(resolve(STORES_DIR, file), 'utf8');
+  for (const path of storeSourceFiles()) {
+    const file = relative(STORES_DIR, path);
+    const source = readFileSync(path, 'utf8');
     const names = extractPersistNames(source, file);
     if (names.length === 0) continue;
     discovered.push({ file, source, hookName: extractExportedHookName(source), names });
@@ -136,13 +145,13 @@ describe('every persisted zustand store is covered by the sign-out disk sweep', 
   const discovered = discoverPersistedStores();
 
   test('the walk actually finds persisted stores — an empty walk would pass everything', () => {
-    // A floor on the CURRENT, real count (10 as of this test's writing, after
-    // diagnostics-store.ts became a re-export shim with no persist() call of
-    // its own) minus slack, not an exact pin — an exact count would churn on
+    // A floor on the CURRENT, real count (15 as of this test's writing: 10 in
+    // apps/web plus 5 that moved to @kortix/ui; a re-export shim has no
+    // persist() call of its own) minus slack, not an exact pin — an exact count would churn on
     // every unrelated store addition. The floor exists so a walker broken by
     // a directory rename or a changed `persist(` call shape fails loud
     // instead of quietly checking zero stores.
-    expect(discovered.length).toBeGreaterThanOrEqual(10);
+    expect(discovered.length).toBeGreaterThanOrEqual(15);
   });
 
   for (const store of discovered) {

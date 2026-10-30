@@ -57,21 +57,39 @@ export function useImpersonation(): ImpersonationSession | null {
  * every subsequent request from this tab carry the grant header — so the
  * caller navigates to the app shell and nothing else needs wiring.
  *
+ * `{ projectId }` acts as that project's account: the "Open as admin" button on
+ * a project's access screen knows only the project. A grant this mint replaces
+ * is revoked, so it does not stay live for the rest of its hour.
+ *
  * The whole React Query cache is cleared, not invalidated: every cached entry
  * was fetched as the OPERATOR, and re-serving one inside a customer's session
  * would show the operator's own data under the customer's banner.
  */
 export function useAdminImpersonate() {
   const queryClient = useQueryClient();
-  return useMutation<AdminImpersonateResponse, Error, { accountId: string; reason?: string }>({
-    mutationFn: async ({ accountId, reason }) => {
-      const body: Record<string, unknown> = { account_id: accountId };
-      if (reason) body.reason = reason;
+  return useMutation<
+    AdminImpersonateResponse,
+    Error,
+    ({ accountId: string } | { projectId: string }) & { reason?: string }
+  >({
+    mutationFn: async (variables) => {
+      const body: Record<string, unknown> =
+        'projectId' in variables
+          ? { project_id: variables.projectId }
+          : { account_id: variables.accountId };
+      if (variables.reason) body.reason = variables.reason;
+      const previous = getImpersonationSession();
       const response = await backendApi.post<AdminImpersonateResponse>(
         ADMIN_IMPERSONATE_PATH,
         body,
       );
       if (response.error) throw new Error(response.error.message);
+      if (previous) {
+        // Best effort: the replaced grant expires on its own within the hour.
+        await backendApi
+          .delete(adminImpersonateRevokePath(previous.grantId))
+          .catch(() => undefined);
+      }
       return response.data!;
     },
     onSuccess: (data) => {

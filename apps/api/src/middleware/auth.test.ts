@@ -194,6 +194,7 @@ function appWithProbe() {
     c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
   );
   app.get('/v1/skills', (c) => c.json({ ok: true }));
+  app.get('/v1/drives/:driveId/files', (c) => c.json({ ok: true }));
   app.get('/v1/usage/cost-summary', (c) => c.json({ projectId: c.get('tokenProjectId' as never) }));
   app.get('/v1/usage/cost-by-project', (c) => c.json({ projectId: c.get('tokenProjectId' as never) }));
   app.post('/v1/usage/cost-summary', (c) => c.json({ ok: true }));
@@ -227,6 +228,30 @@ function appWithSandboxDescriptorProbe() {
   );
   return app;
 }
+
+describe('current project alias', () => {
+  test('alias does not allow writes or nested routes', async () => {
+    for (const [method, path] of [
+      ['PATCH', '/v1/projects/current'],
+      ['GET', '/v1/projects/current/detail'],
+      ['GET', '/v1/connectors/projects/current/catalog'],
+    ]) {
+      const response = await appWithProbe().request(path, {
+        method,
+        headers: { Authorization: 'Bearer kortix_pat_project_a' },
+      });
+      expect(response.status).toBe(403);
+    }
+  });
+  for (const token of ['kortix_pat_project_a', 'kortix_pat_session_bound_a']) {
+    test('GET current accepts ' + token, async () => {
+      const response = await appWithProbe().request('/v1/projects/current', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      expect(response.status).toBe(200);
+    });
+  }
+});
 
 describe('project-scoped PAT on the sandbox-proxy path', () => {
   beforeEach(() => {});
@@ -324,6 +349,20 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
       { headers: { Authorization: 'Bearer kortix_pat_project_a' } },
     );
     expect(file.status).toBe(200);
+  });
+
+  // `kortix drive` in a session holds the session PAT; drive routes are keyed
+  // by drive id, so the gate lets them through and the handlers bind the project.
+  test('project-scoped PAT CAN reach Files (/v1/drives), not a lookalike prefix', async () => {
+    const files = await appWithProbe().request('/v1/drives/d-1/files', {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+    expect(files.status).toBe(200);
+
+    const lookalike = await appWithProbe().request('/v1/drivesx', {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+    expect(lookalike.status).toBe(403);
   });
 
   test('the /v1/skills allowlist does not leak to a lookalike prefix', async () => {

@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { gitOrEmpty } from '../src/fixtures/git-or-empty';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -11,23 +11,9 @@ import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
 
-function testFilesFakingTimers(): string[] {
-  try {
-    return execFileSync('git', ['grep', '-l', 'useFakeTimers(', '--', '*.test.ts', '*.test.tsx'], {
-      cwd: REPO_ROOT,
-      encoding: 'utf8',
-    })
-      .split('\n')
-      .filter(Boolean);
-  } catch {
-    // `git grep` exits 1 when nothing matches.
-    return [];
-  }
-}
-
 describe('fake timers', () => {
   it('every test file that fakes timers also restores real timers', () => {
-    const offenders = testFilesFakingTimers().filter(
+    const offenders = gitOrEmpty(['grep', '-l', 'useFakeTimers(', '--', '*.test.ts', '*.test.tsx']).filter(
       (file) => !readFileSync(join(REPO_ROOT, file), 'utf8').includes('useRealTimers('),
     );
     expect(offenders).toEqual([]);

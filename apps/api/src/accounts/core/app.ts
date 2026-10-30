@@ -136,6 +136,7 @@ export const MeSchema = z
     token_context: z
       .object({
         auth_type: z.string().nullable(),
+        token_id: z.string().nullable(),
         project_id: z.string().nullable(),
         session_id: z.string().nullable(),
         agent: z.string().nullable(),

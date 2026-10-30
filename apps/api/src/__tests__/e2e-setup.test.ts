@@ -59,7 +59,6 @@ beforeAll(() => {
   mkdirSync(resolve(TEST_DIR, 'apps/web'), { recursive: true });
 
   writeFileSync(resolve(TEST_DIR, 'docker-compose.local.yml'), 'services:\n  test:\n    image: hello-world\n');
-  writeFileSync(resolve(TEST_DIR, 'scripts', 'setup-env.sh'), '#!/usr/bin/env bash\nexit 0\n');
   writeFileSync(resolve(TEST_DIR, '.env.example'), 'KORTIX_BILLING_INTERNAL_ENABLED=false\nANTHROPIC_API_KEY=\n');
   writeFileSync(resolve(TEST_DIR, 'deploy', 'docker', 'sandbox', '.env.example'), 'ANTHROPIC_API_KEY=\nKORTIX_BILLING_INTERNAL_ENABLED=false\n');
 
@@ -164,8 +163,8 @@ describe('/v1/setup', () => {
       const app = createSetupTestApp();
       const res = await app.request('/v1/setup/health');
       const data = await res.json();
-      expect(data.daytona).toBeDefined();
-      expect(typeof data.daytona.ok).toBe('boolean');
+      // One check per allowed provider. Platinum is the default (#10310).
+      expect(typeof data.platinum.ok).toBe('boolean');
     });
   });
 });

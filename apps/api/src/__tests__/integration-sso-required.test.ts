@@ -9,14 +9,13 @@ import { eq } from 'drizzle-orm';
 import { PgClient } from './helpers/pg-client';
 import { accountMembers, accountSessionActivity, accountSsoProviders, accounts, platformUserRoles, projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { config } from '../config';
 import { authorize, listAccessible, ssoRequiredFor } from '../iam/authorize';
 import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS } from '../iam';
 import { invalidateIamCacheForAccount } from '../iam/cache-invalidation';
 import { signOutNonSsoMembers } from '../repositories/sso';
 import { getPlatformRole } from '../shared/platform-roles';
-import { __setJwtLivenessLoaderForTests, confirmJwtLive, jwtLivenessCacheSize } from '../shared/jwt-liveness';
+import { confirmJwtLive } from '../shared/jwt-liveness';
 import { insertIntoView } from './helpers/compat-views';
 
 const superuser = new PgClient({ connectionString: process.env.TEST_DATABASE_SUPERUSER_URL });
@@ -164,19 +163,11 @@ describe('turning SSO only on ends the sign-ins the gate refuses', () => {
     expect((await liveSessions(all)).sort()).toEqual([...all].sort());
 
     await enforce(true, true);
-    // A cached liveness answer for an ended sign-in must not outlive it on this replica.
-    const ttl = config.SUPABASE_JWT_LIVENESS_TTL_MS;
-    (config as { SUPABASE_JWT_LIVENESS_TTL_MS: number }).SUPABASE_JWT_LIVENESS_TTL_MS = 60_000;
-    __setJwtLivenessLoaderForTests(async () => ({ id: passwordAdmin, email: `admin@${DOMAIN}` }));
-    try {
-      await confirmJwtLive('synthetic-access-token', undefined);
-      expect(jwtLivenessCacheSize()).toBe(1);
-      expect(await signOutNonSsoMembers(ACCOUNT, passwordOwner)).toBe(4);
-      expect(jwtLivenessCacheSize()).toBe(0);
-    } finally {
-      (config as { SUPABASE_JWT_LIVENESS_TTL_MS: number }).SUPABASE_JWT_LIVENESS_TTL_MS = ttl;
-      __setJwtLivenessLoaderForTests(null);
-    }
+    // An ended sign-in's access token is refused on its next request, on every replica.
+    const adminToken = { sub: passwordAdmin, session_id: sessions.passwordAdmin[0] };
+    expect(await confirmJwtLive('synthetic-access-token', adminToken)).not.toBeNull();
+    expect(await signOutNonSsoMembers(ACCOUNT, passwordOwner)).toBe(4);
+    expect(await confirmJwtLive('synthetic-access-token', adminToken)).toBeNull();
 
     const ended = [...sessions.passwordAdmin, ...sessions.passwordOwner, ...sessions.otherIdp];
     const kept = [...sessions.idpMember, ...sessions.otherDomain, ...sessions.nonMember];

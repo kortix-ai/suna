@@ -48,26 +48,26 @@
  * the Stripe portal are the Plan pane's subject and are not duplicated here.
  */
 
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget } from '@/stores/account-panel-store';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
-import { Skeleton } from '@/components/ui/skeleton';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
+import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
+import { Button } from '@kortix/ui/button';
+import { Label } from '@kortix/ui/label';
+import { Progress } from '@kortix/ui/progress';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { CreditExpiry } from '@/features/billing/credit-expiry';
 import { formatUsd } from '@/features/billing/account-overview';
 import { TopupControls } from '@/features/billing/topup-controls';
-import { useAccountState } from '@/hooks/billing/use-account-state';
-import { cn } from '@/lib/utils';
-import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { useAccountState } from '@kortix/ui/internal/billing/use-account-state';
+import { cn } from '@kortix/ui';
+import { BillingAccountProvider } from '@kortix/ui/internal/stores/billing-account-context';
 import { type AccountState, canOfferTopup } from '@kortix/sdk';
 import { dollarsToCredits, formatCredits, formatUsdAsCredits } from '@kortix/shared';
 import { ReceiptIcon } from '@phosphor-icons/react';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
-import { SettingsTabHeader } from '../settings-tab-header';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 
 // ─── Pure model ─────────────────────────────────────────────────────────────
 // Everything below this line down to the components is data, not markup, and
@@ -295,6 +295,7 @@ export function CreditsView({
               ≈ {formatUsd(Math.abs(balance), locale)}
               {isNegative ? ` ${t('owed')}` : ''}
             </p>
+            {state.credits.monthly > 0 && <CreditExpiry expiresAt={state.credits.expires_at} />}
           </div>
         </div>
 

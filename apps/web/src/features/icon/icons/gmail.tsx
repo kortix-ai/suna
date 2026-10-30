@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 export const Gmail = ({ className }: { className?: string }) => (
   <svg

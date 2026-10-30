@@ -5,15 +5,13 @@ import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { ReactNode, RefObject } from 'react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { Button } from '@kortix/ui/button';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { EmptyState } from '@kortix/ui/empty-state';
 import { useInfiniteMarketplaceItems } from '@/hooks/marketplace';
-import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
 import type { ItemsPage, MarketplaceItem } from '@/lib/marketplace-client';
-import { cn } from '@/lib/utils';
-import Loading from '../../components/ui/loading';
+import { cn } from '@kortix/ui';
+import Loading from '@kortix/ui/loading';
 import { MarketplaceExploreCard } from './marketplace-explore-card';
 import {
   buildMarketplaceGridRows,
@@ -87,7 +85,7 @@ export function MarketplacePagedGrid({
   const pageCount = itemsQuery.data?.pages.length ?? 0;
 
   const rows = useMemo(
-    () => buildMarketplaceGridRows({ items, grouped: false, columns }),
+    () => buildMarketplaceGridRows({ items, columns }),
     [items, columns],
   );
   const hasNextPage = !!itemsQuery.hasNextPage;
@@ -209,8 +207,7 @@ function useInfiniteScrollSentinel({
   return sentinelRef;
 }
 
-/** Renders one virtualizer row — a plain grid of cards. (Headers are unused
- *  today since callers pass `grouped: false`, but handled for completeness.) */
+/** Renders one virtualizer row — a plain grid of cards. */
 function GridRow({
   row,
   gridClassName,
@@ -220,17 +217,6 @@ function GridRow({
   gridClassName: string;
   showSource: boolean;
 }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  if (row.kind === 'header') {
-    return (
-      <div className="flex items-center justify-between gap-2 py-1 pt-4 first:pt-0">
-        <h3 className="text-foreground text-sm font-medium">
-          {translateUiCatalogText(row.label, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS)}
-        </h3>
-        <span className="text-muted-foreground text-xs tabular-nums">{row.count}</span>
-      </div>
-    );
-  }
   return (
     <div className={cn('grid gap-3 pb-3', gridClassName)}>
       {row.items.map((item) => (

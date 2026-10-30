@@ -5,12 +5,9 @@
  * then re-reads the defaults and asserts the change stuck. Every new session
  * in the project resolves to this model unless a prompt overrides it.
  *
- * Model selection is compile-time safe: `ManagedModelId` is a literal union,
- * so a typo like 'claude-opus-4.9' is a type error, not a 400 at runtime.
- * The catalog types model ids as plain `string` (it is generated data), so
- * the union is pinned here and cross-checked against `MANAGED_MODELS` — the
- * set the gateway actually serves — before anything talks to the API.
- *
+ * Kortix managed models are whatever Platinum Inference offers, so the id is
+ * a runtime value: the project's model picker lists the current ones.
+
  * Project selection: argv[3] → KORTIX_PROJECT_ID (required).
  *
  * Run:
@@ -19,56 +16,16 @@
  *
  * As an npm consumer, the import lines change to:
  *   import { createKortix } from '@kortix/sdk';
- *   import { MANAGED_MODELS } from '@kortix/llm-catalog';
  */
-import { MANAGED_MODELS } from "@kortix/llm-catalog";
 
 import { createKortix } from "../../src/index";
 
-const MODEL_IDS = [
-  "grok-4.6",
-  "glm-5.3-flash",
-  "deepseek-v4-flash",
-  "deepseek-v4-pro-0813",
-  "muse-spark-1.2",
-  "minimax-m3",
-  "gpt-5.6-luna",
-] as const;
-
-type ManagedModelId = (typeof MODEL_IDS)[number];
-
-function isPinnedModelId(input: string): input is ManagedModelId {
-  return (MODEL_IDS as readonly string[]).includes(input);
-}
-
 /** The shape `session.setModel(...)` and `session.send(text, { model })` take. */
-function toSessionModel(modelID: ManagedModelId) {
+function toSessionModel(modelID: string) {
   return { providerID: "kortix", modelID } as const;
 }
 
-function assertCatalogInSync() {
-  const catalogIds = MANAGED_MODELS.map((m) => m.id).sort();
-  const pinnedIds = [...MODEL_IDS].sort();
-  if (JSON.stringify(catalogIds) !== JSON.stringify(pinnedIds)) {
-    console.error(
-      "✗ MODEL_IDS is out of sync with MANAGED_MODELS (@kortix/llm-catalog):",
-    );
-    console.error(`  catalog: ${catalogIds.join(", ")}`);
-    console.error(`  pinned:  ${pinnedIds.join(", ")}`);
-    process.exit(1);
-  }
-}
-
-function printModelMenu() {
-  console.error("pick one of:");
-  for (const model of MANAGED_MODELS) {
-    console.error(`  ${model.id.padEnd(18)} ${model.name} (${model.tier})`);
-  }
-}
-
 async function main() {
-  assertCatalogInSync();
-
   const backendUrl = process.env.KORTIX_API_URL ?? "http://localhost:8008/v1";
   const apiKey = process.env.KORTIX_API_KEY;
   if (!apiKey) {
@@ -79,15 +36,12 @@ async function main() {
   }
 
   const requested = process.argv[2];
-  if (!requested || !isPinnedModelId(requested)) {
-    console.error(
-      requested ? `✗ unknown model: ${requested}` : "✗ no model given",
-    );
-    printModelMenu();
+  if (!requested) {
+    console.error("✗ no model given — pass a model id from the project's model picker");
     process.exit(1);
     return;
   }
-  const model: ManagedModelId = requested;
+  const model = requested;
 
   const projectId = process.argv[3] ?? process.env.KORTIX_PROJECT_ID;
   if (!projectId) {

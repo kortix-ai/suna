@@ -60,14 +60,33 @@ import { wireMessageIdMatches } from './wire-id-match';
 export const INBOX_ORDER_BACKOFF_MS = 300;
 /**
  * The ceiling is LOW on purpose. A refused row is not polling for a whole cold
- * boot any more: accepted delivery calls `promoteNextInboxRow` and makes the
- * session's next queued row due NOW, then kicks a targeted drain. The terminal
- * relay and reaper repeat that wake for recovery. This backoff only covers the
+ * boot any more: a reply delivery opens a turn, and that turn's end calls
+ * `promoteNextInboxRow`, which makes the session's next queued row due NOW and
+ * drains it. A `noReply` delivery opens no turn, so it makes that call itself
+ * (`queued-continue.ts`). The reaper repeats the wake for recovery. This backoff only covers the
  * gap a lost kick would leave. 30s here was the entire "queue does not send
  * between turns" experience: three quick messages compounded to 27s / 45s /
  * 75s of dead air behind ~1s deliveries.
  */
 export const INBOX_ORDER_MAX_BACKOFF_MS = 2_000;
+/**
+ * A row refused this many times (~2 min at the 2s cap) behind an older prompt
+ * on a box that is NOT running waits on a parked head: a failed or stopped
+ * session whose head sits out the runtime-unreachable ladder. It re-polls once
+ * a minute instead. Prod 2026-10-20: ~200 such rows, every one on a stopped
+ * box, were refused 28 times a second.
+ *
+ * The box gate is what makes this safe. `admission_refusals` counts every
+ * reason, `turn_active` included, so a row that waited out a long live turn
+ * crosses 64 while its head still moves; on a running box it keeps the 2s cap.
+ * The minute is a fallback, not the wake. These exits make the next row due at
+ * once (`promoteNextInboxRow`): turn end, the reaper, forwarded-strand
+ * reconcile, a `noReply` delivery, a dead-lettered head (`markCommandFailed`),
+ * a removed head (`deleteInboxPrompt`), and a head closed without a post
+ * (`executeQueuedContinue`: consumed in band, skipped).
+ */
+export const INBOX_STALE_ORDER_REFUSALS = 64;
+export const INBOX_STALE_ORDER_BACKOFF_MS = 60_000;
 const INBOX_BACKOFF_FREE_REFUSALS = 4;
 
 /** `base * 2^(refusals - free)`, capped. Pure, so the curve is testable. */
@@ -431,7 +450,6 @@ export async function admitInboxPrompt(
     INBOX_ORDER_MAX_BACKOFF_MS,
     refusals,
   );
-
   // THE THREE READS THIS GATE ASKS FOR ARE INDEPENDENT, so they go out
   // together. Awaiting them one at a time cost three sequential round trips on
   // every delivery, and the API does not share a region with its database
@@ -496,6 +514,10 @@ export async function admitInboxPrompt(
     }
   }
 
+  const parked = !(sandbox && RUNNING_SANDBOX_STATUSES.has(sandbox.status));
+  const waitBackoffMs =
+    parked && refusals >= INBOX_STALE_ORDER_REFUSALS ? INBOX_STALE_ORDER_BACKOFF_MS : orderBackoffMs;
+
   // ONE PROMPT OF A SESSION ON THE WIRE AT A TIME, and this check binds even a
   // promoted row. A claimed row spends up to READY_DEADLINE_MS (5 min) inside
   // `continueSession` waiting for a cold box, with no message written for any
@@ -503,7 +525,7 @@ export async function admitInboxPrompt(
   // one session, and OpenCode orders what it receives by ARRIVAL — so the loser
   // of that race is the message the user typed FIRST.
   if (await inFlightRead) {
-    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
+    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: waitBackoffMs };
   }
 
   // "Send now"/retry stamps `promoted`: the user pointed at ONE row and asked
@@ -512,7 +534,7 @@ export async function admitInboxPrompt(
   // about which message goes first.
   const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
   if (!promoted && (await olderRead)) {
-    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
+    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: waitBackoffMs };
   }
 
   return { admit: true };

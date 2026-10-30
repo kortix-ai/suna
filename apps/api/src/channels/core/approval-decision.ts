@@ -3,7 +3,9 @@
  *
  * Same bar as the web route: a linked human with read access to the project
  * who is a project manager or the session's launcher. The chat surface then
- * resumes the session its own way.
+ * resumes the session its own way, except for an approved held call
+ * (`running`): the held-call worker runs it and resumes the session once with
+ * the result, so the surface starts no turn of its own.
  */
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
@@ -17,9 +19,12 @@ import {
   isPendingApproval,
   loadApprovalRow,
 } from '../../projects/lib/connector-approval-decision';
+import { isApprovalExpired } from '../../connectors/approval-expiry';
 import { markApprovalCardDecided } from '../approval-card-relay';
 import { db } from '../../shared/db';
 import { type ChatUser, resolveChatActor } from './identity';
+
+const APPROVAL_EXPIRED = 'This approval expired.';
 
 export async function decideChatApproval(input: {
   user: ChatUser;
@@ -29,13 +34,19 @@ export async function decideChatApproval(input: {
   executionId: string;
   decision: ApprovalDecision;
   note: string;
-}): Promise<{ row: PendingApprovalRow } | { refusal: string }> {
+  /** The presser's name as the card shows it (Teams). */
+  deciderLabel?: string;
+  /** Where the resumed agent answers, for a session that may serve several
+   *  threads (Slack): the run's resume carries it. */
+  replyTo?: string;
+}): Promise<{ row: PendingApprovalRow; running: boolean } | { refusal: string }> {
   const row = await loadApprovalRow(input.projectId, input.executionId);
   // The card must belong to the session behind this thread: an execution id
   // pasted into another thread's button payload decides nothing.
   if (!row || !input.sessionId || row.sessionId !== input.sessionId) {
     return { refusal: 'That approval is no longer available.' };
   }
+  if (isApprovalExpired(row)) return { refusal: APPROVAL_EXPIRED };
   if (!isPendingApproval(row)) return { refusal: 'That call was already decided.' };
   const [project] = await db
     .select({ accountId: projects.accountId })
@@ -87,6 +98,14 @@ export async function decideChatApproval(input: {
     actorUserId: actor.userId,
     auditSource: 'human',
     resume: 'caller',
+    ...(input.deciderLabel || input.replyTo
+      ? {
+          chatDecider: {
+            ...(input.deciderLabel ? { label: input.deciderLabel } : {}),
+            ...(input.replyTo ? { reply_to: input.replyTo } : {}),
+          },
+        }
+      : {}),
     updateStaleCard: () =>
       markApprovalCardDecided({
         projectId: input.projectId,
@@ -99,6 +118,11 @@ export async function decideChatApproval(input: {
   if (outcome === 'preview_unavailable') {
     return { refusal: 'This call recorded no parameters to review, so it can only be denied.' };
   }
+  if (outcome === 'expired') return { refusal: APPROVAL_EXPIRED };
   if (outcome === 'already_resolved') return { refusal: 'That call was already decided.' };
-  return { row };
+  // `approved` (not `ok`) means the approve queued the held run.
+  const running =
+    input.decision === 'approve' &&
+    (await loadApprovalRow(input.projectId, input.executionId))?.status === 'approved';
+  return { row, running };
 }

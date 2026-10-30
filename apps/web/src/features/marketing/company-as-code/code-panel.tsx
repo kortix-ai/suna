@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import type { ReactNode } from 'react';
 
 /* A real grammar is overkill for six fixed snippets, and shipping a syntax

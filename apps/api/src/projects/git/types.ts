@@ -29,7 +29,10 @@ export interface ProjectConfigSummary {
    *  to decide whether to offer an upgrade. See `../lib/manifest-verdict`. */
   manifest_version: ProjectManifestVerdict;
   env: { required: string[]; optional: string[] };
-  /** The text of the project's `opencode.jsonc`: OpenCode's own config file. */
+  /**
+   * The text of the project's `opencode.jsonc`: OpenCode's own config file.
+   * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+   */
   open_code_raw: string | null;
   /** The project's default agent. */
   default_agent: string | null;
@@ -41,6 +44,8 @@ export interface ProjectConfigSummary {
     path: string;
     description: string | null;
     mode: string | null;
+    /** Internal automation remains registered but is not offered by agent pickers. */
+    hidden?: boolean;
     /** The agent's `model:` frontmatter (`provider/model`), null when it
      *  follows the project default. */
     model?: string | null;

@@ -47,6 +47,8 @@ const R = {
   asset: `GET ${A}/devices/:deviceId/assets/:name`,
   policyGet: `GET ${A}/policy`,
   policyPut: `PUT ${A}/policy`,
+  storageGet: `GET ${A}/storage`,
+  storagePut: `PUT ${A}/storage`,
   timeline: `GET ${A}/timeline`,
   items: `GET ${A}/timeline/items`,
   days: `GET ${A}/days`,
@@ -309,7 +311,7 @@ flow(
     domain: 'capture',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: [R.devices, R.sync, R.timeline, R.days, R.items, R.search, R.frame, R.media, R.asset, R.policyGet, R.policyPut, R.workspace],
+    routes: [R.devices, R.sync, R.timeline, R.days, R.items, R.search, R.frame, R.media, R.asset, R.policyGet, R.policyPut, R.storageGet, R.storagePut, R.workspace],
   },
   async (ctx) => {
     const { team, member, device, store, day, asMember } = await ingestedWorld(ctx, 'cap2');
@@ -358,6 +360,13 @@ flow(
       (await asMember.get(path(R.search), { params, query: { q: '"incident review"', kinds: 'screen' } })).status(200).body().has('$.hits[0].app', 'Editor');
     });
 
+    await ctx.step('search with day= keeps to that UTC day: the fixture day has hits, a day with no capture has none, a malformed day → 400 (KRTX-2983)', async () => {
+      const onDay = (await asMember.get(path(R.search), { params, query: { q: 'quarterly or roadmap', day: day.day } })).status(200).json<{ hits: Hit[] }>().hits;
+      if (onDay.length === 0) throw new Error('no hits on the fixture day');
+      (await asMember.get(path(R.search), { params, query: { q: 'quarterly or roadmap', day: '2001-01-01' } })).status(200).body().has('$.hits', []);
+      (await asMember.get(path(R.search), { params, query: { q: 'roadmap', day: '20-10-2026' } })).status(400).body().has('$.code', 'capture_bad_window');
+    });
+
     await ctx.step('a frame opens with its full on-screen text, a signed URL whose bytes match the uploaded video, and offset_ms = frame_index seconds', async () => {
       const frameId = hits.find((h) => h.kind === 'screen')!.id;
       const detail = (await asMember.get(path(R.frame), { params: { ...params, frameId } })).status(200).json<any>();
@@ -403,6 +412,14 @@ flow(
       const doc = JSON.parse((await readCaptureObject(store, `${device.prefix}/policy.json`)) ?? '{}');
       conforms('policy', doc);
       if (doc.schema !== 2 || doc.layers.actions !== false || doc.notice !== 'Synthetic notice') throw new Error(`policy.json ${JSON.stringify(doc)}`);
+    });
+
+    await ctx.step('storage: a member cannot read or set it; the owner reads the managed store, a bucket with no credential → 400, and choosing the managed store → 200', async () => {
+      (await asMember.get(path(R.storageGet), { params })).status(403).body().has('$.code', 'capture_forbidden');
+      (await asMember.put(path(R.storagePut), { mode: 'kortix' }, { params })).status(403).body().has('$.code', 'capture_forbidden');
+      (await owner.get(path(R.storageGet), { params })).status(200).body().has('$.mode', 'kortix');
+      (await owner.put(path(R.storagePut), { mode: 's3', region: 'eu-west-2', bucket: 'synthetic-capture-bucket' }, { params })).status(400).body().has('$.code', 'capture_storage_invalid');
+      (await owner.put(path(R.storagePut), { mode: 'kortix' }, { params })).status(200).body().has('$.mode', 'kortix');
     });
 
     await ctx.step('the device forgets its audio item (objects deleted, a delete line appended) → the index reader retracts it: the audio chunk goes, the transcript no longer matches, the screen hits stay', async () => {

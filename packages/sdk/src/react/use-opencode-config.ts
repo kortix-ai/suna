@@ -8,6 +8,7 @@ import { useRuntimeSupports } from './use-runtime-supports';
 
 export type { Config };
 
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export const configKeys = {
   all: ['opencode', 'config'] as const,
 };
@@ -31,6 +32,7 @@ function unwrap<T>(result: { data?: T; error?: unknown }): T {
  * serves `session.config` (OpenCode) has one; on any other the query stays
  * off and `data` is undefined. Agents and models come from the project
  * (`/detail`, `/model-picker`), not from here.
+ * @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support.
  */
 export function useRuntimeConfig() {
   const runtimeReady = useRuntimeReady();
@@ -48,6 +50,7 @@ export function useRuntimeConfig() {
   });
 }
 
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export function useUpdateRuntimeConfig() {
   const queryClient = useQueryClient();
 

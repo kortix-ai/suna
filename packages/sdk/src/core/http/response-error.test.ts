@@ -74,3 +74,16 @@ describe('handleErrorResponse · connectors_provider_unavailable 503', () => {
     expect(errors).toHaveLength(0);
   });
 });
+
+describe('handleErrorResponse · approval expired 409', () => {
+  test('the body code reaches ApiError.code, so a host can tell an expired approval apart', async () => {
+    const result = await handleErrorResponse(
+      response(409, { error: 'This approval expired', code: 'APPROVAL_EXPIRED' }),
+      signal,
+      false,
+    );
+    expect(result.error).toBeInstanceOf(ApiError);
+    expect((result.error as ApiError).status).toBe(409);
+    expect((result.error as ApiError).code).toBe('APPROVAL_EXPIRED');
+  });
+});

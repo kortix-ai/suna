@@ -1,0 +1,188 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`shipped marketing route composition home retains its rendered sections, links and visuals 1`] = `
+{
+  "glyphs": [
+    "--brand:var(--foreground);mask-image:url(/media/landing/logos/notion.svg);mask-size:contain;mask-repeat:no-repeat;mask-position:center",
+    "--brand:var(--foreground);mask-image:url(/media/landing/logos/notion.svg);mask-size:contain;mask-repeat:no-repeat;mask-position:center",
+  ],
+  "headings": [
+    "The sovereign, multiplayer, extensible and open CompanyOSThe sovereign CompanyOS",
+    "Models and apps Kortix works with",
+    "Multiplayer. Company as code. Sovereign. The CompanyOS you own.",
+    "Multiplayer AIOne AI for the whole team.",
+    "Company as codeExtensible to the core.",
+    "Sovereign and openOwn your data and your infrastructure.",
+    "How Kortix works.One repo, every tool, any model, a computer per agent.",
+    "Keep one source of truth",
+    "Connect to everything",
+    "Run any model",
+    "Every agent gets its own computer",
+    "Ask for an app, get one",
+    "A workspace for your team.A framework underneath.",
+    "kortix.yaml",
+    "pi coding agent",
+    "@kortix/sdk",
+    "@kortix/ui",
+    "Give it an outcome. Agents run it 24/7.End to end, for every team.",
+    "The books reconciled, not just summarized.",
+    "Everything IT needs to say yes.Agents for the whole team, without giving up control.",
+    "Access control",
+    "Guardrails",
+    "Full audit trail",
+    "Isolated machines",
+    "Single sign-on",
+    "No lock-in",
+    "The questions people ask.Answered plainly.",
+  ],
+  "links": [
+    [
+      "Start for free",
+      "/auth",
+    ],
+    [
+      "Learn moreabout Multiplayer AI",
+      "/multiplayer",
+    ],
+    [
+      "Learn moreabout Company as code",
+      "/framework",
+    ],
+    [
+      "Learn moreabout Sovereign and open",
+      "/sovereign",
+    ],
+    [
+      "See the architecture",
+      "/framework",
+    ],
+    [
+      "Synthetic report",
+      "/use-cases/synthetic-report",
+    ],
+    [
+      "Security at Kortix",
+      "/security",
+    ],
+    [
+      "write to the team",
+      "/contact",
+    ],
+  ],
+  "sections": [
+    "hero",
+    "",
+    "works-with",
+    "pillars",
+    "how-it-works",
+    "framework",
+    "use-cases",
+    "trust",
+    "faq",
+  ],
+  "securityContent": undefined,
+  "visuals": [
+    [
+      "/media/landing/logos/color/claude.svg",
+      "",
+      null,
+    ],
+    [
+      "/media/landing/logos/color/claude.svg",
+      "",
+      null,
+    ],
+    [
+      "/media/landing/logos/color/slack.svg",
+      "",
+      null,
+    ],
+    [
+      "/media/landing/logos/color/slack.svg",
+      "",
+      null,
+    ],
+    [
+      "/media/landing/logos/color/openai.svg",
+      "",
+      null,
+    ],
+    [
+      "/media/landing/logos/color/openai.svg",
+      "",
+      null,
+    ],
+    [
+      null,
+      null,
+      "SOC 2 Type I Verified",
+    ],
+  ],
+}
+`;
+
+exports[`shipped marketing route composition security retains its rendered sections, links and visuals 1`] = `
+{
+  "glyphs": [],
+  "headings": [
+    "Secure by construction.Agents reach your tools only through gates you control.",
+    "Four guarantees. They hold whoever runs the agent.",
+    "Its own computerEvery session runs isolated.",
+    "Its own identityAn agent never borrows your role.",
+    "Logins stay outConnector logins never enter the computer.",
+    "Checked and recordedRules first, then the audit log.",
+    "How it works.One layer at a time.",
+    "Identity and roles",
+    "Agent permissions",
+    "The computer and egress",
+    "Connectors and approvals",
+    "Secrets",
+    "Models",
+    "Changes and review",
+    "Identity and roles",
+    "What enforces each rule. All but one run outside the computer.",
+    "Run it where your policy says.And read every line of what you run.",
+    "Kortix Cloud",
+    "Self-hosted",
+    "Your VPC or on-prem",
+    "Open source",
+    "SAML 2.0 and SCIM 2.0",
+    "Any model",
+    "Security questions.Answered from the code.",
+  ],
+  "links": [
+    [
+      "Talk to us",
+      "/contact",
+    ],
+    [
+      "Read the security docs",
+      "/docs/guide#security",
+    ],
+    [
+      "Bring us your review",
+      "/contact",
+    ],
+    [
+      "write to the team",
+      "/contact",
+    ],
+  ],
+  "sections": [
+    "hero",
+    "pillars",
+    "how-it-works",
+    "enforcement",
+    "trust",
+    "faq",
+  ],
+  "securityContent": "Secure by construction.Agents reach your tools only through gates you control.A person grants an agent access. The agent runs as itself on its own isolated computer. Kortix decides which keys reach that computer, and checks every app call, model call and change it makes.Talk to usRead the security docsA personYouChoose which agent may run, and grant it access.Its own computerThe agentActs as itself, never with your role.Run a commandKortix gateTool rulesChecked by the runtime, before the tool runs.ResourceFiles and commandsReached only after the check.1Tool rules2Connector broker3Secret broker4LLM gateway5ReviewThe runtime checks allow, ask or deny before every tool runs.One computer per session. Connector logins and Kortix’s model keys never enter it.Four guarantees. They hold whoever runs the agent.Its own computerEvery session runs isolated.One cloud computer per sessionIts own branch of the repositoryNothing shared with another sessionIts own identityAn agent never borrows your role.Grants are deny-by-defaultIt cannot grant itself moreYou choose who may run itLogins stay outConnector logins never enter the computer.Kortix makes each app callSecrets encrypted per projectEnforced secrets swapped outsideChecked and recordedRules first, then the audit log.Allow, Ask or Block per actionOne approval per exact callEvery action on recordHow it works.One layer at a time.Identity and rolesWho may open a project, and which agents they may run.Agent permissionsAn agent acts as itself, with only what you grant.The computer and egressEach session gets its own isolated cloud computer.Connectors and approvalsKortix holds the login and decides each call.SecretsEncrypted per project, delivered only where allowed.ModelsEvery model request passes one gateway.Changes and reviewWork reaches main through a change request.Identity and rolesPeople sign in with SAML single sign-on, or a password with two-factor.Each person holds an account role and a role in each project. Groups grant a project to many people at once.Account roleOwnerAdminMemberProject roleManagerMemberSign-inSAML 2.0 SSOSCIM 2.0Two-factorSession timeoutWhat enforces each rule. All but one run outside the computer.What enforces each rule.RuleEnforced byOn denyA valid credentialKortix API401A role that allows the actionKortix API, IAM403, or 404 if hiddenThe agent’s own permissionsKortix API, IAM403No self-granted permissionsKortix API, IAM403 agent_grant_escalationTool, command and path rulesRuntime, inside the computerAsk waits, deny refusesConnector rulesConnector broker202 held, 403 deniedNo connector calls to private addressesConnector brokerconnector_egress_blockedEnforced secret, listed hosts onlySecret brokerNot swappedPush only to its own branchKortix git403Merge needs project.gitops.mergeKortix API403 CR_SELF_MERGE_REFUSEDA valid credentialKortix API401A role that allows the actionKortix API, IAM403, or 404 if hiddenThe agent’s own permissionsKortix API, IAM403No self-granted permissionsKortix API, IAM403 agent_grant_escalationTool, command and path rulesRuntime, inside the computerAsk waits, deny refusesConnector rulesConnector broker202 held, 403 deniedNo connector calls to private addressesConnector brokerconnector_egress_blockedEnforced secret, listed hosts onlySecret brokerNot swappedPush only to its own branchKortix git403Merge needs project.gitops.mergeKortix API403 CR_SELF_MERGE_REFUSEDRun it where your policy says.And read every line of what you run.Kortix CloudWe run the control plane and the computers.Self-hostedThe app, API and database on your server.Your VPC or on-premA single-tenant deployment, scoped with us.Open sourceRead it, fork it, audit it.SAML 2.0 and SCIM 2.0Your identity provider decides who gets in.Any modelYour own provider keys, or Kortix-managed.SOC 2Type IVerifiedSOC 2 Type I verifiedGDPR operated. We hold no other certification and imply none.Bring us your reviewSecurity questions.Answered from the code.Anything else, write to the team.{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How does an agent authenticate to Kortix?","acceptedAnswer":{"@type":"Answer","text":"Each session computer gets KORTIX_TOKEN. It acts as that session’s agent, limited to its project, and ends with the session. It holds the agent’s permissions, never the role of the person who started it."}},{"@type":"Question","name":"Which API keys and tokens exist?","acceptedAnswer":{"@type":"Answer","text":"Every credential names its kind in its prefix: kortix_pat_ acts as you, kortix_sa_ as a service account, kortix_oat_ as a person who approved an app for 1 hour, kortix_gw_ reaches only the LLM gateway, and kortix_scim_ only directory sync. A missing or invalid token gets 401. A valid one without the permission gets 403."}},{"@type":"Question","name":"Can an agent read our connector logins?","acceptedAnswer":{"@type":"Answer","text":"No. Kortix stores the login and makes each call itself. The login never enters the session’s computer."}},{"@type":"Question","name":"Can code in a session read a secret?","acceptedAnswer":{"@type":"Answer","text":"A secret delivered as an environment variable is a real value, so code in the session can read it. Mark a web API key Enforced and the computer gets a stand-in instead. Kortix swaps in the real value outside the computer, only on requests to the hosts you list, and an echoed value comes back as [REDACTED]."}},{"@type":"Question","name":"Does Kortix filter outbound network traffic?","acceptedAnswer":{"@type":"Answer","text":"Not today. A computer can reach the internet directly, for example to install packages. What Kortix enforces: enforced secrets go only to listed hosts, connector calls never reach private addresses, and a copied session token gets no enforced secret outside its own computer."}},{"@type":"Question","name":"Who can approve a held action?","acceptedAnswer":{"@type":"Answer","text":"A project manager, or the person who started the session. An approval covers one exact call. A held call expires after 24 hours unless the project sets another time, from 5 minutes to 30 days."}},{"@type":"Question","name":"Can an agent merge its own changes?","acceptedAnswer":{"@type":"Answer","text":"Only with the project.gitops.merge permission. Without it, the merge answers 403. The built-in kortix agent holds every Kortix permission, so remove the merge permission from it to require a person every time."}},{"@type":"Question","name":"What does the audit log record, and can we export it?","acceptedAnswer":{"@type":"Answer","text":"Who did what, when, how they signed in, and whether it was allowed, refusals included. When an agent acts, the row names the person it acted for. Events stay readable for 90 days and sit in a locked archive to day 365. Reading, exporting and streaming the log is an Enterprise feature."}},{"@type":"Question","name":"Do the models keep our data?","acceptedAnswer":{"@type":"Answer","text":"Kortix-managed models run only through inference providers with zero data retention. With your own provider key, your agreement with that provider applies."}},{"@type":"Question","name":"Where does a self-hosted Kortix run sessions?","acceptedAnswer":{"@type":"Answer","text":"The web app, API and database run on your server. Sessions still run on Platinum cloud computers, which call back to your server, so it must be reachable from the internet."}}]}How does an agent authenticate to Kortix?Each session computer gets KORTIX_TOKEN. It acts as that session’s agent, limited to its project, and ends with the session. It holds the agent’s permissions, never the role of the person who started it.Which API keys and tokens exist?Every credential names its kind in its prefix: kortix_pat_ acts as you, kortix_sa_ as a service account, kortix_oat_ as a person who approved an app for 1 hour, kortix_gw_ reaches only the LLM gateway, and kortix_scim_ only directory sync. A missing or invalid token gets 401. A valid one without the permission gets 403.Can an agent read our connector logins?No. Kortix stores the login and makes each call itself. The login never enters the session’s computer.Can code in a session read a secret?A secret delivered as an environment variable is a real value, so code in the session can read it. Mark a web API key Enforced and the computer gets a stand-in instead. Kortix swaps in the real value outside the computer, only on requests to the hosts you list, and an echoed value comes back as [REDACTED].Does Kortix filter outbound network traffic?Not today. A computer can reach the internet directly, for example to install packages. What Kortix enforces: enforced secrets go only to listed hosts, connector calls never reach private addresses, and a copied session token gets no enforced secret outside its own computer.Who can approve a held action?A project manager, or the person who started the session. An approval covers one exact call. A held call expires after 24 hours unless the project sets another time, from 5 minutes to 30 days.Can an agent merge its own changes?Only with the project.gitops.merge permission. Without it, the merge answers 403. The built-in kortix agent holds every Kortix permission, so remove the merge permission from it to require a person every time.What does the audit log record, and can we export it?Who did what, when, how they signed in, and whether it was allowed, refusals included. When an agent acts, the row names the person it acted for. Events stay readable for 90 days and sit in a locked archive to day 365. Reading, exporting and streaming the log is an Enterprise feature.Do the models keep our data?Kortix-managed models run only through inference providers with zero data retention. With your own provider key, your agreement with that provider applies.Where does a self-hosted Kortix run sessions?The web app, API and database run on your server. Sessions still run on Platinum cloud computers, which call back to your server, so it must be reachable from the internet.",
+  "visuals": [
+    [
+      null,
+      null,
+      "SOC 2 Type I Verified",
+    ],
+  ],
+}
+`;

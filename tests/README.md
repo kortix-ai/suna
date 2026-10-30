@@ -27,7 +27,8 @@ default made each flow that pushes `kortix.yaml` wait up to 60 s per push.
 
 The default run has six lanes plus package quality. It always runs every lane
 and every package. There is no diff scope, no lane reuse, and no attestation:
-CI runs the whole suite at the dev -> staging promote and nightly on `dev`.
+CI runs the contract lanes nightly on `dev` and once in the release suite on
+the pull request into `prod`.
 
 1. Black-box REST and CLI flows against local Supabase, API, and gateway.
 2. `@kortix/sdk` tests in `packages/sdk`.
@@ -106,9 +107,9 @@ Desktop UI parity is part of the browser lane in `27-desktop-parity.spec.ts`.
 Run the same journey in native Electron with `E2E_DESKTOP_NATIVE=1` and
 `E2E_GREP='27 — desktop parity'`.
 
-The pre-merge gate is the developer's machine: run `pnpm test` (and `--full` for
-browser-visible changes) before you merge into `main`. A pull request into
-`main` runs no GitHub Actions job unless a person adds the `test` label (six
+The pre-merge gate is the developer's machine: run T0 and the tests that cover
+the change (the **testing** skill) before you merge into `dev`. A pull request
+into `dev` runs no GitHub Actions job unless a person adds the `test` label (six
 lanes, once) or the `preview` label (below).
 
 GitHub Actions uses `.github/workflows/tests.yml` for every local-profile run.
@@ -123,7 +124,7 @@ dispatch only; the `preview` label deploys without it) and `tests-release.yml` (
 staging, whose `full suite + quality gates` job is the only required check in
 the repository).
 
-The run is eight lanes in parallel, each natively on one free GitHub-hosted
+The run is six lanes in parallel, each natively on one free GitHub-hosted
 runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). Two core lanes
 split the default run without package quality: `core-flows` runs
 `pnpm test -- --core-group=flows` (the REST and CLI flows) and `core-db` runs
@@ -133,18 +134,12 @@ suites shared 4 vCPU and the lane took 11-12 min. Four package lanes run one sli
 quality each: `pnpm test -- --packages-only --package-group=api` (`cli`,
 `kortixd`, `rest`; `rest` holds the repo-wide checks and every other package).
 On one runner the API, CLI and kortixd suites and three `tsc` shared 4 vCPU and
-the lane took 18.5 min. Two browser
-lanes run shards `1/2` and `2/2` with one Playwright worker each
-(`E2E_BROWSER_WORKERS=1`, exported in browser lanes only) via
-`pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`. The runner hands
-each shard its spec files by path, balanced by measured duration (see
-"Browser shard balancing"). The eight lanes are the parallel equivalent of
-`pnpm test -- --full`; `tests.yml` records their measured times. Each lane checks out the
-exact requested SHA, runs `pnpm install --frozen-lockfile`, and invokes the
-unchanged root command; browser lanes also install Chromium and prestart
-Supabase so the root runner reuses it. `actions/cache` keeps the Chromium
-download per lockfile. Every runner is a fresh VM, so `pnpm install` (~45 s)
-and the Supabase image pulls (~55 s) run cold on each lane. A `node_modules`
+the lane took 18.5 min. No browser journey runs in `tests.yml`: the journeys
+run once, in the release suite, against deployed staging (`tests-release.yml`).
+Each lane checks out the exact requested SHA, runs
+`pnpm install --frozen-lockfile`, and invokes the unchanged root command. Every
+runner is a fresh VM, so `pnpm install` (~45 s) and the Supabase image pulls
+(~55 s) run cold on each lane. A `node_modules`
 cache does not pay on these runners: restoring its 1.33 GB archive took
 24-44 s against a 41-49 s cold install (2026-10-16).
 
@@ -163,15 +158,16 @@ invalidates it for every project using the same content hash.
 
 ## Pull request preview sandboxes
 
-Add the `preview` label to a same-repository pull request into `main`.
+Add the `preview` label to a same-repository pull request into `dev`.
 `.github/workflows/deploy-preview.yml` then performs this sequence:
 
 1. A repository writer authorizes the exact pull request SHA.
 2. Three credential-free jobs build the API, gateway, and frontend images for
    `linux/amd64`.
-3. The trusted controller from `main` publishes the three exact SHA tags.
-4. The controller restores one warm Platinum sandbox. `auto` uses Daytona only
-   when Platinum infrastructure fails.
+3. The trusted controller from the default branch (`dev`) publishes the three
+   exact SHA tags.
+4. The controller restores one warm Platinum sandbox. Previews run on Platinum
+   only; there is no fallback provider.
 5. The sandbox generates the standard `kortix self-host` Compose distribution.
 6. One overlay adds Caddy, Mailpit, the report mount, and loopback PostgreSQL.
 7. On a dispatch only, the sandbox runs `pnpm test -- --target-full` against its public HTTPS origin.
@@ -183,15 +179,14 @@ frontend, and Mailpit. It does not use the Dev, staging, or production database.
 The warm image contains dependencies and Docker layers only. It contains no
 preview database and no runtime secret.
 
-The runtime secret allowlist contains `DAYTONA_API_KEY`,
-`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `OPENROUTER_API_KEY`, `MORPH_API_KEY`, and the five fields required
+The runtime secret allowlist contains `PLATINUM_API_KEY`,
+`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `PLATINUM_INFERENCE_API_KEY`, and the five fields required
 for the dedicated preview GitHub App installation. Mailpit handles preview
 email. The GitHub App runs the real managed repository and CLI push flows.
 OAuth initiation is the only allowed preview browser exclusion. All API flow
 exclusions and all other browser journey exclusions fail the preview test.
 
-Use **Run workflow** to select `platinum` or `daytona` explicitly for one
-provider proof. A new deployment deletes any existing provider sandbox for the
+A new deployment deletes any existing provider sandbox for the
 same pull request. A test failure keeps the sandbox available for diagnosis.
 A push to a labelled branch starts nothing; re-add the label to deploy the new
 head. The label never runs the suite (step 7); a dispatch does. Removing the label or deleting the branch deletes the sandbox; closing
@@ -252,10 +247,11 @@ count. `src/core/browser-shard.ts` packs whole spec files longest-first onto the
 lightest shard, using the per-file seconds in `e2e/shard-durations.json`
 (tie-break by path, so every job computes the same partition). A spec missing
 from the table takes the median weight. A spec file is the unit, so a
-`describe.serial` group never splits. One table per target: `local` for the
-`tests.yml` lanes, `deployed` for the release gate, which runs journeys the
-local stack skips. Refresh a table from green CI runs, reading the list
-reporter lines in the job logs (no artifact needed):
+`describe.serial` group never splits. One table per target: `local` for a local
+`--browser-only` run, `deployed` for the release gate, which runs journeys the
+local stack skips. `tests.yml` runs no browser spec since 2026-10-16, so the
+`local` table keeps its last measured values. Refresh a table from green CI
+runs, reading the list reporter lines in the job logs (no artifact needed):
 
 ```bash
 bun tests/bin/refresh-shard-durations.ts local <tests.yml run id>...
@@ -283,13 +279,13 @@ failed `deployed` flow fails the gate.
 | Auth and JWT against the real Supabase | AUTH-3, AUTH-1, ME-1, TOK-3 |
 | Email delivery | AUTH-2, AUTH-4 |
 | CORS, cookies, domains | PRX-1, PRX-3, OAU-5, MCP-1 |
-| Sandbox boot and the runtime proxy | RUN-2, RUN-2-pi, RUN-8 |
-| SSE through the edge | RUN-3, RUN-3-pi |
-| Sandbox stop and wake | SESS-12, SESS-12-pi |
+| Sandbox boot and the runtime proxy | RUN-2, RUN-8 |
+| SSE through the edge | RUN-3 |
+| Sandbox stop and wake | SESS-12 |
 | LLM gateway | GW-2, GW-MANAGED-1 |
 | Stripe and billing webhooks | BILL-1, BILL-3, BILL-8, BILL-18 |
-| Object storage and uploads | SESS-31, SESS-31-log, FILE-9 |
-| Git push to managed repositories | SHIP-1, RUN-7, RUN-7-pi, GH-19, FILE-1 |
+| Object storage and uploads | SESS-31, FILE-9, MEMORY-4 |
+| Git push to managed repositories | SHIP-1, RUN-7, GH-19, FILE-1 |
 | Money path: prompt to merged change request, real CLI | GOLD-1, CLI-SESS |
 | MCP over HTTP with a PAT | MCP-4 |
 | Apps edge host check | APP-5 |
@@ -298,8 +294,8 @@ failed `deployed` flow fails the gate.
 | Internal cron key | BILL-13 |
 | Database writes over the deployed pool | ACCT-2, PROJ-1 |
 
-45 flows, picked for stability: in the 8 release-gate runs from 2026-10-13 to
-2026-10-15, 44 passed every run (SESS-31-log: 3 of 3 since it was added) and
+44 flows, picked for stability: in the 8 release-gate runs from 2026-10-13 to
+2026-10-15, 43 passed every run and
 RUN-3 failed once on a request timeout (run 38399331524). Their median times
 sum to ~10 min of flow work, which the 9 workers run in ~3 min. `unit/deployed-set.test.ts`
 pins this table to the tags, keeps the set between 30 and 50 flows, and rejects
@@ -418,28 +414,6 @@ The control client retries `502`, `503`, `504`, `524`, the provider's transient
 bounded exponential backoff. Sandbox deletion uses eight attempts. A failed
 deletion fails the workflow and keeps the exact sandbox ID in the log.
 
-### Daytona
-
-Daytona first builds an OCI base snapshot. It starts a temporary builder from
-that base. The builder starts nested Docker, pulls the Supabase images, stops
-Supabase and dockerd, writes a warm marker, and captures the warm snapshot.
-`DAYTONA_CI_TARGET` selects the nested-Docker region. It falls back to
-`DAYTONA_TARGET`, then `us`. Do not reuse the product `DAYTONA_WARM_TARGET`.
-That product variable can select a different sandbox class or region.
-
-The disposable worker uses 6 vCPU, 12 GiB RAM, and 40 GiB disk. These are the
-current Daytona organization maxima. The worker is private.
-Its labels include the repository, exact SHA, workflow run ID, and run attempt.
-The cleanup command deletes only the exact worker whose name and labels match.
-
-Run a provider explicitly from a checkout with the provider key loaded:
-
-```bash
-TEST_SANDBOX_PROVIDER=platinum bun tests/bin/sandbox-ci.ts --full
-TEST_SANDBOX_PROVIDER=daytona bun tests/bin/sandbox-ci.ts --full
-TEST_SANDBOX_PROVIDER=auto bun tests/bin/sandbox-ci.ts --full
-```
-
 ## Product flows
 
 `tests/spec/end-to-end.md` is the human-readable contract. Each contract has a
@@ -464,14 +438,12 @@ body with it: `r.status(200).body().schema(ProjectSchema)`. A body that drifts
 from the contract then fails `pnpm test` and names each failing path. The
 session fixture checks every session create the same way.
 
-### One flow body, every harness
+### Session flows run on pi
 
 A flow that runs a session turn registers with `harnessFlow` (`src/core/flow.ts`)
-instead of `flow`. `harnessFlow('RUN-1', meta, fn)` registers `RUN-1`, which boots
-OpenCode, and `RUN-1-pi`, which runs the same body on pi. The pi variant uses a
-shared seeded project with the `pi_harness` flag on, maps to spec `RUN-1`
-through `meta.specId`, and carries the `harness-pi` tag
-(`bun bin/ke2e.ts run --tag harness-pi` runs only pi).
+instead of `flow`. `harnessFlow('RUN-1', meta, fn)` registers `RUN-1` and calls
+the body with `harness` = `pi`: every new session runs pi since 2026-10-23
+(OpenCode is sunset). The body proves the harness from `/kortix/health`.
 
 Drive these flows through `src/fixtures/session-run.ts`, which speaks only the
 Kortix session routes: `bootSession` (boot, prove the harness from
@@ -504,7 +476,9 @@ counts. Do not infer those counts from source files.
 The runner splits selected flows into three lanes.
 
 - **Parallel lanes** — `meta.serial` and `meta.global` unset. Split again into an
-  API lane and a live-sandbox lane by `requires: ['daytona']`.
+  API lane and a live-sandbox lane by `requires: ['sandbox']`. The `sandbox`
+  capability (`KE2E_CAP_SANDBOX`) means a real cloud sandbox on Platinum, the
+  reference provider; a preview enables it from `PLATINUM_API_KEY`.
 - **Serial lane** — `meta.serial`. Never runs beside another serial flow. It
   runs at concurrency 1 *inside the same `Promise.all` as the parallel lanes*,
   so it overlaps them instead of appending a sequential tail.
@@ -796,7 +770,7 @@ package command documented in the **sdk** skill.
 
 Full mode also builds, dry-packs, and install-smokes every publishable npm
 package before it runs all package and app tests. This keeps published-package
-contracts in the same local and Platinum command.
+contracts in the same local and CI command.
 
 Keep co-located package tests for pure logic and internal invariants. Do not add
 a second cross-cutting harness, Makefile lane, Pact suite, Testcontainers suite,
@@ -818,5 +792,5 @@ contracts moved into the canonical lanes before deletion.
 | `tests/self-host-e2e/live` | Removed as opt-in image-orchestration scripts. They never gated changes and duplicated the CLI and API contracts without deterministic fixtures. |
 | Pact, example API, integration, mutation, smoke, and visual suites | Removed because they were placeholders, duplicates, or unmaintained snapshot harnesses. |
 | k6 and session benchmark scripts | Removed from correctness testing. Every root run now writes measured lane timing to the benchmark JSON artifact. |
-| Allure, standalone JUnit, portal, and shell quality wrappers | Removed. The root runner emits its own report and provider workers upload `tests/test-results`. |
+| Allure, standalone JUnit, portal, and shell quality wrappers | Removed. The root runner emits its own report. |
 | Infrastructure and security shell wrappers | Removed from `tests/`. Dedicated deployment and security workflows retain their platform-specific scanners. |

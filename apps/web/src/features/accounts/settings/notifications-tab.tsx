@@ -11,8 +11,8 @@
  * live consumer: `features/workspace/settings/tabs/preferences-tab.tsx`.
  */
 
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { Label } from '@kortix/ui/label';
+import { Switch } from '@kortix/ui/switch';
 import {
   type Icon as IconType,
   type Icon as LucideIcon,

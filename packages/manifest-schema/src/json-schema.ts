@@ -19,6 +19,11 @@
  *     `kortix_version` (const 1 vs const 2), so ONE URL always validates
  *     whichever version a manifest declares.
  *
+ * The docs' kortix.yaml key tables are generated from the v3 document
+ * (apps/web/scripts/generate-kortix-yaml-doc.mjs). Every v3 key the docs list
+ * needs a `description` here; a trailing "Default: …." sentence fills the
+ * Default column when `default` cannot hold the value. Editors show the same text.
+ *
  * Deliberate scope limits (documented, not bugs — see spec header of
  * `./index.ts` and the conformance test):
  *
@@ -61,9 +66,7 @@ import {
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
   DURATION_RE,
-  MONITOR_MODES,
   EVENT_FORBIDDEN_KEYS,
-  MONITOR_RUN_MAX_LENGTH,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
   SANDBOX_CPU_BOUNDS,
@@ -88,6 +91,7 @@ import {
   CONNECTOR_HEADER_VALUE_MAX_LENGTH,
   CONNECTOR_HEADERS_MAX_COUNT,
 } from './connector-headers';
+import { MAX_POLICY_SETS_PER_CONNECTOR, MAX_RULES_PER_POLICY_SET, POLICY_SET_NAME_RE, RESERVED_POLICY_SET_NAME } from './policy-sets';
 
 /** A JSON Schema fragment — plain data, no `$id`/`$schema` (those belong on
  *  the top-level documents only). Kept loose (not the full 2020-12 meta-type)
@@ -146,6 +150,7 @@ const ENV_NAME_PATTERN = ENV_NAME_RE.source;
 const ENV_NAME_PATTERN_CASE_INSENSITIVE = '^[A-Za-z_][A-Za-z0-9_]*$';
 
 const NON_EMPTY_STRING: JsonSchemaFragment = { type: 'string', minLength: 1 };
+const NON_BLANK_STRING: JsonSchemaFragment = { type: 'string', pattern: '\\S' };
 
 /** One `agents.<name>.apps` entry: an App slug (`SLUG_RE`) or the `*` wildcard. */
 const APP_GRANT_ENTRY_PATTERN = '^(?:[a-z0-9][a-z0-9_-]{0,127}|\\*)$';
@@ -154,12 +159,12 @@ const APP_GRANT_ENTRY_PATTERN = '^(?:[a-z0-9][a-z0-9_-]{0,127}|\\*)$';
  *  an allowlist of names, or the "all"/"none" sentinel (spec §2.2/§2.4/§2.5).
  *  `itemSchema` lets `kortix_permissions` additionally constrain each entry to the
  *  grantable-action enum. */
-function grantSetSchema(itemSchema: JsonSchemaFragment = NON_EMPTY_STRING): JsonSchemaFragment {
+function grantSetSchema(itemSchema: JsonSchemaFragment = NON_BLANK_STRING): JsonSchemaFragment {
   return {
     description: 'An allowlist of names, or the "all" / "none" sentinel. "*" (alone or in the list) means "all".',
     oneOf: [
       { type: 'array', items: itemSchema },
-      { type: 'string', enum: ['all', '*', 'none'] },
+      normalizedEnumSchema(['all', '*', 'none', '']),
     ],
   };
 }
@@ -247,22 +252,35 @@ function agentMdFrontmatterSchema(): JsonSchemaFragment {
     description:
       "Behavior for one agent — lives in its .md frontmatter (agents.<name>.file, default agents/<name>.md), never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
     properties: {
-      description: { type: 'string' },
-      model: { type: 'string' },
-      mode: { type: 'string', enum: [...AGENT_MODES_V2] },
-      variant: { type: 'string' },
-      temperature: { type: 'number' },
-      top_p: { type: 'number' },
-      steps: { type: 'integer', minimum: 1 },
+      description: { type: 'string', description: 'What the agent does. An agent that may start it as a subagent reads it to choose.' },
+      model: { type: 'string', description: '`provider/model`. Default: the project default.' },
+      mode: {
+        type: 'string',
+        enum: [...AGENT_MODES_V2],
+        default: 'all',
+        description: '`primary`: people and triggers run it; no agent starts it. `subagent`: only another agent starts it; agent pickers hide it. `all`: both.',
+      },
+      variant: {
+        type: 'string',
+        description: "The model's reasoning level: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`, when the model offers it.",
+      },
+      temperature: { type: 'number', description: "Sampling temperature. A model that refuses a custom temperature ignores it. Default: the model's." },
+      top_p: { type: 'number', description: "Nucleus sampling. Default: the model's." },
+      steps: {
+        type: 'integer',
+        minimum: 1,
+        description: 'Model requests in one run. The request that reaches the limit gets no tools, so the model answers. Default: no limit.',
+      },
       color: {
+        description: 'Accepted. Sessions do not use it.',
         oneOf: [
           { type: 'string', pattern: HEX_COLOR_RE_V2.source },
           { type: 'string', enum: [...AGENT_THEME_COLORS_V2] },
         ],
       },
-      hidden: { type: 'boolean' },
+      hidden: { type: 'boolean', default: false, description: '`true`: agent pickers do not list the agent.' },
       disable: { type: 'boolean' },
-      options: { type: 'object' },
+      options: { type: 'object', description: 'Accepted. Sessions do not use it.' },
       permission: permissionConfigSchema(),
     },
     additionalProperties: true,
@@ -279,11 +297,41 @@ const SLUG_SCHEMA: JsonSchemaFragment = { type: 'string', pattern: SLUG_RE.sourc
  *  `..`, and no `/` or end immediately after it). */
 const PATH_TRAVERSAL_OR_ABSOLUTE_PATTERN = String.raw`^/|(^|/)\.\.($|/)`;
 
+/** Non-ASCII code points whose `toLowerCase()` folds to an ASCII letter. A
+ *  scan of every code point U+0000..U+10FFFF finds exactly one: U+212A KELVIN
+ *  SIGN → "k" (U+017F is already lowercase; İ and fullwidth Ｋ fold to
+ *  non-ASCII or multi-char results). The validator matches with
+ *  `trim().toLowerCase()` (`./index.ts`), so a literal containing `k` must
+ *  also accept the KELVIN SIGN. Pinned by the Unicode conformance fixtures
+ *  in `./__tests__/json-schema.conformance.test.ts`. */
+const UNICODE_ASCII_FOLDS: Record<string, string> = { k: '\u212A' };
+
 /** Every case-variant of one of `isEnabledValue`'s (`./index.ts`) accepted
  *  sentinel words, turned into a case-insensitive regex alternative (JSON
- *  Schema `pattern` has no `/i` flag) — e.g. `true` → `[Tt][Rr][Uu][Ee]`. */
+ *  Schema `pattern` has no `/i` flag) — e.g. `true` → `[Tt][Rr][Uu][Ee]`,
+ *  plus the Unicode folds the validator's `toLowerCase()` performs
+ *  (`keyed` → `[Kk\u212A][Ee]…`). */
 function caseInsensitiveLiteral(word: string): string {
-  return word.replace(/[a-z]/gi, (ch) => `[${ch.toLowerCase()}${ch.toUpperCase()}]`);
+  return word.replace(/[a-z]/gi, (ch) => `[${ch.toLowerCase()}${ch.toUpperCase()}${UNICODE_ASCII_FOLDS[ch.toLowerCase()] ?? ''}]`);
+}
+
+/** Preserve editor suggestions while matching the validator's trim/lowercase.
+ *  An empty-string member gets its OWN `^\s*$` arm instead of becoming an
+ *  empty pattern alternative: `(?:…|)` sitting between the leading `^\s*`
+ *  and the trailing `\s*` is quadratic on whitespace-only input followed by
+ *  any non-matching character (16 s for 100 KB, measured — G9 item [B]),
+ *  while the dedicated blank arm is linear. Acceptance is unchanged: the
+ *  validator's `trim().toLowerCase()` sends both `""` and `"   "` to `""`. */
+function normalizedEnumSchema(values: readonly string[]): JsonSchemaFragment {
+  const words = values.filter((value) => value !== '');
+  const anyOf: JsonSchemaFragment[] = [{ enum: [...values] }];
+  if (words.length > 0) {
+    anyOf.push({ pattern: `^\\s*(?:${words.map((value) => value === '*' ? '\\*' : caseInsensitiveLiteral(value)).join('|')})\\s*$(?![\\s\\S])` });
+  }
+  if (words.length !== values.length) {
+    anyOf.push({ pattern: '^\\s*$(?![\\s\\S])' });
+  }
+  return { type: 'string', anyOf };
 }
 
 const ENABLED_SENTINEL_WORDS = ['true', 'false', '1', '0', 'yes', 'no', 'on', 'off'] as const;
@@ -313,7 +361,7 @@ function enabledValueSchema(): JsonSchemaFragment {
 function relativePathSchema(): JsonSchemaFragment {
   return {
     type: 'string',
-    minLength: 1,
+    pattern: '\\S',
     not: { pattern: PATH_TRAVERSAL_OR_ABSOLUTE_PATTERN },
   };
 }
@@ -322,6 +370,8 @@ function relativePathSchema(): JsonSchemaFragment {
 function projectSchema(): JsonSchemaFragment {
   return {
     type: 'object',
+    description:
+      "`name`: the project's name. A push that changes it renames the project, and a rename in Kortix commits it here. `description`: text for people who read the repository.",
     properties: {
       name: { type: 'string' },
       description: { type: 'string' },
@@ -336,7 +386,15 @@ function envSchema(): JsonSchemaFragment {
   const nameList = { type: 'array', items: { type: 'string', pattern: ENV_NAME_PATTERN_CASE_INSENSITIVE } };
   return {
     type: 'object',
-    properties: { required: nameList, optional: nameList },
+    description: 'The secret names the project expects. Values live in Secrets, never in this file.',
+    properties: {
+      required: {
+        ...nameList,
+        description:
+          'Secret names the project needs: uppercase letters, digits and `_`, not starting with a digit. The dashboard and `kortix ship` ask for a missing value. A missing value does not block a session.',
+      },
+      optional: { ...nameList, description: 'Secret names the same prompts offer. Values live in Secrets, never in this file.' },
+    },
     additionalProperties: true,
   };
 }
@@ -358,25 +416,48 @@ function opencodeSchema(): JsonSchemaFragment {
 
 /** One `[[sandbox.templates]]` entry. */
 function sandboxTemplateSchema(): JsonSchemaFragment {
+  const clamped = (what: string, max: number) =>
+    `${what}. Above ${max} is a warning, and Kortix uses ${max}. Default: the platform default.`;
   return {
     type: 'object',
     required: ['slug'],
     properties: {
-      slug: { allOf: [SLUG_SCHEMA, { not: { const: RESERVED_SANDBOX_SLUG } }] },
-      name: { type: 'string' },
-      entrypoint: { type: 'string' },
-      image: { type: 'string', minLength: 1 },
-      dockerfile: relativePathSchema(),
-      cpu: { type: 'integer', minimum: SANDBOX_CPU_BOUNDS.min },
-      memory: { type: 'integer', minimum: SANDBOX_MEMORY_BOUNDS.min },
-      disk: { type: 'integer', minimum: SANDBOX_DISK_BOUNDS.min },
-      container_runtime: { type: 'boolean' },
+      slug: {
+        allOf: [SLUG_SCHEMA, { not: { const: RESERVED_SANDBOX_SLUG } }],
+        description: `Unique. Lowercase letters, digits, \`-\` and \`_\`, at most 64 characters. \`${RESERVED_SANDBOX_SLUG}\` is reserved.`,
+      },
+      name: { type: 'string', description: 'The label in the template picker. Default: the slug.' },
+      entrypoint: { type: 'string', description: "Overrides the container entrypoint. Default: the image's." },
+      image: {
+        description:
+          'An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both. Neither: the platform base image.',
+      },
+      dockerfile: {
+        // Blank is absent (`validateSandboxTemplates`); a set path must stay inside the repository.
+        anyOf: [{ not: NON_BLANK_STRING }, relativePathSchema()],
+        description:
+          'A repository path to a Dockerfile. `kortix validate` lints it: no `COPY` from the repository, no `RUN` heredoc, a Debian-family base image.',
+      },
+      cpu: { type: 'integer', minimum: SANDBOX_CPU_BOUNDS.min, description: clamped('vCPU cores', SANDBOX_CPU_BOUNDS.max) },
+      memory: { type: 'integer', minimum: SANDBOX_MEMORY_BOUNDS.min, description: clamped('GiB of memory', SANDBOX_MEMORY_BOUNDS.max) },
+      disk: { type: 'integer', minimum: SANDBOX_DISK_BOUNDS.min, description: clamped('GiB of disk', SANDBOX_DISK_BOUNDS.max) },
+      container_runtime: { type: 'boolean', default: false, description: '`true`: Docker runs inside the sandbox.' },
+      residential_proxy: {
+        description:
+          "`true`, or `{ country: us }`: the sandbox's web traffic leaves through a residential IP address, billed per GB from credits. Kortix hosts and package registries connect directly. Sessions start only where the deployment offers it. Not part of the image.",
+        oneOf: [
+          { type: 'boolean' },
+          {
+            type: 'object',
+            properties: {
+              country: { type: 'string', pattern: '^[A-Za-z]{2}$', description: 'ISO 3166-1 alpha-2 country code of the IP address.' },
+            },
+          },
+        ],
+      },
     },
-    // Exactly one of image/dockerfile (`validateSandboxTemplates`).
-    oneOf: [
-      { required: ['image'], not: { required: ['dockerfile'] } },
-      { required: ['dockerfile'], not: { required: ['image'] } },
-    ],
+    // At most one non-blank image/dockerfile (`validateSandboxTemplates`); neither is the platform base image.
+    not: { required: ['image', 'dockerfile'], properties: { image: NON_BLANK_STRING, dockerfile: NON_BLANK_STRING } },
   };
 }
 
@@ -388,78 +469,251 @@ function sandboxSchema(): JsonSchemaFragment {
   const forbiddenLegacy = Object.fromEntries(LEGACY_SANDBOX_KEYS.map((k) => [k, false]));
   return {
     type: 'object',
+    description: "Sandbox templates and the project's default template. Default: the platform image.",
     properties: {
       ...forbiddenLegacy,
-      templates: { type: 'array', items: sandboxTemplateSchema() },
+      templates: { type: 'array', items: sandboxTemplateSchema(), description: 'Named sandbox images.' },
       // Cross-field: must name a declared template slug — dynamic, left to
       // the imperative validator (see module doc "deliberate scope limits").
-      default: { type: 'string', minLength: 1 },
+      default: {
+        ...NON_BLANK_STRING,
+        default: RESERVED_SANDBOX_SLUG,
+        description: `A slug from \`sandbox.templates\`, or \`${RESERVED_SANDBOX_SLUG}\` for the platform image.`,
+      },
     },
     additionalProperties: true,
   };
 }
 
-/** One `[[triggers]]` entry — cron, webhook, monitor, or event (`validateTriggers`). */
-function triggerSchema(): JsonSchemaFragment {
+/** One `[[triggers]]` entry — cron, webhook, event, or app (`validateTriggers`). */
+/**
+ * A trigger `filter` (KRTX-1721): payload path → a value (equals) or an object
+ * with exactly one operator. Mirrors `parseTriggerFilter` in `./trigger-filter`.
+ */
+function triggerFilterSchema(): JsonSchemaFragment {
+  const scalar: JsonSchemaFragment = { type: ['string', 'number', 'boolean'] };
+  const list = (item: JsonSchemaFragment): JsonSchemaFragment => ({
+    oneOf: [item, { type: 'array', minItems: 1, items: item }],
+  });
+  const prefix: JsonSchemaFragment = { type: ['string', 'number', 'boolean'], minLength: 1 };
+  return {
+    type: 'object',
+    additionalProperties: {
+      oneOf: [
+        scalar,
+        {
+          type: 'object',
+          minProperties: 1,
+          maxProperties: 1,
+          additionalProperties: false,
+          properties: {
+            not: list(scalar),
+            in: list(scalar),
+            exists: { type: 'boolean' },
+            prefix: list(prefix),
+            not_prefix: list(prefix),
+          },
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * One trigger in the `on:` / `run:` shape (trigger-shape.ts): what fires it,
+ * and what a fire runs. `type` is implied by `on`, so it may not appear.
+ */
+function onRunTriggerSchema(): JsonSchemaFragment {
+  const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
+  const appSlug: JsonSchemaFragment = { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' };
+  const source = (required: string[], properties: Record<string, JsonSchemaFragment>): JsonSchemaFragment => ({
+    type: 'object', required, additionalProperties: false, properties,
+  });
+  const timezone = { type: 'string', default: 'UTC', description: 'An IANA time zone for `cron` and `at`.' };
+  return {
+    type: 'object',
+    required: ['slug', 'on', 'run'],
+    properties: {
+      slug: { ...SLUG_SCHEMA, description: 'Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters.' },
+      name: { type: 'string', description: 'The label in the dashboard. Default: the slug.' },
+      type: false,
+      enabled: { ...enabledValueSchema(), default: true, description: '`false`: the trigger does not fire.' },
+      filter: {
+        ...triggerFilterSchema(),
+        description:
+          'Payload path → a value (equals), or one operator: `not`, `in`, `exists`, `prefix`, `not_prefix`. A fire runs only when every path matches.',
+      },
+      max_runs_per_hour: { type: 'integer', minimum: 1, default: 60, description: 'Runs the trigger starts in any 60 minutes.' },
+      max_runs_per_day: { type: 'integer', minimum: 1, description: 'Runs the trigger starts in a UTC day.' },
+      max_lateness: { ...durationSchema, description: 'Schedules only, `60s` or more. A missed fire later than this does not run.' },
+      overlap: {
+        type: 'string',
+        enum: ['skip', 'allow'],
+        description:
+          '`skip` holds a fire while the previous run is active. Only with `run.session: fresh`. Default: `skip` for a schedule, `allow` for others.',
+      },
+      on: {
+        description: 'What fires the trigger: a schedule (`cron`, `every` or `at`), a webhook, or an App event.',
+        oneOf: [
+          source(['cron'], {
+            cron: {
+              ...NON_BLANK_STRING,
+              description: 'A 6-field cron expression, seconds first: `"0 0 9 * * 1"` is 09:00 every Monday. A trigger fires at most once every 60 seconds.',
+            },
+            timezone,
+          }),
+          source(['every'], {
+            every: { ...durationSchema, description: 'A fixed period: an integer and `s`, `m`, `h` or `d`, at least `60s`.' },
+            timezone,
+          }),
+          source(['at'], { at: { ...NON_BLANK_STRING, description: 'One fire at an ISO-8601 time, such as `2026-06-01T09:00:00Z`.' }, timezone }),
+          source(['webhook'], {
+            webhook: {
+              ...source(['secret'], {
+                secret: { type: 'string', pattern: ENV_NAME_PATTERN, description: "The name of the secret that signs requests to the trigger's webhook." },
+              }),
+              description: 'Fire on a signed request to the trigger\'s webhook URL.',
+            },
+          }),
+          source(['event', 'connector'], {
+            event: NON_BLANK_STRING, connector: NON_BLANK_STRING, account: NON_BLANK_STRING, source: NON_BLANK_STRING, config: { type: 'object' },
+          }),
+          source(['event', 'app'], {
+            event: { ...NON_BLANK_STRING, description: 'With `on.app`: the App event name, or `"*"` for every event.' },
+            app: { ...appSlug, description: "The App's slug. The trigger fires on that App's events." },
+          }),
+        ],
+      },
+      run: {
+        type: 'object',
+        description: 'What a fire runs: an agent turn, or a call to an App.',
+        additionalProperties: false,
+        anyOf: [{ required: ['prompt'] }, { required: ['app'] }],
+        properties: {
+          agent: { ...NON_BLANK_STRING, description: 'A declared agent. Default: `default_agent`.' },
+          prompt: { ...NON_BLANK_STRING, description: 'The first message of the run. Required unless `run.app` is set.' },
+          session: {
+            ...normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']),
+            default: 'fresh',
+            description:
+              '`fresh`: a new session for each fire. `reuse`: the last session this trigger created, or a new one when none can continue. `pinned`: the session `run.session_id`. `keyed`: one session for each value of `run.session_key`.',
+          },
+          session_key: {
+            ...NON_BLANK_STRING,
+            description: 'With `keyed`: a template over the payload, such as `"{{ body.chat_id }}"`. A key that renders empty runs `fresh`.',
+          },
+          session_id: { ...NON_BLANK_STRING, description: 'The session to run in. Required with `pinned`.' },
+          model: { type: 'string', description: "`provider/model`. Default: the agent's model." },
+          app: { ...appSlug, description: 'The fire calls this App instead of an agent.' },
+          path: { type: 'string', pattern: '^/', description: 'With `run.app`: the request path. Starts with `/`.' },
+          method: { type: 'string', enum: ['POST', 'GET'], description: 'With `run.app`: the request method.' },
+          payload: { type: 'object', description: 'With `run.app`: the request body.' },
+        },
+      },
+    },
+    additionalProperties: true,
+  };
+}
+
+function triggerSchema(version: 1 | 2): JsonSchemaFragment {
   const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
   return {
     type: 'object',
     required: ['slug', 'type'],
     properties: {
       slug: SLUG_SCHEMA,
-      type: { type: 'string', enum: [...TRIGGER_TYPES] },
+      type: { type: 'string', enum: [...TRIGGER_TYPES], description: 'Required in the flat form: the trigger without `on` and `run`. `type` next to `on` is an error.' },
       name: { type: 'string' },
       // Cross-field: must name a declared agent (or be omitted) — dynamic,
       // left to the imperative validator.
-      agent: { type: 'string', minLength: 1 },
-      agent_name: { type: 'string', minLength: 1 },
+      agent: { ...(version === 2 ? NON_BLANK_STRING : { type: 'string' }), description: 'Flat form of `run.agent`.' },
+      agent_name: { type: 'string' },
       enabled: enabledValueSchema(),
-      session_mode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
-      session_key: { type: 'string' },
+      session_mode: { ...normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']), description: 'Flat form of `run.session`.' },
+      session_key: { type: 'string', description: 'Flat form of `run.session_key`.' },
       sessionKey: { type: 'string' },
-      filter: { type: 'object', additionalProperties: { type: 'string' } },
-      sessionMode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
-      session_id: { type: 'string', minLength: 1 },
-      sessionId: { type: 'string', minLength: 1 },
-      prompt: NON_EMPTY_STRING,
-      prompt_template: NON_EMPTY_STRING,
-      cron: { type: 'string', minLength: 1 },
+      filter: triggerFilterSchema(),
+      sessionMode: normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']),
+      session_id: { type: 'string', description: 'Flat form of `run.session_id`.' },
+      sessionId: { type: 'string' },
+      prompt: { type: 'string', description: 'Flat form of `run.prompt`.' },
+      model: { description: 'Flat form of `run.model`.' },
+      prompt_template: { type: 'string' },
+      cron: { type: 'string', minLength: 1, description: 'Flat form of `on.cron`, with `type: cron`.' },
       schedule: { type: 'string', minLength: 1 },
-      run_at: { type: 'string', minLength: 1 },
+      run_at: { type: 'string', minLength: 1, description: 'Flat form of `on.at`, with `type: cron`.' },
       runAt: { type: 'string', minLength: 1 },
-      timezone: { type: 'string' },
-      secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
+      timezone: { type: 'string', description: 'Flat form of `on.timezone`.' },
+      // `type: cron` only — the misfire bound. Its 60s floor is the imperative
+      // validator's.
+      max_lateness: durationSchema,
+      // Any trigger type: runs started in any 60 minutes (60 when unset) and
+      // in a UTC day (KRTX-1721).
+      max_runs_per_hour: { type: 'integer', minimum: 1 },
+      max_runs_per_day: { type: 'integer', minimum: 1 },
+      // Fresh session mode only: skip holds a fire while the previous run is active (KRTX-1721).
+      overlap: { type: 'string', enum: ['skip', 'allow'] },
+      secret_env: { type: 'string', pattern: ENV_NAME_PATTERN, description: 'Flat form of `on.webhook.secret`, with `type: webhook`.' },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
-      // `type: monitor` only — the repo command the platform supervises 24/7,
-      // its shape, and the two duration bounds. The FLOORS (interval ≥ 30s,
-      // expect_event_within ≥ 5m) are value ranges over a formatted string,
-      // which JSON Schema can't express — the imperative validator owns them
-      // (see json-schema.conformance.test.ts's documented-divergence block).
-      run: { type: 'string', minLength: 1, maxLength: MONITOR_RUN_MAX_LENGTH },
-      mode: { type: 'string', enum: [...MONITOR_MODES] },
-      interval: durationSchema,
-      expect_event_within: durationSchema,
       // `type: event` only — the connector slug, the provider event type id
       // and the provider event config (opaque here; the provider validates it).
-      connector: { type: 'string', minLength: 1 },
+      connector: NON_BLANK_STRING,
       // Optional: the label of one shared account of that connector.
-      account: { type: 'string', minLength: 1 },
+      account: NON_BLANK_STRING,
       // Optional: the event source adapter (default: the connector's provider).
-      source: { type: 'string', minLength: 1 },
-      event: { type: 'string', minLength: 1 },
+      source: NON_BLANK_STRING,
+      event: NON_BLANK_STRING,
       config: { type: 'object' },
+      // `type: app` only — the slug of the App whose events fire the trigger.
+      app: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$', description: 'Flat form of `on.app`, with `type: app`.' },
+      // A fire calls this App instead of running an agent.
+      target: {
+        description: 'Flat form of `run.app`, `run.path`, `run.method` and `run.payload`: `{ app, path, method, payload }`.',
+        type: 'object',
+        required: ['app'],
+        additionalProperties: false,
+        properties: {
+          app: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' },
+          path: { type: 'string', pattern: '^/' },
+          method: { type: 'string', enum: ['POST', 'GET'] },
+          payload: { type: 'object' },
+        },
+      },
+      // `type: cron` only: a fixed period instead of a cron expression or run_at.
+      every: { ...durationSchema, description: 'Flat form of `on.every`, with `type: cron`.' },
     },
     additionalProperties: true,
     allOf: [
-      // A prompt (or its alias) is always required, non-empty.
-      { anyOf: [{ required: ['prompt'] }, { required: ['prompt_template'] }] },
+      {
+        if: {
+          anyOf: [
+            { required: ['session_mode'], properties: { session_mode: normalizedEnumSchema(['pinned']) } },
+            { not: { required: ['session_mode'] }, required: ['sessionMode'], properties: { sessionMode: normalizedEnumSchema(['pinned']) } },
+          ],
+        },
+        then: {
+          if: { required: ['session_id'] },
+          then: { properties: { session_id: NON_BLANK_STRING } },
+          else: { required: ['sessionId'], properties: { sessionId: NON_BLANK_STRING } },
+        },
+      },
+      // A prompt (or its alias) is required, non-empty, unless an App target receives the payload.
+      {
+        if: { not: { required: ['target'] } },
+        then: {
+          if: { required: ['prompt'] },
+          then: { properties: { prompt: NON_BLANK_STRING } },
+          else: { required: ['prompt_template'], properties: { prompt_template: NON_BLANK_STRING } },
+        },
+      },
       {
         if: { properties: { type: { const: 'cron' } } },
         then: {
-          // A recurring `cron`/`schedule`, or a one-off `run_at`/`runAt`.
+          // A recurring `cron`/`schedule` or `every`, or a one-off `run_at`/`runAt`.
           anyOf: [
             { required: ['cron'] },
             { required: ['schedule'] },
+            { required: ['every'] },
             { required: ['run_at'] },
             { required: ['runAt'] },
           ],
@@ -470,25 +724,8 @@ function triggerSchema(): JsonSchemaFragment {
         then: { anyOf: [{ required: ['secret_env'] }, { required: ['secretEnv'] }] },
       },
       {
-        // A monitor names its command and its shape, and carries none of the
-        // cron/webhook wiring (`false` = the key may not appear at all).
-        if: { properties: { type: { const: 'monitor' } } },
-        then: {
-          required: ['run', 'mode'],
-          properties: {
-            cron: false,
-            schedule: false,
-            run_at: false,
-            runAt: false,
-            timezone: false,
-            secret_env: false,
-            secretEnv: false,
-          },
-        },
-      },
-      {
         // An event names its connector + event type and carries none of the
-        // cron/webhook/monitor wiring.
+        // cron/webhook wiring.
         if: { properties: { type: { const: 'event' } } },
         then: {
           required: ['connector', 'event'],
@@ -496,24 +733,29 @@ function triggerSchema(): JsonSchemaFragment {
         },
       },
       {
+        // An app trigger names its App and carries no other type's wiring.
+        if: { properties: { type: { const: 'app' } } },
+        then: {
+          required: ['app'],
+          properties: Object.fromEntries(
+            [...EVENT_FORBIDDEN_KEYS, 'connector', 'account', 'source', 'event', 'config'].map((k) => [k, false]),
+          ),
+        },
+      },
+      {
+        // `app` exists only on an app trigger.
+        if: { properties: { type: { enum: ['cron', 'webhook', 'event'] } }, required: ['type'] },
+        then: { properties: { app: false } },
+      },
+      {
         // The event fields exist only on an event trigger.
-        if: { properties: { type: { enum: ['cron', 'webhook', 'monitor'] } }, required: ['type'] },
+        if: { properties: { type: { enum: ['cron', 'webhook', 'app'] } }, required: ['type'] },
         then: { properties: { connector: false, account: false, source: false, event: false, config: false } },
       },
       {
-        // `interval` is the poll period: required on poll, forbidden on stream.
-        if: {
-          properties: { type: { const: 'monitor' }, mode: { const: 'poll' } },
-          required: ['mode'],
-        },
-        then: { required: ['interval'] },
-      },
-      {
-        if: {
-          properties: { type: { const: 'monitor' }, mode: { const: 'stream' } },
-          required: ['mode'],
-        },
-        then: { properties: { interval: false } },
+        // The misfire bound and `every` exist only on a cron trigger.
+        if: { properties: { type: { enum: ['webhook', 'event', 'app'] } }, required: ['type'] },
+        then: { properties: { max_lateness: false, every: false } },
       },
     ],
   };
@@ -529,7 +771,7 @@ function triggerSchema(): JsonSchemaFragment {
 const RESERVED_SLUG_CONST_CHECKS: JsonSchemaFragment[] = Object.entries(RESERVED_SLUG_PROVIDERS).map(
   ([slug, provider]) => ({
     if: { properties: { slug: { const: slug } } },
-    then: { properties: { provider: { const: provider } } },
+    then: { properties: { provider: normalizedEnumSchema([provider]) } },
   }),
 );
 
@@ -546,38 +788,75 @@ const RESERVED_SLUG_CONST_CHECKS: JsonSchemaFragment[] = Object.entries(RESERVED
  *    tolerates the stray legacy key (warning-level only, so unconstrained
  *    here); v2 forbids it outright (`false` schema — matches the `auth.secret`
  *    forbidden-key pattern below) — see `validateConnectors`. */
+const CONNECTOR_POLICY_LIST_SCHEMA: JsonSchemaFragment = {
+  type: 'array',
+  items: {
+    type: 'object',
+    required: ['match', 'action'],
+    properties: {
+      match: { ...NON_BLANK_STRING, description: "A glob over the connector's tool names, such as `send_*`." },
+      action: { ...normalizedEnumSchema(CONNECTOR_POLICY_ACTIONS), description: 'What a matching call does.' },
+      conditions: {
+        description:
+          "Every condition must hold. Each is `{ arg, match, negate }`: `arg` is a dot path into the call's arguments, `match` is a glob or a `/regex/`, and `negate: true` inverts it.",
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['arg', 'match'],
+          properties: { arg: NON_BLANK_STRING, match: { type: 'string' }, negate: { type: 'boolean' } },
+        },
+      },
+    },
+  },
+};
+
 function connectorSchema(version: 1 | 2): JsonSchemaFragment {
-  const credentialSchema: JsonSchemaFragment = version === 2 ? { const: 'shared' } : {};
+  const credentialSchema: JsonSchemaFragment = version === 2 ? normalizedEnumSchema(['shared']) : {};
   const agentScopeSchema: JsonSchemaFragment | boolean = version === 2 ? false : {};
   return {
     type: 'object',
     required: ['slug', 'provider'],
     properties: {
-      slug: SLUG_SCHEMA,
-      name: NON_EMPTY_STRING,
+      slug: {
+        ...SLUG_SCHEMA,
+        description: `Unique. Lowercase letters, digits, \`-\` and \`_\`, at most 128 characters. ${Object.keys(RESERVED_SLUG_PROVIDERS).map((slug) => `\`${slug}\``).join(', ').replace(/, ([^,]+)$/, ' and $1')} are reserved for the built-in connectors.`,
+      },
+      name: { ...NON_BLANK_STRING, description: 'The label. Default: the slug.' },
+      enabled: { default: true, description: '`false`: the connector is off.' },
       // `computer` is deliberately excluded — synth-only, never hand-authored.
-      provider: { type: 'string', enum: [...CONNECTOR_PROVIDERS] },
-      app: { type: 'string' },
-      url: { type: 'string' },
-      endpoint: { type: 'string' },
-      base_url: { type: 'string' },
+      provider: {
+        ...normalizedEnumSchema(CONNECTOR_PROVIDERS),
+        description: 'How Kortix reaches the app or API. Kortix writes the `channel` entry when you connect a channel.',
+      },
+      app: { type: 'string', description: '`composio` and `pipedream`: the app. Required for them.' },
+      url: { type: 'string', description: '`mcp`: the server URL. Required.' },
+      endpoint: { type: 'string', description: '`graphql`: the endpoint. Required.' },
+      base_url: { type: 'string', description: '`http`: the base URL. Required.' },
       baseUrl: { type: 'string' },
-      transport: { type: 'string', enum: ['http', 'sse'] },
-      spec: { type: 'string' },
-      platform: { type: 'string', enum: [...CHANNEL_PLATFORMS] },
+      transport: { ...normalizedEnumSchema(['http', 'sse']), default: 'http', description: '`mcp` only.' },
+      spec: { type: 'string', description: '`openapi` and `postman`: the spec URL or repository path. Without it the connector does not load.' },
+      platform: normalizedEnumSchema(CHANNEL_PLATFORMS),
       credential: credentialSchema,
       authorization_strategy: {
-        type: 'string',
-        enum: [...CONNECTOR_AUTHORIZATION_STRATEGIES],
+        ...normalizedEnumSchema(CONNECTOR_AUTHORIZATION_STRATEGIES),
         default: 'project',
+        description: "`project`: the connector's accounts belong to the project. `user`: each person connects their own account.",
       },
+      sensitive: { default: false, description: '`true`: a call that no rule matches needs approval, reads included.' },
       agent_scope: agentScopeSchema,
       auth: {
         type: 'object',
+        description: 'How Kortix sends the credential. The credential lives in Kortix, never in this file.',
         required: ['type'],
         properties: {
-          type: { type: 'string', enum: [...CONNECTOR_AUTH_TYPES] },
+          type: {
+            ...normalizedEnumSchema(CONNECTOR_AUTH_TYPES),
+            description: '`oauth1` works on `openapi`, `postman` and `http` only.',
+          },
           secret: false,
+          in: { default: 'header', description: 'Where the credential goes.' },
+          name: { description: 'The header, query or cookie name. Required for `custom` and `api_key`.' },
+          prefix: { description: 'Text before the credential value, such as `Bearer`.' },
         },
         additionalProperties: true,
       },
@@ -589,6 +868,7 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
       // case-insensitively).
       headers: {
         type: 'object',
+        description: `Static request headers, at most ${CONNECTOR_HEADERS_MAX_COUNT}. The values are plain text in Git.`,
         maxProperties: CONNECTOR_HEADERS_MAX_COUNT,
         propertyNames: {
           pattern: CONNECTOR_HEADER_NAME_RE.source,
@@ -600,36 +880,42 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
           pattern: '^[^\\r\\n]*$',
         },
       },
-      policies: {
-        type: 'array',
-        items: {
+      policies: { ...CONNECTOR_POLICY_LIST_SCHEMA, description: 'The base rules: `{ match, action, conditions }`.' },
+      // v1 refuses policy sets (`unsupported_in_v1`): `false`, as for the other v2-only keys.
+      policy_sets: version === 1 ? false : {
+        type: 'object',
+        description:
+          `Set name → \`{ description, policies }\`: a rule set an agent can be given with \`agents.<name>.policy_sets\`. A set name is lowercase letters, digits, \`-\` and \`_\`, at most 64 characters, and not \`${RESERVED_POLICY_SET_NAME}\`. At most ${MAX_POLICY_SETS_PER_CONNECTOR} sets of ${MAX_RULES_PER_POLICY_SET} rules each. Not on \`channel\` connectors.`,
+        maxProperties: MAX_POLICY_SETS_PER_CONNECTOR,
+        propertyNames: { pattern: POLICY_SET_NAME_RE.source, not: { const: RESERVED_POLICY_SET_NAME } },
+        additionalProperties: {
           type: 'object',
-          required: ['match', 'action'],
           properties: {
-            match: NON_EMPTY_STRING,
-            action: { type: 'string', enum: [...CONNECTOR_POLICY_ACTIONS] },
+            description: { type: 'string' },
+            policies: { ...CONNECTOR_POLICY_LIST_SCHEMA, maxItems: MAX_RULES_PER_POLICY_SET },
           },
+          additionalProperties: false,
         },
       },
     },
     additionalProperties: true,
     allOf: [
       ...RESERVED_SLUG_CONST_CHECKS,
-      { if: { properties: { provider: { const: 'pipedream' } } }, then: { required: ['app'] } },
-      { if: { properties: { provider: { const: 'mcp' } } }, then: { required: ['url'] } },
-      { if: { properties: { provider: { const: 'graphql' } } }, then: { required: ['endpoint'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['pipedream']) } }, then: { required: ['app'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['mcp']) } }, then: { required: ['url'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['graphql']) } }, then: { required: ['endpoint'] } },
       {
-        if: { properties: { provider: { const: 'http' } } },
+        if: { properties: { provider: normalizedEnumSchema(['http']) } },
         then: { anyOf: [{ required: ['base_url'] }, { required: ['baseUrl'] }] },
       },
-      { if: { properties: { provider: { const: 'channel' } } }, then: { required: ['platform'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['channel']) } }, then: { required: ['platform'] } },
       // channel connectors authenticate via the platform install token.
       {
         if: {
-          properties: { provider: { const: 'channel' } },
+          properties: { provider: normalizedEnumSchema(['channel']) },
           required: ['auth'],
         },
-        then: { properties: { auth: { properties: { type: { const: 'none' } } } } },
+        then: { properties: { auth: { properties: { type: normalizedEnumSchema(['none']) } } } },
       },
     ],
   };
@@ -641,7 +927,7 @@ function channelSchema(): JsonSchemaFragment {
     type: 'object',
     required: ['platform'],
     properties: {
-      platform: NON_EMPTY_STRING,
+      platform: NON_BLANK_STRING,
       enabled: enabledValueSchema(),
       events: { type: 'array', items: { type: 'string' } },
     },
@@ -668,7 +954,7 @@ function agentEntryV1Schema(): JsonSchemaFragment {
 
 /** `agents.<name>.tools` — which tools the agent may use (`AgentToolsV2`). */
 function agentToolsSchema(): JsonSchemaFragment {
-  const names = { type: 'array', items: NON_EMPTY_STRING };
+  const names = { type: 'array', items: NON_BLANK_STRING };
   return {
     description:
       'Which tools this agent may use: harness tools (bash, read, edit, …), Kortix tools (web_search, memory, show, …) and project tools (top-level `tools`). ' +
@@ -734,14 +1020,19 @@ function agentBlockV2Schema(): JsonSchemaFragment {
       connectors: grantSetSchema(),
       connectors_required: {
         type: 'array',
-        items: NON_EMPTY_STRING,
+        items: NON_BLANK_STRING,
         description: 'Connector slugs that must resolve before the session starts.',
       },
       connectors_personal: {
         type: 'array',
-        items: NON_EMPTY_STRING,
+        items: NON_BLANK_STRING,
         deprecated: true,
         description: 'Deprecated input alias for connectors_required.',
+      },
+      policy_sets: {
+        type: 'object',
+        description: 'Connector slug → the policy set (connectors[].policy_sets) this agent gets on it. Absent: the base rules.',
+        additionalProperties: { type: 'string', pattern: POLICY_SET_NAME_RE.source },
       },
       secrets: grantSetSchema(),
       skills: grantSetSchema(),
@@ -841,7 +1132,7 @@ function appStringMapSchema(): JsonSchemaFragment {
   return {
     type: 'object',
     propertyNames: { pattern: ENV_NAME_PATTERN },
-    additionalProperties: { type: 'string', minLength: 1 },
+    additionalProperties: NON_BLANK_STRING,
   };
 }
 
@@ -930,7 +1221,7 @@ function appBlockV2Schema(): JsonSchemaFragment {
       },
       {
         if: { properties: { type: { const: 'oci_image' } }, required: ['type'] },
-        then: { required: ['image'] },
+        then: { required: ['image'], properties: { image: NON_BLANK_STRING } },
       },
     ],
   };
@@ -939,8 +1230,9 @@ function appBlockV2Schema(): JsonSchemaFragment {
 function appsV2Schema(): JsonSchemaFragment {
   return {
     type: 'object',
+    description: 'App slug → App block.',
     propertyNames: { pattern: SLUG_RE.source },
-    additionalProperties: appBlockV2Schema(),
+    additionalProperties: { ...appBlockV2Schema(), description: "One App's deploy settings. Any other key is an error." },
   };
 }
 
@@ -954,8 +1246,13 @@ function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
     sandbox: sandboxSchema(),
     // `[[sandboxes]]` was renamed — always a hard error, so forbid it.
     sandboxes: false,
-    triggers: { type: 'array', items: triggerSchema() },
-    connectors: { type: 'array', items: connectorSchema(connectorVersion) },
+    // The flat shape (`type: …`) or the `on:` / `run:` shape; `type` is required by one and forbidden by the other.
+    triggers: {
+      type: 'array',
+      description: 'Schedules, webhooks and App events that start agent work.',
+      items: { anyOf: [triggerSchema(connectorVersion), onRunTriggerSchema()] },
+    },
+    connectors: { type: 'array', description: 'Apps and APIs agents can call.', items: connectorSchema(connectorVersion) },
     apps: connectorVersion === 2 ? appsV2Schema() : false,
   };
 }
@@ -1014,8 +1311,8 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
       },
       // Cross-field: must resolve to a declared, enabled agent — dynamic,
       // left to the imperative validator.
-      default_agent: NON_EMPTY_STRING,
-      runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES] },
+      default_agent: NON_BLANK_STRING,
+      runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES], deprecated: true, description: 'Selects nothing: every new session runs pi.' },
       // Per-harness native settings. `pi.packages`: pi packages
       // (https://pi.dev/packages) in pi's own settings format, for every agent.
       harnesses: harnessesSchema('project'),
@@ -1045,21 +1342,31 @@ const REGISTRY_NAME_SCHEMA: JsonSchemaFragment = { type: 'string', pattern: REGI
 const REPO_PATH_PATTERN = String.raw`^(?!-)(?!\.?/)(?!(?:.*/)?\.\.?(?:/|$))[^\s:]+$`;
 
 /** `agents.<name>.<grant>` of registered names (v3). */
-function namedGrantSchema(description: string): JsonSchemaFragment {
-  return { ...grantSetSchema(), description: `${description} "all", "none" (default) or a list of names.` };
+function namedGrantSchema(description: string, grant: JsonSchemaFragment = grantSetSchema()): JsonSchemaFragment {
+  return { ...grant, default: 'none', description };
 }
 
 /** v3 pi package source: an exact npm pin or a repository path, alone or in pi's filter form. */
 function piSourceV3Schema(): JsonSchemaFragment {
   const source = { type: 'string', anyOf: [{ pattern: PI_PACKAGE_NPM_RE.source }, { pattern: REPO_PATH_PATTERN, not: { pattern: '^npm:' } }] };
-  const globs = { type: 'array', items: { type: 'string' } };
+  const globs = (kind: string) => ({
+    type: 'array',
+    items: { type: 'string' },
+    description: `Load only the package's ${kind} files that match these globs. \`[]\` loads none. Default: every one.`,
+  });
   return {
     oneOf: [
       source,
       {
         type: 'object',
         required: ['source'],
-        properties: { source, extensions: globs, skills: globs, prompts: globs, themes: globs },
+        properties: {
+          source: { ...source, description: 'The npm pin or the repository path. Required in the map form.' },
+          extensions: globs('extension'),
+          skills: globs('skill'),
+          prompts: globs('prompt'),
+          themes: globs('theme'),
+        },
         additionalProperties: false,
       },
     ],
@@ -1073,47 +1380,72 @@ function agentBlockV3Schema(): JsonSchemaFragment {
   delete behavior.disable;
   const permission = permissionConfigSchema();
   permission.oneOf[1].properties = { ...permission.oneOf[1].properties, skill: false, task: false };
-  const names = { type: 'array', items: NON_EMPTY_STRING };
+  const names = { type: 'array', items: NON_BLANK_STRING };
   return {
     type: 'object',
     properties: {
       ...behavior,
-      permission: { ...permission, description: 'Tool policy. Omitted: allow. `skill` and `task` belong to `skills` and `subagents`.' },
-      prompt: { type: 'string', minLength: 1, description: 'The system prompt.' },
-      prompt_file: { type: 'string', pattern: AGENT_FILE_PATTERN, description: 'Repository path of a Markdown file that holds the system prompt.' },
-      enabled: { type: 'boolean', description: 'false: no session can start with this agent. Default true.' },
-      codemode: { type: 'string', enum: [...CODEMODE_VALUES], description: 'pi codemode tool: on (default), only, off.' },
+      permission: {
+        ...permission,
+        default: 'allow',
+        description: 'Which tool calls run, ask a person, or never run. `skill` and `task` belong to `skills` and `subagents`.',
+      },
+      prompt: { ...NON_BLANK_STRING, description: 'The system prompt. Set `prompt` or `prompt_file`, not both.' },
+      prompt_file: { type: 'string', pattern: AGENT_FILE_PATTERN, description: 'A repository path to a `.md` file. The whole file is the system prompt.' },
+      enabled: { type: 'boolean', default: true, description: '`false`: no session starts with the agent, and no agent starts it as a subagent.' },
+      codemode: {
+        type: 'string',
+        enum: [...CODEMODE_VALUES],
+        default: 'on',
+        description:
+          "`on`: the model gets every tool plus `codemode`, which runs one JavaScript script that calls the other tools. `only`: `codemode` alone. `off`: no `codemode`. A script's calls follow the agent's `permission`.",
+      },
       tools: {
-        description: 'Tools this agent may use: harness, Kortix and registered tools. all (default), none, a list, or { exclude: [...] }.',
+        default: 'all',
+        description:
+          'The tools the agent may call: built-in tools, Kortix tools and registered tools. A list allows only those. `{ exclude: [bash] }` allows every tool but those.',
         oneOf: [
           { type: 'string', enum: ['all', 'none'] },
           names,
           { type: 'object', required: ['exclude'], properties: { exclude: names }, additionalProperties: false },
         ],
       },
-      skills: namedGrantSchema('Registered and Kortix skills this agent may load.'),
-      subagents: namedGrantSchema('Declared subagents this agent may start.'),
-      commands: namedGrantSchema('Registered slash commands this agent runs.'),
-      extensions: namedGrantSchema('Registered extensions a session of this agent loads.'),
-      connectors: v2.properties.connectors,
-      connectors_required: v2.properties.connectors_required,
-      secrets: v2.properties.secrets,
-      apps: v2.properties.apps,
-      kortix_permissions: v2.properties.kortix_permissions,
+      skills: namedGrantSchema('Registered skills and Kortix skills the agent may load.'),
+      subagents: namedGrantSchema(
+        'Agents this agent may start with the `task` tool: declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent.',
+      ),
+      commands: namedGrantSchema('Registered commands the agent runs.'),
+      extensions: namedGrantSchema('Registered extensions that a session of the agent loads.'),
+      connectors: namedGrantSchema('Connector slugs the agent may call.', v2.properties.connectors),
+      connectors_required: { ...v2.properties.connectors_required, description: 'Connector slugs, a subset of `connectors`. Sessions do not check it.' },
+      policy_sets: {
+        ...v2.properties.policy_sets,
+        description: 'Connector slug → the name of a policy set on that connector. Default: the base rules.',
+      },
+      secrets: namedGrantSchema("Secret names the agent's sandbox receives.", v2.properties.secrets),
+      apps: namedGrantSchema("App slugs the agent may open when the App's access is restricted or private.", v2.properties.apps),
+      kortix_permissions: namedGrantSchema(
+        'Project permissions (`project.*`) the agent holds, whoever starts the session. `kortix validate --scopes` prints them. An account permission is an error.',
+        v2.properties.kortix_permissions,
+      ),
       workspace: {
-        description: 'What new sessions of this agent get in /workspace.',
+        description: 'What new sessions of this agent get in /workspace. Any other key under `workspace` is an error.',
         type: 'object',
         properties: {
           project_repository: {
             type: 'boolean',
             default: false,
-            description: 'Check out the project repository and allow repository access. Defaults to false: an agent that reads or changes the repository sets true.',
+            description:
+              '`true`: new sessions check out the project repository in `/workspace`, on their own session branch. `false`: no checkout, and repository calls answer `403` `session_repository_access_denied`. Project tools still load.',
           },
         },
         additionalProperties: false,
       },
-      sandbox: v2.properties.sandbox,
-      network_egress: v2.properties.network_egress,
+      sandbox: { ...v2.properties.sandbox, description: 'A template slug, or `default` for the platform image. Default: `sandbox.default`.' },
+      network_egress: {
+        ...v2.properties.network_egress,
+        description: 'Only `{ version: 1, default: deny, rules: [] }`. It validates with a warning: Kortix does not enforce it.',
+      },
     },
     additionalProperties: false,
     not: { required: ['prompt', 'prompt_file'] },
@@ -1138,33 +1470,72 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
     if: { not: { required: ['imports'] } },
     then: { required: ['agents'] },
     properties: {
-      kortix_version: { const: 3 },
-      imports: { type: 'array', items: { type: 'string', pattern: IMPORT_PATH_PATTERN } },
-      default_agent: NON_EMPTY_STRING,
-      runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES] },
+      kortix_version: { const: 3, description: '`3`. A higher version is an error.' },
+      imports: {
+        type: 'array',
+        description: 'YAML files or folders whose collections merge into this file.',
+        items: { type: 'string', pattern: IMPORT_PATH_PATTERN },
+      },
+      default_agent: {
+        ...NON_BLANK_STRING,
+        description: 'The agent a session or trigger runs when it names none. A declared agent that is enabled and whose `mode` is `primary` or `all`.',
+      },
+      runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES], deprecated: true, description: 'Selects nothing: every new session runs pi.' },
       ...shared,
       skills: {
         type: ['object', 'null'],
-        description: 'Skills: name → repository folder that holds SKILL.md, named after the skill. Kortix skills (kortix-*) are always registered.',
-        propertyNames: { ...REGISTRY_NAME_SCHEMA, not: { pattern: `^${KORTIX_SKILL_PREFIX}` } },
-        additionalProperties: { type: 'string', pattern: REPO_PATH_PATTERN },
+        description: 'Skill name → repository folder. The Kortix skills (`kortix-*`) are always registered. Default: the Kortix skills.',
+        propertyNames: {
+          ...REGISTRY_NAME_SCHEMA,
+          not: { pattern: `^${KORTIX_SKILL_PREFIX}` },
+          description: `Lowercase letters and digits in words joined by \`-\`, at most ${REGISTRY_NAME_MAX} characters. A name that starts with \`${KORTIX_SKILL_PREFIX}\` is an error.`,
+        },
+        additionalProperties: {
+          type: 'string',
+          pattern: REPO_PATH_PATTERN,
+          description:
+            "The repository folder that holds the skill's `SKILL.md`. The folder's last segment is the name: `skills/pdf` for `pdf`. The `SKILL.md` frontmatter has `name: <name>`.",
+        },
       },
       tools: {
         type: ['object', 'null'],
-        description: 'Tools: name → repository .ts/.js module. Kortix tools are always registered; a project tool with a Kortix tool name replaces it.',
-        propertyNames: { anyOf: [{ pattern: TOOL_NAME_RE.source }, { enum: [...KORTIX_TOOL_NAMES] }], not: { enum: [...HARNESS_TOOL_NAMES] } },
-        additionalProperties: { type: 'string', pattern: TOOL_FILE_PATTERN },
+        description: 'Tool name → repository module. The Kortix tools are always registered. Default: the Kortix tools.',
+        propertyNames: {
+          anyOf: [{ pattern: TOOL_NAME_RE.source }, { enum: [...KORTIX_TOOL_NAMES] }],
+          not: { enum: [...HARNESS_TOOL_NAMES] },
+          description:
+            "snake_case: a lowercase letter, then letters, digits or `_`, at most 64 characters. A built-in tool name or a `pty_` name is an error. A Kortix tool's name replaces that Kortix tool. `kortix tools eject <name>` copies a Kortix tool into `tools/<name>.ts` and writes its entry.",
+        },
+        additionalProperties: {
+          type: 'string',
+          pattern: TOOL_FILE_PATTERN,
+          description:
+            'A repository path to a `.ts`, `.js`, `.mts`, `.mjs`, `.cts` or `.cjs` module. The module default-exports `{ description, parameters, execute(args, context) }`. `parameters` is a JSON Schema object. `execute` returns a string or a JSON value.',
+        },
       },
       commands: {
         type: ['object', 'null'],
-        description: 'Slash commands: name → { description, prompt | prompt_file }. $ARGUMENTS, $1, $2 … take the arguments.',
-        propertyNames: REGISTRY_NAME_SCHEMA,
+        description: 'Slash command name → command.',
+        propertyNames: {
+          ...REGISTRY_NAME_SCHEMA,
+          description: `Lowercase letters and digits in words joined by \`-\`, at most ${REGISTRY_NAME_MAX} characters. In the \`/\` menu, a command hides a skill with the same name.`,
+        },
         additionalProperties: {
           type: 'object',
+          description:
+            'One slash command. An agent runs it only when its `commands` grant names it. Any other agent gets `403` `{"error": "command_not_enabled", "command": "<name>", "agent": "<agent>"}`.',
           properties: {
-            description: { type: 'string' },
-            prompt: { type: 'string', minLength: 1 },
-            prompt_file: { type: 'string', pattern: AGENT_FILE_PATTERN },
+            description: { type: 'string', description: 'Shown in the `/` menu.' },
+            prompt: {
+              ...NON_BLANK_STRING,
+              description:
+                'The template. `$ARGUMENTS` takes the text after the command. `$1`, `$2` and on take the words in order, and the highest one takes the rest. A template with neither gets the arguments appended. Set `prompt` or `prompt_file`, not both.',
+            },
+            prompt_file: {
+              type: 'string',
+              pattern: AGENT_FILE_PATTERN,
+              description: 'A repository path to a `.md` file. The whole file is the template, frontmatter included.',
+            },
           },
           additionalProperties: false,
           oneOf: [{ required: ['prompt'] }, { required: ['prompt_file'] }],
@@ -1172,22 +1543,67 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
       },
       extensions: {
         type: ['object', 'null'],
-        description: 'Extensions: name → one implementation per harness. opencode: a repository plugin module. pi: an exact npm pin or a repository path.',
-        propertyNames: REGISTRY_NAME_SCHEMA,
+        description: 'Extension name → package.',
+        propertyNames: {
+          ...REGISTRY_NAME_SCHEMA,
+          description: `Lowercase letters and digits in words joined by \`-\`, at most ${REGISTRY_NAME_MAX} characters.`,
+        },
         additionalProperties: {
           type: 'object',
+          description: 'One package: runtime extensions, skills, prompts or themes for the agent runtime.',
           properties: {
-            opencode: { type: 'string', pattern: TOOL_FILE_PATTERN },
-            pi: piSourceV3Schema(),
+            opencode: { type: 'string', pattern: TOOL_FILE_PATTERN, deprecated: true, description: 'Selects nothing for new sessions: every new session runs pi.' },
+            pi: {
+              ...piSourceV3Schema(),
+              description:
+                '`npm:<package>@<x.y.z>` with an exact version, or a repository path such as `extensions/audit.ts` (no leading `./`), or `{ source, extensions, skills, prompts, themes }`. A version range is an error. Set it on every extension: one without it loads in no new session.',
+            },
           },
           additionalProperties: false,
           minProperties: 1,
         },
       },
-      policy: { type: 'object' },
-      policies: { type: 'array' },
+      policy: {
+        type: 'object',
+        description: 'The decision for a connector call that no rule matches.',
+        properties: {
+          default_mode: {
+            default: 'allow_all',
+            description: '`allow_all`: the call runs. `risk`: a read runs, and a write or a delete waits for approval.',
+          },
+        },
+      },
+      policies: {
+        type: 'array',
+        description: 'Connector rules for the whole project. They run before every policy set and base rule.',
+        items: {
+          properties: {
+            match: { description: 'Required. A glob over `<connector-slug>.<tool>`, such as `gmail.send_*` or `*.delete*`. Case-insensitive.' },
+            action: { description: 'Required. What a matching call does.' },
+            conditions: {
+              description:
+                "Every condition must hold. Each is `{ arg, match, negate }`: `arg` is a dot path into the call's arguments, `match` is a glob or a `/regex/`, and `negate: true` inverts it.",
+            },
+          },
+        },
+      },
+      approvals: {
+        type: 'object',
+        description: 'How long a held connector call waits for a decision.',
+        properties: {
+          ttl: {
+            type: 'string',
+            pattern: '^[0-9]+[mhd]$',
+            default: '24h',
+            description: 'An integer and `m`, `h` or `d`, such as `30m`, `4h` or `7d`. Kortix clamps it to 5 minutes through 30 days.',
+          },
+        },
+        additionalProperties: false,
+      },
       agents: {
         type: 'object',
+        description:
+          'Agent name → agent block. At least 1 agent, here or in an imported file. A name is lowercase letters, digits, `-` and `_`, at most 128 characters.',
         minProperties: 1,
         propertyNames: { pattern: SLUG_RE.source },
         additionalProperties: agentBlockV3Schema(),

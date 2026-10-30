@@ -1,216 +1,179 @@
-import { MANAGED_MODELS as BUNDLED_MANAGED_MODELS, type ManagedModel } from '@kortix/llm-catalog';
-import { z } from '@hono/zod-openapi';
+import type { CatalogReasoningOption } from '@kortix/llm-catalog';
 import { config } from '../../config';
+import { logger } from '../../lib/logger';
 
-const managedModelSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  upstreamModelId: z.string().min(1),
-  transport: z.literal('openrouter'),
-  providerBrand: z.string().min(1).optional(),
-  pricingRef: z.string().min(1),
-  pricing: z
-    .object({
-      inputPerMillion: z.number().nonnegative(),
-      outputPerMillion: z.number().nonnegative(),
-      cachedInputPerMillion: z.number().nonnegative().optional(),
-      cacheWritePerMillion: z.number().nonnegative().optional(),
-      contextOver200k: z
-        .object({
-          inputPerMillion: z.number().nonnegative(),
-          outputPerMillion: z.number().nonnegative(),
-          cachedInputPerMillion: z.number().nonnegative().optional(),
-          cacheWritePerMillion: z.number().nonnegative().optional(),
-          contextThreshold: z.number().int().positive(),
-        })
-        .optional(),
-    })
-    .optional(),
-  tier: z.enum(['flagship', 'balanced', 'fast']),
-  vision: z.boolean(),
-  limit: z.object({
-    context: z.number().int().positive(),
-    output: z.number().int().positive(),
-  }),
-  morphModelId: z.string().min(1).optional(),
-  morphPricing: z.object({
-    inputPerMillion: z.number().nonnegative(),
-    outputPerMillion: z.number().nonnegative(),
-    cachedInputPerMillion: z.number().nonnegative().optional(),
-  }).optional(),
-  // `only` is required: OpenRouter may fall back only inside this endpoint pool.
-  openrouterProvider: z.object({
-    only: z.array(z.string().min(1)).min(1),
-    allow_fallbacks: z.boolean(),
-    zdr: z.literal(true),
-    data_collection: z.literal('deny'),
-    max_price: z
-      .object({ prompt: z.number().nonnegative(), completion: z.number().nonnegative() })
-      .optional(),
-  }),
-}).refine((model) => Boolean(model.morphModelId) === Boolean(model.morphPricing), {
-  message: 'morphModelId and morphPricing must be set together',
-});
+/**
+ * A Kortix managed model: one model Platinum Inference offers, paid from
+ * Kortix credits. Platinum's `GET /v1/inference/models` is the only source;
+ * nothing here lists or prices a model.
+ */
+export interface ManagedModel {
+  id: string;
+  name: string;
+  // Platinum's price per 1M tokens. The gateway bills Platinum's `usage.cost`;
+  // this applies only when a response carries none.
+  pricing: { inputPerMillion: number; outputPerMillion: number; cachedInputPerMillion?: number };
+  // Image input. Also sets the served `modalities`: OpenCode drops image parts
+  // for a model without `image` input.
+  vision: boolean;
+  // `reasoning_effort` values Platinum accepts; the thinking control's variants.
+  reasoningOptions?: CatalogReasoningOption[];
+  limit: { context: number; output: number };
+}
 
-export function parseManagedModels(
-  raw: string | undefined,
-  fallback: readonly ManagedModel[] = BUNDLED_MANAGED_MODELS,
-): ManagedModel[] {
-  if (!raw) return [...fallback];
+/** One entry of Platinum's `/models` list, as far as this file reads it. */
+type PlatinumModel = {
+  id?: unknown; name?: unknown; owned_by?: unknown;
+  context_length?: unknown; max_output_tokens?: unknown;
+  pricing?: { input?: unknown; cached_input?: unknown; output?: unknown };
+  modalities?: { input?: unknown };
+  reasoning_efforts?: unknown;
+};
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    throw new Error(
-      `LLM_GATEWAY_MANAGED_MODELS must be valid JSON: ${err instanceof Error ? err.message : String(err)}`,
-    );
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined);
+
+/** Platinum's named models → the lineup, in Platinum's order. Entries without a price are skipped. */
+export function managedModelsFromPlatinum(body: unknown): ManagedModel[] {
+  const data = (body as { data?: unknown })?.data;
+  if (!Array.isArray(data)) throw new Error('Platinum /models answered without a data list');
+  const out: ManagedModel[] = [];
+  for (const m of data as PlatinumModel[]) {
+    const input = num(m.pricing?.input);
+    const output = num(m.pricing?.output);
+    const context = num(m.context_length);
+    const maxOutput = num(m.max_output_tokens);
+    if (m.owned_by !== 'platinum' || typeof m.id !== 'string' || !m.id || input === undefined || output === undefined
+      || !context || !maxOutput) continue;
+    const cached = num(m.pricing?.cached_input);
+    const efforts = Array.isArray(m.reasoning_efforts) ? m.reasoning_efforts.filter((e): e is string => typeof e === 'string') : [];
+    out.push({
+      id: m.id,
+      name: typeof m.name === 'string' && m.name ? m.name : m.id,
+      pricing: { inputPerMillion: input, outputPerMillion: output, ...(cached !== undefined ? { cachedInputPerMillion: cached } : {}) },
+      vision: Array.isArray(m.modalities?.input) && m.modalities.input.includes('image'),
+      ...(efforts.length ? { reasoningOptions: [{ type: 'effort', values: efforts }] as CatalogReasoningOption[] } : {}),
+      limit: { context, output: maxOutput },
+    });
   }
-  const models = z.array(managedModelSchema).parse(parsed) as ManagedModel[];
-  const ids = new Set<string>();
-  for (const model of models) {
-    if (ids.has(model.id)) {
-      throw new Error(`LLM_GATEWAY_MANAGED_MODELS contains duplicate model id "${model.id}"`);
-    }
-    ids.add(model.id);
-  }
-  return models;
+  return out;
+}
+
+let lineup: readonly ManagedModel[] = [];
+// replica-local: every replica loads the same Platinum list and refreshes it
+// every 5 min (workers/managed-lineup-worker.ts); a copy is at most that old.
+let byId = new Map<string, ManagedModel>();
+let revision = 0;
+
+function setLineup(models: readonly ManagedModel[]): void {
+  lineup = models;
+  byId = new Map(models.map((model) => [model.id, model] as const));
+  revision++;
 }
 
 /**
- * Kortix-credit managed models. This registry is empty
- * when the cloud managed-provider flag is off. The picker, catalog, and gateway
- * all use this registry, so self-host users never receive the shared key.
+ * The managed lineup: what Platinum Inference offers right now. Empty when the
+ * managed provider is off (self-host) or Platinum was never reached.
  */
-export const RUNTIME_MANAGED_MODELS: readonly ManagedModel[] =
-  config.KORTIX_MANAGED_PROVIDER_ENABLED
-    ? parseManagedModels(config.LLM_GATEWAY_MANAGED_MODELS)
-    : [];
+export function managedLineup(): readonly ManagedModel[] {
+  return lineup;
+}
 
-const MANAGED_BY_ID = new Map(RUNTIME_MANAGED_MODELS.map((model) => [model.id, model] as const));
+/** Bumps on every lineup change, so derived caches know to rebuild. */
+export function managedLineupRevision(): number {
+  return revision;
+}
 
 export function getRuntimeManagedModel(id: string): ManagedModel | undefined {
-  return MANAGED_BY_ID.get(id);
+  return byId.get(id);
 }
 
 export function isRuntimeManagedModelId(id: string): boolean {
-  return MANAGED_BY_ID.has(id);
+  return byId.has(id);
 }
 
-// The BUNDLED catalog (never gated by KORTIX_MANAGED_PROVIDER_ENABLED) — used
-// only to answer "is this id a REAL managed-model id at all", regardless of
-// whether the managed provider happens to be enabled on this deployment.
-// RUNTIME_MANAGED_MODELS/MANAGED_BY_ID above are empty whenever the flag is
-// off, so they can't tell "self-host operator hasn't turned this on" apart
-// from "no such model exists anywhere" — this can, which lets gateway error
-// messaging say "this model needs the managed provider, which is off here"
-// instead of the misleading "no such model".
-const BUNDLED_BY_ID = new Map(BUNDLED_MANAGED_MODELS.map((model) => [model.id, model] as const));
+export function __setManagedLineupForTest(models: readonly ManagedModel[]): void {
+  setLineup(models);
+}
+
+type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+const LOAD_TIMEOUT_MS = 10_000;
+
+/** HTTP status of a failed Platinum `/models` read, so a caller can tell a bad key from an outage. */
+export class PlatinumModelsError extends Error {
+  constructor(readonly status: number | null, message: string) { super(message); }
+}
+
+/**
+ * Platinum's named models for one key: `GET {baseUrl}/models`. The one reader
+ * for both the managed lineup (the deployment's key) and the Platinum BYOK
+ * provider (a project's own key, platinum-byok-models.ts).
+ */
+export async function fetchPlatinumModels(baseUrl: string, apiKey: string, fetchImpl: FetchLike = fetch): Promise<ManagedModel[]> {
+  let res: Response;
+  try {
+    res = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/models`, {
+      headers: { authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(LOAD_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new PlatinumModelsError(null, err instanceof Error ? err.message : String(err));
+  }
+  if (!res.ok) throw new PlatinumModelsError(res.status, `HTTP ${res.status}`);
+  return managedModelsFromPlatinum(await res.json());
+}
+
+/**
+ * Reads Platinum's `/models` into the lineup. On any failure the last good
+ * lineup stays and the error is logged; returns whether the read succeeded.
+ */
+export async function loadManagedLineup(fetchImpl: FetchLike = fetch): Promise<boolean> {
+  if (!config.KORTIX_MANAGED_PROVIDER_ENABLED || !config.PLATINUM_INFERENCE_API_KEY) {
+    if (lineup.length) setLineup([]);
+    return true;
+  }
+  try {
+    const models = await fetchPlatinumModels(config.PLATINUM_INFERENCE_URL, config.PLATINUM_INFERENCE_API_KEY, fetchImpl);
+    const changed = JSON.stringify(models) !== JSON.stringify(lineup);
+    if (changed) {
+      setLineup(models);
+      logger.info('[managed-lineup] loaded from Platinum Inference', { models: models.map((m) => m.id) });
+    }
+    return true;
+  } catch (err) {
+    logger.warn('[managed-lineup] Platinum /models failed; keeping the last lineup', {
+      error: err instanceof Error ? err.message : String(err), kept: lineup.length,
+    });
+    return false;
+  }
+}
+
 const RETIRED_MANAGED_MODEL_IDS = new Set([
   'glm-5.2', 'grok-4.6', 'deepseek-v4-flash', 'deepseek-v4-pro-0813',
   'muse-spark-1.2', 'minimax-m3', 'gpt-5.6-luna', 'gpt-6-astra',
   'morph-glm53-744b', 'morph-dsv4flash', 'morph-kimik3',
   'morph-kimik3-fast', 'morph-dsv41flash',
   'deepseek-v4-flash-0731', 'kimi-k3-fast',
+  // 2026-10-19: Kimi K3 left the managed lineup; its sessions move to the default.
+  'kimi-k3',
 ]);
 
-// Exported (read-only) so a test can iterate every declared alias and assert
-// its FULLY RESOLVED chain lands on something still current — the guard
-// against the exact bug this map just had: an alias whose one-hop target got
-// retired out from under it and nobody revisited the alias.
-export const LEGACY_MANAGED_IDS: Readonly<Record<string, string>> = {
-  'morph-kimik3': 'kimi-k3',
-  'morph-kimik3-fast': 'kimi-k3-fast',
-  'morph-dsv41flash': 'deepseek-v4.1-flash',
-  'morph-dsv4flash': 'deepseek-v4-flash-0731',
-  'deepseek-v4-flash': 'deepseek-v4-flash-0731',
-  // deepseek-v4-flash-0731 was itself retired 2026-09-28 in favor of
-  // deepseek-v4.1-flash — see RETIRED_MANAGED_MODEL_IDS above.
-  'deepseek-v4-flash-0731': 'deepseek-v4.1-flash',
-  // kimi-k3-fast (the ONE-HOP target of morph-kimik3-fast above) is itself
-  // retired — the fast tier merged into kimi-k3. Found by the chain-
-  // resolution guard test below, 2026-09-28, the same bug class as
-  // deepseek-v4-flash-0731 above: a target retired out from under its alias.
-  'kimi-k3-fast': 'kimi-k3',
-};
-
-// Bounds chain resolution below. This map is hand-maintained: retiring a
-// model whose id is itself the TARGET of an older alias (deepseek-v4-flash-
-// 0731 was both — see the two entries above it) creates a two-hop chain, and
-// nothing stops a third. A bound plus cycle detection means a data bug here
-// degrades to "stop resolving" rather than hanging a turn.
-const CANONICAL_CHAIN_MAX_HOPS = 8;
-
 /**
- * Follows `table` to its end, not just one hop — a retired id can itself be
- * superseded (deepseek-v4-flash-0731 was the declared successor for
- * morph-dsv4flash/deepseek-v4-flash, then was itself retired in favor of
- * deepseek-v4.1-flash; a single lookup would leave those two aliases pointing
- * at a now-also-retired id). Stops at the first id that is not itself a key,
- * or after `maxHops` hops, or the instant a hop would repeat an id already
- * seen (a cycle) — whichever comes first. `table` is injected so this stays
- * pure and testable against a synthetic chain/cycle without mutating the real
- * (hand-maintained) map. The caller-side retirement checks (resolve-
- * candidates.ts, session-model-repoint.ts) still treat a not-fully-resolved
- * retired id correctly, so stopping early here is safe: it never fabricates a
- * wrong answer, only leaves one still-retired.
+ * A stored managed id as the gateway should serve it: a retired id becomes the
+ * first model Platinum lists (its preferred default); anything else is itself.
+ * No successor is hardcoded: the lineup decides.
  */
-export function resolveLegacyIdChain(
-  id: string,
-  table: Readonly<Record<string, string>>,
-  maxHops: number = CANONICAL_CHAIN_MAX_HOPS,
-): string {
-  let current = id;
-  const seen = new Set([current]);
-  for (let hop = 0; hop < maxHops; hop++) {
-    const next = table[current];
-    if (next === undefined || seen.has(next)) return current;
-    seen.add(next);
-    current = next;
-  }
-  return current;
-}
-
 export function canonicalManagedModelId(id: string): string {
-  return resolveLegacyIdChain(id, LEGACY_MANAGED_IDS);
+  return RETIRED_MANAGED_MODEL_IDS.has(id) ? (lineup[0]?.id ?? id) : id;
 }
 
+/** In the current lineup, or a retired id stored sessions may still carry. */
 export function isKnownManagedModelId(id: string): boolean {
-  return BUNDLED_BY_ID.has(id) || RETIRED_MANAGED_MODEL_IDS.has(id);
+  return byId.has(id) || RETIRED_MANAGED_MODEL_IDS.has(id);
 }
 
-/** Explicitly retired — distinct from merely "not currently servable" (off
- *  deployment / missing credential), which stays a bundled-but-unserved id. */
+/** Explicitly retired — distinct from merely "not currently servable". */
 export function isRetiredManagedModelId(id: string): boolean {
   return RETIRED_MANAGED_MODEL_IDS.has(id);
-}
-
-/**
- * The declared successor for a retired id, ONLY when that successor is
- * itself in `served` — never a dead pin swapped for another dead pin.
- * `null` when the id isn't retired, has no declared successor
- * (LEGACY_MANAGED_IDS), or the successor isn't servable here either.
- */
-export function retiredManagedModelReplacement(id: string, served: readonly ManagedModel[]): string | null {
-  if (!isRetiredManagedModelId(id)) return null;
-  const successor = canonicalManagedModelId(id);
-  return successor !== id && served.some((model) => model.id === successor) ? successor : null;
-}
-
-/**
- * The managed lineup this deployment can actually SERVE: every configured model
- * whose transport credential is present. `hasTransportCredential` is injected so
- * the rule stays pure and testable without config.
- *
- * `RUNTIME_MANAGED_MODELS` answers "which models did the operator configure",
- * which is not the same question. Offering a configured-but-uncredentialed model
- * can make the picker advertise a model while every selection of it fails.
- */
-export function servedManagedModels(
-  models: readonly ManagedModel[],
-  hasTransportCredential: (model: ManagedModel) => boolean,
-): ManagedModel[] {
-  return models.filter(hasTransportCredential);
 }
 
 /** Strip the opencode `kortix/` namespace off a managed ref. */
@@ -221,31 +184,19 @@ function bareManagedId(ref: string): string {
 /**
  * The platform default model, guaranteed reachable.
  *
- * `LLM_GATEWAY_DEFAULT_MODEL` is what an operator asked for; it is not
- * necessarily servable. When the configured default is a managed id this
- * deployment cannot reach because its transport credential is absent, every
- * `auto` request and every "use the default" pick
- * dies with a resolution error the user cannot act on. Degrade to a served
- * managed model instead — flagship first, then catalog order.
- *
- * A BYOK ref (`provider/model`) is returned untouched: it resolves from a
- * PROJECT key, so a managed transport says nothing about whether it works, and
- * `degradeUnservableDefault` already probes that case per-project.
+ * `configured` (`LLM_GATEWAY_DEFAULT_MODEL`) is what an operator asked for.
+ * Empty, or a managed id Platinum does not serve now: the first served model
+ * (Platinum lists in order of preference). A BYOK ref (`provider/model`) is
+ * returned untouched: it resolves from a project key, and
+ * `degradeUnservableDefault` probes that case per project.
  */
 export function resolvePlatformDefaultModelId(
   configured: string,
   served: readonly ManagedModel[],
 ): string {
   const trimmed = configured.trim();
-  if (!trimmed) return trimmed;
+  if (trimmed.includes('/') && !trimmed.startsWith('kortix/')) return trimmed;
   const bare = bareManagedId(trimmed);
-  const alias = canonicalManagedModelId(bare);
-  if (alias !== bare && served.some((model) => model.id === alias)) return alias;
-  // Not a managed id at all → a BYOK ref; leave it alone.
-  if (!isKnownManagedModelId(bare)) return trimmed;
-  if (served.some((model) => model.id === bare)) return trimmed;
-  const replacement = served.find((model) => model.tier === 'flagship') ?? served[0];
-  return replacement ? replacement.id : trimmed;
+  if (bare && served.some((model) => model.id === bare)) return trimmed;
+  return served[0]?.id ?? trimmed;
 }
-
-export type { ManagedModel };

@@ -4,7 +4,6 @@
  * Session actions use the menu registry directly and must not be added here.
  */
 export const LEGACY_PALETTE_HIDDEN = new Set([
-  'workspace',
   'dashboard',
   'scheduled-tasks',
   'files',
@@ -12,7 +11,6 @@ export const LEGACY_PALETTE_HIDDEN = new Set([
   'running-services-cmd',
   'agent-browser-cmd',
   'internal-browser-cmd',
-  'desktop-cmd',
   'templates',
   'changelog',
   'credits-explained',

@@ -27,10 +27,9 @@ import { Platform, Text as RNText, useWindowDimensions, View } from 'react-nativ
 
 import { classifyInlineCode, splitInlineCode } from '@/lib/markdown/inline-code';
 import { INLINE_CODE, inlineCodeAnchor, RADIUS, TYPE } from '@/lib/markdown/markdown-layout';
-import { isSafeExternalLink } from '@/lib/markdown/safe-link';
 
 import { markdownPalette, MONO_FONT, type MarkdownPalette } from './markdown-theme';
-import { openLink } from '@/lib/utils/open-link';
+import { openExternalLink } from '@/lib/utils/open-link';
 
 export interface MarkdownActions {
   /** Open a file path mentioned in a message (e.g. in the session file viewer). */
@@ -42,12 +41,12 @@ const MarkdownActionsContext = createContext<MarkdownActions>({});
 /** Lets a screen make file paths in rendered markdown tappable. */
 export const MarkdownActionsProvider = MarkdownActionsContext.Provider;
 
-export function useMarkdownActions(): MarkdownActions {
+function useMarkdownActions(): MarkdownActions {
   return useContext(MarkdownActionsContext);
 }
 
 /** Text style of the line the chip sits in. */
-export interface InlineCodeLine {
+interface InlineCodeLine {
   fontSize?: number;
   lineHeight?: number;
 }
@@ -124,10 +123,9 @@ export function InlineCode({
   const kind = classifyInlineCode(text);
 
   let onPress: (() => void) | undefined;
-  if (!insideLink && kind === 'url' && isSafeExternalLink(text)) {
-    onPress = () => {
-      openLink(text).catch(() => {});
-    };
+  if (!insideLink && kind === 'url') {
+    // The shared guard: http(s)/mailto only, a failed open never rejects.
+    onPress = () => openExternalLink(text);
   } else if (!insideLink && kind === 'path' && onOpenFile) {
     onPress = () => onOpenFile(text);
   }

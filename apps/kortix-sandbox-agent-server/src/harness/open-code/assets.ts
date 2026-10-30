@@ -36,7 +36,10 @@ const execFileAsync = promisify(execFile)
 const OPENCODE_INSTALL_TIMEOUT_MS = 600_000
 const OPENCODE_HEALTH_TIMEOUT_MS = 5_000
 
-/** Live lifecycle accessors are re-read after verified reload and warm adoption. */
+/**
+ * Live lifecycle accessors are re-read after verified reload and warm adoption.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export interface OpenCodeAssetsRuntime {
   getInternalUrl(): string
   workspace(): string
@@ -49,7 +52,10 @@ export interface OpenCodeAssetsRuntime {
   getState?(): 'starting' | 'ok' | 'down'
 }
 
-/** Native installer seams stay with the implementation that understands them. */
+/**
+ * Native installer seams stay with the implementation that understands them.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export interface OpenCodeAssetsOptions {
   installOpencode?: (version: string) => Promise<void>
   readOpencodeVersion?: (baseUrl: string) => Promise<string | null>
@@ -89,7 +95,9 @@ const OPENCODE_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/
 const OPENCODE_PLUGIN_PACKAGE = '@opencode-ai/plugin'
 
 /** The version opencode itself reports. `null` when it cannot be read — which
- *  is NOT the same as "mismatched", and never converges anything. */
+ *  is NOT the same as "mismatched", and never converges anything.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function readOpencodeVersion(baseUrl: string): Promise<string | null> {
   try {
     const res = await fetch(`${baseUrl}/global/health`, {
@@ -112,14 +120,20 @@ export async function readOpencodeVersion(baseUrl: string): Promise<string | nul
  * installer here would produce a second, subtly different runtime that only
  * ever exists on updated boxes, which is the hardest kind of drift to debug.
  */
-/** The exact global install the image performs (dockerfile-layer.ts), or its pnpm < 10 form. */
+/**
+ * The exact global install the image performs (dockerfile-layer.ts), or its pnpm < 10 form.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function pnpmAddOpencodeArgs(version: string, opts: { allowBuild: boolean }): string[] {
   return opts.allowBuild
     ? ['add', '-g', '--allow-build=opencode-ai', `opencode-ai@${version}`]
     : ['add', '-g', `opencode-ai@${version}`]
 }
 
-/** pnpm 8/9 answer `--allow-build` with "ERROR  Unknown option: 'allow-build'". */
+/**
+ * pnpm 8/9 answer `--allow-build` with "ERROR  Unknown option: 'allow-build'".
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function isUnknownAllowBuildOption(error: unknown): boolean {
   const e = error as {
     message?: unknown
@@ -130,12 +144,14 @@ export function isUnknownAllowBuildOption(error: unknown): boolean {
   return /unknown option/i.test(text) && /allow-build/.test(text)
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface InstallOpencodeVersionOptions {
   installPackage?: (version: string) => Promise<void>
   capture?: CaptureCommand
   currentLinkPath?: string
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function installOpencodeVersion(
   version: string,
   options: InstallOpencodeVersionOptions = {},
@@ -489,7 +505,10 @@ async function bakedOpencodeVersion(path: string): Promise<string | undefined> {
   }
 }
 
-/** Create the same maintenance operations with or without a live lifecycle. */
+/**
+ * Create the same maintenance operations with or without a live lifecycle.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function createOpenCodeAssetsService(
   runtime?: OpenCodeAssetsRuntime,
   options: OpenCodeAssetsOptions = {},

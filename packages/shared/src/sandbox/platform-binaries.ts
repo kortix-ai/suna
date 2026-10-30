@@ -48,7 +48,10 @@
  */
 export const SANDBOX_CLI_OWNERSHIP_COMMAND = 'chown kortix:kortix /usr/local/bin';
 
-/** Where every `opencode` invocation reads its global config. */
+/**
+ * Where every `opencode` invocation reads its global config.
+ * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export const SANDBOX_OPENCODE_GLOBAL_CONFIG_PATH =
   '/home/kortix/.config/opencode/opencode.json';
 
@@ -74,6 +77,7 @@ export const SANDBOX_OPENCODE_GLOBAL_CONFIG_PATH =
  * root-owning it buys no boundary, and a writable path avoids inventing a new
  * EACCES for anything opencode may want to write here. Runs as root (it must
  * create the directory as `kortix`), single line, no heredoc.
+ * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
  */
 export const SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND =
   // `mkdir -p`, not `install -d -m 0755`: /home/kortix/.config already exists

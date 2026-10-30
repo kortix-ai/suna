@@ -144,7 +144,6 @@ describe('ephemeral self-host preview stack', () => {
 
   it('rejects every runtime secret outside the explicit allowlist', () => {
     expect(PREVIEW_RUNTIME_SECRET_ALLOWLIST).toEqual([
-      'DAYTONA_API_KEY',
       'KE2E_STRIPE_SECRET_KEY',
       'KE2E_STRIPE_WEBHOOK_SECRET',
       'KORTIX_GITHUB_APP_ID',
@@ -153,16 +152,17 @@ describe('ephemeral self-host preview stack', () => {
       'MANAGED_GIT_GITHUB_INSTALL_ID',
       'MANAGED_GIT_GITHUB_OWNER',
       'MANAGED_GIT_GITHUB_TOKEN',
-      'OPENROUTER_API_KEY',
-      'MORPH_API_KEY',
+      'PLATINUM_INFERENCE_API_KEY',
       'PLATINUM_API_KEY',
     ]);
     expect(() =>
       validatePreviewRuntimeSecrets({
-        DAYTONA_API_KEY: 'allowed',
+        PLATINUM_API_KEY: 'allowed',
         DEV_DATABASE_URL: 'forbidden',
       }),
     ).toThrow('DEV_DATABASE_URL');
+    // Daytona is a legacy fallback: a preview never receives its key.
+    expect(() => validatePreviewRuntimeSecrets({ DAYTONA_API_KEY: 'legacy' })).toThrow('DAYTONA_API_KEY');
   });
 
   it('reads every allowed runtime secret from the deployment environment', () => {
@@ -187,7 +187,6 @@ describe('ephemeral self-host preview stack', () => {
         frontendImage: `kortix/kortix-frontend:pr-${SHA}`,
       },
       {
-        DAYTONA_API_KEY: 'daytona',
         KE2E_STRIPE_SECRET_KEY: 'stripe',
         KE2E_STRIPE_WEBHOOK_SECRET: 'webhook',
         KORTIX_GITHUB_APP_ID: '12345',
@@ -195,8 +194,7 @@ describe('ephemeral self-host preview stack', () => {
         KORTIX_GITHUB_APP_SLUG: 'kortix-preview-test',
         MANAGED_GIT_GITHUB_INSTALL_ID: '67890',
         MANAGED_GIT_GITHUB_OWNER: 'kortix-preview',
-        OPENROUTER_API_KEY: 'openrouter',
-        MORPH_API_KEY: 'morph',
+        PLATINUM_INFERENCE_API_KEY: 'pt_live_inference',
         PLATINUM_API_KEY: 'pt_live_example',
       },
     );
@@ -208,14 +206,14 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.runtimeEnv).toContain('SUPABASE_PUBLIC_URL=https://preview.example');
     expect(configured.runtimeEnv).toContain('INTERNAL_KORTIX_ENV=preview');
     expect(configured.runtimeEnv).toContain('KORTIX_INSTANCE_ID=kortix-preview-pr-6337');
-    expect(configured.runtimeEnv).toContain('MORPH_API_KEY=morph');
+    expect(configured.runtimeEnv).toContain('PLATINUM_INFERENCE_API_KEY=pt_live_inference');
     // The preview edge drops request bodies above ~124 KiB, Storage uploads included.
     expect(configured.runtimeEnv).toContain('PROMPT_ATTACHMENT_UPLOAD_MODE=chunked');
     expect(configured.runtimeEnv).toContain('KORTIX_FRONTEND_MEMORY_LIMIT=2048m');
     expect(configured.runtimeEnv).toContain('EMAIL_PROVIDER_ORDER=mailpit');
     expect(configured.runtimeEnv).toContain('MANAGED_GIT_PROVIDER=github');
     expect(configured.runtimeEnv).toContain('KORTIX_GITHUB_APP_PRIVATE_KEY=line-one\\nline-two');
-    expect(configured.runtimeEnv).not.toContain('E2E_AGENTMAIL_API_KEY');
+    expect(configured.runtimeEnv).not.toContain('E2E_RESEND_API_KEY');
     expect(configured.testEnv).toContain('KE2E_TARGET=preview');
     // Session-token fixtures use the token API; its signing secret stays private.
     expect(configured.testEnv).not.toContain('KE2E_API_KEY_SECRET');
@@ -225,8 +223,9 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.testEnv).toContain(
       'KE2E_DATABASE_URL=postgresql://postgres:generated@127.0.0.1:15432/postgres',
     );
+    expect(configured.testEnv).toContain('KE2E_CAP_SANDBOX=1');
     expect(configured.testEnv).toContain('KE2E_CAP_MANAGED_GIT_PUSH=1');
-    expect(configured.testEnv).toContain('E2E_AGENTMAIL_API_KEY=');
+    expect(configured.testEnv).toContain('E2E_RESEND_API_KEY=');
   });
 
   it('runs preview sessions on Platinum only, and never forwards an AWS identity', () => {
@@ -239,7 +238,6 @@ describe('ephemeral self-host preview stack', () => {
       frontendImage: `kortix/kortix-frontend:pr-${SHA}`,
     };
     const secrets = {
-      DAYTONA_API_KEY: 'daytona',
       KORTIX_GITHUB_APP_ID: '12345',
       KORTIX_GITHUB_APP_PRIVATE_KEY: 'k',
       KORTIX_GITHUB_APP_SLUG: 'kortix-preview-test',
@@ -248,9 +246,7 @@ describe('ephemeral self-host preview stack', () => {
     };
 
     // Without a Platinum key the preview cannot run a session anywhere it is
-    // allowed to. Fail before boot instead of falling back to Daytona: the
-    // shared Daytona org hit its snapshot quota on 2026-09-21 and every preview
-    // session died with "Snapshot quota exceeded".
+    // allowed to. Fail before boot: a preview never falls back to Daytona.
     expect(() => applyPreviewEnvironment(base, input, secrets)).toThrow('PLATINUM_API_KEY');
 
     const wired = applyPreviewEnvironment(

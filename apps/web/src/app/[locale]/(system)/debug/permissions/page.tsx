@@ -1,6 +1,6 @@
 'use client';
 
-import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
+import { SessionPermissionPrompt } from '@kortix/ui/session';
 import type { PermissionRequest } from '@/ui/types';
 import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';

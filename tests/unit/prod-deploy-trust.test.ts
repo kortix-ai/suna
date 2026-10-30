@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -79,5 +79,33 @@ describe('ecs-scale', () => {
     const wf = read('.github/workflows/ecs-scale.yml');
     const runBlocks = wf.split(/^\s+run: \|$/m).slice(1).map((b) => b.split(/^\s{6}- /m)[0]);
     for (const block of runBlocks) expect(block).not.toContain('${{');
+  });
+});
+
+describe('prod access is reachable only through the prod role (phase 2)', () => {
+  it('the broad repo:* role holds no prod ECS, PassRole, or secret grant', () => {
+    const tf = read('infra/terraform/security-baseline/iam-gha-ecs-deploy.tf');
+    const broad = tf
+      .slice(0, tf.indexOf('# ── kortix-gha-ecs-deploy-prod'))
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('#'))
+      .join('\n');
+    expect(broad).not.toMatch(/kortix-prod/);
+    expect(broad).not.toContain('kortix-*-env-*');
+    expect(broad).not.toContain('service/kortix-*/kortix-*');
+  });
+
+  it('every workflow job that touches a prod blob or prod ECS declares `environment: prod`', () => {
+    const dir = resolve(repo, '.github/workflows');
+    const offenders: string[] = [];
+    for (const file of readdirSync(dir).filter((f) => f.endsWith('.yml'))) {
+      for (const [name, text] of jobsOf(readFileSync(resolve(dir, file), 'utf8'))) {
+        const code = text.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+        const touchesProd = /kortix-prod-env|kortix-prod-web-env|ecs-deploy\.sh\s+prod|ecs-deploy\.sh\s+\\\s*\n\s*prod\b/.test(code);
+        const ownRole = code.includes('kortix-gha-prod-use2-terraform');
+        if (touchesProd && !ownRole && !/^ {4}environment: prod\s*$/m.test(code)) offenders.push(`${file}:${name}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

@@ -223,3 +223,16 @@ describe('restoreProjectName', () => {
     ]);
   });
 });
+
+test('rename leaves the quota object under the projects prefix untouched', () => {
+  const qc = client();
+  const quota = { limit: 5, used: 1 };
+  qc.setQueryData(qk.projects.quota('acct_1'), quota);
+  qc.setQueryData(qk.projects.list('acct_1'), [{ project_id: ID, name: 'Old' }]);
+  const snapshot = writeProjectNameOptimistically(qc, ID, 'New');
+  expect(qc.getQueryData<typeof quota>(qk.projects.quota('acct_1'))).toBe(quota);
+  expect(qc.getQueryData<ProjectsListEntry[]>(qk.projects.list('acct_1'))).toEqual([{ project_id: ID, name: 'New' }]);
+  restoreProjectName(qc, ID, snapshot);
+  expect(qc.getQueryData<typeof quota>(qk.projects.quota('acct_1'))).toBe(quota);
+  expect(qc.getQueryData<ProjectsListEntry[]>(qk.projects.list('acct_1'))).toEqual([{ project_id: ID, name: 'Old' }]);
+});

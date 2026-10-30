@@ -13,14 +13,23 @@
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 const WEB_SRC = join(import.meta.dir, '..', '..');
+// The session UI moved to @kortix/ui. The same rules hold there; its files
+// report as `@kortix/ui/<path>`, so no web exemption below matches them.
+const UI_SRC = join(WEB_SRC, '..', '..', '..', 'packages', 'ui', 'src');
 
 /** The module that is ALLOWED to make these decisions, plus its own tests. */
 const DECISION_LAYER = [
   join('lib', 'billing', 'billing-gate-state.ts'),
   join('lib', 'billing', 'billing-gate-state.test.ts'),
   join('lib', 'billing', 'billing-source-rules.test.ts'),
+  // The decision layer moved to @kortix/ui; apps/web keeps a one-line shim.
+  join('@kortix/ui', 'internal', 'lib', 'billing', 'billing-gate-state.ts'),
+  join('@kortix/ui', 'internal', 'lib', 'billing', 'billing-gate-state.test.ts'),
+  // The bundled English catalog (generated from apps/web/translations/en.json) holds the owned copy.
+  join('@kortix/ui', 'i18n', 'en.ts'),
 ];
 
 /**
@@ -53,7 +62,7 @@ const DISPLAY_ONLY = [
  * They are consumers of the wire format, not billing surfaces.
  */
 const ERROR_NOISE_FILTERS = [
-  join('lib', 'browser-noise', 'rules', 'expected-states.ts'),
+  join('@kortix/ui', 'internal', 'lib', 'browser-noise', 'rules', 'expected-states.ts'),
   join('app', 'sentry-ignore-errors.test.ts'),
   'sentry.client.config.ts',
 ];
@@ -84,11 +93,10 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-const FILES = walk(WEB_SRC).map((path) => ({
-  path,
-  rel: path.slice(WEB_SRC.length + 1),
-  source: executableSource(readFileSync(path, 'utf8')),
-}));
+const FILES = [
+  ...walk(WEB_SRC).map((path) => ({ path, rel: path.slice(WEB_SRC.length + 1) })),
+  ...walk(UI_SRC).map((path) => ({ path, rel: `@kortix/ui/${path.slice(UI_SRC.length + 1)}` })),
+].map((file) => ({ ...file, source: executableSource(readFileSync(file.path, 'utf8')) }));
 
 function candidates(exempt: string[]) {
   return FILES.filter(
@@ -152,7 +160,7 @@ describe('the wallet-floor bypass stays deleted', () => {
     // runs, and a drained paid account renders as runnable against a server
     // that has already started 402ing it. There is no billing model to branch
     // on any more, and the fallback must not grow one back.
-    const source = readFileSync(join(WEB_SRC, 'lib', 'billing', 'billing-gate-state.ts'), 'utf8');
+    const source = readFileSync(uiSourcePath('internal/lib/billing/billing-gate-state.ts'), 'utf8');
     const fallback = source.slice(
       source.indexOf('Fallback derivation'),
       source.indexOf("return 'no_subscription';"),

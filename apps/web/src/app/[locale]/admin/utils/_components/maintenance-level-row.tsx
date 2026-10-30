@@ -1,9 +1,9 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import type { MaintenanceLevel } from '@/lib/maintenance-store';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 import { MAINTENANCE_LEVELS, MAINTENANCE_TONE_GLYPH, MAINTENANCE_TONE_TILE } from './constants';
 

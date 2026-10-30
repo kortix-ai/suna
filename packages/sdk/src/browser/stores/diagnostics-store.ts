@@ -231,13 +231,17 @@ export function parseDiagnosticsFromToolOutput(
 ): Record<string, LspDiagnostic[]> {
   const result: Record<string, LspDiagnostic[]> = {};
 
-  // Extract content from both tag types
-  const tagPattern = /<(?:file_diagnostics|project_diagnostics)>([\s\S]*?)<\/(?:file_diagnostics|project_diagnostics)>/g;
+  // Extract content from both tag types. Find each close tag with indexOf: a
+  // lazy `[\s\S]*?` scan per open tag is quadratic on unclosed tags.
+  const tagPattern = /<(file_diagnostics|project_diagnostics)>/g;
   let tagMatch;
   const allLines: string[] = [];
 
   while ((tagMatch = tagPattern.exec(output)) !== null) {
-    const content = tagMatch[1].trim();
+    const close = output.indexOf(`</${tagMatch[1]}>`, tagPattern.lastIndex);
+    if (close < 0) break;
+    const content = output.slice(tagPattern.lastIndex, close).trim();
+    tagPattern.lastIndex = close;
     if (content) {
       for (const line of content.split('\n')) {
         const trimmed = line.trim();
@@ -252,7 +256,8 @@ export function parseDiagnosticsFromToolOutput(
 
   // Parse each diagnostic line
   // Format: Severity: /path/to/file:line:col [source][code] (tags) message
-  const linePattern = /^(Error|Warn|Info|Hint):\s+(.+?):(\d+):(\d+)\s+\[([^\]]*)\](.*)$/;
+  // `\S` and the bounded `[...]` keep the match linear on untrusted text.
+  const linePattern = /^(Error|Warn|Info|Hint):\s+(\S.*?):(\d+):(\d+)\s+\[([^\]]{0,200})\](.*)$/;
 
   for (const line of allLines) {
     const match = linePattern.exec(line);

@@ -227,7 +227,7 @@ export async function buildSessionTranscriptDigest(
 }
 
 /**
- * The sync-store envelope. Always the mirror: a client whose sandbox is up
+ * The sync-store envelope. Always the stored copy (the session log): a client whose sandbox is up
  * reads the runtime directly, so re-proxying it here would only duplicate the
  * body this endpoint exists to avoid.
  */
@@ -291,10 +291,9 @@ export function mirrorIsComplete(mirror: MirrorSnapshot): boolean {
   return mirror.head_complete && mirror.messages.length >= mirror.total;
 }
 
-/** A mirror read must never be able to fail a transcript request: the mirror is
- *  an enrichment, and its absence is already an expressible answer. With the
- *  project flag `session_log` on, the session log answers in the mirror's shape
- *  (`readStoredTranscriptWindow`). */
+/** A stored read must never be able to fail a transcript request: its absence
+ *  is already an expressible answer. The session log answers in the v1 window
+ *  shape (`readStoredTranscriptWindow`). */
 async function readMirrorSafely(
   sessionId: string,
   limit: number,

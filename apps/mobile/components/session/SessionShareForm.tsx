@@ -49,7 +49,7 @@ const MODE_OPTIONS: Array<{ mode: ShareMode; icon: AppIcon; label: string }> = [
   { mode: 'members', icon: UsersIcon, label: 'Specific people' },
 ];
 
-export interface SessionShareFormProps {
+interface SessionShareFormProps {
   projectId: string;
   session: ProjectSession;
   /** The sharing was saved. */

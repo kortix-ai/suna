@@ -52,10 +52,12 @@ import type { ConfigReleaseReport, ConfigSource } from '@/types/config-release'
  * never supplies it), verifies the archive against the descriptor's blob IDs,
  * starts a replacement OpenCode on the standby port, and promotes it only
  * after the proven check. Every failure keeps the running process.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 
 export type ConvergeOutcome = 'applied' | 'unchanged' | 'declined' | 'quarantined' | 'failed'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface ConvergeResponse {
   ok: boolean
   outcome: ConvergeOutcome
@@ -107,17 +109,22 @@ let inFlight: Promise<ConvergeResponse> | null = null
  * signal — it registers this predicate as a swap blocker instead (proxy.ts),
  * so a staged daemon update never exits mid-verify and kills the candidate
  * `reloadVerified` is proving. See DEF-A above for what happens when it does.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function isConvergenceInFlight(): boolean {
   return inFlight !== null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function configReleaseReport(): ConfigReleaseReport {
   const { source_commit: _sourceCommit, ...report } = running
   return { ...report }
 }
 
-/** The running release's source commit, for readers that predate `config`. */
+/**
+ * The running release's source commit, for readers that predate `config`.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function runningSourceCommit(): string | null {
   return running.source === 'release' ? running.source_commit : null
 }
@@ -125,6 +132,7 @@ export function runningSourceCommit(): string | null {
 /**
  * The release root (the repository checkout) OpenCode runs from, or null off
  * the release path.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function runningReleaseDir(root: string = bootConfigRoot()): string | null {
   return running.source === 'release' && running.release_id ? releaseDir(root, running.release_id) : null
@@ -135,6 +143,7 @@ export function runningReleaseDir(root: string = bootConfigRoot()): string | nul
  * release (any source) was applied or spawned on. Then a `/kortix/env` push of
  * `KORTIX_COMPILED_AGENT_CONFIG` must not replace it: the release is the
  * authority, and the next convergence delivers any newer governance.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function releaseGovernanceActive(): boolean {
   return running.release_id !== null
@@ -147,6 +156,7 @@ export function releaseGovernanceActive(): boolean {
  * read, so it is assigned in exactly one place. Everything that changes what
  * the box runs — the boot path, a convergence, the flag-off revert — states its
  * whole new answer here instead of patching a field from three call sites.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function setRunningConfig(next: Partial<RunningConfig>): void {
   running = { ...running, ...next }
@@ -188,11 +198,13 @@ function noteDesiredReleaseMet(): void {
   setRunningConfig({ mode: 'follow-base', fallback_reason: null, failed_release_id: null })
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function resetConfigReleaseStateForTests(): void {
   setRunningConfig({ ...INITIAL })
   inFlight = null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface ConvergeDeps {
   cfg: OpenCodeConfig
   opencode: Pick<Opencode, 'reloadVerified' | 'getPid' | 'getInternalUrl'>
@@ -246,7 +258,10 @@ async function warnOnHarnessMcp(dir: string): Promise<void> {
   }
 }
 
-/** Dependencies and the managed-skill overlay, the preparation every config dir in the working tree gets. */
+/**
+ * Dependencies and the managed-skill overlay, the preparation every config dir in the working tree gets.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function prepareConfigDir(
   dir: string,
   managedSkillsDir?: string,
@@ -271,6 +286,7 @@ export async function prepareConfigDir(
  *
  * Never used on a working tree: its `package.json` is a tracked user file and
  * the plugin pin would dirty it.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function preparePlatformConfigDir(
   dir: string,
@@ -288,6 +304,7 @@ export async function preparePlatformConfigDir(
  * the OpenCode config dir inside it gets its dependencies, as the image default
  * does, and the managed-skill overlay lands where the project keeps its skills
  * (`managedOverlayRoot`), exactly where it lands in `/workspace`.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function prepareRelease(
   staged: string,
@@ -310,6 +327,7 @@ export async function prepareRelease(
 /**
  * Apply the desired release. Single flight: a call while one runs throws
  * `ConvergeBusyError`. Never throws otherwise; a failure is an outcome.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function convergeConfigRelease(deps: ConvergeDeps): Promise<ConvergeResponse> {
   if (inFlight) return Promise.reject(new ConvergeBusyError())
@@ -364,6 +382,7 @@ function respond(
  * Write the session notice for the release a box is about to run. Never
  * throws: the notice is information, and a box that cannot write `/tmp` must
  * still converge.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function noteRunningConfig(
   descriptor: Pick<ConfigReleaseDescriptor, 'source_commit' | 'config_dir'> & {

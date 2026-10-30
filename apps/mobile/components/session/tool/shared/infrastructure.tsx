@@ -25,12 +25,8 @@
  *                               here — ported
  *   ToolActivateContext / BoundActivateContext
  *                               here — ported (no mobile provider yet)
- *   ToolSurfaceContext / TOOL_INDENT / useToolIndent / useToolCardFrame /
- *   useToolCardPad              `./surface` — adapted: indent/pad are points,
- *                               the frame is a style object (null on 'panel')
  *   ToolNavigationContext / useToolNavigation / useProxyUrl /
- *   useServicePreview / ServicePreviewActions / ServicePreviewViewport /
- *   ServicePreviewUrlFallback / InlineServicePreview
+ *   useServicePreview / ServicePreviewActions / InlineServicePreview
  *                               `./navigation` — adapted: `useToolNavigation()`
  *                               adds `openFile(path, line?)`, `openSession(id)`
  *                               and `openPreview(url, label?)`; a sandbox
@@ -85,7 +81,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Pressable, View } from 'react-native';
-import type { ToolOutcome } from '@kortix/sdk';
+import type { ToolCallBlock, ToolOutcome } from '@kortix/sdk';
 import { RunningLoader, TextShimmer, ToolMotionContext } from '@/components/kortix/text-shimmer';
 import { DisclosureContent } from '@/components/session/chain-of-thought';
 import { Text } from '@/components/ui/text';
@@ -93,7 +89,6 @@ import { CheckIcon, MagnifyingGlassIcon, WarningCircleIcon, WarningIcon } from '
 import { useDisclosureState } from '@/lib/session/disclosure-store';
 import {
   cleanErrorMessage,
-  formatJsonFailureOutput,
   formatRawOutput,
   looksLikeError,
   looksLikeJsonPayload,
@@ -140,20 +135,17 @@ export {
   ToolIconSlot,
   ToolRowVariantContext,
   ToolScroll,
-  ToolSurfaceContext,
   useToolCardFrame,
   useToolCardPad,
   useToolIndent,
   useToolRowVariant,
   type ToolDetailLevel,
   type ToolIcon,
-  type ToolSurface,
 } from './surface';
 export {
   InlineServicePreview,
   ServicePreviewActions,
-  ServicePreviewUrlFallback,
-  ServicePreviewViewport,
+  ServicePreviewRow,
   ToolFilePreviewHost,
   ToolNavigationContext,
   useProxyUrl,
@@ -187,6 +179,12 @@ export const ToolOutcomeContext = createContext<ToolOutcome>('ok');
 export const StalePendingContext = createContext(false);
 /** The turn that owns this part is still working. */
 export const TurnLiveContext = createContext(false);
+/** The images this turn's `image_gen` calls already drew (`imagePathsShownByImageGen`): a `show` does not draw them again. */
+export const ImageGenPathsContext = createContext<ReadonlySet<string>>(new Set());
+/** The sha256 of the images this turn's `image_gen` calls drew (`imageDigestsShownByImageGen`): a `show` of the same bytes elsewhere draws nothing (R38). */
+export const ImageGenDigestsContext = createContext<ReadonlySet<string>>(new Set());
+/** The turn's runs of `image_gen` calls drawn as one grid (`sessionLogImageGenRuns`), by block id (R38). */
+export const ImageGenRunsContext = createContext<ReadonlyMap<string, ToolCallBlock[]>>(new Map());
 /** Re-exported with the other row contexts: `false` in a finished turn (see `ToolMotionContext`). */
 export { RunningLoader, ToolMotionContext };
 export const ToolDurationContext = createContext<number | undefined>(undefined);
@@ -658,9 +656,9 @@ export function RawOutputBlock({ output, maxChars = RAW_OUTPUT_MAX_CHARS }: { ou
 /**
  * The body of a tool with nothing better to show. Same branch order as web:
  * the `{success:false}` contract → `JsonFailureOutputCard` in a
- * `ToolResultCard`; a JSON failure or an error-looking string → `ToolError`;
- * JSON or anything over 4000 characters → `RawOutputBlock`; short prose →
- * markdown in the output card.
+ * `ToolResultCard`; an error-looking string → `ToolError`; JSON or anything
+ * over 4000 characters → `RawOutputBlock`; short prose → markdown in the
+ * output card.
  */
 export function ToolOutputFallback({
   output,
@@ -679,9 +677,6 @@ export function ToolOutputFallback({
       </ToolResultCard>
     );
   }
-
-  const jsonFailure = !isStreaming ? formatJsonFailureOutput(output) : null;
-  if (jsonFailure) return <ToolError error={jsonFailure} toolName={toolName} />;
 
   if (!isStreaming && looksLikeError(output)) return <ToolError error={output} toolName={toolName} />;
 

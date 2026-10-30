@@ -31,6 +31,8 @@ import {
   PYTHON_PACKAGE_FLOOR_IMPORTS,
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
+  VOXL_SHA256_AMD64,
+  VOXL_SHA256_ARM64,
 } from '../../runtime-versions';
 import {
   type BuildLayeredDockerfileOpts,
@@ -99,17 +101,19 @@ describe('runtime artifact integrity', () => {
       UV_SHA256_ARM64,
       BUN_SHA256_AMD64,
       BUN_SHA256_ARM64,
+      VOXL_SHA256_AMD64,
+      VOXL_SHA256_ARM64,
     ]) {
       expect(rendered).toContain(digest);
     }
-    expect(rendered.match(/sha256sum -c -/g)).toHaveLength(3);
+    expect(rendered.match(/sha256sum -c -/g)).toHaveLength(4);
   });
 
   test('does not execute remote installer scripts', () => {
     expect(rendered).not.toContain('get.pnpm.io/install.sh');
     expect(rendered).not.toContain('astral.sh/uv/');
     expect(rendered).not.toContain('bun.com/install');
-    expect(rendered).not.toMatch(/curl[^|\n]*\|\s*(?:sh|bash)/);
+    expect(rendered).not.toMatch(/curl[^|\n]*\|\s*(?:sh|bash)\b/);
   });
 
   test('fails the image build when OpenCode warm-up fails', () => {

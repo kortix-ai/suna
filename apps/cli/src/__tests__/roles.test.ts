@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -260,6 +260,34 @@ describe('kortix roles', () => {
       scopeId: 'proj-1',
       roleId: 'role_77', // resolved from the key
     });
+  });
+
+  // KRTX-2990: the help says an assignment's scope defaults to project, but the
+  // code sent `account`, which the API refuses for a project role.
+  test('assign without --project binds at project scope on the linked project', async () => {
+    mkdirSync(join(tmp, '.kortix'), { recursive: true });
+    writeFileSync(
+      join(tmp, '.kortix', 'link.json'),
+      JSON.stringify({ project_id: 'proj-linked', account_id: 'account_1', host: 'test' }),
+    );
+    const code = await runRoles(['assign', 'support_agent', '--to', 'member:user-9']);
+    expect(code).toBe(0);
+    const post = requests.find((r) => r.method === 'POST' && r.url.includes('/iam/policies'));
+    expect(post?.body).toMatchObject({ scopeType: 'project', scopeId: 'proj-linked' });
+  });
+
+  test('assign without --project and no linked project fails before any write', async () => {
+    const code = await runRoles(['assign', 'support_agent', '--to', 'member:user-9']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain('--project <id>');
+    expect(requests.some((r) => r.method === 'POST')).toBe(false);
+  });
+
+  test('assign --scope account keeps account scope with a null scope id', async () => {
+    const code = await runRoles(['assign', 'support_agent', '--to', 'member:user-9', '--scope', 'account']);
+    expect(code).toBe(0);
+    const post = requests.find((r) => r.method === 'POST' && r.url.includes('/iam/policies'));
+    expect(post?.body).toMatchObject({ scopeType: 'account', scopeId: null });
   });
 
   test('assignments filters policies by project scope', async () => {

@@ -26,11 +26,11 @@ import { type ManifestFormat, parseManifestText } from '@kortix/manifest-schema'
 export const LATEST_MANIFEST_VERSION = 3;
 
 /**
- * Implemented upgrade paths, `from` → `to`. Only v1 → v2 exists today (the
- * `kortix.toml` → `kortix.yaml` governance conversion). Version 3 is the
- * current schema. No automatic v2 → v3 migration exists: v2 agents depend on Markdown files.
+ * Implemented upgrade paths, `from` → `to`. v1 (`kortix.toml`) and v2 both go
+ * straight to v3, the current schema, through `kortix migrate` in an agent
+ * session that opens a change request. v2 keeps running unchanged until then.
  */
-const MIGRATIONS: Readonly<Record<number, number>> = { 1: 2 };
+const MIGRATIONS: Readonly<Record<number, number>> = { 1: 3, 2: 3 };
 
 export type ManifestUnknownReason =
   /** No manifest text — absent from the repo, or the repo read failed. */
@@ -40,7 +40,10 @@ export type ManifestUnknownReason =
   /** Parses, but declares no usable integer `kortix_version`. */
   | 'undeclared'
   /** Hidden from this caller — no `project.file.read`. */
-  | 'restricted';
+  | 'restricted'
+  /** The GitHub App can no longer reach the repository (KRTX-2955). The
+   *  project's `git_connection` carries the reason and the fix. */
+  | 'repository_disconnected';
 
 export interface ProjectManifestVerdict {
   /** Declared `kortix_version`. `null` whenever `unknown_reason` is set. */
@@ -66,6 +69,11 @@ function unknown(reason: ManifestUnknownReason, path: string | null): ProjectMan
     unknown_reason: reason,
     path,
   };
+}
+
+/** The verdict when the repository cannot be reached at all. */
+export function disconnectedManifestVerdict(): ProjectManifestVerdict {
+  return unknown('repository_disconnected', null);
 }
 
 /** The verdict for a caller who may not read the project's config. */

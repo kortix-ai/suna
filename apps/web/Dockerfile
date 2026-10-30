@@ -20,6 +20,7 @@
 #   NEXT_PUBLIC_SUPABASE_ANON_KEY - Supabase anon key
 #
 FROM node:22-slim AS runner
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -95,7 +96,7 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://localhost:'+(process.env.PORT||3000)).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
+  CMD ["node", "-e", "fetch('http://localhost:'+(process.env.PORT||3000)).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
 
 # Use entrypoint for VPS URL rewriting support
 ENTRYPOINT ["/docker-entrypoint.sh"]

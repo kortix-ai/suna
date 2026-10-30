@@ -15,6 +15,7 @@ locals {
   compliance_alerts_logger_name = "kortix-compliance-alerts-logger"
 }
 
+#trivy:ignore:AVD-AWS-0017 Non-secret operational metadata; CloudWatch's AWS-managed encryption is sufficient (same rationale as the CKV_AWS_158 skip).
 resource "aws_cloudwatch_log_group" "use2_compliance_alerts_logger" {
   # checkov:skip=CKV_AWS_158: Logs contain only the SNS compliance alert payloads that also reach the human email channel; CloudWatch's AWS-managed encryption is sufficient for this non-secret operational metadata.
   provider          = aws.use2

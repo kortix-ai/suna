@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { TERMINAL_THEMES } from '@/lib/interface-themes';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 
 import en from '../../../translations/en.json';
 import { INTERFACE_THEME_OPTIONS } from './interface-theme';
@@ -86,10 +86,5 @@ describe('settings store and theme compatibility contracts', () => {
       expect(useSettingsPanelStore.getState().tab).toBe(tab);
     }
     useSettingsPanelStore.getState().close();
-  });
-
-  test('the compatibility entry point shares the live theme options', async () => {
-    const compat = await import('./user-menu');
-    expect(compat.INTERFACE_THEME_OPTIONS).toBe(INTERFACE_THEME_OPTIONS);
   });
 });

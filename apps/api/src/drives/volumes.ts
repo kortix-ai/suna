@@ -1,9 +1,13 @@
 // The storage behind a drive: one Platinum volume in drive sync mode. Every
 // call here speaks the Platinum volumes API; nothing above this file does.
 
+import { createHash } from 'node:crypto';
 import { logger } from '../lib/logger';
 import { isPlatinumConfigured, platinumFetch } from '../shared/platinum';
 import { DEFAULT_SANDBOX_MOUNT_LIMIT } from './access';
+import { parseVolumeWriteCommit, type VolumeWriteCommit } from './volume-commit';
+
+export { parseVolumeWriteCommit, type VolumeWriteCommit } from './volume-commit';
 
 /** A storage failure the drive routes turn into a response. `message` is user-facing. */
 export class DriveStorageError extends Error {
@@ -25,16 +29,24 @@ const FILE_TIMEOUT_MS = 5 * 60_000;
 
 export const FILE_CHANGED_MESSAGE = 'This file changed since you opened it. Reload it to see the latest version, then save again.';
 
-async function call(path: string, init: RequestInit = {}): Promise<Response> {
+async function call(path: string, init: RequestInit = {}, allowRangeRefusal = false): Promise<Response> {
   if (!driveStorageAvailable()) throw new DriveStorageError(503, 'Drive storage is not available', 'drive_storage_unavailable');
   let res: Response;
   try {
     res = await platinumFetch(path, init);
+    // Reads are safe to replay while storage recovers; writes may have committed.
+    for (const delay of [2_000, 3_000]) {
+      if ((init.method ?? 'GET').toUpperCase() !== 'GET' || res.status !== 503 || init.signal?.aborted) break;
+      await res.body?.cancel();
+      await Bun.sleep(delay);
+      init.signal?.throwIfAborted();
+      res = await platinumFetch(path, init);
+    }
   } catch (err) {
     logger.warn(`[drives] ${init.method ?? 'GET'} ${path} failed:`, { error: err instanceof Error ? err.message : String(err) });
     throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', 'drive_storage_unavailable');
   }
-  if (res.ok) return res;
+  if (res.ok || (allowRangeRefusal && res.status === 416)) return res;
   const text = await res.text().catch(() => '');
   let code: string | undefined;
   try {
@@ -126,18 +138,20 @@ export async function listVolumeFiles(
   path: string,
   recursive: boolean,
   signal?: AbortSignal,
+  at?: string,
 ): Promise<VolumeEntry[]> {
-  const q = new URLSearchParams({ path, recursive: String(recursive), limit: '10000' });
+  const q = new URLSearchParams({ path, recursive: String(recursive), limit: '10000', ...(at ? { at } : {}) });
   const r = await callJson<{ entries: VolumeEntry[] }>(`${v(volume)}/files?${q}`, signal ? { signal } : {});
   return r.entries ?? [];
 }
 
-export async function readVolumeFile(volume: string, path: string, range?: string): Promise<Response> {
-  const q = new URLSearchParams({ path });
+/** A file's bytes; `at` reads it as it was at that commit. */
+export async function readVolumeFile(volume: string, path: string, range?: string, at?: string): Promise<Response> {
+  const q = new URLSearchParams({ path, ...(at ? { at } : {}) });
   return call(`${v(volume)}/files/content?${q}`, {
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
     headers: range ? { Range: range } : {},
-  });
+  }, true);
 }
 
 export async function writeVolumeFile(
@@ -145,7 +159,7 @@ export async function writeVolumeFile(
   path: string,
   body: Uint8Array<ArrayBuffer>,
   opts: { overwrite: boolean; ifMatch?: string },
-): Promise<{ path: string; size: number; version?: string }> {
+): Promise<{ path: string; size: number; version?: string; commit?: VolumeWriteCommit }> {
   const q = new URLSearchParams({ path, overwrite: String(opts.overwrite) });
   const r = await callJson<{ path: string; size: number; version?: string }>(`${v(volume)}/files/content?${q}`, {
     method: 'PUT',
@@ -155,7 +169,8 @@ export async function writeVolumeFile(
     // same step as the write: two saves from one version cannot both land.
     headers: { 'Content-Type': 'application/octet-stream', ...(opts.ifMatch ? { 'If-Match': opts.ifMatch } : {}) },
   });
-  return { path: r.path ?? path, size: Number(r.size ?? body.byteLength), ...(r.version ? { version: String(r.version) } : {}) };
+  const commit = parseVolumeWriteCommit(r);
+  return { path: r.path ?? path, size: Number(r.size ?? body.byteLength), ...(r.version ? { version: String(r.version) } : {}), ...(commit ? { commit } : {}) };
 }
 
 /** One page of a listing, for callers that walk a whole drive (drive sync). */
@@ -177,8 +192,9 @@ export interface VolumeFileStat extends VolumeEntry {
   version: string | null;
 }
 
-export async function statVolumeFile(volume: string, path: string): Promise<VolumeFileStat> {
-  const q = new URLSearchParams({ path });
+/** A file's metadata; `at` stats it as it was at that commit. */
+export async function statVolumeFile(volume: string, path: string, at?: string): Promise<VolumeFileStat> {
+  const q = new URLSearchParams({ path, ...(at ? { at } : {}) });
   const r = await callJson<VolumeFileStat>(`${v(volume)}/files/stat?${q}`, { signal: AbortSignal.timeout(30_000) });
   return { path: r.path, type: r.type, size: Number(r.size ?? 0), mtime: Number(r.mtime ?? 0), version: r.version ?? null };
 }
@@ -211,6 +227,39 @@ export async function commitVolumeUpload(volume: string, uploadId: string): Prom
   });
 }
 
+const BLOCK_BYTES = 1024 * 1024;
+const BLOCK_CONCURRENCY = 8;
+
+/**
+ * Write many files as ONE commit, through the block protocol: the store
+ * answers which 1 MiB blocks it lacks, only those travel (8 at a time), and the
+ * commit lands every file at once. A reader never sees half a folder.
+ */
+export async function writeVolumeFiles(
+  volume: string,
+  files: Array<{ path: string; bytes: Uint8Array<ArrayBuffer> }>,
+  opts: { overwrite: boolean },
+): Promise<VolumeWriteCommit | undefined> {
+  if (!files.length) return;
+  const blocks = new Map<string, Uint8Array<ArrayBuffer>>();
+  const planned = files.map((f) => {
+    const shas: string[] = [];
+    for (let off = 0; off < f.bytes.byteLength; off += BLOCK_BYTES) {
+      const block = f.bytes.subarray(off, Math.min(f.bytes.byteLength, off + BLOCK_BYTES));
+      const sha = createHash('sha256').update(block).digest('hex');
+      blocks.set(sha, block);
+      shas.push(sha);
+    }
+    return { path: f.path, size: f.bytes.byteLength, blocks: shas };
+  });
+  const plan = (await planVolumeUpload(volume, { files: planned, overwrite: opts.overwrite })) as { upload_id: string; missing?: string[] };
+  const missing = [...new Set(plan.missing ?? [])];
+  for (let i = 0; i < missing.length; i += BLOCK_CONCURRENCY) {
+    await Promise.all(missing.slice(i, i + BLOCK_CONCURRENCY).map((sha) => putVolumeUploadBlock(volume, plan.upload_id, sha, blocks.get(sha)!)));
+  }
+  return parseVolumeWriteCommit(await commitVolumeUpload(volume, plan.upload_id));
+}
+
 export async function moveVolumeFile(volume: string, src: string, dst: string): Promise<void> {
   await call(`${v(volume)}/files/move`, {
     method: 'POST',
@@ -229,12 +278,21 @@ export interface VolumeCommit {
   kind: string;
   author: { kind: string; id: string | null };
   created_at: string;
+  on_head?: boolean;
+  parent_id?: string | null;
+  base_id?: string | null;
+  merged_from?: string[];
   stats?: { changed_paths?: number; deleted_paths?: number };
 }
 
-export async function listVolumeCommits(volume: string, limit = 100): Promise<VolumeCommit[]> {
-  const r = await callJson<{ commits: VolumeCommit[] }>(`${v(volume)}/commits?limit=${limit}`);
+export async function listVolumeCommits(volume: string, limit = 100, opts: { includeSide?: boolean; before?: string } = {}): Promise<VolumeCommit[]> {
+  const query = new URLSearchParams({ limit: String(limit), ...(opts.includeSide ? { include_side: 'true' } : {}), ...(opts.before ? { before: opts.before } : {}) });
+  const r = await callJson<{ commits: VolumeCommit[] }>(`${v(volume)}/commits?${query}`);
   return r.commits ?? [];
+}
+
+export async function getVolumeCommit(volume: string, commitId: string): Promise<VolumeCommit> {
+  return callJson<VolumeCommit>(`${v(volume)}/commits/${encodeURIComponent(commitId)}`);
 }
 
 export async function restoreVolume(volume: string, to: string): Promise<void> {
@@ -244,20 +302,33 @@ export async function restoreVolume(volume: string, to: string): Promise<void> {
 let mountLimitCache: { value: number; at: number } | null = null;
 const MOUNT_LIMIT_TTL_MS = 10 * 60_000;
 
+/** Platinum's `GET /v1/volumes/limits`, the fields the mount plan reads. */
+export interface PlatinumMountLimits {
+  /** Private mounts per sandbox: each is a disk in the VM. */
+  max_mounts_per_sandbox?: number;
+  /** Mounts of any share per sandbox. Absent from a Platinum older than node-share counting. */
+  max_total_mounts_per_sandbox?: number;
+  /** Node share is on for this org: share "node" mounts take no disk. */
+  node_share?: boolean;
+}
+
 /**
- * How many volumes one sandbox may mount, from Platinum's own limits (never
- * above its hard cap of {@link DEFAULT_SANDBOX_MOUNT_LIMIT}). Cached; falls
- * back to that cap when the limits cannot be read.
+ * How many folders one sandbox mounts. Every drive mount asks for share
+ * "node"; with node share on they take no disk, so the plan uses the total
+ * cap, else the private one. {@link DEFAULT_SANDBOX_MOUNT_LIMIT} when unknown.
  */
+export function mountSlotsFrom(limits: PlatinumMountLimits): number {
+  const pick = limits.node_share ? limits.max_total_mounts_per_sandbox : limits.max_mounts_per_sandbox;
+  const max = Number(pick ?? limits.max_mounts_per_sandbox);
+  return Number.isFinite(max) && max >= 1 ? Math.floor(max) : DEFAULT_SANDBOX_MOUNT_LIMIT;
+}
+
+/** {@link mountSlotsFrom} Platinum's live limits. Cached; the default when they cannot be read. */
 export async function sandboxMountLimit(): Promise<number> {
   if (mountLimitCache && Date.now() - mountLimitCache.at < MOUNT_LIMIT_TTL_MS) return mountLimitCache.value;
   let value = DEFAULT_SANDBOX_MOUNT_LIMIT;
   try {
-    const limits = await callJson<{ max_mounts_per_sandbox?: number }>('/v1/volumes/limits', {
-      signal: AbortSignal.timeout(5_000),
-    });
-    const max = Number(limits.max_mounts_per_sandbox);
-    if (Number.isFinite(max) && max >= 1) value = Math.min(DEFAULT_SANDBOX_MOUNT_LIMIT, Math.floor(max));
+    value = mountSlotsFrom(await callJson<PlatinumMountLimits>('/v1/volumes/limits', { signal: AbortSignal.timeout(5_000) }));
   } catch (err) {
     logger.warn('[drives] reading the sandbox mount limit failed:', { error: err instanceof Error ? err.message : String(err) });
     return value;
@@ -325,6 +396,7 @@ export async function attachSandboxVolume(
         volume: input.volume,
         read_only: input.readOnly,
         ...(input.subdir ? { subdir: input.subdir } : {}),
+        share: 'node',
       }),
       signal: AbortSignal.timeout(45_000),
     });

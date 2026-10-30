@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "answer",
+  "type": "object",
+  "required": ["schema", "question", "addressed", "answer_md", "citations"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "enum": ["answer/1"] },
+    "question": { "type": "string" },
+    "addressed": { "type": "boolean" },
+    "answer_md": { "type": "string", "minLength": 1, "maxLength": 6000 },
+    "citations": { "type": "array", "maxItems": 20, "items": { "$ref": "citation" } }
+  }
+}

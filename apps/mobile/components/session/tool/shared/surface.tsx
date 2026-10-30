@@ -33,17 +33,6 @@ import { MOTION } from '@/lib/utils/theme';
 import { TURN_SPACE, useTurnPalette } from './styles';
 
 /**
- * Which surface a tool view is drawn on (web `surface.tsx`). Mobile has only
- * the inline transcript — there is no side panel — so every provider in the
- * app leaves this at `'inline'`. The value shape is kept so a renderer ported
- * from web can read it unchanged, and the hooks below honour `'panel'` the way
- * web does if a host ever supplies it.
- */
-export type ToolSurface = 'inline' | 'panel';
-
-export const ToolSurfaceContext = createContext<ToolSurface>('inline');
-
-/**
  * A tool drawn in the activity sheet's detail view (`turn/activity-sheet.tsx`).
  * `body`: the tool the detail is about — `BasicTool` draws its body only, since
  * the sheet header already names it. `nested`: any tool row inside that body.
@@ -109,10 +98,9 @@ export const TOOL_INDENT = TURN_SPACE.toolIndent;
  * `{ marginLeft: indent, marginTop: indent ? TURN_SPACE.gap1_5 : 0 }`.
  */
 export function useToolIndent(): number {
-  const surface = useContext(ToolSurfaceContext);
   const detail = useContext(ToolDetailContext);
   const { chain } = useToolRowVariant();
-  if (surface !== 'inline' || detail) return 0;
+  if (detail) return 0;
   return chain ? TURN_SPACE.toolIndentChain : TURN_SPACE.toolIndent;
 }
 
@@ -123,14 +111,9 @@ export interface ToolCardFrameStyle {
   borderRadius: number;
 }
 
-/**
- * Web `useToolCardFrame`: `border-border bg-popover rounded-md border` on the
- * inline surface, nothing on the panel. Spread the result into a style.
- */
+/** Web `useToolCardFrame`: `border-border bg-popover rounded-md border`. Spread the result into a style. */
 export function useToolCardFrame(): ToolCardFrameStyle | null {
-  const surface = useContext(ToolSurfaceContext);
   const palette = useTurnPalette();
-  if (surface !== 'inline') return null;
   return {
     borderWidth: 1,
     borderColor: palette.border,
@@ -139,9 +122,9 @@ export function useToolCardFrame(): ToolCardFrameStyle | null {
   };
 }
 
-/** Web `useToolCardPad`: `p-3` inline, `0` on the panel. */
+/** Web `useToolCardPad`: `p-3`. */
 export function useToolCardPad(): number {
-  return useContext(ToolSurfaceContext) === 'inline' ? TURN_SPACE.cardPad : 0;
+  return TURN_SPACE.cardPad;
 }
 
 export function ToolCopyButton({ text }: { text: string }) {

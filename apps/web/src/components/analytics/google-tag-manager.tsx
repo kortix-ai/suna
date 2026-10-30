@@ -4,7 +4,7 @@ import Script from 'next/script';
 import { useEffect, useState } from 'react';
 
 import { isAnalyticsExcludedPath } from '@/lib/analytics/gtm';
-import { isDesktop } from '@/lib/desktop';
+import { isDesktop } from '@kortix/ui/internal/lib/desktop';
 
 /**
  * Google Tag Manager, loaded after the page is done: on `window.load`, then

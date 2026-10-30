@@ -11,8 +11,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { UserMessage } from '@/features/session/turn/user-message';
+import { UserAvatar } from '@kortix/ui/user-avatar';
+import { UserMessage } from '@kortix/ui/session';
 import { sessionLogOfV1Rows, type SessionMessageAuthor } from '@kortix/sdk';
 
 /** A v1 user row, as the session-log message `UserMessage` reads (`sessionLogOfV1Rows`, flag off). */

@@ -47,6 +47,12 @@ current `package.json` scripts.
    here, and the multi-statement `pgm.sql()` footgun to avoid.
 6. Prod is live: show the exact SQL and get explicit go-ahead before any manual
    prod migration action.
+7. `kortix.gateway_request_logs` is insert-only. The gateway budgets read the
+   running total `gateway_spend_daily` that an AFTER INSERT trigger keeps. A
+   cost correction that UPDATEs or DELETEs log rows must also insert the
+   affected UTC days into `gateway_spend_pending_days`, so the backfill worker
+   recomputes them. `tests/unit/gateway-logs-insert-only.test.ts` fails on any
+   such statement until its file is allowlisted there with that reason.
 
 ## Commands from repo root
 

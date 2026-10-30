@@ -64,7 +64,7 @@ mock.module('@/lib/public-env-server', () => ({
 
 const { sendEmailCode, signInWithPassword, signUpWithPassword } = await import('./actions');
 const { AUTH_BOUNCE_COOKIE, serializeAuthBounce } =
-  await import('@/lib/onboarding/landing-destination');
+  await import('@kortix/ui/internal/lib/onboarding/landing-destination');
 
 function bounce(ownerId: string | null) {
   jar.set(AUTH_BOUNCE_COOKIE, serializeAuthBounce(ownerId, A_PROJECT));

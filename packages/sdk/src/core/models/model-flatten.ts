@@ -35,6 +35,8 @@ type LooseModel =
       last_updated?: string;
       enabled?: boolean;
       free?: boolean;
+      available?: boolean;
+      availability?: 'login' | 'provider';
     };
 
 function hasCapabilities(model: LooseModel): model is Model {
@@ -99,29 +101,39 @@ export interface FlatModel {
    */
   enabled?: boolean;
   free?: boolean;
+  /**
+   * `false` when the project keeps this model only because a default or a
+   * routing rule names it, and its provider is not connected for the caller:
+   * the gateway would refuse it ("Connect Codex to use this model."). Nothing
+   * may choose it on the person's behalf, and the picker shows what to connect
+   * instead. Undefined = runnable, or a catalog that does not say.
+   */
+  available?: boolean;
+  /** What `available: false` needs: a ChatGPT login or the provider's key. */
+  availability?: 'login' | 'provider';
 }
 
 /**
  * One entry of the model picker: a `FlatModel` plus `id`, the ref a pick
- * stores and sends (the gateway wire id, or the native `provider/model`).
+ * stores and sends (the gateway wire id).
  */
 export interface ModelOption extends FlatModel {
   id: string;
 }
 
 /**
- * Whether `key` may be offered/resolved from `models` — present in the catalog
- * and not turned off by the server's per-project enablement (`enabled` above).
- * THE one predicate for "is this model selectable?"; a second, client-local
- * visibility heuristic beside it is exactly what made the session picker and
- * "Manage models" disagree.
+ * Whether `key` may be offered/resolved from `models` — present in the catalog,
+ * not turned off by the server's per-project enablement (`enabled` above), and
+ * runnable for the caller (`available` above). THE one predicate for "is this
+ * model selectable?"; a second, client-local visibility heuristic beside it is
+ * exactly what made the session picker and "Manage models" disagree.
  */
 export function isOfferedModel(
   models: FlatModel[],
   key: { providerID: string; modelID: string },
 ): boolean {
   const model = models.find((m) => m.providerID === key.providerID && m.modelID === key.modelID);
-  return !!model && model.enabled !== false;
+  return !!model && model.enabled !== false && model.available !== false;
 }
 
 // The gateway-specific fields (`provider`, `reasoning_options`,
@@ -138,35 +150,30 @@ type WithGatewayFields = {
   last_updated?: string;
   enabled?: boolean;
   free?: boolean;
+  available?: boolean;
+  availability?: 'login' | 'provider';
   attachment?: boolean;
 };
 
 export function flattenModels(
   providers: ProviderListResponse | undefined,
-  opts?: {
+  _opts?: {
     /**
-     * Which provider universe this list belongs to (modelProviderMode).
-     *
-     *  • 'gateway' (default) — the synthetic `kortix` provider is the ONLY
-     *    renderable provider; a native provider that slips into the response
-     *    is a bypass and is dropped (defense in depth on top of source
-     *    filtering).
-     *  • 'native' (project `llm_gateway` flag OFF) — OpenCode's own connected
-     *    providers (`anthropic`, `openrouter`, `opencode`, …) ARE the catalog;
-     *    only a stale `kortix` entry (a box mid-toggle) is dropped.
+     * @deprecated Ignored. The synthetic `kortix` provider is the ONLY
+     * renderable provider: the LLM gateway is the only model path, and a
+     * native provider that slips into a response is a bypass and is dropped.
+     * Removed in the next major.
      */
     providerMode?: 'gateway' | 'native';
   },
 ): ModelOption[] {
   if (!providers) return [];
-  const providerMode = opts?.providerMode ?? 'gateway';
   const all = Array.isArray(providers.all) ? providers.all : [];
   const connected = Array.isArray(providers.connected) ? providers.connected : [];
   const result: ModelOption[] = [];
   for (const p of all) {
     if (!connected.includes(p.id)) continue;
-    if (providerMode === 'gateway' ? !GATEWAY_PROVIDER_IDS.has(p.id) : GATEWAY_PROVIDER_IDS.has(p.id))
-      continue;
+    if (!GATEWAY_PROVIDER_IDS.has(p.id)) continue;
     for (const [modelID, model] of Object.entries(p.models) as Array<[string, LooseModel]>) {
       // Old sandboxes can carry a baked catalog from before the synthetic model
       // was removed. Never expose or send those stale entries.
@@ -222,6 +229,8 @@ export function flattenModels(
         lastUpdated: (model as WithGatewayFields).last_updated,
         enabled: (model as WithGatewayFields).enabled,
         free: (model as WithGatewayFields).free === true,
+        available: (model as WithGatewayFields).available,
+        availability: (model as WithGatewayFields).availability,
       });
     }
   }

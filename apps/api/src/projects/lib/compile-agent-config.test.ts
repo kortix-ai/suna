@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, mock, spyOn, test } from 'bun:test';
 import { KORTIX_SKILL_NAMES, parseManifestText } from '@kortix/manifest-schema';
 
 // compile-agent-config.ts's I/O half imports the real ../git module, which
@@ -64,10 +64,8 @@ const {
   manifestPiCodemode,
   manifestPiPackageLists,
   manifestPiPackages,
-  manifestRuntime,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
-  selectSessionHarness,
 } = await import('./compile-agent-config');
 type CompiledAgents = Awaited<ReturnType<typeof compileAgentConfig>> & object;
 
@@ -529,40 +527,6 @@ agents:
   });
 });
 
-describe('selectSessionHarness — flag OR manifest', () => {
-  test('pi when the project flag is on, whatever the manifest says', () => {
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'opencode', llmGateway: true })).toBe('pi');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi', llmGateway: true })).toBe('pi');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null, llmGateway: true })).toBe('pi');
-  });
-
-  test('pi when the manifest says runtime: pi, even with the flag off', () => {
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi', llmGateway: true })).toBe('pi');
-  });
-
-  test('opencode in every other case', () => {
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'opencode', llmGateway: true })).toBe('opencode');
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: null, llmGateway: true })).toBe('opencode');
-  });
-
-  // W1 B7: pi calls models only through the gateway; without it the box would never start.
-  test('opencode when the LLM gateway is off, even when the flag or the manifest asks for pi', () => {
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi', llmGateway: false })).toBe('opencode');
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi', llmGateway: false })).toBe('opencode');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null, llmGateway: false })).toBe('opencode');
-  });
-});
-
-describe('manifestRuntime — the harness a manifest selects', () => {
-  test('pi only for a v2 manifest that says runtime: pi; everything else is opencode', () => {
-    expect(manifestRuntime(parseYaml('kortix_version: 2\nruntime: pi\nagents:\n  a: {}\n'))).toBe('pi');
-    expect(manifestRuntime(parseYaml('kortix_version: 2\nagents:\n  a: {}\n'))).toBe('opencode');
-    expect(manifestRuntime(parseYaml('kortix_version: 2\nruntime: opencode\n'))).toBe('opencode');
-    expect(manifestRuntime(parseYaml('runtime: pi\n'))).toBe('opencode');
-    expect(manifestRuntime(null)).toBe('opencode');
-  });
-});
-
 describe('manifestPiPackages — the project pi packages a manifest declares', () => {
   test('the v2 harnesses.pi.packages list, entries kept as written', () => {
     const raw = parseYaml('kortix_version: 2\nruntime: pi\nagents:\n  a: {}\nharnesses:\n  pi:\n    packages:\n      - npm:pi-web-access@0.30.0\n      - source: ./x.ts\n        skills: []\n');
@@ -672,11 +636,11 @@ describe('resolveCompiledAgentConfigForSession', () => {
     const result = await resolveCompiledAgentConfigForSession(PROJECT, null, { onManifest: (raw) => { seen = raw; } });
     expect(result).not.toBeNull();
     expect((JSON.parse(result!) as CompiledAgents).agent.support.prompt).toBe('Support body.');
-    expect(manifestRuntime(seen)).toBe('pi');
+    expect((seen as Record<string, unknown> | null)?.runtime).toBe('pi');
     // The restricted-session compiler reads the same manifest and reports it too.
     seen = null;
     await resolveSelectedAgentConfigForSession(PROJECT, 'support', null, { onManifest: (raw) => { seen = raw; } });
-    expect(manifestRuntime(seen)).toBe('pi');
+    expect((seen as Record<string, unknown> | null)?.runtime).toBe('pi');
   });
 
   test("reads each declared agent's conventional .md and returns the compiled JSON for a v2 manifest", async () => {
@@ -796,11 +760,16 @@ describe('resolveCompiledAgentConfigForSession — read failures', () => {
       // pr-bot.md deliberately absent
     };
 
-    const compiled = await resolveCompiledAgentConfigForSession(project);
-
-    expect(compiled).not.toBeNull();
-    expect(JSON.parse(compiled as string).agent['pr-bot']).toBeDefined();
-    expect(JSON.parse(compiled as string).agent.support.prompt).toBe('Support prompt.');
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const compiled = await resolveCompiledAgentConfigForSession(project);
+      expect(compiled).not.toBeNull();
+      expect(compiled && JSON.parse(compiled).agent['pr-bot']).toBeDefined();
+      expect(compiled && JSON.parse(compiled).agent.support.prompt).toBe('Support prompt.');
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('a TRANSIENT git failure yields null, not an agent stripped of its prompt', async () => {
@@ -912,7 +881,6 @@ agents:
     expect(JSON.parse(result!).agent.writer.prompt).toBe('Be concise.');
     expect(JSON.parse(result!).agent.reader.prompt).toBe('Read only.');
     expect(readRepoFileCalls).toEqual(['agents/reader.md']);
-    expect(manifestRuntime(parseYaml(manifestFile.content))).toBe('pi');
     const selected = JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'reader', 'feature/yaml'));
     expect(Object.keys(selected.agent).filter((name) => !selected.agent[name].disable)).toEqual(['reader']);
   });
@@ -1035,18 +1003,39 @@ describe('project tools', () => {
     };
     for (const manifest of [v2(tools)]) {
       for (const compiled of [compileAgentConfig(manifest)!, compileSelectedAgentConfig(manifest, 'worker')]) {
-        expect(compiled.kortix_tools).toEqual(['web_search', 'show']);
+        expect(compiled.kortix_tools).toEqual(['web_search', 'image_gen', 'show']);
         expect(compiled.project_tools).toEqual({ memory: 'tools/memory.ts', lookup_order: 'tools/lookup_order.ts' });
         expect(Object.values(compiled.project_tools ?? {}).some((path) => path.startsWith('kortix:'))).toBe(false);
       }
     }
   });
 
-  test('an empty tools key (a map, or every line deleted) compiles to an empty kortix_tools list', () => {
+  test('a tools list written before image_gen existed still loads image_gen', () => {
+    for (const compiled of [compileAgentConfig(v2({ web_search: 'kortix:web_search' }))!, compileSelectedAgentConfig(v2({ web_search: 'kortix:web_search' }), 'worker')]) {
+      expect(compiled.kortix_tools).toEqual(['web_search', 'image_gen']);
+    }
+  });
+
+  test("an agent's tools switch turns image_gen off for that agent only", () => {
+    const manifest = { kortix_version: 2, default_agent: 'worker', agents: { worker: { tools: { image_gen: false } }, other: {} }, tools: { web_search: 'kortix:web_search' } };
+    const compiled = compileAgentConfig(manifest)!;
+    // The tool loads for the session; the agent's tool access refuses it (pi `toolAllowed`).
+    expect(compiled.kortix_tools).toEqual(['web_search', 'image_gen']);
+    expect(compiled.agent.worker.tools).toEqual({ image_gen: false });
+    expect(compiled.agent.other.tools).toBeUndefined();
+  });
+
+  test('image_gen mapped to a project module compiles as a project tool', () => {
+    const compiled = compileAgentConfig(v2({ web_search: 'kortix:web_search', image_gen: 'tools/img.ts' }))!;
+    expect(compiled.project_tools?.image_gen).toBe('tools/img.ts');
+    expect(compiled.kortix_tools).not.toContain('image_gen');
+  });
+
+  test('an empty tools key (a map, or every line deleted) compiles to the default-on Kortix tools only', () => {
     for (const tools of [{}, null]) {
       for (const manifest of [v2(tools)]) {
-        expect(compileAgentConfig(manifest)?.kortix_tools).toEqual([]);
-        expect(compileSelectedAgentConfig(manifest, 'worker').kortix_tools).toEqual([]);
+        expect(compileAgentConfig(manifest)?.kortix_tools).toEqual(['image_gen']);
+        expect(compileSelectedAgentConfig(manifest, 'worker').kortix_tools).toEqual(['image_gen']);
         expect(compileAgentConfig(manifest)).not.toHaveProperty('project_tools');
       }
     }

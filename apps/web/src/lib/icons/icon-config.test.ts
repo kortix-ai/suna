@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { DEFAULT_ICON_WEIGHT, ICON_WEIGHTS, SHIPPED_ICON_WEIGHTS } from './icon-config';
+import { DEFAULT_ICON_WEIGHT, ICON_WEIGHTS, SHIPPED_ICON_WEIGHTS } from '@kortix/ui';
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -33,13 +33,18 @@ describe('icon-config', () => {
   // The browser bundle strips every other weight (phosphor-weights-loader).
   // A literal outside the list would render an empty icon, so it fails here.
   test('no source file asks for a weight the bundle does not ship', () => {
-    const root = new URL('../../', import.meta.url).pathname;
+    // apps/web/src and packages/ui/src: both ship in the same bundle.
+    const roots = ['../../', '../../../../../packages/ui/src/'].map(
+      (rel) => new URL(rel, import.meta.url).pathname,
+    );
     const literal = /\bweight(?:=\{?|:\s*)['"](thin|light|regular|bold|fill|duotone)['"]/g;
     const offenders: string[] = [];
-    for (const file of sourceFiles(root)) {
-      for (const match of readFileSync(file, 'utf8').matchAll(literal)) {
-        if (!SHIPPED_ICON_WEIGHTS.includes(match[1] as (typeof SHIPPED_ICON_WEIGHTS)[number])) {
-          offenders.push(`${file.slice(root.length)}: ${match[0]}`);
+    for (const root of roots) {
+      for (const file of sourceFiles(root)) {
+        for (const match of readFileSync(file, 'utf8').matchAll(literal)) {
+          if (!SHIPPED_ICON_WEIGHTS.includes(match[1] as (typeof SHIPPED_ICON_WEIGHTS)[number])) {
+            offenders.push(`${file.slice(root.length)}: ${match[0]}`);
+          }
         }
       }
     }

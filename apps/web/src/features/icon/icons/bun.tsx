@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /** Bun brand mark, full colour. Source: gilbarbara/logos (CC0), `logos:bun`. */
 export const Bun = ({ className }: { className?: string }) => {

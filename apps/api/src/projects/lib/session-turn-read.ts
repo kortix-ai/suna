@@ -92,6 +92,90 @@ async function readRecentTurnFailures(sessionId: string): Promise<SessionTurnFai
   return failures;
 }
 
+function projectLiveTurns(
+  authority: ReturnType<typeof storedSandboxTurns>,
+  ledger: ReadonlyMap<string, { messageId: string | null; opencodeSessionId: string | null; startedAt: Date; acceptedAt: Date | null }>,
+): SessionTurnState['turns'] {
+  const live = authority
+    .map((turn) => {
+      const row = ledger.get(turn.token);
+      // The authority's own instant first: it is what the grant statement
+      // wrote. The ledger start is the fallback for a legacy `activeTurn`
+      // record, which carries none.
+      const startedAt =
+        turn.startedAtMs !== null ? new Date(turn.startedAtMs) : (row?.startedAt ?? null);
+      const runtimeSessionId = turn.runtimeSessionId || row?.opencodeSessionId || null;
+      return {
+        startedAtMs: startedAt ? startedAt.getTime() : null,
+        turn: {
+          turn_token: turn.token,
+          // State comes from the authority: `acceptSandboxTurn` promotes the
+          // authority entry in statement one and UPSERTs the ledger in
+          // statement two, so a swallowed second write leaves the row saying
+          // `delivering` for a turn OpenCode has accepted.
+          state: turn.state,
+          message_id: turn.messageId ?? row?.messageId ?? null,
+          runtime_session_id: runtimeSessionId,
+          opencode_session_id: runtimeSessionId,
+          started_at: startedAt ? startedAt.toISOString() : null,
+          accepted_at: row?.acceptedAt ? row.acceptedAt.toISOString() : null,
+        },
+      };
+    })
+    // Newest start first, then by token so two turns minted in the same
+    // millisecond — or two legacy records with no instant at all — still
+    // come back in a stable order.
+    .sort(
+      (a, b) =>
+        (b.startedAtMs ?? 0) - (a.startedAtMs ?? 0) ||
+        a.turn.turn_token.localeCompare(b.turn.turn_token),
+    )
+    .map((entry) => entry.turn);
+  return live;
+}
+
+/** Batched lifecycle-authoritative projection, scoped to the caller's visible IDs. */
+export async function readSessionTurnStates(sessionIds: string[]): Promise<Map<string, SessionTurnState>> {
+  if (sessionIds.length === 0) return new Map();
+  const boxes = await db.select({
+    sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status,
+    metadata: sessionSandboxes.metadata, sandboxId: sessionSandboxes.sandboxId,
+    externalId: sessionSandboxes.externalId, provider: sessionSandboxes.provider,
+  }).from(sessionSandboxes).where(inArray(sessionSandboxes.sessionId, sessionIds));
+  const authorities = boxes.map(box => ({ box, turns: RUNNING_SANDBOX_STATUSES.has(box.status) ? storedSandboxTurns(box.metadata) : [] }));
+  const tokens = authorities.flatMap(({ turns }) => turns.map(turn => turn.token));
+  const rows = tokens.length === 0 ? [] : await db.select({
+    turnToken: sessionTurns.turnToken, sessionId: sessionTurns.sessionId,
+    messageId: sessionTurns.messageId, opencodeSessionId: sessionTurns.runtimeSessionId,
+    startedAt: sessionTurns.startedAt, acceptedAt: sessionTurns.acceptedAt,
+  }).from(sessionTurns).where(and(inArray(sessionTurns.sessionId, sessionIds), inArray(sessionTurns.turnToken, tokens)));
+  const ended = await db.selectDistinctOn([sessionTurns.sessionId], {
+    sessionId: sessionTurns.sessionId, turnToken: sessionTurns.turnToken,
+    messageId: sessionTurns.messageId, endReason: sessionTurns.endReason,
+    endError: sessionTurns.endError, endedAt: sessionTurns.endedAt,
+  }).from(sessionTurns).where(and(inArray(sessionTurns.sessionId, sessionIds), eq(sessionTurns.state, 'ended')))
+    .orderBy(sessionTurns.sessionId, desc(sessionTurns.endedAt), desc(sessionTurns.startedAt));
+  const result = new Map<string, SessionTurnState>(sessionIds.map(id => [id, { turns: [] }]));
+  for (const row of ended) result.set(row.sessionId, { turns: [], last_ended: {
+    turn_token: row.turnToken, ...(row.messageId ? { message_id: row.messageId } : {}),
+    end_reason: row.endReason, ended_at: row.endedAt?.toISOString() ?? null,
+    ...(row.endError && !isRequestedStopName(row.endError.name) ? { error: row.endError } : {}),
+  } });
+  const ledgerBySession = new Map<string, Map<string, typeof rows[number]>>();
+  for (const row of rows) {
+    const ledger = ledgerBySession.get(row.sessionId) ?? new Map<string, typeof row>();
+    ledger.set(row.turnToken, row);
+    ledgerBySession.set(row.sessionId, ledger);
+  }
+  for (const { box, turns: authority } of authorities) {
+    if (authority.length > 0) scheduleSessionTurnRecovery(box);
+    const ledger = ledgerBySession.get(box.sessionId) ?? new Map();
+    const live = projectLiveTurns(authority, ledger);
+    result.set(box.sessionId, { ...result.get(box.sessionId), turns: live });
+  }
+  return result;
+}
+
 export async function readSessionTurnState(sessionId: string): Promise<SessionTurnState> {
   // `session_sandboxes.session_id` is UNIQUE, so this is the session's one
   // box. A box that is not running holds no live turn whatever its metadata
@@ -155,41 +239,7 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
     for (const row of rows) ledger.set(row.turnToken, row);
   }
 
-  const live = authority
-    .map((turn) => {
-      const row = ledger.get(turn.token);
-      // The authority's own instant first: it is what the grant statement
-      // wrote. The ledger start is the fallback for a legacy `activeTurn`
-      // record, which carries none.
-      const startedAt =
-        turn.startedAtMs !== null ? new Date(turn.startedAtMs) : (row?.startedAt ?? null);
-      const runtimeSessionId = turn.runtimeSessionId || row?.opencodeSessionId || null;
-      return {
-        startedAtMs: startedAt ? startedAt.getTime() : null,
-        turn: {
-          turn_token: turn.token,
-          // State comes from the authority: `acceptSandboxTurn` promotes the
-          // authority entry in statement one and UPSERTs the ledger in
-          // statement two, so a swallowed second write leaves the row saying
-          // `delivering` for a turn OpenCode has accepted.
-          state: turn.state,
-          message_id: turn.messageId ?? row?.messageId ?? null,
-          runtime_session_id: runtimeSessionId,
-          opencode_session_id: runtimeSessionId,
-          started_at: startedAt ? startedAt.toISOString() : null,
-          accepted_at: row?.acceptedAt ? row.acceptedAt.toISOString() : null,
-        },
-      };
-    })
-    // Newest start first, then by token so two turns minted in the same
-    // millisecond — or two legacy records with no instant at all — still
-    // come back in a stable order.
-    .sort(
-      (a, b) =>
-        (b.startedAtMs ?? 0) - (a.startedAtMs ?? 0) ||
-        a.turn.turn_token.localeCompare(b.turn.turn_token),
-    )
-    .map((entry) => entry.turn);
+  const live = projectLiveTurns(authority, ledger);
   const failures = await readRecentTurnFailures(sessionId);
   const recentFailures = failures.length > 0 ? { recent_failures: failures } : {};
   const [ended] = await db

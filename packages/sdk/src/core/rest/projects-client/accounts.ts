@@ -174,6 +174,18 @@ export interface AccountInviteDescribeRedacted {
   expired: boolean;
   accepted_at: string | null;
   email_matches_caller: false;
+  /** Why the invite is not the caller's; absent from an older API. The same
+   *  codes a refused accept or decline returns as `code`:
+   *  - `email_unconfirmed`: the caller holds the address, but the instance
+   *    cannot prove it (a self-host with no email). The person signs in through
+   *    `sso_provider_id`, or an account admin resends the invite.
+   *  - `sso_email_domain_unverified`: an SSO login whose IdP did not verify the
+   *    address's domain. The person signs in with the email address instead.
+   *  - `wrong_account`: the invite names another address. */
+  reason?: 'email_unconfirmed' | 'sso_email_domain_unverified' | 'wrong_account';
+  /** With `email_unconfirmed`: the Supabase SSO provider of the invite's
+   *  account, for `signInWithSSO({ providerId })`. Null when it has none. */
+  sso_provider_id?: string | null;
   account_id?: null;
   account_name?: null;
   email?: null;

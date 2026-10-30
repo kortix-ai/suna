@@ -1,3 +1,4 @@
+import { wellKnownResponse } from '@kortix/shared/well-known';
 import {
   DEFAULT_BODY_AMPLIFICATION,
   DEFAULT_MAX_REQUEST_BYTES,
@@ -96,7 +97,12 @@ export function messagesAuthorization(
 
 export function buildServer(options: { inflight?: InflightBudget } = {}): GatewayServer {
   const inflight = options.inflight ?? defaultInflight;
-  const api = createApiClient({ baseUrl: config.apiUrl, token: config.apiToken, edgeKey: config.internalEdgeKey });
+  const api = createApiClient({
+    baseUrl: config.apiUrl,
+    internalBaseUrl: config.apiInternalUrl,
+    token: config.apiToken,
+    edgeKey: config.internalEdgeKey,
+  });
 
   const logger = createGatewayLogger();
 
@@ -114,11 +120,13 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       '[gateway] LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY unset — Langfuse disabled (request logs still persist via the API)',
     );
 
+  const { recordOutcome, recordUpstream, trafficSnapshot, upstreamSignals } = createTraffic();
   const gateway = createGateway(
     {
       authenticate: api.authenticate,
       // Combined authentication + budget gate. Billing runs after model resolution.
       authorize: api.authorize,
+      admit: api.admit,
       resolveRoute: api.resolveRoute,
       resolveUpstream: api.resolveUpstream,
       notePoolRateLimit: api.notePoolRateLimit,
@@ -128,6 +136,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       recordUsage: api.recordUsage,
       listModels: api.listModels,
       recordTrace: async (trace) => {
+        recordUpstream(trace);
         const sinks: Promise<unknown>[] = [api.recordTrace(trace)];
         if (traces) sinks.push(traces.record(trace));
         await Promise.allSettled(sinks);
@@ -136,9 +145,18 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
     { logger, imageWindow: config.imageWindow },
   );
   const app = new Hono();
-  const { recordOutcome, trafficSnapshot } = createTraffic();
+  app.use('*', async (c, next) => {
+    await next();
+    c.header('Content-Security-Policy', "default-src 'none';frame-ancestors 'none'");
+    c.header('X-Frame-Options', 'DENY');
+    // Permissions-Policy has no wildcard directive: deny each browser capability explicitly.
+    c.header('Permissions-Policy', 'accelerometer=(), ambient-light-sensor=(), attribution-reporting=(), autoplay=(), battery=(), bluetooth=(), browsing-topics=(), camera=(), clipboard-read=(), clipboard-write=(), compute-pressure=(), display-capture=(), encrypted-media=(), fullscreen=(), gamepad=(), geolocation=(), gyroscope=(), hid=(), identity-credentials-get=(), idle-detection=(), keyboard-map=(), local-fonts=(), magnetometer=(), microphone=(), midi=(), otp-credentials=(), payment=(), picture-in-picture=(), publickey-credentials-create=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), speaker-selection=(), storage-access=(), sync-xhr=(), usb=(), web-share=(), window-management=(), xr-spatial-tracking=()');
+  });
+  for (const path of ['/.well-known/security.txt', '/robots.txt', '/sitemap.xml']) {
+    app.get(path, (c) => wellKnownResponse(c.req.path) ?? c.notFound());
+  }
   const inflightRequests = trackInflight(app);
-  registerHealth(app, api, inflight, traces, trafficSnapshot);
+  registerHealth(app, api, inflight, traces, trafficSnapshot, upstreamSignals);
   registerRoutes(app, gateway, inflight, recordOutcome);
   return { app, traces, inflightRequests };
 }

@@ -5,9 +5,9 @@
  * opencode part type (text, reasoning, tool, file, subtask, patch, snapshot,
  * agent, retry, compaction, step) into a `ClassifiedPart` with a
  * compile-time-exhaustive `kind`, plus a normalized `TurnError` for a failed
- * assistant turn. This is the exact same classification
- * `apps/whitelabel-demo/src/components/chat/message-view.tsx` uses to render
- * React — here we switch over `part.kind` and print plain text instead, to
+ * assistant turn. This is the exact same classification the terminal client
+ * (`apps/tui/src/features/session/transcript/turn.tsx`) renders from — here
+ * we switch over `part.kind` and print plain text instead, to
  * show the classification itself has no framework dependency.
  *
  * Run:

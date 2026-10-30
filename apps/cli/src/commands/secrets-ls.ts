@@ -28,6 +28,8 @@ type SecretRow = {
   granted: boolean;
   /** Audience labels; empty = everyone in the project. */
   sharedWith: string[];
+  /** Enabled manifest agents admitted by identifier; unknown on older servers. */
+  agents?: string[] | 'all' | null;
   /** False when the value is shared with specific people and not the caller. */
   usable: boolean;
 };
@@ -37,9 +39,12 @@ type SecretRow = {
  * grant to the project), else the audience labels. `(not you)` marks a value
  * the caller lists only because they manage the project's secrets.
  */
-function secretAudienceLabel(row: { sharedWith: string[]; usable: boolean }): string {
+function secretAudienceLabel(row: { sharedWith: string[]; usable: boolean; agents?: string[] | 'all' | null }): string {
   const audience = row.sharedWith.length === 0 ? 'everyone' : row.sharedWith.join(', ');
-  return row.usable ? audience : `${audience} (not you)`;
+  const people = row.usable ? audience : `${audience} (not you)`;
+  if (row.agents == null) return people;
+  const agents = row.agents === 'all' ? 'all' : row.agents.join(', ') || 'none';
+  return `${people}; agents: ${agents}`;
 }
 
 /**
@@ -130,6 +135,7 @@ export async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
       deliveryStatus:
         secret.delivery_status ?? (secret.strategy === 'denied' ? 'disabled' : 'available'),
       requiresRotation: secret.requires_rotation ?? false,
+      agents: secret.agents,
       sharedWith: (secret.shared_with ?? []).some((share) => share.principal_type === 'project')
         ? []
         : (secret.shared_with ?? []).map((share) => share.label),
@@ -219,6 +225,7 @@ export async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
         requires_rotation: r.requiresRotation,
         granted: r.granted,
         shared_with: r.sharedWith,
+        agents: r.agents,
         usable: r.usable,
         // Backward-compatible aliases for older CLI JSON consumers.
         key: r.key,

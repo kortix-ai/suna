@@ -8,11 +8,11 @@
  * the DB on first read for a project) or directly via the UI/CRUD API.
  *
  * Provider-agnostic: each template carries the provider of its most recent
- * successful build; the matching Daytona, Platinum, or E2B adapter is resolved
+ * successful build; the matching Platinum or Daytona adapter is resolved
  * through the shared provider registry.
  */
 
-import { and, eq, ne, or } from 'drizzle-orm';
+import { and, eq, ne, or, sql } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
@@ -29,6 +29,7 @@ import {
   extractSandboxDefault,
   extractSandboxTemplates,
   normalizeUserDockerfileForSnapshot,
+  type SandboxResidentialProxy,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
   SANDBOX_SPEC_LIMITS,
 } from './dockerfile-layer';
@@ -43,6 +44,7 @@ export {
 } from './template-runtime-fingerprint';
 import { getSandboxProvider } from './providers';
 import { BoundedMap } from '../shared/bounded-map';
+import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
 
 /** Pretty resolved view used by both the boot path and the UI. */
 export interface ResolvedTemplate {
@@ -61,6 +63,11 @@ export interface ResolvedTemplate {
   diskGb: number;
   /** kortix.yaml `container_runtime: true` — the sandbox runs Docker. */
   containerRuntime: boolean;
+  /**
+   * kortix.yaml `residential_proxy` (or the template form's "Residential IP"):
+   * null = off. Stored in `metadata.residentialProxy`, outside the image identity.
+   */
+  residentialProxy: SandboxResidentialProxy | null;
   /** Live provider state — refreshed by the caller on demand. */
   providerState: string;
   providerSnapshotName: string | null;
@@ -72,6 +79,12 @@ export interface ResolvedTemplate {
    * runtime). null for rows built before this column existed → no swap (rebuild).
    */
   swapKey: string | null;
+  /**
+   * The last image this template served on EACH provider. The row's own
+   * snapshot columns follow whichever provider built last, so a build on one
+   * provider must not erase another provider's fallback (dev 2026-10-24).
+   */
+  lastReady: Record<string, { snapshotName: string; contentHash: string | null }>;
 }
 
 /**
@@ -253,6 +266,7 @@ export interface CreateTemplateInput {
   cpu?: number;
   memoryGb?: number;
   diskGb?: number;
+  residentialProxy?: SandboxResidentialProxy | null;
   source?: 'toml' | 'ui';
 }
 
@@ -268,13 +282,14 @@ export async function createTemplate(input: CreateTemplateInput): Promise<DbSand
       name: input.name || input.slug,
       isShared: false,
       source: input.source ?? 'ui',
-      provider: 'daytona',
+      provider: config.getDefaultProvider(),
       image: input.image ?? null,
       dockerfilePath: input.dockerfilePath ?? null,
       entrypoint: input.entrypoint ?? null,
       cpu: clamp(input.cpu, SANDBOX_SPEC_LIMITS.cpu),
       memoryGb: clamp(input.memoryGb, SANDBOX_SPEC_LIMITS.memory),
       diskGb: clamp(input.diskGb, SANDBOX_SPEC_LIMITS.disk),
+      metadata: residentialProxyMetadata(input.residentialProxy),
       providerState: 'missing',
     })
     .returning();
@@ -290,6 +305,8 @@ export interface UpdateTemplateInput {
   cpu?: number | null;
   memoryGb?: number | null;
   diskGb?: number | null;
+  /** null turns the residential proxy off. Not part of the image identity. */
+  residentialProxy?: SandboxResidentialProxy | null;
 }
 
 /** Patch a template by id. When `expectProjectId` is given, the row must belong
@@ -315,6 +332,7 @@ export async function updateTemplate(
   if (patch.cpu !== undefined) next.cpu = clamp(patch.cpu ?? undefined, SANDBOX_SPEC_LIMITS.cpu);
   if (patch.memoryGb !== undefined) next.memoryGb = clamp(patch.memoryGb ?? undefined, SANDBOX_SPEC_LIMITS.memory);
   if (patch.diskGb !== undefined) next.diskGb = clamp(patch.diskGb ?? undefined, SANDBOX_SPEC_LIMITS.disk);
+  if (patch.residentialProxy !== undefined) next.metadata = mergeResidentialProxy(patch.residentialProxy);
   // Identity changed → snapshot is stale.
   if (
     patch.image !== undefined ||
@@ -375,9 +393,35 @@ export async function refreshTemplateState(
  * snapshot name from (Dockerfile bytes or FROM image, runtime fingerprint,
  * spec). Used by builder.ts to know what to ask the provider for.
  */
+/**
+ * The region a project's own image is built in: the region its sessions boot
+ * in (`us_region`, see platform/services/sandbox-region.ts), or undefined for
+ * the provider's home region. The shared default is never regional. One image
+ * serves every project, so it is built at home and copied where it is needed.
+ *
+ * The region is part of the image identity, not only a build parameter.
+ * Platinum boots an image only from its own region's object store, and the
+ * copy runs one way: the home control plane holds no credentials for a
+ * regional bucket (prod, 2026-10-17), so an image built in us-east can never
+ * boot in eu-west. With the region in the name, two projects with the same
+ * Dockerfile in different regions get different images (a content-addressed
+ * name would make the second adopt the first's), and a project that changes
+ * region rebuilds there instead of booting an image its new region cannot read.
+ */
+export async function projectImageRegion(projectId: string): Promise<string | undefined> {
+  if (!projectId) return undefined;
+  const [row] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  return resolveSessionSandboxRegion(row?.metadata ?? null);
+}
+
 export async function computeTemplateIdentity(
   project: GitBackedProject,
   template: ResolvedTemplate,
+  deps: { imageRegion?: (projectId: string) => Promise<string | undefined> } = {},
 ): Promise<{
   snapshotName: string;
   contentHash: string;
@@ -386,6 +430,8 @@ export async function computeTemplateIdentity(
   userDockerfile: string;
   /** Commit the Dockerfile was read from; null for default/image templates. */
   builtFromCommit: string | null;
+  /** Provider region the image is built in; undefined for the home region. */
+  region?: string;
   /**
    * Identity of everything the agent-swap does NOT touch: user image + spec +
    * NON-agent runtime layer (contentHash with the non-agent runtime fingerprint
@@ -397,11 +443,17 @@ export async function computeTemplateIdentity(
 }> {
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
   const { dockerfile: userDockerfile, commit } = await resolveUserDockerfile(project, template);
+  const region = template.isShared
+    ? undefined
+    : await (deps.imageRegion ?? projectImageRegion)(project.projectId);
   const hashInputs = {
     dockerfile: userDockerfile,
     contextTreeOid: template.isShared ? 'platform-default' : `template:${template.slug}`,
     spec: { cpu: template.cpu, memory: template.memoryGb, disk: template.diskGb },
     containerRuntime: template.containerRuntime,
+    // In swapKey too: an agent swap patches its predecessor in the
+    // predecessor's region, so a region change must rebuild instead.
+    region,
   };
   const hash = computeSnapshotHash({ ...hashInputs, runtimeFingerprint });
   // swapKey identifies EVERYTHING the agent-swap does NOT touch: the user image,
@@ -421,6 +473,7 @@ export async function computeTemplateIdentity(
     runtimeFingerprint,
     userDockerfile,
     builtFromCommit: commit,
+    region,
     swapKey,
   };
 }
@@ -442,7 +495,43 @@ export async function resolveUserDockerfile(
   if (template.image) {
     return { dockerfile: `FROM ${template.image}\n`, commit: null };
   }
-  throw new Error(`Sandbox template "${template.slug}" has neither image nor dockerfilePath`);
+  // Neither: the platform base, built for this template (its own size and settings).
+  return { dockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE, commit: null };
+}
+
+/**
+ * The `residential_proxy` of a project's template, read from its row (the
+ * session create already synced kortix.yaml into it). The platform templates
+ * (`default`, the meta sandbox) never ask for one.
+ */
+export async function templateResidentialProxy(
+  projectId: string,
+  slug: string,
+): Promise<SandboxResidentialProxy | null> {
+  if (!slug || slug === DEFAULT_SANDBOX_SLUG) return null;
+  const [row] = await db
+    .select({ metadata: sandboxTemplates.metadata })
+    .from(sandboxTemplates)
+    .where(and(eq(sandboxTemplates.projectId, projectId), eq(sandboxTemplates.slug, slug)))
+    .limit(1);
+  return storedResidentialProxy(row?.metadata);
+}
+
+/** `metadata.residentialProxy` of a template row; null = off. */
+export function storedResidentialProxy(metadata: unknown): SandboxResidentialProxy | null {
+  const value = (metadata as { residentialProxy?: unknown } | null | undefined)?.residentialProxy;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const country = (value as { country?: unknown }).country;
+  return typeof country === 'string' && country ? { country } : {};
+}
+
+function residentialProxyMetadata(value: SandboxResidentialProxy | null | undefined): Record<string, unknown> {
+  return value ? { residentialProxy: value } : {};
+}
+
+/** Set or clear `metadata.residentialProxy`, keeping every other key (`lastReady`). */
+function mergeResidentialProxy(value: SandboxResidentialProxy | null | undefined) {
+  return sql`(coalesce(${sandboxTemplates.metadata}, '{}'::jsonb) - 'residentialProxy') || ${JSON.stringify(residentialProxyMetadata(value))}::jsonb`;
 }
 
 /**
@@ -456,10 +545,21 @@ export async function recordTemplateBuilt(
   if (!templateId) return;
   // Read the row first so we know which snapshot we're about to repoint AWAY
   // from (the predecessor) and on which provider it lives.
-  const prev = await getTemplateById(templateId).catch(() => null);
+  const prevRow = await getTemplateById(templateId).catch(() => null);
+  const prev = prevRow ? rowToResolved(prevRow) : null;
+  const provider = args.provider ?? prev?.provider;
+  // Repointing to another provider keeps the outgoing provider's image as
+  // its last ready one.
+  const lastReady = {
+    ...(prev && prev.provider !== provider && prev.lastReady[prev.provider]
+      ? { [prev.provider]: prev.lastReady[prev.provider] }
+      : {}),
+    ...(provider ? { [provider]: { snapshotName: args.snapshotName, contentHash: args.contentHash } } : {}),
+  };
   await db
     .update(sandboxTemplates)
     .set({
+      metadata: sql`coalesce(${sandboxTemplates.metadata}, '{}'::jsonb) || jsonb_build_object('lastReady', coalesce(${sandboxTemplates.metadata} -> 'lastReady', '{}'::jsonb) || ${JSON.stringify(lastReady)}::jsonb)`,
       providerSnapshotName: args.snapshotName,
       contentHash: args.contentHash,
       builtFromCommit: args.builtFromCommit ?? null,
@@ -483,18 +583,16 @@ export async function recordTemplateBuilt(
   // one it referenced before is superseded. Drop it immediately instead of
   // leaving it to accumulate against the org-wide 100-snapshot quota until the
   // lazy, pressure-gated GC eventually notices.
+  // A predecessor on ANOTHER provider is still that provider's last ready
+  // image (`lastReady`), and it does not live on this one: never reap it here.
   const oldName = prev?.providerSnapshotName ?? null;
-  if (oldName && oldName !== args.snapshotName) {
+  if (oldName && oldName !== args.snapshotName && provider && prev?.provider === provider) {
     // Off the caller's path: the first session after every deploy lands here
     // (the release gate builds the new image unpublished), and the reap is a
     // provider lookup + delete that session never needed. It is best-effort by
     // construction (reapPredecessorSnapshot catches and logs everything; quota
     // GC collects whatever it leaves), so a session must not wait on it.
-    const reap = reapPredecessorSnapshot(
-      templateId,
-      oldName,
-      args.provider ?? prev?.provider ?? 'daytona',
-    );
+    const reap = reapPredecessorSnapshot(templateId, oldName, provider);
     pendingPredecessorReaps.add(reap);
     void reap.finally(() => pendingPredecessorReaps.delete(reap));
   }
@@ -577,7 +675,7 @@ function synthesizedDefault(): ResolvedTemplate {
     name: tpl.name ?? 'Default',
     isShared: true,
     source: 'platform',
-    provider: 'daytona',
+    provider: config.getDefaultProvider(),
     image: null,
     dockerfilePath: null,
     entrypoint: null,
@@ -585,11 +683,13 @@ function synthesizedDefault(): ResolvedTemplate {
     memoryGb: DEFAULT_MEMORY_GB,
     diskGb: DEFAULT_DISK_GB,
     containerRuntime: false,
+    residentialProxy: null,
     providerState: 'missing',
     providerSnapshotName: null,
     contentHash: null,
     builtFromCommit: null,
     swapKey: null,
+    lastReady: {},
   };
 }
 
@@ -609,11 +709,19 @@ function rowToResolved(row: DbSandboxTemplate): ResolvedTemplate {
     memoryGb: row.memoryGb ?? DEFAULT_MEMORY_GB,
     diskGb: row.diskGb ?? DEFAULT_DISK_GB,
     containerRuntime: row.containerRuntime,
+    residentialProxy: storedResidentialProxy(row.metadata),
     providerState: row.providerState ?? 'missing',
     providerSnapshotName: row.providerSnapshotName,
     contentHash: row.contentHash,
     builtFromCommit: row.builtFromCommit ?? null,
     swapKey: row.swapKey ?? null,
+    lastReady: {
+      ...((row.metadata as { lastReady?: ResolvedTemplate['lastReady'] } | null)?.lastReady ?? {}),
+      // The row's own active snapshot is its provider's last ready image.
+      ...(row.provider && row.providerState === 'active' && row.providerSnapshotName
+        ? { [row.provider]: { snapshotName: row.providerSnapshotName, contentHash: row.contentHash } }
+        : {}),
+    },
   };
 }
 
@@ -636,14 +744,15 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
           name: tpl.name ?? tpl.slug,
           isShared: false,
           source: 'toml',
-          provider: 'daytona',
+          provider: config.getDefaultProvider(),
           image: tpl.image ?? null,
           dockerfilePath: tpl.dockerfile ?? null,
-          entrypoint: null,
+          entrypoint: tpl.entrypoint ?? null,
           cpu: clamp(tpl.spec.cpu, SANDBOX_SPEC_LIMITS.cpu),
           memoryGb: clamp(tpl.spec.memory, SANDBOX_SPEC_LIMITS.memory),
           diskGb: clamp(tpl.spec.disk, SANDBOX_SPEC_LIMITS.disk),
           containerRuntime: tpl.containerRuntime === true,
+          metadata: residentialProxyMetadata(tpl.residentialProxy),
           providerState: 'missing',
         })
         .onConflictDoUpdate({
@@ -652,10 +761,12 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
             name: tpl.name ?? tpl.slug,
             image: tpl.image ?? null,
             dockerfilePath: tpl.dockerfile ?? null,
+            entrypoint: tpl.entrypoint ?? null,
             cpu: clamp(tpl.spec.cpu, SANDBOX_SPEC_LIMITS.cpu),
             memoryGb: clamp(tpl.spec.memory, SANDBOX_SPEC_LIMITS.memory),
             diskGb: clamp(tpl.spec.disk, SANDBOX_SPEC_LIMITS.disk),
             containerRuntime: tpl.containerRuntime === true,
+            metadata: mergeResidentialProxy(tpl.residentialProxy),
             updatedAt: new Date(),
           },
         });

@@ -103,6 +103,21 @@ test('opens the control-only stream with the platform auth and hands each queue 
   stream.close();
 });
 
+test('a path-only backendUrl (a same-origin proxy such as /api/kortix) opens the stream against the page origin', async () => {
+  const g = globalThis as { location?: unknown };
+  const before = g.location;
+  g.location = { href: 'http://app.test/projects/p1/sessions/s1', origin: 'http://app.test' };
+  try {
+    configureKortix({ backendUrl: '/api/kortix', getToken: async () => 'tok', eventStreamTransport: fakeTransport() });
+    const stream = openSessionControlStream({ projectId: 'p1', sessionId: 's1', timing: TIMING });
+    await tick();
+    expect(connections.map((c) => c.url)).toEqual(['http://app.test/api/kortix/projects/p1/sessions/s1/events?channels=control']);
+    stream.close();
+  } finally {
+    g.location = before;
+  }
+});
+
 test('every opener of one session shares ONE connection; the last close ends it', async () => {
   const a: string[] = [];
   const b: string[] = [];

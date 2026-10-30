@@ -13,7 +13,7 @@ const isolatedUrl = new URL(url);
 isolatedUrl.pathname = `/${name}`;
 const db = postgres(isolatedUrl.toString());
 const root = resolve(import.meta.dir, '../../../..');
-const env = { ...process.env, BASH_ENV: '/dev/null', INTERNAL_KORTIX_ENV: 'dev', KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: 'http://127.0.0.1:1', FRONTEND_URL: 'http://127.0.0.1:1', ALLOWED_SANDBOX_PROVIDERS: '', DATABASE_URL: isolatedUrl.toString(), E2E_DATABASE_URL: isolatedUrl.toString() };
+const env = { ...process.env, BASH_ENV: '/dev/null', INTERNAL_KORTIX_ENV: 'dev', KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: 'http://127.0.0.1:1', FRONTEND_URL: 'http://127.0.0.1:1', PLATINUM_INFERENCE_URL: 'http://127.0.0.1:1', ALLOWED_SANDBOX_PROVIDERS: '', DATABASE_URL: isolatedUrl.toString(), E2E_DATABASE_URL: isolatedUrl.toString() };
 const survivor = 'pk_concurrent';
 
 beforeAll(async () => {

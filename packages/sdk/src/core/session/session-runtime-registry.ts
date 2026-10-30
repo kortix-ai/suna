@@ -32,7 +32,7 @@ export interface SessionRuntimeEntry {
   opencodeSessionId: string;
   /** This session's resolved runtime proxy URL (`${backendUrl}/p/{externalId}/8000`). */
   runtimeUrl: string;
-  /** The sandbox's provider external id (Daytona id). */
+  /** The sandbox's provider external id. */
   sandboxId: string;
 }
 

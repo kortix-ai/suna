@@ -2,11 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { getChildSessionId } from '@kortix/sdk';
 
 import {
+  childReadFailureLog,
   childSessionIdOf,
   childSessionReferences,
   childSessionsToCapture,
   readChildTranscripts,
 } from './session-transcript-mirror';
+import { TranscriptReadError } from './runtime-read-failure';
 
 /**
  * A sub-agent runs in its own OpenCode session, and its row in the parent
@@ -138,6 +140,55 @@ describe('readChildTranscripts: which sub-agents one capture saves, and whether 
     expect(out.more).toBe(false);
   });
 
+  test('an expected runtime failure stops the walk: every sibling would fail the same way', async () => {
+    // A stopped box answers 503 through the proxy for EVERY child, not one.
+    // The walk stops at the first unavailable failure instead of paying the
+    // same failure per child (one prod capture failed 60 reads in a row).
+    const stopped = box({});
+    stopped.read = async (id) => {
+      stopped.reads.push(id);
+      throw new TranscriptReadError(503);
+    };
+    const out = await readChildTranscripts({ references: refs(ids(8)), stored: new Map(), cap: 12, read: stopped.read });
+    expect(stopped.reads).toEqual(['ses_c0']);
+    expect(out.children).toEqual([]);
+    expect(out.failures).toEqual({ missing: 0, unavailable: 1, other: 0, first: 'Transcript read failed: HTTP 503' });
+  });
+
+  test('a missing child transcript does not stop the walk: the siblings after it still read', async () => {
+    // A 404 is per transcript, instant, and says nothing about the runtime:
+    // one gone child (the box came back without its sessions) must not starve
+    // the pending siblings after it — a running sub-agent's transcript lives
+    // there. Only the cannot-serve-anything class stops the walk.
+    const replaced = box({});
+    replaced.read = async (id) => {
+      replaced.reads.push(id);
+      if (id === ids(16)[2]) throw new TranscriptReadError(404);
+      return { rows: [message(id)], complete: true };
+    };
+    const out = await readChildTranscripts({ references: refs(ids(16)), stored: new Map(), cap: 12, read: replaced.read });
+    // The 404 read takes no slot, so the walk keeps paying reads past it.
+    expect(replaced.reads).toEqual(ids(13));
+    expect(out.children.map((c) => c.opencodeSessionId)).toEqual(ids(13).filter((id) => id !== ids(16)[2]));
+    expect(out.failures).toEqual({ missing: 1, unavailable: 0, other: 0, first: 'Transcript read failed: HTTP 404' });
+    // The gone child is no progress: the siblings saved new rows, so the
+    // chain asks for one more capture to pick the rest up.
+    expect(out.more).toBe(true);
+  });
+
+  test('an expected transport failure (timeout, dead box) also stops the walk', async () => {
+    const slow = box({});
+    slow.read = async (id) => {
+      slow.reads.push(id);
+      const timeout = new Error('The operation timed out.');
+      timeout.name = 'TimeoutError';
+      throw timeout;
+    };
+    const out = await readChildTranscripts({ references: refs(ids(8)), stored: new Map(), cap: 12, read: slow.read });
+    expect(slow.reads).toEqual(['ses_c0']);
+    expect(out.failures).toEqual({ missing: 0, unavailable: 1, other: 0, first: 'The operation timed out.' });
+  });
+
   test('an unsettled sub-agent saved before is read again but is not new: no next capture for it alone', async () => {
     const stored = new Map(ids(14).map((id) => [id, { settled: false }]));
     const { read } = box();
@@ -156,5 +207,45 @@ describe('readChildTranscripts: which sub-agents one capture saves, and whether 
     const out = await readChildTranscripts({ references: refs(['ses_parent', '../etc']), stored: new Map(), cap: 12, read });
     expect(reads).toEqual(['ses_parent', 'ses_grand']);
     expect(out.children.map((c) => c.opencodeSessionId)).toEqual(['ses_parent', 'ses_grand']);
+  });
+
+});
+
+describe('childReadFailureLog: the one log line a capture\'s failed sub-agent reads earn', () => {
+  test('no failures, no line', () => {
+    expect(childReadFailureLog({ missing: 0, unavailable: 0, other: 0 })).toBeNull();
+  });
+
+  test('expected states — a stopped box, gone transcripts — are info, not warn', () => {
+    // The warn on these states was the spike: 637 lines in four days, 284 in
+    // one hour, every one an expected fail-open degrade.
+    const stopped = childReadFailureLog({ missing: 0, unavailable: 3, other: 0, first: 'Transcript read failed: HTTP 503' });
+    expect(stopped?.level).toBe('info');
+    expect(stopped?.message).toBe('[transcript-mirror] sub-agent reads deferred');
+    expect(stopped?.context).toEqual({ missing: 0, unavailable: 3, first: 'Transcript read failed: HTTP 503' });
+
+    const gone = childReadFailureLog({ missing: 2, unavailable: 0, other: 0, first: 'Transcript read failed: HTTP 404' });
+    expect(gone?.level).toBe('info');
+  });
+
+  test('an unexpected failure still warns, with the count of unexpected ones', () => {
+    const line = childReadFailureLog({ missing: 1, unavailable: 0, other: 2, first: 'boom' });
+    expect(line?.level).toBe('warn');
+    expect(line?.message).toBe('[transcript-mirror] sub-agent reads failed');
+    expect(line?.context).toEqual({ count: 2, first: 'boom' });
+  });
+
+  test('a mixed capture warns about the unexpected one, not the expected one', () => {
+    // The first failure was expected (a stopped box), so `first` holds the
+    // 503; the warn line must name the unexpected failure it counts.
+    const line = childReadFailureLog({
+      missing: 0,
+      unavailable: 3,
+      other: 1,
+      first: 'Transcript read failed: HTTP 503',
+      firstOther: 'Unexpected reply from the runtime daemon',
+    });
+    expect(line?.level).toBe('warn');
+    expect(line?.context).toEqual({ count: 1, first: 'Unexpected reply from the runtime daemon' });
   });
 });

@@ -13,7 +13,7 @@ import { ensureFreeTierAccountReady } from './free-tier';
 import { MINIMUM_CREDIT_FOR_RUN } from './tiers';
 import { debitAndCheckAutoTopup } from './wallet-debits';
 
-type BillingGateReason = 'subscription_required' | 'insufficient_credits' | 'no_account';
+type BillingGateReason = 'subscription_required' | 'insufficient_credits' | 'no_account' | 'plan_upgrade_required';
 
 export interface BillingGateOk {
   ok: true;

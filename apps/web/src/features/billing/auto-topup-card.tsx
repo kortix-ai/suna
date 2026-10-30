@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
-import { Switch } from '@/components/ui/switch';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { spring } from '@/lib/springs';
-import { cn } from '@/lib/utils';
-import { useBillingAccountId } from '@/stores/billing-account-context';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
+import { Switch } from '@kortix/ui/switch';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { spring, cn } from '@kortix/ui';
+import { useBillingAccountId } from '@kortix/ui/internal/stores/billing-account-context';
 import {
   configureAutoTopup,
   getAutoTopupSettings,
@@ -29,7 +28,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { formatWholeUsd, monthlyCreditsForUsd, TOP_UP_BONUS_STEPS, topUpBonusCredits } from './compute-pricing';
+import { formatWholeUsd, monthlyCreditsForUsd, TOP_UP_BONUS_STEPS, topUpBonusCredits } from '@kortix/ui/internal/billing/compute-pricing';
 import { autoTopupFailureNotice } from './auto-topup-failure-notice';
 
 /**

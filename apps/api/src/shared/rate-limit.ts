@@ -15,7 +15,9 @@ export interface RateLimitResult {
   allowed: boolean;
   limit: number;
   remaining: number;
+  /** Until the bucket is full again (`X-RateLimit-Reset`). */
   resetMs: number;
+  /** On a denial: until the next token (`Retry-After`). */
   retryAfterMs?: number;
 }
 
@@ -46,37 +48,41 @@ export class TokenBucketRateLimiter {
   check(key: string, policy: RateLimitPolicy): RateLimitResult {
     const limit = Math.max(1, Math.floor(policy.limit));
     const windowMs = Math.max(1000, Math.floor(policy.windowMs));
+    // One token returns every `msPerToken`; `lastRefill` marks the start of
+    // the token in progress, so a refill keeps the part of a token it did not
+    // complete.
+    const msPerToken = windowMs / limit;
     const now = Date.now();
     const bucketKey = `${this.namespace}:${key}`;
     let bucket = this.buckets.get(bucketKey);
 
     if (!bucket) {
       this.evictIfNeeded();
-      bucket = { tokens: limit - 1, lastRefill: now };
+      bucket = { tokens: limit, lastRefill: now };
       this.buckets.set(bucketKey, bucket);
-      return { allowed: true, limit, remaining: bucket.tokens, resetMs: windowMs };
     }
 
-    const elapsed = now - bucket.lastRefill;
-    const refill = Math.floor((elapsed / windowMs) * limit);
+    const refill = Math.floor((now - bucket.lastRefill) / msPerToken);
     if (refill > 0) {
       bucket.tokens = Math.min(limit, bucket.tokens + refill);
-      bucket.lastRefill = now;
+      bucket.lastRefill += refill * msPerToken;
     }
+    // A full bucket gains nothing while it waits: its next token starts now.
+    if (bucket.tokens >= limit) bucket.lastRefill = now;
+    const inProgress = now - bucket.lastRefill;
 
-    const resetMs = Math.max(windowMs - (now - bucket.lastRefill), 1000);
     if (bucket.tokens <= 0) {
       return {
         allowed: false,
         limit,
         remaining: 0,
-        resetMs,
-        retryAfterMs: resetMs,
+        resetMs: limit * msPerToken - inProgress,
+        retryAfterMs: msPerToken - inProgress,
       };
     }
 
     bucket.tokens -= 1;
-    return { allowed: true, limit, remaining: bucket.tokens, resetMs };
+    return { allowed: true, limit, remaining: bucket.tokens, resetMs: (limit - bucket.tokens) * msPerToken - inProgress };
   }
 
   reset() {

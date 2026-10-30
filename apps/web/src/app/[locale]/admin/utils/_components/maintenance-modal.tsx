@@ -1,10 +1,10 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
+import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
+import { Field, FieldGroup, FieldLabel } from '@kortix/ui/field';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -13,11 +13,11 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { Textarea } from '@/components/ui/textarea';
+} from '@kortix/ui/modal';
+import { Textarea } from '@kortix/ui/textarea';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import type { MaintenanceLevel } from '@/lib/maintenance-store';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 import { AVAILABLE_SERVICES, MAINTENANCE_LEVELS, MAINTENANCE_TONE_GLYPH } from './constants';
 import { DateTimePicker } from './date-time-picker';

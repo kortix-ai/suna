@@ -217,10 +217,12 @@ type ReadAgentBlockResult =
 /**
  * Read one agent's raw block out of an already-loaded v2 or v3 manifest. Never
  * throws. A v3 block also carries behavior and the prompt; the route splits it
- * with `agentConfigViewV3`. `block` is `null` for a v1 manifest or when
- * the named agent isn't declared yet (a brand-new agent the editor is about
- * to create) — both are valid, non-error states the caller (the GET route)
- * surfaces distinctly via `schemaVersion`/`ok`.
+ * with `agentConfigViewV3`. `block` is `null` for a v1 manifest with a
+ * DECLARED agent (valid — the route answers 200 with `schema_version: 1` so
+ * the editor can offer the upgrade; an undeclared v1 name hits the same
+ * 404 gate), or when the named agent isn't declared in a v2+ manifest (the
+ * GET route turns that into 404 `agent_not_found`, which names the declared
+ * agents — see `agentNotDeclaredError` in `agents/parse.ts`).
  */
 export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): ReadAgentBlockResult {
   if (manifest.schemaVersion < 2) {
@@ -401,6 +403,8 @@ export function applyAgentScopeV2(
     connectorsRequired?: string[];
     /** Kortix App slugs, same grant-set shape as `connectors`. */
     apps?: string[] | 'all';
+    /** Connector slug → set name; MERGES per slug. `null` or `base` removes. */
+    policySets?: Record<string, string | null>;
   },
 ): ApplyAgentBlockResult & { notFound?: boolean } {
   if (manifest.schemaVersion < 2) {
@@ -435,6 +439,17 @@ export function applyAgentScopeV2(
     if (required.length === 0) delete merged.connectors_required;
     else merged.connectors_required = required;
   }
+  if (scope.policySets !== undefined) {
+    const current = merged.policy_sets;
+    const sets: Record<string, unknown> =
+      current && typeof current === 'object' && !Array.isArray(current) ? { ...(current as Record<string, unknown>) } : {};
+    for (const [slug, name] of Object.entries(scope.policySets)) {
+      if (name === null || name === 'base') delete sets[slug];
+      else sets[slug] = name;
+    }
+    merged.policy_sets = sets;
+  }
+  dropEmptyPolicySets(merged);
   const effectiveConnectors = merged.connectors;
   const effectiveRequired = merged.connectors_required;
   if (Array.isArray(effectiveRequired)) {
@@ -448,6 +463,19 @@ export function applyAgentScopeV2(
     }
   }
   return applyAgentMapBlock(manifest, agentName, merged);
+}
+
+/**
+ * Drop an emptied `policy_sets` map (`{}` from an editor that cleared the last
+ * set). Entries on connectors the block no longer grants are KEPT: such an
+ * entry is inert while the connector is un-granted and applies again on
+ * re-grant. Pruning it would let a writer without project.connector.write move
+ * the agent onto the base rules by un-granting and re-granting the connector.
+ */
+export function dropEmptyPolicySets(block: Record<string, unknown>): void {
+  const map = block.policy_sets;
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return;
+  if (Object.keys(map).length === 0) delete block.policy_sets;
 }
 
 /** Grant membership. Case-insensitive, mirroring `listAdmits`
@@ -618,6 +646,7 @@ const BLOCK_ORDER_V3: readonly string[] = [
   'codemode',
   'connectors',
   'connectors_required',
+  'policy_sets',
   'secrets',
   'apps',
   'kortix_permissions',

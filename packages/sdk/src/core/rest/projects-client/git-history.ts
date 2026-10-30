@@ -7,6 +7,17 @@ import { unwrap } from './shared';
 // Git history — branches (Versions), commits (Checkpoints), diffs
 // ---------------------------------------------------------------------------
 
+/** Which session a session branch belongs to. A session branch is named by its session id. */
+export interface ProjectBranchSession {
+  /** The session's title. Null when it has none yet, or when the caller may not open the session. */
+  title: string | null;
+  agent_name: string | null;
+  /** The caller archived the session. */
+  archived: boolean;
+  /** The session is in Recently deleted. Its branch is kept until its restore window ends. */
+  deleted: boolean;
+}
+
 export interface ProjectBranch {
   name: string;
   is_default: boolean;
@@ -18,6 +29,8 @@ export interface ProjectBranch {
   committed_at: string;
   ahead: number | null;
   behind: number | null;
+  /** Present on a session branch. Absent on the default branch, a named branch, and older servers. */
+  session?: ProjectBranchSession;
 }
 
 export interface ProjectBranchesResponse {

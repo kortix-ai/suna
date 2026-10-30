@@ -230,6 +230,7 @@ export const startLlmProxy = (port: number, upstreamBase?: string, token?: strin
   llm.start(port, upstreamBase, token)
 export const setLlmProxyToken = (token: string | undefined, upstreamBase?: string | undefined) =>
   llm.setToken(token, upstreamBase)
+/** @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const llmProxyReady = () => llm.ready()
 export const llmProxyBaseUrl = () => llm.baseUrl()
 export const stopLlmProxy = () => llm.stop()

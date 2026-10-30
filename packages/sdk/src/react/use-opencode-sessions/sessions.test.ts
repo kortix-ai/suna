@@ -1,3 +1,5 @@
+import type { Session } from '../../core/runtime/runtime-types';
+import { qk } from '../query-keys';
 import { describe, expect, test, beforeEach, mock } from 'bun:test';
 // Imported BEFORE `mock.module` below runs, so this binds to the REAL store
 // (module resolution for a static import happens before the rest of this
@@ -14,7 +16,7 @@ import { useOpenCodeCompactionStore as realCompactionStore } from '../../browser
 function makeFakeQueryClient() {
   const cache = new Map<string, unknown>();
   const cacheKey = (k: readonly unknown[]) => JSON.stringify(k);
-  const refetchCalls: unknown[] = [];
+  const refetchCalls: Array<{ queryKey?: readonly unknown[]; predicate?: (query: { queryKey: readonly unknown[] }) => boolean }> = [];
   return {
     setQueryData: (k: readonly unknown[], updater: unknown) => {
       const existing = cache.get(cacheKey(k));
@@ -24,7 +26,7 @@ function makeFakeQueryClient() {
       return value;
     },
     getQueryData: (k: readonly unknown[]) => cache.get(cacheKey(k)),
-    refetchQueries: (opts: unknown) => {
+    refetchQueries: (opts: { queryKey?: readonly unknown[]; predicate?: (query: { queryKey: readonly unknown[] }) => boolean }) => {
       refetchCalls.push(opts);
     },
     refetchCalls,
@@ -33,9 +35,14 @@ function makeFakeQueryClient() {
 
 let fakeQueryClient = makeFakeQueryClient();
 
+let mutationSuccess: ((session: Session) => unknown) | undefined;
+
 mock.module('@tanstack/react-query', () => ({
   useQuery: (config: Record<string, unknown>) => config,
-  useMutation: (config: Record<string, unknown>) => config,
+  useMutation: (config: { onSuccess?: (session: Session) => unknown }) => {
+    mutationSuccess = config.onSuccess;
+    return config;
+  },
   useQueryClient: () => fakeQueryClient,
 }));
 
@@ -371,6 +378,20 @@ describe('useInitSession', () => {
 // ============================================================================
 
 describe('useForkSession', () => {
+  test('a successful fork refreshes persistent project inventories', async () => {
+    const forked: Session = {
+      id: 'ses_fork', slug: 'fork', projectID: 'project', directory: '/workspace',
+      title: 'Fork', version: '1', time: { created: 1, updated: 1 },
+    };
+    useForkSession();
+    if (!mutationSuccess) throw new Error('Missing mutation onSuccess');
+    await mutationSuccess(forked);
+    const call = fakeQueryClient.refetchCalls[0];
+    if (!call?.predicate) throw new Error('Missing inventory refetch predicate');
+    expect(call.predicate({ queryKey: [...qk.project.sessions('p')] })).toBe(true);
+    expect(call.predicate({ queryKey: ['runtime', 'sessions'] })).toBe(false);
+  });
+
   test('forks the conversation and returns the forked session', async () => {
     const forked = { id: 'ses_fork', title: 'Old (fork #1)', time: { updated: 5 } };
     let forkArgs: unknown;

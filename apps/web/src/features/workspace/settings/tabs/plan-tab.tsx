@@ -26,18 +26,18 @@
  * the portal lands back here.
  */
 
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget } from '@/stores/account-panel-store';
-import { Button } from '@/components/ui/button';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { Skeleton } from '@/components/ui/skeleton';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
+import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
+import { Button } from '@kortix/ui/button';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
-import { usePermission } from '@/lib/use-permission';
-import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { usePermission } from '@kortix/ui/workspace';
+import { BillingAccountProvider } from '@kortix/ui/internal/stores/billing-account-context';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
-import { SettingsTabHeader } from '../settings-tab-header';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 
 function planReturnUrl(): string {
   return typeof window !== 'undefined'

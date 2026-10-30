@@ -13,7 +13,7 @@
  * - `data:` and any other source: the placeholder card.
  */
 
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -33,7 +33,7 @@ import { useToolFilePreviewStore } from '@/stores/tool-file-preview-store';
 import { ImageIcon } from '@/lib/icons';
 import { describeMarkdownImage, type MarkdownImageRef } from '@/lib/markdown/markdown-image';
 import { RADIUS } from '@/lib/markdown/markdown-layout';
-import { openExternalLink } from '@/components/markdown/markdown-text';
+import { openExternalLink } from '@/lib/utils/open-link';
 
 export type MarkdownRemoteImages = 'load' | 'placeholder';
 
@@ -63,8 +63,17 @@ function imageSource(src: string): ImageSource {
  * agent's own text, a `data:` source, or one that failed. An http(s) source
  * opens in the browser on tap; others only show the label.
  */
-export function MarkdownImagePlaceholder({ src, alt, isDark }: { src: unknown; alt: unknown; isDark: boolean }) {
+function MarkdownImagePlaceholder({ src, alt, isDark, compact }: { src: unknown; alt: unknown; isDark: boolean; compact?: boolean }) {
   const { label, href } = describeMarkdownImage(src, alt);
+  if (compact) {
+    return (
+      <CompactImageButton
+        label={`Image: ${label}`}
+        role={href ? 'link' : 'img'}
+        onPress={href ? () => openExternalLink(href) : undefined}
+      />
+    );
+  }
   return (
     <Button
       variant="secondary"
@@ -88,6 +97,24 @@ export function MarkdownImagePlaceholder({ src, alt, isDark }: { src: unknown; a
   );
 }
 
+/**
+ * Compact mode (web's `compact`): an icon-only button that fills a small thumbnail's box (40pt, 96pt), where
+ * the labelled full-width button would clip. The caller's box is the frame and the well.
+ */
+function CompactImageButton({ label, role, onPress }: { label: string; role: 'link' | 'img' | 'button'; onPress?: () => void }) {
+  return (
+    <Pressable
+      className="size-full items-center justify-center active:opacity-70"
+      disabled={!onPress}
+      onPress={onPress}
+      role={role}
+      accessibilityLabel={label}
+    >
+      <Icon as={ImageIcon} size={16} className="text-muted-foreground" />
+    </Pressable>
+  );
+}
+
 /** How a caller frames the image: fill or fit the frame, and its natural size once it loads (generative-UI cards). */
 export type MarkdownImageLook = {
   resizeMode?: 'contain' | 'cover';
@@ -96,6 +123,8 @@ export type MarkdownImageLook = {
   bare?: boolean;
   /** A failed load calls this instead of showing the placeholder: the caller draws its own fallback. */
   onError?: () => void;
+  /** A small thumbnail: a placeholder or tap-to-load button is icon-only and fills the box. */
+  compact?: boolean;
 };
 
 /**
@@ -124,7 +153,7 @@ export function MarkdownImage({
   if (source.kind === 'remote' && remoteImages === 'load') {
     return <RemoteImage uri={source.uri} src={src} alt={alt} isDark={isDark} fixedHeight={fixedHeight} look={look} />;
   }
-  return <MarkdownImagePlaceholder src={src} alt={alt} isDark={isDark} />;
+  return <MarkdownImagePlaceholder src={src} alt={alt} isDark={isDark} compact={look?.compact} />;
 }
 
 /**
@@ -187,6 +216,14 @@ function SandboxImage({
   look?: MarkdownImageLook;
 }) {
   const image = useSandboxImage(path, true);
+  // A failed file hands its failure to the caller, as a failed remote image does (FramedImage). Once per
+  // failure: the caller's handler is a new function on every render.
+  const onError = useRef(look?.onError);
+  onError.current = look?.onError;
+  const failed = image.phase === 'error';
+  useEffect(() => {
+    if (failed) onError.current?.();
+  }, [failed]);
   if (image.phase === 'load' && image.source) {
     return (
       <FramedImage
@@ -204,6 +241,7 @@ function SandboxImage({
     );
   }
   if (image.phase === 'tap-to-load') {
+    if (look?.compact) return <CompactImageButton label="Load image" role="button" onPress={image.loadAnyway} />;
     return (
       <Button variant="secondary" size="sm" className="my-1 self-start rounded-full" onPress={image.loadAnyway}>
         <Icon as={ImageIcon} size={16} />
@@ -211,7 +249,7 @@ function SandboxImage({
       </Button>
     );
   }
-  if (image.phase === 'error') return <MarkdownImagePlaceholder src={src} alt={alt} isDark={isDark} />;
+  if (failed) return look?.onError ? null : <MarkdownImagePlaceholder src={src} alt={alt} isDark={isDark} compact={look?.compact} />;
   // Probing: hold the space an image will take, in its frame.
   return <ImageFrame isDark={isDark} height={fixedHeight ?? 200} />;
 }
@@ -259,7 +297,7 @@ function FramedImage({
   const [aspect, setAspect] = useState<number | null>(null);
   const [failed, setFailed] = useState(false);
   const onLayout = useCallback((e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width), []);
-  if (failed) return <MarkdownImagePlaceholder src={src} alt={alt} isDark={isDark} />;
+  if (failed) return <MarkdownImagePlaceholder src={src} alt={alt} isDark={isDark} compact={look?.compact} />;
   const height = fixedHeight ?? (width && aspect ? Math.min(width / aspect, MAX_INLINE_HEIGHT) : 200);
   return (
     // Full width: a paragraph lays its children out as a wrapping row.

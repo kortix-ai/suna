@@ -2,10 +2,10 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 
-import { Button } from '@/components/ui/button';
-import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { Button } from '@kortix/ui/button';
+import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
 import type { MaintenanceConfig, MaintenanceLevel } from '@/lib/maintenance-store';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { normalizeAppPathname } from '@kortix/sdk';
 import {
   WarningCircleIcon as AlertCircle,

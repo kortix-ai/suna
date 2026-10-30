@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 
-import { withSearch } from '@/features/workspace/capabilities/shared/with-search';
+import { withSearch } from '@kortix/ui/customize/shared/with-search';
 
 /** Retired tab: Apps is a sidebar page again (Marko, 2026-10-07). Links from the Customize era keep working. */
 export default async function RetiredCustomizeAppsRoute({

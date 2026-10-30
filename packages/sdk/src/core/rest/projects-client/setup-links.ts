@@ -121,7 +121,17 @@ export interface ApprovalLinkDetails {
   args_summary: string | null;
   /** The agent's own description of the call's effect. Unverified. */
   approval_context?: string | null;
+  /** Content Kortix read from the provider for a call whose arguments only
+   *  name a target (a draft id → the draft), redacted. Absent on older servers. */
+  resolved_preview?: Record<string, unknown> | null;
+  /** `unavailable` when Kortix could not read that content. */
+  resolved_error?: string | null;
   policy_source: string | null;
+  /** The agent policy set that held this call; non-null only when
+   *  `policy_source` is `policy_set`. Absent on older servers. */
+  policy_set?: string | null;
+  /** With `policy_set`: the agent whose set held this call. */
+  agent?: string | null;
   requested_at: string;
   resolved_at: string | null;
   expires_at: string;

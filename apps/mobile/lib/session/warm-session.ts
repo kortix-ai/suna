@@ -10,7 +10,7 @@
  *
  * A warm session is an ORDINARY session the user has not typed into yet. The
  * server hides it from the session list (`metadata.warm`) until its first
- * prompt lands, and gates it by the `warm_sessions` project flag (on by default).
+ * prompt lands, and gates it by the `warm_sessions` project flag (explicit opt-in).
  *
  * Everything the two hosts share — reserve, take, the one-retry exclude loop,
  * prime with its ambiguous-commit confirmation, revalidate, reset, settled —

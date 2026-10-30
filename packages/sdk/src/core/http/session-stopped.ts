@@ -22,3 +22,28 @@ export function onSessionStopped(listener: (sessionId: string) => void): () => v
     stoppedListeners.delete(listener);
   };
 }
+
+const deletedListeners = new Set<(sessionId: string) => void>();
+
+/**
+ * Tell every open `useSession` that its session was deleted, so it stops
+ * `/start`, the log sync and the stream at once instead of polling a session
+ * that now answers 404. Called by `deleteProjectSession`.
+ */
+export function noteSessionDeleted(sessionId: string): void {
+  for (const listener of deletedListeners) {
+    try {
+      listener(sessionId);
+    } catch {
+      // One listener's failure must not hide the delete from the others.
+    }
+  }
+}
+
+/** Returns the unsubscribe. */
+export function onSessionDeleted(listener: (sessionId: string) => void): () => void {
+  deletedListeners.add(listener);
+  return () => {
+    deletedListeners.delete(listener);
+  };
+}

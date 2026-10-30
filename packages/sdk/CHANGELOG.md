@@ -5,6 +5,219 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (portrait image grids)
+- `ImageGenGrid.strip`: `true` when the run's first call asks for portrait images (taller than
+  wide). Every row of a strip is its tiles side by side, up to four, the rows as even as they split
+  (5 = 3+2, 7 = 4+3, 10 = 4+3+3), and `imageGenGrid(views).rows` follows that split. Before, a
+  portrait run took the bento rows: the large tile of a row of three was about 1.19 × the grid's
+  width tall, and a run of ten 9:16 images took about four screens.
+- `ImageGenView.error.limit`: `'turn'` or `'session'` when the tool's own image cap refused the
+  whole call before any request (`Image limit for this turn reached …`). `imageGenGrid` gives such
+  a call no slot, and a host draws nothing for it. Before, each refused prompt took a grid slot that
+  showed the refusal text.
+
+### Changed (no v1 transcript reads, P8.3)
+- No hook and no SDK read sends `GET …/transcript` any more. `useSession`, `useSessionSync`
+  (root, `savedChild`, turn end, older pages), `readSavedSessionCopy` and
+  `loadSessionExportMessages` read only the session log (`GET …/log`). A 404 with
+  `code: 'session_log_missing'` keeps the session on the log with nothing in it. A failed read (a
+  5xx, the network, a 404 without a code, an invalid page) keeps the copy on screen and re-reads
+  the page after 2 s, 10 s and 30 s, or after the API's `Retry-After` (at most 60 s). Without a log
+  in the store, `useSession().hasOlder` / `loadOlder` page the runtime. Before, a 404 without a
+  code or a failed read fell back to the v1 saved copy, and `useSessionSync` re-read the v1 copy
+  3 s after each turn end.
+- `readSavedSessionCopy` returns `envelope: null` always; `SavedSessionCopy.envelope` is
+  deprecated.
+- `loadSessionExportMessages` throws when the log answers no page and the runtime has no
+  messages, instead of reading the v1 copy.
+- The deprecated v1 reads (`getSessionTranscript`, `getSessionTranscriptSync`, `transcript`,
+  `transcriptSync`) stay exported for older code; nothing in the SDK calls them.
+
+### Added (channel access for any chat platform)
+- `listChannelUsers`, `allowChannelUser`, `removeChannelUser`, `dismissChannelAccessRequest` and
+  `getChannelUserPhoto`: the allowed users and access requests of a chat platform's bot, keyed by
+  `platform: ChannelAccessPlatform` (`'telegram'` today). They call the same routes as the Telegram
+  functions, which keep their signatures and error texts.
+- The types `ChannelAccessPlatform`, `ChannelUser`, `ChannelAccessRequest`, `ChannelUsers` and
+  `ChannelAccessList` (`allowed_user_ids?`, `access_request_count?`: what an edit returns).
+
+### Added (image generation card)
+- `imageGenView(call, live?)` and the `ImageGenView` / `ImageGenPhase` types: what an `image_gen`
+  card draws from its `ToolCallBlock`, for any image model and for one to four images per call.
+  The call: `phase` (`generating`, `ready`, `failed` or `stopped`), `action`, `prompts` (the
+  call's `prompts`, or a Phase 1 call's one `prompt`), `aspectRatio` (the requested ratio, the same in
+  every phase, for a layout of several images), `startedAt`, `model` and `provider` (from
+  the tool output once the call completed, else `null`), `error` (the whole call's failure).
+  `images` holds one frame per image: one per prompt while the call runs, then each image the call
+  made and each prompt that failed, in prompt order; empty when the whole call failed or stopped.
+  A frame has `prompt`, `phase` (`generating`, `ready` or `failed`), `aspectRatio` (`"<w> / <h>"`,
+  from the delivered size, else the requested `aspect_ratio` (`16:9` is `16 / 9`), else a legacy
+  requested `size`, else `1 / 1`), `imagePath` (a sandbox file: `.png`, `.jpg` or `.webp`),
+  `directUrl` (legacy outputs without a path, http(s) only) and `error`. An error has `message`,
+  `suggestion?`, `code?`, `retryAfterSeconds?` and `connectModel` (true for a trailing
+  `[image_model_unavailable]`, `[provider_not_connected]` or `[provider_reauth_required]` code).
+  Older one-image outputs (`{"path"}`, a Replicate URL, a bare path) render as one frame.
+  `live: false` reads an open call as `stopped`. The single-image fields of the unreleased branch
+  (`prompt`, `aspectRatio`, `imagePath`, `directUrl` on the view, `connectChatGpt`) never shipped.
+- `imageGenRetryDelay(seconds)`: `{ value, unit }` in seconds below 90 s, minutes below 90 min,
+  else hours. `formatImageGenElapsed(ms)`: `m:ss`.
+- `imagePathsShownByImageGen(blocks)`, `withoutImageGenDuplicates(items, paths)` and
+  `showDrawnByImageGen(call, paths)`: a `show` of an image that an `image_gen` card of the same
+  turn already drew (every image of a batch) is left out, and a `show` call whose every file is
+  such an image draws nothing.
+- A frame's `sha256?`: the lowercase hex digest of the saved file's bytes, when the `image_gen`
+  output names it (kortixd adds it; older outputs have none; a malformed value is dropped).
+- `imageDigestsShownByImageGen(blocks)`: the digests of every image the turn's `image_gen` calls
+  drew. `withoutImageGenDuplicates(items, paths, digests?)` and `showDrawnByImageGen(call, paths,
+  digests?)` take it as an optional third argument: a `show` of the same bytes at another path (a
+  Drive copy) is left out too. Items carry their digest as `sha256?`.
+- `showItemDigest(call, path)`: the `sha256` a `show` call's output gives the file at `path` (its
+  single `entry` or one of its `items`), with or without the `/workspace/` prefix.
+  `sessionLogShowGroupCall` items carry it as `sha256` too.
+- `imageGenGrid(views)` and the `ImageGenGrid` / `ImageGenGridTile` types: the one grid of a run of
+  `image_gen` calls. `tiles` are in call order (`image`, `call`, `first`); a call that failed or
+  stopped as a whole keeps one slot per prompt. `rows` is each row's tile count: up to four is one
+  bento, five and more are rows of three (or of four when that divides evenly) and one or two rows
+  of two (5 = 3+2, 6 = 3+3, 7 = 3+2+2, 8 = 4+4).
+- `sessionLogImageGenRuns(segments, { paths, digests })`: the runs of `image_gen` calls that draw
+  as one grid, by block id: standalone calls with no visible non-image deliverable between them.
+  The host draws the grid at `run[0]` and nothing for the others, live and settled alike.
+- `createImageCache({ maxEntries, maxBytes?, dispose? })` and the `ImageCache`, `ImageCacheEntry`,
+  `ImageCacheOptions` and `ImageCacheRef` types: a framework-free store of loaded images, by path
+  key and by sha256. A lookup with a sha256 finds only those bytes, never a path entry of other
+  bytes. `retain` holds an entry against eviction; past the bounds the least recently used entry
+  nothing holds is evicted and handed to `dispose`. `link`, `setSize`, `forget`, `clear` and
+  `subscribe` complete it.
+- Narration counts the images of one `image_gen` call: "Made 3 images" (the images it made, else
+  the prompts it asked for). `getToolInfo('image_gen', input).subtitle` is the first prompt.
+- `getToolPrimaryArg` reads an `image_gen` call as its first prompt (60 characters) and, for a batch,
+  how many more (`A fox in a shuttle (+2)`), never its arguments as JSON (a script card's call row).
+
+### Changed (image_gen is a deliverable)
+- `NO_GROUP_ACTIVITY_TOOLS`, and with it `STANDALONE_TOOLS`, include `image_gen`. An `image_gen`
+  call is a `standalone` segment, never folds into a burst, and `splitTurnWork` /
+  `splitSessionLogTurnWork` hoist it above the final text like `show`.
+
+### Deprecated (app form)
+- `getConnectorAppForm`, `submitConnectorAppForm`, `ConnectorAppFormInfo`, `ConnectorAppFormInput`
+  and `ConnectorAppFormResult`. The server removed `/connectors/app-form/:token`; every call
+  answers 404. The names stay exported until the next major.
+
+### Added (connector policy sets)
+- `listConnectorPolicySets`, `upsertConnectorPolicySet`, `renameConnectorPolicySet`,
+  `deleteConnectorPolicySet` and the `ConnectorPolicySet` type: named rule sets on one connector
+  (`connectors[].policy_sets` in kortix.yaml) that an agent selects with `agents.<a>.policy_sets`
+  (`/connectors/projects/:id/connectors/:slug/policy-sets`). `deleteConnectorPolicySet` answers 409
+  `policy_set_in_use` (with `agents`) while an agent uses the set.
+- Facade `p.connectors.policySets.{list,upsert,rename,remove}`.
+- `ConnectorPolicySetOptions` (`{ policySet }`): the optional last argument of
+  `getConnectorPolicies` and `setConnectorPolicies` reads or writes one set's rules. Absent = the
+  base rules.
+- `ConnectorPolicyRule.conditions`, `ConnectorCatalogEntry.policy_set` (the caller's set),
+  `ConnectorCallResult.policy_set` / `.agent` (on a denial the set decided),
+  `ApprovalLinkDetails.policy_set` / `.agent`, `AgentConfigBlock.policy_sets`, and `policy_sets` on
+  the `setAgentScope` input (`null` or `base` removes one entry) and result.
+
+### Changed (connector policy sets)
+- `ConnectorPolicySource` gains `'policy_set'`. A consumer with an exhaustive `switch` over the
+  union must add the case.
+
+### Added (share one assistant response)
+- `getTurnShare`, `shareTurn`, `unshareTurn` and the `TurnShare` type: the public share of one
+  turn's response (`/projects/:id/sessions/:sid/turns/:turnId/share`, GET / PUT / DELETE). The
+  server publishes the response text as a snapshot; `shareTurn` again refreshes it and keeps the URL.
+  `shareTurn(…, { include_prompt: true })` also publishes the prompt text (`TurnShare.include_prompt`).
+- `ProjectSession.can_publish_response`: whether the viewer may publish a response of the session
+  (a human owner or project manager who can read it). Single-session reads only; absent means unknown.
+- `getPublicResponse` and the `PublicResponse` type: the anonymous read of a shared response
+  (`GET /public/responses/:token`); `prompt` is null unless the sharer included it. Throws `HostBoundaryError` with `status` 404 or 410.
+
+### Changed (pi runs every new session; OpenCode is sunset)
+- `FeatureFlagKey` `'pi_harness'` is deprecated and no longer a flag: absent from `FEATURE_FLAG_KEYS`
+  and from the feature-flag catalog. The API sends `experimental.pi_harness: true` for every
+  project, and `useFeatureFlag(id, 'pi_harness')` reports `true`.
+  `KortixProject.experimental.pi_harness` is optional in the type.
+
+### Deprecated (OpenCode-only; pi does not serve them)
+- `useRuntimeConfig`, `useUpdateRuntimeConfig`, `configKeys` (`/global/config`), `useRuntimeSessionTodo`,
+  `logRuntimeEvent`, `RuntimeConfigIssue`, `RuntimeConfigInvalidError`, `getRuntimeConfigInvalidError`,
+  `isRuntimeConfigInvalidError`, `isShellMode`, `getShellModePart`, `AddMcpServerParams`,
+  `ProjectConfigSummary.open_code_raw`, and the frozen runtime types `Config`, `McpStatus`,
+  `McpLocalConfig`, `McpRemoteConfig`, `Todo`, `EventTodoUpdated`, `EventPty*`, `EventMcpToolsChanged`.
+  They keep working for sessions that still run OpenCode and are removed with OpenCode support.
+
+### Changed (the session log is the only saved history, P8.2)
+- `FeatureFlagKey` `'session_log'` is no longer a flag: absent from `FEATURE_FLAG_KEYS` and from
+  the feature-flag catalog. The API sends `experimental.session_log: true` for every project, so
+  `useFeatureFlag(id, 'session_log')` reports `true` once the project detail loads, as before.
+  `KortixProject.experimental.session_log` is optional in the type.
+- `GET …/sessions/:id/log` no longer answers `503` `{ code: 'session_log_converting' }`: the API
+  stopped converting the v1 mirror on a read (Session Log Plan P8.2, Release B2). A session with no
+  stored log answers `404` `{ code: 'session_log_missing' }`. A client that still retries a `503`
+  after `Retry-After` keeps working.
+
+### Added (custom LLM providers)
+- `listCustomLlmProviders(projectId)`, `putCustomLlmProvider(projectId, providerId, input)` and
+  `deleteCustomLlmProvider(projectId, providerId)` (types `CustomLlmProvider`,
+  `CustomLlmProviderInput`): a project's OpenAI-compatible endpoints, served through the gateway
+  (`GET`/`PUT`/`DELETE /projects/:id/custom-providers[/:providerId]`). The delete also deletes the
+  `CUSTOM_<ID>_API_KEY` project secret. On the facade: `projects.customLlmProviders`,
+  `projects.setCustomLlmProvider`, `projects.deleteCustomLlmProvider` and the same three on
+  `project(id)` without the project id.
+- `useCustomLlmProviders(projectId)` (`@kortix/sdk/react`): `{ providers, isLoading, error, save,
+  remove, isSaving }`. Writes refresh the list and both model-picker caches.
+
+### Deprecated (managed models are served by Kortix Platinum inference)
+- `ProjectLlmCatalogResponse.managedPricingRoutes`: the API no longer sends it. Every managed
+  model has one price, its `cost` in `models`. `platformFeePercent` is unchanged.
+
+### Deprecated (the LLM gateway is the only model path)
+- `FeatureFlagKey` `'llm_gateway'` graduated: absent from `FEATURE_FLAG_KEYS`, and
+  `useFeatureFlag(id, 'llm_gateway')` reports `enabled: true`.
+- Ignored inputs, kept so callers compile: `modelRefToKey`'s second argument,
+  `sessionModelCandidates({ gatewayEnabled })`, `PickerProviderListInput.gatewayEnabled`,
+  `.runtimeProviders`, `.llmCatalogProviders`, `.secretNames`, and `flattenModels`'
+  `providerMode`. `modelProviderMode()` always returns `'gateway'`; `filterToNativeProviders`
+  is deprecated.
+- Constant `true` fields: `useModelDefaults().llmGatewayEnabled` and
+  `useGatewayRoutingPolicy().llmGatewayEnabled` (with a project id),
+  `SessionOpenBundleConfig.llm_gateway_enabled`, `ProjectModelAccess.enforced`.
+
+### Changed (the LLM gateway is the only model path)
+- `useRuntimeProviders()` on a project route always reads the gateway catalog
+  (`GET /projects/:id/model-picker`). It no longer reads `GET /projects/:id` for the flag, and the
+  native picker sources (the runtime `/provider` list with project secret names, the
+  `/llm-catalog/providers` synthesis) are gone.
+- `useProjectModels`, `useProjectModelPickerCatalog`, `useModelEnablement`, `useModelDefaults`
+  and `useGatewayRoutingPolicy` fetch for every project without a project-detail read first.
+- `pickerProviderList` returns the `/model-picker` catalog only. `resolveComposerModel` no longer
+  rewrites a bare Bedrock id to its inference profile: under the gateway every key is `kortix`.
+- The session-open snapshot's `models` leg is now the model-defaults query's own fetch, so
+  `useModelDefaults` mounts onto it and sends no `/model-defaults` request.
+
+### Added (session log: sub-agent chats and export)
+- `useSessionLogOlder(session, threadId?, options?)` (`@kortix/sdk/react`): older pages of one
+  thread of a v2 session (`GET …/log?thread=&before_seq=`), `{ hasOlder, isLoadingOlder, loadOlder }`.
+  A sub-agent's chat pages its own thread with it.
+- `loadSessionExportMessages(sessionId, kortixSessionScope)`: when the store holds the session log
+  of `kortixSessionScope` (v2), the export is the log's thread of `sessionId` (the root, or a
+  sub-agent), every page of it, as v1 rows (`toV1`). It reads no `GET …/transcript` and no
+  runtime history then. The signature is unchanged; v1 sessions export as before.
+
+### Changed (Capture app ids)
+- `normalizeCaptureAppId` accepts every identifier the Capture engine matches:
+  app names with spaces (`AutoCAD 2025`), paths, and a prefix ending in `*`
+  (`com.autodesk.autocad*`, at least 3 characters before the `*`). It still
+  refuses empty, over-long, flag-like (`-x`) and control-character values.
+
+### Added (session log: the connecting view's saved copy)
+- `readSavedSessionCopy({ …, sessionLog: true })`: with the project flag `session_log` on,
+  reads the session log's newest page (`GET …/log`) into `SavedSessionCopy.log` (new optional
+  field; `envelope: null`) and proves an empty root from it. It reads no `GET …/transcript`.
+  Without `sessionLog` it reads the v1 copy exactly as before.
+- `useSession({ chatEngine: false })`: with the flag known on at the open, the session-open
+  snapshot asks no transcript window (`transcript=0`), as the chat engine already did.
+
 ### Added (session-log restore notice)
 - `sessionLogRestoreNotice(session)` (`SessionLogRestoreNotice`): what a partial
   restore of a session log could not bring back, from the session record
@@ -12,6 +225,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `missing[].kind` includes `'message'`: the log was over the API's restore cap
   (`SESSION_LOG_RESTORE_MAX_BYTES`), so the agent got none of those earlier
   messages; the transcript keeps them.
+
+### Deprecated (public transcript shares removed)
+The API removed public transcript sharing (KRTX-2358): no `/v1/public/session-shares/**`
+route is served and `createSessionPublicShare` with `{ transcript: true }` answers 400.
+- `getPublicSessionShare`, `getPublicSessionShareMessages`, `findActiveTranscriptShare`,
+  `PublicSessionShareError`, `PublicSessionShareMeta`, `PublicSessionTranscript`,
+  `PublicSessionTranscriptMessage` and `PublicSessionTranscriptToolCall` are `@deprecated`
+  (every call answers 404). Removed in the next major.
+- `CreateSessionPublicShareInput.transcript` is `@deprecated`; the field is still sent until
+  the next major, and a current server answers 400.
+- File and preview shares are unaffected: mint/list/revoke and the `/share/session/:token`
+  viewer keep working.
 
 ### Changed (Enterprise is a feature layer; trials removed)
 - `AccountState.enterprise` (`AccountEnterprise`, additive): `{ state: 'off' | 'demo' | 'licensed' }`.

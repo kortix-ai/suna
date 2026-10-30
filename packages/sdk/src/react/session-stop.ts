@@ -179,7 +179,7 @@ export async function stopWithReceipt(
   return settlement;
 }
 
-export interface CancelSessionTurnArgs {
+interface CancelSessionTurnArgs {
   /** Kortix project id — addresses the session's prompt inbox. */
   projectId: string;
   /** Kortix session id — the key `GET .../turn`, the receipts and the inbox use. */

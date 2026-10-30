@@ -37,13 +37,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { type ReactNode, createElement } from 'react';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
 
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { PROJECT_ACTIONS } from '@kortix/ui/workspace';
 
 function Passthrough({ children }: { children?: ReactNode }) {
   return createElement('div', null, children);
 }
 
-const realToast = await import('@/components/ui/toast');
+const realToast = await import('@kortix/ui/toast');
 
 // Per-test state, REASSIGNED (not emptied) in `beforeEach`: a PATCH left in
 // flight from an earlier test still holds this module's bindings, and its
@@ -52,11 +52,12 @@ let calls: { url: string; method: string; body: unknown; status: number }[] = []
 let toastCalls: { kind: 'success' | 'error'; message: string }[] = [];
 let failNextPatch = false;
 
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   ...realToast,
   successToast: (message: string) => toastCalls.push({ kind: 'success', message }),
   errorToast: (message: string) => toastCalls.push({ kind: 'error', message }),
-}));
+});
+mock.module('@kortix/ui/toast', uiToastMock);
 // Collaborators, not the subject: the card reads `canManage` from the IAM
 // probe, the container reads the session user and the router, and the icon
 // field is a heavy picker that never opens in these tests.
@@ -66,17 +67,26 @@ mock.module('next/navigation', () => ({
 mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({ user: { id: 'user-1' } }),
 }));
-mock.module('@/lib/use-project-can', () => ({
+mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   useProjectCans: () => ({
-    [PROJECT_ACTIONS.PROJECT_WRITE]: { allowed: true },
+    [PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]: { allowed: true },
     [PROJECT_ACTIONS.PROJECT_DELETE]: { allowed: true },
   }),
 }));
-mock.module('@/features/projects/modal/project-icon-field', () => ({
+mock.module('@kortix/ui/workspace/projects/modal/project-icon-field', () => ({
   ProjectIconField: Passthrough,
 }));
 
-const { GeneralTab } = await import('./general-tab');
+// Radix Select requires a browser DOM; rename behavior does not depend on it.
+mock.module('@kortix/ui/select', () => ({
+  Select: Passthrough,
+  SelectContent: Passthrough,
+  SelectItem: Passthrough,
+  SelectTrigger: Passthrough,
+  SelectValue: Passthrough,
+}));
+
+const { GeneralTab } = await import('@kortix/ui/customize/settings/tabs/general-tab');
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 

@@ -14,8 +14,8 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-import Hint from '@/components/ui/hint';
-import { KortixLogo } from '@/components/ui/kortix-logo';
+import Hint from '@kortix/ui/hint';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
 import {
   Sidebar,
   SidebarContent,
@@ -28,9 +28,9 @@ import {
   SidebarRail,
   SidebarTrigger,
   useSidebar,
-} from '@/components/ui/sidebar';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+} from '@kortix/ui/sidebar';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 
 interface AdminNavItem {
   href: string;

@@ -47,6 +47,11 @@ mock.module('../projects/lib/session-secret-reach', () => ({
   },
 }));
 
+// These route tests isolate withheld-name reporting; real persistence and rotation
+// are exercised by SEC-7 against PostgreSQL.
+const { mintSetupLink } = await import('../setup-links/token');
+mock.module('../setup-links/mint-secret-link', () => ({ mintSecretLink: mintSetupLink, secretLinkSuperseded: async () => false }));
+
 const { projectsApp } = await import('../projects/lib/app');
 (await import('../projects/routes/setup-links')).registerSetupLinksRoutes();
 

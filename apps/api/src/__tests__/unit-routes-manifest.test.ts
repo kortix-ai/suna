@@ -29,9 +29,9 @@ test('the committed route manifest equals the live route table', () => {
       // the generator exits 1 before it ever reads a route table. It is
       // validation-only and does not change the dumped route table.
       KORTIX_URL: 'https://placeholder.kortix.com',
-      LLM_GATEWAY_ENABLED: 'true',
       FRONTEND_URL: 'https://placeholder.kortix.com',
       KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: 'https://placeholder.storage.example',
+      PLATINUM_INFERENCE_URL: 'https://placeholder.platinum.example/v1/inference',
     },
   });
   expect(run.exitCode, run.stderr.toString()).toBe(0);

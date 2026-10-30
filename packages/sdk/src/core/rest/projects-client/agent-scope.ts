@@ -20,6 +20,12 @@ export async function setAgentScope(
     connectors_required?: string[];
     /** @deprecated Input alias for `connectors_required`. */
     connectors_personal?: string[];
+    /**
+     * Connector slug → policy set name (`connectors[].policy_sets`). Merges per
+     * slug: `null` or `'base'` removes that slug's set (base rules). Needs
+     * `project.agent.write` and `project.connector.write`. v2/v3 manifests only.
+     */
+    policy_sets?: Record<string, string | null>;
   },
 ) {
   const canonicalScope = canonicalizeRequiredConnectors(scope);
@@ -30,6 +36,8 @@ export async function setAgentScope(
       env: AgentGrantSet;
       connectors: AgentGrantSet;
       connectors_required: string[];
+      /** Connector slug → policy set name after the write. Absent on older servers. */
+      policy_sets?: Record<string, string>;
     }>(`/projects/${projectId}/agents/${encodeURIComponent(agentName)}/scope`, canonicalScope),
   );
 }

@@ -50,6 +50,39 @@ describe('App artifacts', () => {
     expect(calls).toBe(3);
   });
 
+  // KRTX-2981: a refusal (a bucket size limit above a self-host's global
+  // limit, a forbidden write) does not change on retry.
+  test('a Storage refusal is not retried', async () => {
+    const delays: number[] = [];
+    let calls = 0;
+    const refusal = Object.assign(new Error('The object exceeded the maximum allowed size'), { status: 400, statusCode: '413' });
+    await expect(
+      retryAppArtifactStorage(
+        async () => {
+          calls += 1;
+          throw refusal;
+        },
+        async (delay) => { delays.push(delay); },
+      ),
+    ).rejects.toBe(refusal);
+    expect(calls).toBe(1);
+    expect(delays).toEqual([]);
+  });
+
+  test('a rate limit is still retried', async () => {
+    let calls = 0;
+    const result = await retryAppArtifactStorage(
+      async () => {
+        calls += 1;
+        if (calls < 2) throw Object.assign(new Error('Too many requests'), { status: 429, statusCode: '429' });
+        return 'ok';
+      },
+      async () => {},
+    );
+    expect(result).toBe('ok');
+    expect(calls).toBe(2);
+  });
+
   test('keeps source archives within the managed Supabase Storage limit', () => {
     expect(MAX_ARCHIVE_BYTES).toBe(50 * 1024 * 1024);
   });

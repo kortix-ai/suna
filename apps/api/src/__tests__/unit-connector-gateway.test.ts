@@ -245,6 +245,90 @@ describe('handleCall — upstream + errors', () => {
     });
   });
 
+  test('upstream 401 on a stored credential → credential_rejected, names the account and the fix, marks the connection', async () => {
+    const { deps, records } = makeDeps({
+      connector: { ...STRIPE, connectionId: 'cx-1', connectionLabel: 'Stripe API' },
+      fetchStatus: 401,
+      fetchBody: '{"error":{"code":"api_key_expired","message":"Expired API Key provided"}}',
+    });
+    const marks: Array<[string, boolean]> = [];
+    deps.markCredentialRejected = async (id, rejected) => {
+      marks.push([id, rejected]);
+    };
+    deps.credentialKind = async () => 'secret';
+    const res = await handleCall(deps, baseInput);
+    expect(res).toMatchObject({ status: 'error', upstreamStatus: 401 });
+    const reason = (res as { reason: string }).reason;
+    expect(reason.startsWith('credential_rejected: ')).toBe(true);
+    expect(reason).toContain('"Stripe API"');
+    expect(reason).toContain('kortix connectors connections credential cx-1');
+    expect(reason).toContain('api_key_expired');
+    expect(records.at(-1)!.resultSummary).toMatchObject({ http_status: 401, error_code: 'credential_rejected' });
+    expect(marks).toEqual([['cx-1', true]]);
+  });
+
+  test('401 remedy follows the credential: OAuth signs in again, a project secret is rotated, a repeat 401 says retrying fails', async () => {
+    const reasonFor = async (connector: GatewayConnector, kind: string | null) => {
+      const { deps } = makeDeps({ connector, fetchStatus: 401, fetchBody: '{"error":"invalid_token"}' });
+      const marks: string[] = [];
+      deps.markCredentialRejected = async (id) => {
+        marks.push(id);
+      };
+      deps.credentialKind = async () => kind;
+      const res = await handleCall(deps, baseInput);
+      return { reason: (res as { reason: string }).reason, marks };
+    };
+    const account = { ...STRIPE, connectionId: 'cx-1', connectionLabel: 'Main' };
+
+    const oauth = await reasonFor(account, 'oauth2_delegated');
+    expect(oauth.reason).toContain('signs in to account "Main" again in Connectors');
+    expect(oauth.reason).not.toContain('connections credential');
+
+    const projectSecret = await reasonFor({ ...account, authSecret: 'STRIPE_KEY' }, null);
+    expect(projectSecret.reason).toContain('project secret STRIPE_KEY');
+    expect(projectSecret.reason).not.toContain('connections credential');
+
+    const first = await reasonFor(account, 'secret');
+    expect(first.reason).not.toContain('Retrying');
+    const repeat = await reasonFor({ ...account, connectionMetadata: { credential_rejected_at: '2026-10-19T00:00:00Z' } }, 'secret');
+    expect(repeat.reason).toContain('Retrying returns this error until the credential is replaced.');
+    expect(repeat.marks).toEqual([]);
+  });
+
+  test('a channel 401 is the platform token, not the account credential: plain upstream_401, no mark', async () => {
+    const { deps } = makeDeps({
+      connector: { ...STRIPE, provider: 'channel', connectionId: 'cx-1' },
+      fetchStatus: 401,
+      fetchBody: '',
+    });
+    const marks: string[] = [];
+    deps.markCredentialRejected = async (id) => {
+      marks.push(id);
+    };
+    const res = await handleCall(deps, baseInput);
+    expect((res as { reason: string }).reason.startsWith('credential_rejected')).toBe(false);
+    expect(marks).toEqual([]);
+  });
+
+  test('a later ok call on a marked connection clears the mark; an unmarked one writes nothing', async () => {
+    const marked = makeDeps({
+      connector: { ...STRIPE, connectionId: 'cx-1', connectionMetadata: { credential_rejected_at: '2026-10-19T00:00:00Z' } },
+    });
+    const marks: Array<[string, boolean]> = [];
+    marked.deps.markCredentialRejected = async (id, rejected) => {
+      marks.push([id, rejected]);
+    };
+    expect(await handleCall(marked.deps, baseInput)).toMatchObject({ status: 'ok' });
+    expect(marks).toEqual([['cx-1', false]]);
+
+    const clean = makeDeps({ connector: { ...STRIPE, connectionId: 'cx-2', connectionMetadata: {} } });
+    clean.deps.markCredentialRejected = async (id, rejected) => {
+      marks.push([id, rejected]);
+    };
+    await handleCall(clean.deps, baseInput);
+    expect(marks).toHaveLength(1);
+  });
+
   test('thrown execution error is caught + audited', async () => {
     const { deps, records } = makeDeps();
     deps.fetchImpl = async () => {
@@ -629,6 +713,143 @@ describe('handleCall — policy layer', () => {
     });
     expect(res.status).toBe('ok');
     expect(consulted).toBe(true);
+  });
+});
+
+describe('handleCall — approval enrichment and content binding', () => {
+  // Key for STRIPE + CREATE_CHARGE (openapi binding): provider + slug + path.
+  const KEY = 'openapi:stripe.charges.create';
+  const gated = () =>
+    makeDeps({ policies: [{ match: '*', action: 'require_approval' }], enforcePolicies: true });
+  const content = { to: ['buyer@example.test'], subject: 'Quote', body: 'Hello', api_key: 'k-synthetic' };
+
+  async function digestOf(value: Record<string, unknown>): Promise<string> {
+    const { deps, records } = gated();
+    deps.approvalEnrichers = { [KEY]: async () => value };
+    await handleCall(deps, baseInput);
+    return records.at(-1)!.resultSummary!.resolved_digest as string;
+  }
+
+  test('a held call stores the redacted content and its digest', async () => {
+    const { deps, records } = gated();
+    const seen: Array<Record<string, unknown>> = [];
+    deps.approvalEnrichers = {
+      [KEY]: async (ctx) => {
+        seen.push(ctx.args);
+        return content;
+      },
+    };
+    const res = await handleCall(deps, baseInput);
+    expect(res).toMatchObject({ status: 'pending_approval', reason: 'policy_require_approval' });
+    expect(seen).toEqual([{ amount: 500 }]);
+    expect(records.at(-1)).toMatchObject({
+      status: 'pending_approval',
+      resultSummary: {
+        reason: 'policy_require_approval',
+        resolved_preview: { ...content, api_key: '[redacted]' },
+        resolved_digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
+    });
+  });
+
+  test('a failed read records resolved_error and still holds the call', async () => {
+    const { deps, records } = gated();
+    deps.approvalEnrichers = { [KEY]: async () => { throw new Error('upstream 503'); } };
+    expect((await handleCall(deps, baseInput)).status).toBe('pending_approval');
+    expect(records.at(-1)!.resultSummary).toMatchObject({ resolved_error: 'unavailable' });
+    expect(records.at(-1)!.resultSummary).not.toHaveProperty('resolved_preview');
+  });
+
+  test('an action with no enricher records no resolved keys', async () => {
+    const { deps, records } = gated();
+    deps.approvalEnrichers = {};
+    await handleCall(deps, baseInput);
+    expect(Object.keys(records.at(-1)!.resultSummary!).filter((k) => k.startsWith('resolved_'))).toEqual([]);
+  });
+
+  test('carry-over with unchanged content runs the call', async () => {
+    const approved = await digestOf(content);
+    const { deps, fetchCalls } = gated();
+    deps.approvalEnrichers = { [KEY]: async () => ({ ...content }) };
+    deps.consumeApprovedExecution = async () => ({ resolvedDigest: approved });
+    expect((await handleCall(deps, baseInput)).status).toBe('ok');
+    expect(fetchCalls).toHaveLength(1);
+  });
+
+  test('carry-over with changed content asks again with content_changed', async () => {
+    const approved = await digestOf(content);
+    const { deps, records, fetchCalls } = gated();
+    deps.recordExecution = async (r) => {
+      records.push(r);
+      return 'exec-fresh';
+    };
+    deps.approvalEnrichers = { [KEY]: async () => ({ ...content, to: ['someone-else@example.test'] }) };
+    deps.consumeApprovedExecution = async () => ({ resolvedDigest: approved });
+    deps.isPendingApprovalExecution = async () => true;
+    const res = await handleCall(deps, { ...baseInput, approvalExecutionId: 'exec-old' });
+    expect(res).toMatchObject({ status: 'pending_approval', reason: 'content_changed', executionId: 'exec-fresh' });
+    expect(fetchCalls).toHaveLength(0);
+    expect(records.at(-1)).toMatchObject({
+      status: 'pending_approval',
+      resultSummary: {
+        reason: 'content_changed',
+        resolved_preview: { to: ['someone-else@example.test'] },
+        resolved_digest: expect.not.stringMatching(approved),
+      },
+    });
+  });
+
+  test('carry-over whose content can no longer be read asks again', async () => {
+    const { deps, records, fetchCalls } = gated();
+    deps.approvalEnrichers = { [KEY]: async () => null };
+    deps.consumeApprovedExecution = async () => ({ resolvedDigest: 'a'.repeat(64) });
+    expect(await handleCall(deps, baseInput)).toMatchObject({ status: 'pending_approval', reason: 'content_changed' });
+    expect(fetchCalls).toHaveLength(0);
+    expect(records.at(-1)!.resultSummary).toMatchObject({ reason: 'content_changed', resolved_error: 'unavailable' });
+  });
+
+  test('carry-over of an approval given while the content was unreadable asks again once it is readable', async () => {
+    const { deps, records, fetchCalls } = gated();
+    deps.approvalEnrichers = { [KEY]: async () => content };
+    deps.consumeApprovedExecution = async () => ({ resolvedDigest: null, resolvedError: true });
+    expect(await handleCall(deps, baseInput)).toMatchObject({ status: 'pending_approval', reason: 'content_changed' });
+    expect(fetchCalls).toHaveLength(0);
+    expect(records.at(-1)!.resultSummary).toMatchObject({
+      reason: 'content_changed',
+      resolved_preview: { to: ['buyer@example.test'] },
+    });
+  });
+
+  test('carry-over of an approval given while unreadable, still unreadable, runs on that decision', async () => {
+    const { deps, fetchCalls } = gated();
+    let reads = 0;
+    deps.approvalEnrichers = { [KEY]: async () => { reads += 1; throw new Error('upstream 503'); } };
+    deps.consumeApprovedExecution = async () => ({ resolvedDigest: null, resolvedError: true });
+    expect((await handleCall(deps, baseInput)).status).toBe('ok');
+    expect(reads).toBe(1);
+    expect(fetchCalls).toHaveLength(1);
+  });
+
+  test('a legacy retry that reuses its pending row reads no content', async () => {
+    const { deps, records } = gated();
+    let reads = 0;
+    deps.approvalEnrichers = { [KEY]: async () => { reads += 1; return content; } };
+    deps.consumeApprovedExecution = async () => false;
+    deps.isPendingApprovalExecution = async () => true;
+    const res = await handleCall(deps, { ...baseInput, approvalExecutionId: 'exec-held' });
+    expect(res).toMatchObject({ status: 'pending_approval', executionId: 'exec-held' });
+    expect(reads).toBe(0);
+    expect(records).toHaveLength(0);
+  });
+
+  test('carry-over of an approval with no bound content runs without a read', async () => {
+    const { deps, fetchCalls } = gated();
+    let reads = 0;
+    deps.approvalEnrichers = { [KEY]: async () => { reads += 1; return content; } };
+    deps.consumeApprovedExecution = async () => ({ resolvedDigest: null });
+    expect((await handleCall(deps, baseInput)).status).toBe('ok');
+    expect(reads).toBe(0);
+    expect(fetchCalls).toHaveLength(1);
   });
 });
 

@@ -170,6 +170,15 @@ describe('validateAccountToken revocation gate', () => {
       // KRTX-446: the lease refusal is a DEAD credential — the auth gate
       // marks it with the typed 401 so a retrying client can stop.
       credentialDead: true,
+      // KRTX-1749: the sandbox credential hash-matched a real row, so the
+      // gateway refusal keeps its owner.
+      refusedIdentity: {
+        accountId: 'acct-1',
+        userId: 'user-1',
+        tokenId: 'tok-session',
+        projectId: 'project-1',
+        sessionId: 'session-1',
+      },
     });
   });
 
@@ -221,7 +230,7 @@ describe('a dead credential is named by its refusal (KRTX-1564)', () => {
     const { secretKey } = generateAccountTokenPair();
     rows = [];
     deadRows = [
-      { tokenId: 'tok-proj', projectId: 'project-1', sessionId: null, status: 'revoked', revokedAt: new Date() },
+      { tokenId: 'tok-proj', accountId: 'acct-1', userId: 'user-1', projectId: 'project-1', sessionId: null, status: 'revoked', revokedAt: new Date() },
     ];
 
     const result = await validateAccountToken(secretKey);
@@ -230,6 +239,13 @@ describe('a dead credential is named by its refusal (KRTX-1564)', () => {
       isValid: false,
       error: 'project token tok-proj is revoked',
       credentialDead: true,
+      refusedIdentity: {
+        accountId: 'acct-1',
+        userId: 'user-1',
+        tokenId: 'tok-proj',
+        projectId: 'project-1',
+        sessionId: null,
+      },
     });
   });
 
@@ -237,7 +253,7 @@ describe('a dead credential is named by its refusal (KRTX-1564)', () => {
     const { secretKey } = generateAccountTokenPair();
     rows = [];
     deadRows = [
-      { tokenId: 'tok-sess', projectId: 'project-1', sessionId: 'sess-1', status: 'active', revokedAt: new Date() },
+      { tokenId: 'tok-sess', accountId: 'acct-1', userId: 'user-1', projectId: 'project-1', sessionId: 'sess-1', status: 'active', revokedAt: new Date() },
     ];
 
     const result = await validateAccountToken(secretKey);
@@ -246,6 +262,13 @@ describe('a dead credential is named by its refusal (KRTX-1564)', () => {
       isValid: false,
       error: 'session token tok-sess is revoked',
       credentialDead: true,
+      refusedIdentity: {
+        accountId: 'acct-1',
+        userId: 'user-1',
+        tokenId: 'tok-sess',
+        projectId: 'project-1',
+        sessionId: 'sess-1',
+      },
     });
   });
 
@@ -253,7 +276,7 @@ describe('a dead credential is named by its refusal (KRTX-1564)', () => {
     const { secretKey } = generateAccountTokenPair();
     rows = [];
     deadRows = [
-      { tokenId: 'tok-pat', projectId: null, sessionId: null, status: 'revoked', revokedAt: new Date() },
+      { tokenId: 'tok-pat', accountId: 'acct-1', userId: 'user-1', projectId: null, sessionId: null, status: 'revoked', revokedAt: new Date() },
     ];
 
     const result = await validateAccountToken(secretKey);
@@ -262,6 +285,13 @@ describe('a dead credential is named by its refusal (KRTX-1564)', () => {
       isValid: false,
       error: 'token tok-pat is revoked',
       credentialDead: true,
+      refusedIdentity: {
+        accountId: 'acct-1',
+        userId: 'user-1',
+        tokenId: 'tok-pat',
+        projectId: null,
+        sessionId: null,
+      },
     });
   });
 
@@ -269,12 +299,26 @@ describe('a dead credential is named by its refusal (KRTX-1564)', () => {
     const { secretKey } = generateAccountTokenPair();
     rows = [];
     deadRows = [
-      { tokenId: 'tok-live', projectId: null, sessionId: null, status: 'active', revokedAt: null },
+      { tokenId: 'tok-live', accountId: 'acct-1', userId: 'user-1', projectId: null, sessionId: null, status: 'active', revokedAt: null },
     ];
 
     const result = await validateAccountToken(secretKey);
 
-    expect(result).toEqual({ isValid: false, error: 'PAT not found or revoked', credentialDead: true });
+    // The prose stays generic (a race, not a naming case), but the row the
+    // secret hashes to is real: its identity still rides on the refusal
+    // (KRTX-1749).
+    expect(result).toEqual({
+      isValid: false,
+      error: 'PAT not found or revoked',
+      credentialDead: true,
+      refusedIdentity: {
+        accountId: 'acct-1',
+        userId: 'user-1',
+        tokenId: 'tok-live',
+        projectId: null,
+        sessionId: null,
+      },
+    });
   });
 
   test('a row absent from both lookups keeps the generic refusal', async () => {

@@ -17,7 +17,6 @@ import {
   retryAfterMs,
   sanitizeRuntimeEvent,
 } from '@/harness/shared/audit-relay';
-import { migratePreW3AuditSpool } from '@/harness/open-code/runtime-state';
 import {
   SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
   noteControlPlaneResponse,
@@ -887,27 +886,6 @@ describe('the runtime audit relay every harness runs (E12)', () => {
     expect(posted[0]!.body).toMatchObject({ source: 'runtime', harness: 'pi' });
     expect(posted[0]!.body.events[0]).toMatchObject({ runtime_session_id: 'ses_pi', tool_call_id: 'call_1' });
     expect(posted[0]!.body.events[0]).not.toHaveProperty('opencode_session_id');
-    await relay.stop({ flush: false });
-  });
-
-  test('a spool a pre-W3 daemon left behind loads after the migration renames its field', async () => {
-    const event = sanitizeRuntimeEvent({ type: 'tool.execute.after', properties: { sessionID: 'ses_old', callID: 'call_1' } })!;
-    const { runtime_session_id: id, ...rest } = event;
-    const spoolPath = join(dir, 'opencode-audit-spool.json');
-    // What a pre-W3 daemon wrote: a V2 spool whose events name `opencode_session_id`.
-    writeFileSync(spoolPath, JSON.stringify({ version: 2, queue: [{ ...rest, opencode_session_id: id }], lineage: [] }));
-    expect(() => createAuditRelay(async () => {}, { spoolPath })).toThrow('invalid audit spool');
-
-    migratePreW3AuditSpool(spoolPath);
-
-    const sent: RuntimeAuditEvent[] = [];
-    const relay = createAuditRelay(async (events) => { sent.push(...events); }, { spoolPath });
-    await relay.flush();
-    expect(sent).toEqual([event]);
-    // A spool without the old field is left byte-for-byte alone.
-    const before = readFileSync(spoolPath, 'utf8');
-    migratePreW3AuditSpool(spoolPath);
-    expect(readFileSync(spoolPath, 'utf8')).toBe(before);
     await relay.stop({ flush: false });
   });
 });

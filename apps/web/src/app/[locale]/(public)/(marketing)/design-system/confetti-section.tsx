@@ -18,8 +18,8 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { Button } from '@kortix/ui/button';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import { IdentityConfetti } from '@/components/ui/identity-confetti';
 
 const SAMPLES = [

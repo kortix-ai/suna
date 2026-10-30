@@ -669,26 +669,19 @@ function plainError(msg) {
    person's own groups, private browsing and entries. `pp` is the policy's privacy block (only
    while synced to Kortix); `org` is the account name or null.
    Row: {kind: group|private|app|site, id, label, sub, locked, on, key}. */
-/* Whether the Never record controls show. A Kortix policy decides while synced to Kortix
-   (and then the local switch is not shown); otherwise the local experimental switch does.
-   Hiding never changes what applies. */
-function privacyControls(view, policy, settings) {
-  if (view && view.destination === 'kortix' && policy) return { on: policy.experimental?.privacy_controls === true, local: false };
-  return { on: settings?.experimental?.privacy_controls === true, local: true };
-}
 const GROUP_DESC = { password_managers: 'Password manager apps and websites', messaging: 'Messaging apps and websites', banking: 'Bank and finance apps and websites' };
 function neverRows(s, groups, pp, org) {
   pp = pp || {};
   const by = org ? `Required by ${org}` : 'Required by policy';
   const rows = [];
-  for (const g of groups) if ((pp.exclusion_groups || []).includes(g.id)) rows.push({ kind: 'group', id: g.id, label: g.name, sub: by, locked: true, on: true });
+  for (const g of groups) if ((pp.exclusion_groups || []).includes(g.id)) rows.push({ kind: 'group', id: g.id, label: g.name, sub: by, locked: true, on: true, members: g });
   if (pp.exclude_private_browsing) rows.push({ kind: 'private', id: 'private', label: 'Private browsing windows', sub: by, locked: true, on: true });
   // An entry both lists hold shows once, locked.
   const orgItems = exclusionItems({}, pp).filter((i) => i.locked);
   for (const i of orgItems) rows.push({ kind: i.kind, id: i.v, label: i.v, sub: by, locked: true });
   const required = new Set(orgItems.map((i) => i.kind + i.v));
   const ownItems = exclusionItems(s, {}).filter((i) => !required.has(i.kind + i.v));
-  for (const g of groups) if (!(pp.exclusion_groups || []).includes(g.id)) rows.push({ kind: 'group', id: g.id, label: g.name, sub: GROUP_DESC[g.id] || '', locked: false, on: (s.enabled_exclusion_groups || []).includes(g.id) });
+  for (const g of groups) if (!(pp.exclusion_groups || []).includes(g.id)) rows.push({ kind: 'group', id: g.id, label: g.name, sub: GROUP_DESC[g.id] || '', locked: false, on: (s.enabled_exclusion_groups || []).includes(g.id), members: g });
   if (!pp.exclude_private_browsing) rows.push({ kind: 'private', id: 'private', label: 'Private browsing windows', sub: 'Skip private and incognito windows', locked: false, on: !!s.exclude_private_browsing });
   for (const i of ownItems) rows.push({ kind: i.kind, id: i.v, label: i.v, sub: '', locked: false, key: i.key });
   return rows;
@@ -707,9 +700,13 @@ function onlyIncluded(s, pp, org) {
   };
   add(pp.included_bundle_ids, 'app', true, null);
   add(pp.included_domains, 'site', true, null);
-  add(s.included_bundle_ids, 'app', false, 'included_bundle_ids');
-  add(s.included_domains, 'site', false, 'included_domains');
-  return { on: orgSet || !!s.record_only_included, locked: orgSet, sub: orgSet ? by : '', rows };
+  // The organization can keep inclusions to its own list: the person's are then ignored.
+  const own = pp.member_inclusions !== false;
+  if (own) {
+    add(s.included_bundle_ids, 'app', false, 'included_bundle_ids');
+    add(s.included_domains, 'site', false, 'included_domains');
+  }
+  return { on: orgSet || !!s.record_only_included, locked: orgSet, sub: orgSet ? by : '', rows, own };
 }
 /* "Keep recordings on this computer" says its rule in one line: with sync on, 7 days and never
    anything not uploaded yet; with sync off, nothing is uploaded, so only space frees it. */
@@ -825,6 +822,34 @@ function policyText(cached) {
   return n || 'Managed by policy.';
 }
 
+/* One list, apps first: {value, label}. An app is named once, by its bundle id. */
+function suggestionList(installed, recorded, domains) {
+  const out = [], seen = new Set();
+  for (const a of [...(installed || []), ...(recorded || [])]) {
+    const v = a && a.bundle;
+    if (!v || seen.has(v.toLowerCase())) continue;
+    seen.add(v.toLowerCase());
+    out.push({ value: v, label: a.name || v });
+  }
+  for (const d of domains || []) if (d && d.name && !seen.has(d.name)) { seen.add(d.name); out.push({ value: d.name, label: 'Website' }); }
+  return out;
+}
+/* Where the Apps and websites rules come from, in one sentence. `pp` is the organization's
+   privacy policy (null on a computer not synced to an organization). */
+function policySource(pp, org, only, managed) {
+  if (managed && !pp) return `Managed by ${org || 'your organization'}. Its rules arrive with its policy.`;
+  if (!pp) return 'Set on this computer. Nothing here is uploaded.';
+  const who = org || 'your organization';
+  const type = only.locked ? 'an inclusion policy' : 'an exclusion policy';
+  const own = only.own ? 'You can add your own; you cannot remove theirs.' : 'You can add apps and websites to skip; only ' + who + ' adds what is recorded.';
+  return `Synced from ${who}, which uses ${type}. Its entries are locked. ${own}`;
+}
+/* A category's members by name: apps this computer knows by name (installed or recorded),
+   else their id, one name per app; then its websites. */
+function groupMembers(g, known) {
+  const names = (g.bundle_ids || []).map((id) => (known || []).find((o) => o.value.toLowerCase() === id.toLowerCase())?.label || id);
+  return [...new Set(names), ...(g.domains || [])];
+}
 /* ---- end settings: pure ---- */
 /* ---- opening zoom: pure ----
    The default view shows about 12 minutes with the newest frame at the playhead. After a long
@@ -1742,7 +1767,8 @@ async function openSettings(dest, section) {
   searchEl.hidden = true;
   settingsEl.hidden = false;
   await loadSettings();
-  if (section) $(`#sec-${section}`)?.scrollIntoView();
+  // "never" and "only" were sections of their own; both are Apps and websites now.
+  if (section) $(`#sec-${section === 'never' || section === 'only' ? 'apps' : section}`)?.scrollIntoView();
   clearInterval(livePoll);
   // Live account, status and sign-in progress while the panel is open.
   livePoll = setInterval(() => {
@@ -1754,8 +1780,24 @@ async function loadAudioDevices() {
   try { draft.audioDevices = await api('/api/audio/devices'); } catch (e) { draft.audioDevices = { devices: [], error: e.message }; }
   if (!settingsEl.hidden) renderSettings();
 }
+/* Apps and websites to suggest where a person includes or excludes one: installed apps
+   (macOS), recorded apps and recorded websites. Loaded once per window. */
+let suggest = null;
+async function loadSuggestions() {
+  const [inst, rec, dom] = await Promise.all([api('/api/installed-apps').catch(() => ({})), api('/api/apps').catch(() => ({})), api('/api/domains').catch(() => ({}))]);
+  suggest = suggestionList(inst.apps, rec.apps, dom.domains);
+  const dl = $('#app-site-suggest');
+  if (dl) setHtml(dl, suggestOptions());
+}
+const suggestOptions = () => (suggest || []).map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+/* An app or website row, by its name when this computer knows it. */
+function appRow(r) {
+  const name = r.kind === 'app' ? (suggest || []).find((o) => o.value.toLowerCase() === String(r.id).toLowerCase())?.label : null;
+  return { ...r, label: name || r.label || r.id, sub: [r.sub, name ? r.id : ''].filter(Boolean).join(' · ') };
+}
 async function loadSettings() {
   if (draft.audioDevices == null) { draft.audioDevices = { devices: [] }; loadAudioDevices(); }
+  if (suggest == null) { suggest = []; loadSuggestions().then(() => settingsData && renderSettings()); }
   const [settings, sync, app] = await Promise.all([api('/api/settings'), api('/api/sync'), api('/api/app')]);
   settingsData = settings;
   syncData = sync;
@@ -1932,7 +1974,14 @@ function paintRecording() {
 function neverRow(r) {
   const glyph = r.locked ? icon('lock').replace('<svg ', '<svg class="lock" ') : '';
   const name = `<span class="name${r.kind === 'app' || r.kind === 'site' ? ' mono' : ''}">${glyph}${esc(r.label)}</span>`;
-  const lab = `<div class="lab">${name}${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</div>`;
+  // A category says what it covers: counts, and the list on request.
+  const m = r.kind === 'group' && r.members;
+  const count = m ? [m.bundle_ids?.length ? `${m.bundle_ids.length} apps` : '', m.domains?.length ? `${m.domains.length} websites` : ''].filter(Boolean).join(', ') : '';
+  const open = m && (draft.openGroups || []).includes(r.id);
+  const toggle = m ? ` · <button class="link-btn" data-group-list="${esc(r.id)}">${open ? 'Hide list' : 'Show list'}</button>` : '';
+  const sub = [r.sub, count].filter(Boolean).join(' · ');
+  const list = open ? `<small class="members">${esc(groupMembers(m, suggest).join(', '))}</small>` : '';
+  const lab = `<div class="lab">${name}${sub || toggle ? `<small>${esc(sub)}${toggle}</small>` : ''}${list}</div>`;
   let ctl = '';
   if (!r.locked) {
     if (r.kind === 'group') ctl = `<label class="switch"><input type="checkbox" data-group="${esc(r.id)}"${r.on ? ' checked' : ''} aria-label="${esc(r.label)}"><i></i></label>`;
@@ -1947,7 +1996,6 @@ function renderSettings() {
   const pp = policyPrivacy();
   const orgKnown = syncData?.status?.kortix?.account_name || '';
   const never = neverRows(s, g, pp, orgKnown);
-  const pc = privacyControls(syncData?.view, syncData?.status?.policy?.policy, s);
   const managed = !!appData?.managed;
   const items = exclusionItems(s, pp);
   const only = onlyIncluded(s, pp, orgKnown);
@@ -1968,18 +2016,20 @@ function renderSettings() {
       <div id="sync-status" class="sync-status"></div>
       <div id="sync-box"></div>
 
-      ${pc.on || only.on ? `<h3 id="sec-only">Record only</h3>
-      <p class="hint">${only.on ? 'Only these apps and websites are recorded. Everything else is blacked out and never saved.' : 'Off: everything not in Never record is recorded.'}</p>
-      <div class="never">${row(`Record only included apps and websites${only.sub ? `<small>${esc(only.sub)}</small>` : ''}`, '', only.locked ? `<span>${icon('lock').replace('<svg ', '<svg class="lock" ')}On</span>` : sw('record_only_included', only.on, ' aria-label="Record only included apps and websites"'))}
-        ${only.on ? only.rows.map((r) => neverRow({ ...r, label: r.id })).join('') + `
-        <div class="add-row"><input type="text" id="add-in" placeholder="Add an app or website, such as com.tinyspeck.slackmacgap or github.com" aria-label="Add an app or website to record" autocomplete="off" spellcheck="false"><button class="btn" id="add-in-btn">Add</button></div>` : ''}
-      </div>` : ''}
-
-      ${pc.on ? `<h3 id="sec-never">Never record</h3>      <p class="hint">Kortix Capture skips these before it records. Nothing here is saved or uploaded.</p>
-      ${never.some((r) => r.locked) ? `<p class="hint">${esc(orgKnown ? orgKnown + ' requires the locked ones.' : 'Policy requires the locked ones.')}</p>` : ''}
-      <div class="never">${never.map((r) => neverRow(r)).join('')}
-        <div class="add-row"><input type="text" id="add-ex" placeholder="Add an app or website, such as example.com" aria-label="Add an app or website" autocomplete="off" spellcheck="false"><button class="btn" id="add-ex-btn">Add</button></div>
-      </div>` : ''}
+      <h3 id="sec-apps">Apps and websites</h3>
+      <p class="hint">Choose what Kortix Capture records. What it skips is blacked out and never saved or uploaded. Never record always wins.</p>
+      <p class="hint">${esc(policySource(syncData?.status?.policy?.policy ? pp : null, orgKnown, only, !!appData?.managed))}</p>
+      <div class="never">
+        ${row(`Policy${only.sub ? `<small>${esc(only.sub)}</small>` : ''}`, '', only.locked
+          ? `<span>${icon('lock').replace('<svg ', '<svg class="lock" ')}Inclusion policy</span>`
+          : `<select id="rec-mode" aria-label="What to record"><option value="all"${only.on ? '' : ' selected'}>Exclusion policy: everything except Never record</option><option value="only"${only.on ? ' selected' : ''}>Inclusion policy: only what is included</option></select>`)}
+        ${only.on ? `<div class="sub-h">Record only these</div>${only.rows.length ? '' : '<p class="hint">Nothing is included yet, so nothing is recorded. Add an app or a website.</p>'}${only.rows.map((r) => neverRow(appRow(r))).join('')}
+        ${only.own ? `<div class="add-row"><input type="text" id="add-in" list="app-site-suggest" placeholder="Add an app or website to record" aria-label="Add an app or website to record" autocomplete="off" spellcheck="false"><button class="btn" id="add-in-btn">Add</button></div>` : ''}` : ''}
+        <div class="sub-h">${only.on ? 'Never record, even if included' : 'Never record'}</div>
+        ${never.map((r) => neverRow(r.kind === 'app' || r.kind === 'site' ? appRow(r) : r)).join('')}
+        <div class="add-row"><input type="text" id="add-ex" list="app-site-suggest" placeholder="Add an app or website to skip" aria-label="Add an app or website to skip" autocomplete="off" spellcheck="false"><button class="btn" id="add-ex-btn">Add</button></div>
+      </div>
+      <datalist id="app-site-suggest">${suggestOptions()}</datalist>
 
       <h3 id="sec-storage">Storage</h3>
       ${row('Library size', esc(st.library), `<span>${gb(st.usage_total_bytes || 0)}</span>`)}
@@ -1989,12 +2039,11 @@ function renderSettings() {
 
       <h3 id="sec-about">About</h3>
       ${row('Version', '', `<span class="mono">${esc(appData?.version || '')}</span>`)}
-      ${managed ? '' : row('Launch at login', 'Start Kortix Capture when you log in, and restart it if it quits unexpectedly.', sw('launch_at_login', s.launch_at_login !== false))}
+      ${row('Starts at login', managed ? 'Always. Your organization runs Kortix Capture on this computer.' : 'Always. Recording runs around the clock and comes back after a restart or a crash. To stop it until the next login, use Quit in the menu bar.', '<span>On</span>')}
       ${row('Logs', '', '<button class="btn" id="open-logs">Open logs</button>')}
 
       <details class="adv"${draft.adv ? ' open' : ''}><summary>Advanced</summary>
         <div id="sec-sync-dest"><div id="sync-adv"></div></div>
-        ${pc.local ? row('Privacy controls<small>Off hides these controls. What is set keeps applying.</small>', '', sw('experimental.privacy_controls', !!s.experimental?.privacy_controls, ' aria-label="Privacy controls"')) : ''}
         ${orgRec.interval_ms != null
           ? row('Capture interval', `Set by ${by}.`, `<span>${orgRec.interval_ms / 1000} s</span>`)
           : row('Capture interval', '', `<span>${num('interval_ms', s.interval_ms, { min: 0.5, step: 0.5, type: 'float', scale: 1000 })} s</span>`)}
@@ -2077,6 +2126,11 @@ settingsEl.addEventListener('toggle', (e) => {
 }, true);
 settingsEl.addEventListener('change', async (e) => {
   const t = e.target, s = settingsData.settings;
+  if (t.id === 'rec-mode') {
+    patch({ record_only_included: t.value === 'only' });
+    renderSettings();
+    return;
+  }
   if (t.id === 'keep-for') {
     const p = keepPatch(t.value);
     if (p) { patch(p); renderSettings(); }
@@ -2099,12 +2153,19 @@ settingsEl.addEventListener('change', async (e) => {
   if (typeof v === 'number' && Number.isNaN(v)) return;
   if (t.dataset.scale) v = Math.round(v * +t.dataset.scale);
   patch(pathPatch(t.dataset.path, v));
-  if (t.dataset.path === 'audio.enabled' || t.dataset.path === 'experimental.privacy_controls' || t.dataset.path === 'record_only_included') renderSettings();
+  if (t.dataset.path === 'audio.enabled') renderSettings();
 });
 settingsEl.addEventListener('click', async (e) => {
   const b = e.target.closest('button, [data-rm]');
   if (!b || b.disabled) return;
   const s = settingsData.settings;
+  if (b.dataset.groupList) {
+    const id = b.dataset.groupList, set = new Set(draft.openGroups || []);
+    set.has(id) ? set.delete(id) : set.add(id);
+    draft.openGroups = [...set];
+    renderSettings();
+    return;
+  }
   if (b.dataset.rm) {
     const key = b.dataset.rm;
     patch({ [key]: s[key].filter((x) => x !== b.dataset.v) });

@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { AnimatePresence, m } from 'motion/react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 

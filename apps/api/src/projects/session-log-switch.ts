@@ -6,7 +6,7 @@
  * `switchPreflight` (`@kortix/api-contract/session-log`, `capabilities.ts`) reads. Text, tool input
  * and output and attachment bytes never leave the database; a reasoning text leaves as `x` or `''`
  * (the rule needs only "not blank", any whitespace, as JS `trim`); no blob is read, only the blob
- * sizes for the restore cap (`sessionLogRestoreFits`). The projection is cast to
+ * sizes and the slice of an over-cap log (`sessionLogRestoreKeepsModelView`). The projection is cast to
  * `SessionLog`: only the fields `switchPreflight` reads are real.
  */
 import {
@@ -22,9 +22,8 @@ import { asc, eq, sql } from 'drizzle-orm';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { config } from '../config';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 import { db } from '../shared/db';
-import { sessionLogRestoreFits } from './session-log-restore';
+import { sessionLogRestoreKeepsModelView } from './session-log-restore';
 
 type Thread = SessionLog['threads'][number];
 
@@ -106,12 +105,12 @@ export async function sessionLogSwitchPreflight(input: {
         threads: [...byThread.values()],
       } as unknown as SessionLog;
       return switchPreflight(slim, input.to, {
-        llmGateway: projectLlmGatewayEnabled(input.projectMetadata),
-        // Over the restore cap the new box gets the note alone (413): the history does not restore.
+        // Over the restore cap the new box gets what the model saw (413 `model_view`), or else the newest turns or
+        // the note alone: then the earlier history does not restore.
         restore:
           config.SESSION_LOG_RESTORE_ENABLED &&
           resolveFeatureFlag(input.projectMetadata, 'session_log_restore') &&
-          (await sessionLogRestoreFits(tx, input.sessionId)),
+          (await sessionLogRestoreKeepsModelView(tx, input.sessionId)),
         deletedMessages: deleted,
       });
     },

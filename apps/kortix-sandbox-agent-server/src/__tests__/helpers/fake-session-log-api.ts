@@ -22,6 +22,9 @@ export function fakeSessionLogApi(initial: SessionLog, env: { projectId: string;
   const server = Bun.serve({
     port: 0,
     hostname: '127.0.0.1',
+    // A slow restore leaves the client's pooled socket idle past Bun's 10 s
+    // default; the server closing it fails the next journal post (ECONNRESET).
+    idleTimeout: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname
       const route = path.split('/').slice(-2).join('/')

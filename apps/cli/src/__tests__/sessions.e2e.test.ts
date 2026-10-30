@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
@@ -27,12 +27,11 @@ let previousDisableSandboxEnvFile: string | undefined;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let sessionCreateBody: Record<string, unknown> | null = null;
 let sessionList: Record<string, unknown>[] = [];
-let transcriptRequests: URL[] = [];
-/** Per-session transcript origin, so a test can say which sessions the server
- *  serves live and which it serves from the durable mirror. */
-let transcriptSources: Record<string, 'live' | 'mirror'> = {};
+let logRequests: URL[] = [];
 let apiRequests: string[] = [];
 let clientCreatesBranch = false;
+let readinessStage = 'ready';
+let onStart = () => {};
 
 function git(args: string[], cwd?: string): string {
   return execFileSync('git', args, {
@@ -100,10 +99,11 @@ describe('sessions new CLI flow', () => {
     process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
     sessionCreateBody = null;
     sessionList = [];
-    transcriptRequests = [];
-    transcriptSources = {};
+    logRequests = [];
     apiRequests = [];
     clientCreatesBranch = false;
+    readinessStage = 'ready';
+    onStart = () => {};
 
     cpSync(join(templateRoot, 'repo'), repo, { recursive: true });
     cpSync(join(templateRoot, 'origin.git'), origin, { recursive: true });
@@ -164,47 +164,44 @@ describe('sessions new CLI flow', () => {
             updated_at: '2026-01-01T00:00:00.000Z',
           });
         }
+        if (req.method === "POST" && url.pathname.endsWith("/start")) {
+          onStart();
+          return Response.json({ stage: readinessStage });
+        }
+        if (
+          req.method === "GET" &&
+          new RegExp(`^/v1/projects/${PROJECT_ID}/sessions/[^/]+$`).test(url.pathname)
+        ) {
+          return Response.json({
+            session_id: "00000000-0000-4000-a000-000000000333",
+            status: readinessStage === "ready" ? "running" : readinessStage,
+          });
+        }
         if (req.method === 'GET' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
           return Response.json(sessionList);
         }
-        const transcriptMatch = url.pathname.match(new RegExp(`^/v1/projects/${PROJECT_ID}/sessions/([^/]+)/transcript$`));
-        if (req.method === 'GET' && transcriptMatch) {
-          transcriptRequests.push(url);
-          const source = transcriptSources[transcriptMatch[1]!] ?? 'live';
+        const logMatch = url.pathname.match(new RegExp(`^/v1/projects/${PROJECT_ID}/sessions/([^/]+)/log$`));
+        if (req.method === 'GET' && logMatch) {
+          logRequests.push(url);
+          const common = {
+            schema: 'kortix.session/2', v: 1, thread_id: 'ses_test', kind: 'turn', status: 'complete',
+            in_context: true, model: null, usage: null, finish: 'stop', error: null,
+            producer: { harness: 'pi', harness_version: '1', adapter_version: '1' },
+            created_at: '2026-06-20T00:00:00.000Z', completed_at: '2026-06-20T00:02:00.000Z',
+          };
           return Response.json({
-            available: true,
-            reason:
-              source === 'mirror'
-                ? 'session is stopped; live transcript requires a running sandbox'
-                : null,
-            source,
-            // A mirror read reports completeness for itself; a live read is
-            // whatever the sandbox holds right now.
-            complete: source === 'mirror',
-            opencode_session_id: 'ses_test',
-            message_count: 2,
+            session: { session_id: logMatch[1] }, generation: 0, thread_id: 'ses_test', has_more: false,
+            threads: [{ schema: 'kortix.session/2', v: 1, thread_id: 'ses_test', parent_thread_id: null,
+              spawned_by: null, agent: null, title: null, created_at: common.created_at }],
             messages: [
-              {
-                role: 'user',
-                created: '2026-06-20T00:00:00.000Z',
-                completed: null,
-                text: 'Review recent sessions',
-                tools: [],
-                files: [],
-                reasoning_omitted: false,
-                error: null,
-              },
-              {
-                role: 'assistant',
-                created: '2026-06-20T00:01:00.000Z',
-                completed: '2026-06-20T00:02:00.000Z',
-                text: 'Found the important changes.',
-                tools: [{ tool: 'bash', status: 'completed', output: 'must not leak' }],
-                files: [],
-                reasoning_omitted: true,
-                error: null,
-                output: 'must not leak',
-              },
+              { ...common, message_id: 'user', seq: 1, role: 'user', blocks: [{ id: 'request', type: 'text', text: 'Review recent sessions' }] },
+              { ...common, message_id: 'assistant', seq: 2, role: 'assistant', blocks: [
+                { id: 'response', type: 'text', text: 'Found the important changes.' },
+                { id: 'reasoning', type: 'reasoning', text: 'must not leak' },
+                { id: 'call', type: 'tool_call', call_id: 'bash-call', name: 'bash', kind: 'shell',
+                  input: { command: 'must not leak' }, status: 'complete',
+                  result: { is_error: false, content: [{ type: 'text', text: 'must not leak' }] } },
+              ] },
             ],
           });
         }
@@ -254,6 +251,86 @@ describe('sessions new CLI flow', () => {
     server?.stop(true);
     server = null;
     if (root) rmSync(root, { recursive: true, force: true });
+  });
+
+  for (const stage of ["ready", "failed", "stopped"]) {
+    test(`--wait --json reports creation and ${stage} on stderr, leaving stdout as JSON`, async () => {
+      readinessStage = stage;
+      let stderr = "";
+      const output = spyOn(process.stderr, "write").mockImplementation(
+        (chunk) => {
+          stderr += String(chunk);
+          return true;
+        },
+      );
+      onStart = () => {
+        expect(stderr).toContain("created");
+      };
+      try {
+        const { code, stdout } = await captureStdout(() =>
+          runSessions(["new", "--wait", "--json"]),
+        );
+        expect(code).toBe(stage === "ready" ? 0 : 1);
+        expect(stderr).toContain("created");
+        expect(stderr).toContain("00000000-0000-4000-a000-000000000333");
+        expect(stderr).toContain(stage);
+        expect(JSON.parse(stdout)).toMatchObject({
+          status: stage === "ready" ? "running" : stage,
+        });
+      } finally {
+        output.mockRestore();
+      }
+    });
+  }
+
+  test('reports intermediate readiness transitions only once', async () => {
+    let stderr = '';
+    let polls = 0;
+    const output = spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderr += String(chunk);
+      return true;
+    });
+    onStart = () => {
+      polls += 1;
+      readinessStage = polls < 3 ? 'provisioning' : 'ready';
+    };
+    try {
+      const { code, stdout } = await captureStdout(() => runSessions(['new', '--wait', '--json']));
+      expect(code).toBe(0);
+      expect(stderr.match(/: provisioning\n/g)).toHaveLength(1);
+      expect(stderr).toContain(': ready\n');
+      expect(JSON.parse(stdout)).toMatchObject({ status: 'running' });
+    } finally {
+      output.mockRestore();
+    }
+  });
+
+  test("real CLI keeps progress off JSON stdout", async () => {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        new URL("../index.ts", import.meta.url).pathname,
+        "sessions",
+        "new",
+        "--wait",
+        "--json",
+      ],
+      {
+        cwd: repo,
+        env: process.env,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout)).toMatchObject({ status: "running" });
+    expect(stderr).toContain("created");
+    expect(stderr).toContain("ready");
   });
 
   test('creates the session branch with local git credentials before creating the API session', async () => {
@@ -346,7 +423,7 @@ describe('sessions new CLI flow', () => {
     expect(sessionCreateBody).toBeNull();
   });
 
-  test('digest uses compact project transcript endpoint', async () => {
+  test('digest reads the stored session log for running and stopped sessions', async () => {
     const runningId = '11111111-1111-4111-8111-111111111111';
     const stoppedId = '22222222-2222-4222-8222-222222222222';
     sessionList = [
@@ -388,27 +465,18 @@ describe('sessions new CLI flow', () => {
       },
     ];
 
-    transcriptSources[stoppedId] = 'mirror';
-
     const { code, stdout } = await captureStdout(() =>
       runSessions(['digest', '--all', '--messages', '5', '--chars', '120', '--json']),
     );
 
     expect(code).toBe(0);
-    // EVERY session is asked, not only the running one. The API serves a
-    // stopped session from its durable transcript mirror, so skipping the
-    // request here is how the digest used to lose a transcript it could read.
-    expect(transcriptRequests).toHaveLength(2);
-    expect(transcriptRequests.map((u) => u.pathname)).toEqual(
-      expect.arrayContaining([
-        `/v1/projects/${PROJECT_ID}/sessions/${runningId}/transcript`,
-        `/v1/projects/${PROJECT_ID}/sessions/${stoppedId}/transcript`,
-      ]),
-    );
-    for (const request of transcriptRequests) {
-      expect(request.searchParams.get('limit')).toBe('5');
-      expect(request.searchParams.get('chars')).toBe('120');
-    }
+    expect(logRequests).toHaveLength(2);
+    expect(logRequests.map((url) => url.pathname)).toEqual(expect.arrayContaining([
+      `/v1/projects/${PROJECT_ID}/sessions/${runningId}/log`,
+      `/v1/projects/${PROJECT_ID}/sessions/${stoppedId}/log`,
+    ]));
+    for (const request of logRequests) expect(request.searchParams.get('limit')).toBe('5');
+    expect(apiRequests.filter((request) => request.includes('/transcript'))).toEqual([]);
 
     const parsed = JSON.parse(stdout) as {
       sessions: Array<{
@@ -429,16 +497,12 @@ describe('sessions new CLI flow', () => {
       opencode_session_id: 'ses_test',
       opencode_titles: ['Digest target'],
     });
-    expect(parsed.sessions[0]!.transcript).toMatchObject({ available: true, source: 'live' });
-    // The stopped session: served, and honest about where from.
-    expect(parsed.sessions[1]!.transcript).toMatchObject({
-      available: true,
-      source: 'mirror',
-      complete: true,
-    });
+    for (const session of parsed.sessions) {
+      expect(session.transcript).toMatchObject({ available: true, source: 'log', complete: true });
+    }
     expect(JSON.stringify(parsed)).not.toContain('must not leak');
     expect(parsed.sessions[0]!.transcript.messages[1]!.tools).toEqual([
-      { tool: 'bash', status: 'completed' },
+      { tool: 'bash', status: 'complete' },
     ]);
   });
 });

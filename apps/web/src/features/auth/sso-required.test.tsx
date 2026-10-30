@@ -21,7 +21,7 @@ const host = (tag: string) =>
   function Host({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) {
     return createElement(tag, props, children);
   };
-mock.module('@/components/ui/dialog', () => ({
+const uiDialogMock = () => ({
   Dialog: ({ open, children }: { open?: boolean; children?: React.ReactNode }) =>
     open ? createElement('div', { 'data-dialog': 'open' }, children) : null,
   DialogContent: host('section'),
@@ -29,12 +29,15 @@ mock.module('@/components/ui/dialog', () => ({
   DialogFooter: host('footer'),
   DialogHeader: host('header'),
   DialogTitle: host('h2'),
-}));
-mock.module('@/components/ui/button', () => ({
+});
+mock.module('@kortix/ui/dialog', uiDialogMock);
+const uiButtonMock = () => ({
   Button: ({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) =>
     createElement('button', props, children),
-}));
-mock.module('@/components/ui/loading', () => ({ default: () => createElement('span', null, 'loading') }));
+});
+mock.module('@kortix/ui/button', uiButtonMock);
+const uiLoadingMock = () => ({ default: () => createElement('span', null, 'loading') });
+mock.module('@kortix/ui/loading', uiLoadingMock);
 
 const { SsoRequiredProvider } = await import('./sso-required');
 

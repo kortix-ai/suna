@@ -16,12 +16,13 @@ export function startTunnelService(): void {
 
   heartbeatManager.start();
   startTunnelRpcForwarder();
-
   registerTunnelRelayPersistence();
 
   // ── Rate-limiter + device-auth cleanup ───────────────────────────────
 
-  cleanupInterval = setInterval(() => void runWorkerTick('tunnel-cleanup', runTunnelCleanupOnce), 5 * 60_000);
+  if (config.KORTIX_WORKERS_ENABLED) {
+    cleanupInterval = setInterval(() => void runWorkerTick('tunnel-cleanup', runTunnelCleanupOnce), 5 * 60_000);
+  }
 
   console.log('[TUNNEL] Tunnel service started');
 }

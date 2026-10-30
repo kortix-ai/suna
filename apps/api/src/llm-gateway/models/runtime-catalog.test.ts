@@ -51,9 +51,11 @@ describe('runtime model catalog', () => {
     expect(catalog.status()).toMatchObject({
       source: 'api',
       sourceUrl: 'https://catalog.test/api.json',
-      providerCount: 1,
+      // The live provider plus Platinum, which is not on models.dev and is kept on every refresh.
+      providerCount: 2,
       modelCount: 1,
     });
+    expect(catalog.snapshot().providers.map((p) => p.id)).toContain('platinum');
     expect(catalog.snapshot().providers[0]?.models[0]).toMatchObject({
       id: 'live-model',
       released: '2026-07-01',

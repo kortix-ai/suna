@@ -64,6 +64,18 @@ describe('local capability permission enforcement', () => {
     );
     expect(registry.getCapabilityNames()).toEqual([]);
     expect(registry.getHandler('desktop.cua.get_screen_size')).toBeNull();
+    expect(registry.unavailable.get('desktop')).toContain('cua-driver was not found');
+  });
+
+  test('a rejected driver is reported as the reason, not thrown', () => {
+    const registry = createEnabledCapabilityRegistry(
+      { ...config(), enabledCapabilities: ['filesystem', 'desktop'] },
+      () => {
+        throw new Error('cua-driver is not owned by the current user or root: /x/cua-driver');
+      },
+    );
+    expect(registry.getCapabilityNames()).toEqual(['filesystem']);
+    expect(registry.unavailable.get('desktop')).toBe('cua-driver is not owned by the current user or root: /x/cua-driver');
   });
 
   test('desktop is advertised when a trusted local driver exists', () => {
@@ -73,7 +85,9 @@ describe('local capability permission enforcement', () => {
     );
     expect(registry.getCapabilityNames()).toEqual(['desktop']);
     expect(registry.getHandler('desktop.cua.call')).not.toBeNull();
+    expect(registry.unavailable.size).toBe(0);
   });
+
   test('a permission scope cannot widen the local filesystem ceiling', async () => {
     const handler = createFilesystemCapability(config()).methods.get('fs.read')!;
     await expect(

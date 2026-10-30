@@ -1,13 +1,13 @@
 'use client';
 
-import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
-import type { ShowCarouselItem } from '@/features/file-renderers/show-content-renderer';
+import { SessionDotMatrix } from '@kortix/ui/dot-matrix/session-dot-matrix';
+import type { ShowCarouselItem } from '@kortix/ui/file-viewer';
 import {
   ServicePreviewViewport,
   type ServicePreviewState,
-} from '@/features/session/tool/shared/infrastructure-preview';
-import { ShowCarouselTabs, showFileTypeIcon } from '@/features/session/tool/shared/show-helpers';
-import { ShowUnavailableNote } from '@/features/session/tool/tools/show-tool';
+} from '@kortix/ui/session';
+import { ShowCarouselTabs, showFileTypeIcon } from '@kortix/ui/session/tool/shared/show-helpers';
+import { ShowUnavailableNote } from '@kortix/ui/session/tool/tools/show-tool';
 import {
   PREVIEW_BUILDING_STATES,
   previewStatePage,
@@ -122,6 +122,10 @@ const PROXY_CASES: Array<{ state: PreviewState; gaveUp?: boolean; note: string }
     note: 'After 40 reloads (~2 min) the load line stops and Try again appears.',
   },
   { state: 'signed-out', note: 'No credential yet. Offers sign-in.' },
+  {
+    state: 'unavailable',
+    note: 'The share link was revoked, expired or deleted. No sign-in, no retry.',
+  },
   { state: 'forbidden', note: 'Host claimed without the edge signature.' },
   { state: 'unknown', note: 'The sandbox behind the address no longer exists.' },
 ];

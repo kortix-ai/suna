@@ -148,6 +148,9 @@ async function loadProvisionMatrix(opts: {
   }));
   vi.doMock('../src/fixtures/billing', () => ({ subscribe: opts.subscribe }));
   vi.doMock('../src/core/client', () => ({
+    // The mock mirrors the module surface principals.ts consumes; the mint
+    // helper answers through the same shape as the mocked Client.post.
+    mintAccountToken: async () => ({ secret_key: 'pat-secret' }),
     Client: class {
       as() {
         return this;
@@ -242,6 +245,9 @@ describe('provisionMatrix parallelism (P1.7)', () => {
       },
     }));
     vi.doMock('../src/core/client', () => ({
+      // The mock mirrors the module surface principals.ts consumes; the mint
+      // helper answers through the same shape as the mocked Client.post.
+      mintAccountToken: async () => ({ secret_key: 's' }),
       Client: class {
         as() {
           return this;

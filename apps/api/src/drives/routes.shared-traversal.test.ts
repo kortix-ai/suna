@@ -87,6 +87,12 @@ mock.module('./service', () => ({
   readDriveVolume: async (_drive: unknown, op: (volume: string) => Promise<unknown>) => op('vol-1'),
   writeDriveVolume: async (_drive: unknown, op: (volume: string) => Promise<unknown>) => op('vol-1'),
 }));
+// A project with no private channel: no folder under `/Channels` is reserved.
+const realSpaceAccess = await import('../shared/space-access');
+mock.module('../shared/space-access', () => ({
+  ...realSpaceAccess,
+  privateChannelAccess: async () => ({ all: new Set<string>(), hidden: new Set<string>() }),
+}));
 const realConflicts = await import('./conflicts');
 mock.module('./conflicts', () => ({ ...realConflicts, noteDriveWrite: () => undefined }));
 // The storage behind a drive file, as the volume API keeps it: a write with

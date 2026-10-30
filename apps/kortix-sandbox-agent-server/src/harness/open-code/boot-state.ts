@@ -1,5 +1,6 @@
 import type { SandboxBootState } from '../contract/boot-state'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OpenCodeBootState extends SandboxBootState {
   /** True when boot must create a first OpenCode conversation before the UI is usable. */
   initialRuntimeSessionRequired?: boolean

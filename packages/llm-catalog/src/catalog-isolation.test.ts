@@ -21,7 +21,8 @@ describe('catalog snapshot isolation', () => {
   test('CATALOG and catalogModelForWireModel stay on the public surface', async () => {
     const mod = await import('./index');
     expect(mod.CATALOG.providers.length).toBeGreaterThan(0);
-    expect(mod.catalogModelForWireModel('deepseek-v4.1-flash')?.id).toBeDefined();
+    const [provider] = mod.CATALOG.providers;
+    expect(mod.catalogModelForWireModel(`${provider!.id}/${provider!.models[0]!.id}`)?.id).toBeDefined();
   });
 
   test('CATALOG_PROVIDER_ENV is the id/env projection of the snapshot', async () => {

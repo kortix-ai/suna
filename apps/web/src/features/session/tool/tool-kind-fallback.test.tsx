@@ -1,10 +1,9 @@
-import '@/features/session/tool/tools/register';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { FOREIGN_TOOL_CALLS } from '@/features/session/tool/foreign-tool-calls';
-import { parseListing } from '@/features/session/tool/shared/file-list';
-import { patchFilesFromText } from '@/features/session/tool/shared/patch-helpers';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
+import '@kortix/ui/session/tool/tools/register';
+import { TooltipProvider } from '@kortix/ui/tooltip';
+import { FOREIGN_TOOL_CALLS } from '@kortix/ui/session/tool/foreign-tool-calls';
+import { parseListing } from '@kortix/ui/session/tool/shared/file-list';
+import { patchFilesFromText } from '@kortix/ui/session/tool/shared/patch-helpers';
+import { ToolRegistry, ToolPartRenderer } from '@kortix/ui/session';
 import type { ToolCallBlock } from '@kortix/sdk';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';

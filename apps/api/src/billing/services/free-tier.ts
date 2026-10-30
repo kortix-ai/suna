@@ -2,21 +2,23 @@ import { config } from '../../config';
 import { getCreditAccount, upsertCreditAccount } from '../repositories/credit-accounts';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { wallet } from '../wallet';
-import { MINIMUM_CREDIT_FOR_RUN } from './tiers';
+import { getTier, MINIMUM_CREDIT_FOR_RUN } from './tiers';
 
 export async function initializeFreeTierAccount(accountId: string): Promise<void> {
   const billingAnchor = new Date();
+  const expiresAt = calculateNextCreditGrant(billingAnchor).toISOString();
   await upsertCreditAccount(accountId, {
     tier: 'free',
     billingCycleAnchor: billingAnchor.toISOString(),
-    nextCreditGrant: calculateNextCreditGrant(billingAnchor).toISOString(),
+    nextCreditGrant: expiresAt,
   });
   await wallet.grant({
     accountId,
-    amount: 2,
+    amount: getTier('free').monthlyCredits,
     kind: 'free_tier_grant',
     description: 'Free tier welcome credits',
     expiring: true,
+    expiresAt,
     key: { event: `free_tier_signup:${accountId}` },
   });
 }

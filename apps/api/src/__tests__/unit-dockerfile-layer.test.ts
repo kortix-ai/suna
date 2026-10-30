@@ -275,7 +275,9 @@ WORKDIR /workspace
     expect(merged).toContain('FROM ubuntu:24.04');
     expect(merged).toContain('WORKDIR /workspace');
     expect(merged).not.toContain('having them in your base');
-    expect(merged.match(/apt-get update/g)?.length).toBe(1);
+    // The user's block is gone: only the Kortix layer's own apt-get updates remain.
+    const layerOnly = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    expect(merged.match(/apt-get update/g)?.length).toBe(layerOnly.match(/apt-get update/g)?.length);
   });
 
   test('result ends with a trailing newline', () => {
@@ -462,5 +464,52 @@ describe('container_runtime', () => {
     expect(off).not.toContain('kmod');
     // Runs as root, after the kortix user exists, before the image drops to it.
     expect(on.indexOf('KORTIX_CONTAINER_RUNTIME')).toBeGreaterThan(on.indexOf('useradd --create-home'));
+  });
+});
+
+// kortix.yaml `residential_proxy: true | { country }`: a boot setting on the
+// template, never an image input. A template that asks never loses the ask to
+// a typo (fail closed): a bad country is dropped, the proxy stays on.
+describe('residential_proxy', () => {
+  test('extractSandboxTemplates reads true, a country, and off', () => {
+    const out = extractSandboxTemplates({
+      sandbox: {
+        templates: [
+          { slug: 'on', residential_proxy: true },
+          { slug: 'country', image: 'python:3.12-slim', residential_proxy: { country: 'US' } },
+          { slug: 'bad-country', image: 'python:3.12-slim', residential_proxy: { country: 'usa' } },
+          { slug: 'empty-table', image: 'python:3.12-slim', residential_proxy: {} },
+          { slug: 'off', image: 'python:3.12-slim', residential_proxy: false },
+          { slug: 'absent', image: 'python:3.12-slim' },
+          { slug: 'string', image: 'python:3.12-slim', residential_proxy: 'yes' },
+        ],
+      },
+    });
+    expect(out.map((t) => [t.slug, t.residentialProxy])).toEqual([
+      ['on', {}],
+      ['country', { country: 'us' }],
+      ['bad-country', {}],
+      ['empty-table', {}],
+      ['off', undefined],
+      ['absent', undefined],
+      ['string', undefined],
+    ]);
+  });
+
+  test('an entry with neither image nor dockerfile parses: the platform base image', () => {
+    const [tpl] = extractSandboxTemplates({ sandbox: { templates: [{ slug: 'web', residential_proxy: true }] } });
+    expect(tpl).toMatchObject({ slug: 'web', residentialProxy: {} });
+    expect(tpl?.image).toBeUndefined();
+    expect(tpl?.dockerfile).toBeUndefined();
+  });
+});
+
+describe('sandbox.templates entrypoint', () => {
+  test('a declared entrypoint is parsed, so the sync applies it; none stays absent', () => {
+    const [withEntry, without] = extractSandboxTemplates({
+      sandbox: { templates: [{ slug: 'py', image: 'python:3.12-slim', entrypoint: ' /bin/start ' }, { slug: 'node', image: 'node:22-slim' }] },
+    });
+    expect(withEntry?.entrypoint).toBe('/bin/start');
+    expect(without?.entrypoint).toBeUndefined();
   });
 });

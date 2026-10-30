@@ -147,7 +147,7 @@ export async function confirm(
  * Always renders every choice as a numbered menu before asking — a bare
  * `label [default]:` line with no visible options leaves anything beyond
  * the default undiscoverable (a real self-host bug: `Sandbox provider
- * [daytona]:` gave no hint that e2b/platinum existed at all). Accepts
+ * [daytona]:` gave no hint that any other provider existed). Accepts
  * either the option's number or its literal name, so scripted input
  * (tests, `--yes` non-interactive paths) that already types the option
  * name keeps working unchanged.

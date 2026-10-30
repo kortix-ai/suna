@@ -7,11 +7,13 @@
  * (~200 MB, ~3 s), migrated to the worktree branch. GoTrue, Kong, Storage and
  * Studio stay shared.
  *
- * GoTrue writes users only to the primary `postgres` database, and the product
- * schema has foreign keys to `auth.users`. A trigger on the primary's
- * `auth.users` pushes every insert/update/delete into each registered branch
- * through dblink (`kortix_wt.branches`), so a user who signs up after the copy
- * exists in the branch too, with the branch's own triggers and cascades. Create
+ * GoTrue writes users and sessions only to the primary `postgres` database.
+ * The product schema has foreign keys to `auth.users`, and the API confirms
+ * every access token against `auth.sessions` (apps/api/src/shared/jwt-liveness.ts).
+ * Triggers on the primary's `auth.users` and `auth.sessions` push every
+ * insert/update/delete into each registered branch through dblink
+ * (`kortix_wt.branches`), so a sign-up, sign-in or sign-out after the copy
+ * reaches the branch too, with the branch's own triggers and cascades. Create
  * and start also run a full reconcile (`kortix_wt.pull_users`).
  */
 import { sh, type ShResult } from './exec';
@@ -37,48 +39,60 @@ select pg_advisory_xact_lock(hashtext('kortix_wt'));
 create extension if not exists dblink with schema extensions;
 create schema if not exists kortix_wt;
 create table if not exists kortix_wt.branches (datname text primary key, conninfo text not null);
-create or replace function kortix_wt.push_user() returns trigger language plpgsql security definer set search_path = '' as $$
+-- One function for every mirrored table. kortix_wt.push_user (users only) is
+-- left in place for checkouts that still run the older version of this file.
+create or replace function kortix_wt.push_row() returns trigger language plpgsql security definer set search_path = '' as $$
 declare b record;
 begin
   for b in select br.datname, br.conninfo from kortix_wt.branches br join pg_database d on d.datname = br.datname loop
     begin
-      perform extensions.dblink_exec(b.conninfo, format('call kortix_wt.apply_users(%L, %L)', tg_op, jsonb_build_array(to_jsonb(coalesce(new, old)))));
+      perform extensions.dblink_exec(b.conninfo, format('call kortix_wt.apply_rows(%L, %L, %L)', tg_table_name, tg_op, jsonb_build_array(to_jsonb(coalesce(new, old)))));
     exception when others then
       -- Never fail a GoTrue write because a branch is broken. start reconciles.
-      raise warning 'kortix_wt: % of auth.users % to % failed: %', tg_op, to_jsonb(coalesce(new, old))->>'id', b.datname, sqlerrm;
+      raise warning 'kortix_wt: % of auth.% % to % failed: %', tg_op, tg_table_name, to_jsonb(coalesce(new, old))->>'id', b.datname, sqlerrm;
     end;
   end loop;
   return null;
 end $$;
 create or replace trigger kortix_wt_push_user after insert or update or delete on auth.users
-  for each row execute function kortix_wt.push_user();
+  for each row execute function kortix_wt.push_row();
+create or replace trigger kortix_wt_push_session after insert or update or delete on auth.sessions
+  for each row execute function kortix_wt.push_row();
 `;
 
 const BRANCH_SQL = `
 create schema if not exists kortix_wt;
-create or replace procedure kortix_wt.apply_users(op text, rows jsonb) language plpgsql as $$
+create or replace procedure kortix_wt.apply_rows(tbl text, op text, rows jsonb) language plpgsql as $$
 declare cols text; sets text;
 begin
   if op = 'DELETE' then
-    delete from auth.users where id in (select (r->>'id')::uuid from jsonb_array_elements(rows) r);
+    execute format('delete from auth.%I where id in (select (r->>''id'')::uuid from jsonb_array_elements($1) r)', tbl) using rows;
     return;
   end if;
   select string_agg(quote_ident(attname), ', '), string_agg(format('%1$I = excluded.%1$I', attname), ', ')
     into cols, sets
-    from pg_attribute where attrelid = 'auth.users'::regclass and attnum > 0 and not attisdropped and attgenerated = '';
+    from pg_attribute where attrelid = format('auth.%I', tbl)::regclass and attnum > 0 and not attisdropped and attgenerated = '';
   execute format(
-    'insert into auth.users as u (%s) select %s from jsonb_populate_recordset(null::auth.users, $1)
-       on conflict (id) do update set %s where u is distinct from excluded', cols, cols, sets) using rows;
+    'insert into auth.%1$I as t (%2$s) select %2$s from jsonb_populate_recordset(null::auth.%1$I, $1)
+       on conflict (id) do update set %3$s where t is distinct from excluded', tbl, cols, sets) using rows;
+end $$;
+-- Older primaries push users through this name.
+create or replace procedure kortix_wt.apply_users(op text, rows jsonb) language plpgsql as $$
+begin
+  call kortix_wt.apply_rows('users', op, rows);
 end $$;
 -- ponytail: a delete pushed while pull_users holds an older snapshot can re-insert
--- that user until the next start; local dev only.
+-- that row until the next start; local dev only.
 create or replace procedure kortix_wt.pull_users(primary_conninfo text) language plpgsql as $$
-declare rows jsonb;
+declare tbl text; rows jsonb;
 begin
-  select r into rows from extensions.dblink(primary_conninfo,
-    'select coalesce(jsonb_agg(to_jsonb(u)), ''[]'') from auth.users u') as t(r jsonb);
-  delete from auth.users where id not in (select (x->>'id')::uuid from jsonb_array_elements(rows) x);
-  call kortix_wt.apply_users('UPSERT', rows);
+  -- users first: sessions.user_id references them.
+  foreach tbl in array array['users', 'sessions'] loop
+    select r into rows from extensions.dblink(primary_conninfo,
+      format('select coalesce(jsonb_agg(to_jsonb(t)), ''[]'') from auth.%I t', tbl)) as t(r jsonb);
+    execute format('delete from auth.%I where id not in (select (x->>''id'')::uuid from jsonb_array_elements($1) x)', tbl) using rows;
+    call kortix_wt.apply_rows(tbl, 'UPSERT', rows);
+  end loop;
 end $$;
 `;
 
@@ -144,7 +158,7 @@ export function createBranchDb(p: PrimaryDb, name: string): string | null {
     'set -e',
     `trap 'rm -f ${dump} ${dump}.list' EXIT`,
     `pg_dump -U postgres -Fc --no-owner --no-privileges ${schemas} ${skip} -f ${dump} postgres`,
-    `pg_restore -l ${dump} | grep -v -e ' SCHEMA - public ' -e ' kortix_wt_push_user ' > ${dump}.list`,
+    `pg_restore -l ${dump} | grep -v -e ' SCHEMA - public ' -e ' kortix_wt_push_user ' -e ' kortix_wt_push_session ' > ${dump}.list`,
     `pg_restore -U postgres --no-owner --no-privileges --exit-on-error -L ${dump}.list -d ${build} ${dump}`,
   ].join('\n')]);
   if (!r.ok) return fail('copy primary schemas', r);
@@ -157,7 +171,8 @@ export function createBranchDb(p: PrimaryDb, name: string): string | null {
 }
 
 /**
- * Register the branch for the push trigger and reconcile every user. Idempotent;
+ * Register the branch for the push triggers and reconcile every user and
+ * session. Idempotent;
  * `start` runs it every time, which also repairs anything a push missed.
  */
 export function syncBranchUsers(p: PrimaryDb, name: string): string | null {
@@ -166,11 +181,17 @@ export function syncBranchUsers(p: PrimaryDb, name: string): string | null {
   if (!r.ok) return `install primary sync trigger: ${r.stderr.trim()}`;
   r = psql(p.url, `insert into kortix_wt.branches values (${lit(db)}, ${lit(conninfo(p, db))}) on conflict (datname) do update set conninfo = excluded.conninfo`);
   if (!r.ok) return `register branch: ${r.stderr.trim()}`;
+  // Every registered branch, not only this one: the primary trigger now calls
+  // apply_rows, which a branch created by an older checkout does not have yet.
+  const branches = sh(['psql', p.url, '-XAtc', 'select br.datname from kortix_wt.branches br join pg_database d using (datname)']).stdout
+    .split('\n').map((n) => n.trim()).filter(Boolean);
+  for (const other of branches) {
+    r = psql(withDatabase(p.url, other), BRANCH_SQL);
+    if (!r.ok && other === db) return `install branch sync procedures: ${r.stderr.trim()}`;
+  }
   const branchUrl = withDatabase(p.url, db);
-  r = psql(branchUrl, BRANCH_SQL);
-  if (!r.ok) return `install branch sync procedures: ${r.stderr.trim()}`;
-  r = psql(branchUrl, `call kortix_wt.pull_users(${lit(conninfo(p, 'postgres'))})`);
-  if (!r.ok) return `reconcile auth.users: ${r.stderr.trim()}`;
+  r = psql(branchUrl, `call kortix_wt.pull_users(${lit(conninfo(p, new URL(p.url).pathname.slice(1)))})`);
+  if (!r.ok) return `reconcile auth.users + auth.sessions: ${r.stderr.trim()}`;
   return null;
 }
 

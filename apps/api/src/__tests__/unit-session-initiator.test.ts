@@ -93,4 +93,14 @@ describe('sessionRowMatchesSearch', () => {
     expect(sessionRowMatchesSearch(row({}, { labels: ['Customer: EU'] }), 'customer: eu')).toBe(true);
     expect(sessionRowMatchesSearch(row({}, { labels: ['bug'] }), 'urgent')).toBe(false);
   });
+  // KRTX-3017: people type an agent's display name ("Store Builder"); the
+  // column holds its slug (`store-builder`).
+  test('matches an agent by its display name: spaces, hyphens and underscores are one separator', () => {
+    const agent = row({}, { agentName: 'store-builder' });
+    expect(sessionRowMatchesSearch(agent, 'Store Builder')).toBe(true);
+    expect(sessionRowMatchesSearch(agent, 'store_builder')).toBe(true);
+    expect(sessionRowMatchesSearch(agent, 'store-builder')).toBe(true);
+    expect(sessionRowMatchesSearch(agent, 'shop builder')).toBe(false);
+    expect(sessionRowMatchesSearch(agent, ' - ')).toBe(false);
+  });
 });

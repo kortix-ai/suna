@@ -12,7 +12,7 @@ import {
   fail,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
-import { readSavedTranscript } from './sessions-chat.ts';
+import { readStoredSessionLog, type StoredSessionLog } from './sessions-chat.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -34,8 +34,8 @@ session is stopped: neither the list nor the bytes need its sandbox.
   --host <name>                Operate against a non-default Kortix host.
   -h, --help                   Show this help.
 
-Files come from the session's saved transcript, which is written at the end of
-every turn.`;
+Files come from the session's stored session log, which is written at the end
+of every turn (JSON "source": "log").`;
 
 /**
  * A download name that can only land inside `dir`.
@@ -105,10 +105,16 @@ export async function runSessionsAttachments(argv: string[]): Promise<number> {
   if (!found) return 1;
   const { projectId, auth, session } = found.located;
 
-  const saved = await readSavedTranscript(auth, projectId, session.session_id, WHOLE_TRANSCRIPT);
-  if (saved.kind === 'error') return surfaceApiError(saved.error);
-  const attachments: SessionAttachmentReference[] =
-    saved.kind === 'ok' ? findSessionAttachments(saved.messages) : [];
+  // The stored session log is the index (every thread); no v1 transcript (`GET …/transcript`, P8.3).
+  const handle = kortixFromAuth(auth).session(projectId, session.session_id);
+  let stored: StoredSessionLog | null;
+  try {
+    stored = await readStoredSessionLog((query) => withKortixScope(auth, () => handle.log(query)), WHOLE_TRANSCRIPT);
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  const attachments: SessionAttachmentReference[] = stored ? findSessionAttachments(stored.threads.flatMap((thread) => thread.messages)) : [];
+  const source: 'log' | 'none' = stored ? 'log' : 'none';
 
   const wanted = all
     ? attachments
@@ -127,7 +133,6 @@ export async function runSessionsAttachments(argv: string[]): Promise<number> {
   if (wanted.length > 0) {
     const dir = path.resolve(outDir ?? '.');
     mkdirSync(dir, { recursive: true });
-    const handle = kortixFromAuth(auth).session(projectId, session.session_id);
     for (const attachment of wanted) {
       let bytes: Uint8Array;
       try {
@@ -145,7 +150,7 @@ export async function runSessionsAttachments(argv: string[]): Promise<number> {
   if (json) {
     emitJson({
       session_id: session.session_id,
-      source: saved.kind === 'ok' ? 'saved' : 'none',
+      source,
       attachments,
       ...(wanted.length > 0 ? { downloaded } : {}),
     });

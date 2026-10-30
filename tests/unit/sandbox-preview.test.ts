@@ -17,7 +17,6 @@ import {
   selectTeardownSandboxIds,
 } from '../src/core/sandbox-preview';
 import {
-  daytonaPreviewLabelsFilter,
   platinumPreviewIdempotencyKey,
   stopPreviousPreviewWorkerCommand,
 } from '../src/core/sandbox-preview-providers';
@@ -411,10 +410,6 @@ describe('provider-neutral preview lifecycle', () => {
     );
   });
 
-  it('encodes the Daytona preview ownership filter as JSON', () => {
-    expect(daytonaPreviewLabelsFilter()).toBe('{"kortix-preview":"true"}');
-  });
-
   it('requires the exact SHA-256 of the pull request lockfile', () => {
     expect(previewLockfileHash('A'.repeat(64))).toBe('a'.repeat(64));
     expect(() => previewLockfileHash('a'.repeat(40))).toThrow('64 hex characters');
@@ -442,8 +437,7 @@ describe('provider-neutral preview lifecycle', () => {
   });
 
   it('runs on Platinum only: an infrastructure failure fails the preview, never falls back', async () => {
-    // Previews never run on Daytona. The shared Daytona org hit its snapshot
-    // quota on 2026-09-21 and every preview session failed there.
+    // Previews never fall back to Daytona, the legacy provider.
     const platinum = vi.fn().mockRejectedValue(new PreviewInfrastructureError('restore timeout'));
     await expect(runSandboxPreview(input, { platinum })).rejects.toThrow('restore timeout');
     expect(platinum).toHaveBeenCalledOnce();
@@ -465,7 +459,7 @@ describe('provider-neutral preview lifecycle', () => {
     });
   });
 
-  it('rejects a Daytona request', async () => {
+  it('rejects a request for the legacy Daytona provider', async () => {
     const platinum = vi.fn();
     await expect(
       runSandboxPreview({ ...input, provider: 'daytona' as never }, { platinum }),

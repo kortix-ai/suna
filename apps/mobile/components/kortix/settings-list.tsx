@@ -19,13 +19,13 @@
 
 import * as React from 'react';
 import { Pressable, ScrollView, View, useWindowDimensions, type ScrollViewProps } from 'react-native';
+import { GUTTER_CLASS, type Gutter } from '@/lib/ui/gutter';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowUpRightIcon as ArrowUpRight,
   CheckIcon as Check,
-  CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
   MonitorIcon as Monitor,
   MoonIcon as Moon,
@@ -39,48 +39,23 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { MenuButton } from '@/components/kortix/menu-button';
-import { PlatformButton } from '@/components/kortix/platform-button';
+import { BackButton } from '@/components/kortix/back-button';
 import { haptics } from '@/lib/haptics';
 import { cn } from '@/lib/utils/index';
 import { SHEET_ROW_SURFACE, SurfaceContext } from '@/components/kortix/surface-context';
 import { useThemeStore, type ThemePreference } from '@/stores/theme-store';
 
 /**
- * Side padding of a settings-style screen. `page` is the app default (20pt);
- * `project` is the 16pt edge (`px-4`) of every page inside a project
- * (Jay, 2026-09-16), the same as the project home composer.
- */
-/**
- * A screen's side margin. `project` (16pt) is the default and what every
- * settings-style screen uses, so a settings page, an account page and the
- * project's own Account page share one edge (Jay, 2026-09-22 — the 20pt
- * `page` screens read as a different app beside it). `page` (20pt) is kept
- * for a surface that deliberately sits wider.
- */
-export type Gutter = 'page' | 'project';
-const GUTTER_CLASS: Record<Gutter, string> = {
-  page: 'px-5',
-  project: 'px-4',
-};
-
-/**
  * Screen header: Go back (native SwiftUI button on iOS, secondary pill on
- * Android), the title, and an optional trailing action. Tab roots pass
- * `showBack={false}`. A project page passes `onOpenMenu`: the hamburger that
- * opens the project drawer replaces Go back.
+ * Android), the title, and an optional trailing action. A project page passes
+ * `onOpenMenu`: the hamburger that opens the project drawer replaces Go back.
  */
 export function SettingsHeader({
   title,
-  showBack = true,
   onOpenMenu,
   right,
-  align = 'start',
-  transparent = false,
-  largeTitle = false,
-  gutter = 'project',
 }: {
   title: string;
-  showBack?: boolean;
   /**
    * Show the hamburger (the same secondary icon button as `PageHeader`) in
    * place of Go back. It opens the project drawer.
@@ -88,27 +63,10 @@ export function SettingsHeader({
   onOpenMenu?: () => void;
   /** Trailing action, e.g. a `PlatformButton` "New". */
   right?: React.ReactNode;
-  /**
-   * `center` centres the title between the back button and the trailing
-   * action. An empty side gets a 40pt spacer (the icon button size), so pair
-   * it with icon-only actions: a labelled pill pushes the title off centre.
-   */
-  align?: 'start' | 'center';
-  /** No background: the header sits on a `SettingsPage` hero (Billing). */
-  transparent?: boolean;
-  /**
-   * Large page title: the control row holds only the leading button and
-   * `right`, and the title renders below it as `Text variant="h3"`, above
-   * the page content (Sessions page).
-   */
-  largeTitle?: boolean;
-  /** Side padding: `page` 20pt (`px-5`), `project` 12pt (`px-3`) on project pages. */
-  gutter?: Gutter;
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(insets.top, 10) + 6;
-  const centered = align === 'center';
 
   const handleBack = () => {
     haptics.tap();
@@ -117,52 +75,19 @@ export function SettingsHeader({
     else router.replace('/'); // the last project (app/index.tsx), never the list
   };
 
-  const leading = onOpenMenu ? (
-    <MenuButton onPress={onOpenMenu} />
-  ) : showBack ? (
-    <PlatformButton
-      systemImage="chevron.left"
-      icon={ChevronLeft}
-      fallbackVariant="secondary"
-      accessibilityLabel="Go back"
-      onPress={handleBack}
-    />
-  ) : centered ? (
-    <View className="size-10" />
-  ) : null;
-
-  if (largeTitle) {
-    return (
-      <View className={cn(!transparent && 'bg-background')}>
-        <View
-          className={cn('flex-row items-center justify-between gap-3 pb-3', GUTTER_CLASS[gutter])}
-          style={{ paddingTop: topPadding, minHeight: 56 }}>
-          {leading}
-          {right ?? null}
-        </View>
-        <View className={cn('h-10 justify-center pb-1', GUTTER_CLASS[gutter])}>
-          <Text variant="h3" accessibilityRole="header" numberOfLines={1}>
-            {title}
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
   return (
     <View
-      className={cn('flex-row items-center gap-3 pb-3', GUTTER_CLASS[gutter], !transparent && 'bg-background')}
+      className={cn('flex-row items-center gap-3 pb-3 px-4 bg-background')}
       style={{ paddingTop: topPadding, minHeight: 56 }}>
-      {leading}
+      {onOpenMenu ? <MenuButton onPress={onOpenMenu} /> : (
+        <BackButton onPress={handleBack} />
+      )}
       <Text
-        className={cn(
-          'flex-1 text-xl leading-6 font-roobert-medium text-foreground tracking-tight',
-          centered && 'text-center'
-        )}
+        className="flex-1 text-xl leading-6 font-roobert-medium text-foreground tracking-tight"
         numberOfLines={1}>
         {title}
       </Text>
-      {right ?? (centered ? <View className="size-10" /> : null)}
+      {right ?? null}
     </View>
   );
 }

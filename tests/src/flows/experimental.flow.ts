@@ -2,7 +2,7 @@
  * Feature flags — the unified per-project flag surface. Maps to spec §EXP-*.
  *
  * `PATCH /v1/projects/:projectId/features {feature, enabled}` is the canonical
- * write path for opting a project into a flag (connectors_api_discover, apps, …);
+ * write path for opting a project into a flag (marketplace, genui, …);
  * `PATCH /v1/projects/:projectId/experimental` is the deprecated alias published
  * SDKs still call, registered on the SAME handler. State is DB-only
  * (projects.metadata.experimental — a stable storage detail). The response is
@@ -28,12 +28,12 @@ flow(
   async (ctx) => {
     const p = await ctx.fixtures.project();
 
-    await ctx.step('OWNER enables connectors_api_discover via /features → 200 + catalog in body', async () => {
+    await ctx.step('OWNER sets marketplace via /features → 200 + catalog in body', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/features',
-          { feature: 'connectors_api_discover', enabled: true },
+          { feature: 'marketplace', enabled: false },
           { params: { projectId: p.id } },
         );
       r.status(200).body().exists('$.experimental_features').exists('$.experimental');
@@ -44,7 +44,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/experimental',
-          { feature: 'connectors_api_discover', enabled: false },
+          { feature: 'marketplace', enabled: true },
           { params: { projectId: p.id } },
         );
       r.status(200).body().exists('$.experimental_features').exists('$.experimental');
@@ -55,10 +55,19 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/features',
-          { feature: 'connectors_api_discover', enabled: null },
+          { feature: 'marketplace', enabled: null },
           { params: { projectId: p.id } },
         );
       r.status(200);
+    });
+
+    await ctx.step('connectors_v2 and connectors_api_discover graduated (one catalog for every project) → 400 unknown feature', async () => {
+      for (const feature of ['connectors_v2', 'connectors_api_discover']) {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch('/v1/projects/:projectId/features', { feature, enabled: true }, { params: { projectId: p.id } });
+        r.status(400);
+      }
     });
 
     await ctx.step('agent_tunnel graduated (computers need no flag) → 400 unknown feature', async () => {
@@ -85,7 +94,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/features',
-          { feature: 'pi_harness', enabled: null },
+          { feature: 'genui', enabled: null },
           { params: { projectId: p.id } },
         );
       project.status(200);
@@ -97,8 +106,32 @@ flow(
       if (body.experimental_features.some((f) => f.key === 'pi_worker')) {
         throw new Error('the catalog still lists pi_worker');
       }
-      if (!body.experimental_features.some((f) => f.key === 'pi_harness')) {
-        throw new Error('the catalog lost pi_harness');
+    });
+
+    await ctx.step('pi_harness graduated (every new session runs pi) → 400, absent from the catalog, experimental.pi_harness true', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/projects/:projectId/features',
+          { feature: 'pi_harness', enabled: false },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+      const project = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/projects/:projectId/features',
+          { feature: 'genui', enabled: null },
+          { params: { projectId: p.id } },
+        );
+      project.status(200);
+      const body = project.json<{
+        experimental: Record<string, boolean>;
+        experimental_features: Array<{ key: string }>;
+      }>();
+      if (body.experimental.pi_harness !== true) throw new Error(`experimental.pi_harness is ${body.experimental.pi_harness}, not true`);
+      if (body.experimental_features.some((f) => f.key === 'pi_harness')) {
+        throw new Error('the catalog still lists pi_harness');
       }
     });
 
@@ -118,7 +151,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/experimental',
-          { feature: 'monitors', enabled: 'yes' },
+          { feature: 'reminders', enabled: 'yes' },
           { params: { projectId: p.id } },
         );
       r.status(400);
@@ -129,7 +162,7 @@ flow(
         .as(ctx.P.NONMEMBER)
         .patch(
           '/v1/projects/:projectId/experimental',
-          { feature: 'monitors', enabled: true },
+          { feature: 'reminders', enabled: true },
           { params: { projectId: p.id } },
         );
       r.status([403, 404]);
@@ -140,7 +173,7 @@ flow(
         .as(ctx.P.ANON)
         .patch(
           '/v1/projects/:projectId/experimental',
-          { feature: 'monitors', enabled: true },
+          { feature: 'reminders', enabled: true },
           { params: { projectId: p.id } },
         );
       r.status(401);

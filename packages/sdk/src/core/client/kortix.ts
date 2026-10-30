@@ -11,6 +11,7 @@ import { bindProjectAccessSecurity } from './project-access-security';
 import { projectConnections } from './project-connections';
 import { connectorDataPlane, connectorHandle } from './project-connectors';
 import { bindProjectCore } from './project-core';
+import { bindProjectArtifacts } from './project-artifacts';
 import { bindProjectOperations } from './project-operations';
 import { bindProjectPlatformResources } from './project-platform-resources';
 import { bindProjectPlatformSecurity } from './project-platform-security';
@@ -86,6 +87,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     const connections = projectConnections(projectId);
     return {
       ...bindProjectCore(projectId),
+      ...bindProjectArtifacts(projectId),
       ...bindProjectAccessResources(projectId),
       ...bindProjectAccessSecurity(projectId),
       ...bindProjectOperations(projectId, connections),
@@ -134,10 +136,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
      * The caller's notifications (`/v1/notifications/*`): push device tokens
      * for a native app, the inbox, per-kind push and email preferences, and
      * Web Push for this browser. Muting one session is `session(pid, sid).setWatch`.
+     * `releaseDeviceToken` needs no token: a signed-out app removes its row.
      */
     notifications: {
       registerDeviceToken: P.registerDeviceToken,
       unregisterDeviceToken: P.unregisterDeviceToken,
+      releaseDeviceToken: P.releaseDeviceToken,
       list: P.listNotifications,
       markRead: P.markNotificationsRead,
       preferences: P.getNotificationPreferences,

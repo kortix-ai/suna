@@ -15,7 +15,7 @@ import { useTranslations } from '@/i18n/use-translations';
 // It used to draw its own `bg-popover rounded-md border` box, which is why
 // the organization pane read as four unrelated cards instead of one settings
 // form. It is a ROW now, in the Linear shape every other pane on this branch
-// uses (`components/ui/settings-row.tsx`); the group that hosts it owns the
+// uses (`packages/ui/src/primitives/settings-row.tsx`); the group that hosts it owns the
 // border and the hairlines. `key-rules-card.tsx` made the same move first.
 //
 // The control is a `Switch`, not the old Require/Disable button pair. Both
@@ -23,16 +23,16 @@ import { useTranslations } from '@/i18n/use-translations';
 // only opens them, and does not move until the mutation actually lands, so
 // what it shows is always the server's answer.
 
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { WarningIcon as AlertTriangle } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -41,10 +41,10 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { SettingsRow } from '@/components/ui/settings-row';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
+} from '@kortix/ui/modal';
+import { SettingsRow } from '@kortix/ui/settings-row';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
 import { getMfaRequired, previewMfaRequired, setMfaRequired } from '@/lib/iam-client';
 import { listAccountMembers } from '@kortix/sdk';
 

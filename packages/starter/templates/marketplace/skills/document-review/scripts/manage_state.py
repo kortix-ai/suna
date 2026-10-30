@@ -6,6 +6,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from collections.abc import Callable
 
 from constants import LOG_FILENAME, STATE_FILENAME
 from models import DocumentIssue
@@ -568,31 +569,7 @@ def cmd_submit(args: argparse.Namespace) -> None:
     )
 
 
-def cmd_get_claims(args: argparse.Namespace) -> None:
-    """Print claims, optionally filtered by status/section."""
-    state = load_state()
-    claims = list(state["claims"].values())
-
-    filters = {}
-    if args.status:
-        claims = [claim for claim in claims if claim["claim_status"] == args.status]
-        filters["status"] = args.status
-    if args.section:
-        claims = [claim for claim in claims if claim["section"] == args.section]
-        filters["section"] = args.section
-
-    log_action(
-        "get-claims",
-        state["phase"],
-        state["phase"],
-        filters=filters,
-        results=len(claims),
-    )
-
-    if not claims:
-        print("No claims match the filter.")
-        return
-
+def _print_claims(claims: list[dict]) -> None:
     for claim in claims:
         cid = claim["claim_id"]
         cstatus = claim["claim_status"]
@@ -608,34 +585,8 @@ def cmd_get_claims(args: argparse.Namespace) -> None:
             print(f"  Sources: {', '.join(urls)}")
         print()
 
-    print(f"Total: {len(claims)} claims")
 
-
-def cmd_get_issues(args: argparse.Namespace) -> None:
-    """Print issues, optionally filtered by severity/section."""
-    state = load_state()
-    issues = list(state["issues"].values())
-
-    filters = {}
-    if args.severity:
-        issues = [issue for issue in issues if issue["severity"] == args.severity]
-        filters["severity"] = args.severity
-    if args.section:
-        issues = [issue for issue in issues if issue["section"] == args.section]
-        filters["section"] = args.section
-
-    log_action(
-        "get-issues",
-        state["phase"],
-        state["phase"],
-        filters=filters,
-        results=len(issues),
-    )
-
-    if not issues:
-        print("No issues match the filter.")
-        return
-
+def _print_issues(issues: list[dict]) -> None:
     for issue in issues:
         iid = issue["issue_id"]
         sev = issue["severity"]
@@ -651,7 +602,50 @@ def cmd_get_issues(args: argparse.Namespace) -> None:
             print(f"  Suggested: {issue['new_text']}")
         print()
 
-    print(f"Total: {len(issues)} issues")
+
+def _list_records(
+    args: argparse.Namespace,
+    collection: str,
+    filter_name: str,
+    filter_field: str,
+    print_records: Callable[[list[dict]], None],
+) -> None:
+    state = load_state()
+    records = list(state[collection].values())
+
+    filters = {}
+    value = getattr(args, filter_name)
+    if value:
+        records = [record for record in records if record[filter_field] == value]
+        filters[filter_name] = value
+    if args.section:
+        records = [record for record in records if record["section"] == args.section]
+        filters["section"] = args.section
+
+    log_action(
+        f"get-{collection}",
+        state["phase"],
+        state["phase"],
+        filters=filters,
+        results=len(records),
+    )
+
+    if not records:
+        print(f"No {collection} match the filter.")
+        return
+
+    print_records(records)
+    print(f"Total: {len(records)} {collection}")
+
+
+def cmd_get_claims(args: argparse.Namespace) -> None:
+    """Print claims, optionally filtered by status/section."""
+    _list_records(args, "claims", "status", "claim_status", _print_claims)
+
+
+def cmd_get_issues(args: argparse.Namespace) -> None:
+    """Print issues, optionally filtered by severity/section."""
+    _list_records(args, "issues", "severity", "severity", _print_issues)
 
 
 def cmd_status(_args: argparse.Namespace) -> None:

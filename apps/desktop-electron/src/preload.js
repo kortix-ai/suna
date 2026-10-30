@@ -2,7 +2,7 @@
 //
 // Exposes a `window.__TAURI__` object with the shape the web app's desktop
 // bridge expects (the previous shell set Tauri's `withGlobalTauri`). The web
-// app's only native-bridge consumer — apps/web/src/lib/desktop.ts — talks
+// app's only native-bridge consumer — packages/ui/src/internal/lib/desktop.ts — talks
 // exclusively through `window.__TAURI__.core.invoke(...)` and
 // `window.__TAURI__.window.getCurrentWindow()`, so mirroring that shape here
 // means the entire web app runs UNCHANGED on Electron. No `isElectron` branches
@@ -62,6 +62,11 @@ window.addEventListener(
 contextBridge.exposeInMainWorld('kortixDesktop', {
   shell: 'electron',
   version: '0.1.0',
+  // 'overlay': the OS draws only the caption buttons over the page's top row
+  // (Windows, window-chrome.js → WIN_TITLEBAR). The web app's head script
+  // reads it before first paint and sets `data-desktop-titlebar`, so a shell
+  // with the native title bar never gets the band layout.
+  titlebar: process.platform === 'win32' ? 'overlay' : 'default',
   // One history step through the shell's policy, which skips entries the
   // navigation gate keeps out of the window. Resolves true when it moved. The
   // web app's Back uses this: a renderer history.back() into such an entry is

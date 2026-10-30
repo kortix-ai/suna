@@ -80,7 +80,7 @@ Reach:
   projects <group> [--json]         Which projects this group reaches, and at
                                     what role.
 
-Bind a group to a scope with \`kortix access grant --group <id> --role <key>\`;
+Bind a group to a scope with \`kortix access grant --group <id|name> --role <key>\`;
 revoke with \`kortix access revoke <assignment-id>\`.
 
 Options:

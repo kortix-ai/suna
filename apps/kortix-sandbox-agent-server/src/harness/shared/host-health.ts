@@ -65,12 +65,6 @@ export async function readHostHealth(context: HarnessDiagnosticsContext, catalog
   const wantBranch = repoRequired ? wantedSessionBranch() : ''
   const repoReady = !repoRequired || (repoInfo !== null && (!wantBranch || repoInfo.branch === wantBranch))
   return {
-    // Which boot path this daemon took. An agent binary that predates
-    // monitor mode omits the field entirely, which is exactly what the
-    // monitor-box reconciler uses to detect a stale-agent box and recreate
-    // it (a box whose env says KORTIX_WORKLOAD=monitor but whose daemon
-    // booted the session path can never run monitors).
-    workload: process.env.KORTIX_WORKLOAD === 'monitor' ? 'monitor' : 'session',
     uptime_s: Math.floor((Date.now() - context.bootTime) / 1000),
     // Static web server (preview/static files). The bound port when up, else
     // null — surfaces "preview won't load because static-web never bound".

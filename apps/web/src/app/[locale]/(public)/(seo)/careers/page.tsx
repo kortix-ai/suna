@@ -1,11 +1,11 @@
 import { CareersPage as CareersPageContent } from '@/features/marketing/careers/careers-page';
-import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
+import { CANONICAL_ORIGIN } from '@kortix/ui/internal/lib/site-metadata';
 import type { Metadata } from 'next';
 import { languageAlternates, localePath, metaDescription, requestLocale } from '@/lib/seo/metadata';
 import { getTranslations } from '@/i18n/get-translations';
 
 const DESCRIPTION =
-  'Open positions at Kortix — Marketing / Content, Sales, FDE / Services, Product / Eng, Product / R&D. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.';
+  'Open positions at Kortix — FDE, GTM and MTS. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('hardcodedUi.i18nComplete');

@@ -1,5 +1,14 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { lintMigration, lintMigrationSequence, lintMigrationSet, parseLockTimeoutMs } from './lint-migrations';
+import {
+  lintMigration,
+  lintMigrationSequence,
+  lintMigrationSet,
+  mergedMigrationFiles,
+  parseLockTimeoutMs,
+} from './lint-migrations';
 
 const GOOD_NAME = '20260101000000000_add_widget.sql';
 
@@ -144,6 +153,61 @@ describe('lintMigrationSequence (the #8846 dev-deploy halt)', () => {
 
   test('no merged list (origin/main unavailable) checks nothing', () => {
     expect(lintMigrationSequence(['20200101000000000_x.sql'], [])).toEqual([]);
+  });
+});
+
+describe('mergedMigrationFiles (the trunk ref feeds lintMigrationSequence)', () => {
+  const BASELINE = '20260101000000000_add_widget_trunk_baseline.sql';
+
+  /** A repo mimicking what a fresh clone sets: refs/remotes/origin/trunk exists
+   *  and refs/remotes/origin/HEAD is symbolic to it. */
+  function makeCloneLikeRepo(): string {
+    const root = mkdtempSync(join(tmpdir(), 'lint-mig-trunk-'));
+    const run = (args: string[]): void => {
+      const { exitCode, stderr } = Bun.spawnSync(['git', '-C', root, ...args]);
+      if (exitCode !== 0) throw new Error(`git ${args.join(' ')} failed: ${stderr?.toString() ?? ''}`);
+    };
+    run(['init', '-q', '-b', 'trunk']);
+    run(['config', 'user.name', 'lint-test']);
+    run(['config', 'user.email', 'lint-test@example.com']);
+    mkdirSync(join(root, 'packages/db/migrations'), { recursive: true });
+    writeFileSync(
+      join(root, 'packages/db/migrations', BASELINE),
+      '-- immutability baseline\nALTER TABLE kortix.accounts ADD COLUMN note text;\n',
+    );
+    run(['add', '-A']);
+    run(['commit', '-qm', 'trunk baseline']);
+    run(['update-ref', 'refs/remotes/origin/trunk', 'HEAD']);
+    run(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/trunk']);
+    return root;
+  }
+
+  test('resolves the remote default branch — not a dead literal — and lists its migrations', () => {
+    const root = makeCloneLikeRepo();
+    try {
+      const merged = mergedMigrationFiles({ repoRoot: root });
+      if (merged === null) throw new Error('trunk ref unresolved');
+      expect(merged).toEqual([BASELINE]);
+      // …and lintMigrationSequence runs over the real list (the main() composition):
+      expect(lintMigrationSequence([BASELINE], merged)).toEqual([]);
+      const before = lintMigrationSequence(['20260101000000000_mine_before.sql'], merged);
+      expect(before).toHaveLength(1);
+      expect(before[0]).toContain('out of sequence');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('degrades silently when the clone-like repo has no default-branch ref', () => {
+    const root = makeCloneLikeRepo();
+    try {
+      // strip the clone-set refs (a depth-1 checkout look): no refs/remotes/origin/HEAD
+      const strip = Bun.spawnSync(['git', '-C', root, 'update-ref', '-d', 'refs/remotes/origin/HEAD']);
+      expect(strip.exitCode).toBe(0);
+      expect(mergedMigrationFiles({ repoRoot: root })).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

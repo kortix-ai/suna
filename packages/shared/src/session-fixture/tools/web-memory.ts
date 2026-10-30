@@ -11,7 +11,7 @@
  * - image/video/presentation: `parseImageOutput`, `parseVideoOutput` (mobile),
  *   `parsePresentationOutput` (`@kortix/sdk`).
  * - memory: `parseMemoryView` (`@kortix/sdk`), `parseMemorySearchOutput`,
- *   `parseMemoryEntryOutput` (web `lib/utils`, mobile `lib/session/tools` ports).
+ *   `parseMemoryEntryOutput` (web `packages/ui/src/internal/lib/utils`, mobile `lib/session/tools` ports).
  *
  * No output carries a top-level `error` field or `success: false` unless the
  * spec is the embedded-failure case: `detectEmbeddedFailure`
@@ -585,7 +585,7 @@ export const WEB_MEMORY_TOOL_GROUP: FixtureToolGroup = {
       output: MEMORY_SEARCH_OUTPUT,
       error: 'Error: memory index is not ready. Retry in a few seconds.',
       durationMs: 380,
-      note: 'JSON shape: 3 hits across `ltm` and `obs`, with confidence and file chips. Title "Memory Search". Web parses with `lib/utils/memory-search-output.ts`; mobile with its port `lib/session/tools/projects-memory-search-output.ts`.',
+      note: 'JSON shape: 3 hits across `ltm` and `obs`, with confidence and file chips. Title "Memory Search". Web parses with `parseMemorySearchOutput` (`@kortix/shared/tool-output`); mobile with its port `lib/session/tools/projects-memory-search-output.ts`.',
     },
     {
       renderer: 'memory-search-tool.tsx',

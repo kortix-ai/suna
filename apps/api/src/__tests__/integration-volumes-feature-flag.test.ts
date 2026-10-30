@@ -68,11 +68,16 @@ const row = (body: any, key: string) => body.experimental_features.find((f: { ke
 
 describe('Volumes is a project flag', () => {
   test('a project admin (not a platform operator) turns it on and off; drives follows', async () => {
-    const off = await app.request(`/v1/projects/${PROJECT}`, { headers: { Authorization: `Bearer ${ownerSecret}` } });
+    // Unset, it follows the platform default: on (Platinum is configured above).
+    const fresh = await app.request(`/v1/projects/${PROJECT}`, { headers: { Authorization: `Bearer ${ownerSecret}` } });
+    expect(fresh.status).toBe(200);
+    const freshBody = (await fresh.json()) as any;
+    expect(freshBody.experimental).toMatchObject({ volumes: true, drives: true });
+    expect(row(freshBody, 'volumes')).toMatchObject({ enabled: true, overridden: false, operator_only: false, scope: 'project' });
+
+    const off = await setFlag('volumes', false);
     expect(off.status).toBe(200);
-    const offBody = (await off.json()) as any;
-    expect(offBody.experimental).toMatchObject({ volumes: false, drives: false });
-    expect(row(offBody, 'volumes')).toMatchObject({ enabled: false, overridden: false, operator_only: false, scope: 'project' });
+    expect(off.body.experimental).toMatchObject({ volumes: false, drives: false });
 
     const on = await setFlag('volumes', true);
     expect(on.status).toBe(200);

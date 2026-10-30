@@ -29,8 +29,8 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import type { MenuRowSize } from '@/components/ui/menu-recipe';
+} from '@kortix/ui/dropdown-menu';
+import type { MenuRowSize } from '@kortix/ui/menu-recipe';
 import {
   Select,
   SelectContent,
@@ -40,9 +40,9 @@ import {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE } from '@/components/ui/trigger-variants';
-import { cn } from '@/lib/utils';
+} from '@kortix/ui/select';
+import { TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE } from '@kortix/ui/trigger-variants';
+import { cn } from '@kortix/ui';
 
 const SIZES: MenuRowSize[] = ['sm', 'md', 'lg'];
 

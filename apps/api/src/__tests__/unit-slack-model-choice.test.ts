@@ -64,7 +64,6 @@ mock.module('../channels/model-access', () => ({
     linkedUserId: string | null;
     oneToOne: boolean;
     freeManagedOnly: boolean;
-    llmGatewayEnabled: boolean;
     pooledEnabled: boolean;
   }) => ({
     projectId: input.projectId,
@@ -73,7 +72,6 @@ mock.module('../channels/model-access', () => ({
     linkedUserId: input.linkedUserId,
     personalUserId: input.linkedUserId && input.oneToOne ? input.linkedUserId : null,
     freeManagedOnly: input.freeManagedOnly,
-    llmGatewayEnabled: input.llmGatewayEnabled,
     pooledEnabled: input.pooledEnabled,
   }),
   agentGrantEnvFor: (_projectId: string, agentName: string | null | undefined) => {
@@ -107,7 +105,7 @@ function findAccessory(resp: { blocks?: unknown[] }, type: string): Record<strin
 
 beforeEach(() => {
   testConfig.SLACK_REQUIRE_USER_IDENTITY = true;
-  gate = { projectId: 'proj', accountId: 'acct', ownerUserId: 'owner', freeManagedOnly: false, llmGatewayEnabled: true };
+  gate = { projectId: 'proj', accountId: 'acct', ownerUserId: 'owner', freeManagedOnly: false };
   actor = { userId: 'ivan' };
   actorLookups.length = 0;
   selection = { projectId: 'proj', agentName: null, opencodeModel: null };
@@ -209,11 +207,6 @@ describe('/kortix models — what this person may run here', () => {
     gate = null;
     expect(text(await buildSlackModelsResponse(dm))).toContain('No project is connected to this channel yet');
   });
-
-  test('off the gateway: explains native refs instead of a list', async () => {
-    gate = { ...gate, llmGatewayEnabled: false };
-    expect(text(await buildSlackModelsResponse(dm))).toContain('native OpenCode models');
-  });
 });
 
 describe('/kortix model — a choice is checked as the person who made it', () => {
@@ -273,15 +266,8 @@ describe('/kortix model — a choice is checked as the person who made it', () =
   test('no project connected, or the binding is gone: says to connect one, nothing kept', async () => {
     gate = null;
     expect(await applySlackModelChoice(dm, 'glm-5.3-flash')).toContain('Connect a project first');
-    gate = { projectId: 'proj', accountId: 'acct', ownerUserId: 'owner', freeManagedOnly: false, llmGatewayEnabled: true };
+    gate = { projectId: 'proj', accountId: 'acct', ownerUserId: 'owner', freeManagedOnly: false };
     bound = false;
     expect(await applySlackModelChoice(dm, 'glm-5.3-flash')).toContain('Connect a project first');
-  });
-
-  test('off the gateway a native ref is stored as typed; a gateway id is refused', async () => {
-    gate = { ...gate, llmGatewayEnabled: false };
-    expect(await applySlackModelChoice(dm, 'kortix/glm-5.3-flash')).toContain("isn't usable here");
-    expect(await applySlackModelChoice(dm, 'anthropic/claude-sonnet-4-6')).toContain('New threads use it.');
-    expect(stored).toEqual(['anthropic/claude-sonnet-4-6']);
   });
 });

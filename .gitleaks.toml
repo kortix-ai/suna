@@ -81,6 +81,7 @@ paths = [
   '''apps/web/src/i18n/marketing-secondary-translation-keys\.generated\.ts$''',
   '''apps/web/src/i18n/site-config-translation-keys\.generated\.ts$''',
   '''apps/web/src/i18n/remaining-ui-translation-keys\.generated\.ts$''',
+  '''packages/ui/src/i18n/ui-catalog/remaining-ui-translation-keys\.generated\.ts$''',
 ]
 regexes = [
   '''(?i)linkedin''',

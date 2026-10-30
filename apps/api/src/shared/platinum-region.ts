@@ -3,12 +3,13 @@
  * feature flag is on.
  *
  * Choosing a region needs no second URL in configuration, only this value. A
- * create that names `region` goes to `PLATINUM_API_URL`, which forwards it to
- * that region's control plane. Every later call by sandbox id goes straight to
- * the owner that Platinum names (`api_url`, `x-pt-served-by`; see
- * shared/platinum.ts). Through `PLATINUM_API_URL` each such call cost a
- * discovery GET plus a forward across the Atlantic: 329 ms vs 26 ms direct for
- * a US box from New York (prod, 2026-10-02).
+ * create, image build or prepare that names `region` goes straight to that
+ * region's control plane, `https://<region>.<PLATINUM_API_URL host>`, and every
+ * later call by sandbox id to the owner that Platinum names (`api_url`,
+ * `x-pt-served-by`; see shared/platinum.ts). `PLATINUM_API_URL` forwards to the
+ * same place and stays the fallback, at the cost of a discovery GET plus a
+ * forward across the Atlantic: 329 ms vs 26 ms direct for a US box from New
+ * York (prod, 2026-10-02).
  *
  * This value is also the operator gate: unset ⇒ the flag is unavailable and
  * hidden, which is the right default for an environment whose Platinum org has

@@ -44,7 +44,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { SandboxFile } from '@/api/types';
 import { PatchDiffView } from '@/components/diff/PatchDiffView';
-import { FilePreview, FilePreviewBottomInsetContext, getFilePreviewType } from '@/components/files/FilePreviewRenderers';
+import { FilePreview } from '@/components/files/FilePreviewRenderers';
+import { FilePreviewBottomInsetContext } from '@/components/files/file-preview-webview';
+import { getFilePreviewType } from '@/lib/files/preview-type';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { PageContent } from '@/components/kortix/page-content';
 import { PageHeader } from '@/components/kortix/page-header';
@@ -86,6 +88,7 @@ import {
   useProjectDirectory,
   useProjectFileSearch,
 } from '@/lib/projects/hooks';
+import { orderVersions, versionLabel } from '@/lib/projects/version-label';
 import { projectArchiveRequest } from '@/lib/projects/projects-client';
 import type { ProjectBranch, ProjectCommit } from '@/lib/projects/projects-client';
 import { relativeTime } from '@/lib/projects/triggers-format';
@@ -97,13 +100,8 @@ interface FilesNavPageProps {
   /** As a sub-page: Go back in place of the hamburger. */
   onBack?: () => void;
   onOpenDrawer?: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const shortRef = (ref: string) => (UUID_RE.test(ref) ? ref.slice(0, 8) : ref);
 const basename = (p: string) => p.split('/').filter(Boolean).pop() ?? p;
 const ext = (name: string) => {
   const i = name.lastIndexOf('.');
@@ -202,15 +200,7 @@ function VersionSheet({
   onSelect: (ref: string) => void;
 }) {
   const insets = useSafeAreaInsets();
-  const sorted = useMemo(
-    () =>
-      [...branches].sort((a, b) => {
-        if (a.name === defaultBranch) return -1;
-        if (b.name === defaultBranch) return 1;
-        return (b.committed_at ?? '').localeCompare(a.committed_at ?? '');
-      }),
-    [branches, defaultBranch],
-  );
+  const sorted = useMemo(() => orderVersions(branches, defaultBranch), [branches, defaultBranch]);
   return (
     <BottomSheetScrollView
       showsVerticalScrollIndicator={false}
@@ -230,7 +220,7 @@ function VersionSheet({
             <SettingsRow
               key={b.name}
               icon={GitBranchIcon}
-              label={shortRef(b.name)}
+              label={versionLabel(b.name, branches)}
               value={b.name === defaultBranch ? 'Default' : b.committed_at ? relativeTime(b.committed_at) : undefined}
               checked={b.name === value}
               right={null}
@@ -466,9 +456,6 @@ export function FilesNavPage({
   projectId,
   onBack,
   onOpenDrawer,
-  onOpenRightDrawer,
-  isDrawerOpen,
-  isRightDrawerOpen,
 }: FilesNavPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -707,9 +694,6 @@ export function FilesNavPage({
         title={path ? basename(path) : page.label}
         onBack={onBack}
         onOpenDrawer={onBack ? undefined : onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
       />
 
       <PageContent>
@@ -838,9 +822,9 @@ export function FilesNavPage({
                 haptics.tap();
                 versionSheetRef.current?.present();
               }}
-              accessibilityLabel={`Version, ${ref_ ? shortRef(ref_) : 'none'}`}>
+              accessibilityLabel={`Version, ${ref_ ? versionLabel(ref_, branchesQuery.data?.branches) : 'none'}`}>
               <Icon as={GitBranchIcon} size={16} className="text-foreground" />
-              <Text numberOfLines={1}>{ref_ ? shortRef(ref_) : '…'}</Text>
+              <Text numberOfLines={1}>{ref_ ? versionLabel(ref_, branchesQuery.data?.branches) : '…'}</Text>
             </Button>
             <View className="flex-1" />
             <Button

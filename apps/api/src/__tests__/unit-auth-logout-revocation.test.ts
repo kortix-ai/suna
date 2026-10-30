@@ -7,7 +7,6 @@ import type { AuthVariables } from '../types';
 const USER = '00000000-0000-4000-8000-00000000a001';
 const SECRET = 'synthetic-logout-secret-0123456789';
 process.env.SUPABASE_JWT_SECRET = SECRET;
-process.env.SUPABASE_JWT_LIVENESS_TTL_MS = '0';
 
 mock.module('../shared/db', () => ({ db: {}, hasDatabase: () => false }));
 mock.module('../middleware/auth-audit', () => ({

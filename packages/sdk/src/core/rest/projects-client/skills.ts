@@ -9,6 +9,8 @@ export interface CreateProjectSkillInput {
   name: string;
   /** Frontmatter `description` — the agent-facing "load this when…" trigger. */
   description?: string;
+  /** Markdown instructions; blank or omitted uses the starter template. */
+  body?: string;
 }
 
 /** A committed skill: where it lives in the repo and the slug it got. */
@@ -32,5 +34,20 @@ export async function createProjectSkill(
       showErrors: false,
       ...options,
     }),
+  );
+}
+
+/** Whole-folder removal includes user edits; shared dependencies are never removed. */
+export async function removeProjectSkill(
+  projectId: string,
+  input: { folder: string; confirm: true },
+  options?: ApiClientOptions,
+): Promise<{ ok: true; commitSha: string; removed: string[] }> {
+  return unwrap(
+    await backendApi.post<{ ok: true; commitSha: string; removed: string[] }>(
+      `/projects/${projectId}/skills/remove`,
+      input,
+      { showErrors: false, ...options },
+    ),
   );
 }

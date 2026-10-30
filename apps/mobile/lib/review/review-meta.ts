@@ -43,6 +43,7 @@ export function reviewItemTone(kind: ReviewItemKind, status: ReviewItemStatus): 
     case 'changes_requested':
       return 'orange';
     case 'dismissed':
+    case 'expired':
       return 'muted';
     default:
       return KIND_TONE[kind];
@@ -121,9 +122,24 @@ export function verdictNeedsConfirm(kind: ReviewItemKind, verdict: ReviewVerdict
 export function formatReviewAge(iso: string, now = Date.now()): string {
   const then = Date.parse(iso);
   if (Number.isNaN(then)) return '';
-  const minutes = Math.max(1, Math.floor((now - then) / 60_000));
+  return compactMinutes(Math.floor((now - then) / 60_000));
+}
+
+function compactMinutes(value: number): string {
+  const minutes = Math.max(1, value);
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
+}
+
+/** Time left on a pending approval (`3h`), and whether it is under one hour.
+ *  Null when it has no expiry or the time already passed. */
+export function formatApprovalExpiresIn(
+  iso: string | undefined,
+  now = Date.now(),
+): { time: string; soon: boolean } | null {
+  const left = iso ? Date.parse(iso) - now : Number.NaN;
+  if (!(left > 0)) return null;
+  return { time: compactMinutes(Math.floor(left / 60_000)), soon: left < 3_600_000 };
 }

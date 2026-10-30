@@ -177,8 +177,16 @@ export function agentGrantDiffers(
     secretGrantEnvDiffers(sessionGrant?.env, requestedGrant?.env) ||
     grantListKey(sessionGrant?.connectors) !== grantListKey(requestedGrant?.connectors) ||
     grantListKey(sessionGrant?.permissions) !== grantListKey(requestedGrant?.permissions) ||
-    grantAppsKey(sessionGrant?.apps) !== grantAppsKey(requestedGrant?.apps)
+    grantAppsKey(sessionGrant?.apps) !== grantAppsKey(requestedGrant?.apps) ||
+    policySetsKey(sessionGrant?.policySets) !== policySetsKey(requestedGrant?.policySets)
   );
+}
+
+/** Order-independent key of a policy-set map: a reordered but equal map must
+ *  not look like a change (the same-blob drift guard reads that as a glitch). */
+export function policySetsKey(map: Record<string, string> | undefined): string {
+  if (!map || typeof map !== 'object') return '';
+  return JSON.stringify(Object.entries(map).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
 
 /**

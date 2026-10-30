@@ -138,3 +138,24 @@ describe('meta snapshot reap — fail-closed protection', () => {
     expect(provider.deleted).toEqual([stale]);
   });
 });
+
+describe('meta snapshot reap — local stacks', () => {
+  test("a local stack deletes no image: it shares dev's namespace and cannot see dev's builds", async () => {
+    // KRTX-2546. A local stack runs as INTERNAL_KORTIX_ENV=dev on dev's
+    // provider organisation, and its protection lookup reads its OWN database,
+    // which has never heard of the image deployed dev boots meta sandboxes
+    // from. 2026-10-20: one worktree's stack logged 30+ "reaped superseded
+    // kortix-meta-dev-*" deletes. Deployed dev's own reap still tidies the
+    // images local stacks leave behind.
+    const flags = config as { KORTIX_LOCAL_DEV: boolean };
+    const before = flags.KORTIX_LOCAL_DEV;
+    flags.KORTIX_LOCAL_DEV = true;
+    try {
+      const provider = fakeProvider([metaSnapshotName(HASH_A), metaSnapshotName('d'.repeat(64))]);
+      await reapSupersededMetaSnapshots(provider, metaSnapshotName(HASH_B), NOTHING_RECENT);
+      expect(provider.deleted).toEqual([]);
+    } finally {
+      flags.KORTIX_LOCAL_DEV = before;
+    }
+  });
+});

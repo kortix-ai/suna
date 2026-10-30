@@ -52,6 +52,65 @@ Rejected:
 - No bucket events without SQS: the index reader polls every 30 s
   (`KORTIX_CAPTURE_INDEX_POLL_SECONDS`).
 
+## External object store (AWS S3 / R2)
+
+The bundled `capture-store` grows unbounded on the box disk and shares the DB's
+disk. A box already on a cloud should point Capture at that cloud's S3 instead.
+The API already speaks any S3 + STS; the self-host switch is one durable `.env`
+key.
+
+`KORTIX_CAPTURE_STORE=bundled` (default) runs the on-box MinIO. `external` drops
+the `capture-store` container and the `@capture` Caddy route, and the device
+uploads go straight to the external store — nothing transits the box.
+
+Set it on the box, then recreate the stack:
+
+```
+kortix self-host env set \
+  KORTIX_CAPTURE_STORE=external \
+  KORTIX_CAPTURE_S3_BUCKET=<bucket> \
+  KORTIX_CAPTURE_S3_REGION=<region> \
+  KORTIX_CAPTURE_STS_ROLE_ARN=arn:aws:iam::<account>:role/<device-role>
+kortix self-host start   # reconciles the removed capture-store container
+```
+
+`.env` keys (all read by `kortix-api`; `.env` survives `kortix self-host
+update`):
+
+| Key | AWS | R2 / MinIO / path-style |
+|---|---|---|
+| `KORTIX_CAPTURE_S3_BUCKET` | required | required |
+| `KORTIX_CAPTURE_S3_REGION` | required (e.g. `us-east-1`) | `auto` for R2 |
+| `KORTIX_CAPTURE_STS_ROLE_ARN` | required | required (the API sends the session policy; a non-AWS STS treats the ARN as a label) |
+| `KORTIX_CAPTURE_S3_ENDPOINT` | empty (regional endpoint) | the provider S3 endpoint |
+| `KORTIX_CAPTURE_STS_ENDPOINT` | empty | the provider STS endpoint |
+| `KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT` | empty (devices sign the regional endpoint) | the provider public endpoint |
+| `KORTIX_CAPTURE_S3_FORCE_PATH_STYLE` | `false` | `true` |
+| `KORTIX_CAPTURE_S3_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY` | omit (box instance role) | the provider key pair |
+
+The box never creates the bucket in external mode
+(`KORTIX_CAPTURE_S3_CREATE_BUCKET=false` is pinned); the operator or Terraform
+owns it. The bundled MinIO root pair
+(`CAPTURE_STORE_ROOT_USER`/`CAPTURE_STORE_ROOT_PASSWORD`) is dropped from `.env`.
+
+IAM (AWS):
+
+- One S3 bucket for Capture.
+- A device role (`KORTIX_CAPTURE_STS_ROLE_ARN`) with S3 read/write on that
+  bucket. The API calls `AssumeRole` on it and attaches a per-device session
+  policy, so each device reaches only its own folder.
+- The box identity (the EC2 instance role, or the configured key pair) granted
+  `sts:AssumeRole` on the device role and S3 on the bucket. On AWS omit the key
+  pair to use the instance role's default credential chain.
+
+Set an S3 lifecycle rule (Intelligent-Tiering, or transition to a colder class)
+on the bucket for cheap long retention — the data grows with every enrolled
+device.
+
+If `KORTIX_CAPTURE_STS_ROLE_ARN` or the bucket is missing, the API cannot issue
+credentials and a device gets `503 capture_credentials_unavailable`, the same
+signal as a store that is not configured.
+
 ## Upgrade an existing install
 
 The nightly updater never re-renders Compose. On the box:

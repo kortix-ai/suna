@@ -13,9 +13,9 @@
 
 import { useEffect } from 'react';
 
-import { useOptionalSidebar } from '@/components/ui/sidebar';
-import { useIsMobile } from '@/hooks/utils';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { useOptionalSidebar } from '@kortix/ui/sidebar';
+import { useIsMobile } from '@kortix/ui';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 import { matchesSettingsShortcut } from './settings-shortcut';
 
 /**

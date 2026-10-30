@@ -290,8 +290,8 @@ interface SyncState {
 	 * session) calls `applySessionLogEvent`.
 	 */
 	applyEvent: (event: RuntimeEvent) => void;
-	/** Merge one page of the session log (`GET …/log`) into session `sessionId`'s log. */
-	applySessionLogPage: (sessionId: string, page: SessionLogPage) => void;
+	/** Merge one page of the session log (`GET …/log`) into session `sessionId`'s log. `beforeSeq`: the page's `before_seq` (an older page). */
+	applySessionLogPage: (sessionId: string, page: SessionLogPage, beforeSeq?: number) => void;
 	/** Apply one `log.*` frame to session `sessionId`'s log, creating it when absent. */
 	applySessionLogEvent: (sessionId: string, event: SessionLogEventInput) => void;
 	/** Forget session `sessionId`'s log: its v1 hooks read the v1 store again. */
@@ -1286,13 +1286,24 @@ function takeDeltaEventId(sessionID: string, tailKey: string, id: string): boole
 function applySessionLogFrame(sessionId: string, event: SessionLogEventInput): void {
 	const state = useSyncStore.getState();
 	const current = state.sessionLogs[sessionId] ?? EMPTY_SESSION_LOG_STATE;
-	const next = applySessionLogEvent(current, event);
-	if (next === current) return;
-	if (event.type === "log.block.delta") {
-		const p = event.properties as { thread_id: string; message_id: string; block_id: string };
-		if (event.id && !takeDeltaEventId(p.thread_id, `${p.message_id}:${p.block_id}:log`, event.id)) return;
-		state.noteSessionActivity(p.thread_id);
+	// A coalesced `log.block.delta` (`core/stream/event-attempt.ts`) lists the wire frames it
+	// replaced: each one is applied and deduped by its own id, as if it came alone, and the
+	// run lands in one store update.
+	const wire = event.type === "log.block.delta" ? ((event as { coalesced?: SessionLogEventInput[] }).coalesced ?? [event]) : [event];
+	let next = current;
+	let delta: { thread_id: string } | undefined;
+	for (const frame of wire) {
+		const applied = applySessionLogEvent(next, frame);
+		if (applied === next) continue;
+		if (frame.type === "log.block.delta") {
+			const p = frame.properties as { thread_id: string; message_id: string; block_id: string };
+			if (frame.id && !takeDeltaEventId(p.thread_id, `${p.message_id}:${p.block_id}:log`, frame.id)) continue;
+			delta = p;
+		}
+		next = applied;
 	}
+	if (next === current) return;
+	if (delta) state.noteSessionActivity(delta.thread_id);
 	useSyncStore.setState((s) => ({ sessionLogs: { ...s.sessionLogs, [sessionId]: next } }));
 }
 
@@ -2449,11 +2460,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		});
 	},
 
-	applySessionLogPage: (sessionId, page) =>
+	applySessionLogPage: (sessionId, page, beforeSeq) =>
 		set((s) => {
 			const current = s.sessionLogs[sessionId] ?? EMPTY_SESSION_LOG_STATE;
 			// A page's session record is a patch; the id it was read for is its `session_id`.
-			const next = applySessionLogPage(current, { ...page, session: { session_id: sessionId, ...page.session } });
+			const next = applySessionLogPage(current, { ...page, session: { session_id: sessionId, ...page.session } }, beforeSeq);
 			return next === current ? s : { sessionLogs: { ...s.sessionLogs, [sessionId]: next } };
 		}),
 

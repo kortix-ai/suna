@@ -223,7 +223,15 @@ export async function resolveCodexCredential(
 export async function resolveCodexAccountCredential(input: {
   projectId: string; accountId: string; sessionId: string | null; userId: string;
   secretId: string; value: string | null; updatedAt: Date;
+  /** A servability probe (default-model choice at authentication) only reads
+   *  the stored login: no refresh and no reconnection mark, so the turn that
+   *  follows tries and names the account itself. */
+  probe?: boolean;
 }, fetchImpl: FetchImpl = (request, init) => fetch(request, init)): Promise<CodexCredential | null> {
+  if (input.probe) {
+    const stored = input.value === null ? null : parseCodexAuth(input.value);
+    return stored?.access ? { access: stored.access, accountId: stored.accountId } : null;
+  }
   return resolveCodexRowCredential(input.projectId, {
     storage: 'account_resource', accountId: input.accountId, secretId: input.secretId,
     ownerUserId: input.userId, value: input.value, actorUserId: input.userId,

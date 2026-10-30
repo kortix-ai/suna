@@ -16,7 +16,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OPENCODE_VERSION } from '@kortix/shared/runtime-versions';
 import { managedSkillOverlayFiles, managedSkillOverlayHash } from '../managed-skills';
-import { RUNTIME_MANAGED_MODELS } from '../../llm-gateway/models/managed-models';
+import { TEST_MANAGED_LINEUP } from '../../__tests__/fixtures/managed-lineup';
+import { __setManagedLineupForTest, managedLineup } from '../../llm-gateway/models/managed-models';
 import {
   _resetRuntimeAssetsCache,
   manifestFingerprint,
@@ -51,7 +52,9 @@ async function stage(name: string, bytes: string): Promise<{ path: string; sha25
 }
 
 const SKILLS_HASH = managedSkillOverlayHash(managedSkillOverlayFiles());
-const MANAGED_IDS = RUNTIME_MANAGED_MODELS.map((model) => model.id);
+// The lineup Platinum Inference would list.
+__setManagedLineupForTest(TEST_MANAGED_LINEUP);
+const MANAGED_IDS = managedLineup().map((model) => model.id);
 
 function running(over: Partial<RunningAssetsReport> = {}): RunningAssetsReport {
   return {
@@ -106,10 +109,6 @@ describe('runningAssetsVerdict', () => {
     process.env[CLI_BIN_ENV] = cli.path;
     _resetRuntimeAssetsCache();
     expect(await runningAssetsVerdict(running({ cli_sha256: 'f'.repeat(64) }))).toBe('behind');
-  });
-
-  test('a stale OpenCode version is behind — the one component with no sha to compare', async () => {
-    expect(await runningAssetsVerdict(running({ opencode_version: '0.0.1' }))).toBe('behind');
   });
 
   test('a stale managed-skill overlay is behind', async () => {

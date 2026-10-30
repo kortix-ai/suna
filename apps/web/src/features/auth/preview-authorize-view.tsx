@@ -10,11 +10,11 @@
  * a test.
  */
 
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { DetailPanel, DetailRow } from '@/features/auth/auth-consent';
-import { Rise, StepHeader } from '@/features/auth/auth-primitives';
+import { Button } from '@kortix/ui/button';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { DetailPanel, DetailRow } from '@kortix/ui/internal/auth/auth-consent';
+import { Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useTranslations } from '@/i18n/use-translations';
 
 export type PreviewAuthorizeState = 'opening' | 'not-served' | 'expired';

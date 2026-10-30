@@ -2,7 +2,7 @@ import { promptAttachments } from '@kortix/db';
 import { PROMPT_ATTACHMENT_TTL_MS } from '@kortix/shared';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { PromptAttachmentError, type PromptAttachmentScope, storage, storageUnavailable, chunkedMode, chunkBytes, formatBytes, filePath, chunkPath, metadata, assertOwner, assertUnexpired, selectAttachment, digest, download, STORAGE_TIMEOUT_MS, COMPLETE_BOUND_MS, FINALIZE_LEASE_MS } from './prompt-attachment-storage';
+import { PromptAttachmentError, type PromptAttachmentScope, storage, storageUnavailable, storageWriteFailure, chunkedMode, chunkBytes, formatBytes, filePath, chunkPath, metadata, assertOwner, assertUnexpired, selectAttachment, digest, download, STORAGE_TIMEOUT_MS, COMPLETE_BOUND_MS, FINALIZE_LEASE_MS } from './prompt-attachment-storage';
 
 /** Chunked assembly holds one whole file in memory; this bounds it per process. */
 const MAX_CHUNKED_FINALIZATIONS = 2;
@@ -101,7 +101,7 @@ export async function uploadPromptAttachmentChunk(
     upsert: true,
     contentType: 'application/octet-stream',
   });
-  if (error) throw storageUnavailable('Attachment upload failed. Retry this file.');
+  if (error) throw storageWriteFailure(error, 'Attachment upload failed. Retry this file.');
   const [recorded] = await db
     .update(promptAttachments)
     .set({ receivedBytes: end, updatedAt: new Date() })
@@ -201,7 +201,7 @@ export async function completeChunkedPromptAttachment(
         upsert: true,
         contentType: row.mime,
       });
-      if (error) throw storageUnavailable('Attachment processing failed. Retry this file.');
+      if (error) throw storageWriteFailure(error, 'Attachment processing failed. Retry this file.');
       const [ready] = await db
         .update(promptAttachments)
         .set({ status: 'ready', sha256: hash, finalizeToken: null, updatedAt: new Date() })

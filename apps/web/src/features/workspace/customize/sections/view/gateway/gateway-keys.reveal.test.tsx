@@ -4,9 +4,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { readFileSync } from '@/i18n/test-source';
 
-import { GatewayFirstRequest, firstRequestSamples } from './gateway-api-reference';
+import { GatewayFirstRequest, firstRequestSamples } from '@kortix/ui/customize/sections/view/gateway/gateway-api-reference';
+import { uiSourcePath } from '@/test-utils/read-source';
 
-const keys = readFileSync(join(import.meta.dir, 'gateway-keys.tsx'), 'utf8');
+const keys = readFileSync(uiSourcePath('customize/sections/view/gateway/gateway-keys.tsx'), 'utf8');
 const reveal = keys.slice(keys.indexOf('function RevealKeyDialog'));
 
 /** Paper KM01: the show-once reveal with one first-request card. */

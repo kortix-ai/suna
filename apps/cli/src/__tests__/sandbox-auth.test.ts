@@ -54,7 +54,7 @@ describe('in-sandbox auth resolution', () => {
     expect(host?.url).toBe('https://tunnel.example/v1');
   });
 
-  it('loads sandbox CLI auth from BASH_ENV agent-env.sh when non-interactive shells did not source it', () => {
+  it('loads sandbox CLI auth from BASH_ENV agent-env.sh when non-interactive shells did not source it', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'kortix-cli-agent-env-'));
     const envFile = join(dir, 'agent-env.sh');
     try {
@@ -78,7 +78,7 @@ describe('in-sandbox auth resolution', () => {
       expect(host?.token).toBe('kortix_pat_from_file');
       expect(host?.url).toBe('https://dev-api.kortix.com/v1');
       expect(resolveProjectId()).toBe('proj-from-file');
-      expect(connectorProjectContext().projectId).toBe('proj-from-file');
+      expect((await connectorProjectContext()).projectId).toBe('proj-from-file');
       expect(process.env.NOT_ALLOWLISTED).toBeUndefined();
       expect(process.env.AGENTMAIL_API_KEY).toBeUndefined();
     } finally {
@@ -96,12 +96,12 @@ describe('in-sandbox auth resolution', () => {
     expect(resolveProjectId()).toBe('proj-xyz');
   });
 
-  it('lets connector management commands override KORTIX_PROJECT_ID with --project', () => {
+  it('lets connector management commands override KORTIX_PROJECT_ID with --project', async () => {
     process.env.KORTIX_TOKEN = 'kortix_pat_cli';
     process.env.KORTIX_API_URL = 'https://tunnel.example/v1';
     process.env.KORTIX_PROJECT_ID = 'proj-from-env';
 
-    expect(connectorProjectContext('proj-from-flag').projectId).toBe('proj-from-flag');
+    expect((await connectorProjectContext('proj-from-flag')).projectId).toBe('proj-from-flag');
   });
 });
 
@@ -242,7 +242,7 @@ describe('plain commands vs an explicitly selected stored host (KRTX-1705)', () 
     expect(ctx?.auth.token).toBe('kortix_pat_session');
   });
 
-  it('keeps the connector data plane on the injected identity even with a selection', () => {
+  it('keeps the connector data plane on the injected identity even with a selection', async () => {
     seedOwnHost({ default_project: { project_id: 'proj_own', account_id: 'acct_own' } });
     process.env.KORTIX_TOKEN = 'kortix_pat_session';
     process.env.KORTIX_API_URL = 'https://session.example/v1';
@@ -253,7 +253,7 @@ describe('plain commands vs an explicitly selected stored host (KRTX-1705)', () 
     // mcp` (template runtime fingerprint): the data plane stays pinned to the
     // injected identity and the session's own project — the selection must
     // never redirect it at the selected host.
-    const ctx = connectorProjectContext();
+    const ctx = await connectorProjectContext();
     expect(ctx.projectId).toBe('proj_session');
   });
 

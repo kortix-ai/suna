@@ -127,7 +127,10 @@ export function clearConfigReleaseNotice(path = CONFIG_RELEASE_NOTICE_PATH): voi
   rmSync(path, { force: true })
 }
 
-/** The path to declare in OpenCode `instructions`, or null when there is no notice. */
+/**
+ * The path to declare in OpenCode `instructions`, or null when there is no notice.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function configReleaseNoticePath(path = CONFIG_RELEASE_NOTICE_PATH): string | null {
   return existsSync(path) ? path : null
 }

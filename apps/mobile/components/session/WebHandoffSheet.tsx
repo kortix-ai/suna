@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { useHandoffDismiss } from './handoff-sheet';
 
-export interface WebHandoffSheetProps {
+interface WebHandoffSheetProps {
   title: string;
   /** One short line of body copy under the title. */
   line: string;

@@ -45,6 +45,7 @@ Examples:
   kortix sessions connect <session-id> -- --mini
   kortix sessions connect --port 4100 <session-id>`;
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export async function runSessionsConnect(argv: string[]): Promise<number> {
   const rest = [...argv];
   if (rest.includes('-h') || rest.includes('--help')) {

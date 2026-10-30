@@ -2,9 +2,9 @@
 
 import { Suspense } from 'react';
 
-import { AuthPendingScreen } from '@/features/auth/auth-consent';
+import { AuthPendingScreen } from '@kortix/ui/internal/auth/auth-consent';
 import { ChannelInstallComplete } from '@/features/auth/channel-install-complete';
-import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
+import { MicrosoftTeams } from '@kortix/ui/internal/icons/microsoft-teams';
 import { completeTeamsInstall } from '@kortix/sdk';
 
 /**

@@ -14,7 +14,6 @@ import { config } from '../../config';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { toWireModel } from '../../llm-gateway/resolution/effective';
-import { validateNativeOpencodeModelRef } from '../../projects/lib/session-model-change';
 import {
   type ChannelModelOption,
   type ChannelModelScope,
@@ -112,34 +111,6 @@ export async function buildSlackModelsResponse(ctx: SlackModelCtx): Promise<Slas
   }
   const selection = await currentChannelSelection({ teamId: ctx.teamId, channelId: ctx.channelId });
   const current = selection?.opencodeModel ?? null;
-  // Native mode: the gateway catalog does not exist for this project. The
-  // channel model is a native `provider/model` ref set directly.
-  if (!scope.llmGatewayEnabled) {
-    return {
-      response_type: 'ephemeral',
-      blocks: [
-        { type: 'header', text: { type: 'plain_text', text: 'Models', emoji: true } },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: current
-              ? `This channel uses \`${escapeMrkdwn(current)}\`.`
-              : 'This channel uses the *project default* (resolved by OpenCode in the sandbox).',
-          },
-        },
-        {
-          type: 'context',
-          elements: [
-            {
-              type: 'mrkdwn',
-              text: `This project runs native OpenCode models (LLM gateway off). Set any connected provider's model with \`${ctx.command} model provider/model\` (e.g. \`anthropic/claude-sonnet-4-6\`), or \`${ctx.command} model default\` to reset.`,
-            },
-          ],
-        },
-      ],
-    };
-  }
 
   const { models, defaultModel } = await listChannelModels(scope);
   const currentWire = current ? toWireModel(current) : null;
@@ -243,16 +214,6 @@ export async function applySlackModelChoice(ctx: SlackModelCtx, choice: string):
   }
   if (/\s/.test(id)) {
     return `\`${escapeMrkdwn(id)}\` doesn't look like a model id. Use \`provider/model\` (e.g. \`anthropic/claude-sonnet-4.6\`) or a managed id (e.g. \`kortix/deepseek-v4.1-flash\` or \`deepseek-v4.1-flash\`).`;
-  }
-  // Gateway OFF: OpenCode owns the catalog — enforce the native
-  // `provider/model` shape and store verbatim, no gateway check.
-  if (!scope.llmGatewayEnabled) {
-    if (validateNativeOpencodeModelRef(id)) {
-      return `\`${escapeMrkdwn(id)}\` isn't usable here — this project runs native OpenCode models (LLM gateway off). Use \`provider/model\`, e.g. \`anthropic/claude-sonnet-4-6\`.`;
-    }
-    return (await setChannelModel(channelCtx, id))
-      ? `Model for this channel set to \`${escapeMrkdwn(id)}\`. New threads use it.`
-      : connect;
   }
 
   const selection = await currentChannelSelection(channelCtx);

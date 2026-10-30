@@ -33,7 +33,6 @@ import {
   ToolOutputFallback,
   ToolResultCard,
   ToolRunningContext,
-  ToolSurfaceContext,
   useToolNavigation,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
@@ -42,7 +41,6 @@ import type { ToolProps } from '../shared/types';
 
 export function ReadTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const surface = useContext(ToolSurfaceContext);
   const running = useContext(ToolRunningContext);
   const { openFile } = useToolNavigation();
   const input = partInput(call);
@@ -109,7 +107,7 @@ export function ReadTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
           <ToolOutputFallback output={output} toolName="read" />
         ) : null}
       </BasicTool>
-      {surface !== 'panel' && loaded.length > 0 ? (
+      {loaded.length > 0 ? (
         <View style={{ marginTop: webSpace(1), rowGap: webSpace(0.5), paddingLeft: webSpace(2) }}>
           {loaded.map((path) => (
             <Pressable

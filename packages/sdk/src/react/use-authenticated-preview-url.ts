@@ -8,7 +8,7 @@ import {
   isSubdomainPreviewUrl,
   appendPreviewToken,
 } from '../core/session/preview';
-import { shouldAttachPreviewToken } from '../core/session/preview-origin-trust';
+import { authorizePreviewUrl } from '../core/session/preview-auth';
 import { isInternalLocalhostUrl } from '../core/session/url';
 
 // The preview-proxy auth helpers now live in the SDK (single source of truth,
@@ -63,16 +63,13 @@ export function useAuthenticatedPreviewUrl(previewUrl: string): string | null {
         return;
       }
 
-      // Subdomain previews (p{port}-{sandbox}.host/) — the /v1/p/ session cookie
-      // never reaches them, so authenticate the first request with a one-shot
-      // ?token. The subdomain proxy validates it, marks the subdomain authed
-      // in-memory for sub-resources, and strips the token before forwarding.
-      // Only an origin this deployment serves gets the token; any other host
-      // with the same label shape is framed bare.
+      // Exchange the bearer for a short-lived, sandbox-and-port-scoped ticket.
+      // Only the ticket enters browser navigation; the proxy strips it and
+      // establishes the preview cookie before forwarding to the application.
       if (isSubdomainPreviewUrl(previewUrl)) {
-        const trusted = await shouldAttachPreviewToken(previewUrl, { serverUrl });
+        const authorized = await authorizePreviewUrl(previewUrl, { serverUrl }).catch(() => previewUrl);
         if (cancelled) return;
-        setAuthenticatedUrl(trusted ? appendPreviewToken(previewUrl, token) : previewUrl);
+        setAuthenticatedUrl(authorized);
         return;
       }
 

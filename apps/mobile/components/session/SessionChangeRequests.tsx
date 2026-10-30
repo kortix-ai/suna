@@ -23,7 +23,7 @@ import { reviewItemTone } from '@/lib/review/review-meta';
 import { changeRequestStatusLabel, type ChangeItem } from '@/lib/session/session-change-requests';
 import { THEME } from '@/lib/utils/theme';
 
-export interface SessionChangeRequestsProps {
+interface SessionChangeRequestsProps {
   /** This turn's change requests, oldest first. One stable array per turn. */
   items: readonly ChangeItem[];
   /** Opens the review sheet for one change request. Must be stable. */

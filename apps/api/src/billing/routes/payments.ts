@@ -44,7 +44,7 @@ paymentsRouter.openapi(
     },
     responses: {
       200: json(z.object({ checkout_url: z.string().nullable() }), 'Stripe checkout URL'),
-      ...errors(400),
+      ...errors(400, 429),
     },
   }),
   async (c) => {
@@ -119,8 +119,8 @@ paymentsRouter.openapi(
     request: {
       query: z.object({
         account_id: z.string().optional(),
-        limit: z.coerce.number().optional(),
-        offset: z.coerce.number().optional(),
+        limit: z.coerce.number().int().nonnegative().safe().optional(),
+        offset: z.coerce.number().int().nonnegative().safe().optional(),
         type_filter: z.string().optional(),
       }),
     },
@@ -273,6 +273,7 @@ paymentsRouter.openapi(
     },
     responses: {
       200: json(OpaqueSchema, 'Auto-topup configuration result'),
+      ...errors(429),
     },
   }),
   async (c) => {
@@ -303,8 +304,8 @@ paymentsRouter.openapi(
     request: {
       query: z.object({
         account_id: z.string().optional(),
-        limit: z.coerce.number().optional(),
-        offset: z.coerce.number().optional(),
+        limit: z.coerce.number().int().nonnegative().safe().optional(),
+        offset: z.coerce.number().int().nonnegative().safe().optional(),
       }),
     },
     responses: {

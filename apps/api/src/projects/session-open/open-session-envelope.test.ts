@@ -151,7 +151,7 @@ function row(
     sessionId: 'sess-1',
     projectId: 'proj-1',
     accountId: 'acct-1',
-    provider: 'daytona',
+    provider: 'platinum',
     externalId: 'ext-1',
     baseUrl: null,
     status,

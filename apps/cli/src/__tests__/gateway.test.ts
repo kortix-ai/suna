@@ -136,6 +136,9 @@ function startServer(): string {
           requests: 10,
           errors: 1,
           total_cost: 0.5,
+          estimated_usage_value: 0.02,
+          priced_requests: 9,
+          unpriced_requests: 1,
           input_tokens: 100,
           output_tokens: 50,
         });
@@ -178,6 +181,7 @@ function startServer(): string {
       if (url.pathname === `${base}/playground` && req.method === 'POST') {
         const models = (entry.body as { models: string[] }).models;
         return Response.json({
+          gateway_url: keysGatewayUrl,
           results: models.map((m) => ({
             model: m,
             ok: true,
@@ -266,6 +270,25 @@ describe('kortix gateway command', () => {
       defaultModel: 'openai/gpt-5.5',
       visionModel: 'claude-sonnet-4.6',
     });
+  }, 15_000);
+
+  test('routing set: the merged body keeps the stored per-model generation settings', async () => {
+    const cfg = writeConfig(startServer());
+    const generation = { 'openai/gpt-4.1': { temperature: 0.3 } };
+    routingProject = {
+      defaultModel: null,
+      visionModel: null,
+      defaultFallback: null,
+      rules: [],
+      modelGenerationConfig: generation,
+    } as typeof routingProject;
+    const r = await runCli(
+      ['gateway', 'routing', 'set', '--default-model', 'openai/gpt-5.5', '--project', PROJECT],
+      cfg,
+    );
+    expect(r.code).toBe(0);
+    const put = requests.find((q) => q.method === 'PUT');
+    expect(put?.body).toMatchObject({ defaultModel: 'openai/gpt-5.5', modelGenerationConfig: generation });
   }, 15_000);
 
   test('budget ls: each budget shows the spend of its own period and its reset, not the month', async () => {
@@ -366,6 +389,7 @@ describe('kortix gateway command', () => {
     expect(out.overview.total_cost).toBe(0.5);
     const human = await runCli(['gateway', 'usage', '--project', PROJECT], cfg);
     expect(human.code).toBe(0);
+    expect(human.stdout).toContain('LLM estimated usage value (not a bill): 2 credits · priced 9; unpriced 1');
     expect(human.stdout).toContain('10 req · 1 err · 50 credits · 100/50 tok');
     expect(human.stdout).toMatch(/openai\/gpt-5\.5\s+7 req  42 credits/);
   }, 15_000);
@@ -423,6 +447,33 @@ describe('kortix gateway command', () => {
     });
     expect(JSON.parse(r.stdout).results).toHaveLength(2);
   }, 15_000);
+
+  test.each([true, false])('test: exposes the configured gateway URL (json=%s)', async (json) => {
+    const cfg = writeConfig(startServer());
+    const r = await runCli(
+      ['gateway', 'test', 'openai/gpt-5.5', '--project', PROJECT, ...(json ? ['--json'] : [])],
+      cfg,
+    );
+    expect(r.code).toBe(0);
+    if (json) {
+      expect(JSON.parse(r.stdout).gateway_url).toBe('https://gw.test/v1/llm');
+      expect(JSON.parse(r.stdout).results[0].output).toBe('pong');
+    } else {
+      expect(r.stdout).toContain('Gateway URL: https://gw.test/v1/llm');
+      expect(r.stdout).toContain('pong');
+    }
+  });
+
+  test('test: resolves a missing gateway URL against the selected host', async () => {
+    keysGatewayUrl = null;
+    const apiBase = startServer();
+    const cfg = writeConfig(apiBase);
+    const r = await runCli(
+      ['gateway', 'test', 'openai/gpt-5.5', '--json', '--project', PROJECT], cfg,
+    );
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).gateway_url).toBe(`${apiBase}/v1/llm`);
+  });
 
   test('routing reset: DELETEs the policy', async () => {
     const cfg = writeConfig(startServer());

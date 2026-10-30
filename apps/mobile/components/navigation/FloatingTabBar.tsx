@@ -15,31 +15,51 @@
  * interruptible; reduced motion snaps instead). Press feedback is a 0.96
  * scale driven by shared values — a function `style` on a classNamed
  * Pressable is silently dropped by css-interop, so it can't live there.
+ *
+ * Drag (iOS tab-bar style): press and slide horizontally anywhere on the
+ * capsule and the thumb lifts (1.12 scale), follows the finger, ticks a
+ * selection haptic on each segment it crosses, and on release springs to the
+ * nearest segment with the finger's velocity, then selects it. Vertical
+ * movement fails the pan, so a sheet's own drag still wins; a tap never
+ * reaches it (6pt slop) and stays with the item's Pressable.
  */
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
   Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { useColorScheme } from 'nativewind';
 
 import { Text } from '@/components/ui/text';
+import { haptics } from '@/lib/haptics';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { FLOATING_BAR_HEIGHT } from '@/components/navigation/tab-bar-layout';
+import {
+  LIQUID_GLASS_AVAILABLE,
+  LiquidGlassCapsule,
+} from '@/components/kortix/liquid-glass-capsule';
 
 // House motion tokens: the house ease-out-quint family, shortened for a
 // small on-screen move; press curves match the house press-scale values.
 const SLIDE = { duration: 220, easing: Easing.bezier(0.23, 1, 0.32, 1) };
 const PRESS_IN = { duration: 90, easing: Easing.out(Easing.quad) };
 const PRESS_OUT = { duration: 140, easing: Easing.out(Easing.quad) };
+// Drag: the thumb settles with no overshoot (same spring as the thinking
+// slider in ModelPickerSheet); the lift has a little give, like a lens.
+const SNAP_SPRING = { duration: 300, dampingRatio: 1 };
+const LIFT_SPRING = { duration: 260, dampingRatio: 0.8 };
+const LIFT_SCALE = 1.12;
 
-/** Soft lift for the light capsule, from the foreground token. */
-/** Soft shadow for a light floating surface. The composer does not use it (design.md §5). */
-export const LIGHT_SHADOW = `0px 6px 24px ${withAlpha(THEME.light.foreground, 0.12)}`;
+/** Soft shadow for a light floating surface, from the foreground token. The
+ * composer does not use it (design.md §5). */
+const LIGHT_SHADOW = `0px 6px 24px ${withAlpha(THEME.light.foreground, 0.12)}`;
 
 function TabItem({
   label,
@@ -106,17 +126,25 @@ export interface FloatingTabItem {
  * sliding behind the active tab, icon over a 12px label. Any sheet or page
  * that switches between views draws it (the project/account switcher, Jay
  * 2026-09-23) — one look everywhere.
+ *
+ * `glass` (KRTX-2928): on iOS 26+ the capsule is Liquid Glass
+ * (`LiquidGlassCapsule`) instead of the opaque `background`/`card` fill, its
+ * shadow and its border. Android and older iOS keep the opaque capsule. The
+ * switcher sheets (account/project, agent/model) and Review's segment bar pass it.
  */
 export function FloatingTabCapsule({
   items,
   activeIndex,
   onSelect,
   onLongPress,
+  glass = false,
 }: {
   items: FloatingTabItem[];
   activeIndex: number;
   onSelect: (index: number) => void;
   onLongPress?: (index: number) => void;
+  /** Liquid Glass capsule where the platform supports it. */
+  glass?: boolean;
 }) {
   const reduced = useReducedMotion();
   const { colorScheme } = useColorScheme();
@@ -124,11 +152,30 @@ export function FloatingTabCapsule({
 
   const [segmentWidth, setSegmentWidth] = React.useState(0);
   const thumbX = useSharedValue(0);
+  const lift = useSharedValue(0);
+  const grab = useSharedValue(0);
+  const hoverIndex = useSharedValue(activeIndex);
   const settled = React.useRef(false);
+  // Index a drag just released onto: the thumb is already springing there
+  // with the finger's velocity, so the activeIndex effect must not restart it.
+  const draggedTo = React.useRef<number | null>(null);
+
+  const commit = React.useCallback(
+    (index: number) => {
+      draggedTo.current = index;
+      onSelect(index);
+    },
+    [onSelect]
+  );
 
   React.useEffect(() => {
     if (segmentWidth <= 0) return;
     const target = activeIndex * segmentWidth;
+    if (draggedTo.current === activeIndex) {
+      draggedTo.current = null;
+      return;
+    }
+    draggedTo.current = null;
     if (!settled.current || reduced) {
       thumbX.value = target;
       settled.current = true;
@@ -137,33 +184,81 @@ export function FloatingTabCapsule({
     }
   }, [activeIndex, segmentWidth, reduced, thumbX]);
 
-  const thumbStyle = useAnimatedStyle(() => ({ transform: [{ translateX: thumbX.value }] }));
+  const count = items.length;
+  const pan = React.useMemo(() => {
+    const max = Math.max(0, (count - 1) * segmentWidth);
+    const nearest = (x: number) => {
+      'worklet';
+      return segmentWidth > 0 ? Math.min(count - 1, Math.max(0, Math.round(x / segmentWidth))) : 0;
+    };
+    return Gesture.Pan()
+      .enabled(segmentWidth > 0 && count > 1)
+      .activeOffsetX([-6, 6])
+      .failOffsetY([-12, 12])
+      .onStart((e) => {
+        // Grabbing the thumb keeps the finger where it touched it; grabbing
+        // elsewhere centres the thumb under the finger.
+        const onThumb = e.x >= thumbX.value && e.x <= thumbX.value + segmentWidth;
+        grab.value = onThumb ? e.x - thumbX.value : segmentWidth / 2;
+        hoverIndex.value = nearest(thumbX.value);
+        if (!reduced) lift.value = withSpring(1, LIFT_SPRING);
+      })
+      .onUpdate((e) => {
+        thumbX.value = Math.min(max, Math.max(0, e.x - grab.value));
+        const index = nearest(thumbX.value);
+        if (index !== hoverIndex.value) {
+          hoverIndex.value = index;
+          scheduleOnRN(haptics.selection);
+        }
+      })
+      .onFinalize((e, success) => {
+        const index = nearest(thumbX.value);
+        const target = index * segmentWidth;
+        thumbX.value = reduced
+          ? target
+          : withSpring(target, { ...SNAP_SPRING, velocity: e.velocityX });
+        lift.value = reduced ? 0 : withSpring(0, LIFT_SPRING);
+        if (success && index !== activeIndex) scheduleOnRN(commit, index);
+      });
+  }, [count, segmentWidth, reduced, activeIndex, commit, thumbX, lift, grab, hoverIndex]);
 
+  const thumbStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: thumbX.value }, { scale: 1 + (LIFT_SCALE - 1) * lift.value }],
+  }));
+
+  const glassy = glass && LIQUID_GLASS_AVAILABLE;
+  const surface = glassy ? '' : isDark ? 'border border-border bg-card' : 'bg-background';
   return (
     <View
-      className={`rounded-full p-1 ${isDark ? 'border border-border bg-card' : 'bg-background'}`}
-      style={{ height: FLOATING_BAR_HEIGHT, boxShadow: isDark ? undefined : LIGHT_SHADOW }}>
-      <View
-        className="relative h-full flex-row"
-        onLayout={(e) => setSegmentWidth(e.nativeEvent.layout.width / Math.max(items.length, 1))}>
-        {segmentWidth > 0 ? (
-          <Reanimated.View
-            style={[thumbStyle, { width: segmentWidth }]}
-            className="absolute bottom-0 left-0 top-0 rounded-full bg-secondary"
-          />
-        ) : null}
-        {items.map((item, index) => (
-          <TabItem
-            key={item.key}
-            label={item.label}
-            icon={item.icon}
-            focused={index === activeIndex}
-            reduced={reduced}
-            onPress={() => onSelect(index)}
-            onLongPress={() => onLongPress?.(index)}
-          />
-        ))}
-      </View>
+      className={`rounded-full p-1 ${surface}`}
+      style={{
+        height: FLOATING_BAR_HEIGHT,
+        boxShadow: glassy || isDark ? undefined : LIGHT_SHADOW,
+      }}>
+      {glassy ? <LiquidGlassCapsule /> : null}
+      <GestureDetector gesture={pan}>
+        <View
+          className="relative h-full flex-row"
+          onLayout={(e) => setSegmentWidth(e.nativeEvent.layout.width / Math.max(items.length, 1))}>
+          {segmentWidth > 0 ? (
+            <Reanimated.View
+              style={[thumbStyle, { width: segmentWidth }]}
+              className="absolute bottom-0 left-0 top-0 rounded-full bg-secondary"
+            />
+          ) : null}
+          {items.map((item, index) => (
+            <TabItem
+              key={item.key}
+              label={item.label}
+              icon={item.icon}
+              focused={index === activeIndex}
+              reduced={reduced}
+              onPress={() => onSelect(index)}
+              onLongPress={() => onLongPress?.(index)}
+            />
+          ))}
+        </View>
+      </GestureDetector>
     </View>
   );
 }

@@ -5,6 +5,7 @@ import type { DropFirst } from './binding-types';
 export function bindProjectOperationsWorkspace(projectId: string) {
   return {
     files: {
+      write: (input: Parameters<typeof P.writeProjectFile>[1]) => P.writeProjectFile(projectId, input),
       list: (options?: Parameters<typeof P.listProjectFiles>[1]) =>
         P.listProjectFiles(projectId, options),
       /** One folder level, complete up to its entry cap (not cut at 1,000 recursive files). */

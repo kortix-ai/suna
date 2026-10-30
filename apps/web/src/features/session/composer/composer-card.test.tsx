@@ -15,9 +15,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@kortix/ui/tooltip';
 import { AuthProvider } from '@/features/providers/auth-provider';
-import { ComposerCard } from './ComposerCard';
+import { ComposerCard } from '@kortix/ui/composer';
 
 const noop = () => {};
 const asyncNoop = async () => {};
@@ -81,6 +81,8 @@ function render(props?: {
               handleAttachClick={noop}
               primaryAgents={[] as never}
               availableSelectedModel={null}
+              agentMenuOpen={false}
+              setAgentMenuOpen={noop}
               modelMenuOpen={false}
               setModelMenuOpen={noop}
               reasoningMenuOpen={false}
@@ -118,7 +120,7 @@ describe('ComposerCard (the moved card subtrees)', () => {
     expect(html).toContain('pointer-events-none absolute inset-0');
     expect(html).toContain('Drop files to attach');
     expect(html).toContain('opacity-30');
-    expect(html).toContain('border-kortix-blue/80');
+    expect(html).toContain('border-ring ring-ring/15');
   });
 
   test('without a drag, the overlay is absent and the card paints normally', () => {

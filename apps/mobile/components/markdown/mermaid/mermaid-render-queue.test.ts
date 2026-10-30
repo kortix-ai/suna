@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { MermaidRenderQueue } from './mermaid-render-queue';
+import { MermaidRenderQueue, type MermaidOutcome } from './mermaid-render-queue';
 
 const SVG = '<svg id="kortix-mermaid-1" width="100%" viewBox="0 0 200 100" style="max-width: 200px;"></svg>';
+// Two distinct diagrams whose 32-bit base-36 source hashes collided (`-ducwb5`):
+// the regression below is the bug this file exists to catch, red before the fix.
+const SVG_A = '<svg viewBox="0 0 100 50"></svg>';
+const SVG_B = '<svg viewBox="0 0 300 75"></svg>';
+const OUTCOME_A: MermaidOutcome = { ok: true, diagram: { svg: SVG_A, viewBox: { width: 100, height: 50 } } };
+const OUTCOME_B: MermaidOutcome = { ok: true, diagram: { svg: SVG_B, viewBox: { width: 300, height: 75 } } };
+const CHART_A = 'graph TD;A4x403-->B';
+const CHART_B = 'graph TD;A1104x10-->B';
 
 function setup(timeoutMs = 10_000) {
   const queue = new MermaidRenderQueue(timeoutMs);
@@ -30,7 +38,7 @@ describe('MermaidRenderQueue', () => {
     expect(await result).toEqual({ ok: true, diagram: { svg: SVG, viewBox: { width: 200, height: 100 } } });
   });
 
-  test('caches by content hash and merges concurrent requests', async () => {
+  test('caches by the trimmed source and merges concurrent requests', async () => {
     const { queue, sent, inject } = setup();
     queue.attach(inject);
     const first = queue.render('flowchart LR\n  A --> B');
@@ -42,6 +50,27 @@ describe('MermaidRenderQueue', () => {
     expect(queue.peek('flowchart LR\n  A --> B')?.ok).toBe(true);
     await queue.render('flowchart LR\n  A --> B');
     expect(sent).toHaveLength(1);
+  });
+
+  test('two distinct charts never read each other, even when their source hashes collide', async () => {
+    // The 32-bit source hash served both charts (base-36 `-ducwb5`): before the
+    // fix the second chart's promise was the first chart's promise and its
+    // first paint read the first chart's cached SVG.
+    const { queue, sent, inject } = setup();
+    queue.attach(inject);
+    const first = queue.render(CHART_A);
+    const second = queue.render(CHART_B);
+
+    queue.handleMessage(JSON.stringify({ id: sent[0].id, svg: SVG_A }));
+    expect(await first).toEqual(OUTCOME_A);
+    // The second chart has not rendered yet: nothing answers its first paint.
+    expect(queue.peek(CHART_B)).toBeNull();
+
+    expect(sent).toHaveLength(2);
+    queue.handleMessage(JSON.stringify({ id: sent[1].id, svg: SVG_B }));
+    expect(await second).toEqual(OUTCOME_B);
+    expect(queue.peek(CHART_A)).toEqual(OUTCOME_A);
+    expect(queue.peek(CHART_B)).toEqual(OUTCOME_B);
   });
 
   test('Mermaid errors are cached, unknown types map to web value', async () => {
@@ -57,12 +86,31 @@ describe('MermaidRenderQueue', () => {
     expect(await unknown).toEqual({ ok: false, error: 'unsupported_diagram_type' });
   });
 
-  test('a chart web rejects before rendering never reaches the WebView', async () => {
+  test('renders whatever the router sent: directive-first, front-matter, and garbage source', async () => {
+    // The one client gate is the router's `isMermaidCode`; the queue renders
+    // anything it receives and maps Mermaid's own failure to web's error value.
     const { queue, sent, inject } = setup();
     queue.attach(inject);
-    expect(await queue.render('xychart-beta\n  bar [1, 2]')).toEqual({ ok: false, error: 'Invalid diagram type' });
-    expect(sent).toEqual([]);
-    expect(queue.isWanted()).toBe(false);
+
+    const directive = queue.render('%%{init: {"theme":"base"}}%%\ngraph TD;A-->B');
+    expect(sent).toHaveLength(1);
+    queue.handleMessage(JSON.stringify({ id: sent[0].id, svg: SVG_A }));
+    expect(await directive).toEqual(OUTCOME_A);
+
+    const frontMatter = queue.render('---\ntitle: t\n---\ngraph TD;A-->B');
+    expect(sent).toHaveLength(2);
+    queue.handleMessage(JSON.stringify({ id: sent[1].id, svg: SVG_B }));
+    expect(await frontMatter).toEqual(OUTCOME_B);
+
+    // Garbage mounts the hidden renderer (web rejects it before its render call
+    // instead) and shows the code block through the mapped failure, never
+    // through a client gate.
+    expect(queue.isWanted()).toBe(true);
+    const garbage = queue.render('hello world');
+    expect(sent).toHaveLength(3);
+    queue.handleMessage(JSON.stringify({ id: sent[2].id, error: 'UnknownDiagramError: No diagram type detected' }));
+    expect(await garbage).toEqual({ ok: false, error: 'unsupported_diagram_type' });
+    expect(queue.peek('hello world')).toEqual({ ok: false, error: 'unsupported_diagram_type' });
   });
 
   test('re-sends unanswered requests after the renderer process restarts', async () => {

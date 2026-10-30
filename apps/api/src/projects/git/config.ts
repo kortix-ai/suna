@@ -18,7 +18,7 @@ import {
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
 import { listManagedSkills } from '../../skills/catalog';
-import { resolveManifestVerdict } from '../lib/manifest-verdict';
+import { disconnectedManifestVerdict, resolveManifestVerdict } from '../lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
@@ -215,6 +215,7 @@ export function resolveConfigAgents(
           path: file ?? native?.path ?? spec.path,
           description: native?.description ?? null,
           mode: native?.mode ?? null,
+          ...(native?.hidden === true ? { hidden: true } : {}),
           model: native?.model ?? null,
           source: 'kortix.yaml' as const,
           enabled: spec.enabled,
@@ -365,6 +366,7 @@ async function scanAgents(
         path,
         description: meta.description || null,
         mode: meta.mode || null,
+        ...(meta.hidden === 'true' ? { hidden: true } : {}),
         model: meta.model || null,
       };
     },
@@ -439,6 +441,29 @@ async function scanCommands(
   );
 }
 
+/**
+ * The config of a project whose repository cannot be reached: nothing was
+ * read, and `manifest_version.unknown_reason` says why instead of
+ * `unreadable` (KRTX-2955).
+ */
+export function disconnectedProjectConfig(): ProjectConfigSummary {
+  return {
+    is_kortix_repo: false,
+    signals: { manifest: false, openCodeConfig: false, openCodeAgent: false },
+    manifest_raw: null,
+    manifest: {},
+    manifest_version: disconnectedManifestVerdict(),
+    env: { required: [], optional: [] },
+    open_code_raw: null,
+    default_agent: null,
+    open_code_default_agent: null,
+    agent_discovery: 'declarative',
+    agents: [],
+    skills: [],
+    commands: [],
+  };
+}
+
 export async function loadProjectConfig(
   project: GitBackedProject,
   files?: ProjectFileEntry[],
@@ -490,7 +515,7 @@ export async function loadProjectConfig(
     loadedAgents,
     declaredAgentFile,
   );
-  const skills = await scanSkills(project, repoFiles, skillDirs(manifest));
+  const skills = withKortixSkills(await scanSkills(project, repoFiles, skillDirs(manifest)));
   const commands = await scanCommands(project, repoFiles, commandRe);
   // v2 makes the manifest's declared default authoritative. Legacy projects
   // keep reading OpenCode's native default_agent for backwards compatibility.
@@ -551,6 +576,7 @@ async function loadProjectConfigV3(
       path: text(block.prompt_file) ?? spec.path,
       description: text(block.description),
       mode: text(block.mode),
+      ...(block.hidden === true ? { hidden: true } : {}),
       model: text(block.model),
     };
   });
@@ -563,12 +589,7 @@ async function loadProjectConfigV3(
       return { name, path, description: meta.description || null };
     }),
   );
-  const kortixSkills = listManagedSkills().map((skill) => ({
-    name: skill.name,
-    path: `${SKILLS_DIR}/${skill.name}/SKILL.md`,
-    description: skill.description || null,
-  }));
-  const skills = [...projectSkills, ...kortixSkills].sort((a, b) => a.name.localeCompare(b.name));
+  const skills = withKortixSkills(projectSkills);
 
   const manifestPath = project.manifestPath || 'kortix.yaml';
   const commands = Object.entries(map(manifest.commands))
@@ -580,6 +601,23 @@ async function loadProjectConfigV3(
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return { agent_discovery: 'declarative', agents, skills, commands };
+}
+
+/**
+ * The project's skills plus the Kortix skills. kortixd injects the Kortix skills
+ * into every session on every manifest version, so every version lists them. A
+ * repo copy of the same name (the scaffold's `kortix-cli`) is listed once.
+ */
+function withKortixSkills(skills: ProjectConfigSummary['skills']): ProjectConfigSummary['skills'] {
+  const names = new Set(skills.map((skill) => skill.name));
+  const kortixSkills = listManagedSkills()
+    .filter((skill) => !names.has(skill.name))
+    .map((skill) => ({
+      name: skill.name,
+      path: `${SKILLS_DIR}/${skill.name}/SKILL.md`,
+      description: skill.description || null,
+    }));
+  return [...skills, ...kortixSkills].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function escapeRegExp(input: string): string {

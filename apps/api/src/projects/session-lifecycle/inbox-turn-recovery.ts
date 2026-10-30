@@ -1,6 +1,6 @@
 import { sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { getProvider } from '../../platform/providers';
+import { getProvider, isProviderName } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { clearSandboxTurn } from '../sandbox-turn-lifecycle';
 import { storedSandboxTurns } from '../session-turn-ledger';
@@ -12,7 +12,8 @@ export async function settleCompletedInboxTurns(
   box: Box,
   deps = { observe: observeSandboxTurn, clear: clearSandboxTurn, provider: getProvider },
 ): Promise<boolean> {
-  if (!box.externalId) return false;
+  // A legacy `e2b` row has no live provider; nothing to observe.
+  if (!box.externalId || !isProviderName(box.provider)) return false;
   let settled = false;
   for (const turn of storedSandboxTurns(box.metadata)) {
     // Never infer completion from a reservation or a missing/unanswered prompt.

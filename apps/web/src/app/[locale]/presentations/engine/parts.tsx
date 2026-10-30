@@ -9,8 +9,8 @@
  * (like a homepage section), theme-following — never a forced palette.
  */
 
-import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
-import { cn } from '@/lib/utils';
+import { KortixAsterisk } from '@kortix/ui/kortix-asterisk';
+import { cn } from '@kortix/ui';
 import { m } from 'motion/react';
 import type { ReactNode } from 'react';
 

@@ -4,11 +4,11 @@ import type { CaptureDay } from '@kortix/sdk';
 import { CalendarBlankIcon, CaretDownIcon } from '@phosphor-icons/react';
 import { useState, type KeyboardEvent } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 import { durationParts, localDayOf } from '../capture-time';
 

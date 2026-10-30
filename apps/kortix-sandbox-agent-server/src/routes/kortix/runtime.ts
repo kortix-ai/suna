@@ -55,20 +55,23 @@ function authorize(cfg: Config, c: Context): AuthOutcome {
 }
 
 const optionalString = (value: unknown): value is string | undefined => value === undefined || typeof value === 'string'
+/** `system`: the per-turn system prompt addition apps/api sends (the memory file list). */
+export const MAX_TURN_SYSTEM_CHARS = 16_000
 
 /**
  * Validate a `POST /sessions/:id/prompt` body:
- * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply? }`.
+ * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply?, system? }`.
  */
 export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | string {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 'body must be a JSON object'
   const body = raw as Record<string, unknown>
   if (!Array.isArray(body.parts) || body.parts.length === 0) return 'parts must be a non-empty array'
   if (body.parts.some((part) => !part || typeof part !== 'object' || Array.isArray(part))) return 'parts must be objects'
-  for (const key of ['message_id', 'agent', 'model', 'variant', 'directory'] as const) {
+  for (const key of ['message_id', 'agent', 'model', 'variant', 'directory', 'system'] as const) {
     if (!optionalString(body[key])) return `${key} must be a string`
   }
   if (body.no_reply !== undefined && typeof body.no_reply !== 'boolean') return 'no_reply must be a boolean'
+  if (typeof body.system === 'string' && body.system.length > MAX_TURN_SYSTEM_CHARS) return `system must be at most ${MAX_TURN_SYSTEM_CHARS} characters`
   let model: RuntimePromptInput['model']
   if (typeof body.model === 'string') {
     const slash = body.model.indexOf('/')
@@ -84,6 +87,7 @@ export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | strin
     ...(text('variant') ? { variant: text('variant') } : {}),
     ...(text('directory') ? { directory: text('directory') } : {}),
     ...(body.no_reply === true ? { noReply: true } : {}),
+    ...(text('system') ? { system: text('system') } : {}),
   }
 }
 
@@ -153,6 +157,8 @@ export function createRuntimeRouter(
       const input = parseRuntimePromptBody(raw)
       if (typeof input === 'string') return c.json({ error: input }, 400)
       if (!input.messageId) return c.json({ error: 'message_id is required' }, 400)
+      // A steer joins the running turn, which keeps its prompt's `system`: a steer's own is dropped.
+      delete input.system
       return answer(c, () => turns.steer(c.req.param('sessionId'), input))
     })
 

@@ -1,9 +1,8 @@
 'use client';
 
-import { Skeleton } from '@/components/ui/skeleton';
-import { useDebounce } from '@/hooks/use-debounce';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { useDebounce, cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
 import { memo, useMemo, useRef } from 'react';
 import {
   dateFormat,

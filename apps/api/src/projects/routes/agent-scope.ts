@@ -24,8 +24,11 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { projectSecrets } from '@kortix/db';
 import { GrantSecretToAgentInputSchema, GrantSecretToAgentResultSchema } from '@kortix/api-contract';
 import { and, eq, isNull, or } from 'drizzle-orm';
-import { auth, errors, json } from '../../openapi';
+import { auth, boundedIssues, errors, json } from '../../openapi';
 import { applyAgentScope, extractAgents, grantsByAgent } from '../agents';
+import { extractConnectors } from '../connectors';
+import { canonicalConnectorAlias } from '../../shared/connector-alias';
+import { policySetNameError } from '@kortix/manifest-schema';
 import {
   applyAgentScopeV2,
   grantSecretToAgentV2,
@@ -34,7 +37,7 @@ import {
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { PROJECT_ACTIONS } from '../../iam';
-import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
+import { assertNoGrantEscalation, changedPolicySet } from '../../iam/agent-grant-ceiling';
 import { isBorrowedSessionPrincipal } from '../../iam/agent-scope';
 import { db } from '../../shared/db';
 import { isValidIdentifier } from '../secrets';
@@ -42,6 +45,7 @@ import { commitManifest, loadManifestForEdit } from '../lib/triggers';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { eagerlyProvisionAgentIdentities, type AgentIdentity } from '../../accounts/iam/custom-roles';
 import { listAgentServiceAccounts } from '../../repositories/service-accounts';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 // `'all'` = every item the launcher can see; a list = an explicit allowlist;
 // `[]` = none. Mirrors the AgentSpec GrantSet.
@@ -57,6 +61,11 @@ const AgentScopeBody = z.object({
   // shape as `connectors`, same deny-by-default, so it belongs on the same
   // route rather than forcing a whole-block `/config` PUT for one list.
   apps: GrantSetSchema.optional(),
+  // Connector slug → policy set name (`connectors[].policy_sets`). MERGES per
+  // slug, unlike the grant sets above: `null` or `"base"` removes the entry
+  // (the agent gets the connector's base rules). Needs project.connector.write
+  // too — choosing a set is a rule edit.
+  policy_sets: z.record(z.string().min(1).max(128), z.string().max(64).nullable()).optional(),
 });
 
 /**
@@ -113,7 +122,22 @@ export function registerAgentScopeRoutes(): void {
 
       const parsed = AgentScopeBody.safeParse(await c.req.json().catch(() => null));
       if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
-      const { env, connectors, connectors_required, connectors_personal, apps } = parsed.data;
+      const { env, connectors, connectors_required, connectors_personal, apps, policy_sets } = parsed.data;
+      if (policy_sets !== undefined) {
+        // Choosing a set changes which rules gate the agent's calls: the same
+        // trust as editing the rules (`resolveAdmin` on the connector routes).
+        await assertProjectCapability(
+          c,
+          loaded.userId,
+          loaded.row.accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+        );
+        for (const [slug, name] of Object.entries(policy_sets)) {
+          const problem = name === null || name === 'base' ? null : policySetNameError(name);
+          if (problem) return c.json({ error: `policy_sets.${slug}: ${problem}`, code: 'invalid_policy_set_name' }, 400);
+        }
+      }
       const normalizedRequired = normalizeRequiredConnectorAliases({
         connectors_required,
         connectors_personal,
@@ -126,11 +150,12 @@ export function registerAgentScopeRoutes(): void {
         env === undefined &&
         connectors === undefined &&
         connectorsRequired === undefined &&
-        apps === undefined
+        apps === undefined &&
+        policy_sets === undefined
       ) {
         return c.json(
           {
-            error: 'Provide env, connectors, connectors_required and/or apps',
+            error: 'Provide env, connectors, connectors_required, apps and/or policy_sets',
             code: 'nothing_to_update',
           },
           400,
@@ -141,6 +166,7 @@ export function registerAgentScopeRoutes(): void {
       try {
         manifest = await loadManifestForEdit(loaded.row);
       } catch (e) {
+        rethrowDatabaseError(e);
         return c.json(
           { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
           400,
@@ -154,17 +180,34 @@ export function registerAgentScopeRoutes(): void {
       // stores agents as a `[[agents]]` array; v2 (kortix.yaml) as an `agents:`
       // map. The v1-only path treated a v2 map as an empty array, so EVERY scope
       // edit on a YAML project 404'd "agent not found" — branch on the schema.
+      // Every set this request assigns must exist on a connector the agent is
+      // granted after this edit. Checked before the edit: the schema check in
+      // applyAgentScopeV2 would report an unknown set as a generic
+      // invalid_scope.
+      if (manifest.schemaVersion >= 2 && policy_sets !== undefined) {
+        const agents = manifest.raw.agents;
+        const block =
+          agents && typeof agents === 'object' && !Array.isArray(agents) && Object.hasOwn(agents, agentName)
+            ? (agents as Record<string, unknown>)[agentName]
+            : undefined;
+        if (block && typeof block === 'object') {
+          const granted = connectors !== undefined ? connectors : (block as Record<string, unknown>).connectors;
+          const refusal = policySetAssignmentError(manifest, agentName, granted, policy_sets);
+          if (refusal) return c.json(refusal, 400);
+        }
+      }
       if (manifest.schemaVersion >= 2) {
         const applied = applyAgentScopeV2(manifest, agentName, {
           env,
           connectors,
           connectorsRequired,
           apps,
+          policySets: policy_sets,
         });
         if (!applied.ok) {
           return applied.notFound
             ? c.json({ error: applied.error, code: 'agent_not_found' }, 404)
-            : c.json({ error: applied.error, code: 'invalid_scope', issues: applied.issues }, 400);
+            : c.json({ error: applied.error, code: 'invalid_scope', ...boundedIssues(applied.issues) }, 400);
         }
         manifest.raw = applied.raw;
       } else {
@@ -188,6 +231,12 @@ export function registerAgentScopeRoutes(): void {
             400,
           );
         }
+        if (policy_sets !== undefined) {
+          return c.json(
+            { error: 'policy_sets requires a v2 (kortix.yaml) manifest', code: 'unsupported_in_v1' },
+            400,
+          );
+        }
         const applied = applyAgentScope(current, agentName, { env, connectors }, manifest.path);
         if (!applied.ok) return c.json({ error: applied.error, code: 'agent_not_found' }, 404);
         manifest.raw.agents = applied.agents;
@@ -198,13 +247,25 @@ export function registerAgentScopeRoutes(): void {
       const check = extractAgents(manifest);
       const problem = check.errors.find((e) => e.name === agentName);
       if (problem) return c.json({ error: problem.error, code: 'invalid_scope' }, 400);
+      const grantsAfter = grantsByAgent(check);
+      // Any change to the agent's sets is a rule edit, whatever key carried it.
+      const grantAfter = grantsAfter.get(agentName);
+      if (policy_sets === undefined && grantAfter && changedPolicySet(grantsBefore.get(agentName), grantAfter) !== null) {
+        await assertProjectCapability(
+          c,
+          loaded.userId,
+          loaded.row.accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+        );
+      }
       // An agent grants only what it holds (iam/agent-grant-ceiling.ts).
-      await assertNoGrantEscalation(c, projectId, grantsBefore, grantsByAgent(check));
+      await assertNoGrantEscalation(c, projectId, grantsBefore, grantsAfter);
 
       const committed = await commitManifest(
         loaded.row,
         manifest,
-        `chore: scope agent ${agentName} (secrets/connectors/apps)`,
+        `chore: scope agent ${agentName} (secrets/connectors/apps/policy sets)`,
       );
       if ('error' in committed) {
         return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
@@ -222,6 +283,7 @@ export function registerAgentScopeRoutes(): void {
         connectors: spec?.connectors ?? [],
         apps: spec?.apps ?? [],
         connectors_required: spec?.connectorsRequired ?? [],
+        policy_sets: { ...(spec?.policySets ?? {}) },
       });
     },
   );
@@ -345,6 +407,7 @@ export function registerAgentScopeRoutes(): void {
       try {
         manifest = await loadManifestForEdit(loaded.row);
       } catch (e) {
+        rethrowDatabaseError(e);
         return c.json(
           { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
           400,
@@ -368,7 +431,7 @@ export function registerAgentScopeRoutes(): void {
       if (!applied.ok) {
         return applied.unsupportedV1
           ? c.json({ error: applied.error, code: 'manifest_v1_unsupported' }, 400)
-          : c.json({ error: applied.error, code: 'invalid_grant', issues: applied.issues }, 400);
+          : c.json({ error: applied.error, code: 'invalid_grant', ...boundedIssues(applied.issues) }, 400);
       }
       if (applied.alreadyGranted) {
         return c.json({
@@ -459,4 +522,36 @@ export function registerAgentScopeRoutes(): void {
       return c.json({ agents });
     },
   );
+}
+
+/**
+ * The 400 body when a requested policy set does not exist on the connector,
+ * or the connector is not granted to the agent. `granted` is the agent's
+ * `connectors` value after the edit (`all`, a list, or absent = none).
+ */
+function policySetAssignmentError(
+  manifest: Parameters<typeof extractConnectors>[0],
+  agentName: string,
+  granted: unknown,
+  requested: Record<string, string | null>,
+): { error: string; code: string } | null {
+  const grantsAll = granted === 'all' || (Array.isArray(granted) && granted.includes('*'));
+  const grantedSlugs = new Set(
+    (Array.isArray(granted) ? granted : [])
+      .filter((slug): slug is string => typeof slug === 'string')
+      .map(canonicalConnectorAlias),
+  );
+  const connectorSpecs = extractConnectors(manifest).specs;
+  for (const [slug, name] of Object.entries(requested)) {
+    if (name === null || name === 'base') continue;
+    const canonical = canonicalConnectorAlias(slug);
+    if (!grantsAll && !grantedSlugs.has(canonical)) {
+      return { error: `agent "${agentName}" is not granted connector "${slug}"`, code: 'connector_not_granted' };
+    }
+    const connector = connectorSpecs.find((candidate) => canonicalConnectorAlias(candidate.slug) === canonical);
+    if (!connector?.policySets?.some((set) => set.name === name)) {
+      return { error: `connector "${slug}" has no policy set "${name}"`, code: 'policy_set_not_found' };
+    }
+  }
+  return null;
 }

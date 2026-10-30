@@ -49,7 +49,7 @@ for (const field of ['type', 'main', 'types', 'exports', 'files', 'bin', 'browse
   }
 }
 
-// 3) Replace every `workspace:` dependency with the exact lockstep version, so
+// 3) Replace every `workspace:` dependency with the lockstep version, so
 //    the published package resolves its siblings from the public registry. Real
 //    registry ranges (^, >=, …) and peer ranges are left untouched.
 const pinned = [];
@@ -58,11 +58,19 @@ for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies']
   if (!deps) continue;
   for (const [name, range] of Object.entries(deps)) {
     if (typeof range === 'string' && range.startsWith('workspace:')) {
-      deps[name] = version;
-      pinned.push(`${name}@${version}`);
+      // pnpm's own rule: `workspace:^` / `workspace:~` keep their operator on the
+      // release version (a lockstep peer such as @kortix/ui → @kortix/sdk must not
+      // reject the next patch); `workspace:*` and any other form pin exactly.
+      const op = range.slice('workspace:'.length);
+      deps[name] = op === '^' || op === '~' ? `${op}${version}` : version;
+      pinned.push(`${name}@${deps[name]}`);
     }
   }
 }
+
+//    devDependencies are never installed from the registry, and theirs still hold
+//    `workspace:` ranges (@kortix/ui → @kortix/shared). Drop them.
+delete pkg.devDependencies;
 
 // 4) Validate that every published entrypoint and executable exists — a missing
 //    target means the build did not emit or include what the manifest advertises,

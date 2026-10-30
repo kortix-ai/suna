@@ -1,10 +1,10 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@kortix/ui/button';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
-import { EditorSection } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
-import { useFolderAccess } from '@/hooks/drives/use-drives';
+import { EditorSection } from '@kortix/ui/customize/sections/view/agent-editor-primitives';
+import { useFolderAccess } from '@kortix/ui/files';
 import { useTranslations } from '@/i18n/use-translations';
 import { LockIcon, ShareNetworkIcon } from '@phosphor-icons/react';
 import { useMemo } from 'react';

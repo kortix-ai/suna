@@ -47,16 +47,16 @@
  * it, and a reconnect needs no replay to be correct.
  */
 
+import { registerSessionRuntimeTurnEnds, forgetSessionRuntimeTurnEnds } from './session-runtime-turn-ends';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
 import { serializePrompt } from './session-prompt-view';
 import { readSessionTurnState } from './session-turn-read';
 import {
   readRuntimeControlState,
-  readMirrorWatermark,
   readSessionAuditWatermark,
   readSessionControlState,
 } from './session-control-readers';
-export type { RuntimeControlState, MirrorWatermark, AuditWatermark, SessionControlState } from './session-control-readers';
+export type { RuntimeControlState, AuditWatermark, SessionControlState } from './session-control-readers';
 import { deriveSessionWorking } from './session-working';
 import type { SessionTurnStatus } from '@kortix/api-contract';
 import type { RuntimeControlState } from './session-control-readers';
@@ -260,6 +260,7 @@ export function acquireControlReconciler(
       },
     };
     reconcilers.set(sessionId, reconciler);
+    registerSessionRuntimeTurnEnds(sessionId, reconciler.runtimeTurnEnds);
   }
   const target = reconciler;
   target.projectId ??= projectId;
@@ -351,6 +352,7 @@ function sweepIdleReconcilers(): void {
     if (reconciler.refs <= 0 && reconciler.idleSince !== null && reconciler.idleSince < cutoff) {
       if (reconciler.timer) clearInterval(reconciler.timer);
       reconcilers.delete(sessionId);
+      forgetSessionRuntimeTurnEnds(sessionId);
     }
   }
 }
@@ -379,11 +381,10 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
     const observedAt = new Date().toISOString();
     // No full holder: the queue is the only subsystem anyone reads.
     const full = reconciler.fullRefs > 0;
-    const [turn, queue, runtime, mirror, audit, session] = await Promise.allSettled([
+    const [turn, queue, runtime, audit, session] = await Promise.allSettled([
       full ? readSessionTurnState(sessionId) : null,
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       full ? readRuntimeControlState(sessionId) : null,
-      full ? readMirrorWatermark(sessionId) : null,
       full ? readSessionAuditWatermark(sessionId, reconciler) : null,
       full ? readSessionControlState(sessionId) : null,
     ]);
@@ -417,9 +418,6 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
       observeWake(reconciler);
       emitRuntime(sessionId, reconciler);
       void driveWakeLadder(sessionId, reconciler);
-    }
-    if (full && mirror.status === 'fulfilled') {
-      emit(sessionId, reconciler, 'kortix.control.mirror', mirror.value);
     }
     if (full && audit.status === 'fulfilled') {
       emit(sessionId, reconciler, 'kortix.control.audit', audit.value);
@@ -664,7 +662,8 @@ export function publishRuntimeStateFrame(sessionId: string, payload: unknown): C
 
 /** Test-only: stop and forget every reconciler. */
 export function __resetControlReconcilersForTests(): void {
-  for (const reconciler of reconcilers.values()) {
+  for (const [sessionId, reconciler] of reconcilers) {
+    forgetSessionRuntimeTurnEnds(sessionId);
     if (reconciler.timer) clearInterval(reconciler.timer);
   }
   reconcilers.clear();

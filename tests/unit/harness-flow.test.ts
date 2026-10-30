@@ -6,19 +6,16 @@ import { mintWireMessageId } from '../src/fixtures/session-run';
 describe('harnessFlow', () => {
   afterEach(() => clearRegistry());
 
-  it('registers the OpenCode flow under the spec id and a pi variant that maps back to it', async () => {
+  it('registers one flow under the spec id, on pi: every new session runs pi', async () => {
     const ran: Harness[] = [];
     harnessFlow('RUN-1', { domain: 'agent-run', tags: ['smoke'] }, async (_ctx, harness) => {
       ran.push(harness);
     });
 
     const flows = allFlows();
-    expect(flows.map((f) => [f.id, f.meta.specId, f.meta.tags])).toEqual([
-      ['RUN-1', undefined, ['smoke']],
-      ['RUN-1-pi', 'RUN-1', ['smoke', 'harness-pi']],
-    ]);
+    expect(flows.map((f) => [f.id, f.meta.specId, f.meta.tags])).toEqual([['RUN-1', undefined, ['smoke']]]);
     for (const f of flows) await f.fn({} as FlowContext);
-    expect(ran).toEqual(['opencode', 'pi']);
+    expect(ran).toEqual(['pi']);
   });
 });
 

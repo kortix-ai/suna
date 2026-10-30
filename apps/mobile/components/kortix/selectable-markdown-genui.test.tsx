@@ -8,6 +8,7 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { hasReferenceDefinitionOutsideFences } from '@kortix/shared/markdown-math';
 
 type HostProps = React.PropsWithChildren<Record<string, unknown>>;
 const host = (name: string) => ({ children, ...props }: HostProps) => React.createElement(name, props, children);
@@ -51,6 +52,7 @@ mock.module('@/components/ui/button', () => ({ Button: none }));
 mock.module('@/components/ui/icon', () => ({ Icon: none }));
 mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@kortix/shared', () => ({
+  hasReferenceDefinitionOutsideFences,
   isMathFenceLanguage: () => false,
   isMermaidCode: () => false,
   prepareMarkdownForMath: (s: string) => s,
@@ -80,7 +82,7 @@ mock.module('@/components/markdown/markdown-image', () => ({
   MarkdownImagesContext: ImagesContext,
 }));
 mock.module('@/lib/markdown/markdown-image', () => ({ groupImageBlocks: (blocks: string[]) => blocks.map((text, index) => ({ kind: 'markdown', index, text })), imageSourceKey: String }));
-mock.module('@/lib/utils/open-link', () => ({ openLink: async () => {} }));
+mock.module('@/lib/utils/open-link', () => ({ openLink: async () => {}, openExternalLink: () => {} }));
 mock.module('@/components/genui/genui-message-block', () => ({ GenuiMessageBlock: host('genui-block') }));
 
 let SelectableMarkdownText: typeof import('./selectable-markdown').SelectableMarkdownText;

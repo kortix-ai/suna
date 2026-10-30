@@ -13,10 +13,17 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { compiledSetV3 } from '@/lib/config/manifest-v3'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const SKILLS_DIR = 'skills'
-/** Default OpenCode config dir when the manifest names none. */
+/**
+ * Default OpenCode config dir when the manifest names none.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const OPENCODE_CONFIG_DIR = 'harnesses/opencode'
-/** The pre-2026-09 OpenCode config dir, which also held agents/ and skills/. */
+/**
+ * The pre-2026-09 OpenCode config dir, which also held agents/ and skills/.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const LEGACY_OPENCODE_CONFIG_DIR = '.kortix/opencode'
 
 /**
@@ -24,6 +31,7 @@ export const LEGACY_OPENCODE_CONFIG_DIR = '.kortix/opencode'
  * legacy config dir holds the agents and skills too; the root layout keeps
  * them beside it. `configDir` null = the default. A kortix.yaml v3 project
  * (`governance` is its compiled set) has only `kortix.yaml`.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function releaseSourcePaths(configDir: string | null, governance: string | null = null): string[] {
   if (compiledSetV3(governance)) return ['kortix.yaml']
@@ -31,12 +39,18 @@ export function releaseSourcePaths(configDir: string | null, governance: string 
   return dir === LEGACY_OPENCODE_CONFIG_DIR ? [dir] : ['agents', SKILLS_DIR, dir]
 }
 
-/** OpenCode config dirs to try, in order: the manifest's own, else the current then the legacy default. */
+/**
+ * OpenCode config dirs to try, in order: the manifest's own, else the current then the legacy default.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function opencodeConfigDirCandidates(manifestConfigDir: string | null): string[] {
   return manifestConfigDir ? [manifestConfigDir] : [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR]
 }
 
-/** Project skill roots under `projectRoot`, most specific first. */
+/**
+ * Project skill roots under `projectRoot`, most specific first.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function projectSkillDirs(projectRoot: string): string[] {
   return [join(projectRoot, SKILLS_DIR), join(projectRoot, LEGACY_OPENCODE_CONFIG_DIR, SKILLS_DIR)]
 }
@@ -52,6 +66,7 @@ export function projectSkillDirs(projectRoot: string): string[] {
  * `skills/` and the project root does (the root layout: `harnesses/opencode`
  * beside `skills/`). Then the root's `skills/` takes it; OpenCode reads that
  * through `skills.paths` (`projectSkillsDir`, harness/open-code/lifecycle.ts).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function managedOverlayRoot(dir: string, projectRoot?: string): string {
   if (!projectRoot || !dir.startsWith(`${projectRoot}/`)) return dir
@@ -64,6 +79,7 @@ export function managedOverlayRoot(dir: string, projectRoot?: string): string {
  * it in `/workspace`: the manifest's dir when it holds an `opencode.json[c]`.
  * Null when the repository has none; OpenCode then runs the image default, as
  * it does on the working tree.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function releaseConfigDir(releaseRoot: string, configDir: string | null): string | null {
   if (!configDir) return null

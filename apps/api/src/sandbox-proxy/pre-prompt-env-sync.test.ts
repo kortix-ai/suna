@@ -20,7 +20,8 @@
  *    suite.
  */
 import { describe, expect, test } from 'bun:test';
-import { isRetryableEnvSyncFailure, runPrePromptEnvSync, type PrePromptEnvSyncDeps } from './pre-prompt-env-sync';
+import { config } from '../config';
+import { isRetryableEnvSyncFailure, jsonProxyError, runPrePromptEnvSync, type PrePromptEnvSyncDeps } from './pre-prompt-env-sync';
 
 const RECORD = {
   accountId: 'acct-1',
@@ -177,5 +178,20 @@ describe('isRetryableEnvSyncFailure — status and error class, never the body t
     expect(isRetryableEnvSyncFailure(httpError(500, 'connection refused upstream'))).toBe(false);
     expect(isRetryableEnvSyncFailure(httpError(401, 'timeout'))).toBe(false);
     expect(isRetryableEnvSyncFailure(new Error('socket hang up: econnreset'))).toBe(false);
+  });
+});
+
+describe('jsonProxyError — CORS follows the preview allowlist', () => {
+  // Every proxy refusal is built here (the 413 too-large body included). A
+  // credentialed grant echoed to any Origin let a cross-site page read it
+  // (KRTX-2802).
+  test('the allowlisted origin gets the credentialed pair; any other origin gets none', () => {
+    const allowed = jsonProxyError({ error: 'x' }, 413, config.FRONTEND_URL);
+    expect(allowed.headers.get('Access-Control-Allow-Origin')).toBe(config.FRONTEND_URL);
+    expect(allowed.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+    const arbitrary = jsonProxyError({ error: 'x' }, 413, 'https://arbitrary.example');
+    expect(arbitrary.headers.has('Access-Control-Allow-Origin')).toBe(false);
+    expect(arbitrary.headers.has('Access-Control-Allow-Credentials')).toBe(false);
+    expect(jsonProxyError({ error: 'x' }, 502).headers.has('Access-Control-Allow-Origin')).toBe(false);
   });
 });

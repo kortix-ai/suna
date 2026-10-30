@@ -234,10 +234,6 @@ func (s appSpec) readinessURL() string {
 	return fmt.Sprintf("http://127.0.0.1:%d%s", ingressPort, s.readinessPath())
 }
 
-func (s appSpec) restartLimit() int {
-	return s.RestartLimit
-}
-
 func renderCaddyfile(spec appSpec) (string, error) {
 	if err := spec.validate(); err != nil {
 		return "", err
@@ -570,14 +566,6 @@ func childExitError(name string, err error) error {
 	return fmt.Errorf("%s exited: %w", name, err)
 }
 
-func startApp(spec appSpec, state *runtimeState) (*childProcess, error) {
-	child, err := startLogged(commandFor(spec), "app", state.logs)
-	if err != nil {
-		return nil, fmt.Errorf("start app: %w", err)
-	}
-	return child, nil
-}
-
 func startReadinessWatch(ctx context.Context, spec appSpec, state *runtimeState) context.CancelFunc {
 	readyCtx, cancel := context.WithCancel(ctx)
 	switch {
@@ -804,9 +792,9 @@ func runWithState(ctx context.Context, spec appSpec, state *runtimeState) error 
 
 	var app *childProcess
 	if spec.StaticRoot == "" {
-		app, err = startApp(spec, state)
+		app, err = startLogged(commandFor(spec), "app", state.logs)
 		if err != nil {
-			return err
+			return fmt.Errorf("start app: %w", err)
 		}
 	}
 
@@ -846,7 +834,7 @@ func runWithState(ctx context.Context, spec appSpec, state *runtimeState) error 
 			state.ready.Store(false)
 			state.lastExit = fmt.Sprint(err)
 			state.statusMu.Unlock()
-			if state.restarts >= spec.restartLimit() {
+			if state.restarts >= spec.RestartLimit {
 				state.setStatus("failed")
 				terminate(caddy)
 				return fmt.Errorf(
@@ -860,7 +848,7 @@ func runWithState(ctx context.Context, spec appSpec, state *runtimeState) error 
 			restart := state.restarts
 			state.status = "restarting"
 			state.statusMu.Unlock()
-			state.logs.append("appd", fmt.Sprintf("app exited; restart %d/%d in %s", restart, spec.restartLimit(), restartDelay(restart)))
+			state.logs.append("appd", fmt.Sprintf("app exited; restart %d/%d in %s", restart, spec.RestartLimit, restartDelay(restart)))
 			timer := time.NewTimer(restartDelay(restart))
 			select {
 			case <-ctx.Done():
@@ -870,11 +858,11 @@ func runWithState(ctx context.Context, spec appSpec, state *runtimeState) error 
 				return nil
 			case <-timer.C:
 			}
-			app, err = startApp(spec, state)
+			app, err = startLogged(commandFor(spec), "app", state.logs)
 			if err != nil {
 				terminate(caddy)
 				state.setStatus("failed")
-				return err
+				return fmt.Errorf("start app: %w", err)
 			}
 			cancelReady = startReadinessWatch(ctx, spec, state)
 		}

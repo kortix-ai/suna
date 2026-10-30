@@ -16,6 +16,7 @@ import { MESSAGE_READ_CODE } from '@kortix/api-contract/runtime-relay'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import type { HarnessForwardInput, HarnessForwardResult } from '../contract/proxy'
+import { isGitRepo, vcsDiff } from './vcs'
 import { CommandNotEnabled, PromptRejected, parsePromptBody, type PiRuntime } from './runtime'
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}): HarnessForwardResult => ({
@@ -284,9 +285,19 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
         if (path === '/path') {
           return json(200, { home: process.env.HOME ?? '/home/kortix', state: '', config: '', worktree: rt.workspace, directory: rt.workspace })
         }
-        if (path === '/project/current') return json(200, { id: rt.workspace, worktree: rt.workspace, time: { created: rt.createdAt } })
-        if (path === '/project') return json(200, [{ id: rt.workspace, worktree: rt.workspace, time: { created: rt.createdAt } }])
-        if (path === '/vcs/diff' || path === '/vcs/status' || path === '/vcs') return json(200, [])
+        if (path === '/project/current' || path === '/project') {
+          // OpenCode's shape: `vcs: 'git'` is what turns the Changes tab on.
+          const project = { id: rt.workspace, worktree: rt.workspace, ...((await isGitRepo(rt.workspace)) ? { vcs: 'git' } : {}), time: { created: rt.createdAt } }
+          return json(200, path === '/project' ? [project] : project)
+        }
+        if (path === '/vcs/diff') {
+          try {
+            return json(200, await vcsDiff(rt.workspace, search.get('mode') ?? 'branch', rt.defaultBranch))
+          } catch (err) {
+            return json(500, { error: err instanceof Error ? err.message : String(err) })
+          }
+        }
+        if (path === '/vcs/status' || path === '/vcs') return json(200, [])
       }
 
       // ── interaction replies ──────────────────────────────────────────────

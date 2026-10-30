@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
+import { DrizzleQueryError } from 'drizzle-orm/errors';
 import {
   inspectDatabaseError,
+  databaseErrorSummary,
   isTransientDatabaseError,
+  rethrowDatabaseError,
   retryTransientDatabaseRead,
 } from './database-errors';
 
@@ -122,5 +125,53 @@ describe('retryTransientDatabaseRead', () => {
     });
     expect(result).toEqual(['allowed']);
     expect(calls).toBe(2);
+  });
+});
+
+describe('rethrowDatabaseError', () => {
+  test('throws a wrapped database error unchanged, so its query never reaches a response body', () => {
+    const error = wrappedDatabaseError('23505', 'duplicate key value violates unique constraint');
+    let thrown: unknown;
+    try {
+      rethrowDatabaseError(error);
+    } catch (caught) {
+      thrown = caught;
+    }
+    expect(thrown).toBe(error);
+  });
+
+  test('throws a bare DrizzleQueryError, whose message is the statement and its parameters', () => {
+    const error = new DrizzleQueryError('insert into "kortix"."sandbox_templates" values ($1)', ['probe'], new Error('boom'));
+    expect(() => rethrowDatabaseError(error)).toThrow('Failed query: insert into');
+  });
+
+  test('returns for a socket error whose code only looks like a SQLSTATE', () => {
+    const error = Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
+    expect(() => rethrowDatabaseError(error)).not.toThrow();
+  });
+
+  test('returns for an application error, whose message a route may show', () => {
+    expect(() => rethrowDatabaseError(new Error('slug must be lowercase'))).not.toThrow();
+    expect(() => rethrowDatabaseError('plain string')).not.toThrow();
+  });
+});
+
+describe('databaseErrorSummary', () => {
+  test('names the SQLSTATE and the driver message, never the statement or its parameters', () => {
+    const cause = Object.assign(new Error('invalid input syntax for type uuid: "not-a-uuid"'), { name: 'PostgresError', code: '22P02' });
+    const error = new DrizzleQueryError('select "account_id" from "kortix"."accounts" where "account_id" = $1', ['not-a-uuid'], cause);
+    const summary = databaseErrorSummary(error);
+    expect(summary).toBe('Database error (SQLSTATE 22P02): invalid input syntax for type uuid: "not-a-uuid"');
+    expect(summary).not.toContain('Failed query');
+    expect(summary).not.toContain('kortix');
+  });
+
+  test('a Drizzle error with no driver message still hides the statement', () => {
+    const summary = databaseErrorSummary(new DrizzleQueryError('select 1 from "kortix"."accounts"', [], undefined as unknown as Error));
+    expect(summary).toBe('Database error: the query failed');
+  });
+
+  test('returns null for an application error', () => {
+    expect(databaseErrorSummary(new Error('account not found'))).toBeNull();
   });
 });

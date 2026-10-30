@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { formatRangeLabel, resolvePreset } from '@/components/ui/date-range-picker';
+import { formatRangeLabel, resolvePreset } from '@kortix/ui/date-range-picker';
 
 import {
   CostExportButtonView,

@@ -10,10 +10,13 @@
  * - 503: the operator switch is off. The daemon keeps its dirty set and retries later.
  * - 404: the API predates the route. The daemon stops journaling for this boot.
  *
- * The body above 2 MB gzipped or 16 MB raw answers 413. A batch that reuses a `seq` another
- * message of the same thread holds answers 422 `SessionLogJournalSeqConflict` and writes nothing:
- * `seq` is never reused in a thread, and a tombstone keeps its seq. The daemon drops the batch.
- * One exception: a row the API's transcript capture wrote for a box without a journal (P2.7,
+ * The body above 2 MB gzipped or 16 MB raw answers 413: the daemon sends smaller batches, and cuts the
+ * longest strings of a single message over the cap. A body the schema rejects answers 400 with the zod
+ * `issues`: the daemon drops the puts, tombstones and threads they name and sends the rest. A batch that
+ * reuses a `seq` another message of the same thread holds answers 422 `SessionLogJournalSeqConflict` and
+ * writes nothing: `seq` is never reused in a thread, and a tombstone keeps its seq. `seq_max` is the
+ * thread's highest stored seq, tombstones included. The daemon numbers that thread above it from then on
+ * and sends the batch again; no batch is dropped. One exception: a row the API's transcript capture wrote for a box without a journal (P2.7,
  * rev below 2^31) is provisional. A put that claims its seq replaces it and answers 200.
  *
  * Manifest: `GET /v1/projects/:p/sessions/:s/log/manifest`, sandbox token, answers
@@ -26,9 +29,12 @@
  *
  * Read (P4.2): `GET /v1/projects/:p/sessions/:s/log?thread=<thread_id>&before_seq=<n>&limit=<n>`,
  * the caller's session read permission, the transcript route's gate (a session-bound token included).
- * It reads Postgres only, never the box, and is served whether or not the `session_log` flag is
- * on. 200 `SessionLogPage`: one page of one thread. 404 when the session has no stored log, or when
- * `thread` is not one of its threads.
+ * It reads Postgres only, never the box. 200 `SessionLogPage`: one page of one thread. 404 `{ error,
+ * code: 'session_log_missing' }` when the session has no stored log yet (a client stays on the log;
+ * an API without this route answers 404 with no code), and 404 when `thread` is not one of its threads.
+ * Releases before P8.2 Release B2 also converted a session whose history was only in the old v1
+ * mirror, and answered 503 `{ error, code: 'session_log_converting' }` with `Retry-After: 60` for one
+ * over the conversion size cap; Release B2 removed both.
  *
  * Restore (P6.1): `POST /v1/projects/:p/sessions/:s/log/restore`, sandbox token only, no body.
  * The daemon of a fresh box calls it once, before its harness starts. It claims the session:
@@ -44,9 +50,13 @@
  *   the id being the last segment of `ref`, and check `sha256`).
  * - 413 `SessionLogRestoreTooLarge`: the restore is over `SESSION_LOG_RESTORE_MAX_BYTES` (`bytes`, the
  *   live messages' stored JSON lengths plus 2/5 of the session's live blob bytes, against `limit`). The claim still happens, so the box
- *   journals above it: the answer is `SessionLogRestore` with every thread and no message, every
- *   rev, `seq_max` and no blob, plus `messages` (the live messages left out). The box writes the D3
- *   note alone into its root and boots: the model does not see the earlier conversation.
+ *   journals above it. The answer is `SessionLogRestore` with a part of the log that fits under `limit` (`kept`), every
+ *   rev, `seq_max`, the `blobs` of the messages it holds, and `messages` (the live messages left out).
+ *   `kept: 'model_view'`: what the model sees (`modelViewSliceIds`); the box writes it and adds no note.
+ *   `kept: 'newest'`: the root's newest whole turns; the box writes them with a D3 note. No `kept`: no message;
+ *   the box writes the D3 note alone into its root. The status stays 413 so a daemon before `kept` drops the
+ *   messages and writes the note alone, as before: with a 200 it would mark only the part as written and read
+ *   its store as behind at every boot.
  * - 404 `SessionLogRestoreMissing`: the session has no stored log; nothing was claimed. Boot
  *   without a restore. A 404 with another body is an API that predates the route.
  * - 503: the operator switch `SESSION_LOG_RESTORE_ENABLED` is off; nothing was claimed.
@@ -97,6 +107,7 @@ export const SessionLogJournalSeqConflictSchema = z.object({
   rev,
   thread_id: z.string().min(1),
   seq: z.number().int(),
+  seq_max: z.number().int(),
 });
 
 export const SessionLogManifestSchema = z.object({
@@ -149,6 +160,13 @@ export const SessionLogRestoreTooLargeSchema = SessionLogRestoreSchema.extend({
   limit: z.number().int().nonnegative(),
   /** The live messages left out of `log`. */
   messages: z.number().int().nonnegative(),
+  /**
+   * What `log` holds. `model_view`: the root and the sub-agent threads that fit (newest first, each whole or not
+   * at all), each cut to `modelViewSliceIds`, so the model sees what it saw. `newest`: the root's newest in-context
+   * turns that fit, from a user turn, without the compaction summary. Absent: no message (an API before this field,
+   * or not even the newest turn fits).
+   */
+  kept: z.enum(['model_view', 'newest']).optional(),
 });
 
 /** A harness a session can run on: the adapters with a capability manifest (`capabilities.ts`). */
@@ -175,9 +193,9 @@ export const SessionLogSwitchPreflightSchema = z.object({
   to: SessionLogHarnessSchema,
   /** False when the switch cannot happen; `reason` says why. */
   available: z.boolean(),
-  /** `same_harness`: the log already runs on `to`. `llm_gateway_off`: pi needs the project's `llm_gateway` flag. */
-  reason: z.enum(['same_harness', 'llm_gateway_off']).nullable(),
-  /** The new box restores the log (`session_log_restore` on, the log under the restore cap). False: it starts without the conversation (`losses` begins with `history`). */
+  /** `same_harness`: the log already runs on `to`. */
+  reason: z.enum(['same_harness']).nullable(),
+  /** The new box restores the model's context (`session_log_restore` on, the log or its model view under the restore cap). False: it starts without the earlier conversation (`losses` begins with `history`). */
   restores: z.boolean(),
   /** What the session uses that `to` handles worse, with counts. */
   losses: z.array(SessionLogSwitchLossSchema),

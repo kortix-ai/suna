@@ -1,10 +1,10 @@
 'use client';
 
-import { agentDisplayLabel } from '@/features/session/composer/agent-selector';
+import { agentDisplayLabel } from '@kortix/ui/composer';
 import {
   composerSelectableAgents,
   resolveComposerAgent,
-} from '@/features/session/composer/composer-agent-access';
+} from '@kortix/ui/session/composer/composer-agent-access';
 import type { ModelKey } from '@kortix/sdk';
 import {
   useProjectConfig,

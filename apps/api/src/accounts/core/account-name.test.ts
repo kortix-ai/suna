@@ -12,12 +12,12 @@ describe("suggestAccountName (KRTX-638)", () => {
     ).toBe("Ada's workspace");
   });
 
-  test("otherwise the email's local part, as is", () => {
-    expect(suggestAccountName({ email: "ada42@gmail.com" })).toBe("ada42");
+  test("otherwise a neutral workspace name", () => {
+    expect(suggestAccountName({ email: "ada42@gmail.com" })).toBe("My workspace");
     expect(suggestAccountName({ email: "ada.lovelace@outlook.com" })).toBe(
-      "ada.lovelace",
+      "My workspace",
     );
-    expect(suggestAccountName({ email: "ada@acme.com" })).toBe("ada");
+    expect(suggestAccountName({ email: "ada@acme.com" })).toBe("My workspace");
   });
 
   test("never the address and never the domain — no account called Gmail", () => {

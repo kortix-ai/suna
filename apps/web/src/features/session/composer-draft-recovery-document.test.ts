@@ -1,7 +1,7 @@
 import type { JSONContent } from '@tiptap/core';
 import { describe, expect, test } from 'bun:test';
 
-import { mergeFailedSubmissionDocument } from './composer-draft-recovery';
+import { mergeFailedSubmissionDocument } from '@kortix/ui/session/composer/composer-draft-recovery';
 
 /**
  * `mergeFailedSubmissionDocument` — Task 13's document-aware counterpart to

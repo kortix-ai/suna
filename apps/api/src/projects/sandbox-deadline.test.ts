@@ -159,8 +159,9 @@ describe('extendSandboxDeadline — control-plane-observed, monotone, capped', (
 
 // KRTX-1729: the composer shows how long presence keeps the computer on. The
 // renewal returns the deadline it wrote and the cap it used, from the same
-// statement, so the two values cannot disagree with the write.
-describe('extendSandboxDeadlineForPresence — the idle grace, capped 2 h past the latest turn', () => {
+// statement, so the two values cannot disagree with the write. KRTX-2451: the
+// cap is the idle grace past the latest turn, not a separate 2 h budget.
+describe('extendSandboxDeadlineForPresence — the idle grace, capped at the idle window past the latest turn', () => {
   test('is monotone and capped, and returns the deadline and the cap from one statement', async () => {
     await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' });
 
@@ -171,14 +172,15 @@ describe('extendSandboxDeadlineForPresence — the idle grace, capped 2 h past t
     expect(parts).toHaveLength(2);
     const [write, readBack] = parts as [string, string];
     expect(write).toMatch(/deadline_at = GREATEST\( ?s\.deadline_at, LEAST\(/);
-    expect(write).toContain('7200'); // PRESENCE_ONLY_CAP_MS in seconds
     expect(write).toContain('86400'); // NON_TURN_DEADLINE_CAP_MS in seconds
-    expect(write).toContain(String(idleGraceMs() / 1000));
+    // The cap is the idle grace (KRTX-2451): the grace seconds appear for the
+    // grant in the SET and again inside the cap the RETURNING repeats.
+    expect(write.match(new RegExp(`${idleGraceMs() / 1000}`, 'g'))).toHaveLength(2);
     expect(write).toContain("status IN ('active', 'provisioning')");
     expect(write).not.toMatch(/active_since\s*=/);
     // The deadline the SET wrote, and the cap it applied.
     expect(readBack).toMatch(/s\.deadline_at.*AS deadline_ms/);
-    expect(readBack).toMatch(/86400.*7200.*AS cap_ms/);
+    expect(readBack).toMatch(new RegExp(`86400.*${idleGraceMs() / 1000}.*AS cap_ms`));
   });
 
   test('returns the written deadline and the cap as Dates', async () => {

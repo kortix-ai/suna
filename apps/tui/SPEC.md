@@ -54,7 +54,7 @@ Scripts: `dev` (`bun run src/index.tsx`), `typecheck`, `keymap`, `test`
 `@tsconfig/bun`.
 
 **`@kortix/cli` deep-import allowlist.** `@kortix/cli` publishes no barrel for
-these, so the TUI reaches into its source. That is allowed for exactly five
+these, so the TUI reaches into its source. That is allowed for exactly seven
 modules and nothing else — anything not on this list is either SDK work or a
 new entry here, decided deliberately:
 

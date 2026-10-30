@@ -40,7 +40,7 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
-      api: ${{ steps.filter.outputs.api }}
+      app_runtime: ${{ steps.filter.outputs.app_runtime }}
       frontend: ${{ steps.filter.outputs.frontend }}
       cli: ${{ steps.filter.outputs.cli }}
       sandbox_agent: ${{ steps.filter.outputs.sandbox_agent }}
@@ -48,12 +48,12 @@ jobs:
       desktop: ${{ steps.filter.outputs.desktop }}
       self_host: ${{ steps.filter.outputs.self_host }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: filter
         with:
           filters: |
-            # Shared foundation for the pnpm-installed jobs (api/frontend/cli):
+            # Shared foundation for the pnpm-installed jobs (frontend/cli/self-host):
             # a change here can break any of their installs/typechecks.
             pnpm: &pnpm
               - 'pnpm-lock.yaml'
@@ -62,16 +62,11 @@ jobs:
               - '.npmrc'
               - 'tsconfig.base.json'
               - '.github/workflows/ci.yml'
-            api:
-              - *pnpm
-              - 'apps/api/**'
+            app_runtime:
+              - '.github/workflows/ci.yml'
               - 'apps/kortix-app-runtime/**'
-              - 'packages/agent-tunnel/**'
-              - 'packages/api-contract/**'
-              - 'packages/db/**'
-              - 'packages/manifest-schema/**'
-              - 'packages/shared/**'
-              - 'packages/starter/**'
+              # build_test.go asserts the Caddy pin in this file.
+              - 'apps/api/Dockerfile'
             frontend:
               - *pnpm
               - 'apps/web/**'
@@ -85,6 +80,7 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'tsconfig.base.json'
               - 'apps/kortix-sandbox-agent-server/**'
+              - 'packages/shared/src/ssrf-guard.ts'
               # Bundled into the daemon (KORTIXD_SHARED_SOURCES).
               - 'packages/api-contract/src/**'
               - 'packages/sdk/src/core/session/wire-message-id.ts'
@@ -120,15 +116,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
@@ -146,6 +142,9 @@ jobs:
       # (apps/web `bun test`); only the lint is unique to this job.
       - name: Enforce frontend lint
         run: pnpm --dir apps/web exec eslint src --quiet
+
+      - name: Lint translations
+        run: pnpm --dir apps/web run lint:i18n
 
       # Next.js 16.3 turns on Turbopack's FileSystem cache for `next build`
       # (`experimental.turbopackFileSystemCacheForBuild`, default true) and
@@ -172,7 +171,7 @@ jobs:
       # a re-run logged "Cache restored from key" and the Turbopack compile
       # went 105s -> 1.549s.
       - name: Restore Turbopack build cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: apps/web/.next/cache
           key: nextjs-turbopack-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
@@ -189,6 +188,27 @@ jobs:
           NEXT_PUBLIC_BILLING_ENABLED: "false"
           NEXT_OUTPUT: standalone
 
+  app-runtime-tests:
+    name: App runtime Go tests
+    needs: changes
+    if: needs.changes.outputs.app_runtime == 'true' || github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/kortix-app-runtime/go.mod
+          # The module has no dependencies, so there is no go.sum to key a cache on.
+          cache: false
+
+      - name: Go tests
+        working-directory: apps/kortix-app-runtime
+        run: go test ./...
+
   sandbox-agent-build:
     name: Sandbox agent build
     needs: changes
@@ -197,17 +217,17 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
       # The import-boundary lint runs under Node: ESLint's config validation
       # crashes under the Bun runtime (apps/kortix-sandbox-agent-server/ARCHITECTURE.md).
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -242,7 +262,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Every apt package the sandbox image installs resolves
         run: bash scripts/check-sandbox-apt-packages.sh
@@ -255,15 +275,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
@@ -303,15 +323,15 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
@@ -348,10 +368,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -360,7 +380,7 @@ jobs:
 
       # The installer bundles the computer agent (packages/agent-tunnel), built
       # with bun by scripts/ensure-runtime.js before electron-builder runs.
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
@@ -384,6 +404,55 @@ jobs:
           files=(apps/desktop-electron/dist/*.AppImage)
           test "${#files[@]}" -gt 0
           ls -lh "${files[@]}"
+
+  lockfile-advisories:
+    name: GHSA lockfile advisory check
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+      - name: Check root lockfile against GHSA advisories
+        # Exception: 4 better-auth advisories (GHSA-q84f-53jg-9ppm, GHSA-r4xp-prcw-77qf,
+        # GHSA-965c-763c-88jm, GHSA-44jh-23m7-hpcf). Only apps/white-label/lumen pulls
+        # better-auth; no workflow builds or deploys it; it uses none of the affected
+        # features (device login, OAuth proxy, magic link); and @convex-dev/better-auth
+        # has no release for the fixed better-auth 1.7.7+.
+        # Exception: GHSA-qr28-fpjm-wq7f (decode-uri-component <= 0.5.0, a DoS on a
+        # crafted percent-encoded string). Only apps/mobile pulls it, through
+        # expo-router -> query-string 7.1.3, to parse the app's own URLs on the device.
+        # The only fix, 0.5.1, is ESM-only, and query-string 7 loads it with require().
+        # Remove the exception when expo-router leaves query-string 7.
+        # pnpm 8.11 cannot ignore an advisory by GHSA id, so the JSON report is
+        # filtered; anything else at moderate or above fails, and an unreadable report
+        # fails.
+        run: |
+          npx --yes pnpm@8.11.0 audit --audit-level moderate --json > "$RUNNER_TEMP/audit.json" || true
+          node -e '
+            const ignore = new Set(["GHSA-q84f-53jg-9ppm", "GHSA-r4xp-prcw-77qf", "GHSA-965c-763c-88jm", "GHSA-44jh-23m7-hpcf", "GHSA-qr28-fpjm-wq7f"]);
+            const rank = { info: 0, low: 1, moderate: 2, high: 3, critical: 4 };
+            const report = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            const bad = Object.values(report.advisories ?? {}).filter((a) => rank[a.severity] >= rank.moderate && !ignore.has(a.github_advisory_id));
+            for (const a of bad) console.log(`${a.severity} ${a.module_name} ${a.github_advisory_id} ${a.url}`);
+            process.exit(bad.length ? 1 : 0);
+          ' "$RUNNER_TEMP/audit.json"
+      - name: Check scanner lockfile against GHSA advisories
+        if: always()
+        working-directory: .deepsec
+        run: npx --yes pnpm@9.15.4 audit --audit-level moderate
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        if: always()
+        with:
+          bun-version: 1.4.3
+      - name: Check daemon lockfile against GHSA advisories
+        if: always()
+        working-directory: apps/kortix-sandbox-agent-server
+        # GHSA-mrhx-c7xc-m3w5 (zod collection-size DoS) has no 3.x fix. kortixd
+        # compiles @kortix/api-contract's zod 3 types, so it moves to zod 4 with
+        # api-contract. Root and .trivyignore carry the same exception.
+        run: bun audit --audit-level moderate --ignore=GHSA-mrhx-c7xc-m3w5
 
   dependency-scan:
     name: Dependency + secret scan

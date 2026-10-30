@@ -70,9 +70,15 @@ async function daemonEndpoint(
 
 /** The daemon's Runtime API since W3. */
 const RUNTIME_API = '/kortix/runtime';
-/** Its path on a daemon built before W3. */
+/**
+ * Its path on a daemon built before W3.
+ * @deprecated Pre-W3 OpenCode path (/kortix/opencode); use RUNTIME_API.
+ */
 const LEGACY_RUNTIME_API = '/kortix/opencode';
-/** Sandboxes whose daemon answered only the pre-W3 path. */
+/**
+ * Sandboxes whose daemon answered only the pre-W3 path.
+ * @deprecated Pre-W3 OpenCode path (/kortix/opencode); use RUNTIME_API.
+ */
 // ponytail: per-process memo, cleared when full; a box that updates its daemon
 // keeps the legacy path here until the memo clears or the process restarts.
 const legacyRuntimeApi = new Set<string>();

@@ -16,15 +16,6 @@ export function localDayOf(at: string | number | Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/** `[from, to)` of a local day as ISO instants. Daylight-saving days are 23 or 25 hours. */
-export function dayWindow(day: string): { from: string; to: string } {
-  const [y, m, d] = day.split('-').map(Number) as [number, number, number];
-  return {
-    from: new Date(y, m - 1, d).toISOString(),
-    to: new Date(y, m - 1, d + 1).toISOString(),
-  };
-}
-
 /** Whole hours and minutes of a duration in seconds (rounded to the minute). */
 export function durationParts(seconds: number): { hours: number; minutes: number } {
   const total = Math.max(0, Math.round(seconds / 60));

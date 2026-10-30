@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { platformConfig } from '@kortix/sdk';
 
 import type { Auth } from './auth.ts';
-import { kortixFromAuth, sdkBackendUrl, withKortixScope } from './sdk.ts';
+import { kortixFromAuth, sdkBackendUrl, sdkConfigFromAuth, withKortixScope } from './sdk.ts';
 
 const originalFetch = globalThis.fetch;
 
@@ -102,3 +102,19 @@ describe('withKortixScope', () => {
     expect(second).toBe('https://two.kortix.com/v1|two');
   });
 });
+
+// KRTX-2914: the API names a CLI-created session's source from this header, so
+// a CLI run from source (no baked version) still says it is the CLI.
+test('sdkConfigFromAuth always names the CLI as the client, dev without a baked version', () => {
+  const previous = process.env.KORTIX_CLI_VERSION;
+  try {
+    delete process.env.KORTIX_CLI_VERSION;
+    expect(sdkConfigFromAuth({ api_base: 'https://api.test/v1', token: 't' } as never).clientVersion).toBe('cli/dev');
+    process.env.KORTIX_CLI_VERSION = '0.14.3';
+    expect(sdkConfigFromAuth({ api_base: 'https://api.test/v1', token: 't' } as never).clientVersion).toBe('cli/0.14.3');
+  } finally {
+    if (previous === undefined) delete process.env.KORTIX_CLI_VERSION;
+    else process.env.KORTIX_CLI_VERSION = previous;
+  }
+});
+

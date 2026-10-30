@@ -10,7 +10,7 @@
  * for, and the signed-in account supplies the authority to make it.
  */
 
-import { ApprovalDecision } from '@/components/setup-links/approval-decision';
+import { ApprovalDecision } from '@kortix/ui/markdown/setup-links/approval-decision';
 import { useParams } from 'next/navigation';
 
 export default function ApprovalPage() {

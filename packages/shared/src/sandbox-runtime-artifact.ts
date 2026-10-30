@@ -15,6 +15,7 @@ export interface RuntimeArtifact {
 
 export interface RuntimeArtifactFingerprintInput {
   sandboxVersion: string;
+  /** @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
   opencodeVersion: string;
   artifacts: RuntimeArtifact[];
 }
@@ -48,6 +49,17 @@ export const CLI_CONNECTOR_RUNTIME_FILES = [
   // addition, and hashing it would re-mint every project's runtime identity on
   // edits that cannot affect the connector.
   'src/api/token-identity.ts',
+  // KRTX-2529: the gateway face resolves its project context through
+  // `resolveProjectContext` (the one resolver the admin face uses), so its
+  // import closure joins the fingerprint. Bounded plumbing — context
+  // resolution, the link/bind seam, its shared UI + API types — not the CLI
+  // monolith.
+  'src/command-helpers.ts',
+  'src/project-bind.ts',
+  'src/token-denial.ts',
+  'src/style.ts',
+  'src/tui-select.ts',
+  'src/api/types.ts',
   'src/project-link.ts',
 ] as const;
 

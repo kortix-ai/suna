@@ -6,6 +6,16 @@ import { getProjectDetail } from '../core/rest/projects-client';
 import { qk } from './query-keys';
 import { contract } from './query-contracts';
 
+function useProjectDetail(projectId: string | undefined) {
+  const id = projectId ?? '';
+  return useQuery({
+    queryKey: qk.project.detail(id),
+    queryFn: () => getProjectDetail(id),
+    enabled: Boolean(projectId),
+    ...contract('config'),
+  });
+}
+
 /**
  * The ONLY way to read a project's name.
  *
@@ -19,12 +29,7 @@ import { contract } from './query-contracts';
  * invalidated. Do not reintroduce a `??` fallback to another source here.
  */
 export function useProjectName(projectId: string | undefined): string | undefined {
-  const { data } = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId as string),
-    enabled: Boolean(projectId),
-    ...contract('config'),
-  });
+  const { data } = useProjectDetail(projectId);
   return data?.project?.name;
 }
 
@@ -37,12 +42,7 @@ export function useProjectName(projectId: string | undefined): string | undefine
  * wiring, not something a host should hand-roll a second time.
  */
 export function useProjectAccountId(projectId: string | undefined): string | undefined {
-  const { data } = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId as string),
-    enabled: Boolean(projectId),
-    ...contract('config'),
-  });
+  const { data } = useProjectDetail(projectId);
   return data?.project?.account_id;
 }
 
@@ -67,12 +67,7 @@ export function useProjectAccountId(projectId: string | undefined): string | und
 export function useProjectIcon(
   projectId: string | undefined,
 ): Pick<KortixProject, 'icon' | 'icon_glyph'> | undefined {
-  const { data } = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId as string),
-    enabled: Boolean(projectId),
-    ...contract('config'),
-  });
+  const { data } = useProjectDetail(projectId);
   const project = data?.project;
   if (!project) return undefined;
   return { icon: project.icon ?? null, icon_glyph: project.icon_glyph ?? null };

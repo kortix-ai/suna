@@ -24,6 +24,7 @@ import { bootLinkPath } from '@/services/config-provider/boot-config'
  * condition 3 catches.
  */
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface ProvenCheckInput {
   /** The directory OpenCode instances are scoped to (`cfg.projectTarget`). */
   directory: string
@@ -46,6 +47,7 @@ export interface ProvenCheckInput {
   waitForSessionApi?: boolean
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type ProvenCheckResult = { ok: true } | { ok: false; reason: string; fatal?: boolean }
 
 const MAX_REASON = 300
@@ -60,7 +62,10 @@ function bounded(text: string): string {
   return text.length > MAX_REASON ? `${text.slice(0, MAX_REASON - 1)}…` : text
 }
 
-/** Base names of `tools/<name>.ts` files at the top of the tools directory. */
+/**
+ * Base names of `tools/<name>.ts` files at the top of the tools directory.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function toolNamesFromFiles(files: readonly ConfigReleaseFile[] | readonly string[]): string[] {
   const names = new Set<string>()
   for (const entry of files) {
@@ -71,7 +76,10 @@ export function toolNamesFromFiles(files: readonly ConfigReleaseFile[] | readonl
   return [...names].sort()
 }
 
-/** `plugins/*.{ts,js}` files of a config. */
+/**
+ * `plugins/*.{ts,js}` files of a config.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function pluginFilesFrom(files: readonly ConfigReleaseFile[] | readonly string[]): string[] {
   return files
     .map((entry) => (typeof entry === 'string' ? entry : entry[0]))
@@ -79,7 +87,10 @@ export function pluginFilesFrom(files: readonly ConfigReleaseFile[] | readonly s
     .sort()
 }
 
-/** OpenCode names every config load failure `Config…` (ConfigJsonError, ConfigInvalidError, …). */
+/**
+ * OpenCode names every config load failure `Config…` (ConfigJsonError, ConfigInvalidError, …).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function isConfigErrorName(name: unknown): name is string {
   return typeof name === 'string' && name.startsWith('Config')
 }
@@ -88,6 +99,7 @@ export function isConfigErrorName(name: unknown): name is string {
  * One line that names the cause of an OpenCode error answer. Never includes
  * file content: a ConfigJsonError message quotes the whole file, so only its
  * `<Kind> at line N, column M` lines are kept. Bounded to 300 characters.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function describeOpencodeError(status: number, bodyText: string, configDir?: string): string {
   let body: { name?: unknown; data?: { path?: unknown; message?: unknown; ref?: unknown } } | null = null
@@ -246,7 +258,10 @@ async function checkOnce(baseUrl: string, input: ProvenCheckInput, deadline: num
   return { result: { ok: true } }
 }
 
-/** Poll `checkOnce` until it passes, a cause is final, or `deadline` (epoch ms) passes. */
+/**
+ * Poll `checkOnce` until it passes, a cause is final, or `deadline` (epoch ms) passes.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function provenCheck(
   baseUrl: string,
   deadline: number,

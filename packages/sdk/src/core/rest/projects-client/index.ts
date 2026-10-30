@@ -19,6 +19,9 @@ export * from './prompt-attachments';
 export * from './git-history';
 export * from './change-requests';
 export * from './sessions';
+export * from './spaces';
+export * from './session-groups';
+export * from './memory';
 export * from './session-prompt-actions';
 export * from './triggers';
 export * from './session-sandbox';
@@ -42,6 +45,8 @@ export * from './review-items';
 export * from './sandbox-shares';
 export * from './public-session-shares';
 export * from './session-reminders';
+export * from './rooms';
+export * from './artifacts';
 export * from './tokens';
 export * from './audit';
 export * from './setup-links';
@@ -50,7 +55,9 @@ export * from './templates';
 export * from './apps';
 export * from './apps-fleet';
 export * from './drives';
+export * from './goals';
 export * from './notifications';
+export * from './chrome';
 
 // Cross-cutting types that originally lived in this module. Re-exported
 // explicitly (not the internal `unwrap` helper) to keep the surface identical.
@@ -63,5 +70,8 @@ export type {
 } from './shared';
 
 export * from './model-access';
+export * from './custom-llm-providers';
 export * from './session-attachments';
 export * from './project-agents';
+
+export * from './change-request-recovery';

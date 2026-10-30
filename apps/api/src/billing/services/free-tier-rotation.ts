@@ -7,8 +7,9 @@ import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { ROTATION_BATCH_SIZE } from './rotation-batch';
 import { wallet } from '../wallet';
 import { formatUsdAsCredits } from '@kortix/shared';
+import { getTier } from './tiers';
 
-const FREE_TIER_MONTHLY_CREDITS_USD = 2;
+const FREE_TIER_MONTHLY_CREDITS_USD = getTier('free').monthlyCredits;
 
 function rotationMonth(now: Date): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -40,15 +41,17 @@ export async function processFreeTierCreditRotation(now = new Date()): Promise<{
 
       try {
         const idempotencyKey = `free_tier_rotation_${account.accountId}_${rotationMonth(now)}`;
+        const expiresAt = calculateNextCreditGrant(now).toISOString();
         await wallet.reset({
           accountId: account.accountId,
           amount: FREE_TIER_MONTHLY_CREDITS_USD,
+          expiresAt,
           description: `Free tier monthly credit reset: ${formatUsdAsCredits(FREE_TIER_MONTHLY_CREDITS_USD)} credits`,
           key: { event: idempotencyKey },
         });
 
         await updateCreditAccount(account.accountId, {
-          nextCreditGrant: calculateNextCreditGrant(now).toISOString(),
+          nextCreditGrant: expiresAt,
           lastGrantDate: now.toISOString(),
         });
 

@@ -173,9 +173,9 @@ export async function stopSession(input: {
     // maintained at every turn end, which runs fire-and-forget with the box
     // definitionally up; the only gap a stop can close is the turn that just
     // ended, and one bounded page covers it.
-    const { captureSessionTranscriptMirror } = await import('../lib/session-transcript-capture');
+    const { captureJournallessSessionLog } = await import('../lib/session-transcript-capture');
     await within(
-      captureSessionTranscriptMirror(sessionId, undefined, {
+      captureJournallessSessionLog(sessionId, undefined, {
         scope: 'tail',
         actorUserId: userId,
       }),

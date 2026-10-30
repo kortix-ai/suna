@@ -29,10 +29,6 @@ import { eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projectSessions, projects } from '@kortix/db';
 import { insertIntoView } from './helpers/compat-views';
 
-// The project row below opts into the gateway, but the operator master switch
-// (config.LLM_GATEWAY_ENABLED, default off) wins over any project override, and
-// config reads it once at import. Set it before the app loads.
-process.env.LLM_GATEWAY_ENABLED = 'true';
 const { db } = await import('../shared/db');
 const { app } = await import('../index');
 const { createAccountToken } = await import('../repositories/account-tokens');
@@ -63,10 +59,6 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'member-model-gate-test-project',
     repoUrl: 'https://example.com/member-model-gate-test.git',
-    // `GET /model-picker` and `PUT /model-enablement` both 404 with
-    // `llm_gateway_disabled` unless the project has the gateway on. Turn it on
-    // so this suite measures the ROLE gate and not the feature flag.
-    metadata: { experimental: { llm_gateway: true } },
   });
   await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },

@@ -9,6 +9,7 @@
  * (`POST /session/<root>/abort`) and the daemon's own `GET /kortix/health`.
  * Both harnesses serve both.
  */
+import { SessionStartResultSchema } from '@kortix/api-contract';
 import { isKe2eRetryableError } from '../core/client';
 import { waitFor } from '../core/poll';
 import { markSessionReadinessTimeoutRetryable } from '../core/session-runtime-retry';
@@ -88,6 +89,11 @@ export async function waitForSessionReady(
         );
         if (r.statusCode >= 500 && r.statusCode <= 599) return null;
         r.status(200);
+        // The /start route documents 200: SessionStartResultSchema, and two
+        // flows already bind it. Bind the fixture's answer too, so shape drift
+        // fails here as a recorded assertion instead of an undefined-field
+        // mystery three steps later.
+        r.body().schema(SessionStartResultSchema);
         return r.json<any>();
       },
       {
@@ -160,7 +166,7 @@ export async function bootSession(
   },
 ): Promise<BootedSession> {
   return ctx.step(`a fresh ${harness} session boots to a ready runtime`, async () => {
-    const project = opts?.project ?? (await ctx.fixtures.sharedSeededProject(harness));
+    const project = opts?.project ?? (await ctx.fixtures.sharedSeededProject());
     const session = await ctx.fixtures.session(project, {
       prompt: opts?.prompt ?? 'say hello',
       opencodeModel: opts?.opencodeModel,

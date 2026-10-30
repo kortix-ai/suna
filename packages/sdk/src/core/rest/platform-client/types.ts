@@ -21,7 +21,11 @@ export const SANDBOX_PORTS = {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'platinum' | 'e2b';
+/**
+ * Platinum is the reference provider. Daytona is a legacy fallback whose
+ * removal is scheduled. E2B support is discontinued.
+ */
+export type SandboxProviderName = 'platinum' | 'daytona';
 export type ServerTypeOption = string;
 
 export interface SandboxCreateProgress {

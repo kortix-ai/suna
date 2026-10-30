@@ -2,7 +2,7 @@
 
 import { Reveal } from '@/components/home/reveal';
 import { Button } from '@/components/ui/marketing/button';
-import { DitherShader } from '@/components/ui/wallpaper-shaders';
+import { DitherShader } from '@kortix/ui/wallpaper-shaders';
 import { ArrowRightIcon } from '@phosphor-icons/react';
 import Link from '@/components/site-link';
 import type { ReactNode } from 'react';

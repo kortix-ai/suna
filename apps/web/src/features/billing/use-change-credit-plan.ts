@@ -1,12 +1,12 @@
 'use client';
 
-import { errorToast, infoToast, successToast } from '@/components/ui/toast';
+import { errorToast, infoToast, successToast } from '@kortix/ui/toast';
 import { useBillingReturnUrl } from '@/features/billing/billing-return';
-import { formatWholeUsd, monthlyCreditsForUsd } from '@/features/billing/compute-pricing';
-import { invalidateAccountState, useCreatePortalSession } from '@/hooks/billing';
+import { formatWholeUsd, monthlyCreditsForUsd } from '@kortix/ui/internal/billing/compute-pricing';
+import { invalidateAccountState, useCreatePortalSession } from '@kortix/ui/internal/billing/index';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { useBillingAccountId } from '@/stores/billing-account-context';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { useBillingAccountId } from '@kortix/ui/internal/stores/billing-account-context';
+import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
 import { useSetBillingPlan } from '@kortix/sdk/react';
 import { formatCredits } from '@kortix/shared';
 import { useQueryClient } from '@tanstack/react-query';

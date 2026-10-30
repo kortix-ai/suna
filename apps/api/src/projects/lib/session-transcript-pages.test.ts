@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { TranscriptReadError } from "./runtime-read-failure";
 import {
   readTranscriptPages,
   retryTranscriptCapture,
@@ -106,6 +107,26 @@ test("a FIRST page that fails still throws — nothing was read at all", async (
   ).rejects.toThrow("503");
 });
 
+test("a failed first page throws a typed error that carries the status", async () => {
+  // The callers classify the expected stopped-box and gone-transcript states
+  // by STATUS, not by parsing message text.
+  const error = await readTranscriptPages(
+    async () => new Response("", { status: 404 }),
+    true,
+  ).catch((err: unknown) => err);
+  expect(error).toBeInstanceOf(TranscriptReadError);
+  expect((error as TranscriptReadError).status).toBe(404);
+  // The message stays the spelling every existing log pattern and test reads.
+  expect((error as TranscriptReadError).message).toBe("Transcript read failed: HTTP 404");
+
+  const stale = await readTranscriptPages(
+    async () => new Response("", { status: 503 }),
+    true,
+  ).catch((err: unknown) => err);
+  expect(stale).toBeInstanceOf(TranscriptReadError);
+  expect((stale as TranscriptReadError).status).toBe(503);
+});
+
 test("a complete walk reports complete", async () => {
   const pages = [page([3, 4], "older"), page([1, 2])];
   const result = await readTranscriptPages(async () => pages.shift()!, true);
@@ -183,61 +204,6 @@ test("prepares attachment bytes before sanitizing transcript pages", async () =>
   expect(result.rows[0]!.parts[0]!.url).toBe(url);
 });
 
-test("the walk stops at history it already holds, and says so", async () => {
-  // Every turn end re-read the WHOLE session. On a 600-message thread that is
-  // eight pages against the sandbox, per turn, for the two messages the turn
-  // added. Once a page is entirely captured already, everything older is too.
-  const pages = [page([9, 10], "p2"), page([7, 8], "p3"), page([5, 6], "p4")];
-  let seen = 0;
-  const result = await readTranscriptPages(
-    async () => pages.shift()!,
-    true,
-    undefined,
-    (rows) => {
-      seen += 1;
-      // The second page is the one we already have.
-      return seen === 2 && rows.length > 0;
-    },
-  );
-  expect(pages).toHaveLength(1);
-  expect(result.caughtUp).toBe(true);
-  // NOT complete: it never reached the head, so it cannot speak for what the
-  // session no longer contains below the rows it read.
-  expect(result.complete).toBe(false);
-  expect(result.headComplete).toBe(false);
-  expect(result.rows.map((row) => row.info.id)).toEqual([
-    "msg_7",
-    "msg_8",
-    "msg_9",
-    "msg_10",
-  ]);
-});
-
-test("a walk nobody stops still reaches the head", async () => {
-  const pages = [page([3, 4], "older"), page([1, 2])];
-  const result = await readTranscriptPages(
-    async () => pages.shift()!,
-    true,
-    undefined,
-    () => false,
-  );
-  expect(result.caughtUp).toBe(false);
-  expect(result.complete).toBe(true);
-});
-
-test("an empty page cannot mean caught up", async () => {
-  // `every` over nothing is true. A page with no rows says the walk ran past
-  // the end, never that the rows below it are already stored.
-  const pages = [page([]), page([1, 2])];
-  const result = await readTranscriptPages(
-    async () => pages.shift() ?? page([1, 2]),
-    true,
-    undefined,
-    (rows) => rows.length === 0,
-  );
-  expect(result.caughtUp).toBe(false);
-});
-
 test("the next page is asked for by `before`, the spelling OpenCode reads", () => {
   // OpenCode ignores `cursor=` and answers page one again, with the same
   // cursor, so a walk that sent it stopped as "not advancing" after the newest
@@ -253,4 +219,14 @@ test("the next page is asked for by `before`, the spelling OpenCode reads", () =
   const next = transcriptPageUrl("https://box.test", "ses_root", "msg_oldest_on_page", 80);
   expect(next.searchParams.get("before")).toBe("msg_oldest_on_page");
   expect(next.searchParams.has("cursor")).toBe(false);
+});
+
+test("a full page with no cursor does not prove the head: an old build that ignores paging answers the newest `limit` rows", async () => {
+  const result = await readTranscriptPages(async () => page([3, 4, 5]), true, undefined, 3);
+  expect(result.rows).toHaveLength(3);
+  expect(result.headComplete).toBe(false);
+  expect(result.complete).toBe(false);
+  // A short last page with no cursor still proves it.
+  const short = await readTranscriptPages(async () => page([4, 5]), true, undefined, 3);
+  expect(short.complete).toBe(true);
 });

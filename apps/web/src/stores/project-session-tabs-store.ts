@@ -1,7 +1,7 @@
 'use client';
 
-import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
-import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
+import { createSafeJSONStorage } from '@kortix/ui/internal/lib/storage/managed-storage';
+import { registerPersistedStore, resetPersistedStore } from '@kortix/ui/internal/stores/persisted-store-registry';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 

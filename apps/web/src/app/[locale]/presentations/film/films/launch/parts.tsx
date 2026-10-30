@@ -1,7 +1,7 @@
 'use client';
 
 import { AppleCursor } from '@/features/icon/icons/apple-cursor';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import type { CSSProperties, ReactNode } from 'react';
 import { ease, interp, rise, stagger } from '../../engine/time';
 

@@ -22,28 +22,7 @@ const { createAppAccessToken } = await import('./access');
 const { config } = await import('../config');
 
 describe('Apps public edge', () => {
-  test('recognises a dead E2B runtime, which is a 502 and not a throw', () => {
-    // The outage this pins. An App ran fine after every deploy and then served
-    // `{"message":"The sandbox is running but port is not open","port":8080}`
-    // for hours, with desired_state `running` and a `ready` deployment, until a
-    // human rolled back to force a new runtime.
-    //
-    // Nothing recovered it because recovery only fired on a THROWN fetch or a
-    // Daytona 400 — and a provider edge that can still see the sandbox answers
-    // with an ordinary 502 instead. The runtime was gone; the response was not
-    // an error the App produced.
-    const dead = '{"sandboxId":"is3w07miuo2i3gz63g2su","message":"The sandbox is running but port is not open","port":8080,"code":502}';
-    expect(appProviderStoppedResponse('e2b', 502, dead)).toBe(true);
-    expect(appProviderStoppedResponse('e2b', 503, 'connection refused')).toBe(true);
-    expect(appProviderStoppedResponse('e2b', 504, 'sandbox not found')).toBe(true);
-
-    // An App's OWN 502 must still reach the reader. Recovering there would hide
-    // a broken upstream behind an endless "starting" page.
-    expect(appProviderStoppedResponse('e2b', 502, '{"error":"Upstream request failed"}')).toBe(false);
-    expect(appProviderStoppedResponse('e2b', 500, dead)).toBe(false);
-    expect(appProviderStoppedResponse('e2b', 200, dead)).toBe(false);
-
-    // Daytona's shape is unchanged.
+  test('recognises a dead Daytona runtime by its 400 shape', () => {
     expect(appProviderStoppedResponse('daytona', 400, 'no IP address found')).toBe(true);
     expect(appProviderStoppedResponse('daytona', 502, 'port is not open')).toBe(false);
   });

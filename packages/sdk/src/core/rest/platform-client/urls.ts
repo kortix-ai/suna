@@ -9,7 +9,7 @@ import { getPlatformUrl } from './shared';
  * Build the OpenCode server URL for a sandbox.
  * Provider-agnostic: {BACKEND_URL}/p/{externalId}/8000
  *
- * The external_id is the sandbox's Daytona ID, used for proxy routing.
+ * The external_id is the sandbox's provider external id, used for proxy routing.
  * Guards against missing external_id to prevent broken URLs.
  */
 export function getSandboxUrl(sandbox: SandboxInfo): string {

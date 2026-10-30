@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "draft",
+  "type": "object",
+  "required": ["schema", "title", "markdown", "unfilled", "citations", "files"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "enum": ["draft/1"] },
+    "title": { "type": "string" },
+    "markdown": { "type": "string" },
+    "unfilled": { "type": "array", "items": { "type": "string" } },
+    "citations": { "type": "array", "items": { "$ref": "citation" } },
+    "files": { "type": "array", "items": { "type": "string" } }
+  }
+}

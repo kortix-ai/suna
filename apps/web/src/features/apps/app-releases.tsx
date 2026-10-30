@@ -13,17 +13,17 @@
  *   build output stays one click further down, because it is the thing you
  *   read only when a stage failed.
  */
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
-import { relativeTime } from '@/lib/relative-time';
-import { cn } from '@/lib/utils';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
+import { cn } from '@kortix/ui';
 import type { App, AppDeployment, AppDeployStrategy } from '@kortix/sdk';
 import { useAppDeployment, useAppMachines } from '@kortix/sdk/react';
 import { CaretDownIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { memo, useCallback, useMemo, useState } from 'react';
 
-import { appCan, localizedAppCopy } from './app-shared';
+import { appCan, localizedAppCopy } from '@kortix/ui/apps';
 
 type Translator = ReturnType<typeof useTranslations>;
 

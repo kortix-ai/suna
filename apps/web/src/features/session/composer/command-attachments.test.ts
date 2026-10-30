@@ -25,8 +25,8 @@ import {
   planCommandAttachments,
   planUnresolvedCommandChip,
   readCommandChipLabel,
-} from './command-attachments';
-import { MentionNode } from './editor/mention-node';
+  MentionNode,
+} from '@kortix/ui/composer';
 
 describe('planCommandAttachments', () => {
   test('a command with no attachments dispatches', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
+import { legalShortPathRedirectUrl, legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
 
 const BASE = 'https://www.kortix.com/legal/terms';
 
@@ -61,5 +61,40 @@ describe('legalTermsRedirectUrl', () => {
     const dest = legalTermsRedirectUrl('/legal/terms', new URLSearchParams(), BASE)!;
     expect(dest.host).toBe('www.kortix.com');
     expect(dest.href).not.toContain('drive.google.com');
+  });
+});
+
+// KRTX-3256: the paths a visitor types for the legal texts answered 200 with
+// the "Page not found" page.
+describe('legalShortPathRedirectUrl', () => {
+  const cases: Array<{ pathname: string; path: string; tab: string | null }> = [
+    { pathname: '/terms', path: '/legal', tab: 'terms' },
+    { pathname: '/privacy', path: '/legal', tab: 'privacy' },
+    { pathname: '/imprint', path: '/legal', tab: 'imprint' },
+    { pathname: '/subprocessors', path: '/legal/subprocessors', tab: null },
+    { pathname: '/de/privacy', path: '/de/legal', tab: 'privacy' },
+    { pathname: '/ja/subprocessors', path: '/ja/legal/subprocessors', tab: null },
+  ];
+
+  for (const { pathname, path, tab } of cases) {
+    test(`${pathname} goes to ${path}${tab ? `?tab=${tab}` : ''} on the same origin`, () => {
+      const dest = legalShortPathRedirectUrl(pathname, new URLSearchParams(), BASE);
+      expect(dest).not.toBeNull();
+      expect(dest!.origin).toBe('https://www.kortix.com');
+      expect(dest!.pathname).toBe(path);
+      expect(dest!.searchParams.get('tab')).toBe(tab);
+    });
+  }
+
+  test('keeps unrelated params and sets the tab', () => {
+    const dest = legalShortPathRedirectUrl('/privacy', new URLSearchParams('utm_source=x&tab=terms'), BASE);
+    expect(dest!.searchParams.get('utm_source')).toBe('x');
+    expect(dest!.searchParams.get('tab')).toBe('privacy');
+  });
+
+  test('leaves every other path alone', () => {
+    for (const pathname of ['/legal', '/legal/terms', '/status', '/dpa', '/terms/x', '/xx/privacy', '/Privacy', '/']) {
+      expect(legalShortPathRedirectUrl(pathname, new URLSearchParams(), BASE), pathname).toBeNull();
+    }
   });
 });

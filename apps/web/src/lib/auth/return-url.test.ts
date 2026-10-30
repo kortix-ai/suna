@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import {
   isInviteReturnUrl,
   isSignupSafeReturnUrl,

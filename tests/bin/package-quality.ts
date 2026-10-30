@@ -226,7 +226,19 @@ if (repoChecks) {
     run(['node', 'scripts/publish-npm-package.test.mjs']),
     run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
     run(['node', '--test', 'scripts/dev-local.test.mjs']),
+    run(['node', '--test', 'scripts/dev-local-cleanup.test.mjs']),
     run(['node', '--test', 'scripts/test-guard.test.mjs']),
+    run(['node', '--test', 'scripts/refresh-staged-web-artifacts.test.mjs']),
+    // No package owns these: `./infra` discovers every edge-worker and deploy-script
+    // test, and the two lockfile checks need Bun (Bun.YAML, Bun.semver), not vitest.
+    run([
+      'bun',
+      'test',
+      './infra',
+      './scripts/eslint-policy.test.mjs',
+      './tests/unit/dependency-advisories.test.js',
+      './tests/unit/undici-advisory.test.js',
+    ]),
   ]);
   await rejectFocusedTests();
 }
@@ -239,6 +251,9 @@ await when('apps/web', () => run(['pnpm', '--dir', 'tests', 'run', 'playwright:i
 await runAll([
   when('packages/sdk', () => run(['pnpm', '--filter', '@kortix/sdk', 'typecheck'])),
   when('packages/sdk', () => run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install'])),
+  when('packages/ui', () => run(['pnpm', '--filter', '@kortix/ui', 'typecheck'])),
+  // The apps/web rules (SDK boundary, query keys, icons) over the moved session UI.
+  when('packages/ui', () => run(['pnpm', '--filter', '@kortix/ui', 'lint'])),
   // Frozen counts (apps/api/eslint.config.mjs): new violations fail, fixed ones must be pruned.
   when('apps/api', () => run(['pnpm', '--filter', 'kortix-api', 'lint'])),
   // The migration file lint (backfill-safe sign-off, CONCURRENTLY, safety header).
@@ -250,8 +265,14 @@ await runAll([
   ...['llm-catalog', 'sdk'].map((directory) =>
     when(`packages/${directory}`, () => verifyPublishablePackage(directory, false)),
   ),
+  // @kortix/ui has no earlier build in this lane: build it, stage, dry-pack.
+  when('packages/ui', () => verifyPublishablePackage('ui')),
   when('packages/agent-tunnel', verifyAgentTunnelCli),
 ]);
+// @kortix/ui's install smoke stages and packs @kortix/sdk and @kortix/llm-catalog
+// too, so it runs alone: concurrent with the SDK smoke or the stage above, two
+// processes would rewrite and restore the same package.json.
+await when('packages/ui', () => run(['pnpm', '--filter', '@kortix/ui', 'run', 'smoke:install']));
 
 // Run two explicit bounded waves. This avoids a generic workspace fan-out while
 // removing idle CPU time between independent load classes. Keep the CLI and

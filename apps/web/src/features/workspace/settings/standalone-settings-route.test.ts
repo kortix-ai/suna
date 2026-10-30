@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { ACCOUNT_SCOPED_SETTINGS_TABS, isSettingsTabAllowed } from './settings-panel-body';
-import { DEFAULT_SETTINGS_TAB } from './settings-tabs';
+import { DEFAULT_SETTINGS_TAB } from '@kortix/ui/customize/settings/settings-tabs';
 import {
   resolveSettingsExitPath,
   STANDALONE_DEFAULT_SETTINGS_TAB,

@@ -19,7 +19,9 @@ const PUBLIC_TO_CANONICAL_CONNECTOR_ALIAS: Readonly<Record<string, string>> = {
 
 /** The stored slug for an alias written in either spelling. */
 export function canonicalConnectorAlias(alias: string): string {
-  return PUBLIC_TO_CANONICAL_CONNECTOR_ALIAS[alias] ?? alias;
+  return Object.hasOwn(PUBLIC_TO_CANONICAL_CONNECTOR_ALIAS, alias)
+    ? PUBLIC_TO_CANONICAL_CONNECTOR_ALIAS[alias]!
+    : alias;
 }
 
 /** The user-facing alias for a stored slug. */

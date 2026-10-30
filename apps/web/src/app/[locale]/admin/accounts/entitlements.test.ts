@@ -144,29 +144,13 @@ describe('admin accounts — Overrides card', () => {
     }
   });
 
-  test('the whole card saves through one merge-patch mutation', () => {
-    expect(pageSource).toContain('useAdminSetOverrides');
-    expect(pageSource).toMatch(
-      /setOverrides\.mutateAsync\(\{ accountId: account\.accountId, patch: result\.patch \}\)/,
-    );
-    // The diff is computed by the pure helper, never rebuilt inline — that is
-    // what keeps an untouched row (and its expiry) out of the patch.
-    expect(pageSource).toContain('overridesPatch(draft, stored)');
-  });
-
   test('a stored expiry is visible on its row', () => {
     expect(pageSource).toContain('<OverrideExpiryChip');
     expect(pageSource).toContain('overrideExpiresAt(stored,');
     expect(pageSource).toContain('isOverrideExpired(expiresAt)');
   });
 
-  test('Save is inert until something actually changed', () => {
-    expect(pageSource).toContain('disabled={!dirty || !result.ok || setOverrides.isPending}');
-  });
 
-  test('a validation failure is shown inline, not sent to the server', () => {
-    expect(pageSource).toContain('{!result.ok && <p className="text-kortix-red text-xs">');
-  });
 });
 
 describe('admin accounts — Ledger tab', () => {

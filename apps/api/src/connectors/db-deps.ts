@@ -5,10 +5,11 @@
  * is the glue to Postgres + the credential store + Pipedream.
  */
 import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../config';
 import { bindIntegrationPrincipal } from '../shared/audit-scope';
+import { isProjectSessionPrincipal } from '../middleware/agent-scope';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { invalidateProjectMirror } from '../projects/git';
 import {
@@ -30,6 +31,7 @@ import {
 } from './credentials';
 import {
   connectedAsOf,
+  credentialRejectedAt,
   relabelToIdentity,
   resolveConnectedAs,
   rowMetadata,
@@ -38,12 +40,16 @@ import {
   type ConnectorDraft,
   deleteConnectorFromManifest,
   getProjectPoliciesFromManifest,
+  rulesMatrixFromManifest,
   setConnectorCredentialModeInManifest,
   setConnectorAuthorizationStrategyInManifest,
   setConnectorCredentialShared,
   setConnectorNameInManifest,
+  deleteConnectorPolicySetInManifest,
+  renameConnectorPolicySetInManifest,
   setConnectorPoliciesInManifest,
   setConnectorSensitiveInManifest,
+  upsertConnectorPolicySetInManifest,
   setProjectPoliciesInManifest,
   upsertConnectorInManifest,
 } from './manifest-crud';
@@ -58,18 +64,21 @@ import {
 } from './pipedream';
 import type { ConnectorRouterDeps } from './router-contract';
 import {
-  connectorCatalogSections,
-  getConnectorCatalogDetail,
   connectorCatalogDirectIds,
   connectorCatalogDirectMcpUrls,
-  listConnectorCatalog,
 } from './connector-catalog';
+import { catalogDegraded, kortixMcpCatalog, mcpAppForUrl } from './mcp-apps';
+import { connectorIdentity } from './catalog-install';
+import { catalogTools } from './catalog-tools';
+import { oauth2ConnectionStatus, startConnectionSignIn } from './oauth2-store';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import {
   createComputerConnector,
   deleteComputerConnectorProfile,
   getConnectorConfig,
   getConnectorPolicies,
+  listConnectorPolicySets,
+  policySetsUnsupportedFor,
   setComputerConnectorName,
   setComputerConnectorPolicies,
   setComputerConnectorSensitive,
@@ -82,6 +91,7 @@ import {
   connectLinkEligibility,
   loadComposioAdapter,
   loadComposioConnector,
+  loadMcpConnector,
   loadPipedreamConnector,
   mergeRequestingSession,
   readRequestingSessionId,
@@ -169,14 +179,33 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     setConnectorNameInManifest(projectId, accountId, slug, name),
   getConnectorPolicies,
   getConnectorConfig,
-  setConnectorPolicies: async (projectId, accountId, slug, policies) =>
-    (await setComputerConnectorPolicies(projectId, accountId, slug, policies)) ??
-    setConnectorPoliciesInManifest(
-      projectId,
-      accountId,
-      slug,
-      policies as Parameters<typeof setConnectorPoliciesInManifest>[3],
-    ),
+  setConnectorPolicies: async (projectId, accountId, slug, policies, policySet) =>
+    policySet
+      ? ((await policySetsUnsupportedFor(projectId, slug)) ??
+        setConnectorPoliciesInManifest(
+          projectId,
+          accountId,
+          slug,
+          policies as Parameters<typeof setConnectorPoliciesInManifest>[3],
+          policySet,
+        ))
+      : ((await setComputerConnectorPolicies(projectId, accountId, slug, policies)) ??
+        setConnectorPoliciesInManifest(
+          projectId,
+          accountId,
+          slug,
+          policies as Parameters<typeof setConnectorPoliciesInManifest>[3],
+        )),
+  listConnectorPolicySets,
+  upsertConnectorPolicySet: async (projectId, accountId, slug, name, description, policies) =>
+    (await policySetsUnsupportedFor(projectId, slug)) ??
+    upsertConnectorPolicySetInManifest(projectId, accountId, slug, name, description, policies),
+  renameConnectorPolicySet: async (projectId, accountId, slug, from, to) =>
+    (await policySetsUnsupportedFor(projectId, slug)) ??
+    renameConnectorPolicySetInManifest(projectId, accountId, slug, from, to),
+  deleteConnectorPolicySet: async (projectId, accountId, slug, name) =>
+    (await policySetsUnsupportedFor(projectId, slug)) ??
+    deleteConnectorPolicySetInManifest(projectId, accountId, slug, name),
   pipedreamConnect: pipedreamConfigured()
     ? async (projectId, slug, _userId, redirects) => {
         const conn = await loadPipedreamConnector(projectId, slug);
@@ -363,6 +392,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       owner_type: connection.ownerType,
       is_default: connection.isDefault,
       connected_as: connectedAsOf(connection.metadata),
+      credential_rejected_at: credentialRejectedAt(connection.metadata),
     }));
   },
   mintConnectorConnectLink: async ({ projectId, slug, userId, sessionId }) => {
@@ -499,6 +529,29 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         connected: result.connected,
         isNoAuth: result.isNoAuth,
       };
+    }
+    const mcp = await loadMcpConnector(projectId, slug);
+    if (mcp) {
+      // A server with nothing to sign in to is usable now: answer that, and
+      // never create an account row a refused sign-in would leave behind.
+      if (!mcp.needsSignIn) {
+        return { provider: 'mcp', app: mcpAppForUrl(mcp.url)?.slug ?? slug, connected: true, isNoAuth: true };
+      }
+      // Kortix runs the sign-in itself: the link is the provider's consent page,
+      // and the OAuth callback stores the token on the connection.
+      if (!userId) return null;
+      const connectionId =
+        connectOwner === 'me'
+          ? await ensureMemberConnection({ projectId, connectorId: mcp.connectorId, userId })
+          : await ensureDefaultConnection({ projectId, connectorId: mcp.connectorId });
+      await mergeRequestingSession(connectionId, requestingSessionId);
+      const connectUrl = await startConnectionSignIn({
+        identity: { accountId: mcp.accountId, projectId, connectorId: mcp.connectorId, connectionId },
+        initiatedBy: userId,
+        redirects,
+      });
+      if (!connectUrl) return null;
+      return { provider: 'mcp', app: mcpAppForUrl(mcp.url)?.slug ?? slug, connectUrl, connectionId };
     }
     if (!pipedreamConfigured()) return null;
     const pipedream = await loadPipedreamConnector(projectId, slug);
@@ -642,6 +695,51 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         ...(label ? { label } : {}),
       };
     }
+    const mcp = await loadMcpConnector(projectId, slug);
+    if (mcp) {
+      if (finalizeOwner === 'me' && !_userId) return null;
+      // The row `connectorConnect` started on, resolved the same way, never "the
+      // most recently touched": a start updates no row unless a session asked.
+      const connectionId =
+        selector?.connectionId ??
+        (finalizeOwner === 'me'
+          ? await ensureMemberConnection({ projectId, connectorId: mcp.connectorId, userId: _userId! })
+          : await defaultConnectionIdForConnector(mcp.connectorId));
+      if (!connectionId) return { provider: 'mcp', connected: false };
+      const [connection] = await db
+        .select({ connectionId: connectorConnections.connectionId })
+        .from(connectorConnections)
+        .where(
+          and(
+            eq(connectorConnections.connectorId, mcp.connectorId),
+            eq(connectorConnections.connectionId, connectionId),
+            finalizeOwner === 'me'
+              ? and(eq(connectorConnections.ownerType, 'member'), eq(connectorConnections.ownerId, _userId ?? ''))
+              : and(eq(connectorConnections.ownerType, 'project'), isNull(connectorConnections.ownerId)),
+          ),
+        )
+        .limit(1);
+      if (!connection) {
+        if (selector?.connectionId) throw new HTTPException(404, { message: 'connector connection not found' });
+        return { provider: 'mcp', connected: false };
+      }
+      const connected = (await oauth2ConnectionStatus(connection.connectionId)).status === 'active';
+      if (connected) {
+        // Told once: only the call that clears the waiting session notifies it.
+        const rows = (await db.execute(sql`
+          update kortix.connector_connections c
+             set metadata = c.metadata - 'requesting_session_id'
+            from (select connection_id, metadata->>'requesting_session_id' as waiting
+                    from kortix.connector_connections
+                   where connection_id = ${connection.connectionId}
+                     for update) old
+           where c.connection_id = old.connection_id and old.waiting is not null
+          returning old.waiting as waiting`)) as unknown as Array<{ waiting: string }>;
+        const waiting = rows[0]?.waiting;
+        if (waiting) void notifyConnectorSession(waiting, projectId, _userId ?? null, slug, mcpAppForUrl(mcp.url)?.slug ?? slug);
+      }
+      return { provider: 'mcp', connected, connectionId: connection.connectionId };
+    }
     if (!pipedreamConfigured()) return null;
     const pipedream = await loadPipedreamConnector(projectId, slug);
     if (!pipedream) return null;
@@ -675,12 +773,31 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     return { provider: 'pipedream', connected: r.connected, accountId: r.accountId };
   },
   discoverConnectorAuth: discoverDraftConnectorAuth,
-  listDiscoverConnectors: (input) => listConnectorCatalog(input),
+  listDiscoverConnectors: async (input) => ({ ...(await kortixMcpCatalog.list(input)), degraded: catalogDegraded() }),
   catalogDirectIds: () => connectorCatalogDirectIds(),
   catalogDirectMcpUrls: () => connectorCatalogDirectMcpUrls(),
-  listDiscoverSections: (input) => connectorCatalogSections(input),
-  getDiscoverConnector: (id) => getConnectorCatalogDetail(id),
+  listDiscoverSections: async (input) => ({ ...(await kortixMcpCatalog.sections(input)), degraded: catalogDegraded() }),
+  isAgentCaller: (c) => isProjectSessionPrincipal(c),
+  customConnectorSetupUrl: (projectId, draft) => {
+    const query = new URLSearchParams({ tab: 'browse', custom: '1' });
+    for (const key of ['provider', 'url', 'transport', 'endpoint', 'spec', 'baseUrl', 'name'] as const) {
+      if (typeof draft[key] === 'string' && draft[key]) query.set(key === 'baseUrl' ? 'base_url' : key, draft[key] as string);
+    }
+    return `${(config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')}/projects/${projectId}/customize/connectors?${query}`;
+  },
+  listConnectorIdentities: async (projectId) =>
+    (
+      await db
+        .select({ slug: connectors.slug, provider: connectors.providerType, config: connectors.config })
+        .from(connectors)
+        .where(eq(connectors.projectId, projectId))
+        // The oldest profile of a way is the one an install answers as `existing`.
+        .orderBy(asc(connectors.createdAt), asc(connectors.slug))
+    ).map((row) => ({ slug: row.slug, identity: connectorIdentity({ provider: row.provider, ...(row.config as Record<string, string>) }) })),
+  discoverConnectorTools: (variant) => catalogTools(variant),
+  getDiscoverConnector: (id) => kortixMcpCatalog.detail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,
+  getRulesMatrix: rulesMatrixFromManifest,
   setProjectPolicies: (projectId, accountId, policies, defaultMode) =>
     setProjectPoliciesInManifest(projectId, accountId, policies, defaultMode),
 };

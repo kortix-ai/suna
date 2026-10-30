@@ -17,6 +17,13 @@ locals {
     for arn, alb in local.use2_albs : arn => alb
     if alb.name != "kortix-dev-use2-web-alb"
   }
+  # SQS queues monitored below. Module capture_store (modules/capture-store/
+  # main.tf) composes both names from its caller's `name`; the dev-us-east-2
+  # root passes kortix-dev-use2-capture-store. The value is the alarm stem.
+  use2_sqs_queues = {
+    "kortix-dev-use2-capture-store-manifests"     = "manifests"
+    "kortix-dev-use2-capture-store-manifests-dlq" = "manifests-dlq"
+  }
 }
 
 # ── Regional alert delivery ──────────────────────────────────────────────────
@@ -535,6 +542,44 @@ resource "aws_cloudwatch_metric_alarm" "use2_unhealthy_hosts" {
   lifecycle {
     ignore_changes = [dimensions]
   }
+}
+
+# ── SQS manifest queue monitoring (Drata test 115) ───────────────────────────
+#
+# Drata test 115 (DCF-86) fails every SQS queue without a CloudWatch alarm on
+# ApproximateAgeOfOldestMessage that notifies a subscribed SNS topic. The AWS
+# provider has no SQS discovery data source to mirror data.aws_lbs, so this
+# root repeats the dev manifest queue names literally (local.use2_sqs_queues,
+# composed by module capture_store for the environments/dev-us-east-2
+# caller); scripts/test_sqs_message_age_alarms.py keeps the three trees in
+# agreement.
+resource "aws_cloudwatch_metric_alarm" "use2_sqs_oldest_message_age" {
+  provider            = aws.use2
+  for_each            = local.use2_sqs_queues
+  alarm_name          = "kortix-sqs-${each.value}-oldest-message-age"
+  alarm_description   = "SOC2 DCF-86: SQS manifest queue message age is elevated"
+  namespace           = "AWS/SQS"
+  metric_name         = "ApproximateAgeOfOldestMessage"
+  dimensions          = { QueueName = each.key }
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 3
+  datapoints_to_alarm = 3
+  threshold           = 900
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.use2_alerts.arn]
+  tags                = local.alarm_tags
+
+  # Manifest events normally ingest in seconds (the capture-events-reader
+  # long-polls the queue continuously in apps/api/src/workers/capture-worker.ts),
+  # so this fires on a sustained stall: the oldest message waits 15 minutes
+  # for three consecutive 5-minute periods before alerting, above any deploy
+  # blip; Maximum cannot average a spike away. An empty queue publishes no
+  # series, so treat_missing_data = notBreaching keeps it green. Nothing in
+  # apps/api consumes the DLQ: it is a parking lot, so its oldest message age
+  # grows monotonically once a dead message arrives — firing and staying red
+  # is the intended signal for failed captures.
 }
 
 # ── Backup failure monitoring ─────────────────────────────────────────────────

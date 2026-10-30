@@ -1,7 +1,8 @@
-import type { FileTreeNode } from '@/components/ui/file-tree';
-import { buildFileTree } from '@/features/workspace/capabilities/shared/entity/entity-files';
+import type { FileTreeNode } from '@kortix/ui/file-tree';
+import { buildFileTree } from '@kortix/ui/customize/shared/entity/entity-files';
 import type { UiTranslator } from '@/i18n/translator';
-import type { DependencyItem, ItemCapabilities, MarketplaceItem } from '@/lib/marketplace-client';
+import type { DependencyItem, ItemCapabilities, MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
+import { groupMarketplaceItemsByType } from './marketplace-grid';
 import { typeMeta } from './marketplace-meta';
 
 /** Type-aware copy for the "no description" state. Every item type reads as
@@ -13,22 +14,6 @@ export function emptyDescriptionCopy(type: string): string {
 /** Type-aware copy for the "no README" empty state. */
 export function emptyReadmeCopy(type: string): string {
   return `This ${typeMeta(type).label.toLowerCase()} doesn't ship a README yet.`;
-}
-
-/** Type-aware meta-line count label for a card/detail (e.g. "3 items" for a
- *  bundle's member count, "12 files" for everything else). */
-export function itemCountLabel(
-  item: Pick<MarketplaceItem, 'type' | 'dependencies' | 'fileCount'>,
-): {
-  count: number;
-  unit: string;
-} {
-  if (item.type === 'registry:bundle') {
-    const count = item.dependencies.length;
-    return { count, unit: count === 1 ? 'item' : 'items' };
-  }
-  const count = item.fileCount;
-  return { count, unit: count === 1 ? 'file' : 'files' };
 }
 
 /** A single "what's inside" row for a bundle's member items. Prefers the
@@ -66,56 +51,6 @@ export function resolveBundleMembers(params: {
     }
     return { key: name, title: name, type: null, description: null, href: null };
   });
-}
-
-export interface TypedMemberGroup {
-  type: string;
-  label: string;
-  members: BundleMember[];
-}
-
-// Order + plural labels for a project's contents, so "what's inside" reads as
-// typed sections (Skills, Agents, Tools, …) instead of a flat list.
-const MEMBER_TYPE_ORDER = [
-  'registry:skill',
-  'registry:agent',
-  'registry:command',
-  'registry:tool',
-  'registry:bundle',
-  'registry:project',
-];
-const MEMBER_TYPE_LABELS: Record<string, string> = {
-  'registry:skill': 'Skills',
-  'registry:agent': 'Agents',
-  'registry:command': 'Commands',
-  'registry:tool': 'Tools',
-  'registry:bundle': 'Bundles',
-  'registry:project': 'Projects',
-};
-
-/** Bucket bundle/project members by registry type in a stable order, with an
- *  "Other" bucket for anything unrecognized (or a null type). */
-export function groupBundleMembersByType(
-  members: BundleMember[],
-  tI18nComplete: UiTranslator,
-): TypedMemberGroup[] {
-  const byType = new Map<string, BundleMember[]>();
-  for (const m of members) {
-    const key = m.type ?? 'other';
-    const arr = byType.get(key) ?? [];
-    arr.push(m);
-    byType.set(key, arr);
-  }
-  const groups: TypedMemberGroup[] = [];
-  for (const type of MEMBER_TYPE_ORDER) {
-    const arr = byType.get(type);
-    if (arr?.length) groups.push({ type, label: MEMBER_TYPE_LABELS[type] ?? type, members: arr });
-    byType.delete(type);
-  }
-  const rest = [...byType.values()].flat();
-  if (rest.length)
-    groups.push({ type: 'other', label: tI18nComplete.raw('textf97e9da0e3b8'), members: rest });
-  return groups;
 }
 
 /** One row in the grouped capability-badge display. */
@@ -180,4 +115,67 @@ export function marketplaceFileNodes(targets: readonly string[]): FileTreeNode[]
     return [...targets].sort().map((path) => ({ path, name: path, depth: 0 }));
   }
   return buildFileTree(targets, dir);
+}
+
+export function projectContentGroups(data: MarketplaceItemDetail, tI18nComplete: UiTranslator) {
+  if (data.type !== 'registry:project') return [];
+  const toItem = (
+    name: string,
+    title: string,
+    description: string | null,
+    type: string,
+    id: string,
+  ): MarketplaceItem => ({
+    id,
+    registry: data.registry,
+    name,
+    type,
+    title,
+    description,
+    categories: [],
+    capabilities: { secrets: [], connectors: [], tools: [], network: [] },
+    dependencies: [],
+    fileCount: 0,
+    external: data.external,
+    marketplaceId: data.marketplaceId,
+    marketplaceLabel: data.marketplaceLabel,
+    owner: data.owner,
+    sourceUrl: data.sourceUrl,
+  });
+  // A project shows its README first, then its contents rendered as the SAME
+  // marketplace cards, in the SAME typed grid, as the main gallery — so a skill
+  // inside the project looks exactly like a skill listed on the marketplace.
+  // Each content item is a full catalog id, so we synthesize a MarketplaceItem
+  // from the resolved dependency metadata + the project's own source identity.
+  const byName = new Map(data.dependencyItems.map((d) => [d.name, d]));
+  const items: MarketplaceItem[] = data.dependencies
+    .map((name) => byName.get(name))
+    .filter((d): d is MarketplaceItemDetail['dependencyItems'][number] => Boolean(d))
+    .map((d) => toItem(d.name, d.title, d.description, d.type, d.id));
+  const memberItemGroups = groupMarketplaceItemsByType(items);
+  // A project's agents + triggers (parsed from kortix.yaml) rendered with the
+  // SAME card + name-based icon heuristic as its skills — just non-navigable,
+  // since they aren't their own catalog items.
+  const groups: { label: string; items: MarketplaceItem[] }[] = [];
+  if (data.projectAgents?.length) {
+    groups.push({
+      label: tI18nComplete.raw('text279b44d2ab4b'),
+      items: data.projectAgents.map((a) =>
+        toItem(a.name, a.title.replaceAll('-', ' '), a.description, 'registry:agent', `agent:${a.name}`),
+      ),
+    });
+  }
+  if (data.projectTriggers?.length) {
+    groups.push({
+      label: tI18nComplete.raw('texte62f2148a64d'),
+      items: data.projectTriggers.map((t) =>
+        toItem(t.slug, t.slug.replaceAll('-', ' '), t.description, 'registry:trigger', `trigger:${t.slug}`),
+      ),
+    });
+  }
+
+  return [
+    ...memberItemGroups.map((g) => ({ ...g, navigable: true })),
+    ...groups.map((g) => ({ ...g, navigable: false })),
+  ];
 }

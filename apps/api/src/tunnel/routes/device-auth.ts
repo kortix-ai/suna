@@ -209,7 +209,7 @@ export function createDeviceAuthPublicRouter() {
           }),
           'Current device-auth status (pending/approved/denied/expired)',
         ),
-        ...errors(400, 403, 404, 429),
+        ...errors(400, 403, 429),
       },
     }),
     async (c: any) => {
@@ -234,12 +234,8 @@ export function createDeviceAuthPublicRouter() {
         .from(tunnelDeviceAuthRequests)
         .where(eq(tunnelDeviceAuthRequests.deviceCode, code));
 
-      if (!row) {
-        return c.json({ status: 'not_found' }, 404);
-      }
-
-      // Verify the secret
-      if (!verifySecretKey(secret, row.deviceSecretHash)) {
+      // Do not reveal whether a device code exists before verifying its secret.
+      if (!row || !verifySecretKey(secret, row.deviceSecretHash)) {
         return c.json({ error: 'Invalid secret' }, 403);
       }
 

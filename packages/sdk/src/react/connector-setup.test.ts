@@ -242,7 +242,12 @@ test('reopening the popup resets the poll deadline instead of inheriting an expi
     return Response.json({ connected: false });
   }) as unknown as typeof fetch;
 
-  jest.useFakeTimers();
+  // Both opens happen at the same clock instant. Re-enabling Bun's fake timers
+  // resets the clock to the wall time, so the two opens read the same
+  // millisecond in about 1 run in 3 (KRTX-2877). The hook must start a fresh
+  // window on every open, whatever the clock says.
+  const OPENED_AT = 1_800_000_000_000;
+  jest.useFakeTimers({ now: OPENED_AT });
   const setup = harness({ openPopup: (url) => openedUrls.push(url) });
   await setup.mount();
   await setup.connect();
@@ -265,7 +270,7 @@ test('reopening the popup resets the poll deadline instead of inheriting an expi
     expect(setup.value?.phase).toBe('opened');
 
     // Reopen: a fresh 5-minute window starts, so polls resume.
-    jest.useFakeTimers();
+    jest.useFakeTimers({ now: OPENED_AT });
     await setup.connect();
     // Step the clock as the first window does: the reopened poll's first timer
     // is scheduled only after /start settles, a few microtasks in. One 6s jump

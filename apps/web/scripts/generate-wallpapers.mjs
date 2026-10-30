@@ -13,7 +13,7 @@
  *    resolution — nothing is ever upscaled from a raster.
  *
  * 2. `product` — the wallpapers you can set on a Kortix home
- *    (`src/lib/wallpapers.ts`). Five of the six are live WebGL compositions,
+ *    (`packages/ui/src/theme/wallpapers.ts`). Five of the six are live WebGL compositions,
  *    so there is no file to copy: each one is rendered at the target pixel
  *    size in a real browser at `/debug/wallpaper` and the frame is captured.
  *    `prefers-reduced-motion: reduce` freezes every composition (speed 0), so
@@ -34,7 +34,7 @@
  * Flags:
  *   --base=<url>   dev/prod server that serves /debug/wallpaper (required host)
  *   --only=<ids>   comma-separated ids to re-render (`symbol`, `logo`, or any
- *                  wallpaper id from src/lib/wallpapers.ts)
+ *                  wallpaper id from packages/ui/src/theme/wallpapers.ts)
  *   --gpu=<mode>   `metal` (default, fast) or `swiftshader` (no GPU)
  */
 import { execFileSync } from 'node:child_process';

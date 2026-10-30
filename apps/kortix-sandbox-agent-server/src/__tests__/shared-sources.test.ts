@@ -19,6 +19,7 @@ const REPO = resolve(APP, '../..')
  * contract module that is a directory (`session-log/`) bundles every file in it.
  */
 function sharedFilesFor(specifier: string): string[] | null {
+  if (specifier === '@kortix/shared/ssrf-guard') return ['packages/shared/src/ssrf-guard.ts']
   if (specifier === '@kortix/sdk/wire-message-id') return ['packages/sdk/src/core/session/wire-message-id.ts']
   const contract = /^@kortix\/api-contract\/([a-z-]+)$/.exec(specifier)
   if (!contract) return null

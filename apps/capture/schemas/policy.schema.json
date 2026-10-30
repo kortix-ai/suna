@@ -68,6 +68,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "member_inclusions": {
+          "type": "boolean",
+          "description": "False: a member's own included apps and websites are ignored. Default true."
         }
       }
     },

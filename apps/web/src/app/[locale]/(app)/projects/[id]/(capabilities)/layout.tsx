@@ -2,8 +2,8 @@
 
 import { useParams } from 'next/navigation';
 
-import { CapabilityAccessGate } from '@/features/workspace/capabilities/shared/capability-access-gate';
-import { CapabilityTabs } from '@/features/workspace/capabilities/shared/capability-tabs';
+import { CapabilityAccessGate } from '@kortix/ui/customize/shared/capability-access-gate';
+import { CapabilityTabs } from '@kortix/ui/customize/shared/capability-tabs';
 
 /**
  * Shared shell for /projects/[id]/{agent,connectors,skills,triggers,models,

@@ -20,12 +20,15 @@ let projectId: string;
 let upstream: string;
 let asks: number;
 let clock: Date;
+/** Resolves when the fake upstream is asked: the check has claimed its row by then. */
+let asked: () => void = () => {};
 
 const project = () => ({ projectId, repoUrl: 'https://example.test/r.git', defaultBranch: 'main', manifestPath: 'kortix.yaml', gitAuthToken: null });
 const deps = {
   store: dbBaseTipStore,
   ask: async () => {
     asks += 1;
+    asked();
     // Long enough that the concurrent requests below all arrive while it runs.
     await Bun.sleep(50);
     if (upstream === 'down') throw new Error('upstream unreachable');
@@ -93,8 +96,11 @@ describe('sharedBaseTip', () => {
   });
 
   test('a move during a check keeps the row expired: the stale answer is not stored', async () => {
+    // Expire while the check runs: after its claim, before its answer. A fixed
+    // sleep raced the claim's write under load, and the move then landed first.
+    const checking = new Promise<void>((resolve) => (asked = resolve));
     const first = tip();
-    await Bun.sleep(10);
+    await checking;
     await expireBaseTips(projectId);
     expect(await first).toBe(TIP_A);
     upstream = TIP_B;

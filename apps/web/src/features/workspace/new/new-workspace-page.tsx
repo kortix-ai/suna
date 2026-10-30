@@ -1,8 +1,8 @@
 'use client';
 
-import { readAccountParam } from '@/features/workspace/new/account-param';
-import { readCloneParam } from '@/features/workspace/new/clone-param';
-import { readSourceParam } from '@/features/workspace/new/source-param';
+import { readAccountParam } from '@kortix/ui/workspace/new/account-param';
+import { readCloneParam } from '@kortix/ui/workspace/new/clone-param';
+import { readSourceParam } from '@kortix/ui/workspace/new/source-param';
 import { useTranslations } from '@/i18n/use-translations';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
@@ -10,15 +10,15 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { DesktopCloseButton } from '@/components/desktop/desktop-close-button';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
-import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
+import { ProjectIconField } from '@kortix/ui/workspace/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
 import { AccountTopBar } from '@/features/workspace/account-top-bar';
-import { AccountPicker } from '@/features/workspace/new/account-picker';
-import { AdvancedFields } from '@/features/workspace/new/advanced-fields';
+import { AccountPicker } from '@kortix/ui/workspace/new/account-picker';
+import { AdvancedFields } from '@kortix/ui/workspace/new/advanced-fields';
 import {
   INITIAL_FORM_STATE,
   isForeignAccountList,
@@ -26,20 +26,21 @@ import {
   resolveDefaultCreatableAccountId,
   shouldShowAccountLine,
   type NewWorkspaceFormState,
-} from '@/features/workspace/new/new-workspace-form';
-import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
-import { useCreateWorkspace } from '@/features/workspace/new/use-create-workspace';
-import { WorkspaceHandoff } from '@/features/workspace/new/workspace-handoff';
+} from '@kortix/ui/workspace/new/new-workspace-form';
+import { useCreatableAccounts } from '@kortix/ui/workspace/new/use-creatable-accounts';
+import { useCreateWorkspace } from '@kortix/ui/workspace/new/use-create-workspace';
+import { useProjectQuota } from '@kortix/ui/workspace/new/use-project-quota';
+import { WorkspaceHandoff } from '@kortix/ui/workspace/new/workspace-handoff';
 import {
   WORKSPACE_NAME_MAX_LENGTH,
   suggestWorkspaceName,
   validateWorkspaceName,
-} from '@/features/workspace/new/workspace-name';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
+} from '@kortix/ui/workspace/new/workspace-name';
+import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
-import { cn } from '@/lib/utils';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { cn } from '@kortix/ui';
+import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
 
 /**
  * The form <-> `WorkspaceHandoff` swap's ONLY transition — a plain opacity
@@ -132,6 +133,7 @@ export function NewWorkspacePage() {
   const searchParams = useSearchParams();
   const cloneItemId = readCloneParam(new URLSearchParams(searchParams?.toString() ?? ''));
   const router = useRouter();
+  const connectComputer = searchParams?.get('connect') === 'computer';
 
   useSignedOutRedirect();
 
@@ -177,7 +179,11 @@ export function NewWorkspacePage() {
     canRetry,
     limitReached,
     phase,
-  } = useCreateWorkspace();
+  } = useCreateWorkspace({
+    enterProject: connectComputer
+      ? (projectId) => router.replace(`/projects/${encodeURIComponent(projectId)}/settings/computer`)
+      : undefined,
+  });
   const openUpgradeDialog = useUpgradeDialogStore((store) => store.openUpgradeDialog);
   const submitting = status === 'creating';
 
@@ -255,6 +261,18 @@ export function NewWorkspacePage() {
     accountId: effectiveAccountId,
   };
 
+  // The target account's project-cap state, read once on load. When the plan
+  // caps the account, the form shows the cap reason and the Upgrade affordance
+  // up front (KRTX-2495) and Create cannot submit — the same information a
+  // denied submit would have taught, without the failed attempt first. Gated
+  // on `!accountsQuery.isLoading` so the pre-check never fires for an account
+  // the create would not target (the effective id is still unresolved during
+  // the load window), and on `userId` so a signed-out render reads nothing.
+  const quotaQuery = useProjectQuota(effectiveAccountId, {
+    enabled: !accountsQuery.isLoading && Boolean(userId),
+  });
+  const capState = quotaQuery.data?.capped ? quotaQuery.data : null;
+
   // `accountsQuery.isLoading` is checked here AS WELL AS inside
   // `isSubmittable`'s own `accountCount < 1` floor. Belt and braces on
   // purpose, not redundant: during the loading window `creatableAccounts` is
@@ -281,6 +299,9 @@ export function NewWorkspacePage() {
     isSubmittable(effectiveState, creatableAccounts.length) &&
     !accountsQuery.isLoading &&
     !submitting &&
+    // The account is at its plan cap (the quota pre-check said so): a create
+    // can only fail with the 403 the cap block on screen already explains.
+    !capState &&
     // Belt and braces on top of `effectiveAccountId` already being forced
     // null above for a FOREIGN list — `isSubmittable`'s own
     // `accountCount > 1 && !accountId` check already fails on that null, but
@@ -537,12 +558,50 @@ export function NewWorkspacePage() {
                     />
                   </div>
                 ) : null}
-                <AdvancedFields state={state} accountId={effectiveAccountId} onChange={setState} />
+                <AdvancedFields
+                  connectComputer={connectComputer}
+                  state={state}
+                  accountId={effectiveAccountId}
+                  onChange={setState}
+                />
               </div>
 
               <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
                 {t('actions.create')}
               </Button>
+              {/* The plan cap, known BEFORE any submit (KRTX-2495): the quota
+                  pre-check answered `capped` for the target account, so the
+                  form states the cap reason here instead of teaching it
+                  through a failed create. Same slot and treatment as the
+                  post-submit error block below — form-level, `role="alert"`,
+                  one message and one secondary action — so the cap says the
+                  same thing about the same account wherever it is met. Shown
+                  only while `status === 'idle'`: once a submit runs, the
+                  handoff ('creating') or the post-submit block ('error') owns
+                  this slot, so at most one cap message is ever on screen.
+                  The Upgrade affordance is gated on billing exactly like the
+                  post-submit one: with billing off there is nothing to upgrade
+                  to, and the server itself answers `capped: false`. */}
+              {capState && status === 'idle' ? (
+                <div role="alert" className="flex flex-col items-center gap-1.5">
+                  <p className="text-destructive text-center text-xs">{capState.message}</p>
+                  {isBillingEnabled() ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        openUpgradeDialog({
+                          reason: 'subscription_required',
+                          accountId: effectiveAccountId ?? undefined,
+                        })
+                      }
+                    >
+                      {t('actions.upgrade')}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
               {/* Form-level, not a field error: every failure `messageFor`
                     (`use-create-workspace.ts`) maps — 403 wrong-account, 400
                     bad name, a managed-git-unavailable 503, a retryable 502, or

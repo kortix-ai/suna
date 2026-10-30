@@ -28,6 +28,7 @@ import { opencodeSupportsSteer, runningOpencodeVersion } from './turns'
 
 import type { OpenCodeBootState } from './boot-state'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function opencodeLogFilePath(home: string): string {
   return join(home, '.local', 'share', 'opencode', 'log', 'opencode.log')
 }
@@ -46,6 +47,7 @@ function catalogSnapshotForHealth(): { ids: string[] | null; fallbackReason: str
  * root-scoped fallback (older daemons' callers, command turns with no message
  * id) answers about the whole root, so it names no reason rather than lend one
  * turn's outcome to another.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function observeRequestedTurn(
   opencodeUrl: string,
@@ -81,6 +83,7 @@ export async function observeRequestedTurn(
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function resolveTurnObservationIdentity(
   requestedSession: string | undefined,
   requestedMessage: string | undefined,
@@ -245,6 +248,7 @@ async function readOpenCodeDiagnosticReport(
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function createOpenCodeDiagnosticsService(
   opencode: Opencode,
   home: string = OPENCODE_HOME,

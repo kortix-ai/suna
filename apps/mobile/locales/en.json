@@ -114,14 +114,14 @@
       "passwordTooShort": "Password must be at least 8 characters"
     },
     "drawer": {
-      "defaultTitle": "Welcome to Kortix",
-      "defaultMessage": "The AI Super Mega Giga app.",
-      "signInToChat": "Welcome to Kortix",
-      "signInToChatMessage": "The AI Super Mega Giga app.",
-      "signUpUnlock": "Welcome to Kortix",
-      "signUpUnlockMessage": "The AI Super Mega Giga app.",
-      "welcomeBack": "Welcome to Kortix",
-      "welcomeBackMessage": "The AI Super Mega Giga app.",
+      "defaultTitle": "Welcome to Kortix CompanyOS",
+      "defaultMessage": "The open-source CompanyOS.",
+      "signInToChat": "Welcome to Kortix CompanyOS",
+      "signInToChatMessage": "The open-source CompanyOS.",
+      "signUpUnlock": "Welcome to Kortix CompanyOS",
+      "signUpUnlockMessage": "The open-source CompanyOS.",
+      "welcomeBack": "Welcome to Kortix CompanyOS",
+      "welcomeBackMessage": "The open-source CompanyOS.",
       "signUpToContinue": "Sign up to continue",
       "signUpToContinueMessage": "Please sign up or sign in to create and select workers, connect apps and much more"
     },
@@ -1205,8 +1205,12 @@
     "stopNotAllowed": "Only the member who started this run, the session owner or a project manager can stop it."
   },
   "genui": {
+    "call": "Call",
     "chartTapHint": "Tap to read a value",
     "checklistReady": "{{done}}/{{total}} ready",
+    "directions": "Directions",
+    "imageCount_one": "{{count}} image",
+    "imageCount_other": "{{count}} images",
     "map": "Map",
     "mapUnavailable": "Map unavailable",
     "openImage": "Open image",
@@ -1214,7 +1218,9 @@
     "pick": "Pick",
     "pieFocus": "{{label}} is {{percent}}% of the total",
     "pieOfTotal": "{{value}} of {{total}}",
-    "showData": "Show data"
+    "showData": "Show data",
+    "unavailable": "This content could not be displayed.",
+    "website": "Website"
   },
   "updateRequired": {
     "title": "Update required",
@@ -1248,6 +1254,9 @@
     "expiredBody": "Ask the person who invited you to send a new one.",
     "wrongAccountTitle": "Switch accounts",
     "wrongAccountBody": "This invite is addressed to a different account. You're signed in as {{email}}.",
+    "directoryTitle": "Sign in with single sign-on",
+    "directoryBody": "Your organization's directory added you to this account. Open this invite in a browser and sign in with your organization's single sign-on, or ask an account admin to resend the invite.",
+    "ssoDomainUnverifiedBody": "Your single sign-on provider has not verified this email's domain. Sign out and sign back in with your email address to use this invite.",
     "signOutAndContinue": "Sign out and continue",
     "backToProjects": "Back to projects"
   },
@@ -1255,5 +1264,27 @@
     "waitingManagers": "Anyone who manages this project can approve or deny it.",
     "waitingTitle": "Waiting on approval",
     "waitingWho": "The person who started this session or anyone who manages this project can approve or deny it."
+  },
+  "imageGen": {
+    "generating": "Generating image",
+    "editing": "Editing image",
+    "openFullScreen": "Open full screen",
+    "openFullScreenPrompt": "Open full screen: {{prompt}}",
+    "generatingCount_one": "Generating {{count}} image",
+    "generatingCount_other": "Generating {{count}} images",
+    "editingCount_one": "Editing {{count}} image",
+    "editingCount_other": "Editing {{count}} images",
+    "loading": "Loading image",
+    "stopped": "Stopped",
+    "failed": "The image was not generated.",
+    "tapToLoad": "Tap to load ({{size}})",
+    "retrySecond_one": "Try again in {{count}} second.",
+    "retrySecond_other": "Try again in {{count}} seconds.",
+    "retryMinute_one": "Try again in {{count}} minute.",
+    "retryMinute_other": "Try again in {{count}} minutes.",
+    "retryHour_one": "Try again in {{count}} hour.",
+    "retryHour_other": "Try again in {{count}} hours.",
+    "unavailable": "Image unavailable",
+    "details": "Image details"
   }
 }

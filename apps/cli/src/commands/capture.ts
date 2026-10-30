@@ -34,7 +34,7 @@ Options:
   --app <name>      search: only this app (exact name, any case).
   --from <iso>      search, timeline: start (ISO 8601).
   --to <iso>        search, timeline: end (exclusive).
-  --day <date>      timeline: one UTC day, YYYY-MM-DD (default: today).
+  --day <date>      search, timeline: one UTC day, YYYY-MM-DD (timeline default: today).
   --limit <n>       search: results, 1 to 100 (default 20).
   --host <name>     Operate against a non-default Kortix host.
   --json            Machine-readable output.
@@ -91,7 +91,7 @@ export async function runCapture(argv: string[]): Promise<number> {
   try {
     if (sub === 'search') {
       const result = await withKortixScope(auth, () =>
-        searchMyCapture({ q: query, kinds, app: f.app, from: f.from, to: f.to, limit }),
+        searchMyCapture({ q: query, kinds, app: f.app, day: f.day, from: f.from, to: f.to, limit }),
       );
       if (json) return (emitJson(result), 0);
       if (result.hits.length === 0) {

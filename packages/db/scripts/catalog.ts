@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { ledgerExists } from '../src/ledger-exists';
 
 /**
  * The one reader of the `kortix` schema catalog and the migration ledger.
@@ -198,10 +199,7 @@ async function readCatalog(client: pg.Client, schema: string): Promise<Catalog> 
  * reads as empty. A ledger the role cannot read throws.
  */
 async function readLedger(client: pg.Client): Promise<string[]> {
-  const { rows } = await client.query<{ exists: boolean }>(
-    `SELECT to_regclass('${LEDGER_TABLE}') IS NOT NULL AS exists`,
-  );
-  if (!rows[0]?.exists) return [];
+  if (!(await ledgerExists(client))) return [];
   const ledger = await client.query<{ name: string }>(`SELECT name FROM ${LEDGER_TABLE} ORDER BY run_on, id`);
   return ledger.rows.map((row) => row.name);
 }

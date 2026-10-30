@@ -14,6 +14,7 @@
 // agent's grant, and a grant we cannot prove must refuse the turn.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { config } from '../../config';
+import { applyEnvSyncDurableWrite, firstBoundString } from '../../__tests__/helpers/env-sync-durable-fake';
 
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
@@ -39,14 +40,20 @@ const SESSION_ROW = {
   config: { serviceKey: 'svc-key' },
 };
 
+/** Each session's durable env-sync record (`session_sandboxes.config`), which every push writes. */
+const durableConfigs = new Map<string, Record<string, unknown> | null>();
+
 // One fake row satisfies every select on this path: the session lookup, the
 // project lookup, the gateway-mode lookup and the sandbox lookup.
 mock.module('../../shared/db', () => ({
   db: {
-    select: () => ({
+    select: (columns: Record<string, unknown> = {}) => ({
       from: () => ({
-        where: () => {
-          const rows = [SESSION_ROW];
+        where: (condition: unknown) => {
+          const wantsDurableRecord = Object.keys(columns).length === 1 && 'config' in columns;
+          const rows = wantsDurableRecord
+            ? [{ ...SESSION_ROW, config: durableConfigs.get(firstBoundString(condition) ?? '') ?? null }]
+            : [SESSION_ROW];
           return {
             limit: async () => rows,
             then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
@@ -55,7 +62,14 @@ mock.module('../../shared/db', () => ({
         },
       }),
     }),
-    update: () => ({ set: () => ({ where: async () => undefined }) }),
+    update: () => ({
+      set: (patch: { config?: unknown }) => ({
+        where: async (condition: unknown) => {
+          const sessionId = firstBoundString(condition) ?? '';
+          durableConfigs.set(sessionId, applyEnvSyncDurableWrite(durableConfigs.get(sessionId) ?? null, patch.config));
+        },
+      }),
+    }),
   },
 }));
 
@@ -117,10 +131,11 @@ function binding(overrides: Partial<NetworkBoundarySecretBinding> = {}): Network
   };
 }
 
+/** One box per session, as in production: `ext-2` is the box of `sess-2`. */
 function prompt(externalId = 'ext-1') {
   return syncSandboxEnvForPrompt({
     projectId: 'proj-1',
-    sessionId: 'sess-1',
+    sessionId: externalId.replace('ext-', 'sess-'),
     externalId,
     serviceKey: 'svc-key',
     previewUrl: 'https://sandbox.test',
@@ -142,6 +157,7 @@ beforeEach(() => {
 
   __resetNetworkBoundaryArmCacheForTests();
   __resetPromptModelSignatureCacheForTests();
+  durableConfigs.clear();
   events = [];
   envPushes = [];
   bindings = [binding()];

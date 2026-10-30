@@ -49,6 +49,7 @@ function actionOf(rules: Rules, key: string): unknown {
   return Object.hasOwn(rules, key) ? rules[key] : rules['*']
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function toolAccessRules(tools: Record<string, boolean>, agentPermission: unknown, globalPermission: unknown): Rules {
   const own = asRules(agentPermission)
   if (tools['*'] !== false) {
@@ -79,7 +80,10 @@ export function toolAccessRules(tools: Record<string, boolean>, agentPermission:
   return rules
 }
 
-/** Apply every agent's compiled `tools` to its `permission`, in place, and drop `tools`. */
+/**
+ * Apply every agent's compiled `tools` to its `permission`, in place, and drop `tools`.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function applyAgentToolAccess(config: Record<string, unknown>): void {
   const agents = config.agent
   if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return

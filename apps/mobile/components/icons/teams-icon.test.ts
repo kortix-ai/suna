@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
  */
 const read = (path: string) => readFileSync(`${import.meta.dir}/${path}`, 'utf8');
 const mobileMark = read('teams-icon.tsx');
-const webMark = read('../../../web/src/features/icon/icons/microsoft-teams.tsx');
+const webMark = read('../../../../packages/ui/src/internal/icons/microsoft-teams.tsx');
 const userMessage = read('../session/turn/user-message.tsx');
 
 /** Every drawing attribute of the mark, in order, with ids normalised. */
@@ -43,5 +43,12 @@ describe('the mobile channel card', () => {
     expect(userMessage).toMatch(/platform === 'Teams'\)? (\?|return) <TeamsIcon size=\{size\} \/>/);
     expect(userMessage).toMatch(/platform === 'Slack'\)? (\?|return) <SlackIcon size=\{size\} \/>/);
     expect(userMessage).toContain("Teams: 'Microsoft Teams'");
+  });
+
+  // Any platform but Teams and Slack drew the Telegram plane.
+  test('draws Telegram only for Telegram: Email is an envelope, an unknown platform a neutral chat glyph', () => {
+    expect(userMessage).toMatch(/platform === 'Telegram'\)? (\?|return) <TelegramIcon size=\{size\} \/>/);
+    expect(userMessage).toContain("platform === 'Email' ? EnvelopeIcon : ChatCircleIcon");
+    expect(userMessage).toContain("Email: 'Email'");
   });
 });

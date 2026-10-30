@@ -100,7 +100,7 @@ jobs:
             KE2E_INTERNAL_SERVICE_KEY=kortix-staging-env:INTERNAL_SERVICE_KEY
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
-            E2E_AGENTMAIL_API_KEY
+            E2E_RESEND_API_KEY
             WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
             VERCEL_AUTOMATION_BYPASS_SECRET
             KE2E_CI_PASSTHROUGH_SECRET=kortix-ci-env:CF_WORKER_CI_PASSTHROUGH_SECRET
@@ -111,7 +111,7 @@ jobs:
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
@@ -200,7 +200,7 @@ jobs:
             KE2E_INTERNAL_SERVICE_KEY=kortix-staging-env:INTERNAL_SERVICE_KEY
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
-            E2E_AGENTMAIL_API_KEY
+            E2E_RESEND_API_KEY
             WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
             VERCEL_AUTOMATION_BYPASS_SECRET
             KE2E_CI_PASSTHROUGH_SECRET=kortix-ci-env:CF_WORKER_CI_PASSTHROUGH_SECRET
@@ -238,7 +238,7 @@ jobs:
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
@@ -297,8 +297,12 @@ jobs:
 
   # The deployed browser journeys, split by measured spec duration
   # (tests/src/core/browser-shard.ts, table in tests/e2e/shard-durations.json).
+  # Off until the repository variable RELEASE_BROWSER_LANES is `on` (Marko,
+  # 2026-10-28: "turn off any of the web browser lanes for now"). Turn them
+  # back on with `gh variable set RELEASE_BROWSER_LANES --body on`.
   browser:
     name: deployed browser shard
+    if: vars.RELEASE_BROWSER_LANES == 'on'
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
@@ -336,7 +340,7 @@ jobs:
             KE2E_INTERNAL_SERVICE_KEY=kortix-staging-env:INTERNAL_SERVICE_KEY
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
-            E2E_AGENTMAIL_API_KEY
+            E2E_RESEND_API_KEY
             WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
             VERCEL_AUTOMATION_BYPASS_SECRET
             KE2E_CI_PASSTHROUGH_SECRET=kortix-ci-env:CF_WORKER_CI_PASSTHROUGH_SECRET
@@ -374,7 +378,7 @@ jobs:
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
@@ -459,7 +463,7 @@ jobs:
             KE2E_INTERNAL_SERVICE_KEY=kortix-staging-env:INTERNAL_SERVICE_KEY
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
-            E2E_AGENTMAIL_API_KEY
+            E2E_RESEND_API_KEY
             WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
             VERCEL_AUTOMATION_BYPASS_SECRET
             KE2E_CI_PASSTHROUGH_SECRET=kortix-ci-env:CF_WORKER_CI_PASSTHROUGH_SECRET
@@ -470,7 +474,7 @@ jobs:
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
@@ -527,13 +531,16 @@ jobs:
           echo "contract lanes: $contract"
           failed=0
           [ "$api" = "success" ] || failed=1
-          [ "$browser" = "success" ] || failed=1
+          # A skipped browser job passes only while the lanes are switched off.
+          if [ "${{ vars.RELEASE_BROWSER_LANES }}" = "on" ] || [ "$browser" != "skipped" ]; then
+            [ "$browser" = "success" ] || failed=1
+          fi
           [ "$contract" = "success" ] || failed=1
           if [ "$failed" -ne 0 ]; then
             echo "::error::A release suite job did not pass (api=$api browser=$browser contract=$contract)."
             exit 1
           fi
-          echo "The contract lanes, the deployed API smoke and every browser shard passed."
+          echo "The contract lanes, the deployed API smoke and the browser shards (result: $browser) passed."
       # The release suite is ONE gate: this check is the only one the `prod`
       # ruleset requires, so it also requires every other check on the release
       # commit (CI, CodeQL, DB Migrations, scanners) to finish green. A check
@@ -549,8 +556,14 @@ jobs:
           deadline=$(( $(date +%s) + 40 * 60 ))
           while :; do
             # Latest attempt per check name, excluding this run's own jobs.
+            # Advisory (shown on the PR, not blocking): `compliance-as-code-action`
+            # (Drata). Owner decision 2026-10-20: since #10547 touched
+            # infra/terraform/environments/prod/variables.tf it reports one CRITICAL
+            # IaC finding whose detail exists only in the Drata dashboard, while
+            # Checkov and Trivy on the same files pass. Restore it to blocking once
+            # that finding is resolved.
             latest="$(RID="$RUN_ID" gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" --paginate \
-              --jq '.check_runs[] | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)' \
+              --jq '.check_runs[] | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not) | select(.name != "compliance-as-code-action")' \
               | jq -s 'group_by(.name) | map(max_by(.started_at // ""))')"
             pending="$(jq -r '.[] | select(.status != "completed") | .name' <<<"$latest")"
             red="$(jq -r '.[] | select(.status == "completed") | select((.conclusion // "") | IN("success","skipped","neutral") | not) | "\(.name): \(.conclusion)"' <<<"$latest")"

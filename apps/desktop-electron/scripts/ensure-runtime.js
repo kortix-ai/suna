@@ -31,7 +31,7 @@ if (!hasRuntime()) {
 // is impossible, so a package never ships without it.
 require('../src/computer').ensureDevAgentCli();
 
-// The Computer Use driver ships inside the macOS app (fetch-cua-driver.js).
+// The Computer Use driver ships inside the macOS and Windows apps (fetch-cua-driver.js).
 require('./fetch-cua-driver')
   .fetchCuaDriver()
   .catch((error) => {

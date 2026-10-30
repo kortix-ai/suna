@@ -112,7 +112,7 @@ function rememberNetworkBoundaryArm(externalId: string, digest: string, secretId
  * There is nothing to register with a provider any more. One mechanism serves
  * every provider: the guest holds a HANDLE, the broker route substitutes the real value
  * server-side on an approved host, and the value never enters the sandbox on
- * daytona, e2b or platinum alike. The Platinum credential edge is gone, so this
+ * platinum or daytona alike. The Platinum credential edge is gone, so this
  * is bookkeeping — it keeps the digest/skip and revocation accounting the
  * callers below still read, and it is async because it is awaited as a promise
  * everywhere.

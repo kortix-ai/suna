@@ -1,8 +1,15 @@
 // Anonymous, read-only session-share viewing — `/v1/public/session-shares/:ref`
 // and `.../messages` (apps/api/src/public-session-shares/index.ts). `:ref` is a
 // share's `share_id` or its `kps_` `public_token`. Only a `transcript` share
-// (`createSessionPublicShare(..., { transcript: true })`) reads `/messages`;
-// a `preview` or `file` share gets 404 there.
+// (`createSessionPublicShare(..., { transcript: true })`) read `/messages`;
+// a `preview` or `file` share got 404 there.
+//
+// REMOVED SERVER-SIDE (KRTX-2358): public transcript sharing is gone — the API
+// no longer serves `/v1/public/session-shares/**` and rejects transcript share
+// creates with 400. The functions stay exported until the next major (a
+// published package does not drop public names in a minor); every call now
+// answers 404. File and preview shares are unaffected — they never used these
+// routes (the web viewer reads `/p/public-share/:token`).
 //
 // Deliberately NOT built on `backendApi` (platform/api-client.ts): that client
 // wraps every call in the authenticated fetch path, which for a visitor with
@@ -16,6 +23,8 @@
 
 import { getBackendUrl } from '../../session/server-store/url-helpers';
 
+/** @deprecated Public transcript shares were removed (KRTX-2358).
+ *  Removed in the next major. */
 export class PublicSessionShareError extends Error {
   constructor(
     message: string,
@@ -26,6 +35,8 @@ export class PublicSessionShareError extends Error {
   }
 }
 
+/** @deprecated The server route was removed with public transcript sharing
+ *  (KRTX-2358). Removed in the next major. */
 export interface PublicSessionShareMeta {
   share: {
     share_id: string;
@@ -45,11 +56,15 @@ export interface PublicSessionShareMeta {
   };
 }
 
+/** @deprecated Public transcript shares were removed (KRTX-2358).
+ *  Removed in the next major. */
 export interface PublicSessionTranscriptToolCall {
   tool: string;
   status: string | null;
 }
 
+/** @deprecated Public transcript shares were removed (KRTX-2358).
+ *  Removed in the next major. */
 export interface PublicSessionTranscriptMessage {
   role: string;
   created: string | null;
@@ -60,6 +75,8 @@ export interface PublicSessionTranscriptMessage {
   reasoning_omitted: boolean;
 }
 
+/** @deprecated Public transcript shares were removed (KRTX-2358).
+ *  Removed in the next major. */
 export interface PublicSessionTranscript {
   available: boolean;
   reason: string | null;
@@ -98,7 +115,10 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 /** Anonymous session metadata (title/status/timestamps) for a share. Takes
- *  the `share_id` or the `kps_` public token. */
+ *  the `share_id` or the `kps_` public token.
+ *
+ *  @deprecated The server route was removed with public transcript sharing
+ *  (KRTX-2358); every call answers 404. Removed in the next major. */
 export async function getPublicSessionShare(shareId: string): Promise<PublicSessionShareMeta> {
   return getJson<PublicSessionShareMeta>(publicSessionShareUrl(shareId));
 }
@@ -107,7 +127,10 @@ export async function getPublicSessionShare(shareId: string): Promise<PublicSess
  *  transcript digest for a `transcript` share. Takes the `share_id` or the
  *  `kps_` public token. Throws `PublicSessionShareError` with status 404 for a
  *  share that does not name the conversation, 410 when revoked or expired, and
- *  503 when no sandbox runs and no transcript was saved. */
+ *  503 when no sandbox runs and no transcript was saved.
+ *
+ *  @deprecated The server route was removed with public transcript sharing
+ *  (KRTX-2358); every call answers 404. Removed in the next major. */
 export async function getPublicSessionShareMessages(shareId: string): Promise<PublicSessionTranscript> {
   return getJson<PublicSessionTranscript>(publicSessionShareUrl(shareId, '/messages'));
 }

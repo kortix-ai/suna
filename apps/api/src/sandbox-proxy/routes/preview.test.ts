@@ -137,10 +137,16 @@ describe('shouldAutoResumeStoppedSandbox', () => {
 // The 504 LONG_TURN_PROXY_TIMEOUT answer itself (code, no-store, the way out)
 // is proven at the route in __tests__/e2e-preview-proxy.test.ts.
 describe('longTurnTimeoutResponse', () => {
-  test('reflects CORS origin like every other proxy response, and omits it with no Origin', () => {
-    const res = longTurnTimeoutResponse('https://app.kortix.ai');
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://app.kortix.ai');
+  // The same allowlist as every preview response: the preview cookie is ambient
+  // on cross-site requests, so a credentialed grant to any origin let a
+  // cross-site page read this refusal (KRTX-2802).
+  test('grants CORS to the allowlisted origin only, and to no Origin nothing', () => {
+    const res = longTurnTimeoutResponse(config.FRONTEND_URL);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(config.FRONTEND_URL);
     expect(res.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+    const arbitrary = longTurnTimeoutResponse('https://arbitrary.example');
+    expect(arbitrary.headers.has('Access-Control-Allow-Origin')).toBe(false);
+    expect(arbitrary.headers.has('Access-Control-Allow-Credentials')).toBe(false);
     expect(longTurnTimeoutResponse('').headers.has('Access-Control-Allow-Origin')).toBe(false);
   });
 });

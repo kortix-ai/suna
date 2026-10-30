@@ -298,13 +298,13 @@ function firstMatchOrNull(
   policies: Policy[],
   args?: Record<string, unknown> | null,
   argsAvailable = false,
-): PolicyAction | null {
+): Policy | null {
   if (policies.length === 0) return null;
   const ordered = [...policies].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   for (const p of ordered) {
     if (!matchesPolicy(p.match, path)) continue;
     if (!ruleApplies(p, args, argsAvailable)) continue;
-    return p.action;
+    return p;
   }
   return null;
 }
@@ -321,6 +321,18 @@ export interface EffectiveResolveInput {
   relPath: string;
   projectPolicies: Policy[];
   connectorPolicies: Policy[];
+  /**
+   * The calling agent's policy set on this connector (`agents.<a>.policy_sets`).
+   * Evaluated after the project rules and before the connector's base rules.
+   * Absent = the caller has no set (no agent, or no entry).
+   */
+  setPolicies?: Policy[];
+  /**
+   * The caller's agent names a set this connector does not define (manifest
+   * drift, or the set's rules failed to load). Every call is blocked: a block
+   * is never looser than any set, while `require_approval` could be.
+   */
+  setMissing?: boolean;
   risk: Risk;
   /** Project setting from `policy.default_mode` in kortix.yaml. */
   defaultMode: DefaultMode;
@@ -340,25 +352,38 @@ export interface EffectiveResolveInput {
 export interface EffectiveResolveResult {
   action: PolicyAction;
   /** Why this action — which scope decided. Useful for explainability + audit. */
-  source: 'project' | 'connector' | 'risk_default' | 'allow_all';
+  source: 'project' | 'policy_set' | 'connector' | 'risk_default' | 'allow_all';
 }
 
 /**
- * Resolve the effective action across both scopes + the risk-derived default.
+ * Resolve the effective action across the scopes + the risk-derived default.
+ *   0. the caller's set is missing → block (fail closed, before everything).
  *   1. project `[[policies]]` (first match wins) → if hit, return.
- *   2. connector `[[connectors.policies]]` (first match wins) → if hit, return.
- *   3. `defaultMode = risk` → action from risk class.
- *   4. `defaultMode = allow_all` → always_run.
+ *   2. the caller's agent policy set on this connector → if hit, return.
+ *   3. connector `[[connectors.policies]]` (base rules) → if hit, return.
+ *   4. `sensitive` → require_approval; `defaultMode` → risk class / allow_all.
  *
- * Project rules are evaluated BEFORE connector rules and CANNOT be overridden
- * by them — admin trust property.
+ * Project rules are evaluated BEFORE set and connector rules and CANNOT be
+ * overridden by them — admin trust property. A set CAN loosen a base rule
+ * for its agent: a guardrail for every caller belongs in project `policies:`.
  */
 export function resolveEffectiveAction(input: EffectiveResolveInput): EffectiveResolveResult {
+  const { action, source } = resolveEffectiveRule(input);
+  return { action, source };
+}
+
+/** `resolveEffectiveAction` plus the rule that decided, when a rule did. */
+export function resolveEffectiveRule(input: EffectiveResolveInput): EffectiveResolveResult & { rule?: Policy } {
   const args = input.args ?? null;
   const argsAvailable = input.argsAvailable ?? false;
 
+  if (input.setMissing) return { action: 'block', source: 'policy_set' };
+
   const projectHit = firstMatchOrNull(input.fullPath, input.projectPolicies, args, argsAvailable);
-  if (projectHit) return { action: projectHit, source: 'project' };
+  if (projectHit) return { action: projectHit.action, source: 'project', rule: projectHit };
+
+  const setHit = firstMatchOrNull(input.relPath, input.setPolicies ?? [], args, argsAvailable);
+  if (setHit) return { action: setHit.action, source: 'policy_set', rule: setHit };
 
   const connectorHit = firstMatchOrNull(
     input.relPath,
@@ -366,7 +391,7 @@ export function resolveEffectiveAction(input: EffectiveResolveInput): EffectiveR
     args,
     argsAvailable,
   );
-  if (connectorHit) return { action: connectorHit, source: 'connector' };
+  if (connectorHit) return { action: connectorHit.action, source: 'connector', rule: connectorHit };
 
   // A `sensitive` connector gates EVERYTHING by default — reads included —
   // regardless of default_mode. A per-connector "sensitive" is a deliberate,
@@ -377,3 +402,4 @@ export function resolveEffectiveAction(input: EffectiveResolveInput): EffectiveR
   if (input.defaultMode === 'allow_all') return { action: 'always_run', source: 'allow_all' };
   return { action: riskDefaultAction(input.risk), source: 'risk_default' };
 }
+

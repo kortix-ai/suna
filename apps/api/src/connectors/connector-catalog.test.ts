@@ -18,7 +18,6 @@ const item = (id: string, kind: string, name: string, domain: string, descriptio
 
 const INDEX = [
   item('autumn-mcp', 'mcp', 'useautumn.com', 'useautumn.com', 'Billing on top of Stripe'),
-  item('stripe-cli', 'cli', 'Stripe', 'stripe.com'),
   item('autumn-api', 'openapi', 'useautumn.com', 'useautumn.com', 'Billing on top of Stripe'),
   item('stripe-api', 'openapi', 'Stripe', 'stripe.com'),
   item('stripe-mcp', 'mcp', 'Stripe', 'stripe.com'),
@@ -71,7 +70,6 @@ describe('connector catalogue sections', () => {
             data: [
               { ...item('a-mcp', 'mcp', 'A', 'a.example'), categories: ['cloud'] },
               { ...item('a-api', 'openapi', 'A', 'a.example'), categories: ['cloud'] },
-              { ...item('a-cli', 'cli', 'A', 'a.example'), categories: ['cloud'] },
               { ...item('b-mcp', 'mcp', 'B', 'b.example'), categories: ['cloud'] },
             ],
           }),

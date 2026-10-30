@@ -8,28 +8,28 @@ import {
 
 test('background snapshot build dedup is provider-qualified', () => {
   expect(backgroundBuildKey('daytona', 'kortix-default-abc')).not.toBe(
-    backgroundBuildKey('e2b', 'kortix-default-abc'),
+    backgroundBuildKey('platinum', 'kortix-default-abc'),
   );
-  expect(backgroundBuildKey('e2b', 'kortix-default-abc')).toBe(
-    'e2b:kortix-default-abc',
+  expect(backgroundBuildKey('platinum', 'kortix-default-abc')).toBe(
+    'platinum:kortix-default-abc',
   );
 });
 
 test('new snapshot build logs reconcile only against their recorded provider', () => {
   expect(buildLogProviderCandidates(
-    { source: 'background', slug: 'default-warm', provider: 'e2b' },
-    ['daytona', 'platinum', 'e2b'],
-  )).toEqual(['e2b']);
+    { source: 'background', slug: 'default-warm', provider: 'platinum' },
+    ['platinum', 'daytona'],
+  )).toEqual(['platinum']);
 });
 
 test('historical and unknown build logs remain unattributed', () => {
   expect(buildLogProviderCandidates(
     { source: 'background', slug: 'default-warm' },
-    ['daytona', 'platinum', 'e2b', 'e2b'],
+    ['platinum', 'daytona', 'daytona'],
   )).toEqual([]);
   expect(buildLogProviderCandidates(
     { source: 'manual', provider: 'managed' },
-    ['daytona', 'platinum', 'e2b'],
+    ['platinum', 'daytona'],
   )).toEqual([]);
 });
 

@@ -22,7 +22,7 @@
  *   2. `useCurrentAccountStore`'s `selectedAccountId`, via
  *      `useSettingsAccountId` — the same fallback every account-scoped
  *      settings tab already used, and the same one
- *      `stores/account-settings-modal-store.ts` uses to build this exact URL.
+ *      `packages/ui/src/internal/stores/account-settings-modal-store.ts` uses to build this exact URL.
  *      Covers the case where the detail read fails or the caller has no
  *      project.
  *
@@ -42,7 +42,7 @@ import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
-import { isAccountGraduatedSection, legacySectionRedirect } from './settings-tabs';
+import { isAccountGraduatedSection, legacySectionRedirect } from '@kortix/ui/customize/settings/settings-tabs';
 import { useSettingsAccountId } from './use-settings-account-id';
 
 export interface LegacySectionRedirect {

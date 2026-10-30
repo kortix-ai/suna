@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { getManagedModel } from '@kortix/llm-catalog';
+import { TEST_MANAGED_LINEUP } from '../../__tests__/fixtures/managed-lineup';
 
 import { CODEX_SEED_MODEL_IDS } from '../models/codex-models';
 
 import {
+  CODEX_DEFAULT_MODEL,
   DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
+  effectiveFallbackPolicies,
   parseFallbackPolicies,
 } from './policy-config';
 
@@ -62,16 +64,33 @@ describe('gateway fallback policy configuration', () => {
     ]))).toThrow('shared/model');
   });
 
-  // The shipped default must route only to ids the platform can serve, and a
-  // fallback must never be the model it backs up.
-  test('the default policies route between servable models, never a model to itself', () => {
-    const policies = parseFallbackPolicies(DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES);
-    expect(policies.length).toBeGreaterThan(0);
-    const servable = (id: string) =>
-      getManagedModel(id) !== undefined || (id.startsWith('codex/') && CODEX_SEED_MODEL_IDS.includes(id.slice(6)));
-    for (const policy of policies) {
-      expect([...policy.models, ...policy.fallbackModels].filter((id) => !servable(id))).toEqual([]);
-      expect(policy.fallbackModels.filter((id) => policy.models.includes(id))).toEqual([]);
+  test('no operator policy ships by default: managed fallbacks are derived', () => {
+    expect(parseFallbackPolicies(DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES)).toEqual([]);
+  });
+
+  // Derived from the lineup Platinum lists, never from hardcoded ids.
+  test('each served model falls back to the others, in Platinum order, never to itself', () => {
+    const ids = TEST_MANAGED_LINEUP.map((m) => m.id);
+    const policies = effectiveFallbackPolicies([], ids);
+    for (const id of ids) {
+      const policy = policies.find((p) => p.models.includes(id))!;
+      expect(policy.fallbackModels).toEqual(ids.filter((other) => other !== id));
+      expect(policy.fallbackOn).toBe('transient');
     }
+    expect(CODEX_SEED_MODEL_IDS).toContain(CODEX_DEFAULT_MODEL.slice('codex/'.length));
+    expect(policies.find((p) => p.models.includes(CODEX_DEFAULT_MODEL))).toMatchObject({ fallbackModels: ids, fallbackOn: 'any-error' });
+  });
+
+  test('a model Platinum adds gets a fallback with no code change; one served model has no peer fallback', () => {
+    expect(effectiveFallbackPolicies([], ['a', 'b', 'qwen-x']).find((p) => p.models.includes('qwen-x'))?.fallbackModels).toEqual(['a', 'b']);
+    expect(effectiveFallbackPolicies([], ['a']).filter((p) => p.models.includes('a'))).toEqual([]);
+    expect(effectiveFallbackPolicies([], [])).toEqual([]);
+  });
+
+  test('an operator policy that owns a model wins over the derived one', () => {
+    const operator = [{ id: 'op', models: ['a'], fallbackModels: ['x/y'], fallbackOn: 'any-error' as const }];
+    const policies = effectiveFallbackPolicies(operator, ['a', 'b']);
+    expect(policies.filter((p) => p.models.includes('a'))).toEqual(operator);
+    expect(policies.find((p) => p.models.includes('b'))?.fallbackModels).toEqual(['a']);
   });
 });

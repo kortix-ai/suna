@@ -6,7 +6,7 @@
  */
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { listProjectBranches } from './git-history';
+import { listProjectBranches, type ProjectBranchSession } from './git-history';
 
 let calls: { url: string }[] = [];
 
@@ -42,4 +42,38 @@ test('includeSessionBranches: false reaches the wire (the server includes them b
   await listProjectBranches('P1', { includeSessionBranches: false });
   const url = new URL(last().url);
   expect(url.searchParams.get('include_session_branches')).toBe('false');
+});
+
+test("a session branch carries its session's label as the API serves it", async () => {
+  const label: ProjectBranchSession = {
+    title: 'Draft cable tray product page',
+    agent_name: 'store-builder',
+    archived: false,
+    deleted: false,
+  };
+  const branch = {
+    tip: 'a'.repeat(40),
+    tip_short: 'aaaaaaa',
+    subject: 'commit',
+    committer_name: '',
+    committer_email: '',
+    committed_at: '2026-10-22T08:00:00.000Z',
+    ahead: null,
+    behind: null,
+  };
+  globalThis.fetch = mock(async () =>
+    new Response(
+      JSON.stringify({
+        default_branch: 'main',
+        branches: [
+          { ...branch, name: 'main', is_default: true },
+          { ...branch, name: '3f6c2a1e-8b4d-4c7a-9e2f-1a2b3c4d5e6f', is_default: false, session: label },
+        ],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ),
+  ) as unknown as typeof fetch;
+  const listed = await listProjectBranches('P1');
+  expect(listed.branches[0]?.session).toBeUndefined();
+  expect(listed.branches[1]?.session).toEqual(label);
 });

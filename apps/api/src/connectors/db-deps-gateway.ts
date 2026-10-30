@@ -1,21 +1,32 @@
 /** DB-backed GatewayDeps for one principal (makeDbGatewayDeps) and the approval carry-over reads it uses. */
-import { connectorConnections, connectorActions, connectors, connectorCalls } from '@kortix/db';
+import {
+  accountTokens,
+  connectionCredentials,
+  connectorConnections,
+  connectorActions,
+  connectors,
+  connectorCalls,
+  connectorHeldCalls,
+  connectorProjectSettings,
+} from '@kortix/db';
 import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
-import { and, desc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
-import { resolveAgentMailApiKey } from '../channels/agentmail-api';
+import { and, desc, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { resolveEmailApiKey } from '../channels/resend-email-api';
 import { bindSlackThreadToSession } from '../channels/slack/binding';
 import { slackUserNames } from '../channels/slack/labels';
 import {
-  loadAgentMailApiKeyForInbox,
-  loadAgentMailApiKeyForProject,
-  loadAgentMailInstall,
+  emailOwnKeyForAccount,
+  emailOwnKeyForInbox,
+  loadDefaultEmailInboxAccount,
   loadSlackTeamIdForProject,
   loadSlackTokenForProject,
   loadTeamsBotCredentials,
   loadTeamsTenantForProject,
+  loadTelegramBotToken,
 } from '../channels/install-store';
 import { approvalPageUrl } from '../setup-links/token';
 import { config } from '../config';
+import { logger } from '../lib/logger';
 import type { ConnectionOwnerType } from '../projects/lib/connection-access';
 import {
   getProjectSecretConsumerConfigurationStatus,
@@ -26,14 +37,17 @@ import {
   resolveSessionConnectorConnectionOutcome,
 } from '../projects/lib/session-connector-bindings';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
+import { APPROVAL_RERUN_WINDOW_MS, DEFAULT_APPROVAL_TTL_SECONDS, approvalNotExpired } from './approval-expiry';
 import { connectorAttachmentStore } from './attachments';
 import { gateChannelRead } from './channel-read-scope';
 import { gateChannelWrite } from './channel-write-scope';
 import { resolveCredentialValue, resolveConnectionCredentialValue } from './credentials';
 import { connectorEgressFetch } from './egress';
 import { CredentialNotSharedError } from './gateway';
-import type { GatewayAction, GatewayConnector, GatewayDeps } from './gateway';
+import type { ExecutionRecord, GatewayAction, GatewayConnector, GatewayDeps, HeldApprovalVerdict } from './gateway';
+import { HELD_RUN_CEILING_MS, sealHeldInput } from './held-call-store';
 import { graphToken } from '../channels/teams-auth';
 import { runPipedreamAction, runPipedreamProxy } from './pipedream';
 import type { ConnectorPrincipal } from './router-contract';
@@ -50,16 +64,11 @@ import {
   headersOf,
   isUuid,
   loadConnectorPoliciesFor,
+  loadConnectorPolicySetFor,
   loadDefaultModeFor,
   loadProjectPoliciesFor,
   resolveActiveConnectorConnection,
 } from './db-deps-rows';
-
-/** How long an unconsumed human approve stays claimable by a fresh call. Long
- *  enough for the "agent gave up → approve lands → nudge/`continue` retries"
- *  round-trip, short enough that a stale yes can't silently authorize a much
- *  later call. */
-const APPROVAL_CARRYOVER_WINDOW_MS = 15 * 60 * 1000;
 
 /**
  * The call path reads connector/project policies and the project's default
@@ -84,8 +93,8 @@ export async function consumeApprovedExecution(input: {
   connectorId: string;
   actionPath: string;
   requestDigest: string;
-}): Promise<boolean> {
-  const cutoff = new Date(Date.now() - APPROVAL_CARRYOVER_WINDOW_MS);
+}): Promise<false | { resolvedDigest: string | null; resolvedError: boolean }> {
+  const cutoff = new Date(Date.now() - APPROVAL_RERUN_WINDOW_MS);
   const candidates = await db
     .select({
       executionId: connectorCalls.executionId,
@@ -108,18 +117,22 @@ export async function consumeApprovedExecution(input: {
         gt(connectorCalls.resolvedAt, cutoff),
         sql`${connectorCalls.resultSummary} ->> 'decision' = 'approve'`,
         sql`${connectorCalls.resultSummary} ->> 'consumed_at' IS NULL`,
+        // A gate that held its input runs through the held run, never through a repeat.
+        sql`NOT EXISTS (SELECT 1 FROM kortix.connector_held_calls h WHERE h.execution_id = ${qualifiedColumn(connectorCalls.executionId)})`,
       ),
     )
     .orderBy(desc(connectorCalls.resolvedAt))
     .limit(3);
   for (const candidate of candidates) {
+    const summary =
+      typeof candidate.resultSummary === 'object' && candidate.resultSummary
+        ? (candidate.resultSummary as Record<string, unknown>)
+        : {};
     const claimed = await db
       .update(connectorCalls)
       .set({
         resultSummary: {
-          ...(typeof candidate.resultSummary === 'object' && candidate.resultSummary
-            ? candidate.resultSummary
-            : {}),
+          ...summary,
           consumed_at: new Date().toISOString(),
         },
       })
@@ -130,7 +143,14 @@ export async function consumeApprovedExecution(input: {
         ),
       )
       .returning({ id: connectorCalls.executionId });
-    if (claimed.length > 0) return true;
+    if (claimed.length > 0) {
+      // The content the human approved (approval-enrichers.ts); the gateway
+      // re-reads it before the call runs.
+      return {
+        resolvedDigest: typeof summary.resolved_digest === 'string' ? summary.resolved_digest : null,
+        resolvedError: typeof summary.resolved_error === 'string',
+      };
+    }
   }
   return false;
 }
@@ -162,10 +182,93 @@ export async function isPendingApprovalExecution(input: {
         eq(connectorCalls.status, 'pending_approval'),
         isNull(connectorCalls.approvedBy),
         isNull(connectorCalls.resolvedAt),
+        approvalNotExpired,
       ),
     )
     .limit(1);
   return Boolean(row);
+}
+
+/**
+ * The approved held run's claim: the gate is `approved`, its held row is
+ * `dispatched` (the run's fence), and the re-computed digest is the gate's.
+ */
+export async function verifyHeldApproval(input: {
+  executionId: string;
+  projectId: string;
+  requestDigest: string;
+}): Promise<HeldApprovalVerdict> {
+  const [row] = await db
+    .select({
+      status: connectorCalls.status,
+      requestDigest: connectorCalls.requestDigest,
+      resultSummary: connectorCalls.resultSummary,
+      state: connectorHeldCalls.state,
+    })
+    .from(connectorCalls)
+    .innerJoin(connectorHeldCalls, eq(connectorHeldCalls.executionId, connectorCalls.executionId))
+    .where(and(eq(connectorCalls.executionId, input.executionId), eq(connectorCalls.projectId, input.projectId)))
+    .limit(1);
+  if (!row || row.status !== 'approved' || row.state !== 'dispatched') {
+    return { ok: false, reason: 'approval_not_found' };
+  }
+  if (row.requestDigest !== input.requestDigest) return { ok: false, reason: 'request_changed' };
+  const summary = (row.resultSummary ?? {}) as Record<string, unknown>;
+  return {
+    ok: true,
+    resolvedDigest: typeof summary.resolved_digest === 'string' ? summary.resolved_digest : null,
+    resolvedError: typeof summary.resolved_error === 'string',
+  };
+}
+
+/**
+ * The newest gate of this exact request whose held call can still finish: held
+ * and decidable, queued inside its run window, or dispatched inside the run
+ * ceiling. A queued row whose job died, or a run that never settled, no
+ * longer matches: the repeat opens a new gate instead of waiting forever.
+ */
+export async function findOpenHeldExecution(input: {
+  projectId: string;
+  sessionId: string | null;
+  actingUserId: string;
+  connectorId: string;
+  actionPath: string;
+  requestDigest: string;
+}): Promise<string | null> {
+  const [row] = await db
+    .select({ executionId: connectorCalls.executionId })
+    .from(connectorCalls)
+    .innerJoin(connectorHeldCalls, eq(connectorHeldCalls.executionId, connectorCalls.executionId))
+    .where(
+      and(
+        eq(connectorCalls.projectId, input.projectId),
+        input.sessionId ? eq(connectorCalls.sessionId, input.sessionId) : isNull(connectorCalls.sessionId),
+        eq(connectorCalls.actingUserId, input.actingUserId),
+        eq(connectorCalls.connectorId, input.connectorId),
+        eq(connectorCalls.actionPath, input.actionPath),
+        eq(connectorCalls.requestDigest, input.requestDigest),
+        or(
+          and(
+            eq(connectorHeldCalls.state, 'held'),
+            eq(connectorCalls.status, 'pending_approval'),
+            approvalNotExpired,
+          ),
+          and(
+            eq(connectorCalls.status, 'approved'),
+            eq(connectorHeldCalls.state, 'queued'),
+            gt(connectorHeldCalls.runDeadline, sql`now()`),
+          ),
+          and(
+            eq(connectorCalls.status, 'approved'),
+            eq(connectorHeldCalls.state, 'dispatched'),
+            gt(connectorHeldCalls.dispatchedAt, sql`now() - make_interval(secs => ${HELD_RUN_CEILING_MS / 1000})`),
+          ),
+        ),
+      ),
+    )
+    .orderBy(desc(connectorCalls.createdAt))
+    .limit(1);
+  return row?.executionId ?? null;
 }
 
 async function channelToken(
@@ -180,12 +283,17 @@ async function channelToken(
     const creds = await loadTeamsBotCredentials(projectId);
     return graphToken(tenant, creds).catch(() => null);
   }
-  if (platform === 'email')
-    return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
+  if (platform === 'email') {
+    // `slug` here is the selected account's inbox id when it names one.
+    if (slug) return resolveEmailApiKey(await emailOwnKeyForInbox(projectId, slug));
+    const account = await loadDefaultEmailInboxAccount(projectId);
+    return account ? resolveEmailApiKey(await emailOwnKeyForAccount(account)) : null;
+  }
+  if (platform === 'telegram') return loadTelegramBotToken(projectId);
   return null;
 }
 
-function toGatewayConnector(
+export function toGatewayConnector(
   row: ConnectorRow,
   connection?: {
     connectionId: string;
@@ -223,6 +331,97 @@ function toGatewayConnector(
     enabled: row.enabled,
     sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
   };
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Inserts the audit row and returns its execution id. */
+async function insertConnectorCall(exec: Tx | typeof db, rec: ExecutionRecord): Promise<string | null> {
+  const [row] = await exec
+    .insert(connectorCalls)
+    .values({
+      accountId: rec.accountId,
+      projectId: rec.projectId,
+      connectorId: rec.connectorId,
+      connectionId: rec.connectionId,
+      actionPath: rec.actionPath,
+      actingUserId: rec.actingUserId,
+      sessionId: rec.sessionId,
+      status: rec.status,
+      risk: rec.risk,
+      requestDigest: rec.requestDigest ?? null,
+      resultSummary: rec.resultSummary,
+      // A pending_approval row is genuinely UNRESOLVED — it's awaiting a human
+      // approve/deny (the approvals inbox). Every terminal status (ok/error/
+      // denied) resolves at insert. Leaving pending rows unresolved is what lets
+      // the inbox query surface exactly the actions still waiting on a decision.
+      resolvedAt: rec.status === 'pending_approval' ? null : new Date(),
+      // The decision window: the project's `approvals.ttl`, else 24 h.
+      expiresAt:
+        rec.status === 'pending_approval'
+          ? sql`now() + make_interval(secs => coalesce((select ${connectorProjectSettings.approvalTtlSeconds} from ${connectorProjectSettings} where ${connectorProjectSettings.projectId} = ${rec.projectId}), ${DEFAULT_APPROVAL_TTL_SECONDS}))`
+          : null,
+    })
+    .returning({ id: connectorCalls.executionId });
+  return row?.id ?? null;
+}
+
+/**
+ * Writes the held input in a savepoint inside the gate's transaction. A failed
+ * write rolls back only the held row: the gate commits and Approve falls back
+ * to the carry-over. The log names the gate, never the input.
+ */
+async function holdCallInput(
+  tx: Tx,
+  principal: ConnectorPrincipal,
+  rec: ExecutionRecord,
+  executionId: string,
+): Promise<void> {
+  const tokenId = principal.tokenId;
+  if (!config.KORTIX_APPROVAL_RUNS_HELD_CALL || !rec.held || !rec.requestDigest || !tokenId) return;
+  try {
+    const inputEnc = sealHeldInput({
+      v: 1,
+      execution_id: executionId,
+      project_id: rec.projectId,
+      request_digest: rec.requestDigest,
+      account_id: principal.accountId,
+      connector_slug: rec.held.connectorSlug,
+      action_path: rec.held.actionPath,
+      args: rec.held.args,
+      connection_id: rec.connectionId,
+      approval_context: rec.held.approvalContext,
+      policy_set: rec.held.policySet,
+      acting_token_id: tokenId,
+      session_id: principal.sessionId,
+      user_id: principal.userId,
+      agent_grant: principal.agentGrant ?? null,
+      agent_principal: principal.agentPrincipal ?? null,
+    });
+    await tx.transaction(async (sp) => {
+      // Only a project-scoped token can be re-checked server-side at run
+      // time. A dashboard JWT or an unscoped PAT keeps the carry-over.
+      const [token] = await sp
+        .select({ tokenId: accountTokens.tokenId })
+        .from(accountTokens)
+        .where(and(eq(accountTokens.tokenId, tokenId), eq(accountTokens.projectId, rec.projectId)))
+        .limit(1);
+      if (!token) return;
+      await sp.insert(connectorHeldCalls).values({
+        executionId,
+        projectId: rec.projectId,
+        accountId: rec.accountId,
+        inputEnc,
+        state: 'held',
+        updatedAt: new Date(),
+      });
+    });
+  } catch (error) {
+    logger.warn('[approvals] held input not stored; approve falls back to the carry-over', {
+      executionId,
+      error: error instanceof Error ? error.name : 'unknown',
+    });
+  }
 }
 
 export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
@@ -381,13 +580,15 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
           .from(connectors)
           .where(eq(connectors.connectorId, connector.connectorId))
           .limit(1);
-        const connectionSlug =
-          typeof connector.connectionMetadata?.connector_slug === 'string'
-            ? connector.connectionMetadata.connector_slug
+        const platform = row ? channelPlatform(row.config) : null;
+        // An email account names its inbox; the key is that inbox account's.
+        const scope =
+          platform === 'email'
+            ? typeof connector.connectionMetadata?.inbox_id === 'string'
+              ? connector.connectionMetadata.inbox_id
+              : null
             : row?.slug;
-        return row
-          ? channelToken(row.projectId, channelPlatform(row.config), connectionSlug)
-          : null;
+        return row ? channelToken(row.projectId, platform, scope) : null;
       }
       if (connector.provider === 'composio') {
         return composioConnectedAccountId(connector.connectionMetadata);
@@ -410,7 +611,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         projectId: principal.projectId,
         accountId: principal.accountId,
         sessionId: principal.sessionId,
-        actorUserId: principal.userId,
+        actorUserId: principal.secretsAsProject ? null : principal.userId,
         name: connector.authSecret,
         consumer: 'connector',
         throwWhenUndecryptable: true,
@@ -441,47 +642,52 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     gateChannelRead: (input) => gateChannelRead(input),
     gateChannelWrite: (input) => gateChannelWrite(input),
     loadEmailSessionContext: async () => null,
-    loadEmailConnectorContext: async (projectId, connectorSlug) => {
-      const install = await loadAgentMailInstall(projectId, connectorSlug).catch(() => null);
-      return install?.inboxId ? { inboxId: install.inboxId } : null;
+    // No selected account: the project's default inbox.
+    loadEmailConnectorContext: async (projectId) => {
+      const account = await loadDefaultEmailInboxAccount(projectId).catch(() => null);
+      return account ? { inboxId: account.inboxId } : null;
     },
     resolveEmailCredentialForInbox: async (projectId, inboxId) =>
-      resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(projectId, inboxId)),
+      resolveEmailApiKey(await emailOwnKeyForInbox(projectId, inboxId)),
     loadPolicies: loadConnectorPoliciesFor,
+    loadPolicySet: loadConnectorPolicySetFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
-    mintApprovalLink: ({ projectId, executionId, sessionId }) =>
-      approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL),
+    // The link expires with the approval it points at (`expires_at`). A failed
+    // read still mints the link, with the default 24 h token.
+    mintApprovalLink: async ({ projectId, executionId, sessionId }) => {
+      let expiresAt: Date | null = null;
+      try {
+        const [row] = await db
+          .select({ expiresAt: connectorCalls.expiresAt })
+          .from(connectorCalls)
+          .where(eq(connectorCalls.executionId, executionId))
+          .limit(1);
+        expiresAt = row?.expiresAt ?? null;
+      } catch (error) {
+        logger.warn('[approvals] expires_at read failed; minting a 24h approval link', {
+          executionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL, expiresAt);
+    },
     // Lazy: channels import connectors, so a static import here would cycle.
     postApprovalCard: async (input) =>
       (await import('../channels/approval-card-relay')).postApprovalCard(input),
-    recordExecution: async (rec) => {
-      const [row] = await db
-        .insert(connectorCalls)
-        .values({
-          accountId: rec.accountId,
-          projectId: rec.projectId,
-          connectorId: rec.connectorId,
-          connectionId: rec.connectionId,
-          actionPath: rec.actionPath,
-          actingUserId: rec.actingUserId,
-          sessionId: rec.sessionId,
-          status: rec.status,
-          risk: rec.risk,
-          requestDigest: rec.requestDigest ?? null,
-          resultSummary: rec.resultSummary,
-          // A pending_approval row is genuinely UNRESOLVED — it's awaiting a human
-          // approve/deny (the approvals inbox). Every terminal status (ok/error/
-          // denied) resolves at insert. Leaving pending rows unresolved is what lets
-          // the inbox query surface exactly the actions still waiting on a decision.
-          resolvedAt: rec.status === 'pending_approval' ? null : new Date(),
-        })
-        .returning({ id: connectorCalls.executionId });
-      if (!row?.id) return null;
-      return row.id;
-    },
+    // A held call writes the gate and its held input in one transaction.
+    recordExecution: (rec) =>
+      rec.held && rec.status === 'pending_approval'
+        ? db.transaction(async (tx) => {
+            const executionId = await insertConnectorCall(tx, rec);
+            if (executionId) await holdCallInput(tx, principal, rec, executionId);
+            return executionId;
+          })
+        : insertConnectorCall(db, rec),
     consumeApprovedExecution: consumeApprovedExecution,
     isPendingApprovalExecution: isPendingApprovalExecution,
+    verifyHeldApproval,
+    findOpenHeldExecution,
     executePipedream: ({ projectId, connectorSlug, app, actionKey, args, accountId, userId }) =>
       runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
     executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>
@@ -492,6 +698,24 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     // Every connector request resolves and checks its target, on each
     // redirect hop too. See egress.ts.
     fetchImpl: connectorEgressFetch,
+    markCredentialRejected: async (connectionId, rejected) => {
+      await db
+        .update(connectorConnections)
+        .set({
+          metadata: rejected
+            ? sql`${connectorConnections.metadata} || jsonb_build_object('credential_rejected_at', now())`
+            : sql`${connectorConnections.metadata} - 'credential_rejected_at'`,
+        })
+        .where(eq(connectorConnections.connectionId, connectionId));
+    },
+    credentialKind: async (connectionId) => {
+      const [row] = await db
+        .select({ kind: connectionCredentials.kind })
+        .from(connectionCredentials)
+        .where(eq(connectionCredentials.connectionId, connectionId))
+        .limit(1);
+      return row?.kind ?? null;
+    },
     enforcePolicies: true,
   };
 }

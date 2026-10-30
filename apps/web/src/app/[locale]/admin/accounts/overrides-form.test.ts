@@ -81,42 +81,39 @@ describe('overridesPatch — only what changed', () => {
       scim: { value: false, expires_at: '2026-09-01T00:00:00.000Z' },
     };
     const result = overridesPatch(draftFromOverrides(stored), stored);
-    expect(result).toEqual({ ok: true, patch: {} });
+    expect(result).toEqual({});
   });
 
   test('a malformed stored entry is not a change — Save stays disabled on open', () => {
     const stored = { sso: { value: 'yes' } } as never;
-    expect(overridesPatch(draftFromOverrides(stored), stored)).toEqual({ ok: true, patch: {} });
+    expect(overridesPatch(draftFromOverrides(stored), stored)).toEqual({});
   });
 
   test('setting a boolean sends one entry, not the whole map', () => {
     const stored = { sso: { value: true } };
     const result = overridesPatch({ ...draftFromOverrides(stored), managedModels: 'off' }, stored);
-    expect(result).toEqual({ ok: true, patch: { managedModels: { value: false } } });
+    expect(result).toEqual({ managedModels: { value: false } });
   });
 
   test('clearing a boolean row sends null, which deletes the key', () => {
     const stored = { sso: { value: true } };
     const result = overridesPatch({ ...EMPTY }, stored);
-    expect(result).toEqual({ ok: true, patch: { sso: null } });
+    expect(result).toEqual({ sso: null });
   });
 
   test('re-sending an unchanged row is a no-op, so its expiry survives', () => {
     // The patch carries no `expires_at`, so ANY entry it sends makes the grant
     // permanent. Not sending an unchanged row is what keeps a timed grant timed.
     const stored = { sso: { value: true, expires_at: '2026-09-01T00:00:00.000Z' } };
-    expect(overridesPatch({ ...EMPTY, sso: 'on' }, stored)).toEqual({ ok: true, patch: {} });
+    expect(overridesPatch({ ...EMPTY, sso: 'on' }, stored)).toEqual({});
   });
 
   test('several rows at once ride one patch', () => {
     const stored = { sso: { value: true } };
     const result = overridesPatch({ ...EMPTY, managedModels: 'off' }, stored);
     expect(result).toEqual({
-      ok: true,
-      patch: {
-        sso: null,
-        managedModels: { value: false },
-      },
+      sso: null,
+      managedModels: { value: false },
     });
   });
 });

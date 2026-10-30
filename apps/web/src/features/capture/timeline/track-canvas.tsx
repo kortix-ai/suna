@@ -65,9 +65,6 @@ const rgb = ([r, g, b]: Rgb, a = 1) => `rgb(${r} ${g} ${b} / ${a})`; // audit:al
 export const appInkCss = (app: string | null) =>
   rgb(brighter(runColor({ k: app, app }, false), -0.22));
 export const APP_TILE = ICON_TILE;
-/** An app's band color on the track, for the legend. */
-export const appBandCss = (app: string, dark: boolean) => rgb(runColor({ k: app, app }, dark));
-
 function roundRect(
   g: CanvasRenderingContext2D,
   x: number,
@@ -382,6 +379,9 @@ export function TrackCanvas({
     setTip(null);
     schedule();
   };
+  const onPointerCancel = () => {
+    drag.current = null;
+  };
   const onPointerUp = (event: PointerEvent<HTMLCanvasElement>) => {
     const d = drag.current;
     drag.current = null;
@@ -408,6 +408,7 @@ export function TrackCanvas({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
         onPointerLeave={onPointerLeave}
         className="absolute inset-0 size-full cursor-grab touch-none active:cursor-grabbing"
       />

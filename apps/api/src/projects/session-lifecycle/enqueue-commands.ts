@@ -20,6 +20,7 @@ function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreat
     apiKeyType: command.apiKeyType,
     inSession: command.inSession,
     callerSessionId: command.callerSessionId,
+    parentActor: command.parentActor,
   };
 }
 
@@ -30,6 +31,7 @@ function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreat
  * promise. `availableAt` in the future = a scheduled grace window.
  */
 export interface EnqueueContinueSessionCommandInput {
+  artifactId?: string;
   source: SessionInvocationSource;
   projectId: string;
   accountId: string;
@@ -103,6 +105,7 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     projectId: input.projectId,
     accountId: input.accountId,
     actorUserId: input.actorUserId,
+    ...(input.artifactId ? { artifactId: input.artifactId } : {}),
     sessionId: input.sessionId,
     idempotencyKey: input.idempotencyKey ?? null,
     payload: payload as unknown as Record<string, unknown>,
@@ -239,6 +242,7 @@ function buildCreateSessionCommandValues(
     projectId: command.project.projectId,
     accountId: command.project.accountId,
     actorUserId: command.userId,
+    ...(command.artifactId ? { artifactId: command.artifactId } : {}),
     idempotencyKey: command.idempotencyKey ?? null,
     payload: createSessionCommandPayload(command) as unknown as Record<string, unknown>,
     result: opts.reason ? { reason: opts.reason } : {},

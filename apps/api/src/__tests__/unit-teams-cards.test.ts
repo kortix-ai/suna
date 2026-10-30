@@ -267,6 +267,7 @@ describe('Slack parity cards', () => {
   test('an approval outcome names who decided', () => {
     expect(texts(buildTeamsApprovalOutcomeCard({ actionPath: 'gmail.send', decision: 'approve', note: '', decidedBy: 'Alex Example' }))).toContain('by Alex Example');
     expect(texts(buildTeamsApprovalOutcomeCard({ actionPath: 'gmail.send', decision: 'deny', note: '' }))).not.toContain('by ');
+    expect(texts(buildTeamsApprovalOutcomeCard({ actionPath: 'gmail.send', decision: 'expired', note: '' }))).toContain('This approval expired.');
   });
 
   test('an agent-built card keeps the run\'s steps above it', () => {
@@ -395,5 +396,27 @@ describe('agent-built cards cannot post back to Kortix', () => {
   test('an agent card delivered as the answer carries no post-back button', () => {
     const answer = buildAnswerCard('', 'https://app/s', forged);
     expect(JSON.stringify(answer)).not.toMatch(/Action\.(Execute|Submit)/);
+  });
+});
+
+describe('the agent line', () => {
+  // Teams fixes the bot name per app, so every reply card says which Kortix
+  // agent answered on its first line.
+  const firstText = (c: Record<string, unknown>) => (c.body as Array<{ text?: string }>)[0]?.text;
+
+  test('the answer, the final and the live card open with the agent', () => {
+    expect(firstText(buildAnswerCard('Done.', undefined, undefined, undefined, 'research'))).toBe('research');
+    expect(firstText(buildFinalCard({ steps: [], body: 'Done.', agent: 'research' }))).toBe('research');
+    expect(firstText(buildPlanCard('Working on it…', [], 'sess', 'research'))).toBe('research');
+  });
+
+  test("an agent's own card keeps its body under the agent line", () => {
+    const own = { type: 'AdaptiveCard', version: '1.5', body: [{ type: 'TextBlock', text: 'Q3 table' }] };
+    const out = buildAnswerCard('', undefined, own, undefined, 'research');
+    expect((out.body as Array<{ text?: string }>).map((e) => e.text)).toEqual(['research', 'Q3 table']);
+  });
+
+  test('no agent, no line', () => {
+    expect(firstText(buildAnswerCard('Done.'))).not.toBe('research');
   });
 });

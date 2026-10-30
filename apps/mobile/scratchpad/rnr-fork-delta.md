@@ -461,6 +461,19 @@ height of `sm`) and an empty `'icon-md'` entry to `buttonTextVariants`. No
 other change. Part of the same `button.tsx` deviation, not a new forked file.
 Re-apply after any `add --all --overwrite`.
 
+### button.tsx `icon-lg` size — DEVIATES (2026-10-20)
+
+Jay, 2026-10-20: the iOS header buttons (hamburger, Go back, the thread's
+`···`) "feel smaller" than the system's 44pt bar buttons. Stock has `icon`
+(40pt) as its largest icon size, and sizing a `Button` by class is banned
+(CLAUDE.md → Button).
+
+Decision: add `size['icon-lg']` to `buttonVariants` as `h-11 w-11` (44pt, the
+height of `lg`) and an empty `'icon-lg'` entry to `buttonTextVariants`. No
+other change. Only `HEADER_BUTTON_SIZE` (`components/kortix/header-button.ts`)
+selects it, on iOS; Android keeps `icon`. Part of the same `button.tsx`
+deviation, not a new forked file. Re-apply after any `add --all --overwrite`.
+
 Consumers of `size="icon-md"`: `components/kortix/composer.tsx` (add, Stop,
 send) and `components/session/SessionChatInput.tsx` (AutoContinue). Each passes
 `hitSlop={COMPOSER_CONTROL_HIT_SLOP}` (4pt), so the touch target stays 44pt.

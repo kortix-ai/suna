@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { findDiagnosticsForFile, getRelativePath, useDiagnosticsStore } from './diagnostics-store';
+import {
+  findDiagnosticsForFile,
+  getRelativePath,
+  parseDiagnosticsFromToolOutput,
+  useDiagnosticsStore,
+} from './diagnostics-store';
 
 describe('getRelativePath', () => {
   test('strips an absolute sandbox prefix up to the first project-root marker', () => {
@@ -129,5 +134,32 @@ describe('persistence through sessionStorage', () => {
     await useDiagnosticsStore.persist.rehydrate();
     expect(useDiagnosticsStore.getState().byFile['/workspace/a.ts']).toHaveLength(1);
     expect(() => useDiagnosticsStore.persist.clearStorage()).not.toThrow();
+  });
+});
+
+describe('parseDiagnosticsFromToolOutput', () => {
+  test('parses both tag types into per-file diagnostics', () => {
+    const out = parseDiagnosticsFromToolOutput(
+      '<file_diagnostics>\nError: /workspace/a b.ts:4:1 [typescript] Cannot find module\n</file_diagnostics>' +
+        '<project_diagnostics>Warn: /workspace/c.ts:5:7 [typescript][6133] (unnecessary) x is unused\n... 2 more</project_diagnostics>',
+    );
+    expect(out).toEqual({
+      '/workspace/a b.ts': [
+        { file: '/workspace/a b.ts', line: 3, column: 0, severity: 1, message: 'Cannot find module', source: 'typescript' },
+      ],
+      '/workspace/c.ts': [
+        { file: '/workspace/c.ts', line: 4, column: 6, severity: 2, message: 'x is unused', source: 'typescript' },
+      ],
+    });
+  });
+
+  // Tool output is untrusted text: parsing must stay linear (CodeQL js/polynomial-redos).
+  test.each([
+    ['unclosed tags', '<file_diagnostics>a'.repeat(20_000)],
+    ['an unclosed source bracket', `<file_diagnostics>Warn: a:0:0 [${'\\:0:0 [\\'.repeat(12_000)}</file_diagnostics>`],
+  ])('parses %s in linear time', (_name, input) => {
+    const started = performance.now();
+    expect(parseDiagnosticsFromToolOutput(input)).toEqual({});
+    expect(performance.now() - started).toBeLessThan(250);
   });
 });

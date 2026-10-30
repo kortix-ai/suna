@@ -618,3 +618,14 @@ func TestLegacySpecKeepsIngressReadiness(t *testing.T) {
 		t.Fatalf("readiness URL = %q", got)
 	}
 }
+
+func TestRunReportsAppStartFailure(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing-app")
+	state := &runtimeState{logs: newLogRing(defaultLogCapacity)}
+	err := runWithState(context.Background(), appSpec{
+		Command: []string{missing}, TargetPort: 32126,
+	}, state)
+	if err == nil || !strings.HasPrefix(err.Error(), "start app: ") || !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("run error = %v, want wrapped app start failure", err)
+	}
+}

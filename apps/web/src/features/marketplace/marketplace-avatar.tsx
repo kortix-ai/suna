@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { EntityAvatar, type EntityAvatarSize } from '@/components/ui/entity-avatar';
-import { cn } from '@/lib/utils';
+import { EntityAvatar, type EntityAvatarSize } from '@kortix/ui/entity-avatar';
+import { cn } from '@kortix/ui';
 
 type MarketplaceAvatarSize = 'xs' | 'sm' | 'md' | 'lg';
 
@@ -84,7 +84,12 @@ export function MarketplaceAvatar({
   const [failed, setFailed] = useState(0);
 
   // Reset the broken-image fallback when this tile is recycled to a new source.
-  useEffect(() => setFailed(0), [id, owner, sourceUrl]);
+  const sourceKey = `${id}|${owner ?? ''}|${sourceUrl ?? ''}`;
+  const [prevSourceKey, setPrevSourceKey] = useState(sourceKey);
+  if (sourceKey !== prevSourceKey) {
+    setPrevSourceKey(sourceKey);
+    setFailed(0);
+  }
 
   if (id === 'kortix') {
     return (

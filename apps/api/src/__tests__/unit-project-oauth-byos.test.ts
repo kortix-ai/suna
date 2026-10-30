@@ -82,7 +82,6 @@ mock.module('../projects/lib/access', () => ({
 mock.module('../feature-flags/registry', () => ({
   resolveFeatureFlag: (_metadata: unknown, key: string) => key === 'pooled_provider_secrets' ? pooledEnabled : false,
 }));
-mock.module('../llm-gateway/enablement', () => ({ projectLlmGatewayEnabled: () => true }));
 
 mock.module('../projects/codex-device-auth', () => ({
   startCodexDeviceAuth: async () => {
@@ -242,7 +241,7 @@ describe('POST /oauth/openai/start — reconnect an existing ChatGPT account in 
     resourceRows = [codexResource()];
     const result = await start(MEMBER_ID, { resource_id: RESOURCE_ID });
     expect(result.status).toBe(403);
-    expect(result.body.error).toBe('Pooled OAuth connections require pooled provider secrets and the LLM gateway');
+    expect(result.body.error).toBe('Pooled OAuth connections require pooled provider secrets');
     expect(deviceStarts).toBe(0);
   });
 });

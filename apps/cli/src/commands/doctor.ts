@@ -1,9 +1,9 @@
-import type { ProjectSession } from '@kortix/sdk';
+import type { MessageWithParts, ProjectSession } from '@kortix/sdk';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { ApiError } from '../api/client.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
-import { sendAndWaitForReply } from './sessions-chat.ts';
+import { extractMessageError, sendAndWaitForReply } from './sessions-chat.ts';
 import type { MeResponse, ProjectSummary } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { resolveProjectContext, shortId, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
@@ -17,6 +17,10 @@ spins up a throwaway session, sends a message, and asserts the agent
 replies. Designed so coding agents can verify Kortix end-to-end before
 they start orchestrating real work.
 
+By default, doctor attempts to delete only its diagnostic session.
+With --keep-session, it leaves that session in place. UI-prepared warm
+sessions are left unchanged and may remain billed.
+
 Options:
   --no-session         Stop after auth + project checks. Don't create
                        a sandbox. Fast and cheap.
@@ -28,7 +32,7 @@ Options:
   -h, --help           Show this help.
 
 Exit codes:
-  0  All checks passed.
+  0  All checks passed, or agent reply explicitly skipped (no available model).
   1  At least one check failed.
 `;
 
@@ -88,13 +92,33 @@ export async function runDoctor(argv: string[]): Promise<number> {
     return 0;
   }
 
+  process.stdout.write(
+    `  ${C.dim}UI-prepared warm sessions are left unchanged and may remain billed.${C.reset}\n`,
+  );
+
+  // Resolve through the server's entitlement and provider checks, not the runtime's default.
+  let model: string | null;
+  try {
+    const defaults = await withKortixScope(auth, () =>
+      kortixFromAuth(auth).project(ctx.projectId).modelDefaults.get(),
+    );
+    model = defaults.resolvedForCaller;
+  } catch (err) {
+    process.stdout.write(`${status.err(`model lookup failed: ${describe(err)}`)}\n`);
+    return 1;
+  }
+  if (!model) {
+    process.stdout.write(`\n  agent reply skipped: no available model. Connect one with kortix providers; then rerun doctor.\n\n`);
+    return 0;
+  }
+
   // ── 4. Spin up a session ────────────────────────────────────────────────
   const t0 = Date.now();
   process.stdout.write(`  ${C.dim}creating session…${C.reset}\n`);
   let session: ProjectSession;
   try {
     session = await withKortixScope(auth, () =>
-      kortixFromAuth(auth).project(ctx.projectId).sessions.create(),
+      kortixFromAuth(auth).project(ctx.projectId).sessions.create({ model }),
     );
   } catch (err) {
     process.stdout.write(`${status.err(`session create failed: ${describe(err)}`)}\n`);
@@ -144,15 +168,13 @@ export async function runDoctor(argv: string[]): Promise<number> {
         { auth, handle, runtimeSessionId },
         flags.prompt,
       );
-      const text = reply.parts
-        .map((p) => ('text' in p && typeof p.text === 'string' ? p.text : ''))
-        .join(' ')
-        .trim();
-      if (!text) {
-        process.stdout.write(`${status.err('reply had no text content')}\n`);
+      const verdict = doctorReplyVerdict(reply);
+      if (!verdict.ok) {
+        process.stdout.write(`${status.err(verdict.reason)}\n`);
         failures += 1;
       } else {
         const dur = ((Date.now() - sendStart) / 1000).toFixed(1);
+        const text = verdict.text;
         const preview = text.length > 80 ? `${text.slice(0, 77)}…` : text;
         process.stdout.write(`${status.ok(`reply (${dur}s) — ${C.dim}${preview}${C.reset}`)}\n`);
       }
@@ -176,6 +198,21 @@ export async function runDoctor(argv: string[]): Promise<number> {
 }
 
 /** `--timeout <seconds>`; absent or empty keeps the 180 s default. */
+/** The agent-reply check: the reply's text, or why the check fails. A turn
+ *  error fails it even after partial text, and names the cause the way
+ *  `sessions chat` does (KRTX-2918). */
+export function doctorReplyVerdict(
+  reply: MessageWithParts,
+): { ok: true; text: string } | { ok: false; reason: string } {
+  const error = extractMessageError(reply);
+  if (error) return { ok: false, reason: `reply failed — ${error}` };
+  const text = reply.parts
+    .map((p) => (p.type === 'text' ? p.text : ''))
+    .join(' ')
+    .trim();
+  return text ? { ok: true, text } : { ok: false, reason: 'reply had no text content' };
+}
+
 function timeoutSeconds(raw: string | undefined): number {
   if (!raw) return 180;
   const n = Number(raw);

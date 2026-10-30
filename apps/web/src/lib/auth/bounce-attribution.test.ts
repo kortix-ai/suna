@@ -4,7 +4,7 @@ import {
   parseAuthBounceOwner,
   parseLastProjectOwner,
   serializeAuthBounce,
-} from '@/lib/onboarding/landing-destination';
+} from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { shouldDemoteReturnUrl } from './return-url';
 
 /**

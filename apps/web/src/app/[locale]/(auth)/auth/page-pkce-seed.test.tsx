@@ -102,7 +102,8 @@ mock.module('@/lib/auth/submit-auth', () => ({
 mock.module('@/lib/env-config', () => ({
   getEnv: () => ({ AUTH_METHODS: 'magic,password', AUTH_PROVIDERS: '' }),
 }));
-mock.module('@/components/ui/toast', () => ({ errorToast: () => {} }));
+const uiToastMock = () => ({ errorToast: () => {} });
+mock.module('@kortix/ui/toast', uiToastMock);
 const { default: AuthPage } = await import('./page');
 
 test('a successful send seeds the verifier cookie the action could not set', async () => {

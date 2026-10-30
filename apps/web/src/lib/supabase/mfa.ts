@@ -82,6 +82,32 @@ export function mfaChallengeRequired(aal?: AALResponse | null): boolean {
   return (aal.factors ?? []).some((f) => f.status === 'verified' && f.factor_type === 'totp');
 }
 
+type ValidatedUser = { id: string; created_at?: string; factors?: FactorInfo[] };
+
+/** Older than this, the bootstrap's answer is no longer "this page load". */
+const VALIDATED_USER_MAX_AGE_MS = 10_000;
+let validatedUser: { user: ValidatedUser; at: number } | null = null;
+
+/**
+ * The auth bootstrap (`AuthProvider`) already asks the auth server for the
+ * user (`getUser()`) before it clears `isLoading`. It hands that answer here so
+ * the first `getAAL` — the `(app)` sign-in gate's — reads the same fresh
+ * factors without a second `GET /auth/v1/user`. The gate starts only after
+ * `isLoading` clears, so its own `getUser` was a second auth round trip in
+ * series, and the whole app shell waited on it (dev, 2026-10-20: 160–360 ms).
+ * Used once: later reads (Security tab after an unenroll) ask the server again.
+ */
+export function rememberValidatedUser(user: ValidatedUser | null): void {
+  validatedUser = user ? { user, at: Date.now() } : null;
+}
+
+function takeValidatedUser(userId: string | undefined): ValidatedUser | null {
+  const entry = validatedUser;
+  validatedUser = null;
+  if (!entry || !userId || entry.user.id !== userId) return null;
+  return Date.now() - entry.at <= VALIDATED_USER_MAX_AGE_MS ? entry.user : null;
+}
+
 /**
  * Extract a human-readable message from an unknown thrown value. Preserves the
  * previous `error.message` behaviour for Error instances and Supabase error
@@ -355,10 +381,11 @@ export const supabaseMFAService = {
         throw new Error(aalResponse.error.message);
       }
 
+      const known = takeValidatedUser(session.user?.id);
       const {
         data: { user },
         error: userError,
-      } = await supabase.auth.getUser();
+      } = known ? { data: { user: known }, error: null } : await supabase.auth.getUser();
 
       if (userError) {
         throw new Error(userError.message);

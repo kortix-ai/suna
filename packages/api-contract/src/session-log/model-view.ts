@@ -111,6 +111,51 @@ export function threadView(log: SessionLog, threadId: string, target: ViewTarget
   return out;
 }
 
+/** The fields of a message the id rules below read. Only the last in-context compaction needs its `blocks`. */
+export type ViewRow = Pick<SessionLogMessage, 'message_id' | 'seq' | 'kind' | 'in_context'> & { blocks?: SessionLogBlock[] };
+
+/** The rows in seq order, the index of the last in-context compaction (-1: none) and its block. */
+function lastCompaction<T extends ViewRow>(messages: readonly T[]) {
+  const msgs = [...messages].sort((a, b) => a.seq - b.seq);
+  let at = -1;
+  msgs.forEach((m, i) => { if (m.kind === 'compaction' && m.in_context) at = i; });
+  const block = msgs[at]?.blocks?.find((b): b is CompactionBlock => b.type === 'compaction');
+  return { msgs, at, block };
+}
+
+/**
+ * The messages `threadView` shows: in-context turns; after the last in-context compaction, only what it
+ * keeps (its `layout` messages, or the turns from `first_kept_message_id` up to it) and the turns after it.
+ */
+export function visibleMessageIds(messages: readonly ViewRow[]): Set<string> {
+  const { msgs, at, block } = lastCompaction(messages);
+  const turn = (m: ViewRow) => m.in_context && m.kind === 'turn';
+  if (at < 0) return new Set(msgs.filter(turn).map((m) => m.message_id));
+  const k = block?.first_kept_message_id ? msgs.findIndex((m) => m.message_id === block.first_kept_message_id) : -1;
+  const kept = block?.layout
+    ? block.layout.flatMap((e) => ('message_id' in e ? [e.message_id] : []))
+    : k < 0 ? [] : msgs.slice(k, at).filter(turn).map((m) => m.message_id);
+  return new Set([...kept, ...msgs.slice(at + 1).filter(turn).map((m) => m.message_id)]);
+}
+
+/**
+ * What a restore over the cap keeps of a thread (`kept: 'model_view'`), so `threadView` of it equals the whole
+ * thread's: `visibleMessageIds`, the last in-context compaction, its `first_kept_message_id` message (threadView
+ * finds the kept run by it, even when the model does not see it), and the last `context` record (pi gives its
+ * rebuilt system prompt that id, so restores do not add one each).
+ */
+export function modelViewSliceIds(messages: readonly ViewRow[]): Set<string> {
+  const { msgs, at, block } = lastCompaction(messages);
+  const ids = visibleMessageIds(msgs);
+  const context = msgs.filter((m) => m.kind === 'context').pop();
+  if (context) ids.add(context.message_id);
+  if (at < 0) return ids;
+  ids.add(msgs[at]!.message_id);
+  const cut = block?.first_kept_message_id;
+  if (cut && msgs.some((m) => m.message_id === cut)) ids.add(cut);
+  return ids;
+}
+
 function blockText(b: Extract<SessionLogBlock, { type: 'text' }>, opts: ModelViewOptions): string {
   if (b.model_text !== undefined) return b.model_text.trim();
   if (!b.ref) return b.text.trim();

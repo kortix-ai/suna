@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
-import { fileURLToPath } from 'node:url';
+import { uiSourcePath } from '@/test-utils/read-source';
 
-import { seedDraft, toPayloadRule } from './policies-panel';
+import { seedDraft, toPayloadRule } from '@kortix/ui/workspace/projects/policies-panel';
 
 // Regression test for the Better Stack error pattern `236e88fb…` —
 //   `TypeError: Cannot read properties of undefined (reading 'map')`
@@ -17,7 +17,7 @@ import { seedDraft, toPayloadRule } from './policies-panel';
 // guard (#4542).
 
 const panelSource = readFileSync(
-  fileURLToPath(new URL('./policies-panel.tsx', import.meta.url)),
+  uiSourcePath('workspace/projects/policies-panel.tsx'),
   'utf8',
 );
 
@@ -91,14 +91,13 @@ describe('PoliciesPanel source guard — design-system primitives', () => {
     .join('\n');
 
   test('no banned wrappers: SectionCard, List/ListRow, Dialog', () => {
-    expect(imports).not.toContain("from '@/components/ui/section-card'");
-    expect(imports).not.toContain("from '@/components/ui/list'");
-    expect(imports).not.toContain("from '@/components/ui/dialog'");
+    expect(imports).not.toMatch(/primitives\/section-card'/);
+    expect(imports).not.toMatch(/primitives\/list'/);
+    expect(imports).not.toMatch(/primitives\/dialog'/);
   });
 
   test('toasts come from the named helpers, not @/lib/toast', () => {
-    expect(imports).not.toContain("from '@/lib/toast'");
-    expect(panelSource).toContain("from '@/components/ui/toast'");
+    expect(imports).not.toMatch(/lib\/toast'/);
     expect(panelSource).toContain('successToast(');
     expect(panelSource).toContain('errorToast(');
   });

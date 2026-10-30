@@ -2,11 +2,11 @@
 
 import { useParams } from 'next/navigation';
 
-import { AgentsPage } from '@/features/workspace/capabilities/agents/agents-page';
+import { AgentsPage } from '@kortix/ui/customize/agents/agents-page';
 
 /**
  * /projects/[id]/agent — the standalone Agents catalog. See
- * `features/workspace/capabilities/agents/agents-page.tsx` for the page body.
+ * `packages/ui/src/customize/agents/agents-page.tsx` for the page body.
  */
 export default function ProjectAgentPage() {
   const { id: projectId } = useParams<{ id: string }>();

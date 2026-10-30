@@ -39,6 +39,12 @@ import { removeSeeded, seedProject, seedSession, type SeededProject } from './he
 // any git, model or sandbox step; the `transient-refusal` trigger's by a busy
 // provider (a 503 the cron retries).
 const realSessions = await import('../projects/lib/sessions');
+// The managed lineup is what Platinum Inference lists; tests never call
+// Platinum, so seed the synthetic lineup (fixtures/managed-lineup.ts).
+const { __setManagedLineupForTest } = await import('../llm-gateway/models/managed-models');
+const { TEST_MANAGED_LINEUP } = await import('./fixtures/managed-lineup');
+__setManagedLineupForTest(TEST_MANAGED_LINEUP);
+
 mock.module('../projects/lib/sessions', () => ({
   ...realSessions,
   createProjectSession: async (input: { project: { accountId: string }; metadata?: Record<string, unknown> }) => {

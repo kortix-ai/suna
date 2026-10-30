@@ -6,19 +6,19 @@
  * its UI sinks (toast / OS notifications) into the single config seam. Imported
  * for side-effect by the root provider so it runs before any SDK call.
  */
-import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
+import { errorToast, infoToast, successToast, warningToast } from '@kortix/ui/toast';
 import type { UiTranslator } from '@/i18n/translator';
 import { kortixGetToken } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
 import { getEnv } from '@/lib/env-config';
-import { handleApiError } from '@/lib/error-handler';
+import { handleApiError } from '@kortix/ui/internal/lib/error-handler';
 import { createClient } from '@/lib/supabase/client';
 import {
   notifyPermissionRequest,
   notifyQuestion,
   notifySessionError,
   notifyTaskComplete,
-} from '@/lib/web-notifications';
+} from '@kortix/ui/internal/lib/web-notifications';
 import { configureKortix, parseFlagOverride } from '@kortix/sdk';
 
 let configured = false;

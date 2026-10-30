@@ -1,8 +1,8 @@
 'use client';
 
 import SiteLink from '@/components/site-link';
-import { useCopy } from '@/hooks/use-copy';
-import { cn } from '@/lib/utils';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
+import { cn } from '@kortix/ui';
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -130,6 +130,7 @@ export function DevelopersCli() {
   );
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       const step = e.key === 'ArrowDown' ? 1 : -1;
@@ -241,7 +242,7 @@ export function DevelopersCli() {
                       {/* Copied: check + label in ink for 1.5s. Status text, not a toast. */}
                       {result?.cmd === cmd && (
                         <span className="text-foreground flex shrink-0 items-center gap-1.5 text-xs font-medium">
-                          {result.ok && <CheckIcon weight="bold" className="size-3.5" />}
+                          {result.ok && <CheckIcon weight="bold" className="text-ring size-3.5" />}
                           {result.ok ? cli.copied : cli.copyFailed}
                         </span>
                       )}
@@ -264,7 +265,7 @@ export function DevelopersCli() {
                   </span>
                   {result?.cmd === promptCmd ? (
                     <span className="text-foreground flex shrink-0 items-center gap-1.5 text-xs font-medium">
-                      {result.ok && <CheckIcon weight="bold" className="size-3.5" />}
+                      {result.ok && <CheckIcon weight="bold" className="text-ring size-3.5" />}
                       {result.ok ? cli.copied : cli.copyFailed}
                     </span>
                   ) : (

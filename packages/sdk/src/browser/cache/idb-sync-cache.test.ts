@@ -22,7 +22,15 @@ import {
 type Stores = Map<string, Map<string, unknown>>;
 
 /** The slice of IndexedDB the module uses, in memory. Every callback fires on a later task, as in a browser. */
-function fakeIndexedDB(options: { blocked?: boolean; version?: number; stores?: string[]; upgradeThrows?: boolean } = {}) {
+function fakeIndexedDB(
+  options: {
+    blocked?: boolean;
+    version?: number;
+    stores?: string[];
+    upgradeThrows?: boolean;
+    resultMissing?: boolean;
+  } = {},
+) {
   const databases = new Map<string, { version: number; stores: Stores }>();
   if (options.version) {
     databases.set('kortix-session-cache', {
@@ -34,6 +42,7 @@ function fakeIndexedDB(options: { blocked?: boolean; version?: number; stores?: 
   const factory = {
     open(name: string, version: number) {
       const request: Record<string, any> = {};
+      let aborted = false;
       later(() => {
         if (options.blocked) {
           request.onblocked?.();
@@ -46,14 +55,12 @@ function fakeIndexedDB(options: { blocked?: boolean; version?: number; stores?: 
           databases.set(name, db);
         }
         const stores = db.stores;
-        request.result = {
+        const database = {
           objectStoreNames: { contains: (store: string) => stores.has(store) },
           createObjectStore: (store: string) => {
             // Chrome 115 in the field: the upgrade transaction is gone by the
             // time the handler runs.
             if (options.upgradeThrows) {
-              // An aborted upgrade leaves the previous version, as in a browser.
-              db!.version = previous;
               throw new Error(
                 "InvalidStateError: Failed to execute 'createObjectStore' on 'IDBDatabase': The database is not running a version change transaction.",
               );
@@ -83,10 +90,25 @@ function fakeIndexedDB(options: { blocked?: boolean; version?: number; stores?: 
             return tx;
           },
         };
+        // iOS 18.7 Safari in the field: `request.result` is still undefined
+        // when `onupgradeneeded` fires, and reading `result.objectStoreNames`
+        // inside the handler raised `TypeError: undefined is not an object`.
+        if (!options.resultMissing) request.result = database;
         if (version > previous) {
-          db.version = version;
+          // During the upgrade the connection carries its version-change
+          // transaction; the version change commits only when the upgrade
+          // completes, so an aborted upgrade leaves the previous version.
+          request.transaction = {
+            abort: () => {
+              aborted = true;
+            },
+          };
           request.onupgradeneeded?.();
+          request.transaction = null;
+          db.version = aborted ? previous : version;
         }
+        // The result exists by completion; only the upgrade handler saw none.
+        request.result = database;
         request.onsuccess?.();
       });
       return request;
@@ -170,6 +192,17 @@ describe('indexedDBKeyValueStorage', () => {
     const storage = indexedDBKeyValueStorage()!;
     expect(await storage.getItem('k')).toBeNull();
     await expect(Promise.resolve(storage.setItem('k', 'v'))).rejects.toThrow('createObjectStore');
+  });
+
+  test('an upgrade that finds no database fails the open instead of escaping to window.onerror', async () => {
+    // Better Stack (Kortix Frontend prod, 2026-10-16, iOS 18.7 Safari):
+    // `TypeError: undefined is not an object (evaluating 'e.objectStoreNames')`
+    // thrown inside `onupgradeneeded` when `request.result` was still undefined.
+    install(fakeIndexedDB({ resultMissing: true }).factory);
+    const storage = indexedDBKeyValueStorage();
+    if (!storage) throw new Error('IndexedDB storage unavailable');
+    expect(await storage.getItem('k')).toBeNull();
+    await expect(Promise.resolve(storage.setItem('k', 'v'))).rejects.toThrow(TypeError);
   });
 
   test('backs a saved-copy store end to end', async () => {

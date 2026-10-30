@@ -126,7 +126,7 @@ function sleep(delayMs: number, signal?: AbortSignal): Promise<void> {
  * OpenCode generates titles asynchronously. This bounded loop refreshes the
  * authoritative Kortix session without permanent sidebar polling.
  */
-export async function refreshSessionTitleQueryUntilResolved(
+async function refreshSessionTitleQueryUntilResolved(
   queryClient: SessionTitleQueryClient,
   projectId: string,
   sessionId: string,

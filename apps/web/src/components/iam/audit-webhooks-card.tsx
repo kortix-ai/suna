@@ -6,7 +6,7 @@ import { useTranslations } from '@/i18n/use-translations';
 // internal SIEM). The secret is shown EXACTLY ONCE at creation so it can
 // be pasted into the receiver's signature-verification code.
 
-import { errorToast, successToast, warningToast } from '@/components/ui/toast';
+import { errorToast, successToast, warningToast } from '@kortix/ui/toast';
 import {
   WarningIcon as AlertTriangle,
   CheckIcon as Check,
@@ -18,14 +18,14 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -34,17 +34,17 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/modal';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import {
   AccessList,
-  AccessRow,
   CopyRow,
   formatRelative,
   type KebabItem,
-} from '@/features/workspace/shared/access';
+} from '@kortix/ui/access/access/index';
+import { AccessRow } from '@kortix/ui/access';
 import {
   createAuditWebhook,
   type CreatedAuditWebhook,

@@ -46,12 +46,9 @@ actions:
   # Oldest action segments leave this computer above this size (uploaded ones stay in the bucket).
   local_cap_gb: 2
 
-# Update settings. The self-updater is not in this build yet; a new installer upgrades in place.
-# Updates come from the capture-update.json of the Kortix release (see the kortix-capture skill).
-updates:
-  # manifest_url: https://github.com/kortix-ai/suna/releases/latest/download/capture-update.json
-  # public_key: <base64 Ed25519 public key>
-  interval_seconds: 3600
+# Updates are not set here. The machine service updates the app from each Kortix release
+# (src/memory/managed/update.rs). IT turns them off or pins the channel with `auto_update` and
+# `update_channel` (README, "Updates"; release-runbook.md, "Updater").
 
 # Debug settings
 debug:

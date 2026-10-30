@@ -43,6 +43,7 @@ import {
   UV_VERSION,
   assertPiSystemPackage,
 } from '../runtime-versions';
+import { SANDBOX_DESKTOP_INSTALL_COMMAND } from './desktop';
 import {
   SANDBOX_SHELL_TOOL_APT_LIST,
   SANDBOX_SHELL_TOOL_LINK_COMMAND,
@@ -191,7 +192,10 @@ export const PLATFORM_DEFAULT_USER_DOCKERFILE = [
  * builders stage it to enable the cache-only warm-up steps.
  */
 export interface KortixToolchainLayerOpts {
-  /** Pinned opencode CLI version (matches platform-wide `OPENCODE_VERSION`). */
+  /**
+   * Pinned opencode CLI version (matches platform-wide `OPENCODE_VERSION`).
+   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+   */
   opencodeVersion: string;
   /**
    * Pinned `agent-browser` CLI version. Optional — defaults to
@@ -199,7 +203,10 @@ export interface KortixToolchainLayerOpts {
    * `AGENT_BROWSER_VERSION` so the pin is centralized and fingerprinted.
    */
   agentBrowserVersion?: string;
-  /** Build-context path to the cache-only OpenCode warm-up script. */
+  /**
+   * Build-context path to the cache-only OpenCode warm-up script.
+   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+   */
   opencodeWarmupScriptPath?: string;
   /**
    * Path (in the build context) to the canonical starter `.kortix/opencode`
@@ -208,6 +215,7 @@ export interface KortixToolchainLayerOpts {
    * costly first-instance work (Bun plugin auto-install/transpile, models.dev
    * fetch, ripgrep) is cached into the image instead of paid on the session hot
    * path. Optional — omit to skip the instance warm-up.
+   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
    */
   opencodeConfigPath?: string;
   /**
@@ -479,6 +487,9 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && rm -rf /var/lib/apt/lists/* \\',
     `    && ${SANDBOX_SHELL_TOOL_LINK_COMMAND}`,
     '',
+    // The session desktop (Xvfb + XFCE + voxl on :6901). See desktop.ts.
+    `RUN ${SANDBOX_DESKTOP_INSTALL_COMMAND}`,
+    '',
     'RUN useradd --create-home --shell /bin/bash --user-group kortix \\',
     // E2B's Dockerfile parser removes the backslash from a quoted `\\n`.
     // Use echo so every provider writes the same valid sudoers line.
@@ -611,7 +622,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // loop + 30-min timeout below are the SAFETY NET for that one cold fetch.
     'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\',
     '    AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \\',
-    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\',
+    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage,--test-type,--disable-infobars \\',
     // Playwright's browser download defaults to a 30s socket timeout
     // (NET_DEFAULT_TIMEOUT in playwright-core), which a ~150MB Chrome-for-Testing
     // fetch can miss under any network hiccup / contended CDN — observed live as
@@ -872,9 +883,38 @@ export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
 }
 
 /**
+ * kortix.yaml `residential_proxy`: the session sandbox's web traffic leaves
+ * through a residential IP address. `country` is an ISO 3166-1 alpha-2 code,
+ * lowercase. A boot setting, not part of the image.
+ */
+export interface SandboxResidentialProxy {
+  country?: string;
+}
+
+const COUNTRY_RE = /^[a-z]{2}$/i;
+
+/**
+ * Read `residential_proxy`: `true` → on; a table → on, with its `country` when
+ * that is a valid code (an invalid one is dropped with a warning, the proxy
+ * stays on: a template that asks for a residential IP never boots without one
+ * because of a typo). `false`, absent or any other value → off.
+ */
+export function parseResidentialProxy(value: unknown, slug = ''): SandboxResidentialProxy | undefined {
+  if (value === true) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const country = (value as Record<string, unknown>).country;
+  if (country === undefined) return {};
+  if (typeof country === 'string' && COUNTRY_RE.test(country.trim())) return { country: country.trim().toLowerCase() };
+  console.warn(`[sandbox-templates] "${slug}" residential_proxy.country is not an ISO 3166-1 alpha-2 code — ignored`);
+  return {};
+}
+
+/**
  * A sandbox template defines one bootable image. Projects can declare multiple
  * via `sandbox.templates` in kortix.yaml; sessions pick one by slug. The platform
- * default template is always available without any config.
+ * default template is always available without any config. An entry with
+ * neither `dockerfile` nor `image` builds the platform base
+ * (`PLATFORM_DEFAULT_USER_DOCKERFILE`) with its own size and settings.
  */
 export interface SandboxTemplate {
   /** Stable identifier the session creator references. Unique per project. */
@@ -896,6 +936,10 @@ export interface SandboxTemplate {
   spec: SandboxSpec;
   /** kortix.yaml `container_runtime: true` — the sandbox runs Docker. */
   containerRuntime?: boolean;
+  /** kortix.yaml `entrypoint`: the command the sandbox image starts with. */
+  entrypoint?: string;
+  /** kortix.yaml `residential_proxy`. Not part of the image identity. */
+  residentialProxy?: SandboxResidentialProxy;
   /**
    * True iff this is the platform default (no user customization). Never
    * declared in kortix.yaml — the platform synthesizes one of these.
@@ -1060,7 +1104,13 @@ function parseSandboxTemplate(row: Record<string, unknown>): SandboxTemplate | n
     image: !sanitizedDockerfile && image ? image : undefined,
     spec,
     ...(row.container_runtime === true ? { containerRuntime: true } : {}),
+    ...(typeof row.entrypoint === 'string' && row.entrypoint.trim() ? { entrypoint: row.entrypoint.trim() } : {}),
+    ...withResidentialProxy(parseResidentialProxy(row.residential_proxy, slugRaw)),
   };
+}
+
+function withResidentialProxy(value: SandboxResidentialProxy | undefined): { residentialProxy?: SandboxResidentialProxy } {
+  return value ? { residentialProxy: value } : {};
 }
 
 function sanitizeRelPath(value: string): string {

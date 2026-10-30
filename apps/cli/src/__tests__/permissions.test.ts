@@ -28,7 +28,9 @@ const PERMISSIONS = [
     resource_type: 'project',
     delegable: true,
     description: 'Create, edit and delete project secrets',
-    area: 'secrets',
+    // The seeded area of every project.secret.* action
+    // (packages/db/migrations/20260819015724479_rbac_canonical_model.sql).
+    area: 'customize',
     level: 'edit',
     implies: ['project.secret.read'],
   },
@@ -151,7 +153,7 @@ describe('kortix permissions', () => {
     expect(out).toContain('LEVEL');
     expect(out).toContain('DELEGABLE');
     expect(out).toContain('project.secret.write');
-    expect(out).toContain('secrets');
+    expect(out).toContain('customize');
     expect(out).toContain('edit');
     // The escalation ceiling is legible on the row itself.
     expect(out).toContain('account.delete');
@@ -176,12 +178,28 @@ describe('kortix permissions', () => {
   });
 
   test('--area narrows to one area', async () => {
-    const code = await runPermissions(['ls', '--area', 'secrets']);
+    const code = await runPermissions(['ls', '--area', 'customize']);
     expect(code).toBe(0);
     const out = stripAnsi(stdout);
     expect(out).toContain('project.secret.write');
     expect(out).not.toContain('account.delete');
     expect(out).toContain('1 permission');
+  });
+
+  // KRTX-2992: the help named an area (`secrets`) the catalog does not have,
+  // and an unknown area printed only "No permissions match."
+  test('an area with no actions names the areas the catalog has', async () => {
+    const code = await runPermissions(['ls', '--area', 'secrets']);
+    expect(code).toBe(0);
+    expect(stripAnsi(stdout)).toContain('No permissions in area "secrets". Areas: account, customize.');
+  });
+
+  test('--help names a real area', async () => {
+    const code = await runPermissions(['--help']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('kortix permissions ls --area customize');
+    expect(out).not.toContain('--area secrets');
   });
 
   test('--json emits the raw catalog', async () => {

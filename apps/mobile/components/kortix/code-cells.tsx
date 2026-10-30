@@ -6,6 +6,11 @@
  *
  * The group that holds the next digit gets the foreground border and a soft
  * 3 px ring. A wrong code turns both groups destructive.
+ *
+ * The field is clear-ink at full opacity, never `opacity: 0` (iOS would not
+ * deliver taps to it; see `styles.input`). `useFieldRefocus` brings the
+ * keyboard back on a tap and when the app returns from the authenticator (iOS
+ * drops focus without a blur).
  */
 
 import * as React from 'react';
@@ -22,6 +27,7 @@ import Animated, {
 import { useColorScheme } from 'nativewind';
 
 import { Text } from '@/components/ui/text';
+import { useFieldRefocus } from '@/lib/ui/use-field-refocus';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 export const CODE_LENGTH = 6;
@@ -55,6 +61,9 @@ export function CodeCells({
   const colors = THEME[colorScheme === 'dark' ? 'dark' : 'light'];
   const [focused, setFocused] = React.useState(false);
   const active = focused ? Math.min(value.length, CODE_LENGTH - 1) : -1;
+  const inputRef = React.useRef<TextInput>(null);
+
+  const refocus = useFieldRefocus(inputRef, editable);
 
   return (
     <View style={styles.row}>
@@ -106,10 +115,12 @@ export function CodeCells({
         );
       })}
       <TextInput
+        ref={inputRef}
         value={value}
         onChangeText={(text) => onChangeText(text.replace(/\D/g, '').slice(0, CODE_LENGTH))}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
+        onPressIn={refocus}
         editable={editable}
         keyboardType="number-pad"
         textContentType="oneTimeCode"
@@ -120,6 +131,7 @@ export function CodeCells({
         selection={{ start: value.length, end: value.length }}
         autoFocus
         caretHidden
+        selectionColor="transparent"
         accessibilityLabel={accessibilityLabel}
         style={[StyleSheet.absoluteFill, styles.input]}
       />
@@ -158,6 +170,10 @@ const styles = StyleSheet.create({
   digit: { fontSize: 24, lineHeight: 28 },
   dash: { width: 10, height: 1.5 },
   caret: { width: 1.5, height: 22 },
-  // Transparent, not hidden: it must still take focus, touches and paste.
-  input: { opacity: 0, color: 'transparent' },
+  // Clear ink, not `opacity: 0`: iOS hit-testing skips any view with alpha
+  // below 0.01 (`betterHitTest` in RCTViewComponentView.mm), so at opacity 0 a
+  // tap never reached the field and only `autoFocus` ever opened the keyboard
+  // (Jay, 2026-10-20). At full opacity with clear text it still takes focus,
+  // touches, paste and one-time-code autofill, and draws nothing.
+  input: { color: 'transparent', backgroundColor: 'transparent' },
 });

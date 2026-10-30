@@ -5,7 +5,7 @@ import {
   AUTH_BOUNCE_COOKIE,
   LAST_PROJECT_COOKIE,
   parseAuthBounceOwner,
-} from '@/lib/onboarding/landing-destination';
+} from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { middleware } from './middleware';
 
 /**

@@ -1,5 +1,5 @@
-import { Badge } from '@/components/ui/badge';
-import { KortixLogo } from '@/components/ui/kortix-logo';
+import { Badge } from '@kortix/ui/badge';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
 import { IconFrame } from '@/components/ui/marketing/icon-frame';
 import { Shot, useFrame, type Cue, type FilmDef } from '../../engine/film';
 import { bars, ease, fall, interp, rise, stagger } from '../../engine/time';

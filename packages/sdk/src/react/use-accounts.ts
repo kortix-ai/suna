@@ -6,7 +6,7 @@
  *
  * Both already had a client function (`listAccounts`, `listProjectsForAccount`)
  * and a key (`qk.accounts.list`, `qk.projects.list`) — and no hook, so every
- * host rewrote the `useQuery` wiring: `apps/web/src/hooks/account/use-accounts-list.ts`
+ * host rewrote the `useQuery` wiring: `packages/ui/src/internal/hooks/account/use-accounts-list.ts`
  * (thirteen hand-typed copies before it), the workspace switcher, the command
  * palette, and now `apps/tui/src/features/sidebar/sidebar.tsx` with a key of
  * its own invention (`['tui', 'accounts', host, url]`) that shares nothing with

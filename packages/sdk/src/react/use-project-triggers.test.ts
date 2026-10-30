@@ -7,6 +7,7 @@ import { describe, expect, test, beforeEach, mock } from 'bun:test';
 let invalidated: unknown[][] = [];
 mock.module('@tanstack/react-query', () => ({
   useQuery: (config: Record<string, unknown>) => config,
+  useInfiniteQuery: (config: Record<string, unknown>) => config,
   useMutation: (config: Record<string, unknown>) => config,
   useQueryClient: () => ({
     invalidateQueries: (opts: { queryKey: unknown[] }) => {
@@ -17,6 +18,7 @@ mock.module('@tanstack/react-query', () => ({
 
 const { useProjectTriggers, projectTriggersKey } = await import('./use-project-triggers');
 const { qk } = await import('./query-keys');
+const { configureKortix } = await import('../core/http/config');
 
 beforeEach(() => {
   invalidated = [];
@@ -35,20 +37,59 @@ describe('useProjectTriggers (query-key stability + invalidation wiring)', () =>
     expect((useProjectTriggers('proj-1') as any).enabled).toBe(true);
   });
 
-  test('create/update/remove all invalidate the same listing key on success', () => {
+  test('create/update/remove invalidate the listing', () => {
     const result = useProjectTriggers('proj-1') as any;
-    const expectedKey = [...projectTriggersKey('proj-1')];
+    const expected = [[...projectTriggersKey('proj-1')]];
 
     result.create.onSuccess();
     result.update.onSuccess();
     result.remove.onSuccess();
 
-    expect(invalidated).toEqual([expectedKey, expectedKey, expectedKey]);
+    expect(invalidated).toEqual([...expected, ...expected, ...expected]);
   });
 
-  test('firing a trigger does not invalidate the listing', () => {
+  test('a real fire invalidates the triggers scope, which holds the run lists too', () => {
     const result = useProjectTriggers('proj-1') as any;
-    expect(result.fire.onSuccess).toBeUndefined();
+    result.fire.onSuccess({ status: 'fired' }, 'nightly');
+    result.fire.onSuccess({ status: 'queued' }, { slug: 'nightly', payload: { body: {} } });
+    expect(invalidated).toEqual([[...projectTriggersKey('proj-1')], [...projectTriggersKey('proj-1')]]);
+  });
+
+  test('dryRun is its own mutation and invalidates nothing: it writes no run', () => {
+    const result = useProjectTriggers('proj-1') as any;
+    expect(result.dryRun.onSuccess).toBeUndefined();
+  });
+
+  test('fire takes a slug or { slug, payload }; dryRun sends dry_run; replay posts the run', async () => {
+    const sent: { url: string; body: unknown }[] = [];
+    globalThis.fetch = mock(async (url: unknown, opts: { body?: string } = {}) => {
+      sent.push({ url: String(url), body: opts.body ? JSON.parse(opts.body) : undefined });
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+
+    const result = useProjectTriggers('proj-1') as any;
+    await result.fire.mutationFn('nightly');
+    await result.fire.mutationFn({ slug: 'tickets', payload: { body: { a: 1 } } });
+    await result.dryRun.mutationFn({ slug: 'tickets', payload: { body: { a: 1 } } });
+    await result.dryRun.mutationFn('tickets');
+    await result.replay.mutationFn({ slug: 'nightly', runId: 'run-1', confirmUnverified: true });
+    await result.replay.mutationFn({ slug: 'nightly', runId: 'run-1' });
+
+    expect(sent).toEqual([
+      { url: 'http://test.local/projects/proj-1/triggers/nightly/fire', body: {} },
+      { url: 'http://test.local/projects/proj-1/triggers/tickets/fire', body: { payload: { body: { a: 1 } } } },
+      { url: 'http://test.local/projects/proj-1/triggers/tickets/fire', body: { payload: { body: { a: 1 } }, dry_run: true } },
+      { url: 'http://test.local/projects/proj-1/triggers/tickets/fire', body: { dry_run: true } },
+      { url: 'http://test.local/projects/proj-1/triggers/nightly/runs/run-1/replay', body: { confirm_unverified: true } },
+      { url: 'http://test.local/projects/proj-1/triggers/nightly/runs/run-1/replay', body: {} },
+    ]);
+  });
+
+  test('replay invalidates the triggers scope on success', () => {
+    const result = useProjectTriggers('proj-1') as any;
+    result.replay.onSuccess();
+    expect(invalidated).toEqual([[...projectTriggersKey('proj-1')]]);
   });
 
   test('a different projectId gets its own (non-colliding) query key', () => {
@@ -90,5 +131,93 @@ describe('useProjectTriggerEventApps', () => {
     expect(on.queryKey).toEqual(qk.project.triggerEventApps('proj-1'));
     expect(on.enabled).toBe(true);
     expect((useProjectTriggerEventApps(undefined) as any).enabled).toBe(false);
+  });
+});
+
+describe('useTriggerRuns / useProjectTriggerRuns (cursor-paged run history)', () => {
+  test('useTriggerRuns keys under the triggers scope per slug and pages by next_cursor', async () => {
+    const { useTriggerRuns, triggerRunsKey } = await import('./use-project-triggers');
+    const q = useTriggerRuns('proj-1', 'nightly') as any;
+    expect(q.queryKey).toEqual(triggerRunsKey('proj-1', 'nightly'));
+    expect(q.queryKey).toEqual(qk.project.triggerRuns('proj-1', 'nightly'));
+    expect(q.queryKey.slice(0, qk.project.triggers('proj-1').length)).toEqual([...qk.project.triggers('proj-1')]);
+    expect(q.initialPageParam).toBeUndefined();
+    expect(q.getNextPageParam({ runs: [], next_cursor: 'c2' })).toBe('c2');
+    expect(q.getNextPageParam({ runs: [], next_cursor: null })).toBeUndefined();
+    expect(q.enabled).toBe(true);
+    expect((useTriggerRuns('proj-1', null) as any).enabled).toBe(false);
+    expect((useTriggerRuns(undefined, 'nightly') as any).enabled).toBe(false);
+  });
+
+  test('useProjectTriggerRuns keys per status filter under the triggers scope', async () => {
+    const { useProjectTriggerRuns, projectTriggerRunsKey } = await import('./use-project-triggers');
+    const all = useProjectTriggerRuns('proj-1') as any;
+    const failed = useProjectTriggerRuns('proj-1', { status: 'failed' }) as any;
+    expect(all.queryKey).toEqual(projectTriggerRunsKey('proj-1'));
+    expect(failed.queryKey).toEqual(projectTriggerRunsKey('proj-1', 'failed'));
+    expect(failed.queryKey).toEqual(qk.project.projectTriggerRuns('proj-1', 'failed'));
+    expect(all.queryKey).not.toEqual(failed.queryKey);
+    expect(failed.queryKey.slice(0, qk.project.triggers('proj-1').length)).toEqual([...qk.project.triggers('proj-1')]);
+    expect(failed.getNextPageParam({ runs: [], next_cursor: 'c9' })).toBe('c9');
+    expect((useProjectTriggerRuns(null) as any).enabled).toBe(false);
+  });
+
+  test('a per-trigger run key never collides with the project run key', async () => {
+    const { triggerRunsKey, projectTriggerRunsKey } = await import('./use-project-triggers');
+    expect(triggerRunsKey('proj-1', 'failed')).not.toEqual(projectTriggerRunsKey('proj-1', 'failed'));
+  });
+});
+
+describe('run hooks take { enabled, refetchInterval } (useReviewItems pattern)', () => {
+  test('defaults: enabled with ids, no polling', async () => {
+    const { useTriggerRuns, useProjectTriggerRuns } = await import('./use-project-triggers');
+    expect((useTriggerRuns('proj-1', 'nightly') as any).refetchInterval).toBe(false);
+    expect((useProjectTriggerRuns('proj-1') as any).refetchInterval).toBe(false);
+  });
+
+  test('enabled: false idles the query; refetchInterval polls', async () => {
+    const { useTriggerRuns, useProjectTriggerRuns } = await import('./use-project-triggers');
+    const off = useTriggerRuns('proj-1', 'nightly', { enabled: false }) as any;
+    const poll = useTriggerRuns('proj-1', 'nightly', { refetchInterval: 3_000 }) as any;
+    expect(off.enabled).toBe(false);
+    expect(poll.enabled).toBe(true);
+    expect(poll.refetchInterval).toBe(3_000);
+    const pOff = useProjectTriggerRuns('proj-1', { status: 'failed' }, { enabled: false }) as any;
+    const pPoll = useProjectTriggerRuns('proj-1', undefined, { refetchInterval: 3_000 }) as any;
+    expect(pOff.enabled).toBe(false);
+    expect(pPoll.refetchInterval).toBe(3_000);
+    // enabled: true never overrides a missing id.
+    expect((useTriggerRuns('proj-1', null, { enabled: true }) as any).enabled).toBe(false);
+  });
+});
+
+describe('useTriggerRuns takes an optional page { limit }', () => {
+  test('limit is sent on every page and keys its own cache entry under the trigger key', async () => {
+    const { useTriggerRuns, triggerRunsKey } = await import('./use-project-triggers');
+    const urls: string[] = [];
+    globalThis.fetch = mock(async (url: unknown) => {
+      urls.push(String(url));
+      return new Response('{"runs":[],"next_cursor":null}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+
+    const plain = useTriggerRuns('proj-1', 'nightly') as any;
+    const limited = useTriggerRuns('proj-1', 'nightly', { limit: 30 }) as any;
+    // No limit: the key and the request are unchanged.
+    expect(plain.queryKey).toEqual(triggerRunsKey('proj-1', 'nightly'));
+    expect(limited.queryKey).not.toEqual(plain.queryKey);
+    expect(limited.queryKey.slice(0, plain.queryKey.length)).toEqual([...plain.queryKey]);
+
+    await plain.queryFn({ pageParam: undefined });
+    await limited.queryFn({ pageParam: undefined });
+    await limited.queryFn({ pageParam: 'c2' });
+    expect(urls).toEqual([
+      'http://test.local/projects/proj-1/triggers/nightly/runs',
+      'http://test.local/projects/proj-1/triggers/nightly/runs?limit=30',
+      'http://test.local/projects/proj-1/triggers/nightly/runs?limit=30&cursor=c2',
+    ]);
   });
 });

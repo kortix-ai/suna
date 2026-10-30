@@ -1,5 +1,6 @@
 import { DEV_GATEWAY_INTERNAL_TOKEN, type Ports } from './ports';
 import type { SlotCreds } from './supabase';
+import type { DbMode } from './registry';
 
 export const LOCAL_FLOW_INTERNAL_SERVICE_KEY = 'local-flow-runner-internal-service-key';
 
@@ -11,6 +12,7 @@ function appDotenvKeys(app: 'API' | 'WEB'): Record<string, string> {
 }
 
 export interface ApiLaunchOpts {
+  dbMode?: DbMode;
   /** Public origin cloud sandboxes call back to (the cloudflared tunnel URL). */
   kortixUrl?: string;
   /** `whsec_…` from `stripe listen`. When set, billing is turned ON for this
@@ -28,10 +30,13 @@ export interface ApiLaunchOpts {
 
 export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {}): Record<string, string> {
   const billing = opts.billing ?? !!opts.stripeWebhookSecret;
+  const workersEnabled = process.env.KORTIX_WORKERS_ENABLED ?? (opts.dbMode === 'branch' ? 'false' : 'true');
   return {
     INTERNAL_KORTIX_ENV: process.env.INTERNAL_KORTIX_ENV || 'dev',
     ...appDotenvKeys('API'),
     ENV_MODE: 'local', KORTIX_LOCAL_DEV: '1',
+    KORTIX_WORKERS_ENABLED: workersEnabled,
+    ...(workersEnabled === 'false' ? { KORTIX_SKIP_STARTUP_PREBUILD: 'true' } : {}),
     PORT: String(ports.api),
     KORTIX_APPS_LOCAL: 'true',
     KORTIX_APPS_LOCAL_PORT: String(ports.api),
@@ -83,7 +88,6 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     // (no BASE_URL): the API reverse-proxies /v1/llm-gateway/* to 127.0.0.1:gateway.
     // Sandbox OpenAI clients use /v1/llm-gateway/v1 as their base URL because the
     // standalone gateway owns /v1/chat/completions. Overrides .env.
-    LLM_GATEWAY_ENABLED: 'true',
     LLM_GATEWAY_BASE_URL: '',
     LLM_GATEWAY_PROXY_PORT: String(ports.gateway),
     GATEWAY_INTERNAL_TOKEN: DEV_GATEWAY_INTERNAL_TOKEN,

@@ -83,3 +83,18 @@ describe('mountOpenApiDocs — served spec excludes internal routers', () => {
     expect(paths.some((p) => p.startsWith('/v1/admin'))).toBe(false);
   });
 });
+
+describe('mountOpenApiDocs — the published server is relative', () => {
+  test('the spec never names the host the API saw (KRTX-2949)', async () => {
+    // Behind the edge router the API sees its internal origin, and the spec
+    // published it as the server URL. A relative server resolves against the
+    // URL the client fetched the spec from, so it names the public host.
+    const app = makeOpenApiApp();
+    mountOpenApiDocs(app, '0.0.0-test');
+    const res = await app.request('https://api-origin.internal.test/v1/openapi.json');
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(JSON.parse(text).servers).toEqual([{ url: '/' }]);
+    expect(text).not.toContain('api-origin.internal.test');
+  });
+});

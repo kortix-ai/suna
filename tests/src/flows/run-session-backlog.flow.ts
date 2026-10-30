@@ -1,22 +1,21 @@
 /**
  * Agent-run + session happy-path backlog.
  *
- * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-11, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
+ * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
  * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10.
  *
  * REALITY: every flow here needs a REAL booted sandbox and/or a funded
  * account, which the local target does not have. They are therefore gated at the
- * FLOW level on `requires: ["funded"]` and/or `["daytona"]`. The runner
+ * FLOW level on `requires: ["funded"]` and/or `["sandbox"]`. The runner
  * self-skips a flow whose capability is absent, so these SKIP cleanly locally
  * and run for real against a deployed target.
  *
- * ── One body, every harness ─────────────────────────────────────────────────
- * The flows that run a turn are registered with `harnessFlow`: `RUN-1` boots
- * OpenCode and `RUN-1-pi` boots pi (a project with the `pi_harness` flag on).
+ * ── One body, on pi ────────────────────────────────────────────────────────
+ * The flows that run a turn are registered with `harnessFlow`: every new
+ * session runs pi (OpenCode is sunset, 2026-10-23), and each boot proves it.
  * They drive the session through the Kortix routes (`/start`, `/prompts`,
  * `/turn`, `/transcript`, `/events`, `/commit-push`) and never through a
- * harness's own REST API, so a difference between the harnesses fails a named
- * flow. Two calls still use the runtime behind the preview proxy
+ * harness's own REST API. Two calls still use the runtime behind the preview proxy
  * `/p/:sandboxId/:port/*`, because no Kortix route exists for them yet: the
  * Stop abort and the daemon's `/kortix/health` (see fixtures/session-run.ts).
  * That proxy is a Hono wildcard mount, not a manifest route, so it never
@@ -58,7 +57,7 @@ harnessFlow(
   'SESS-10',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     // Boot (≤540s) + one turn (≤240s) + the mirror wait (≤180s) exceeds 360s.
     timeoutMs: 900_000,
@@ -141,7 +140,7 @@ harnessFlow(
   'RUN-1',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -172,7 +171,7 @@ harnessFlow(
   {
     domain: 'agent-run',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -237,7 +236,7 @@ harnessFlow(
   {
     domain: 'agent-run',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -270,7 +269,7 @@ harnessFlow(
   'RUN-4',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -304,7 +303,7 @@ harnessFlow(
   'RUN-5',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -360,7 +359,7 @@ harnessFlow(
   'RUN-6',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -404,7 +403,7 @@ harnessFlow(
   {
     domain: 'agent-run',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -478,7 +477,7 @@ flow(
   {
     domain: 'agent-run',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     retry: { attempts: 2 },
     routes: [
@@ -489,7 +488,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const { sandboxId } = await bootSession(ctx, 'opencode');
+    const { sandboxId } = await bootSession(ctx, 'pi');
     await ctx.step('proxy request with NO token/cookie → 401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).get(runtimePath(sandboxId, '/kortix/health'));
       r.status(401);
@@ -530,7 +529,7 @@ flow(
   'SESS-2',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 300_000,
     routes: ['POST /v1/projects/:projectId/sessions'],
@@ -568,7 +567,7 @@ flow(
   'SESS-3',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 240_000,
     routes: ['POST /v1/projects/:projectId/sessions'],
   },
@@ -603,7 +602,7 @@ harnessFlow(
   'SESS-9',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -636,7 +635,7 @@ harnessFlow(
   {
     domain: 'sessions',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -705,7 +704,7 @@ flow(
   'FILE-8',
   {
     domain: 'files',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 360_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -718,7 +717,7 @@ flow(
     // A booted session pushes a branch named <sessionId>; diffing it against main
     // exercises a REAL two-ref diff. (version-diff itself only needs `read`, but
     // we gate the whole flow so it runs where a session branch actually exists.)
-    const { projectId, sessionId } = await bootSession(ctx, 'opencode');
+    const { projectId, sessionId } = await bootSession(ctx, 'pi');
     await ctx.step('the session branch is published to origin before diffing it', async () => {
       await waitForRemoteBranch(ctx, projectId, sessionId);
     });
@@ -756,7 +755,7 @@ flow(
   {
     domain: 'files',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 600_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -766,7 +765,7 @@ flow(
   async (ctx) => {
     // `/start` answers `ready` only once the daemon reports its runtime ready,
     // so the file routes below never meet a booting daemon.
-    const { sandboxId } = await bootSession(ctx, 'opencode', { readinessTimeoutMs: 420_000 });
+    const { sandboxId } = await bootSession(ctx, 'pi', { readinessTimeoutMs: 420_000 });
     const path = `ke2e-file-${Date.now()}.txt`;
     const content = 'ke2e live file crud';
 
@@ -816,7 +815,7 @@ flow(
   {
     domain: 'golden',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 600_000,
     routes: [
@@ -989,13 +988,13 @@ flow(
 // closest real boundary: a `event_callback`/`app_mention` POST is accepted and
 // (when an install + signature are present on the target) acknowledged 200
 // `{ok:true}` and a `source:slack` session subsequently appears; otherwise the
-// install gate (404) is asserted. This flow is gated on funded+daytona because a
+// install gate (404) is asserted. This flow is gated on funded+sandbox because a
 // successful dispatch spins a real sandbox.
 flow(
   'CHN-6',
   {
     domain: 'channels',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 240_000,
     routes: ['POST /v1/webhooks/slack/:projectId', 'GET /v1/projects/:projectId/sessions'],
@@ -1061,6 +1060,13 @@ flow(
  * write a file: the file tools (`edit`), the shell (`bash`, which also covers
  * OpenCode's `pty_*` tools, W5 E9), and delegation.
  */
+/**
+ * A synthetic value only a successful read of `private/notes.txt` can put in the
+ * conversation. Not `secrets/…`: a model refuses on its own to read a file named
+ * like a credential, and the rule is never exercised (OpenCode, 2026-10-23).
+ */
+const RUN10_PRIVATE = 'RUN10-PRIVATE-c41f9e';
+
 const NO_EDIT_FILES = {
   'kortix.yaml': [
     'kortix_version: 2',
@@ -1081,17 +1087,21 @@ const NO_EDIT_FILES = {
     '  edit: deny',
     '  bash: deny',
     '  task: deny',
+    '  read:',
+    "    '*': allow",
+    "    'private/*': deny",
     '---',
     'You answer questions about this repository. Follow the user instructions exactly.',
     '',
   ].join('\n'),
+  'private/notes.txt': `${RUN10_PRIVATE}\n`,
 };
 
 harnessFlow(
   'RUN-10',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // Boot (≤540s) + the boot turn (≤240s).
     timeoutMs: 900_000,
     routes: [
@@ -1100,6 +1110,7 @@ harnessFlow(
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
       'GET /v1/projects/:projectId/sessions/:sessionId/turn',
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx, harness) => {
@@ -1107,7 +1118,6 @@ harnessFlow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
       await ctx.step(`the project declares a no-edit agent and runs ${harness}`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
         await world.commitToMain(NO_EDIT_FILES, 'ke2e RUN-10: a no-edit agent');
       });
       const path = `ke2e-run10-${Date.now()}.txt`;
@@ -1119,10 +1129,8 @@ harnessFlow(
         agentName: 'no-edit',
         prompt:
           `Call your file-writing tool (write) once to create the file ${path} containing the single line OK. ` +
-          // OpenCode's pty plugin tools never asked for permission, so `bash: deny` did not stop them.
-          (harness === 'opencode'
-            ? `If you have no file-writing tool but have a pty_spawn tool, call pty_spawn once with command "sh" and args ["-c", "printf OK > ${path}"] instead. `
-            : '') +
+          // `./` is the spelling pi once matched raw, past a `private/*` deny.
+          'Then call your read tool once with exactly the path ./private/notes.txt. ' +
           `Use no other tool. Whatever the tool returns, then reply with exactly: ${done}`,
       });
       await ctx.step('no file or pty tool ran; on pi the write was attempted and refused', async () => {
@@ -1138,10 +1146,9 @@ harnessFlow(
           .filter((t) => t.tool === 'write' || t.tool === 'edit' || t.tool === 'memory' || t.tool.startsWith('pty_'));
         const ran = fileTools.filter((t) => t.status !== 'error');
         if (ran.length > 0) throw new Error(`a denied file tool ran: ${JSON.stringify(ran)}`);
-        // OpenCode never offers a tool its policy denies, so its model has no
-        // write tool to call. pi offers every tool and refuses the call; a
-        // refused `write` is the proof that `edit: deny` reached it.
-        if (harness === 'pi' && fileTools.length === 0) {
+        // pi offers every tool and refuses the call; a refused `write` is the
+        // proof that `edit: deny` reached it.
+        if (fileTools.length === 0) {
           throw new Error(`the pi agent never called a file tool, so the policy was not exercised: ${JSON.stringify(messages.map((m) => m.tools))}`);
         }
       });
@@ -1151,39 +1158,20 @@ harnessFlow(
           .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
         file.status(404);
       });
+      await ctx.step('a read of ./private/notes.txt is refused and its content reaches no message', async () => {
+        const root = await pinnedRoot(ctx, session.projectId, session.sessionId);
+        const parts = (await runtimeMessages(ctx, session.sandboxId, root)).flatMap((m) => m.parts);
+        const reads = parts.filter((p) => p.type === 'tool' && p.tool === 'read' && JSON.stringify(p.state?.input ?? {}).includes('private/notes.txt'));
+        if (reads.length === 0) {
+          throw new Error(`the agent never read private/notes.txt, so the path rule was not exercised: ${JSON.stringify(parts.filter((p) => p.type === 'tool').map((p) => [p.tool, p.state?.input]))}`);
+        }
+        const ran = reads.filter((p) => p.state?.status !== 'error');
+        if (ran.length > 0) throw new Error(`a denied read ran: ${JSON.stringify(ran.map((p) => p.state))}`);
+        if (JSON.stringify(parts).includes(RUN10_PRIVATE)) throw new Error('the denied file content reached the conversation');
+      });
     } finally {
       await world.close();
     }
-  },
-);
-
-flow(
-  'RUN-11',
-  {
-    domain: 'agent-run',
-    requires: ['funded', 'daytona'],
-    timeoutMs: 900_000,
-    routes: [
-      'PATCH /v1/projects/:projectId/features',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-    ],
-  },
-  async (ctx) => {
-    const project = await ctx.fixtures.project({ seed: true });
-    await ctx.step('the project asks for pi and turns the LLM gateway off', async () => {
-      for (const [feature, enabled] of [['pi_harness', true], ['llm_gateway', false]] as const) {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .patch('/v1/projects/:projectId/features', { feature, enabled }, { params: { projectId: project.id } });
-        r.status(200).body().has(`$.experimental.${feature}`, enabled);
-      }
-    });
-    // pi has no model path without the gateway: the session boots OpenCode,
-    // and bootSession proves it from the daemon's health.
-    await bootSession(ctx, 'opencode', { project });
   },
 );
 
@@ -1191,7 +1179,7 @@ harnessFlow(
   'RUN-12',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -1257,7 +1245,7 @@ flow(
   'RUN-20',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1272,7 +1260,6 @@ flow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
       await ctx.step('the project runs pi with harnesses.pi.codemode: only', async () => {
-        await world.setFeature('pi_harness', true);
         await world.commitToMain({ 'kortix.yaml': RUN20_MANIFEST }, 'ke2e RUN-20: codemode only');
       });
       const session = await bootSession(ctx, 'pi', { project });
@@ -1385,7 +1372,7 @@ harnessFlow(
   'RUN-15',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // Three sessions: boot (≤540s) + one turn (≤240s) each.
     timeoutMs: 2_500_000,
     routes: [
@@ -1406,7 +1393,6 @@ harnessFlow(
       ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, `/file/content?path=${encodeURIComponent(`ke2e-run15-${nonce}.txt`)}`));
     try {
       await ctx.step(`the project declares the ke2e_marker tool and a limited agent, and runs ${harness}`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
         await world.commitToMain(PROJECT_TOOL_FILES, 'ke2e RUN-15: a project tool and a limited agent');
       });
 
@@ -1479,7 +1465,7 @@ harnessFlow(
   'RUN-19',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // One session: boot (≤540s) + one turn (≤240s).
     timeoutMs: 900_000,
     routes: [
@@ -1505,7 +1491,6 @@ harnessFlow(
         if (!manifest.includes('  web_search: tools/web_search.ts  # ejected from kortix:web_search\n')) throw new Error(`eject did not point kortix.yaml at the copy:\n${manifest}`);
         const source = cli.readFile('tools/web_search.ts');
         if (!source.includes(EJECTED_EXECUTE)) throw new Error('the ejected web_search no longer has the execute line this flow changes');
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
         await world.commitToMain({ 'kortix.yaml': manifest, 'tools/web_search.ts': source.replace(EJECTED_EXECUTE, CHANGED_EXECUTE) }, 'ke2e RUN-19: four Kortix tools and an ejected web_search');
       });
 
@@ -1574,7 +1559,7 @@ harnessFlow(
   'RUN-13',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1591,8 +1576,6 @@ harnessFlow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
       await ctx.step(`the project runs ${harness}`, async () => {
-        if (harness !== 'pi') return;
-        await world.setFeature('pi_harness', true);
         await world.commitToMain(PI_COMPACT_FILES, 'ke2e RUN-13: pi keeps no recent context out of a summary');
       });
       const session = await bootSession(ctx, harness, { project });
@@ -1654,7 +1637,7 @@ harnessFlow(
   'RUN-14',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1670,8 +1653,7 @@ harnessFlow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
       await ctx.step(`the project runs ${harness} and commits the command where that harness reads it`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
-        const path = harness === 'pi' ? `harnesses/pi/prompts/${COMMAND}.md` : `harnesses/opencode/commands/${COMMAND}.md`;
+        const path = `harnesses/pi/prompts/${COMMAND}.md`;
         await world.commitToMain({ [path]: COMMAND_TEMPLATE }, `ke2e RUN-14: the ${COMMAND} command`);
       });
       const session = await bootSession(ctx, harness, { project });
@@ -1704,11 +1686,11 @@ harnessFlow(
         }
       });
 
-      await ctx.step('a command the project does not have is refused: 400 on pi, 500 on OpenCode', async () => {
+      await ctx.step('a command the project does not have is refused: 400', async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .post(runtimePath(sandboxId, `/session/${root}/command`), { command: 'ke2e-no-such-command', arguments: '' });
-        r.status(harness === 'pi' ? 400 : 500);
+        r.status(400);
       });
     } finally {
       await world.close();
@@ -1769,7 +1751,7 @@ harnessFlow(
   'RUN-17',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // Boot (≤540s) + the boot turn + two turns (≤240s each).
     timeoutMs: 1_200_000,
     routes: [
@@ -1787,7 +1769,6 @@ harnessFlow(
     const token = `Agentpick${Date.now()}`;
     try {
       await ctx.step(`the project declares a second primary agent and runs ${harness}`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
         await world.commitToMain(agentPickFiles(token), 'ke2e RUN-17: a marker agent');
       });
       const session = await bootSession(ctx, harness, { project, prompt: 'Reply with the word ready.' });
@@ -1830,7 +1811,7 @@ flow(
   'RUN-16',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -1877,7 +1858,7 @@ harnessFlow(
   'RUN-18',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1897,7 +1878,6 @@ harnessFlow(
     const agentsMd = `# Project rules\n\n${name}: ${value}\n`;
     try {
       await ctx.step(`the project runs ${harness} and commits a root AGENTS.md`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
         await world.commitToMain({ 'AGENTS.md': agentsMd }, 'ke2e RUN-18: a root AGENTS.md');
       });
       const { projectId, sessionId, sandboxId } = await bootSession(ctx, harness, { project });

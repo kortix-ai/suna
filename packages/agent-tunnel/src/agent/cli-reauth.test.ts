@@ -256,7 +256,7 @@ describe('agent tunnel connect re-authorization', () => {
     expect(JSON.parse(await readFile(configPath, 'utf8')).token).toBeUndefined();
   }, 30_000);
 
-  test('a new pairing from the desktop app asks before every use and never inherits the previous grant (A1)', async () => {
+  test('a first pairing from the desktop app asks; a re-pair keeps the owner mode and drops the old grant (A1)', async () => {
     const relay = startRejectingRelay({ serveDeviceAuth: true });
     const apiUrl = `http://127.0.0.1:${relay.server.port}/v1/tunnel`;
     const home = await mkdtemp(join(tmpdir(), 'agent-tunnel-access-default-'));
@@ -279,8 +279,8 @@ describe('agent tunnel connect re-authorization', () => {
         if (!second.out().includes('Authorized')) throw new Error('not yet');
       });
       second.child.kill('SIGTERM');
-      // Keep awake is a machine setting and stays; the answer resets with the pairing.
-      expect(JSON.parse(await readFile(accessPath, 'utf8'))).toEqual({ mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: true });
+      // The mode and keep awake are the owner's machine settings and stay; the grant resets with the pairing.
+      expect(JSON.parse(await readFile(accessPath, 'utf8'))).toEqual({ mode: 'always', grantedUntil: null, deniedUntil: null, keepAwake: true });
     } finally {
       relay.server.stop(true);
     }

@@ -254,14 +254,14 @@ empty bottom rather than letterboxing it.
 ## QA before delivery — do not skip
 
 ```bash
-cd apps/web
-npx tsc --noEmit                    # must be clean in src/app/[locale]/presentations
-npx eslint src/app/[locale]/presentations    # 0 errors
+pnpm --filter Kortix-Computer-Frontend typecheck   # tsgo; must be clean in src/app/[locale]/presentations
+cd apps/web && npx eslint src/app/[locale]/presentations    # 0 errors
 ```
 
-`tsc --noEmit` reports ~15 pre-existing `@types/bun` `test.each` errors elsewhere
-in the app — those are the documented baseline, not yours. Nothing under
-`presentations` may appear.
+Never run raw `tsc --noEmit` in `apps/web`: on 2026-10-21 it ran 817 s at 3.18 GB
+and did not finish.
+Errors elsewhere in the app are the baseline (compare against `origin/dev`), not
+yours. Nothing under `presentations` may appear.
 
 Then drive it in the browser (chrome-devtools MCP):
 

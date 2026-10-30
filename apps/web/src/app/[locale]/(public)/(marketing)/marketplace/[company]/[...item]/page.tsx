@@ -12,7 +12,7 @@ import {
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
 import { pathPartsToItemId } from '@/lib/marketplace-slug';
 import { socialMetadata } from '@/lib/seo/metadata';
-import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
+import { CANONICAL_ORIGIN } from '@kortix/ui/internal/lib/site-metadata';
 
 // The root layout (app/layout.tsx) forces the whole app into per-request dynamic
 // rendering via `connection()`/`headers()` (so self-host Docker images read env

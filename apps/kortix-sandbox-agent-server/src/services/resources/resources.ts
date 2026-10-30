@@ -18,7 +18,9 @@
  * testable on macOS, where /proc does not exist.
  */
 import { readFile, readdir, statfs } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { logger } from '@/lib/log/logger'
+import { DEEP_DISK_CLEANUP_PCT, knownSafeTargets, runDiskCleanup } from './disk-cleanup'
 
 export interface MemorySnapshot {
   totalMb: number | null
@@ -56,7 +58,12 @@ export interface DiskSnapshot {
   totalMb: number | null
   freeMb: number | null
   usedPct: number | null
+  /** The statfs numeric fs type (the magic on Linux, MNT flags on macOS). */
+  type?: number | null
 }
+
+/** Linux TMPFS_MAGIC (statfs type of a RAM-backed tmpfs; the session fs is ext4/overlay, never this). */
+export const TMPFS_TYPE = 0x01021994
 
 export interface ProcessSnapshot {
   pid: number
@@ -202,9 +209,10 @@ async function diskSnapshot(path: string): Promise<DiskSnapshot> {
       totalMb: Math.round(total / MB),
       freeMb: Math.round(free / MB),
       usedPct: total > 0 ? Math.round(((total - free) / total) * 100) : null,
+      type: s.type,
     }
   } catch {
-    return { path, totalMb: null, freeMb: null, usedPct: null }
+    return { path, totalMb: null, freeMb: null, usedPct: null, type: null }
   }
 }
 
@@ -437,6 +445,14 @@ export interface ResourceMonitorOptions {
   formatState?: (state: string | null) => Record<string, unknown>
   formatStateTransition?: (from: string, to: string) => string
   guard?: MemoryGuardOptions
+  /**
+   * When set, a disk-pressure crossing acts instead of only logging: the
+   * known-safe caches under `home` (default the session user's) and the
+   * workspace build caches under `workspaceRoot` are wiped, and unreferenced
+   * pnpm store objects pruned at the deep threshold. The action logs as
+   * `[resources] disk cleanup` with what it freed.
+   */
+  diskCleanup?: { home?: string; workspaceRoot?: string }
 }
 
 /** The memory figure the guard judges: box used% or cgroup used%, whichever is worse. */
@@ -483,6 +499,7 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
   let fastTimer: ReturnType<typeof setInterval> | null = null
   const doKill = guard?.killProcess ?? killProcess
   const maxShedAttempts = guard?.maxShedAttemptsPerEpisode ?? 2
+  const diskCleanup = opts.diskCleanup
   /** Sheds spent in THIS elevated episode; reset once memory clears `elevatedPct`. */
   let shedAttempts = 0
 
@@ -556,7 +573,41 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
     }
   }
 
-  async function tick(reason: string): Promise<ResourceSnapshot> {
+  /**
+   * The disk counterpart of the memory guard: on a pressure crossing, wipe
+   * the known-safe caches (tier 1) — and at the deep threshold also the
+   * workspace build caches and unreferenced store objects (tier 2) — instead
+   * of only logging while the box drifts to 100%. One action per tier per
+   * episode; re-armed once the disk clears the threshold. The trigger judges
+   * only the fs the cleanup can act on: tmpfs disks are skipped (the memory
+   * guard owns tmpfs pressure — a tmpfs crossing cannot be relieved by
+   * wiping caches on the session fs).
+   */
+  let tier1Armed = true
+  let tier2Armed = true
+  async function runDiskAction(s: ResourceSnapshot): Promise<void> {
+    if (!diskCleanup) return
+    const usedPct = s.disks.reduce<number | null>(
+      (worst, disk) => (disk.usedPct !== null && disk.type !== TMPFS_TYPE && (worst === null || disk.usedPct > worst) ? disk.usedPct : worst),
+      null,
+    )
+    if (usedPct === null) return
+    if (usedPct < PRESSURE_THRESHOLDS.diskUsedPct) {
+      tier1Armed = true
+      tier2Armed = true
+      return
+    }
+    const tier: 1 | 2 = usedPct >= DEEP_DISK_CLEANUP_PCT ? 2 : 1
+    if (tier === 1 ? !tier1Armed : !tier2Armed) return
+    tier1Armed = false
+    if (tier === 2) tier2Armed = false
+    const report = await runDiskCleanup(await knownSafeTargets(diskCleanup.home ?? homedir(), diskCleanup.workspaceRoot), {
+      maxTier: tier,
+    })
+    logger.warn('[resources] disk cleanup', { usedPct, tier, freedMb: report.freedMb, cleaned: report.cleaned, skipped: report.skipped })
+  }
+
+  async function doTick(reason: string): Promise<ResourceSnapshot> {
     const s = await snapshot({
       daemonPid: process.pid,
       runtimePid: opts.runtimePid(),
@@ -585,14 +636,37 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
     } catch {
       // the guard is best-effort; never let it break sampling
     }
+    try {
+      // After the memory guard: protecting the box outranks cleaning it, and
+      // a slow wipe must never delay the guard.
+      await runDiskAction(s)
+    } catch {
+      // the cleanup is best-effort; never let it break sampling
+    }
     return s
+  }
+
+  /**
+   * A direct tick (`diag`, tests) waits for the in-flight tick instead of
+   * interleaving with it: concurrent ticks double-log the same state and race
+   * the guards' once-per-episode bookkeeping. Timer ticks keep their skip
+   * semantics (guardedTick) so they never queue up behind one another.
+   */
+  async function tick(reason: string): Promise<ResourceSnapshot> {
+    while (ticking) await new Promise<void>((resolve) => setImmediate(resolve))
+    ticking = true
+    try {
+      return await doTick(reason)
+    } finally {
+      ticking = false
+    }
   }
 
   async function guardedTick(reason: string): Promise<void> {
     if (ticking || stopped) return
     ticking = true
     try {
-      await tick(reason)
+      await doTick(reason)
     } catch {
       // never
     } finally {

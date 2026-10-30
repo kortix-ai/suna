@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { TurnErrorDisplay } from './session-error-banner';
+import { TurnErrorDisplay } from '@kortix/ui/session';
 
 const render = (props: Parameters<typeof TurnErrorDisplay>[0]) =>
   renderToStaticMarkup(

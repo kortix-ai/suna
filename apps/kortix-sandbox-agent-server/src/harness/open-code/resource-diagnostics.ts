@@ -5,7 +5,10 @@ import {
   type ResourceSnapshot,
 } from '@/services/resources/resources'
 
-/** Match executable and subcommand arguments, never arbitrary test-file paths. */
+/**
+ * Match executable and subcommand arguments, never arbitrary test-file paths.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function isOpenCodeServeCommand(cmdline: string): boolean {
   const args = cmdline.split('\0').filter(Boolean)
   const executable = args[0]?.split('/').pop()
@@ -13,7 +16,10 @@ export function isOpenCodeServeCommand(cmdline: string): boolean {
     executable === 'opencode-kortix' || executable === 'opencode.current') && args[1] === 'serve'
 }
 
-/** Pids running `opencode serve`. Linux only; [] elsewhere. */
+/**
+ * Pids running `opencode serve`. Linux only; [] elsewhere.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function findOpencodePids(): Promise<number[]> {
   let entries: string[]
   try {
@@ -32,20 +38,27 @@ export async function findOpencodePids(): Promise<number[]> {
   return pids.sort((a, b) => a - b)
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type OpenCodeResourceSnapshot = Omit<ResourceSnapshot, 'runtime' | 'runtimePids'> & {
   opencode: ResourceSnapshot['runtime']
   opencodePids: number[]
 }
 
-/** Preserve the existing diagnostic and log schema at the native boundary. */
+/**
+ * Preserve the existing diagnostic and log schema at the native boundary.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function projectOpenCodeResourceSnapshot(snapshot: ResourceSnapshot): OpenCodeResourceSnapshot
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function projectOpenCodeResourceSnapshot(snapshot: ResourceSnapshot | null): OpenCodeResourceSnapshot | null
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function projectOpenCodeResourceSnapshot(snapshot: ResourceSnapshot | null): OpenCodeResourceSnapshot | null {
   if (!snapshot) return null
   const { runtime, runtimePids, ...host } = snapshot
   return { ...host, opencode: runtime, opencodePids: runtimePids }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function evaluateOpenCodePressure(
   snapshot: ResourceSnapshot,
   previous?: ResourceSnapshot | null,
@@ -63,6 +76,7 @@ export function evaluateOpenCodePressure(
 /** RAM-backed files at or above this share of memory are named in the guard's reason. */
 const NAMED_SHMEM_MIN_MB = 256
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function formatOpenCodeMemoryGuardReason(snapshot: ResourceSnapshot, pct: number): string {
   // A RAM-backed /tmp was half of a 4 GiB box when the guard fired on prod
   // (2026-09-24), and the message named only OpenCode. Say what else holds it.
@@ -75,10 +89,12 @@ export function formatOpenCodeMemoryGuardReason(snapshot: ResourceSnapshot, pct:
     `${snapshot.cgroup.maxMb ?? snapshot.memory.totalMb ?? '?'} MB): turn stopped to prevent a kernel OOM kill`
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function formatOpenCodeResourceState(state: string | null): Record<string, unknown> {
   return { opencodeState: state }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function formatOpenCodeResourceTransition(from: string, to: string): string {
   return `opencode ${from || '?'} -> ${to}`
 }

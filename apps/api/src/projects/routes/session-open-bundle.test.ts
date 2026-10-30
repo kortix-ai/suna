@@ -33,7 +33,6 @@ let auditLeg: () => Promise<Record<string, unknown>>;
 let refreshCalls: Array<Record<string, unknown>> = [];
 let legCalls: string[] = [];
 let transcriptLimits: number[] = [];
-let gatewayEnabled = true;
 let auditedAccount = false;
 
 mock.module('../lib/access', () => ({
@@ -86,9 +85,6 @@ mock.module('../lib/session-runtime-projection-refresh', () => ({
     refreshCalls.push(target);
   },
 }));
-mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: () => gatewayEnabled,
-}));
 mock.module('../../repositories/model-preferences', () => ({
   getAccountModelDefaults: async () => {
     legCalls.push('models');
@@ -115,6 +111,8 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
 mock.module('../../llm-gateway/models/served-managed-models', () => ({
   platformDefaultModelId: () => 'anthropic/claude-sonnet-4-6',
   isPlatformDefaultModelId: (id: string) => id === 'anthropic/claude-sonnet-4-6',
+  servedManagedModels: () => [],
+  platformVisionModelId: () => '',
 }));
 mock.module('../lib/serializers', () => ({
   ...require('../lib/serializers'),
@@ -125,6 +123,12 @@ mock.module('../lib/serializers', () => ({
 // this file stubs.
 let canStop = true;
 let canStopCalls: Array<{ newest: string | null; callerUserId: string | null; canManageLifecycle: boolean }> = [];
+// The session-log reads are DB reads (#10454 added the conversation model leg).
+// Unmocked, each request waited on a real connection: 3-7 s per open.
+mock.module('../session-log-read', () => ({
+  readSessionLogPage: async () => undefined,
+  readSessionConversationModels: async () => new Map<string, string>(),
+}));
 mock.module('../session-lifecycle/turn-stop-authority', () => ({
   canStopTurns: async (
     state: { turns: Array<{ message_id: string | null }> },
@@ -170,7 +174,6 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
     canStopCalls = [];
     refreshCalls = [];
     transcriptLimits = [];
-    gatewayEnabled = true;
     auditedAccount = false;
     loadedProject = {
       row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, defaultBranch: 'main', metadata: {} },
@@ -292,6 +295,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
       base_ref: 'main',
       agent_name: 'kortix',
       llm_gateway_enabled: true,
+      default_reasoning_effort: null,
     });
     expect(body.models.known).toBe(true);
     expect(body.models.projectDefault).toBe('p');
@@ -401,12 +405,14 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
     expect(body.transcript.messages).toBeUndefined();
   });
 
-  test('a gateway-disabled project reports models unknown, not "no default"', async () => {
-    gatewayEnabled = false;
+  test('a stored llm_gateway: false override is inert: models known, llm_gateway_enabled stays true', async () => {
+    // Old clients still read `config.llm_gateway_enabled`; the native mode it
+    // used to report no longer exists.
+    (loadedProject as any).row.metadata = { experimental: { llm_gateway: false } };
     const body = (await (await openBundle()).json()) as Record<string, any>;
-    expect(body.models).toEqual({ known: false, reason: 'llm_gateway_disabled' });
-    expect(body.config.llm_gateway_enabled).toBe(false);
-    expect(legCalls).not.toContain('models');
+    expect(body.models.known).toBe(true);
+    expect(body.config.llm_gateway_enabled).toBe(true);
+    expect(legCalls).toContain('models');
   });
 
   test('falls back to the project default branch when the session pins no base ref', async () => {

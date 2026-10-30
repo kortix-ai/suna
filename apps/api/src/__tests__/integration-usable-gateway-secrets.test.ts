@@ -17,7 +17,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
 import {
   clearAccountSecretCooldown, coolDownAccountSecret, encryptAccountSecret, listUsableGatewaySecrets, memberMayReadProject, queryUsableGatewaySecrets,
-  resolveProjectSharedProviderSecrets,
+  resolveDefaultCodexAccountSecret, resolveProjectSharedProviderSecrets,
 } from '../secrets/account-resource';
 import { mayUseProviderKeys, providerEnvVarOf } from '../secrets/provider-key-selection';
 import { insertIntoView } from './helpers/compat-views';
@@ -367,5 +367,38 @@ describe('resolveProjectSharedProviderSecrets: the ChatGPT accounts an unconfigu
     });
     expect(labels(result.secrets)).toEqual(['owner-retry']);
     expect(await clearAccountSecretCooldown('00000000-0000-0000-0000-000000000000', accountId)).toBe(false);
+  });
+});
+
+describe('resolveDefaultCodexAccountSecret: the caller`s own ChatGPT account and its rest', () => {
+  const personal: Record<string, string> = {};
+  let minute = 500;
+  async function seedPersonal(label: string, over: Partial<typeof accountSecretResources.$inferInsert> = {}) {
+    const [row] = await db.insert(accountSecretResources).values({
+      accountId, projectId, label, accessMode: 'members', providerId: 'codex', name: 'CODEX_AUTH_JSON',
+      valueEnc: encryptAccountSecret(accountId, JSON.stringify({ openai: { access: `${label}-token` } })),
+      consumer: 'llm_gateway', strategy: 'runtime', createdBy: GRANTEE,
+      createdAt: new Date(Date.UTC(2026, 0, 1, 0, minute++)),
+      ...over,
+    }).returning({ secretId: accountSecretResources.secretId });
+    await db.insert(accountSecretGrants).values({ secretId: row!.secretId, accountId, userId: GRANTEE, grantedBy: GRANTEE });
+    personal[label] = row!.secretId;
+  }
+  const mine = () => resolveDefaultCodexAccountSecret(accountId, projectId, GRANTEE);
+
+  test('a ready account is preferred over a newer resting one, and carries no rest', async () => {
+    await seedPersonal('mine-ready');
+    await seedPersonal('mine-resting-newer', { cooldownUntil: new Date(Date.now() + 180_000) });
+    const chosen = await mine();
+    expect(chosen?.label).toBe('mine-ready');
+    expect(chosen?.restingSeconds).toBeUndefined();
+  });
+
+  test('when every own account rests, the newest is returned with its rest in seconds', async () => {
+    await coolDownAccountSecret(personal['mine-ready']!, accountId, 600);
+    const chosen = await mine();
+    expect(chosen?.label).toBe('mine-resting-newer');
+    expect(chosen?.restingSeconds).toBeGreaterThan(170);
+    expect(chosen?.restingSeconds).toBeLessThanOrEqual(180);
   });
 });

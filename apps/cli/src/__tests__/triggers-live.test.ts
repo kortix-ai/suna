@@ -732,6 +732,40 @@ describe('kortix triggers — the live (--apply) path', () => {
     expect(calls).toEqual([]);
   });
 
+  test('set sends filter operators, and an unknown operator value exits 2 before any request (KRTX-1721)', async () => {
+    const config = writeConfig(startServer());
+    const ok = await runCli(
+      [
+        'triggers',
+        'set',
+        'new-pr',
+        '--filter',
+        'body.ref:not_prefix=refs/heads/kortix/',
+        '--filter',
+        'body.sender.login:not=kortix-bot',
+        '--filter',
+        'body.action:in=opened,reopened',
+        '--project',
+        PROJECT,
+      ],
+      config,
+    );
+    expect(ok.code).toBe(0);
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({
+      filter: {
+        'body.ref': { not_prefix: ['refs/heads/kortix/'] },
+        'body.sender.login': { not: ['kortix-bot'] },
+        'body.action': { in: ['opened', 'reopened'] },
+      },
+    });
+
+    calls.length = 0;
+    const bad = await runCli(['triggers', 'set', 'new-pr', '--filter', 'body.pr:exists=maybe', '--project', PROJECT], config);
+    expect(bad.code).toBe(2);
+    expect(bad.stderr).toContain('--filter body.pr:exists takes true or false (got "maybe")');
+    expect(calls).toEqual([]);
+  });
+
   test('add --apply rejects a malformed --filter', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(

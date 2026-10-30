@@ -33,7 +33,7 @@ import {
   uploadErrorMessage,
 } from '@/lib/session/composer-uploads';
 import { assertUploadedFileParts } from '@/lib/session/prompt-parts';
-import type { ComposerAttachmentUpload } from './composer-attachment-tiles';
+import type { ComposerAttachmentUpload } from '@/lib/session/composer-uploads';
 
 export interface UseComposerAttachments {
   files: AttachedFile[];

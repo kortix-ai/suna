@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   REVIEW_SEGMENTS,
+  formatApprovalExpiresIn,
   formatReviewAge,
   reviewItemTone,
   reviewKindLabel,
@@ -120,5 +121,25 @@ describe('reviewVerdictToast', () => {
     expect(reviewVerdictToast('decision', 'answer')).toBe('Answered');
     expect(reviewVerdictToast('output', 'changes')).toBe('Changes requested');
     expect(reviewVerdictToast('batch', 'dismiss')).toBe('Dismissed');
+  });
+});
+
+describe('formatApprovalExpiresIn', () => {
+  const now = Date.parse('2026-09-21T12:00:00.000Z');
+  test('time left in the compact idiom; soon under one hour', () => {
+    expect(formatApprovalExpiresIn('2026-09-21T15:00:00.000Z', now)).toEqual({ time: '3h', soon: false });
+    expect(formatApprovalExpiresIn('2026-09-21T12:30:00.000Z', now)).toEqual({ time: '30m', soon: true });
+    // Floored: 59.6 min is "59m", never "1h" beside the under-one-hour glyph.
+    expect(formatApprovalExpiresIn(new Date(now + 59.6 * 60_000).toISOString(), now)).toEqual({
+      time: '59m',
+      soon: true,
+    });
+  });
+  test('no expiry or a past time has no label', () => {
+    expect(formatApprovalExpiresIn(undefined, now)).toBeNull();
+    expect(formatApprovalExpiresIn('2026-09-21T11:00:00.000Z', now)).toBeNull();
+  });
+  test('an expired approval takes the muted tone', () => {
+    expect(reviewItemTone('approval', 'expired')).toBe('muted');
   });
 });

@@ -182,6 +182,28 @@ describe('runProviders rejects what it does not know', () => {
     expect(stderr).toContain('unknown option "--bogus"');
     expect(stderr).toContain('Usage: kortix providers login <provider>');
   });
+
+  // KRTX-2990: the API's device flow serves openai, opencode and opencode-go
+  // only (provider-oauth.ts oauthProvider), and nothing reads enterprise_url.
+  test('login github-copilot fails fast and names the supported providers', async () => {
+    const { code, stderr } = await runExpectingStderr(['login', 'github-copilot']);
+    expect(code).toBe(2);
+    expect(stderr).toContain('OAuth not supported for "github-copilot"');
+    expect(stderr).toContain('openai, opencode, opencode-go');
+    expect(stderr).not.toContain('providers set github-copilot');
+  });
+
+  test('login --enterprise is an unknown option', async () => {
+    const { code, stderr } = await runExpectingStderr([
+      'login',
+      'openai',
+      '--enterprise',
+      'https://ghe.example.test',
+    ]);
+    expect(code).toBe(2);
+    expect(stderr).toContain('unknown option "--enterprise"');
+    expect(stderr).not.toContain('github-copilot');
+  });
 });
 
 describe('provider positional help', () => {

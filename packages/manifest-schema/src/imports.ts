@@ -52,6 +52,7 @@ export const ROOT_ONLY_KEYS = [
   'sandbox',
   'policy',
   'policies',
+  'approvals',
 ] as const;
 
 export const MAX_IMPORT_DEPTH = 8;

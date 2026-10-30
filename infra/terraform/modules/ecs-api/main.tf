@@ -554,6 +554,25 @@ resource "aws_lb_listener" "https" {
   }
 }
 
+# ── Private DNS for in-VPC callers (optional) ────────────────────────────────
+# ECS registers each RUNNING task's private IP under <container_name>.<namespace>
+# and removes it when the task stops. Callers resolve the name through the VPC
+# resolver and connect to the task directly, without the ALB.
+resource "aws_service_discovery_service" "this" {
+  count = var.service_discovery == null ? 0 : 1
+  name  = var.container_name
+
+  dns_config {
+    namespace_id   = var.service_discovery.namespace_id
+    routing_policy = "MULTIVALUE"
+    dns_records {
+      type = "A"
+      ttl  = 10
+    }
+  }
+  tags = var.tags
+}
+
 # ── ECS cluster + service ─────────────────────────────────────────────────────
 resource "aws_ecs_cluster" "this" {
   name = local.name
@@ -658,7 +677,7 @@ resource "aws_ecs_service" "this" {
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [aws_security_group.service.id]
+    security_groups  = concat([aws_security_group.service.id], var.extra_security_group_ids)
     assign_public_ip = var.assign_public_ip
   }
 
@@ -666,6 +685,13 @@ resource "aws_ecs_service" "this" {
     target_group_arn = aws_lb_target_group.this.arn
     container_name   = var.container_name
     container_port   = var.container_port
+  }
+
+  dynamic "service_registries" {
+    for_each = aws_service_discovery_service.this
+    content {
+      registry_arn = service_registries.value.arn
+    }
   }
 
   deployment_minimum_healthy_percent = 100

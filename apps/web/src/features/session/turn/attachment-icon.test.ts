@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { FileTextIcon } from '@phosphor-icons/react';
 
-import { fileIconFor, getFileType } from '@/lib/utils/file-utils';
+import { fileIconFor, getFileType } from '@kortix/ui/internal/lib/utils/file-utils';
 
 // Attachment tiles (user-message.tsx) and the file chips on a write row
 // (activity-file-chips.tsx) both pick their glyph with `fileIconFor(filename)`.

@@ -86,7 +86,7 @@ describe('findServableLastReadyImage — a session boot never waits for a build'
       project,
       template,
       identity,
-      buildProvider: 'e2b',
+      buildProvider: 'platinum',
       readHistory: noHistory,
     });
     expect(servable).toEqual({ snapshotName: 'kortix-tpl-OLD', contentHash: 'hash-old' });
@@ -99,10 +99,29 @@ describe('findServableLastReadyImage — a session boot never waits for a build'
       project,
       template,
       identity,
-      buildProvider: 'e2b',
+      buildProvider: 'platinum',
       readHistory: async () => [{ snapshotName: 'kortix-tpl-OLDER', contentHash: 'hash-older' }],
     });
     expect(servable).toEqual({ snapshotName: 'kortix-tpl-OLDER', contentHash: 'hash-older' });
+  });
+
+  test("a build on another provider does not hide this provider's last ready image", async () => {
+    // Dev 2026-10-24: a Daytona build repointed the shared row at the identity
+    // still building on Platinum, so Platinum boots waited 12 min for it.
+    const provider = fakeProvider(['kortix-tpl-OLD']);
+    const servable = await findServableLastReadyImage(provider, {
+      project,
+      template: {
+        ...template,
+        providerSnapshotName: 'kortix-tpl-NEW',
+        contentHash: 'hash-new',
+        lastReady: { platinum: { snapshotName: 'kortix-tpl-OLD', contentHash: 'hash-old' } },
+      },
+      identity,
+      buildProvider: 'platinum',
+      readHistory: noHistory,
+    });
+    expect(servable).toEqual({ snapshotName: 'kortix-tpl-OLD', contentHash: 'hash-old' });
   });
 
   test('a genuinely FIRST build has nothing to serve and must block', async () => {
@@ -112,7 +131,7 @@ describe('findServableLastReadyImage — a session boot never waits for a build'
         project,
         template: { ...template, providerSnapshotName: null, contentHash: null },
         identity,
-        buildProvider: 'e2b',
+        buildProvider: 'platinum',
         readHistory: noHistory,
       }),
     ).toBeNull();
@@ -125,7 +144,7 @@ describe('findServableLastReadyImage — a session boot never waits for a build'
         project,
         template,
         identity,
-        buildProvider: 'e2b',
+        buildProvider: 'platinum',
         readHistory: noHistory,
       }),
     ).toBeNull();
@@ -137,7 +156,7 @@ describe('findServableLastReadyImage — a session boot never waits for a build'
       project,
       template,
       identity,
-      buildProvider: 'e2b',
+      buildProvider: 'platinum',
       readHistory: async () => {
         throw new Error('db down');
       },

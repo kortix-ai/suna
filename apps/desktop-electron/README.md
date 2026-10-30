@@ -44,7 +44,8 @@ pnpm --filter @kortix/desktop-electron dev:prod-env   # https://kortix.com
 KORTIX_DESKTOP_URL=https://kortix.com/projects pnpm --filter @kortix/desktop-electron dev
 ```
 
-At runtime you can also switch via the native menu. A **dev build**
+At runtime you can also switch via the native menu (the **Kortix** menu: the
+macOS app menu, the first menu on Windows and Linux). A **dev build**
 (`kortixUpdateChannel: "dev"`, product "Kortix Dev") keeps the full
 **Kortix → Frontend URL** switcher (Production / Dev / Local / Custom… /
 Reset). A **production build** hides the developer presets and shows one
@@ -65,6 +66,40 @@ saved URL with any other path loads as saved.
 session URL inside a session — so it can be pasted and shared. It is enabled
 only on app pages (the same in-app routes the navigation gate allows); on a
 blank, error, or external page it is disabled.
+
+### The application menu and the title bar on each OS
+
+`src/app-menu.js` builds the menu as a pure function of the platform
+(`app-menu.test.js`). Every OS has the same app-level actions:
+
+| Menu | macOS | Windows, Linux |
+| --- | --- | --- |
+| **Kortix** | About Kortix, Settings… (⌘,), Check for Updates…, Change Kortix Instance…, Services, Hide, Hide Others, Show All, Quit | About Kortix, Settings… (Ctrl+,), Check for Updates…, Change Kortix Instance…, Quit Kortix (Ctrl+Q) |
+| File, Edit, View, Go, Window | same on every OS | same on every OS |
+
+A dev build shows **Frontend URL** (the preset switcher) in place of Change
+Kortix Instance….
+
+Title bar:
+
+- **macOS.** `titleBarStyle: 'hidden'`; the traffic lights share the 40 px band
+  with the page's first row (`MAC_TITLEBAR` in `src/window-chrome.js`).
+- **Windows.** `titleBarStyle: 'hidden'` + `titleBarOverlay`: no Win32 title
+  bar and no menu-bar strip. Windows draws minimize, maximize and close over
+  the top-right corner of the page (138 × 40 window px, transparent, glyphs in
+  the theme's foreground). The page's first row shares that band, and the web
+  app draws a menu button (☰) in its left slot. The button and a lone **Alt**
+  press open the Kortix application menu. Keyboard accelerators work without
+  a menu bar. The geometry is `WIN_TITLEBAR` in `src/window-chrome.js`,
+  mirrored by `html[data-desktop-titlebar='overlay']` in
+  `apps/web/src/app/globals.css`; the preload's `kortixDesktop.titlebar`
+  sets that marker, so a web app with a native-frame shell never gets it.
+- **Linux.** The native frame. The menu bar hides until Alt.
+
+The Windows app icon (`build/icon.ico`, 16 to 256 px) is the symbol on the
+light rounded tile from `apps/web/public/favicon.svg`. Regenerate it with
+`python3 scripts/build-win-icon.py` (needs `rsvg-convert` and Pillow); never
+hand-edit it. The installer and uninstaller use the same file.
 
 ### First launch: choose a Kortix instance
 
@@ -221,14 +256,14 @@ count is the number of sessions with a finished turn you have not seen yet. The
 in-app toast fades after 8 s; the badge stays until you look.
 
 - **What counts.** The web app's turn-attention store
-  (`apps/web/src/stores/turn-attention-store.ts`). A turn counts when it
+  (`packages/ui/src/internal/stores/turn-attention-store.ts`). A turn counts when it
   finishes while the window is hidden or not focused, including on the session
   the window shows. It also counts when it finishes while another session is on
   screen and the app still hears it (another window or browser tab has it
   open). Looking at the session in a focused window removes it from the count.
 - **How it reaches the icon.** `TurnAttentionBadge` sends the count through the
   sender-gated `set_badge_count` command (`setDesktopBadgeCount` in
-  `apps/web/src/lib/desktop.ts`), and `src/attention-badge.js` shows it:
+  `packages/ui/src/internal/lib/desktop.ts`), and `src/attention-badge.js` shows it:
 
   | Platform | Shows |
   | --- | --- |
@@ -259,6 +294,25 @@ Chromium shows nothing.
   wins.
 - On macOS a right-click also selects the word under the pointer, so Copy can
   follow the link items.
+
+## ⌘I from inside a preview
+
+⌘I (Ctrl+I) hides and brings back the session's right-side panel. The web app
+handles the key while its own document has focus. A cross-origin iframe, such
+as the Browser panel's app preview, receives its own keys, so the page never
+sees ⌘I typed there (KRTX-2944).
+
+The shell closes that gap (`src/panel-shortcut.js`). On `before-input-event`,
+a plain ⌘I / Ctrl+I keyDown while `webContents.focusedFrame` is a subframe is
+cancelled and sent to the page as the `toggle-right-panel` command. The panel
+column handles that command like its own key.
+
+- The shell never takes the key from the app's own document, so one press
+  toggles once on any web build. An older web build without the command
+  handler behaves as before.
+- ⌥⌘I and Ctrl+Shift+I stay with DevTools. A held key toggles once.
+- A browser tab cannot do this: a cross-origin iframe's keys never reach the
+  page.
 
 ## This computer (local agent + tray)
 
@@ -372,6 +426,17 @@ Icons live in `build/` (`icon.icns` / `icon.ico` / `icon.png`). Code signing /
 notarization are env-driven (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_API_KEY*`,
 `WIN_CSC_LINK`, …); unsigned local builds are fine for testing.
 
+Windows installers are Authenticode-signed through Microsoft Artifact Signing
+(`win.azureSignOptions`, publisher "Kortix AI Corp") when `kortix-ci-env` holds
+`AZURE_SIGNING_TENANT_ID`, `AZURE_SIGNING_CLIENT_ID`, `AZURE_SIGNING_CLIENT_SECRET`,
+`AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT` and `AZURE_SIGNING_PROFILE`
+(the same values Kortix Capture uses). `desktop.yml` and `deploy-prod.yml` then
+fail the build unless every `dist/*.exe` is `Valid`. Without them the installer
+is unsigned and SmartScreen shows "Unknown publisher" on download. The Azure
+account, certificate profile, CI identity and renewal steps are in the
+kortix-capture skill: `.agents/skills/kortix-capture/references/release-runbook.md`,
+section "Windows signing setup".
+
 ## Auto-update
 
 The installed app self-updates via **electron-updater**, reading the `vX.Y.Z`
@@ -393,13 +458,27 @@ For this to work the release must carry the electron-updater **metadata** —
 `latest*.yml`, the `*.blockmap`s, and (macOS only) the update **`.zip`** that
 Squirrel.Mac installs from. The dmg/exe/AppImage is the first-install download;
 the zip + yml are what the updater consumes. CI (`deploy-prod.yml` for prod,
-`desktop.yml` for dev) builds the mac zip target and uploads all of these to the
-release.
+`desktop.yml` for dev and staging) builds the mac zip target and uploads all of
+these to the release.
+
+Each deployment's `/download` hands out the build that opens it. The web app keys
+the channel on its backend host (`deploymentChannel()` in
+`apps/web/src/features/marketing/download/releases.ts`):
+
+| Deployment | Release served | Product | Built by |
+|---|---|---|---|
+| `kortix.com`, self-hosted, local | newest `vX.Y.Z` | Kortix | `deploy-prod.yml` |
+| `dev.kortix.com` | `desktop-dev-latest` | Kortix Dev | `gh workflow run desktop.yml -f channel=dev` |
+| `staging.kortix.com` | `desktop-staging-latest` | Kortix Staging | `gh workflow run desktop.yml -f channel=staging` |
+
+A channel prerelease keeps every build it ever published; `/download` serves the
+newest version in it. When the channel has no installer, `/download/<platform>`
+sends the visitor to that prerelease, never to the production installer.
 
 Scope: auto-update runs only for **packaged, stable-channel** builds. Unpackaged
-`electron .` dev runs can't self-update; the **`dev`** channel (the mutable
-`desktop-dev-latest` prerelease) opts out so a dev build never cross-updates to a
-prod installer. macOS additionally requires the build to be **signed +
+`electron .` dev runs can't self-update; the **`dev`** and **`staging`**
+channels (the mutable `desktop-<channel>-latest` prereleases) opt out so they
+never cross-update to a prod installer. macOS additionally requires the build to be **signed +
 notarized** — CI signs when the cert secrets are present.
 
 > End-to-end note: a true download→install→relaunch can only be exercised
@@ -410,7 +489,7 @@ notarized** — CI signs when the cert secrets are present.
 ## Parity with the Tauri shell
 
 The web app talks to the native shell through exactly one module —
-`apps/web/src/lib/desktop.ts` — which uses `window.__TAURI__` and the
+`packages/ui/src/internal/lib/desktop.ts` — which uses `window.__TAURI__` and the
 `KortixDesktop` user-agent token. This port reproduces **both**, so the web app
 runs **unchanged** on either shell:
 

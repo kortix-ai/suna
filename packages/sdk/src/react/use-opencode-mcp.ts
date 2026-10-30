@@ -54,6 +54,7 @@ function unwrap<T>(result: { data?: T; error?: unknown; response?: Response }): 
 // Add MCP Server
 // ============================================================================
 
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export interface AddMcpServerParams {
   name: string;
   type: 'local' | 'remote';

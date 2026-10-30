@@ -1,9 +1,10 @@
 /**
- * Inbound chat and email webhooks: claim, ack, work.
+ * Inbound Slack and Teams webhooks: claim, ack, work. Telegram and Email store
+ * each event before the ack instead (integrations/event-inbox.ts).
  *
  * A webhook handler claims its event in `chat_event_dedup` so a provider retry
  * does not run it twice, then acks 200 and works on. If the work fails, the
- * claim must not outlive it: the provider's retry (Slack, AgentMail) would find
+ * claim must not outlive it: the provider's retry (Slack) would find
  * the claim held and drop the event. This module records every claim a handler
  * takes, in an async scope, and releases them all when the work fails.
  *

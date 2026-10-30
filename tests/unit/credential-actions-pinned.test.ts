@@ -44,6 +44,7 @@ describe('credential-holding workflows pin remote actions to SHAs', () => {
   test('the gate is green on this repository', () => {
     const r = run(root);
     // Every non-zero exit names its violations on stderr; surface them.
+    expect(r.stdout, r.stderr).toMatch(/thirdPartyViolations=0\b/);
     expect(r.stdout, r.stderr).toMatch(/credentialWorkflowViolations=0\b/);
     expect(r.status, r.stderr).toBe(0);
   });

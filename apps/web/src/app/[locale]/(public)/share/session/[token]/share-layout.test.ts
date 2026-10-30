@@ -29,6 +29,11 @@ describe('public session share layout sizing', () => {
     expect(SHARE_FILE_IFRAME_CLASS).toContain('w-full');
   });
 
+  test('html file iframe paints white behind the document, like HTML_PREVIEW_IFRAME_CLASS', () => {
+    expect(SHARE_FILE_IFRAME_CLASS).toContain('bg-white');
+    expect(SHARE_FILE_IFRAME_CLASS).not.toContain('bg-background');
+  });
+
   test('every iframe class claims the full width so content is never clipped', () => {
     for (const cls of [SHARE_PREVIEW_IFRAME_CLASS, SHARE_FILE_IFRAME_CLASS]) {
       expect(cls).toContain('w-full');

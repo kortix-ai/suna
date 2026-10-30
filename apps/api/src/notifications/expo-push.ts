@@ -37,6 +37,10 @@ export interface ExpoPushOptions {
   endpoint?: string;
   /** Receives failure warnings. Defaults to `console`. */
   logger?: Pick<Console, 'warn'>;
+  /** False: send nothing and warn once per process (`EXPO_PUSH_ENABLED`, KRTX-2938). */
+  enabled?: boolean;
+  /** This API's public origin, set as `data.origin`. The app ignores a tap from another backend. */
+  origin?: string;
 }
 
 export interface ExpoPushResult {
@@ -95,6 +99,8 @@ async function postBatch(
   return { kind: 'ok', tickets: data as ExpoPushTicket[] };
 }
 
+let skipWarned = false;
+
 /** Send `messages` to Expo. Never throws. */
 export async function sendExpoPushMessages(
   messages: readonly ExpoPushMessage[],
@@ -105,6 +111,15 @@ export async function sendExpoPushMessages(
   const logger = options.logger ?? console;
   const result: ExpoPushResult = { tickets: [], removedTokens: [], failedMessages: 0 };
   const unregistered: string[] = [];
+  if (options.enabled === false) {
+    if (!skipWarned) logger.warn('[push] expo sends are off (EXPO_PUSH_ENABLED); set it to true to send from this stack');
+    skipWarned = true;
+    return result;
+  }
+  if (options.origin) {
+    const origin = options.origin;
+    messages = messages.map((m) => ({ ...m, data: { ...m.data, origin } }));
+  }
 
   for (let start = 0; start < messages.length; start += EXPO_PUSH_BATCH_SIZE) {
     const batch = messages.slice(start, start + EXPO_PUSH_BATCH_SIZE);

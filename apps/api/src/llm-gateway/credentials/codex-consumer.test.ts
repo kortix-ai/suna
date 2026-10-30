@@ -240,6 +240,17 @@ describe('resolveCodexAccountCredential marks a login that needs reconnection', 
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(marks()).toHaveLength(3);
   });
+
+  // 2026-10-19 (SEC-POOL-6): a Free principal's default-model probe at
+  // authentication marked the newest account, so the turn named the older one.
+  test('a probe neither refreshes nor marks: it only reads the stored login', async () => {
+    const fetchImpl = mock(async () => Response.json({ access_token: 'never' }));
+    expect(await resolveCodexAccountCredential({ ...account(null), probe: true }, fetchImpl)).toBeNull();
+    expect(await resolveCodexAccountCredential({ ...account(expiring), probe: true }, fetchImpl))
+      .toEqual({ access: 'old-account-access', accountId: undefined });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(updates).toEqual([]);
+  });
 });
 
 // Seen on dev 2026-09-29: ChatGPT refused a stored login with 401 "Could not

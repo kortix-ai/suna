@@ -9,18 +9,19 @@
  * This module imports only leaf modules (`markdown-text`, lib) — the main
  * markdown module imports it, never the reverse.
  */
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
+import React, { createContext, memo, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { InlineCode } from '@/components/markdown/inline-code';
 import { InlineMath } from '@/components/markdown/math';
-import { MarkdownText, openExternalLink } from '@/components/markdown/markdown-text';
+import { MarkdownText } from '@/components/markdown/markdown-text';
+import { openExternalLink } from '@/lib/utils/open-link';
 import type { MarkdownPalette } from '@/components/markdown/markdown-theme';
 import { FONT_FAMILY } from '@/lib/utils/fonts';
 import { withAlpha } from '@/lib/utils/theme';
-import { RADIUS, TYPE } from '@/lib/markdown/markdown-layout';
+import { MARKDOWN_BORDER_WIDTH, RADIUS, TYPE } from '@/lib/markdown/markdown-layout';
 import {
   nodeText,
   TABLE_CELL_PADDING_X,
@@ -28,6 +29,7 @@ import {
   fitColumnWidths,
   tableColumnWidths,
   tableSections,
+  type TableSection,
 } from '@/lib/markdown/table-layout';
 
 export type AstNode = {
@@ -107,7 +109,8 @@ function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPale
 
 /** Width of the fade at a table edge that has more columns past it. */
 const TABLE_FADE_WIDTH = 24;
-const TABLE_BORDER_WIDTH = 0.5;
+const TABLE_BORDER_WIDTH = MARKDOWN_BORDER_WIDTH;
+const TABLE_CONTENT = { minWidth: '100%' } as const;
 
 export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: MarkdownPalette; isDark: boolean }) {
   const fill = useContext(MarkdownSurfaceContext) ?? palette.tableBody;
@@ -126,13 +129,14 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
     setFade({ left, right });
   }, []);
 
-  const sections = tableSections(node);
+  const sections = useMemo(() => tableSections(node), [node]);
   const colCount = Math.max(0, ...sections.flatMap((s) => s.rows.map((r) => r.length)));
+  const colWidths = useMemo(
+    () => fitColumnWidths(tableColumnWidths(sections, colCount), viewport),
+    [sections, colCount, viewport],
+  );
   if (colCount === 0) return <View />;
 
-  const colWidths = fitColumnWidths(tableColumnWidths(sections, colCount), viewport);
-
-  let rowIndex = 0;
   return (
     <View
       style={{
@@ -146,7 +150,7 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
       <GHScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ minWidth: '100%' }}
+        contentContainerStyle={TABLE_CONTENT}
         scrollEventThrottle={16}
         onScroll={(e) => {
           const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
@@ -163,63 +167,93 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
           updateFade();
         }}
       >
-        <View style={{ flexGrow: 1 }}>
-          {sections.map((section, sIdx) =>
-            section.rows.map((cells, rIdx) => {
-              const divider = rowIndex++ > 0;
-              return (
-                <View
-                  key={`${sIdx}-${rIdx}`}
-                  // GFM has one header row: the fade paints its colour over that height.
-                  onLayout={section.isHeader && rIdx === 0 ? (e) => setHeaderHeight(e.nativeEvent.layout.height) : undefined}
-                  style={{
-                    flexDirection: 'row',
-                    borderTopWidth: divider ? TABLE_BORDER_WIDTH : 0,
-                    borderTopColor: palette.border,
-                    backgroundColor: section.isHeader ? palette.tableHeader : undefined,
-                  }}
-                >
-                  {cells.map((cell, cIdx) => (
-                    <View
-                      key={cIdx}
-                      style={{
-                        width: colWidths[cIdx],
-                        // Every column is left-aligned: GFM `:---:` / `---:` markers are
-                        // ignored, and Yoga places the text, sized to its content, at the left edge.
-                        alignItems: 'flex-start',
-                        borderLeftWidth: cIdx > 0 ? TABLE_BORDER_WIDTH : 0,
-                        borderLeftColor: palette.border,
-                        paddingHorizontal: TABLE_CELL_PADDING_X,
-                        paddingVertical: TABLE_CELL_PADDING_Y,
-                      }}
-                    >
-                      <MarkdownText
-                        selectable
-                        numberOfLines={section.isHeader ? 1 : undefined}
-                        style={{
-                          fontFamily: section.isHeader ? FONT_FAMILY.semibold : FONT_FAMILY.regular,
-                          fontWeight: section.isHeader ? '600' : '400',
-                          fontSize: TYPE.sm.fontSize,
-                          lineHeight: TYPE.sm.lineHeight,
-                          color: palette.strong,
-                          textAlign: 'left',
-                        }}
-                      >
-                        {renderCellContent(cell, isDark, palette)}
-                      </MarkdownText>
-                    </View>
-                  ))}
-                </View>
-              );
-            }),
-          )}
-        </View>
+        <TableGrid
+          sections={sections}
+          colWidths={colWidths}
+          palette={palette}
+          isDark={isDark}
+          onHeaderLayout={setHeaderHeight}
+        />
       </GHScrollView>
       {fade.left ? <TableEdgeFade side="left" headerHeight={headerHeight} header={palette.tableHeader} body={fill} /> : null}
       {fade.right ? <TableEdgeFade side="right" headerHeight={headerHeight} header={palette.tableHeader} body={fill} /> : null}
     </View>
   );
 }
+
+/**
+ * The cells. Memoized apart from the frame (KRTX-2879): an edge fade flips on
+ * the first frame of a pan and at either end, and re-rendering every cell's
+ * native text view then stalled the pan. Only the fades render on a flip.
+ */
+const TableGrid = memo(function TableGrid({
+  sections,
+  colWidths,
+  palette,
+  isDark,
+  onHeaderLayout,
+}: {
+  sections: TableSection<AstNode>[];
+  colWidths: number[];
+  palette: MarkdownPalette;
+  isDark: boolean;
+  onHeaderLayout: (height: number) => void;
+}) {
+  let rowIndex = 0;
+  return (
+    <View style={{ flexGrow: 1 }}>
+      {sections.map((section, sIdx) =>
+        section.rows.map((cells, rIdx) => {
+          const divider = rowIndex++ > 0;
+          return (
+            <View
+              key={`${sIdx}-${rIdx}`}
+              // GFM has one header row: the fade paints its colour over that height.
+              onLayout={section.isHeader && rIdx === 0 ? (e) => onHeaderLayout(e.nativeEvent.layout.height) : undefined}
+              style={{
+                flexDirection: 'row',
+                borderTopWidth: divider ? TABLE_BORDER_WIDTH : 0,
+                borderTopColor: palette.border,
+                backgroundColor: section.isHeader ? palette.tableHeader : undefined,
+              }}
+            >
+              {cells.map((cell, cIdx) => (
+                <View
+                  key={cIdx}
+                  style={{
+                    width: colWidths[cIdx],
+                    // Every column is left-aligned: GFM `:---:` / `---:` markers are
+                    // ignored, and Yoga places the text, sized to its content, at the left edge.
+                    alignItems: 'flex-start',
+                    borderLeftWidth: cIdx > 0 ? TABLE_BORDER_WIDTH : 0,
+                    borderLeftColor: palette.border,
+                    paddingHorizontal: TABLE_CELL_PADDING_X,
+                    paddingVertical: TABLE_CELL_PADDING_Y,
+                  }}
+                >
+                  <MarkdownText
+                    selectable
+                    numberOfLines={section.isHeader ? 1 : undefined}
+                    style={{
+                      fontFamily: section.isHeader ? FONT_FAMILY.semibold : FONT_FAMILY.regular,
+                      fontWeight: section.isHeader ? '600' : '400',
+                      fontSize: TYPE.sm.fontSize,
+                      lineHeight: TYPE.sm.lineHeight,
+                      color: palette.strong,
+                      textAlign: 'left',
+                    }}
+                  >
+                    {renderCellContent(cell, isDark, palette)}
+                  </MarkdownText>
+                </View>
+              ))}
+            </View>
+          );
+        }),
+      )}
+    </View>
+  );
+});
 
 /** A fade from the table's fill (opaque at the edge) to clear: the header colour over the header row, the body fill below. */
 function TableEdgeFade({ side, headerHeight, header, body }: { side: 'left' | 'right'; headerHeight: number; header: string; body: string }) {

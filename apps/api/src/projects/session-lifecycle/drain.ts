@@ -3,6 +3,7 @@
  * belong to another API instance, and run one lane per session.
  */
 
+import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { randomUUID } from 'node:crypto';
 import { logger } from '../../lib/logger';
 import {
@@ -203,7 +204,8 @@ async function drainSessionLifecycleQueueTick(
       await markCommandFailed(
         row,
         `drain failed: ${err instanceof Error ? err.message : String(err)}`,
-        { retryable: true, attempts: row.attempts },
+        // A disconnected repository cannot succeed on a retry (KRTX-2955).
+        { retryable: !isRepositoryDisconnectedError(err), attempts: row.attempts },
       );
       out.failed += 1;
       return;

@@ -25,6 +25,22 @@ Use Bun only when a project requires it.
   `sqlite3`, `wget`, `zip`, `unzip`, `zstd`, `git-lfs`, `ssh`, `nc`, `sponge`, and `nano`.
   Use `rg` to search file contents and `fd` to find files.
 
+## Desktop
+
+This machine runs a graphical desktop (XFCE on display `:1`). The user watches
+it live in the session's **Desktop** panel, streamed from port 6901.
+
+- `DISPLAY=:1` is set, so any GUI program you start opens on the desktop.
+- `agent-browser` runs headed (`AGENT_BROWSER_HEADED=true`): the user sees
+  every page you open. Pass `--headed false` for a run they should not see.
+- `curl -o shot.png localhost:6901/screenshot` captures the screen as a PNG.
+- After a GUI action, `curl localhost:6901/wait` returns when the screen is
+  still for 300 ms. Do not sleep.
+- `curl -o clip.mp4 "localhost:6901/record?seconds=10"` records the next 10 s
+  as an MP4.
+- `kortix-desktop status|stop|start` controls it. `stop` frees ~380 MB of RAM.
+  Then set `AGENT_BROWSER_HEADED=false` until you `start` it again.
+
 ## Platform-owned binaries
 
 Kortix owns `kortix` and `opencode` on this machine. Both are converged from

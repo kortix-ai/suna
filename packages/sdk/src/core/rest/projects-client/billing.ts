@@ -84,10 +84,14 @@ export interface AccountAccessGrace {
 }
 
 export interface AccountState {
+  /** Account model entitlement, separate from wallet admission. Absent on older APIs. */
+  model_access?: { managed: boolean; requires_provider_key: boolean };
   credits: {
     total: number;
     daily: number;
     monthly: number;
+    /** Next scheduled reset of the expiring credit bucket. */
+    expires_at?: string | null;
     extra: number;
     can_run: boolean;
     /** Lifetime rollups derived from credit_ledger, server-side. Present once

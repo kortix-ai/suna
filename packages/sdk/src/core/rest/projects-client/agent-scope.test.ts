@@ -51,3 +51,10 @@ test('setAgentScope rejects conflicting aliases before sending a request', async
   ).rejects.toThrow('connectors_personal must match connectors_required');
   expect(bodies).toHaveLength(0);
 });
+
+test('setAgentScope sends policy_sets as given, null clears one slug', async () => {
+  await setAgentScope('project-1', 'support', {
+    policy_sets: { gmail: 'read_only', slack: null },
+  });
+  expect(bodies[0]).toEqual({ policy_sets: { gmail: 'read_only', slack: null } });
+});

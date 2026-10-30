@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   createMarketplaceFetch,
-  clampMarketplaceItemsLimit,
+  compareCatalogItems,
   getCatalogItemDetail,
   pageCatalogItems,
   type CatalogItem,
@@ -171,30 +171,6 @@ describe('pageCatalogItems', () => {
   });
 });
 
-describe('clampMarketplaceItemsLimit', () => {
-  test('passes an in-range limit through unchanged', () => {
-    expect(clampMarketplaceItemsLimit(30)).toBe(30);
-  });
-
-  test('passes the explore-landing limit (120) through unchanged', () => {
-    expect(clampMarketplaceItemsLimit(120)).toBe(120);
-  });
-
-  test('passes the ceiling itself (200) through unchanged', () => {
-    expect(clampMarketplaceItemsLimit(200)).toBe(200);
-  });
-
-  test('clamps a limit above 200 down to 200', () => {
-    expect(clampMarketplaceItemsLimit(201)).toBe(200);
-    expect(clampMarketplaceItemsLimit(5000)).toBe(200);
-  });
-
-  test('clamps a non-positive limit up to 1', () => {
-    expect(clampMarketplaceItemsLimit(0)).toBe(1);
-    expect(clampMarketplaceItemsLimit(-3)).toBe(1);
-  });
-});
-
 describe('marketplace fetch', () => {
   function harness() {
     const direct: Array<{ url: string; auth: string | null }> = [];
@@ -229,5 +205,32 @@ describe('marketplace fetch', () => {
     await fetchImpl('http://api.github.com/repos/o/r');
     expect(direct).toEqual([{ url: 'https://api.github.com/repos/o/r', auth: 'Bearer gh-token' }]);
     expect(guarded).toEqual(['https://api.github.com.example.com/repos/o/r', 'http://api.github.com/repos/o/r']);
+  });
+});
+
+// KRTX-3284. Two sources can publish a skill with the same name. The order of
+// those ties was the order in which sources finished resolving, which differs
+// between requests and replicas, so `offset` paging skipped or repeated rows.
+describe('compareCatalogItems', () => {
+  const davila = item({ id: 'davila7:ab-test-setup', registry: 'davila7', name: 'ab-test-setup' });
+  const alireza = item({ id: 'alirezarezvani:ab-test-setup', registry: 'alirezarezvani', name: 'ab-test-setup' });
+
+  test('items that share a name sort by id, whatever order the sources resolved in', () => {
+    expect([davila, alireza].sort(compareCatalogItems).map((i) => i.id)).toEqual([alireza.id, davila.id]);
+    expect([alireza, davila].sort(compareCatalogItems).map((i) => i.id)).toEqual([alireza.id, davila.id]);
+  });
+
+  test('the same page comes back for the same offset after the sources resolve in another order', () => {
+    const others = synthetic(4);
+    const first = [...others, davila, alireza].sort(compareCatalogItems);
+    const second = [alireza, ...others.reverse(), davila].sort(compareCatalogItems);
+    const page = (items: CatalogItem[]) => pageCatalogItems(items, { limit: 2, offset: 0 }).items.map((i) => i.id);
+    expect(page(second)).toEqual(page(first));
+  });
+
+  test('bundles still come first, then names', () => {
+    const bundle = item({ id: 'acme:zz-bundle', name: 'zz-bundle', type: 'registry:bundle' });
+    const skill = item({ id: 'acme:aa-skill', name: 'aa-skill' });
+    expect([skill, bundle].sort(compareCatalogItems).map((i) => i.id)).toEqual([bundle.id, skill.id]);
   });
 });

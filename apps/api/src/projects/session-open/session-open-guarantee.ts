@@ -60,7 +60,7 @@ export async function enforceRuntimeGuarantee(
     // top-level import here closed a cycle that threw
     // `ReferenceError: Cannot access 'preview' before initialization` at
     // server boot (CI run 36351579974: the whole stack never came up). Same
-    // pattern as `session-lifecycle/stop.ts`'s `captureSessionTranscriptMirror`
+    // pattern as `session-lifecycle/stop.ts`'s `captureJournallessSessionLog`
     // dynamic import — this call site is already inside an async function,
     // so the dynamic import costs nothing extra on the hot path.
     const { guaranteeCurrentRuntimeOnOpen } = await import('../lib/legacy-runtime-bootstrap-wiring');

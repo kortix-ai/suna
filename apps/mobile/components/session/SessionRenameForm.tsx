@@ -31,7 +31,7 @@ import {
 
 const MAX_NAME_LENGTH = 120;
 
-export interface SessionRenameFormProps {
+interface SessionRenameFormProps {
   projectId: string;
   session: ProjectSession;
   /** The name was saved, or it did not change. */

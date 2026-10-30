@@ -462,7 +462,7 @@ request into `staging` that touches `packages/db/**`. A pull request into
 
 ```bash
 pnpm --filter @kortix/db lint                                   # lint + squawk
-git diff --diff-filter=M --name-only origin/main... -- 'packages/db/migrations/*.sql'   # immutability: must print nothing
+git diff --diff-filter=M --name-only origin/HEAD... -- 'packages/db/migrations/*.sql'   # immutability: must print nothing
 ( cd packages/db && bun scripts/generate.ts __local_schema_sync ) && git status --porcelain -- packages/db/migrations packages/db/drizzle   # schema-sync: must print nothing
 pnpm test -- --db-only                                          # fresh-DB apply + migration suites
 ```

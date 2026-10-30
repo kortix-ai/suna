@@ -2,7 +2,7 @@
  * Customize · Skills.
  *
  * `ProjectConfigSummary.skills` — the same server-side read
- * `apps/web/src/features/workspace/capabilities/skills/skills-page.tsx` uses.
+ * `packages/ui/src/customize/skills/skills-page.tsx` uses.
  * Skills do NOT require a session: they are project config, so this tab works
  * with no sandbox running. That is why `CustomizeScreen` takes no session
  * prop.

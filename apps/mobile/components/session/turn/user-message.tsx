@@ -13,7 +13,7 @@
  * `lib/session/attachment-tile.ts`.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
 import Reanimated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -28,8 +28,10 @@ import { TeamsIcon } from '@/components/icons/teams-icon';
 import { TelegramIcon } from '@/components/icons/telegram-icon';
 import {
   AlarmIcon,
+  ChatCircleIcon,
   CheckIcon,
   CopyIcon,
+  EnvelopeIcon,
   LightningIcon,
   PencilIcon,
   TextTIcon,
@@ -39,8 +41,8 @@ import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import type { Command } from '@/lib/session/runtime-data';
 import type { SessionLogTurn } from '@kortix/sdk';
 import { recordTimeMs } from '@/lib/session/turn-meta';
-import { type ChannelPlatform, parseChannelMessage } from '@kortix/shared';
-import { parseReminderPrompt, parseTriggerEvent, type ChannelMessageInfo } from '@kortix/shared';
+import { type ChannelPlatform, channelPromptTail, isChannelFileLabel, parseChannelMessage } from '@kortix/shared';
+import { parseReminderPrompt, parseRoomDigest, parseRoomPrompt, parseTriggerEvent, type ChannelMessageInfo } from '@kortix/shared';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { SourcePill } from './source-pill';
 import { CopyContentButton, KortixBottomSheetModal } from '@/components/kortix/sheet';
@@ -57,7 +59,9 @@ import {
 } from '@/lib/session/attachment-tile';
 import {
   commandMessageText,
+  messageAttachments,
   parseUserMessageBlocks,
+  parseUserMessageText,
   type MessageAttachment,
   queuedPromptStatusLabel,
   quoteMarginBottom,
@@ -82,6 +86,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { useToast } from '@/components/kortix/toast-provider';
+import { NativeContextMenu, type NativeContextMenuAction } from '@/modules/kortix-context-menu';
 
 // ─── Values (web → rendered px) ──────────────────────────────────────────────
 
@@ -91,14 +96,22 @@ const BUBBLE_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 13, lineHeig
 /** The full-message sheet opens full screen (Jay, 2026-10-07). A module constant: gorhom wants a stable array. */
 const FULL_SCREEN = ['100%'];
 const SHEET_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 15, lineHeight: 23 } as const;
-/** `px-3.5 py-2.5 rounded-lg`. */
-const BUBBLE_PADDING_X = webSpace(3.5);
-const BUBBLE_PADDING_Y = webSpace(2.5);
-const BUBBLE_RADIUS = 10;
+/** 12pt on every side (Jay, 2026-10-20), not web's `px-3.5 py-2.5`. */
+const BUBBLE_PADDING_X = 12;
+const BUBBLE_PADDING_Y = 12;
+/**
+ * 20pt, rounder than web's `rounded-lg` (Jay, 2026-10-20): a one-line bubble
+ * (19pt line + 2 × 12pt padding = 43pt) reads as a near pill, as in Messages
+ * and the Claude app. The edit card shares it.
+ */
+const BUBBLE_RADIUS = 20;
 /** Web's 4px top-right corner under the sender's avatar (`--radius` 10 minus 6). */
 const BUBBLE_TAIL_RADIUS = 4;
 /** `max-h-[200px]`. */
 const CLAMP_HEIGHT = 200;
+/** A message clamps (fade + "Show more") only above this many characters (Jay, 2026-10-20). */
+const SHOW_MORE_MIN_CHARS = 300;
+const CLAMP_STYLE = { maxHeight: CLAMP_HEIGHT, overflow: 'scroll' } as const;
 /** `h-10` fade. */
 const FADE_HEIGHT = webSpace(10);
 /** `text-xs` = 0.8125rem with a 1rem line. */
@@ -107,23 +120,28 @@ const META_TEXT_STYLE = { fontSize: 13, lineHeight: 16 } as const;
 // A channel card's mark and label, as web draws them (`channel-brand.tsx`). The
 // label colors are the platforms' fixed brand colors, never the app theme. Slack
 // has no hue to tint with: its mark is four colors and its name reads like
-// Slack's wordmark, in the text color.
+// Slack's wordmark, in the text color. Email is no brand: its envelope and its
+// label take the text color too.
 const TELEGRAM_BRAND_COLOR = 'hsl(198.7 91.9% 56.3%)'; // hex-allowlist: Telegram blue, web CHANNEL_BRAND_COLOR.Telegram hsl(198.7 91.9% 56.3%)
 const CHANNEL_LABEL_COLOR: Record<ChannelPlatform, string | undefined> = {
   Slack: undefined,
   Teams: '#5B5FC7', // hex-allowlist: Microsoft Teams purple #5B5FC7, web CHANNEL_BRAND_COLOR.Teams
   Telegram: TELEGRAM_BRAND_COLOR,
+  Email: undefined,
 };
 const CHANNEL_LABEL: Record<ChannelPlatform, string> = {
   Slack: 'Slack',
   Teams: 'Microsoft Teams',
   Telegram: 'Telegram',
+  Email: 'Email',
 };
 
-function ChannelMark({ platform, size }: { platform: ChannelPlatform; size: number }) {
+/** `className` colors only the glyphs with no brand: Email's envelope, and the neutral chat glyph of a platform this build does not know. */
+function ChannelMark({ platform, size, className }: { platform: ChannelPlatform; size: number; className?: string }) {
   if (platform === 'Teams') return <TeamsIcon size={size} />;
   if (platform === 'Slack') return <SlackIcon size={size} />;
-  return <TelegramIcon size={size} />;
+  if (platform === 'Telegram') return <TelegramIcon size={size} />;
+  return <Icon as={platform === 'Email' ? EnvelopeIcon : ChatCircleIcon} size={size} className={className} />;
 }
 
 /** `isDark` is passed down from SessionTurn. */
@@ -175,14 +193,14 @@ export interface SessionSourceAuthor {
   agent?: string;
 }
 
-/** Slack / Teams / Telegram: mark · platform · sender; the sheet names the channel and sender. */
+/** Slack / Teams / Telegram / Email: mark · platform · sender; the sheet names the channel and sender. */
 function ChannelSourcePill({ info }: { info: ChannelMessageInfo }) {
   const platform = CHANNEL_LABEL[info.platform];
   // A Teams conversation id names nothing a person reads: no channel row.
   const channel = info.platform === 'Teams' ? null : info.context;
   return (
     <SourcePill
-      mark={<ChannelMark platform={info.platform} size={12} />}
+      mark={<ChannelMark platform={info.platform} size={12} className="text-muted-foreground" />}
       sheetMark={<ChannelMark platform={info.platform} size={22} />}
       source={platform}
       sourceColor={CHANNEL_LABEL_COLOR[info.platform]}
@@ -272,7 +290,7 @@ function SessionSourcePill({
 
 // ─── UserMessage ─────────────────────────────────────────────────────────────
 
-export function UserMessage({
+function UserMessageImpl({
   turn,
   isDark,
   agentNames,
@@ -344,9 +362,22 @@ export function UserMessage({
   // Both parsers are linear in the prompt: a channel or a webhook chooses this
   // text, and a regex version of each froze the JS thread on a crafted prompt.
   const channelMessageInfo = useMemo(() => parseChannelMessage(rawText), [rawText]);
+  // Its files: the `<file>` tags Kortix wrote after the sender's text, and nothing else. A tag the sender
+  // typed is text; the image block pi records for a tag repeats it, and names no path when the sender typed one.
+  const channelAttachments = useMemo(
+    () =>
+      channelMessageInfo
+        ? messageAttachments([], parseUserMessageText(channelPromptTail(rawText, channelMessageInfo.platform)))
+        : [],
+    [channelMessageInfo, rawText],
+  );
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
   // A reminder fire: platform-written `[REMINDER …]` header + the reminder text.
   const reminderInfo = useMemo(() => parseReminderPrompt(rawText), [rawText]);
+  // A message from a room or a direct conversation: `[room dev · #2 · from …]` + the text.
+  const roomInfo = useMemo(() => parseRoomPrompt(rawText), [rawText]);
+  // Room traffic batched into one turn: `[room dev · #a–#b · N new messages]`.
+  const roomDigestInfo = useMemo(() => parseRoomDigest(rawText), [rawText]);
 
   // Queued dim: `duration-slow transition-opacity` + `opacity-50`.
   const dim = useSharedValue(queueState ? 0.5 : 1);
@@ -366,7 +397,7 @@ export function UserMessage({
   // under the bubble; only a queued status line (or Select text's Done)
   // stays there. The bubble's own long press opens it through the trigger's
   // ref: the bubble is already a Pressable (tap expands a long message).
-  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo && !reminderInfo;
+  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo && !reminderInfo && !roomInfo && !roomDigestInfo;
   const menuRef = useRef<TriggerRef>(null);
   // Select text: the bubble's text becomes selectable in place until Done.
   const [selecting, setSelecting] = useState(false);
@@ -379,6 +410,9 @@ export function UserMessage({
     Keyboard.dismiss();
     menuRef.current?.open();
   }, [copyText]);
+  // iOS: the system menu owns the long press (`NativeContextMenu`); the
+  // bubble's own Pressable must not also fire it.
+  const longPress = NativeContextMenu ? undefined : openMenu;
   const menuProps = {
     menuRef,
     text: copyText,
@@ -419,16 +453,18 @@ export function UserMessage({
   }
 
   // A prompt a person did not type here (Slack / Teams / Telegram, a reminder,
-  // a trigger): the source pill over the same bubble a typed message uses,
-  // web's `ChannelMessage` / `PlatformPromptMessage`. Long press keeps Copy.
-  const platformMessage = (pill: React.ReactNode, body: React.ReactNode, fullText?: string) => (
+  // a trigger): the source pill over the files a channel sender sent and the
+  // same bubble a typed message uses, web's `ChannelMessage` /
+  // `PlatformPromptMessage`. Long press keeps Copy.
+  const platformMessage = (pill: React.ReactNode, body: React.ReactNode, fullText?: string, files?: MessageAttachment[]) => (
     <Reanimated.View className="px-4" style={dimStyle}>
       <View className="items-end self-end" style={{ maxWidth: '80%', gap: webSpace(1.5) }}>
         {pill}
+        {files?.length ? <MessageAttachments attachments={files} onOpenPath={onFileMention} /> : null}
         {body ? (
           <MessageMenu {...menuProps}>
             <View className="items-end">
-              <UserMessageBubble isDark={isDark} onLongPress={openMenu} fullText={fullText}>
+              <UserMessageBubble isDark={isDark} onLongPress={longPress} fullText={fullText}>
                 {body}
               </UserMessageBubble>
             </View>
@@ -442,8 +478,53 @@ export function UserMessage({
   if (channelMessageInfo) {
     return platformMessage(
       <ChannelSourcePill info={channelMessageInfo} />,
-      channelMessageInfo.messageText ? <ChannelMessageText text={channelMessageInfo.messageText} /> : null,
+      channelMessageInfo.messageText && !(channelAttachments.length > 0 && isChannelFileLabel(channelMessageInfo.messageText))
+        ? <ChannelMessageText text={channelMessageInfo.messageText} />
+        : null,
       channelMessageInfo.messageText,
+      channelAttachments,
+    );
+  }
+
+  if (roomInfo) {
+    const source = roomInfo.room;
+    const sender = roomInfo.senderKind === 'session' ? `Agent ${roomInfo.sender}` : roomInfo.sender;
+    return platformMessage(
+      <SourcePill
+        mark={<Icon as={ChatCircleIcon} size={12} className="text-muted-foreground" />}
+        sheetMark={<Icon as={ChatCircleIcon} size={22} className="text-foreground" />}
+        source={source}
+        sender={sender}
+        title={source}
+        subtitle={sender}
+        rows={[
+          { label: 'Message', value: `#${roomInfo.seq}` },
+          ...(roomInfo.replyTo ? [{ label: 'Reply to', value: `#${roomInfo.replyTo}` }] : []),
+        ]}
+      />,
+      roomInfo.text ? <Text style={BUBBLE_TEXT_STYLE}>{roomInfo.text}</Text> : null,
+      roomInfo.text,
+    );
+  }
+
+  if (roomDigestInfo) {
+    const range = roomDigestInfo.fromSeq === roomDigestInfo.toSeq ? `#${roomDigestInfo.toSeq}` : `#${roomDigestInfo.fromSeq}–#${roomDigestInfo.toSeq}`;
+    const count = `${roomDigestInfo.count} new message${roomDigestInfo.count === 1 ? '' : 's'}`;
+    const lines = roomDigestInfo.lines.map((line) => `#${line.seq} ${line.sender}: ${line.text}`);
+    if (roomDigestInfo.more) lines.push(`… and ${roomDigestInfo.more} more`);
+    const body = lines.join('\n');
+    return platformMessage(
+      <SourcePill
+        mark={<Icon as={ChatCircleIcon} size={12} className="text-muted-foreground" />}
+        sheetMark={<Icon as={ChatCircleIcon} size={22} className="text-foreground" />}
+        source={roomDigestInfo.room}
+        sender={count}
+        title={roomDigestInfo.room}
+        subtitle={count}
+        rows={[{ label: 'Messages', value: range }]}
+      />,
+      <Text style={BUBBLE_TEXT_STYLE}>{body}</Text>,
+      body,
     );
   }
 
@@ -499,7 +580,7 @@ export function UserMessage({
                 attachments={attachments}
                 status={failed}
                 onOpenPath={onFileMention}
-                onLongPressPaste={selecting ? undefined : openMenu}
+                onLongPressPaste={selecting ? undefined : longPress}
               />
             </MessageMenu>
           )
@@ -509,7 +590,7 @@ export function UserMessage({
         {hasBubble ? (
           <MessageSenderAbove sender={sender}>
             {/* A failed send greys its bubble; "Try again" above stays full strength. */}
-            <MessageMenu {...menuProps} onSelectText={() => setSelecting(true)}>
+            <MessageMenu {...menuProps} selecting={selecting} onSelectText={() => setSelecting(true)}>
               <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
                 <UserMessageBubble
                   isDark={isDark}
@@ -517,7 +598,7 @@ export function UserMessage({
                   quotes={content.quotes}
                   fullText={selecting ? undefined : promptText}
                   // While selecting, a long press belongs to the text selection.
-                  onLongPress={selecting ? undefined : openMenu}>
+                  onLongPress={selecting ? undefined : longPress}>
                   {selecting ? (
                     <SelectableMessageText text={promptText} isDark={isDark} />
                   ) : bodyText || commandInfo ? (
@@ -549,6 +630,14 @@ export function UserMessage({
  * end-aligned like the bubble): the time it was sent, then Copy · Select text
  * · Edit. The components are the RNR `context-menu`; `ContextMenuContent`
  * portals over the thread and closes on a tap outside or an item.
+ *
+ * iOS (a binary with the `KortixContextMenu` module): the system context menu
+ * instead, as in Messages and the Claude app. `NativeContextMenu` is a plain
+ * UIKit container with `UIContextMenuInteraction`: React Native still lays the
+ * bubble out, a long press lifts the real bubble (clipped to its corners),
+ * blurs the thread and opens a `UIMenu`, Liquid Glass on iOS 26. Not SwiftUI
+ * (`@expo/ui` `ContextMenu` + `RNHostView`): that sized the row a pass late and
+ * broke the thread's layout twice (2026-10-20).
  */
 function MessageMenu({
   menuRef,
@@ -556,6 +645,7 @@ function MessageMenu({
   timestamp,
   onEdit,
   onSelectText,
+  selecting = false,
   children,
 }: {
   menuRef: React.RefObject<TriggerRef | null>;
@@ -563,6 +653,8 @@ function MessageMenu({
   timestamp: number | null;
   onEdit?: () => void;
   onSelectText?: () => void;
+  /** Select text is on: a long press belongs to the text selection, not the menu. */
+  selecting?: boolean;
   children: React.ReactNode;
 }) {
   const toast = useToast();
@@ -573,6 +665,38 @@ function MessageMenu({
     haptics.success();
     toast.success('Copied');
   }, [text, toast]);
+
+  const nativeActions = useMemo<NativeContextMenuAction[]>(
+    () => [
+      { id: 'copy', title: 'Copy', systemImage: 'doc.on.doc' },
+      ...(onSelectText ? [{ id: 'select', title: 'Select text', systemImage: 'character.cursor.ibeam' }] : []),
+      ...(onEdit ? [{ id: 'edit', title: 'Edit', systemImage: 'pencil' }] : []),
+    ],
+    [onSelectText, onEdit],
+  );
+  const onNativeAction = useCallback(
+    ({ nativeEvent }: { nativeEvent: { id: string } }) => {
+      if (nativeEvent.id === 'copy') void copy();
+      else if (nativeEvent.id === 'select') onSelectText?.();
+      else if (nativeEvent.id === 'edit') onEdit?.();
+    },
+    [copy, onSelectText, onEdit],
+  );
+
+  if (NativeContextMenu) {
+    // Always the same wrapper: Select text toggles `enabled`, so the bubble
+    // never remounts.
+    return (
+      <NativeContextMenu
+        menuTitle={sentLabel ?? ''}
+        actions={nativeActions}
+        previewCornerRadius={BUBBLE_RADIUS}
+        enabled={!selecting && !!text}
+        onPressAction={onNativeAction}>
+        {children}
+      </NativeContextMenu>
+    );
+  }
 
   return (
     <ContextMenu relativeTo="trigger">
@@ -723,8 +847,9 @@ export function MessageBody({
 // ─── Bubble ──────────────────────────────────────────────────────────────────
 
 /**
- * `bg-sidebar dark:bg-muted px-3.5 py-2.5 rounded-lg`, hugging its text. Long
- * text clamps at 200px under a 36.8px fade in the bubble colour, with a
+ * `bg-sidebar dark:bg-muted`, 12pt padding, 20pt corners, hugging its text. A
+ * message over 300 characters that is taller than 200px clamps under a 36.8px
+ * fade in the bubble colour, with a
  * "Show more" label (a label, not a control) at the bottom left. A tap on a
  * clamped bubble opens the whole message in a sheet with selectable text
  * (`FullMessageSheet`); it never expands in place. Long press still opens the
@@ -752,7 +877,9 @@ export function UserMessageBubble({
   const palette = paletteFor(isDark);
   const surface = isDark ? palette.muted : palette.sidebar;
   const [contentHeight, setContentHeight] = useState(0);
-  const clamped = contentHeight > CLAMP_HEIGHT + 2;
+  // Only a long message clamps: a short one with many lines shows whole.
+  const long = (fullText?.length ?? 0) > SHOW_MORE_MIN_CHARS;
+  const clamped = long && contentHeight > CLAMP_HEIGHT + 2;
   const sheetRef = useRef<BottomSheetModal>(null);
   const opensSheet = clamped && !!fullText;
 
@@ -811,7 +938,7 @@ export function UserMessageBubble({
                 under 'hidden' the text measured 200pt and never read as long.
                 'scroll' measures the full text and still clips it (no
                 ScrollView, nothing scrolls). */}
-            <View style={{ maxHeight: CLAMP_HEIGHT, overflow: 'scroll' }}>
+            <View style={long ? CLAMP_STYLE : undefined}>
               <View onLayout={onContentLayout}>{children}</View>
             </View>
 
@@ -1096,3 +1223,19 @@ function MessageAttachmentTile({
   }
   return <AttachmentTile filename={file.filename} mime={file.mime} onPress={open} />;
 }
+
+type UserMessageProps = Parameters<typeof UserMessageImpl>[0];
+
+/**
+ * The prompt reads only `turn.user`. The live turn is a new object on every
+ * streamed frame; comparing the prompt instead keeps the bubble from
+ * re-rendering while the reply streams under it.
+ */
+function sameUserMessageProps(a: UserMessageProps, b: UserMessageProps): boolean {
+  for (const key of Object.keys(b) as (keyof UserMessageProps)[]) {
+    if (key === 'turn' ? a.turn.user !== b.turn.user : a[key] !== b[key]) return false;
+  }
+  return Object.keys(a).length === Object.keys(b).length;
+}
+
+export const UserMessage = memo(UserMessageImpl, sameUserMessageProps);

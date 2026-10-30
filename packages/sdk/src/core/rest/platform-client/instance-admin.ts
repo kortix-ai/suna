@@ -43,11 +43,11 @@ export interface CreateInstanceRequest {
 
 /**
  * @deprecated Standalone instance provisioning was retired. The supported
- * sandbox provider contract is `daytona | platinum | e2b`.
+ * sandbox provider contract is `platinum | daytona`.
  */
 export async function createInstance(_request: CreateInstanceRequest): Promise<never> {
   throw new Error(
-    'Retired instance provisioning is unavailable. Create a project session with daytona, platinum, or e2b.',
+    'Retired instance provisioning is unavailable. Create a project session on platinum (or the legacy daytona fallback).',
   );
 }
 

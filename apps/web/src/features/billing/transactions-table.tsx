@@ -14,7 +14,7 @@
  * lives in `app/admin/accounts/ledger-rows.ts`.
  */
 
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import {
   Table,
   TableBody,
@@ -22,10 +22,10 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { cn } from '@/lib/utils';
+} from '@kortix/ui/table';
+import { APP_REGISTRY_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/app-registry-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { cn } from '@kortix/ui';
 import { formatUsdAsCredits } from '@kortix/shared';
 import { useTranslations } from '@/i18n/use-translations';
 
@@ -39,6 +39,7 @@ export interface CreditTransactionRow {
   description: string | null;
   /** Absent = the source does not say, and the Credit type cell stays empty. */
   isExpiring?: boolean;
+  expiresAt?: string | null;
   amount: number;
   balanceAfter: number;
 }
@@ -61,6 +62,7 @@ const TRANSACTION_BADGES: Record<string, { label: string; variant: BadgeVariant 
   token_overage: { label: 'LLM Overage', variant: 'outline' },
   compute_debit: { label: 'Sandbox', variant: 'outline' },
   compute_refund: { label: 'Sandbox Refund', variant: 'secondary' },
+  proxy_debit: { label: 'Proxy', variant: 'outline' },
   refund: { label: 'Refund', variant: 'secondary' },
   adjustment: { label: 'Adjustment', variant: 'outline' },
   expired: { label: 'Expired', variant: 'destructive' },
@@ -143,6 +145,11 @@ export function CreditTransactionsTable({ rows }: { rows: CreditTransactionRow[]
                 {row.isExpiring !== undefined && (
                   <span className="text-muted-foreground text-xs">
                     {row.isExpiring ? 'Expiring' : 'Permanent'}
+                    {row.isExpiring && row.expiresAt && Number.isFinite(Date.parse(row.expiresAt)) && (
+                      <time dateTime={row.expiresAt} className="block">
+                        {formatDate(row.expiresAt)}
+                      </time>
+                    )}
                   </span>
                 )}
               </TableCell>

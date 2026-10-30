@@ -20,7 +20,12 @@ export function ChangelogAnchorRedirect({
 }) {
   const router = useRouter();
   useEffect(() => {
-    const tag = decodeURIComponent(window.location.hash.slice(1));
+    let tag: string;
+    try {
+      tag = decodeURIComponent(window.location.hash.slice(1));
+    } catch {
+      return;
+    }
     if (!tag || document.getElementById(tag)) return;
     const target = tagPages[tag];
     if (target && target !== page) router.replace(`${changelogPageHref(target)}#${tag}`);

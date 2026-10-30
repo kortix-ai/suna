@@ -348,6 +348,19 @@ describe('kortix apps deploy (characterization)', () => {
     expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ labels: ['backend'], display: { preview: 'none' } });
   });
 
+  test('deploy --listed registers the App for the Apps page; with no flag and no display block nothing is sent', async () => {
+    mkdirSync(join(tmp, 'site'), { recursive: true });
+    writeFileSync(join(tmp, 'site', 'index.html'), '<!doctype html>');
+    const config = writeConfig(startServer());
+    const plain = await runCli(['apps', 'deploy', 'site', '--slug', 'storefront', '--type', 'static', '--project', PROJECT], config);
+    expect(plain.code).toBe(0);
+    expect(calls.find((c) => c.method === 'PATCH')).toBeUndefined();
+    calls = [];
+    const listed = await runCli(['apps', 'deploy', 'site', '--slug', 'storefront', '--type', 'static', '--listed', '--project', PROJECT], config);
+    expect(listed.code).toBe(0);
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ display: { listed: true } });
+  });
+
   test('launch --template convex: the dashboard is a tab of the backend, signed in by a secret the launch creates once', async () => {
     writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
     const config = writeConfig(startServer());

@@ -27,7 +27,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, help, pad, status, trim } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 /** One entry of GET /projects/:id/model-picker `models` (GatewayCatalogModel). */
 interface PickerModel {
@@ -37,11 +37,24 @@ interface PickerModel {
   free?: boolean;
   reasoning?: boolean;
   tool_call?: boolean;
+  /** `false`: kept because a default names it, but its provider is not
+   *  connected for you, so the gateway would refuse it (KRTX-3011). */
+  available?: boolean;
+  availability?: 'login' | 'provider';
+}
+
+/** The connect command for a served model that is not runnable, else ''. */
+function connectHint(id: string, model: PickerModel): string {
+  if (model.available !== false) return '';
+  const provider = model.provider ?? id.split('/')[0];
+  const command = model.availability === 'login' ? 'kortix providers login openai' : `kortix providers set ${provider}`;
+  return `  ${C.yellow}not connected: ${command}${C.reset}`;
 }
 
 /** GET /projects/:id/model-picker (routes/models.ts). */
 interface ModelPicker {
   models: Record<string, PickerModel>;
+  catalog?: Record<string, { provider?: string; availability: string }>;
   modelOverrides?: Record<string, boolean>;
   usingDefaults?: boolean;
   defaultModel?: string;
@@ -63,7 +76,8 @@ Enablement is display-only — it decides what pickers OFFER, never what the
 gateway serves.
 
 Subcommands:
-  ls [--json]                     List every model: state, origin, how it is
+  ls [--json]                     List served and unavailable catalog ids,
+                                  availability, state, origin, how it is
                                   paid for (VIA), provider.
   enable <model-id>...            Offer these models.
   disable <model-id>...           Stop offering them. The project default
@@ -152,7 +166,8 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
     const p = (a.provider ?? '').localeCompare(b.provider ?? '');
     return p !== 0 ? p : aId.localeCompare(bId);
   });
-  if (rows.length === 0) {
+  const unavailable = Object.entries(picker.catalog ?? {}).filter(([id]) => !(id in picker.models));
+  if (rows.length === 0 && unavailable.length === 0) {
     // Same state the web Models tab's empty state answers ("Add a key on the
     // Providers tab"): a fresh account on internal billing serves nothing until
     // a provider key is connected. Name the CLI path instead of a bare dead end.
@@ -163,7 +178,7 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
     );
     return 0;
   }
-  const idW = Math.min(44, Math.max(...rows.map(([id]) => id.length), 5));
+  const idW = Math.max(...rows.map(([id]) => id.length), ...unavailable.map(([id]) => id.length), 5);
   process.stdout.write('\n');
   process.stdout.write(
     `  ${C.dim}${pad('MODEL', idW)}   STATE   ORIGIN     ${pad('VIA', 8)}  PROVIDER${C.reset}\n`,
@@ -179,7 +194,17 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
       : `${C.faded}${pad('off', 6)}${C.reset}`;
     const origin = id in overrides ? 'override' : 'default';
     process.stdout.write(
-      `${marker}${pad(trim(id, idW), idW)}   ${state}  ${pad(origin, 9)}  ${pad(paidVia(id, model.provider), 8)}  ${C.faded}${model.provider ?? '—'}${C.reset}\n`,
+      `${marker}${pad(id, idW)}   ${state}  ${pad(origin, 9)}  ${pad(paidVia(id, model.provider), 8)}  ${C.faded}${model.provider ?? '—'}${C.reset}${connectHint(id, model)}\n`,
+    );
+  }
+  if (unavailable.length > 0) {
+    process.stdout.write(`\n  ${C.dim}Unavailable catalog ids (not served by this project):${C.reset}\n`);
+    for (const [id, model] of unavailable.sort(([a], [b]) => a.localeCompare(b))) {
+      process.stdout.write(`  ${pad(id, idW)}   ${model.availability}\n`);
+    }
+    process.stdout.write(
+      '  plan = managed-model plan required; login = connect ChatGPT with kortix providers login openai;\n' +
+      '  provider = configure provider access with kortix providers set (some providers need dashboard setup).\n',
     );
   }
   const exceptions = Object.keys(overrides).length;

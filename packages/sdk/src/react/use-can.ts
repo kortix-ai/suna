@@ -3,7 +3,7 @@
 /**
  * `useCan` / `useCans` — the ONLY client-side authorization read.
  *
- * Relocated from `apps/web/src/lib/use-permission.ts` + `use-project-can.ts`.
+ * Relocated from `packages/ui/src/internal/lib/use-permission.ts` + `use-project-can.ts`.
  * They were host-local, so every other host (the whitelabel demo, mobile) had
  * no probe at all and fell back to reading a role literal off a row — which is
  * exactly the bug the canonical model deletes: a member holding a custom role

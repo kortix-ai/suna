@@ -8,6 +8,7 @@ import type { auditEvents } from '@kortix/db';
  */
 type ReceivedAuditBatch = { [K in keyof RuntimeAuditBatch]?: unknown };
 type ReceivedAuditEvent = { [K in keyof RuntimeAuditEvent]?: unknown } & {
+  /** @deprecated Pre-W3 OpenCode name; use runtime_session_id. */
   opencode_session_id?: unknown;
   initiator_actor_type?: unknown;
   initiator_actor_id?: unknown;

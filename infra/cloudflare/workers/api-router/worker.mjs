@@ -294,6 +294,15 @@ export default {
     const url = new URL(request.url);
     const isGateway = url.hostname.includes('gateway');
 
+    if (url.protocol === 'https:' && url.pathname === '/.well-known/security.txt' &&
+        (request.method === 'GET' || request.method === 'HEAD')) {
+      return addSecurityHeaders(new Response(request.method === 'HEAD' ? null :
+        `Contact: mailto:security@kortix.com\nExpires: 2027-04-25T00:00:00Z\nPreferred-Languages: en\nCanonical: ${url.origin}/.well-known/security.txt\n`, {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      }));
+    }
+
+
     const active =
       (isGateway ? env.GATEWAY_ACTIVE_BACKEND : env.ACTIVE_BACKEND) || 'ecs-fargate';
     const backends = isGateway
@@ -443,12 +452,16 @@ export default {
     // A GET or HEAD whose origin connection drops before any response is sent
     // once more: it has no body and no side effect. A reset Cloudflare→ALB
     // connection ("Network connection lost") failed staging release-gate
-    // flows on 2026-10-13. Never a POST: the origin may already have run it.
-    const attempts = dropBody ? 2 : 1;
+    // flows on 2026-10-13. Never a mutating POST: the origin may already have run it.
+    // This POST only evaluates permissions; it does not mutate membership.
+    // Clone its body for each attempt so a consumed stream can be replayed.
+    const permissionBatch = !isGateway && request.method === 'POST' &&
+      /^\/v1\/accounts\/[0-9a-f-]{36}\/iam\/members\/[0-9a-f-]{36}\/effective:batch$/.test(url.pathname);
+    const attempts = dropBody || permissionBatch ? 2 : 1;
     let response;
     for (let attempt = 1; !response; attempt++) {
       try {
-        response = await fetch(modifiedRequest);
+        response = await fetch(permissionBatch ? modifiedRequest.clone() : modifiedRequest);
       } catch (error) {
         if (attempt < attempts) continue;
         return originUnreachableResponse(

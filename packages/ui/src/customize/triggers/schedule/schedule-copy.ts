@@ -1,0 +1,498 @@
+import { localizeUiCatalog } from '../../../i18n/ui-catalog/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '../../../i18n/ui-catalog/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '../../../i18n';
+
+/**
+ * Plain-language copy for schedules and webhooks.
+ *
+ * Everything a person reads on the Schedules and Webhooks screens is built
+ * here, so the two screens can never drift and so the wording can be tested
+ * without rendering anything. The rule: **the UI never shows the wire word.**
+ * A cron expression reads as "Every day at 09:00", `session_mode: 'keyed'`
+ * reads as "One session per conversation", and `secret_env` reads as "Signed".
+ *
+ * Where a value genuinely has no plain equivalent — a hand-written cron
+ * expression, the trigger id, the file it is saved in — the plain summary
+ * wins in the list and the exact value stays available under Advanced or
+ * Details. Hiding it entirely would be dishonest; leading with it is what
+ * made these screens read as a config file.
+ */
+
+import type { ProjectTrigger } from '@kortix/sdk';
+
+import { describeEventTitle } from './event-trigger-copy';
+
+export type TriggerKind = 'cron' | 'webhook' | 'event' | 'app';
+
+/**
+ * The trigger kinds this screen lists. `ScheduleView` filters every list
+ * through this before it reaches the table, the row actions, or the detail
+ * sheet, so `trigger.type` is safe to treat as {@link TriggerKind} anywhere
+ * downstream of that filter. `app` (an App's own events) is listed and
+ * managed here; it is written in `kortix.yaml`, not in the composer.
+ */
+export function isTriggerKind(type: ProjectTrigger['type']): type is TriggerKind {
+  return type === 'cron' || type === 'webhook' || type === 'event' || type === 'app';
+}
+
+/** The kinds the composer can create. */
+export const COMPOSER_KINDS: readonly TriggerKind[] = ['cron', 'webhook', 'event'];
+
+/** `every_seconds` as a sentence: "Every 5 minutes", "Every 2 hours". */
+export function describeEvery(seconds: number): string {
+  if (seconds % 3600 === 0) return seconds === 3600 ? 'Every hour' : `Every ${seconds / 3600} hours`;
+  if (seconds % 60 === 0) return seconds === 60 ? 'Every minute' : `Every ${seconds / 60} minutes`;
+  return `Every ${seconds} seconds`;
+}
+
+/**
+ * Triggers the customer wrote. The starter ships every new project a
+ * `harness-reflector` cron that keeps the project's memory current; it is
+ * infrastructure, not something the customer configured, so the Triggers page
+ * must not show it (KRTX-1299). `agent` matches the shipped template exactly;
+ * `slug` covers a renamed trigger on the same agent.
+ */
+export function isCustomerTrigger(trigger: ProjectTrigger): boolean {
+  if (trigger.agent !== 'harness-reflector') return true;
+  return trigger.slug !== 'harness-reflector' && trigger.slug !== 'harness-reflector-daily';
+}
+
+/* ─── Time of day ───────────────────────────────────────────────────────── */
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function timeOfDay(hour: string, minute: string): string | null {
+  const h = Number(hour);
+  const m = Number(minute);
+  if (!Number.isInteger(h) || !Number.isInteger(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return `${pad2(h)}:${pad2(m)}`;
+}
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function ordinal(value: number): string {
+  if (value >= 11 && value <= 13) return `${value}th`;
+  const suffix = value % 10 === 1 ? 'st' : value % 10 === 2 ? 'nd' : value % 10 === 3 ? 'rd' : 'th';
+  return `${value}${suffix}`;
+}
+
+/** `1-5` and `1,2,3,4,5` both mean the same set of days. */
+function parseWeekdays(field: string): number[] | null {
+  const out = new Set<number>();
+  for (const part of field.split(',')) {
+    const range = part.match(/^(\d)-(\d)$/);
+    if (range) {
+      const from = Number(range[1]);
+      const to = Number(range[2]);
+      if (from > to || to > 6) return null;
+      for (let d = from; d <= to; d += 1) out.add(d);
+      continue;
+    }
+    if (!/^\d$/.test(part)) return null;
+    const day = Number(part);
+    if (day > 6) return null;
+    // Cron accepts 7 for Sunday in some dialects; croner uses 0-6 only.
+    out.add(day);
+  }
+  return out.size > 0 ? [...out].sort((a, b) => a - b) : null;
+}
+
+function describeWeekdays(days: number[], time: string): string {
+  const key = days.join(',');
+  if (key === '1,2,3,4,5') return `Weekdays at ${time}`;
+  if (key === '0,6') return `Weekends at ${time}`;
+  if (days.length === 7) return `Every day at ${time}`;
+  if (days.length === 1) return `Every ${DAY_NAMES[days[0]]} at ${time}`;
+  return `${days.map((d) => DAY_SHORT[d]).join(', ')} at ${time}`;
+}
+
+/** Shown when an expression is valid cron but has no plain-English shape. */
+export const CUSTOM_TIMING_LABEL = 'Custom timing';
+
+/**
+ * A 6-field cron expression as a sentence a person can check at a glance.
+ * Covers every shape the schedule picker can produce, plus the common
+ * hand-written ones. Anything else falls back to {@link CUSTOM_TIMING_LABEL} —
+ * the raw expression is still shown under Advanced, never in the list.
+ */
+export function describeCadence(expression: string): string {
+  const parts = expression.trim().split(/\s+/);
+  if (parts.length !== 6) return CUSTOM_TIMING_LABEL;
+  const [, minute, hour, day, month, weekday] = parts;
+
+  // Every N minutes.
+  if (minute.startsWith('*/') && hour === '*' && day === '*' && weekday === '*') {
+    const n = Number(minute.slice(2));
+    if (!Number.isInteger(n) || n < 1) return CUSTOM_TIMING_LABEL;
+    return n === 1 ? 'Every minute' : `Every ${n} minutes`;
+  }
+
+  // Every N hours, on a given minute.
+  if (hour.startsWith('*/') && day === '*' && weekday === '*') {
+    const n = Number(hour.slice(2));
+    const m = Number(minute);
+    if (!Number.isInteger(n) || n < 1 || !Number.isInteger(m)) return CUSTOM_TIMING_LABEL;
+    const at = `:${pad2(m)}`;
+    return n === 1 ? `Every hour at ${at}` : `Every ${n} hours at ${at}`;
+  }
+
+  // Every hour, on the hour.
+  if (hour === '*' && day === '*' && weekday === '*' && /^\d+$/.test(minute)) {
+    return `Every hour at :${pad2(Number(minute))}`;
+  }
+
+  const time = timeOfDay(hour, minute);
+  if (!time || month !== '*') return CUSTOM_TIMING_LABEL;
+
+  // A given day of the month.
+  if (/^\d+$/.test(day) && weekday === '*') {
+    const dayOfMonth = Number(day);
+    if (dayOfMonth < 1 || dayOfMonth > 31) return CUSTOM_TIMING_LABEL;
+    return `The ${ordinal(dayOfMonth)} of each month at ${time}`;
+  }
+
+  if (day !== '*') return CUSTOM_TIMING_LABEL;
+
+  // Every day.
+  if (weekday === '*') return `Every day at ${time}`;
+
+  // Specific weekdays.
+  const days = parseWeekdays(weekday);
+  return days ? describeWeekdays(days, time) : CUSTOM_TIMING_LABEL;
+}
+
+/** A one-off run as a date a person can read. */
+export function describeOneOff(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'Runs once';
+  return `Once on ${date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })}`;
+}
+
+/**
+ * The one line that answers "when does this run?" — the same sentence in the
+ * list, the detail panel, and the delete confirmation.
+ */
+export function describeWhen(
+  trigger: ProjectTrigger,
+  eventNames?: ReadonlyMap<string, string>,
+): string {
+  if (trigger.type === 'webhook') return 'When a request arrives';
+  if (trigger.type === 'event') return describeEventTitle(trigger.event, eventNames);
+  if (trigger.type === 'app') {
+    const name = trigger.filter?.['event.name'];
+    return name ? `When ${trigger.app} emits ${name}` : `When ${trigger.app} emits an event`;
+  }
+  if (trigger.run_at) return describeOneOff(trigger.run_at);
+  if (trigger.every_seconds) return describeEvery(trigger.every_seconds);
+  if (trigger.cron) return describeCadence(trigger.cron);
+  return CUSTOM_TIMING_LABEL;
+}
+
+/** Exact cron occurrence and actual scheduled execution, explicitly in UTC. */
+export function describeNextRun(trigger: ProjectTrigger): string | null {
+  if (!trigger.enabled || trigger.auto_paused_at || !trigger.next_fire_at) return null;
+  const execution = new Date(trigger.next_fire_at);
+  if (Number.isNaN(execution.getTime())) return null;
+  const occurrence = trigger.next_cron_at ? new Date(trigger.next_cron_at) : execution;
+  const at = Number.isNaN(occurrence.getTime()) ? execution : occurrence;
+  const format = (date: Date) => date.toLocaleString('en-US', {
+    timeZone: 'UTC', month: 'short', day: 'numeric', hour: '2-digit',
+    minute: '2-digit', second: '2-digit', timeZoneName: 'short',
+  });
+  return `Next run ${format(at)}${at.getTime() !== execution.getTime() ? ` · Scheduled execution ${format(execution)}` : ''}`;
+}
+
+/* ─── Names ─────────────────────────────────────────────────────────────── */
+
+/** Never blank: falls back to what the automation does, then to its kind. */
+export function triggerName(trigger: ProjectTrigger): string {
+  const named = trigger.name?.trim();
+  if (named) return named;
+  if (trigger.type === 'cron') return describeWhen(trigger);
+  if (trigger.type === 'event') return describeWhen(trigger);
+  if (trigger.type === 'app') return describeWhen(trigger);
+  return 'Untitled webhook';
+}
+
+/* ─── Status ────────────────────────────────────────────────────────────── */
+
+export type TriggerStatus = {
+  label: 'Active' | 'Paused';
+  active: boolean;
+};
+
+export function triggerStatus(enabled: boolean, tI18nComplete: UiTranslator): TriggerStatus {
+  return enabled
+    ? { label: tI18nComplete.raw('text92340695899b'), active: true }
+    : { label: tI18nComplete.raw('texte159b06187d3'), active: false };
+}
+
+/* ─── Badge state ───────────────────────────────────────────────────────── */
+
+/**
+ * The one status a trigger shows on every surface: the list, the sheet header
+ * and the connector tab. Paused outranks the rest (a paused trigger holds no
+ * subscription), then the subscription's own state, then a failed last run.
+ */
+export type TriggerBadgeState = 'live' | 'needs_connection' | 'error' | 'pending' | 'paused';
+
+export function triggerBadgeState(trigger: ProjectTrigger): TriggerBadgeState {
+  // An auto-pause (KRTX-1721) is runtime state: the manifest still says enabled.
+  if (!trigger.enabled || trigger.auto_paused_at) return 'paused';
+  const subscription = trigger.event?.status;
+  if (
+    subscription === 'needs_connection' ||
+    subscription === 'error' ||
+    subscription === 'pending'
+  ) {
+    return subscription;
+  }
+  return trigger.last_status === 'failed' ? 'error' : 'live';
+}
+
+/* ─── Last run ──────────────────────────────────────────────────────────── */
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+function plural(count: number, unit: string): string {
+  return `${count} ${unit}${count === 1 ? '' : 's'} ago`;
+}
+
+/**
+ * "Never", "Just now", "12 minutes ago", "3 hours ago", "5 days ago", then an
+ * absolute date. `now` is a parameter so this is testable without faking time.
+ */
+export function describeLastRun(iso: string | null | undefined, now: number = Date.now()): string {
+  if (!iso) return 'Never';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 'Never';
+
+  const elapsed = now - then;
+  if (elapsed < 0) return 'Just now';
+  if (elapsed < MINUTE) return 'Just now';
+  if (elapsed < HOUR) return plural(Math.floor(elapsed / MINUTE), 'minute');
+  if (elapsed < DAY) return plural(Math.floor(elapsed / HOUR), 'hour');
+  if (elapsed < 30 * DAY) return plural(Math.floor(elapsed / DAY), 'day');
+  return new Date(then).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+/* ─── Where the run happens (session_mode) ──────────────────────────────── */
+
+export type SessionMode = ProjectTrigger['session_mode'];
+
+export const SESSION_MODES: readonly SessionMode[] = ['fresh', 'reuse', 'pinned', 'keyed'];
+
+/** The wire calls the last one "keyed". Nobody setting up a webhook does. */
+export const SESSION_MODE_LABEL: Record<SessionMode, string> = {
+  fresh: 'Start a new session every time',
+  reuse: 'Keep using the same session',
+  pinned: 'Always use one session I pick',
+  keyed: 'One session per conversation',
+};
+
+export const SESSION_MODE_HELP: Record<SessionMode, string> = {
+  fresh: 'Every run starts clean, with no memory of the last one.',
+  reuse: 'Every run continues the same conversation, so the agent keeps its context.',
+  pinned: 'Every run continues one session you choose below.',
+  keyed:
+    'Each sender or chat gets its own session, so separate conversations never blend together.',
+};
+
+/** One-line summary for read-only views and the list. */
+export function describeRunLocation(trigger: ProjectTrigger): string {
+  // A trigger that calls an App starts no session.
+  if (trigger.target?.app) return `Calls ${trigger.target.app}${trigger.target.path ?? '/'}`;
+  const base = SESSION_MODE_LABEL[trigger.session_mode];
+  if (trigger.session_mode === 'pinned' && trigger.session_id) {
+    return `${base} (${trigger.session_id.slice(0, 8)})`;
+  }
+  if (trigger.session_mode === 'keyed' && trigger.session_key) {
+    return `${base} — by ${trigger.session_key}`;
+  }
+  return base;
+}
+
+/* ─── Webhook security ──────────────────────────────────────────────────── */
+
+export type SecurityState = {
+  label: 'Signed' | 'Not signed';
+  signed: boolean;
+  /** Sentence for the detail panel. */
+  detail: string;
+};
+
+export function describeSecurity(
+  trigger: ProjectTrigger,
+  tI18nComplete: UiTranslator,
+): SecurityState {
+  if (trigger.secret_env) {
+    return {
+      label: tI18nComplete.raw('text08251562b340'),
+      signed: true,
+      detail: tI18nComplete('text9a4b273e6216', { secret: trigger.secret_env }),
+    };
+  }
+  return {
+    label: tI18nComplete.raw('textc0f06f876fa1'),
+    signed: false,
+    detail: tI18nComplete.raw('text2e5ec4fb360d'),
+  };
+}
+
+/* ─── Conditions (the wire calls this `filter`) ─────────────────────────── */
+
+/** "Runs on every request" / "Runs when 2 things match". */
+export function describeConditions(filter: Record<string, string> | null | undefined): string {
+  const count = Object.keys(filter ?? {}).length;
+  if (count === 0) return 'Runs on every request';
+  return count === 1 ? 'Runs when 1 condition matches' : `Runs when ${count} conditions match`;
+}
+
+/* ─── Per-kind screen copy ──────────────────────────────────────────────── */
+
+/**
+ * Per-kind wording for the Schedules and Webhooks screens, heading included.
+ *
+ * The heading lived in `packages/ui/src/customize/settings/rail.ts` for as long as
+ * these were two tabs of the Settings overlay — every pane in that overlay
+ * takes its title and description from its rail entry, and being the one
+ * exception is what let the copy drift before. They are capability PAGES now
+ * (`/projects/<id>/schedules`, `/projects/<id>/webhooks`), not panes, so they
+ * have no rail entry to read: a rail lookup that finds nothing renders no
+ * heading and throws nothing, which is exactly the silent failure to avoid.
+ * The copy is the wording those rail entries carried, moved verbatim.
+ */
+export interface KindCopy {
+  /** Page heading. */
+  title: string;
+  /** One sentence under the heading. */
+  description: string;
+  /** Singular noun, lowercase, for inline sentences. */
+  noun: string;
+  createLabel: string;
+  searchPlaceholder: string;
+  emptyTitle: string;
+  emptyBody: string;
+  /** Header for the type-specific list column. */
+  column: string;
+}
+
+export const KIND_COPY: Record<TriggerKind, KindCopy> = {
+  cron: {
+    title: 'Schedules',
+    description: 'Have an agent do something on a repeating schedule, or once at a set time.',
+    noun: 'schedule',
+    createLabel: 'New schedule',
+    searchPlaceholder: 'Search schedules',
+    emptyTitle: 'No schedules yet',
+    emptyBody: 'Create one to have an agent run on its own, on a schedule you set.',
+    column: 'Runs',
+  },
+  webhook: {
+    title: 'Webhooks',
+    description: 'Give another app a private address that starts an agent when it sends a request.',
+    noun: 'webhook',
+    createLabel: 'New webhook',
+    searchPlaceholder: 'Search webhooks',
+    emptyTitle: 'No webhooks yet',
+    emptyBody: 'Create one to let another app start an agent when something happens over there.',
+    column: 'Security',
+  },
+  event: {
+    title: 'Connector events',
+    description: 'Have an agent run when something happens in a connected app.',
+    noun: 'connector event',
+    createLabel: 'New connector event',
+    searchPlaceholder: 'Search connector events',
+    emptyTitle: 'No connector events yet',
+    emptyBody: 'Create one to have an agent run when a connected app reports something new.',
+    column: 'Status',
+  },
+  app: {
+    title: 'App events',
+    description: 'Have an agent run when one of your Kortix Apps emits an event.',
+    noun: 'App event',
+    createLabel: 'New App event',
+    searchPlaceholder: 'Search App events',
+    emptyTitle: 'No App events yet',
+    emptyBody: 'An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml.',
+    column: 'Status',
+  },
+};
+
+/**
+ * The unified Triggers screen's own copy — the page that replaced the two
+ * Schedules/Webhooks capability pages. A trigger is one thing with two ways
+ * to start it, so the page speaks about "triggers" in general and leans on
+ * each row's own type (via {@link KIND_COPY}) for anything kind-specific.
+ */
+export const TRIGGERS_COPY = {
+  title: 'Triggers',
+  description: 'Run agents on a schedule, an app event, or a webhook.',
+  noun: 'trigger',
+  createLabel: 'New trigger',
+  searchPlaceholder: 'Search triggers',
+  emptyTitle: 'No triggers yet',
+  emptyBody: 'Create a trigger and your agent runs on its own, no prompt needed.',
+} as const;
+
+export function localizedKindCopy(tI18nComplete: UiTranslator): Record<TriggerKind, KindCopy> {
+  return localizeUiCatalog(KIND_COPY, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS);
+}
+
+export function localizedTriggersCopy(tI18nComplete: UiTranslator): typeof TRIGGERS_COPY {
+  return localizeUiCatalog(TRIGGERS_COPY, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS);
+}
+
+/* ─── Search ────────────────────────────────────────────────────────────── */
+
+/** Matches what a person can see in the list, not the wire fields. */
+export function matchesQuery(
+  trigger: ProjectTrigger,
+  query: string,
+  tI18nComplete: UiTranslator,
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return [
+    triggerName(trigger),
+    trigger.agent,
+    describeWhen(trigger),
+    trigger.slug,
+    triggerStatus(trigger.enabled && !trigger.auto_paused_at, tI18nComplete).label,
+  ].some((field) => field.toLowerCase().includes(q));
+}
+
+/**
+ * The line under (or beside) a trigger's name: its schedule, unless that is
+ * the name itself (a trigger named after its schedule); then the first line
+ * of its prompt; null when there is neither, so the name stands alone.
+ */
+export function triggerSubtitle(
+  name: string,
+  when: string,
+  prompt: string | null | undefined,
+): string | null {
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  if (when.trim() && !same(when, name)) return when;
+  const first = (prompt ?? '')
+    .split('\n')
+    .map((l) => l.trim())
+    .find(Boolean);
+  return first && !same(first, name) ? first : null;
+}

@@ -1,11 +1,15 @@
 {
-  "$doc": "THE ONLY FILE WITH VALUES. Every color, type, spacing, radius, motion and effect value for the web app, the mobile app and the portable kit lives here and nowhere else. Guidance files cite token names, never values. To change a value: edit this file, then run `bun .agents/skills/kortix-brand/scripts/generate-tokens.ts`. The script rewrites the marker regions in apps/web/src/app/globals.css and apps/mobile/global.css, plus references/visual/tokens.css and fonts.css. `--check` exits 1 and names the drifted file; tests/unit/brand-kit.test.ts runs it. Web color values are CSS strings exactly as the web ships them. Mobile color values are derived (oklch to sRGB to 'H S% L%', 1 decimal). 'hex' fields are checked against the oklch value by the generator.",
+  "$doc": "THE ONLY FILE WITH VALUES. Every color, type, spacing, radius, motion and effect value for the web app, the mobile app and the portable kit lives here and nowhere else. Guidance files cite token names, never values. To change a value: edit this file, then run `bun .agents/skills/kortix-brand/scripts/generate-tokens.ts`. The script rewrites the marker regions in apps/web/src/app/globals.css, packages/ui/src/styles/theme.css and apps/mobile/global.css, plus the whole files packages/ui/src/styles/tokens.css, packages/ui/src/styles/fonts.css, references/visual/tokens.css, references/visual/fonts.css and apps/api/src/lib/email/brand-tokens.generated.ts. `--check` exits 1 and names the drifted file; tests/unit/brand-kit.test.ts runs it. Web color values are CSS strings exactly as the web ships them. Mobile color values are derived (oklch to sRGB to 'H S% L%', 1 decimal). 'hex' fields are checked against the oklch value by the generator.",
   "version": 1,
   "generates": [
-    "apps/web/src/app/globals.css: region 'kortix-brand' (the :root and .dark token blocks) and region 'kortix-brand theme' (inside @theme inline: type scale, emoji, glyph, motion)",
+    "apps/web/src/app/globals.css: region 'kortix-brand' (the :root and .dark token blocks)",
+    "packages/ui/src/styles/theme.css: region 'kortix-brand theme' (inside @theme inline: type scale, emoji, glyph, motion)",
+    "packages/ui/src/styles/tokens.css: whole file, the @kortix/ui :root and .dark tokens with color-scheme and the system font stacks",
+    "packages/ui/src/styles/fonts.css: whole file, opt-in @font-face for Roobert and Roobert Mono plus --font-roobert and --font-roobert-mono (Kortix-owned surfaces only, D8a)",
     "apps/mobile/global.css: regions 'kortix-brand mobile-light' and 'kortix-brand mobile-dark'",
     ".agents/skills/kortix-brand/references/visual/tokens.css: portable hex variables for HTML, email and OG outside apps/web",
-    ".agents/skills/kortix-brand/references/visual/fonts.css: @font-face for Roobert and Roobert Mono"
+    ".agents/skills/kortix-brand/references/visual/fonts.css: @font-face for Roobert and Roobert Mono",
+    "apps/api/src/lib/email/brand-tokens.generated.ts: the email palette and layout"
   ],
   "when_the_guide_is_silent": "Pick the nearest role token by what the surface IS (canvas, lifted region, inset control, floating panel), never by how it looks. If no role fits, the design is wrong, not the token set. Add a token here only with a role, a use and a decision entry.",
   "color": {
@@ -124,13 +128,10 @@
       },
       "sidebar-foreground": { "light": "oklch(0.2393 0 0)", "dark": "oklch(1 0 0)", "hex": ["#1f1f1f", "#ffffff"], "ramp": "ink", "utility": "text-sidebar-foreground", "mobile": true },
       "sidebar-primary": {
-        "light": "oklch(0.669 0.1837 248.8066)",
-        "dark": "oklch(0.669 0.1837 248.8066)",
-        "hex": ["#0099ff", "#0099ff"],
-        "ramp": "accent-blue",
+        "ref": "ring",
         "utility": "bg-sidebar-primary",
         "mobile": true,
-        "use": "Selection in the sidebar. 0 class uses in apps/web at audit time."
+        "use": "Selection in the sidebar. Follows --ring, so a white-label accent reaches the sidebar. 0 class uses in apps/web at audit time."
       },
       "sidebar-primary-foreground": { "light": "oklch(1 0 0)", "dark": "oklch(1 0 0)", "hex": ["#ffffff", "#ffffff"], "utility": "text-sidebar-primary-foreground", "mobile": true },
       "sidebar-accent": { "light": "oklch(0.9461 0 0)", "dark": "oklch(0.2264 0 0)", "hex": ["#ededed", "#1c1c1c"], "ramp": "surface-2", "utility": "bg-sidebar-accent", "mobile": true },
@@ -152,7 +153,7 @@
         "use": "A control on a filled sidebar row: one step above sidebar-row."
       },
       "sidebar-border": { "light": "oklch(0.9128 0 0)", "dark": "oklch(0.2178 0 0)", "hex": ["#e2e2e2", "#1a1a1a"], "ramp": "hairline / hairline-soft", "utility": "border-sidebar-border", "mobile": true },
-      "sidebar-ring": { "light": "oklch(0.669 0.1837 248.8066)", "dark": "oklch(0.669 0.1837 248.8066)", "hex": ["#0099ff", "#0099ff"], "utility": "ring-sidebar-ring", "mobile": true }
+      "sidebar-ring": { "ref": "ring", "utility": "ring-sidebar-ring", "mobile": true, "use": "Focus ring in the sidebar. Follows --ring, so a white-label focus color reaches the sidebar." }
     },
     "accents": {
       "rule": "The only sources of hue in product UI. Theme-invariant today (same value in light and dark). Tinted fill = /15, glyph = solid. Two opacities, no others.",
@@ -379,17 +380,45 @@
     }
   },
   "email": {
-    "note": "Whole pixels, because mail clients cannot read CSS variables and round fractional pixels. Copies the shipped shell (apps/api/src/lib/email/template.ts, which consumes the generated EMAIL_LAYOUT). Ships light only: see decisions Q34. Colors come from color.semantic (EMAIL_COLORS, tokens.css hex).",
-    "container_width_px": 520,
-    "side_padding_px": 32,
-    "card_radius": "xl",
+    "note": "Whole pixels, because mail clients cannot read CSS variables and round fractional pixels. The frame copies the React Email demo template 01-Barebone: a grey page, a white frame with a header row (symbol left, label right), one grey card, and a white footer. Inside the card every block sits on one left edge (D26). The shell (apps/api/src/lib/email/template.tsx) consumes the generated EMAIL_LAYOUT. Ships light only: see decisions Q34. Colors come from color.semantic (EMAIL_COLORS, tokens.css hex).",
+    "container_width_px": 640,
+    "frame_padding": "16px 24px",
+    "card_padding": "40px",
+    "mobile_frame_padding": "16px 8px",
+    "mobile_card_padding": "32px 24px",
+    "card_radius": "md",
     "button_radius": "md",
-    "button_padding": "12px 28px",
-    "logo_height_px": 22,
-    "logo_url": "https://kortix.com/brandkit/Logo/Logomark/PNG/Logomark%20Black.png",
-    "font_size_px": { "title": 22, "body": 14, "kicker": 13, "small": 12 },
-    "line_height": { "title": 1.25, "body": 1.6 },
-    "gap_px": { "kicker_before": 24, "kicker_after": 8, "title_after": 12, "block_after": 24 }
+    "button_padding": "12px 20px",
+    "logo_url": "https://kortix.com/brandkit/Logo/Brandmark/PNG/Brandmark%20Black.png",
+    "logo_width_px": 20,
+    "font_size_px": {
+      "title": 24,
+      "body": 15,
+      "label": 13,
+      "small": 12
+    },
+    "font_weight": {
+      "title": 600,
+      "body": 400,
+      "strong": 500
+    },
+    "line_height": {
+      "title": 1.25,
+      "body": 1.6,
+      "label": 1.5
+    },
+    "letter_spacing_px": {
+      "title": -0.48,
+      "body": 0,
+      "label": 0,
+      "small": 0
+    },
+    "gap_px": {
+      "title_after": 12,
+      "block_after": 16,
+      "button_before": 8,
+      "note_before": 16
+    }
   },
   "mobile": {
     "spacing_base": "0.25rem",

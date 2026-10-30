@@ -41,6 +41,7 @@ import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 // State projection — the seven reads `/kortix/opencode/state` replaces
 // ---------------------------------------------------------------------------
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface AgentProjection {
   name: string
   description: string | null
@@ -55,6 +56,7 @@ export interface AgentProjection {
   model: { providerID: string; modelID: string } | null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface CommandProjection {
   name: string
   description: string | null
@@ -76,6 +78,7 @@ export interface CommandProjection {
   agents?: string[]
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface ConfigProjection {
   model: string | null
   small_model: string | null
@@ -86,6 +89,7 @@ export interface ConfigProjection {
   enabled_providers: string[] | null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface SessionProjection {
   id: string
   title: string
@@ -97,6 +101,7 @@ export interface SessionProjection {
   revert: unknown | null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface PermissionProjection {
   id: string
   sessionID: string
@@ -105,6 +110,7 @@ export interface PermissionProjection {
   tool: { messageID: string; callID: string } | null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface QuestionProjection {
   id: string
   sessionID: string
@@ -132,6 +138,7 @@ function asList(payload: unknown): unknown[] {
   return []
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function projectAgents(payload: unknown): AgentProjection[] {
   const out: AgentProjection[] = []
   for (const raw of asList(payload)) {
@@ -163,6 +170,7 @@ export function projectAgents(payload: unknown): AgentProjection[] {
  * `compiled` is a kortix.yaml v3 set's `commands`. Then only those commands
  * are listed, each with its `agents`: OpenCode's own (`init`, `review`), MCP
  * prompts and skills are no command of a v3 project.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function projectCommands(payload: unknown, compiled?: Record<string, CompiledCommand>): CommandProjection[] {
   const out: CommandProjection[] = []
@@ -187,6 +195,7 @@ export function projectCommands(payload: unknown, compiled?: Record<string, Comp
   return out
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function projectConfig(payload: unknown): ConfigProjection {
   const config = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>
   const permission = config.permission
@@ -209,7 +218,10 @@ export function projectConfig(payload: unknown): ConfigProjection {
   }
 }
 
-/** From OpenCode's HTTP `/session` list. */
+/**
+ * From OpenCode's HTTP `/session` list.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function projectSessions(payload: unknown): SessionProjection[] {
   const out: SessionProjection[] = []
   for (const raw of asList(payload)) {
@@ -239,6 +251,7 @@ export function projectSessions(payload: unknown): SessionProjection[] {
  * From `opencode.db`'s `session` rows — the same projection, from the source
  * that answers while OpenCode is mid-turn or dead. Column names are snake_case
  * there and the JSON shape is nested; this is the one place that bridges them.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function projectSessionRows(
   rows: Array<{
@@ -276,7 +289,10 @@ function safeJson(value: string): unknown {
   }
 }
 
-/** `GET /session/status` answers `{ [sessionID]: SessionStatus }`. */
+/**
+ * `GET /session/status` answers `{ [sessionID]: SessionStatus }`.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function projectStatuses(payload: unknown): Record<string, { type: string }> {
   const out: Record<string, { type: string }> = {}
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return out
@@ -287,6 +303,7 @@ export function projectStatuses(payload: unknown): Record<string, { type: string
   return out
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function projectPermissions(payload: unknown): PermissionProjection[] {
   const out: PermissionProjection[] = []
   for (const raw of asList(payload)) {
@@ -319,6 +336,7 @@ export function projectPermissions(payload: unknown): PermissionProjection[] {
  * questions still open — the thing the deleted 2 s `/question` self-heal poll
  * was asking for. `sessionID` rides along because routing an answer needs it
  * and it costs 30 bytes.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function projectQuestions(payload: unknown): QuestionProjection[] {
   const out: QuestionProjection[] = []
@@ -405,11 +423,16 @@ const PART_COMMON_FIELDS = [
  * `status`, `title`, `input`, `output`, `error`, `time`. `metadata` is kept
  * ONLY when it is small; past the cap it is replaced by its size so the UI can
  * still say "there is more" and fetch the raw part if it ever needs to.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const TOOL_METADATA_MAX_BYTES = 4 * 1024
-/** Tool `output` past this is truncated with an explicit marker. */
+/**
+ * Tool `output` past this is truncated with an explicit marker.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const TOOL_OUTPUT_MAX_BYTES = 64 * 1024
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface ProjectedTranscript {
   messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }>
   /** Attachment payloads swapped for `/kortix/part/...` refs. */
@@ -428,10 +451,12 @@ function pick(source: Record<string, unknown>, fields: readonly string[]): Recor
   return out
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function projectMessageInfo(info: Record<string, unknown>): Record<string, unknown> {
   return pick(info, MESSAGE_INFO_FIELDS)
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function projectPart(part: Record<string, unknown>): Record<string, unknown> {
   const out = pick(part, PART_COMMON_FIELDS)
   const state = part.state
@@ -464,6 +489,7 @@ export function projectPart(part: Record<string, unknown>): Record<string, unkno
  * metadata is gone before anything walks it), then the attachment stripper runs
  * over the result so every remaining `data:` payload becomes a
  * `/kortix/part/...` reference.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function projectTranscript(
   page: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }>,
@@ -508,6 +534,7 @@ export function projectTranscript(
  * Canonical JSON: object keys sorted at every depth, so a rebuild that
  * produces the same facts in a different key order does NOT invalidate a
  * client's cache. Arrays keep their order — it is meaningful.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
@@ -518,6 +545,7 @@ export function canonicalJson(value: unknown): string {
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function etagOf(value: unknown): string {
   const hasher = new Bun.CryptoHasher('sha256')
   hasher.update(canonicalJson(value))

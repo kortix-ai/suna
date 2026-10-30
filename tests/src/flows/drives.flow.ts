@@ -79,7 +79,9 @@ flow(
         (await ctx.client.as(ctx.P.ANON).get('/v1/drives', listFiles)).status(401);
       });
 
-      await ctx.step('Volumes off for the project (the default): Files → 403 feature_disabled', async () => {
+      // Volumes is on by default wherever Platinum is configured (#10878).
+      await ctx.step('the project admin turns Volumes off: Files → 403 feature_disabled', async () => {
+        (await setVolumes(false)).status(200).body().has('$.experimental.volumes', false);
         (await owner.get('/v1/drives', listFiles))
           .status(403)
           .body()
@@ -241,7 +243,7 @@ flow(
   'DRIVE-2',
   {
     domain: 'drives',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId/drives'],
   },

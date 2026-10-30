@@ -1,0 +1,39 @@
+import { describe, expect, test } from 'bun:test';
+
+import {
+  mergeFailedSubmissionFiles,
+  mergeFailedSubmissionText,
+} from './composer-draft-recovery';
+import type { AttachedFile } from './session-chat-input';
+
+function localFile(name: string, localUrl: string): Extract<AttachedFile, { kind: 'local' }> {
+  return {
+    kind: 'local',
+    file: new File(['draft'], name, { type: 'text/plain' }),
+    localUrl,
+    isImage: false,
+  };
+}
+
+describe('failed composer submission recovery', () => {
+  test('restores the submitted prompt when the composer is still empty', () => {
+    expect(mergeFailedSubmissionText('', 'twenty minutes of work')).toBe('twenty minutes of work');
+  });
+
+  test('preserves text typed while the failed request was in flight', () => {
+    expect(mergeFailedSubmissionText('new follow-up', 'original prompt')).toBe(
+      'original prompt\n\nnew follow-up',
+    );
+  });
+
+  test('restores sent files ahead of newly attached files without duplicates', () => {
+    const sent = localFile('offer.pdf', 'blob:offer');
+    const addedWhileSending = localFile('notes.txt', 'blob:notes');
+    expect(mergeFailedSubmissionFiles([addedWhileSending], [sent])).toEqual([
+      sent,
+      addedWhileSending,
+    ]);
+    expect(mergeFailedSubmissionFiles([sent], [sent])).toEqual([sent]);
+  });
+
+});

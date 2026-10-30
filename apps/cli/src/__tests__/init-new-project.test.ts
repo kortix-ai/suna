@@ -52,6 +52,23 @@ describe('init — the plain new-project path', () => {
     expect(readdirSync(parent)).toEqual(['my-app']);
   });
 
+  // KRTX-2921: a named init with no TTY created the directory, then the agent
+  // picker read EOF and the process exited 0, leaving an empty folder.
+  test('a named init without a TTY and without agent flags is refused before anything is created', () => {
+    const parent = realpathSync(mkdtempSync(resolve(tmpdir(), 'kortix-init-notty-')));
+    const result = spawnSync(process.execPath, [cli, 'init', 'my-app', '--no-git'], {
+      cwd: parent,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 30_000,
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('stdin is not a TTY');
+    expect(result.stderr).toContain('--yes');
+    expect(readdirSync(parent)).toEqual([]);
+  });
+
   test('-y without a name is refused before anything is created', () => {
     const parent = realpathSync(mkdtempSync(resolve(tmpdir(), 'kortix-init-noname-')));
     const result = spawnSync(process.execPath, [cli, 'init', '-y'], {

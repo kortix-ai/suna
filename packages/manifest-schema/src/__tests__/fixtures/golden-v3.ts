@@ -3,7 +3,6 @@
 export const GOLDEN_V3 = `
 kortix_version: 3
 default_agent: assistant
-runtime: opencode
 
 project:
   name: acme
@@ -28,7 +27,6 @@ commands:
 
 extensions:
   audit:
-    opencode: extensions/audit.opencode.ts
     pi: extensions/audit.pi.ts
   web-access:
     pi: npm:pi-web-access@0.30.0

@@ -1,17 +1,46 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { cn } from '@/lib/utils';
-import { useConnectorSetup } from '@kortix/sdk/react';
-import {
-  CheckIcon as Check,
-  ArrowSquareOutIcon as ExternalLink,
-  PlugIcon as Plug,
-} from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
+import { SessionDotMatrix } from '@kortix/ui/dot-matrix/session-dot-matrix';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
+import { StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
+import { useConnectorSetup, type ConnectorSetupPhase } from '@kortix/sdk/react';
+import { connectorHeadline } from '@kortix/sdk';
+import type { ConnectorSetupLinkInfo } from '@kortix/sdk';
+import { ArrowSquareOutIcon, WarningIcon } from '@phosphor-icons/react';
 import { useEffect } from 'react';
-import { browserLinkInfoStorage, setupLinkApiBase } from './util';
+import { ConnectorAppMark, ConnectorHandshake } from '@kortix/ui/markdown/setup-links/connector-handshake';
+import { setupLinkApiBase } from '@kortix/ui/markdown/setup-links/api-base';
+import { browserLinkInfoStorage } from '@kortix/ui/markdown/setup-links/util';
+
+const COPY = {
+  title: 'Connect {app}',
+  titleToProject: 'Connect {app} to {project}',
+  readyDescription: 'Your agent asked for access to {app}. You sign in on {app} directly.',
+  openedTitle: 'Finish in the new window',
+  openedDescription: 'Sign in to {app} in the window that opened. This page updates by itself.',
+  waiting: 'Waiting for {app}…',
+  reopen: 'Reopen window',
+  connectedTitle: '{app} connected',
+  alreadyConnectedTitle: '{app} is already connected',
+  connectedDescription: 'Your agent can use {app} now and continues on its own.',
+  connectedAs: 'Connected as {account}',
+  closeTab: 'You can close this tab.',
+  errorTitle: 'This link no longer works',
+  errorDescription: 'Ask your agent for a new connect link.',
+  loading: 'Loading…',
+  connect: 'Connect {app}',
+  opening: 'Opening…',
+  privacy: 'Kortix never sees your password. No key is pasted into chat or stored in the repo.',
+  fallbackApp: 'the app',
+} as const;
+
+function fill(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? '');
+}
 
 /**
  * Renders 1-click authorization for an agent-minted connect link.
@@ -52,116 +81,143 @@ export function ConnectorIntake({
   token,
   onOpened,
   onConnected,
-  compact,
 }: {
   token: string;
   onOpened?: () => void;
-  /**
-   * Fired once the poll confirms the connection landed.
-   *
-   * The parent cannot observe this on its own: the connect happens in
-   * Pipedream's hosted popup, and the only proof is the finalize poll below.
-   * `SetupLinkButton` uses it to flip its card from "Waiting for you" to
-   * "Connected" without reopening the modal.
-   */
+  /** Fired once the finalize poll confirms the connection landed. */
   onConnected?: () => void;
-  compact?: boolean;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { phase, info, error, connectedAs, alreadyConnected, connect } = useConnectorIntake(
     token,
     { onOpened },
   );
 
-  const appLabel = info?.app || info?.slug || 'the app';
-
   useEffect(() => {
     if (phase === 'connected') onConnected?.();
   }, [phase, onConnected]);
 
-  if (phase === 'loading') {
-    return (
-      <div className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-sm">
-        <Loading className="h-4 w-4" />{' '}
-        {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextLoading4e5fd209')}
-      </div>
-    );
-  }
+  return (
+    <ConnectorIntakeView
+      phase={phase}
+      info={info}
+      error={error}
+      connectedAs={connectedAs}
+      alreadyConnected={alreadyConnected}
+      onConnect={connect}
+    />
+  );
+}
 
-  if (phase === 'error') {
-    return (
-      <div className="text-muted-foreground py-6 text-center text-sm">
-        {error || tI18nHardcoded.raw('i18nComplete.text5998ac369aec')}
-      </div>
-    );
-  }
-
-  if (phase === 'connected') {
-    return (
-      <div className="flex flex-col items-center gap-2 py-8 text-center">
-        <span className="bg-kortix-green/15 flex size-9 items-center justify-center rounded-sm">
-          <Check weight="fill" className="text-kortix-green size-5" />
-        </span>
-        <p className="text-foreground text-sm font-medium">
-          {alreadyConnected
-            ? tI18nHardcoded.raw('i18nComplete.textbe03b81f11cb')
-            : tI18nHardcoded.raw('i18nComplete.text22965568d22a')}
-        </p>
-        {connectedAs ? (
-          <p className="text-foreground text-sm" data-testid="connector-intake-connected-as">
-            {tI18nHardcoded('i18nComplete.texte9e0b20cf289', { value0: connectedAs })}
-          </p>
-        ) : null}
-        <p className="text-muted-foreground max-w-xs text-xs">
-          {appLabel} {tI18nHardcoded.raw('i18nComplete.text27fd394a8fbd')}
-        </p>
-        {alreadyConnected ? (
-          <p className="text-muted-foreground max-w-xs text-xs">
-            {tI18nHardcoded.raw('i18nComplete.text0223e507afd3')}
-          </p>
-        ) : null}
-      </div>
-    );
-  }
-
-  if (phase === 'opened') {
-    return (
-      <div className="flex flex-col items-center gap-2 py-8 text-center">
-        <span className="bg-muted flex size-9 items-center justify-center rounded-sm">
-          <Loading className="size-4" />
-        </span>
-        <p className="text-foreground text-sm font-medium">
-          {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextFinishInThe0a10e77c')}
-        </p>
-        <p className="text-muted-foreground max-w-xs text-xs">
-          {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextCompleteThe07661028')}
-          {appLabel}{' '}
-          {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextSignInIn5b6c05ee')}
-        </p>
-        <Button variant="ghost" size="sm" className="mt-1" onClick={connect}>
-          <ExternalLink className="mr-2 h-3.5 w-3.5" />{' '}
-          {tI18nHardcoded.raw(
-            'autoComponentsSetupLinksConnectorIntakeJsxTextReopenConnectWindowb7f822cd',
-          )}
-        </Button>
-      </div>
-    );
-  }
-
+/**
+ * The page body for each phase of the connect link: the Kortix ··· App
+ * handshake as the header mark, one title, one sentence, one action.
+ * Stateless, so `/debug/connect` can render every phase side by side.
+ */
+export function ConnectorIntakeView({
+  phase,
+  info,
+  error,
+  connectedAs,
+  alreadyConnected,
+  onConnect,
+}: {
+  phase: ConnectorSetupPhase;
+  info: ConnectorSetupLinkInfo | null | undefined;
+  error: string | null;
+  connectedAs: string | null;
+  alreadyConnected: boolean;
+  onConnect: () => void;
+}) {
+  const copy = useLocalizedUiCatalog(COPY);
+  const headline = info ? connectorHeadline(info) : null;
+  const app = headline?.app || copy.fallbackApp;
+  const connected = phase === 'connected';
+  const opened = phase === 'opened';
   const starting = phase === 'starting';
+  const failed = phase === 'error';
+
+  // Connected, the handshake gives way to one solid check: the page's whole answer.
+  const mark = failed ? null : connected ? (
+    <SolidCheckIcon className="text-kortix-green size-10" />
+  ) : (
+    <ConnectorHandshake
+      name={app}
+      iconUrl={phase === 'loading' ? undefined : (info?.icon_url ?? null)}
+      size="lg"
+      collapsible={false}
+    />
+  );
+
+  const title = failed
+    ? copy.errorTitle
+    : connected
+      ? fill(alreadyConnected ? copy.alreadyConnectedTitle : copy.connectedTitle, { app })
+      : opened
+        ? copy.openedTitle
+        : headline?.project
+          ? fill(copy.titleToProject, { app, project: headline.project })
+          : fill(copy.title, { app });
+
+  const description = failed
+    ? copy.errorDescription
+    : connected
+      ? fill(copy.connectedDescription, { app })
+      : opened
+        ? fill(copy.openedDescription, { app })
+        : phase === 'loading'
+          ? copy.loading
+          : fill(copy.readyDescription, { app });
 
   return (
-    <div className={cn('space-y-4 text-center', compact ? '' : 'mt-2')}>
-      <p className="text-muted-foreground text-sm">
-        {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxText1ClickConnect9e029325')}{' '}
-        <span className="text-foreground font-medium">{appLabel}</span>{' '}
-        {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477')}
-      </p>
-      {error ? <p className="text-destructive text-xs">{error}</p> : null}
-      <Button className="w-full" onClick={connect} disabled={starting}>
-        {starting ? <Loading className="mr-2 h-4 w-4" /> : <Plug className="mr-2 h-4 w-4" />}
-        {starting ? tI18nHardcoded.raw('i18nComplete.textc926c2c50e65') : `Connect ${appLabel}`}
-      </Button>
+    <div data-testid="connector-intake" data-phase={phase}>
+      <StepHeader
+        mark={mark ?? undefined}
+        markOnMobile
+        title={title}
+        description={description}
+      />
+
+      {failed ? (
+        error ? (
+          <InfoBanner tone="destructive" icon={<WarningIcon weight="fill" />} title={error} />
+        ) : null
+      ) : connected ? (
+        <div className="bg-muted flex items-center gap-3 rounded-md px-4 py-3">
+          <ConnectorAppMark name={app} iconUrl={info?.icon_url ?? null} size="md" />
+          <div className="min-w-0">
+            <p className="text-foreground truncate text-sm font-medium" data-testid="connector-intake-connected-as">
+              {connectedAs ? fill(copy.connectedAs, { account: connectedAs }) : fill(copy.connectedTitle, { app })}
+            </p>
+            <p className="text-muted-foreground text-xs">{copy.closeTab}</p>
+          </div>
+        </div>
+      ) : opened ? (
+        <div className="space-y-3">
+          <div className="bg-muted flex items-center gap-3 rounded-md px-4 py-3">
+            <Loading className="size-4 shrink-0" />
+            <p className="text-foreground text-sm">{fill(copy.waiting, { app })}</p>
+          </div>
+          <Button variant="outline-ghost" className="w-full" onClick={onConnect}>
+            <ArrowSquareOutIcon className="size-4" />
+            {copy.reopen}
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {error ? (
+            <InfoBanner tone="destructive" icon={<WarningIcon weight="fill" />} title={error} />
+          ) : null}
+          <Button
+            className="w-full"
+            onClick={onConnect}
+            disabled={starting || phase === 'loading'}
+          >
+            {starting ? <SessionDotMatrix className="size-4 shrink-0" /> : null}
+            {starting ? copy.opening : fill(copy.connect, { app })}
+          </Button>
+          <p className="text-muted-foreground text-center text-xs text-pretty">{copy.privacy}</p>
+        </div>
+      )}
     </div>
   );
 }

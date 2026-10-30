@@ -312,6 +312,7 @@ describe('connectors', () => {
     ]);
     expect(indexNames(connectorCalls)).toEqual([
       'idx_connector_calls_project',
+      'idx_connector_calls_pending_expiry',
       'idx_connector_calls_project_session_created',
       'idx_connector_calls_connector',
       'idx_connector_calls_connection',

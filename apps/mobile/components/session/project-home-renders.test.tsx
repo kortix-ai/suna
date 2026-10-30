@@ -30,7 +30,7 @@ const submitted: any[] = [];
 const NO_FILES: any[] = [];
 const attachments = { files: NO_FILES, uploads: {}, add() {}, remove() {}, takeForSend: async () => ({ files: [], fileParts: [] }), clearAfterSend() {}, reclaim() {} };
 const toast = { error() {} };
-const models = { gatewayEnabled: false, providers: undefined, models: [], modelDefaults: undefined, isLoading: false, refetchModelCount() {} };
+const models = { providers: undefined, models: [{ providerID: 'kortix', providerName: 'Kortix', modelID: 'kimi-k3', modelName: 'Kimi K3' }], modelDefaults: undefined, isLoading: false, refetchModelCount() {} };
 let screenFocused = true;
 const store = { selectedAgent: null, setAgent() {}, globalDefault: null, agentModels: {}, setModelForAgent() {}, modelVariants: {}, setVariant() {} };
 

@@ -51,11 +51,11 @@ describe('buildSandboxUpstreamHeaders', () => {
     const h = await buildSandboxUpstreamHeaders({ sandboxId: 'sbx', userId: '', serviceKey: null, providerHeaders: {
       'X-Daytona-Skip-Preview-Warning': 'true',
       'X-Daytona-Disable-CORS': 'true',
-      'e2b-traffic-access-token': 'e2b-token',
+      'x-provider-traffic-token': 'provider-token',
     } });
     expect(h['X-Daytona-Skip-Preview-Warning']).toBe('true');
     expect(h['X-Daytona-Disable-CORS']).toBe('true');
-    expect(h['e2b-traffic-access-token']).toBe('e2b-token');
+    expect(h['x-provider-traffic-token']).toBe('provider-token');
   });
 
   test('sets Authorization from the service key', async () => {

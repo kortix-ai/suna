@@ -17,7 +17,6 @@ export {
 export {
   kortixGet,
   kortixPost,
-  kortixDelete,
   kortixDownload,
   kortixConnectorCall,
 } from './api';

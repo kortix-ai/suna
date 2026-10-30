@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { backendApi, setAdminBypass } from './api-client';
+import { backendApi, isAdminBypassEnabled, setAdminBypass } from './api-client';
 import { ApiError, AuthError, BillingError } from './api/errors';
 import { authenticatedFetch, getSupabaseAccessToken, invalidateTokenCache } from './auth';
 import { configureKortix } from './config';
@@ -71,11 +71,12 @@ describe('send: header policy', () => {
     expect(seen[0].headers.has('x-kortix-client')).toBe(false);
   });
 
-  test('attaches admin bypass and act-as while they are on', async () => {
+  test('attaches act-as while it is on; the retired admin bypass sends nothing', async () => {
     setAdminBypass(true);
     setImpersonationSession(live());
     await send('http://backend.test/v1/p/ext-1/8000/session');
-    expect(seen[0].headers.get('x-kortix-admin-bypass')).toBe('1');
+    expect(seen[0].headers.has('x-kortix-admin-bypass')).toBe(false);
+    expect(isAdminBypassEnabled()).toBe(false);
     expect(seen[0].headers.get('x-kortix-impersonate')).toBe('grant-1');
   });
 
@@ -116,14 +117,12 @@ describe('send: header policy', () => {
   });
 
   test('the platform policy replaces a caller header in another case, as one value', async () => {
-    setAdminBypass(true);
     setImpersonationSession(live());
     await send(
       new Request('http://backend.test/v1/p/ext-1/8000/session', {
-        headers: { 'X-Kortix-Admin-Bypass': '0', 'x-kortix-impersonate': 'stale' },
+        headers: { 'x-kortix-impersonate': 'stale' },
       }),
     );
-    expect(seen[0].headers.get('x-kortix-admin-bypass')).toBe('1');
     expect(seen[0].headers.get('x-kortix-impersonate')).toBe('grant-1');
   });
 
@@ -137,14 +136,12 @@ describe('send: header policy', () => {
         return new Response('{}');
       },
     });
-    setAdminBypass(true);
     setImpersonationSession(live());
     await send('http://backend.test/v1/p/ext-1/8000/session', {
-      headers: { 'content-type': 'application/json', 'X-KORTIX-ADMIN-BYPASS': '0', 'x-kortix-impersonate': 'stale' },
+      headers: { 'content-type': 'application/json', 'X-KORTIX-IMPERSONATE': 'stale' },
     });
     expect(raw).toEqual({
       'content-type': 'application/json',
-      'x-kortix-admin-bypass': '1',
       'X-Kortix-Impersonate': 'grant-1',
       Authorization: 'Bearer tok1',
     });
@@ -291,12 +288,10 @@ describe('send: deadline', () => {
 });
 
 describe('every adapter applies the same policy', () => {
-  test('authenticatedFetch attaches act-as and admin bypass (it used to drop both)', async () => {
-    setAdminBypass(true);
+  test('authenticatedFetch attaches act-as (it used to drop it)', async () => {
     setImpersonationSession(live());
     await authenticatedFetch('http://backend.test/v1/p/ext-1/8000/file/content?path=a');
     expect(seen[0].headers.get('x-kortix-impersonate')).toBe('grant-1');
-    expect(seen[0].headers.get('x-kortix-admin-bypass')).toBe('1');
   });
 
   test('authenticatedFetch still answers a missing token with a synthetic 401', async () => {

@@ -10,7 +10,7 @@ import {
   resolveProjectCloneTarget,
   saveClonedProjectLink,
 } from "../commands/projects.ts";
-import { loadLink } from "../project-link.ts";
+import { loadLink, saveLink } from "../project-link.ts";
 
 function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
   return {
@@ -99,6 +99,34 @@ test("a cloned repo is bound to its project without dirtying git status", () => 
     spawnSync("git", ["status", "--porcelain"], { cwd: repo, encoding: "utf8" })
       .stdout,
   ).toBe("");
+});
+
+test("a shipped clone preserves an existing matching link byte for byte", () => {
+  const repo = mkdtempSync(resolve(tmpdir(), "kortix-shipped-clone-"));
+  spawnSync("git", ["init", "-b", "main"], { cwd: repo });
+  saveLink({
+    project_id: "proj_1",
+    account_id: "acct_1",
+    host: "dev",
+    host_url: "https://dev-api.kortix.com",
+    linked_at: "2026-01-01T00:00:00.000Z",
+  }, repo);
+  const path = resolve(repo, ".kortix/link.json");
+  const original = readFileSync(path, "utf8");
+  spawnSync("git", ["add", "."], { cwd: repo });
+  const committed = spawnSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-m", "seed"], { cwd: repo });
+  expect(committed.status).toBe(0);
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    saveClonedProjectLink(repo, project(), "dev", "https://dev-api.kortix.com");
+    expect(readFileSync(path, "utf8")).toBe(original);
+    const status = spawnSync("git", ["status", "--porcelain"], { cwd: repo, encoding: "utf8" });
+    expect(status.status).toBe(0);
+    expect(status.stdout).toBe("");
+  }
+
+  saveClonedProjectLink(repo, project({ project_id: "proj_2" }), "dev", "https://dev-api.kortix.com");
+  expect(loadLink(repo)?.project_id).toBe("proj_2");
 });
 
 test("a proxied clone installs an on-demand Kortix credential helper without storing a token", () => {

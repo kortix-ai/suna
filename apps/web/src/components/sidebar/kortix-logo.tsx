@@ -1,6 +1,6 @@
 'use client';
 
-import { KortixLogo as UiKortixLogo } from '@/components/ui/kortix-logo';
+import { KortixLogo as UiKortixLogo } from '@kortix/ui/kortix-logo';
 
 interface KortixLogoProps {
   size?: number;
@@ -9,7 +9,7 @@ interface KortixLogoProps {
 }
 
 /**
- * Back-compat shim over the canonical `@/components/ui/kortix-logo` —
+ * Back-compat shim over the canonical `@kortix/ui/kortix-logo` —
  * `symbol` maps to `icon`, `logomark` maps to `brandmark`. New code should
  * import the ui component directly.
  */

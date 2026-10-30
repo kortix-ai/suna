@@ -72,6 +72,26 @@ describe('<Transcript/> turns', () => {
     renderer.destroy();
   });
 
+  test('synthetic user text stays hidden while ordinary text renders', async () => {
+    const session = fakeSession({
+      messages: [
+        message('m1', 'user', [
+          textPart('p1', 'hidden synthetic instruction', true),
+          textPart('p2', 'visible user request'),
+        ]),
+      ],
+    });
+    const { captureCharFrame, flush, renderer } = await render(session);
+    try {
+      await settle(flush);
+      const frame = captureCharFrame();
+      expect(frame).toContain('visible user request');
+      expect(frame).not.toContain('hidden synthetic instruction');
+    } finally {
+      renderer.destroy();
+    }
+  });
+
   test('an empty transcript says so', async () => {
     const { captureCharFrame, flush, renderer } = await render(fakeSession({ messages: [] }));
     await settle(flush);

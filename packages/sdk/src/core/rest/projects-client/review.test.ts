@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { getReviewSummary, listReviewItems } from './review';
+import { bulkActReviewItems, getReviewSummary, listReviewItems } from './review';
 
 let urls: string[] = [];
 let nextBody: unknown = {};
@@ -44,4 +44,22 @@ test('listReviewItems with no params stays a bare GET', async () => {
   nextBody = { review_items: [] };
   await listReviewItems('P1');
   expect(urls).toEqual(['http://test.local/projects/P1/review/items']);
+});
+
+test('bulkActReviewItems returns one typed result per id', async () => {
+  nextBody = {
+    updated: 1,
+    review_items: [],
+    results: [
+      { id: 'r1', ok: true },
+      { id: 'call:e1', ok: false, code: 'expired' },
+    ],
+  };
+  const res = await bulkActReviewItems('P1', { ids: ['r1', 'call:e1'], verdict: 'approve' });
+  expect(urls).toEqual(['http://test.local/projects/P1/review/bulk']);
+  // Typed: a renamed or dropped code fails tsc here.
+  const code: 'expired' | 'already_resolved' | 'preview_unavailable' | 'forbidden' | 'not_found' | 'not_bulk_actionable' | undefined =
+    res.results?.[1]?.code;
+  expect(code).toBe('expired');
+  expect(res.updated).toBe(1);
 });

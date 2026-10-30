@@ -20,31 +20,14 @@ import { ScrollView, View } from 'react-native';
 import type { PastedContent } from '@kortix/shared';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { isPreviewableImage } from '@/lib/session/attachment-tile';
+import type { ComposerAttachmentUpload } from '@/lib/session/composer-uploads';
 import { webSpace } from '@/lib/session/user-message';
 import {
   AttachmentFailureScrim,
-  AttachmentRemoveButton,
   AttachmentTile,
+  RemovableAttachmentTile,
   UploadProgressRing,
 } from './attachment-tile';
-
-/** Per-file upload state, keyed by the file's index in `files`. */
-export interface ComposerAttachmentUpload {
-  /** 0–100 while uploading. */
-  progress?: number;
-  failed?: boolean;
-  /** Present when a retry can succeed. */
-  onRetry?: () => void;
-  /**
-   * The live progress of an upload in flight. The tile subscribes itself, so
-   * progress ticks do not re-render the composer. `progress` is the value at
-   * the time the entry was built.
-   */
-  live?: {
-    subscribe: (listener: () => void) => () => void;
-    getProgress: () => number | undefined;
-  };
-}
 
 const NO_SUBSCRIBE = () => () => {};
 const NO_PASTES: PastedContent[] = [];
@@ -140,7 +123,7 @@ const ComposerAttachmentTile = React.memo(function ComposerAttachmentTile({
   const running = !failed && typeof progress === 'number' && progress < 100;
   const image = file.isImage && isPreviewableImage(file.name, file.mimeType);
   return (
-    <View style={{ position: 'relative' }}>
+    <RemovableAttachmentTile filename={file.name} disabled={disabled} onRemove={() => onRemove(index)}>
       <AttachmentTile
         filename={file.name}
         mime={file.mimeType}
@@ -148,8 +131,7 @@ const ComposerAttachmentTile = React.memo(function ComposerAttachmentTile({
         corner={running ? <UploadProgressRing value={progress} /> : undefined}
         overlay={failed ? <AttachmentFailureScrim filename={file.name} onRetry={upload?.onRetry} /> : undefined}
       />
-      <AttachmentRemoveButton filename={file.name} disabled={disabled} onRemove={() => onRemove(index)} />
-    </View>
+    </RemovableAttachmentTile>
   );
 });
 
@@ -165,14 +147,13 @@ const PastedTextTile = React.memo(function PastedTextTile({
   onRemove: (id: string) => void;
 }) {
   return (
-    <View style={{ position: 'relative' }}>
+    <RemovableAttachmentTile filename="pasted text" disabled={disabled} onRemove={() => onRemove(paste.id)}>
       <AttachmentTile
         filename="Pasted text"
         preview={paste.text}
         onPress={onOpen ? () => onOpen(paste) : undefined}
         accessibilityLabel="Pasted text"
       />
-      <AttachmentRemoveButton filename="pasted text" disabled={disabled} onRemove={() => onRemove(paste.id)} />
-    </View>
+    </RemovableAttachmentTile>
   );
 });

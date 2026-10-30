@@ -1,5 +1,7 @@
 # @kortix/cli
 
+The command line for Kortix CompanyOS, the open-source operating system for your company.
+
 Create a new Kortix project.
 
 ```sh
@@ -15,6 +17,8 @@ project floor at the repo root (`kortix.yaml`, `README.md`, `agents/`,
 ```sh
 kortix init                  # interactive flow: pick a name and wire local coding agents
 kortix init my-project       # use the given name
+kortix projects create my-project # create a remote project and print its id
+kortix projects use <project_id>  # select it without a local scaffold
 kortix ship                  # push to linked/default project; create when neither exists
 kortix self-host start       # run your own Kortix Cloud from Docker images
 ```
@@ -72,24 +76,28 @@ my-project/
 ```
 
 `kortix.yaml` is `kortix_version: 3`. The project registers skills, tools,
-commands and extensions; each agent block enables them by name. A v3 session
-reads no `harnesses/`, `.kortix/`, `.opencode/` or `.pi/` folder. Reference:
-<https://kortix.com/docs/project/manifest>.
+commands and extensions; each agent block enables them by name. Every starter
+agent sets `workspace: { project_repository: true }`, so its sessions get a
+checkout of the repository. A v3 session reads no `harnesses/`, `.kortix/`,
+`.opencode/` or `.pi/` folder. Reference:
+<https://kortix.com/docs/#kortixyaml-reference>.
 
-Projects on `kortix_version` 1 or 2 keep their layout (`agents/<name>.md` with
-frontmatter, `harnesses/opencode/`, `harnesses/pi/`, or `.kortix/opencode/`)
-and still run. `kortix migrate` prints the v3 manifest for a v2 project, and
-`kortix migrate --write` writes it.
+Projects on `kortix_version` 1 or 2 keep their layout and still run. To
+upgrade one to v3:
+
+- `kortix migrate` prints the v3 manifest and changes nothing.
+  `kortix migrate --write` writes it. It converts a v1 `kortix.toml` and a v2
+  `kortix.yaml`.
+- `kortix projects upgrade` starts an agent session that runs `kortix migrate`
+  and opens the result as a change request for review.
 
 The local coding tools you wire up (`--primary`/`--agents`, default Codex)
 receive native discovery links to the canonical sources. Claude Code uses
-`.claude/skills`, `.claude/agents`, and `.claude/commands`. Codex uses
-`.agents/skills`. Pi uses `.pi/skills`. Codex, Pi, and Cursor also get a root
-`AGENTS.md` pointer. Sessions in the cloud never read these links.
+`.claude/skills` and `.claude/agents`. Codex uses `.agents/skills`. Pi uses
+`.pi/skills`. Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
+Sessions in the cloud never read these links.
 
-A cloud session runs one of two harnesses: OpenCode (the default) or pi
-(`runtime: pi` in `kortix.yaml`, or the `pi_harness` project flag; pi needs the
-LLM gateway). The CLI talks to the same Kortix routes on both.
+A cloud session runs pi.
 
 Create a project with:
 

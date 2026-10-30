@@ -45,38 +45,6 @@ describe('callUpstream OpenAI-compatible passthrough', () => {
     expect(JSON.parse(String(received?.init.body))).toMatchObject({ model: 'provider-model' });
   });
 
-  test('strictChatSchema drops OpenRouter-only fields and keeps prior reasoning as reasoning_content', async () => {
-    let body: any;
-    await callUpstream(
-      {
-        model: 'requested',
-        reasoning: { effort: 'high' },
-        usage: { include: true },
-        provider: { only: ['x'] },
-        tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
-        messages: [
-          { role: 'user', content: [{ type: 'text', text: 'hi', cache_control: { type: 'ephemeral' } }] },
-          { role: 'assistant', content: 'a', reasoning: 'r', annotations: [],
-            reasoning_details: [{ type: 'reasoning.text', text: 'thought ' }, { type: 'reasoning.text', text: 'more' }] },
-          { role: 'assistant', content: 'b', reasoning_content: 'kept', reasoning_details: [{ type: 'reasoning.text', text: 'x' }] },
-        ],
-      },
-      { ...descriptor, strictChatSchema: true },
-      { fetchImpl: async (_input, init) => { body = JSON.parse(String(init.body)); return new Response('{}'); } },
-    );
-
-    expect(body).toEqual({
-      model: 'provider-model',
-      reasoning_effort: 'high',
-      tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
-      messages: [
-        { role: 'user', content: [{ type: 'text', text: 'hi' }] },
-        { role: 'assistant', content: 'a', reasoning_content: 'thought more' },
-        { role: 'assistant', content: 'b', reasoning_content: 'kept' },
-      ],
-    });
-  });
-
   test('does not dispatch when the client already aborted', async () => {
     const controller = new AbortController();
     controller.abort();
@@ -266,5 +234,44 @@ describe('callUpstream per-model wire format (OpenCode Go)', () => {
     });
     expect(url).toBe('https://opencode.ai/zen/go/v1/chat/completions');
     expect(headers.get('x-opencode-session')).toBe('ses_1');
+  });
+});
+
+describe('callUpstream for a user-supplied base URL (descriptor.egress)', () => {
+  const custom: UpstreamDescriptor = {
+    ...descriptor,
+    provider: 'my-llm',
+    baseUrl: 'http://127.0.0.1:9/v1',
+    omitAuthorization: true,
+    egress: { allowPrivateHosts: [] },
+  };
+  const body = { model: 'm', messages: [{ role: 'user', content: 'hi' }] };
+
+  test('refuses a private address before any fetch', async () => {
+    let calls = 0;
+    const call = callUpstream(body, custom, { fetchImpl: async () => { calls += 1; return new Response('{}'); } });
+    await expect(call).rejects.toThrow('is not reachable from the gateway (blocked private ip host: 127.0.0.1)');
+    expect(calls).toBe(0);
+  });
+
+  test('refuses a host name that resolves to a private address (DNS, not string matching)', async () => {
+    const call = callUpstream(body, { ...custom, baseUrl: 'http://localhost:9/v1' }, { fetchImpl: async () => new Response('{}') });
+    await expect(call).rejects.toThrow('blocked egress to private/resolved address');
+  });
+
+  test('an operator-allowlisted host is called without auth and without following redirects', async () => {
+    let received: { input: string; init: RequestInit } | undefined;
+    await callUpstream(body, { ...custom, egress: { allowPrivateHosts: ['127.0.0.1'] } }, {
+      fetchImpl: async (input, init) => { received = { input, init }; return new Response('{}'); },
+    });
+    expect(received?.input).toBe('http://127.0.0.1:9/v1/chat/completions');
+    expect(received?.init.redirect).toBe('manual');
+    expect((received?.init.headers as Record<string, string>).authorization).toBeUndefined();
+  });
+
+  test('a catalog descriptor (no egress) keeps the plain fetch', async () => {
+    let received: RequestInit | undefined;
+    await callUpstream(body, descriptor, { fetchImpl: async (_input, init) => { received = init; return new Response('{}'); } });
+    expect(received?.redirect).toBeUndefined();
   });
 });

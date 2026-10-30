@@ -4,10 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useState } from 'react';
 
-import { ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
-import { ActivityBurst } from '@/features/session/turn/activity-burst';
-import { PlanCard } from '@/features/session/turn/plan-card';
-import { UserMessage } from '@/features/session/turn/user-message';
+import { ToolActivateContext, ActivityBurst, PlanCard, UserMessage } from '@kortix/ui/session';
 import {
   SESSION_LOG_MINOR,
   SESSION_LOG_SCHEMA,

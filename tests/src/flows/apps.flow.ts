@@ -30,7 +30,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     let appId = "";
@@ -238,7 +238,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
 
@@ -356,6 +356,27 @@ flow(
     );
 
     await ctx.step(
+      "a deployment that names the deprecated daytona provider → 400 sandbox_provider_deprecated",
+      async () => {
+        const response = await owner.post(
+          "/v1/projects/:projectId/apps/:appId/deployments",
+          {
+            artifact_id: artifactId,
+            provider: "daytona",
+            source: {
+              kind: "oci_image",
+              image: "docker.io/library/caddy:alpine",
+              command: ["caddy", "file-server"],
+              port: 80,
+            },
+          },
+          { params: appParams },
+        );
+        response.status(400).body().has("$.code", "sandbox_provider_deprecated");
+      },
+    );
+
+    await ctx.step(
       "deployment reads expose empty state and unknown boundaries",
       async () => {
         const list = await owner.get(
@@ -451,7 +472,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     let appId = "";
@@ -541,6 +562,7 @@ flow(
       "PUT /v1/admin/api/projects/:id/features",
       "GET /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps",
+      "POST /v1/projects/:projectId/apps/:appId/access-session",
       "GET /v1/projects/:projectId/apps/:appId",
       "PATCH /v1/projects/:projectId/apps/:appId",
       "PATCH /v1/projects/:projectId/apps/:appId/access",
@@ -629,6 +651,14 @@ flow(
       if (!visible.includes(appId)) {
         throw new Error(`project-wide App ${appId} was hidden from a teammate`);
       }
+
+      // A listed App is one the teammate can open: the card mints this session.
+      const session = await teammate.post(
+        "/v1/projects/:projectId/apps/:appId/access-session",
+        {},
+        { params: { ...projectParams, appId } },
+      );
+      session.status(200).body().exists("$.url").exists("$.expires_at");
     });
 
     await ctx.step(
@@ -961,7 +991,7 @@ flow(
     // certificate for an App hostname. Unauthenticated by design (Caddy cannot
     // present a bearer token), so the contract that matters is: 200 ONLY for a
     // real App host, and no certificate for anything else.
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const anon = ctx.client.as(ctx.P.ANON);
     const projectParams = { projectId: project.id };
@@ -1245,7 +1275,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     const IN_PROGRESS = ["queued", "validating", "building", "provisioning", "checking"];
@@ -1391,7 +1421,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     const slug = ctx.fixtures.name("static").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 63);
@@ -1799,7 +1829,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     const slug = ctx.fixtures.name("ext").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 63);
@@ -1888,6 +1918,86 @@ flow(
     } finally {
       if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: app() }).catch(() => {});
       if (plainId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId: plainId } }).catch(() => {});
+    }
+  },
+);
+
+flow(
+  "APP-15",
+  {
+    domain: "apps",
+    requires: ["database"],
+    routes: [
+      "POST /v1/projects/:projectId/apps",
+      "PATCH /v1/projects/:projectId/apps/:appId",
+      "GET /v1/projects/:projectId/apps/:appId",
+      "GET /v1/projects/:projectId/files/content",
+      "PUT /v1/projects/:projectId/files/content",
+      "POST /v1/connectors/projects/:projectId/connectors/sync",
+      "PATCH /v1/projects/:projectId",
+      "DELETE /v1/projects/:projectId/apps/:appId",
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id };
+    const slug = ctx.fixtures.name("yaml").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40).replace(/-+$/, "");
+    let appId = "";
+    const manifest = async () => {
+      const r = await owner.get("/v1/projects/:projectId/files/content", { params, query: { path: "kortix.yaml" } });
+      r.status(200);
+      return r.json<{ content: string; ref: string; revision: string }>();
+    };
+    const until = (needle: string, description: string) =>
+      waitFor(manifest, { until: (m) => m.content.includes(needle), timeoutMs: 60_000, intervalMs: 2_000, description });
+
+    try {
+      await ctx.step("creating an external App commits apps.<slug> with display.listed: true to kortix.yaml", async () => {
+        const created = await owner.post("/v1/projects/:projectId/apps", { slug, name: "Yaml probe", external_url: "https://127.0.0.1:9/probe" }, { params });
+        created.status(201).body().has("$.display", { listed: true });
+        appId = created.json<any>().app_id;
+        const m = await until(`${slug}:`, "the App block in kortix.yaml");
+        if (!/listed: true/.test(m.content)) throw new Error(`kortix.yaml lacks listed: true:\n${m.content}`);
+      });
+
+      await ctx.step("a create at a taken slug, or with a link the caller may not make, is refused before anything reaches kortix.yaml", async () => {
+        const before = (await manifest()).content;
+        (await owner.post("/v1/projects/:projectId/apps", { slug, name: "Takeover", cpu: 4, always_on: true }, { params })).status(409);
+        const other = `${slug.slice(0, 30)}-b`;
+        (await owner.post("/v1/projects/:projectId/apps", { slug: other, name: "Linker", uses: ["no-such-app"] }, { params }))
+          .status(400).body().has("$.code", "app_not_found");
+        const after = (await manifest()).content;
+        if (after !== before) throw new Error(`kortix.yaml changed after refused creates:\n${after}`);
+      });
+
+      await ctx.step("PATCH labels commits them to the App block before the row changes", async () => {
+        (await owner.patch("/v1/projects/:projectId/apps/:appId", { labels: ["ops"] }, { params: { ...params, appId } }))
+          .status(200).body().has("$.labels", ["ops"]);
+        await until("- ops", "labels in kortix.yaml");
+      });
+
+      await ctx.step("a kortix.yaml change pushed outside the API applies to the App on the next sync", async () => {
+        const m = await manifest();
+        const content = m.content.replace("- ops", "- finance");
+        (await owner.put("/v1/projects/:projectId/files/content", { path: "kortix.yaml", ref: m.ref, content, expected_revision: m.revision }, { params }))
+          .status(200);
+        (await owner.post("/v1/connectors/projects/:projectId/connectors/sync", {}, { params })).status(200);
+        (await owner.get("/v1/projects/:projectId/apps/:appId", { params: { ...params, appId } })).status(200).body().has("$.labels", ["finance"]);
+      });
+
+      await ctx.step("renaming the project commits project.name to kortix.yaml", async () => {
+        (await owner.patch("/v1/projects/:projectId", { name: "Renamed through the API" }, { params })).status(200);
+        await until("name: Renamed through the API", "project.name in kortix.yaml");
+      });
+
+      await ctx.step("deleting the App removes its block from kortix.yaml", async () => {
+        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...params, appId } })).status(200);
+        appId = "";
+        await waitFor(manifest, { until: (m) => !m.content.includes(`${slug}:`), timeoutMs: 60_000, intervalMs: 2_000, description: "the App block is gone" });
+      });
+    } finally {
+      if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...params, appId } });
     }
   },
 );

@@ -1,15 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
 import { testUiTranslator } from '@/i18n/test-translator';
-import type { DependencyItem, ItemCapabilities } from '@/lib/marketplace-client';
+import type { DependencyItem, ItemCapabilities, MarketplaceItemDetail } from '@/lib/marketplace-client';
 import {
   emptyDescriptionCopy,
   emptyReadmeCopy,
-  groupBundleMembersByType,
   groupCapabilities,
-  itemCountLabel,
   marketplaceFileNodes,
   resolveBundleMembers,
+  projectContentGroups,
   totalCapabilityCount,
 } from './marketplace-item-view';
 
@@ -46,40 +45,6 @@ describe('emptyReadmeCopy', () => {
 
   test('derives type-aware wording for a skill', () => {
     expect(emptyReadmeCopy('registry:skill')).toBe("This skill doesn't ship a README yet.");
-  });
-});
-
-describe('itemCountLabel', () => {
-  test('a bundle counts its member dependencies as items', () => {
-    const result = itemCountLabel({
-      type: 'registry:bundle',
-      dependencies: ['a', 'b', 'c'],
-      fileCount: 0,
-    });
-
-    expect(result).toEqual({ count: 3, unit: 'items' });
-  });
-
-  test('a bundle with exactly one member uses the singular unit', () => {
-    const result = itemCountLabel({ type: 'registry:bundle', dependencies: ['a'], fileCount: 0 });
-
-    expect(result).toEqual({ count: 1, unit: 'item' });
-  });
-
-  test('a non-bundle type counts files, ignoring dependencies', () => {
-    const result = itemCountLabel({
-      type: 'registry:skill',
-      dependencies: ['a', 'b'],
-      fileCount: 5,
-    });
-
-    expect(result).toEqual({ count: 5, unit: 'files' });
-  });
-
-  test('a single file uses the singular unit', () => {
-    const result = itemCountLabel({ type: 'registry:agent', dependencies: [], fileCount: 1 });
-
-    expect(result).toEqual({ count: 1, unit: 'file' });
   });
 });
 
@@ -149,48 +114,6 @@ describe('resolveBundleMembers', () => {
 
   test('an empty dependency list produces no members', () => {
     expect(resolveBundleMembers({ dependencies: [], dependencyItems: [], hrefForId })).toEqual([]);
-  });
-});
-
-describe('groupBundleMembersByType', () => {
-  const m = (key: string, type: string | null) => ({
-    key,
-    title: key,
-    type,
-    description: null,
-    href: null,
-  });
-
-  test('buckets members by type in a stable order (skills, agents, tools, …)', () => {
-    const groups = groupBundleMembersByType(
-      [
-        m('t1', 'registry:tool'),
-        m('s1', 'registry:skill'),
-        m('a1', 'registry:agent'),
-        m('s2', 'registry:skill'),
-      ],
-      testUiTranslator,
-    );
-    expect(groups.map((g) => [g.label, g.members.map((x) => x.key)])).toEqual([
-      ['Skills', ['s1', 's2']],
-      ['Agents', ['a1']],
-      ['Tools', ['t1']],
-    ]);
-  });
-
-  test('collects null/unrecognized types into an "Other" bucket at the end', () => {
-    const groups = groupBundleMembersByType(
-      [m('s1', 'registry:skill'), m('x', null), m('y', 'registry:mystery')],
-      testUiTranslator,
-    );
-    expect(groups[0].label).toBe('Skills');
-    const other = groups[groups.length - 1];
-    expect(other.label).toBe('Other');
-    expect(other.members.map((x) => x.key).sort()).toEqual(['x', 'y']);
-  });
-
-  test('empty input produces no groups', () => {
-    expect(groupBundleMembersByType([], testUiTranslator)).toEqual([]);
   });
 });
 
@@ -281,5 +204,52 @@ describe('marketplaceFileNodes', () => {
 
   test('no targets, no rows', () => {
     expect(marketplaceFileNodes([])).toEqual([]);
+  });
+});
+
+describe('projectContentGroups', () => {
+  const data: MarketplaceItemDetail = {
+    id: 'synthetic:project', registry: 'synthetic', name: 'project', type: 'registry:project',
+    title: 'Project', description: null, categories: [],
+    capabilities: { secrets: [], connectors: [], tools: [], network: [] },
+    dependencies: ['second', 'missing', 'first'], fileCount: 2, external: true,
+    marketplaceId: 'synthetic-source', marketplaceLabel: 'Synthetic source',
+    owner: 'synthetic-owner', sourceUrl: 'https://example.test/source', files: [], readme: null,
+    dependencyItems: [
+      { id: 'synthetic:first', name: 'first', type: 'registry:skill', title: 'First-title', description: null },
+      { id: 'synthetic:second', name: 'second', type: 'registry:skill', title: 'Second', description: 'Description' },
+    ],
+    projectAgents: [{ name: 'review-agent', title: 'Review-agent', description: null }],
+    projectTriggers: [{ slug: 'daily-check', description: 'Trigger', agent: 'review-agent' }],
+  };
+
+  test('preserves order, filters unresolved dependencies, and assigns navigability and labels', () => {
+    const groups = projectContentGroups(data, testUiTranslator);
+    expect(groups.map((g) => [g.label, g.navigable, g.items.map((it) => it.id)])).toEqual([
+      ['Skills', true, ['synthetic:second', 'synthetic:first']],
+      ['Agents', false, ['agent:review-agent']],
+      ['Triggers', false, ['trigger:daily-check']],
+    ]);
+    expect(groups.flatMap((g) => g.items.map((it) => [it.name, it.title, it.description]))).toEqual([
+      ['second', 'Second', 'Description'], ['first', 'First-title', null],
+      ['review-agent', 'Review agent', null], ['daily-check', 'daily check', 'Trigger'],
+    ]);
+    for (const item of groups.flatMap((g) => g.items)) {
+      expect(item.registry).toBe(data.registry);
+      expect(item.external).toBe(true);
+      expect(item.marketplaceId).toBe(data.marketplaceId);
+      expect(item.marketplaceLabel).toBe(data.marketplaceLabel);
+      expect(item.owner).toBe(data.owner);
+      expect(item.sourceUrl).toBe(data.sourceUrl);
+      expect(item.categories).toEqual([]);
+      expect(item.capabilities).toEqual({ secrets: [], connectors: [], tools: [], network: [] });
+      expect(item.dependencies).toEqual([]);
+      expect(item.fileCount).toBe(0);
+    }
+  });
+
+  test('non-projects and empty projects have no card groups', () => {
+    expect(projectContentGroups({ ...data, type: 'registry:bundle' }, testUiTranslator)).toEqual([]);
+    expect(projectContentGroups({ ...data, dependencies: [], projectAgents: [], projectTriggers: [] }, testUiTranslator)).toEqual([]);
   });
 });

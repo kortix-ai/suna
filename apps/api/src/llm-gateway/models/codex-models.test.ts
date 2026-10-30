@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseCodexModelIds } from './codex-models';
+import { parseCodexContextWindows, parseCodexModelIds } from './codex-models';
 
 describe('parseCodexModelIds', () => {
   test('drops slugs the ChatGPT backend refuses even though models.json lists them', () => {
@@ -14,5 +14,16 @@ describe('parseCodexModelIds', () => {
       ],
     });
     expect(ids).toEqual(['gpt-6.1-sol']);
+  });
+});
+
+describe('parseCodexContextWindows', () => {
+  test('reads each slug\'s context_window and skips a missing or bad one', () => {
+    expect(parseCodexContextWindows({ models: [
+      { slug: 'gpt-6-sol', context_window: 272_000 },
+      { slug: 'gpt-x', context_window: 0 },
+      { slug: 'gpt-y' },
+    ] })).toEqual({ 'gpt-6-sol': 272_000 });
+    expect(parseCodexContextWindows(null)).toEqual({});
   });
 });

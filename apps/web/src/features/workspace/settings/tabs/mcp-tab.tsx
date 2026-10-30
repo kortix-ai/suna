@@ -13,19 +13,19 @@
 
 import { useState } from 'react';
 
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Button } from '@/components/ui/button';
-import { Copy } from '@/features/icon/icons/copy';
-import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
-import { CLIENTS, ClientAction, mcpUrl } from '@/features/layout/connect-mcp-modal';
-import { useCopy } from '@/hooks/use-copy';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { Button } from '@kortix/ui/button';
+import { Copy } from '@kortix/ui/icons';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
+import { CLIENTS, ClientAction, mcpUrl } from '@kortix/ui/internal/layout/connect-mcp-modal';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { getEnv } from '@/lib/env-config';
 
-import { SettingsTabHeader } from '../settings-tab-header';
-import { ConnectedApps } from './connected-apps';
-import { localizedRelativeTime } from './tokens-tab';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
+import { ConnectedApps } from '@kortix/ui/customize/settings/tabs/connected-apps';
+import { localizedRelativeTime } from '@kortix/ui/customize/settings/tabs/tokens-tab';
 
 export function McpTab() {
   const t = useTranslations('settings.mcp');

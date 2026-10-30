@@ -9,7 +9,7 @@ const ART = [
   '   ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝╚═╝  ╚═╝',
 ];
 
-const TAGLINE = 'The open-source AI Operating System';
+const TAGLINE = 'The open-source CompanyOS';
 
 export function printBanner(): void {
   const lines: string[] = ['', ''];

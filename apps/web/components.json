@@ -13,7 +13,7 @@
   "iconLibrary": "phosphor",
   "aliases": {
     "components": "@/components",
-    "utils": "@/lib/utils",
+    "utils": "@kortix/ui",
     "ui": "@/components/ui",
     "lib": "@/lib",
     "hooks": "@/hooks"

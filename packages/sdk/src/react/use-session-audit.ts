@@ -12,7 +12,7 @@
  * here (a resolved approval sitting in the bundle's 5s share window would
  * un-resolve on screen for a poll that lands inside it).
  *
- * `apps/web`'s `useSessionAudit` (`features/session/session-audit-shared.tsx`)
+ * `apps/web`'s `useSessionAudit` (`packages/ui/src/session/panel/session-audit-shared.tsx`)
  * is this function's only host-side caller. It stays app-local because it is
  * shared by two UI surfaces (the audit panel and the header approvals nudge)
  * with app-specific toast/error wiring that does not belong in the SDK — but

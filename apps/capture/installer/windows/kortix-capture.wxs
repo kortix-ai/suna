@@ -62,7 +62,22 @@
     <!-- A personal install, interactive: open the window once, on onboarding. A silent install
          and an install with IT's URL and token are preconfigured and open nothing. -->
     <CustomAction Id="LaunchApp" FileRef="KortixCaptureExe" ExeCommand="app" Execute="immediate" Impersonate="yes" Return="asyncNoWait" />
+    <!-- The window is a WebView2. Windows 11 ships the runtime; a Windows 10 computer may not
+         have it. Microsoft's bootstrapper installs it per machine (it downloads the runtime).
+         Return="ignore": an offline computer still records, and the window then says what is missing. -->
+    <Property Id="WEBVIEW2_VERSION">
+      <RegistrySearch Id="WebView2Machine" Root="HKLM" Key="SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" Name="pv" Type="raw" Bitness="always32" />
+    </Property>
+    <Binary Id="WebView2Setup" SourceFile="$(WebView2Setup)" />
+    <CustomAction Id="InstallWebView2" BinaryRef="WebView2Setup" ExeCommand="/silent /install"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+    <CustomAction Id="StartMachineService" Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]sc.exe&quot; start KortixCapture"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
     <InstallExecuteSequence>
+      <Custom Action="StartMachineService" After="StartServices" Condition="NOT (REMOVE~=&quot;ALL&quot;)" />
+      <Custom Action="InstallWebView2" Before="InstallFinalize"
+              Condition="NOT (REMOVE~=&quot;ALL&quot;) AND (NOT WEBVIEW2_VERSION OR WEBVIEW2_VERSION = &quot;0.0.0.0&quot;)" />
       <Custom Action="LaunchApp" After="InstallFinalize" Condition="NOT Installed AND UILevel &gt;= 4 AND NOT KORTIX_URL AND NOT ENROLLMENT_TOKEN" />
       <Custom Action="WriteEnrollmentToken" After="WriteRegistryValues"
               Condition="KORTIX_URL AND ENROLLMENT_TOKEN AND NOT (REMOVE~=&quot;ALL&quot;)" />
@@ -116,7 +131,9 @@
                               RestartServiceDelayInSeconds="10"
                               ResetPeriodInDays="1" />
         </ServiceInstall>
-        <ServiceControl Id="MachineServiceControl" Name="KortixCapture" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+        <!-- No Start here: a service that cannot start (error 1920) would roll the whole install
+             back. StartMachineService starts it and ignores a failure; Start="auto" covers boot. -->
+        <ServiceControl Id="MachineServiceControl" Name="KortixCapture" Stop="both" Remove="uninstall" Wait="yes" />
         <util:RemoveFolderEx On="uninstall" Property="MACHINEDATA" />
       </Component>
       <Component Id="CaptureEngineExe" Bitness="always64">
@@ -148,7 +165,9 @@
       <RemoveRegistryKey Root="HKLM" Key="SOFTWARE\Policies\Kortix\Capture" Action="removeOnUninstall" />
     </Component>
 
-    <!-- The Start menu entry opens the Kortix Capture window (`kortix-capture app`). -->
+    <!-- The Start menu entry opens the Kortix Capture window (`kortix-capture app`).
+         Show="minimized" applies only to the console a click on a console exe opens: `app`
+         starts itself again without a console, and that process shows the window normally. -->
     <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder" Bitness="always64">
       <Shortcut Id="AppShortcut" Name="Kortix Capture" Description="Open Kortix Capture"
                 Target="[INSTALLFOLDER]kortix-capture.exe" Arguments="app" WorkingDirectory="INSTALLFOLDER"

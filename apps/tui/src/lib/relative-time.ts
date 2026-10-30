@@ -4,7 +4,7 @@
  * Fixed-width by construction (at most 4 columns: `now`, `59m`, `23h`, `29d`,
  * `11mo`, `9y`) so a row never reflows when a session's age ticks over. The
  * unit ladder mirrors `shortRelative` in
- * `apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts`
+ * `packages/ui/src/session/actions/project-session-list-helpers.ts`
  * so a session reads the same in both clients.
  *
  * Pure: `now` is a parameter, never `Date.now()`.

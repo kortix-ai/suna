@@ -18,13 +18,12 @@
  * shows the child's real transcript in the modal.
  */
 
-import '@/features/session/tool/tools/register';
+import '@kortix/ui/session/tool/tools/register';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
-import { ToolSurfaceContext } from '@/features/session/tool/shared/infrastructure';
-import { ToolPartRenderer, TurnLiveContext } from '@/features/session/tool/tool-renderers';
+import { ToolSurfaceContext, ToolPartRenderer, TurnLiveContext } from '@kortix/ui/session';
 import { useSessionStateStore } from '@kortix/sdk/react';
 import type { ToolCallBlock } from '@kortix/sdk';
 

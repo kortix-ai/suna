@@ -165,6 +165,7 @@ impl S3Target {
             .connect_timeout(Duration::from_secs(15))
             // A part at a low bandwidth cap can take minutes; reqwest's timeout covers the whole exchange.
             .timeout(Duration::from_secs(1800))
+            .user_agent(super::user_agent())
             .build()?;
         Ok(Self {
             bucket,

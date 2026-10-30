@@ -88,7 +88,7 @@ also gives the test state:
 
 - **Same-repo branches only.** Fork PRs never get a preview.
 - **The actor who adds the label needs write access.** The workflow checks it twice.
-- **`pull_request_target` runs the workflow from `main`.** A change to `deploy-preview.yml`
+- **`pull_request_target` runs the workflow from `dev`, the default branch.** A change to `deploy-preview.yml`
   or `tests/bin/sandbox-preview.ts` on a branch takes effect only after it merges.
 - **The shared Platinum pool is 512 GB, and each preview takes 16 GB.** A full pool fails
   deploys with `429 org RAM pool is full`. Remove labels you no longer need.

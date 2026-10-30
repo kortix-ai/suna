@@ -29,6 +29,10 @@ mock.module('./attachment-tile', () => ({
   },
   UploadProgressRing: () => null,
   AttachmentFailureScrim: () => null,
+  RemovableAttachmentTile: (props: { filename: string; onRemove: () => void; children?: unknown }) => {
+    removeButtons[props.filename] = props.onRemove;
+    return props.children ?? null;
+  },
   AttachmentRemoveButton: ({ filename, onRemove }: any) => {
     removeButtons[filename] = onRemove;
     return null;

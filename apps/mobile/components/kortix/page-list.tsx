@@ -22,7 +22,7 @@
  * - `children`: a plain `ScrollView`, for a short fixed page (project Settings).
  */
 import * as React from 'react';
-import { RefreshControl, View, type ListRenderItem } from 'react-native';
+import { RefreshControl, View, type FlatListProps, type ListRenderItem } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -55,6 +55,9 @@ interface PageListProps<T = unknown> {
   data?: readonly T[];
   renderItem?: (item: T, index: number) => React.ReactElement | null;
   keyExtractor?: (item: T, index: number) => string;
+  /** Which rows are on screen (Apps mounts a preview only for those). Pass a stable function. */
+  onViewableItemsChanged?: FlatListProps<T>['onViewableItemsChanged'];
+  viewabilityConfig?: FlatListProps<T>['viewabilityConfig'];
 }
 
 export function PageList<T = unknown>({
@@ -69,6 +72,8 @@ export function PageList<T = unknown>({
   data,
   renderItem,
   keyExtractor,
+  onViewableItemsChanged,
+  viewabilityConfig,
 }: PageListProps<T>) {
   const insets = useSafeAreaInsets();
   const { onScroll, topFadeStyle } = useScrollFade();
@@ -98,6 +103,8 @@ export function PageList<T = unknown>({
           data={state === 'rows' ? (data as T[]) : EMPTY}
           renderItem={flatRenderItem}
           keyExtractor={keyExtractor}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
           ListHeaderComponent={
             state === 'rows' ? (
               <>{header}</>

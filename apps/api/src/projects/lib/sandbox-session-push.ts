@@ -10,7 +10,6 @@ import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 // Aliased: every push below binds a local `config` from the sandbox row, which
 // would shadow the app config import inside those function bodies.
 import { config as appConfig } from '../../config';
-import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import {
   agentConfigEtag,
@@ -21,7 +20,6 @@ import { repositoryAccessFromSessionMetadata } from './session-sandbox-metadata'
 import { hasConfigReleaseCapability } from './session-config-release';
 import { resolveSandboxEnvSnapshot } from './sandbox-env-snapshot';
 import { SANDBOX_SERVICE_PORT, postEnvToDaemon } from './sandbox-env-transport';
-import { markSandboxLlmGatewayMode } from './sandbox-env-push';
 
 /**
  * A push target that exists but is not `active` is a control-plane DIVERGENCE,
@@ -396,7 +394,6 @@ export async function pushSessionScopeToSandbox(input: {
     const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
     if (!snapshot) return { applied: false, reason: 'no env snapshot' };
 
-    const llmGatewayEnabled = await projectLlmGatewayEnabledById(input.projectId);
     const { url, headers } = await resolveSandboxIngress(row.externalId, {
       port: SANDBOX_SERVICE_PORT,
       transport: 'http',
@@ -411,12 +408,8 @@ export async function pushSessionScopeToSandbox(input: {
       // secrets shape it at spawn, not via the config file), so the respawn is
       // the load-bearing part — see the daemon-side gate in routes/env.ts.
       refreshModels: true,
-      llmGatewayEnabled,
-      llmGatewayBaseUrl: llmGatewayEnabled
-        ? resolveLlmGatewayBaseUrl(appConfig.KORTIX_URL)
-        : undefined,
+      llmGatewayBaseUrl: resolveLlmGatewayBaseUrl(appConfig.KORTIX_URL),
     });
-    await markSandboxLlmGatewayMode(input.sessionId, llmGatewayEnabled);
     return { applied: true };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);

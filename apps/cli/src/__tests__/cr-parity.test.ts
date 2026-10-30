@@ -118,6 +118,13 @@ function startServer(): string {
               },
         );
       }
+      if (url.pathname === `${base}/change-requests/${CR_ID}/merge` && req.method === 'POST') {
+        return Response.json({
+          change_request: { ...changeRequest(), status: 'merged' },
+          merge: { merge_commit_sha: 'abcdef1234567', fast_forward: true, base_sha_before: 'b', base_sha_after: 'abcdef1234567' },
+          also_merged: [{ cr_id: 'cr_low', number: 5 }, { cr_id: 'cr_lower', number: 4 }],
+        });
+      }
       if (
         url.pathname === `${base}/change-requests/${CR_ID}/request-changes` &&
         req.method === 'POST'
@@ -226,6 +233,15 @@ describe('kortix cr — review parity', () => {
     ]) {
       expect(r.stdout).toContain(fragment);
     }
+  });
+
+  // KRTX-3371: the requests a merge carried are merged too, and the CLI says which.
+  test('merge names the requests whose commits landed with it', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['cr', 'merge', CR_ID, '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('fast-forward');
+    expect(r.stdout).toContain('Also merged #5, #4');
   });
 
   test('merge-preview on a clean CR exits 0 and says it merges', async () => {

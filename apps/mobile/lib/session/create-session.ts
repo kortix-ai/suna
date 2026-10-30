@@ -1,7 +1,7 @@
 /**
  * create-session — `POST /projects/:id/sessions` with a client-minted
  * `session_id` (COR-185, web parity with
- * `apps/web/src/hooks/projects/use-new-project-session.ts`).
+ * `packages/ui/src/internal/hooks/projects/use-new-project-session.ts`).
  *
  * The client owns the id, so an ambiguous failure (a client timeout or a
  * server deadline) can be resolved by reading that id back: a row means the

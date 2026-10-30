@@ -13,22 +13,21 @@ import {
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { cn } from '@/lib/utils';
-import { floatingZ, useDialogDepth } from '@/lib/z-stack';
+import { cn, floatingZ, useDialogDepth } from '@kortix/ui';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
-import { errorToast } from '@/components/ui/toast';
+import { errorToast } from '@kortix/ui/toast';
 
-import { UnifiedMarkdown } from '@/components/markdown';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { FileTree, FileTreeNav } from '@/components/ui/file-tree';
-import { Portal } from '@/components/ui/portal';
-import { Copy } from '@/features/icon/icons/copy';
-import { Github } from '@/features/icon/icons/github';
-import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { FadedScrollArea } from '@kortix/ui/faded-scroll-area';
+import { FileTree, FileTreeNav } from '@kortix/ui/file-tree';
+import { Portal } from '@kortix/ui/portal';
+import { Copy } from '@kortix/ui/icons';
+import { Github } from '@kortix/ui/internal/icons/github';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
+import { EmptyState } from '@kortix/ui/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import type {
   MarketplaceItem,
@@ -42,7 +41,6 @@ import { MarketplaceAvatar } from './marketplace-avatar';
 import { displayCompanyLabel } from './marketplace-company-filter';
 import { MarketplaceExploreCard } from './marketplace-explore-card';
 import { MarketplaceFileView } from './marketplace-file-view';
-import { groupMarketplaceItemsByType } from './marketplace-grid';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
 import {
   emptyDescriptionCopy,
@@ -50,9 +48,11 @@ import {
   groupCapabilities,
   marketplaceFileNodes,
   resolveBundleMembers,
+  projectContentGroups,
   totalCapabilityCount,
 } from './marketplace-item-view';
 import { TypeTile, typeMeta } from './marketplace-meta';
+import { useMarketplaceListHref } from './marketplace-return';
 import { MarketplaceShell } from './marketplace-shell';
 import { useMarketplaceSurface } from './marketplace-surface';
 
@@ -179,7 +179,7 @@ function BundleMemberRow({
 /** The README renders in full (no collapse) — it's the primary content. */
 function ReadmeMarkdown({ content }: { content: string }) {
   return (
-    <div className="bg-secondary rounded-md border px-4 py-2.5">
+    <div className="bg-secondary/40 rounded-md border px-4 py-2.5">
       <div className="prose-sm text-foreground max-w-none">
         <UnifiedMarkdown content={content} trust="untrusted" variant="document" />
       </div>
@@ -563,6 +563,8 @@ export function MarketplaceDetail({
   nav?: DetailNav;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // Back returns to the list as the person left it (`?source=`, `?q=`).
+  const listHref = useMarketplaceListHref();
   const onPrev = nav?.onPrev;
   const onNext = nav?.onNext;
   // ← / → step through the surrounding item list (ignored while typing).
@@ -595,94 +597,7 @@ export function MarketplaceDetail({
         hrefForId: (id) => id,
       })
     : [];
-  // A project shows its README first, then its contents rendered as the SAME
-  // marketplace cards, in the SAME typed grid, as the main gallery — so a skill
-  // inside the project looks exactly like a skill listed on the marketplace.
-  // Each content item is a full catalog id, so we synthesize a MarketplaceItem
-  // from the resolved dependency metadata + the project's own source identity.
-  const memberItemGroups = useMemo(() => {
-    if (!isProject) return [];
-    const byName = new Map(data.dependencyItems.map((d) => [d.name, d]));
-    const items: MarketplaceItem[] = data.dependencies
-      .map((name) => byName.get(name))
-      .filter((d): d is MarketplaceItemDetail['dependencyItems'][number] => Boolean(d))
-      .map((d) => ({
-        id: d.id,
-        registry: data.registry,
-        name: d.name,
-        type: d.type,
-        title: d.title,
-        description: d.description,
-        categories: [],
-        capabilities: { secrets: [], connectors: [], tools: [], network: [] },
-        dependencies: [],
-        fileCount: 0,
-        external: data.external,
-        marketplaceId: data.marketplaceId,
-        marketplaceLabel: data.marketplaceLabel,
-        owner: data.owner,
-        sourceUrl: data.sourceUrl,
-      }));
-    return groupMarketplaceItemsByType(items);
-  }, [isProject, data]);
-  // A project's agents + triggers (parsed from kortix.yaml) rendered with the
-  // SAME card + name-based icon heuristic as its skills — just non-navigable,
-  // since they aren't their own catalog items.
-  const projectExtraGroups = useMemo(() => {
-    if (!isProject) return [] as { label: string; items: MarketplaceItem[] }[];
-    const toItem = (
-      name: string,
-      title: string,
-      description: string | null,
-      type: string,
-      prefix: string,
-    ): MarketplaceItem => ({
-      id: `${prefix}:${name}`,
-      registry: data.registry,
-      name,
-      type,
-      title,
-      description,
-      categories: [],
-      capabilities: { secrets: [], connectors: [], tools: [], network: [] },
-      dependencies: [],
-      fileCount: 0,
-      external: data.external,
-      marketplaceId: data.marketplaceId,
-      marketplaceLabel: data.marketplaceLabel,
-      owner: data.owner,
-      sourceUrl: data.sourceUrl,
-    });
-    const groups: { label: string; items: MarketplaceItem[] }[] = [];
-    if (data.projectAgents?.length) {
-      groups.push({
-        label: tI18nComplete.raw('text279b44d2ab4b'),
-        items: data.projectAgents.map((a) =>
-          toItem(a.name, a.title.replaceAll('-', ' '), a.description, 'registry:agent', 'agent'),
-        ),
-      });
-    }
-    if (data.projectTriggers?.length) {
-      groups.push({
-        label: tI18nComplete.raw('texte62f2148a64d'),
-        items: data.projectTriggers.map((t) =>
-          toItem(t.slug, t.slug.replaceAll('-', ' '), t.description, 'registry:trigger', 'trigger'),
-        ),
-      });
-    }
-    return groups;
-  }, [
-    isProject,
-    data.projectAgents,
-    data.projectTriggers,
-    data.registry,
-    data.external,
-    data.marketplaceId,
-    data.marketplaceLabel,
-    data.owner,
-    data.sourceUrl,
-    tI18nComplete,
-  ]);
+  const projectGroups = useMemo(() => projectContentGroups(data, tI18nComplete), [data, tI18nComplete]);
   const readme = data.readme ? stripFrontmatter(data.readme) : '';
   const itemTitle = data.title.replaceAll('-', ' ');
   const companyLabel = displayCompanyLabel(data.marketplaceId, data.marketplaceLabel);
@@ -713,7 +628,7 @@ export function MarketplaceDetail({
         { label: itemTitle },
       ]
     : [
-        { label: tI18nComplete.raw('textc608981d8d68'), href: '/marketplace' },
+        { label: tI18nComplete.raw('textc608981d8d68'), href: listHref },
         { label: companyLabel, href: marketplaceSourceHref(data.marketplaceId) },
         ...(projectCrumb ? [projectCrumb] : []),
         { label: itemTitle },
@@ -770,22 +685,12 @@ export function MarketplaceDetail({
   // the gallery. Shared by both layouts; `columns` follows the surface width.
   const projectSections = (gridClassName: string) => (
     <>
-      {memberItemGroups.map((g) => (
+      {projectGroups.map((g) => (
         <section key={g.label}>
           <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
           <div className={cn('grid gap-3', gridClassName)}>
             {g.items.map((it) => (
-              <MarketplaceExploreCard key={it.id} item={it} showSource={false} />
-            ))}
-          </div>
-        </section>
-      ))}
-      {projectExtraGroups.map((g) => (
-        <section key={g.label}>
-          <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
-          <div className={cn('grid gap-3', gridClassName)}>
-            {g.items.map((it) => (
-              <MarketplaceExploreCard key={it.id} item={it} showSource={false} navigable={false} />
+              <MarketplaceExploreCard key={it.id} item={it} showSource={false} navigable={g.navigable} />
             ))}
           </div>
         </section>
@@ -864,6 +769,7 @@ export function MarketplaceDetail({
                     sourceUrl={sourceUrl}
                     label={data.marketplaceLabel}
                     size="xs"
+                    className="rounded"
                   />
                   <span className="truncate">{companyLabel}</span>
                 </Link>
@@ -904,7 +810,7 @@ export function MarketplaceDetail({
         <div className="space-y-10">
           <header className="space-y-6">
             <Link
-              href="/marketplace"
+              href={listHref}
               className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors duration-(--duration-normal)"
             >
               <ArrowLeft className="size-4" aria-hidden />

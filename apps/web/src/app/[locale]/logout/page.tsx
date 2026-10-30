@@ -3,7 +3,7 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useEffect } from 'react';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 
 /**

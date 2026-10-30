@@ -115,7 +115,7 @@ export async function readProjectFile(
   const params = new URLSearchParams({ path });
   if (ref) params.set('ref', ref);
   return unwrap(
-    await backendApi.get<{ path: string; ref: string; content: string }>(
+    await backendApi.get<{ path: string; ref: string; content: string; revision?: string }>(
       `/projects/${projectId}/files/content?${params.toString()}`,
       // Same manager-tier gate as listProjectFiles above: project.file.read
       // legitimately 403s for a plain member reading one file (e.g. a
@@ -197,4 +197,14 @@ export async function fetchProjectFileRaw(
     'Failed to read file',
   );
   return await res.blob();
+}
+
+/** Commit an edited text file only if its viewed blob revision is unchanged. */
+export async function writeProjectFile(
+  projectId: string,
+  input: { path: string; ref: string; content: string; expected_revision: string },
+) {
+  return unwrap(await backendApi.put<{ commit_sha: string }>(
+    `/projects/${projectId}/files/content`, input, { showErrors: false },
+  ));
 }

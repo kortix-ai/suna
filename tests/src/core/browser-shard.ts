@@ -17,6 +17,7 @@
  *   in exactly one shard before the next refresh.
  */
 import { readdirSync, readFileSync } from 'node:fs';
+import { packLeastLoaded } from './shard';
 import { resolve } from 'node:path';
 
 export type ShardTarget = 'local' | 'deployed';
@@ -56,13 +57,10 @@ export function planBrowserShard(opts: {
   const weighted = specs
     .map((spec) => ({ spec, weight: durations[spec] ?? fallback }))
     .sort((a, b) => b.weight - a.weight || (a.spec < b.spec ? -1 : 1));
-  const loads = Array.from({ length: total }, () => 0);
-  const bins: string[][] = Array.from({ length: total }, () => []);
-  for (const { spec, weight } of weighted) {
-    const lightest = loads.indexOf(Math.min(...loads));
-    loads[lightest]! += weight;
-    bins[lightest]!.push(spec);
-  }
+  const { bins } = packLeastLoaded(
+    weighted.map(({ spec, weight }) => ({ id: spec, weight })),
+    total,
+  );
   const mine = bins[current - 1]!.sort();
   // An empty list would make Playwright run EVERY spec, not none.
   if (mine.length === 0) {

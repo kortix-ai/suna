@@ -223,7 +223,7 @@ describe('GET /gateway/budgets: spend per budget period', () => {
 
   test('spent_usd equals the spend checkBudget measures, for every day, week and month budget', async () => {
     const principal = { accountId: project.account_id, projectId: project.project_id, userId: MEMBER } as AuthedPrincipal;
-    const { exceeded, crossings } = await checkBudget(principal);
+    const { exceeded, crossings } = await checkBudget(principal, 'warn');
     expect(exceeded).toBe(false);
     const gate = new Map((crossings ?? []).map((c) => [c.budgetId, c.spentUsd]));
     const budgets = await readBudgets();

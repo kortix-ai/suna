@@ -1,7 +1,7 @@
 import { rehypeCodeDefaultOptions, remarkMdxMermaid } from 'fumadocs-core/mdx-plugins';
 import { defineConfig, defineDocs, frontmatterSchema } from 'fumadocs-mdx/config';
 import { z } from 'zod';
-import { SHIKI_THEME_DARK, SHIKI_THEME_LIGHT } from './src/lib/code-theme';
+import { SHIKI_THEME_DARK, SHIKI_THEME_LIGHT } from '@kortix/ui/internal/lib/code-theme';
 
 // Frontmatter contract for the use-case / case-study MDX collection. `author`
 // references a key in the author registry (src/lib/blog.ts); the rest is

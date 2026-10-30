@@ -182,6 +182,42 @@ pub fn run(paths: &MemoryPaths, a: UiArgs) -> Result<()> {
     launch(paths, target)
 }
 
+/// A window that did not open, from the Start menu or the tray, has no console to print
+/// to: `logs/ui.log`, and on Windows a message box the person sees.
+pub fn report_failure(paths: &MemoryPaths, err: &anyhow::Error) {
+    use std::io::Write as _;
+    let _ = std::fs::create_dir_all(paths.logs_dir());
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(paths.logs_dir().join("ui.log"))
+    {
+        let _ = writeln!(
+            f,
+            "{} the window did not open: {err:#}",
+            chrono::Utc::now().to_rfc3339()
+        );
+    }
+    #[cfg(all(windows, feature = "capture-engine"))]
+    {
+        use windows::core::HSTRING;
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+        let text = format!(
+            "Kortix Capture could not open its window.\n\n{err:#}\n\nThe window needs the Microsoft Edge WebView2 Runtime. If it is missing, install it from https://go.microsoft.com/fwlink/p/?LinkId=2124703 and open Kortix Capture again.\n\nRecording is not affected. Log: {}",
+            paths.logs_dir().join("ui.log").display()
+        );
+        unsafe {
+            MessageBoxW(
+                HWND::default(),
+                &HSTRING::from(text),
+                &HSTRING::from("Kortix Capture"),
+                MB_OK | MB_ICONERROR,
+            );
+        }
+    }
+}
+
 pub fn open_url(paths: &MemoryPaths, url: &str) -> Result<()> {
     launch(paths, parse_link(url)?)
 }
@@ -254,8 +290,12 @@ mod window {
         }
 
         // The title-bar and taskbar icon (Windows, Linux); macOS uses the app bundle's.
+        #[cfg(windows)]
+        const WINDOW_ICON: &[u8] = include_bytes!("../../assets/icons/windows/app-256.png");
+        #[cfg(not(windows))]
+        const WINDOW_ICON: &[u8] = include_bytes!("../../assets/icons/app-256.png");
         let window_icon = image::load_from_memory_with_format(
-            include_bytes!("../../assets/icons/app-256.png"),
+            WINDOW_ICON,
             image::ImageFormat::Png,
         )
         .ok()
@@ -278,7 +318,23 @@ mod window {
         let close_proxy = proxy.clone();
         let float_proxy = proxy.clone();
         let hash = format!("#{}", urlencoding::encode(&target.to_json().to_string()));
-        let builder = WebViewBuilder::new()
+        // WebView2 keeps its profile next to the exe unless told otherwise. A person cannot
+        // write to Program Files, so the window of an MSI install failed to open.
+        // %LOCALAPPDATA%\Kortix\WebView2: a cache, so not in the roaming library.
+        #[cfg(windows)]
+        let mut web_context = {
+            let dir = crate::config::app_data_directory()
+                .map(|d| d.join("WebView2"))
+                .unwrap_or_else(|_| paths.root.join("WebView2"));
+            std::fs::create_dir_all(&dir)
+                .with_context(|| format!("create the WebView2 folder {}", dir.display()))?;
+            wry::WebContext::new(Some(dir))
+        };
+        #[cfg(windows)]
+        let builder = WebViewBuilder::new_with_web_context(&mut web_context);
+        #[cfg(not(windows))]
+        let builder = WebViewBuilder::new();
+        let builder = builder
             .with_asynchronous_custom_protocol("kmem".into(), move |_id, request, responder| {
                 let ctx = handler_ctx.clone();
                 std::thread::spawn(move || {
@@ -340,6 +396,9 @@ mod window {
         };
 
         event_loop.run(move |event, _, control_flow| {
+            // The WebView2 profile lives as long as the window.
+            #[cfg(windows)]
+            let _ = &web_context;
             *control_flow = ControlFlow::Wait;
             match event {
                 Event::UserEvent(UiEvent::Close)

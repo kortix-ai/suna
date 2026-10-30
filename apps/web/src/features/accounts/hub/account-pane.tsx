@@ -18,14 +18,14 @@
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
+import { Button } from '@kortix/ui/button';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { cn } from '@kortix/ui';
 
-import type { HubTarget } from '@/stores/account-panel-store';
+import type { HubTarget } from '@kortix/ui/internal/stores/account-panel-store';
 
-import { HubLink } from './account-hub-location';
-import type { AccountPaneWidth } from './sections';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
+import type { AccountPaneWidth } from '@kortix/ui/internal/account-hub/sections';
 
 const WIDTH_CLASS: Record<AccountPaneWidth, string> = {
   default: 'max-w-2xl',
@@ -76,8 +76,10 @@ export function AccountPane({
       <div
         className={cn(
           'px-4 pb-12',
-          // Fluid panes run edge to edge with Linear's gutter (~34px).
-          width === 'fluid' ? 'sm:px-9' : 'sm:px-12',
+          // `sm:px-12` on every pane. A fluid table hangs its select gutter
+          // and hover fill `9` steps outside the content edge (`member-table.tsx`);
+          // `px-9` left nothing between that fill and the sidebar border.
+          'sm:px-12',
           back ? 'md:pt-12' : 'pt-12',
         )}
       >

@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 // Self-host: one coherent "managed-git" setup card covering all three ways
 // to configure it — create a GitHub App in-app (manifest flow, recommended),
 // paste in credentials for an App that already exists, or a personal/
@@ -55,20 +55,20 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useId, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { Github } from '@/features/icon/icons/github';
-import { ErrorState } from '@/features/layout/section/error-state';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { Disclosure, DisclosureContent } from '@kortix/ui/disclosure';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
+import { RadioGroup, RadioGroupItem } from '@kortix/ui/radio-group';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Textarea } from '@kortix/ui/textarea';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { Github } from '@kortix/ui/internal/icons/github';
+import { ErrorState } from '@kortix/ui/error-state';
 import {
   type GitHubAppStatus,
   disconnectGitHubApp,

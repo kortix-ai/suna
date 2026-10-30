@@ -124,6 +124,16 @@ describe('standalone gateway inference routes', () => {
     let providerBytes = 0;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      // An API that serves the one-call admission.
+      if (url.endsWith('/internal/gateway/admit')) {
+        return Response.json({
+          admission: { ok: true, principal: { userId: 'u', accountId: 'a' } },
+          route: { policyId: 'direct', primaryModel: 'large-model' },
+          candidates: [
+            { provider: 'mock', kind: 'openai-compat', baseUrl: 'https://provider.test/v1', apiKey: 'key', billingMode: 'none', markup: 0 },
+          ],
+        });
+      }
       if (url.endsWith('/internal/gateway/authorize')) {
         return Response.json({ ok: true, principal: { userId: 'u', accountId: 'a' } });
       }
@@ -284,6 +294,8 @@ describe('standalone chat and messages admission', () => {
     const { app, inflightRequests } = buildServer({ inflight });
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
+      // An older API without the one-call admission: the gateway uses the separate calls.
+      if (url.endsWith('/internal/gateway/admit')) return Response.json({ error: 'not found' }, { status: 404 });
       if (url.endsWith('/internal/gateway/authorize')) return Response.json({ ok: true, principal: { userId: 'u', accountId: 'a' } });
       if (url.endsWith('/internal/gateway/resolve-route')) return Response.json({ route: { policyId: 'direct', primaryModel: 'x' } });
       if (url.endsWith('/internal/gateway/resolve-upstream')) return Response.json({ candidates: [{ provider: 'mock', kind: 'openai-compat', baseUrl: 'https://provider.test/v1', apiKey: 'key', billingMode: 'none', markup: 0 }] });
@@ -303,5 +315,65 @@ describe('standalone chat and messages admission', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+});
+
+describe('public discovery without credentials', () => {
+  const { app } = buildServer();
+  for (const path of ['/.well-known/security.txt', '/robots.txt', '/sitemap.xml']) {
+    test(path, async () => {
+      const res = await app.request(path);
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(text).not.toContain('/admin');
+      if (path.endsWith('security.txt')) expect(text).toContain('Contact: mailto:security@kortix.com');
+      if (path === '/sitemap.xml') expect(text).not.toContain('<loc>');
+    });
+  }
+});
+
+const { registerRoutes } = await import('./routes');
+const { Hono } = await import('hono');
+
+describe('standalone image routes', () => {
+  function imageApp(inflight = new InflightBudget({ maxBytes: 1024 * 1024, perRequestMaxBytes: 1024 * 1024, amplification: 1 })) {
+    const calls: { authorization: string | undefined; rawBody: string; operation: string }[] = [];
+    const unused = async (): Promise<Response> => { throw new Error('not an image route'); };
+    const app = new Hono();
+    registerRoutes(app, {
+      chatCompletions: unused, messages: unused, responses: unused, listModels: unused,
+      images: async (request) => {
+        calls.push({ authorization: request.authorization, rawBody: request.rawBody, operation: request.operation });
+        return Response.json({ data: [{ b64_json: 'AAAA' }] });
+      },
+    }, inflight, () => {});
+    return { app, calls, inflight };
+  }
+
+  test('POST /v1/images/generations reaches gateway.images with operation generations', async () => {
+    const { app, calls, inflight } = imageApp();
+    const body = JSON.stringify({ model: 'codex/gpt-image-2', prompt: 'a red cube' });
+    const res = await app.request('/v1/images/generations', {
+      method: 'POST', headers: { authorization: 'Bearer token', 'content-type': 'application/json' }, body,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toHaveProperty('data.0.b64_json', 'AAAA');
+    expect(calls).toEqual([{ authorization: 'Bearer token', rawBody: body, operation: 'generations' }]);
+    expect(inflight.inflightBytes).toBe(0);
+    for (const path of ['/images/edits', '/v1/llm/images/edits', '/v1/openai/images/generations']) {
+      expect((await app.request(path, { method: 'POST', body })).status).toBe(200);
+    }
+    expect(calls.map((call) => call.operation)).toEqual(['generations', 'edits', 'edits', 'generations']);
+  });
+
+  test('an oversized image body is 413 before gateway.images runs', async () => {
+    const { app, calls, inflight } = imageApp(new InflightBudget({ maxBytes: 1024, perRequestMaxBytes: 1024, amplification: 1 }));
+    const res = await app.request('/v1/images/edits', {
+      method: 'POST', headers: { 'content-length': '1025' }, body: 'x'.repeat(1025),
+    });
+    expect(res.status).toBe(413);
+    expect((await res.json()) as Record<string, unknown>).toHaveProperty('code', 'request_too_large');
+    expect(calls).toHaveLength(0);
+    expect(inflight.inflightBytes).toBe(0);
   });
 });

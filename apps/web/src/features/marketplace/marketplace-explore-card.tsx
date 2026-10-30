@@ -4,9 +4,9 @@ import { useTranslations } from '@/i18n/use-translations';
 import { CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
 import Link from 'next/link';
 
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
 import { useMarketplaceSurface } from './marketplace-surface';
 

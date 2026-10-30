@@ -23,6 +23,7 @@ const execFileAsync = promisify(execFile)
  * Image-baked, fully-installed copy of the OpenCode config-dir dependencies.
  * Produced by the snapshot Dockerfile (see `dockerfile-layer.ts`) so we can
  * satisfy the config dir's node_modules at boot with zero network work.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const OPENCODE_CONFIG_DEPS_DIR = '/opt/kortix/opencode-config-deps'
 const BAKED_DEPS_DIR = OPENCODE_CONFIG_DEPS_DIR
@@ -279,6 +280,7 @@ async function installStaged(stagingDir: string, install: InstallDeps, platformO
  * Customized configs keep the normal installer.
  *
  * Never throws: a failure here means OpenCode falls back to its self-install.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function ensureOpencodeConfigDeps(
   configDir: string,

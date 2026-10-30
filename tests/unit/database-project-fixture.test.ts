@@ -31,7 +31,7 @@ function env(overrides: Partial<Env> = {}): Env {
     liveConfirm: "ci",
     target: "staging",
     capabilities: {
-      daytona: true,
+      sandbox: true,
       managedGit: true,
       managedGitPush: false,
       stripe: false,

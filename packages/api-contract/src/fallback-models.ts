@@ -1,8 +1,8 @@
 /**
  * The model fallback table OpenCode's `kortix` provider falls back to inside
- * the sandbox, and its managed subset. Data only, with no imports: kortixd
- * bundles it, and apps/api keeps the managed lineup and this fallback in sync
- * (llm-gateway/models/managed-fallback-sync.test.ts).
+ * the sandbox. Data only, with no imports: kortixd bundles it. It holds no
+ * Kortix managed model: those come only from the API, which reads them from
+ * Platinum Inference.
  */
 
 /**
@@ -10,6 +10,7 @@
  * (`OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX`). OpenCode clamps to 32,000 by
  * default; a clamp below a managed model's `limit.output` cuts a large file
  * write at finish_reason "length" and the tool never runs.
+ * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
  */
 export const MANAGED_OPENCODE_OUTPUT_TOKEN_MAX = 65_536
 // One `reasoning_options` entry (models.dev's shape, mirrored — see
@@ -72,129 +73,3 @@ export type KortixGatewayModel = {
   open_weights?: boolean
   last_updated?: string
 }
-
-export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
-  'deepseek-v4.1-flash': {
-    name: 'DeepSeek V4.1 Flash', provider: 'kortix', reasoning: true, tool_call: true,
-    attachment: true, temperature: true, modalities: { input: ['text', 'image'], output: ['text'] },
-    reasoning_options: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
-    limit: { context: 1_000_000, output: 65_536 }, cost: { input: 0.2, output: 0.65, cache_read: 0.03 },
-  },
-  'glm-5.3-flash': {
-    name: 'GLM 5.3 Flash', provider: 'kortix', reasoning: true, tool_call: true,
-    attachment: true, temperature: true, modalities: { input: ['text', 'image'], output: ['text'] },
-    reasoning_options: [{ type: 'effort', values: ['low', 'high', 'max'] }],
-    limit: { context: 1_000_000, output: 65_536 }, cost: { input: 0.15, output: 0.5, cache_read: 0.05 },
-  },
-  'kimi-k3': {
-    name: 'Kimi K3 2.8T', provider: 'kortix', reasoning: true, tool_call: true,
-    attachment: true, temperature: true, modalities: { input: ['text', 'image'], output: ['text'] },
-    reasoning_options: [{ type: 'effort', values: ['low', 'high', 'max'] }],
-    limit: { context: 1_000_000, output: 65_536 }, cost: { input: 3.3, output: 16.5, cache_read: 0.33 },
-  },
-  'openai/gpt-5.5': {
-    name: 'GPT-5.5',
-    provider: 'openai',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    // models.dev: false — OpenAI reasoning models (gpt-5.x) reject a
-    // client-sent `temperature`, so advertising support here would make
-    // OpenCode send one and 400 the turn whenever this fallback catalog is
-    // in effect. Must match capabilitiesOf() in the served catalog
-    // (apps/api/src/llm-gateway/models/catalog-models.ts).
-    temperature: false,
-    limit: { context: 1_050_000, output: 64_000 },
-  },
-  'google/gemini-3.5-flash': {
-    name: 'Gemini 3.5 Flash',
-    provider: 'google',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 65_536 },
-  },
-  'google/gemini-3.1-pro-preview': {
-    name: 'Gemini 3.1 Pro',
-    provider: 'google',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 65_536 },
-  },
-  'deepseek/deepseek-v4-flash': {
-    name: 'DeepSeek V4 Flash',
-    provider: 'deepseek',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'deepseek/deepseek-v4-pro': {
-    name: 'DeepSeek V4 Pro',
-    provider: 'deepseek',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'minimax/minimax-m3': {
-    name: 'MiniMax M3',
-    provider: 'minimax',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'moonshotai/kimi-k2.6': {
-    name: 'Kimi K2.6',
-    provider: 'moonshotai',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 262_144, output: 64_000 },
-  },
-  'z-ai/glm-5.1': {
-    name: 'GLM 5.1',
-    provider: 'z-ai',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 202_752, output: 64_000 },
-  },
-  'x-ai/grok-4.3': {
-    name: 'Grok 4.3',
-    // models.dev's real provider id is 'xai' (no hyphen) — matches
-    // @kortix/llm-catalog's PROVIDER_LABELS key and gatewayModelsAll's
-    // `provider` field. The model-id PREFIX here ('x-ai/...') is just this
-    // fallback table's own key convention and is left alone; only the
-    // `provider` value (what the picker actually groups/labels by) must
-    // match models.dev's real id or the picker mislabels/falls back to
-    // "Kortix" for this entry.
-    provider: 'xai',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_000_000, output: 64_000 },
-  },
-}
-
-/** The managed subset of the bundled fallback table: bare ids branded `kortix`.
- *  Used when the live managed fetch is unavailable, so a managed model is
- *  present in OpenCode's provider map even with a stale baked catalog AND a
- *  down gateway. Kept in sync with @kortix/llm-catalog MANAGED_MODELS by
- *  apps/api/src/llm-gateway/models/managed-fallback-sync.test.ts — a managed model missing here and
- *  missing from the baked image is the exact 2026-08-19 ModelNotFound outage. */
-export const BUNDLED_MANAGED_MODELS: Record<string, KortixGatewayModel> = Object.fromEntries(
-  Object.entries(MINIMAL_FALLBACK_MODELS).filter(
-    ([id, model]) => !id.includes('/') && model.provider === 'kortix',
-  ),
-)

@@ -1,0 +1,112 @@
+'use client';
+
+import { Button } from '../../primitives/button';
+import Hint from '../../primitives/hint';
+import Loading from '../../primitives/loading';
+import { ArchiveIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
+import { useTranslations } from '../../i18n';
+
+export function SessionsSelectionBar({
+  selectedCount,
+  selectableCount,
+  allSelected,
+  onSelectAll,
+  onClearSelection,
+  onExit,
+  onDelete,
+  deleting,
+  onArchive,
+  archiveLabel,
+  archiving = false,
+}: {
+  selectedCount: number;
+  /** Deletable sessions in the CURRENT filtered view, not the whole project. */
+  selectableCount: number;
+  allSelected: boolean;
+  onSelectAll: () => void;
+  onClearSelection: () => void;
+  onExit: () => void;
+  onDelete: () => void;
+  deleting: boolean;
+  /** Archive or unarchive the selection in the viewer's own list (KRTX-2418). */
+  onArchive?: () => void;
+  archiveLabel?: string;
+  archiving?: boolean;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const busy = deleting || archiving;
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-sm font-medium tabular-nums" aria-live="polite">
+        {selectedCount} {tI18nComplete.raw('textd7cbbb688b2e')}
+      </span>
+
+      <div className="ml-auto flex items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={allSelected ? onClearSelection : onSelectAll}
+          disabled={busy || selectableCount === 0}
+          className="h-8 transition-[scale] duration-150 active:scale-[0.96]"
+        >
+          {allSelected
+            ? tI18nComplete.raw('text83b12c2216ef')
+            : tI18nComplete.raw('text1fc9a387654d')}
+        </Button>
+
+        {selectedCount > 0 && onArchive && archiveLabel ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onArchive}
+            disabled={busy}
+            aria-busy={archiving}
+            className="h-8 gap-1.5 transition-[scale] duration-normal active:scale-[0.96]"
+          >
+            {archiving ? (
+              <Loading className="size-3.5 shrink-0" />
+            ) : (
+              <ArchiveIcon className="size-3.5 shrink-0" />
+            )}
+            {archiveLabel} {selectedCount}
+          </Button>
+        ) : null}
+
+        {selectedCount > 0 && (
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={onDelete}
+            disabled={busy || selectedCount === 0}
+            aria-busy={deleting}
+            className="h-8 gap-1.5 transition-[scale] duration-150 active:scale-[0.96]"
+          >
+            {deleting ? (
+              <Loading className="size-3.5 shrink-0" />
+            ) : (
+              <TrashIcon className="size-3.5 shrink-0" />
+            )}
+            {tI18nComplete.raw('texte2d0a54968ea')} {selectedCount > 0 ? selectedCount : ''}
+          </Button>
+        )}
+
+        <Hint label={tI18nComplete.raw('text22206bc67806')} side="bottom">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={tI18nComplete.raw('text22206bc67806')}
+            onClick={onExit}
+            disabled={busy}
+            className="size-8 transition-[scale] duration-150 active:scale-[0.96]"
+          >
+            <XIcon className="size-4 shrink-0" />
+          </Button>
+        </Hint>
+      </div>
+    </div>
+  );
+}

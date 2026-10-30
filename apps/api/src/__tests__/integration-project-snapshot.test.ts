@@ -22,7 +22,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { and, eq, lte, sql } from 'drizzle-orm';
 import { CreateBucketCommand, DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
 import { accounts, projectGitConnections, projectSnapshotArchives, projects } from '@kortix/db';
 import { db } from '../shared/db';
@@ -139,10 +139,23 @@ afterAll(async () => {
 
 async function drainWorker(maxPasses = 5): Promise<Awaited<ReturnType<typeof runProjectSnapshotWorkerOnce>>> {
   const all: Awaited<ReturnType<typeof runProjectSnapshotWorkerOnce>> = [];
-  for (let i = 0; i < maxPasses; i += 1) {
+  for (let pass = 0, waits = 0; pass < maxPasses; ) {
     const processed = await runProjectSnapshotWorkerOnce(WORKER, 10);
     all.push(...processed);
-    if (processed.length === 0) break;
+    if (processed.length > 0) {
+      pass += 1;
+      continue;
+    }
+    // An empty pass with a row still due: a cache miss's background enqueue
+    // (ON CONFLICT DO UPDATE locks the row) held it, and the claim skips a
+    // locked row. Let that statement commit, then claim again (up to 2 s).
+    const [due] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(projectSnapshotArchives)
+      .where(and(eq(projectSnapshotArchives.status, 'queued'), lte(projectSnapshotArchives.nextAttemptAt, sql`now()`)));
+    if (!due?.n || waits >= 40) break;
+    waits += 1;
+    await new Promise((r) => setTimeout(r, 50));
   }
   return all;
 }

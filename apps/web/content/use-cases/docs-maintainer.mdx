@@ -51,54 +51,122 @@ Nothing publishes without a human merge.
 ## How it works
 
 <Steps>
-<Step title="Connect GitHub as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires once a day and resumes the same persistent
-**session** rather than spinning up a new one per merge. The session reads a
-checkpoint left by the previous run, then pulls every commit that landed on
-the default branch since that checkpoint — however many merges that turns out
-to be. Each affected doc page is handled as its own unit of work, so a problem
-with one page never blocks the rest of the sweep. One sweep, one PR, and the
-checkpoint advances at the end whether or not anything changed.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the docs sync skill and the daily trigger,
+and opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent the codebase and the docs standard">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a daily docs maintainer agent in this project.
 
-Our writing conventions are stored as **skills** and **memory** that load into
-every session: how the docs are structured, the terminology we use, which page
-covers which subject, and fixes that worked before. The agent writes to that
-standard rather than inventing one, and it updates as docs PRs get merged.
+1. Create the agent agents/docs-maintainer.md. Its job is to keep the docs in owner/repo accurate to the code. It may use the GitHub connector and open pull requests.
 
-</Step>
-<Step title="Connect what a docs update can touch">
+2. Create the skill skills/docs-sync/SKILL.md with these rules:
+   - Read the last checkpoint commit from memory/docs-sync-log.md, then read every commit that landed since then.
+   - Read the changed code in full, not only the diff.
+   - Find every page under docs/ and every README that the change made wrong. Update only the affected section.
+   - Docs and READMEs are the only files you edit. If the code looks wrong, log it for a person. Never change code.
+   - Group the day's changes into one pull request, with the commit that prompted each one. Never merge it.
+   - If nothing doc-visible changed, move the checkpoint forward and stop without a pull request.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger daily-docs-sync to kortix.yaml. It runs the docs-maintainer agent every day at 06:00 with the prompt "Load the docs-sync skill and run one docs sync pass on owner/repo."
 
-- **Read the diff and the codebase** — it sees what changed, then reads the
-  surrounding code to understand intent, not just the delta.
-- **Search the docs** — it finds every page, README, and reference section that
-  mentions the changed behavior.
-- **Open a PR on GitHub** — the rewritten docs come back as a reviewable pull
-  request, linked to the change that prompted it.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent never pushes to a branch anyone reads from: every change lands as a
-**pull request** gated on a human merge. It edits only files under the docs and
-README paths; the code itself is read-only to it. Credentials are encrypted in
-the secrets manager and injected at runtime, scoped to the agents you grant them to or written
-to logs.
+Open **Connectors** in your project and connect GitHub. Credentials are brokered server-side and never enter the agent's machine.
+Add a GitHub token as the `GH_TOKEN` secret so the agent can open the pull
+request.
+
+<ToolList>
+  <ToolNeed name="GitHub" domain="github.com" tag="Required" alternatives={[['GitLab', 'gitlab.com'], ['Bitbucket', 'bitbucket.org']]}>
+    Reads new commits and opens one PR with the doc updates.
+  </ToolNeed>
+  <ToolNeed name="Mintlify" domain="mintlify.com" tag="Optional" alternatives={[['GitBook', 'gitbook.com'], ['ReadMe', 'readme.com']]}>
+    Publishes the docs once a person merges the PR.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Let each merge update the affected docs">
+<Step title="Run it once with this prompt">
 
-With that in place, each day's sweep triages what changed since the last
-checkpoint, finds the pages that drifted, rewrites them to match, and opens a
-docs PR with its reasoning attached. A renamed env var becomes an update to the
-setup guide. A new endpoint becomes a reference entry drafted from the actual
-handler. A removed feature becomes a PR that strips the stale section.
+Merge the change request, then start a session with the **docs-maintainer** agent
+and send this prompt. Read the pull request before you let the
+schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one docs sync pass on owner/repo.
+
+1. Read the checkpoint in memory/docs-sync-log.md and list the commits since then.
+2. For each commit, read the changed code and note what behavior changed.
+3. Search docs/ and every README for text that no longer matches the code.
+4. Update only those sections, in the style the docs already use.
+5. Open one pull request with the commit and the reason for each change. Do not merge it.
+6. Move the checkpoint to the newest commit you read.`}
+/>
+
+</Step>
+<Step title="Let the daily schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every day at 06:00, each run in a new session on its own cloud computer.
+The checkpoint in memory tells each run where the last one stopped.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: daily-docs-sync
+    name: Daily docs sync
+    on:
+      cron: "0 0 6 * * *"
+    run:
+      agent: docs-maintainer
+      prompt: Load the docs-sync skill and run one docs sync pass on owner/repo.`}
+/>
+
+</Step>
+<Step title="Edit only docs, through a pull request">
+
+The agent edits only files under the docs path and README files. The rest of
+the code is read-only to it. When the code itself looks wrong, it logs the
+problem for a person instead of changing it. A person reviews the pull request
+and merges it.
+
+</Step>
+<Step title="Review the pull request">
+
+Each run ends with one docs pull request, or none when nothing drifted. This is
+what a run looks like in the session:
+
+<ExampleRun
+  title="Daily docs sync · 06:00"
+  message="Load the docs-sync skill and run one docs sync pass on owner/repo."
+  worked="Worked for 5m 09s"
+  tools={[
+    'github · list commits',
+    'github · read file × 11',
+    'github · search code',
+    'github · create branch',
+    'github · open pull request',
+  ]}
+  note="Illustrative example. Your commits and pages differ."
+>
+  Read **9** commits since the last checkpoint. **3** changed documented
+  behavior: a renamed env var, a new API endpoint and a removed CLI flag.
+  Updated **4** pages in one pull request, and the checkpoint moved to the
+  newest commit.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -109,6 +177,25 @@ handler. A removed feature becomes a PR that strips the stale section.
   standard as **skills** and **memory**, and gate every change behind a reviewed
   **PR**.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Draft missing pages"
+  code="When a commit adds a public endpoint or command with no doc page, draft a new page for it in the same pull request."
+/>
+
+<CopyBlock
+  title="Check code samples"
+  code="Run every code sample in the pages you change, and fix the sample when its output no longer matches the text."
+/>
+
+<CopyBlock
+  title="Find quiet drift"
+  code="Every Friday, list the doc pages that have not changed in 6 months but describe code that changed since then."
+/>
 
 ## Guardrails
 

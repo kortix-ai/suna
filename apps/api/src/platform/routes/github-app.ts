@@ -66,6 +66,7 @@ import {
   resolveInstanceGitMutability,
 } from '../services/instance-git-mutability';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 export const githubAppSetupRouter = makeOpenApiApp<AppEnv>();
 
@@ -522,6 +523,7 @@ githubAppSetupRouter.openapi(
 
       return c.json({ github_create_url: githubCreateUrl, manifest, state });
     } catch (err) {
+      rethrowDatabaseError(err);
       return c.json(
         { error: true, message: err instanceof Error ? err.message : String(err), status: 500 },
         500,
@@ -1167,6 +1169,7 @@ githubAppSetupRouter.openapi(
       owner = verified.owner;
       ownerType = verified.ownerType;
     } catch (err) {
+      rethrowDatabaseError(err);
       return c.json(
         { error: true, message: err instanceof Error ? err.message : String(err), status: 400 },
         400,
@@ -1324,6 +1327,7 @@ githubAppSetupRouter.openapi(
     try {
       verdict = await verifyRepoAdminToken(token, owner);
     } catch (err) {
+      rethrowDatabaseError(err);
       return c.json(
         {
           error: true,
@@ -1374,6 +1378,7 @@ githubAppSetupRouter.openapi(
       resetManagedGithubAppInstallationHealthCache();
       return c.json({ ok: true as const });
     } catch (err) {
+      rethrowDatabaseError(err);
       return c.json(
         { error: true, message: err instanceof Error ? err.message : String(err), status: 500 },
         500,

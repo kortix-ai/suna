@@ -50,6 +50,14 @@ export const TEAMS_START_ERROR_COMMANDS: StartErrorCommands = {
   login: '`/login`',
 };
 
+/** Plain text: Telegram replies carry no markup. `/status` shows the chat's settings; the project and the login live in Kortix. */
+export const TELEGRAM_START_ERROR_COMMANDS: StartErrorCommands = {
+  surface: 'chat',
+  settings: '/status',
+  switchProject: 'Channels → Telegram in the Kortix project',
+  login: 'Channels → Telegram in the Kortix project',
+};
+
 export function startErrorMessage(
   status: number | undefined,
   body: unknown,

@@ -43,7 +43,9 @@ import {
   getPermissionForTool,
   getRetryInfo,
   getRetryMessage,
+  sessionLogImageGenRuns,
   shouldShowToolPart,
+  showDrawnByImageGen,
   type SessionLogTurn,
 } from '@kortix/sdk';
 import type { PermissionRequest, QuestionRequest, SessionStatus } from '@/lib/session/types';
@@ -53,8 +55,11 @@ import {
   answeredQuestionCalls,
   commandPromptText,
   compactionTurnView,
+  imageDigestsDrawnByImageGen,
+  imagePathsDrawnByImageGen,
   inlineContentItems,
-  lastTextBlockId,
+  isOpenTextBlock,
+  liveTextBlockId,
   segmentInputBlocks,
   showTurnActions,
   showTurnBusyIndicator,
@@ -66,6 +71,7 @@ import {
   turnHasSteps,
   turnBodyLayout,
   turnResponse,
+  textBlockRevealKey,
   turnSegments,
   turnWorkSplit,
   type TurnSegment,
@@ -77,7 +83,12 @@ import { webSpace, type MessageAttachment, type QueuedPromptState } from '@/lib/
 import { SessionBusyIndicator, useTurnBusyStatus } from './session-busy-indicator';
 import { SessionRetryDisplay, useRetrySecondsLeft } from './session-retry-display';
 import { TurnErrorDisplay } from './SessionErrorBanner';
-import { TurnLiveContext } from './tool/shared/infrastructure';
+import {
+  ImageGenDigestsContext,
+  ImageGenPathsContext,
+  ImageGenRunsContext,
+  TurnLiveContext,
+} from './tool/shared/infrastructure';
 import { ToolPartRenderer, type PermissionReply } from './tool/tool-part-renderer';
 import './tool/tools/register';
 import { ActivityBurst } from './turn/activity-burst';
@@ -226,7 +237,30 @@ function SessionTurnImpl({
     () => turnSegments(segmentInputBlocks(blocks, answeredById, showInlineContent), standaloneCallIds),
     [blocks, answeredById, showInlineContent, standaloneCallIds],
   );
-  const streamingTextId = useMemo(() => (working ? lastTextBlockId(segments) : undefined), [working, segments]);
+  // KRTX-2933: only the part that can still grow streams. A reply that ended
+  // while the session still reads busy renders at once.
+  const streamingTextId = useMemo(
+    () => (working ? liveTextBlockId(turn.assistant, segments) : undefined),
+    [working, turn.assistant, segments],
+  );
+  // A `show` of an image this turn's `image_gen` already drew does not draw it again.
+  // Keyed by its content so the context keeps one identity across stream frames.
+  const imageGenPathsKey = useMemo(() => [...imagePathsDrawnByImageGen(segments)].join('\n'), [segments]);
+  const imageGenPaths = useMemo(
+    () => new Set(imageGenPathsKey ? imageGenPathsKey.split('\n') : []),
+    [imageGenPathsKey],
+  );
+  // R38: the same bytes at another path (a Drive copy) count too, by sha256.
+  const imageGenDigestsKey = useMemo(() => [...imageDigestsDrawnByImageGen(segments)].join('\n'), [segments]);
+  const imageGenDigests = useMemo(
+    () => new Set(imageGenDigestsKey ? imageGenDigestsKey.split('\n') : []),
+    [imageGenDigestsKey],
+  );
+  // R38: consecutive image_gen deliverables draw as one grid at the first call, live and settled.
+  const imageGenRuns = useMemo(
+    () => sessionLogImageGenRuns(segments, { paths: imageGenPaths, digests: imageGenDigests }),
+    [segments, imageGenPaths, imageGenDigests],
+  );
   // KRTX-2113: settled, the work folds behind one "Worked for" row; `null` while working.
   const workSplit = useMemo(() => turnWorkSplit(segments, working), [segments, working]);
   const durationMs = useMemo(() => (workSplit ? turnDurationMs(turn) : null), [workSplit, turn]);
@@ -349,7 +383,7 @@ function SessionTurnImpl({
     hasSteps,
     hasAssistantContent,
     showInlineContent,
-    isCommand: !!commandForTurn,
+    isCommand: !!commandForTurn && commandForTurn.source !== 'skill',
   });
 
   // 2. Segments
@@ -379,6 +413,11 @@ function SessionTurnImpl({
       }
       if (segment.kind === 'standalone') {
         if (!shouldShowToolPart(segment.block)) return null;
+        // A `show` whose every file is an image drawn above renders nothing, not even the row.
+        if (showDrawnByImageGen(segment.block, imageGenPaths, imageGenDigests)) return null;
+        // A later call of an image_gen run draws in the first call's grid (R38).
+        const run = imageGenRuns.get(segment.block.id);
+        if (run && run[0] !== segment.block) return null;
         return (
           <LoopMotionContext.Provider key={segment.block.id} value={shimmerSegment}>
             <ToolPartRenderer
@@ -400,6 +439,7 @@ function SessionTurnImpl({
           text={text}
           isDark={isDark}
           isStreaming={segment.block.id === streamingTextId}
+          revealKey={textBlockRevealKey(turn.assistant, segment.block.id)}
         />
       );
     };
@@ -411,6 +451,9 @@ function SessionTurnImpl({
     const split = layout.text === 'segments' ? workSplit : null;
     body.push(
       <TurnLiveContext.Provider key="segments" value={working}>
+       <ImageGenPathsContext.Provider value={imageGenPaths}>
+       <ImageGenDigestsContext.Provider value={imageGenDigests}>
+       <ImageGenRunsContext.Provider value={imageGenRuns}>
         <View style={{ gap: SEGMENT_STACK_GAP }}>
           {split
             ? [
@@ -421,6 +464,9 @@ function SessionTurnImpl({
               ]
             : segments.map((segment) => renderSegment(segment))}
         </View>
+       </ImageGenRunsContext.Provider>
+       </ImageGenDigestsContext.Provider>
+       </ImageGenPathsContext.Provider>
       </TurnLiveContext.Provider>,
     );
   }
@@ -429,10 +475,11 @@ function SessionTurnImpl({
   // A slash-command reply streams in its card with the chrome off. The
   // streaming and the finished card share the key "response", so the reply
   // keeps its views when the turn ends instead of remounting.
-  if (layout.text === 'response' && commandForTurn && response) {
+  // A pi skill answers like any chat turn: no command card.
+  if (layout.text === 'response' && commandForTurn && commandForTurn.source !== 'skill' && response) {
     body.push(
       <CommandOutputCard key="response" name={commandForTurn.name} chrome={!working}>
-        <TextPartBlock text={response} isDark={isDark} isStreaming={working} />
+        <TextPartBlock text={response} isDark={isDark} isStreaming={working} revealKey={`${turn.id}:response`} />
       </CommandOutputCard>,
     );
   }
@@ -453,9 +500,17 @@ function SessionTurnImpl({
         <View style={{ gap: SEGMENT_STACK_GAP }}>
           {inlineItems.map((item, index) => {
             if (item.type === 'text') {
-              const streaming = index === lastTextIndex;
+              const streaming = index === lastTextIndex && isOpenTextBlock(turn.assistant, item.block.id);
               const text = streaming ? item.block.text : item.block.text.trim();
-              return <TextPartBlock key={item.id} text={text} isDark={isDark} isStreaming={streaming} />;
+              return (
+                <TextPartBlock
+                  key={item.id}
+                  text={text}
+                  isDark={isDark}
+                  isStreaming={streaming}
+                  revealKey={textBlockRevealKey(turn.assistant, item.block.id)}
+                />
+              );
             }
             return <ToolPartRenderer key={item.id} call={item.call} sessionId={sessionId} turnLive={working} />;
           })}

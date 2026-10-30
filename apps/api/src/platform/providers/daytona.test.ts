@@ -18,6 +18,7 @@ mock.module('../../config', () => ({
     KORTIX_URL: 'https://api.example.com',
   },
   SANDBOX_VERSION: 'test-version',
+  KNOWN_PROVIDERS: ['platinum', 'daytona'],
 }));
 
 mock.module('../../shared/db', () => ({ db: {} }));

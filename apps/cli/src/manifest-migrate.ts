@@ -23,6 +23,7 @@ import {
   KORTIX_TOOL_NAMES,
   REGISTRY_NAME_RE,
   kortixToolRef,
+  selectedKortixTools,
   serializeManifestObject,
   validateManifest,
   type ManifestIssue,
@@ -54,7 +55,7 @@ export interface MigrationPlan {
 
 const BEHAVIOR_KEYS = ['description', 'mode', 'model', 'variant', 'temperature', 'top_p', 'steps', 'options', 'color', 'hidden'];
 const KEEP_KEYS = ['enabled', 'connectors', 'connectors_required', 'secrets', 'apps', 'kortix_permissions', 'workspace', 'sandbox', 'network_egress'];
-const TOP_LEVEL_ORDER = ['kortix_version', 'project', 'default_agent', 'runtime', 'imports', 'env', 'sandbox', 'skills', 'tools', 'commands', 'extensions', 'connectors', 'apps', 'policy', 'policies', 'agents', 'triggers'];
+const TOP_LEVEL_ORDER = ['kortix_version', 'project', 'default_agent', 'runtime', 'imports', 'env', 'sandbox', 'skills', 'tools', 'commands', 'extensions', 'connectors', 'apps', 'policy', 'policies', 'approvals', 'agents', 'triggers'];
 const AGENT_ORDER = [...BEHAVIOR_KEYS, 'prompt_file', 'permission', 'enabled', 'tools', 'skills', 'subagents', 'commands', 'extensions', 'codemode', 'connectors', 'connectors_required', 'secrets', 'apps', 'kortix_permissions', 'workspace', 'sandbox', 'network_egress'];
 
 const table = (value: unknown): Table | null =>
@@ -292,7 +293,7 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
   // Tools: project modules stay; the Kortix tools v2 left out become a per-agent exclude.
   const toolMap = table(raw.tools);
   const tools = toolMap ? Object.fromEntries(Object.entries(toolMap).filter(([, value]) => kortixToolRef(value) === null)) : {};
-  const removedTools = toolMap ? KORTIX_TOOL_NAMES.filter((name) => !Object.hasOwn(toolMap, name)) : [];
+  const removedTools = toolMap ? KORTIX_TOOL_NAMES.filter((name) => !selectedKortixTools(toolMap).includes(name)) : [];
 
   // Agents.
   const codemodeTop = table(harnesses.pi)?.codemode;
@@ -356,7 +357,7 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
     TOP_LEVEL_ORDER,
   );
   const manifest = renderManifest(next);
-  changes.unshift({ path: manifestPath, action: 'rewrite', note: 'kortix_version 2 → 3: agents inline, registries, per-agent grants', content: manifest });
+  changes.unshift({ path: manifestPath, action: 'rewrite', note: 'kortix_version 3: agents inline, registries, per-agent grants', content: manifest });
   const issues = validateManifest(manifest, 'yaml').issues;
   return { manifest, next, changes, dropped, issues, valid: !issues.some((issue) => issue.severity === 'error') };
 }

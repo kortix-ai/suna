@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
 
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { DEFAULT_WALLPAPER_ID, getWallpaperById, type Wallpaper } from '@/lib/wallpapers';
+import { DEFAULT_WALLPAPER_ID, getWallpaperById, type Wallpaper } from '@kortix/ui/theme';
 
 /**
  * /debug/wallpaper — the full-bleed render harness the wallpaper exporter
@@ -19,7 +19,7 @@ import { DEFAULT_WALLPAPER_ID, getWallpaperById, type Wallpaper } from '@/lib/wa
  * no chrome, nothing else on the page.
  *
  * Query params:
- *   id     — wallpaper id from `@/lib/wallpapers` (default: the app default)
+ *   id     — wallpaper id from `@kortix/ui/theme/wallpapers` (default: the app default)
  *   theme  — `light` | `dark` (default: dark)
  *   px     — Paper Shader pixel cap; the exporter passes width*height so the
  *            canvas renders at true size instead of the 2 MP app cap

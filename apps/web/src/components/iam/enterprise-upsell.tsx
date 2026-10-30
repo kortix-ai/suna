@@ -20,14 +20,14 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { CheckIcon as Check } from '@phosphor-icons/react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
 import { useEnterpriseDemo, useTalkToSales } from '@/features/billing/use-enterprise-sales';
-import { useAccountState } from '@/hooks/billing';
-import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { cn } from '@/lib/utils';
+import { useAccountState } from '@kortix/ui/internal/billing/index';
+import { APP_REGISTRY_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/app-registry-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { cn } from '@kortix/ui';
 import { canManageBilling } from '@kortix/sdk';
 
 type UpsellFeature = 'groups' | 'audit' | 'identity' | 'branding' | 'roles';

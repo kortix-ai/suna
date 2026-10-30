@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { deployOrder } from '../commands/apps-capabilities';
+import { deployOrder, deployableBlocks } from '../commands/apps-capabilities';
 
 // Black-box tests of `kortix apps` for capabilities and links: the real CLI
 // process against a fake Kortix API holding two Apps (site, db). Synthetic ids
@@ -409,5 +409,16 @@ describe('kortix apps — capabilities and links', () => {
     ]);
     const records = calls.filter((c) => c.method === 'POST' && c.path.endsWith('/deployments')).map((c) => c.path);
     expect(records).toEqual([`/v1/projects/${PROJECT}/apps/${DB_ID}/deployments`, `/v1/projects/${PROJECT}/apps/${SITE_ID}/deployments`]);
+  });
+});
+
+describe('deployableBlocks', () => {
+  test('a block that names a source (path or image) deploys; a block that only declares settings is skipped', () => {
+    expect(deployableBlocks({
+      web: { path: 'apps/web/dist' },
+      api: { image: 'ghcr.io/acme/api:1' },
+      docs: { display: { listed: true } },
+      poller: { always_on: true, resources: { cpu: 1 } },
+    })).toEqual({ deploy: ['web', 'api'], skipped: ['docs', 'poller'] });
   });
 });

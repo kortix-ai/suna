@@ -629,6 +629,7 @@ export async function syncWorkspaceToBase(
  */
 const LITERAL = { env: { GIT_LITERAL_PATHSPECS: '1' } } as const
 
+/** @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface ConfigDirSyncResult {
   /** True only when files were actually replaced from the base ref. */
   synced: boolean
@@ -673,6 +674,7 @@ export interface ConfigDirSyncResult {
  * too, so the index is reset afterwards. The result is a plain working-tree
  * modification, and its diff against base is empty by construction — so a change
  * request opened from this session carries nothing extra.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function syncConfigDirToBase(
   cfg: Config,

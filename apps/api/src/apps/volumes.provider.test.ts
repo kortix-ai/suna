@@ -13,7 +13,7 @@ describe('chooseReleaseProvider', () => {
   });
 
   test('a named provider wins; mounts on it still need platinum', () => {
-    expect(chooseReleaseProvider({ ...base, hasMounts: false, requested: 'e2b' })).toEqual({ ok: true, provider: 'e2b' });
+    expect(chooseReleaseProvider({ ...base, hasMounts: false, requested: 'daytona' })).toEqual({ ok: true, provider: 'daytona' });
     expect(chooseReleaseProvider({ ...base, hasMounts: true, requested: 'daytona' })).toEqual({ ok: false, provider: 'daytona' });
   });
 
@@ -21,8 +21,14 @@ describe('chooseReleaseProvider', () => {
     expect(chooseReleaseProvider({ ...base, platinumEnabled: false, hasMounts: true })).toEqual({ ok: false, provider: 'daytona' });
   });
 
-  test('no mounts: an existing App keeps its provider, a new App gets the platform default (null)', () => {
-    expect(chooseReleaseProvider({ ...base, hasMounts: false, previous: 'platinum' })).toEqual({ ok: true, provider: 'platinum' });
-    expect(chooseReleaseProvider({ ...base, hasMounts: false })).toEqual({ ok: true, provider: null });
+  test('no mounts: a new App and a daytona App both take platinum when it is configured', () => {
+    expect(chooseReleaseProvider({ ...base, hasMounts: false })).toEqual({ ok: true, provider: 'platinum' });
+    expect(chooseReleaseProvider({ ...base, hasMounts: false, previous: 'daytona' })).toEqual({ ok: true, provider: 'platinum' });
+  });
+
+  test('platinum not configured: an existing App keeps its provider, a new App gets the platform default (null)', () => {
+    const off = { ...base, platinumEnabled: false, hasMounts: false };
+    expect(chooseReleaseProvider({ ...off, previous: 'daytona' })).toEqual({ ok: true, provider: 'daytona' });
+    expect(chooseReleaseProvider(off)).toEqual({ ok: true, provider: null });
   });
 });

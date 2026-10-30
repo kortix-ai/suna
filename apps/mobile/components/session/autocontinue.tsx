@@ -2,12 +2,13 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
-import { InfinityIcon, InfoIcon, CaretLeftIcon, CheckIcon } from '@/lib/icons';
+import { InfinityIcon, InfoIcon, CheckIcon } from '@/lib/icons';
 import Svg, { Line } from 'react-native-svg';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, withAlpha } from '@/lib/utils/theme';
-import { SheetBackdrop, KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { SheetBackdrop, KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
+import { SheetBackButton } from '@/components/kortix/sheet-push';
 import type { Command } from '@/lib/session/runtime-data';
 
 // ─── AutoContinue configuration (shared with frontend) ────────────────────────
@@ -218,37 +219,27 @@ export const AutoContinueSheet = React.memo(function AutoContinueSheet({
           contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
           showsVerticalScrollIndicator={false}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 6, paddingHorizontal: 20, paddingBottom: 12 }}>
-            <Button
-              variant="ghost"
-              className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-20"
-              onPress={() => setDetailAlg(null)}
-              hitSlop={12}
-              accessibilityLabel="Back"
-              style={{ marginRight: 12 }}
-            >
-              <CaretLeftIcon size={22} color={muted} />
-            </Button>
-            <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
-              {detailAlg.label}
-            </Text>
-            <Button
-              variant="ghost"
-              className="h-auto w-auto gap-0 rounded-md p-0 active:bg-transparent active:opacity-20"
-              onPress={() => {
-                onSelect(detailAlg.id);
-                setDetailAlg(null);
-                onClose();
-              }}
-              style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }}
-              hitSlop={10}
-            >
-              <Text style={{ color: THEME.accent.purple, fontFamily: 'Roobert-Medium', fontSize: 13 }}>
-                Use
-              </Text>
-              <CheckIcon size={18} color={THEME.accent.purple} />
-            </Button>
-          </View>
+          {/* The app's one sheet title row: Back at the far left, the
+              algorithm centred, Use at the far right (Liquid Glass on iOS 26+). */}
+          <SheetTitleRow
+            title={detailAlg.label}
+            leading={<SheetBackButton onPress={() => setDetailAlg(null)} />}
+            trailing={
+              <Button
+                variant="ghost"
+                size="sm"
+                className="rounded-full"
+                onPress={() => {
+                  onSelect(detailAlg.id);
+                  setDetailAlg(null);
+                  onClose();
+                }}
+                accessibilityLabel={`Use ${detailAlg.label}`}>
+                <Text className="text-kortix-purple">Use</Text>
+                <CheckIcon size={18} color={THEME.accent.purple} />
+              </Button>
+            }
+          />
 
           <View style={{ paddingHorizontal: 20 }}>
             <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>

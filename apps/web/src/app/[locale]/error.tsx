@@ -1,13 +1,13 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import {
   isRuntimeNotReadyExhausted,
   recordRuntimeNotReady,
   type RuntimeNotReadyStreak,
 } from '@/lib/runtime-not-ready-budget';
-import { reloadForChunkLoadError } from '@/lib/chunk-load-recovery';
+import { reloadForChunkLoadError } from '@kortix/ui/internal/lib/chunk-load-recovery';
 import { isRuntimeStartingError } from '@kortix/sdk';
 import * as Sentry from '@sentry/nextjs';
 import { useTranslations } from '@/i18n/use-translations';

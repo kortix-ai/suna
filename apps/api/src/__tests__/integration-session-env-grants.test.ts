@@ -379,12 +379,11 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       repoUrl: 'https://example.test/principal.git',
       baseRef: 'main',
       agentName: 'default',
-      llmGatewayEnabled: false,
     });
     expect(env[OVERRIDE_KEY]).toBe('owner-val');
   });
 
-  test('the session_log_restore project flag reaches the box env as KORTIX_SESSION_LOG_RESTORE=1, and no key while it is off', async () => {
+  test('the session_log_restore project flag (on by default) reaches the box env as KORTIX_SESSION_LOG_RESTORE=1, and no key while it is off', async () => {
     const boot = () =>
       buildSessionSandboxEnvVars({
         accountId: ctx.accountId,
@@ -394,7 +393,6 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
         repoUrl: 'https://example.test/principal.git',
         baseRef: 'main',
         agentName: 'default',
-        llmGatewayEnabled: false,
       });
     const setFlag = (on: boolean | null) =>
       db
@@ -402,7 +400,7 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
         .set({ metadata: sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{experimental}', ${JSON.stringify(on === null ? {} : { session_log_restore: on })}::jsonb)` })
         .where(eq(projects.projectId, ctx.projectId));
     try {
-      expect('KORTIX_SESSION_LOG_RESTORE' in (await boot())).toBe(false);
+      expect((await boot()).KORTIX_SESSION_LOG_RESTORE).toBe('1');
       await setFlag(true);
       expect((await boot()).KORTIX_SESSION_LOG_RESTORE).toBe('1');
       await setFlag(false);
@@ -412,7 +410,7 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     }
   });
 
-  test('a lost session continued on a new computer (lostRecoveredAt) restores from its log with the project flag off; another session does not', async () => {
+  test('a lost session continued on a new computer (lostRecoveredAt) and a restored deleted session (restoredAt) restore from their log with the project flag off; another session does not', async () => {
     const boot = (sessionId: string) =>
       buildSessionSandboxEnvVars({
         accountId: ctx.accountId,
@@ -422,25 +420,33 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
         repoUrl: 'https://example.test/principal.git',
         baseRef: 'main',
         agentName: 'default',
-        llmGatewayEnabled: false,
       });
-    const mark = (on: boolean) =>
+    const mark = (key: string, on: boolean) =>
       db
         .update(projectSessions)
         .set({
           metadata: on
-            ? sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || '{"lostRecoveredAt":"2026-10-15T10:00:00.000Z"}'::jsonb`
-            : sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) - 'lostRecoveredAt'`,
+            ? sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || jsonb_build_object(${key}::text, '2026-10-15T10:00:00.000Z')`
+            : sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) - ${key}::text`,
         })
         .where(eq(projectSessions.sessionId, PRINCIPAL_SESSION));
-    try {
-      expect('KORTIX_SESSION_LOG_RESTORE' in (await boot(PRINCIPAL_SESSION))).toBe(false);
-      await mark(true);
-      expect((await boot(PRINCIPAL_SESSION)).KORTIX_SESSION_LOG_RESTORE).toBe('1');
-      expect('KORTIX_SESSION_LOG_RESTORE' in (await boot(SESSION_ID))).toBe(false);
-    } finally {
-      await mark(false);
+    const setProjectFlag = (experimental: Record<string, boolean>) =>
+      db
+        .update(projects)
+        .set({ metadata: sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{experimental}', ${JSON.stringify(experimental)}::jsonb)` })
+        .where(eq(projects.projectId, ctx.projectId));
+    await setProjectFlag({ session_log_restore: false });
+    for (const key of ['lostRecoveredAt', 'restoredAt']) {
+      try {
+        expect('KORTIX_SESSION_LOG_RESTORE' in (await boot(PRINCIPAL_SESSION))).toBe(false);
+        await mark(key, true);
+        expect({ key, env: (await boot(PRINCIPAL_SESSION)).KORTIX_SESSION_LOG_RESTORE }).toEqual({ key, env: '1' });
+        expect('KORTIX_SESSION_LOG_RESTORE' in (await boot(SESSION_ID))).toBe(false);
+      } finally {
+        await mark(key, false);
+      }
     }
+    await setProjectFlag({});
   });
 
   test('sandbox boot snapshots the latest committed backend-wrapper capability secrets without caching', async () => {
@@ -484,7 +490,6 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       repoUrl: 'https://example.test/wrapper.git',
       baseRef: 'main',
       agentName: 'wrapper-agent',
-      llmGatewayEnabled: false,
     });
     expect(env.WRAPPER_API_URL).toBe('https://fresh.wrapper.example.test');
     expect(env.WRAPPER_AGENT_TOKEN).toBe('fresh-capability');

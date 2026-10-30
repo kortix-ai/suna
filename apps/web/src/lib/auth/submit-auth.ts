@@ -66,7 +66,17 @@ export type AuthSubmitFailureReason = 'timeout' | 'network' | 'server';
 
 export type AuthSubmitOutcome =
   | { ok: true; result: Record<string, unknown> }
-  | { ok: false; reason: AuthSubmitFailureReason; message: string };
+  | {
+      ok: false;
+      reason: AuthSubmitFailureReason;
+      message: string;
+      /**
+       * The HTTP status the route answered with, when there was one. The auth
+       * page cools its email-link buttons down after a refused send (KRTX-1882)
+       * — only a 429 says "rate limited, wait", a 400 says "fix and retry".
+       */
+      status?: number;
+    };
 
 /**
  * Resolve with `fallback` when `p` does not settle within `ms`. The loser's
@@ -111,7 +121,7 @@ export async function submitAuthForm(
     const json = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     if (!res.ok || !json) {
       const message = json && typeof json.message === 'string' ? json.message : AUTH_NETWORK_MESSAGE;
-      return { ok: false, reason: 'server', message };
+      return { ok: false, reason: 'server', message, status: res.status };
     }
     return { ok: true, result: json };
   } catch (err) {

@@ -118,7 +118,7 @@ export interface ProjectRouteValue {
   openProjectSession: (session: ProjectSession, focusRuntimeId?: string) => void;
   /** Open the project drawer. Stable. Every project page's hamburger calls it. */
   openDrawer: () => void;
-  /** The project drawer is open: a hamburger shows its X. */
+  /** The project drawer is open: pages pause their loaders behind it. */
   isDrawerOpen: boolean;
   /**
    * Open the session actions sheet (`SessionActionsSheet`, COR-140 Task 5) for

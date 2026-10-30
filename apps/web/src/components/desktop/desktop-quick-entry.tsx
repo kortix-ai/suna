@@ -1,21 +1,21 @@
 'use client';
 
-import { sessionDisplayStatus, type SessionDisplayStatus } from '@/components/projects/session-label';
-import type { AttachedFile } from '@/features/session/composer/types';
+import { sessionDisplayStatus, type SessionDisplayStatus } from '@kortix/ui/session/actions/session-label';
+import type { AttachedFile } from '@kortix/ui/composer';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   getSessionDisplayTitle,
   sessionLastActivityAt,
-} from '@/features/workspace/project-sidebar/project-session-list-helpers';
+} from '@kortix/ui/session';
 import {
   isDesktop,
   setDesktopQuickEntryTarget,
   takeDesktopQuickEntryPrompt,
-} from '@/lib/desktop';
-import { readLastProjectId } from '@/lib/onboarding/last-project-cookie';
-import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
-import { projectIdFromPathname } from '@/stores/project-switch-store';
-import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
+} from '@kortix/ui/internal/lib/desktop';
+import { readLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { useComposerPrefillStore } from '@kortix/ui/internal/stores/composer-prefill-store';
+import { projectIdFromPathname } from '@kortix/ui/internal/stores/project-switch-store';
+import { useSessionComposerPrefillStore } from '@kortix/ui/composer';
 import { getProjectDetail, type ProjectSession } from '@kortix/sdk';
 import {
   KortixProjectProvider,

@@ -77,11 +77,8 @@ import {
   type BlockKind,
   type StackContext,
 } from '@/lib/markdown/markdown-layout';
-import {
-  MarkdownText,
-  openExternalLink,
-  IOS_TEXT_VIEW,
-} from '@/components/markdown/markdown-text';
+import { MarkdownText, IOS_TEXT_VIEW } from '@/components/markdown/markdown-text';
+import { openExternalLink } from '@/lib/utils/open-link';
 import {
   MarkdownTable,
   MarkdownSurfaceContext,
@@ -237,6 +234,30 @@ function FencedCode({ node, isDark }: { node: AstNode; isDark: boolean }) {
 }
 
 /** Render rules for react-native-markdown-display, one set per theme. */
+/** The six heading levels differ only in the styles key the token picks. */
+const headingRule =
+  (level: number) =>
+  (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
+    <View key={node.key} accessibilityRole="header" style={styles[`_VIEW_SAFE_heading${level}`]}>
+      {children}
+    </View>
+  );
+
+/** The list bodies are byte-identical apart from the token (`space-y-1` between items). */
+const listRule =
+  () =>
+  (node: AstNode, children: React.ReactNode[]) => (
+    <View key={node.key}>
+      {children.map((child, index) =>
+        index === 0 ? child : (
+          <View key={`item-${node.children[index]?.key ?? index}`} style={{ marginTop: web(1) }}>
+            {child}
+          </View>
+        ),
+      )}
+    </View>
+  );
+
 const createMarkdownRules = (isDark: boolean) => {
   const palette = markdownPalette(isDark);
   return {
@@ -298,59 +319,15 @@ const createMarkdownRules = (isDark: boolean) => {
         isDark={isDark}
       />
     ),
-    heading1: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading1}>
-        {children}
-      </View>
-    ),
-    heading2: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading2}>
-        {children}
-      </View>
-    ),
-    heading3: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading3}>
-        {children}
-      </View>
-    ),
-    heading4: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading4}>
-        {children}
-      </View>
-    ),
-    heading5: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading5}>
-        {children}
-      </View>
-    ),
-    heading6: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading6}>
-        {children}
-      </View>
-    ),
+    heading1: headingRule(1),
+    heading2: headingRule(2),
+    heading3: headingRule(3),
+    heading4: headingRule(4),
+    heading5: headingRule(5),
+    heading6: headingRule(6),
     // Lists: `space-y-1` between items.
-    bullet_list: (node: AstNode, children: React.ReactNode[]) => (
-      <View key={node.key}>
-        {children.map((child, index) =>
-          index === 0 ? child : (
-            <View key={`item-${node.children[index]?.key ?? index}`} style={{ marginTop: web(1) }}>
-              {child}
-            </View>
-          ),
-        )}
-      </View>
-    ),
-    ordered_list: (node: AstNode, children: React.ReactNode[]) => (
-      <View key={node.key}>
-        {children.map((child, index) =>
-          index === 0 ? child : (
-            <View key={`item-${node.children[index]?.key ?? index}`} style={{ marginTop: web(1) }}>
-              {child}
-            </View>
-          ),
-        )}
-      </View>
-    ),
+    bullet_list: listRule(),
+    ordered_list: listRule(),
     // `list-outside`: the marker hangs in the list's inline-start padding,
     // end-aligned against the item text.
     list_item: (node: AstNode, children: React.ReactNode[], parent: AstNode[], styles: any) => {
@@ -687,7 +664,7 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = mem
       <MarkdownImagesContext.Provider value={remoteImages}>
         <MarkdownSurfaceContext.Provider value={surface}>
           {Platform.OS === 'ios' && !IOS_TEXT_VIEW && isOutermost ? (
-            <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming}>
+            <IOSSelectableMarkdown text={text} isDark={isDark}>
               <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
             </IOSSelectableMarkdown>
           ) : (

@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 const root = resolve(import.meta.dirname, '../..');
 const actionDir = resolve(root, '.github/actions/aws-env');
@@ -53,6 +53,7 @@ const BLOBS: Record<string, Record<string, unknown>> = {
 
 function run(keys: string, env: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'aws-env-'));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
   const stub = join(dir, 'aws');
   writeFileSync(stub, AWS_STUB);
   chmodSync(stub, 0o755);
@@ -263,6 +264,7 @@ describe('aws-env composite action — fetch.sh', () => {
   // directory away first (runs 36026464514, 36026908894).
   function credsHarness() {
     const dir = mkdtempSync(join(tmpdir(), 'aws-env-creds-'));
+    onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
     writeFileSync(
       join(dir, 'curl'),
       `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >>"${dir}/curl.log"\necho '{"value":"GITHUB-OIDC-TOKEN"}'\n`,

@@ -11,6 +11,8 @@ let byoCreds: { appId: string; appPassword: string } | null = null;
 
 mock.module('../config', () => ({ config: { MICROSOFT_APP_ID: 'managed-app' } }));
 mock.module('../channels/install-store', () => ({
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   loadTeamsServiceUrlForProject: async () => storedServiceUrl,
   loadTeamsBotCredentials: async () => byoCreds,
 }));

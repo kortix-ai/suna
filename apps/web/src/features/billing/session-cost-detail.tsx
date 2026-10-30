@@ -8,10 +8,10 @@ import {
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Skeleton } from '@kortix/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -19,14 +19,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { EmptyState } from '@/features/layout/section/empty-state';
+} from '@kortix/ui/table';
+import { EmptyState } from '@kortix/ui/empty-state';
 
 import {
   formatSessionCostCredits,
   formatSessionCostDuration,
   formatSessionCostExactCredits,
-} from './session-cost-format';
+} from '@kortix/ui/internal/billing/session-cost-format';
 
 interface SessionCostDetailContentProps {
   detail: SessionCostDetail | undefined;

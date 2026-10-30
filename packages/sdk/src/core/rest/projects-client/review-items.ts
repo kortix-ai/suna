@@ -66,6 +66,9 @@ export interface ReviewApprovalAction {
   id: string;
   title: string;
   connector: string;
+  /** The connector's display name ("GitHub"), when the API sends it. `connector`
+   *  is the slug from the action path. */
+  connectorName?: string;
   action: string;
   consequence: string;
   risk: ReviewItemRisk;
@@ -88,9 +91,16 @@ export interface ReviewApprovalAction {
   /** The agent's own description of the call's effect. Unverified: the
    *  arguments remain the evidence. */
   approvalContext?: string;
+  /** Content Kortix read from the provider for a call whose arguments only
+   *  name a target (a draft id → the draft), redacted. Absent when none. */
+  resolvedPreview?: Record<string, unknown>;
+  /** `unavailable` when Kortix could not read that content. */
+  resolvedError?: string;
   connectorRisk?: string | null;
   policySource: string;
   decided?: 'approved' | 'denied';
+  /** ISO timestamp after which the call can no longer be decided. Absent: never. */
+  expiresAt?: string;
 }
 
 /** `kind: 'approval'` — one or more actions that need a go-ahead. */
@@ -147,6 +157,8 @@ interface ReviewItemBase {
   createdAt: string;
   /** The session the item came from, when known. */
   sessionId?: string;
+  /** ISO timestamp after which a connector approval can no longer be decided. */
+  expiresAt?: string;
 }
 
 /** One thing a human needs to look at or decide on, discriminated by `kind`. */
@@ -329,6 +341,7 @@ function approvalDetail(detail: AnyRecord, row: ApiReviewItem): ReviewApprovalDe
         id: asString(detail.execution_id) ?? row.review_item_id,
         title: path ? humanizeReviewActionPath(path) : row.title || 'Run action',
         connector,
+        connectorName: asString(detail.connector_name),
         action,
         consequence: 'Runs against the real connector once you approve',
         risk: row.risk,
@@ -356,11 +369,55 @@ function approvalDetail(detail: AnyRecord, row: ApiReviewItem): ReviewApprovalDe
             : detail.args_preview_authorized !== false,
         ...(row.resolvers ? { resolvers: row.resolvers } : {}),
         approvalContext: asString(detail.approval_context),
+        ...(Object.keys(asRecord(detail.resolved_preview)).length > 0
+          ? { resolvedPreview: asRecord(detail.resolved_preview) }
+          : {}),
+        ...(asString(detail.resolved_error) ? { resolvedError: asString(detail.resolved_error) } : {}),
         connectorRisk: asString(detail.risk) ?? null,
         policySource: 'Requires approval',
+        expiresAt: asString(row.expires_at),
       },
     ],
   };
+}
+
+/** A file path an output names: under the session's drives or workspace, with an extension. */
+const OUTPUT_FILE_PATH = /^\/(drives|workspace)\/.+\.[A-Za-z0-9]+$/;
+
+/** `claimLedger` or `claim_ledger` → `Claim ledger`. */
+function keyLabel(key: string): string {
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+// `kortix review submit --detail` takes any JSON object, so an agent names its
+// files in keys of its own (`artifact`, `claimLedger: "/drives/…/ledger.json"`).
+// The deliverable comes first, then `files`, then every other path-valued key.
+function outputFiles(detail: AnyRecord): ReviewOutputDetail['files'] {
+  const files: NonNullable<ReviewOutputDetail['files']> = [];
+  const add = (value: unknown, label?: string) => {
+    const entry = asRecord(value);
+    const path = typeof value === 'string' ? value : asString(entry.path);
+    if (!path || files.some((f) => f.path === path)) return;
+    const note = asString(entry.note) ?? label;
+    files.push(note ? { path, note } : { path });
+  };
+  for (const value of [
+    detail.artifact,
+    ...(asArray<unknown>(detail.artifacts) ?? []),
+    ...(asArray<unknown>(detail.files) ?? []),
+  ]) {
+    add(value);
+  }
+  for (const [key, value] of Object.entries(detail)) {
+    if (typeof value === 'string' && OUTPUT_FILE_PATH.test(value)) add(value, keyLabel(key));
+  }
+  return files.length > 0 ? files : undefined;
 }
 
 function outputDetail(detail: AnyRecord, row: ApiReviewItem): ReviewOutputDetail {
@@ -370,8 +427,8 @@ function outputDetail(detail: AnyRecord, row: ApiReviewItem): ReviewOutputDetail
       'document',
     artifactLabel: asString(detail.artifactLabel) ?? 'Output',
     previewUrl: asString(detail.previewUrl) ?? asString(detail.preview_url),
-    preview: asString(detail.preview),
-    files: asArray<NonNullable<ReviewOutputDetail['files']>[number]>(detail.files),
+    preview: asString(detail.preview) ?? asString(detail.description),
+    files: outputFiles(detail),
     note: asString(detail.note) ?? row.summary ?? '',
   };
 }
@@ -444,6 +501,7 @@ export function mapApiReviewItem(
     agent: row.agent || 'Agent',
     createdAt: row.created_at,
     sessionId,
+    expiresAt: asString(row.expires_at),
     // The kind ↔ detail correlation cannot be proven across the switch.
     detail: normalizeDetail(row),
   } as ReviewItem;

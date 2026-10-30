@@ -2,7 +2,7 @@
  * The PTY WebSocket state machine.
  *
  * Framing, verbatim from `apps/cli/src/commands/sessions-shell.ts` (the one
- * working raw attach) and `apps/web/src/features/session/pty-terminal.tsx`:
+ * working raw attach) and `packages/ui/src/terminal/pty-terminal.tsx`:
  *
  *   - Output: raw bytes, server → client. No envelope, no JSON.
  *   - Input:  raw bytes, client → server. No envelope, no JSON.

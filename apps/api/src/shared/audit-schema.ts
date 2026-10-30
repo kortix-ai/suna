@@ -49,7 +49,7 @@ export const AuditEventSchema = z
     credential_kind: z.string().nullable(),
     credential_id: z.string().nullable(),
     credential_name: z.string().nullable(),
-    outcome: z.enum(['success', 'failure', 'denied', 'pending']).nullable(),
+    outcome: z.enum(['success', 'failure', 'denied', 'pending', 'expired']).nullable(),
     action: z.string(),
     phase: z.string(),
     resource_type: z.string(),

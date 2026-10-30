@@ -7,7 +7,8 @@
  */
 
 import type { ToolPart } from '../../runtime/client';
-import { toolKind } from '../tool-kind';
+import type { KortixToolState } from '../../runtime/transcript-types';
+import { inputPath, toolKind } from '../tool-kind';
 import { asToolPart, isToolCallBlock, toolPartOf } from '../../session-log/tool-call';
 import type { ToolCallBlock } from '../../session-log/types';
 import { humanizeSearchQuery } from './search-query';
@@ -70,8 +71,8 @@ function truncate(s: string, max = 60): string {
  */
 export function getToolPrimaryArg(call: ToolPart | ToolCallBlock): string {
   const part = asToolPart(call);
-  const state = (part.state ?? {}) as any;
-  const input = (state.input ?? {}) as Record<string, any>;
+  const state = (part.state ?? {}) as KortixToolState;
+  const input = state.input ?? {};
   const key = normalizeName(part.tool);
 
   switch (key) {
@@ -79,8 +80,8 @@ export function getToolPrimaryArg(call: ToolPart | ToolCallBlock): string {
     case 'edit':
     case 'write':
     case 'morph_edit': {
-      const p = input.filePath ?? input.file_path ?? input.path;
-      return p ? basename(String(p)) : '';
+      const p = inputPath(input);
+      return p ? basename(p) : '';
     }
     case 'glob':
       return input.pattern ? String(input.pattern) : '';
@@ -95,6 +96,13 @@ export function getToolPrimaryArg(call: ToolPart | ToolCallBlock): string {
       return input.path ? basename(String(input.path)) : '';
     case 'bash':
       return truncate(String(input.command ?? ''), 80);
+    case 'image_gen': {
+      // One call asks for 1–4 images (`prompts`; a Phase 1 call has one `prompt`).
+      const prompts = Array.isArray(input.prompts) ? input.prompts.filter((p): p is string => typeof p === 'string' && !!p) : [];
+      const first = prompts[0] ?? (typeof input.prompt === 'string' ? input.prompt : '');
+      if (!first) return '';
+      return prompts.length > 1 ? `${truncate(first, 50)} (+${prompts.length - 1})` : truncate(first, 60);
+    }
     default:
       break;
   }

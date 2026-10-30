@@ -12,6 +12,7 @@ import { authorizeControl, bearerMatches } from './control-auth'
  * session is this box's (`KORTIX_SESSION_ID`).
  * Answers `{ output }`, or `{ error }`: 404 unknown tool, 403 the agent may not
  * use it, 422 the tool threw.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function createToolsRouter(cfg: Config, env: NodeJS.ProcessEnv = process.env): Hono {
   const app = new Hono()

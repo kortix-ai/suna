@@ -53,6 +53,19 @@ describe('applySessionControlFrame', () => {
     expect(client.getQueryState(qk.project.secrets(P))?.isInvalidated).toBe(true);
   });
 
+  test('a changed model pin re-reads the session row; the first frame does not', () => {
+    const client = new QueryClient();
+    client.setQueryData(qk.project.session(P, S), { session_id: S, name: 'Sea' });
+    const memory: { modelRev?: string } = {};
+    const session = (model_rev: string, n = 1) =>
+      frame('kortix.control.session', { known: true, title: 'Sea', secrets_rev: '1:a', model_rev }, n);
+    applySessionControlFrame(client, P, S, session('kortix/codex/gpt-6.1-sol:explicit'), memory);
+    applySessionControlFrame(client, P, S, session('kortix/codex/gpt-6.1-sol:explicit', 2), memory);
+    expect(client.getQueryState(qk.project.session(P, S))?.isInvalidated).toBe(false);
+    applySessionControlFrame(client, P, S, session('kortix/deepseek-v4.1-flash:fallback', 3), memory);
+    expect(client.getQueryState(qk.project.session(P, S))?.isInvalidated).toBe(true);
+  });
+
   test('a runtime frame is stored; a changed box row re-reads /start, the first one does not', () => {
     const client = new QueryClient();
     client.setQueryData(sessionStartKey(P, S), { stage: 'starting' });

@@ -11,7 +11,7 @@ import {
   WORKSPACE_SWITCHER_ITEM_ID,
   buildRootSuggestions,
 } from '@/features/workspace/command-palette';
-import { workspaceAccountLabel } from '@/features/workspace/project-sidebar/workspace-grouping';
+import { workspaceAccountLabel } from '@kortix/ui/workspace/sidebar/workspace-grouping';
 import {
   ROOT_WORKSPACE_RESULT_LIMIT,
   buildWorkspacePaletteRows,

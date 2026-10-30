@@ -66,7 +66,9 @@ app.use('*', async (c, next) => {
   await next();
 });
 mock.module('../lib/app', () => ({ projectsApp: app }));
+const realAccess = await import('../lib/access');
 mock.module('../lib/access', () => ({
+  ...realAccess,
   loadProjectForUser: async () => ({
     userId: callerId,
     row: { accountId, metadata: {}, repoUrl: 'https://example.test/repo', defaultBranch: null, manifestPath: null },
@@ -96,7 +98,6 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
 }));
 const realEnvSync = await import('../lib/sandbox-env-sync');
 mock.module('../lib/sandbox-env-sync', () => ({ ...realEnvSync, pushSessionModelToSandbox: async () => ({ ok: true }) }));
-mock.module('../../llm-gateway/enablement', () => ({ projectLlmGatewayEnabled: () => true }));
 mock.module('../../llm-gateway/models/provider-registry', () => ({
   resolveCatalogUpstream: (providerId: string) => (providerId === 'anthropic' ? { envVar: 'ANTHROPIC_API_KEY' } : null),
 }));

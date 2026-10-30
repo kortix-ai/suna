@@ -1412,6 +1412,125 @@ describe('SessionSyncController — sandbox-not-ready classification', () => {
     expect(seen).not.toContain('error');
   });
 
+  /**
+   * KRTX-3140. A parked box answers every read from its row with
+   * `503 sandbox_not_ready` and never wakes on a read, so the proxy now says
+   * `retry: false`. Prod saw ~2,000 of these an hour: one per open tab every
+   * 15 s, forever, from the retry backoff and the idle verification poll.
+   */
+  const parkedBody = {
+    error: 'sandbox not ready (status: stopped)',
+    hop: 'control_plane',
+    code: 'sandbox_not_ready',
+    retry: false,
+  };
+
+  async function settle(clock: ReturnType<typeof createScheduler>, ms: number, steps: number) {
+    for (let i = 0; i < steps; i += 1) {
+      clock.advance(ms);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  test('a parked box is read once: no retry backoff and no idle verification read after it', async () => {
+    const clock = createScheduler();
+    let attempts = 0;
+    let loaded = 0;
+    const controller = createHttpSessionSyncController({
+      baseUrl: 'https://runtime.example.test',
+      sessionId: 'session-1',
+      fetch: async () => {
+        attempts += 1;
+        return Response.json(parkedBody, { status: 503 });
+      },
+      hydrate: () => {},
+      markLoaded: () => {
+        loaded += 1;
+      },
+      scheduler: clock.scheduler,
+    });
+    try {
+      // Idle, stream down: the state an open tab is in once its box parks.
+      controller.setBusy(false, true);
+      await controller.reconcile('initial');
+      expect(attempts).toBe(1);
+      await settle(clock, 30_000, 10);
+      expect(attempts).toBe(1);
+      // Same state as before the change: a loader, never an error and never an
+      // empty transcript recorded as loaded.
+      expect(controller.getSnapshot().freshness).toBe('loading');
+      expect(loaded).toBe(0);
+    } finally {
+      controller.destroy();
+    }
+  });
+
+  test('a parked box is read again on the next explicit read, and polling resumes once it answers', async () => {
+    const clock = createScheduler();
+    let attempts = 0;
+    let parked = true;
+    const controller = createHttpSessionSyncController({
+      baseUrl: 'https://runtime.example.test',
+      sessionId: 'session-1',
+      fetch: async () => {
+        attempts += 1;
+        return parked
+          ? Response.json(parkedBody, { status: 503 })
+          : Response.json(messagePage([{ id: 'user-1', role: 'user' }]).messages);
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+    });
+    try {
+      controller.setBusy(false, true);
+      await controller.reconcile('initial');
+      await settle(clock, 30_000, 4);
+      expect(attempts).toBe(1);
+
+      // The box woke (a send, `/start`, another tab): the next read lands.
+      parked = false;
+      await controller.reconcile('visible');
+      expect(attempts).toBe(2);
+      expect(controller.getSnapshot().freshness).toBe('fresh');
+
+      // The idle verification poll is live again.
+      await settle(clock, 30_000, 2);
+      expect(attempts).toBeGreaterThan(2);
+    } finally {
+      controller.destroy();
+    }
+  });
+
+  for (const [label, response] of [
+    ['retry: true', () => Response.json({ ...parkedBody, error: 'sandbox not ready (status: provisioning)', retry: true }, { status: 503 })],
+    ['a body that is not JSON', () => new Response('Service Unavailable', { status: 503 })],
+  ] as const) {
+    test(`a 503 with ${label} keeps retrying: the box is still coming up`, async () => {
+      const clock = createScheduler();
+      let attempts = 0;
+      const controller = createHttpSessionSyncController({
+        baseUrl: 'https://runtime.example.test',
+        sessionId: 'session-1',
+        fetch: async () => {
+          attempts += 1;
+          return response();
+        },
+        hydrate: () => {},
+        markLoaded: () => {},
+        scheduler: clock.scheduler,
+      });
+      try {
+        await controller.reconcile('initial');
+        await settle(clock, 15_000, 4);
+        expect(attempts).toBeGreaterThan(2);
+        expect(controller.getSnapshot().freshness).toBe('loading');
+      } finally {
+        controller.destroy();
+      }
+    });
+  }
+
   test('a real error is marked error, not loading', async () => {
     const clock = createScheduler();
     const controller = new SessionSyncController({

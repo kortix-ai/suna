@@ -160,10 +160,26 @@ export function createRuntimeVerbs(input: RuntimeVerbsInput) {
         }
       }
       if (!chosen) throw new ApiError('Cannot compact: no model is set for this session', { code: 'MODEL_REQUIRED' });
-      unwrap(
-        await client.session.summarize({ sessionID: input.rootId, providerID: chosen.providerID, modelID: chosen.modelID }),
-        'Compacting the session failed',
-      );
+      const statuses = unwrap(await client.session.status(), 'Reading the session status failed');
+      const status = statuses?.[input.rootId];
+      if (status && status.type !== 'idle') {
+        throw new ApiError('This session is busy. Wait for the current turn to finish, then run compact again.', {
+          code: 'SESSION_BUSY',
+          status: 409,
+        });
+      }
+      const result = await client.session.summarize({
+        sessionID: input.rootId, providerID: chosen.providerID, modelID: chosen.modelID,
+      });
+      // A turn that started after the status read can outlast the proxy. Say so
+      // without the proxy's internal diagnostic, and never resubmit.
+      if (result.error && typeof result.error === 'object' && 'code' in result.error
+        && result.error.code === 'LONG_TURN_PROXY_TIMEOUT') {
+        throw new ApiError('Compaction has not finished. Check the session status before trying again.', {
+          code: 'LONG_TURN_PROXY_TIMEOUT', status: result.response?.status,
+        });
+      }
+      unwrap(result, 'Compacting the session failed');
       return chosen;
     },
   };

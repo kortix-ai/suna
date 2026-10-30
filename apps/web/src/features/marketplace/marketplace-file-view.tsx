@@ -3,8 +3,8 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useQuery } from '@tanstack/react-query';
 
-import { UnifiedMarkdown } from '@/components/markdown';
-import Loading from '@/components/ui/loading';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
+import Loading from '@kortix/ui/loading';
 import { getMarketplaceItemFile } from '@/lib/marketplace-client';
 
 function isMarkdown(path: string): boolean {
@@ -62,7 +62,7 @@ export function MarketplaceFileView({
       {!useLoadedReadme && filename ? (
         <div className="text-muted-foreground px-1 font-mono text-xs">{filename}</div>
       ) : null}
-      <div className="bg-secondary rounded-md border px-4 py-2.5">
+      <div className="bg-secondary/40 rounded-md border px-4 py-2.5">
         {!useLoadedReadme && fileQuery.isLoading ? (
           <div className="text-muted-foreground flex h-40 items-center justify-center">
             <Loading />

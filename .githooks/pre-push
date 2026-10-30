@@ -29,6 +29,9 @@ if [ -n "$docs_files" ]; then
   exit 1
 fi
 
+# A merge subject must carry real merge ancestry.
+printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-fake-merge.sh"
+
 # No customer data in the pushed commits, their messages, or the ref names.
 printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" push
 

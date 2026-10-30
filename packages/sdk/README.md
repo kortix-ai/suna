@@ -11,7 +11,7 @@ road.)
 > Philosophy: **one Kortix token, one client, every action a method.** Keys never
 > leave the server; mutations own their side-effects there; the host states intent.
 
-📖 **Full documentation:** [kortix.com/docs/sdk](https://kortix.com/docs/sdk) —
+📖 **Full documentation:** [kortix.com/docs/#sdk](https://kortix.com/docs/#sdk) —
 getting started, the full client, sessions, React hooks, and the subpath modules.
 The REST API has an auto-generated reference at
 [api.kortix.com/v1/docs](https://api.kortix.com/v1/docs).
@@ -84,7 +84,7 @@ One connector as a handle: `run` returns the output itself and throws
 `upstreamStatus`, `retryAfterSeconds`) or `ConnectorApprovalPendingError`;
 `paginate` follows a cursor and throws `ConnectorPageLimitError` (with
 `nextArgs`) past `maxPages`; `useConnectorQuery` (`@kortix/sdk/react`) caches a
-read. Guide: `/docs/connect/connectors#call-connectors-from-code`; runnable: `examples/13-connectors-as-code.ts`.
+read. Guide: <https://kortix.com/docs/#call-a-connector>; runnable: `examples/13-connectors-as-code.ts`.
 
 ```ts
 const linear = kortix.project(projectId).connector('linear');
@@ -154,7 +154,7 @@ The browser path needs the App's viewer scope set to `api`
 `403 insufficient_scope`. A service account answers `403` until a person
 grants it a project role (`kortix access grant --service-account <id> --role
 member --project <id>`). Never put a provider API key in an App or a Convex
-deployment when a connector exists. Guide: `/docs/connect/connectors#call-connectors-from-code`.
+deployment when a connector exists. Guide: <https://kortix.com/docs/#call-a-connector>.
 
 ### Upload prompt attachments before Send
 
@@ -286,14 +286,19 @@ no build step required:
 ## Entry points
 
 `@kortix/sdk` is the canonical entry — everything framework-free lives there.
-Four others exist, each for a reason that fits in one sentence:
+Eight others are stable, each for a reason that fits in one sentence:
 
-| Entry                         | Why it is separate                                         |
-| ----------------------------- | ---------------------------------------------------------- |
-| `@kortix/sdk/react`           | React is a peer dependency                                 |
-| `@kortix/sdk/server`          | imports `node:async_hooks`                                 |
-| `@kortix/sdk/wire-message-id` | the wire-id clock alone, one file with no imports (also at root) |
-| `@kortix/sdk/internal/*`      | unsupported, outside semver                                |
+| Entry                           | Why it is separate                                         |
+| ------------------------------- | ---------------------------------------------------------- |
+| `@kortix/sdk/react`             | React is a peer dependency                                 |
+| `@kortix/sdk/server`            | imports `node:async_hooks`                                 |
+| `@kortix/sdk/genui/fence`       | splits `openui` blocks out of text and loads no parser     |
+| `@kortix/sdk/genui`             | needs the optional peers `zod` and `@openuidev/lang-core`  |
+| `@kortix/sdk/genui/react`       | React and the Generative UI peers                          |
+| `@kortix/sdk/wire-message-id`   | the message-id mint alone, one file with no imports (also at root) |
+| `@kortix/sdk/workspace-search`  | the workspace search client; the root does not export it   |
+| `@kortix/sdk/capture-rules`     | the Kortix Capture constants alone                         |
+| `@kortix/sdk/internal/*`        | unsupported, outside semver                                |
 
 Install the optional peers before you use the React entry:
 
@@ -302,9 +307,9 @@ npm install @kortix/sdk react @tanstack/react-query
 ```
 
 Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
-`@deprecated`. Import from the root instead — see **Entry points** below for
-the four that are real, and **API-MAP.md**'s Stability table for the full
-list of aliases (20 of them).
+`@deprecated`. Import from the root instead — see **Entry points** below, and
+the [SDK reference](https://kortix.com/docs/#deprecated-names) for the full
+list of aliases (21 of them).
 
 > **React Native / Expo:** REST works. Live streaming works with a host
 > transport: pass `configureKortix({ eventStreamTransport })` (one connection's
@@ -351,22 +356,6 @@ await kortix.project(pid).secrets.upsert({
   strategy: "broker",
   consumer: "llm_gateway",
 });
-// When pooled_provider_secrets and llm_gateway are enabled for the project,
-// a new account secret is available to this project's members by default.
-const shared = await kortix.accounts.secretResources.create(accountId, {
-  project_id: pid,
-  label: "Anthropic backup",
-  provider_id: "anthropic",
-  name: "ANTHROPIC_API_KEY",
-  value: providerKey,
-  consumer: "llm_gateway",
-  strategy: "broker",
-});
-// Restrict it to selected members when needed. The creator keeps access.
-await kortix.accounts.secretResources.setAccess(accountId, shared.secret_id, "members", [memberUserId]);
-await kortix.session(pid, sid).providerSecretPool.set("anthropic", [shared.secret_id]);
-const { pools, can_edit } = await kortix.session(pid, sid).providerSecretPool.list();
-// Passing null to set() resets the session to the project default.
 const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix
   .project(pid)
@@ -376,13 +365,12 @@ const mine = await kortix.project(pid).sessions.list({ parent: "root", startedBy
 const found = await kortix.project(pid).sessions.list({ parent: "root", q: "nightly" }); // searches every visible session
 const spawned = await kortix.project(pid).sessions.list({ parent: mine[0].session_id });
 // React: useProjectSessions(pid, { parent: "root", startedBy: "me" }), useSessionChildren(pid, parentId)
-const warm = await kortix.project(pid).sessions.ensureWarm(); // ordinary session, pre-created
 
 // Sessions (id-bound handle)
 const s = kortix.session(pid, sid);
 const cost = await s.cost(); // reads finalized LLM + compute cost; no runtime start
 await s.send("Build me a widget"); // provisions/resumes if needed, then prompts
-await s.rewind(userMessageId); // stages a reversible rollback on this session
+await s.rewind(userMessageId); // only when health() lists `session.rewind`; pi does not
 await s.restoreRewind(); // restores the removed path before the next prompt
 await s.previews();
 await s.participants(); // who can open the session
@@ -399,13 +387,6 @@ await s.answerPermission(permissions[0].id, "once"); // "once" | "always" | "rej
 await s.answerQuestion(questions[0].id, [["Yes"]]); // null dismisses it
 await s.compact(); // only when health() lists `session.compact`
 ```
-
-React consumers use `useAccountSecretResources(accountId)` and
-`useSessionProviderSecretPools(projectId, sessionId)` from `@kortix/sdk/react`.
-The latter exposes `setPool.mutate({ providerId, secretIds })`. `null` restores
-inheritance; `[]` disables that provider for the session. Empty configured pools
-remain listed after their last resource is deleted. Successful writes refresh
-both the pool list and the session's provider-specific query cache.
 
 ### Apps
 
@@ -486,6 +467,28 @@ most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
 `stops` maps the user message that started a turn to the member who stopped that turn.
 In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the same data.
 
+### Share one response
+
+The web session's **Share response** button publishes one finished response.
+The prompt stays private unless the person selects **Prompt and response**.
+The SDK exposes the same operations as named exports:
+
+```ts
+import { getTurnShare, shareTurn, unshareTurn, getPublicResponse } from '@kortix/sdk';
+
+const { share } = await shareTurn(projectId, sessionId, turnId, { include_prompt: false });
+const response = await getPublicResponse(share.token, { backendUrl });
+await getTurnShare(projectId, sessionId, turnId);
+await unshareTurn(projectId, sessionId, turnId);
+```
+
+`turnId` is the user message id that starts the turn. Publishing requires a human
+owner or project manager who can read the session. Service accounts and agent
+credentials cannot publish. Sessions with personal connections or person-only
+secrets cannot publish. Repeating `shareTurn` updates the snapshot under the same
+URL. `unshareTurn` revokes it; anonymous reads then return `410`. Snapshots exclude
+reasoning, tool calls, and attachments. The public page disables search indexing.
+
 ### Who may stop a turn
 
 In a shared session only the member who started the running turn, the session owner or a
@@ -497,8 +500,11 @@ send queue. Any other stop answers 403 with `code: 'not_turn_prompter'`.
 
 `kortix.session(projectId, sessionId).modelUsage()` (or `getSessionModelUsage`) returns
 `{ latest, billed_cost, turns }` from the gateway's request record. `latest` is
-`{ served_model, fallback_from, at }` for the newest answered request: `served_model` is the model
-that answered, and `fallback_from` is the routed model when a fallback model answered in its place.
+`{ served_model, fallback_from, at, outcome }` for the newest request, whatever its outcome:
+`outcome` is `answered`, `client_aborted` (the caller canceled it) or `error`; a cancel is not a
+model failure. `served_model` is the route id recorded for the request — the model that answered
+it, or on an unanswered request the model it was being served by. `fallback_from` is the routed
+model when the gateway rerouted after a failed attempt, whether or not the fallback answered.
 `turns` maps the runtime message id of each prompt to `{ served_models, fallback_from, billed_cost }`.
 A transcript message carries only the model its turn asked for. In React,
 `useSessionModelUsage(projectId, sessionId)` reads the same record.
@@ -506,13 +512,15 @@ A transcript message carries only the model its turn asked for. In React,
 ### React runtime
 
 `useSession(projectId, sessionId)` opens the session runtime returned by
-`POST /start`. The runtime is OpenCode or pi; the hook reads the same routes,
-transcript and events from both. The hook owns messages, rewind and restore,
-cancellation, commands, permissions, and questions. Hosts do not construct
-runtime routes. A feature one harness lacks is a capability: gate its control
-with `runtimeSupports(health?.capabilities, 'session.rewind')`. pi lists
-`session.subagents` only, so rewind, compaction, slash commands, the todo list
-and the runtime config document stay hidden or empty on a pi session.
+`POST /start`. Every new session runs pi. The hook owns messages, rewind and
+restore, cancellation, commands, permissions, and questions. Hosts do not
+construct runtime routes. A feature the runtime lacks is a capability: gate its
+control with `runtimeSupports(health?.capabilities, 'session.rewind')`. pi lists
+`session.subagents`, `session.compact`, `session.commands`, `session.steer` and
+`session.log.v2`. It does not list `session.rewind`, `session.fork`,
+`session.mcp`, `session.todo`, `session.shell`, `session.attach` or
+`session.config`, so rewind, fork, MCP servers, the todo list, shell turns and
+the runtime config document stay hidden or empty on a pi session.
 
 Every session saves its transcript at the end of each turn. `useSession` reads saved
 messages from the platform database while `/start` continues. It uses the
@@ -520,11 +528,20 @@ server-validated runtime session id and lets the live read reconcile the saved m
 A live read that returns no messages keeps the saved messages on screen: it means the computer
 lost its state, not that the conversation is empty. The first live read with messages reconciles them.
 Missing or rejected history falls back to the existing runtime path.
-An open reads the saved window once: the session-open snapshot carries it (the read waits up
-to 2 s for one in flight), else `GET …/transcript?shape=sync&history=true`. A host that shows
-the saved copy before `useSession` binds the session calls `readSavedSessionCopy`, the same read
-plus the empty-conversation proof. The SDK holds that copy for the open that follows (up to 5 min):
-the snapshot then asks for no window, and the saved-history read answers from the held copy.
+An open reads the session log (`GET …/log`), on every host, with no project flag:
+`useSession`, `readSavedSessionCopy` (returned as `log`), `useSessionSync` with no `mirror` or
+with `savedChild`, and `loadSessionExportMessages`. The host applies a page it reads itself to
+the session store and renders `useSessionLogThread`. No hook and no SDK read sends
+`GET …/transcript`, whatever the log answers. A new session's 404 with
+`code: 'session_log_missing'` keeps the session on the log with nothing in it: the runtime's rows
+are the history. A failed read (a 5xx, the network, a 404 with no `code`, an invalid page) keeps
+the copy already on screen and reads the page again after 2 s, 10 s and 30 s, or after the API's
+`Retry-After` (at most 60 s). Either is read again at the next turn end and after a stream
+reconnect. Without a log in the store, `useSession().loadOlder` pages the runtime. An export
+with no page reads the runtime, and fails when the runtime has nothing. The session-open
+snapshot (`GET …/snapshot`) asks for no v1 window (`?transcript=0`). The v1 reads
+(`getSessionTranscript`, `getSessionTranscriptSync`, `transcript`, `transcriptSync`) are
+deprecated.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
@@ -545,7 +562,7 @@ A server-rendered host can seed a known runtime session pin while `/start` runs:
 
 ```tsx
 useSession(projectId, sessionId, {
-  initialRuntimeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
+  initialRuntimeSessionId: persistedSession.runtime_session_id,
 });
 ```
 
@@ -554,8 +571,7 @@ The seed hydrates cached content. It does not choose the runtime identity.
 The pin returned by `/start` always replaces a stale seed. The SDK also scopes
 runtime query and synchronization controllers to the sandbox runtime. Two
 sandboxes cannot share browser cache state when a snapshot exposes the same
-runtime session id during adoption. `opencode_session_id` is the older name
-of `runtime_session_id`; read it only as the fallback above.
+runtime session id during adoption.
 
 After a project replaces its repository, a session created before the
 replacement still starts. It runs the project's CURRENT config release and
@@ -577,6 +593,60 @@ Message retries keep the originating sandbox URL after navigation. A `404` or
 `410` message read stops automatic retries and preserves the cached transcript.
 An explicit reconciliation can recover the controller when the session returns.
 
+## Artifact comments and activity
+
+Projects enable `artifacts` and `artifact_comments` before using comments.
+`artifact_comments` defaults off. Agent tokens need `project.artifact.comment`.
+Every comment identifies its author as a user or a session.
+
+```ts
+const artifact = kortix.project(projectId).artifacts;
+const thread = await artifact.comments.create(artifactId, {
+  anchor: { type: 'none', version: entryVersion },
+  body: 'Confirm the forecast.',
+});
+await artifact.comments.reply(artifactId, thread.thread_id, { body: 'Confirmed.' });
+const handoff = await artifact.comments.send(artifactId, {
+  thread_ids: [thread.thread_id],
+  batch_id: crypto.randomUUID(),
+  agent: 'reviewer',
+});
+await artifact.comments.setStatus(artifactId, thread.thread_id, 'resolved');
+const threads = await artifact.comments.list(artifactId, { status: 'all' });
+const activity = await artifact.activity(artifactId, { limit: 50 });
+```
+
+Text anchors carry `version`, `quote`, `prefix`, and `suffix`. `quote`,
+`prefix`, and `suffix` each accept up to 32 UTF-16 code units. Point and region anchors carry a CSS selector,
+element-relative fractions, viewport width, and scroll position.
+
+The root exports `listArtifactComments`, `createArtifactComment`,
+`replyArtifactComment`, `setArtifactCommentStatus`, `editArtifactComment`,
+`deleteArtifactComment`, and `listArtifactActivity`. The write functions return
+the thread or comment. `getArtifactCommentThread(projectId, threadId)` resolves
+a bare thread id with the same visibility checks. Activity returns
+`{ items, next_cursor, older_versions }`; pass `next_cursor` as `cursor` to
+read the next page. Unknown historical save authors remain `System`.
+
+`sendArtifactComments` sends selected threads to an agent. Reuse `batch_id`
+when retrying the same handoff. An omitted id is generated once by the SDK.
+The result identifies the target session. A newly reserved session remains
+pending until queued creation succeeds. Read the thread's `agent_state` before
+opening it. `agent_error` distinguishes a delivery failure from the loop guard.
+Editing a comment updates its mentions without requesting another turn; use
+Send to agent to deliver an edited request.
+
+`ArtifactCommentMention` identifies a person (`kind: 'user', user_id`), an
+existing session (`kind: 'session', session_id, agent_name`), or a project agent
+(`kind: 'agent', agent_name`). Comments return the server-resolved mentions.
+
+`useArtifactComments(projectId, artifactId, { status?, enabled? })` returns the
+thread query and `create`, `reply`, `setStatus`, `edit`, `remove`, and `send` writes.
+Each successful write refetches mounted Comments and Activity queries.
+`useArtifactActivity(projectId, artifactId, { limit?, cursor?, enabled? })`
+returns one activity page. Both hooks poll every 10 seconds while mounted and
+visible. A missing project or Artifact id disables reads.
+
 ## The facade surface
 
 `createKortix(config)` returns one client. The table below is illustrative, not
@@ -585,18 +655,18 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | namespace | what |
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
-| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,delete,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
+| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,retry,remove,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,activity,webhooks.*}` (filterable project/session reconstruction log; `activity` = who was active and how often, per UTC day) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` (with `min_monthly_usd` / `max_monthly_usd`) — plus a curated mutation surface: `setPlan` (subscribe to or change the credits plan; `useSetBillingPlan()` in `@kortix/sdk/react`) · `subscription.{createPortalSession,cancel,reactivate}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`. `checkout.{createSession,confirmSession}`, `subscription.{scheduleDowngrade,cancelScheduledChange,prorationPreview}`, `createPerSeatCheckout` and `claimPerSeatBilling` are deprecated: they reject with `ENDPOINT_RETIRED` |
-| `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
+| `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}`. A project installs an item through `createMarketplaceInstallSession(projectId, itemId)`, which starts a session whose agent merges the item into the project and opens a change request; it resolves `{ session_id }` |
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
-| `kortix.notifications` | the caller's notifications, across accounts: `list({ limit?, before? })` (inbox page + `unread_count`) · `markRead({ ids } \| { all: true } \| { sessionId })` · `preferences` · `updatePreferences({ kinds })` (push and email per kind) · `webPushPublicKey` · `registerWebPushSubscription` · `unregisterWebPushSubscription` · `registerDeviceToken` · `unregisterDeviceToken` (native Expo push). Muting one session is `session(pid, sid).setWatch(false)`. Hooks: `useNotificationInbox`, `useNotificationPreferences`, `useSessionWatch`. Inbox rows, Web Push, email, and session watch are served only for projects with the `notification_center` flag on, off by default; with it off, the session creator's phone still gets the push |
+| `kortix.notifications` | native push for a person's devices: `registerDeviceToken` · `unregisterDeviceToken` (Expo push tokens) · `releaseDeviceToken(token, { backendUrl?, signal? })` (**no token needed**: a signed-out app removes its device token from a backend, `POST /v1/notifications/device-token/release`; resolves `{ ok: true }`, a non-2xx answer throws `ApiError` with `status`). A session push reaches the phone of the person who created the session |
 | `kortix.mobileClientPolicy()` | the operator's mobile release policy, `GET /v1/clients/mobile`, **no token needed** (read before login): resolves `{ minimum_version, store_url_ios, store_url_android }`, each a string or `null`; a non-200 answer throws `ApiError`. A mobile host compares its app version to `minimum_version` with `compareSemver(a, b)` (`-1 \| 0 \| 1`, or `null` when either side does not parse; ignores a leading `v` and `-pre`/`+build` suffixes) and fails open on `null`. Also exported standalone as `getMobileClientPolicy` and the `MobileClientPolicy` type. The operator sets `MOBILE_MIN_VERSION`, `MOBILE_STORE_URL_IOS`, `MOBILE_STORE_URL_ANDROID` on the API |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`restore`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
-| `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / app; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.skills`, `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`restore`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`setPinned`/`setArchived`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind` (needs `session.rewind`)/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · the session verbs (`messages`/`pending`/`answerPermission`/`answerQuestion`/`compact`) · `stream()` · the deprecated `.runtime` |
+| `kortix.runtime()` | the runtime REST compatibility client of the process-wide active sandbox. It throws on a scoped client. Use the session verbs on `kortix.session(pid, sid)` instead |
 
 Runnable, self-contained scripts for the highest-value flows live in
 [`examples/`](./examples): list projects with a PAT, send + stream, the
@@ -692,7 +762,7 @@ handle.close();
 
 `session.stream()` emits the runtime's events (`message.updated`,
 `message.part.updated`, `session.status`, `permission.*`, `question.*`, …),
-the same from OpenCode and pi. Use `useSession()` in React.
+the same for every session. Use `useSession()` in React.
 
 Events arrive in batches, 16 ms apart. Consecutive `message.part.delta` events
 for one part field in a batch arrive as one event: `properties.delta` is their
@@ -714,34 +784,34 @@ and the constants `SESSION_LOG_SCHEMA`, `SESSION_LOG_MINOR` and
 `zod` dependency. The validators (`SessionLogSchema` and the rest) stay in the
 private `@kortix/api-contract` package. The types are a copy of the api-contract
 session-log types, and a test fails when the two differ. See the
-[reference](https://kortix.com/docs/sdk/reference#session-log-types).
+[reference](https://kortix.com/docs/#session-log-types).
 
 `@kortix/sdk/react` adds `useSessionLog(session)` and
 `useSessionLogThread(session, threadId?, { throttleMs? })`: the log of a session `useSession`
-owns. `useSessionLog` marks its source: `'v2'` is the API's log, which a session
-reads only when the runtime lists `session.log.v2`, the project flag
-`session_log` is on, and the API holds a log for the session (OpenCode or pi).
-Every other session reads v1, and the hooks return `source: 'v1'`: the `fromV1`
-conversion of the v1 rows, with the turn that runs kept open. Pass the session's
+owns. `useSessionLog` marks its source: `'v2'` is the API's log, which every open reads
+first when the API holds a log for the session. No project flag is read.
+Until a session's log answers a page, the hooks return `source: 'v1'`: the `fromV1`
+conversion of the runtime's v1 rows, with the turn that runs kept open. Pass the session's
 `runtimeSessionId`; without it, or before the first row, they return `null`.
 `throttleMs` paces the v1 rows as `useSessionMessages` paces them. The
 v1 hooks (`useSessionMessages`, `useSession().messages`) return the same rows
-either way. See the
-[reference](https://kortix.com/docs/sdk/react#read-the-session-log).
+either way. `useSessionLogOlder(session, threadId?)` pages one thread of a v2 session back
+(`GET …/log?thread=&before_seq=`). See the
+[reference](https://kortix.com/docs/#render-blocks-from-the-session-log).
 
 Three transitional functions bridge a host that renders blocks while its rows are
 still v1:
 
 - `toolCallBlock(part)`: the `ToolCallBlock` of a v1 tool part, the block
-  `fromV1` builds for it. An open call stays open; a call that streams its input
+  the v1 conversion builds for it. An open call stays open; a call that streams its input
   has the text so far as its `input`. One block per part object. It goes away in
   the SDK major that removes the v1 rows.
 - `toolCallMetadata(call)`: the harness's display metadata of a tool call, the
   whole `state.metadata` of the v1 part it came from (bash `command`, read
-  `loaded`, task `sessionId`, edit `filediff`); for a record a harness wrote
-  natively (pi), its `details`. It stays until the session-log schema carries
+  `loaded`, task `sessionId`, edit `filediff`); for a record pi wrote
+  natively, its `details`. It stays until the session-log schema carries
   display metadata of its own.
-- `sessionLogOfV1Rows(sessionId, runtimeSessionId, rows)`: the `fromV1` live view
+- `sessionLogOfV1Rows(sessionId, runtimeSessionId, rows)`: the v1 live view
   of one runtime session's v1 rows, the log `useSessionLogThread` returns on v1,
   for rows a host reads without a `useSession` (a sub-agent's chat). One message
   per row object, kept while the row is unchanged. It goes away with the v1 rows.
@@ -749,6 +819,24 @@ still v1:
 A host draws a `ToolCallBlock` with `toolCallStatus(call)` (`completed`, not
 `complete`), `toolCallRawOutput(call)`, `toolCallError(call)` (the semantic error,
 else the result text) and, for a sub-agent row, `subAgentCalls(thread)`.
+
+An `image_gen` card reads `imageGenView(call, live?)`: an `ImageGenView` with
+`phase` (`ImageGenPhase`: `generating`, `ready`, `failed`, `stopped`), `action`,
+`prompts`, `aspectRatio` (the requested ratio, fixed across phases), `startedAt`, `model`, `provider`, `error` (`message`, `suggestion?`,
+`code?`, `retryAfterSeconds?`, `connectModel`) and `images`: one frame per image
+(`prompt`, `phase`, `aspectRatio`, `imagePath`, `directUrl`, `error`), one to four
+per call.
+`imageGenRetryDelay(seconds)` and `formatImageGenElapsed(ms)` format its retry wait
+and elapsed time. `imagePathsShownByImageGen(blocks)`,
+`withoutImageGenDuplicates(items, paths, digests?)` and `showDrawnByImageGen(call, paths, digests?)` keep
+a `show` from drawing an image the turn's `image_gen` card already drew, by path or by
+the bytes' sha256 (`imageDigestsShownByImageGen(blocks)`, a frame's `sha256?`,
+`showItemDigest(call, path)` for a `show` output). Consecutive `image_gen` cards of a turn
+draw as one grid: `sessionLogImageGenRuns(segments, drawn)` finds the runs and
+`imageGenGrid(views)` lays out their tiles and rows. `createImageCache(options)` is a
+framework-free store of loaded images by path and sha256, for a host that shares one
+loaded image across surfaces. See the
+[reference](https://kortix.com/docs/sdk/reference#the-image_gen-card).
 
 `getSessionLogPage(projectId, sessionId, query?)`, or `kortix.session(p, s).log(query?)`,
 reads one page of the stored session log (`SessionLogPage`: the session record,
@@ -782,7 +870,8 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   out every message with `in_context: false` that is not streaming.
 - `sessionLogTurnSegments(blocks, options?)`, `splitSessionLogTurnWork(segments, { working })`
   and `sessionLogBurstSteps(blocks)` draw a turn: bursts, text and standalone calls,
-  the settled-turn fold, and the rows of a burst.
+  the settled-turn fold, and the rows of a burst. The deliverables (`show`, `show_user`,
+  `image_gen`: `NO_GROUP_ACTIVITY_TOOLS`) stand alone and are hoisted above the final text.
 - `sessionLogCallStatus(call, live)` is the status a call renders with: an open call,
   or one the closure rule closed, is `running` or `pending` on a live turn and
   `interrupted` on any other. `sessionLogOpenCall(call)` is the call in that open
@@ -879,16 +968,25 @@ app.use(async (req, res, next) => {
 ```
 
 A runnable version of the pattern is `examples/03-server-wrapper.ts`, and the
-full production-shaped reference (per-user project isolation, route policy,
-rate limiting, cost markup for re-billing) is `apps/whitelabel-demo` in wrapper
-mode — see its README.
+full production-shaped reference is `apps/white-label/lumen` (Lumen): its own
+users and orgs (Convex + Better Auth), one Kortix project shared by every
+customer firm (a Drive folder, an agent and a service account per firm), the
+firm's service-account secret held server-side, and a same-origin proxy built
+on `forwardKortixRequest` — see its README.
 
 ## Rendering chat (the headless chat kit)
+
+For the Kortix chat itself, use `SessionThread` from `@kortix/ui/session` (the
+Kortix component package): one component renders the whole
+session from one `useSession(projectId, sessionId)` result, the same thread
+apps/web renders. `ToolRegistry.register(name, Row)` replaces one tool row. Docs:
+<https://kortix.com/docs/#the-thread-alone>. The kit below is for a host that
+draws every part with its own components.
 
 Everything needed to render an agent transcript without adopting any Kortix
 UI: `classifyPart`/`classifyTurn` (framework-free, from the root entry)
 normalize all twelve part types of the Kortix transcript format
-(`kortix.transcript.v1`; both harnesses emit it) (text, reasoning, tool, file,
+(`kortix.transcript.v1`, the same for every session) (text, reasoning, tool, file,
 subtask, patch, snapshot, agent, retry, compaction, step, + a forward-compat
 `unknown`) into a typed `ClassifiedPart`, and normalize a failed assistant
 turn's `info.error` into a `{ name, message }` `TurnError` — so "assistant
@@ -928,9 +1026,9 @@ function Turn({ message }: { message: MessageWithParts }) {
 }
 ```
 
-The living reference is
-`apps/whitelabel-demo/src/components/chat/message-view.tsx` — one deliberate
-rendering decision per part kind, with the rationale for each `null`. For a
+The living reference is `packages/ui/src/session/thread/transcript.tsx`
+(the transcript of `SessionThread` in `@kortix/ui/session`), on the
+session-log message. For a
 memoized message-list binding use `useChatTurns(messages)` (`@kortix/sdk/react`);
 for a no-React plain-text version of the same classification see
 `examples/04-render-transcript.ts`. On the live side, `narrowChatEvent`
@@ -951,14 +1049,14 @@ the root import — offers the same agents and models and sends the same pick.
 | `projectConfigAgentsToRuntimeAgents(config)` | `/projects/:id/detail` config → agent roster, project default first |
 | `composerSelectableAgents(agents, { enableProjects?, includeSubagents? })` | roster → picker list (no hidden agents, no subagents, `project-manager` only with `enableProjects`) |
 | `resolveComposerAgent({ agents, boundAgent, defaultAgent, selectedAgent })` | → the agent to send, and `disabled` when none is accessible |
-| `pickerProviderList({ gatewayEnabled, modelPicker, runtimeProviders, llmCatalogProviders, secretNames })` | raw sources → provider list |
-| `flattenModels(providers, { providerMode })` | provider list → `ModelOption[]` (a `FlatModel` plus `id`, the ref a pick stores) |
-| `modelRefToKey(ref, gatewayEnabled)` | a stored ref (session pin, channel binding, trigger, agent `model`) → `ModelKey`; `kortix/x` and `x` are one gateway model |
+| `pickerProviderList({ modelPicker })` | `/model-picker` catalog → provider list (the single `kortix` provider). `gatewayEnabled`, `runtimeProviders`, `llmCatalogProviders` and `secretNames` are deprecated and ignored |
+| `flattenModels(providers)` | provider list → `ModelOption[]` (a `FlatModel` plus `id`, the ref a pick stores). Only the `kortix` provider flattens; the `providerMode` option is deprecated and ignored |
+| `modelRefToKey(ref)` | a stored ref (session pin, channel binding, trigger, agent `model`) → `ModelKey`; `kortix/x` and `x` are one gateway model. The second argument is deprecated and ignored |
 | `createModelVisibility({ catalogModels, pins?, connectedProviderIds?, freeTier? })` | → default-visibility predicate |
 | `modelInDefaultView(model, { search, isStoreVisible, selected })` | → whether the empty-search picker shows the model |
 | `resolveModelDefault(modelDefaults, agentName)` | `/model-defaults` → agent → project → account → platform default |
 | `resolveComposerModel({ models, picks, serverDefault, globalDefault, agentModel, configModel, recent, providers })` | → `{ model, explicit, fallback }` |
-| `sessionModelCandidates({ session, lastPromptModel, gatewayEnabled })` | session row + last prompt's model → the models the session already runs, most trusted first: a chosen pin (`explicit`, `repointed`), the last prompt's model, a default pin. Put them in `picks` after this composer's own pick for the session |
+| `sessionModelCandidates({ session, lastPromptModel })` | session row + last prompt's model → the models the session already runs, most trusted first: a chosen pin (`explicit`, `repointed`), the last prompt's model, a default pin. Put them in `picks` after this composer's own pick for the session |
 | `latestPromptModel(messages)` | transcript → the model of the newest user message that records one |
 
 The root barrel reads catalog helpers from `@kortix/llm-catalog/lite`, which
@@ -1028,23 +1126,29 @@ provider, resolved model, HTTP status, code, and bounded message.
 
 ## Entry points
 
-**There are four, plus one internal.** Everything framework-free lives at the
-root. `react` and `server` exist because each carries a dependency the root
-cannot; `wire-message-id` exists so a server can load one module, not the barrel.
-That is the whole map — learn it once.
+**There are nine stable entries, plus one internal.** Everything framework-free
+lives at the root. `react`, `server` and the three `genui` entries exist because
+each carries a dependency the root cannot. `wire-message-id` and
+`capture-rules` exist so a server can load one module, not the barrel.
+`workspace-search` is isolated from the root on purpose. That is the whole map —
+learn it once.
 
 | import | when you use it | why it is separate |
 | --- | --- | --- |
 | `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`/`toToolView`/`toolKind`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
-| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` (each pre-W4 `useOpenCode*` name is a deprecated alias), `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
+| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` hook, `useChatTurns`/`renderParts`, the domain hooks. Its deprecated aliases are listed in the [SDK reference](https://kortix.com/docs/#deprecated-names) | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
-| `@kortix/sdk/wire-message-id` | `mintWireMessageId`, `mintWireMessageIdAbove`, `newestWireIdClock`, `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf` — the OpenCode wire message-id clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
+| `@kortix/sdk/genui/fence`, `@kortix/sdk/genui`, `@kortix/sdk/genui/react` | Generative UI: split `openui` blocks out of text, parse them, render them (see **Generative UI** below) | `genui` and `genui/react` need the optional peers `zod` and `@openuidev/lang-core`; `genui/fence` loads neither |
+| `@kortix/sdk/wire-message-id` | `mintWireMessageId` and `WIRE_MESSAGE_ID`: mint and validate a Kortix message id. Its clock helpers are `@deprecated` | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
+| `@kortix/sdk/workspace-search` | `createWorkspaceSearchClient` and its ranking helpers | isolated from the root on purpose |
+| `@kortix/sdk/capture-rules` | the Kortix Capture constants (`CAPTURE_LAYERS`, `CAPTURE_DEVICE_DEFAULTS`, …) | the root exports the same names; this module loads alone |
 | `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |
 
 The root really is canonical, and that is a test rather than a promise:
 `src/root-canonical.test.ts` asserts that every name exported by every other
-isomorphic subpath is also exported from `@kortix/sdk`. The only names it
-permits to be missing are the browser-only stores above — `zustand` is a
+isomorphic subpath is also exported from `@kortix/sdk`. The only subpaths it
+permits to be missing are `react`, `server`, the three `genui` entries,
+`workspace-search` and the browser-only stores above — `zustand` is a
 forbidden import in the root's `isomorphic-core` tier, so they cannot live
 there.
 
@@ -1055,14 +1159,14 @@ import { useSession } from '@kortix/sdk/react';
 
 ### Legacy aliases — do not use in new code
 
-`package.json` still declares about twenty more subpaths: `/turns`, `/files`,
-`/session`, `/session/url`, `/auth`, `/config`, `/api-client`,
-`/projects-client`, `/platform-client`, `/opencode-client`, `/opencode-errors`,
-`/event-stream`, `/feature-flags`, `/fresh-sessions`, `/instance-routes`,
-`/message-queue`, and the un-prefixed store aliases.
+`package.json` still declares 21 more subpaths, for example `/turns`, `/files`,
+`/session`, `/projects-client`, `/event-stream` and the un-prefixed store
+aliases. The full list is in the
+[SDK reference](https://kortix.com/docs/#deprecated-names).
 
-Every one of them is a one-line `export *` re-export under `src/deprecated/`,
-kept alive only so an existing `npm install` does not break. **They add nothing
+Twenty of them are one-line `export *` re-exports under `src/deprecated/`, and
+`/message-queue` is a deprecated module of its own. They stay only so an
+existing `npm install` does not break. **They add nothing
 the root does not already export.** They are removed at the next major; new
 code imports the root.
 
@@ -1078,6 +1182,8 @@ interface KortixPlatformConfig {
   clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
   clientVersion?: string; // '<surface>/<version>', sent as X-Kortix-Client-Version
   credentialHeader?: string; // send the raw token in this header instead of Authorization
+  fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; // default: global fetch
+  eventStreamTransport?: RuntimeEventTransport; // event-stream bytes when `fetch` cannot stream (React Native)
   getUserId?: () => Promise<string | null>;
   billingEnabled?: boolean;
   sandboxId?: string | null;
@@ -1144,7 +1250,7 @@ const backend = kortixBinding('backend', {
 
 The SDK is host-agnostic: no Next.js / web coupling in the core. The host injects
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven
-in React DOM (`apps/web` and the `apps/whitelabel-demo` reference app are the
+in React DOM (`apps/web` and the `apps/white-label/lumen` reference app are the
 `configureKortix`/`@kortix/sdk/react` consumers).
 The framework-free core — turn classification, session URLs and health, the
 REST clients, file operations, transcript formatting — has no React or DOM
@@ -1160,7 +1266,6 @@ Its only platform code for the session runtime is the event transport
 - **No harness SDK in host code.** Import transcript and runtime types from
   `@kortix/sdk`, and reach the runtime through the session verbs. `session.runtime`
   (the raw REST compatibility client) is deprecated.
-  (Holds today — no host imports `@opencode-ai/sdk`, and neither does the SDK.)
 - **No raw `backendApi` / `authenticatedFetch` in host code.** Use the facade or a
   subpath module. (Aspirational: apps/web still calls `backendApi` via its
   `@/lib/api-client` re-export in ~30 files and keeps a parallel
@@ -1174,7 +1279,7 @@ Its only platform code for the session runtime is the event transport
 (`kortix_pat_…`) for server-side / automation use, or an OAuth access token
 (`kortix_oat_…`) minted by "Sign in with Kortix" — supplied via `getToken`.
 
-To use Kortix from an MCP client (Claude, ChatGPT, Cursor, Codex) instead of code, see the hosted MCP server: <https://kortix.com/docs/connect/mcp>.
+To use Kortix from an MCP client (Claude, ChatGPT, Cursor, Codex) instead of code, see the hosted MCP server: <https://kortix.com/docs/#connectors>.
 
 ### Sign in with Kortix (your app, their Kortix account)
 
@@ -1204,7 +1309,7 @@ const client = createKortix(auth.clientConfig());  // talks to Kortix through /p
 ```
 
 `@kortix/sdk/react` adds `useKortixViewer()` and `<SignInWithKortix />`.
-Full guide: `/docs/sdk/auth#sign-in-with-kortix`. Example: `examples/11-sign-in-with-kortix.ts`.
+Full guide: <https://kortix.com/docs/#sign-in-with-kortix>. Example: `examples/11-sign-in-with-kortix.ts`.
 
 ### A Kortix-hosted App is already signed in
 
@@ -1222,7 +1327,7 @@ the API refused (after an access-policy change) and replays the call once.
 In the browser, `backendUrl` is `/_kortix/api/v1`: the gate on the App's own
 origin forwards to the Kortix API as the viewer (`viewer_token_scope: 'api'`).
 A direct call to `https://api.kortix.com/v1` from an App origin fails CORS.
-Guide: `/docs/apps#build-on-apps-from-typescript`.
+Guide: <https://kortix.com/docs/#build-on-apps-from-typescript>.
 
 ### One member on every runtime: sign-in tokens, groups, roles
 
@@ -1249,7 +1354,7 @@ header, sign-in token) into one `KortixMember`: `userId`, `email`, `name`,
 `forbidden`). In React, read the member with a `members:me` query (`readKortixMember(await ctx.auth.getUserIdentity())` in `convex/members.ts`, then `useQuery(api.members.me)`: `undefined` loading, `null` signed out). Never call `useConvexAuth()`: it throws under a plain `ConvexProvider`. Kortix injects `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` (the App's own id) and `KORTIX_AUTH_JWKS` into every server App, so do not set `KORTIX_AUTH_*` in its `env`. `verifyKortixToken` takes the key set inline or as an https URL
 (`auth.jwks_uri`), and refuses every token when no audience is set (option or
 `KORTIX_AUTH_AUDIENCE`): one project key signs every App's tokens, so `aud` is
-the only thing that keeps another App's token out. `audience: false` opts out. WebCrypto only; no dependency. Guide: `/docs/apps#build-on-apps-from-typescript`.
+the only thing that keeps another App's token out. `audience: false` opts out. WebCrypto only; no dependency. Guide: <https://kortix.com/docs/#build-on-apps-from-typescript>.
 
 ### Headless sign-in (your users, straight through the API)
 
@@ -1262,25 +1367,26 @@ const asUser = createKortix({ backendUrl, getToken: session.getToken });
 
 Also `signUp`, `sendMagicLink` + `verifyOtp`, `signInWithProvider` +
 `exchangeCode` (PKCE), `resetPassword`, `updatePassword`, `user`, `signOut` —
-all `/v1/auth/*`, no Supabase in the client. Guide: `/docs/sdk/auth`.
+all `/v1/auth/*`, no Supabase in the client. Guide: <https://kortix.com/docs/#sdk-authentication>.
 
 ## Tests
 
 ```sh
 pnpm --filter @kortix/sdk typecheck  # package + examples/ (examples/tsconfig.json)
-pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript, session url/health, projects-client domains
+pnpm --filter @kortix/sdk test src/root-canonical.test.ts   # one test file
+pnpm --filter @kortix/sdk test   # the whole suite (on macOS it exits 2 unless KORTIX_FULL_TEST=1)
 ```
 
-See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
-REST API and the session runtime's REST routes. See **`CHANGELOG.md`** for
-per-release changes.
+See **`API-MAP.md`** for the endpoint catalogue. It covers the Kortix REST API
+and the session runtime that the session handle wraps. See **`CHANGELOG.md`**
+for per-release changes.
 
 
 ### Agent repository access
 
 Agent configuration accepts `repository_access?: boolean`.
 The API stores it in `kortix.yaml` as `agents.<name>.workspace.project_repository` and always writes the value.
-An omitted value defaults to `true` on `kortix_version` 1 and 2, and to `false` on 3. `GET` returns the resolved value.
+On a `kortix_version: 3` project an omitted value is `false`. `GET` returns the resolved value.
 Set `false` to run new sessions without the project repository or repository API access.
 Git, secret, connector, and tool permissions remain separate. Existing sessions retain their saved policy.
 `AgentConfigBlock.workspace` is deprecated. The SDK maps legacy `branch`/`runtime` to the boolean field.
@@ -1301,30 +1407,26 @@ await kortix.projects.setModelAccess(projectId, {
 
 `kortix` identifies Kortix Managed Models. Other provider IDs identify BYOK, Codex, or custom providers. Provider disable takes precedence over individual model choices. Each write changes one target and preserves credentials. Disabling the current project default or its provider returns `409 cannot_disable_default`; select another default first.
 
-`useModelAccess(projectId)` from `@kortix/sdk/react` exposes the policy, write state, and `setEnabled(change)`. Successful writes refresh both picker caches. Rejected writes leave the displayed policy unchanged. The policy blocks gateway inference; legacy `setProjectModelEnablement` remains display-only. Native runtimes that bypass the gateway return `enforced: false`.
+`useModelAccess(projectId)` from `@kortix/sdk/react` exposes the policy, write state, and `setEnabled(change)`. Successful writes refresh both picker caches. Rejected writes leave the displayed policy unchanged. The policy blocks gateway inference; legacy `setProjectModelEnablement` remains display-only. The LLM gateway is the only model path, so `enforced` is always `true`.
 
-### Pooled ChatGPT connections
+### Custom LLM providers
 
-With the `pooled_provider_secrets` and `llm_gateway` project flags enabled, a
-member can create a named ChatGPT OAuth account resource:
+A project can add OpenAI-compatible endpoints. The gateway serves their models as `<providerId>/<modelId>` in the model picker, bills them as BYOK (no Kortix credits), and calls `<base_url>/chat/completions` from the gateway, never from the sandbox. The key is the optional project secret `CUSTOM_<ID>_API_KEY` (`secret_name`).
 
 ```ts
-const challenge = await kortix.project(projectId).secrets.startProviderOAuth('openai', {
-  resourceLabel: 'My ChatGPT account',
+const providers = await kortix.project(projectId).customLlmProviders();
+await kortix.project(projectId).setCustomLlmProvider('my-llm', {
+  name: 'My LLM',
+  base_url: 'https://llm.example.com/v1',
+  models: [{ id: 'my-model', name: 'My Model' }],
 });
-// Show challenge.verification_url and challenge.user_code, then poll the flow.
-const result = await kortix.project(projectId).secrets.pollProviderOAuth('openai', challenge.flow_id);
+// Deletes the definition and its CUSTOM_MY_LLM_API_KEY secret.
+await kortix.project(projectId).deleteCustomLlmProvider('my-llm');
 ```
 
-Poll until `result.status` is `success`, `failed`, or `expired`. A successful
-named flow returns `credential.secret_id`. It creates a separate project-scoped
-account resource; reconnecting does not replace another account. Every project
-member can use it by default. The owner can restrict access to selected members.
-A session can select one or more available
-ChatGPT resources through its provider secret pool (`providerId: 'codex'`).
-Without an explicit session selection, the caller's newest personal ChatGPT
-resource is used. The legacy project login remains the fallback when that
-caller has no personal resource.
+The root entry exports the same calls as `listCustomLlmProviders`, `putCustomLlmProvider` and `deleteCustomLlmProvider`. A row with `configured: false` is a `CUSTOM_*_API_KEY` secret with no endpoint saved yet. A reserved id (a catalog provider's id, `kortix`, `codex` or `auto`) returns `400 reserved_provider_id`.
+
+`useCustomLlmProviders(projectId)` from `@kortix/sdk/react` returns `{ providers, isLoading, error, save, remove, isSaving }`. `save` and `remove` refresh the list and both model-picker caches; `remove` also refreshes the secrets list.
 
 ### ChatGPT subscription usage
 
@@ -1434,9 +1536,11 @@ Other freshness tiers keep their existing behavior.
 
 ## Generative UI (`@kortix/sdk/genui`)
 
-When a project turns on the `genui` flag, the agent may answer with ` ```openui ` blocks:
-cards, comparisons, charts, maps, tabs. Render them with the headless renderer and your own
-components, or with the bundled defaults:
+Generative UI is on by default for every project (the `genui` project flag), and
+experimental. The agent may answer with ` ```openui ` blocks: cards, comparisons,
+charts, maps, tabs. Render them with the headless renderer and your own
+components, or with the bundled defaults
+([guide](https://kortix.com/docs/#generative-ui)):
 
 ```tsx
 import { genuiVersionFromClassName } from '@kortix/sdk/genui';
@@ -1469,3 +1573,23 @@ It converts blocks inside blockquotes and list items too. For a reply that is st
 Install the optional peers: `npm i zod @openuidev/lang-core@0.3.1`. `@openuidev/lang-core`
 sends one pseudonymous PostHog event at install time; set `OPENUI_TELEMETRY_DISABLED=1` or
 `DO_NOT_TRACK=1` to turn it off. Runtime telemetry is off unless you opt in.
+
+### Commit a repository file
+
+`kortix.project(projectId).files.read(path, branch)` returns the text and its
+`revision` (Git blob SHA). Pass that revision to
+`kortix.project(projectId).files.write({ path, ref: branch, content, expected_revision: revision })`.
+The server requires `project.file.write` and returns `{ commit_sha }` after pushing.
+A changed file returns HTTP 409 instead of overwriting another edit. Reload before retrying.
+
+### Change request recovery
+
+`recoverChangeRequest(projectId, target, blocker)` queues a follow-up on the
+visible origin session and returns its ID. It uses queue delivery, so a running
+turn is not interrupted. The origin prompt updates the existing change request
+and leaves application to the person. A visible archived origin creates a child;
+an unavailable origin creates a root with `metadata.origin_session_id`.
+`createProjectSession` accepts an optional `parent_session_id` for a visible
+same-project parent. This groups the new session without inheriting the parent's
+sharing or automation identity. A session-bound credential retains its own
+server-derived parent regardless of that field.

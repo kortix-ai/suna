@@ -36,7 +36,7 @@ import { useSessionStatus } from '@/lib/session/session-store';
 import { webSpace } from '@/lib/session/user-message';
 import { TurnLiveContext } from '../shared/infrastructure';
 import { ToolNavigationContext } from '../shared/navigation';
-import { ToolSurfaceContext, useToolIndent } from '../shared/surface';
+import { useToolIndent } from '../shared/surface';
 import { ToolPartRenderer } from '../tool-part-renderer';
 
 /** The child's thread plus its shown tool calls, memoised on the thread. */
@@ -47,8 +47,7 @@ export function useChildSession(childSessionId: string | undefined) {
 }
 
 export function SubAgentActivity({ childSessionId, calls }: { childSessionId?: string; calls: readonly ToolCallBlock[] }) {
-  // Read BEFORE the provider flips the surface: the offset belongs to the row
-  // this list hangs under.
+  // The offset belongs to the row this list hangs under.
   const indent = useToolIndent();
   // A background spawn returns at once: the parent's turn ends while the child
   // keeps working. The child's rows are live while either one is.
@@ -58,17 +57,15 @@ export function SubAgentActivity({ childSessionId, calls }: { childSessionId?: s
 
   if (calls.length === 0) return null;
   return (
-    <ToolSurfaceContext.Provider value="inline">
-      <ToolNavigationContext.Provider value={false}>
-        <TurnLiveContext.Provider value={childLive}>
-          <View style={{ rowGap: webSpace(1), marginLeft: indent }}>
-            {calls.map((call) => (
-              <ToolPartRenderer key={call.call_id} call={call} sessionId={childSessionId} />
-            ))}
-          </View>
-        </TurnLiveContext.Provider>
-      </ToolNavigationContext.Provider>
-    </ToolSurfaceContext.Provider>
+    <ToolNavigationContext.Provider value={false}>
+      <TurnLiveContext.Provider value={childLive}>
+        <View style={{ rowGap: webSpace(1), marginLeft: indent }}>
+          {calls.map((call) => (
+            <ToolPartRenderer key={call.call_id} call={call} sessionId={childSessionId} />
+          ))}
+        </View>
+      </TurnLiveContext.Provider>
+    </ToolNavigationContext.Provider>
   );
 }
 

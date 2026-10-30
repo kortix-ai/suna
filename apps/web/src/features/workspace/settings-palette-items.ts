@@ -33,9 +33,9 @@
 
 import { GearSixIcon } from '@phosphor-icons/react';
 
-import { railGroups, type SettingsRailTranslator } from '@/features/workspace/settings/rail';
-import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
-import type { RailItem } from '@/features/workspace/settings/type';
+import { railGroups, type SettingsRailTranslator } from '@kortix/ui/customize/settings/rail';
+import type { SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
+import type { RailItem } from '@kortix/ui/customize/settings/type';
 
 /**
  * Mirrors `ACCOUNT_SCOPED_SETTINGS_TABS` (settings-panel.tsx) — the tabs that
@@ -48,6 +48,7 @@ export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'sessions',
   'preferences',
   'connected',
+  'chrome',
   'tokens',
   'credits',
   'plan',
@@ -117,6 +118,8 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   sessions: 'sessions sounds audio volume notification notifications sound effects mute alerts',
   preferences: 'preferences language locale translation shortcuts keyboard hotkeys keybindings',
   connected: 'connected accounts linked oauth google github identities social sign in providers',
+  chrome:
+    'chrome browser extension edge brave arc connect tabs web page automation control cdp',
   // The words a person types when they want to sign the CLI in. `pat` and
   // `personal access token` came off `nav:account-tokens` in
   // `lib/menu-registry.ts` and landed here, because this is the pane that
@@ -192,6 +195,8 @@ export interface SettingsPaletteGroup {
 export interface SettingsPaletteParams {
   /** True only where `SettingsPanel` is mounted — see `openSettingsTab` in command-palette.tsx. */
   hasProject: boolean;
+  /** The platform offers Kortix in Chrome (`useChromeOffered`); off, its Settings row is not offered. */
+  chromeOffered?: boolean;
   // `flags: RailFlags` used to sit here. Marketplace, Review and Voice were
   // the only flag-gated rows and all three moved to `/projects/<id>/config`,
   // whose own sub-nav composes them
@@ -206,6 +211,7 @@ export interface SettingsPaletteParams {
  * tab is unreachable without a project.
  */
 export function isSettingsTabOfferable(tab: SettingsTab, params: SettingsPaletteParams): boolean {
+  if (tab === 'chrome' && !params.chromeOffered) return false;
   return params.hasProject || PALETTE_ACCOUNT_SCOPED_TABS.includes(tab);
 }
 

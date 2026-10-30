@@ -2,7 +2,7 @@
 
 import { useId, useLayoutEffect, useSyncExternalStore } from 'react';
 
-import { useDialogDepth } from '@/lib/z-stack';
+import { useDialogDepth } from '@kortix/ui';
 
 const hosts = new Map<string, number>();
 const listeners = new Set<() => void>();

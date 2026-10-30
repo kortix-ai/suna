@@ -45,6 +45,7 @@ import {
   assertAllowedSourceAddress,
   isAllowedSourceValidationError,
 } from '../marketplace/catalog';
+import { config } from '../config';
 import { UnsafeEgressError } from '../shared/ssrf-guard';
 import {
   createConnectorRouter,
@@ -357,4 +358,45 @@ describe('connector router: assertAllowedSourceAddress throw → structured 400 
     const text = await res.text();
     expect(text).not.toContain('invalid_source_address');
   });
+});
+
+// Characterize both public guards before sharing their string-only host policy.
+describe('marketplace URL host admission', () => {
+  test.each([
+    ['localhost', false], ['SUB.LOCALHOST.', false], ['127.2.3.4', false],
+    ['0.0.0.0', false], ['169.254.169.254', false], ['10.1.2.3', false],
+    ['192.168.1.2', false], ['172.16.0.1', false], ['172.31.255.1', false],
+    ['service.internal', false], ['service.LOCAL.', false],
+    ['example.com', true], ['EXAMPLE.COM.', true], ['172.15.0.1', true],
+    ['172.32.0.1', true], ['[::1]', true], ['[fd00::1]', true],
+  ])('%s admission is %s', (host, allowed) => {
+    const address = `https://${host}/registry.json`;
+    if (allowed) {
+      expect(() => assertAllowedSourceAddress(address)).not.toThrow();
+      expect(() => assertAllowedEndpointUrl(address)).not.toThrow();
+    } else {
+      expect(() => assertAllowedSourceAddress(address)).toThrow(
+        'Only https registry URLs on public hosts are allowed.',
+      );
+      expect(() => assertAllowedEndpointUrl(address)).toThrow(
+        'Connector endpoints must use https on a public host.',
+      );
+    }
+  });
+});
+
+test('operator allow-host bypass remains endpoint-only and precedes HTTPS checks', () => {
+  const previous = config.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS;
+  config.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS = ['LOCALHOST'];
+  try {
+    expect(() => assertAllowedEndpointUrl('http://localhost./mcp')).not.toThrow();
+    expect(() => assertAllowedSourceAddress('http://localhost./registry.json')).toThrow(
+      'Only https registry URLs on public hosts are allowed.',
+    );
+    expect(() => assertAllowedEndpointUrl('http://user:password@localhost/mcp')).toThrow(
+      'Connector endpoints must not embed credentials.',
+    );
+  } finally {
+    config.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS = previous;
+  }
 });

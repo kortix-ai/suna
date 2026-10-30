@@ -208,8 +208,10 @@ describe('web ECS migration', () => {
     expect(workflow).toContain('deployments: write');
     expect(workflow).toContain('type: choice');
     expect(workflow).toContain('- platinum');
-    // Previews run on Platinum only: Daytona is not a dispatch option.
+    // Previews run on Platinum only: Daytona is not a dispatch option, and no
+    // preview job reads a Daytona credential.
     expect(workflow).not.toContain('- daytona');
+    expect(workflow).not.toContain('DAYTONA_');
     expect(workflow).not.toContain('infra/scripts/ecs-preview.sh');
     expect(workflow).not.toContain('configure-aws-credentials');
     expect(workflow).not.toMatch(/vercel/i);
@@ -458,5 +460,26 @@ describe('web ECS migration', () => {
     expect(smoke).toContain('deploymentBypassRequestHeaders');
     expect(smoke).toContain('deploymentBypassSecret');
     expect(smoke).not.toContain("'x-vercel-protection-bypass'");
+  });
+
+  /**
+   * Vercel refuses a deploy of more than 15,000 files. The v0.14.9 tree had
+   * 15,077, and the prod Vercel job, the only one without `--archive=tgz`,
+   * failed after the API was live (Deploy Prod 40868757807). kortix.com stayed
+   * on the previous release, and the GitHub Release, the installers and the
+   * VERSION syncs never ran.
+   */
+  it('uploads every Vercel deploy as one archive', () => {
+    for (const file of ['deploy-prod.yml', 'deploy-staging.yml']) {
+      const deploys = read(`.github/workflows/${file}`)
+        .split('\n')
+        .filter((line) => /vercel(@[\w.]+)? deploy /.test(line));
+      expect(deploys.length).toBeGreaterThan(0);
+      for (const line of deploys) expect(line).toContain('--archive=tgz');
+    }
+    // An archive deploy does not promise git metadata, so prod stamps the commit.
+    expect(read('.github/workflows/deploy-prod.yml')).toContain(
+      '--build-env "NEXT_PUBLIC_KORTIX_COMMIT=${{ github.sha }}"',
+    );
   });
 });

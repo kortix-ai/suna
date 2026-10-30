@@ -16,8 +16,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 
 import { useOpsOverview } from '@/hooks/admin/use-ops-overview';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { cn } from '@/lib/utils';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
+import { cn } from '@kortix/ui';
 
 import { AdminPageShell } from './_components/admin-page-shell';
 import { AdminSection } from './_components/admin-panel';

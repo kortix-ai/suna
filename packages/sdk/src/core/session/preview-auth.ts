@@ -18,9 +18,10 @@
  * reloaded, bookmarked, or sent to anyone.
  */
 
+import { backendApi } from '../http/api-client';
 import { getAuthToken } from '../http/auth';
 import { platformConfig } from '../http/config';
-import { appendPreviewToken, buildPreviewAuthEndpoint, isSubdomainPreviewUrl } from './preview';
+import { buildPreviewAuthEndpoint, isSubdomainPreviewUrl } from './preview';
 import { shouldAttachPreviewToken } from './preview-origin-trust';
 
 /**
@@ -74,12 +75,12 @@ export async function ensurePreviewSessionCookie(
  *
  *   - Preview ORIGIN (`{env}-p{port}-{sandbox}.{domain}`, or the localhost
  *     form): the API's `__preview_session` cookie is host-scoped and can never
- *     reach it, so the credential rides in the URL as a one-shot `?token`. The
+ *     reach it, so the credential is exchanged for a short-lived `?preview_ticket`. The
  *     proxy exchanges it for a host cookie and strips it from the address bar.
  *   - Path proxy (`/v1/p/{sandbox}/{port}/…`): same origin as the API, so the
  *     cookie works; mint it and return the URL untouched.
  *
- * Never throws. With no token, for a URL that is not a preview at all, or for
+ * Ticket exchange failures reject without exposing the bearer. With no token, for a URL that is not a preview at all, or for
  * a preview-shaped host this deployment does not serve, the input is returned
  * unchanged — the destination then answers for itself, which
  * is more honest than fabricating a URL that cannot work.
@@ -93,7 +94,16 @@ export async function authorizePreviewUrl(
     // may receive the credential. Anything else opens bare.
     if (!(await shouldAttachPreviewToken(previewUrl, options))) return previewUrl;
     const token = await getAuthToken();
-    return token ? appendPreviewToken(previewUrl, token) : previewUrl;
+    if (!token) return previewUrl;
+    const response = await backendApi.post<{ ticket: string }>('/p/ticket', { preview_url: previewUrl });
+    const result = response.data;
+    if (!response.success || !result || typeof result.ticket !== 'string' || !result.ticket) {
+      throw new Error('Preview authorization failed');
+    }
+    const authorized = new URL(previewUrl);
+    authorized.searchParams.delete('token');
+    authorized.searchParams.set('preview_ticket', result.ticket);
+    return authorized.toString();
   }
   await ensurePreviewSessionCookie(previewUrl, options);
   return previewUrl;

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { Modal } from '@/components/ui/modal';
-import type { ConnectorGateConnection } from '@/stores/connector-gate-store';
+import { Modal } from '@kortix/ui/modal';
+import type { ConnectorGateConnection } from '@kortix/ui/internal/stores/connector-gate-store';
 
 import { ConnectorConnectionGateContent } from './connector-connection-gate-dialog';
 

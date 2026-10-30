@@ -37,6 +37,9 @@ let createBody: Record<string, unknown> | null = null;
 let transcript: unknown[] = [];
 /** When true, the assistant reply stops with a structured runtime error. */
 let replyError = false;
+let provisioning = false;
+let startPosts = 0;
+let stopped = false;
 
 function sessionRow() {
   return {
@@ -46,13 +49,13 @@ function sessionRow() {
     branch_name: SESSION_ID,
     base_ref: 'main',
     sandbox_provider: 'daytona',
-    sandbox_id: SESSION_ID,
+    sandbox_id: provisioning ? null : SESSION_ID,
     sandbox_url: null,
-    opencode_session_id: OPENCODE_SESSION_ID,
+    opencode_session_id: provisioning ? null : OPENCODE_SESSION_ID,
     name: 'SDK chat',
     custom_name: null,
     agent_name: 'default',
-    status: 'running',
+    status: stopped ? 'stopped' : provisioning ? 'provisioning' : 'running',
     error: null,
     metadata: {},
     created_at: '2026-07-30T00:00:00.000Z',
@@ -127,6 +130,9 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     createBody = null;
     transcript = [];
     replyError = false;
+    provisioning = false;
+    startPosts = 0;
+    stopped = false;
 
     server = Bun.serve({
       port: 0,
@@ -146,6 +152,8 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
           request.method === 'POST' &&
           url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`
         ) {
+          startPosts += 1;
+          provisioning = false;
           return Response.json({
             stage: 'ready',
             agent_name: 'default',
@@ -233,7 +241,18 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  test('sends through the prompt inbox and reads the reply from the session runtime', async () => {
+  test('chat rejects stopped sessions, starts unused sessions, and reads the prompt reply', async () => {
+    stopped = true;
+    const stoppedCode = await runSessions([
+      'chat', SESSION_ID, '--project', PROJECT_ID, '--prompt', 'Reply pong', '--json',
+    ]);
+    expect(stoppedCode).toBe(1);
+    expect(stderr).toContain('not running');
+    expect(startPosts).toBe(0);
+    expect(runtimePromptPosts).toBe(0);
+    stopped = false;
+    stderr = '';
+    provisioning = true;
     const chatCode = await runSessions([
       'chat',
       SESSION_ID,
@@ -245,6 +264,7 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     ]);
 
     expect(chatCode).toBe(0);
+    expect(startPosts).toBeGreaterThan(0);
     expect(runtimeAuthorization).toBe(`Bearer ${TOKEN}`);
     expect(promptBody).toMatchObject({
       parts: [{ type: 'text', text: 'hello from the CLI' }],

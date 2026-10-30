@@ -16,7 +16,10 @@ const testConfig: Record<string, unknown> = {
 };
 mock.module('../config', () => ({ config: testConfig }));
 const claims = new Set<string>();
+/** When set, the refresh-token ledger insert throws this. */
+let ledgerFailure: Error | null = null;
 mock.module('../shared/db', () => ({ db: { execute: async (query: SQL) => {
+  if (ledgerFailure) throw ledgerFailure;
   const rendered = new PgDialect().sqlToQuery(query);
   const digest = rendered.params[0];
   if (typeof digest !== 'string') throw new Error('missing token digest');
@@ -82,6 +85,7 @@ const post = (path: string, body: unknown, ip = '203.0.113.7') =>
 beforeEach(() => {
   seen = [];
   claims.clear();
+  ledgerFailure = null;
   signupsOpen = true;
   respond = () => Response.json(SESSION);
 });
@@ -123,6 +127,24 @@ describe('/v1/auth headless routes', () => {
     respond = () => Response.json(SESSION);
     expect((await post('/refresh', { refresh_token: 'retry-token' })).status).toBe(400);
     expect(seen).toHaveLength(1);
+  });
+
+  // KRTX-2977: only a connection-level failure is "temporarily unavailable".
+  // A missing table or a permission error is a fault the operator must see:
+  // it reaches the global handler, which logs its SQLSTATE and answers 500.
+  test('a connection failure on the refresh-token ledger is a 503; GoTrue is never called', async () => {
+    ledgerFailure = Object.assign(new Error('terminating connection due to administrator command'), { code: '57P01' });
+    const res = await post('/refresh', { refresh_token: 'ledger-down' });
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as { error: string }).error).toBe('auth_unavailable');
+    expect(seen).toEqual([]);
+  });
+
+  test('any other ledger error is not reported as temporary; GoTrue is never called', async () => {
+    ledgerFailure = Object.assign(new Error('relation "kortix.used_refresh_tokens" does not exist'), { code: '42P01' });
+    const res = await post('/refresh', { refresh_token: 'ledger-missing' });
+    expect(res.status).toBe(500);
+    expect(seen).toEqual([]);
   });
 
   test('signup reports requires_email_confirmation when GoTrue returns a bare user', async () => {

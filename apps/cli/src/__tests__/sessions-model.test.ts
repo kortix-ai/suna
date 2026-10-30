@@ -1,7 +1,6 @@
 // `sessions ls --json` and `sessions status --json` carry the session's
-// resolved model id — the stored pin (`metadata.opencode_model`, the same
-// `provider/model` ref `sessions new --model` takes), or null when the row
-// holds none (the session follows the default chain). KRTX-1695.
+// conversation model, even when a project-default turn overrode the creation
+// pin. Older APIs without this field fall back to the stored pin.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -41,9 +40,10 @@ const row = (id: string, over: Record<string, unknown> = {}) => ({
 
 const PINNED = row(PINNED_ID, {
   status: "running",
-  metadata: { opencode_model: "kortix/glm-5.3-flash", opencode_model_source: "project" },
+  metadata: { opencode_model: "kortix/deepseek-v4.1-flash", opencode_model_source: "platform" },
+  model: "kortix/glm-5.3-flash",
 });
-const UNPINNED = row(UNPINNED_ID);
+const UNPINNED = row(UNPINNED_ID, { model: null, metadata: { opencode_model: "kortix/old-pin" } });
 const BYOK = row(BYOK_ID, { metadata: { opencode_model: "openai/gpt-4o" } });
 
 async function runCli(args: string[]) {
@@ -103,7 +103,7 @@ afterEach(() => {
 });
 
 describe("kortix sessions model field in --json output", () => {
-  test("ls --json carries the stored pin per session and null when unpinned", async () => {
+  test("ls --json prefers the conversation model, falling back for older APIs", async () => {
     const r = await runCli(["sessions", "ls", "--json"]);
     expect(r.code).toBe(0);
     const rows = JSON.parse(r.stdout) as Array<Record<string, unknown>>;

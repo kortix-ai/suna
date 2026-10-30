@@ -26,9 +26,8 @@
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 
-import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
-import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { useCapabilityAccess } from '@/features/workspace/project-sidebar/project-settings-nav';
+import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-skeleton';
+import { capabilityTabHref, useCapabilityAccess } from '@kortix/ui/workspace';
 import { useLegacySectionRedirect } from '@/features/workspace/settings/use-account-section-redirect';
 
 export default function ProjectCustomizePage() {

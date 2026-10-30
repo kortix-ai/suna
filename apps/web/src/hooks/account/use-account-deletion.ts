@@ -1,5 +1,5 @@
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import {
   cancelAccountDeletion,
   deleteAccountImmediately,

@@ -16,7 +16,7 @@
  */
 export interface CurrentRuntimeState {
   url: string | null;
-  /** The sandbox's external_id (Daytona id) — used for proxy routing. */
+  /** The sandbox's provider external id, used for proxy routing. */
   sandboxId: string | null;
   /** The sandbox's DB instance id (platform `sandbox_id`) — used by ownership-
    *  scoped APIs like per-sandbox API keys that key on the DB row, not the

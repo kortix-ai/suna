@@ -8,6 +8,7 @@
  *     token as a bearer, and Slack's HTTP-200 `{ok:false}` envelope is surfaced
  *     as a real error (parity with the in-sandbox CLI's throw).
  */
+import { config } from '../config';
 import { describe, expect, test } from 'bun:test';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
@@ -105,7 +106,7 @@ describe('channelCatalog(email)', () => {
   const byPath = new Map(actions.map((a) => [a.path, a]));
   const action = (path: string) => expectDefined(byPath.get(path));
 
-  test('exposes the AgentMail inbox/thread surface as http bindings', () => {
+  test('exposes the Resend inbox/thread surface as http bindings', () => {
     expect(actions.map((a) => a.path).sort()).toEqual([
       'get_message',
       'get_message_attachment',
@@ -128,10 +129,11 @@ describe('channelCatalog(email)', () => {
     expect(a.binding).toEqual({
       kind: 'http',
       method: 'POST',
-      path: '/inboxes/{inbox_id}/messages/{message_id}/reply',
+      path: '/inboxes/{inbox_id}/threads/{thread_id}/emails/{message_id}/reply',
     });
     const props = objectSchema(a.inputSchema).properties;
     expect(props.inbox_id).toMatchObject({ 'x-in': 'path' });
+    expect(props.thread_id).toMatchObject({ 'x-in': 'path' });
     expect(props.message_id).toMatchObject({ 'x-in': 'path' });
     expect(a.risk).toBe('write');
   });
@@ -145,6 +147,7 @@ describe('channelCatalog(email)', () => {
     );
     expect(objectSchema(action('send_message').inputSchema).required ?? []).toEqual(['to']);
     expect(objectSchema(action('reply_message').inputSchema).required ?? []).toEqual([
+      'thread_id',
       'message_id',
     ]);
   });
@@ -171,7 +174,7 @@ describe('channelCatalog(email)', () => {
   });
 
   test('api base + default slug', () => {
-    expect(channelApiBase('email')).toBe('https://api.agentmail.to/v0');
+    expect(channelApiBase('email')).toBe('https://api.resend.com');
     expect(channelDefaultSlug('email')).toBe(EMAIL_CHANNEL_CONNECTOR_SLUG);
     expect(EMAIL_CHANNEL_CONNECTOR_SLUG).toBe('kortix_email');
   });
@@ -267,7 +270,7 @@ const EMAIL: GatewayConnector = {
   slug: EMAIL_CHANNEL_CONNECTOR_SLUG,
   provider: 'channel',
   platform: 'email',
-  baseUrl: 'https://api.agentmail.to/v0',
+  baseUrl: 'https://api.resend.com',
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
   hasAuth: true,
   credentialMode: 'shared',
@@ -289,16 +292,17 @@ const EMAIL_REPLY: GatewayAction = {
     type: 'object',
     properties: {
       inbox_id: { 'x-in': 'path' },
+      thread_id: { 'x-in': 'path' },
       message_id: { 'x-in': 'path' },
       text: {},
     },
-    required: ['inbox_id', 'message_id'],
+    required: ['inbox_id', 'thread_id', 'message_id'],
   },
   risk: 'write',
   binding: {
     kind: 'http',
     method: 'POST',
-    path: '/inboxes/{inbox_id}/messages/{message_id}/reply',
+    path: '/inboxes/{inbox_id}/threads/{thread_id}/emails/{message_id}/reply',
   },
 };
 
@@ -309,11 +313,12 @@ const EMAIL_LIST_MESSAGES: GatewayAction = {
     type: 'object',
     properties: {
       inbox_id: { 'x-in': 'path' },
+      thread_id: { 'x-in': 'path' },
       limit: {},
     },
   },
   risk: 'read',
-  binding: { kind: 'http', method: 'GET', path: '/inboxes/{inbox_id}/messages' },
+  binding: { kind: 'http', method: 'GET', path: '/inboxes/{inbox_id}/threads/{thread_id}/emails' },
 };
 
 function makeDeps(body: string, status = 200) {
@@ -571,7 +576,7 @@ describe('handleCall — channel (email)', () => {
     const deps: GatewayDeps = {
       loadConnectorBySlug: async () => EMAIL,
       loadAction: async () => EMAIL_REPLY,
-      resolveCredential: async () => 'am_project_token',
+      resolveCredential: async () => 're_project_token',
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
@@ -633,19 +638,20 @@ describe('handleCall — channel (email)', () => {
     expect(res.status).toBe('ok');
     expect(lifecycle).toEqual(['claim:proj-1:sess-1:u1', 'complete:claim-1']);
     const providerBody = JSON.parse(expectDefined(fetchCalls[0]?.body));
-    expect(providerBody.attachments[0]).toMatchObject({
+    // Resend fetches a reply's file from `path`; Kortix's own fields are dropped.
+    expect(providerBody.attachments[0]).toEqual({
       filename: 'memo.pdf',
-      url: 'https://storage.test/signed-on-execute',
+      content_type: 'application/pdf',
+      path: 'https://storage.test/signed-on-execute',
     });
-    expect(providerBody.attachments[0].attachment_id).toBeUndefined();
   });
 
-  test('releases a claim after an AgentMail failure so the same approved call can retry', async () => {
+  test('releases a claim after a provider failure so the same approved call can retry', async () => {
     const lifecycle: string[] = [];
     const deps: GatewayDeps = {
       loadConnectorBySlug: async () => EMAIL,
       loadAction: async () => EMAIL_REPLY,
-      resolveCredential: async () => 'am_project_token',
+      resolveCredential: async () => 're_project_token',
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
@@ -693,7 +699,7 @@ describe('handleCall — channel (email)', () => {
     const deps: GatewayDeps = {
       loadConnectorBySlug: async () => EMAIL,
       loadAction: async () => EMAIL_REPLY,
-      resolveCredential: async () => 'am_project_token',
+      resolveCredential: async () => 're_project_token',
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [
         { match: 'kortix_email.reply_message', action: 'require_approval', position: 0 },
@@ -732,7 +738,7 @@ describe('handleCall — channel (email)', () => {
     expect(claimCount).toBe(0);
   });
 
-  test('legacy connector="email" calls use kortix_email and build AgentMail requests', async () => {
+  test('legacy connector="email" calls use kortix_email and build Resend requests', async () => {
     const fetchCalls: Array<{
       url: string;
       method: string;
@@ -744,7 +750,7 @@ describe('handleCall — channel (email)', () => {
         slug === EMAIL_CHANNEL_CONNECTOR_SLUG ? EMAIL : null,
       loadAction: async (connectorId, relPath) =>
         connectorId === EMAIL.connectorId && relPath === 'reply_message' ? EMAIL_REPLY : null,
-      resolveCredential: async () => 'am_project_token',
+      resolveCredential: async () => 're_project_token',
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
@@ -759,19 +765,19 @@ describe('handleCall — channel (email)', () => {
       ...input,
       connectorSlug: 'email',
       actionPath: 'reply_message',
-      args: { inbox_id: 'inb_1', message_id: 'msg_1', text: 'Thanks' },
+      args: { inbox_id: 'inb_1', thread_id: 'thr_1', message_id: 'msg_1', text: 'Thanks' },
     });
 
     expect(res.status).toBe('ok');
     expect(fetchCalls).toHaveLength(1);
     const call = expectDefined(fetchCalls[0]);
-    expect(call.url).toBe('https://api.agentmail.to/v0/inboxes/inb_1/messages/msg_1/reply');
+    expect(call.url).toBe('https://api.resend.com/inboxes/inb_1/threads/thr_1/emails/msg_1/reply');
     expect(call.method).toBe('POST');
-    expect(call.headers.Authorization).toBe('Bearer am_project_token');
+    expect(call.headers.Authorization).toBe('Bearer re_project_token');
     expect(JSON.parse(expectDefined(call.body))).toEqual({ text: 'Thanks' });
   });
 
-  test('email-originated sessions pin connection-specific calls to the active AgentMail inbox', async () => {
+  test('email-originated sessions pin calls to the active inbox, thread and email', async () => {
     const staleConnectionConnector: GatewayConnector = {
       ...EMAIL,
       connectorId: 'conn-email-stale-connection',
@@ -795,14 +801,14 @@ describe('handleCall — channel (email)', () => {
         connectorId === staleConnectionConnector.connectorId && relPath === 'reply_message'
           ? EMAIL_REPLY
           : null,
-      resolveCredential: async () => 'am_stale_connection_token',
+      resolveCredential: async () => 're_stale_connection_token',
       loadEmailSessionContext: async () => ({
         inboxId: 'inb_active',
         threadId: 'thr_active',
         messageId: 'msg_active',
       }),
       resolveEmailCredentialForInbox: async (_projectId, inboxId) =>
-        inboxId === 'inb_active' ? 'am_active_inbox_token' : null,
+        inboxId === 'inb_active' ? 're_active_inbox_token' : null,
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
@@ -817,16 +823,16 @@ describe('handleCall — channel (email)', () => {
       ...input,
       connectorSlug: 'email_old_connection',
       actionPath: 'reply_message',
-      args: { inbox_id: 'inb_deleted', message_id: 'msg_deleted', text: 'Thanks' },
+      args: { inbox_id: 'inb_deleted', thread_id: 'thr_deleted', message_id: 'msg_deleted', text: 'Thanks' },
     });
 
     expect(res.status).toBe('ok');
     expect(fetchCalls).toHaveLength(1);
     const call = expectDefined(fetchCalls[0]);
     expect(call.url).toBe(
-      'https://api.agentmail.to/v0/inboxes/inb_active/messages/msg_active/reply',
+      'https://api.resend.com/inboxes/inb_active/threads/thr_active/emails/msg_active/reply',
     );
-    expect(call.headers.Authorization).toBe('Bearer am_active_inbox_token');
+    expect(call.headers.Authorization).toBe('Bearer re_active_inbox_token');
     expect(JSON.parse(expectDefined(call.body))).toEqual({ text: 'Thanks' });
   });
 
@@ -849,9 +855,9 @@ describe('handleCall — channel (email)', () => {
         connectorId === connectionConnector.connectorId && relPath === 'list_messages'
           ? EMAIL_LIST_MESSAGES
           : null,
-      resolveCredential: async () => 'am_connection_token',
+      resolveCredential: async () => 're_connection_token',
       loadEmailConnectorContext: async (_projectId, connectorSlug) =>
-        connectorSlug === 'email_fabian_u7vq' ? { inboxId: 'email-inbox@agentmail.to' } : null,
+        connectorSlug === 'email_fabian_u7vq' ? { inboxId: 'email-inbox@kortixmail.com' } : null,
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
@@ -867,16 +873,94 @@ describe('handleCall — channel (email)', () => {
       sessionId: null,
       connectorSlug: 'email_fabian_u7vq',
       actionPath: 'list_messages',
-      args: { inbox_id: 'email_fabian_u7vq', limit: 1 },
+      args: { inbox_id: 'email_fabian_u7vq', thread_id: 'thr_1', limit: 1 },
     });
 
     expect(res.status).toBe('ok');
     expect(fetchCalls).toHaveLength(1);
     const call = expectDefined(fetchCalls[0]);
     expect(call.url).toBe(
-      'https://api.agentmail.to/v0/inboxes/email-inbox%40agentmail.to/messages?limit=1',
+      'https://api.resend.com/inboxes/email-inbox%40kortixmail.com/threads/thr_1/emails?limit=1',
     );
-    expect(call.headers.Authorization).toBe('Bearer am_connection_token');
+    expect(call.headers.Authorization).toBe('Bearer re_connection_token');
+  });
+});
+
+describe('handleCall — email send_message is a draft sent at once', () => {
+  test('creates the draft with inline file bytes, then sends it, as one call', async () => {
+    const EMAIL_SEND: GatewayAction = {
+      path: 'email.send_message',
+      relPath: 'send_message',
+      inputSchema: { type: 'object', properties: { inbox_id: { 'x-in': 'path' }, to: {}, subject: {}, text: {} } },
+      risk: 'write',
+      binding: { kind: 'http', method: 'POST', path: '/inboxes/{inbox_id}/drafts' },
+    };
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response('file-bytes')) as unknown as typeof fetch;
+    const fetchCalls: Array<{ url: string; method: string; body?: string }> = [];
+    const deps: GatewayDeps = {
+      loadConnectorBySlug: async () => EMAIL,
+      loadAction: async () => EMAIL_SEND,
+      resolveCredential: async () => 're_project_token',
+      loadEmailConnectorContext: async () => ({ inboxId: 'inb_1' }),
+      loadPolicies: async () => [],
+      loadProjectPolicies: async () => [],
+      loadDefaultMode: async () => 'allow_all',
+      recordExecution: async () => null,
+      attachmentStore: {
+        stage: async () => {
+          throw new Error('not used');
+        },
+        claimForEmail: async (_scope, args) => ({
+          args: {
+            ...args,
+            // Kortix's own storage: read directly, not through the egress guard.
+            attachments: [
+              {
+                filename: 'memo.txt',
+                content_type: 'text/plain',
+                url: `${(config.SUPABASE_PUBLIC_URL ?? config.SUPABASE_URL).replace(/\/+$/, '')}/storage/v1/object/sign/memo`,
+              },
+            ],
+          },
+          claimToken: 'claim-1',
+          attachmentIds: ['019fc40d-04dd-7f52-a591-65ab13d2a245'],
+        }),
+        completeClaim: async () => {},
+        releaseClaim: async () => {},
+      },
+      fetchImpl: async (url, init) => {
+        fetchCalls.push({ url, method: init.method, body: init.body });
+        const body = url.endsWith('/send') ? '{"id":"email-sent-1"}' : '{"object":"inbox_draft","id":"draft-1"}';
+        return { status: 200, ok: true, text: async () => body };
+      },
+    };
+    try {
+      const res = await handleCall(deps, {
+        ...input,
+        sessionId: null,
+        connectorSlug: 'email',
+        actionPath: 'send_message',
+        args: {
+          to: ['someone@example.test'],
+          subject: 'Hi',
+          text: 'Hello',
+          attachments: [{ attachment_id: '019fc40d-04dd-7f52-a591-65ab13d2a245' }],
+        },
+      });
+      expect(res).toMatchObject({ status: 'ok' });
+      expect(fetchCalls.map((c) => `${c.method} ${c.url}`)).toEqual([
+        'POST https://api.resend.com/inboxes/inb_1/drafts',
+        'POST https://api.resend.com/inboxes/inb_1/drafts/draft-1/send',
+      ]);
+      const draft = JSON.parse(expectDefined(fetchCalls[0]?.body));
+      expect(draft.attachments).toEqual([
+        { filename: 'memo.txt', content_type: 'text/plain', content: Buffer.from('file-bytes').toString('base64') },
+      ]);
+      expect(res.status === 'ok' && res.data).toEqual({ id: 'email-sent-1' });
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });
 

@@ -1,0 +1,186 @@
+/**
+ * Telegram install: one bot per project. The bot token and webhook secret live
+ * in project secrets (connector-only); `chat_installs` records the bot id so
+ * the install is a channel like Slack and Teams. Allowed senders and access
+ * requests are `projects.metadata.telegram` (channels/core/channel-access.ts),
+ * scoped to the bot id.
+ */
+import { chatChannelBindings, chatInstalls, projects } from '@kortix/db';
+import { CHANNELS } from '@kortix/shared/channel-descriptors';
+import { and, eq } from 'drizzle-orm';
+import { logger } from '../../lib/logger';
+import { db } from '../../shared/db';
+import { telegramCall } from './api';
+import { removeTelegramMenu } from './menu';
+import {
+  type ChannelAccessEntry,
+  type ChannelAccessRequester,
+  cleanName,
+  clearChannelAccessRequests,
+  readChannelAccess,
+  recordChannelAccessRequest,
+  setChannelAllowedUsers,
+} from '../core/channel-access';
+import { deleteProjectSecrets, readSecret, upsertSecret } from '../install-store';
+
+export const TELEGRAM_BOT_TOKEN = 'TELEGRAM_BOT_TOKEN';
+/** Same name the legacy webhook verifies against, so one secret serves both paths. */
+export const TELEGRAM_WEBHOOK_SECRET = 'TELEGRAM_WEBHOOK_SECRET';
+export const TELEGRAM_BOT_USERNAME = 'TELEGRAM_BOT_USERNAME';
+
+export const TELEGRAM_USER_ID = CHANNELS.telegram.access.userId;
+
+/** A sender's id and cleaned names (the port's `requester`). Null: `from` has no valid Telegram user id. */
+export function telegramRequester(from: unknown): ChannelAccessRequester | null {
+  const sender = (from ?? {}) as { id?: unknown; username?: unknown; first_name?: unknown; last_name?: unknown };
+  const id = typeof sender.id === 'number' && Number.isSafeInteger(sender.id) && sender.id > 0 ? String(sender.id) : '';
+  if (!TELEGRAM_USER_ID.test(id)) return null;
+  return {
+    id,
+    username: cleanName(sender.username, 32),
+    first_name: cleanName(sender.first_name, 64),
+    last_name: cleanName(sender.last_name, 64),
+  };
+}
+
+export interface TelegramInstall {
+  botId: string;
+  username: string | null;
+  allowedUserIds: string[];
+  /** Requests still waiting: not allowed, under 30 days old, newest first. */
+  accessRequests: ChannelAccessEntry[];
+}
+
+export async function saveTelegramInstall(input: {
+  projectId: string;
+  botId: string;
+  username: string | null;
+  token: string;
+  webhookSecret: string;
+}): Promise<void> {
+  // One bot per project: a reconnect with another bot retires the old row.
+  const [previous] = await db
+    .delete(chatInstalls)
+    .where(and(eq(chatInstalls.platform, 'telegram'), eq(chatInstalls.projectId, input.projectId)))
+    .returning({ botId: chatInstalls.workspaceId });
+  await db
+    .insert(chatInstalls)
+    .values({ platform: 'telegram', workspaceId: input.botId, projectId: input.projectId })
+    .onConflictDoNothing();
+  // Requests to another bot are not requests to this one. After the insert: a
+  // request still writing checks its bot under the row lock. The chats' settings
+  // (`/model`, `/agent`) were the old bot's chats.
+  if (previous?.botId !== input.botId) {
+    await clearChannelAccessRequests('telegram', input.projectId);
+    await deleteTelegramChatSettings(input.projectId);
+  }
+  await upsertSecret(input.projectId, TELEGRAM_BOT_TOKEN, input.token);
+  await upsertSecret(input.projectId, TELEGRAM_WEBHOOK_SECRET, input.webhookSecret);
+  if (input.username) await upsertSecret(input.projectId, TELEGRAM_BOT_USERNAME, input.username);
+}
+
+/**
+ * Null for a deleted project: its tombstone keeps the install (no FK cascade),
+ * and the webhook and both consumers return at no install, so its bot answers no one.
+ */
+export async function loadTelegramInstall(projectId: string): Promise<TelegramInstall | null> {
+  const [row] = await db
+    .select({ botId: chatInstalls.workspaceId, metadata: projects.metadata })
+    .from(chatInstalls)
+    .innerJoin(projects, and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active')))
+    .where(and(eq(chatInstalls.platform, 'telegram'), eq(chatInstalls.projectId, projectId)))
+    .limit(1);
+  if (!row) return null;
+  return {
+    botId: row.botId,
+    username: await readSecret(projectId, TELEGRAM_BOT_USERNAME),
+    ...readChannelAccess(row.metadata, 'telegram'),
+  };
+}
+
+export function loadTelegramBotToken(projectId: string): Promise<string | null> {
+  return readSecret(projectId, TELEGRAM_BOT_TOKEN);
+}
+
+/** The secret Telegram sends with every update to this project's webhook. */
+export function loadTelegramWebhookSecret(projectId: string): Promise<string | null> {
+  return readSecret(projectId, TELEGRAM_WEBHOOK_SECRET);
+}
+
+/** Every chat's `/model` and `/agent` choice in the project. */
+function deleteTelegramChatSettings(projectId: string) {
+  return db
+    .delete(chatChannelBindings)
+    .where(and(eq(chatChannelBindings.platform, 'telegram'), eq(chatChannelBindings.projectId, projectId)));
+}
+
+export async function deleteTelegramInstall(projectId: string): Promise<void> {
+  await db
+    .delete(chatInstalls)
+    .where(and(eq(chatInstalls.platform, 'telegram'), eq(chatInstalls.projectId, projectId)));
+  await deleteTelegramChatSettings(projectId);
+  await deleteProjectSecrets(projectId, [TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, TELEGRAM_BOT_USERNAME]);
+  // Requests were made to the old bot. The allowed list stays for a reconnect.
+  await clearChannelAccessRequests('telegram', projectId);
+}
+
+/**
+ * Disconnect and the project delete release the bot (`releaseTelegramWebhook`),
+ * then delete the install and its secrets. An update that still arrives finds
+ * no secret and gets the webhook's 404.
+ */
+export async function releaseTelegramBot(projectId: string): Promise<void> {
+  const token = await loadTelegramBotToken(projectId);
+  if (token) await releaseTelegramWebhook(projectId, token);
+  await deleteTelegramInstall(projectId);
+}
+
+/**
+ * The bot's webhook and Kortix's menu entries go, only while the webhook
+ * points at this project: the bot may serve another project since. Telegram
+ * is best effort; never throws.
+ */
+export async function releaseTelegramWebhook(projectId: string, token: string): Promise<void> {
+  try {
+    const info = await telegramCall<{ url?: string }>(token, 'getWebhookInfo', {}, 5_000);
+    if (!info.url?.endsWith(`/v1/webhooks/telegram/${projectId}`)) return;
+    await telegramCall(token, 'deleteWebhook', {}, 5_000);
+    // The bot is this project's: its menu loses Kortix's commands and keeps the owner's.
+    await removeTelegramMenu(token).catch((error) =>
+      logger.warn('[telegram] the released bot kept its Kortix commands', { projectId, error: String(error) }));
+  } catch (error) {
+    logger.warn('[telegram] the released bot kept its webhook', { projectId, error: String(error) });
+  }
+}
+
+/** The token of the project's bot when a connect replaces it with `botId`; read it before the save overwrites it. */
+export async function replacedTelegramBotToken(projectId: string, botId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ botId: chatInstalls.workspaceId })
+    .from(chatInstalls)
+    .where(and(eq(chatInstalls.platform, 'telegram'), eq(chatInstalls.projectId, projectId)))
+    .limit(1);
+  return row && row.botId !== botId ? loadTelegramBotToken(projectId) : null;
+}
+
+/** Replace the allowed sender list; drops the requests of the ids it allows. */
+export function setTelegramAllowedUserIds(projectId: string, ids: string[]): Promise<void> {
+  return setChannelAllowedUsers('telegram', projectId, ids);
+}
+
+/**
+ * Record that a not-allowed user messaged the bot privately: only the id and
+ * the names of `from` (channel-access.ts `recordChannelAccessRequest`). False
+ * also when `from` has no valid Telegram user id.
+ */
+export async function recordTelegramAccessRequest(
+  projectId: string,
+  install: Pick<TelegramInstall, 'botId' | 'accessRequests'>,
+  from: { id?: unknown; username?: unknown; first_name?: unknown; last_name?: unknown },
+): Promise<boolean> {
+  const requester = telegramRequester(from);
+  return (
+    !!requester &&
+    recordChannelAccessRequest('telegram', projectId, { scopeId: install.botId, accessRequests: install.accessRequests }, requester)
+  );
+}

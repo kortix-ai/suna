@@ -289,7 +289,7 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     expect(scheduled).toBe(1);
   });
 
-  test('a box already staged on this build (Daytona/E2B): proceed — it converges at its next start', async () => {
+  test('a box already staged on this build (Daytona): proceed — it converges at its next start', async () => {
     let scheduled = 0;
     const metadata = {
       legacyRuntimeBootstrap: { state: 'staged', attempts: 1, manifestBuild: 1790538288, lastAttemptAt: '2026-09-26T23:00:00.000Z' },

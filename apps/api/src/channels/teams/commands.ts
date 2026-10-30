@@ -1,5 +1,6 @@
 import { config } from '../../config';
 import { formatRelativeTime, sessionWebUrl } from '../slack/util';
+import { SESSION_STATUS, describeSession } from '../core/display';
 import { repoPreviewImages } from '../repo-preview';
 import { PREVIEW_WAIT_MS, projectRows } from './project-rows';
 import { buildTeamsHomeCard } from './home';
@@ -7,7 +8,6 @@ import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { currentChannelSelection } from '../slack/selection';
 import { type SettingsChannel, changeChannelAgent, changeChannelPolicy, switchChannelProject, unbindChannel } from '../core/settings';
 import { teamsAgentChangeText, teamsSettingsChannel, teamsSettingsRefusal } from './settings-text';
-import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { buildAgentsPicker } from './agent-picker';
 import { stopTeamsTurn } from './stop';
 import { applyTeamsModelChoice, buildTeamsModelsCard, statusModel } from './model-choice';
@@ -27,7 +27,6 @@ import {
 import { listVisibleChatSessions } from '../core/sessions';
 import {
   conversationSession,
-  type TeamsConversationSession,
   ensureTeamsConversationBinding,
   listTenantProjects,
   resolveConversationProject,
@@ -286,11 +285,10 @@ async function buildStatusCard(
   userId: string | null,
   sessionProjectId?: string,
 ) {
-  const [selection, projects, session, gatewayOn, identity] = await Promise.all([
+  const [selection, projects, session, identity] = await Promise.all([
     currentChannelSelection(ctx),
     listTenantProjects(tenantId).catch(() => []),
     conversationSession(tenantId, conversationId, sessionProjectId).catch(() => null),
-    projectLlmGatewayEnabledById(projectId).catch(() => true),
     userId ? lookupChatIdentity(chatUser('teams', tenantId, userId)).catch(() => null) : Promise.resolve(null),
   ]);
   const email = identity
@@ -303,13 +301,13 @@ async function buildStatusCard(
     rows: [
       { label: 'Project', value: projectName },
       { label: 'Agent', value: selection?.agentName || 'default' },
-      { label: 'Model', value: statusModel(selection?.opencodeModel ?? null, session, gatewayOn) },
+      { label: 'Model', value: statusModel(selection?.opencodeModel ?? null, session?.opencodeModel ?? null) },
       { label: 'Policy', value: conversationPolicyLabel(normalizeConversationPolicy(selection?.conversationPolicy ?? null)) },
       // The run itself. `/status` was the one place a user looks to answer
       // "what is this conversation doing", and it answered everything except
       // that — so a run that had quietly stopped looked identical to one still
       // working.
-      { label: 'Session', value: describeConversationSession(session) },
+      { label: 'Session', value: describeSession(session, { none: 'none yet — @-mention me with a task' }) },
       { label: 'You', value: identity ? `connected as ${email || 'your Kortix account'}` : 'not connected — run /login' },
     ],
     // Slack's settings panel changes what it shows; this one only showed it.
@@ -363,39 +361,6 @@ async function buildRecentSessionsCard(actor: ChatUser, projectId?: string) {
     url: sessionWebUrl(config.FRONTEND_URL, r.projectId, r.sessionId),
     imageUrl: images.get(r.repoUrl) ?? null,
   })));
-}
-
-/**
- * Every value of `project_session_status`, as a glyph and a word a user reads.
- *
- * The first cut of this map keyed on `idle`, which is not one of them — so it
- * never matched, and `queued`, `branching`, `provisioning` and `completed` all
- * fell through to a bare `•`. The enum is the contract
- * (packages/db/src/schema/kortix.ts): queued, branching, provisioning, running,
- * stopped, failed, completed.
- *
- * `branching` and `provisioning` are how the sandbox is built, not something a
- * user asked about; both read as "starting". A status outside the enum still
- * renders, verbatim, rather than being swallowed.
- */
-const SESSION_STATUS: Record<string, { glyph: string; label: string }> = {
-  queued: { glyph: '•', label: 'queued' },
-  branching: { glyph: '•', label: 'starting' },
-  provisioning: { glyph: '•', label: 'starting' },
-  running: { glyph: '⏳', label: 'working' },
-  completed: { glyph: '✓', label: 'done' },
-  stopped: { glyph: '•', label: 'stopped' },
-  failed: { glyph: '✗', label: 'failed' },
-};
-
-function describeConversationSession(session: TeamsConversationSession | null): string {
-  if (!session) return 'none yet — @-mention me with a task';
-  const raw = session.status ?? '';
-  const known = SESSION_STATUS[raw];
-  const glyph = known?.glyph ?? '•';
-  const label = known?.label ?? raw ?? 'unknown';
-  const when = session.createdAt ? ` · started ${formatRelativeTime(session.createdAt)}` : '';
-  return `${glyph} ${label}${when}`;
 }
 
 /** Who this Teams user is linked as; null when they are not linked. */

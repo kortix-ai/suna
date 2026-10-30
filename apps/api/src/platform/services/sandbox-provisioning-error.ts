@@ -20,6 +20,23 @@ export interface SandboxProvisioningFailure {
   transient: boolean;
 }
 
+/** A /workspace volume that did not open because storage did not answer: the next `/start` retries it. */
+export const WORKSPACE_VOLUME_UNREACHABLE_MESSAGE =
+  '[workspace] This session’s workspace volume is not reachable right now, so the session did not start. Try again in a minute.';
+
+/**
+ * A sandbox template asks for a residential IP that cannot be served, so the
+ * session did not start. A configuration state: never transient, never a
+ * provider fault, and never a boot on the sandbox's own address.
+ */
+const RESIDENTIAL_PROXY_PREFIX = '[residential-proxy] ';
+export const RESIDENTIAL_PROXY_NOT_OFFERED_MESSAGE =
+  `${RESIDENTIAL_PROXY_PREFIX}This sandbox template asks for a residential IP, which this deployment does not offer, so the session did not start. ` +
+  'Turn off residential_proxy in the sandbox template, or ask Kortix to enable it.';
+export const RESIDENTIAL_PROXY_PLATINUM_ONLY_MESSAGE =
+  `${RESIDENTIAL_PROXY_PREFIX}This sandbox template asks for a residential IP, which runs on Platinum only, and this session's sandbox provider is not Platinum, so it did not start. ` +
+  'Switch the sandbox provider to Platinum, or turn off residential_proxy in the sandbox template.';
+
 export const SANDBOX_PROVIDER_CAPACITY_MESSAGE =
   'The sandbox provider is at capacity right now. Try again in a minute.';
 
@@ -63,7 +80,7 @@ const SNAPSHOT_TOO_LARGE_PATTERN =
 const STORAGE_FULL_PATTERN = /total disk limit exceeded|disk quota exceeded|storage quota exceeded/i;
 
 const CAPACITY_PATTERN =
-  /resource pool exhausted|too many starts in flight|no available runner|no runners available|no capacity|out of capacity|capacity exceeded|failed to place sandbox|rate ?limit|too many requests|maximum number of concurrent (?:e2b )?sandboxes|max(?:imum)? number of running sandboxes(?: on node)? reached|too many sandboxes starting on this node/i;
+  /resource pool exhausted|too many starts in flight|no available runner|no runners available|no capacity|out of capacity|capacity exceeded|failed to place sandbox|rate ?limit|too many requests|maximum number of concurrent sandboxes|max(?:imum)? number of running sandboxes(?: on node)? reached|too many sandboxes starting on this node/i;
 
 /**
  * A provider answer that says "not now" rather than "never": 429, or a 5xx a
@@ -86,7 +103,7 @@ const GIT_AUTH_PATTERN =
  * check, plus the other policy throws (invalid consumer, missing policy, non-exact host).
  *
  * There is no longer a PROVIDER capability gap to distinguish it from: one mechanism serves
- * daytona, e2b and platinum alike, so
+ * platinum and daytona alike, so
  * the `unsupported-secret-delivery` category is never produced. It stays on the wire contract
  * because sandbox rows written before this change still carry it.
  */
@@ -101,11 +118,23 @@ export function classifySandboxProvisioningFailure(error: unknown): SandboxProvi
   const rawMessage = error instanceof Error ? error.message : String(error);
 
   // Kortix Drive: the session's drives did not mount, so it did not start.
-  // The message already says which drives and why (drives/service.ts).
-  if (rawMessage.startsWith('[drives] ')) {
+  // The message already says which drives and why (drives/service.ts). A
+  // /workspace volume that did not open is the same class: storage the box
+  // mounts (platform/services/workspace-volume.ts).
+  const storagePrefix = ['[drives] ', '[workspace] '].find((p) => rawMessage.startsWith(p));
+  if (storagePrefix) {
     return {
       category: 'drives-unavailable',
-      userMessage: rawMessage.slice('[drives] '.length),
+      userMessage: rawMessage.slice(storagePrefix.length),
+      isCapacity: false,
+      isGitAuth: false,
+      transient: rawMessage === WORKSPACE_VOLUME_UNREACHABLE_MESSAGE,
+    };
+  }
+  if (rawMessage.startsWith(RESIDENTIAL_PROXY_PREFIX)) {
+    return {
+      category: 'sandbox-provider',
+      userMessage: rawMessage.slice(RESIDENTIAL_PROXY_PREFIX.length),
       isCapacity: false,
       isGitAuth: false,
       transient: false,

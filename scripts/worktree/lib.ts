@@ -30,6 +30,7 @@ export * from './lib/migrate';
 export * from './lib/branch-db';
 export * from './lib/launch-env';
 export * from './lib/prune';
+export * from './lib/sweep';
 export * from './lib/services';
 export * from './lib/deps';
 export * from './lib/supabase-cli';

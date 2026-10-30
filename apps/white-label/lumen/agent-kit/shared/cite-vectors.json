@@ -1,0 +1,17 @@
+{
+  "comment": "Quote-in-paragraph cases. Both the kit (Python) and Lumen (TypeScript) run every case; Lumen is the authority.",
+  "cases": [
+    { "name": "exact", "para": "11.1 Neither party's liability shall be limited.", "quote": "Neither party's liability shall be limited", "ok": true },
+    { "name": "curly quotes vs straight", "para": "the “Agreement” and the Party’s duty", "quote": "the \"Agreement\" and the Party's duty", "ok": true },
+    { "name": "dashes unified", "para": "a term of two – three years", "quote": "two - three years", "ok": true },
+    { "name": "whitespace collapsed", "para": "shall  not\n exceed   the fees", "quote": "shall not exceed the fees", "ok": true },
+    { "name": "soft hyphen removed", "para": "confi­dential information", "quote": "confidential information", "ok": true },
+    { "name": "line-break hyphen removed", "para": "the Recip-\nient shall", "quote": "the Recipient shall", "ok": true },
+    { "name": "NFKC ligature", "para": "the ﬁnal oﬀer", "quote": "the final offer", "ok": true },
+    { "name": "case is kept", "para": "Customer Data", "quote": "customer data", "ok": false },
+    { "name": "ellipsis inside the quote fails", "para": "shall not exceed the fees paid in the twelve months", "quote": "shall not exceed ... twelve months", "ok": false },
+    { "name": "paraphrase fails", "para": "liability is uncapped", "quote": "liability is unlimited", "ok": false },
+    { "name": "leading and trailing space ignored", "para": "governed by the laws of England and Wales.", "quote": "  laws of England and Wales  ", "ok": true },
+    { "name": "nbsp is whitespace", "para": "thirty (30) days", "quote": "thirty (30) days", "ok": true }
+  ]
+}

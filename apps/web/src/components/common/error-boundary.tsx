@@ -1,10 +1,10 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { Copy } from '@/features/icon/icons/copy';
-import { isRuntimeNotReadyNoiseMessage } from '@/lib/browser-error-noise';
-import { cn } from '@/lib/utils';
+import { Button } from '@kortix/ui/button';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@kortix/ui/disclosure';
+import { Copy } from '@kortix/ui/icons';
+import { isRuntimeNotReadyNoiseMessage } from '@kortix/ui/internal/lib/browser-error-noise';
+import { cn } from '@kortix/ui';
 import { CaretRightIcon, CheckIcon } from '@phosphor-icons/react';
 import * as Sentry from '@sentry/nextjs';
 import { useTranslations } from '@/i18n/use-translations';

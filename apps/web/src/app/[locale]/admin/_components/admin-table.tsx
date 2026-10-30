@@ -9,15 +9,15 @@ import {
   MagnifyingGlassIcon,
 } from '@phosphor-icons/react';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import { TableHead } from '@/components/ui/table';
-import { cn } from '@/lib/utils';
+} from '@kortix/ui/input-group';
+import { TableHead } from '@kortix/ui/table';
+import { cn } from '@kortix/ui';
 
 /**
  * The console's search field. `InputGroupSearch` is the system's search

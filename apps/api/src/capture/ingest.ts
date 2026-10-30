@@ -35,7 +35,8 @@ import {
   type Manifest,
 } from './format';
 import { captureEnabled, readWorkspace } from './workspace';
-import { captureStore } from './store';
+import { captureStoreForAccount } from './account-store';
+import type { ObjectStore } from '../object-store/s3';
 
 export type IngestOutcome =
   | { status: 'indexed'; chunkId: string; kind: Manifest['kind']; items: number }
@@ -49,9 +50,9 @@ const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest(
 const MAX_OBJECT_BYTES = 256 * 1024 * 1024;
 const MAX_INDEX_LINES_BYTES = 64 * 1024 * 1024;
 
-async function readObject(key: string, expected: { size: number; sha256: string }): Promise<Uint8Array> {
+async function readObject(store: ObjectStore, key: string, expected: { size: number; sha256: string }): Promise<Uint8Array> {
   if (expected.size > MAX_OBJECT_BYTES) throw new Error(`object too large: ${key}: ${expected.size} bytes`);
-  const bytes = await captureStore.getBytes(key, { maxBytes: expected.size });
+  const bytes = await store.getBytes(key, { maxBytes: expected.size });
   if (!bytes) throw new Error(`object missing: ${key}`);
   if (bytes.byteLength !== expected.size) throw new Error(`size mismatch for ${key}: ${bytes.byteLength} != ${expected.size}`);
   if (sha256(bytes) !== expected.sha256) throw new Error(`sha256 mismatch for ${key}`);
@@ -92,7 +93,8 @@ export async function ingestManifest(key: string): Promise<IngestOutcome> {
     .limit(1);
   if (existing) return { status: 'duplicate', reason: 'already indexed' };
 
-  const manifestBytes = await captureStore.getBytes(key, { maxBytes: 1024 * 1024 });
+  const store = await captureStoreForAccount(device.accountId);
+  const manifestBytes = await store.getBytes(key, { maxBytes: 1024 * 1024 });
   if (manifestBytes === null) throw new Error(`manifest missing: ${key}`);
   const manifestText = new TextDecoder().decode(manifestBytes);
   let raw: unknown;
@@ -117,7 +119,7 @@ export async function ingestManifest(key: string): Promise<IngestOutcome> {
     const full = objectKey(prefix, device.deviceId, info.key);
     if (!full) return { status: 'ignored', reason: `object "${role}" is outside the device folder` };
     // The video and audio are verified, never parsed: read them to check the hash.
-    objects[role] = await readObject(full, info);
+    objects[role] = await readObject(store, full, info);
   }
 
   const owner = { accountId: device.accountId, deviceId: device.deviceId, userId: device.userId };

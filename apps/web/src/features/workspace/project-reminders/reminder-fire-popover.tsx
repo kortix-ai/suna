@@ -1,12 +1,12 @@
 'use client';
 
-import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
-import { STATUS_BG, STATUS_DOT, type StatusTone } from '@/components/ui/status';
+import { HoverPrefetchLink } from '@kortix/ui/internal/components/hover-prefetch-link';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { Popover, PopoverAnchor, PopoverContent } from '@kortix/ui/popover';
+import { STATUS_BG, STATUS_DOT, type StatusTone } from '@kortix/ui/status';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import type { ProjectReminder } from '@kortix/sdk';
 import { chalkColors } from '@kortix/shared';
 import { ChatCircleIcon, ClockIcon, XIcon } from '@phosphor-icons/react';
@@ -20,7 +20,7 @@ import {
   type ReactNode,
 } from 'react';
 import { clockTime, dateFormat, relativeFire } from './reminder-calendar-model';
-import { reminderTitle } from './reminder-format';
+import { reminderTitle } from '@kortix/ui/workspace';
 import type { useReminderActions } from './reminder-list';
 import type { ReminderFire } from './reminder-schedule';
 
@@ -235,7 +235,7 @@ function FireCard({
   );
 }
 
-/** Text actions on a hairline footer: Pause/Resume left, Remove right. The session row is the link. */
+/** Text actions on a hairline footer: Retry and Pause/Resume left, Remove right. The session row is the link. */
 const ACTION =
   'text-foreground hover:text-muted-foreground flex items-center gap-1.5 text-xs font-medium transition-colors aria-disabled:opacity-50';
 
@@ -255,6 +255,17 @@ function FireActions({
   const locked = actions.busy || undefined;
   return (
     <div className="flex items-center gap-4 border-t px-3 py-2.5">
+      {reminder.last_status === 'failed' ? (
+        <button
+          type="button"
+          className={ACTION}
+          aria-disabled={locked}
+          onClick={actions.busy ? undefined : () => actions.retry(reminder)}
+        >
+          {pending === 'retry' ? <Loading className="size-3" /> : null}
+          {t('retry')}
+        </button>
+      ) : null}
       {reminder.state !== 'done' ? (
         <button
           type="button"

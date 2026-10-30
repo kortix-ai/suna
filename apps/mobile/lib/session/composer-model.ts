@@ -19,20 +19,18 @@ export function selectComposerModel(key: string, defaultKey: string | null): str
 }
 
 /**
- * The session `model` value of a pick. Gateway on: the bare gateway wire id
- * (the API stores `kortix/<wire>`). Gateway off: OpenCode's `provider/model`.
+ * The session `model` value of a pick: the bare gateway wire id (the API
+ * stores `kortix/<wire>`).
  */
 export function sessionModelRef(model: { providerID: string; modelID: string }): string {
-  return model.providerID === 'kortix' ? model.modelID : `${model.providerID}/${model.modelID}`;
+  return model.modelID;
 }
 
 /**
  * The project offers no model, so a send must not start a session or post a
  * message (KRTX-251; web's `isModelRequiredButUnavailable`). True only once
- * the gateway list has loaded and is empty. While it loads nothing is blocked,
- * and a project without the gateway runs on its sandbox's own providers, so it
- * is never blocked here.
+ * the gateway list has loaded and is empty. While it loads nothing is blocked.
  */
-export function isModelUnavailable(i: { hasCatalog: boolean; loading: boolean; modelCount: number }): boolean {
-  return i.hasCatalog && !i.loading && i.modelCount === 0;
+export function isModelUnavailable(i: { loading: boolean; modelCount: number }): boolean {
+  return !i.loading && i.modelCount === 0;
 }

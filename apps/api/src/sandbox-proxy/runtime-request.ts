@@ -25,9 +25,9 @@ export type RuntimeRequest =
       prefix: string;
     }
   | { kind: 'abort'; runtimeSessionId: string; prefix: string }
+  /** OpenCode's rewind: drops `messageID` and every message after it. pi answers 501. */
+  | { kind: 'revert'; runtimeSessionId: string; prefix: string }
   | { kind: 'message-list'; runtimeSessionId: string; prefix: string }
-  /** OpenCode's rewind: `revert` stages one, `unrevert` undoes it. */
-  | { kind: 'revert' | 'unrevert'; runtimeSessionId: string; prefix: string }
   /** A client answers (`reply`) or dismisses (`reject`) an agent question. Both harnesses serve it. */
   | { kind: 'question-answer'; requestId: string; prefix: string }
   | { kind: 'other' };
@@ -36,7 +36,7 @@ const OTHER: RuntimeRequest = { kind: 'other' };
 const PREFIX = /^\/proxy\/\d+(?=\/)/;
 const KORTIX = /^\/kortix\/(?:runtime|opencode)\/sessions\/([^/?#]+)\/(prompt|abort)\/?$/;
 const NATIVE = /^\/session\/([^/?#]+)\/(prompt_async|message|command|summarize|abort)(?=$|[/?#])(.*)$/;
-const REWIND = /^\/session\/([^/?#]+)\/(revert|unrevert)\/?(?:$|[?#])/;
+const REVERT = /^\/session\/([^/?#]+)\/revert\/?(?:$|[?#])/;
 const QUESTION = /^\/question\/([^/?#]+)\/(?:reply|reject)\/?(?:$|[?#])/;
 
 /**
@@ -70,17 +70,16 @@ export function classifyRuntimeRequest(method: string, path: string): RuntimeReq
       : { kind: 'abort', runtimeSessionId, prefix };
   }
 
-  const rewind = REWIND.exec(bare);
-  if (rewind) {
-    const runtimeSessionId = decodeSegment(rewind[1]!);
-    if (verb !== 'POST' || !runtimeSessionId) return OTHER;
-    return { kind: rewind[2] === 'revert' ? 'revert' : 'unrevert', runtimeSessionId, prefix };
-  }
-
   const question = QUESTION.exec(bare);
   if (question) {
     const requestId = decodeSegment(question[1]!);
     return verb === 'POST' && requestId ? { kind: 'question-answer', requestId, prefix } : OTHER;
+  }
+
+  const revert = REVERT.exec(bare);
+  if (revert) {
+    const runtimeSessionId = decodeSegment(revert[1]!);
+    return verb === 'POST' && runtimeSessionId ? { kind: 'revert', runtimeSessionId, prefix } : OTHER;
   }
 
   const native = NATIVE.exec(bare);
@@ -117,23 +116,5 @@ export function turnStartBodyFields(body: ArrayBuffer | undefined): {
     };
   } catch {
     return { messageId: null, noReply: false };
-  }
-}
-
-/**
- * The message a `POST /session/:id/revert` body rewinds to (`messageID`), or
- * null. A rewind to a PART (`partID`) is null too: its boundary message stays
- * listed after the commit, so a marker for it could never be spent. Its rows
- * stay in saved history instead.
- */
-export function revertBodyMessageId(body: ArrayBuffer | undefined): string | null {
-  if (!body?.byteLength) return null;
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(body)) as { messageID?: unknown; partID?: unknown } | null;
-    if (typeof parsed?.partID === 'string' && parsed.partID.trim()) return null;
-    const id = parsed?.messageID;
-    return typeof id === 'string' && id.trim() ? id.trim() : null;
-  } catch {
-    return null;
   }
 }

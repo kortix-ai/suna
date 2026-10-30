@@ -15,10 +15,10 @@ const passthrough = ({ children, ...props }: { children?: ReactNode; [key: strin
   createElement('div', props, children);
 const translate = Object.assign((key: string) => key, { raw: (key: string) => key });
 mock.module('@/i18n/use-translations', () => ({ useTranslations: () => translate }));
-mock.module('@/i18n/use-localized-ui-catalog', () => ({
+mock.module('@kortix/ui/i18n/ui-catalog/use-localized-ui-catalog', () => ({
   translateUiCatalogText: (_catalog: unknown, key: string) => key,
 }));
-mock.module('@/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/projects' }));
+mock.module('@kortix/ui/internal/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/projects' }));
 mock.module('@phosphor-icons/react', () => ({
   WarningCircleIcon: passthrough,
   ArrowLeftIcon: passthrough,

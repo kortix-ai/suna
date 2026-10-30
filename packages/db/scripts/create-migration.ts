@@ -15,22 +15,10 @@
  */
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { utcStamp } from './utc-stamp';
 
 const MIGRATIONS_DIR = join(import.meta.dir, '..', 'migrations');
 
-function utcStamp(): string {
-  const d = new Date();
-  const p = (n: number, w = 2) => String(n).padStart(w, '0');
-  return (
-    d.getUTCFullYear().toString() +
-    p(d.getUTCMonth() + 1) +
-    p(d.getUTCDate()) +
-    p(d.getUTCHours()) +
-    p(d.getUTCMinutes()) +
-    p(d.getUTCSeconds()) +
-    p(d.getUTCMilliseconds(), 3)
-  );
-}
 
 const args = process.argv.slice(2);
 const concurrent = args.includes('--concurrent');

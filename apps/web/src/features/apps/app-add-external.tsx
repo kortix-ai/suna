@@ -1,11 +1,11 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
-import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
-import { successToast, warningToast } from '@/components/ui/toast';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
+import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@kortix/ui/modal';
+import { successToast, warningToast } from '@kortix/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 import { useProjectApps } from '@kortix/sdk/react';
 import { useState } from 'react';
@@ -13,6 +13,22 @@ import { useState } from 'react';
 /** A slug from a display name: lowercase letters, numbers and single hyphens, at most 63. */
 export function slugFromName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 63).replace(/-+$/, '') || 'app';
+}
+
+/**
+ * The App's URL from what was typed: a bare host ("example.com") gets
+ * `https://`, since Apps are framed over HTTPS only. `null` until it names an
+ * HTTPS site with a dotted host. An explicit `http://` stays rejected.
+ */
+export function externalAppUrl(input: string): URL | null {
+  const value = input.trim();
+  if (!value) return null;
+  try {
+    const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`);
+    return url.protocol === 'https:' && url.hostname.includes('.') ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -34,22 +50,16 @@ export function AddExternalAppDialog({
   const apps = useProjectApps(projectId);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
-  const host = (() => {
-    try {
-      const parsed = new URL(url.trim());
-      return parsed.protocol === 'https:' && parsed.hostname.includes('.') ? parsed.hostname.replace(/^www\./, '') : '';
-    } catch {
-      return '';
-    }
-  })();
+  const externalUrl = externalAppUrl(url);
+  const host = externalUrl ? externalUrl.hostname.replace(/^www\./, '') : '';
   // The name defaults to the site's host: a URL alone is enough.
   const appName = name.trim() || host;
   const ready = !!host && !apps.create.isPending;
 
   const submit = async () => {
-    if (!ready) return;
+    if (!ready || !externalUrl) return;
     try {
-      const app = await apps.create.mutateAsync({ slug: slugFromName(appName), name: appName, external_url: url.trim() });
+      const app = await apps.create.mutateAsync({ slug: slugFromName(appName), name: appName, external_url: externalUrl.href });
       const notFramed = app.warnings?.find((warning) => warning.code === 'app_external_not_frameable');
       if (notFramed) warningToast(notFramed.message);
       else successToast(tI18nComplete('text08e6480e9b78', { value0: app.name }));
@@ -80,10 +90,15 @@ export function AddExternalAppDialog({
               <Label htmlFor="external-app-url">{tI18nComplete.raw('texte7a241debad5')}</Label>
               <Input
                 id="external-app-url"
-                type="url"
+                // Not `type="url"`: the browser would refuse a bare host on
+                // submit, before `externalAppUrl` adds the scheme.
+                type="text"
                 inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 autoFocus
-                placeholder="https://"
+                placeholder="example.com"
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
               />

@@ -51,11 +51,16 @@ describe('Capture rules shared by the API, the web and the CLI', () => {
     ['com.apple.keychainaccess', 'com.apple.keychainaccess'],
     ['  1password.exe ', '1password.exe'],
     ['proton pass.exe', 'proton pass.exe'],
+    // Any identifier the engine matches (fixtures/capture-format-v2/apps.json): names, paths, prefixes.
+    ['AutoCAD 2025', 'AutoCAD 2025'],
+    ['C:\\Program Files\\Autodesk\\AutoCAD 2025\\acad.exe', 'C:\\Program Files\\Autodesk\\AutoCAD 2025\\acad.exe'],
+    ['com.autodesk.autocad*', 'com.autodesk.autocad*'],
+    ['Microsoft.WindowsNotepad_8wekyb3d8bbwe!App', 'Microsoft.WindowsNotepad_8wekyb3d8bbwe!App'],
   ])('app id %p → %p', (input, expected) => {
     expect(normalizeCaptureAppId(input)).toBe(expected);
   });
 
-  test.each(['', '   ', '--frontmost', '-x', 'two words', 'a\u0000b', 'x'.repeat(256)])('not an app id: %p', (input) => {
+  test.each(['', '   ', '--frontmost', '-x', 'a\u0000b', 'x'.repeat(256), '*', 'ab*'])('not an app id: %p', (input) => {
     expect(normalizeCaptureAppId(input)).toBeNull();
   });
 

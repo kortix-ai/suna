@@ -2,11 +2,11 @@
 
 import { useParams } from 'next/navigation';
 
-import { SecretsPage } from '@/features/workspace/capabilities/secrets/secrets-page';
+import { SecretsPage } from '@kortix/ui/customize/secrets/secrets-page';
 
 /**
  * /projects/[id]/secrets — the standalone Secrets page. See
- * `features/workspace/capabilities/secrets/secrets-page.tsx` for the page
+ * `packages/ui/src/customize/secrets/secrets-page.tsx` for the page
  * body.
  */
 export default function ProjectSecretsPage() {

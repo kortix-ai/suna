@@ -1,0 +1,4 @@
+[
+  { "doc_id": "docA", "filename": "msa-fixture.pdf", "type": "msa", "pages": 2, "paras": 3, "text_path": "Text/docA.md" },
+  { "doc_id": "docB", "filename": "nda-fixture.docx", "type": "nda", "pages": 1, "paras": 2, "text_path": "Text/docB.md" }
+]

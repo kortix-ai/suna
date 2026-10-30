@@ -265,7 +265,10 @@ describe.skipIf(!databaseUrl)('kortix.audit_events — weekly range partitions o
     const triggers = await q(`SELECT tgname FROM pg_trigger WHERE tgrelid = $1::regclass AND NOT tgisinternal ORDER BY 1`, [`kortix.${newest}`]);
     expect(triggers.rows.map((r) => r.tgname)).toEqual(['audit_events_append_only', 'audit_events_enqueue_webhooks', 'audit_events_prepare']);
     const indexes = await q<{ n: number }>(`SELECT count(*)::int AS n FROM pg_indexes WHERE tablename = $1`, [newest]);
-    expect(indexes.rows[0]!.n).toBe(11); // 10 secondary + the primary key
+    // 11 secondary + the primary key. The KRTX-2763 tool-action parent index
+    // (idx_audit_events_account_tool_action_time) auto-inherits a child onto
+    // every new partition, so its child is part of the contract this asserts.
+    expect(indexes.rows[0]!.n).toBe(12);
   });
 
   test('the new table has the grants the legacy table has', async () => {

@@ -36,7 +36,7 @@ import {
   isAwaitingTitle,
   projectSessionsRefetchInterval,
   sessionTitleHasLanded,
-} from './project-session-list-helpers';
+} from '@kortix/ui/session';
 
 /** Fixed clock, so the age bound below is asserted rather than raced. */
 const NOW = Date.parse('2026-08-12T12:00:00.000Z');

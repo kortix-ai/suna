@@ -1,6 +1,6 @@
 'use client';
 
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
 /**
  * Organization branding — the `?tab=branding` pane of `/accounts/[id]`.
@@ -35,16 +35,16 @@ import { TrashIcon, UploadSimpleIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type FormEvent } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
-import { KortixLogo } from '@/components/ui/kortix-logo';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import Hint from '@kortix/ui/hint';
+import { Input } from '@kortix/ui/input';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { cn } from '@kortix/ui';
 
 const MAX_APP_NAME_LENGTH = 60;
 const MAX_ASSET_BYTES = 1024 * 1024;

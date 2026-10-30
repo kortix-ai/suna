@@ -32,7 +32,8 @@ mock.module('./actions', () => ({
 mock.module('@/lib/env-config', () => ({
   getEnv: () => ({ AUTH_METHODS: 'magic,password', AUTH_PROVIDERS: '' }),
 }));
-mock.module('@/components/ui/toast', () => ({ errorToast: () => {} }));
+const uiToastMock = () => ({ errorToast: () => {} });
+mock.module('@kortix/ui/toast', uiToastMock);
 
 type Outcome = { ok: true; result: Record<string, unknown> } | { ok: false; message: string };
 const submits: { path: string; body: FormData }[] = [];

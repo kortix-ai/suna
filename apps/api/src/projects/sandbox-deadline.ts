@@ -34,7 +34,6 @@ import { type SQL, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import {
   NON_TURN_DEADLINE_CAP_MS,
-  PRESENCE_ONLY_CAP_MS,
   idleGraceMs,
   isWarmPoolBox,
   turnGrantMs,
@@ -104,10 +103,15 @@ function cappedDeadline(grantMs: number) {
 }
 
 /**
- * Presence's cap (KRTX-1729): PRESENCE_ONLY_CAP_MS after the session's latest
- * turn activity or the run's start, whichever is later, and never past the
- * run's non-turn cap. Turns are sequential, so the latest-started turn holds
- * the latest activity, and the (session_id, started_at DESC) index finds it.
+ * Presence's cap (KRTX-1729; KRTX-2451): the idle grace after the session's
+ * latest turn activity or the run's start, whichever is later, and never past
+ * the run's non-turn cap. An open page holds a box only to the window the
+ * idle autostop already grants (`KORTIX_SANDBOX_AUTOSTOP_MINUTES`): a chat
+ * left open with nothing happening stops on the ordinary idle stop, minutes
+ * after its latest turn, and the next prompt resumes the box in place. A
+ * shorter deadline (a failed turn's, say) is still held up to the window.
+ * Turns are sequential, so the latest-started turn holds the latest activity,
+ * and the (session_id, started_at DESC) index finds it.
  */
 function presenceCap() {
   return sql`LEAST(
@@ -119,7 +123,7 @@ function presenceCap() {
                  WHERE t.session_id = s.session_id
                  ORDER BY t.started_at DESC
                  LIMIT 1)
-             ) + make_interval(secs => ${secs(PRESENCE_ONLY_CAP_MS)}))`;
+             ) + make_interval(secs => ${secs(idleGraceMs())}))`;
 }
 
 /** Presence's horizon: the grant, but never past {@link presenceCap}. */

@@ -1,0 +1,187 @@
+/* @kortix/ui component rules that a utility class cannot express: the
+   composer editor's placeholder and slash hint (TipTap renders the markers,
+   the stylesheet paints them), the streamed-word fade, KaTeX overflow and the
+   thin scrollbar. Imported by theme.css, so every host gets it: the Tailwind
+   bundle (tailwind.css) and the prebuilt styles.css. Values are tokens. */
+
+.kortix-markdown pre .line,
+.kortix-markdown pre code span {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.scrollbar-minimal {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.scrollbar-minimal::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.scrollbar-minimal::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-minimal::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 2px;
+  transition: background 0.2s ease;
+}
+
+.scrollbar-minimal:hover::-webkit-scrollbar-thumb {
+  background: oklch(0.5 0 0 / 0.2);
+}
+
+.scrollbar-minimal.dark:hover::-webkit-scrollbar-thumb,
+.dark .scrollbar-minimal:hover::-webkit-scrollbar-thumb {
+  background: oklch(0.7 0 0 / 0.3);
+}
+
+/* No `display` rule belongs under `.streaming-active`: a streaming message
+   must lay out exactly like the settled one. See
+   components/markdown/streaming-layout.test.ts. */
+.kortix-markdown.streaming-active {
+  position: relative;
+}
+
+/* KaTeX — block/display math scrolls horizontally; keep inline math in flow */
+.kortix-markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+
+.kortix-markdown .katex {
+  font-size: 1.05em;
+}
+
+/* Streamed words fade in as they mount (see markdown/stream-words.tsx).
+ *
+ * Opacity only. This used to run `blur-fade-in` (blur 8px -> 3px -> 0) on the
+ * last child of a streaming block: `filter: blur()` re-rasterises glyphs every
+ * frame, and the last child changed on every token, so the animation restarted
+ * continuously over live text. Here each word is its own node that React keeps
+ * once mounted, so a word fades exactly once and nothing already on screen is
+ * touched. No filter, no transform, no layout. It is a comprehension fade, not
+ * movement, so it stays under reduced motion. */
+@keyframes kx-stream-word-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* In-out, not out: an ease-out fade reaches ~60% opacity in its first quarter,
+ * so each word still lands as a pop. A symmetric ramp lets it emerge, and
+ * with ~3 words starting per 40 ms the trailing edge of the reply is a soft
+ * gradient rather than a hard line. `backwards` holds a word at opacity 0
+ * through its stagger delay (see `StreamWord`); without it the word would
+ * flash at full opacity first. */
+.kortix-markdown .kx-stream-word {
+  animation: kx-stream-word-in var(--duration-slow) var(--ease-in-out) backwards;
+}
+
+/* A block's chrome (a bullet, a code card, a table's frame, a rule) has no
+ * words of its own to fade, so it would pop in under words that fade. While
+ * the message streams it fades in once, on mount, with the same curve. Only
+ * elements that mount mid-stream run it: the class leaving at the end of the
+ * turn replays nothing. */
+.kortix-markdown.streaming-active :is(li, figure, hr, blockquote, .kx-md-table) {
+  animation: kx-stream-word-in var(--duration-slow) var(--ease-in-out);
+}
+
+/* ─── Composer editor ──────────────────────────────────────────────────── */
+/* Coarse-pointer (touch) targets inside the composer toolbar — added once
+   here at the shell rather than per-button, since every toolbar button is a
+   plain <button> with no shared class today. */
+/* The underbar is listed too. It holds the SAME attach control the toolbar
+   used to, so with only `.kortix-composer-toolbar` here one button was 40px on
+   project home (inline underbar, inside the toolbar) and 32px in a session
+   (row underbar, outside it). */
+@media (pointer: coarse) {
+  .kortix-composer-toolbar button,
+  .kortix-composer-underbar button {
+    min-height: 2.5rem;
+    min-width: 2.5rem;
+  }
+}
+
+/* TipTap's Placeholder extension (composer/editor/extensions.ts) marks the
+   empty paragraph with `.is-editor-empty` + a `data-placeholder` attribute
+   and otherwise renders nothing — the `::before` content + color is always
+   the consumer's job. Nothing under composer/editor/ is stylesheet-owning
+   (it is pure TipTap wiring), so this is the shell's responsibility: without
+   it the placeholder text passed to `ComposerEditor` is present in the DOM
+   but invisible. Scoped to `.kortix-composer-editor` (the wrapper class
+   `ComposerEditor`'s `EditorContent` already renders). */
+.kortix-composer-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+/* The `/` trigger's inline hint — "/Type to search". `@tiptap/suggestion`
+   decorates the active trigger range with this class, adds `is-empty` while
+   no query characters have been typed yet, and copies the configured
+   `decorationContent` onto the span as `data-decoration-content` (see
+   `menus/slash-controller.ts`). This is the only thing that paints it.
+
+   Same shape as the placeholder rule above, and for the same two reasons:
+   `content: attr(...)` keeps the string out of the document (so it can never
+   be selected, copied, or serialized into the message), and
+   `pointer-events: none` keeps a click landing on it from moving the caret
+   into text that does not exist. It disappears the instant a character is
+   typed, because the plugin drops `is-empty` at that point. */
+.kortix-composer-editor .kortix-slash-trigger.is-empty::after {
+  content: attr(data-decoration-content);
+
+  /* Pinned rather than inherited by luck. This text renders immediately
+     beside a real typed character inside a contenteditable, so any drift in
+     size, weight or baseline between the two reads as a rendering bug rather
+     than as a hint. `font: inherit` covers every font-* longhand at once
+     (family, size, weight, style, variant) so a future rule on the editor
+     cannot desync the pseudo-element from the `/` next to it. */
+  font: inherit;
+  vertical-align: baseline;
+  line-height: 1;
+
+  /* The separation the copy cannot provide: CSS collapses leading whitespace
+     in `content`, so `content: " Type to search"` renders as "Type to
+     search" and the hint ends up glued to the slash — "/Type" reads as one
+     word whose first glyph is inexplicably darker than the rest. Padding is
+     the only way to put space there.
+
+     `em`, not `px`: the composer is `text-base` below 640px and `text-sm`
+     above it, so a fixed gap would be proportionally twice as wide on
+     desktop as on mobile. */
+  padding-left: 0.3em;
+
+  color: var(--muted-foreground);
+  pointer-events: none;
+  /* Belt and braces — pseudo-element content is already unselectable, but the
+     caret sits directly before this inside an editable region and the intent
+     is worth stating. */
+  user-select: none;
+}
+
+/* The paused-on-approval placeholder is amber, not muted. `composer.tsx`
+   puts `.composer-locked-approval` on the editor's wrapper only while
+   `lockForApproval` is true; the rule reaches the placeholder `::before`
+   alone, never typed text. */
+.composer-locked-approval
+  .kortix-composer-editor
+  .ProseMirror
+  p.is-editor-empty:first-child::before {
+  color: var(--color-amber-600);
+}
+.dark
+  .composer-locked-approval
+  .kortix-composer-editor
+  .ProseMirror
+  p.is-editor-empty:first-child::before {
+  color: var(--color-amber-400);
+}

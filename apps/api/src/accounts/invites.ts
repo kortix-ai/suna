@@ -19,6 +19,7 @@ import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { normalizeProjectRole } from '../iam/roles';
 import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assignments';
 import { trustedEmailForUser } from '../iam/email-trust';
+import { getSsoProvider } from '../repositories/sso';
 import { isUuid } from '../shared/validate';
 import { logger } from '../lib/logger';
 
@@ -44,6 +45,10 @@ const InviteDescribeSchema = z
     /** Projects the invite grants on accept, for the invited caller only;
      *  empty for anyone else and for a plain workspace invite (KRTX-1731). */
     projects: z.array(z.object({ project_id: z.string(), name: z.string(), role: z.string() })),
+    /** Why the invite is not addressed to the caller; absent when it is. Same codes as a refused accept. */
+    reason: z.enum(['email_unconfirmed', 'sso_email_domain_unverified', 'wrong_account']).optional(),
+    /** With `email_unconfirmed`: the Supabase SSO provider of the invite's account, to sign in through it. */
+    sso_provider_id: z.string().nullable().optional(),
   })
   .openapi('InviteDescribe');
 const InviteAcceptSchema = z
@@ -69,20 +74,25 @@ interface CallerInviteEmail {
 
 /**
  * The caller's email for invite matching: the Auth row's email, and only when
- * it proves ownership (see iam/email-trust.ts). An SSO identity whose IdP has
- * not verified the email's domain matches no invite.
+ * it proves ownership (see iam/email-trust.ts). An SSO identity matches when
+ * its IdP verified the email's domain, or when the IdP belongs to the invite's
+ * own account (`accountId`): inside one account the IdP and the admin are the
+ * same authority. Any other SSO identity matches no invite.
  *
  * While Auth auto-confirms sign-ups, a password email is unproven: whoever
  * signed up first holds the address (KRTX-1715). It still matches an invite a
- * person sent (`invited_by` set), which the invitee accepts in person; sign-in
- * never claims it. It does not match an invite the account's IdP pushed through
- * SCIM (`invited_by` null): nobody shares that invite, and the directory's
- * groups ride on it. That person signs in with single sign-on instead.
+ * person sent or resent (`invited_by` set), which the invitee accepts in
+ * person; sign-in never claims it. It does not match an invite the account's
+ * IdP pushed through SCIM (`invited_by` null): nobody shares that invite, and
+ * the directory's groups ride on it. That person signs in through the
+ * account's IdP instead (`sso_provider_id` on the describe), or an admin
+ * resends the invite.
  */
-async function callerInviteEmail(c: any): Promise<CallerInviteEmail> {
+async function callerInviteEmail(c: any, accountId?: string): Promise<CallerInviteEmail> {
   const userId = c.get('userId') as string | undefined;
-  const email = await trustedEmailForUser(userId, { allowAutoconfirmed: true });
-  const proven = !email || !config.ENABLE_EMAIL_AUTOCONFIRM || (await trustedEmailForUser(userId)) === email;
+  const email = await trustedEmailForUser(userId, { allowAutoconfirmed: true, accountId });
+  const proven =
+    !email || !config.ENABLE_EMAIL_AUTOCONFIRM || (await trustedEmailForUser(userId, { accountId })) === email;
   return { email, proven };
 }
 
@@ -90,34 +100,35 @@ function addressedToCaller(caller: CallerInviteEmail, invite: { email: string; i
   return caller.email === invite.email.toLowerCase() && (caller.proven || invite.invitedBy !== null);
 }
 
-/** 403 for an accept or decline of an invite not addressed to the caller. */
-function refuseInvite(c: Context<AppEnv>, caller: CallerInviteEmail, invite: { email: string }) {
-  if (caller.email === invite.email.toLowerCase()) {
-    return c.json(
-      {
-        error:
-          'Your identity provider manages this invite, and this instance does not confirm email addresses. Sign in with single sign-on to join.',
-        code: 'email_unconfirmed',
-      },
-      403,
-    );
-  }
-  return unverifiedSsoEmail(c, invite)
-    ?? c.json({ error: 'This invite is addressed to a different account.' }, 403);
-}
+/** Why an invite is not addressed to the caller. The describe returns it as `reason`; accept and decline as `code`. */
+type InviteRefusal = {
+  code: 'email_unconfirmed' | 'sso_email_domain_unverified' | 'wrong_account';
+  error: string;
+};
 
-/** 403 for a caller whose token names the invite's email but cannot prove it. */
-function unverifiedSsoEmail(c: any, invite: { email: string }) {
-  const claimed = normalizeEmail(c.get('userEmail') as string | undefined);
-  if (!claimed || claimed !== invite.email.toLowerCase()) return null;
-  return c.json(
-    {
+function inviteRefusal(c: any, caller: CallerInviteEmail, invite: { email: string }): InviteRefusal {
+  const address = invite.email.toLowerCase();
+  if (caller.email === address) {
+    return {
+      code: 'email_unconfirmed',
+      error:
+        "Your organization's directory manages this invite. Sign in with your organization's single sign-on to join, or ask an account admin to resend the invite.",
+    };
+  }
+  // The token names the invite's email, but the SSO identity cannot prove it.
+  if (normalizeEmail(c.get('userEmail') as string | undefined) === address) {
+    return {
+      code: 'sso_email_domain_unverified',
       error:
         "Your single sign-on provider has not verified this email's domain. Sign in with your email address to use this invite.",
-      code: 'sso_email_domain_unverified',
-    },
-    403,
-  );
+    };
+  }
+  return { code: 'wrong_account', error: 'This invite is addressed to a different account.' };
+}
+
+/** 403 for an accept or decline of an invite not addressed to the caller. */
+function refuseInvite(c: Context<AppEnv>, caller: CallerInviteEmail, invite: { email: string }) {
+  return c.json(inviteRefusal(c, caller, invite), 403);
 }
 
 function isExpired(invite: { expiresAt: Date; acceptedAt: Date | null }): boolean {
@@ -377,7 +388,6 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-  const caller = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
   // Not a uuid: no invite has it, and Postgres would reject the cast (500).
   if (!isUuid(inviteId)) return c.json({ error: 'Invite not found' }, 404);
@@ -389,12 +399,20 @@ accountInvitesRouter.openapi(
     .limit(1);
 
   if (!invite) return c.json({ error: 'Invite not found' }, 404);
+  const caller = await callerInviteEmail(c, invite.accountId);
 
   const expired = isExpired(invite);
   const emailMatchesCaller = addressedToCaller(caller, invite);
 
   if (!emailMatchesCaller) {
+    const reason = inviteRefusal(c, caller, invite).code;
+    // The account's own IdP vouches for this address (callerInviteEmail), so
+    // signing in through it is the way in. Its email domain may be any, so the
+    // sign-in page cannot find it from the address.
+    const ssoProvider = reason === 'email_unconfirmed' ? await getSsoProvider(invite.accountId) : null;
     return c.json({
+      reason,
+      sso_provider_id: ssoProvider?.supabaseSsoProviderId ?? null,
       invite_id: invite.inviteId,
       email_matches_caller: false,
       expired,
@@ -457,7 +475,6 @@ accountInvitesRouter.openapi(
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
-  const caller = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
   // Not a uuid: no invite has it, and Postgres would reject the cast (500).
   if (!isUuid(inviteId)) return c.json({ error: 'Invite not found' }, 404);
@@ -469,6 +486,7 @@ accountInvitesRouter.openapi(
     .limit(1);
 
   if (!invite) return c.json({ error: 'Invite not found' }, 404);
+  const caller = await callerInviteEmail(c, invite.accountId);
 
   if (!addressedToCaller(caller, invite)) return refuseInvite(c, caller, invite);
 
@@ -571,7 +589,6 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-  const caller = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
   // Not a uuid: no invite has it, and Postgres would reject the cast (500).
   if (!isUuid(inviteId)) return c.json({ error: 'Invite not found' }, 404);
@@ -583,6 +600,7 @@ accountInvitesRouter.openapi(
     .limit(1);
 
   if (!invite) return c.json({ error: 'Invite not found' }, 404);
+  const caller = await callerInviteEmail(c, invite.accountId);
 
   if (invite.acceptedAt) {
     return c.json({ error: 'Invite has already been accepted' }, 409);

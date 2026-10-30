@@ -27,13 +27,23 @@ mock.module('../channels/teams-api', () => ({
     attachments: [{ contentType: 'x', content: c }],
   }),
 }));
+/** When set, every token mint throws this (what `fetchTeamsToken` throws). */
+let mintFailure: Error | null = null;
 mock.module('../channels/teams-auth', () => ({
-  graphToken: async () => 'graph-tok',
-  botConnectorToken: async () => 'bot-tok',
+  graphToken: async () => {
+    if (mintFailure) throw mintFailure;
+    return 'graph-tok';
+  },
+  botConnectorToken: async () => {
+    if (mintFailure) throw mintFailure;
+    return 'bot-tok';
+  },
   teamsChannelEnabled: () => true,
   teamsConfigured: () => true,
 }));
 mock.module('../channels/install-store', () => ({
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   loadTeamsBotCredentials: async () => ({ appId: 'app-1', appPassword: 'secret' }),
   loadTeamsTenantForProject: async () => 'tenant-1',
   saveTeamsServiceUrl: async () => {},
@@ -110,6 +120,7 @@ let nextFetchOk = true;
 let downloadBytes = 8;
 const realFetch = globalThis.fetch;
 beforeEach(() => {
+  mintFailure = null;
   apiCalls = [];
   bound = true;
   storedServiceUrl = 'https://smba.trafficmanager.net/teams/';
@@ -215,6 +226,29 @@ describe('downloadTeamsFile', () => {
     expect(r.ok).toBe(true);
     expect(fetchCalls).toHaveLength(1);
     expect(fetchCalls[0].headers?.Authorization).toBe('Bearer bot-tok');
+  });
+});
+
+// KRTX-2978: the proxy dropped why a token could not be minted. Microsoft's
+// 400/401 is configuration a person must fix; the AADSTS code says which.
+describe('a token Microsoft refuses', () => {
+  const botFile = 'https://smba.trafficmanager.net/emea/36009a52/v3/attachments/0-abc/views/original';
+
+  test('an invalid bot secret is a 409 that names the AADSTS code and the fix; nothing is fetched', async () => {
+    mintFailure = new Error(
+      'Teams token request failed (401): {"error":"invalid_client","error_description":"AADSTS7000215: Invalid client secret provided."}',
+    );
+    const r = await downloadTeamsFile('proj-1', botFile);
+    expect(r).toMatchObject({ ok: false, status: 409 });
+    expect((r as { error: string }).error).toContain('AADSTS7000215');
+    expect((r as { error: string }).error).toContain('bot secret');
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  test('a network failure while minting stays a 502', async () => {
+    mintFailure = new TypeError('fetch failed');
+    const r = await downloadTeamsFile('proj-1', botFile);
+    expect(r).toMatchObject({ ok: false, status: 502, error: 'could not mint a bot token' });
   });
 });
 

@@ -10,7 +10,7 @@ import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
 import { accountRoleFor, countAccountOwners } from '../iam/read-models';
 import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
 import { scimError } from '../middleware/scim-auth';
-import { errors, json } from '../openapi';
+import { auth, errors, json } from '../openapi';
 import { db } from '../shared/db';
 import { scimMemberRow, scimMemberRows } from '../iam/membership-read';
 import { accountGroupsAmong, scimGroupIdsOfUser } from '../iam/group-read';
@@ -215,7 +215,7 @@ async function writeUser(c: any) {
 
 export function registerScimUsersRoutes(): void {
   scimRouter.openapi(createRoute({
-    method: 'get', path: '/accounts/{accountId}/Users', tags: ['scim'],
+    method: 'get', path: '/accounts/{accountId}/Users', ...auth, tags: ['scim'],
     summary: 'List SCIM Users (filter by userName/id/externalId eq)',
     request: { params: z.object({ accountId: z.string().uuid() }), query: ScimListQuery },
     responses: { 200: json(ScimResource, 'SCIM ListResponse'), ...errors(400, 401, 403) },
@@ -248,7 +248,7 @@ export function registerScimUsersRoutes(): void {
   });
 
   scimRouter.openapi(createRoute({
-    method: 'get', path: '/accounts/{accountId}/Users/{userId}', tags: ['scim'], summary: 'Get a SCIM User',
+    method: 'get', path: '/accounts/{accountId}/Users/{userId}', ...auth, tags: ['scim'], summary: 'Get a SCIM User',
     request: { params: userParams }, responses: { 200: json(ScimResource, 'SCIM User'), ...errors(400, 401, 403, 404) },
   }), async (c: any) => {
     const user = await resolveDirectoryUser(c.req.param('accountId'), c.req.param('userId'));
@@ -256,7 +256,7 @@ export function registerScimUsersRoutes(): void {
   });
 
   scimRouter.openapi(createRoute({
-    method: 'post', path: '/accounts/{accountId}/Users', tags: ['scim'], summary: 'Create / provision a SCIM User',
+    method: 'post', path: '/accounts/{accountId}/Users', ...auth, tags: ['scim'], summary: 'Create / provision a SCIM User',
     request: { params: z.object({ accountId: z.string().uuid() }), body: { content: { 'application/json': { schema: ScimResource } } } },
     responses: { 200: json(ScimResource, 'SCIM User (already provisioned)'), 201: json(ScimResource, 'SCIM User created / invited'), ...errors(400, 401, 403, 409) },
   }), async (c: any) => {
@@ -287,7 +287,7 @@ export function registerScimUsersRoutes(): void {
 
   for (const method of ['patch', 'put'] as const) {
     scimRouter.openapi(createRoute({
-      method, path: '/accounts/{accountId}/Users/{userId}', tags: ['scim'],
+      method, path: '/accounts/{accountId}/Users/{userId}', ...auth, tags: ['scim'],
       summary: method === 'patch' ? 'Patch a SCIM User' : 'Replace a SCIM User',
       request: { params: userParams, body: { content: { 'application/json': { schema: ScimResource } } } },
       responses: { 200: json(ScimResource, 'SCIM User'), 204: { description: 'Already absent' }, ...errors(400, 401, 403, 404, 409) },
@@ -295,7 +295,7 @@ export function registerScimUsersRoutes(): void {
   }
 
   scimRouter.openapi(createRoute({
-    method: 'delete', path: '/accounts/{accountId}/Users/{userId}', tags: ['scim'], summary: 'Delete / deprovision a SCIM User',
+    method: 'delete', path: '/accounts/{accountId}/Users/{userId}', ...auth, tags: ['scim'], summary: 'Delete / deprovision a SCIM User',
     request: { params: userParams }, responses: { 204: { description: 'Deleted / idempotent' }, ...errors(400, 401, 403, 409) },
   }), async (c: any) => {
     const user = await resolveDirectoryUser(c.req.param('accountId'), c.req.param('userId'));

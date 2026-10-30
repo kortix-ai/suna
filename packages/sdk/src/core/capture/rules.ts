@@ -50,14 +50,16 @@ export function normalizeCaptureDomain(input: string): string | null {
 }
 
 /**
- * An app as Capture stores it: a macOS bundle id or a Windows/Linux program
- * name. Spaces only in a Windows program (`proton pass.exe`), as the engine
- * allows. Null for an empty, over-long or flag-like (`-x`) value, or one with
- * control characters.
+ * An app as Capture stores it: any identifier the engine matches by its one app
+ * rule (apps/capture/fixtures/capture-format-v2/apps.json): a macOS bundle id, a
+ * Windows executable or package name, a Linux `WM_CLASS`, Flatpak or Snap name,
+ * an app's name (`AutoCAD 2025`), a path, or a prefix ending in `*`
+ * (`com.autodesk.autocad*`). Null for an empty, over-long or flag-like (`-x`)
+ * value, one with control characters, or a `*` prefix under 3 characters.
  */
 export function normalizeCaptureAppId(input: string): string | null {
   const id = input.trim();
   // eslint-disable-next-line no-control-regex
   if (!id || id.length > 255 || id.startsWith('-') || /[\u0000-\u001f\u007f]/.test(id)) return null;
-  return /\s/.test(id) && !id.toLowerCase().endsWith('.exe') ? null : id;
+  return id.endsWith('*') && id.slice(0, -1).trim().length < 3 ? null : id;
 }

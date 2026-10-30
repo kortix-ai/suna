@@ -2,7 +2,7 @@
 
 import { useNotificationInbox } from '@kortix/sdk/react';
 import { useEffect, useRef, useSyncExternalStore } from 'react';
-import { sessionUnreadRowId } from './notification-rows';
+import { sessionUnreadRowId } from '@kortix/ui/internal/notifications/notification-rows';
 
 function subscribeVisibility(onChange: () => void) {
   document.addEventListener('visibilitychange', onChange);

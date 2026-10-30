@@ -14,6 +14,8 @@ import { agentSwapRequiresUnattendedBox, registerAgentSwapBlocker } from '@/serv
 import { kortixEventBus, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { createEnvRpcRouter } from '@/routes/kortix/env-rpc'
 import { createToolsRouter } from '@/routes/kortix/tools'
+import { createChromeRouter } from '@/routes/kortix/chrome'
+import { chromeBridge, isBridgeWsData, KORTIX_CHROME_BRIDGE_PATH, type BridgeWsData } from '@/services/chrome/chrome-bridge'
 import { createHarnessControlRouter } from '@/routes/kortix/harness-control'
 import { createDriveSyncRouter } from '@/routes/kortix/drive-sync'
 import { startDriveSyncFromEnv } from '@/services/drive-sync/drive-sync'
@@ -140,6 +142,8 @@ export function buildDaemonApp(
   kortixRouter.route('/env-rpc/', envRpcRouter)
   // Hosted tools for a harness outside this process (OpenCode's bridge plugin).
   kortixRouter.route('/tools', createToolsRouter(cfg))
+  // Kortix in Chrome: attach/release/status for `kortix chrome` (the bridge socket upgrades in startProxy).
+  kortixRouter.route('/chrome', createChromeRouter(cfg))
 
   // Kortix Drive off Platinum: the API's pre-stop request for the final push.
   kortixRouter.route('/drive-sync', createDriveSyncRouter(cfg))
@@ -190,22 +194,8 @@ export function buildDaemonApp(
   // /web-proxy/{scheme}/{host}/{path} — forward proxy that rewrites HTML/CSS
   // so external sites embed cleanly inside the internal browser iframe.
   //
-  // Blocked loopback ports keep it off our own control plane: reaching the
-  // daemon or runtime through here would tunnel past every path-keyed control
-  // apps/api applies on the way in (agent authorization, connector gate, run
-  // cap, prompt idempotency, secret-grant re-mint).
-  app.route(
-    '/web-proxy',
-    createWebProxyRouter({
-      // Include every port the selected harness can use, including standby
-      // listeners. Reload must not create an unguarded route to the runtime.
-      blockedSelfPorts: new Set([
-        cfg.servicePort,
-        egressShimPort(),
-        ...harness.proxy.blockedPorts(cfg),
-      ]),
-    }),
-  )
+  // Every target and redirect is checked by the shared SSRF guard.
+  app.route('/web-proxy', createWebProxyRouter())
 
   // The daemon owns file reads and writes directly from the workspace,
   // including binary previews and downloads, independently of the harness.
@@ -306,7 +296,7 @@ export function startProxy(
   registerAgentSwapBlocker('config-convergence', () => harness.control.convergenceInFlight?.() ?? false)
   let app = buildDaemonApp(cfg, harness, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
 
-  const server = Bun.serve<PtyWsData>({
+  const server = Bun.serve<PtyWsData | BridgeWsData>({
     port: cfg.servicePort,
     hostname: '0.0.0.0',
     // SSE streams from runtime can be long-lived with no traffic; default 10s
@@ -325,6 +315,12 @@ export function startProxy(
         if (upgraded) return undefined
         return jsonError(500, { error: 'websocket upgrade failed' })
       }
+      if (isWsUpgrade && url.pathname === KORTIX_CHROME_BRIDGE_PATH) {
+        const prep = chromeBridge.prepareUpgrade(req, currentCfg.sandboxToken)
+        if (!prep.ok) return prep.response
+        if (srv.upgrade(req, { data: { chromeBridge: true } satisfies BridgeWsData })) return undefined
+        return jsonError(500, { error: 'websocket upgrade failed' })
+      }
       return app.fetch(req, srv)
     },
     websocket: {
@@ -338,7 +334,8 @@ export function startProxy(
       // itself ended, e.g. the user typed `exit`) closes without recreating
       // — that's a real end-of-session the client should surface, not
       // silently paper over.
-      open(ws: ServerWebSocket<PtyWsData>) {
+      open(ws: ServerWebSocket<PtyWsData | BridgeWsData>) {
+        if (isBridgeWsData(ws.data)) return chromeBridge.bridgeSocket.open(ws as ServerWebSocket<BridgeWsData>)
         const state = ws.data
         const requestedId = state.ptyId
         const result = ptyRegistry.attachOrCreate(requestedId, {
@@ -367,10 +364,12 @@ export function startProxy(
           try { ws.send(result.handle.replay) } catch {}
         }
       },
-      message(ws: ServerWebSocket<PtyWsData>, message: string | Buffer) {
+      message(ws: ServerWebSocket<PtyWsData | BridgeWsData>, message: string | Buffer) {
+        if (isBridgeWsData(ws.data)) return chromeBridge.bridgeSocket.message(ws as ServerWebSocket<BridgeWsData>, message)
         ws.data.handle?.write(typeof message === 'string' ? message : message.toString())
       },
-      close(ws: ServerWebSocket<PtyWsData>) {
+      close(ws: ServerWebSocket<PtyWsData | BridgeWsData>) {
+        if (isBridgeWsData(ws.data)) return chromeBridge.bridgeSocket.close(ws as ServerWebSocket<BridgeWsData>)
         ws.data.handle?.detach()
       },
     },

@@ -1,11 +1,11 @@
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@kortix/ui/tooltip';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ServicePreviewActions, type ServicePreviewState } from './infrastructure';
-import { ShowFileActions } from './show-helpers';
+import { ServicePreviewActions, type ServicePreviewState } from '@kortix/ui/session';
+import { ShowFileActions } from '@kortix/ui/session/tool/shared/show-helpers';
 
 function render(node: ReactNode) {
   return renderToStaticMarkup(

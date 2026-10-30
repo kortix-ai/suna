@@ -69,7 +69,12 @@ for await (const page of crm.paginate('list_deals', { limit: 100 }, {
 `run` returns `output` and throws for everything else:
 
 - `ConnectorApprovalPendingError` (HTTP 202): `approvalUrl`, `executionId`.
-  Show the link to the human; do not loop.
+  Show the link to the human. Do not repeat the call. With a project-scoped
+  token, Approve runs the call once: the session resumes with the result, or
+  a script reads `GET /v1/projects/:id/review/items/call:<executionId>` until
+  `detail.run.state` is final. With any other token (no `runs_on_approval` in
+  the 202 body), repeat the identical call within 15 minutes after approval:
+  it runs once.
 - `ConnectorCallError` (extends `ApiError`): `status`, `code` (the machine
   reason: `connector_not_connected`, `account_required`, `upstream_timeout`,
   `upstream_429`, `upstream_error` for a failure inside a 2xx, …), `reason`,
@@ -119,7 +124,7 @@ Inspect the catalog first:
 ```sh
 kortix connectors ls
 kortix connectors discover "reply to email"
-kortix connectors show email_email_inbox_bjgk.reply_message
+kortix connectors show kortix_email.reply_message
 kortix connectors types --out kortix-connectors.d.ts   # types for callAction
 ```
 
@@ -136,29 +141,30 @@ const connectors = process.env.KORTIX_PROJECT_ID
   ? kortix.project(process.env.KORTIX_PROJECT_ID).connectors
   : kortix.connectors;
 
-const matches = await connectors.search('email inbox unread', { limit: 5 });
-const listAction = matches.find((item) => item.tool.includes('list_messages'));
-if (!listAction) throw new Error('No inbox list action is available');
-
-const listed = await connectors.call<{
-  messages: Array<{ id: string; text?: string }>;
-}>(listAction.tool, {
-  inbox_id: 'email-inbox@agentmail.to',
-  label: 'unread',
-  limit: 10,
-});
-
-if (!listed.ok) {
-  throw new Error(`List failed: ${listed.reason ?? listed.status ?? 'unknown'}`);
+// Inbox addresses are accounts of `kortix_email`; Kortix fills in `inbox_id`.
+const inbox = { account: 'support@example.com' };
+const threads = await connectors.call<{ data: Array<{ id: string }> }>(
+  'kortix_email.list_threads',
+  { limit: 10 },
+  inbox,
+);
+if (!threads.ok) {
+  throw new Error(`List failed: ${threads.reason ?? threads.status ?? 'unknown'}`);
 }
 
-for (const message of listed.data?.messages ?? []) {
-  if (!message.text?.toLowerCase().includes('invoice')) continue;
-  const reply = await connectors.call('email_email_inbox_bjgk.reply_message', {
-    inbox_id: 'email-inbox@agentmail.to',
-    message_id: message.id,
-    text: 'Received. I will review this and follow up.',
-  });
+for (const thread of threads.data?.data ?? []) {
+  const emails = await connectors.call<{ data: Array<{ id: string; text?: string | null }> }>(
+    'kortix_email.list_messages',
+    { thread_id: thread.id },
+    inbox,
+  );
+  const message = emails.data?.data.at(-1);
+  if (!message?.text?.toLowerCase().includes('invoice')) continue;
+  const reply = await connectors.call(
+    'kortix_email.reply_message',
+    { thread_id: thread.id, message_id: message.id, text: 'Received. I will review this and follow up.' },
+    inbox,
+  );
   if (!reply.ok) throw new Error(`Reply failed for ${message.id}`);
 }
 ```

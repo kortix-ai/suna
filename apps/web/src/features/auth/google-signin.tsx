@@ -1,10 +1,10 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
 import { NewGoogle } from '@/features/icon/icons/new-google';
-import { authRedirectUrl } from '@/lib/desktop';
+import { authRedirectUrl } from '@kortix/ui/internal/lib/desktop';
 import { createClient } from '@/lib/supabase/client';
 import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';

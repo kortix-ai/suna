@@ -1,5 +1,5 @@
 /**
- * `DELETE /v1/projects/:projectId` runs four steps in a fixed order, and each
+ * `DELETE /v1/projects/:projectId` runs five steps in a fixed order, and each
  * order was a production bug:
  *
  * 1. Release prompt attachments. After the archive the project answers 404, so
@@ -10,13 +10,17 @@
  *    project row as a tombstone, so the database's FK cascade never fires and
  *    the rows would outlive the purged project. Same retry rule as the
  *    repository delete: a failure answers 500 and the project stays active.
- * 4. Archive the project row.
+ * 4. Release the chat channels: the Telegram bot, the Slack and Teams installs
+ *    and bindings outlive the archive for the same reason, and kept routing
+ *    messages to the deleted project. Same retry rule.
+ * 5. Archive the project row.
  *
  * PROJ-8 (tests/src/flows) proves the archive over real HTTP. A local stack has
  * no managed git provider to fail and no way to fail the attachment release,
  * so the fault paths live here.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { accountTokens } from '@kortix/db';
 
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const steps: string[] = [];
@@ -43,7 +47,9 @@ mock.module('../projects/prompt-attachments', () => ({
   },
 }));
 
+const realDeletion = await import('../projects/lib/project-deletion');
 mock.module('../projects/lib/project-deletion', () => ({
+  ...realDeletion,
   deleteManagedProjectRepo: async () => {
     steps.push('delete-repo');
     if (repoError) throw repoError;
@@ -55,19 +61,30 @@ mock.module('../projects/lib/project-deletion', () => ({
   },
 }));
 
+const realInstallStore = await import('../channels/install-store');
+mock.module('../channels/install-store', () => ({
+  ...realInstallStore,
+  releaseProjectChannels: async () => {
+    steps.push('release-channels');
+  },
+}));
+
 const realDb = await import('../shared/db');
 mock.module('../shared/db', () => ({
   ...realDb,
   db: {
-    update: () => ({
-      set: (values: { status?: string }) => ({
+    transaction: async (action: (tx: typeof realDb.db) => Promise<unknown>) => action((await import('../shared/db')).db),
+    update: (table: unknown) => ({
+      set: (values: { status?: string }) => {
+        if (table === accountTokens) steps.push('revoke-tokens');
+        return ({
         where: () => ({
           returning: async () => {
             steps.push(`archive:${values.status}`);
             return [{ projectId: PROJECT_ID, status: values.status }];
           },
         }),
-      }),
+      }); },
     }),
   },
 }));
@@ -85,12 +102,12 @@ beforeEach(() => {
 });
 
 describe('DELETE /projects/:projectId step order', () => {
-  test('release, then repository delete, then connector purge, then archive', async () => {
+  test('release, then repository delete, then connector purge, then the chat channels, then archive', async () => {
     const res = await deleteProject();
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, archived: true, repo_deleted: true });
-    expect(steps).toEqual(['release', 'delete-repo', 'purge-connectors', 'archive:archived']);
+    expect(await res.json()).toEqual({ ok: true, deleted: true, archived: true, repo_deleted: true });
+    expect(steps).toEqual(['release', 'delete-repo', 'purge-connectors', 'release-channels', 'archive:archived', 'revoke-tokens']);
   });
 
   test('a failed repository delete answers 502 and leaves the project active', async () => {

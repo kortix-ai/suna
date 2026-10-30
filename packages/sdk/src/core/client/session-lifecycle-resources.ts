@@ -15,11 +15,13 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
      * person is here (KRTX-1742). `keepalive` lets the request outlive a
      * closing page. Default: on for an absent report, off for a present one.
      *
-     * A present report from a person who may start the session keeps its
-     * computer on, and the response says until when (KRTX-1729):
+     * A present report from a person who may start the session renews the
+     * awake window, and the response says until when (KRTX-1729):
      * `awake_until` is the computer's stop time after this renewal, and
-     * `awake_cap_at` the time presence cannot keep it on past. Both are null
-     * otherwise, and absent from an API before KRTX-1729.
+     * `awake_cap_at` the time the idle window ends — the idle autostop window
+     * after the computer's latest turn activity or its start (KRTX-2451) —
+     * which presence cannot keep it past. Both are null otherwise, and
+     * absent from an API before KRTX-1729.
      */
     presence: (
       input: { tab_id: string; active: boolean; alerts?: boolean },

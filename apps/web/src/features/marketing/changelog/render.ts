@@ -9,9 +9,58 @@ import { unified } from 'unified';
 type HastNode = {
   type: string;
   tagName?: string;
+  value?: string;
   properties?: Record<string, unknown>;
   children?: HastNode[];
 };
+
+/** The repo the release notes come from. `releases.ts` re-exports it. */
+export const CHANGELOG_REPO = 'kortix-ai/suna';
+
+/** `#10786` in prose: a pull request number, not part of a word or entity. */
+const PR_REF = /(^|[^\w&#])#(\d{1,6})\b/g;
+
+/**
+ * Turns every `#1234` in the notes' text into a link to that pull request on
+ * GitHub (GitHub redirects a number that is an issue). Text already inside a
+ * link or code is left alone. The link carries `data-pr`, so the prose styles
+ * can keep it in the text colour and only tint it on hover.
+ */
+function rehypePullLinks() {
+  const skip = new Set(['a', 'code', 'pre']);
+  const split = (value: string): HastNode[] => {
+    const out: HastNode[] = [];
+    let last = 0;
+    for (const match of value.matchAll(PR_REF)) {
+      const start = match.index + match[1].length;
+      if (start > last) out.push({ type: 'text', value: value.slice(last, start) });
+      out.push({
+        type: 'element',
+        tagName: 'a',
+        properties: {
+          href: `https://github.com/${CHANGELOG_REPO}/pull/${match[2]}`,
+          target: '_blank',
+          rel: ['noopener', 'noreferrer'],
+          dataPr: '',
+        },
+        children: [{ type: 'text', value: `#${match[2]}` }],
+      });
+      last = start + match[2].length + 1;
+    }
+    if (last < value.length) out.push({ type: 'text', value: value.slice(last) });
+    return out;
+  };
+  return (tree: HastNode) => {
+    const walk = (node: HastNode) => {
+      if (!node.children || (node.tagName && skip.has(node.tagName))) return;
+      node.children = node.children.flatMap((child) =>
+        child.type === 'text' && child.value?.includes('#') ? split(child.value) : [child],
+      );
+      node.children.forEach(walk);
+    };
+    walk(tree);
+  };
+}
 
 /**
  * Reproduces what the page's former `<ReactMarkdown>` did after sanitizing:
@@ -51,6 +100,7 @@ const processor = unified()
   .use(remarkRehype, { allowDangerousHtml: true })
   .use(rehypeSanitize)
   .use(rehypeReleaseLinks)
+  .use(rehypePullLinks)
   .use(rehypeStringify);
 
 /**

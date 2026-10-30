@@ -196,9 +196,10 @@ async function lastTurnEndedMinutesAgo(minutes: number | null) {
 }
 
 // KRTX-1729: a client that reports "present" for every visible tab (clients
-// before the input check do) must not keep a box up all night. Presence alone
-// keeps it at most 2 h past the run's latest turn.
-describe('presence alone keeps a box at most 2 h past its latest turn', () => {
+// before the input check do) must not keep a box up all night. KRTX-2451:
+// presence alone keeps a box only to the idle window past the run's latest
+// turn — the same idle grace an absent session gets — never past it.
+describe('presence alone keeps a box to the idle window past its latest turn', () => {
   beforeAll(async () => {
     await runStartedHoursAgo(5);
   });
@@ -206,23 +207,21 @@ describe('presence alone keeps a box at most 2 h past its latest turn', () => {
     await lastTurnEndedMinutesAgo(null);
   });
 
-  test('a turn that ended 30 min ago: the idle grace, as before', async () => {
-    await lastTurnEndedMinutesAgo(30);
+  test('a turn that ended 5 min ago: presence holds the deadline at the idle grace past the turn', async () => {
+    await lastTurnEndedMinutesAgo(5);
     await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true });
-    expect(Math.abs((await secondsLeft()) - idleGraceMs() / 1000)).toBeLessThanOrEqual(5);
-  });
-
-  test('a turn that ended 1 h 50 min ago: only up to the cap, 10 min from now', async () => {
-    await lastTurnEndedMinutesAgo(110);
-    await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true });
+    // The 1-minute deadline from beforeEach is held up to the window:
+    // the turn ended 5 min ago, so the window is 10 min from now.
     const secs = await secondsLeft();
     expect(Math.abs(secs - 600)).toBeLessThanOrEqual(5);
-    expect(secs).toBeLessThan(idleGraceMs() / 1000);
+    expect(secs).toBeLessThanOrEqual(idleGraceMs() / 1000);
   });
 
-  test('a turn that ended 3 h ago: presence extends nothing, and the lease still renews', async () => {
-    await lastTurnEndedMinutesAgo(180);
+  test('a turn that ended 30 min ago: presence extends nothing, and the lease still renews', async () => {
+    await lastTurnEndedMinutesAgo(30);
     expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBeInstanceOf(Date);
+    // The regression KRTX-2451 fixes: an open chat whose last turn is past
+    // the window no longer holds the box; it stops on the ordinary idle stop.
     expect(await secondsLeft()).toBeLessThanOrEqual(60);
     expect(await leaseSecondsLeft()).toBeGreaterThan(60);
   });
@@ -238,7 +237,8 @@ describe('presence alone keeps a box at most 2 h past its latest turn', () => {
 const secondsUntil = (at: Date) => Math.round((at.getTime() - Date.now()) / 1000);
 
 // KRTX-1729: the composer says how long presence keeps the computer on. The
-// renewal returns the deadline it wrote and the cap it applied.
+// renewal returns the deadline it wrote and the cap it applied. KRTX-2451:
+// the cap is the idle window past the latest turn.
 describe('a presence renewal returns the deadline it wrote and the cap', () => {
   beforeAll(async () => {
     await runStartedHoursAgo(5);
@@ -247,26 +247,19 @@ describe('a presence renewal returns the deadline it wrote and the cap', () => {
     await lastTurnEndedMinutesAgo(null);
   });
 
-  test('a turn that ended 30 min ago: the idle grace, under a cap 90 min away', async () => {
-    await lastTurnEndedMinutesAgo(30);
+  test('a turn that ended 5 min ago: the deadline is the cap, the idle grace past the turn', async () => {
+    await lastTurnEndedMinutesAgo(5);
     const awake = await extendSandboxDeadlineForPresence({ sessionId: SESSION_ID });
     expect(awake).not.toBeNull();
-    expect(Math.abs(secondsUntil(awake!.deadlineAt) - idleGraceMs() / 1000)).toBeLessThanOrEqual(5);
-    expect(Math.abs(secondsUntil(awake!.deadlineAt) - (await secondsLeft()))).toBeLessThanOrEqual(1);
-    expect(Math.abs(secondsUntil(awake!.capAt) - 90 * 60)).toBeLessThanOrEqual(5);
-  });
-
-  test('a turn that ended 1 h 50 min ago: the deadline is the cap, 10 min away', async () => {
-    await lastTurnEndedMinutesAgo(110);
-    const awake = await extendSandboxDeadlineForPresence({ sessionId: SESSION_ID });
+    expect(Math.abs(secondsUntil(awake!.deadlineAt) - 600)).toBeLessThanOrEqual(5);
     expect(awake!.deadlineAt.getTime()).toBe(awake!.capAt.getTime());
-    expect(Math.abs(secondsUntil(awake!.capAt) - 600)).toBeLessThanOrEqual(5);
+    expect(Math.abs(secondsUntil(awake!.deadlineAt) - (await secondsLeft()))).toBeLessThanOrEqual(1);
   });
 
-  test('a turn that ended 3 h ago: the cap is past, and the deadline is the one already set', async () => {
-    await lastTurnEndedMinutesAgo(180);
+  test('a turn that ended 30 min ago: the cap is past, and the deadline is the one already set', async () => {
+    await lastTurnEndedMinutesAgo(30);
     const awake = await extendSandboxDeadlineForPresence({ sessionId: SESSION_ID });
-    expect(Math.abs(secondsUntil(awake!.capAt) + 60 * 60)).toBeLessThanOrEqual(5);
+    expect(Math.abs(secondsUntil(awake!.capAt) + 15 * 60)).toBeLessThanOrEqual(5);
     expect(secondsUntil(awake!.deadlineAt)).toBeLessThanOrEqual(60);
     expect(Math.abs(secondsUntil(awake!.deadlineAt) - (await secondsLeft()))).toBeLessThanOrEqual(1);
   });

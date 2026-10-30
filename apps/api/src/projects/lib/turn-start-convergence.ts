@@ -593,7 +593,7 @@ export async function convergeModelCatalogForTurnStart(
         import('../../llm-gateway/models/managed-models'),
       ]);
     return await convergeModelCatalogBeforeTurnStart(sessionId, requestedManagedModelId, {
-      isManagedModelId: isRuntimeManagedModelId,
+      isLineupModelId: isRuntimeManagedModelId,
       lastKnown: lastKnownManagedCatalog,
       // The one health GET every lane shares — `probeRunningRelease` records
       // the catalog too (see `noteAssetsFromHealth`), single-flight per

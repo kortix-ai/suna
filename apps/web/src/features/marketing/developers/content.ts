@@ -14,10 +14,10 @@
  * section task edits its own block only.
  */
 
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
-import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@kortix/ui/internal/lib/kortix-cli';
 
 /** A two-line headline: `muted` renders first and dimmed, `ink` second. */
 export type TwoTone = { muted: string; ink: string };
@@ -40,15 +40,21 @@ export const hero = {
     {
       name: 'kortix.yaml',
       language: 'yaml',
-      code: `kortix_version: 2
+      code: `kortix_version: 3
 default_agent: support-triage
 
 project:
   name: acme-ops
 
+tools:
+  lookup_order: tools/lookup_order.ts
+
 agents:
   support-triage:
-    file: agents/support-triage.md
+    description: Acme's support agent. Resolves tickets end to end.
+    mode: primary
+    model: anthropic/claude-opus-4-8
+    prompt_file: agents/support-triage.md
     connectors: [slack, linear]
 
 connectors:
@@ -69,15 +75,7 @@ triggers:
     {
       name: 'agents/support-triage.md',
       language: 'markdown',
-      code: `---
-description: Acme's support agent. Resolves tickets end to end.
-mode: primary
-model: anthropic/claude-opus-4-8
-tools:
-  lookup_order: true
----
-
-You are Acme's support agent. Resolve customer tickets
+      code: `You are Acme's support agent. Resolve customer tickets
 end to end, with full product and order context.
 
 Issue refunds under $500 on your own. Anything higher

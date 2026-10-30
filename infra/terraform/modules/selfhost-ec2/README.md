@@ -65,7 +65,7 @@ mechanism to keep in sync with the updater, on purpose.
 
 ## What it deliberately does NOT do
 
-- **No secrets.** `DAYTONA_API_KEY`, managed-git tokens, SMTP, etc. are not
+- **No secrets.** `PLATINUM_API_KEY`, managed-git tokens, SMTP, etc. are not
   Terraform inputs — cloud-init runs `kortix self-host init` so the box comes
   up without them (it warns rather than refusing), and the
   `post_apply_next_steps` output tells you how to set them afterward (SSM in,

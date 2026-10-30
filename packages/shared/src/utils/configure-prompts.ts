@@ -23,8 +23,9 @@ const NEW_PROMPTS: Record<ConfigureKind, string> = {
     "`skills/<name>/SKILL.md` and open a change request so I can review and merge it.",
   command:
     "I want to create a new slash command for this project. Ask me what it " +
-    "should do, then add it at `harnesses/opencode/commands/<name>.md` and open a " +
-    "change request so I can review and merge it.",
+    "should do, then add it where pi reads commands (`commands:` in `kortix.yaml` " +
+    "on `kortix_version: 3`, else a prompt template at `harnesses/pi/prompts/<name>.md`) " +
+    "and open a change request so I can review and merge it.",
   connector:
     "I want to connect an outside service to this project. Ask me which service " +
     "and what the agents should be able to do with it, then add the connector " +

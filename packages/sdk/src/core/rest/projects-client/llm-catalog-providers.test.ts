@@ -42,7 +42,7 @@ configureKortix({
   getToken: async () => 'tok',
 });
 
-test('loads the live provider-level catalog (not gated by llm_gateway, unlike model-picker)', async () => {
+test('loads the live provider-level catalog', async () => {
   const result = await getProjectLlmCatalogProviders('P1');
   expect(result.providers[0]?.id).toBe('amazon-bedrock');
   expect(result.providers[0]?.env).toContain('AWS_BEARER_TOKEN_BEDROCK');

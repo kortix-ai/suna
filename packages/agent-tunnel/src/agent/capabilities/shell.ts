@@ -79,6 +79,7 @@ export function createShellCapability(config: TunnelConfig): Capability {
         shell: false,
         timeout,
         env: safeEnv,
+        windowsHide: true,
       });
 
       let stdout = '';

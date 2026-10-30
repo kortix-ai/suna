@@ -13,6 +13,7 @@ terraform {
 }
 
 data "aws_availability_zones" "available" {
+  #checkov:skip=CKV_AWS_394:Subnets take the first az_count zone names in sorted order. AWS adds zones under later letters, so a new zone does not change the planned subnets.
   state = "available"
 }
 
@@ -36,9 +37,10 @@ locals {
   )]
 }
 
+#trivy:ignore:AVD-AWS-0178 Flow logs live outside this module; see the CKV2_AWS_11 skip.
 resource "aws_vpc" "this" {
-  #checkov:skip=CKV2_AWS_11:Flow-log destination, KMS key, and retention are deployment concerns composed by production callers; enterprise-vpc creates aws_flow_log.vpc with 60-second aggregation.
-  #checkov:skip=CKV2_AWS_12:The enterprise-vpc caller owns the VPC default security group and empties ingress and egress; keeping it outside this shared module avoids duplicate aws_default_security_group ownership.
+  #checkov:skip=CKV2_AWS_11:This module creates no flow log on purpose. compliance-monitoring owns the dev and staging VPC flow logs; prod's flow log predates Terraform (DCF-406). Drata test 224 checks every VPC daily.
+  #checkov:skip=CKV2_AWS_12:This module leaves the default security group alone on purpose. compliance-monitoring empties it for the dev and staging VPCs. Drata test 233 checks every VPC daily.
   cidr_block           = var.cidr
   enable_dns_support   = true
   enable_dns_hostnames = true

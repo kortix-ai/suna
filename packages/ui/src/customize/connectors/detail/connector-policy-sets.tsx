@@ -1,0 +1,507 @@
+'use client';
+
+import { useTranslations } from '../../../i18n';
+import {
+  type ConnectorPolicySet,
+  deleteConnectorPolicySet,
+  getConnectorPolicies,
+  listConnectorPolicySets,
+  listConnectors,
+  renameConnectorPolicySet,
+  upsertConnectorPolicySet,
+} from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { CaretDownIcon, PlusIcon } from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Fragment, useEffect, useId, useState } from 'react';
+
+import { Button } from '../../../primitives/button';
+import { ConfirmDialog } from '../../../primitives/confirm-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '../../../primitives/dropdown-menu';
+import { RadioGroup, RadioGroupItem } from '../../../primitives/radio-group';
+import { ErrorState } from '../../../primitives/error-state';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '../../../primitives/field';
+import Hint from '../../../primitives/hint';
+import { Input } from '../../../primitives/input';
+import Loading from '../../../primitives/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '../../../primitives/modal';
+import { Skeleton } from '../../../primitives/skeleton';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '../../../primitives/tabs';
+import { errorToast, successToast } from '../../../primitives/toast';
+
+import { agentHref, capabilityTabHref } from '../../../internal/lib/capability-tab-routes';
+import { UiLink as Link } from '../../../providers/ui-provider';
+
+import {
+  connectorPoliciesKey,
+  connectorPolicySetsKey,
+  POLICY_SET_TEMPLATES,
+  policySetNameProblem,
+  TEMPLATE_NAME,
+  type PolicySetTemplate,
+} from '../tools/policy-sets';
+import { humanizeToolName } from '../tools/tool-groups';
+import { agentConnectorAccess } from '../agent-access';
+import { useAgentAccess } from '../use-agent-access';
+
+/** `read_only` reads "Read only" on screen; the name itself is in the tooltip and in kortix.yaml. */
+export function policySetLabel(name: string): string {
+  return humanizeToolName(name);
+}
+
+/** The tab value of the base rules. A set name starts with [a-z0-9]. */
+const BASE_VALUE = '__base';
+
+/**
+ * The rule-list strip above the Tools tab: "Base rules", each policy set,
+ * then "New rule set". A set gives the agents it is assigned to different
+ * rules on this connector, with the same accounts. Each tab counts the rules
+ * its list holds. Past about six sets the strip scrolls sideways.
+ *
+ * Under the strip, one line says who the selected list applies to: every
+ * agent without a set, or the agents that use this set (each a link to that
+ * agent's Connectors page).
+ *
+ * The bar owns create, edit (rename + description) and delete. The rules of
+ * the selected set are edited by the Tools list below, through the one rule
+ * writer (`PUT .../policies?policy_set=<name>`).
+ *
+ * Delete is refused while an agent uses the set: the button is disabled with
+ * that reason, and a 409 from a concurrent assignment surfaces the server's
+ * message naming the agents.
+ */
+export function ConnectorPolicySetBar({
+  projectId,
+  slug,
+  canWrite,
+  value,
+  onChange,
+}: {
+  projectId: string;
+  slug: string;
+  canWrite: boolean;
+  /** The selected set, or null for the base rules. */
+  value: string | null;
+  onChange: (next: string | null) => void;
+}) {
+  const t = useTranslations('connectorPolicySets');
+  const access = useAgentAccess(projectId);
+  const connectorsQuery = useQuery({
+    queryKey: qk.project.connectors(projectId),
+    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
+    ...contract('config'),
+  });
+  const allSlugs = (connectorsQuery.data?.connectors ?? []).map((item) => item.slug);
+  const queryClient = useQueryClient();
+  const queryKey = connectorPolicySetsKey(projectId, slug);
+  const setsQuery = useQuery({
+    queryKey,
+    queryFn: () => listConnectorPolicySets(projectId, slug),
+    enabled: canWrite,
+  });
+  // The same key and fetch as the Tools list's base query, so this is the
+  // one cached request, not a second one.
+  const baseQuery = useQuery({
+    queryKey: connectorPoliciesKey(projectId, slug, null),
+    queryFn: () => getConnectorPolicies(projectId, slug, { policySet: undefined }),
+    staleTime: 5_000,
+    enabled: canWrite,
+  });
+  const sets: ConnectorPolicySet[] = setsQuery.data?.sets ?? [];
+  const selected = value ? sets.find((set) => set.name === value) : undefined;
+
+  // A set deleted or renamed elsewhere: fall back to the base rules instead of
+  // editing a list that no longer exists.
+  useEffect(() => {
+    // Not while the list refetches: a set created or renamed a moment ago is
+    // not in the stale list yet.
+    if (value && setsQuery.isSuccess && !setsQuery.isFetching && !selected) onChange(null);
+  }, [value, setsQuery.isSuccess, setsQuery.isFetching, selected, onChange]);
+
+  const [editor, setEditor] = useState<{ mode: 'create' } | { mode: 'edit'; set: ConnectorPolicySet } | null>(
+    null,
+  );
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey });
+    void queryClient.invalidateQueries({ queryKey: ['connector-policies', projectId, slug] });
+    // Rename and delete rewrite agent references in kortix.yaml.
+    void queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
+  };
+
+  const remove = useMutation({
+    mutationFn: (name: string) => deleteConnectorPolicySet(projectId, slug, name),
+    onSuccess: (_result, name) => {
+      successToast(t('deleted', { name }));
+      onChange(null);
+      setConfirmDelete(false);
+      invalidate();
+    },
+    // 409 `policy_set_in_use`: the server's message names the agents.
+    onError: (error: Error) => {
+      setConfirmDelete(false);
+      errorToast(error.message);
+      invalidate();
+    },
+  });
+
+  if (!canWrite) return null;
+  if (setsQuery.isPending) return <Skeleton className="h-7 w-56 rounded-md" />;
+  if (setsQuery.isError) {
+    return (
+      <ErrorState
+        size="sm"
+        title={t('loadFailed')}
+        description={setsQuery.error instanceof Error ? setsQuery.error.message : undefined}
+        action={
+          <Button variant="outline" size="sm" onClick={() => void setsQuery.refetch()}>
+            {t('retry')}
+          </Button>
+        }
+      />
+    );
+  }
+
+  const agents = selected?.agents ?? [];
+  const agentList = agents.join(', ');
+  const ruleTotal = selected ? selected.policies.length : (baseQuery.data?.policies.length ?? 0);
+  // Agents that can take this set: every agent not on it yet.
+  const giveTo = selected ? access.agents.filter((agent) => !agents.includes(agent)) : [];
+
+  return (
+    <div className="space-y-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="min-w-0 overflow-x-auto">
+          <Tabs value={value ?? BASE_VALUE} onValueChange={(next) => onChange(next === BASE_VALUE ? null : next)}>
+            <TabsListCompact aria-label={t('rulesFor')}>
+              <TabsTriggerCompact value={BASE_VALUE}>{t('baseRules')}</TabsTriggerCompact>
+              {sets.map((set) => (
+                <TabsTriggerCompact key={set.name} value={set.name} title={set.name}>
+                  {policySetLabel(set.name)}
+                  <span className="text-muted-foreground">
+                    {' · '}
+                    {t('agentCount', { count: set.agents.length })}
+                  </span>
+                </TabsTriggerCompact>
+              ))}
+            </TabsListCompact>
+          </Tabs>
+        </div>
+        <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setEditor({ mode: 'create' })}>
+          <PlusIcon className="size-3.5 shrink-0" />
+          {t('createTitle')}
+        </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <p className="text-muted-foreground min-w-0 text-xs text-pretty">
+          {selected ? (
+            <>
+              {selected.description ? `${selected.description} · ` : null}
+              {agents.length > 0 ? (
+                <>
+                  {t('usedByLead')}{' '}
+                  {agents.map((agent, index) => (
+                    <Fragment key={agent}>
+                      {index > 0 ? ', ' : null}
+                      <Link
+                        href={`${agentHref(projectId, agent)}?section=connectors`}
+                        className="text-foreground underline-offset-4 hover:underline"
+                      >
+                        {agent}
+                      </Link>
+                    </Fragment>
+                  ))}
+                </>
+              ) : (
+                <>
+                  {t('unusedLead')}{' '}
+                  <Link
+                    href={capabilityTabHref(projectId, 'agent')}
+                    className="text-foreground underline-offset-4 hover:underline"
+                  >
+                    {t('unusedLink')}
+                  </Link>
+                </>
+              )}
+            </>
+          ) : (
+            t('baseContext')
+          )}
+          {' · '}
+          {t('ruleCount', { count: ruleTotal })}
+        </p>
+        {selected ? (
+          <div className="flex shrink-0 items-center gap-1">
+            {access.supported && access.canEdit && giveTo.length > 0 ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="xs" disabled={access.pending !== null}>
+                    {t('giveToAgent')}
+                    <CaretDownIcon className="size-3 shrink-0" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-48">
+                  <DropdownMenuLabel>{t('giveToAgentLabel', { name: policySetLabel(selected.name) })}</DropdownMenuLabel>
+                  {giveTo.map((agent) => {
+                    const current = agentConnectorAccess(access.grantsOf(agent), slug);
+                    return (
+                      <DropdownMenuItem
+                        key={agent}
+                        onSelect={() =>
+                          void access
+                            .setPolicySet(agent, slug, selected.name, allSlugs)
+                            .then(() => successToast(t('givenToAgent', { agent, name: policySetLabel(selected.name) })))
+                            .catch(() => undefined)
+                        }
+                      >
+                        <span className="min-w-0 flex-1 truncate">{agent}</span>
+                        {!current.granted || current.policySet ? (
+                          <span className="text-muted-foreground shrink-0 text-xs">
+                            {!current.granted
+                              ? t('giveToAgentGrants')
+                              : t('giveToAgentReplaces', { name: policySetLabel(current.policySet!) })}
+                          </span>
+                        ) : null}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="xs"
+              aria-label={t('edit')}
+              onClick={() => setEditor({ mode: 'edit', set: selected })}
+            >
+              {t('editShort')}
+            </Button>
+            {/* A disabled button takes no pointer events: the span carries the reason. */}
+            <Hint label={agents.length > 0 ? t('deleteInUse', { agents: agentList }) : t('delete')} side="bottom">
+              <span className="inline-flex">
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  aria-label={t('delete')}
+                  disabled={agents.length > 0 || remove.isPending}
+                  aria-busy={remove.isPending || undefined}
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  {t('deleteConfirm')}
+                </Button>
+              </span>
+            </Hint>
+          </div>
+        ) : null}
+      </div>
+
+      <PolicySetEditor
+        key={editor ? (editor.mode === 'edit' ? `edit:${editor.set.name}` : 'create') : 'closed'}
+        projectId={projectId}
+        slug={slug}
+        state={editor}
+        existing={sets.map((set) => set.name)}
+        onOpenChange={(open) => !open && setEditor(null)}
+        onSaved={(name, rules = []) => {
+          // Put the saved set in the cached list before selecting it, so the
+          // stale-selection fallback above never sees it missing.
+          const previous = editor?.mode === 'edit' ? editor.set : null;
+          queryClient.setQueryData<{ sets: ConnectorPolicySet[] }>(queryKey, (current) => {
+            const list = (current?.sets ?? []).filter((set) => set.name !== name && set.name !== previous?.name);
+            const saved: ConnectorPolicySet = previous
+              ? { ...previous, name }
+              : { name, description: null, policies: rules, agents: [] };
+            return { sets: [...list, saved] };
+          });
+          setEditor(null);
+          onChange(name);
+          invalidate();
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={selected ? t('deleteTitle', { name: selected.name }) : ''}
+        description={t('deleteBody')}
+        confirmLabel={t('deleteConfirm')}
+        confirmVariant="destructive"
+        isPending={remove.isPending}
+        onConfirm={() => selected && remove.mutate(selected.name)}
+      />
+    </div>
+  );
+}
+
+/**
+ * Create a set, or rename it and change its description. A rename rewrites
+ * every agent reference in the same kortix.yaml commit (server side), so an
+ * agent never points at a missing set in between.
+ */
+function PolicySetEditor({
+  projectId,
+  slug,
+  state,
+  existing,
+  onOpenChange,
+  onSaved,
+}: {
+  projectId: string;
+  slug: string;
+  state: { mode: 'create' } | { mode: 'edit'; set: ConnectorPolicySet } | null;
+  existing: readonly string[];
+  onOpenChange: (open: boolean) => void;
+  onSaved: (name: string, rules?: ConnectorPolicySet['policies']) => void;
+}) {
+  const t = useTranslations('connectorPolicySets');
+  const id = useId();
+  const current = state?.mode === 'edit' ? state.set : null;
+  const [template, setTemplate] = useState<PolicySetTemplate>('read_only');
+  const [name, setName] = useState(current?.name ?? (existing.includes('read_only') ? '' : 'read_only'));
+  // The name follows the template until the user types one.
+  const [nameEdited, setNameEdited] = useState(false);
+  const pickTemplate = (next: PolicySetTemplate) => {
+    setTemplate(next);
+    if (!nameEdited) setName(existing.includes(TEMPLATE_NAME[next]) ? '' : TEMPLATE_NAME[next]);
+  };
+  const [description, setDescription] = useState(current?.description ?? '');
+  const trimmed = name.trim();
+  const problem = trimmed ? policySetNameProblem(trimmed, existing, current?.name ?? null) : null;
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const nextDescription = description.trim() || null;
+      if (!current) {
+        // A template's set and its rules land in one kortix.yaml commit.
+        const description = nextDescription ?? (template === 'empty' ? null : t(`template_${template}_description`));
+        await upsertConnectorPolicySet(projectId, slug, trimmed, {
+          description,
+          ...(template === 'empty' ? {} : { template }),
+        });
+        // The answer counts the rules written; the set's list refetches them.
+        return { name: trimmed, created: true, rules: [] };
+      }
+      if (trimmed !== current.name) {
+        await renameConnectorPolicySet(projectId, slug, current.name, trimmed);
+      }
+      if (nextDescription !== (current.description ?? null)) {
+        await upsertConnectorPolicySet(projectId, slug, trimmed, { description: nextDescription });
+      }
+      return { name: trimmed, created: false, rules: undefined };
+    },
+    onSuccess: (result) => {
+      successToast(result.created ? t('created', { name: policySetLabel(result.name) }) : t('saved'));
+      onSaved(result.name, result.rules);
+    },
+    onError: (error: Error) => errorToast(error.message),
+  });
+
+  const pending = save.isPending;
+  const valid = trimmed !== '' && problem === null;
+
+  return (
+    <Modal open={state !== null} onOpenChange={(next) => !pending && onOpenChange(next)}>
+      <ModalContent className="lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>{current ? t('editTitle') : t('createTitle')}</ModalTitle>
+          <ModalDescription>{current ? t('editBody') : t('createBody')}</ModalDescription>
+        </ModalHeader>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (valid && !pending) save.mutate();
+          }}
+        >
+          <ModalBody>
+            <FieldGroup>
+              {current ? null : (
+                <Field>
+                  <FieldLabel>{t('templateLabel')}</FieldLabel>
+                  <RadioGroup
+                    value={template}
+                    onValueChange={(next) => pickTemplate(next as PolicySetTemplate)}
+                    disabled={pending}
+                    className="gap-2"
+                  >
+                    {POLICY_SET_TEMPLATES.map((option) => (
+                      <RadioGroupItem
+                        key={option}
+                        value={option}
+                        variant="outline"
+                        size="lg"
+                        label={t(`template_${option}`)}
+                        description={t(`template_${option}_description`)}
+                      />
+                    ))}
+                  </RadioGroup>
+                </Field>
+              )}
+              <Field data-invalid={problem ? true : undefined}>
+                <FieldLabel htmlFor={`${id}-name`}>{t('nameLabel')}</FieldLabel>
+                <Input
+                  id={`${id}-name`}
+                  value={name}
+                  onChange={(event) => {
+                    setNameEdited(true);
+                    setName(event.target.value);
+                  }}
+                  placeholder="read_only"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="font-mono"
+                  aria-invalid={problem ? true : undefined}
+                  disabled={pending}
+                  autoFocus={current !== null}
+                />
+                <FieldDescription className={problem ? 'text-destructive' : undefined}>
+                  {problem === 'taken' ? t('nameTaken') : t('nameHelp')}
+                </FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`${id}-description`}>{t('descriptionLabel')}</FieldLabel>
+                <Input
+                  id={`${id}-description`}
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder={t('descriptionPlaceholder')}
+                  autoComplete="off"
+                  disabled={pending}
+                />
+              </Field>
+            </FieldGroup>
+          </ModalBody>
+          <ModalFooter className="sm:justify-between">
+            <Button
+              type="button"
+              variant="outline-ghost"
+              onClick={() => onOpenChange(false)}
+              disabled={pending}
+            >
+              {t('cancel')}
+            </Button>
+            <Button type="submit" disabled={!valid || pending}>
+              {pending ? <Loading className="size-4 shrink-0" /> : null}
+              {current ? t('save') : t('create')}
+            </Button>
+          </ModalFooter>
+        </form>
+      </ModalContent>
+    </Modal>
+  );
+}

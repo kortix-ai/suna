@@ -28,7 +28,7 @@ import {
   previewScale,
   scheduleSlowPreview,
 } from './apps-view';
-import { framePlacement } from './app-preview';
+import { framePlacement } from '@kortix/ui/apps';
 
 const renderAppMarkup = (node: ReactNode) =>
   renderRaw(

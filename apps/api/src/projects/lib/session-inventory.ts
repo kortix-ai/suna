@@ -6,8 +6,10 @@ import {
   type SecretGrant,
   type ShareSubject,
 } from '../../connectors/share';
+import { spaceVisibleFor } from '../../shared/space-access';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isWarmProjectSession } from './warm-sessions';
+import { sessionRestoreUntil } from '../session-log-purge';
 
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
@@ -106,6 +108,12 @@ export function selectSessionRowsForViewer(input: {
    * never the launcher's other private or restricted ones.
    */
   agentPrincipal?: boolean;
+  /** Recently deleted (KRTX-2853): `SessionListFilter.deleted`. */
+  deleted?: boolean;
+  /** Now, for the restore window. */
+  now?: number;
+  /** The private channels the caller may not see (`hiddenSpaceIds`): their sessions are never listed. */
+  hiddenSpaceIds: ReadonlySet<string>;
 }): { authorized: boolean; items: SessionInventoryItem[] } {
   if (input.scope === 'project' && !input.canManageProject) {
     return { authorized: false, items: [] };
@@ -135,13 +143,32 @@ export function selectSessionRowsForViewer(input: {
         initiatorType: row.initiatorType,
         canManageProject: input.canManageProject,
         accountSessionOversight: input.scope === 'project' && input.accountSessionOversight === true,
+        spaceVisible: spaceVisibleFor(input.hiddenSpaceIds, row.spaceId),
       },
     );
     const access = input.agentPrincipal
-      ? agentSessionStanding(input.boundCredentialSessionId, row, canAccess).visible
+      ? spaceVisibleFor(input.hiddenSpaceIds, row.spaceId) &&
+        agentSessionStanding(input.boundCredentialSessionId, row, canAccess).visible
       : canAccess;
     return { row, canAccess: access, runtimeStatus, deletedAt, deletedBy };
   });
+
+  if (input.deleted) {
+    // Recently deleted: what `POST …/restore` would still take back for this
+    // caller. A session they can open, deleted inside its restore window,
+    // that they started or manage (`canManageLifecycle`). A deleted warm
+    // draft was never prompted, so there is nothing to restore.
+    const now = input.now ?? Date.now();
+    return {
+      authorized: true,
+      items: items.filter((item) => {
+        if (!item.deletedAt || !item.canAccess || isWarmProjectSession(item.row.metadata)) return false;
+        const until = sessionRestoreUntil(item.deletedAt);
+        if (!until || until.getTime() <= now) return false;
+        return input.canManageProject || item.row.createdBy === input.subject.userId;
+      }),
+    };
+  }
 
   if (input.scope === 'project') {
     // A list row is a disclosure. Keep manager-only lifecycle coverage for

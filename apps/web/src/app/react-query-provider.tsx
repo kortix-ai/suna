@@ -1,9 +1,9 @@
 'use client';
 
-import { errorMessageOf, isDeliveredButDisconnected } from '@/lib/delivered-but-disconnected';
-import { handleApiError } from '@/lib/error-handler';
+import { errorMessageOf, isDeliveredButDisconnected } from '@kortix/ui/internal/lib/delivered-but-disconnected';
+import { handleApiError } from '@kortix/ui/internal/lib/error-handler';
 import { ensureKortixConfigured } from '@/lib/kortix-config';
-import { registerQueryClient } from '@/lib/query-client-singleton';
+import { registerQueryClient } from '@kortix/ui/internal/lib/query-client-singleton';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { useState } from 'react';

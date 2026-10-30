@@ -69,7 +69,10 @@ It starts at login, and the supervisor restarts it after every exit (launchd
 `KeepAlive` with a 10 s throttle, systemd `Restart=always`, a 5 s Windows loop).
 On Linux, install enables `loginctl enable-linger` so the user service keeps
 running after logout and starts at boot; when that is not allowed, install
-prints a warning. The Windows task runs hidden, on battery, with no time limit.
+prints a warning. The Windows task runs PowerShell under `conhost --headless`
+(no console window, also where Windows Terminal is the default terminal), on
+battery, with no time limit. Every process the agent starts on Windows sets
+`windowsHide`, so no console window opens.
 The agent itself never stops on its own:
 
 - It reconnects with exponential backoff from 1 s to 30 s, ±20 % jitter, forever.
@@ -184,9 +187,10 @@ change to the agent as `tunnel.access.set`:
 A pairing made from the Kortix desktop app starts in `ask`: the app shows the
 prompt. A pairing made with this CLI alone starts in `always`, because nothing
 on the machine could answer a prompt. This is a deliberate deviation from
-"new pairings default to ask". Every new pairing resets `access.json`, so a
-grant or `always` from an earlier pairing never carries over, and `logout`
-deletes it. The agent home (`config.json`, `access.json`, `desktop-app.json`)
+"new pairings default to ask". The mode and keep awake are the owner's
+machine settings: pairing again (`--reauth`, a rejected or stale credential)
+keeps them, and only a grant or a denial from the earlier pairing is dropped.
+`logout` deletes `access.json`, so the next pairing starts from the default. The agent home (`config.json`, `access.json`, `desktop-app.json`)
 is always a blocked path: no file or shell call can change these files.
 
 The agent reports its state to Kortix as the signed notification
@@ -237,9 +241,16 @@ you trust with this computer.
 
 ## Computer Use driver
 
-Agent Tunnel never downloads or executes a desktop driver. Install `cua-driver`
-locally before enabling Computer Use. The tunnel uses an existing binary from
-`CUA_DRIVER_BIN`, `~/.local/bin`, `/usr/local/bin`, or `/opt/homebrew/bin`.
+Agent Tunnel never downloads or executes a desktop driver. The Kortix desktop
+app bundles `cua-driver` on macOS and Windows (x64), and the agent it runs uses
+that copy. A CLI install uses an existing binary from `CUA_DRIVER_BIN`,
+`~/.local/bin`, `/usr/local/bin`, or `/opt/homebrew/bin`.
+
+An approved `desktop` registers whenever the driver is present. Missing macOS
+grants do not unregister it: the agent reports `desktopPermissions` and the
+setup asks for them. When the driver is missing or rejected (wrong owner,
+group-writable), `desktop` does not register and the reason is reported as
+`unavailableCapabilities.desktop` in `status --json` and in `machineInfo`.
 Treat that binary as trusted local code. Agent Tunnel does not verify or update
 it.
 

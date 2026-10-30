@@ -99,10 +99,11 @@ for (const f of DATA.flows) {
 const domains = {};
 for (const f of DATA.flows) (domains[f.domain] ||= []).push(f);
 const root = document.getElementById('root');
+const shq = s => "'"+String(s).replace(/'/g, "'\\\\''")+"'";
 function curlOf(r){
-  let s = 'curl -X '+r.req.method+" '"+r.req.url+"'";
-  for (const [k,v] of Object.entries(r.req.headers||{})) s += " \\\\\\n  -H '"+k+': '+v+"'";
-  if (r.req.body) s += " \\\\\\n  -d '"+r.req.body+"'";
+  let s = 'curl -X '+r.req.method+' '+shq(r.req.url);
+  for (const [k,v] of Object.entries(r.req.headers||{})) s += " \\\\\\n  -H "+shq(k+': '+v);
+  if (r.req.body) s += " \\\\\\n  -d "+shq(r.req.body);
   return s;
 }
 for (const [dom, flows] of Object.entries(domains).sort()) {

@@ -49,10 +49,12 @@ export type ReleaseProviderChoice =
   | { ok: false; provider: string };
 
 /**
- * The provider a release deploys to. A named provider wins. Otherwise a
- * release with mounts needs Platinum, so it takes Platinum when configured;
- * else an App keeps the provider of its latest release; else `null` leaves
- * the platform default to the deployment worker.
+ * The provider a release deploys to. A named provider wins. Otherwise every
+ * App release takes Platinum when it is configured: Apps run on Platinum, and
+ * a release without mounts is stateless, so an App on another provider moves
+ * on its next release. Without Platinum an App keeps the provider of its
+ * latest release; else `null` leaves the platform default to the deployment
+ * worker. Mounts on a provider other than Platinum are refused.
  */
 export function chooseReleaseProvider(input: {
   requested?: string | null;
@@ -63,7 +65,7 @@ export function chooseReleaseProvider(input: {
 }): ReleaseProviderChoice {
   const { requested, hasMounts, previous, platinumEnabled, platformDefault } = input;
   let provider: string | null = requested ?? null;
-  if (!provider && hasMounts && platinumEnabled) provider = 'platinum';
+  if (!provider && platinumEnabled) provider = 'platinum';
   if (!provider) provider = previous ?? null;
   if (hasMounts && !appVolumesSupported(provider ?? platformDefault)) {
     return { ok: false, provider: provider ?? platformDefault };

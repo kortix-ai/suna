@@ -15,10 +15,10 @@
  * `preferences-tab.tsx` when that phase removes this directory wholesale.
  */
 
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { cn } from '@/lib/utils';
-import { DEFAULT_WALLPAPER_ID, type Wallpaper } from '@/lib/wallpapers';
+import { cn } from '@kortix/ui';
+import { DEFAULT_WALLPAPER_ID, type Wallpaper } from '@kortix/ui/theme';
 import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
 
 /** Exported so `features/workspace/settings/tabs/preferences-tab.tsx` can reuse

@@ -24,7 +24,7 @@ export const PRESENCE_AWAKE_REFRESH_MS = 5 * 60_000;
 
 const INPUT_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'scroll', 'focus'] as const;
 
-export interface HumanPresenceEnv {
+interface HumanPresenceEnv {
   doc: Pick<Document, 'hidden' | 'addEventListener' | 'removeEventListener'>;
   win: Pick<Window, 'addEventListener' | 'removeEventListener' | 'setInterval' | 'clearInterval'>;
   now?: () => number;

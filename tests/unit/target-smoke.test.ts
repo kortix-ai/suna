@@ -63,6 +63,18 @@ function routedFetch(routes: {
 }
 
 describe('deployed staging smoke', () => {
+  it('reads the build from liveness when public readiness contains only status', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url === `${STAGING.gatewayUrl}/health`) return json({ status: 'degraded' });
+      if (url === `${STAGING.gatewayUrl}/health/live`) return json({ ok: true, commit: SHA });
+      if (url.includes('/api/health')) return okFrontend();
+      return okApi();
+    });
+    await expect(assertTargetSmokeHealth(STAGING, fetchImpl)).resolves.toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledWith(`${STAGING.gatewayUrl}/health/live`, expect.any(Object));
+  });
+
   it('accepts only the exact staging API, web, gateway, and source SHA', () => {
     expect(
       resolveTargetSmokeConfig({

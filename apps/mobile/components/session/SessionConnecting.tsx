@@ -48,7 +48,7 @@ import { Icon } from '@/components/ui/icon';
 import { COMPOSER_CARD_CLASS, Composer } from '@/components/kortix/composer';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { FLOATING_MENU_CLEARANCE } from '@/components/session/FloatingMenuButton';
-import { ComposerBottomFade } from '@/components/session/composer-bottom-fade';
+import { ComposerBottomFade, composerSafeAreaPadding } from '@/components/session/composer-bottom-fade';
 import { AttachmentTile } from '@/components/session/attachment-tile';
 import { MessageBody, UserMessageBubble } from '@/components/session/turn/user-message';
 import { SessionTurn } from '@/components/session/SessionTurn';
@@ -259,7 +259,8 @@ function FloatingComposerArea({ children, onHeight }: { children: React.ReactNod
       <View
         testID="waking-composer-area"
         pointerEvents="box-none"
-        style={{ position: 'absolute', right: 0, bottom: 0, left: 0, paddingBottom: insets.bottom }}
+        // The thread's rule (KRTX-2930): the card rests on the safe-area line.
+        style={{ position: 'absolute', right: 0, bottom: 0, left: 0, paddingBottom: composerSafeAreaPadding(insets.bottom) }}
         onLayout={onHeight ? (event) => onHeight(event.nativeEvent.layout.height) : undefined}>
         {children}
       </View>

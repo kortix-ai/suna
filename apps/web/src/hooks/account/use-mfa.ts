@@ -26,7 +26,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { invalidateTokenCache } from '@/lib/auth-token';
 import { createClient } from '@/lib/supabase/client';
 import { mfaChallengeRequired, supabaseMFAService } from '@/lib/supabase/mfa';

@@ -39,4 +39,13 @@ describe('mergeConnectorDraftEntry', () => {
       ).authorization_strategy,
     ).toBe('project');
   });
+
+  test('keeps the sensitive flag when an edit replaces the entry, as a Pipedream move does', () => {
+    expect(
+      mergeConnectorDraftEntry(
+        { slug: 'gmail', provider: 'mcp', url: 'https://gmailmcp.googleapis.com/mcp/v1', transport: 'http' },
+        { slug: 'gmail', provider: 'pipedream', app: 'gmail', sensitive: true },
+      ),
+    ).toEqual({ slug: 'gmail', provider: 'mcp', url: 'https://gmailmcp.googleapis.com/mcp/v1', transport: 'http', sensitive: true });
+  });
 });

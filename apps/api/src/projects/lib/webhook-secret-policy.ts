@@ -19,28 +19,32 @@ export function webhookSecretConfigurationError(
   status:
     | Exclude<ProjectSecretConsumerConfigurationStatus, "configured">
     | "unavailable",
+  secretEnv?: string,
 ): WebhookSecretConfigurationError {
+  // The one command that fixes every mis-scope: `secrets set` re-stores the
+  // secret with connector delivery (strategy broker, consumer connector),
+  // which is what the webhook consumer reads. The value cannot be echoed —
+  // name the placeholder, never a secret.
+  const cmd = `kortix secrets set ${secretEnv ?? "<NAME>"}=<value> --scope connector`;
   if (status === "missing") {
     return {
       error: "Webhook secret is not configured",
       code: "webhook_secret_missing",
-      remediation:
-        "Create the referenced secret, then set its delivery to broker with consumer connector.",
+      remediation: `Create the referenced secret with connector delivery: ${cmd}.`,
     };
   }
   if (status === "inactive") {
     return {
       error: "Webhook secret is disabled",
       code: "webhook_secret_inactive",
-      remediation:
-        "Set the referenced secret value, then set its delivery to broker with consumer connector.",
+      remediation: `Set a value on the referenced secret with connector delivery: ${cmd}.`,
     };
   }
   if (status === "delivery_mismatch") {
     return {
       error: "Webhook secret is not available to the connector consumer",
       code: "webhook_secret_delivery_mismatch",
-      remediation: "Set the secret delivery to broker with consumer connector.",
+      remediation: `The secret is stored with runtime scope; the webhook fires only with connector scope. Re-store it: ${cmd}.`,
     };
   }
   return {
@@ -61,5 +65,5 @@ export async function validateWebhookSecretConfiguration(input: {
   });
   return status === "configured"
     ? null
-    : webhookSecretConfigurationError(status);
+    : webhookSecretConfigurationError(status, input.secretEnv);
 }

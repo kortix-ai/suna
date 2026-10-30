@@ -1,11 +1,11 @@
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { ChatGPT } from '@/features/icon/icons/chat-gpt';
-import { Claude } from '@/features/icon/icons/claude';
-import { Github } from '@/features/icon/icons/github';
-import { OpenAI } from '@/features/icon/icons/open-ai';
+import { Claude } from '@kortix/ui/internal/icons/claude';
+import { Github } from '@kortix/ui/internal/icons/github';
+import { OpenAI } from '@kortix/ui/internal/icons/open-ai';
 import { OpenClaw } from '@/features/icon/icons/open-claw';
-import { Slack } from '@/features/icon/icons/slack';
-import { cn } from '@/lib/utils';
+import { Slack } from '@kortix/ui/internal/icons/slack';
+import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ComponentType, ReactNode } from 'react';
 

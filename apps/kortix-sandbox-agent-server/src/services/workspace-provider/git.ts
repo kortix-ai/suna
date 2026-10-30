@@ -13,7 +13,7 @@ import { pipeline } from 'node:stream/promises'
 import type { Config } from '@/lib/config/config'
 import { buildGitIdentityEnv, configureRepoGitIdentity, createStagePath, execGit, gitWithAuth, resolveCloneCredential } from '@/lib/git/git'
 import { logger } from '@/lib/log/logger'
-import { adoptOrClearBakedCheckout, checkoutLocalSessionBranch, checkoutSessionBranch, clearDirContents, isShallowRepo, markSessionCheckoutAdopted, requireRepoUrl, swapStageIntoTarget } from './checkout'
+import { adoptOrClearBakedCheckout, checkoutLocalSessionBranch, establishBaseRefs, checkoutSessionBranch, clearDirContents, isShallowRepo, markSessionCheckoutAdopted, requireRepoUrl, swapStageIntoTarget } from './checkout'
 
 /**
  * Boot-local fallback for an empty/branchless upstream (a managed repo that was
@@ -596,6 +596,8 @@ async function applyFastBootDeltaBundleFile(
     if (exists.code !== 0) throw new Error('bundle does not contain the expected base commit')
     const checkout = await execGit(['-C', repoPath, 'checkout', '-q', '-B', base, baseSha])
     if (checkout.code !== 0) throw new Error(`checkout bundled base: ${checkout.stderr}`)
+    // The scaffold clone left origin/<base> on the scaffold root.
+    await establishBaseRefs(repoPath, base, baseSha)
     return true
   } catch (error) {
     logger.info('[git] API delta bundle unavailable; using authenticated fetch', {

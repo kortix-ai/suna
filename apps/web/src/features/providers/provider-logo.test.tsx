@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { ProviderLogo } from './provider-branding';
+import { ProviderLogo } from '@kortix/ui/internal/lib/provider-branding';
 
 const render = (props: React.ComponentProps<typeof ProviderLogo>) =>
   renderToStaticMarkup(<ProviderLogo {...props} />);
@@ -47,6 +47,22 @@ describe('ProviderLogo tone="light"', () => {
 
   test('the initials fallback paints black on white', () => {
     const html = render({ providerID: 'some-brand-new-provider', name: 'Brand New', tone: 'light' });
+    expect(html).toContain('bg-white');
+    expect(html).toContain('text-black');
+  });
+});
+
+describe('ProviderLogo platinum', () => {
+  test('draws the Platinum square (platinum.dev favicon geometry) on the provider tile, no remote image', () => {
+    const html = render({ providerID: 'platinum', name: 'Platinum', size: 'medium' });
+    expect(html).toContain('<rect x="5" y="5" width="14" height="14" fill="currentColor">');
+    expect(html).toContain('bg-muted');
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('PL');
+  });
+
+  test('tone="light" paints the square black on the white tile', () => {
+    const html = render({ providerID: 'platinum', size: 'medium', tone: 'light' });
     expect(html).toContain('bg-white');
     expect(html).toContain('text-black');
   });

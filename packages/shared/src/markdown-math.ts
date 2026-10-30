@@ -8,6 +8,8 @@
  *   `prepareMarkdownForMath` (mobile) does the same outside code only.
  * - `KATEX_FENCE_LANGUAGES` are fence languages rendered as display math.
  * - `isMermaidCode` decides whether a fence renders as a Mermaid diagram.
+ * - `hasReferenceDefinitionOutsideFences` tests a reference-definition pattern
+ *   against the runs of lines both clients route as top-level text.
  *
  * No dependencies and no DOM: this file runs in Next.js, Bun, and Hermes.
  */
@@ -205,6 +207,57 @@ export function prepareMarkdownForMath(text: string): string {
   return splitMarkdownCode(text)
     .map((chunk) => (chunk.code ? chunk.content : normalizeLatexText(escapeCurrencyDollars(chunk.content))))
     .join('');
+}
+
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const MATH_OPEN = /^ {0,3}(\${2,})([^$]*)$/;
+// The closer: the same marker, at least as long, indented at most three spaces.
+const REGION_CLOSE = /^ {0,3}(`{3,}|~{3,}|\${2,})[ \t]*$/;
+
+/**
+ * Test whole text runs outside code/math, preserving multiline labels. HTML
+ * can suppress fence openers, so ambiguous HTML keeps the conservative guard.
+ * Indented openers are excluded only without container markers: a container
+ * fence can end implicitly when a later line leaves its container.
+ */
+export function hasReferenceDefinitionOutsideFences(markdown: string, definition: RegExp): boolean {
+  if (/<[!/?A-Za-z]/.test(markdown)) return definition.test(markdown);
+  const hasContainer = /^ {0,3}(?:>|[*+-](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$))/m.test(markdown);
+  let runStart = 0;
+  let marker: string | null = null;
+  let length = 0;
+  let lineStart = 0;
+  while (lineStart < markdown.length) {
+    const newline = markdown.indexOf('\n', lineStart);
+    const lineEnd = newline === -1 ? markdown.length : newline;
+    const next = newline === -1 ? markdown.length : newline + 1;
+    const first = markdown[lineStart];
+    if (marker !== null) {
+      if (first === marker || first === ' ' || first === '\t') {
+        const line = markdown.slice(lineStart, lineEnd).replace(/\r$/, '');
+        const close = REGION_CLOSE.exec(line);
+        if (close && close[1][0] === marker && close[1].length >= length) {
+          marker = null;
+          runStart = next;
+        }
+      }
+      lineStart = next;
+      continue;
+    }
+    if (first === '`' || first === '~' || first === '$' || (first === ' ' && !hasContainer)) {
+      const line = markdown.slice(lineStart, lineEnd).replace(/\r$/, '');
+      const open = FENCE_OPEN.exec(line) ?? MATH_OPEN.exec(line);
+      if (open && !(open[1][0] === '`' && open[2].includes('`'))) {
+        if (definition.test(markdown.slice(runStart, lineStart))) return true;
+        marker = open[1][0];
+        length = open[1].length;
+        runStart = next;
+      }
+    }
+    lineStart = next;
+  }
+  if (marker !== null) return false;
+  return definition.test(markdown.slice(runStart));
 }
 
 /** Fenced code languages rendered as display math (rehype-katex only handles `math` by default). */

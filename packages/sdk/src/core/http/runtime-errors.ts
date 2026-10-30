@@ -1,9 +1,13 @@
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export interface RuntimeConfigIssue {
   path?: unknown[];
   message?: string;
 }
 
-/** OpenCode's `ConfigInvalidError`: its own config (`opencode.jsonc`, agent frontmatter) failed to load. */
+/**
+ * OpenCode's `ConfigInvalidError`: its own config (`opencode.jsonc`, agent frontmatter) failed to load.
+ * @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support.
+ */
 export interface RuntimeConfigInvalidError {
   name: 'ConfigInvalidError';
   data?: {
@@ -57,6 +61,7 @@ export function parseRuntimeErrorPayload(error: unknown): unknown {
 /** @deprecated Renamed to `parseRuntimeErrorPayload`. Removed in the next major. */
 export const parseOpenCodeErrorPayload = parseRuntimeErrorPayload;
 
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export function getRuntimeConfigInvalidError(error: unknown): RuntimeConfigInvalidError | null {
   const payload = parseRuntimeErrorPayload(error);
   if (!payload || typeof payload !== 'object') return null;
@@ -67,6 +72,7 @@ export function getRuntimeConfigInvalidError(error: unknown): RuntimeConfigInval
 /** @deprecated Renamed to `getRuntimeConfigInvalidError`. Removed in the next major. */
 export const getOpenCodeConfigInvalidError = getRuntimeConfigInvalidError;
 
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export function isRuntimeConfigInvalidError(error: unknown): boolean {
   return getRuntimeConfigInvalidError(error) !== null;
 }

@@ -7,7 +7,9 @@ import { chatIdentityStub } from '../../../__tests__/helpers/chat-identity-stub'
 
 process.env.SLACK_REQUIRE_USER_IDENTITY = 'false';
 
+const realConfig = await import('../../../config');
 mock.module('../../../config', () => ({
+  ...realConfig,
   // Keep the managed catalog enabled because this file exercises the real model
   // picker. scripts/test.env sets it, but this config mock replaces that module.
   config: {
@@ -37,7 +39,7 @@ mock.module('../selection', () => ({
   setChannelModel: mock(async () => true),
 }));
 
-let gate: any = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false, llmGatewayEnabled: true };
+let gate: any = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false };
 mock.module('../model-gate', () => ({
   channelModelContext: async () => gate,
   projectModelContext: async () => gate,
@@ -84,7 +86,11 @@ mock.module('../../core/identity', () =>
     resolveProjectChatActor: async () => ({ userId: 'user-1' }),
   }),
 );
-mock.module('../../../accounts/core/app', () => ({ lookupEmailsByUserIds: async () => new Map() }));
+const realApp = await import('../../../accounts/core/app');
+mock.module('../../../accounts/core/app', () => ({
+  ...realApp,
+  lookupEmailsByUserIds: async () => new Map(),
+}));
 
 const { handleSlashCommand } = await import('../commands');
 const { setChannelModel } = (await import('../selection')) as any;
@@ -103,7 +109,7 @@ function actionIds(resp: any): string[] {
 beforeEach(() => {
   dbResults = [];
   selection = { projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null };
-  gate = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false, llmGatewayEnabled: true };
+  gate = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false };
   servable = true;
   setChannelModel.mockClear();
 });

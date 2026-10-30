@@ -123,16 +123,7 @@ export function ModelPickerField({
   isDark?: boolean;
 }) {
   const contentInsets = useContentInsets();
-  const { models, isLoading, gatewayDisabled } = useProjectModelCatalogForTrigger(projectId);
-
-  if (gatewayDisabled) {
-    return (
-      <View className={flush ? 'gap-2' : 'mt-5 gap-2'}>
-        <FieldTitle>Model</FieldTitle>
-        <Text variant="muted">Turn on the LLM gateway for this project to pin a model.</Text>
-      </View>
-    );
-  }
+  const { models, isLoading } = useProjectModelCatalogForTrigger(projectId);
 
   const current = value ? models.find((model) => model.modelID === value) : undefined;
   const selected: Option = value

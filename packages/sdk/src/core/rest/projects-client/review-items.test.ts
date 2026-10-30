@@ -152,6 +152,34 @@ describe('mapApiReviewItem', () => {
     expect(approvalDetailOf(item).actions[0].approvalContext).toBe('Sends the reply to a@b.co');
   });
 
+  test('an adapted connector call carries the content Kortix loaded from the provider', () => {
+    const detail = { execution_id: 'e', action_path: 'gmail.send_draft', args_preview: { draft_id: 'd1' } };
+    const loaded = mapApiReviewItem({
+      ...row,
+      kind: 'approval',
+      detail: { ...detail, resolved_preview: { to: ['a@b.co'], body: 'Hi' } },
+    });
+    expect(approvalDetailOf(loaded).actions[0]).toMatchObject({
+      resolvedPreview: { to: ['a@b.co'], body: 'Hi' },
+    });
+    expect(approvalDetailOf(loaded).actions[0].resolvedError).toBeUndefined();
+
+    const failed = mapApiReviewItem({ ...row, kind: 'approval', detail: { ...detail, resolved_error: 'unavailable' } });
+    expect(approvalDetailOf(failed).actions[0].resolvedError).toBe('unavailable');
+    expect(approvalDetailOf(failed).actions[0].resolvedPreview).toBeUndefined();
+
+    const empty = mapApiReviewItem({ ...row, kind: 'approval', detail: { ...detail, resolved_preview: {} } });
+    expect(approvalDetailOf(empty).actions[0].resolvedPreview).toBeUndefined();
+  });
+
+  test('an adapted connector call carries the connector display name when the API sends it', () => {
+    const detail = { execution_id: 'e', action_path: 'github.merge_a_pull_request' };
+    const named = mapApiReviewItem({ ...row, kind: 'approval', detail: { ...detail, connector_name: 'GitHub' } });
+    expect(approvalDetailOf(named).actions[0]).toMatchObject({ connector: 'github', connectorName: 'GitHub' });
+    const older = mapApiReviewItem({ ...row, kind: 'approval', detail });
+    expect(approvalDetailOf(older).actions[0].connectorName).toBeUndefined();
+  });
+
   test('a viewer without argument visibility gets previewAuthorized false', () => {
     const item = mapApiReviewItem({
       ...row,
@@ -197,6 +225,37 @@ describe('mapApiReviewItem', () => {
     expect('resolvers' in call({})).toBe(false);
   });
 
+  test('expires_at reaches the item and the call as expiresAt; absent means no expiry', () => {
+    const expiring = mapApiReviewItem({
+      ...row,
+      kind: 'approval',
+      detail: { execution_id: 'e', action_path: 'gmail.send_email' },
+      expires_at: '2026-07-01T10:00:00.000Z',
+    });
+    expect(expiring.expiresAt).toBe('2026-07-01T10:00:00.000Z');
+    expect(approvalDetailOf(expiring).actions[0].expiresAt).toBe('2026-07-01T10:00:00.000Z');
+    const open = mapApiReviewItem({
+      ...row,
+      kind: 'approval',
+      detail: { execution_id: 'e', action_path: 'gmail.send_email' },
+      expires_at: null,
+    });
+    expect(open.expiresAt).toBeUndefined();
+    expect(approvalDetailOf(open).actions[0].expiresAt).toBeUndefined();
+  });
+
+  test('an expired call keeps status expired: Done segment, no verdict', () => {
+    const item = mapApiReviewItem({
+      ...row,
+      kind: 'approval',
+      status: 'expired',
+      detail: { execution_id: 'e', action_path: 'gmail.send_email' },
+    });
+    expect(item.status).toBe('expired');
+    expect(reviewSegmentForStatus(item.status)).toBe('done');
+    expect(reviewVerdictForStatus(item.status)).toBeNull();
+  });
+
   test('a server older than can_resolve: canResolve follows the argument verdict', () => {
     // The same API rule decided `args_preview_authorized` before `can_resolve` existed.
     const call = (authorized?: boolean) =>
@@ -239,6 +298,46 @@ describe('mapApiReviewItem', () => {
   test('a batch defaults its note to the summary and its children to an empty list', () => {
     const item = mapApiReviewItem({ ...row, kind: 'batch', detail: {} });
     expect(item.detail).toEqual({ note: 'Built from the brief', children: [] });
+  });
+
+  test("an output reads the files an agent names in its own keys: artifact first, then each path-valued key", () => {
+    const item = mapApiReviewItem({
+      ...row,
+      detail: {
+        title: 'Demo video',
+        videoId: 'vid-1',
+        contentHash: 'abc123',
+        artifact: '/drives/videos/demo/demo.mp4',
+        sources: '/drives/videos/demo/sources.json',
+        claimLedger: '/drives/videos/demo/claim-ledger.json',
+        judge_report: '/workspace/out/judge-report.md',
+        folder: '/drives/videos/demo',
+        description: 'The final cut, with sources.',
+      },
+    });
+    const detail = (item as Extract<ReviewItem, { kind: 'output' }>).detail;
+    expect(detail.files).toEqual([
+      { path: '/drives/videos/demo/demo.mp4' },
+      { path: '/drives/videos/demo/sources.json', note: 'Sources' },
+      { path: '/drives/videos/demo/claim-ledger.json', note: 'Claim ledger' },
+      { path: '/workspace/out/judge-report.md', note: 'Judge report' },
+    ]);
+    expect(detail.preview).toBe('The final cut, with sources.');
+    expect(detail.note).toBe('Built from the brief');
+  });
+
+  test('an output accepts files as plain paths and drops an entry with no path or a repeat', () => {
+    const item = mapApiReviewItem({
+      ...row,
+      detail: {
+        artifacts: ['/drives/out/a.png'],
+        files: ['/drives/out/a.png', { path: '/drives/out/b.csv', note: 'Raw data' }, { note: 'no path' }],
+      },
+    });
+    expect((item as Extract<ReviewItem, { kind: 'output' }>).detail.files).toEqual([
+      { path: '/drives/out/a.png' },
+      { path: '/drives/out/b.csv', note: 'Raw data' },
+    ]);
   });
 });
 

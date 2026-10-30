@@ -147,10 +147,9 @@ describe('AppHostingProvider', () => {
     const { hosting, creates } = dependencies();
     await hosting.createRuntime({ ...input, provider: 'platinum' });
     await hosting.createRuntime({ ...input, provider: 'daytona' });
-    await hosting.createRuntime({ ...input, provider: 'e2b' });
     await hosting.createRuntime({ ...input, provider: 'platinum', alwaysOn: false });
     // Daytona would clamp 0 to a 1-minute stop; keep-alive renews the backstop instead.
-    expect(creates.map((create) => create.autoStopInterval)).toEqual([0, undefined, undefined, undefined]);
+    expect(creates.map((create) => create.autoStopInterval)).toEqual([0, undefined, undefined]);
   });
 
   test('restarts the App runtime daemon after provider start and cold wake', async () => {
@@ -352,7 +351,7 @@ describe('AppHostingProvider', () => {
 
   test('polls authenticated appd status until the runtime is ready', async () => {
     const { hosting, ingressCalls, fetchCalls } = dependencies();
-    const status = await hosting.waitUntilReady('e2b', 'box-1', 'runtime-1', 1_000);
+    const status = await hosting.waitUntilReady('platinum', 'box-1', 'runtime-1', 1_000);
 
     expect(status).toEqual({ status: 'running', ready: true });
     expect(ingressCalls).toHaveLength(2);

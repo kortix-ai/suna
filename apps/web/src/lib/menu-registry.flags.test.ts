@@ -1,10 +1,11 @@
-import { CAPABILITY_TABS } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { CAPABILITY_TABS } from '@kortix/ui/internal/lib/capability-tab-routes';
 import { settingsPaletteGroups } from '@/features/workspace/settings-palette-items';
 import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
 import { join, resolve } from 'node:path';
 import { menuRegistry } from './menu-registry';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 /**
  * `requiresFlag` is only a gate if EVERY consumer honours it. Before this, the
@@ -16,7 +17,7 @@ import { menuRegistry } from './menu-registry';
  */
 const root = resolve(import.meta.dir, '..');
 const registrySource = readFileSync(join(root, 'lib/menu-registry.ts'), 'utf8');
-const flagMapSource = readFileSync(join(root, 'lib/use-project-feature-flags.ts'), 'utf8');
+const flagMapSource = readFileSync(uiSourcePath('internal/lib/use-project-feature-flags.ts'), 'utf8');
 const paletteSource = readFileSync(join(root, 'features/workspace/command-palette.tsx'), 'utf8');
 
 describe('menu registry feature-flag gating', () => {
@@ -60,29 +61,15 @@ describe('menu registry feature-flag gating', () => {
     }
   });
 
-  test('the Models tab is NOT gated on llm_gateway', () => {
-    // Two separate bugs met here, historically. `proj-llm` declared
-    // `requiresFlag: 'llm_gateway'`, so the palette hid Models for every
-    // project without the gateway — while the rail showed Models
-    // unconditionally (availability only controls the `llm-*` sub-sections
-    // INSIDE the pane, via `llmGatewayEnabled` — see `models-tab.tsx`). Models
-    // has since graduated a second time, off `/config` and onto its own
-    // top-level Customize tab (`capability-tab-routes.ts`), but the same rule
-    // holds: no flag reaches it.
-    expect(CAPABILITY_TABS.map((t) => t.key)).toContain('models');
-
-    expect(menuRegistry.filter((item) => item.requiresFlag === 'llm_gateway')).toEqual([]);
-  });
-
   test('the palette honours requiresFlag for the entries that still declare one', () => {
-    // `proj-shared-files` is the only remaining flagged palette entry (Apps
-    // graduated off the flag system in 2026-10). The filter line is the whole
-    // gate, so it is pinned literally — a rename or a fail-OPEN rewrite of it
-    // would otherwise pass every other test here.
+    // `proj-shared-files` (`drives`) and `proj-artifacts` (`artifacts`, #10842)
+    // are the flagged palette entries (Apps graduated off the flag system in
+    // 2026-10). The filter line is the whole gate, so it is pinned literally — a
+    // rename or a fail-OPEN rewrite of it would otherwise pass every other test here.
     const flagged = menuRegistry.filter(
       (item) => item.requiresFlag && item.showIn.includes('commandPalette'),
     );
-    expect(flagged.map((item) => item.id)).toEqual(['proj-shared-files']);
+    expect(flagged.map((item) => item.id)).toEqual(['proj-shared-files', 'proj-artifacts']);
     expect(paletteSource).toContain(
       'if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;',
     );

@@ -385,6 +385,20 @@ export async function persistAppAccessPolicy(
   });
 }
 
+/**
+ * The Actor for an App access check. Every caller already passed the account
+ * MFA gate at its own level: the Apps routes authorize the request first, and
+ * the App origin admits a cookie that `access-session` minted only after that.
+ * Asked with no level, the gate refused every member of an account that
+ * requires MFA except a super admin: their App card read "You do not have
+ * access to preview this App" while the list showed it (2026-10-19). Same rule
+ * as `memberMayReadProject` (secrets/account-resource.ts). A token caller is
+ * unaffected: the gate skips tokens.
+ */
+function appCheckActor(userId: string, accountId: string, actingTokenId?: string) {
+  return actorForToken(userId, accountId, actingTokenId, { ctx: { mfaAal: 'aal2' } });
+}
+
 export async function appAccessibleToUser(
   app: {
     appId: string;
@@ -407,7 +421,7 @@ export async function appAccessibleToUser(
   // the user's role; without one (browser cookie/JWT, or the public-app proxy
   // with a resolved viewer id) the verdict is role-only.
   const projectAccess = await authorize(
-    await actorForToken(userId, app.accountId, actingTokenId),
+    await appCheckActor(userId, app.accountId, actingTokenId),
     PROJECT_ACTIONS.PROJECT_READ,
     { type: 'project', id: app.projectId },
   );
@@ -545,7 +559,7 @@ interface TeamScopedApp {
 /** Is this user an App admin of the project (`project.app.admin`: the `admins` service access, like exec)? */
 export async function isAppAdmin(app: { accountId: string; projectId: string }, userId: string): Promise<boolean> {
   const verdict = await authorize(
-    await actorForToken(userId, app.accountId, undefined),
+    await appCheckActor(userId, app.accountId),
     PROJECT_ACTIONS.PROJECT_APP_ADMIN,
     { type: 'project', id: app.projectId },
   );
@@ -559,7 +573,7 @@ async function projectManager(
   actingTokenId?: string,
 ): Promise<boolean> {
   const verdict = await authorize(
-    await actorForToken(userId, accountId, actingTokenId),
+    await appCheckActor(userId, accountId, actingTokenId),
     PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
     { type: 'project', id: projectId },
   );

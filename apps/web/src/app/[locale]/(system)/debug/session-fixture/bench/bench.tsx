@@ -5,10 +5,8 @@ import { sessionLogTurns } from '@kortix/sdk';
 import { useSession, useSessionLogThread, useSessionStateStore } from '@kortix/sdk/react';
 import { Profiler, memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 
-import { SESSION_TRANSCRIPT_CLASS } from '@/features/session/session-body';
-import { SessionChat } from '@/features/session/session-chat';
-import { SessionTurn } from '@/features/session/session-chat/transcript';
-import { TurnViewport } from '@/features/session/turn/turn-viewport';
+import { SESSION_TRANSCRIPT_CLASS } from '@kortix/ui/session/thread/session-body';
+import { SessionChat, SessionTurn, TurnViewport } from '@kortix/ui/session';
 import type { SessionStatus } from '@/ui';
 
 const SESSION_ID = 'ses_FixtureBench';
@@ -21,7 +19,7 @@ const NO_QUESTIONS: never[] = [];
 const AGENT_NAMES = ['build'];
 const NO_OUTCOME = {};
 const NOOP = () => {};
-const NOOP_ASYNC = async () => {};
+const noopAsync = async () => {};
 /** The bench session's runtime rows, read as the session log (the v1 store view). */
 const SOURCE = { projectId: '', sessionId: '', runtimeSessionId: SESSION_ID };
 
@@ -192,7 +190,7 @@ function Transcript({ streaming, memoRows }: { streaming: boolean; memoRows: boo
             permissions: NO_PERMISSIONS,
             questions: NO_QUESTIONS,
             agentNames: AGENT_NAMES,
-            onPermissionReply: NOOP_ASYNC,
+            onPermissionReply: noopAsync,
             onRewind: NOOP,
             rewindDisabled: true,
           };

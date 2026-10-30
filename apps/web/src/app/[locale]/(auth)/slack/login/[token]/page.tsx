@@ -3,9 +3,9 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useParams } from 'next/navigation';
 
-import { CopyCommandBadge } from '@/features/auth/auth-consent';
+import { CopyCommandBadge } from '@kortix/ui/internal/auth/auth-consent';
 import { ChatIdentityConnect } from '@/features/auth/chat-identity-connect';
-import { Slack } from '@/features/icon/icons/slack';
+import { Slack } from '@kortix/ui/internal/icons/slack';
 import { bindSlackIdentity, previewSlackIdentity } from '@kortix/sdk';
 
 /**

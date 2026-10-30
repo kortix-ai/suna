@@ -198,7 +198,7 @@ export const MCP_SERVER_CARD = {
   $schema: 'https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json',
   name: 'com.kortix/kortix',
   version: MCP_SERVER_VERSION,
-  title: 'Kortix',
+  title: 'Kortix CompanyOS',
   description: 'Run Kortix as yourself: projects, sessions, sandbox files, connectors, and the full kortix CLI.',
   websiteUrl: KORTIX_WEB_ORIGIN,
   repository: {

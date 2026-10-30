@@ -50,6 +50,8 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'instance-scope-accept-test-project',
     repoUrl: 'https://example.com/instance-scope-accept-test.git',
+    // Warm sessions are opt-in per project (KRTX-1871): the claim answers 403 without it.
+    metadata: { experimental: { warm_sessions: true } },
   });
   await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },

@@ -1,8 +1,9 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { llmValueFields, llmValueBasis } from '../../shared/llm-value';
+import { and, eq, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import { db } from '../../shared/db';
-import { budgetSpends } from '../../llm-gateway/budgets';
+import { budgetSpends, monthToDateGatewaySpend } from '../../llm-gateway/budgets';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import {
@@ -31,7 +32,7 @@ export function registerGatewaySpendRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        query: z.object({ days: z.string().optional() }),
+        query: z.object({ days: z.string().refine((value) => Number.isInteger(Number(value))).optional() }),
       },
       responses: { 200: json(z.any(), 'Gateway usage overview'), ...errors(404) },
     }),
@@ -50,6 +51,7 @@ export function registerGatewaySpendRoutes(): void {
       const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
       const [agg] = await db
         .select({
+          ...llmValueFields,
           requests: sql<number>`count(*)::int`,
           errors: sql<number>`count(*) filter (where not ok)::int`,
           totalCost: totalSpendSql,
@@ -68,6 +70,10 @@ export function registerGatewaySpendRoutes(): void {
 
       return c.json({
         window_days: days,
+        valuation: llmValueBasis,
+        estimated_usage_value: agg?.estimated_usage_value ?? null,
+        priced_requests: agg?.priced_requests ?? 0,
+        unpriced_requests: agg?.unpriced_requests ?? 0,
         requests: agg?.requests ?? 0,
         errors: agg?.errors ?? 0,
         total_cost: agg?.totalCost ?? 0,
@@ -88,7 +94,7 @@ export function registerGatewaySpendRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        query: z.object({ days: z.string().optional() }),
+        query: z.object({ days: z.string().refine((value) => Number.isInteger(Number(value))).optional() }),
       },
       responses: { 200: json(z.any(), 'Gateway daily usage series'), ...errors(404) },
     }),
@@ -108,6 +114,7 @@ export function registerGatewaySpendRoutes(): void {
       const rows = await db
         .select({
           day: sql<string>`to_char(date_trunc('day', ${gatewayRequestLogs.createdAt}), 'YYYY-MM-DD')`,
+          ...llmValueFields,
           requests: sql<number>`count(*)::int`,
           errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
           cost: totalSpendSql,
@@ -132,6 +139,9 @@ export function registerGatewaySpendRoutes(): void {
       const byDay = new Map(rows.map((r) => [r.day, r]));
       const series: {
         day: string;
+        estimated_usage_value: number | null;
+        priced_requests: number;
+        unpriced_requests: number;
         requests: number;
         errors: number;
         cost: number;
@@ -149,6 +159,9 @@ export function registerGatewaySpendRoutes(): void {
         const r = byDay.get(key);
         series.push({
           day: key,
+          estimated_usage_value: r?.estimated_usage_value ?? null,
+          priced_requests: r?.priced_requests ?? 0,
+          unpriced_requests: r?.unpriced_requests ?? 0,
           requests: r?.requests ?? 0,
           errors: r?.errors ?? 0,
           cost: r?.cost ?? 0,
@@ -174,7 +187,7 @@ export function registerGatewaySpendRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        query: z.object({ days: z.string().optional() }),
+        query: z.object({ days: z.string().refine((value) => Number.isInteger(Number(value))).optional() }),
       },
       responses: { 200: json(z.any(), 'Gateway spend by session'), ...errors(404) },
     }),
@@ -247,7 +260,7 @@ export function registerGatewaySpendRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        query: z.object({ days: z.string().optional() }),
+        query: z.object({ days: z.string().refine((value) => Number.isInteger(Number(value))).optional() }),
       },
       responses: { 200: json(z.any(), 'Gateway usage by model'), ...errors(404) },
     }),
@@ -306,41 +319,11 @@ export function registerGatewaySpendRoutes(): void {
           ),
         );
 
-      const memberRows = await db
-        .select({
-          userId: gatewayRequestLogs.actorUserId,
-          requests: sql<number>`count(*)::int`,
-          // Budgets cap what a project SPENDS, so per-member spend here is the
-          // same total-spend figure the budget gate enforces on — not the
-          // Kortix-billed slice, which is 0 on every BYOK request.
-          cost: totalSpendSql,
-          tokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)`,
-        })
-        .from(gatewayRequestLogs)
-        .where(
-          and(
-            eq(gatewayRequestLogs.projectId, projectId),
-            full
-              ? sql`${gatewayRequestLogs.actorUserId} is not null`
-              : eq(gatewayRequestLogs.actorUserId, loaded.userId),
-            sql`${gatewayRequestLogs.createdAt} >= date_trunc('month', now())`,
-          ),
-        )
-        .groupBy(gatewayRequestLogs.actorUserId)
-        .orderBy(desc(totalSpendSql));
-
-      const [projectAgg] = await db
-        .select({
-          requests: sql<number>`count(*)::int`,
-          cost: totalSpendSql,
-        })
-        .from(gatewayRequestLogs)
-        .where(
-          and(
-            eq(gatewayRequestLogs.projectId, projectId),
-            sql`${gatewayRequestLogs.createdAt} >= date_trunc('month', now())`,
-          ),
-        );
+      const { project: projectSpend, members: memberRows } = await monthToDateGatewaySpend(
+        projectId,
+        full ? null : loaded.userId,
+        now,
+      );
 
       // The gate's own measure of each budget, in one statement (KRTX-1725).
       const spends = await budgetSpends(projectId, budgets, now);
@@ -356,7 +339,7 @@ export function registerGatewaySpendRoutes(): void {
       return c.json({
         // Month-to-date, whatever the budgets' periods. A meter reads its own
         // budget's `spent_usd`.
-        project_spend: { requests: projectAgg?.requests ?? 0, cost: projectAgg?.cost ?? 0 },
+        project_spend: projectSpend,
         budgets: budgets.map((b, i) => ({
           budget_id: b.budgetId,
           scope: b.scope,
@@ -374,7 +357,7 @@ export function registerGatewaySpendRoutes(): void {
           email: r.userId ? (emails.get(r.userId) ?? null) : null,
           requests: r.requests,
           cost: r.cost,
-          tokens: Number(r.tokens),
+          tokens: r.tokens,
         })),
       });
     },

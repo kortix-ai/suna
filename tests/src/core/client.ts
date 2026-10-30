@@ -277,6 +277,34 @@ export function throwIfEdgeLaundered(response: Res, what: string): void {
   throw error;
 }
 
+/**
+ * The two lines every fixture call repeats: the edge-laundering guard, then
+ * the status assert. Returns the response for chained body reads.
+ */
+export function expectApi(response: Res, what: string, ...statuses: number[]): Res {
+  throwIfEdgeLaundered(response, what);
+  if (statuses.length) response.status(statuses);
+  return response;
+}
+
+/**
+ * Mint a personal access token as `client` and return its credential. The one
+ * ceremony every principal fixture repeats: POST /v1/accounts/tokens, expect
+ * 201, read {token_id, secret_key}, refuse a body without the credential.
+ */
+export async function mintAccountToken(
+  client: Client,
+  name: string,
+): Promise<{ token_id: string; secret_key: string }> {
+  const minted = await client.post('/v1/accounts/tokens', { name });
+  expectApi(minted, 'token mint', 201);
+  const body = minted.json<{ token_id?: string; secret_key?: string }>();
+  if (!body?.token_id || !body?.secret_key) {
+    throw new Error(`token mint returned no credential: ${minted.text()}`);
+  }
+  return { token_id: body.token_id, secret_key: body.secret_key };
+}
+
 function retryAfterMs(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const seconds = Number(value);
@@ -677,6 +705,5 @@ function record(c: Captured): void {
   const rec = currentRecorder();
   if (rec) {
     rec.pushRequest(c);
-    rec.routesHit.add(c.routeTemplate);
   }
 }

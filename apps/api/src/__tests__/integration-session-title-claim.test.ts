@@ -21,9 +21,8 @@ import type { ProjectSessionRow } from '../projects/lib/serializers';
 import { transitionSession } from '../projects/session-lifecycle/status-transitions';
 import { persistTitle } from '../projects/session-title-generate';
 import { db } from '../shared/db';
-import { getPublicSessionInfo } from '../shared/public-session-share-view';
 
-const { writeRuntimeSessionList } = await import('../projects/lib/runtime-session-snapshot');
+const { writeRuntimeSessionList, registerRuntimeFork } = await import('../projects/lib/runtime-session-snapshot');
 const { saveRuntimeProjection } = await import('../projects/lib/session-runtime-projection');
 
 // The state document a running sandbox reported.
@@ -262,24 +261,6 @@ describe('PLACEHOLDER_TITLE_SQL_PATTERN agrees with isPlaceholderOpencodeTitle i
   });
 });
 
-describe('getPublicSessionInfo — the anonymous share viewer sees the same title chain', () => {
-  test('nulls the frozen placeholder, keeps a real title, and custom_name still wins', async () => {
-    const placeholder = await seed({ name: 'New session - Jul 29' });
-    const generated = await seed({ name: 'Set Up MS Graph' });
-    const renamed = await seed({ name: 'Set Up MS Graph', custom_name: 'Mine' });
-
-    const titleOf = async (sessionId: string) => {
-      const result = await getPublicSessionInfo(sessionId);
-      expect(result.ok).toBe(true);
-      return result.ok ? result.session.title : undefined;
-    };
-
-    expect(await titleOf(placeholder.sessionId)).toBeNull();
-    expect(await titleOf(generated.sessionId)).toBe('Set Up MS Graph');
-    expect(await titleOf(renamed.sessionId)).toBe('Mine');
-  });
-});
-
 // R7.4: the list follows every stored projection, scoped to the session's root.
 describe('writeRuntimeSessionList', () => {
   const conv = (id: string, parent: string | null, updated: number) => ({ id, title: id, parent_id: parent, time: { created: 1, updated } });
@@ -292,6 +273,30 @@ describe('writeRuntimeSessionList', () => {
     const tree = doc(conv('ses_a', null, 2), conv('ses_a_kid', 'ses_a', 9), conv('ses_other', null, 5));
     expect(await write(row, tree, 'ses_a')).toBe('written');
     expect(((await metadataOf(row.sessionId)).opencode_sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(['ses_a_kid', 'ses_a']);
+    expect(await write(row, tree, 'ses_a')).toBe('unchanged');
+  });
+
+  test('concurrent fork registration preserves both provenance entries and existing metadata', async () => {
+    const row = await seed({ name: 'Keep me' });
+    const register = (id: string) => registerRuntimeFork({ sessionId: row.sessionId,
+      projectId: row.projectId, accountId: row.accountId, sourceId: 'ses_a', fork: conv(id, null, 2) });
+    await Promise.all([register('ses_one'), register('ses_two')]);
+    await register('ses_one');
+    const metadata = await metadataOf(row.sessionId);
+    expect(metadata.name).toBe('Keep me');
+    expect(metadata.runtime_forks).toEqual({ ses_one: 'ses_a', ses_two: 'ses_a' });
+    expect((metadata.opencode_sessions as Array<{ id: string }>).map((item) => item.id).sort()).toEqual(['ses_one', 'ses_two']);
+  });
+
+  test('registered fork roots and descendants survive projection refresh without admitting unrelated roots', async () => {
+    const row = await seed({ runtime_forks: { ses_fork: 'ses_a', ses_nested: 'ses_fork' } });
+    await db.update(projectSessions).set({ runtimeSessionId: 'ses_a' }).where(eq(projectSessions.sessionId, row.sessionId));
+    const tree = doc(conv('ses_a', null, 1), conv('ses_fork', null, 3),
+      conv('ses_nested', null, 4), conv('ses_kid', 'ses_fork', 5), conv('ses_other', null, 9));
+    expect(await write(row, tree, 'ses_a')).toBe('written');
+    const inventory = (await metadataOf(row.sessionId)).opencode_sessions as Array<{ id: string; fork_source_id?: string }>;
+    expect(inventory.map((s) => s.id)).toEqual(['ses_kid', 'ses_nested', 'ses_fork', 'ses_a']);
+    expect(inventory.find((s) => s.id === 'ses_fork')?.fork_source_id).toBe('ses_a');
     expect(await write(row, tree, 'ses_a')).toBe('unchanged');
   });
 

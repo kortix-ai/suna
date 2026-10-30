@@ -1,8 +1,8 @@
 /**
  * Can this session show its saved conversation before its computer wakes?
  *
- * The control plane keeps a copy of every session's transcript (the mirror,
- * written at each turn end). It answers in one round trip; the computer takes
+ * The control plane keeps every session's history (the session log, journaled
+ * at each turn end). It answers in one round trip; the computer takes
  * 5-240 s to wake. A host that knows a saved copy is on its way shows the
  * session with placeholder rows for that one round trip. A host that knows
  * there is none shows its boot screen, because nothing can be read until the
@@ -21,99 +21,42 @@
  * rendered as a negative.
  */
 
-import {
-  type SessionTranscriptSyncEnvelope,
-  getSessionTranscriptSync,
-  getSessionTurn,
-} from '../rest/projects-client/sessions';
-import {
-  OPEN_BUNDLE_TRANSCRIPT_LIMIT,
-  claimOpenBundle,
-  heldSavedWindow,
-  holdSavedWindow,
-  openBundleHistory,
-} from '../session/open-bundle';
-
-/**
- * How long the saved-history read waits for a session-open snapshot in
- * flight. The snapshot is DB-only and answers well inside it; a slower one
- * loses to the route, so saved history never waits on a hung snapshot (the
- * request timeout is 30 s). That case downloads the window twice.
- */
-export const SAVED_HISTORY_SNAPSHOT_WAIT_MS = 2_000;
-
-/**
- * THE saved-history read: the newest window of the session's saved copy, for
- * its current root. Every reader of a session's saved copy uses it: the web
- * (`useSession`), mobile (`readSavedSessionCopy`) and `useSessionSync` for a
- * host that passes no `mirror`.
- *
- * A window a host read before the bind ({@link readSavedSessionCopy}) answers
- * first, with no request. The session-open snapshot carries the same window,
- * so a snapshot in flight or just answered serves it. The read WAITS for one
- * in flight (up to {@link SAVED_HISTORY_SNAPSHOT_WAIT_MS}), as the row, `/turn`
- * and `/prompts` reads do: racing it downloaded the window twice. Otherwise
- * `GET …/transcript?shape=sync&history=true`. Throws when that route fails.
- */
-export async function loadSavedTranscript(
-  projectId: string,
-  sessionId: string,
-  options: { signal?: AbortSignal; /** Tests only. */ snapshotWaitMs?: number } = {},
-): Promise<SessionTranscriptSyncEnvelope> {
-  return heldSavedWindow(projectId, sessionId) ?? readSavedWindow(projectId, sessionId, options);
-}
-
-/** The window from the snapshot or the route. A held window never answers it. */
-async function readSavedWindow(
-  projectId: string,
-  sessionId: string,
-  options: { signal?: AbortSignal; snapshotWaitMs?: number },
-): Promise<SessionTranscriptSyncEnvelope> {
-  const claimed = claimOpenBundle(projectId, sessionId);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const bundle = claimed
-    ? await Promise.race([
-        claimed,
-        new Promise<null>((resolve) => {
-          timer = setTimeout(resolve, options.snapshotWaitMs ?? SAVED_HISTORY_SNAPSHOT_WAIT_MS, null);
-        }),
-      ]).finally(() => clearTimeout(timer))
-    : null;
-  return (
-    (bundle && openBundleHistory(bundle)) ??
-    getSessionTranscriptSync(projectId, sessionId, {
-      limit: OPEN_BUNDLE_TRANSCRIPT_LIMIT,
-      history: true,
-      signal: options.signal,
-    })
-  );
-}
+import { type SessionTranscriptSyncEnvelope, getSessionTurn } from '../rest/projects-client/sessions';
+import { loadSessionLogPage, readFirstSessionLogAnswer, type SessionLogPage } from '../session-log/source';
+import { EMPTY_SESSION_LOG_STATE, applySessionLogPage } from '../session-log/store';
+import { sessionLogRoot } from '../session-log/v1-view';
 
 export interface SavedSessionCopy {
-  /** The server's saved copy, or null when the read failed. */
+  /**
+   * @deprecated Always null: no v1 saved copy is read (`GET …/transcript`, P8.3). The session
+   * log's page is `log`. Removed in the next major.
+   */
   envelope: SessionTranscriptSyncEnvelope | null;
   /**
    * The conversation is proven empty, with nothing to wait for
    * ({@link isEmptyConversation}): show the composer, not a boot screen.
    */
   empty: boolean;
+  /**
+   * The session log's newest page of the root thread (`GET …/log`). Null when the log answered
+   * no page: a new session, an unconverted mirror, a failed read or an invalid page.
+   */
+  log?: SessionLogPage | null;
 }
 
 /**
  * The saved copy of a session, for a host that shows the session before
- * `useSession` binds it (a connecting view while the computer wakes). Hand
- * `envelope` to `useSessionSync` as `mirror` to paint it.
+ * `useSession` binds it (a connecting view while the computer wakes).
  *
- * Reads the current copy, from the snapshot or the route as
- * {@link loadSavedTranscript} does, and the turn record only when the copy
- * proves `runtimeSessionId` empty. Never throws: a failed read answers
- * `{ envelope: null, empty: false }`. A sub-agent's window is not read here:
- * `useSessionSync` with `savedChild` reads it.
+ * The session log first: its newest page of the root thread (`GET …/log`), as `log` with
+ * `envelope: null`. The host puts it in the session store (`applySessionLogPage`) and renders
+ * `useSessionLogThread`, which loads a sub-agent's thread from the heads that page names.
+ * `useSession` reads the page again at the bind. No v1 window is read then.
  *
- * The copy stays held for the session's open, up to `SAVED_WINDOW_HOLD_MS`:
- * the snapshot `useSession` starts at the bind then asks for the pointer only,
- * and the saved-history read after the bind answers from the held copy. The
- * window is downloaded once per open (KRTX-189).
+ * Any other answer (a 404, a failed read, an invalid page) answers no copy: `log: null`. No v1
+ * window is read (`GET …/transcript`, P8.3).
+ *
+ * The turn record is read only when the page proves `runtimeSessionId` empty. Never throws.
  */
 export async function readSavedSessionCopy(input: {
   projectId: string;
@@ -121,33 +64,37 @@ export async function readSavedSessionCopy(input: {
   sessionId: string;
   /** The runtime session the copy belongs to (the root). */
   runtimeSessionId: string;
+  /**
+   * @deprecated Ignored: the session log is always read, and no v1 window. The project flag
+   * `session_log` it carried is gone.
+   */
+  sessionLog?: boolean;
 }): Promise<SavedSessionCopy> {
   const { projectId, sessionId, runtimeSessionId } = input;
   if (!projectId || !sessionId || !runtimeSessionId) return { envelope: null, empty: false };
-  let envelope: SessionTranscriptSyncEnvelope;
-  try {
-    envelope = await readSavedWindow(projectId, sessionId, {});
-  } catch {
-    return { envelope: null, empty: false };
-  }
-  holdSavedWindow(projectId, sessionId, envelope);
-  if (savedCopyEmptyRoot(envelope) !== runtimeSessionId) return { envelope, empty: false };
-  // A turn that ended after the capture, or one open now, says the copy is
-  // older than the conversation.
+  const log = loadSessionLogPage ? await readFirstSessionLogAnswer(loadSessionLogPage, projectId, sessionId) : null;
+  if (!log || log === 'missing') return { envelope: null, empty: false, log: null };
+  const root = sessionLogRoot(applySessionLogPage(EMPTY_SESSION_LOG_STATE, log));
+  const provenEmpty = !!root?.empty && root.runtimeSessionId === runtimeSessionId;
+  return { envelope: null, empty: provenEmpty && (await noTurnSince(projectId, sessionId, runtimeSessionId)), log };
+}
+
+/**
+ * A page proved `runtimeSessionId` empty: no turn ended since and none is open (the page is
+ * not older than the conversation). An unanswered turn record is an unknown: false.
+ */
+async function noTurnSince(projectId: string, sessionId: string, runtimeSessionId: string): Promise<boolean> {
   try {
     const turn = await getSessionTurn(projectId, sessionId);
-    return {
-      envelope,
-      empty: isEmptyConversation({
-        savedEmptyRoot: runtimeSessionId,
-        rootSessionId: runtimeSessionId,
-        turnRead: true,
-        hasEndedTurn: turn.last_ended != null,
-        hasOpenOrQueuedTurn: turn.turns.length > 0,
-      }),
-    };
+    return isEmptyConversation({
+      savedEmptyRoot: runtimeSessionId,
+      rootSessionId: runtimeSessionId,
+      turnRead: true,
+      hasEndedTurn: turn.last_ended != null,
+      hasOpenOrQueuedTurn: turn.turns.length > 0,
+    });
   } catch {
-    return { envelope, empty: false };
+    return false;
   }
 }
 
@@ -159,7 +106,7 @@ export interface SavedTranscriptInput {
   /** The store holds at least one message for this session's root. */
   hasMessages: boolean;
   /**
-   * The saved-history read (`GET …/transcript?history=true`), which paints
+   * The saved-history read (the session log's page, `GET …/log`), which paints
    * the copy. `off` when the host does not run it.
    */
   history: 'off' | 'loading' | 'present' | 'absent';

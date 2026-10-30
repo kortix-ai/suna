@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 
-import { ToolOutputFallback } from './infrastructure';
+import { ToolOutputFallback } from '@kortix/ui/session';
 
 test('ToolOutputFallback wires the extracted tool-outcome helpers locally', () => {
   expect(() =>

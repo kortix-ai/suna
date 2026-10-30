@@ -26,6 +26,7 @@ import { pathToFileURL } from 'node:url'
 import { logger } from '@/lib/log/logger'
 import { ensureOpencodeConfigDeps, OPENCODE_CONFIG_DEPS_DIR } from './opencode-config-deps'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface ExtensionDepsOptions {
   /** Where staged extensions live, outside the repository. */
   cacheRoot: string
@@ -81,6 +82,7 @@ async function satisfiedBy(modules: string, folder: string): Promise<boolean> {
  * The plugin spec for `module` (a config-root-relative path): its file URL in
  * the repository when it has no package folder, else in its staged copy. Null
  * when the dependencies could not be provided.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function stageExtensionModule(configRoot: string, module: string, opts: ExtensionDepsOptions): Promise<string | null> {
   const file = resolve(configRoot, module)

@@ -9,7 +9,7 @@
  * SDK parses, the sequenced event stream and the control-plane probes the API
  * polls.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -32,7 +32,7 @@ import { expandCommandTemplate, type PiRuntimeHooks } from '@/harness/pi/runtime
 import { MessageIdClock } from '@/harness/pi/message-id'
 import { createPiSessionLogPort, piSessionLog } from '@/harness/pi/session-log'
 import { restorePiSessionLog } from '@/harness/pi/session-log-restore'
-import { SESSION_LOG_EVENTS, upcast as upcastSessionLog, type SessionLogMessage } from '@kortix/api-contract/session-log'
+import { SESSION_LOG_EVENTS, toV1, upcast as upcastSessionLog, type SessionLogMessage } from '@kortix/api-contract/session-log'
 import { encodeCompiledAgentConfigEnv } from '@kortix/api-contract/compiled-agent-config-env'
 import { flushSessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
 import { spawnSync } from 'node:child_process'
@@ -60,7 +60,7 @@ type ToolCall = { tool: string; args: Record<string, unknown> }
  * (`message` is its error text). `promptTokens` is the context size the reply reports in its usage.
  */
 type Step =
-  | { text: string; finish?: 'stop' | 'length'; promptTokens?: number }
+  | { text: string; finish?: 'stop' | 'length'; promptTokens?: number; completionTokens?: number }
   | ToolCall
   | { tools: ToolCall[] }
   | { cut: string }
@@ -79,17 +79,20 @@ function startFakeGateway() {
   /** The chat messages of each request, so a test reads what the model was sent. */
   const sent: Array<Array<{ role: string; content: unknown }>> = []
   /** The sampling fields of each request body. */
-  const sampling: Array<{ temperature?: number; top_p?: number; tool_choice?: unknown; tools: number; toolNames: string[] }> = []
+  const sampling: Array<{ temperature?: number; top_p?: number; tool_choice?: unknown; tools: number; toolNames: string[]; reasoning_effort?: string }> = []
+  /** `/images/generations` (the image_gen tool's route), when a test sets it. */
+  let images: ((body: { prompt: string }) => Response | Promise<Response>) | null = null
   const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
     `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
   const server = Bun.serve({
     port: 0,
     async fetch(req) {
       const url = new URL(req.url)
+      if (req.method === 'POST' && images && url.pathname.endsWith('/images/generations')) return images((await req.json()) as { prompt: string })
       if (req.method !== 'POST' || !url.pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
-      const json = (await req.json()) as { messages: Array<{ role: string; content: unknown }>; temperature?: number; top_p?: number; tool_choice?: unknown; tools?: Array<{ function?: { name?: string } }> }
+      const json = (await req.json()) as { messages: Array<{ role: string; content: unknown }>; temperature?: number; top_p?: number; tool_choice?: unknown; tools?: Array<{ function?: { name?: string } }>; reasoning_effort?: string }
       sent.push(json.messages)
-      sampling.push({ temperature: json.temperature, top_p: json.top_p, tool_choice: json.tool_choice, tools: json.tools?.length ?? 0, toolNames: (json.tools ?? []).map((t) => String(t.function?.name)) })
+      sampling.push({ temperature: json.temperature, top_p: json.top_p, tool_choice: json.tool_choice, tools: json.tools?.length ?? 0, toolNames: (json.tools ?? []).map((t) => String(t.function?.name)), reasoning_effort: json.reasoning_effort })
       requests.push({ path: url.pathname, auth: req.headers.get('authorization') })
       const step: Step = script.shift() ?? { text: '' }
       calls += 1
@@ -125,7 +128,8 @@ function startFakeGateway() {
         body += chunk({}, step.finish ?? 'stop')
       }
       const promptTokens = 'promptTokens' in step && step.promptTokens ? step.promptTokens : 1
-      body += `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [], usage: { prompt_tokens: promptTokens, completion_tokens: 1, total_tokens: promptTokens + 1 } })}\n\n`
+      const completionTokens = 'completionTokens' in step && step.completionTokens ? step.completionTokens : 1
+      body += `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [], usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens } })}\n\n`
       body += 'data: [DONE]\n\n'
       return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
     },
@@ -137,6 +141,9 @@ function startFakeGateway() {
     sampling,
     script: (steps: Step[]) => {
       script = [...steps]
+    },
+    images: (handle: typeof images) => {
+      images = handle
     },
     stop: () => server.stop(true),
   }
@@ -286,6 +293,7 @@ beforeEach(() => {
   process.env.KORTIX_PT_ENV_PATH = absentBoxState
 })
 afterEach(async () => {
+  gateway.images(null)
   for (const rig of rigs.splice(0)) {
     await rig.service.lifecycle.stop().catch(() => {})
     rmSync(rig.workspace, { recursive: true, force: true })
@@ -326,6 +334,25 @@ describe('pi harness', () => {
     expect(probe.turn_end).toBe('failed')
     const text = await readSse(events, (value) => value.includes('event: session.error') && value.includes('event: session.idle'))
     expect(text).toContain('The session made no progress')
+  })
+  test('a synthetic prompt part reaches the transcript as harness context (KRTX-2597)', async () => {
+    const r = await boot({ script: [{ text: 'done' }] })
+    const root = r.service.runtime()!.rootId
+    const continuation = 'msg_0198e2a4b0f0ABCDEFGHIJKLMN'
+    const mixed = 'msg_0198e2a4b0f0BCDEFGHIJKLMNO'
+    expect((await prompt(r, root, { messageID: continuation, parts: [{ type: 'text', text: '[auto-recovery] Continue from where you left off.', synthetic: true }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy(), 3_000)
+    // The person's prompt mixing harness context with their own words is NOT
+    // internal: the flag is a per-part mark, and only an all-synthetic text
+    // body is a continuation.
+    const mixedRes = await prompt(r, root, { messageID: mixed, parts: [{ type: 'text', text: 'harness note', synthetic: true }, { type: 'text', text: 'my real question' }] })
+    expect(mixedRes.status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy(), 3_000)
+    const rows = (await r.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ info?: { id?: string; role?: string }; parts?: Array<Record<string, unknown>> }>
+    expect(rows.find((row) => row.info?.id === continuation)?.parts?.[0]).toMatchObject({ type: 'text', synthetic: true })
+    const mixedRow = rows.find((row) => row.info?.id === mixed)
+    expect(mixedRow?.parts?.[0]).toMatchObject({ type: 'text' })
+    expect(mixedRow?.parts?.[0]).not.toHaveProperty('synthetic', true)
   })
   test('health reports the pi runtime before and after start', async () => {
     const r = await boot({ script: [{ text: 'hi' }], start: false })
@@ -623,7 +650,7 @@ describe('pi harness', () => {
     }
     expect(await r.user('/command').then((res) => res.json())).toEqual([])
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
     expect((await r.user('/session/status').then((res) => res.json()))).toEqual({})
     expect((await r.user('/lsp/diagnostics')).status).toBe(200)
     expect((await r.user('/no/such/route')).status).toBe(404)
@@ -641,9 +668,36 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
     // Step 2 of 2 is the last: the model may not call another tool.
     expect(gateway.sampling.slice(before)).toEqual([
-      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 14, toolNames: expect.arrayContaining(['bash', 'codemode']) },
-      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 14, toolNames: expect.arrayContaining(['bash', 'codemode']) },
+      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 15, toolNames: expect.arrayContaining(['bash', 'codemode']) },
+      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 15, toolNames: expect.arrayContaining(['bash', 'codemode']) },
     ])
+  })
+
+  test('an agent or prompt variant reaches the gateway as the reasoning_effort the catalog offers', async () => {
+    // The gateway catalog states effort as `reasoning_options` values, not `variants` keys.
+    // Prod 2026-10-19: pi read only the option's `type` ('effort'), so every variant ran with thinking off.
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    writeFileSync(join(workspace, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: {
+      name: 'Test Model', reasoning: true, limit: { context: 64_000, output: 4_096 },
+      reasoning_options: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
+    } } }))
+    const r = await boot({
+      workspace,
+      script: [{ text: 'one' }, { text: 'two' }, { text: 'three' }],
+      env: {
+        KORTIX_LLM_CATALOG_FILE: join(workspace, 'catalog.json'),
+        KORTIX_AGENT_NAME: 'lens',
+        KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { lens: { prompt: 'You judge.', variant: 'high' } } }),
+      },
+    })
+    const root = r.service.runtime()!.rootId
+    const before = gateway.sampling.length
+    for (const body of [{}, { variant: 'max' }, { variant: 'medium' }]) {
+      expect((await prompt(r, root, { parts: [{ type: 'text', text: 'go' }], ...body })).status).toBe(204)
+      await waitFor(() => !r.service.runtime()!.busy())
+    }
+    // `medium` is not offered by this model, so the turn runs at the provider default.
+    expect(gateway.sampling.slice(before).map((s) => s.reasoning_effort)).toEqual(['high', 'max', undefined])
   })
 
   test('a permission policy of ask pauses the tool until the product replies', async () => {
@@ -737,6 +791,22 @@ describe('pi harness', () => {
     await waitFor(() => runtime.questions.list().length === 0 && runtime.idle())
   })
 
+  test('a synthetic steer leaves an open question open', async () => {
+    const r = await boot({
+      script: [
+        { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } },
+        { text: 'read the steer' },
+      ],
+    })
+    const runtime = r.service.runtime()!
+    const root = runtime.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitFor(() => runtime.questions.list().length === 1)
+    expect(await runtime.steer({ messageID: siblingId(runtime.activeTurnMessageId()!, 'z'), text: 'The linear connector was just connected', parts: [], synthetic: true } as never)).toBe('steered')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(runtime.questions.list()).toHaveLength(1)
+  })
+
   test('a rejected permission blocks the tool and the turn still ends', async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'echo never' } }, { text: 'blocked, sorry' }],
@@ -827,6 +897,35 @@ describe('pi harness', () => {
     expect(tool.state.status).toBe('error')
     expect(tool.state.error).toContain('denies this write call')
     expect(existsSync(join(r.workspace, 'new.txt'))).toBe(false)
+  })
+
+  test('edit deny denies image_gen', async () => {
+    const r = await boot({
+      script: [{ tool: 'image_gen', args: { action: 'generate', prompts: ['a red cube'] } }, { text: 'blocked' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { edit: 'deny', bash: 'allow' } } } }) },
+    })
+    const tool = await firstToolPart(r)
+    expect(tool.state.status).toBe('error')
+    expect(tool.state.error).toContain('denies this image_gen call')
+    expect(existsSync(join(r.workspace, 'output'))).toBe(false)
+  })
+
+  test('a path deny holds for every spelling of the path the read tool resolves', async () => {
+    const permission = { read: { 'secrets/*': 'deny', '*': 'allow' } }
+    for (const path of ['./secrets/a', 'x/../secrets/a', '@secrets/a']) {
+      const r = await boot({
+        script: [{ tool: 'read', args: { path } }, { text: 'blocked' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission } } }) },
+        prepare: (workspace) => {
+          mkdirSync(join(workspace, 'secrets'))
+          writeFileSync(join(workspace, 'secrets', 'a'), 'sentinel-secret')
+        },
+      })
+      const tool = await firstToolPart(r)
+      expect(tool.state.status).toBe('error')
+      expect(tool.state.error).toContain('denies')
+      expect(JSON.stringify(tool)).not.toContain('sentinel-secret')
+    }
   })
 
   test('the manifest skills grant hides every other skill: managed, project and pi skill dirs (W1 B3)', async () => {
@@ -1048,7 +1147,7 @@ describe('pi harness', () => {
     expect(text).toContain('finished normally')
   })
 
-  test('a restarted daemon restores the transcript, title and turn verdicts from the state dir', async () => {
+  test('a restarted daemon restores the transcript and turn verdicts, and leaves the title to Kortix', async () => {
     // A daemon restart is a new process: a second service on the same state
     // dir must restore what the first one persisted, not reuse its memory.
     const r = await boot({ script: [{ text: 'first answer' }] })
@@ -1057,7 +1156,16 @@ describe('pi harness', () => {
     expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'remember me' }] })).status).toBe(204)
     await waitFor(() => !r.service.runtime()!.busy())
     const before = (await r.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ info: { id: string } }>
+    // The title is Kortix's to write (`metadata.name`, generated from the first
+    // prompt). A runtime title of the prompt's first line outranked it in the
+    // API and ended the web's wait for the real title (KRTX-2567).
+    const live = (await r.user('/session').then((res) => res.json())) as Array<{ title: string }>
+    expect(live[0]!.title).toBe('New session')
     await r.service.lifecycle.stop()
+    // A dump an older daemon wrote carries the first prompt line as its title.
+    const stateDir = join(r.workspace, '.state')
+    const dumpFile = join(stateDir, readdirSync(stateDir).find((f) => f.endsWith('.json'))!)
+    writeFileSync(dumpFile, JSON.stringify({ ...JSON.parse(readFileSync(dumpFile, 'utf8')), title: 'remember me' }))
 
     const restarted = await boot({ script: [{ text: 'second answer' }], workspace: r.workspace })
     rigs.splice(rigs.indexOf(r), 1)
@@ -1066,7 +1174,7 @@ describe('pi harness', () => {
     expect(page.messages.map((m) => m.info.role)).toEqual(['user', 'assistant'])
     expect(page.messages[1]!.parts[0]).toMatchObject({ type: 'text', text: 'first answer' })
     const sessions = (await restarted.user('/session').then((res) => res.json())) as Array<{ title: string }>
-    expect(sessions[0]!.title).toBe('remember me')
+    expect(sessions[0]!.title).toBe('New session')
     const probe = (await restarted.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_end).toBe('completed')
 
@@ -1437,7 +1545,7 @@ describe('project tools on pi', () => {
       env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ lookup_order: 'integrations/orders/lookup.ts' }) },
       prepare: (workspace) => write(workspace, 'integrations/orders/lookup.ts', LOOKUP),
     })
-    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'codemode', 'task'])
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'codemode', 'task'])
     await promptAndSettle(r, 'look up order 42')
     const part = toolParts(await page(r), 'lookup_order')[0]!
     expect(part.state.status).toBe('completed')
@@ -1534,6 +1642,45 @@ describe('pi extensions', () => {
     expect(one).toContain('EXTENSION RULE')
     expect(two).not.toContain('TURN RULE')
     expect(two).toContain('EXTENSION RULE')
+  })
+
+  test('the Kortix prompt route carries system to the model for its turn only', async () => {
+    const r = await boot({ script: [{ text: 'a' }, { text: 'b' }] })
+    const root = r.service.runtime()!.rootId
+    const sentBefore = gateway.sent.length
+    const post = (body: unknown) =>
+      r.user(`/kortix/runtime/sessions/${root}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    expect((await post({ parts: [{ type: 'text', text: 'one' }], system: '## Memory\n- Q4 launch — dates and owners' })).status).toBe(202)
+    await waitFor(() => gateway.sent.length > sentBefore && !r.service.runtime()!.busy())
+    expect((await post({ parts: [{ type: 'text', text: 'two' }] })).status).toBe(202)
+    await waitFor(() => gateway.sent.length > sentBefore + 1 && !r.service.runtime()!.busy())
+    const [one, two] = gateway.sent.slice(sentBefore).map(systemSent)
+    expect(one).toContain('## Memory\n- Q4 launch — dates and owners')
+    expect(two).not.toContain('## Memory')
+    // pi keeps the text out of the stored transcript.
+    expect(JSON.stringify(await r.user(`/session/${root}/message`).then((res) => res.json()))).not.toContain('## Memory')
+  })
+
+  test("every turn tells the model today's date, a subagent included, and a session that crosses midnight gets the new day", async () => {
+    const r = await boot({
+      script: [{ text: 'a' }, { tool: 'task', args: { description: 'Check', prompt: 'check it', subagent_type: 'general' } }, { text: 'child done' }, { text: 'parent done' }],
+    })
+    const sentBefore = gateway.sent.length
+    try {
+      // Noon UTC: the same calendar day in every time zone the box may run in.
+      setSystemTime(new Date('2026-03-09T12:00:00Z'))
+      await promptAndSettle(r, 'one')
+      setSystemTime(new Date('2026-03-10T12:00:00Z'))
+      await promptAndSettle(r, 'delegate it')
+    } finally {
+      setSystemTime()
+    }
+    const [one, two, child] = gateway.sent.slice(sentBefore).map(systemSent)
+    expect(one).toContain("Today's date: Mon Mar 09 2026 (")
+    expect(two).toContain("Today's date: Tue Mar 10 2026 (")
+    expect(two).not.toContain('Mar 09 2026')
+    expect(child).toContain('Working directory:')
+    expect(child).toContain("Today's date: Tue Mar 10 2026 (")
   })
 
   test('an extension that throws is reported and skipped; lifecycle events reach the others', async () => {
@@ -2000,14 +2147,14 @@ describe('pi subagents extension', () => {
     const compiled = (tools?: Record<string, boolean>) => JSON.stringify({ agent: { build: { tools } } })
     const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ bash: false }) } })
     const ids = async () => (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
     const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled()
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled({ grep: false })
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
   })
 
   test('several task calls in one message run their subagents concurrently', async () => {
@@ -2894,20 +3041,18 @@ describe('pi compaction', () => {
     expect(page.messages.filter((m) => m.info.error)).toEqual([])
   })
 
-  test('KORTIX_PI_COMPACT_AT_TOKENS compacts a context far below the model window', async () => {
-    // Window 64,000: pi alone waits until 47,616. A 30,000 context stays put without the budget...
-    const plain = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 30_000 }], prepare: compactEverything })
-    await promptAndSettle(plain, 'ALPHA question')
-    await promptAndSettle(plain, 'BETA question')
-    await waitFor(() => plain.service.runtime()!.idle())
-    const plainPage = (await plain.bearer(`/kortix/runtime/messages/${plain.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
-    expect(compactionTurns(plainPage)).toEqual([])
-
-    // ...and compacts by itself once the budget (20,000) is below it.
+  test('compaction leaves the model its whole output budget, not pi default 16k reserve', async () => {
+    // 128,000 window and a 32,768 output limit: a request needs 32,768 tokens of room for the
+    // answer, so compaction must start at 95,232, not at pi's default window - 16,384 = 111,616.
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    const catalog = join(workspace, 'catalog.json')
+    writeFileSync(catalog, JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', limit: { context: 128_000, output: 32_768 } } } }))
     const r = await boot({
-      script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 30_000 }, ...SUMMARY],
+      workspace,
+      env: { KORTIX_LLM_CATALOG_FILE: catalog },
+      // 100,001 tokens is over 95,232 and under 111,616: the report the session meter shows.
+      script: [{ text: 'first answer', promptTokens: 100_000 }, ...SUMMARY, { text: 'answer after compaction' }],
       prepare: compactEverything,
-      env: { KORTIX_PI_COMPACT_AT_TOKENS: '20000' },
     })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
@@ -2916,8 +3061,32 @@ describe('pi compaction', () => {
     const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     const [turn] = compactionTurns(page)
     expect(turn!.part).toMatchObject({ type: 'compaction', auto: true })
-    // The transcript keeps the history before the cut.
-    expect(JSON.stringify(page.messages)).toContain('ALPHA question')
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+    // The second prompt reaches the model after the summary cut, never with the full history.
+    expect(sentText(gateway.sent.at(-1)!)).toContain('SUMMARY-ONE')
+  })
+
+  test('a project reserve compacts earlier than the model output budget, never later', async () => {
+    // The project asks pi to cut at 28,000 (reserve 100,000 of a 128,000 window, capped at 64,000),
+    // well before this model's own 32,768 reserve would (95,232). A 70,000-token reply is over.
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    const catalog = join(workspace, 'catalog.json')
+    writeFileSync(catalog, JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', limit: { context: 128_000, output: 32_768 } } } }))
+    mkdirSync(join(workspace, 'harnesses/pi'), { recursive: true })
+    writeFileSync(join(workspace, 'harnesses/pi/settings.json'), JSON.stringify({ compaction: { keepRecentTokens: 1, reserveTokens: 100_000 } }))
+    const r = await boot({
+      workspace,
+      env: { KORTIX_LLM_CATALOG_FILE: catalog },
+      script: [{ text: 'first answer', promptTokens: 70_000 }, ...SUMMARY, { text: 'answer after compaction' }],
+    })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    await waitFor(() => r.service.runtime()!.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(compactionTurns(page)[0]!.part).toMatchObject({ type: 'compaction', auto: true })
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+    expect(sentText(gateway.sent.at(-1)!)).toContain('SUMMARY-ONE')
   })
 
   test('a context overflow compacts and retries: the turn completes with no error on the wire', async () => {
@@ -2956,35 +3125,84 @@ describe('pi compaction', () => {
     expect(text).toContain('ContextOverflowError')
   })
 
-  test('stop during the compaction before a prompt ends the turn without a model call', async () => {
-    // The retried step skips pi's post-run check, so the 60,000-token reply is compacted before the next prompt.
-    const r = await boot({ script: [{ text: 'first answer' }, { cut: '' }, { text: 'big answer', promptTokens: 60_000 }, { stall: true }, { text: 'must not be asked' }], prepare: compactEverything })
+  test('stop during the compaction after a turn ends it without another model call', async () => {
+    // The 60,000-token reply is over the 64k window's threshold, so pi compacts after the turn.
+    // A stop during that summary ends the turn; no further model call goes out.
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 60_000 }, { stall: true }, { text: 'must not be asked' }], prepare: compactEverything })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
-    await promptAndSettle(r, 'BETA question')
     const calls = gateway.requests.length
     const messageID = 'msg_0198e2a4b0e3ABCDEFGHIJKLMN'
-    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'GAMMA question' }] })).status).toBe(204)
-    await waitFor(() => gateway.requests.length > calls)
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'BETA question' }] })).status).toBe(204)
+    // The answer, then the summary request that stalls.
+    await waitFor(() => gateway.requests.length - calls === 2)
     expect((await r.user(`/session/${root}/abort`, { method: 'POST' })).status).toBe(200)
     await waitFor(() => r.service.runtime()!.idle())
-    // One request: the stalled summary. Neither the turn's model call nor a compaction after the stop goes out.
-    expect(gateway.requests.length - calls).toBe(1)
-    expect(gateway.sent.slice(calls).map(sentText).filter((sent) => sent.includes('GAMMA question'))).toEqual([])
+    expect(gateway.requests.length - calls).toBe(2)
     const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
-    expect(page.messages.at(-1)!.info).toMatchObject({ role: 'assistant', error: { name: 'MessageAbortedError' } })
+    const summary = page.messages.find((m) => m.info.role === 'assistant' && m.info.summary === true)
+    expect(summary!.info.error).toMatchObject({ name: 'MessageAbortedError' })
+    expect(page.messages.filter((m) => m.info.role === 'assistant' && !m.info.summary).at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'big answer' })
   })
 
-  test('an overflow after a transient retry fails at once: pi does not compact a retried step', async () => {
+  test('an overflow after a transient retry still compacts and retries: the retry stays inside pi loop', async () => {
+    // The cut is retried at pi's settle boundary (runtime `turnExtension`), so the retried step
+    // runs pi's post-run checks like any other and an overflow there is recovered, not final.
     const overflow = { status: 400, message: "This model's maximum context length is 64000 tokens. However, your messages resulted in 70000 tokens." }
-    const r = await boot({ script: [{ text: 'first answer' }, { cut: '' }, overflow], prepare: compactEverything })
+    const r = await boot({ script: [{ text: 'first answer' }, { cut: '' }, overflow, ...SUMMARY, { text: 'answer after the retry compacted' }], prepare: compactEverything })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
     const events = await r.bearer('/kortix/opencode/events?since=0')
     expect((await prompt(r, root, { messageID: 'msg_0198e2a4b0e4ABCDEFGHIJKLMN', parts: [{ type: 'text', text: 'BETA question' }] })).status).toBe(204)
     await waitFor(() => r.service.runtime()!.idle())
-    const text = await readSse(events, (t) => t.includes('ContextOverflowError') && t.includes('event: session.idle'))
-    expect(text).not.toContain('Compacting the conversation')
+    const text = await readSse(events, (t) => t.includes('event: session.idle') && t.includes('answer after the retry compacted'))
+    expect(text).toContain('Compacting the conversation to continue.')
+    expect(text).not.toContain('event: session.error')
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+    expect(compactionTurns(page)[0]!.part).toMatchObject({ type: 'compaction', auto: true, overflow: true })
+    expect(page.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'answer after the retry compacted' })
+  })
+
+  test('a session that failed at its limit heals before the next prompt answers', async () => {
+    // The flagged shape: a turn ends with output_length at a context over the window. pi's own
+    // post-run check compacts it before it settles, and the next prompt must reach the model on
+    // the compacted history — never the full one, and never another output_length.
+    const r = await boot({
+      script: [
+        // 64,096 tokens used, the answer cut at the model's whole 4,096 output budget: not recoverable.
+        { text: 'half an answer', finish: 'length', promptTokens: 60_000, completionTokens: 4_096 },
+        // One summary call: the whole session is one user span, so only the turn prefix is summarized.
+        { text: 'SUMMARY-ONE' },
+        { text: 'answer after the session healed' },
+      ],
+      prepare: compactEverything,
+    })
+    const root = r.service.runtime()!.rootId
+    const messageID = 'msg_0198e2a4b0e5ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'ALPHA question' }] })).status).toBe(204)
+    await waitFor(() => r.service.runtime()!.idle())
+    const first = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(first.turn_end).toBe('failed')
+
+    // The failed turn left a compaction behind: the session is repaired, not stuck at the limit.
+    const healed = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(compactionTurns(healed)).toHaveLength(1)
+    expect(compactionTurns(healed)[0]!.part).toMatchObject({ type: 'compaction', auto: true })
+
+    // The next prompt answers from the compacted history with no error.
+    const calls = gateway.requests.length
+    expect((await prompt(r, root, { messageID: 'msg_0198e2a4b0e6ABCDEFGHIJKLMN', parts: [{ type: 'text', text: 'BETA question' }] })).status).toBe(204)
+    await waitFor(() => r.service.runtime()!.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.filter((m) => m.info.error)).toHaveLength(1)
+    const answers = page.messages.filter((m) => m.info.role === 'assistant' && !m.info.summary)
+    expect(answers.at(-1)!.info.error).toBeUndefined()
+    expect(answers.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'answer after the session healed' })
+    // One model call for BETA, and it carries the summary, not the pre-compaction history.
+    expect(gateway.requests.length - calls).toBe(1)
+    expect(sentText(gateway.sent.at(-1)!)).toContain('SUMMARY-ONE')
+    expect(sentText(gateway.sent.at(-1)!)).not.toContain('ALPHA question')
   })
 })
 
@@ -3024,6 +3242,33 @@ describe('pi slash commands', () => {
     const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     const user = page.messages.find((m) => m.info.id === messageID)!
     expect(user.parts.map((p) => p.text)).toEqual([expanded])
+  })
+
+  const withDeploySkill = (workspace: string) => {
+    withReviewCommand(workspace)
+    for (const name of ['deploy', 'review']) {
+      mkdirSync(join(workspace, 'skills', name), { recursive: true })
+      writeFileSync(join(workspace, 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: The ${name} skill\n---\nSKILL-BODY-${name}\n`)
+    }
+  }
+
+  test('the command list carries the granted skills after the commands; a command keeps its name', async () => {
+    const r = await boot({ script: [], prepare: withDeploySkill })
+    expect(await r.user('/command').then((res) => res.json())).toEqual([
+      { name: 'review', description: 'Review a change', source: 'command', template: TEMPLATE, hints: ['$1', '$ARGUMENTS'] },
+      { name: 'deploy', description: 'The deploy skill', source: 'skill', template: '', hints: [] },
+    ])
+  })
+
+  test('a skill runs as its SKILL.md body plus the arguments', async () => {
+    const r = await boot({ script: [{ text: 'Deployed.' }], prepare: withDeploySkill })
+    const root = r.service.runtime()!.rootId
+    const res = await command(r, root, { command: 'deploy', arguments: 'to staging' })
+    expect(res.status).toBe(200)
+    const sent = sentText(gateway.sent.at(-1)!)
+    expect(sent).toContain('<skill name=\\"deploy\\"')
+    expect(sent).toContain('SKILL-BODY-deploy')
+    expect(sent).toContain('to staging')
   })
 
   test('a command pi does not have is refused with 400 and runs no turn', async () => {
@@ -3751,6 +3996,47 @@ describe('pi session log on the v2 stream (P4.3)', () => {
     // No streaming record reaches the API.
     for (const p of batches.flatMap((b) => b.puts)) expect(p.message.status).not.toBe('streaming')
   })
+
+  test('mid-turn: the API holds the prompt, the finished step and the running step while the turn runs; the stream keeps its live puts', async () => {
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'echo step-one' } }, { tool: 'bash', args: { command: 'sleep 1' } }, { text: 'Both ran.' }] })
+    const rt = r.service.runtime()!
+    const root = rt.rootId
+    expect(startSessionLogJournal(createPiSessionLogPort(() => r.service.runtime()?.sessionLogSnapshot() ?? null), { generation: 0, midTurnMs: 20 })).not.toBeNull()
+    const stream = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
+    const puts = () => readdirSync(dump).flatMap((f) => (JSON.parse(readFileSync(join(dump, f), 'utf8')) as { puts: Array<{ rev: number; message: SessionLogMessage }> }).puts)
+    /** Each turn message as the API holds it: its highest posted rev. */
+    const held = () => [...new Map(puts().sort((a, b) => a.rev - b.rev).map((p) => [p.message.message_id, p])).values()].filter((p) => p.message.kind === 'turn').sort((a, b) => a.message.seq - b.message.seq)
+    const call = (m: SessionLogMessage) => m.blocks.find((b) => b.type === 'tool_call') as { status: string; input: unknown; result?: unknown } | undefined
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'run both commands' }] })).status).toBe(204)
+    await waitFor(() => held().some((p) => call(p.message)?.status === 'running'))
+
+    // A box that dies now leaves the API this: the prompt, the first step with its result, the second step running.
+    const midTurn = held()
+    expect(midTurn.map((p) => [p.message.role, p.message.status])).toEqual([['user', 'complete'], ['assistant', 'complete'], ['assistant', 'streaming']])
+    expect(midTurn[0]!.message.blocks).toMatchObject([{ type: 'text', text: 'run both commands' }])
+    expect(call(midTurn[1]!.message)).toMatchObject({ status: 'complete', input: { command: 'echo step-one' } })
+    expect(JSON.stringify(call(midTurn[1]!.message)!.result)).toContain('step-one')
+    expect(call(midTurn[2]!.message)).toMatchObject({ status: 'running', input: { command: 'sleep 1' } })
+    expect(midTurn[2]!.message.completed_at).toBeNull()
+
+    await waitFor(() => rt.idle())
+    expect(await flushSessionLogJournal()).toBe(true)
+    // The turn end's records replace the mid-turn ones.
+    const end = held()
+    expect(end.map((p) => [p.message.role, p.message.status])).toEqual([['user', 'complete'], ['assistant', 'complete'], ['assistant', 'complete'], ['assistant', 'complete']])
+    expect(end[2]!.rev).toBeGreaterThan(midTurn[2]!.rev)
+    // The running step went to the API only: its live puts went on, and the stream showed its call end before the record that ended it.
+    const posted = new Set(puts().map((p) => p.rev))
+    const frames = v2Frames(await readSse(stream, (t) => t.includes('Both ran.')))
+    const step = frames.filter((f) => f.type === 'log.message' && f.payload.message?.message_id === midTurn[2]!.message.message_id)
+    expect(step.some((f) => f.payload.rev === midTurn[2]!.rev)).toBe(false)
+    expect(step.some((f) => !posted.has(f.payload.rev) && f.payload.rev > midTurn[2]!.rev && call(f.payload.message)?.status === 'complete')).toBe(true)
+    expect(step.at(-1)!.payload).toEqual(end[2])
+    // Idle: no frame, no collection, no post.
+    const files = readdirSync(dump).length
+    await Bun.sleep(100)
+    expect(readdirSync(dump).length).toBe(files)
+  })
 })
 
 describe('pi codemode', () => {
@@ -3762,6 +4048,81 @@ describe('pi codemode', () => {
     const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Part[] }> }
     return page.messages.flatMap((m) => m.parts).filter((p) => p.type === 'tool')
   }
+
+  const savedImageEnv = { KORTIX_LLM_BASE_URL: process.env.KORTIX_LLM_BASE_URL, KORTIX_TOKEN: process.env.KORTIX_TOKEN }
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedImageEnv)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+  /**
+   * The gateway's image route answers once `count` requests are in flight, so a tool that runs its
+   * calls one by one never gets an answer from it (a 2 s fallback answers it, and `peak` says so).
+   */
+  const heldImages = (count: number) => {
+    // Kortix tools read the process env (`sessionEnv`), not the rig's.
+    process.env.KORTIX_LLM_BASE_URL = gateway.baseUrl
+    process.env.KORTIX_TOKEN = TOKEN
+    const seen = { peak: 0, requests: 0 }
+    let inFlight = 0
+    let release!: () => void
+    const all = new Promise<void>((resolve) => (release = resolve))
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13])
+    gateway.images(async () => {
+      seen.requests++
+      seen.peak = Math.max(seen.peak, ++inFlight)
+      if (inFlight === count) release()
+      await Promise.race([all, Bun.sleep(2_000)])
+      inFlight--
+      return Response.json({ model: 'codex/gpt-image-2', provider: 'openai-codex', data: [{ b64_json: png.toString('base64') }], size: '1024x1024' })
+    })
+    return seen
+  }
+
+  /** Each tool part's status changes, in the order the runtime published them: `<tool>#<n>:<status>` (n: the call's order of first appearance). */
+  const toolTimeline = () => {
+    const events: string[] = []
+    const order = new Map<string, number>()
+    const onFrame = (frame: { type: string; properties: unknown }) => {
+      const part = (frame.properties as { part?: { type?: string; tool?: string; callID?: string; state?: { status?: string } } }).part
+      if (frame.type !== 'message.part.updated' || part?.type !== 'tool' || !part.callID) return
+      if (!order.has(part.callID)) order.set(part.callID, order.size + 1)
+      const event = `${part.tool}#${order.get(part.callID)}:${part.state?.status}`
+      if (!events.includes(event)) events.push(event)
+    }
+    return { events, hooks: { onFrame } as PiRuntimeHooks }
+  }
+
+  test('two image_gen calls in one step run at the same time; two bash calls in one step run in turn', async () => {
+    const seen = heldImages(2)
+    const timeline = toolTimeline()
+    const bash = (n: number) => ({ tool: 'bash', args: { command: `echo ${n}` } })
+    const r = await boot({
+      hooks: timeline.hooks,
+      script: [
+        { tools: [{ tool: 'image_gen', args: { action: 'generate', prompts: ['a red cube'] } }, { tool: 'image_gen', args: { action: 'generate', prompts: ['a blue sphere'] } }] },
+        { tools: [bash(1), bash(2)] },
+        { text: 'done' },
+      ],
+    })
+    const parts = await run(r)
+    expect(seen.peak).toBe(2)
+    const images = parts.filter((p) => p.tool === 'image_gen')
+    expect(images.map((p) => p.state.status)).toEqual(['completed', 'completed'])
+    expect(images.map((p) => JSON.parse(p.state.output).images[0].prompt)).toEqual(['a red cube', 'a blue sphere'])
+    // Both image calls start before either ends; the second bash call starts after the first ends.
+    expect(timeline.events.filter((e) => /:(running|completed)$/.test(e))).toEqual([
+      'image_gen#1:running',
+      'image_gen#2:running',
+      expect.stringMatching(/^image_gen#[12]:completed$/),
+      expect.stringMatching(/^image_gen#[12]:completed$/),
+      'bash#3:running',
+      'bash#3:completed',
+      'bash#4:running',
+      'bash#4:completed',
+    ])
+  })
 
   test('on by default: one script runs two tools, and the model sees only its output', async () => {
     const r = await boot({
@@ -3786,7 +4147,7 @@ describe('pi codemode', () => {
     expect(String(results[0]!.content)).toContain('one+two')
   })
 
-  test('off removes codemode; only declares codemode alone and still runs every tool through it', async () => {
+  test('off removes codemode; only declares codemode and presentation and runs workspace tools through scripts', async () => {
     const off = await boot({ script: [{ text: 'hi' }], env: { KORTIX_PI_CODEMODE: 'off' } })
     let first = gateway.sampling.length
     await run(off)
@@ -3796,9 +4157,48 @@ describe('pi codemode', () => {
     const only = await boot({ script: [script("return await tools.bash({ command: 'echo only' })"), { text: 'done' }], env: { KORTIX_PI_CODEMODE: 'only' } })
     first = gateway.sampling.length
     const parts = await run(only)
-    expect(gateway.sampling[first]!.toolNames).toEqual(['codemode'])
-    expect(String(gateway.sent[first]!.find((m) => m.role === 'system')?.content)).toContain('Every tool runs from a codemode script')
+    expect(gateway.sampling[first]!.toolNames.sort()).toEqual(['codemode', 'image_gen', 'show'])
+    expect(String(gateway.sent[first]!.find((m) => m.role === 'system')?.content)).toContain('Call show directly to present outputs')
     expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('only') })
+  })
+
+  test('only keeps presentation model-only and records show as a native transcript block', async () => {
+    const r = await boot({
+      script: [{ tool: 'show', args: { action: 'show', type: 'text', content: 'Presentation proof' } }, { text: 'done' }],
+      env: { KORTIX_PI_CODEMODE: 'only' },
+    })
+    const first = gateway.sampling.length
+    const [part] = await run(r)
+    expect(gateway.sampling[first]?.toolNames.sort()).toEqual(['codemode', 'image_gen', 'show'])
+    expect(part?.tool).toBe('show')
+    expect(part?.state).toMatchObject({ status: 'completed', input: { type: 'text', content: 'Presentation proof' } })
+    expect(JSON.parse(part?.state.output)).toMatchObject({ success: true, entry: { type: 'text', content: 'Presentation proof' } })
+    const snapshot = r.service.runtime()?.sessionLogSnapshot()
+    if (!snapshot) throw new Error('Missing session snapshot')
+    const { log } = piSessionLog(snapshot)
+    expect(log.threads[0]?.messages.flatMap((m) => m.blocks)).toContainEqual(expect.objectContaining({ type: 'tool_call', name: 'show', status: 'complete' }))
+  })
+
+  test('only presentation still obeys tool access and permission policy', async () => {
+    for (const agent of [{ tools: { show: false } }, { permission: { show: 'deny' } }]) {
+      const r = await boot({
+        script: [{ tool: 'show', args: { action: 'show', type: 'text', content: 'Hidden' } }, { text: 'done' }],
+        env: { KORTIX_PI_CODEMODE: 'only', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: agent } }) },
+      })
+      const [part] = await run(r)
+      expect(part?.state.status).toBe('error')
+      expect(part?.state.output).toBeUndefined()
+    }
+  })
+
+  test('only scripts cannot hide presentation inside codemode', async () => {
+    const r = await boot({
+      script: [script("return await tools.show({ action: 'show', type: 'text', content: 'Hidden' })"), { text: 'done' }],
+      env: { KORTIX_PI_CODEMODE: 'only' },
+    })
+    const [part] = await run(r)
+    expect(part?.state.status).toBe('error')
+    expect(part?.state.error).toContain('show')
   })
 
   test('the project policy denies a script\'s call like a direct one', async () => {
@@ -3849,6 +4249,166 @@ describe('pi codemode', () => {
     expect(r.service.runtime()!.questions.list()).toHaveLength(0)
   })
 
+  test("a script's image_gen and show calls run, each published as its own native part with its input and output", async () => {
+    const seen = heldImages(2)
+    const r = await boot({
+      script: [
+        script(
+          "const [a, b] = await Promise.all([tools.image_gen({ action: 'generate', prompts: ['a red cube'] }), tools.image_gen({ action: 'generate', prompts: ['a blue sphere'] })]); await tools.show({ action: 'show', type: 'text', content: 'Two images' }); return [a, b].map((o) => JSON.parse(o).images[0].prompt).join('+')",
+        ),
+        { text: 'done' },
+      ],
+    })
+    const parts = await run(r)
+    // Not refused: both images were generated, at the same time (pi runs a parallel tool's nested calls concurrently).
+    expect(seen.peak).toBe(2)
+    expect(parts.map((p) => p.tool)).toEqual(['codemode', 'image_gen', 'image_gen', 'show'])
+    const [code, cube, sphere, show] = parts
+    expect(code!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('a red cube+a blue sphere') })
+    // The script card lists every call it made as a text row (packages/ui codemode-tool.tsx `scriptCalls`, from
+    // `metadata.calls`); the image itself is drawn once, by the call's own part below.
+    expect(code!.state.metadata.calls.map((c: Part) => [c.name, c.status])).toEqual([
+      ['image_gen', 'ok'],
+      ['image_gen', 'ok'],
+      ['show', 'ok'],
+    ])
+    for (const [part, prompt] of [[cube!, 'a red cube'], [sphere!, 'a blue sphere']] as const) {
+      // A nested call's part sits on the script's message, under pi's nested id `<script call>/<n>`.
+      expect(part.messageID).toBe(code!.messageID)
+      expect(part.callID).toStartWith(`${code!.callID}/`)
+      expect(part.state).toMatchObject({ status: 'completed', input: { action: 'generate', prompts: [prompt] }, time: { start: expect.any(Number), end: expect.any(Number) } })
+      const output = JSON.parse(part.state.output)
+      expect(output.images).toEqual([{ path: expect.stringContaining(join(r.workspace, 'output', 'images')), size: '1024x1024', prompt, sha256: expect.any(String) }])
+      // R38: the digest names the bytes saved on disk.
+      expect(output.images[0].sha256).toBe(createHash('sha256').update(readFileSync(output.images[0].path)).digest('hex'))
+    }
+    expect(show!.state).toMatchObject({ status: 'completed', input: { type: 'text', content: 'Two images' } })
+    expect(JSON.parse(show!.state.output)).toMatchObject({ success: true, entry: { type: 'text', content: 'Two images' } })
+    // The model made one call: the session log keeps one tool_call block, the nested calls stay its display data.
+    const { log } = piSessionLog(r.service.runtime()!.sessionLogSnapshot()!)
+    const blocks = log.threads[0]!.messages.flatMap((m) => m.blocks).filter((b) => b.type === 'tool_call')
+    expect(blocks.map((b) => (b as { name: string }).name)).toEqual(['codemode'])
+    expect(((blocks[0] as { result: { details: { calls: Array<{ name: string; status: string }> } } }).result.details.calls).map((c) => [c.name, c.status])).toEqual([
+      ['image_gen', 'complete'],
+      ['image_gen', 'complete'],
+      ['show', 'complete'],
+    ])
+    // The saved transcript (a cold reload, a restore) gives back each nested part as it was published live.
+    const saved = toV1(log).rows.flatMap((row) => row.parts as unknown as Part[]).filter((p) => p.type === 'tool' && p.tool !== 'codemode')
+    expect(saved).toEqual([cube!, sphere!, show!])
+  })
+
+  test("the session log maps a direct image_gen call to its own part, not to a script's nested one before it", async () => {
+    heldImages(1)
+    const r = await boot({
+      script: [
+        // A bash call makes the batch sequential: the script (and its nested part) runs before the direct call.
+        { tools: [script("return await tools.image_gen({ action: 'generate', prompts: ['nested'] })"), { tool: 'image_gen', args: { action: 'generate', prompts: ['direct'] } }, { tool: 'bash', args: { command: 'true' } }] },
+        { text: 'done' },
+      ],
+    })
+    const parts = await run(r)
+    expect(parts.map((p) => [p.tool, p.state.input.prompts?.[0] ?? null])).toEqual([['codemode', null], ['image_gen', 'nested'], ['image_gen', 'direct'], ['bash', null]])
+    const direct = parts[2]!
+    const { log } = piSessionLog(r.service.runtime()!.sessionLogSnapshot()!)
+    const block = log.threads[0]!.messages.flatMap((m) => m.blocks).find((b) => b.type === 'tool_call' && b.name === 'image_gen') as { id: string; call_id: string }
+    expect(block).toMatchObject({ id: direct.id, call_id: direct.callID })
+  })
+
+  test('a script cannot pass the turn image cap: its third 4-prompt image_gen call is refused before any request', async () => {
+    const seen = heldImages(1)
+    const r = await boot({
+      script: [
+        script(
+          "const out = []; for (const p of ['a', 'b', 'c']) { try { await tools.image_gen({ action: 'generate', prompts: [p + '1', p + '2', p + '3', p + '4'] }); out.push('ok') } catch (e) { out.push(e.message) } } return out.join('|')",
+        ),
+        { text: 'done' },
+      ],
+    })
+    const parts = await run(r)
+    expect(seen.requests).toBe(8)
+    expect(parts[0]!.state.output).toContain('ok|ok|Image limit for this turn reached (10 images; 8 used, 4 asked).')
+    expect(parts.slice(1).map((p) => [p.tool, p.state.status])).toEqual([
+      ['image_gen', 'completed'],
+      ['image_gen', 'completed'],
+      ['image_gen', 'error'],
+    ])
+  })
+
+  test("direct and script image_gen calls of one turn share the turn image cap", async () => {
+    const seen = heldImages(1)
+    const four = (p: string) => ({ action: 'generate', prompts: [1, 2, 3, 4].map((n) => `${p}${n}`) })
+    const r = await boot({
+      script: [
+        { tool: 'image_gen', args: four('direct') },
+        script("const out = []; for (const p of ['s', 't']) { try { await tools.image_gen({ action: 'generate', prompts: [1, 2, 3, 4].map((n) => p + n) }); out.push('ok') } catch (e) { out.push(e.message) } } return out.join('|')"),
+        { text: 'done' },
+      ],
+    })
+    const parts = await run(r)
+    // 4 direct + 4 from the script; the script's second call (12 images) is refused.
+    expect(seen.requests).toBe(8)
+    expect(parts.find((p) => p.tool === 'codemode')!.state.output).toContain('ok|Image limit for this turn reached (10 images; 8 used, 4 asked).')
+    // The next turn starts again.
+    gateway.script([{ tool: 'image_gen', args: four('next') }, { text: 'done' }])
+    await run(r, 'again')
+    expect(seen.requests).toBe(12)
+  })
+
+  test("edit: deny and ask decide a script's image_gen call like a direct one; an ask attaches to the call's own part", async () => {
+    const call = "const [o] = await Promise.allSettled([tools.image_gen({ action: 'generate', prompts: ['a red cube'] })]); return o.status + ':' + (o.reason?.message ?? JSON.parse(o.value).images[0].prompt)"
+    const denied = await boot({
+      script: [script(call), { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { edit: 'deny', bash: 'allow' } } } }) },
+    })
+    const deniedParts = await run(denied)
+    expect(deniedParts[0]!.state.output).toContain('rejected:The project policy denies this image_gen call.')
+    expect(deniedParts[1]!.state).toMatchObject({ status: 'error', error: 'The project policy denies this image_gen call.' })
+    expect(existsSync(join(denied.workspace, 'output', 'images'))).toBe(false)
+
+    const seen = heldImages(1)
+    const asked = await boot({
+      script: [script(call), { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { image_gen: 'ask' } } } }) },
+    })
+    const rt = asked.service.runtime()!
+    expect((await prompt(asked, rt.rootId, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => rt.permissions.list().length === 1)
+    const [pending] = (await asked.user('/permission').then((res) => res.json())) as Array<Record<string, any>>
+    // image_gen asks under its capability, `edit` (interactions.ts).
+    expect(pending).toMatchObject({ permission: 'edit', metadata: { prompts: ['a red cube'] } })
+    const page = (await asked.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Part[] }> }
+    const nested = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'image_gen')!
+    expect(pending!.tool).toEqual({ messageID: nested.messageID, callID: nested.callID })
+    expect(seen.requests).toBe(0)
+    expect((await asked.user(`/permission/${pending!.id}/reply`, { method: 'POST', body: JSON.stringify({ reply: 'once' }) })).status).toBe(200)
+    await waitFor(() => !rt.busy())
+    const after = (await asked.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Part[] }> }
+    const tools = after.messages.flatMap((m) => m.parts).filter((p) => p.type === 'tool')
+    expect(tools.find((p) => p.tool === 'codemode')!.state.output).toContain('fulfilled:a red cube')
+    expect(tools.find((p) => p.tool === 'image_gen')!.state.status).toBe('completed')
+    expect(seen.requests).toBe(1)
+  })
+
+  test("the project policy still decides a script's image_gen call, on the call's own part", async () => {
+    const r = await boot({
+      script: [script("const [o] = await Promise.allSettled([tools.image_gen({ action: 'generate', prompts: ['a red cube'] })]); return o.status + ':' + o.reason?.message"), { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { image_gen: 'deny' } } } }) },
+    })
+    const parts = await run(r)
+    expect(parts.map((p) => p.tool)).toEqual(['codemode', 'image_gen'])
+    expect(parts[0]!.state.output).toContain('rejected:The project policy denies this image_gen call.')
+    expect(parts[1]!.state).toMatchObject({ status: 'error', error: 'The project policy denies this image_gen call.' })
+    expect(existsSync(join(r.workspace, 'output', 'images'))).toBe(false)
+  })
+
+  test('codemode only still declares image_gen to the model', async () => {
+    const r = await boot({ script: [{ text: 'done' }], env: { KORTIX_PI_CODEMODE: 'only' } })
+    const first = gateway.sampling.length
+    await run(r)
+    expect(gateway.sampling[first]!.toolNames).toContain('image_gen')
+  })
+
   test('the session log keeps one code call with its nested calls, and a restore brings back the store', async () => {
     const r = await boot({
       script: [
@@ -3877,6 +4437,314 @@ describe('pi codemode', () => {
     expect(again.threads[0]!.messages.flatMap((m) => m.blocks).filter((b) => b.type === 'tool_call')).toEqual(before)
     const parts = await run(restored)
     expect(parts.at(-1)!.state.output).toContain('loaded:7')
+  })
+
+  describe('in a subagent', () => {
+    const TASK = { tool: 'task', args: { description: 'Delegate', prompt: 'do it', subagent_type: 'worker' } }
+    /** A v3 set: the session agent `build` delegates to the subagent `worker`. */
+    const agents = (worker: Record<string, unknown>, build: Record<string, unknown> = { permission: 'allow' }) =>
+      JSON.stringify({ schema: 3, default_agent: 'build', agent: { build: { mode: 'primary', ...build }, worker: { mode: 'subagent', description: 'Works', permission: 'allow', ...worker } } })
+    /** The child the root's task call started, and its tool parts. */
+    const child = async (r: Rig): Promise<{ id: string; parts: Part[] }> => {
+      const root = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      const id = toolParts(root, 'task')[0]!.state.metadata.sessionId as string
+      const page = (await r.bearer(`/kortix/runtime/messages/${id}`).then((res) => res.json())) as WirePage
+      return { id, parts: page.messages.flatMap((m) => m.parts).filter((p) => p.type === 'tool') }
+    }
+
+    test('a subagent gets codemode only when its own agent sets it, and its script runs its tools', async () => {
+      const plain = await boot({ script: [TASK, { text: 'child done' }, { text: 'parent done' }], env: { KORTIX_COMPILED_AGENT_CONFIG: agents({}) } })
+      let first = gateway.sampling.length
+      await promptAndSettle(plain, 'go')
+      // The root has codemode (its default); the child's request declares none.
+      expect(gateway.sampling[first]!.toolNames).toContain('codemode')
+      expect(gateway.sampling[first + 1]!.toolNames).toContain('bash')
+      expect(gateway.sampling[first + 1]!.toolNames).not.toContain('codemode')
+
+      const r = await boot({
+        script: [TASK, script("const a = await tools.bash({ command: 'echo one' }); const b = await tools.bash({ command: 'echo two' }); return a.trim() + '+' + b.trim()"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'on' }) },
+      })
+      first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      expect(gateway.sampling[first + 1]!.toolNames).toEqual(expect.arrayContaining(['bash', 'codemode']))
+      expect(String(gateway.sent[first + 1]!.find((m) => m.role === 'system')?.content)).toContain('Use codemode to batch independent tool calls')
+      const { parts } = await child(r)
+      expect(parts.map((p) => p.tool)).toEqual(['codemode'])
+      expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('one+two') })
+      expect(parts[0]!.state.metadata.calls.map((c: Part) => [c.name, c.status])).toEqual([['bash', 'ok'], ['bash', 'ok']])
+      // The child's next request carries one tool result: the script's output.
+      const results = gateway.sent[first + 2]!.filter((m) => m.role === 'tool')
+      expect(results).toHaveLength(1)
+      expect(String(results[0]!.content)).toContain('one+two')
+      // The session log exports the child's script as one code call.
+      const { log } = piSessionLog(r.service.runtime()!.sessionLogSnapshot()!)
+      expect(() => upcastSessionLog(log)).not.toThrow()
+      expect(log.threads.flatMap((t) => t.messages.flatMap((m) => m.blocks)).filter((b) => b.type === 'tool_call' && b.name === 'codemode')).toHaveLength(1)
+    })
+
+    test("a subagent's script call reaches extension tool_call handlers as nested (parentToolCallId)", async () => {
+      // A child has no AgentSession, so childExtensionGate forwards its calls to the runner's tool_call
+      // handlers by hand. Each nested script call must carry parentToolCallId (the codemode call), as the
+      // root's nested calls do, so an extension can tell a script call from a direct one. The child's own
+      // gate already policed the call (stricter than rootRule), so nestedCallGate skips it — no double decision.
+      let logPath = ''
+      const r = await boot({
+        script: [TASK, script("return (await tools.bash({ command: 'echo nested' })).trim()"), { text: 'child done' }, { text: 'parent done' }],
+        // v3 discovers no `.pi/extensions`: register the extension as a project package.
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'on' }), KORTIX_PI_PACKAGES: JSON.stringify(['./.pi/extensions/watch.ts']) },
+        prepare: (workspace) => {
+          logPath = join(workspace, 'calls.log')
+          repoExtension(
+            workspace,
+            'watch',
+            `import { appendFileSync } from 'node:fs'
+export default function (pi) {
+  pi.on('tool_call', (event) => {
+    appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ name: event.toolName, id: event.toolCallId, parent: event.parentToolCallId ?? null }) + '\\n')
+  })
+}
+`,
+          )
+        },
+      })
+      await promptAndSettle(r, 'go')
+      const events = readFileSync(logPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line) as { name: string; id: string; parent: string | null })
+      const codemode = events.find((e) => e.name === 'codemode')
+      const bash = events.find((e) => e.name === 'bash')
+      expect(codemode?.parent).toBeNull() // the child's direct codemode call has no parent
+      expect(bash?.parent).toBe(codemode!.id) // the nested script call is parented to the codemode call
+      expect(bash!.id.startsWith(codemode!.id + '/')).toBe(true)
+    })
+
+    test("a subagent in 'only' sees codemode alone, and its script still reaches the direct tools", async () => {
+      const r = await boot({
+        script: [TASK, script("return (await tools.bash({ command: 'echo only' })).trim()"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only' }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      // The child's request offers codemode but NOT the direct tools: `only` forces scripts.
+      expect(gateway.sampling[first + 1]!.toolNames).toContain('codemode')
+      expect(gateway.sampling[first + 1]!.toolNames).not.toContain('bash')
+      expect(String(gateway.sent[first + 1]!.find((m) => m.role === 'system')?.content)).toContain('Every other tool runs from a codemode script')
+      // The script still reaches bash through the executor, and only its output returns.
+      const { parts } = await child(r)
+      expect(parts.map((p) => p.tool)).toEqual(['codemode'])
+      expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('only') })
+      expect(parts[0]!.state.metadata.calls.map((c: Part) => [c.name, c.status])).toEqual([['bash', 'ok']])
+    })
+
+    test("a subagent in 'only' calls show directly: its scripts cannot hide presentation", async () => {
+      const r = await boot({
+        script: [TASK, script("return await tools.show({ action: 'show', type: 'text', content: 'Hidden' })"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only' }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      expect(gateway.sampling[first + 1]!.toolNames.sort()).toEqual(['codemode', 'show'])
+      const [part] = (await child(r)).parts
+      expect(part!.state.status).toBe('error')
+      expect(part!.state.error).toContain('show')
+    })
+
+    test("a subagent in 'only' whose show is denied is not told to call show directly", async () => {
+      // Finding C: the only-mode guideline must not say "Call show directly" when the agent has no show.
+      const r = await boot({
+        script: [TASK, script("return (await tools.bash({ command: 'echo noshow' })).trim()"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only', permission: { '*': 'allow', show: 'deny' } }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      const offered = gateway.sampling[first + 1]!.toolNames
+      expect(offered).toContain('codemode')
+      expect(offered).not.toContain('show')
+      const system = String(gateway.sent[first + 1]!.find((m) => m.role === 'system')?.content)
+      expect(system).toContain('Every tool call runs from a codemode script')
+      expect(system).not.toContain('Call show directly')
+    })
+
+    test("a subagent in 'only' with a strict tool allowlist still gets codemode and runs its script", async () => {
+      // The worker's tools are the COMPILED allowlist record the API produces from `tools: ['bash']`
+      // (resolveAgentTools → {'*': false, bash: true}), NOT a raw array — a raw array has no '*' key,
+      // so `toolAllowed` would wrongly allow codemode and hide this bug. `only` must wire codemode AND
+      // let the codemode call through the per-call gate; the allowlist still gates bash et al.
+      // Regression (2f61b78): the gate denied the codemode call itself, bricking the worker — it saw
+      // codemode and show but every call was refused, worse than falling through to the direct tools.
+      const r = await boot({
+        script: [TASK, script("return (await tools.bash({ command: 'echo locked' })).trim()"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only', tools: { '*': false, bash: true } }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      // The child sees codemode and show (show from baseTools, not the allowlist), never bash.
+      const offered = gateway.sampling[first + 1]!.toolNames
+      expect(offered).toEqual(expect.arrayContaining(['codemode', 'show']))
+      expect(offered).not.toContain('bash')
+      expect(String(gateway.sent[first + 1]!.find((m) => m.role === 'system')?.content)).toContain('Every other tool runs from a codemode script')
+      // The codemode call is NOT denied by the allowlist, and its script reaches bash (allowlisted).
+      const { parts } = await child(r)
+      expect(parts.map((p) => p.tool)).toEqual(['codemode'])
+      expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('locked') })
+      expect(parts[0]!.state.metadata.calls.map((c: Part) => [c.name, c.status])).toEqual([['bash', 'ok']])
+    })
+
+    test("a subagent in 'only' whose policy denies codemode keeps its direct tools, not bricked", async () => {
+      // A deny rule on codemode (here the subagent's own; a session-level deny behaves the same) must
+      // skip codemode wiring entirely. Otherwise `only` would hide the direct tools and then refuse
+      // every codemode call — the same brick the allowlist exemption removed. The child keeps its
+      // direct tools instead.
+      const r = await boot({
+        script: [TASK, { tool: 'bash', args: { command: 'echo nocode' } }, { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only', permission: { '*': 'allow', codemode: 'deny' } }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      // codemode is not wired: the child sees its direct tools, not codemode.
+      const offered = gateway.sampling[first + 1]!.toolNames
+      expect(offered).toContain('bash')
+      expect(offered).not.toContain('codemode')
+      // The direct bash call runs — the child is functional, not bricked.
+      const { parts } = await child(r)
+      expect(parts.map((p) => p.tool)).toEqual(['bash'])
+      expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('nocode') })
+    })
+
+    test("a subagent in 'only' does not get codemode the SESSION agent's allowlist denies", async () => {
+      // The exemption covers the subagent's OWN allowlist, not the session (root) agent's: delegating
+      // must not unlock codemode the session denies. Here the root (build) allows only bash.
+      const r = await boot({
+        script: [TASK, { tool: 'bash', args: { command: 'echo rootgate' } }, { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only' }, { permission: 'allow', tools: { '*': false, bash: true } }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      const offered = gateway.sampling[first + 1]!.toolNames
+      expect(offered).not.toContain('codemode')
+      expect(offered).toContain('bash')
+    })
+
+    test("a session agent set to codemode off does not disable a subagent's own only", async () => {
+      // For v3 the API fills KORTIX_PI_CODEMODE from the SESSION agent's codemode, so it is not an
+      // operator kill-switch. A lead with `codemode: off` must not turn codemode off for a subagent
+      // that sets `only` itself — the subagent's mode comes from its own agent.
+      const r = await boot({
+        script: [TASK, script("return (await tools.bash({ command: 'echo leadoff' })).trim()"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_PI_CODEMODE: 'off', KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only' }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      // The subagent still gets codemode despite the session-level off.
+      const offered = gateway.sampling[first + 1]!.toolNames
+      expect(offered).toContain('codemode')
+      expect(offered).not.toContain('bash')
+      const { parts } = await child(r)
+      expect(parts.map((p) => p.tool)).toEqual(['codemode'])
+      expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('leadoff') })
+    })
+
+    test("a subagent in 'on' with a strict tool allowlist gets codemode beside its tools", async () => {
+      // The allowlist exemption applies in `on` too: a strict `{'*': false, bash: true}` omits codemode,
+      // but the subagent still gets it alongside its direct tools (not instead of them).
+      const r = await boot({
+        script: [TASK, script("return (await tools.bash({ command: 'echo onmode' })).trim()"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'on', tools: { '*': false, bash: true } }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      expect(gateway.sampling[first + 1]!.toolNames).toEqual(expect.arrayContaining(['codemode', 'bash']))
+      const { parts } = await child(r)
+      expect(parts.map((p) => p.tool)).toEqual(['codemode'])
+      expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('onmode') })
+    })
+
+    test("a subagent with tools: none gets no codemode or show (the author wants no tools)", async () => {
+      // `tools: none` compiles to `{'*': false}` with nothing allowed — distinct from an allowlist,
+      // which always has a `true`. The exemption must NOT slip codemode (nothing to call) or show in.
+      const r = await boot({
+        script: [TASK, { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only', tools: { '*': false } }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      const offered = gateway.sampling[first + 1]!.toolNames
+      expect(offered).not.toContain('codemode')
+      expect(offered).not.toContain('show')
+    })
+
+    test("a subagent whose permission wildcard-denies codemode does not get it (matches the root)", async () => {
+      // `permission: { '*': deny, bash: allow }` matches codemode through '*', so codemode is not wired —
+      // consistent with the root. The exemption covers the tool allowlist default, never a permission deny.
+      const r = await boot({
+        script: [TASK, { tool: 'bash', args: { command: 'echo wild' } }, { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'only', permission: { '*': 'deny', bash: 'allow' } }) },
+      })
+      const first = gateway.sampling.length
+      await promptAndSettle(r, 'go')
+      const offered = gateway.sampling[first + 1]!.toolNames
+      expect(offered).not.toContain('codemode')
+      expect(offered).toContain('bash')
+    })
+
+    test("a subagent's script call is denied by the subagent's rules and by the session's", async () => {
+      const r = await boot({
+        script: [
+          TASK,
+          script("const out = await Promise.allSettled([tools.bash({ command: 'rm -rf session-keep' }), tools.bash({ command: 'rm -rf own-keep' })]); return out.map((o) => o.status + ':' + (o.reason?.message ?? '')).join('\\n')"),
+          { text: 'child done' },
+          { text: 'parent done' },
+        ],
+        env: {
+          KORTIX_COMPILED_AGENT_CONFIG: agents(
+            { codemode: 'on', permission: { '*': 'allow', bash: { 'rm -rf own*': 'deny', '*': 'allow' } } },
+            { permission: { '*': 'allow', bash: { 'rm -rf session*': 'deny', '*': 'allow' } } },
+          ),
+        },
+        prepare: (workspace) => {
+          for (const dir of ['session-keep', 'own-keep']) {
+            mkdirSync(join(workspace, dir))
+            writeFileSync(join(workspace, dir, 'file'), 'x')
+          }
+        },
+      })
+      await promptAndSettle(r, 'clean up')
+      for (const dir of ['session-keep', 'own-keep']) expect(existsSync(join(r.workspace, dir, 'file'))).toBe(true)
+      const [part] = (await child(r)).parts
+      expect(part!.state.output.match(/rejected:The project policy denies this bash call\./g)).toHaveLength(2)
+    })
+
+    test("an ask rule holds a subagent's script call until the product replies", async () => {
+      const r = await boot({
+        script: [TASK, script("return await tools.bash({ command: 'printf ran > gated.txt && cat gated.txt' })"), { text: 'child done' }, { text: 'parent done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'on', permission: { '*': 'allow', bash: 'ask' } }) },
+      })
+      const rt = r.service.runtime()!
+      expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+      await waitFor(() => rt.permissions.list().length === 1)
+      const [pending] = (await r.user('/permission').then((res) => res.json())) as Array<Record<string, any>>
+      expect(pending).toMatchObject({ permission: 'bash' })
+      expect(existsSync(join(r.workspace, 'gated.txt'))).toBe(false)
+      expect((await r.user(`/permission/${pending!.id}/reply`, { method: 'POST', body: JSON.stringify({ reply: 'once' }) })).status).toBe(200)
+      await waitFor(() => !rt.busy())
+      expect(readFileSync(join(r.workspace, 'gated.txt'), 'utf8')).toBe('ran')
+      expect((await child(r)).parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('ran') })
+    })
+
+    test("a subagent's script cannot start another subagent", async () => {
+      const r = await boot({
+        script: [
+          TASK,
+          script("try { await tools.task({ description: 'x', prompt: 'x', subagent_type: 'worker' }); return 'started' } catch (e) { return 'refused: ' + e.message }"),
+          { text: 'child done' },
+          { text: 'parent done' },
+        ],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'on' }) },
+      })
+      await promptAndSettle(r, 'go')
+      const { id, parts } = await child(r)
+      expect(parts[0]!.state.output).toContain('refused: ')
+      expect(((await r.user('/session').then((res) => res.json())) as Array<{ id: string }>).map((s) => s.id)).toEqual([r.service.runtime()!.rootId, id])
+    })
   })
 })
 
@@ -3923,7 +4791,9 @@ describe('kortix.yaml v3 on pi', () => {
     expect(await skillNames(r)).toEqual(['deploy', 'review'])
     // `subagents` is the runtime's own task tool, not a project extension.
     expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['subagents'], failed: [] })
-    expect(await r.user('/command').then((res) => res.json())).toEqual([])
+    // No prompt template from a harness folder: the registered skills are the only rows.
+    const rows = (await r.user('/command').then((res) => res.json())) as Array<{ name: string; source: string }>
+    expect(rows.map((c) => [c.source, c.name])).toEqual([['skill', 'deploy'], ['skill', 'review']])
     const before = gateway.sent.length
     await promptAndSettle(r, 'hello')
     const system = systemSent(gateway.sent[before]!)
@@ -3951,7 +4821,9 @@ describe('kortix.yaml v3 on pi', () => {
     expect(names).toContain('folder-harnessespi')
     expect(names).toContain('unregistered')
     expect(names).not.toContain('review')
-    expect(((await r.user('/command').then((res) => res.json())) as Array<{ name: string }>).map((c) => c.name)).toEqual(['folder-prompt'])
+    const rows = (await r.user('/command').then((res) => res.json())) as Array<{ name: string; source: string }>
+    expect(rows.filter((c) => c.source === 'command').map((c) => c.name)).toEqual(['folder-prompt'])
+    expect(rows.filter((c) => c.source === 'skill').map((c) => c.name).sort()).toEqual([...names].sort())
   })
 
   test('the per-agent skill grant still filters the registered skills', async () => {
@@ -4075,5 +4947,59 @@ describe('command template expansion', () => {
     ['no arguments leave a plain template alone', 'Ship it.', '', 'Ship it.'],
   ])('%s', (_name, template, args, expected) => {
     expect(expandCommandTemplate(template, args)).toBe(expected)
+  })
+})
+
+describe('pi Changes surface (/project/current vcs, /vcs/diff)', () => {
+  const sh = (cwd: string, ...args: string[]) => {
+    const r = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.test', ...args], { cwd, encoding: 'utf8' })
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`)
+  }
+
+  test('a non-git workspace reports no vcs and an empty diff', async () => {
+    const r = await boot({ script: [] })
+    const project = (await r.user('/project/current').then((res) => res.json())) as Record<string, unknown>
+    expect(project.worktree).toBe(r.workspace)
+    expect(project).not.toHaveProperty('vcs')
+    expect(await r.user('/vcs/diff?mode=branch').then((res) => res.json())).toEqual([])
+  })
+
+  test('a git workspace reports vcs git and lists committed, modified, deleted and new files against the base', async () => {
+    const r = await boot({
+      script: [],
+      env: { KORTIX_DEFAULT_BRANCH: 'main' },
+      prepare: (ws) => {
+        writeFileSync(join(ws, '.gitignore'), '.state/\n.pi-agent/\n.pi-packages/\n')
+        writeFileSync(join(ws, 'kept.txt'), 'one\ntwo\n')
+        writeFileSync(join(ws, 'gone.txt'), 'bye\n')
+        sh(ws, 'init', '-q', '-b', 'main')
+        sh(ws, 'add', '.')
+        sh(ws, 'commit', '-q', '-m', 'base')
+        sh(ws, 'checkout', '-q', '-b', 'kortix/session')
+        writeFileSync(join(ws, 'committed.txt'), 'a\n')
+        sh(ws, 'add', 'committed.txt')
+        sh(ws, 'commit', '-q', '-m', 'session work')
+        writeFileSync(join(ws, 'kept.txt'), 'one\nTWO\nthree\n')
+        rmSync(join(ws, 'gone.txt'))
+        writeFileSync(join(ws, 'new file.txt'), 'x\ny\n')
+      },
+    })
+    const project = (await r.user('/project/current').then((res) => res.json())) as Record<string, unknown>
+    expect(project.vcs).toBe('git')
+
+    const branch = (await r.user('/vcs/diff?mode=branch').then((res) => res.json())) as Array<Record<string, any>>
+    expect(branch.map(({ file, status, additions, deletions }) => ({ file, status, additions, deletions }))).toEqual([
+      { file: 'committed.txt', status: 'added', additions: 1, deletions: 0 },
+      { file: 'gone.txt', status: 'deleted', additions: 0, deletions: 1 },
+      { file: 'kept.txt', status: 'modified', additions: 2, deletions: 1 },
+      { file: 'new file.txt', status: 'added', additions: 2, deletions: 0 },
+    ])
+    expect(branch.find((f) => f.file === 'kept.txt')!.patch).toContain('diff --git a/kept.txt b/kept.txt')
+    expect(branch.find((f) => f.file === 'kept.txt')!.patch).toContain('+TWO')
+    expect(branch.find((f) => f.file === 'new file.txt')!.patch).toContain('+++ b/new file.txt')
+
+    // `git` mode is the working tree only: the committed file is not in it.
+    const working = (await r.user('/vcs/diff?mode=git').then((res) => res.json())) as Array<{ file: string }>
+    expect(working.map((f) => f.file)).toEqual(['gone.txt', 'kept.txt', 'new file.txt'])
   })
 })

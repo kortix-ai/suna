@@ -14,7 +14,20 @@ import { withAlpha } from '@/lib/utils/theme';
 /** The drawer fade's height above the safe-area inset: 16pt gap + 44pt controls + 36pt above them. */
 const DRAWER_FADE_HEIGHT = 16 + 44 + 36;
 /** The composer fade: a quarter of the drawer's, plus 15%. */
-export const COMPOSER_FADE_SCALE = 0.2875;
+const COMPOSER_FADE_SCALE = 0.2875;
+
+/** The composer's own gap under its card: `pb-3` in `SessionChatInput`, and its gap above the keyboard. */
+const COMPOSER_GAP = 12;
+
+/**
+ * The padding under a thread composer's `pb-3` at rest (KRTX-2930). The card
+ * rests on the safe-area line: `max(inset, 12)` from the screen edge, never
+ * `inset + 12`. The inset already holds the home indicator's clearance, so the
+ * 12pt gap is not stacked on top of it. Project home uses the same rule.
+ */
+export function composerSafeAreaPadding(insetBottom: number): number {
+  return Math.max(0, insetBottom - COMPOSER_GAP);
+}
 
 export function ComposerBottomFade({
   background,

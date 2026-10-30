@@ -1,19 +1,19 @@
 'use client';
 
-import { useWallpaperTheme } from '@/components/ui/wallpaper-shaders';
-import { cn } from '@/lib/utils';
+import { useWallpaperTheme } from '@kortix/ui/wallpaper-shaders';
+import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
 import dynamic from 'next/dynamic';
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useHasBeenSeen } from './star-count';
 
-const Shader = dynamic(() => import('@/lib/shaders-react').then((m) => m.Shader), {
+const Shader = dynamic(() => import('shaders/react').then((m) => m.Shader), {
   ssr: false,
 });
-const Dither = dynamic(() => import('@/lib/shaders-react').then((m) => m.Dither), {
+const Dither = dynamic(() => import('shaders/react').then((m) => m.Dither), {
   ssr: false,
 });
-const LinearGradient = dynamic(() => import('@/lib/shaders-react').then((m) => m.LinearGradient), {
+const LinearGradient = dynamic(() => import('shaders/react').then((m) => m.LinearGradient), {
   ssr: false,
 });
 
@@ -96,7 +96,7 @@ const AREA_CLIP_PATH = `${smoothPath(
  * Decorative backdrop for the open-source section: a faint line chart that
  * wipes in left to right — 0 → today's stars — in sync with the count-up.
  *
- * The fill under the curve is the house Bayer dither (`@/lib/shaders-react`
+ * The fill under the curve is the house Bayer dither (`shaders/react`
  * `Dither`, same colors/params as the CTA's `DitherShader`): a vertical
  * luminance ramp quantized to ordered pixels, clipped to the under-curve
  * region. Density is highest at the line and dissolves toward the baseline,

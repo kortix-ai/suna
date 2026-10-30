@@ -1,6 +1,6 @@
 // Standard Webhooks (standardwebhooks.com) signature verification.
 //
-// Two senders reach this API with that scheme — AgentMail (inbound email) and
+// Two senders reach this API with that scheme — Resend (inbound email) and
 // Supabase Auth (the send-email hook) — so the HMAC comparison lives in one
 // place instead of once per integration. Both accept the legacy `svix-*`
 // header names as well as the standardized `webhook-*` ones.

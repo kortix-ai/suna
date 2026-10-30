@@ -558,7 +558,10 @@ describe('slack CLI', () => {
     const out = asObject(
       await runSlack(['thread', '--channel', 'C1', '--ts', '111.222'], { ok: false }),
     );
-    expect(out).toMatchObject({ ok: false, error: 'Missing authentication token' });
+    expect(out).toMatchObject({
+      ok: false,
+      error: 'Token rejected — Missing authentication token. Run `kortix login` to re-authenticate.',
+    });
     expect(world.connector.map((c) => `${c.connector}.${c.action}`)).toEqual([
       `${SLACK_CHANNEL_CONNECTOR_SLUG}.get_thread`,
     ]);

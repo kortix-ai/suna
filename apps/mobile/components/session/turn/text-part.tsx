@@ -27,17 +27,20 @@ export const TextPartBlock = React.memo(function TextPartBlock({
   text,
   isDark,
   isStreaming = false,
+  revealKey,
 }: {
   text: string;
   isDark: boolean;
   /** The part can still grow: an unclosed code fence renders as growing. */
   isStreaming?: boolean;
+  /** `message_id:block_id`: a remount resumes the reveal instead of typing the text again (KRTX-2933). */
+  revealKey?: string;
 }) {
   // The reply reveals word by word at the speed it arrives, not one network
   // chunk at a time (`stream-pacer.ts`, the web pacer's mobile copy). Until
   // the paced text has caught up, the part still renders as streaming, so
   // the switch to the settled render changes nothing on screen.
-  const { text: paced, streaming } = useStreamingCadence(text, isStreaming);
+  const { text: paced, streaming } = useStreamingCadence(text, isStreaming, revealKey);
   const shown = useMemo(() => (streaming ? holdBackTableHeader(paced) : paced), [paced, streaming]);
   const detectedUrls = useMemo(() => detectLocalhostUrls(shown), [shown]);
   const segments = useMemo(() => assistantSegments(shown, streaming), [shown, streaming]);

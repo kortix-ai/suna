@@ -4,7 +4,6 @@ import { Hono } from 'hono';
 
 mock.module('../config', () => ({
   config: {
-    LLM_GATEWAY_ENABLED: true,
     LLM_GATEWAY_PROXY_TARGET: 'http://gateway.test',
     LLM_GATEWAY_PROXY_PORT: 0,
     KORTIX_LLM_GATEWAY_REQS_PER_MIN: 2,

@@ -3,7 +3,7 @@
 import { m, type MotionProps, useReducedMotion } from 'motion/react';
 import { useEffect, useId, useRef, useState } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 import { buildCells, type Cell, CELL_FONT_SIZE, VIEW_H, VIEW_W } from './kortix-hyper-logo.cells';
 

@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { CaptureDevice } from '@kortix/sdk';
 import {
-  dayWindow,
   durationParts,
   indexAtOrBefore,
   localDayOf,
@@ -9,14 +8,6 @@ import {
 import { deviceStatus } from './devices/device-status';
 
 describe('capture time', () => {
-  test('a local day window runs from local midnight to the next local midnight', () => {
-    const { from, to } = dayWindow('2026-10-03');
-    expect(localDayOf(from)).toBe('2026-10-03');
-    expect(new Date(from).getHours()).toBe(0);
-    expect(localDayOf(to)).toBe('2026-10-04');
-    expect(new Date(to).getHours()).toBe(0);
-  });
-
   test('durations round to the minute; the moment lookup finds the last item at or before a time', () => {
     expect(durationParts(3_725)).toEqual({ hours: 1, minutes: 2 });
     expect(durationParts(-5)).toEqual({ hours: 0, minutes: 0 });

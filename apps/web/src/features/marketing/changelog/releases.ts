@@ -4,11 +4,29 @@ import { unstable_cache } from 'next/cache';
 
 import { runtimeConfigIsBakedAtBuild } from '@/lib/runtime-config-mode';
 
-import { CHANGELOG_PAGE_SIZE, paginateReleases } from './paging';
-import { renderReleaseMarkdown } from './render';
-import type { ChangelogPage, ChangelogRelease, GitHubRelease } from './types';
+import { CHANGELOG_PAGE_SIZE, changelogPageHref, paginateReleases } from './paging';
+import { CHANGELOG_REPO, renderReleaseMarkdown } from './render';
+import type {
+  ChangelogPage,
+  ChangelogRelease,
+  ChangelogWeek,
+  ChangelogWeekDetail,
+  ChangelogWeekly,
+  GitHubRelease,
+} from './types';
+import {
+  groupByWeek,
+  isoWeekId,
+  parseSections,
+  pickHighlights,
+  splitLead,
+  weekSlug,
+  type ReleaseSections,
+  type WeekWindow,
+} from './weekly';
+import { readWeeklyBriefs, type WeeklyBriefs } from './weekly-briefs';
 
-export const CHANGELOG_REPO = 'kortix-ai/suna';
+export { CHANGELOG_REPO };
 
 /** Seconds a rendered changelog page is served before it is rebuilt. */
 export const CHANGELOG_REVALIDATE_SECONDS = 3600;
@@ -99,7 +117,7 @@ export async function getChangelogPage(page: number): Promise<ChangelogPage | nu
     // shapes an entry: bump `v1` when ChangelogPage changes shape.
     return await unstable_cache(
       () => buildChangelogPage(page),
-      ['changelog-page', 'v1', `size-${CHANGELOG_PAGE_SIZE}`, String(page)],
+      ['changelog-page', 'v2', `size-${CHANGELOG_PAGE_SIZE}`, String(page)],
       { revalidate: CHANGELOG_REVALIDATE_SECONDS, tags: ['changelog'] },
     )();
   } catch (error) {
@@ -117,4 +135,135 @@ export async function getChangelogPage(page: number): Promise<ChangelogPage | nu
     if (page === 1) return { page: 1, pageCount: 1, releases: [], tagPages: {} };
     throw error;
   }
+}
+
+/** Weeks on `/changelog`, each with its own page. Older weeks live on Release history. */
+export const WEEKLY_WEEK_COUNT = 12;
+
+interface WeekSource {
+  window: WeekWindow;
+  slug: string;
+  /** Newest first, each with its parsed sections. */
+  releases: { release: GitHubRelease; sections: ReleaseSections }[];
+  /** Index of the release that names the week: the most New items, ties to the newest. */
+  lead: number;
+}
+
+/** The newest `WEEKLY_WEEK_COUNT` weeks, parsed and named. */
+function weekSources(all: GitHubRelease[]): WeekSource[] {
+  return groupByWeek(all)
+    .slice(0, WEEKLY_WEEK_COUNT)
+    .map(({ window, releases }) => {
+      const parsed = releases.map((release) => ({
+        release,
+        sections: parseSections(release.body),
+      }));
+      const lead = parsed.reduce(
+        (best, r, i) => (r.sections.new.length > parsed[best].sections.new.length ? i : best),
+        0,
+      );
+      return { window, slug: weekSlug(window), releases: parsed, lead };
+    });
+}
+
+async function weekSummary(
+  source: WeekSource,
+  tagPages: Record<string, number>,
+  currentWeek: string,
+  briefs: WeeklyBriefs,
+): Promise<ChangelogWeek> {
+  const { window, releases, lead, slug } = source;
+  const count = (key: keyof ReleaseSections) =>
+    releases.reduce((sum, r) => sum + r.sections[key].length, 0);
+  const highlights = await Promise.all(
+    pickHighlights(releases.map((r) => r.sections.new)).map(async (bullet) => {
+      const { title, body } = splitLead(bullet);
+      return { title, html: body ? await renderReleaseMarkdown(body) : '' };
+    }),
+  );
+  return {
+    id: window.id,
+    slug,
+    start: window.start.toISOString(),
+    end: window.end.toISOString(),
+    inProgress: window.id === currentWeek,
+    headline: releaseHeadline(releases[lead].release),
+    releases: releases.map(({ release }) => ({
+      tag: release.tag_name,
+      headline: releaseHeadline(release),
+      publishedAt: release.published_at!,
+      href: `${changelogPageHref(tagPages[release.tag_name] ?? 1)}#${release.tag_name}`,
+    })),
+    highlights,
+    summary: briefs[window.id] ?? null,
+    counts: { new: count('new'), improved: count('improved'), fixed: count('fixed') },
+  };
+}
+
+/** One section merged across the week's releases → one rendered list, or `null` when empty. */
+function renderBullets(bullets: string[]): Promise<string | null> {
+  if (bullets.length === 0) return Promise.resolve(null);
+  return renderReleaseMarkdown(bullets.map((b) => `- ${b}`).join('\n'));
+}
+
+async function buildWeeklyChangelog(): Promise<ChangelogWeekly> {
+  const [all, briefs] = await Promise.all([fetchReleases(), readWeeklyBriefs()]);
+  const { tagPages } = paginateReleases(all, 1);
+  const currentWeek = isoWeekId(new Date());
+  const weeks = await Promise.all(
+    weekSources(all).map((source) => weekSummary(source, tagPages, currentWeek, briefs)),
+  );
+  return { weeks, tagPages };
+}
+
+async function buildWeekDetail(slug: string): Promise<ChangelogWeekDetail | null> {
+  const [all, briefs] = await Promise.all([fetchReleases(), readWeeklyBriefs()]);
+  const source = weekSources(all).find((w) => w.slug === slug);
+  if (!source) return null;
+  const { tagPages } = paginateReleases(all, 1);
+  const merged = (key: keyof ReleaseSections) => source.releases.flatMap((r) => r.sections[key]);
+  const [week, newHtml, improvedHtml, fixedHtml] = await Promise.all([
+    weekSummary(source, tagPages, isoWeekId(new Date()), briefs),
+    renderBullets(merged('new')),
+    renderBullets(merged('improved')),
+    renderBullets(merged('fixed')),
+  ]);
+  return { week, sections: { new: newHtml, improved: improvedHtml, fixed: fixedHtml } };
+}
+
+/**
+ * The newest `WEEKLY_WEEK_COUNT` weeks that had a production release, newest
+ * first, for `/changelog`. Cached and failure-handled like `getChangelogPage`:
+ * a GitHub outage is never cached, ISR keeps the last good page, and other
+ * renders get an empty list.
+ */
+export async function getWeeklyChangelog(): Promise<ChangelogWeekly> {
+  try {
+    // Bump the version when ChangelogWeekly changes shape: the data cache outlives deploys.
+    return await unstable_cache(buildWeeklyChangelog, ['changelog-weekly', 'v7'], {
+      revalidate: CHANGELOG_REVALIDATE_SECONDS,
+      tags: ['changelog'],
+    })();
+  } catch (error) {
+    if (runtimeConfigIsBakedAtBuild() && process.env.NEXT_PHASE !== 'phase-production-build') {
+      throw error;
+    }
+    return { weeks: [], tagPages: {} };
+  }
+}
+
+/**
+ * One week with every New, Improved and Fixed item, for `/changelog/<slug>`.
+ * `null` for a slug that is not one of the listed weeks. The slug is checked
+ * against the cached week list first, so an unknown URL never reaches GitHub
+ * or adds a cache entry. Throws when GitHub is unreachable: the page answers
+ * 500, which crawlers treat as transient (same as a later Release history page).
+ */
+export async function getChangelogWeek(slug: string): Promise<ChangelogWeekDetail | null> {
+  const { weeks } = await getWeeklyChangelog();
+  if (!weeks.some((w) => w.slug === slug)) return null;
+  return unstable_cache(() => buildWeekDetail(slug), ['changelog-week', 'v5', slug], {
+    revalidate: CHANGELOG_REVALIDATE_SECONDS,
+    tags: ['changelog'],
+  })();
 }

@@ -1,0 +1,2 @@
+// The app icon of every Kortix Capture exe (build.rs embeds it on Windows).
+1 ICON "app.ico"

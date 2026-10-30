@@ -34,7 +34,10 @@ export interface TunnelConnection {
   sandboxId: string | null;
   name: string;
   status: 'online' | 'offline' | 'connecting';
+  /** What Kortix may use now: approved by the owner AND served by the agent. */
   capabilities: string[];
+  /** What the owner approved (`useUpdateTunnelConnection` changes it). Absent on older servers. */
+  approvedCapabilities?: string[];
   machineInfo: Record<string, unknown>;
   lastHeartbeatAt: string | null;
   isLive: boolean;

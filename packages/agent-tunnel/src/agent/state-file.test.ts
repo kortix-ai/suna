@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -38,5 +38,30 @@ describe('agent state file', () => {
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
+  });
+});
+
+describe('state PID liveness', () => {
+  test.each([null, '1', 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])('rejects invalid PID %p without probing', (pid) => {
+    const home = mkdtempSync(join(tmpdir(), 'agent-tunnel-state-'));
+    writeFileSync(stateFilePath(home), JSON.stringify({ status: 'online', pid }));
+    const kill = spyOn(process, 'kill');
+    try {
+      expect(readAgentState(home)?.status).toBe('offline');
+      expect(kill).not.toHaveBeenCalled();
+    } finally { kill.mockRestore(); rmSync(home, { recursive: true, force: true }); }
+  });
+
+  test.each(['live', 'ESRCH', 'EPERM'])('handles %s', (result) => {
+    const home = mkdtempSync(join(tmpdir(), 'agent-tunnel-state-'));
+    writeFileSync(stateFilePath(home), JSON.stringify({ status: 'online', pid: process.pid }));
+    const kill = spyOn(process, 'kill').mockImplementation(() => {
+      if (result !== 'live') throw Object.assign(new Error(result), { code: result });
+      return true;
+    });
+    try {
+      expect(readAgentState(home)?.status).toBe(result === 'ESRCH' ? 'offline' : 'online');
+      expect(kill).toHaveBeenCalledWith(process.pid, 0);
+    } finally { kill.mockRestore(); rmSync(home, { recursive: true, force: true }); }
   });
 });

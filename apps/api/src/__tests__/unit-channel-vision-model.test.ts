@@ -3,6 +3,7 @@ import {
   capabilityReadsImages,
   channelTurnModel,
   grantAllowsCodex,
+  imageTurnModel,
   promptModelOverride,
   resetVisionProbeCacheForTest,
 } from '../channels/vision-model';
@@ -281,18 +282,49 @@ describe('channelTurnModel', () => {
   });
 });
 
+/**
+ * The model of a channel message that carries an image (the conversation core's file turns).
+ * Each case names the line of `imageTurnModel` it holds.
+ */
+describe('imageTurnModel', () => {
+  const turn = { projectId: 'p1', accountId: 'a1', userId: 'u1' };
+  beforeEach(() => {
+    resetVisionProbeCacheForTest();
+    platformDefault = 'deepseek-v4-flash';
+  });
+
+  // The gateway resolves a shared session with no one's personal keys (personal-resources.ts).
+  test('a shared session probes with no personal keys; a private one with its owner`s', async () => {
+    probeInputs.length = 0;
+    await imageTurnModel({ ...turn, currentModel: 'codex/gpt-6-astra', visibility: 'project' });
+    await imageTurnModel({ ...turn, currentModel: 'codex/gpt-6-astra', visibility: 'private' });
+    expect(probeInputs.map((input) => input.personalUserId)).toEqual([null, 'u1']);
+  });
+
+  // The running agent's grant is not read here, and not knowing it is not permission.
+  test('a codex model that reads images is skipped: the turn goes blind instead', async () => {
+    expect(await imageTurnModel({ ...turn, currentModel: 'deepseek-v4-flash', visibility: 'project' })).toEqual({ model: null, blind: true });
+  });
+
+  // No other model reads images, and none needs to: the session's own model does.
+  test('a session whose model reads images needs no replacement and is not told it is blind', async () => {
+    platformDefault = 'codex/gpt-6-astra';
+    expect(await imageTurnModel({ ...turn, currentModel: null, visibility: 'project' })).toEqual({ model: null, blind: false });
+  });
+});
+
+/** The platform default; a test that changes it sets it back in its beforeEach. */
+let platformDefault = 'deepseek-v4-flash';
+
 mock.module('../config', () => ({
   config: { LLM_GATEWAY_VISION_MODEL: 'gpt-5.6-luna' },
 }));
 
 mock.module('../llm-gateway/models/served-managed-models', () => ({
-  platformDefaultModelId: () => 'deepseek-v4-flash',
-  isPlatformDefaultModelId: (id: string) => id === 'deepseek-v4-flash',
-}));
-
-mock.module('../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: () => true,
-  projectLlmGatewayEnabledById: async () => true,
+  platformDefaultModelId: () => platformDefault,
+  isPlatformDefaultModelId: (id: string) => id === platformDefault,
+  servedManagedModels: () => [],
+  platformVisionModelId: () => 'gpt-5.6-luna',
 }));
 
 mock.module('../billing/services/entitlements', () => ({

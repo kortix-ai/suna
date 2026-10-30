@@ -59,6 +59,7 @@ mock.module('../drives/volumes', () => ({
   },
   execInSandbox: async () => {},
   writeVolumeFile: async (_v: string, path: string, body: Uint8Array) => ({ path, size: body.byteLength }),
+  readVolumeFile: async () => new Response(null, { status: 416, headers: { 'content-range': 'bytes */10' } }),
   listVolumeFilesPage: async () => ({ entries: [], next_cursor: null }),
   statVolumeFile: async (_v: string, path: string) => ({ path, type: 'file', size: 1, mtime: 1 }),
   planVolumeUpload: async () => ({ upload_id: 'up-1', missing: ['a'.repeat(64)] }),
@@ -305,6 +306,16 @@ describe('a resumed sandbox whose guest kept mounts Platinum ended', () => {
     }
     expect((await recordedMounts(RESUMED)).length).toBe(attached.length);
     expect(await pending(RESUMED)).toBe(false);
+  });
+});
+
+describe('drive download ranges', () => {
+  test('preserves the storage range refusal and file size through the authenticated route', async () => {
+    const res = await asOwner(`/v1/drives/${driveId}/files/content?path=${encodeURIComponent('/Company/ten.txt')}`, {
+      headers: { Range: 'bytes=10-' },
+    });
+    expect(res.status).toBe(416);
+    expect(res.headers.get('content-range')).toBe('bytes */10');
   });
 });
 

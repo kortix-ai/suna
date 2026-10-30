@@ -146,6 +146,16 @@ describe('kortix accounts', () => {
     expect(stripAnsi(stdout)).toContain('Active account is now Kortix');
   });
 
+  // KRTX-2992: the API's slug is the first 8 characters of the account id
+  // (apps/api/src/accounts/core/accounts.ts), so the example must look like one.
+  test('--help shows a slug shaped like a real one', async () => {
+    const code = await runAccounts(['--help']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('kortix accounts use 1a2b3c4d');
+    expect(out).not.toContain('accounts use kortix');
+  });
+
   test('use rejects an unknown account', async () => {
     mockApi();
     const code = await runAccounts(['use', 'nope']);

@@ -1,0 +1,10 @@
+/* @kortix/ui for a Tailwind v4 host: one import after `@import "tailwindcss";`.
+   Brings the design tokens, the component layer (dark variant, @theme keys,
+   utilities, keyframes, @source over the package) and the animation and
+   scrollbar plugins the components use. The host re-themes by overriding token
+   variables in :root / .dark after this import. */
+@import 'tw-animate-css';
+@import './tokens.css';
+@import './theme.css';
+@plugin 'tailwind-scrollbar';
+@plugin 'tailwind-scrollbar-hide';

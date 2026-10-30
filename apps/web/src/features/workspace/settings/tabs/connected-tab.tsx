@@ -1,61 +1,23 @@
 'use client';
 
-/**
- * Connected accounts — the identities this ACCOUNT is linked to. One provider
- * today: the GitHub App.
- *
- * **The ChatGPT row is gone (Jay, 2026-08-17):** "this just doesn't make any
- * sense right because this is on a project level anyhow. i don't really get
- * what this is supposed to be." He is right, and the row's own code said so —
- * it was commented `// --- ChatGPT (project-scoped) ---`, it read
- * `useChatGptSubscriptionConnected(projectId, …)`, and it reported
- * `'unavailable'` whenever no project was open, which is the common case: this
- * dialog opens from Cmd+, and from the workspace switcher, neither of which
- * implies a project. A pane whose header says "for this account" is the wrong
- * place to configure one workspace, and a disabled Connect button is a poor way
- * to say so.
- *
- * **Where ChatGPT connect actually lives:** `ChatGptSubscriptionConnectDialog`,
- * the complete device-code flow
- * (`components/projects/chatgpt-subscription-connect.tsx`), opened from
- * project-scoped surfaces. The project sidebar's "Connect GPT subscription"
- * row was one of them until 2026-10-12, when the sidebar footer was cut down
- * to status and the two connect rows. The remaining hosts of the same connect
- * card: Models → Providers (`ProviderConnect` →
- * `llm-api-keys-tab.tsx:97`) and `ProjectProviderModal`
- * (`llm-provider-modal.tsx:136`). So the row deleted here was the fourth copy
- * of a flow that already had a correct home — nothing about CONNECTING was
- * lost.
- *
- * **One capability WAS lost, deliberately, and it is not connect:** this row
- * held the only Disconnect in the product for a ChatGPT subscription
- * (`providerDisconnectPlan({ id: 'codex', … })` → `deleteProjectProviderOAuth`
- * + `deleteProjectSecret`). The old sidebar row could not carry it —
- * `useShowChatGptConnectPrompt` hides that row once connected — and the
- * provider list has no `codex` row to remove, because `codex` is synthetic
- * (`use-connected-providers.ts:113`) while rows come from the static
- * `LLM_PROVIDERS` catalog. Removing the OpenAI key does NOT disconnect it
- * either: `providerDisconnectPlan` filters `CODEX_AUTH_JSON` out by hand
- * (`llm-provider/utils.ts:17`). Its home is project-scoped and it should be
- * rebuilt there — the natural place is a `codex` row in `ProviderConnect`. Do NOT re-add it to this account-scoped pane.
- */
+import { localizedCopy } from './localized-copy';
 
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget, type HubTarget } from '@/stores/account-panel-store';
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { Github } from '@/features/icon/icons/github';
-import { githubInstallationLabel, rememberGitHubSetupReturn } from '@/lib/github-installations';
-import { usePermission } from '@/lib/use-permission';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
+import { Github } from '@kortix/ui/internal/icons/github';
+import { useTranslations } from '@/i18n/use-translations';
+import { githubInstallationLabel, rememberGitHubSetupReturn } from '@kortix/ui/internal/lib/github-installations';
+import { usePermission } from '@kortix/ui/workspace';
+import { hubTarget, type HubTarget } from '@kortix/ui/internal/stores/account-panel-store';
 import { deleteGitHubInstallation, listGitHubInstallations } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
 import { useRouter } from 'next/navigation';
-import { SettingsTabHeader } from '../settings-tab-header';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 import { useSettingsAccountId } from '../use-settings-account-id';
 
 export type ProviderRowStatus = 'loading' | 'connected' | 'disconnected' | 'error' | 'unavailable';
@@ -71,7 +33,7 @@ export interface ConnectedAccountsTabViewProps {
   isGitHubActionPending?: boolean;
   githubOtherInstallationsCount?: number;
   /** The account hub's Git pane — a modal target, not a URL: the hub has no
-   *  route (`stores/account-panel-store.ts`). */
+   *  route (`packages/ui/src/internal/stores/account-panel-store.ts`). */
   githubManageAllTo?: HubTarget;
   copy?: ConnectedAccountsTabCopy;
 }
@@ -106,23 +68,6 @@ const DEFAULT_CONNECTED_ACCOUNTS_COPY: ConnectedAccountsTabCopy = {
   disconnectFailed: 'Failed to disconnect GitHub',
 };
 
-/**
- * The action slot's own loading state — a skeleton shaped like the `size="sm"`
- * button that replaces it (`h-8`, `rounded-md`), so the row never changes
- * height when the provider's status resolves.
- *
- * Replaces a full-width `h-14` skeleton that sat BELOW the row while the
- * action slot rendered nothing. That read as a phantom second row appearing
- * and then vanishing — the row itself looked finished (label, description, no
- * control) with an unexplained grey block under it (Jay, 2026-08-12).
- *
- * A skeleton rather than a disabled button: while the status query is in
- * flight we do not yet know whether this row offers "Connect" or "Disconnect",
- * so any real button would have to show a label that flips once the query
- * lands. The skeleton claims the space without claiming the answer. `Loading`
- * is for an action the user started; this is a placeholder for content that
- * has not arrived, which is `Skeleton`'s job per the design system.
- */
 function ActionSkeleton() {
   return <Skeleton className="h-8 w-24 rounded-md" />;
 }
@@ -220,19 +165,7 @@ export function ConnectedAccountsTabView({
  *  on panel open unless the user actually lands on this tab. */
 export function ConnectedAccountsTab({ accountId }: { accountId?: string }) {
   const t = useTranslations('settings.connected');
-  const copy: ConnectedAccountsTabCopy = {
-    checking: t('checking'),
-    connectedAs: (name) => t('connectedAs', { name }),
-    unavailable: t('unavailable'),
-    install: t('install'),
-    disconnect: t('disconnect'),
-    connect: t('connect'),
-    github: t('github'),
-    moreInstallations: (count) => t('moreInstallations', { count }),
-    adminOnly: t('adminOnly'),
-    disconnectedToast: t('disconnectedToast'),
-    disconnectFailed: t('disconnectFailed'),
-  };
+  const copy = localizedCopy(DEFAULT_CONNECTED_ACCOUNTS_COPY, t);
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -301,9 +234,7 @@ export function ConnectedAccountsTab({ accountId }: { accountId?: string }) {
       canManageAccount={canManageAccount}
       githubStatus={githubStatus}
       githubInstallationName={
-        primaryInstallation
-          ? githubInstallationLabel(primaryInstallation.owner_login)
-          : null
+        primaryInstallation ? githubInstallationLabel(primaryInstallation.owner_login) : null
       }
       githubError={
         installationsQuery.error instanceof Error ? installationsQuery.error.message : null
@@ -312,7 +243,9 @@ export function ConnectedAccountsTab({ accountId }: { accountId?: string }) {
       onDisconnectGitHub={handleDisconnectGitHub}
       isGitHubActionPending={disconnectGitHubMutation.isPending}
       githubOtherInstallationsCount={otherInstallationsCount}
-      githubManageAllTo={resolvedAccountId ? hubTarget(resolvedAccountId, { tab: 'git' }) : undefined}
+      githubManageAllTo={
+        resolvedAccountId ? hubTarget(resolvedAccountId, { tab: 'git' }) : undefined
+      }
     />
   );
 }

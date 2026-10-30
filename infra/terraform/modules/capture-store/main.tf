@@ -24,7 +24,17 @@ resource "aws_s3_bucket" "capture" {
   #checkov:skip=CKV_AWS_144:Capture data is regional by design (data residency); cross-region replication is not wanted.
   bucket        = var.name
   force_destroy = var.force_destroy
-  tags          = merge(var.tags, { Name = var.name })
+  # Tags are literal-keyed so Drata's IaC scanner (test 8028 "Resource Tagging")
+  # can read them: it evaluates `merge(var.tags, …)` and `var.tags` as {}. Caller
+  # context flows through lookup() values, as in the audit archive bucket.
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = var.name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Region      = lookup(var.tags, "Region", null)
+  }
 }
 
 resource "aws_s3_bucket_public_access_block" "capture" {
@@ -121,7 +131,14 @@ resource "aws_sqs_queue" "manifests_dlq" {
   name                      = "${var.name}-manifests-dlq"
   message_retention_seconds = 1209600
   sqs_managed_sse_enabled   = true
-  tags                      = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${var.name}-manifests-dlq"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Region      = lookup(var.tags, "Region", null)
+  }
 }
 
 resource "aws_sqs_queue" "manifests" {
@@ -134,7 +151,14 @@ resource "aws_sqs_queue" "manifests" {
     deadLetterTargetArn = aws_sqs_queue.manifests_dlq.arn
     maxReceiveCount     = 10
   })
-  tags = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${var.name}-manifests"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Region      = lookup(var.tags, "Region", null)
+  }
 }
 
 data "aws_iam_policy_document" "queue" {
@@ -191,7 +215,14 @@ resource "aws_iam_role" "device" {
   name                 = "${var.name}-device"
   assume_role_policy   = data.aws_iam_policy_document.device_trust.json
   max_session_duration = 3600
-  tags                 = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${var.name}-device"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Region      = lookup(var.tags, "Region", null)
+  }
 }
 
 resource "aws_iam_role_policy" "device" {

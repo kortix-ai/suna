@@ -1,11 +1,12 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useAccountDetail } from '@kortix/ui/internal/account-hub/use-account-detail';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { AccountOverviewTab } from '@/features/billing/account-overview';
 import { PlanCard, PlanChanger } from '@/features/billing/plan-card';
 import { EnterpriseAccessRow } from '@/features/billing/enterprise-access-row';
@@ -19,10 +20,10 @@ import {
   useCancelSubscription,
   useCreatePortalSession,
   useReactivateSubscription,
-} from '@/hooks/billing';
+} from '@kortix/ui/internal/billing/index';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { isBillingEnabled } from '@/lib/config';
-import { useBillingAccountId } from '@/stores/billing-account-context';
+import { useBillingAccountId } from '@kortix/ui/internal/stores/billing-account-context';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { getAccountState, type AccountState } from '@kortix/sdk';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -33,7 +34,7 @@ import { useEffect, useRef, useState } from 'react';
  *
  * `true` (the default, and what `/accounts/[id]?tab=billing` uses): the
  * balance card, this period's spend, the limits, and the plan changer under
- * them.
+ * them — when the wallet leads at all (third rule below).
  *
  * `false` (the settings overlay's Plan tab, 2026-09-03): the wallet blocks are
  * dropped and `PlanCard` leads instead. Every number they showed — balance,
@@ -41,9 +42,18 @@ import { useEffect, useRef, useState } from 'react';
  * Credits pane beside it (`settings/tabs/credits-tab.tsx`), so on Plan they
  * were a duplicate. `PlanCard` carries the plan changer itself.
  *
+ * The wallet blocks also require the PLAN'S answer, not just the caller's:
+ * they render for a wallet the plan can fund —
+ * `subscription.can_purchase_credits` (KRTX-2376). On Free the hub's
+ * wallet-first view printed a balance its plan can never refill — the only
+ * top-up control in the product lives behind the subscribe dialog — so the
+ * pane falls to the `PlanCard` (the same shape the `false` view draws),
+ * whose card carries the monthly grant; the balance and top-up return the
+ * moment the plan allows purchases.
+ *
  * What does NOT vary: buying credits, auto top-up, and the Stripe portal stay
- * on both. They are the actions this pane exists to offer, and the Credits
- * pane's "Add credits" button navigates here to reach them.
+ * on both purchasable views. They are the actions this pane exists to offer,
+ * and the Credits pane's "Add credits" button navigates here to reach them.
  */
 export function BillingTab({
   returnUrl,
@@ -64,6 +74,8 @@ export function BillingTab({
   const highlight = useUserSettingsModalStore((s) => s.highlight);
   const queryClient = useQueryClient();
   const billingAccountId = useBillingAccountId();
+
+  const members = useAccountDetail(billingAccountId);
 
   const {
     data: accountState,
@@ -120,6 +132,12 @@ export function BillingTab({
 
   const subscription = accountState?.subscription;
   const canPurchaseCredits = subscription?.can_purchase_credits || false;
+  // The wallet blocks are for a wallet the plan can FUND. A plan that cannot
+  // purchase credits (Free) would show a balance its plan can never refill —
+  // the dead-end wallet of the dogfood finding (KRTX-2376) — so the caller's
+  // `showWallet` and the plan's own answer must both hold for the wallet to
+  // lead this pane. See the docblock above.
+  const walletVisible = showWallet && canPurchaseCredits;
   const hasActiveSubscription = Boolean(subscription?.subscription_id);
   const subscriptionCancelling = subscription?.cancel_at_period_end === true;
   // The cancel control lives on the pane a paying customer manages their
@@ -136,12 +154,19 @@ export function BillingTab({
   return (
     <div className="space-y-8">
       {/* The out-of-credits warning is a WALLET message and stays with the
-          wallet. On the Plan tab the same account reads its balance on the
-          Credits pane, which shows the shortfall in the number itself rather
-          than in a banner over a pane about subscriptions. */}
-      {showWallet && highlight === 'credits' && totalCredits <= 0 && (
+          wallet blocks — it can never tell a Free account to top up a wallet
+          its plan cannot fund. On the Plan tab the same account reads its
+          balance on the Credits pane, which shows the shortfall in the number
+          itself rather than in a banner over a pane about subscriptions. */}
+      {walletVisible && highlight === 'credits' && totalCredits <= 0 && (
         <InfoBanner tone="warning" title={t('outOfCredits')}>
-          {canPurchaseCredits ? t('buyCreditsHint') : t('topupWalletHint')}
+          {/* This banner only leads the wallet blocks, so the plan can always
+              purchase credits here — "buy credits below or turn on auto
+              top-up" is the only advice it can give. */}
+          {/* ponytail: `topupWalletHint` is unreachable in every catalog now
+              (KRTX-2376); prune the key across the nine locales when i18n
+              churn is cheap — the copy collapse stayed inside this diff. */}
+          {t('buyCreditsHint')}
         </InfoBanner>
       )}
 
@@ -149,7 +174,7 @@ export function BillingTab({
           stated before anything else. */}
       {accountState ? <PlanAccessNotice state={accountState} /> : null}
 
-      {showWallet ? (
+      {walletVisible ? (
         <>
           <AccountOverviewTab accountId={billingAccountId} />
           {accountState ? (
@@ -159,6 +184,18 @@ export function BillingTab({
       ) : accountState ? (
         <PlanCard state={accountState} />
       ) : null}
+
+      <SettingsRowGroup>
+        <SettingsRow label={t('members')} description={t('unlimitedMembers')}>
+          <span className="text-sm tabular-nums" aria-live="polite">
+            {members.isLoading
+              ? t('loadingMembers')
+              : members.isError || members.data?.member_count === undefined
+                ? t('membersUnavailable')
+                : t('memberCount', { count: members.data.member_count })}
+          </span>
+        </SettingsRow>
+      </SettingsRowGroup>
 
       {/* Add credits and Auto top-up share one card, matching the settings
               pane. Both components carry their own heading and no chrome
@@ -172,7 +209,7 @@ export function BillingTab({
               changes, not on a pane about a subscription. `TopupControls`
               renders them only when the plan may buy credits and this person
               may change billing (KRTX-1720). */}
-      {showWallet ? <TopupControls state={accountState} heading={t('addCredits')} /> : null}
+      {walletVisible ? <TopupControls state={accountState} heading={t('addCredits')} /> : null}
 
       {/* Enterprise is a feature layer, separate from the plan: off, a
           self-serve demo, or licensed. Hidden when a self-host Enterprise

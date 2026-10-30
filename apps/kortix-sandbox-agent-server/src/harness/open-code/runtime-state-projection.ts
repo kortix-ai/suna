@@ -58,19 +58,28 @@ import {
 } from './opencode-projection'
 import { v3Commands } from './manifest-v3'
 
-/** Upper bound on how old a served projection can be before a forced rebuild. */
+/**
+ * Upper bound on how old a served projection can be before a forced rebuild.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const RUNTIME_STATE_FLOOR_MS = 15 * 60_000
-/** Per-read budget against OpenCode. Its slowest projected read is `/config` (112 ms). */
+/**
+ * Per-read budget against OpenCode. Its slowest projected read is `/config` (112 ms).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const RUNTIME_STATE_READ_TIMEOUT_MS = 5_000
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type RuntimeStateSection = 'catalog' | 'sessions' | 'live'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface Known<T> {
   known: boolean
   reason?: string
   value: T
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface RuntimeStateDoc {
   /** The document format (`@kortix/api-contract/runtime-relay`). */
   schema: typeof KORTIX_RUNTIME_SCHEMA
@@ -109,6 +118,7 @@ export interface RuntimeStateDoc {
   questions: Known<QuestionProjection[]>
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface RuntimeStateResult {
   doc: RuntimeStateDoc
   etag: string
@@ -116,6 +126,7 @@ export interface RuntimeStateResult {
   readMs: number
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface RuntimeStateDeps {
   opencode: Opencode
   cfg: Config
@@ -145,6 +156,7 @@ function unknownSection<T>(reason: string, empty: T): Known<T> {
  * The OpenCode frames that move the catalog (agents, commands, tools, MCP): the
  * four ways the roster can change. The store invalidates its catalog on them
  * and boot re-pushes the projection on the same set.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const CATALOG_MOVING_EVENT_TYPES: ReadonlySet<string> = new Set([
   'server.instance.disposed',
@@ -159,6 +171,7 @@ export const CATALOG_MOVING_EVENT_TYPES: ReadonlySet<string> = new Set([
  * One instance per daemon (see {@link configureRuntimeState}). Concurrent
  * `read()` calls share one in-flight build — a session open fires several
  * requests at once and must not produce several `/config` reads.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export class RuntimeStateStore {
   private doc: RuntimeStateDoc | null = null
@@ -468,11 +481,13 @@ export class RuntimeStateStore {
 
 let store: RuntimeStateStore | null = null
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function configureRuntimeState(deps: RuntimeStateDeps): RuntimeStateStore {
   store = new RuntimeStateStore(deps)
   return store
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function runtimeStateStore(): RuntimeStateStore | null {
   return store
 }
@@ -481,6 +496,7 @@ export function runtimeStateStore(): RuntimeStateStore | null {
  * Invalidate from anywhere — `routes/env.ts` after it applies env and respawns
  * OpenCode, `opencode.ts` after a verified reload promotes the standby half.
  * A no-op before the store is configured, so a boot-time caller is safe.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function invalidateRuntimeState(
   section: RuntimeStateSection | 'all',
@@ -489,6 +505,7 @@ export function invalidateRuntimeState(
   store?.invalidate(section, reason)
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function resetRuntimeStateForTests(): void {
   store = null
 }

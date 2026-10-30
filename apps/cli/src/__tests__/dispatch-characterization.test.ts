@@ -9,7 +9,9 @@ import { join, resolve } from 'node:path';
  * Pinned here, through the real CLI process:
  *  - every alias dispatches to the same handler as its canonical name
  *    (`--help` output byte-identical within a pair);
- *  - the `token`, `remind` and `skills` adapters keep their extra arguments;
+ *  - the `remind` and `skills` adapters keep their extra arguments (the
+ *    `token` adapter is a plain handler — its contract lives in
+ *    cli-help-accuracy.test.ts);
  *  - the `registry` stderr warning stays in front of the help;
  *  - unknown-command suggestions keep the first-wins tie order of the old
  *    KNOWN_COMMANDS list (verified ties).
@@ -76,12 +78,6 @@ describe('root dispatch characterization (KRTX-1341)', () => {
       expect(aliasRun.stderr).toBe(canonicalRun.stderr);
     });
   }
-
-  test('`token --help` routes through the whoami adapter (--token-only argv preserved)', async () => {
-    const result = await runCli(['token', '--help']);
-    expect(result.code).toBe(0);
-    expect(result.stdout).toContain('Usage: kortix whoami');
-  });
 
   test('`remind --help` routes through the reminders adapter with the add-verb default', async () => {
     const result = await runCli(['remind', '--help']);

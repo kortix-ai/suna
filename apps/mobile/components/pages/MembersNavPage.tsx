@@ -76,9 +76,6 @@ interface MembersNavPageProps {
   /** Pushed as a sub-page of project Settings: Go back in place of the hamburger. */
   onBack?: () => void;
   onOpenDrawer?: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
 type Confirm = (request: ConfirmRequest) => void;
@@ -340,9 +337,6 @@ export function MembersNavPage({
   projectId,
   onBack,
   onOpenDrawer,
-  onOpenRightDrawer,
-  isDrawerOpen,
-  isRightDrawerOpen,
 }: MembersNavPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -385,9 +379,6 @@ export function MembersNavPage({
         title={page.label}
         onBack={onBack}
         onOpenDrawer={onBack ? undefined : onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
         onAdd={canManage ? () => open({ kind: 'invite' }) : undefined}
         addLabel="Invite member"
       />

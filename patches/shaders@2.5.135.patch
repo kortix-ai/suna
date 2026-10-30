@@ -11,3 +11,17 @@ index 42c2d4c0b6446f1b4c3b4f33cb798947b8a0cee5..6e381ce904b4c72cf436438b716f7d2f
  		if (typeof uniformValue === "string" && uniformNode.value === null) uniformNode.value = uniformValue;
  		uniformsMap[propName] = {
  			uniform: uniformNode,
+diff --git a/package.json b/package.json
+index 26d8a787d639e7ef90d78808ab1a71d5a37ddf56..bd05865a443b0b056aabf2796cffe1d9549f93b0 100644
+--- a/package.json
++++ b/package.json
+@@ -31,7 +31,8 @@
+     },
+     "./react": {
+       "types": "./dist/react/index.d.ts",
+-      "import": "./dist/react/index.js"
++      "import": "./dist/react/index.js",
++      "default": "./dist/react/index.js"
+     },
+     "./react/bundle": {
+       "types": "./dist/react/index.d.ts",

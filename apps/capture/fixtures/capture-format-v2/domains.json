@@ -1,5 +1,5 @@
 {
-  "description": "The one domain rule of Kortix Capture. `patterns`: what a person, an admin or a list writes, and the pattern every matcher receives (null: refused). `matches`: a page URL (an address bar may omit the scheme) against one normalized pattern. Rust (memory::exclusions), the macOS engine (via _domain_match) and the Kortix API/SDK run these same vectors.",
+  "description": "The one domain rule of Kortix Capture. `patterns`: what a person, an admin or a list writes, and the pattern every matcher receives (null: refused). An internationalized host compares in its ASCII (punycode) form. `matches`: a page URL (an address bar may omit the scheme) against one normalized pattern. Rust (memory::exclusions), the macOS engine (via _domain_match) and the Kortix API/SDK run these same vectors.",
   "patterns": [
     {
       "input": "bank.example",
@@ -28,6 +28,10 @@
     {
       "input": "  WWW.Example.org  ",
       "pattern": "example.org"
+    },
+    {
+      "input": "Bücher.example",
+      "pattern": "xn--bcher-kva.example"
     },
     {
       "input": "notadomain",
@@ -86,6 +90,26 @@
     {
       "url": "file:///Users/x/bank.example.html",
       "pattern": "bank.example",
+      "match": false
+    },
+    {
+      "url": "https://www.bücher.example/x",
+      "pattern": "xn--bcher-kva.example",
+      "match": true
+    },
+    {
+      "url": "https://xn--bcher-kva.example/",
+      "pattern": "xn--bcher-kva.example",
+      "match": true
+    },
+    {
+      "url": "https://shop.bücher.example:8443/a",
+      "pattern": "xn--bcher-kva.example",
+      "match": true
+    },
+    {
+      "url": "https://bucher.example/",
+      "pattern": "xn--bcher-kva.example",
       "match": false
     }
   ]

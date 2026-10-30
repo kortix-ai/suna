@@ -8,6 +8,7 @@ import {
   createGatewayKey,
   deleteGatewayKey,
   listGatewayKeys,
+  revokeGatewayKey,
   validateGatewayKey,
 } from '../llm-gateway/gateway-keys';
 
@@ -70,21 +71,36 @@ describe('validateGatewayKey', () => {
     expect(await validateGatewayKey(secretKey)).not.toBeNull();
   });
 
-  test('rejects a revoked key', async () => {
-    const { secretKey } = await seedKey({ status: 'revoked' });
-    expect(await validateGatewayKey(secretKey)).toBeNull();
+  test('a revoked key is refused but keeps its identity (gateway trace attribution)', async () => {
+    const { secretKey, keyId } = await seedKey({ status: 'revoked' });
+    expect(await validateGatewayKey(secretKey)).toEqual({
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      userId: CREATOR,
+      keyId,
+      refused: 'revoked',
+    });
   });
 
-  test('rejects a key past its expiry', async () => {
+  test('a key past its expiry is refused but keeps its identity', async () => {
     const { secretKey } = await seedKey({ expiresAt: new Date(Date.now() - 1) });
-    expect(await validateGatewayKey(secretKey)).toBeNull();
+    const result = await validateGatewayKey(secretKey);
+    expect(result).not.toBeNull();
+    expect(result?.refused).toBe('expired');
+    expect(result?.accountId).toBe(ACCOUNT);
   });
 
-  test('rejects exactly at the expiry boundary instant', async () => {
+  test('refuses exactly at the expiry boundary instant', async () => {
     const now = new Date();
     const { secretKey } = await seedKey({ expiresAt: now });
     await new Promise((resolve) => setTimeout(resolve, 5));
-    expect(await validateGatewayKey(secretKey)).toBeNull();
+    expect(await validateGatewayKey(secretKey)).toEqual({
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      userId: CREATOR,
+      keyId: expect.any(String),
+      refused: 'expired',
+    });
   });
 
   test('falls back userId to accountId when createdBy is null', async () => {
@@ -92,7 +108,7 @@ describe('validateGatewayKey', () => {
     expect((await validateGatewayKey(secretKey))?.userId).toBe(ACCOUNT);
   });
 
-  test('rejects an unknown secret', async () => {
+  test('an unknown secret matches nothing and stays unattributed', async () => {
     expect(await validateGatewayKey(`kortix_gw_${crypto.randomUUID()}`)).toBeNull();
   });
 
@@ -113,6 +129,27 @@ describe('validateGatewayKey', () => {
     expect(await validateGatewayKey(created.secret_key)).toBeNull();
     expect((await listGatewayKeys(PROJECT)).map((k) => k.keyId)).not.toContain(created.key_id);
     expect(await deleteGatewayKey(PROJECT, created.key_id)).toBe(false);
+  });
+
+  test('the key list offers only keys that still authenticate — a revoked key leaves it', async () => {
+    // The dogfood cleanup (KRTX-2560): `gateway keys rm` then `gateway keys ls`
+    // still listed the dead key. The list is the surface that names live
+    // credentials; the CLI reads it with that meaning for PATs already
+    // (`tokens ls --mine` = "keys that still authenticate"). The revoked row
+    // stays in the table so a refused request keeps its identity
+    // (`validateGatewayKey`), it just stops being listed.
+    const { keyId, secretKey } = await seedKey({ status: 'active' });
+    expect((await listGatewayKeys(PROJECT)).map((k) => k.keyId)).toContain(keyId);
+
+    expect(await revokeGatewayKey(PROJECT, keyId)).toBe(true);
+    expect(await validateGatewayKey(secretKey)).toEqual({
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      userId: CREATOR,
+      keyId,
+      refused: 'revoked',
+    });
+    expect((await listGatewayKeys(PROJECT)).map((k) => k.keyId)).not.toContain(keyId);
   });
 
   test('deleteGatewayKey is scoped to the owning project', async () => {

@@ -42,17 +42,20 @@ import { hintFor } from '../../keymap.ts';
 
 export type { AttachStage };
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export interface AttachStatus {
   stage: AttachStage;
   /** Plain text, no ANSI, no trailing newline. */
   detail: string;
 }
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export interface AttachFailure {
   stage: AttachStage;
   message: string;
 }
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export type RunAttachResult = { exitCode: number } | { error: AttachFailure };
 
 /** The two renderer methods attach mode needs. `CliRenderer` satisfies it. */
@@ -67,6 +70,7 @@ export interface AttachSignals {
   off(signal: NodeJS.Signals, handler: () => void): void;
 }
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export interface RunAttachDeps {
   attach?: (options: AttachOpenCodeOptions) => Promise<AttachOpenCodeResult>;
   /** Where the status lines go while the renderer is suspended. */
@@ -74,6 +78,7 @@ export interface RunAttachDeps {
   signals?: AttachSignals;
 }
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export interface RunAttachOptions {
   renderer: AttachRendererControl;
   host: ResolvedHost;
@@ -93,6 +98,7 @@ export interface RunAttachOptions {
  * must reach opencode, not kill the TUI that is waiting for it.
  * `SIGWINCH`: the renderer is suspended, so nothing else is watching the
  * window; the child needs the resize to re-lay-out.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
  */
 export const FORWARDED_SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGWINCH'];
 
@@ -128,6 +134,7 @@ export function authFromHost(host: ResolvedHost): Auth {
  * Why attaching `target` is refused before the renderer suspends, or null.
  * Only the open session's capabilities are known here; attaching any other
  * session goes ahead, and `attachOpenCodeSession` refuses it by its own read.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
  */
 export function attachRefusal(
   target: string,
@@ -138,6 +145,7 @@ export function attachRefusal(
   return `${ATTACH_UNSUPPORTED} ${hintFor('panel.terminal')} opens a shell in its sandbox.`;
 }
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export function attachFailureFrom(error: unknown): AttachFailure {
   if (error instanceof AttachOpenCodeError) {
     return { stage: error.stage, message: error.message };
@@ -145,6 +153,7 @@ export function attachFailureFrom(error: unknown): AttachFailure {
   return { stage: 'attached', message: error instanceof Error ? error.message : String(error) };
 }
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export async function runAttach(options: RunAttachOptions): Promise<RunAttachResult> {
   const deps = options.deps ?? {};
   const attach = deps.attach ?? attachOpenCodeSession;

@@ -1,4 +1,5 @@
 /** Session runtime: start (the unified open), restart, stop, and the current turn. */
+import { assertRepositoryConnected } from '../lib/git';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
@@ -17,7 +18,7 @@ import { SessionStartResultSchema, SessionTurnStatusSchema, projectsApp } from '
 import {
   sessionUsesCurrentRepository,
 } from '../lib/repository-generation';
-import { backfillSessionTranscriptMirrorOnWake } from '../lib/session-transcript-capture';
+import { captureJournallessSessionLogOnWake } from '../lib/session-transcript-capture';
 import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
 import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
@@ -98,8 +99,11 @@ export function registerSessionRuntimeRoutes(): void {
       // resumes a hibernated box days later. The session's stored `agent_name`
       // may also be the `default` sentinel, which resolves here to the manifest
       // default rather than being waved through unchecked.
-      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
       stl.mark('agent-authorized');
+      // Booting a box needs the repository; a running box keeps working (its
+      // keep-alive polls must not fail because GitHub went away under it).
+      if (visible.row.status !== 'running') await assertRepositoryConnected(loaded.row);
 
       // Adoption (JAY-599/T21): a still-warm row (pre-created, never prompted)
       // stops being speculative the instant a user's tab calls /start on it —
@@ -169,17 +173,12 @@ export function registerSessionRuntimeRoutes(): void {
         signal: c.req.raw.signal,
       });
       stl.mark(`open-session:${result.start.stage}`);
-      // THE RUNTIME IS UP — mirror what is already in it, once.
-      //
-      // Capture otherwise runs only at turn end, so a session nobody prompted
-      // since saved history shipped stayed blank on open until somebody sent it
-      // another message. Opening the session is exactly when the user waits and
-      // the feature is supposed to pay off, so that is where the backfill belongs.
-      //
-      // Fire-and-forget and self-limiting: at most one attempt per session per
-      // process, skipped entirely when the mirror already proves it holds the
-      // session's first message. It cannot fail or delay this response.
-      if (result.start.stage === 'ready') void backfillSessionTranscriptMirrorOnWake(sessionId);
+      // THE RUNTIME IS UP. A box without a journal gets what is already in it
+      // into the session log, once: capture otherwise runs only at turn end.
+      // Fire-and-forget and self-limiting (at most 3 attempts per session per
+      // process, none for a session with a journal). It cannot fail or delay
+      // this response.
+      if (result.start.stage === 'ready') void captureJournallessSessionLogOnWake(sessionId);
       stl.log({
         waitMs,
         repositoryMode: usesCurrentRepository ? 'current' : 'previous',

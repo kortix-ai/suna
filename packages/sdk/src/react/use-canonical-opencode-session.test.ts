@@ -133,3 +133,14 @@ test('a row read waiting for the network (offline) is not settled', async () => 
     onlineManager.setOnline(true);
   }
 });
+
+test('a runtime session list not asked yet reports loading, not an empty answer', async () => {
+  globalThis.fetch = mock(async () => Response.json(row('ses_row'))) as unknown as typeof fetch;
+  // `mount` keeps the list disabled, as a cold page load does before the box
+  // switch. A page that read `isLoading: false` here concluded the list had
+  // answered without a `?rs=` child and dropped the link (KRTX-2886).
+  const value = await mount({ pinFromStart: 'ses_start' });
+  expect(value().sessions).toEqual([]);
+  expect(value().listed).toBe(false);
+  expect(value().isLoading).toBe(true);
+});

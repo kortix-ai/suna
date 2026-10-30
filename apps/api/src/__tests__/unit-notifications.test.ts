@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 const mockConfig = {
+  EMAIL_URL: '',
   FRONTEND_URL: 'https://app.example.test',
   MAILTRAP_API_TOKEN: 'mailtrap-token',
   MAILTRAP_FROM_EMAIL: 'noreply@example.test',
@@ -11,7 +12,7 @@ mock.module('../config', () => ({
   config: mockConfig,
 }));
 
-const { sendAccountInviteEmail, sendProjectAccessRequestEmail } = await import('../accounts/email');
+const { sendAccountInviteEmail, sendProjectAccessRequestEmail, sendProjectAddedEmail } = await import('../accounts/email');
 
 const originalFetch = globalThis.fetch;
 let calls: Array<{ url: string; init: RequestInit }> = [];
@@ -37,6 +38,28 @@ function sentPayload() {
 // Recipients use a real domain: the transport never relays mail to reserved
 // test domains (#8656), so an example.test recipient would be skipped.
 describe('notification emails', () => {
+  test('added-to-project mail opens the project without an acceptance step and escapes user content', async () => {
+    mockConfig.EMAIL_URL = 'mailpit://localhost:54324';
+    try {
+      const result = await sendProjectAddedEmail({
+        email: 'member@example.test',
+        projectId: 'synthetic-project',
+        projectName: 'Research <team>',
+        inviterEmail: 'owner@example.test',
+        role: 'member',
+      });
+      expect(result.ok).toBe(true);
+      const payload = sentPayload();
+      expect(payload.HTML).toContain('Research &lt;team&gt;');
+      expect(payload.HTML).not.toContain('Research <team>');
+      expect(payload.HTML).toContain('https://app.example.test/projects/synthetic-project');
+      expect(payload.Text).toContain('no invitation acceptance is required');
+      expect(payload.Text).toContain('member@example.test');
+    } finally {
+      mockConfig.EMAIL_URL = '';
+    }
+  });
+
   test('sends account invite emails to the shared invite landing route', async () => {
     const result = await sendAccountInviteEmail({
       email: 'teammate@kortix.com',

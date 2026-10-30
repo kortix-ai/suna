@@ -30,8 +30,8 @@ for (const key of Object.getOwnPropertyNames(win)) {
 }
 
 const { LocalhostLinkInterceptor } = await import('./localhost-link-interceptor');
-const { sessionPreviewTabId, useSessionBrowserStore } = await import('@/stores/session-browser-store');
-const { useTabStore } = await import('@/stores/tab-store');
+const { sessionPreviewTabId, useSessionBrowserStore } = await import('@kortix/ui/internal/stores/session-browser-store');
+const { useTabStore } = await import('@kortix/ui/internal/stores/tab-store');
 
 const PANEL_SESSION = 'chat-session-1';
 const APP_URL = 'https://dev-crm-0123456789abcdef.apps.kortix.com/deals/42';

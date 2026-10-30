@@ -1,10 +1,10 @@
 'use client';
 
-import { formatWholeUsd } from '@/features/billing/compute-pricing';
+import { formatWholeUsd } from '@kortix/ui/internal/billing/compute-pricing';
 import type { UiTranslator } from '@/i18n/translator';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useLocale, useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import { ACCOUNT_PANEL_PARAM } from '@/stores/account-panel-store';
+import { ACCOUNT_PANEL_PARAM } from '@kortix/ui/internal/stores/account-panel-store';
 import { creditsToDollars, dollarsToCredits, formatUsdAsCredits } from '@kortix/shared';
 import {
   ArrowDownRightIcon as ArrowDownRight,
@@ -30,31 +30,31 @@ import {
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
-import { IconInbox } from '@/components/ui/kortix-icons';
-import Loading from '@/components/ui/loading';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import Hint from '@kortix/ui/hint';
+import { Input } from '@kortix/ui/input';
+import { IconInbox } from '@kortix/ui/kortix-icons';
+import Loading from '@kortix/ui/loading';
+import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@kortix/ui/select';
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
+} from '@kortix/ui/sheet';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
 import {
   Table,
   TableBody,
@@ -62,11 +62,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
+} from '@kortix/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { CreditTransactionsTable } from '@/features/billing/transactions-table';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { EmptyState } from '@kortix/ui/empty-state';
 import {
   useAdminAccount,
   useAdminAccountLedger,
@@ -85,9 +85,9 @@ import {
   type AdminAccountsSortBy,
   type AdminAccountsSortDir,
 } from '@/hooks/admin/use-admin-accounts';
-import { useDebounce } from '@/hooks/use-debounced-value';
-import { clearLastProjectId } from '@/lib/onboarding/last-project-cookie';
-import { cn } from '@/lib/utils';
+import { useDebounce } from '@kortix/ui/internal/hooks/use-debounced-value';
+import { clearLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { cn } from '@kortix/ui';
 
 import { AdminPageShell, AdminRefreshButton } from '../_components/admin-page-shell';
 import { AdminEmptyFrame, AdminTableFrame } from '../_components/admin-panel';
@@ -779,13 +779,15 @@ function FiltersPanel({
   const tierOptions = useLocalizedUiCatalog(TIER_OPTIONS);
   const paymentStatusOptions = useLocalizedUiCatalog(PAYMENT_STATUS_OPTIONS);
   // The fields take CREDITS; the filter (and the API) holds USD.
-  const [minBalance, setMinBalance] = useState(creditsField(filters.minBalance));
-  const [maxBalance, setMaxBalance] = useState(creditsField(filters.maxBalance));
-
-  useEffect(() => {
+  const [minBalance, setMinBalance] = useState(() => creditsField(filters.minBalance));
+  const [maxBalance, setMaxBalance] = useState(() => creditsField(filters.maxBalance));
+  const balanceKey = `${filters.minBalance}:${filters.maxBalance}`;
+  const [syncedBalanceKey, setSyncedBalanceKey] = useState(balanceKey);
+  if (syncedBalanceKey !== balanceKey) {
+    setSyncedBalanceKey(balanceKey);
     setMinBalance(creditsField(filters.minBalance));
     setMaxBalance(creditsField(filters.maxBalance));
-  }, [filters.minBalance, filters.maxBalance]);
+  }
 
   const toggleTier = (v: string) => {
     onChange({
@@ -1693,21 +1695,19 @@ function OverridesCard({ account }: { account: AdminAccount }) {
     setDraft(draftFromOverrides(stored));
   }
 
-  const result = overridesPatch(draft, stored);
-  const patch = result.ok ? result.patch : {};
-  const nothingToSave = result.ok && isEmptyPatch(patch);
-  const dirty = !result.ok || !nothingToSave;
+  const patch = overridesPatch(draft, stored);
+  const dirty = !isEmptyPatch(patch);
 
   function setRow<K extends keyof OverridesDraft>(key: K, value: OverridesDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
   async function handleSave() {
-    if (!result.ok || isEmptyPatch(result.patch)) return;
+    if (isEmptyPatch(patch)) return;
     try {
-      await setOverrides.mutateAsync({ accountId: account.accountId, patch: result.patch });
+      await setOverrides.mutateAsync({ accountId: account.accountId, patch });
       successToast(tI18nComplete.raw('text214d79fdac84'), {
-        description: describeOverridePatch(result.patch),
+        description: describeOverridePatch(patch),
       });
     } catch (error) {
       errorToast(tI18nComplete.raw('text222b8d57e366'), {
@@ -1763,12 +1763,10 @@ function OverridesCard({ account }: { account: AdminAccount }) {
         ))}
       </div>
 
-      {!result.ok && <p className="text-kortix-red text-xs">{result.error}</p>}
-
       <div className="flex flex-wrap items-center gap-2">
         <Button
           onClick={handleSave}
-          disabled={!dirty || !result.ok || setOverrides.isPending}
+          disabled={!dirty || setOverrides.isPending}
           className="gap-1.5"
         >
           {setOverrides.isPending && <Loading className="h-3.5 w-3.5" />}

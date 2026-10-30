@@ -26,7 +26,8 @@ import { accountPrefix, deviceFields, foldIndex, jsonLines, PolicySchema, status
 import { ingestManifest } from './ingest';
 import { reattributeDevice } from './reads';
 import { readWorkspace } from './workspace';
-import { captureRegion, captureStore, captureStoreConfigured } from './store';
+import { captureRegion, captureStoreConfigured } from './store';
+import { captureStoreForAccount } from './account-store';
 
 export const INGEST_QUEUE = 'capture.ingest';
 
@@ -90,8 +91,9 @@ const decodeJson = (bytes: Uint8Array): Record<string, unknown> | null => {
 export async function pollDevice(device: typeof captureDevices.$inferSelect): Promise<{ enqueued: number; forgotten: number }> {
   const folder = `${accountPrefix(device.accountId)}/${device.deviceId}`;
   const patch: Partial<typeof captureDevices.$inferInsert> = {};
+  const store = await captureStoreForAccount(device.accountId);
 
-  const status = await captureStore.getBytes(`${folder}/status.json`, { maxBytes: 1024 * 1024 });
+  const status = await store.getBytes(`${folder}/status.json`, { maxBytes: 1024 * 1024 });
   if (status) {
     const doc = decodeJson(status);
     const reported = statusReportedAt(doc);
@@ -100,7 +102,7 @@ export async function pollDevice(device: typeof captureDevices.$inferSelect): Pr
       patch.statusReportedAt = new Date(reported);
     }
   }
-  const described = await captureStore.getBytes(`${folder}/device.json`, { maxBytes: 1024 * 1024 });
+  const described = await store.getBytes(`${folder}/device.json`, { maxBytes: 1024 * 1024 });
   if (described) {
     const doc = decodeJson(described);
     if (doc) Object.assign(patch, { deviceInfo: doc, ...deviceFields(doc) });
@@ -117,7 +119,7 @@ export async function pollDevice(device: typeof captureDevices.$inferSelect): Pr
   } catch {
     cursor = {};
   }
-  const files = await captureStore.list(`${folder}/index/`, { pageSize: 1000, maxPages: 2 });
+  const files = await store.list(`${folder}/index/`, { pageSize: 1000, maxPages: 2 });
   const next: Record<string, string> = {};
   for (const file of files) {
     const day = /\/index\/(\d{4}-\d{2}-\d{2})\.jsonl$/.exec(file.key)?.[1];
@@ -125,7 +127,7 @@ export async function pollDevice(device: typeof captureDevices.$inferSelect): Pr
     const mark = `${file.bytes}:${file.lastModified?.getTime() ?? 0}`;
     next[day] = mark;
     if (cursor[day] === mark) continue;
-    const body = await captureStore.getText(file.key);
+    const body = await store.getText(file.key);
     if (body === null) continue;
     const { live, deleted } = foldIndex(accountPrefix(device.accountId), device.deviceId, body);
     enqueued += await enqueueJobs(INGEST_QUEUE, live.map((key) => ({ key, payload: { key } })));
@@ -240,7 +242,7 @@ export async function applyRetention(limitPerAccount = 200): Promise<number> {
       ),
     ]);
     // Objects first: a row without its object is harmless; an object without a row is invisible forever.
-    await captureStore.remove(keys);
+    await (await captureStoreForAccount(accountId)).remove(keys);
     await db.transaction((tx) => removeChunkRows(tx, old));
     removed += old.length;
   }
@@ -249,6 +251,9 @@ export async function applyRetention(limitPerAccount = 200): Promise<number> {
 
 let lastPartitionDay = '';
 export async function captureMaintenance(): Promise<void> {
+  // First, on its own: finished jobs (channel events among them carry email
+  // headers) must not outlive their week because a capture step failed.
+  await pruneFinishedJobs(7).catch((error) => logger.warn('[job-queue] prune failed', { error: String(error) }));
   const today = utcDay(Date.now());
   if (lastPartitionDay !== today) {
     await db.execute(sql`SELECT kortix.capture_timeline_ensure_partitions((now() AT TIME ZONE 'UTC')::date, 3)`);
@@ -256,5 +261,4 @@ export async function captureMaintenance(): Promise<void> {
   }
   await applyRetention();
   await db.delete(captureDeviceGrants).where(lt(captureDeviceGrants.expiresAt, sql`now() - interval '1 day'`));
-  await pruneFinishedJobs(7);
 }

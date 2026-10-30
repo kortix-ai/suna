@@ -30,7 +30,7 @@ function projectConfigAgentToOpenCodeAgent(agent: ProjectConfigSummary['agents']
     description: agent.description ?? undefined,
     mode: agent.mode ?? undefined,
     source: agent.source,
-    hidden: agent.enabled === false,
+    hidden: agent.hidden === true || agent.enabled === false,
   } as unknown as Agent;
 }
 

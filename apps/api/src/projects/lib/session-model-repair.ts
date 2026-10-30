@@ -32,7 +32,6 @@
  * most once per session — once re-pointed, the pin is live and
  * `isRetiredManagedModelId` is false forever after.
  */
-import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { isRetiredManagedModelId } from '../../llm-gateway/models/managed-models';
 import { repointRetiredSessionModel } from '../../llm-gateway/resolution/session-model-repoint';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
@@ -52,11 +51,9 @@ export interface SessionModelRepairInput {
 export interface SessionModelRepairResult {
   /** The replacement pin, or null when nothing was re-pointed. */
   repointed: string | null;
-  /** True only when a RUNNING box took the replacement. */
-  pushed: boolean;
 }
 
-const NO_REPAIR: SessionModelRepairResult = { repointed: null, pushed: false };
+const NO_REPAIR: SessionModelRepairResult = { repointed: null };
 
 /**
  * The bare gateway wire id behind a stored pin, or null when there is none.
@@ -90,10 +87,6 @@ export async function repairRetiredSessionModelOnOpen(
   if (!pinNeedsRepair(input.metadata)) return NO_REPAIR;
   const pin = input.metadata?.opencode_model as string;
   try {
-    // Native mode has no gateway and no managed catalog, so "retired managed
-    // id" is not a concept there and the pin means something else entirely.
-    if (!(await projectLlmGatewayEnabledById(input.projectId))) return NO_REPAIR;
-
     const next = await repointRetiredSessionModel(pin, {
       projectId: input.projectId,
       accountId: input.accountId,
@@ -111,19 +104,42 @@ export async function repairRetiredSessionModelOnOpen(
     // reports `applied: false` (never throws) for a box that is not active,
     // which is the ordinary, correct answer for a cold session: its next boot
     // reads the row.
-    const push = await pushSessionModelToSandbox({
+    //
+    // The push is DETACHED from the open (KRTX-2213): it is best-effort by
+    // design — "a sandbox that is down or unreachable simply picks the new
+    // model up on its next boot", and the turn's own `model_retired` error
+    // remains the fallback — but it POSTS through the daemon transport's full
+    // 15 s timeout, and on prod (2026-10-12..15, 704 warns on
+    // `POST .../sessions/:id/start`) an open whose box was not actually
+    // serving paid that whole wait on the request path: whole /start requests
+    // of ~15.1 s with `The operation timed out.` inside them. Awaiting it
+    // here bought nothing the fallback does not already provide, and cost
+    // every affected open its latency.
+    void pushSessionModelToSandbox({
       projectId: input.projectId,
       sessionId: input.sessionId,
       model: next,
-    });
-    logger.info('[projects] repaired a retired session model on open', {
-      session_id: input.sessionId,
-      from: pin,
-      to: next,
-      pushed: push.applied,
-      push_reason: push.reason,
-    });
-    return { repointed: next, pushed: push.applied };
+    })
+      .then((push) => {
+        logger.info('[projects] repaired a retired session model on open', {
+          session_id: input.sessionId,
+          from: pin,
+          to: next,
+          pushed: push.applied,
+          push_reason: push.reason,
+        });
+      })
+      .catch((error) => {
+        // `pushSessionModelToSandbox` catches its own IO, so this is a defect
+        // guard, not a second failure path — but a detached rejection must
+        // never surface as an unhandled one.
+        logger.warn('[projects] retired session model push failed', {
+          session_id: input.sessionId,
+          pin,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    return { repointed: next };
   } catch (error) {
     logger.warn('[projects] retired session model repair failed', {
       session_id: input.sessionId,

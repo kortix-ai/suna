@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 
-import { siteMetadata } from '@/lib/site-metadata';
+import { siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
 
 /**
  * The client-side guard for the 404 tab title.
@@ -11,7 +11,7 @@ import { siteMetadata } from '@/lib/site-metadata';
  * render replaces a layout that itself aborted, e.g. /blog matching
  * [locale]='blog' — carries no <title>, and the tree's own metadata commit
  * re-asserts the previous default over any one-shot write (the race
- * features/session/session-tab-title-sync.tsx measured at 306ms → 324ms).
+ * packages/ui/src/session/status/session-tab-title-sync.tsx measured at 306ms → 324ms).
  * No server-side metadata export can reach that render: the metadata outlet
  * lives inside the aborted layout.
  *

@@ -56,7 +56,7 @@ output "post_apply_next_steps" {
       aws ssm start-session --target ${aws_instance.this.id}
       sudo kortix self-host configure --instance ${var.instance_name}
       # or non-interactively:
-      sudo kortix self-host secrets set --instance ${var.instance_name} DAYTONA_API_KEY=...
+      sudo kortix self-host secrets set --instance ${var.instance_name} PLATINUM_API_KEY=...
       sudo kortix self-host start --instance ${var.instance_name}
 
     Then open the dashboard at https://${var.domain} -> Settings -> Git (connect

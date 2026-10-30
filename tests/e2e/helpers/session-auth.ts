@@ -153,7 +153,7 @@ export async function signIn(
 
 /**
  * The project page opens the mobile-app introduction once per browser
- * (`apps/web/src/features/workspace/project-layout/home/mobile-app-promo.tsx`).
+ * (`packages/ui/src/workspace/home/mobile-app-promo.tsx`).
  * It is a modal: on a journey's first project page it covers the page, hides
  * it from role queries and blocks its clicks.
  *

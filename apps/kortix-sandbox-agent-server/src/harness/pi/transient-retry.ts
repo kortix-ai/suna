@@ -14,9 +14,12 @@
  *
  * A retry drops the failed assistant message from the agent's context (it is
  * never sent to the model again) and continues from the last user or tool
- * result, the same as pi's own `_prepareRetry`. The root's context is pi's
- * session store, so the root passes its own `dropFailed` (runtime.ts). Two bounded phases, one
- * schedule (default base 2 s):
+ * result, the same as pi's own `_prepareRetry`. The root session retries inside
+ * pi's loop, from the `agent_before_settle` boundary (runtime.ts `turnExtension`):
+ * pi then runs its own post-run checks for every retried step, so a context
+ * threshold or an overflow after a retry still compacts. A child session has no
+ * `AgentSession` and no loop to re-enter, so it keeps the out-of-loop `run`.
+ * Two bounded phases, one schedule (default base 2 s):
  *   - in-turn retries: 5 attempts at 2, 4, 8, 16, 30 s (~60 s) for a blip;
  *   - resumes: 3 more at 60, 120, 240 s (~7 min) for an outage.
  * Only an error that outlasts both ends the turn.
@@ -98,13 +101,18 @@ export class TransientRetry {
     return { attempt, delayMs, next: this.opts.now() + delayMs, message: assistant.errorMessage || 'The model request failed' }
   }
 
-  /** A failed step was continued at least once: the steps after it run outside pi's prompt loop. */
-  get retried(): boolean {
-    return this.attempts > 0
-  }
-
   get wasAborted(): boolean {
     return this.aborted
+  }
+
+  /** Take the attempt `plan` proposed: the next `plan` asks for the following one. */
+  adopt(attempt: number): void {
+    this.attempts = attempt
+  }
+
+  /** The backoff before a retry. False when a stop ended it early. */
+  wait(ms: number): Promise<boolean> {
+    return this.sleep(ms)
   }
 
   /** Stop retrying: a pending backoff ends now and no further step starts. */

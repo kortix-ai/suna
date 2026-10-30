@@ -16,7 +16,7 @@ import { logger } from '@/lib/log/logger'
  * The contract is hard-coded in several places that must keep matching this
  * port:
  *   - packages/sdk/.../platform-client/types.ts  (STATIC_FILE_SERVER: '3211')
- *   - apps/web/src/lib/utils/url.ts              (constructHtmlPreviewUrl)
+ *   - apps/mobile/components/files/file-preview-webview.tsx (constructHtmlPreviewUrl)
  *   - packages/starter/.../opencode/tools/show.ts (agent-facing docs)
  *
  * Purpose: serve any HTML file the agent produces with full relative-asset

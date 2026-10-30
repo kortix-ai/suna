@@ -11,7 +11,7 @@ import type {
  * (`notifyTurnEnd` on busy→idle). There is one stream per window, and it
  * unmounts with the page. Start a turn, open the project home in the same
  * window, and the end reaches nothing: no toast, no favicon dot, no Dock badge.
- * The other-tab relay (`apps/web/src/lib/turn-broadcast.ts`) cannot help: it
+ * The other-tab relay (`packages/ui/src/internal/lib/turn-broadcast.ts`) cannot help: it
  * only repeats what some tab's stream announced.
  *
  * THE SOURCE. The control plane's answer to "which turns are open", with

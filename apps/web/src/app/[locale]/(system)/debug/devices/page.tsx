@@ -8,7 +8,7 @@
  */
 import type { ReactNode } from 'react';
 
-import { useCopy } from '@/hooks/use-copy';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
 
 import { describeUserAgent } from '@/features/workspace/settings/tabs/device-label';
 import {

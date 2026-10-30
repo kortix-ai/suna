@@ -324,7 +324,7 @@ export async function runSessionsCp(argv: string[]): Promise<number> {
   for (const ref of [srcRef, dstRef]) {
     if (ref.kind !== 'remote' || endpoints.has(ref.session)) continue;
     const resolved = await loadSessionForChat(ref.session, { projectArg, hostArg }, 'sessions cp', {
-      requireRunning: false,
+      onNotRunning: 'ignore',
     });
     if (!resolved) return 1;
     const handle = kortixFromAuth(resolved.auth).session(

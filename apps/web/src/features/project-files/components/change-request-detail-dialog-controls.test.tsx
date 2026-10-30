@@ -55,8 +55,8 @@ let conflicts: string[] = [];
 let leaves: Record<string, { allowed: boolean }> = {};
 
 const idleMutation = { mutate() {}, isPending: false, error: null, variables: undefined };
-const changeRequests = await import('../hooks/use-change-requests');
-mock.module('../hooks/use-change-requests', () => ({
+const changeRequests = await import('@kortix/ui/files/project/hooks/use-change-requests');
+mock.module('@kortix/ui/files/project/hooks/use-change-requests', () => ({
   ...changeRequests,
   useChangeRequest: () => ({
     data: {
@@ -82,17 +82,17 @@ mock.module('../hooks/use-change-requests', () => ({
   useCloseChangeRequest: () => idleMutation,
   useReopenChangeRequest: () => idleMutation,
 }));
-mock.module('../hooks/use-change-request-recovery', () => ({
+mock.module('@kortix/ui/files/project/hooks/use-change-request-recovery', () => ({
   useChangeRequestRecovery: () => ({ startRecovery() {}, startingCrId: null }),
 }));
 const manifestVersion =
-  await import('@/features/workspace/customize/migrate-to-v2/manifest-version');
-mock.module('@/features/workspace/customize/migrate-to-v2/manifest-version', () => ({
+  await import('@kortix/ui/internal/lib/manifest-version');
+mock.module('@kortix/ui/internal/lib/manifest-version', () => ({
   ...manifestVersion,
   useProjectManifestVersion: () => ({ version: 2 }),
 }));
-const projectCan = await import('@/lib/use-project-can');
-mock.module('@/lib/use-project-can', () => ({
+const projectCan = await import('@kortix/ui/internal/lib/use-project-can');
+mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   ...projectCan,
   useProjectCans: (_projectId: string, actions: readonly string[]) =>
     Object.fromEntries(actions.map((action) => [action, leaves[action] ?? { allowed: false }])),
@@ -102,8 +102,8 @@ const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query
 const { NextIntlClientProvider } = await import('@/i18n/use-translations');
 const { PROJECT_ACTIONS } = await import('@kortix/sdk');
 const messages = (await import('../../../../translations/en.json')).default;
-const { ProjectFilesProvider } = await import('../context');
-const { ChangeRequestDetailDialog } = await import('./change-request-detail-dialog');
+const { ProjectFilesProvider } = await import('@kortix/ui/files/project/context');
+const { ChangeRequestDetailDialog } = await import('@kortix/ui/files/project/components/change-request-detail-dialog');
 
 const { PROJECT_WRITE, PROJECT_GITOPS_PUSH, PROJECT_GITOPS_MERGE, PROJECT_REVIEW_ACT } =
   PROJECT_ACTIONS;

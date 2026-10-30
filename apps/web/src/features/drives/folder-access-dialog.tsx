@@ -1,10 +1,11 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { Field, FieldLabel } from '@/components/ui/field';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
+import { Button } from '@kortix/ui/button';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { Field, FieldLabel } from '@kortix/ui/field';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -13,24 +14,24 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { UserAvatar } from '@/components/ui/user-avatar';
+} from '@kortix/ui/modal';
+import { RadioGroup, RadioGroupItem } from '@kortix/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { UserAvatar } from '@kortix/ui/user-avatar';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useProjectAgentIdentities } from '@/features/workspace/shared/access/agent-principals';
+import { useProjectAgentIdentities } from '@kortix/ui/access/access/agent-principals';
 import {
   EMPTY_PRINCIPAL_SELECTION,
-  PrincipalPicker,
   type PrincipalSelection,
-} from '@/features/workspace/shared/access/principal-picker';
-import { useFolderAccess, useFolderPrincipals, useShareFolder, useUnshareFolder } from '@/hooks/drives/use-drives';
+} from '@kortix/ui/access/access/principal-picker';
+import { PrincipalPicker } from '@kortix/ui/access';
+import { useFolderAccess, useFolderPrincipals, useShareFolder, useUnshareFolder } from '@kortix/ui/files';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import type { FolderGrant, FolderLevel, FolderPrincipalType } from '@kortix/sdk';
-import { LockIcon, RobotIcon, UsersIcon, UsersThreeIcon, XIcon } from '@phosphor-icons/react';
+import { LockIcon, UsersIcon, UsersThreeIcon, XIcon } from '@phosphor-icons/react';
 import { type ReactNode, useId, useMemo, useState } from 'react';
 
 import {
@@ -51,8 +52,9 @@ export function folderName(path: string, root: string): string {
 /** A grant's avatar: a person's initials, or the team / agent / project glyph. */
 export function GrantAvatar({ type, label }: { type: FolderPrincipalType; label: string }) {
   if (type === 'user') return <UserAvatar email={label} size="sm" />;
-  const icon = type === 'group' ? UsersIcon : type === 'agent' ? RobotIcon : UsersThreeIcon;
-  return <EntityAvatar icon={icon} label={label} size="sm" />;
+  // An agent grant's label is the agent's name: its pixel mark, on the `sm` tile's 22px.
+  if (type === 'agent') return <AgentMark slug={label} size={14} tile={22} />;
+  return <EntityAvatar icon={type === 'group' ? UsersIcon : UsersThreeIcon} label={label} size="sm" />;
 }
 
 /** One row of an access list, the same row the agent and account share dialogs draw. */
@@ -215,9 +217,10 @@ function FolderAccessForm({
       list?.find((x) => x.id === pickedId)?.label ?? pickedId;
     for (const memberId of next.memberIds) added.push({ type: 'user', id: memberId, label: label(principals.data?.people, memberId), level: 'write' });
     for (const groupId of next.groupIds) added.push({ type: 'group', id: groupId, label: label(principals.data?.teams, groupId), level: 'write' });
+    const agentNames = new Map(identities.data?.map((a) => [a.service_account_id, a.agent_name]));
     for (const saId of next.agentIds ?? []) {
       // The picker names an agent by its service account; a folder share names it by the agent's name.
-      const name = identities.data?.find((a) => a.service_account_id === saId)?.agent_name;
+      const name = agentNames.get(saId);
       if (name) added.push({ type: 'agent', id: name, label: name, level: 'write' });
     }
     const fresh = added.filter((n) => !have.has(namedKey(n)));

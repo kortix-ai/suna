@@ -16,7 +16,10 @@ import {
 
 const dir = import.meta.dir;
 const creditTransactionsSource = readFileSync(join(dir, 'credit-transactions.tsx'), 'utf8');
-const adminPageSource = readFileSync(join(dir, '../../app/[locale]/admin/accounts/page.tsx'), 'utf8');
+const adminPageSource = readFileSync(
+  join(dir, '../../app/[locale]/admin/accounts/page.tsx'),
+  'utf8',
+);
 
 describe('creditTransactionBadge', () => {
   test('names the ledger types an operator reads most', () => {
@@ -148,4 +151,20 @@ describe('CreditTransactionsTable renders a ledger row', () => {
     const html = render([grant]);
     expect(html.match(/rounded-md/g)?.length ?? 0).toBe(1);
   });
+});
+
+test('expiring grants show their recorded lapse date', () => {
+  const html = render([
+    {
+      id: 'expiry',
+      createdAt: null,
+      type: 'tier_grant',
+      description: null,
+      isExpiring: true,
+      expiresAt: '2026-11-24T12:00:00Z',
+      amount: 5,
+      balanceAfter: 5,
+    },
+  ]);
+  expect(html).toContain('Nov 24, 2026');
 });

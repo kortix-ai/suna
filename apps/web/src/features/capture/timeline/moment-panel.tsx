@@ -3,7 +3,7 @@
 import type { CaptureAction, CaptureAudioLine } from '@kortix/sdk';
 
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 import { clockTime, indexAtOrBefore, shortDate } from '../capture-time';
 

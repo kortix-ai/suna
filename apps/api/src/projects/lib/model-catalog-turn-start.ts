@@ -164,7 +164,7 @@ export interface ModelCatalogTurnStartDeps {
   /** Is this a model id the control plane currently serves as managed? A
    *  request for anything else (BYOK, a retired id, a typo) is out of scope
    *  for this lane — see the module doc. */
-  isManagedModelId: (id: string) => boolean;
+  isLineupModelId: (id: string) => boolean;
   lastKnown: (sessionId: string) => RunningCatalogLookup | undefined;
   /** One health GET, the same one the config/asset gates already make when
    *  cold. Fills the memo for THIS call and every later one within the TTL. */
@@ -198,7 +198,7 @@ export async function convergeModelCatalogBeforeTurnStart(
 ): Promise<ModelCatalogTurnStartResult> {
   try {
     if (!requestedManagedModelId) return { decision: 'skipped' };
-    if (!deps.isManagedModelId(requestedManagedModelId)) {
+    if (!deps.isLineupModelId(requestedManagedModelId)) {
       return await convergeOneModel(sessionId, requestedManagedModelId, deps);
     }
     // The box said it cannot converge its catalog (pi): asking again is

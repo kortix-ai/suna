@@ -6,6 +6,7 @@ import {
   MAX_PROMPT_REDELIVERIES,
   type RedeliveryDeps,
   findInterruptedTurn,
+  interruptedTurnContinuationParts,
   interruptedTurnContinuationText,
   requeueAbandonedPrompt,
 } from './redelivery';
@@ -284,5 +285,17 @@ describe('findInterruptedTurn', () => {
       '[auto-recovery] The previous turn was interrupted. The runtime that ran it stopped. ' +
         'Continue from where you left off. Do not repeat steps that already completed.',
     );
+  });
+
+  test('the continuation goes on the wire marked synthetic — harness context, not a user prompt (KRTX-2597)', () => {
+    expect(interruptedTurnContinuationParts({ endedAt: ENDED_AT, cause: 'The sandbox stopped unexpectedly while this turn was running.' })).toEqual([
+      {
+        type: 'text',
+        text: '[auto-recovery] The previous turn was interrupted at 2026-10-14 12:03 UTC. ' +
+          'The sandbox stopped unexpectedly while this turn was running. ' +
+          'Continue from where you left off. Do not repeat steps that already completed.',
+        synthetic: true,
+      },
+    ]);
   });
 });

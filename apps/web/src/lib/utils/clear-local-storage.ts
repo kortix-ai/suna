@@ -39,11 +39,19 @@ export const APP_STORAGE_PREFIXES = [
  * whose name is on this list has NO `registerPersistedStore(...)` call
  * (see `persisted-store-registry.ts`) — the disk KEEP and the in-memory
  * exclusion must never drift apart.
+ *
+ * The two promo-dismissal entries hold the same class of fact as the theme
+ * and the sound switch: "this browser has already been shown this" — not
+ * anything tied to the signed-in identity. Sweeping them on sign-out made
+ * every promo modal re-ask on every fresh sign-in (KRTX-2640), the exact
+ * regression the paragraph above names for preferences.
  */
 export const KEEP_STORAGE_KEYS: ReadonlySet<string> = new Set([
   'kortix-sound-preferences',
   'kortix-user-preferences',
   'kortix-web-notifications',
+  'kortix.mobileAppPromo',
+  'kortix:marko-welcome-dismissed',
 ]);
 
 /** Whether `key` is owned by this app (matches a prefix above). */
@@ -90,7 +98,7 @@ function sweepStorage(storage: Storage): void {
  * with no second commit required to remember it.
  *
  * Does NOT touch cookies. `kortix_last_project` survives sign-out on purpose
- * — see `lib/onboarding/last-project-cookie.ts` and the tripwire test at
+ * — see `packages/ui/src/internal/lib/onboarding/last-project-cookie.ts` and the tripwire test at
  * `lib/auth/sign-out-navigation.test.ts`.
  */
 export const clearUserLocalStorage = () => {

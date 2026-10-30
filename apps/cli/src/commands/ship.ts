@@ -5,7 +5,7 @@ import { type ApiClient, ApiError, clientFromAuth } from '../api/client.ts';
 import { activeHostName, getHost } from '../api/config.ts';
 import type { ProjectSecretsResponse, ProjectSummary } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
-import { takeFlagBool, takeFlagValue, tokenRejectedLine } from '../command-helpers.ts';
+import { fail, takeFlagBool, takeFlagValue, tokenRejectedLine } from '../command-helpers.ts';
 import {
   commitIfNeeded,
   currentBranch,
@@ -69,7 +69,8 @@ Where it backs the project (origin is inferred, never asked):
     one-click install link (same as the web UI import); or pass
     --github-token <PAT> to link without the app. Sessions clone/push the real
     repo, so \`git push\` stays synced.
-  * Other existing \`origin\` remote                       → registered + pushed.
+  * Other existing \`origin\` remote (GitLab, Bitbucket, …) → refused: Kortix
+    links GitHub repositories only. Pass --origin managed instead.
   * No \`origin\` remote                                    → creates a managed
     Kortix git repo and pushes to it. No GitHub needed.
 
@@ -82,7 +83,7 @@ Options:
   --account <id|slug>  Account to create the project under (first ship only).
   --origin <value>     Override origin choice:
                          managed      force a managed Kortix repo
-                         <git-url>    register + push to this remote
+                         <github-url> link + push to this GitHub repo
   --github-token <pat> Link a GitHub origin with this token instead of the
                        GitHub App (App-free import; needs repo Contents R/W).
   -m, --message <msg>  Commit message for the sync (default: "kortix: ship").
@@ -382,15 +383,25 @@ async function shipFirstTime(
 ): Promise<number> {
   const name = flags.name ?? manifestProjectName() ?? basename(process.cwd());
 
-  // Which account owns the new project? Ask when there's a real choice.
-  const accountId = await resolveShipAccount(client, auth, flags);
-
   // Decide origin without asking: explicit flag → existing remote → managed.
   const explicitUrl =
     flags.origin && flags.origin !== 'managed' && flags.origin !== 'github' ? flags.origin : null;
   const forceManaged = flags.origin === 'managed';
   const existingOrigin = forceManaged ? null : detectOrigin();
   const byoUrl = explicitUrl ?? existingOrigin;
+  // POST /projects links GitHub repositories only (normalizeRepoUrl in
+  // apps/api/src/projects/lib/serializers.ts): refuse any other remote here
+  // instead of after the account prompt with the server's 400.
+  if (byoUrl && !isGitHubUrl(byoUrl)) {
+    return fail(
+      `Kortix links GitHub repositories only, and ${byoUrl} is not one. ` +
+        'Pass --origin managed to create a managed Kortix repo (origin then points at it), ' +
+        'or --origin <github-url>.',
+    );
+  }
+
+  // Which account owns the new project? Ask when there's a real choice.
+  const accountId = await resolveShipAccount(client, auth, flags);
 
   let project: ProjectSummary;
   let gitTarget: ProjectGitTarget;
@@ -400,34 +411,25 @@ async function shipFirstTime(
   };
 
   if (byoUrl) {
-    const github = isGitHubUrl(byoUrl);
     process.stdout.write(
       `\n  ${C.bold}kortix ship${C.reset}  ${C.dim}new project → your git${C.reset}\n` +
-        `  ${C.dim}origin  ${C.reset}${byoUrl}${github ? `  ${C.faded}(GitHub)${C.reset}` : ''}\n\n`,
+        `  ${C.dim}origin  ${C.reset}${byoUrl}  ${C.faded}(GitHub)${C.reset}\n\n`,
     );
     if (flags.dryRun) {
-      const how = github
-        ? `link ${byoUrl} via GitHub App${flags.githubToken ? ' token' : ' (1-click install if needed)'}`
-        : `POST /projects {repo_url:"${byoUrl}"}`;
-      process.stdout.write(`  ${C.dim}[dry-run] would: ${how} + push${C.reset}\n\n`);
+      process.stdout.write(
+        `  ${C.dim}[dry-run] would: link ${byoUrl} via GitHub App${flags.githubToken ? ' token' : ' (1-click install if needed)'} + push${C.reset}\n\n`,
+      );
       return 0;
     }
     // GitHub origin → the seamless import (one-click App install, or --github-token).
-    // Non-GitHub remote → the generic project link.
-    project = await (github
-      ? linkGitHubBackedProject(client, {
-          repoUrl: byoUrl,
-          name,
-          accountId,
-          githubToken: flags.githubToken,
-          yes: flags.yes,
-        })
-      : client.post<ProjectSummary>('/projects', {
-          repo_url: byoUrl,
-          name,
-          account_id: accountId,
-        })).catch(explainCreationRefusal);
-    bindShippedFolder(project, hostName, auth);
+    project = await linkGitHubBackedProject(client, {
+      repoUrl: byoUrl,
+      name,
+      accountId,
+      githubToken: flags.githubToken,
+      yes: flags.yes,
+    }).catch(explainCreationRefusal);
+    await bindShippedFolder(client, project, hostName, auth);
     // BYO stays BYO: push with the user's own git credentials, to their remote.
     gitTarget = { repoUrl: project.repo_url, credentialMode: 'none' };
     // Only touch the remote when the user named one explicitly — an existing
@@ -462,7 +464,7 @@ async function shipFirstTime(
     // this, a failure after provision left an unlinked cloud project behind and
     // the retry provisioned a SECOND one, silently burning the account's
     // project quota until creation started 403ing on the limit.
-    bindShippedFolder(project, hostName, auth);
+    await bindShippedFolder(client, project, hostName, auth);
     gitTarget = resolveProjectGitTarget(prov);
     cred = await resolvePushCredential(client, auth, project.project_id, gitTarget, prov);
     setOrigin(gitTarget.repoUrl);
@@ -572,11 +574,12 @@ async function finishShip(
 /** Write `.kortix/link.json` so this folder is bound to the cloud project.
  *  Called the moment the project exists — see the note at its first-ship call
  *  site for why ordering matters. */
-function bindShippedFolder(
+async function bindShippedFolder(
+  client: ApiClient,
   project: ProjectSummary,
   hostName: string | undefined,
   auth: Auth,
-): void {
+): Promise<void> {
   saveLink({
     project_id: project.project_id,
     account_id: project.account_id,
@@ -584,6 +587,12 @@ function bindShippedFolder(
     host_url: auth.api_base,
     linked_at: new Date().toISOString(),
   });
+  // CLI creation is an implicit skip of the web project wizard.
+  try {
+    await client.patch(`/projects/${project.project_id}/onboarding`, { completed: true });
+  } catch {
+    process.stderr.write('Could not dismiss project onboarding; skip it on your first web visit.\n');
+  }
 }
 
 function reportShipped(auth: Auth, project: ProjectSummary, repoUrl: string): void {
@@ -613,7 +622,7 @@ function surface(err: unknown): number {
       process.stderr.write(
         `${status.err(err.message)}\n` +
           `  ${C.dim}Update first — ${C.reset}${C.cyan}kortix update${C.reset}${C.dim} — then retry. Still failing? ` +
-          `Pass ${C.reset}${C.cyan}--origin <git-url>${C.reset}${C.dim} to push to your own remote instead.${C.reset}\n`,
+          `Pass ${C.reset}${C.cyan}--origin <github-url>${C.reset}${C.dim} to push to your own GitHub repo instead.${C.reset}\n`,
       );
     } else {
       process.stderr.write(`${status.err(`HTTP ${err.status}: ${err.message}`)}\n`);

@@ -500,6 +500,7 @@ pub fn tray_text(paths: &MemoryPaths, recording: bool) -> TrayText {
 pub fn tray_words(account: Option<&str>, recording: bool, reason: Option<&str>) -> TrayText {
     let status = match (reason, recording) {
         (Some("policy_paused"), _) => account.map_or("Paused by policy".into(), |a| format!("Paused by {a}")),
+        (Some("policy_pending"), _) => account.map_or("Waiting for your organization's settings".into(), |a| format!("Waiting for {a}'s settings")),
         (Some("policy_off"), _) => account.map_or("Screen recording is off by policy".into(), |a| format!("Screen recording is off for {a}")),
         (Some(_), _) => "Paused".to_string(),
         (None, true) => account.map_or("Recording".into(), |a| format!("Recording for {a}")),
@@ -577,20 +578,26 @@ pub enum TrayAction {
     PauseForever,
     /// "Resume" while paused (`kortix-capture resume`).
     Resume,
+    /// "Restart Kortix Capture" (`kortix-capture restart`).
+    Restart,
+    /// "Quit Kortix Capture" (`kortix-capture quit`): stops until the app opens again or the next login.
+    Quit,
 }
 
 /// A managed computer offers none of them: the organization runs the recording.
-/// A computer the person set up offers the pauses (or "Resume" while paused). There is no
-/// Quit: nothing in the menu stops the background recorder, only a pause does.
+/// A computer the person set up offers the pauses (or "Resume" while paused), then
+/// "Restart" and "Quit". A managed computer offers none: the organization runs it.
 pub fn tray_actions(managed: bool, paused: bool) -> Vec<TrayAction> {
     if managed {
         return vec![];
     }
-    if paused {
+    let mut v = if paused {
         vec![TrayAction::Resume]
     } else {
         vec![TrayAction::Pause, TrayAction::PauseTomorrow, TrayAction::PauseForever]
-    }
+    };
+    v.extend([TrayAction::Restart, TrayAction::Quit]);
+    v
 }
 
 /// The tray's status line. A managed computer uses the organization's words; a
@@ -763,6 +770,7 @@ mod tests {
         assert_eq!(tray_words(None, false, None).status, "Not recording");
         assert_eq!(tray_words(Some("Example Org"), true, Some("policy_paused")).status, "Paused by Example Org");
         assert_eq!(tray_words(None, true, Some("policy_paused")).status, "Paused by policy");
+        assert_eq!(tray_words(Some("Example Org"), false, Some("policy_pending")).status, "Waiting for Example Org's settings");
         for t in [tray_words(None, true, Some("policy_off")), tray_words(None, false, None)] {
             assert!(!t.status.to_lowercase().contains("your organization"), "{}", t.status);
         }
@@ -870,15 +878,23 @@ mod tests {
     }
 
     #[test]
-    fn the_tray_offers_pauses_and_nothing_when_managed() {
-        assert_eq!(tray_actions(true, false), vec![]);
+    fn the_tray_offers_pauses_restart_and_quit_and_nothing_when_managed() {
+        assert_eq!(tray_actions(true, false), vec![], "the organization runs it: no Quit");
         assert_eq!(tray_actions(true, true), vec![]);
         assert_eq!(
             tray_actions(false, false),
-            vec![TrayAction::Pause, TrayAction::PauseTomorrow, TrayAction::PauseForever],
-            "pauses only, never a Quit"
+            vec![
+                TrayAction::Pause,
+                TrayAction::PauseTomorrow,
+                TrayAction::PauseForever,
+                TrayAction::Restart,
+                TrayAction::Quit
+            ]
         );
-        assert_eq!(tray_actions(false, true), vec![TrayAction::Resume]);
+        assert_eq!(
+            tray_actions(false, true),
+            vec![TrayAction::Resume, TrayAction::Restart, TrayAction::Quit]
+        );
         let t = tray_words(Some("Example Org"), true, None);
         assert_eq!(tray_status(&t, false, "recording", None), "Recording");
         assert_eq!(tray_status(&t, false, "not_recording", None), "Not recording");

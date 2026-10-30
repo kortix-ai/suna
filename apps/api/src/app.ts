@@ -1,6 +1,7 @@
-import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { wellKnownResponse } from '@kortix/shared/well-known';
+import { createRoute, z } from '@hono/zod-openapi';
 import { config } from './config';
-import { auth, errors, json } from './openapi';
+import { auth, errors, json, makeOpenApiApp } from './openapi';
 import { combinedAuth, supabaseAuth } from './middleware/auth';
 import { getPlatformRole } from './shared/platform-roles';
 
@@ -18,6 +19,7 @@ import { notificationsApp } from './notifications/routes';
 import { drivesApp } from './drives/routes';
 import { feedbackApp } from './feedback';
 import {
+  channelWebhookRoutes,
   emailWebhookApp,
   registerEmailWebhookRoutes,
   registerSlackWebhookRoutes,
@@ -28,7 +30,7 @@ import {
   teamsIdentityApp,
   teamsOauthApp,
   teamsWebhookApp,
-  telegramWebhookApp,
+  telegramInbound,
 } from './channels';
 import { connectorApp } from './connectors';
 import { nativeOAuth2CallbackApp } from './connectors/oauth2-callback';
@@ -64,13 +66,16 @@ import { registerCaptureStoreProxy } from './capture/store-proxy';
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
-const app = new OpenAPIHono();
+const app = makeOpenApiApp();
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
 
 installHttpMiddleware(app);
 
+for (const path of ['/.well-known/security.txt', '/robots.txt', '/sitemap.xml']) {
+  app.get(path, (c) => wellKnownResponse(c.req.path) ?? c.notFound());
+}
 registerSystemRoutes(app);
 registerClientRoutes(app);
 
@@ -89,6 +94,8 @@ registerCaptureStoreProxy(app);
 // Capture routes live under /v1/accounts/:accountId/capture.
 import { createCaptureRouter } from './capture/device-routes';
 app.route('/v1/capture', createCaptureRouter());
+import { createCliDeviceRouter } from './cli/device-routes';
+app.route('/v1/cli/device', createCliDeviceRouter());
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
@@ -158,6 +165,16 @@ app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — acco
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/drives', drivesApp); // personal, agent and company drives + their files and versions
+// Kortix in Chrome: the user's own Chrome, driven from a session sandbox. The
+// control socket (/v1/chrome/ws) is upgraded in inbound-dispatch.ts. The sandbox
+// routes (attach, release) take only a session-scoped credential, checked in the
+// handler; enforceTokenProjectScope lets that credential through (auth-scope.ts).
+import { chromeApp, chromeConnectionsApp, chromeMasterSwitch, registerChromeRoutes } from './chrome/routes';
+app.use('/v1/chrome/*', chromeMasterSwitch);
+app.use('/v1/chrome/*', supabaseAuth);
+registerChromeRoutes();
+app.route('/v1/chrome/connections', chromeConnectionsApp); // GET /v1/chrome/connections, PATCH|DELETE /v1/chrome/connections/:id
+app.route('/v1/chrome', chromeApp); // POST /v1/chrome/attach, /v1/chrome/release
 app.route('/v1/notifications', notificationsApp); // POST/DELETE /v1/notifications/device-token — mobile push registration
 app.route('/v1/feedback', feedbackApp); // POST /v1/feedback — product feedback from agents, the CLI and the web app
 // Auth for the platform routes that need an identity. Scoped to these exact
@@ -182,6 +199,10 @@ app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/ve
 // supabaseAuth would otherwise 401 an anonymous verifier.
 import { tokenIssuerApp } from './apps/token-issuer-routes';
 app.route('/v1/projects', tokenIssuerApp); // /v1/projects/:projectId/{.well-known/openid-configuration,jwks.json}
+// App events: authenticated by the App's own token, so also before projectsApp.
+import { appEventsApp, registerAppEventRoutes } from './apps/event-routes';
+registerAppEventRoutes();
+app.route('/v1/projects', appEventsApp); // POST /v1/projects/:projectId/apps/:appId/events
 registerAllProjectRoutes();
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 registerSessionLookupRoutes();
@@ -242,9 +263,9 @@ registerTeamsWebhookRoutes();
 app.route('/v1/webhooks/teams', teamsWebhookApp); // /v1/webhooks/teams/messages — Bot Framework activities
 app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
-app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
+app.route('/v1/webhooks/telegram', channelWebhookRoutes(telegramInbound)); // /v1/webhooks/telegram/:projectId — Telegram updates
 registerEmailWebhookRoutes();
-app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
+app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/resend — Resend inbound inbox email (Svix-signed)
 registerSendEmailHookRoutes();
 app.route('/v1/webhooks/auth', authEmailHookApp); // /v1/webhooks/auth/send-email — Supabase Auth send-email hook (Standard Webhooks-signed)
 
@@ -286,14 +307,21 @@ import { approvalLinksApp } from './setup-links/approval-app';
 app.use('/v1/approval-links/*', supabaseAuth);
 app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:token
 
-// Public session shares — PUBLIC, share-id-gated. Anonymous, read-only
-// session title + sanitized transcript for a valid session public-share
-// (any resource type SESS-13's CRUD creates); exposed through the SDK's
-// `getPublicSessionShare` / `getPublicSessionShareMessages`. The web app has
-// no page for it. No auth, no client-side sandbox access — the API reads the
-// sandbox's OpenCode daemon server-side.
-import { publicSessionSharesApp } from './public-session-shares';
-app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
+// Shared responses — PUBLIC, token-gated. One assistant response a member
+// published as a stored text snapshot (the authenticated half is
+// /v1/projects/:id/sessions/:sid/turns/:turnId/share). No auth, no sandbox.
+import { publicResponsesApp, registerPublicResponseRoutes } from './public-responses';
+registerPublicResponseRoutes();
+app.route('/v1/public/responses', publicResponsesApp); // GET /v1/public/responses/:token
+
+// Artifact content — PUBLIC, capability-gated. A signed view token (minted by
+// /v1/projects/:id/artifacts*) or a public artifact's id is the capability;
+// every page is served as a CSP sandbox. See artifacts/content-routes.ts.
+import { artifactContentApp, registerArtifactContentRoutes } from './artifacts/content-routes';
+registerArtifactContentRoutes();
+app.route('/v1/artifacts', artifactContentApp); // GET /v1/artifacts/{s/:token,p/:artifactId}/*
+
+
 
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin

@@ -47,5 +47,38 @@ export function legalTermsRedirectUrl(
   return destination;
 }
 
+/** The short paths a visitor types for the legal texts, and where each lives.
+ *  They answered 200 with the "Page not found" page (KRTX-3256). */
+const LEGAL_SHORT_PATHS: Record<string, { path: string; tab?: 'terms' | 'privacy' | 'imprint' }> = {
+  '/terms': { path: '/legal', tab: 'terms' },
+  '/privacy': { path: '/legal', tab: 'privacy' },
+  '/imprint': { path: '/legal', tab: 'imprint' },
+  '/subprocessors': { path: '/legal/subprocessors' },
+};
+
+/**
+ * The legal page for a short path (`/privacy`, `/de/privacy`, …) on `base`'s
+ * origin, with incoming params kept and `tab` set where the text is a tab.
+ * Returns `null` for every other path.
+ */
+export function legalShortPathRedirectUrl(
+  pathname: string,
+  searchParams: URLSearchParams,
+  base: string | URL,
+): URL | null {
+  const [, first, second, ...rest] = pathname.split('/');
+  const prefixed = (locales as readonly string[]).includes(first ?? '');
+  if (rest.length > 0 || (!prefixed && second !== undefined)) return null;
+  const target = LEGAL_SHORT_PATHS[`/${prefixed ? second : first}`];
+  if (!target) return null;
+
+  const destination = new URL(prefixed ? `/${first}${target.path}` : target.path, base);
+  searchParams.forEach((value, key) => {
+    if (key !== 'tab') destination.searchParams.set(key, value);
+  });
+  if (target.tab) destination.searchParams.set('tab', target.tab);
+  return destination;
+}
+
 /** Re-export so callers can keep locale logic close to the redirect logic. */
 export type { Locale };

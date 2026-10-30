@@ -30,6 +30,12 @@ describe('takeSessionListFlags', () => {
     expect(takeSessionListFlags([]).view).toBeUndefined();
     expect(() => takeSessionListFlags(['--pinned', '--archived'])).toThrow('only one of --pinned, --archived');
   });
+  test('maps --deleted (Recently deleted) and rejects it with --pinned or --archived', () => {
+    expect(takeSessionListFlags(['--deleted']).view).toBe('deleted');
+    expect(sessionListQuery(takeSessionListFlags(['--deleted']))).toBe('?deleted=only');
+    expect(() => takeSessionListFlags(['--deleted', '--archived'])).toThrow('only one of --pinned, --archived, --deleted');
+    expect(() => takeSessionListFlags(['--pinned', '--deleted'])).toThrow('only one of --pinned, --archived, --deleted');
+  });
 });
 
 describe('sessionListQuery', () => {

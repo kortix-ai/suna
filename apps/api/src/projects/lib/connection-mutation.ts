@@ -42,6 +42,22 @@ export function mayMutateConnection(
   );
 }
 
+/**
+ * A person revoked the account: an agent session may not touch it, so only a
+ * person turns it back on. Every route that could revive a revoked row
+ * (activate, credential, default, connect, OAuth2 sign-in) loads it through
+ * `loadMutableConnection`, which applies this.
+ */
+export function agentMayTouchConnection(connection: { status: string }, actor: { sessionBound: boolean }): boolean {
+  return !(actor.sessionBound && connection.status === 'revoked');
+}
+
+/** The answer an agent session gets on an account a person revoked. The CLI reads the code as "a person must do this". */
+export const AGENT_REVOKED_ACCOUNT_REFUSAL = {
+  error: 'A person revoked this connector account, so an agent cannot use or change it. A person turns it back on in Customize → Connectors.',
+  code: 'agent_session_forbidden',
+} as const;
+
 /** The connection row (with its connector's type, config and alias) in this project and account, or null. */
 export async function loadConnectionForMutation(projectId: string, connectionId: string, accountId: string) {
   const [connection] = await db

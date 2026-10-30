@@ -3,7 +3,6 @@ import { runGitCredentialHelper } from '@/lib/git/git'
 import { harnessProtectedPathSegments, loadConfig, resolveHarness, warmPiSystemPackages, type HarnessBootContext } from '@/harness/harness'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { enableDaemonLogFile, logger } from '@/lib/log/logger'
-import { runMonitorMode } from '@/app/monitor-mode'
 import { startStaticWebServer } from '@/services/static-web/static-web'
 import { startProxy } from '@/app/server'
 import { installShutdownHandlers } from '@/app/shutdown'
@@ -41,12 +40,7 @@ async function main() {
   }
   const context: HarnessBootContext = { cfg, bootTime, bootState, bootMark, serve }
 
-  // Warm-seed capture has always taken precedence over monitor selection.
   if (await selected.runWarmSeed?.(context)) return
-  if (cfg.workload === 'monitor') {
-    await runMonitorMode(context, selected)
-    return
-  }
   await selected.run(context)
 }
 

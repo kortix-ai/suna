@@ -1,7 +1,7 @@
 /**
  * The project gates as route handlers call them: they read the request's
- * principal (`actorOf`), its agent-session binding, its `account_id` and the
- * admin-bypass header, and hand plain values to the cores in
+ * principal (`actorOf`), its agent-session binding and its `account_id`, and
+ * hand plain values to the cores in
  * `project-access.ts` and `project-quota.ts`. Re-exported by `./access`.
  */
 import type { Context } from 'hono';
@@ -105,14 +105,23 @@ export async function agentSessionWorkspaceAllowsRepository(
   return sessionWorkspaceAllowsRepositoryAccess({ sessionId, accountId, projectId });
 }
 
+export const SESSION_REPOSITORY_ACCESS_DENIED = 'session_repository_access_denied';
+
 export async function assertAgentSessionWorkspaceAllowsRepository(
   c: Context,
   accountId: string,
   projectId: string,
 ): Promise<void> {
   if (await agentSessionWorkspaceAllowsRepository(c, accountId, projectId)) return;
+  // Typed: the CLI keys its remedy on the code. No token grant fixes this, so
+  // it must not send the agent to edit kortix_permissions.
+  const message = 'session workspace does not allow repository access';
   throw new HTTPException(403, {
-    message: 'session workspace does not allow repository access',
+    message,
+    res: new Response(
+      JSON.stringify({ error: true, message, status: 403, code: SESSION_REPOSITORY_ACCESS_DENIED }),
+      { status: 403, headers: { 'content-type': 'application/json' } },
+    ),
   });
 }
 
@@ -134,8 +143,6 @@ export async function loadProjectForUser(c: Context<AppEnv>, projectId: string, 
     // A service account has NO account_members row: the gate skips the human
     // membership hard-gate for it.
     isServiceAccount: c.get('authType') === 'service_account',
-    // The platform-admin READ-ONLY bypass header (see `resolveProjectGate`).
-    bypassHeaderPresent: c.req.header('x-kortix-admin-bypass') === '1',
   });
   c.set('accountId', row.accountId);
 

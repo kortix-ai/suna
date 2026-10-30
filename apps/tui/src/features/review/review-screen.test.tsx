@@ -212,6 +212,46 @@ describe('<ReviewView/> through the OpenTUI test renderer', () => {
     renderer.destroy();
   });
 
+  test('close confirms, reports success and releases busy state', async () => {
+    const { element, calls } = harness();
+    const { flush, mockInput, renderer } = await testRender(element, SIZE);
+    try {
+      await settle(flush);
+      await press(mockInput, flush, 'x');
+      expect(calls.closed).toEqual([]);
+      await press(mockInput, flush, 'y');
+      expect(calls.closed).toEqual(['cr-open']);
+      expect(calls.toasts).toEqual(['info: Closed #12']);
+      await press(mockInput, flush, 'm');
+      await press(mockInput, flush, 'y');
+      expect(calls.merged).toEqual(['cr-open']);
+    } finally {
+      renderer.destroy();
+    }
+  });
+
+  for (const action of ['merge', 'close'] as const) {
+    test(`${action} rejection reports the error and releases busy state`, async () => {
+      const { element, calls } = harness({
+        [action]: async () => { throw new Error('write rejected'); },
+      });
+      const { flush, mockInput, renderer } = await testRender(element, SIZE);
+      try {
+        await settle(flush);
+        const key = action === 'merge' ? 'm' : 'x';
+        await press(mockInput, flush, key);
+        await press(mockInput, flush, 'y');
+        const message = `error: ${action === 'merge' ? 'Merge' : 'Close'} failed: write rejected`;
+        expect(calls.toasts).toEqual([message]);
+        await press(mockInput, flush, key);
+        await press(mockInput, flush, 'y');
+        expect(calls.toasts).toEqual([message, message]);
+      } finally {
+        renderer.destroy();
+      }
+    });
+  }
+
   test('Esc cancels the confirm without writing', async () => {
     const { element, calls } = harness();
     const { captureCharFrame, flush, mockInput, renderer } = await testRender(element, SIZE);

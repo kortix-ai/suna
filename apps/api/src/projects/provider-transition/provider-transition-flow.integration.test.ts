@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq, ne } from 'drizzle-orm';
 import { createDb, accounts, projects, sandboxTemplates, type Database } from '@kortix/db';
+import { renderMetrics } from '../../lib/metrics';
 import {
   providerTransitionMetricsSnapshot,
   resetProviderTransitionMetricsForTest,
@@ -174,6 +175,16 @@ function makeDeps(world: FakeWorld, now: () => Date = () => new Date()): Transit
  */
 function identity(_projectId: string, commit: string, base: string): ResolvedPrepIdentity {
   return { commitSha: commit, baseRuntimeIdentity: base, snapshotName: base };
+}
+
+/** Read one rendered Prometheus counter value (default 0) — the histogram
+ *  singletons are module state shared by every test in this process, so assert
+ *  DELTAS around the drive, never absolute values. */
+function renderedMetricCount(name: string, labels: string): number {
+  const line = renderMetrics()
+    .split('\n')
+    .find((l) => l.startsWith(`${name}{${labels}}`));
+  return line ? Number(line.slice(line.lastIndexOf(' ') + 1)) : 0;
 }
 
 beforeAll(async () => {
@@ -1075,5 +1086,62 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     expect(outcome).toBe('activated');
     expect(beats).toBe(3); // the drive DID thread a heartbeat callback into the build
     expect((await readActiveRouting(db, projectId))?.activeProvider).toBe('platinum');
+  });
+
+  // provider_transitions_total counts TRANSITIONS ("transitions by event and
+  // target provider"), so a drive must tally build_succeeded exactly ONCE — at
+  // the ready milestone, which carries timeToReadySeconds AND (fresh builds
+  // only) buildSeconds. Emitting it again inside prepareTargetImage (post-build
+  // confirm) double-counted every fresh build (2 per drive, image-reuse = 1).
+  test('a fresh-build drive tallies exactly ONE build_succeeded, with buildSeconds observable', async () => {
+    resetProviderTransitionMetricsForTest();
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id); // image absent → ensureWarmImage builds it → ready
+    const res = await reserveSwitchTransition(db, {
+      accountId,
+      sourceProvider: 'daytona',
+      identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const buildObsBefore = renderedMetricCount(
+      'provider_transition_build_duration_seconds_count',
+      'target="platinum"',
+    );
+    const outcome = await driveProviderTransition(makeDeps(world), res.row.transitionId);
+    expect(outcome).toBe('activated');
+    const snap = providerTransitionMetricsSnapshot();
+    expect(snap['build_succeeded']).toBe(1); // one milestone per drive
+    expect(snap['build_succeeded:platinum']).toBe(1);
+    // buildSeconds stays observable on the surviving emission (fresh build).
+    expect(
+      renderedMetricCount('provider_transition_build_duration_seconds_count', 'target="platinum"'),
+    ).toBe(buildObsBefore + 1);
+  });
+
+  test('an image-reuse drive tallies exactly ONE build_succeeded and observes NO build duration', async () => {
+    resetProviderTransitionMetricsForTest();
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    world.state.set(id.snapshotName, 'active'); // image already on the provider → reuse
+    world.externalIds.set(id.snapshotName, 'tpl_preexisting');
+    world.ensureBehavior = 'throw_permanent'; // would blow up if a rebuild were attempted
+    const res = await reserveSwitchTransition(db, {
+      accountId,
+      sourceProvider: 'daytona',
+      identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const buildObsBefore = renderedMetricCount(
+      'provider_transition_build_duration_seconds_count',
+      'target="platinum"',
+    );
+    const outcome = await driveProviderTransition(makeDeps(world), res.row.transitionId);
+    expect(outcome).toBe('activated');
+    const snap = providerTransitionMetricsSnapshot();
+    expect(snap['build_succeeded']).toBe(1); // unchanged: reuse already counted one
+    expect(snap['existing_image_reused']).toBe(1);
+    expect(
+      renderedMetricCount('provider_transition_build_duration_seconds_count', 'target="platinum"'),
+    ).toBe(buildObsBefore); // no build ran → no buildSeconds observation
   });
 });

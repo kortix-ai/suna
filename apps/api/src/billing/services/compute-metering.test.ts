@@ -31,6 +31,8 @@ mock.module('../../config', () => ({
 let storageCalls: string[] = [];
 let openRows: Array<{ id: string } | null> = [];
 let insertError: unknown = null;
+/** The credit_accounts row getCreditAccount answers with; null = no row at all. */
+let creditAccountRow: { tier: string | null } | null = { tier: 'free' };
 /** Rows the stale-session sweep hands the tick; empty keeps every other test untouched. */
 let staleRows: Array<typeof sandboxComputeSessions.$inferSelect> = [];
 /** What claimComputeWindow answers; false keeps every other test untouched. */
@@ -51,7 +53,7 @@ mock.module('./wallet-debits', () => ({
 mock.module('../repositories/credit-accounts', () => ({
   getCreditAccount: async () => {
     storageCalls.push('getCreditAccount');
-    return { tier: 'free' };
+    return creditAccountRow;
   },
   getCreditBalance: async () => null,
   updateCreditAccount: async () => undefined,
@@ -117,6 +119,7 @@ beforeEach(() => {
   storageCalls = [];
   openRows = [];
   insertError = null;
+  creditAccountRow = { tier: 'free' };
   staleRows = [];
   claimResult = false;
   settleCalls = [];
@@ -213,25 +216,72 @@ describe('calculateComputeCost', () => {
     expect(calculateComputeCost(spec, seconds)).toBeCloseTo(cost, 8);
   });
 
-  test.each(['e2b', 'platinum'] as const)('%s bills the one hosted customer rate', (provider) => {
+  // `e2b` is a legacy stored value (E2B support is discontinued); its window still closes.
+  test.each(['platinum', 'daytona', 'e2b'])('%s bills the one hosted customer rate', (provider) => {
     expect(calculateComputeCost(SPEC, 3600, provider)).toBeCloseTo(0.10944109589041096, 8);
   });
 });
 
-describe('a self-hosted deployment never meters compute', () => {
+// Billing revamp (KRTX-1832): metering is observability and must behave the
+// same in every environment. `KORTIX_BILLING_INTERNAL_ENABLED` gates CHARGING
+// (wallet debits, admission holds, routes); it no longer gates the meter.
+describe('charging off meters everywhere', () => {
   test.each([
-    ['startComputeSession', () => metering.startComputeSession({ sandboxId: 'sb', accountId: 'acct', spec: SPEC }), null],
-    ['reopenComputeForSandbox', () => metering.reopenComputeForSandbox('sb', 'acct'), null],
-    ['pauseComputeSession', () => metering.pauseComputeSession('sb'), undefined],
-    ['endComputeSession', () => metering.endComputeSession('sb'), undefined],
-    ['markComputeSessionAlive', () => metering.markComputeSessionAlive('sb'), undefined],
-    ['reconcileMissingComputeSessions', () => metering.reconcileMissingComputeSessions(), { checked: 0, reconciled: 0, errors: 0 }],
-    ['reconcileMissingAppComputeSessions', () => metering.reconcileMissingAppComputeSessions(), { checked: 0, reconciled: 0, errors: 0 }],
-    ['tickRunningComputeCharges', () => metering.tickRunningComputeCharges(), { settled: 0, reconciled: 0 }],
-  ] as const)('%s returns without reading storage', async (_name, call, expected) => {
+    ['startComputeSession', () => metering.startComputeSession({ sandboxId: 'sb', accountId: 'acct', spec: SPEC })],
+    ['reopenComputeForSandbox', () => metering.reopenComputeForSandbox('sb', 'acct')],
+  ] as const)('%s opens a window with no credit_accounts row at all', async (_name, call) => {
     billingEnabled = false;
-    expect(await call()).toEqual(expected);
-    expect(storageCalls).toEqual([]);
+    creditAccountRow = null;
+
+    expect(await call()).toBe('cs_inserted');
+    expect(storageCalls).toContain('insertComputeSession');
+  });
+
+  test.each([
+    ['pauseComputeSession', () => metering.pauseComputeSession('sb')],
+    ['endComputeSession', () => metering.endComputeSession('sb')],
+  ] as const)('%s closes the window without touching the wallet', async (_name, call) => {
+    billingEnabled = false;
+    creditAccountRow = null;
+    openRows = [staleRow('sess-123')];
+    claimResult = true;
+
+    await call();
+
+    expect(storageCalls).toContain('claimComputeWindow');
+    expect(settleCalls).toHaveLength(0);
+  });
+
+  // `markComputeSessionAlive` stamps through `db` directly; the throwing `db`
+  // proxy doubles as the tripwire that the path now REACHES the database
+  // (before this change it returned early without touching storage).
+  test('markComputeSessionAlive writes the liveness stamp', async () => {
+    billingEnabled = false;
+
+    await expect(metering.markComputeSessionAlive('sb')).rejects.toThrow('the database was reached');
+    expect(storageCalls).toContain('db');
+  });
+
+  test('the tick accrues the claimed window without a wallet debit', async () => {
+    billingEnabled = false;
+    creditAccountRow = null;
+    staleRows = [staleRow('sess-123')];
+    claimResult = true;
+
+    expect(await tickRunningComputeCharges()).toEqual({ settled: 1, reconciled: 0 });
+
+    expect(storageCalls).toContain('claimComputeWindow');
+    expect(settleCalls).toHaveLength(0);
+  });
+});
+
+describe('charging on keeps the account rule', () => {
+  test('no credit_accounts row never meters compute', async () => {
+    billingEnabled = true;
+    creditAccountRow = null;
+
+    expect(await metering.startComputeSession({ sandboxId: 'sb', accountId: 'acct', spec: SPEC })).toBeNull();
+    expect(storageCalls).toEqual(['getCreditAccount']);
   });
 });
 

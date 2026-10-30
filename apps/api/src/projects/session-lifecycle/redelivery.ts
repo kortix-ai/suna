@@ -16,6 +16,7 @@ import {
   withNextDeliveryAttempt,
 } from './store';
 import { wireMessageIdMatches } from './wire-id-match';
+import type { PromptPartWire } from './prompt-payload';
 
 /**
  * How many times one prompt may be given back to the inbox.
@@ -339,4 +340,15 @@ export function interruptedTurnContinuationText(turn: Pick<InterruptedTurn, 'end
   const cause = turn.cause ?? 'The runtime that ran it stopped.';
   return `[auto-recovery] The previous turn was interrupted${at}. ${cause} ` +
     'Continue from where you left off. Do not repeat steps that already completed.';
+}
+
+/**
+ * The continuation's wire body: the same text in one part marked `synthetic`.
+ * The text still reaches the model verbatim; the flag marks it harness
+ * context, so the transcript renders it as a notice and never as a user
+ * bubble, and the turn model reads the prompt as an internal continuation
+ * (KRTX-2597).
+ */
+export function interruptedTurnContinuationParts(turn: Pick<InterruptedTurn, 'endedAt' | 'cause'>): PromptPartWire[] {
+  return [{ type: 'text', text: interruptedTurnContinuationText(turn), synthetic: true }];
 }

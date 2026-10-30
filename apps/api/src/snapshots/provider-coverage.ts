@@ -1,7 +1,7 @@
 import { withTimeout } from '../shared/with-timeout';
 import type { ProviderState, SandboxProviderAdapter } from './providers';
 
-export const SANDBOX_TEMPLATE_PROVIDERS = ['daytona', 'platinum', 'e2b'] as const;
+export const SANDBOX_TEMPLATE_PROVIDERS = ['platinum', 'daytona'] as const;
 
 export type SandboxTemplateProvider = (typeof SANDBOX_TEMPLATE_PROVIDERS)[number];
 export type SandboxTemplateProviderCoverageStatus =

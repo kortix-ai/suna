@@ -33,6 +33,7 @@ import {
  *
  * Contract: deep import `@kortix/cli/src/attach-opencode.ts`. The CLI has no
  * public entry point — `src/index.ts` is the `kortix` executable.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
  */
 
 export type AttachStage =
@@ -46,6 +47,7 @@ export type AttachStage =
  * Structured companions to the human `detail` line, filled in as they become
  * known. `sessions connect` uses them to rebuild its coloured output verbatim;
  * an embedder can ignore them and print `detail`.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
  */
 export interface AttachStatusContext {
   session?: ProjectSession;
@@ -53,7 +55,10 @@ export interface AttachStatusContext {
   proxyUrl?: string;
 }
 
-/** Resolution request handed to the (injectable) session resolver. */
+/**
+ * Resolution request handed to the (injectable) session resolver.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
+ */
 export interface AttachResolveRequest {
   auth: Auth;
   projectId: string;
@@ -66,7 +71,10 @@ export interface AttachResolveRequest {
   onStarting: (session: ProjectSession) => void;
 }
 
-/** Test seams. Every default talks to the real API / filesystem / process. */
+/**
+ * Test seams. Every default talks to the real API / filesystem / process.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
+ */
 export interface AttachOpenCodeDeps {
   resolveRuntime?: (request: AttachResolveRequest) => Promise<SessionRuntime>;
   probeCapabilities?: (runtime: SessionRuntime) => Promise<readonly string[] | undefined>;
@@ -84,6 +92,7 @@ export interface AttachOpenCodeDeps {
   ) => Promise<number>;
 }
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export interface AttachOpenCodeOptions {
   auth: Auth;
   projectId: string;
@@ -107,12 +116,14 @@ export interface AttachOpenCodeOptions {
   deps?: AttachOpenCodeDeps;
 }
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export interface AttachOpenCodeResult {
   exitCode: number;
   runtimeSessionId: string;
   proxyUrl: string;
 }
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export class AttachOpenCodeError extends Error {
   /** Where the flow stopped. */
   readonly stage: AttachStage;
@@ -130,15 +141,20 @@ export class AttachOpenCodeError extends Error {
 /**
  * Why attach stops for a runtime without `session.attach` (a pi session): it
  * has no terminal client of its own to attach.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
  */
 export const ATTACH_UNSUPPORTED =
   "This session's runtime does not support attaching a terminal client.";
 
-/** Display name for a session row — the custom/auto name, else its short id. */
+/**
+ * Display name for a session row — the custom/auto name, else its short id.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
+ */
 export function attachSessionLabel(session: ProjectSession): string {
   return session.name ?? session.session_id.split('-')[0];
 }
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export async function attachOpenCodeSession(
   options: AttachOpenCodeOptions,
 ): Promise<AttachOpenCodeResult> {
@@ -270,6 +286,7 @@ async function runtimeOpencodeVersion(runtime: SessionRuntime): Promise<string |
   }
 }
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export function buildAttachArgs(
   url: string,
   runtimeSessionId: string,

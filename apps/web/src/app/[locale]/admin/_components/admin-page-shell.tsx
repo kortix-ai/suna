@@ -3,9 +3,9 @@
 import { ArrowClockwiseIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { cn } from '@/lib/utils';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { cn } from '@kortix/ui';
 
 /**
  * The content column for one /admin page.

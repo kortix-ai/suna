@@ -49,6 +49,24 @@ const REVIEWER_BLOCK = {
   opencode: { description: 'Reviews diffs', mode: 'primary', prompt: 'You review code.' },
 };
 
+/** A v3 GET block that carries `network_egress`, which the PUT schema
+ *  (agent-config.ts AgentBlockSchema, `.strict()`) does not accept. */
+const EGRESS_BLOCK = {
+  enabled: true,
+  connectors: ['slack'],
+  network_egress: { version: 1, default: 'deny', rules: [] },
+  file: 'agents/egress.md',
+  behavior: { description: 'Egress', mode: 'primary', prompt: 'You fetch.' },
+  opencode: { description: 'Egress', mode: 'primary', prompt: 'You fetch.' },
+};
+
+/** The keys AgentBlockSchema accepts. Any other key is a 400. */
+const PUT_KEYS = new Set([
+  'enabled', 'tools', 'sandbox', 'connectors', 'connectors_required', 'connectors_personal',
+  'secrets', 'skills', 'apps', 'kortix_permissions', 'subagents', 'commands', 'extensions',
+  'codemode', 'kortix_cli', 'repository_access', 'workspace', 'file', 'behavior', 'opencode',
+]);
+
 /** The fake server serves exactly the /detail shape the API does, so the agent
  *  rows are the SDK's own detail-agent type, not a hand-rolled copy. */
 type FakeAgent = ProjectConfigSummary['agents'][number];
@@ -126,6 +144,25 @@ function startServer(
           default_agent: defaultAgent,
           block: REVIEWER_BLOCK,
         });
+      }
+      if (p === '/agents/egress/config' && req.method === 'GET') {
+        return Response.json({
+          agent: 'egress',
+          schema_version: 3,
+          editable: true,
+          default_agent: defaultAgent,
+          block: EGRESS_BLOCK,
+        });
+      }
+      if (p === '/agents/egress/config' && req.method === 'PUT') {
+        const unknown = Object.keys(body as object).filter((key) => !PUT_KEYS.has(key));
+        if (unknown.length > 0) {
+          return Response.json(
+            { error: 'Invalid body', code: 'invalid_body', issues: [{ code: 'unrecognized_keys', keys: unknown }] },
+            { status: 400 },
+          );
+        }
+        return Response.json({ ok: true, agent: 'egress', schema_version: 3, block: body });
       }
       if (p === '/agents/reviewer/config' && req.method === 'PUT') {
         return Response.json({
@@ -447,6 +484,35 @@ describe('kortix agents — default, scope, config', () => {
       },
     });
     expect(r.stdout).toContain('reviewer config saved');
+  });
+
+  // KRTX-2990: GET serves `network_egress`; the strict PUT schema refuses it,
+  // so a read-modify-write that sent the whole block back always got a 400.
+  test('config --set sends back only the keys the PUT schema accepts', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['agents', 'config', 'egress', '--set', 'enabled=false', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    const { network_egress: _readOnly, ...accepted } = EGRESS_BLOCK;
+    expect(calls[1]).toEqual({
+      method: 'PUT',
+      path: `/v1/projects/${PROJECT}/agents/egress/config`,
+      body: { ...accepted, enabled: false },
+    });
+    expect(r.stdout).toContain('egress config saved');
+  });
+
+  test('config --set still sends a key the user names, and the API judges it', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['agents', 'config', 'egress', '--set', 'bogus=1', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).not.toBe(0);
+    expect((calls[1]?.body as Record<string, unknown>).bogus).toBe(1);
+    expect(r.stderr).toContain('Invalid body');
   });
 
   test('config --file PUTs the file verbatim without a read-modify-write', async () => {

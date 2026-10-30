@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { markViewedSeen } from '@/components/turn-attention-badge';
-import { useTurnAttentionStore } from '@/stores/turn-attention-store';
+import { drawBadgeDot, markViewedSeen } from '@/components/turn-attention-badge';
+import { useTurnAttentionStore } from '@kortix/ui/internal/stores/turn-attention-store';
 
 const originalDocument = globalThis.document;
 const originalWindow = globalThis.window;
@@ -51,5 +51,48 @@ describe('markViewedSeen', () => {
     screen('/projects/p/sessions/s-1', { hidden: false, focused: true });
     markViewedSeen();
     expect(useTurnAttentionStore.getState().unseen).toEqual(['s-2']);
+  });
+});
+
+/**
+ * The favicon tile is full-bleed. A dot inset from the corner reads as
+ * misplaced in the tab strip, so it sits flush with the right and bottom
+ * edges, and a transparent ring separates it from the logo.
+ */
+describe('drawBadgeDot', () => {
+  function recordingContext() {
+    const calls: Array<{ op: string; args?: number[]; composite?: string }> = [];
+    const ctx = {
+      globalCompositeOperation: 'source-over',
+      fillStyle: '',
+      beginPath: () => calls.push({ op: 'beginPath' }),
+      arc: (...args: number[]) => calls.push({ op: 'arc', args: args.slice(0, 3) }),
+      fill() {
+        calls.push({ op: 'fill', composite: this.globalCompositeOperation });
+      },
+    };
+    return { ctx: ctx as unknown as CanvasRenderingContext2D, calls };
+  }
+
+  test('the dot is tangent to the right and bottom edges of the icon', () => {
+    const { ctx, calls } = recordingContext();
+    drawBadgeDot(ctx, 64, '#0f0');
+    const dot = calls.filter((c) => c.op === 'arc').at(-1)!.args!;
+    const [cx, cy, r] = dot;
+    expect(cx + r).toBe(64);
+    expect(cy + r).toBe(64);
+    expect(cx).toBe(cy);
+  });
+
+  test('a transparent ring is cut out of the logo before the dot is filled', () => {
+    const { ctx, calls } = recordingContext();
+    drawBadgeDot(ctx, 64, '#0f0');
+    const fills = calls.filter((c) => c.op === 'fill');
+    expect(fills.map((f) => f.composite)).toEqual(['destination-out', 'source-over']);
+    const [cut, dot] = calls.filter((c) => c.op === 'arc').map((c) => c.args!);
+    expect(cut[0]).toBe(dot[0]);
+    expect(cut[1]).toBe(dot[1]);
+    expect(cut[2]).toBeGreaterThan(dot[2]);
+    expect((ctx as unknown as { fillStyle: string }).fillStyle).toBe('#0f0');
   });
 });

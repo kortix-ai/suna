@@ -1,7 +1,7 @@
 'use client';
 
-import { ShaderSafe } from '@/components/ui/shader-safe';
-import { cn } from '@/lib/utils';
+import { ShaderSafe } from '@kortix/ui/shader-safe';
+import { cn } from '@kortix/ui';
 import { useInView, useReducedMotion } from 'motion/react';
 import { useTheme } from 'next-themes';
 import dynamic from 'next/dynamic';

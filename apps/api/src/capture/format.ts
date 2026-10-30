@@ -319,6 +319,9 @@ export const PolicySchema = z.object({
       record_only_included: z.boolean().default(false),
       included_bundle_ids: z.array(normalized(normalizeCaptureAppId, 'not an app')).max(500).default([]).transform(unique),
       included_domains: z.array(normalized(normalizeCaptureDomain, 'not a domain')).max(2000).default([]).transform(unique),
+      // False: a computer records only the organization's included apps and websites; a member's
+      // own inclusions are ignored. A member's own exclusions always apply (they only record less).
+      member_inclusions: z.boolean().default(true),
     })
     .passthrough()
     .default({}),

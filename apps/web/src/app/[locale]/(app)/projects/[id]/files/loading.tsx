@@ -1,4 +1,4 @@
-import { ProjectFilesSkeleton } from '@/features/workspace/project-layout/project-files-skeleton';
+import { ProjectFilesSkeleton } from '@kortix/ui/workspace/layout/project-files-skeleton';
 
 /**
  * Navigation Suspense boundary for /projects/[id]/files.

@@ -1,6 +1,6 @@
 import { BOOT_PHASE_HEADER, RUNTIME_NOT_READY_CODE } from '@kortix/api-contract/runtime-relay';
 import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
-import { resumeStoppedSandboxByExternalId } from '../../projects/session-open';
+import { resumeStoppedSandboxByExternalId, stoppedSandboxWakePending } from '../../projects/session-open';
 import { loadSandbox, type SandboxRecord } from '../backend';
 import { isBrowserNavigation, portUnreachableResponse } from '../preview-response';
 import { carriesSessionData } from '../session-data-ports';
@@ -132,6 +132,7 @@ export async function wakeOrRefuseInactiveSandbox(input: {
 }): Promise<{ record: SandboxRecord } | { response: Response }> {
   const { sandboxId, port, upstreamPort, access, sandboxAuthored, method, incomingHeaders, origin } = input;
   let record = input.record;
+  let wakeClaimed = false;
   // A stopped-but-resumable box wakes only on explicit user intent. Session
   // mutations and top-level preview navigation qualify. Transcript reads,
   // cache hydration, polling, and background reconnects return 503. The normal
@@ -147,9 +148,17 @@ export async function wakeOrRefuseInactiveSandbox(input: {
     // Re-read. The resume only claims the wake: the row stays 'stopped' until
     // the provider confirms the box, so this request usually returns the 503
     // below and the client's retry forwards once the row is 'active'.
+    wakeClaimed = true;
     record = await resumeAndReloadSandbox(sandboxId, record, '[sandbox-proxy]');
   }
   if (record.status !== 'active') {
+    // A parked box never wakes on a read, so a retry of it can never succeed:
+    // `retry: true` kept every open tab re-reading its transcript every 15 s
+    // (KRTX-3140). A box that is provisioning, or whose wake is in flight
+    // (claimed here, or by `/start` or another request, while the row stays
+    // `stopped`), still comes up on its own and is still worth retrying.
+    const retry =
+      record.status !== 'stopped' || wakeClaimed || (await stoppedSandboxWakePending(record.externalId));
     return {
       response: portUnreachableResponse({
         port,
@@ -162,7 +171,7 @@ export async function wakeOrRefuseInactiveSandbox(input: {
         // it as evidence of a dead box is counting our own answer.
         hop: 'control_plane',
         code: 'sandbox_not_ready',
-        retry: true,
+        retry,
       }),
     };
   }

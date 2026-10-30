@@ -49,6 +49,7 @@ mock.module('react-native-keyboard-controller', () => ({
 }));
 mock.module('@/lib/icons', () => ({ CaretLeftIcon: none }));
 mock.module('@/components/kortix/pill-input', () => ({ PillInput: host('input') }));
+mock.module('@/lib/ui/use-field-refocus', () => ({ useFieldRefocus: () => none }));
 mock.module('@/components/kortix/settings-list', () => ({ SettingsGroup: host('group') }));
 mock.module('@/components/ui/button', () => ({ Button: host('button') }));
 mock.module('@/components/ui/icon', () => ({ Icon: none }));

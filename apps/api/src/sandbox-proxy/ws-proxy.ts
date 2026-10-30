@@ -32,7 +32,10 @@ import { OPENCODE_PRIMARY_PORT, isOpencodePort } from '../shared/opencode-ports'
 import { healthHarnessId, healthRuntimePort } from '@kortix/api-contract/runtime-relay';
 import { invalidatePreviewLink, resolveSandboxIngress } from './backend';
 import { establishPreviewSession, resolvePreviewRequest, sessionFromCookies } from './preview-origin';
+import { onSpaceAccessBust } from '../shared/space-access';
+import { recheckStreamAccess } from '../shared/stream-access-recheck';
 
+/** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
 // opencode's PTY WebSocket endpoint lives on opencode's own port, reachable via
 // a dedicated Daytona preview link (the daemon on 8000 can't proxy WS).
 //
@@ -57,6 +60,7 @@ const AGENT_PORT = 8000;
  * the pair answers there (R7.5). Falls back to 4096 on anything unexpected: an
  * older daemon that does not report the field, an unreachable box, a slow one.
  * That is the previous behaviour, so this can only improve on it.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
  */
 async function resolveLiveOpencodePort(sandboxId: string): Promise<{ port: number } | { harness: string }> {
   const fallback = { port: OPENCODE_FALLBACK_PORT };
@@ -117,7 +121,60 @@ export interface PreviewWsData {
   queue?: Array<string | Buffer | ArrayBuffer | Uint8Array>;
   /** Interval that pings both legs — see PREVIEW_WS_KEEPALIVE_MS. */
   keepalive?: ReturnType<typeof setInterval>;
+  /** The connect-time session gate, asked again while the socket is open. */
+  accessCheck?: () => Promise<boolean>;
+  /** Stops the periodic re-check. */
+  stopAccessRecheck?: () => void;
 }
+
+// replica-local: the open preview sockets of this process, so a membership
+// change re-checks them at once (`bustSpaceAccess` reaches every replica over
+// LISTEN/NOTIFY; without it, another replica re-checks within 60 s).
+const openPreviewSockets = new Set<ServerWs>();
+const revokePreviewWs = (ws: ServerWs) => {
+  stopPreviewWsAccessRecheck(ws.data);
+  try { ws.close(4403, 'access revoked'); } catch {}
+  try { ws.data.upstream?.close(); } catch {}
+};
+
+/**
+ * Re-check the socket pair's access every 60 s and close both legs with 4403
+ * once it is gone: removal from the session's private channel, a revoked
+ * share. Checked at connect only, a terminal outlived the removal.
+ */
+export function armPreviewWsAccessRecheck(ws: ServerWs): void {
+  const check = ws.data.accessCheck;
+  if (!check) return;
+  stopPreviewWsAccessRecheck(ws.data);
+  openPreviewSockets.add(ws);
+  // The fail-closed rule lives in the check (`sessionStreamAccessCheck`): a
+  // failed read closes a private channel's session only. A check that still
+  // throws keeps the socket, as an SSE stream does.
+  const stop = recheckStreamAccess(check, () => revokePreviewWs(ws));
+  ws.data.stopAccessRecheck = () => {
+    stop();
+    openPreviewSockets.delete(ws);
+  };
+}
+
+/** Stop the re-check. Idempotent. */
+export function stopPreviewWsAccessRecheck(state: PreviewWsData): void {
+  state.stopAccessRecheck?.();
+  state.stopAccessRecheck = undefined;
+}
+
+/** Ask every open socket of this replica again now; close the ones that lost access. */
+export async function recheckOpenPreviewWs(): Promise<void> {
+  await Promise.all(
+    [...openPreviewSockets].map(async (ws) => {
+      // Only a definite "no" closes; see `armPreviewWsAccessRecheck`.
+      const allowed = await ws.data.accessCheck?.().catch(() => true);
+      if (allowed === false) revokePreviewWs(ws);
+    }),
+  );
+}
+
+onSpaceAccessBust(() => void recheckOpenPreviewWs());
 
 /** Minimal shape of the Bun server WebSocket we touch. */
 interface ServerWs {
@@ -299,6 +356,7 @@ async function resolveUpgradeForPrincipal(input: {
   // means nothing to the daemon — strip it with the credentials.
   const wakeRequested = upstreamQuery.get('wake') === '1';
   upstreamQuery.delete('token');
+  upstreamQuery.delete('preview_ticket');
   upstreamQuery.delete('public_share');
   upstreamQuery.delete('wake');
   const queryString = upstreamQuery.toString() ? `?${upstreamQuery.toString()}` : '';
@@ -324,6 +382,7 @@ async function resolveUpgradeForPrincipal(input: {
       data: {
         type: 'preview-ws', url: upstream.url, headers: upstream.headers,
         ingress: { sandboxId, port: upstreamPort },
+        accessCheck: upstream.accessCheck,
       },
     };
   } catch (err) {
@@ -376,6 +435,7 @@ export const previewWsHandlers = {
 
     upstream.binaryType = 'arraybuffer';
     state.upstream = upstream;
+    armPreviewWsAccessRecheck(ws);
 
     upstream.onopen = () => {
       state.ready = true;
@@ -397,12 +457,14 @@ export const previewWsHandlers = {
     upstream.onclose = (ev: CloseEvent) => {
       invalidateFailedHandshake();
       stopPreviewWsKeepalive(state);
+      stopPreviewWsAccessRecheck(state);
       try { ws.close(sanitizePreviewWsCloseCode(ev.code), (ev.reason || '').slice(0, 120)); } catch {}
     };
 
     upstream.onerror = () => {
       invalidateFailedHandshake();
       stopPreviewWsKeepalive(state);
+      stopPreviewWsAccessRecheck(state);
       try { ws.close(4502, 'upstream error'); } catch {}
     };
   },
@@ -421,6 +483,7 @@ export const previewWsHandlers = {
     // The interval holds a reference to the socket pair. Leaving it armed after
     // a close leaks one timer per terminal the box has ever opened.
     stopPreviewWsKeepalive(ws.data);
+    stopPreviewWsAccessRecheck(ws.data);
     try { ws.data.upstream?.close(); } catch {}
   },
 };

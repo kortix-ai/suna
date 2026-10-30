@@ -237,6 +237,7 @@ function PreparingTrigger() {
   );
 }
 
+/** @deprecated Renders an OpenCode-only tool in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode. */
 export function ApplyPatchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const metadata = partMetadata(call);
   const status = partStatus(call);

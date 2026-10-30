@@ -24,16 +24,37 @@ function respond(body: unknown) {
 }
 
 test('reads the instance git backend without naming its credential', async () => {
-  respond({ configured: true, kind: 'pat', owner: 'managed-kortix' } satisfies ManagedGitBackend);
+  respond({
+    configured: true,
+    kind: 'pat',
+    owner: 'managed-kortix',
+    operator: false,
+  } satisfies ManagedGitBackend);
 
   const backend = await getManagedGitBackend();
 
   expect(calls[0]).toBe('http://backend.local/v1/projects/git/backend');
-  expect(backend).toEqual({ configured: true, kind: 'pat', owner: 'managed-kortix' });
+  expect(backend).toEqual({
+    configured: true,
+    kind: 'pat',
+    owner: 'managed-kortix',
+    operator: false,
+  });
+});
+
+test('passes the operator flag through for the client-side listing gate', async () => {
+  // KRTX-1892: the web fires GET /git/backend/repositories only when this
+  // flag says the caller is a self-host operator. The client is a dumb
+  // transport — assert it neither drops nor rewrites the field.
+  respond({ configured: true, kind: 'app', owner: 'acme', operator: true } satisfies ManagedGitBackend);
+
+  const backend = await getManagedGitBackend();
+
+  expect(backend.operator).toBe(true);
 });
 
 test('reports an unconfigured instance git backend', async () => {
-  respond({ configured: false, kind: null, owner: null } satisfies ManagedGitBackend);
+  respond({ configured: false, kind: null, owner: null, operator: false } satisfies ManagedGitBackend);
 
   const backend = await getManagedGitBackend();
 

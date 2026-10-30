@@ -39,7 +39,6 @@ const RESOURCES = {
     },
   ],
   skills: [{ id: 'triage', name: 'triage' }],
-  secrets: [{ id: 'DB_URL', name: 'DB_URL' }],
 };
 
 const GRANTS = [
@@ -172,6 +171,29 @@ describe('kortix grants', () => {
     const parsed = JSON.parse(stdout);
     expect(parsed.resources.agents[0].name).toBe('support-bot');
     expect(parsed.grants).toHaveLength(1);
+  });
+
+  // KRTX-2991: the route lists agents and skills only (resource-grants.ts);
+  // secret sharing was retired, so ls must not promise a secrets section.
+  test('ls with nothing grantable names agents and skills, never secrets', async () => {
+    globalThis.fetch = (async () =>
+      json({ resources: { agents: [], skills: [] }, grants: [] })) as unknown as typeof fetch;
+
+    const code = await runGrants(['ls', '--project', PROJECT]);
+
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('(none — add agents or skills to kortix.yaml)');
+    expect(out).not.toContain('secret');
+  });
+
+  test('--help lists grantable agents and skills, not secrets', async () => {
+    const code = await runGrants(['--help']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('List grants + grantable agents and skills.');
+    expect(out).not.toContain('agents/skills/secrets');
+    expect(out).not.toContain('skill/secret rows');
   });
 
   test('ls handles an older skill resource payload with no secrets array', async () => {

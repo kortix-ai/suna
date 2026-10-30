@@ -26,6 +26,7 @@ export {
   RUNTIME_WAKE_CLAIM_CLEARED_KEYS,
   resumeStoppedSandbox,
   resumeStoppedSandboxByExternalId,
+  stoppedSandboxWakePending,
   isMissingRuntimeError,
 } from './resume-stopped-sandbox';
 

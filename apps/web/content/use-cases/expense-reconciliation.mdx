@@ -50,49 +50,122 @@ the sheet, and escalates anything it can't match to a person.
 ## How it works
 
 <Steps>
-<Step title="Connect a monthly cron as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron** trigger fires the project on a schedule — once a month, after the
-period closes. Each firing spawns a fresh **session** in its own sandbox. One
-run, one session, one disposable machine, with nothing carried over from the last
-month's run.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the reconciliation-match skill and the
+monthly trigger, and opens a change request for you to review.
+Prefer clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Give the agent our reconciliation rules">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a monthly expense reconciliation agent in this project.
 
-How we reconcile lives as **skills** and **memory** loaded into every session:
-what counts as a match, the tolerances we allow on fees and timing, the accounts
-we track, and mismatches we've explained before. The agent works to that standard
-rather than inventing one, and the memory updates as patterns recur.
+1. Create the agent agents/expense-reconciliation.md. Its job is to match Stripe activity and the bank feed against the invoices in our reconciliation sheet. It may use the Stripe, Plaid and Google Sheets connectors and the PLAID_ACCESS_TOKEN secret.
 
-</Step>
-<Step title="Connect what reconciliation can touch">
+2. Create the skill skills/reconciliation-match/SKILL.md with these rules:
+   - Read the sheet's last dated entry and its explained-mismatch notes first. The period starts the day after the last close.
+   - An exact match is a Stripe payout and a bank deposit for the same amount within 1 business day. Tie it out silently.
+   - A tolerance match is short only by Stripe's disclosed fee or a fee the notes already explain, or lags within 3 business days. Tie it out with a one-line explanation.
+   - Everything else is a mismatch. Escalate each one on its own row with both records attached. Never force-fit a match or write off a difference.
+   - Read Stripe and the bank feed only. The sheet is the only thing you write to.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger monthly-reconciliation to kortix.yaml. It runs the expense-reconciliation agent on the 2nd of every month at 06:00 with the prompt "Load the reconciliation-match skill and reconcile the period since the last dated entry in the reconciliation sheet."
 
-- **Read Stripe** — charges, payouts, and fees for the period.
-- **Read the bank feed** — deposits and withdrawals to match against Stripe and
-  invoices.
-- **Read and write the Google Sheet** — the ledger it reconciles against and the
-  summary it posts back.
+4. Tell me which of these connectors are not connected yet.
 
-</Step>
-<Step title="Set the guardrails">
-
-The agent reads the financial systems and writes only to the tracking sheet — it
-never moves money or touches Stripe or the bank beyond reading. Anything it can't
-match within tolerance is **escalated to a person** rather than force-fit or
-written off. Credentials are encrypted in the secrets manager and injected at
-runtime, scoped to the agents you grant them to.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Let each month run">
+<Step title="Connect your tools">
 
-With that in place, the monthly run produces a reconciled sheet and a summary
-without anyone starting it. Clean matches tie out silently. A payout that's short
-by a fee gets explained. An invoice with no matching deposit gets flagged and
-sent to a person to chase, with the two records it couldn't reconcile attached.
+Open **Connectors** in your project and connect Stripe, Plaid and Google
+Sheets. Complete the Plaid Link step once for the bank account and store the
+result as the `PLAID_ACCESS_TOKEN` secret. Credentials are brokered
+server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Stripe" domain="stripe.com" tag="Required">
+    Reads charges, payouts and refunds to match against invoices.
+  </ToolNeed>
+  <ToolNeed name="Plaid" domain="plaid.com" tag="Required">
+    Reads bank transactions to match against the ledger.
+  </ToolNeed>
+  <ToolNeed name="Google Sheets" domain="sheets.google.com" tag="Required" alternatives={[['QuickBooks', 'quickbooks.intuit.com'], ['Xero', 'xero.com']]}>
+    Reads the invoice ledger and marks matched and open lines.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the **expense-reconciliation** agent
+and send this prompt. Check the matches and the escalated rows
+before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Reconcile last month in the reconciliation sheet.
+
+1. Read the sheet's last dated entry and its explained-mismatch notes.
+2. Pull Stripe charges, payouts and fees, and the bank feed, for the period. Read only.
+3. Match each line against an invoice. Tie out exact matches silently, and tolerance matches with a one-line explanation.
+4. Check every mismatch against the explained-mismatch notes. Escalate each new one on its own row with both records attached.
+5. Append the period, the counts and the escalated rows to the sheet. Do not take any action in Stripe or the bank.`}
+/>
+
+</Step>
+<Step title="Let the monthly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs on the 2nd of every month at 06:00, after the prior period closes, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: monthly-reconciliation
+    name: Monthly expense reconciliation
+    on:
+      cron: "0 0 6 2 * *"
+    run:
+      agent: expense-reconciliation
+      prompt: Load the reconciliation-match skill and reconcile the period since the last dated entry in the reconciliation sheet.`}
+/>
+
+</Step>
+<Step title="Escalate every unmatched line to a person">
+
+The agent reads Stripe and the bank feed and writes only to the sheet. It
+never issues a refund or starts a transfer. A line it cannot match within
+tolerance gets its own escalated row with both records attached, so a person
+can chase it without pulling the data again. It never rounds off or writes
+off a difference to make the sheet balance.
+
+</Step>
+<Step title="Read the reconciled sheet">
+
+Each run ends with a new dated entry in the sheet. This is what a run looks like in the session:
+
+<ExampleRun
+  title="Monthly expense reconciliation · 06:00"
+  message="Load the reconciliation-match skill and reconcile the period since the last dated entry in the reconciliation sheet."
+  worked="Worked for 4m 37s"
+  tools={[
+    'google_sheets · read rows',
+    'stripe · list payouts',
+    'stripe · list balance transactions',
+    'plaid · get transactions',
+    'google_sheets · append rows',
+  ]}
+  note="Illustrative example. Your counts depend on your transaction volume."
+>
+  Reconciled **312** lines for the period. **291** tied out exactly and
+  **18** within tolerance, mostly Stripe fees. Escalated **3** new
+  mismatches, including one payout with no matching deposit.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -103,6 +176,25 @@ sent to a person to chase, with the two records it couldn't reconcile attached.
   encode the reconciliation rules as **skills** and **memory**, and escalate
   anything it can't match to a person.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Ping finance on escalations"
+  code="When a run escalates any mismatch, post the count and a link to the sheet in #finance."
+/>
+
+<CopyBlock
+  title="Mid-month check"
+  code="On the 16th of each month, run a read-only reconciliation of the first half of the month and list mismatches without writing to the sheet."
+/>
+
+<CopyBlock
+  title="Catch recurring fees"
+  code="When the same unexplained difference appears three months in a row, propose an explained-mismatch note for me to approve."
+/>
 
 ## Guardrails
 

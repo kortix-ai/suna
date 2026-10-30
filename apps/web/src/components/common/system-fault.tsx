@@ -1,6 +1,6 @@
 'use client';
 
-import { shouldIgnoreBrowserRuntimeNoise } from '@/lib/browser-error-noise';
+import { shouldIgnoreBrowserRuntimeNoise } from '@kortix/ui/internal/lib/browser-error-noise';
 import { truncate as sharedTruncate } from '@/lib/utils/string';
 import * as Sentry from '@sentry/nextjs';
 import { useTranslations } from '@/i18n/use-translations';

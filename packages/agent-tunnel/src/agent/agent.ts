@@ -638,6 +638,9 @@ export class TunnelAgent {
           // the right place instead of probing paths the local ceiling denies.
           homeDir: this.config.workingDir,
           allowedPaths: this.config.allowedPaths,
+          // Approved capabilities this machine cannot run, and why. Always
+          // sent, so a fixed machine clears the stored reason.
+          unavailableCapabilities: Object.fromEntries(this.registry.unavailable),
         },
       },
     });
@@ -793,7 +796,7 @@ export class TunnelAgent {
     if (this.keepAwake || this.keepAwakeFailed) return;
     const blocker = keepAwakeCommand(platform(), process.pid);
     if (!blocker) return;
-    const child = spawn(blocker.command, blocker.args, { stdio: 'ignore' });
+    const child = spawn(blocker.command, blocker.args, { stdio: 'ignore', windowsHide: true });
     child.on('error', () => {
       this.keepAwakeFailed = true;
       log(`${c.yellow}!${c.reset}`, `Keep awake is unavailable: ${blocker.command} could not start`);

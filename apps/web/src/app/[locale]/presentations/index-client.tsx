@@ -12,7 +12,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { ThemeToggle } from '@/components/home/theme-toggle';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import { m } from 'motion/react';
 import Link from 'next/link';
 import { countBuilds, localizedDecks, type DeckDef } from './registry';

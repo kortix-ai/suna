@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'bun:test';
 import { expandI18nSource } from '@/i18n/test-source';
-import { pruneRequiredConnectors } from './connectors-personal';
+import { pruneRequiredConnectors } from '@kortix/ui/customize/sections/view/connectors-personal';
+import { uiSourcePath } from '@/test-utils/read-source';
+import { fileURLToPath } from 'node:url';
 
 describe('pruneRequiredConnectors', () => {
   test('keeps entries that are still granted', () => {
@@ -29,7 +32,7 @@ describe('pruneRequiredConnectors', () => {
 
   test('the editor uses canonical required terminology', async () => {
     const source = expandI18nSource(
-      await Bun.file(new URL('./agent-editor-access-fields.tsx', import.meta.url)).text(),
+      readFileSync(uiSourcePath('customize/sections/view/agent-editor-access-fields.tsx'), 'utf8'),
     );
     expect(source).toContain('RequiredConnectorToggle');
     expect(source).toContain('Required before session start');

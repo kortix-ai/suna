@@ -1,7 +1,7 @@
 import type { TeamsInstallation } from './use-teams-installations';
 
 /** Poll cadence while the org-catalog publish runs in the background. */
-export const TEAMS_PUBLISH_POLL_MS = 3000;
+const TEAMS_PUBLISH_POLL_MS = 3000;
 
 /**
  * `refetchInterval` for the Teams installation query: poll only while the

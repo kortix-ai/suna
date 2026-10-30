@@ -8,6 +8,8 @@ defaultProjectInstall: true
 
 Build fullstack web applications using an opinionated pre-wired template: Express + Vite + React + Tailwind CSS + shadcn/ui + Drizzle ORM.
 
+Load the `kortix-design` skill before you write UI. It owns every visual choice: tokens, type, color, states, motion, the slop sweep and the screenshot check. This skill owns the template and the build.
+
 ## Getting Started
 
 Copy the template into its own App folder (`apps/<name>/` by default; one

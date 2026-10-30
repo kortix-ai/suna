@@ -13,7 +13,8 @@ import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { FilePreviewBottomInsetContext, TextPreview } from '@/components/files/FilePreviewRenderers';
+import { TextPreview } from '@/components/files/FilePreviewRenderers';
+import { FilePreviewBottomInsetContext } from '@/components/files/file-preview-webview';
 import { CopyContentButton, KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { THEME } from '@/lib/utils/theme';
 import { usePastedTextStore } from '@/stores/pasted-text-store';

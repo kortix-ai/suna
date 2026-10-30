@@ -213,6 +213,26 @@ pub fn system_agent_installed() -> bool {
         || Path::new("/usr/lib/systemd/user/kortix-capture.service").exists()
 }
 
+/// Stop the system agent for this person until the next login or until the app opens
+/// again (`start_system_agent`). It stays installed and on at login.
+pub fn stop_system_agent() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let uid = unsafe { libc::getuid() };
+        run("/bin/launchctl", &["bootout", &format!("gui/{uid}/ai.kortix.capture.agent")]);
+        true
+    }
+    #[cfg(target_os = "linux")]
+    {
+        run("systemctl", &["--user", "stop", "kortix-capture.service"]);
+        true
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        false
+    }
+}
+
 /// Start the system agent for this person (a no-op when it already runs).
 pub fn start_system_agent() -> bool {
     #[cfg(target_os = "macos")]

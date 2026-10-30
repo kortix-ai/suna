@@ -12,7 +12,9 @@ export type ReviewItemStatus =
   | 'changes_requested'
   | 'rejected'
   | 'done'
-  | 'dismissed';
+  | 'dismissed'
+  /** A connector approval no one decided before its `expires_at`. Read by id only. */
+  | 'expired';
 export type ReviewItemRisk = 'none' | 'low' | 'medium' | 'high';
 export type ReviewItemSource = 'web' | 'slack' | 'agent';
 export type ReviewVerdict = 'approve' | 'reject' | 'changes' | 'answer' | 'dismiss';
@@ -38,6 +40,8 @@ export interface ApiReviewItem {
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  /** When an adapted connector approval stops being decidable. Null or absent: never. */
+  expires_at?: string | null;
   /**
    * Connector-call items only (`call:<execution_id>`): true when this viewer
    * may approve or deny the call — the verdict `resolveApproval` would get.
@@ -164,7 +168,24 @@ export async function bulkActReviewItems(
   input: { ids: string[]; verdict: ReviewVerdict },
 ) {
   return unwrap(
-    await backendApi.post<{ updated: number; review_items: ApiReviewItem[] }>(
+    await backendApi.post<{
+      updated: number;
+      review_items: ApiReviewItem[];
+      /** One entry per requested id, in request order. Native ids and
+       *  `call:<execution_id>` ids are decided; a refusal carries `code`.
+       *  Absent from an API older than this field. */
+      results?: Array<{
+        id: string;
+        ok: boolean;
+        code?:
+          | 'expired'
+          | 'already_resolved'
+          | 'preview_unavailable'
+          | 'forbidden'
+          | 'not_found'
+          | 'not_bulk_actionable';
+      }>;
+    }>(
       `/projects/${projectId}/review/bulk`,
       input,
     ),

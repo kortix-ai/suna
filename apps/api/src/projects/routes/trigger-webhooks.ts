@@ -13,13 +13,16 @@ import { requestAuditContext } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { releaseWebhookDeliveryKey, webhookDeliveryKey } from '../lib/webhook-delivery';
 import { ACCOUNT_STATE_FIRE_CODES, markGitTriggerAttemptFailed } from '../lib/trigger-fire';
+import { takeThrottledRunSlot } from '../lib/trigger-run-caps';
 import { raiseTriggerAlert } from '../lib/trigger-alerts';
-import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import { recordTriggerRun, triggerRunFromFire } from '../trigger-execution-store';
+import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import { PROJECT_TRIGGERS_PAUSED_REASON, automaticFirePauseReason } from '../lib/trigger-scheduler-state';
 import {
   validateWebhookSecretConfiguration,
   webhookSecretConfigurationError,
 } from '../lib/webhook-secret-policy';
-import { consumeProjectWebhookManifestRefreshBudget, createProjectWebhookRateLimitMiddleware } from '../../middleware/rate-limit';
+import { consumeProjectWebhookManifestRefreshBudget, consumeProjectWebhookRejectedRunBudget, createProjectWebhookRateLimitMiddleware } from '../../middleware/rate-limit';
 import { logger } from '../../lib/logger';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
@@ -90,8 +93,23 @@ export function registerTriggerWebhooksRoutes(): void {
     if (!spec || spec.type !== 'webhook' || !spec.enabled) return reject('trigger_not_found');
 
     const rawBody = await c.req.text();
+    // From here every answer is a run in the trigger's history (KRTX-1743). A
+    // delivery refused before its signature verified is kept 7 days, unverified.
+    const runPayload = () => ({
+      ...webhookPayload((name) => c.req.header(name), rawBody),
+      trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
+      fired_at: new Date().toISOString(),
+    });
+    // Not awaited: the write must not make a real trigger's 401 slower than a
+    // missing one's. recordTriggerRun never throws.
+    const rejectRun = (reason: string, extra?: Record<string, unknown>) => {
+      if (consumeProjectWebhookRejectedRunBudget(projectId, slug)) {
+        void recordTriggerRun({ projectId, slug, source: 'webhook', spec, payload: runPayload(), verified: false, status: 'rejected', error: reason, now: new Date() });
+      }
+      return reject(reason, extra);
+    };
     if (!spec.secretEnv) {
-      return reject('webhook_secret_missing');
+      return rejectRun('webhook_secret_missing');
     }
     const secret = await getProjectSecretValueForConsumer({
       projectId: project.projectId,
@@ -104,7 +122,7 @@ export function registerTriggerWebhooksRoutes(): void {
         projectId: project.projectId,
         secretEnv: spec.secretEnv,
       });
-      return reject((configurationError ?? webhookSecretConfigurationError('unavailable')).code);
+      return rejectRun((configurationError ?? webhookSecretConfigurationError('unavailable')).code);
     }
 
     // Primary auth: HMAC-SHA256 signature over the raw body (GitHub-compatible).
@@ -121,7 +139,7 @@ export function registerTriggerWebhooksRoutes(): void {
     if (signatureHeader && timestampHeader) {
       const seconds = Number(timestampHeader);
       if (!Number.isFinite(seconds) || Math.abs(Date.now() / 1000 - seconds) > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS) {
-        return c.json({ error: 'Invalid webhook signature' }, 401);
+        return rejectRun('timestamp_out_of_tolerance');
       }
     }
     const authed = signatureHeader
@@ -131,7 +149,7 @@ export function registerTriggerWebhooksRoutes(): void {
           secret,
         );
     if (!authed) {
-      return c.json({ error: 'Invalid webhook signature' }, 401);
+      return rejectRun(signatureHeader ? 'signature_mismatch' : 'token_mismatch');
     }
     bindIntegrationPrincipal('project_webhook', {
       accountId: project.accountId,
@@ -140,11 +158,11 @@ export function registerTriggerWebhooksRoutes(): void {
 
     (c as any).set('accountId', project.accountId);
 
-    const payload = {
-      ...webhookPayload((name) => c.req.header(name), rawBody),
-      trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
-      fired_at: new Date().toISOString(),
-    };
+    const payload = runPayload();
+    // Stamped before the fire: a run's turn is the first that starts after it.
+    const firedAt = new Date();
+    const recordRun = (run: Omit<Parameters<typeof recordTriggerRun>[0], 'projectId' | 'slug' | 'source' | 'spec' | 'payload' | 'now'>) =>
+      recordTriggerRun({ projectId, slug, source: 'webhook', spec, payload, ...run, now: firedAt });
     const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
     // One delivery runs once: keyed on the event when the sender names one,
     // else on the body inside a replay window (projects/lib/webhook-delivery.ts).
@@ -161,8 +179,12 @@ export function registerTriggerWebhooksRoutes(): void {
     // Server-side per-project kill-switch: a paused project ignores inbound
     // webhooks (acknowledged, not fired) so a repo deployed to two control planes
     // doesn't double-fire. Manual `…/fire` is unaffected. See triggersPausedForProject.
-    if (triggersPausedForProject(project.metadata)) {
-      return c.json({ status: 'skipped' as const, reason: 'triggers are paused server-side for this project' }, 200);
+    // The account's Pause all automations stops it the same way (KRTX-1721).
+    const pausedReason = await automaticFirePauseReason(project);
+    if (pausedReason) {
+      const reason = pausedReason === PROJECT_TRIGGERS_PAUSED_REASON ? 'triggers are paused server-side for this project' : pausedReason;
+      await recordRun({ status: 'skipped', error: reason });
+      return c.json({ status: 'skipped' as const, reason }, 200);
     }
 
     // Payload guard. A non-matching delivery is a successful no-op, NOT an error:
@@ -170,7 +192,9 @@ export function registerTriggerWebhooksRoutes(): void {
     // canonical use is loop-breaking — a source that reports both directions of a
     // conversation would otherwise re-fire the agent with the agent's own reply.
     if (!triggerFilterMatches(spec, payload)) {
-      return c.json({ status: 'skipped' as const, reason: 'delivery did not match the trigger filter' }, 200);
+      const reason = 'delivery did not match the trigger filter';
+      await recordRun({ status: 'skipped', error: reason });
+      return c.json({ status: 'skipped' as const, reason }, 200);
     }
 
     // A key whose earlier run dead-lettered, lost its session, or (body-hash
@@ -185,7 +209,18 @@ export function registerTriggerWebhooksRoutes(): void {
       source: 'webhook',
       idempotencyKey,
       request: requestAuditContext(c),
+    }).catch(async (error: unknown) => {
+      // A fire that throws is a failed run; the throw still answers as before.
+      await recordRun({ status: 'failed', error: error instanceof Error ? error.message : String(error) });
+      throw error;
     });
+    // A run cap held it (KRTX-1721): 200 skipped, like a paused trigger, so a
+    // sender that retries on an error does not retry. One history row per 10 s.
+    if (result.status === 'skipped') {
+      if (takeThrottledRunSlot(project.projectId, spec.slug)) await recordRun(triggerRunFromFire(result));
+      return c.json({ status: 'skipped' as const, reason: result.reason ?? 'skipped' }, 200);
+    }
+    await recordRun(triggerRunFromFire(result));
 
     // A duplicate ran nothing: it answers `deduped` and leaves last_fired_at alone.
     // A queued prompt or create has not run yet: its delivery ends an alert

@@ -8,7 +8,7 @@
  */
 
 export const hero = {
-  title: 'The open-source AI Operating System',
+  title: 'The open-source CompanyOS',
   sub: 'Your agents, skills, company memory and connectors in one git repo you own. Any model, your keys, self-hosted or managed cloud.',
   ctaPrimary: 'Get started',
   ctaPrimaryHref: '/auth',
@@ -32,22 +32,22 @@ export const pillars = {
       id: 'workforce',
       title: 'A workforce, not one assistant',
       body: 'Specialist agents run in parallel, each session on its own cloud computer and its own branch, and they compound a shared memory.',
-      href: '/agent-computer',
-      link: 'Agent Computer',
+      href: '/docs/work/sessions',
+      link: 'Sessions',
     },
     {
       id: 'work',
       title: 'Real work, not chat',
       body: 'Agents return finished deliverables and take real actions in your tools — on demand, human-assisted, or on a schedule.',
-      href: '/automations',
-      link: 'Automations',
+      href: '/docs/connect/triggers',
+      link: 'Triggers',
     },
     {
       id: 'code',
       title: 'Everything is code',
       body: 'Versioned, reviewable, portable, governable. Work reaches main through a change request a person approves.',
-      href: '/company-as-code',
-      link: 'Company as code',
+      href: '/docs/project',
+      link: 'Projects',
     },
   ],
 } as const;
@@ -78,7 +78,7 @@ export const kit = {
     { token: 'bg-kortix-green', label: 'Merged — the one accent' },
   ],
   type: [
-    { sample: 'The open-source AI Operating System', spec: 'Roobert Medium · tight tracking · headlines' },
+    { sample: 'The open-source CompanyOS', spec: 'Roobert Medium · tight tracking · headlines' },
     { sample: 'kortix ship', spec: 'Roobert Mono · commands, paths, branches only', mono: true },
   ],
   motion: [

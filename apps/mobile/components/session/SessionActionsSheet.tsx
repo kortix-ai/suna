@@ -750,7 +750,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
               <AlertDialogDescription className={deleteFailed ? 'text-destructive' : undefined}>
                 {deleteFailed
                   ? 'Unable to delete. Check your connection and try again.'
-                  : `Delete “${deleteTitle}”? Its sandbox is removed. You can restore the session for 30 days. Its branch is kept.`}
+                  : `Delete “${deleteTitle}”? Its sandbox is removed. You can restore the session for 30 days. After that, its messages, files and branch are deleted.`}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

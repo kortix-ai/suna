@@ -407,7 +407,10 @@ export async function syncSubscription(accountId: string) {
   }
 
   const stripe = getStripe();
-  const subscription = await stripe.subscriptions.retrieve(account.stripeSubscriptionId);
+  const subscription = await stripe.subscriptions.retrieve(account.stripeSubscriptionId).catch((err: unknown) => {
+    if (!isStripeNoSuchResource(err)) throw err;
+    throw new BillingError('Subscription not found in the current Stripe account', 404);
+  });
 
   await updateCreditAccount(accountId, {
     stripeSubscriptionStatus: subscription.status,

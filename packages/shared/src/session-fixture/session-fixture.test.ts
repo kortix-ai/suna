@@ -12,7 +12,7 @@ import {
 import type { FixtureMessageWithParts, FixturePart, FixturePartType, FixtureToolPart, FixtureToolStatus } from './types';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..', '..');
-const WEB_TOOLS_DIR = join(REPO_ROOT, 'apps/web/src/features/session/tool/tools');
+const WEB_TOOLS_DIR = join(REPO_ROOT, 'packages/ui/src/session/tool/tools');
 
 const PART_TYPES: FixturePartType[] = [
   'text',

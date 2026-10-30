@@ -23,7 +23,8 @@ export interface ConnectorAuth {
     | 'aws_sigv4'
     | 'mtls'
     | 'none';
-  in: 'header' | 'query' | 'cookie';
+  /** `path`: `prefix + secret` is the URL's first path segment (Telegram's `/bot<token>/…`). */
+  in: 'header' | 'query' | 'cookie' | 'path';
   name: string | null;
   prefix: string | null;
 }
@@ -89,7 +90,8 @@ function applyAuth(
     headers['Authorization'] = `Basic ${Buffer.from(secret).toString('base64')}`;
     return;
   }
-  // custom / api_key
+  // custom / api_key; a path credential is placed by buildHttpRequest.
+  if (auth.in === 'path') return;
   const value = auth.prefix ? `${auth.prefix}${secret}` : secret;
   const name = auth.name ?? 'Authorization';
   if (auth.in === 'query') query.set(name, value);
@@ -472,6 +474,7 @@ function buildHttpRequest(opts: {
     applyAuth(headers, query, auth, opts.secret ?? null);
   }
 
+  if (auth.in === 'path' && opts.secret) path = joinUrl(`${auth.prefix ?? ''}${opts.secret}`, path);
   let url = joinUrl(opts.baseUrl, path);
   const qs = query.toString();
   if (qs) url += (url.includes('?') ? '&' : '?') + qs;
@@ -849,12 +852,19 @@ async function performRequestWithHeaders(
   now: () => Date,
 ): Promise<{ result: ExecResult; header: (name: string) => string | null }> {
   applyAdvancedAuth(req, auth, secret, now);
-  const res = await fetchImpl(req.url, {
-    method: req.method,
-    headers: req.headers,
-    body: req.body,
-    tls: req.tls,
-  });
+  let res: Awaited<ReturnType<FetchImpl>>;
+  try {
+    res = await fetchImpl(req.url, {
+      method: req.method,
+      headers: req.headers,
+      body: req.body,
+      tls: req.tls,
+    });
+  } catch (error) {
+    // A path credential is part of the URL; never let a fetch error echo it to the agent.
+    if (auth.in !== 'path' || !secret || !(error instanceof Error)) throw error;
+    throw new Error(error.message.split(secret).join('[redacted]'));
+  }
   const text = await res.text();
   const retryAfterSeconds = res.ok ? undefined : parseRetryAfter(res.headers?.get('retry-after'));
   return {

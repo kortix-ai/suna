@@ -3,13 +3,13 @@
 import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-import { ConnectorsAppReturnBar } from '@/features/workspace/capabilities/connectors/connectors-app-return-bar';
-import { AppPage } from '@/features/workspace/capabilities/connectors/detail/app-page';
-import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
+import { ConnectorsAppReturnBar } from '@kortix/ui/customize/connectors/connectors-app-return-bar';
+import { AppPage } from '@kortix/ui/customize/connectors/detail/app-page';
+import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-skeleton';
 
 /**
  * /projects/[id]/customize/connectors/[app] — one catalogue app. See
- * `features/workspace/capabilities/connectors/detail/app-page.tsx`.
+ * `packages/ui/src/customize/connectors/detail/app-page.tsx`.
  *
  * The `Suspense` boundary is required: `AppPage` reads `useSearchParams()`
  * (`?id=` for a Discover app, `?src=apps` for a managed one).

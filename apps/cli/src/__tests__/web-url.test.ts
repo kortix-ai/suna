@@ -9,6 +9,7 @@ const SAVED = { ...process.env };
 
 beforeEach(() => {
   delete process.env.KORTIX_FRONTEND_URL;
+  delete process.env.KORTIX_API_URL;
   delete process.env.KORTIX_DASHBOARD_URL;
   delete process.env.BASH_ENV;
   process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
@@ -88,5 +89,39 @@ describe('projectWebUrl / sessionWebUrl', () => {
     expect(sessionWebUrl('https://api-prod.kortix.com/v1', 'p1', 's1')).toBe(
       'https://kortix.com/projects/p1/sessions/s1',
     );
+  });
+});
+
+describe('dashboard environment belongs to its API host', () => {
+  test('a sandbox frontend must not override another selected host', () => {
+    process.env.KORTIX_API_URL = 'https://api.kortix.com/v1/';
+    process.env.KORTIX_FRONTEND_URL = 'https://kortix.com';
+    process.env.KORTIX_DASHBOARD_URL = 'https://kortix.com';
+    expect(sessionWebUrl('https://dev-api.kortix.com', 'p1', 's1')).toBe(
+      'https://dev.kortix.com/projects/p1/sessions/s1',
+    );
+    expect(projectWebUrl('https://staging-api.kortix.com', 'p1')).toBe(
+      'https://staging.kortix.com/projects/p1',
+    );
+  });
+
+  test('matching API bases keep a custom frontend, including normalized /v1', () => {
+    process.env.KORTIX_API_URL = 'https://api.example.test/v1/';
+    process.env.KORTIX_FRONTEND_URL = 'https://dashboard.example.test/';
+    expect(webDashboardUrl('https://api.example.test')).toBe('https://dashboard.example.test');
+  });
+
+  test('agent-env frontend is scoped to the API from the same file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kortix-cli-host-env-'));
+    try {
+      const envFile = join(dir, 'agent-env.sh');
+      writeFileSync(envFile, "export KORTIX_API_URL='https://api.kortix.com'\nexport KORTIX_FRONTEND_URL='https://kortix.com'\n");
+      delete process.env.KORTIX_API_URL;
+      process.env.BASH_ENV = envFile;
+      delete process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE;
+      expect(webDashboardUrl('https://dev-api.kortix.com')).toBe('https://dev.kortix.com');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

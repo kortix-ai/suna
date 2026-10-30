@@ -45,6 +45,7 @@ import {
   manifestCandidatePaths,
   manifestFormatForPath,
   HARNESS_TOOL_NAMES,
+  isDefaultOnKortixTool,
   KORTIX_TOOL_NAMES,
   kortixToolRef,
   parseManifestText,
@@ -284,8 +285,9 @@ export function compileAgentConfig(
  * Top-level `tools`. `project_tools`: the valid name → module entries;
  * `validateManifest` reports the rest. A harness tool's name never compiles:
  * two tools with one name break the model request. `kortix_tools`: the names
- * listed as `kortix:<name>`, only when the manifest has a `tools` key (even
- * an empty one); without it the daemon loads every Kortix tool.
+ * listed as `kortix:<name>` plus each `DEFAULT_ON_KORTIX_TOOLS` name the map
+ * does not name, only when the manifest has a `tools` key (even an empty one);
+ * without it the daemon loads every Kortix tool.
  */
 function compileTools(tools: unknown): Pick<CompiledAgents, 'project_tools' | 'kortix_tools'> {
   const map = tools && typeof tools === 'object' && !Array.isArray(tools) ? (tools as Record<string, unknown>) : {};
@@ -296,7 +298,9 @@ function compileTools(tools: unknown): Pick<CompiledAgents, 'project_tools' | 'k
   });
   return {
     ...(entries.length > 0 ? { project_tools: Object.fromEntries(entries) } : {}),
-    ...(tools !== undefined ? { kortix_tools: KORTIX_TOOL_NAMES.filter((name) => kortixToolRef(map[name]) === name) } : {}),
+    ...(tools !== undefined
+      ? { kortix_tools: KORTIX_TOOL_NAMES.filter((name) => kortixToolRef(map[name]) === name || (isDefaultOnKortixTool(name) && !Object.hasOwn(map, name))) }
+      : {}),
   };
 }
 
@@ -677,41 +681,6 @@ export function agentConfigEtag(compiled: string | null | undefined): string | n
   return createHash('sha256').update(compiled).digest('hex').slice(0, 16);
 }
 
-/**
- * The manifest's declared session runtime at a ref: 'pi' | 'opencode' | null.
- *
- * Null means "could not tell" (no manifest, not v2, read/parse failure) and
- * always falls back to the OpenCode path — the same fail-open-to-legacy
- * posture as resolveCompiledAgentConfigForSession below. Only an explicit,
- * well-formed `runtime: pi` can move a session onto the worker.
- */
-/**
- * The harness a session boots, from the two inputs that can ask for pi:
- * the project's `pi_harness` feature flag (on ⇒ pi, whatever the manifest
- * says) and the manifest's `runtime:` field (`pi` ⇒ pi, even with the flag
- * off). Everything else is OpenCode. `runtime: null` is "no readable v2
- * manifest", which counts as opencode.
- *
- * pi calls models only through the Kortix LLM gateway (kortixd
- * `harness/pi/model.ts`). A project with the `llm_gateway` flag off gets no
- * gateway URL, so it always boots OpenCode, which calls providers directly.
- */
-export function selectSessionHarness(input: {
-  piHarnessFlag: boolean;
-  runtime: RuntimeV2 | null;
-  llmGateway: boolean;
-}): 'opencode' | 'pi' {
-  if (!input.llmGateway) return 'opencode';
-  if (input.piHarnessFlag) return 'pi';
-  return input.runtime === 'pi' ? 'pi' : 'opencode';
-}
-
-/** The harness a parsed manifest selects. `runtime` is a v2 field; anything but `pi` is OpenCode. */
-export function manifestRuntime(raw: unknown): RuntimeV2 {
-  if (!raw || typeof raw !== 'object' || ![2, 3].includes(manifestSchemaVersion(raw as Record<string, unknown>))) return 'opencode';
-  return (raw as Record<string, unknown>).runtime === 'pi' ? 'pi' : 'opencode';
-}
-
 type PiHarness = { pi?: { packages?: unknown; exclude?: unknown; codemode?: unknown } } | undefined;
 
 function piList(harnesses: PiHarness, key: 'packages' | 'exclude'): unknown[] {
@@ -911,11 +880,7 @@ export async function resolveCompiledAgentConfigForSession(
         const md = await readAgentMarkdownFile(project, raw, name, ref);
         if (md.content !== null) {
           agentMdFiles[md.path] = md.content;
-          return;
         }
-        console.warn(
-          `[compile-agent-config] project ${project.projectId}: agent "${name}" has no behavior file at "${md.path}"`,
-        );
       }),
     );
 

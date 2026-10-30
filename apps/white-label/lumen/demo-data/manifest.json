@@ -1,0 +1,72 @@
+[
+  {
+    "filename": "mutual-nda-quillon.docx",
+    "type": "nda",
+    "pages": null,
+    "sha256": "46b5cdb85d631fbc8a1bd09a026e6a8820958099139109ec182f18f6c3246352",
+    "bytes": 38976
+  },
+  {
+    "filename": "one-way-nda-harbor.pdf",
+    "type": "nda",
+    "pages": 2,
+    "sha256": "89adf65fcbdae9121a220ec642d8be09659e31bfd0e419e8ecb94d93932b50c1",
+    "bytes": 4229
+  },
+  {
+    "filename": "msa-brightwater-quillon.pdf",
+    "type": "msa",
+    "pages": 3,
+    "sha256": "1771ae1af81f4a513a9c1a093aa29a5b92a1ac1c51b1556f81ac28946bd3362b",
+    "bytes": 6027
+  },
+  {
+    "filename": "saas-agreement-lattice.docx",
+    "type": "saas",
+    "pages": null,
+    "sha256": "6f1f06197d0c48761840e1b592e8c1297ce75b0935f20988a0572ced9b4d801b",
+    "bytes": 38751
+  },
+  {
+    "filename": "office-lease-cedar-row.pdf",
+    "type": "lease",
+    "pages": 2,
+    "sha256": "b4b0c420d89b1e62588e45d2bc745a3e4e6542fc1d4c8bed816f5d98399d064f",
+    "bytes": 4105
+  },
+  {
+    "filename": "employment-agreement-tarrow.docx",
+    "type": "employment",
+    "pages": null,
+    "sha256": "4617dd29556a78543780771a874943f2c7418f42f3ea17fa129de14fd903e99f",
+    "bytes": 38572
+  },
+  {
+    "filename": "spa-excerpt-aster.pdf",
+    "type": "spa",
+    "pages": 2,
+    "sha256": "eb8a8ab66e2f638d588c333985586469a2d684766279b177c3533d149c093d81",
+    "bytes": 4254
+  },
+  {
+    "filename": "supply-agreement-meridian.pdf",
+    "type": "supply",
+    "pages": 2,
+    "sha256": "48d15910c9f95831fb9730d956159d2ab442be72930ea88e5ff515cda11e8d01",
+    "bytes": 4272
+  },
+  {
+    "filename": "dpa-lattice.docx",
+    "type": "dpa",
+    "pages": null,
+    "sha256": "efd61d1dbfb12d97d0b05781c189db7f81ef54f9010937e51bd015f92611cc3b",
+    "bytes": 38298
+  },
+  {
+    "filename": "consulting-agreement-pell.txt",
+    "type": "consulting",
+    "pages": null,
+    "sha256": "9b7ab8efafb3968449728cf3d3a65c90b0e917a28abc8a1b46d509d29f8e5578",
+    "bytes": 2100
+  }
+]

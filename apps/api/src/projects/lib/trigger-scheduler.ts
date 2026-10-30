@@ -1,4 +1,6 @@
 import { projects } from '@kortix/db';
+import { assertRepositoryConnected } from './git';
+import { REPOSITORY_DISCONNECTED_CODE, isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
@@ -10,7 +12,7 @@ import { renderPromptTemplate } from './trigger-payload';
 import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
 import { raiseTriggerAlert } from './trigger-alerts';
 import { runProjectConnectorSweep } from './trigger-connector-sweep';
-import { schedulerHealth, triggerFireTimeoutMs, triggerScheduleClaimLimit, triggerExecutionConcurrency, connectorSweepIntervalMs, initialCatalogBackfillIncomplete, mapWithConcurrency, schedulerSweepIsStale, triggersPausedForProject, withTimeout } from './trigger-scheduler-state';
+import { schedulerHealth, triggerFireTimeoutMs, triggerScheduleClaimLimit, triggerExecutionConcurrency, connectorSweepIntervalMs, initialCatalogBackfillIncomplete, mapWithConcurrency, schedulerSweepIsStale, automaticFirePauseReason, withTimeout } from './trigger-scheduler-state';
 
 export let triggerSweepRunning = false;
 let triggerExecutionDrainRunning = false;
@@ -125,17 +127,32 @@ async function executeTriggerExecution(
     .from(projects)
     .where(eq(projects.projectId, row.projectId))
     .limit(1);
-  if (!project || project.status !== 'active' || triggersPausedForProject(project.metadata)) {
+  // The project's own pause, then the account's Pause all automations (KRTX-1721).
+  const paused = project && project.status === 'active' ? await automaticFirePauseReason(project) : null;
+  if (!project || project.status !== 'active' || paused) {
     const reason = !project
       ? 'project not found'
       : project.status !== 'active'
         ? 'project is not active'
-        : 'project triggers are paused';
+        : paused!;
     await markTriggerExecutionSkipped({
       row,
       skippedAt: new Date(),
       reason,
     });
+    return 'skipped';
+  }
+
+  // A disconnected repository (KRTX-2955): skip the run with the cause, no
+  // retries and no alert per slot. The trigger shows the cause as its last
+  // error; the next slot after a reconnect fires normally.
+  try {
+    await assertRepositoryConnected(project);
+  } catch (error) {
+    if (!isRepositoryDisconnectedError(error)) throw error;
+    const skippedAt = new Date();
+    await markTriggerExecutionSkipped({ row, skippedAt, reason: `${error.code}: ${error.message}` });
+    await markGitTriggerAttemptFailed(row.projectId, row.slug, skippedAt, error.message).catch(() => {});
     return 'skipped';
   }
 
@@ -173,7 +190,13 @@ async function recordTriggerExecutionResult(
   row: TriggerExecutionRow,
   result: Awaited<ReturnType<typeof fireGitTrigger>>,
   completedAt: Date,
-): Promise<'fired' | 'queued' | 'failed'> {
+): Promise<'fired' | 'queued' | 'failed' | 'skipped'> {
+    // A run cap held the slot (KRTX-1721): a skipped run, not a failure. The
+    // trigger keeps its last status; fireGitTrigger already told the watchers.
+    if (result.status === 'skipped') {
+      await markTriggerExecutionSkipped({ row, skippedAt: completedAt, reason: result.reason ?? 'skipped' });
+      return 'skipped';
+    }
     if (result.status === 'fired' || result.status === 'queued') {
       // `queued` means two different things to `fireGitTrigger`. A reuse/keyed/
       // pinned fire that hands the prompt to an EXISTING session (`reason:
@@ -217,7 +240,9 @@ async function recordTriggerExecutionResult(
       // same way a billing rejection does.
       || result.errorCode === 'no_usable_model'
       // The fire already paused the reminder; a retry cannot bring the session back.
-      || result.errorCode === 'reminder_session_gone';
+      || result.errorCode === 'reminder_session_gone'
+      // No retry reaches a repository until a person reconnects GitHub.
+      || result.errorCode === REPOSITORY_DISCONNECTED_CODE;
     const state = await markTriggerExecutionFailed({ row, failedAt: completedAt, error, terminal });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, completedAt, error);
     // Only the dead letter alerts the watchers: a retried attempt may still work.

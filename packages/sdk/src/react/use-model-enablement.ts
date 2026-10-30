@@ -10,7 +10,6 @@ import { applyEnablementToProviderList } from './provider-selection';
 import type { ProviderListResponse } from './use-opencode-sessions';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
-import { useProjectLlmGatewayEnabled } from './use-project-llm-gateway';
 
 type ProjectModelPicker = ProjectLlmCatalogResponse;
 
@@ -50,13 +49,10 @@ export function useModelEnablement(projectId: string | null | undefined): UseMod
   // pre-toggle list until a hard refresh.
   const providersKey = useMemo(() => ['project-providers', projectId, 'gateway'], [projectId]);
 
-  // Enablement is a gateway-catalog concept; with the project's llm_gateway
-  // flag off, /model-picker answers 404 llm_gateway_disabled — never fetch.
-  const gateway = useProjectLlmGatewayEnabled(projectId);
   const { data } = useQuery({
     queryKey,
     queryFn: () => getProjectModelPicker(projectId as string),
-    enabled: !!projectId && gateway.enabled,
+    enabled: !!projectId,
     ...contract('config'),
     retry: false,
   });

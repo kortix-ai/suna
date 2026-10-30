@@ -25,6 +25,12 @@ const ENV_KEYS = [
 const INSTALL_URL =
   'https://slack.com/oauth/v2/authorize?client_id=1.2&scope=chat:write&state=signed';
 const TEAMS_CONSENT_URL = 'https://login.microsoftonline.com/common/adminconsent?client_id=teams-1';
+const TEAMS_MANIFEST = {
+  manifestVersion: '1.17',
+  id: 'teams-1',
+  bots: [{ botId: 'teams-1', scopes: ['personal', 'team'] }],
+  validDomains: ['api.test'],
+};
 const INSTALLATION = {
   workspaceId: 'T012AB3CD',
   workspaceName: 'Acme',
@@ -161,6 +167,16 @@ function mockApi() {
         deepLinkUrl: teamsInstall?.catalogAppId ?? null,
       });
     }
+    // GET /channels/teams/manifest: the app manifest the API builds, or 409
+    // when no bot credentials resolve.
+    if (url.endsWith('/channels/teams/manifest') && method === 'GET') {
+      if (!state.oauthAvailable) {
+        return new Response(JSON.stringify({ error: 'Teams is not configured on this server' }), {
+          status: 409,
+        });
+      }
+      return json(TEAMS_MANIFEST);
+    }
     if (url.includes('/channels/teams/installation') && method === 'GET') {
       return json(teamsInstall ?? null);
     }
@@ -252,6 +268,40 @@ describe('kortix channels connect — one-click (cloud)', () => {
     expect(out).toContain(INSTALL_URL);
     expect(out).toContain('Connected to Acme');
   });
+
+  // A non-numeric --timeout made the poll deadline `Number('abc')` = NaN; the
+  // poll's only exit is `Date.now() >= deadline`, which NaN never satisfies —
+  // the CLI hung forever. Same for a deadline of Infinity. Reject the value
+  // where the flag is parsed, before the command touches the API.
+  test('--wait --timeout abc fails fast with a usage error instead of hanging on a NaN deadline', async () => {
+    const code = await runChannels(['connect', '--wait', '--timeout', 'abc']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain(
+      "--timeout requires a non-negative number of seconds, got 'abc'",
+    );
+    expect(requests).toEqual([]);
+  });
+
+  test('--wait --timeout Infinity fails fast too (a deadline that never arrives hangs the poll)', async () => {
+    const code = await runChannels(['connect', '--wait', '--timeout', 'Infinity']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain("got 'Infinity'");
+    expect(requests).toEqual([]);
+  });
+
+  test('--wait --timeout=-5 fails fast (a negative timeout is invalid input)', async () => {
+    const code = await runChannels(['connect', '--wait', '--timeout=-5']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain("got '-5'");
+    expect(requests).toEqual([]);
+  });
+
+  test('--wait --timeout 2e305 fails fast too (a finite value whose ms deadline overflows to Infinity)', async () => {
+    const code = await runChannels(['connect', '--wait', '--timeout', '2e305']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain("got '2e305'");
+    expect(requests).toEqual([]);
+  });
 });
 
 describe('kortix channels connect — manual (self-host)', () => {
@@ -315,7 +365,7 @@ describe('kortix channels connect — manual (self-host)', () => {
 
 describe('kortix channels status', () => {
   test('not connected → points at `kortix channels connect`', async () => {
-    const code = await runChannels(['status']);
+    const code = await runChannels(['status', '--platform', 'slack']);
     expect(code).toBe(0);
     const out = stripAnsi(stdout);
     expect(out).toContain('not connected');
@@ -324,7 +374,7 @@ describe('kortix channels status', () => {
 
   test('--json reports connected + installation', async () => {
     state.installation = INSTALLATION;
-    const code = await runChannels(['status', '--json']);
+    const code = await runChannels(['status', '--platform', 'slack', '--json']);
     expect(code).toBe(0);
     const parsed = JSON.parse(stdout);
     expect(parsed.connected).toBe(true);
@@ -335,7 +385,7 @@ describe('kortix channels status', () => {
     writeConfig('https://api.test/v1');
     state.installation = INSTALLATION;
 
-    const code = await runChannels(['status']);
+    const code = await runChannels(['status', '--platform', 'slack']);
 
     expect(code).toBe(0);
     const out = stripAnsi(stdout);
@@ -414,6 +464,25 @@ describe('kortix channels manifest', () => {
 });
 
 describe('kortix channels --platform teams', () => {
+  // KRTX-2990: `manifest` built an absolute URL the client read as a path
+  // (`/v1/https://…`) and asked the /mode route instead of /manifest.
+  test('manifest GETs the server-built app manifest and prints it verbatim', async () => {
+    const code = await runChannels(['manifest', '--platform', 'teams']);
+    expect(code).toBe(0);
+    expect(requests).toEqual([
+      { url: 'https://api.test/v1/projects/proj_1/channels/teams/manifest', method: 'GET', body: undefined },
+    ]);
+    expect(JSON.parse(stdout)).toEqual(TEAMS_MANIFEST);
+  });
+
+  test('manifest on a host with no Teams bot surfaces the 409 and exits 1', async () => {
+    state.oauthAvailable = false;
+    const code = await runChannels(['manifest', '--platform', 'teams']);
+    expect(code).toBe(1);
+    expect(stripAnsi(stderr)).toContain('Teams is not configured on this server');
+    expect(stdout).toBe('');
+  });
+
   test('status not connected → points at `kortix channels connect --platform teams`', async () => {
     const code = await runChannels(['status', '--platform', 'teams']);
     expect(code).toBe(0);
@@ -611,8 +680,8 @@ describe('kortix channels --platform teams', () => {
     expect(stripAnsi(stdout)).toContain('Disconnected');
   });
 
-  test('default (no --platform) still routes to Slack', async () => {
-    const code = await runChannels(['status']);
+  test('explicit Slack status only requests Slack', async () => {
+    const code = await runChannels(['status', '--platform', 'slack']);
     expect(code).toBe(0);
     expect(requests.some((r) => r.url.includes('/channels/slack/installation'))).toBe(true);
     expect(requests.some((r) => r.url.includes('/channels/teams/'))).toBe(false);

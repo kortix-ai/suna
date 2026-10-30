@@ -11,7 +11,7 @@
 
 import { useAccount, useAccountCapabilities, type AccountCapability } from '@/lib/accounts/hooks';
 
-export type AccountCaps = Record<AccountCapability, boolean>;
+type AccountCaps = Record<AccountCapability, boolean>;
 
 /**
  * The account plus the current user's capabilities on it, from the IAM probe

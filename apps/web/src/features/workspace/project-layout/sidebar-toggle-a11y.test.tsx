@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SidebarContext, type SidebarContextProps } from '@/components/ui/sidebar-context';
-import { SidebarToggle } from './sidebar-toggle';
+import { SidebarContext, type SidebarContextProps } from '@kortix/ui/sidebar-context';
+import { SidebarToggle } from '@kortix/ui/workspace';
 
 const base: SidebarContextProps = {
   state: 'expanded', open: true, isMobile: true, openMobile: false,
@@ -40,5 +40,13 @@ describe('sidebar toggle accessible state', () => {
     const html = render({ isMobile: false, state: 'collapsed', open: false, peek: true });
     expect(html).toContain('aria-label="Pin sidebar"');
     expect(html).toContain('aria-expanded="true"');
+  });
+  test('the 26px ghost toggle carries a hit-area extension to the 44px floor (KRTX-2004)', () => {
+    // The opener is a `size-7` ghost button (≈26px at the 0.23rem spacing
+    // token) — far below the 44px mobile minimum. The box cannot grow in
+    // every header row it renders into, so the tap target extends through
+    // the shared hit-area pseudo-element (≈48px effective).
+    const html = render({ isMobile: true });
+    expect(html).toContain('hit-area-3');
   });
 });

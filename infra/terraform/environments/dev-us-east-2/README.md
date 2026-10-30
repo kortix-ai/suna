@@ -20,6 +20,38 @@ definitions with `infra/scripts/ecs-deploy.sh dev-use2`. The env blob is
 `kortix-dev-env` in us-east-2. `TF_VAR_cloudflare_api_token` is
 `CLOUDFLARE_API_TOKEN` in `kortix-ci-env` (us-east-2).
 
+## Gateway → API inside the VPC
+
+The gateway's control-plane calls (`/internal/gateway/*`, `/health`) go to
+`http://api.kortix-dev-use2.internal:8008` (`KORTIX_API_INTERNAL_URL`, set by
+Deploy Dev's `deploy-gateway-ecs` job). The name is a Cloud Map private DNS
+record: ECS registers every running API task's private IP
+(`aws_service_discovery_private_dns_namespace.internal`, `service_discovery` on
+`module.api`). Only tasks in the `kortix-dev-use2-gateway-internal` security
+group can open port 8008 on tasks in `kortix-dev-use2-api-internal`.
+
+- Plaintext HTTP. The hop stays in the VPC. The API still checks
+  `GATEWAY_INTERNAL_TOKEN` and `KORTIX_INTERNAL_EDGE_KEY` on every call.
+- When a call to the private URL throws (refused, reset, DNS, timeout), the
+  gateway uses `KORTIX_API_URL` (Cloudflare → Worker → ALB) for 60 s.
+- A refused or reset connection costs one failed attempt. A private path that
+  hangs (a stale task IP, a dropped SYN) costs each call in flight on that
+  gateway task its full attempt budget before the switch: ~5 s on
+  authenticate/authorize/resolve (then the public URL), ~10 s on `/admit`
+  (then the separate calls). `recordUsage`/`recordTrace` do not retry a
+  timeout, so a write that hangs is dropped. The `/health` ping tries the
+  private URL for 1 s, then the public URL on a new 3 s signal.
+- The private hop skips the api-router Worker (its blocking-maintenance write
+  gate) and the ALB WAF for `/internal/*`.
+- Roll back: set `KORTIX_API_INTERNAL_URL` to `""` in `deploy-gateway-ecs`'s
+  `KORTIX_ECS_ENV_OVERRIDES` and redeploy. Do not delete the key:
+  `infra/scripts/ecs-deploy.sh` copies every variable of the running task
+  definition that the overrides do not name, so the old URL stays set.
+  `config.ts` maps `""` to unset, and every call uses `KORTIX_API_URL`.
+- Check it: `curl -s https://gateway-dev.kortix.com/health | jq .checks.api`.
+  `latency_ms` was 15 ms min / 27 ms p50 / 54 ms p90 through Cloudflare
+  (2026-10-20, 40 samples).
+
 ## Why this exists
 
 Server-side `Server-Timing`, same code, same query counts:

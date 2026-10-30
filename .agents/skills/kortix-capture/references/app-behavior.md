@@ -523,6 +523,36 @@ The MSI (`installer/windows/kortix-capture.wxs`, built by
 - uninstall stops the service (and every recorder it started), removes the
   files, the two values and `%ProgramData%\Kortix\Capture`. People's
   recordings stay in their profiles.
+- runs Microsoft's WebView2 bootstrapper (`MicrosoftEdgeWebview2Setup.exe
+  /silent /install`, in the MSI's Binary table) when
+  `HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-…}` has
+  no `pv`. Windows 11 ships the runtime; some Windows 10 computers do not. The
+  bootstrapper downloads the runtime. Its failure does not fail the install
+  (`Return="ignore"`): the computer records, and the window says what is missing;
+- starts the service with a deferred `sc.exe start KortixCapture` that ignores a
+  failure (`StartMachineService`), not with `ServiceControl Start`: a service that
+  cannot start failed the install with error 1920 and rolled it back. The exes link
+  the C runtime statically (`apps/capture/.cargo/config.toml`), so a computer
+  without the Visual C++ Redistributable runs them;
+- adds the Start menu entry `kortix-capture.exe app` (`Show="minimized"` only
+  hides the console a click on a console exe opens; `app` starts itself again
+  without one, and that process shows the window).
+
+The Windows window (WebView2) keeps its profile in
+`%LOCALAPPDATA%\Kortix\WebView2`. Without a profile folder WebView2 writes
+next to the exe in `%ProgramFiles%`, which a person without admin rights cannot
+write: until 2026-10-19 the window then failed with `0x80070005` and closed at
+once. A window that cannot open (`app`, `ui`, `open`) appends the error to
+`<library>/logs/ui.log` and, on Windows, shows a message box with the error and
+the log path. A second click on the Start menu entry brings the open window
+forward (`ui.lock` and `ui-request.json`, see `src/memory/ui.rs`).
+
+Windows icons: `assets/icons/windows/` (`app.ico` 16-256 px, `app-256.png` for
+the window, `tray.png`, `trayIdle.png`), made by
+`scripts/make_windows_icons.py` from the Capture mark of `app-1024.png`. The
+exe resource (`build.rs`, `embed-resource`), the MSI (`ARPPRODUCTICON`, the
+shortcut), the window and the tray use them. macOS and Linux keep
+`assets/icons/app-*.png` and `tray*.png`.
 
 For every person who signs in to the computer, the machine service:
 
@@ -612,8 +642,13 @@ timeline and search over those recordings. Sync to Kortix is the default.
   earlier ones stay on this computer (`local_only` in the database). Signing out of Kortix
   turns sync off, keeps the recordings, and keeps recording.
 - **Menu bar / tray.** Status line, sync line, "Open Kortix Capture", "Settings…", the
-  pauses (1 hour, until tomorrow, until resumed) or "Resume". There is no Quit. A managed
-  computer shows the organization and has no pauses.
+  pauses (1 hour, until tomorrow, until resumed) or "Resume", then "Restart Kortix
+  Capture" and "Quit Kortix Capture". Quit (`kortix-capture quit`) stops the background
+  service, the recorders and the icon until the app opens again or the next login
+  (`launchctl bootout` of the agent, `systemctl --user stop`, `schtasks /End`); it stays
+  installed and on at login. Restart (`kortix-capture restart`) ends the supervisor and
+  the OS starts it again (KeepAlive, `Restart=always`, the task's loop). A managed
+  computer shows the organization and has no pauses, Restart or Quit.
 - **Errors** in the window are one short sentence. The detail is in the log
   (Settings, About, Open logs).
 
@@ -790,12 +825,22 @@ audio, actions and policy state, the action spool summary, device info) as
 
 ## Updates
 
-This build has no self-updater. A new installer upgrades in place and keeps the
-configuration (MSI major upgrade, `installer -pkg` over the installed pkg,
-`dpkg -i`). Every Kortix release carries `capture-update.json` (version,
-channel and per-OS installer URL, SHA-256 and size; Ed25519 signature in
-`capture-update.json.sig` once the signing key exists). The release runbook
-(`release-runbook.md`) lists the URLs the updater will poll.
+The machine service updates the app by itself (`src/memory/managed/update.rs`).
+It checks at start and every 6 hours (jittered), on the channel the build came
+from: `stable` for `X.Y.Z`, `dev` for `X.Y.Z-dev.N`. Every Kortix release
+carries `capture-update.json` (version, channel and per-OS installer URL,
+SHA-256 and size) and its Ed25519 signature `capture-update.json.sig`. The
+service installs only a newer version whose signature verifies and whose
+installer matches the size and SHA-256. A new version that does not report
+healthy (recorder running, new frame) is rolled back and never tried again.
+
+IT turns updates off (`auto_update` / `AutoUpdate`) or pins the channel
+(`update_channel` / `UpdateChannel`) where the enrollment settings live.
+`kortix-capture --json machine status` shows `version` and `update`; the same
+`update` object goes into `status.json`. A new installer still upgrades in
+place and keeps the configuration (MSI major upgrade, `installer -pkg` over
+the installed pkg, `dpkg -i`). The rules, files and how to stop a bad release
+are in `release-runbook.md`, section "Updater".
 
 ## Privacy
 
@@ -813,6 +858,19 @@ channel and per-OS installer URL, SHA-256 and size; Ed25519 signature in
   subdomain, case-insensitively (`chase.com` covers `secure.chase.com`;
   `notchase.com` stays visible). It is best-effort: add missing banks under
   `excluded_domains`.
+- Cloud vs local: the organization's policy (account settings ▸ Kortix Capture ▸
+  Apps and websites) reaches every signed-in or enrolled computer within ~1 min and
+  shows locked; the person's own entries live in their settings and never upload.
+  The effective rules are the union; Never record wins. `privacy.member_inclusions`
+  false ignores the person's own inclusions (never their exclusions). A computer
+  synced to Kortix with no cached `policy.json` records nothing (`policy_pending`,
+  tray "Waiting for <org>'s settings") until the first fetch, so a new computer
+  starts under the organization's policy from its first frame.
+- Settings ▸ **Apps and websites** (always shown): "What to record" (everything
+  except Never record, or only included apps and websites), the Included list
+  and the Never record list. Adding one suggests installed apps (macOS,
+  `/api/installed-apps`), recorded apps and recorded websites. The policy's
+  `experimental.privacy_controls` now shows or hides personal-data masking only.
 - Record only included (`record_only_included`, `included_bundle_ids`,
   `included_domains`; the policy's `privacy.*` of the same names turn it on and
   add to the lists, and the person cannot turn it off). A window is recorded
@@ -1094,9 +1152,53 @@ Build: `cargo build --release --features capture-engine --bin kortix-capture-eng
 Swift engine and `engine::locate()` prefers it there.
 
 `bundle_id`: Windows = AppUserModelID for packaged apps, else lowercase exe name
-(`chrome.exe`). Linux = lowercase `WM_CLASS` class. Exclusion lists match
-case-insensitively; the built-in groups carry Windows and Linux ids.
+(`chrome.exe`). Linux = lowercase `WM_CLASS` class. The built-in groups carry
+Windows and Linux ids.
 
+### App lists: the one app rule
+
+Every app list (exclusions, Record only, the organization's policy, Kortix's
+own apps, per-window masking, the action recorder, system audio) uses one rule:
+`memory::exclusions::app_matches` in Rust and `appMatches` in
+`native/macos/CaptureEngine.swift`. Both run the shared vectors in
+`fixtures/capture-format-v2/apps.json`.
+
+An app has several identifiers: its `bundle_id` and its `aliases`. An entry
+names the app when its key equals the key of any identifier. The key is the
+trimmed, lowercase last path component, without `.exe`, `.app`, `.desktop` or
+`.appimage`, and without a `maccatalyst.` prefix. An entry ending in `*` names
+every app with an identifier key that starts with the rest (3 characters or
+more). The API and the SDK (`normalizeCaptureAppId`) accept any such entry.
+
+| OS | Identifiers of an app | What an admin can type (all match) |
+|---|---|---|
+| Windows 10/11, classic Win32 | exe file name, version-resource description | `acad.exe`, `ACAD`, `C:\Program Files\Autodesk\AutoCAD 2025\acad.exe`, `AutoCAD Application`, `autocad*` |
+| Windows, packaged MSIX/Store (Win11 Notepad, Paint, Terminal, Calculator) | AppUserModelID, exe file name, package family, package name, description | `notepad.exe`, `Microsoft.WindowsNotepad`, `Microsoft.WindowsNotepad_8wekyb3d8bbwe`, the AUMID, a `WindowsApps` path |
+| Windows, UWP in `ApplicationFrameHost.exe` | the app process behind the frame; if not found, the window's `PKEY_AppUserModel_ID` | `calculatorapp.exe`, `Microsoft.WindowsCalculator` (`calc.exe` is only a launcher: it never matches) |
+| Windows, elevated or protected process the recorder may not open | none: the app is unknown (a process snapshot names it in `aliases` only) | nothing: never recorded unless `record_unknown_bundle_ids`, never with Record only |
+| Windows, Java / .NET / Electron hosts | the host exe (`javaw.exe`), or the app's own exe (`slack.exe`) | `javaw.exe` names every Java app |
+| macOS 14+ | bundle id, app name, executable name, `.app` file name | `com.autodesk.AutoCAD2025`, `com.autodesk.autocad*`, `AutoCAD 2025`, `AutoCAD 2025.app`, a `/Applications/...` path |
+| macOS, Mac Catalyst | bundle id without `maccatalyst.` | the iOS bundle id |
+| macOS, no bundle id (CLI tools, unbundled Java) | none: the app is unknown | nothing (see below) |
+| Linux X11 | `WM_CLASS` class and instance, process name, `.desktop` name, exe file name | `gedit`, `Text Editor` |
+| Linux, Flatpak / Snap / AppImage | Flatpak app id (cgroup scope), Snap name (`/snap/<name>/`), AppImage file (`APPIMAGE`) | `org.gnome.TextEditor`, `firefox`, `FreeCAD.AppImage` |
+
+Fail-safe rules:
+
+- An app without a `bundle_id` (macOS without a bundle id, an X11 window
+  without `WM_CLASS` or pid, a Windows process the recorder may not open) is
+  never recorded with Record only on, even when its name is listed. With it
+  off it is hidden unless `record_unknown_bundle_ids`; the recorder reports
+  `unknown_bundle`.
+- Record only on: a browser whose URL is not read (an unfocused window on
+  Windows, every window on Linux, an unknown browser) is recorded only when
+  the browser app itself is included. Exclusion: such a window is recorded
+  unless its title marks a private window.
+- Websites follow the domain rule (`fixtures/capture-format-v2/domains.json`):
+  a site covers its subdomains, ports and `www.` are ignored, and an
+  internationalized host compares in its punycode form on every OS.
+- An excluded app is masked window by window on every display, also when it is
+  not in front.
 | | Windows | Linux (X11) |
 |---|---|---|
 | Screen | GDI `BitBlt` of the monitor with the focused window (per-monitor DPI aware) | X11 `GetImage` of the RandR monitor with the focused window |

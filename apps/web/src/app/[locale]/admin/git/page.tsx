@@ -24,7 +24,7 @@
 import { Suspense } from 'react';
 
 import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { useTranslations } from '@/i18n/use-translations';
 
 import { AdminPageShell } from '../_components/admin-page-shell';

@@ -1,7 +1,7 @@
 'use client';
 
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget } from '@/stores/account-panel-store';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
+import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 // Shared "GitHub isn't connected yet" panel — shown in place of the
 // create/import UI whenever there's no usable managed git on this server
@@ -13,8 +13,8 @@ import { useTranslations } from '@/i18n/use-translations';
 import { GithubLogoIcon as Github } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { Button } from '@kortix/ui/button';
+import { EmptyState } from '@kortix/ui/empty-state';
 
 /** Owner/admin of the account can fix a missing GitHub connection
  *  themselves (via the account's Git settings); anyone else can only ask.

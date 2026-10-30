@@ -6,7 +6,9 @@ import { db } from '../shared/db';
 import { mintSetupLink } from './token';
 
 const propagated: string[] = [];
+const realSync = await import('../projects/lib/sandbox-env-sync');
 mock.module('../projects/lib/sandbox-env-sync', () => ({
+  ...realSync,
   propagateProjectSecretsToActiveSandboxes: async (id: string) => { propagated.push(id); },
 }));
 const { setupLinksPublicApp } = await import('./public-app');

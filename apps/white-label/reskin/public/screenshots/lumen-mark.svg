@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" width="56" height="56">
+  <style>.f{fill:#007980}.s{stroke:#007980}@media (prefers-color-scheme:dark){.f{fill:#2ac3bb}.s{stroke:#2ac3bb}}</style>
+  <circle class="f" cx="14" cy="14" r="13" opacity="0.16"/>
+  <circle class="s" cx="14" cy="14" r="8.5" fill="none" stroke-width="1.75"/>
+  <circle class="f" cx="14" cy="14" r="3.75"/>
+</svg>

@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { DEFAULT_MANAGED_MODEL_IDS, PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
 import { chooseDefaultModel } from '../llm-gateway/resolution/choose-default-model';
 
-const PAID_MANAGED = DEFAULT_MANAGED_MODEL_IDS.find((id) => id !== PLATFORM_DEFAULT_MODEL_ID)!;
+const PAID_MANAGED = 'glm-5.3-flash'; // a managed id that is not the platform default
 const BYOK = 'anthropic/claude-sonnet-4-6'; // a non-managed wire model
 
 describe('chooseDefaultModel — precedence (agent > project > account)', () => {
@@ -47,17 +46,15 @@ describe('chooseDefaultModel — precedence (agent > project > account)', () => 
 });
 
 describe('chooseDefaultModel — free tier', () => {
-  // KRTX-1067: the platform default is the ONE managed model every tier may
-  // use, so a free account keeps it; every other managed model still drops.
-  test('keeps the platform default', () => {
+  // A free account gets no managed model, the platform default included.
+  test('drops the platform default', () => {
     expect(
       chooseDefaultModel({
-        accountDefault: PLATFORM_DEFAULT_MODEL_ID,
+        accountDefault: 'deepseek-v4.1-flash',
         agentDefaults: {},
         freeModelsOnly: true,
-        platformDefault: PLATFORM_DEFAULT_MODEL_ID,
       }),
-    ).toBe(PLATFORM_DEFAULT_MODEL_ID);
+    ).toBeUndefined();
   });
 
   test('drops a non-default managed default → undefined (gateway falls back to free)', () => {
@@ -66,7 +63,6 @@ describe('chooseDefaultModel — free tier', () => {
         accountDefault: PAID_MANAGED,
         agentDefaults: {},
         freeModelsOnly: true,
-        platformDefault: PLATFORM_DEFAULT_MODEL_ID,
       }),
     ).toBeUndefined();
   });
@@ -77,7 +73,6 @@ describe('chooseDefaultModel — free tier', () => {
         accountDefault: `kortix/${PAID_MANAGED}`,
         agentDefaults: {},
         freeModelsOnly: true,
-        platformDefault: PLATFORM_DEFAULT_MODEL_ID,
       }),
     ).toBeUndefined();
   });

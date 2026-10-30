@@ -24,7 +24,7 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
     'text3efe2d7294ba',
   'Every Kortix session gets its own computer: an isolated Linux machine that clones your repo, cuts a branch named after the session, and runs OpenCode. Work lands through a change request a person approves.':
     'textb57f2c70525f',
-  'Field notes on building, running, and governing AI agents that do real work — from the team building the Kortix AI Operating System.':
+  'Field notes on building, running, and governing AI agents that do real work — from the team building Kortix CompanyOS.':
     'text3661bf7ae497',
   'Get Kortix for macOS, Windows, Linux, iOS, and Android.': 'textd587acccbf63',
   'How Kortix is built to survive a security review: an isolated machine per session, connector credentials brokered server-side that never enter that machine, permissions for people and agents, human approval gates, and a change request between an agent and main.':
@@ -50,7 +50,7 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
   'Kortix terms of service and privacy policy.': 'text460a8b327e17',
   'One platform, eight teams with completely different work. What sales, marketing, product, engineering, finance, people, IT and data science can each hand off — and what comes back.':
     'text1327d65dc73c',
-  'Open positions at Kortix — Marketing / Content, Sales, FDE / Services, Product / Eng, Product / R&D. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.':
+  'Open positions at Kortix — FDE, GTM and MTS. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.':
     'text0f4827ef74ea',
   'Reach Kortix support by email or Discord, read the answers to the questions people ask most, and find the account deletion steps.':
     'text5b4afe177d99',
@@ -65,6 +65,8 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
     'textad70f35eaccc',
   'Field notes on building, running, and governing AI agents that do real work — from the team building Kortix.':
     'text66b6392a2418',
+  'What shipped in Kortix each week, straight from our production releases.':
+    'text19e6841a618f',
   "Contact sales and book a demo": 'text228359b08506',
   "About": 'text4efca0d10c5f',
   "Legal": 'text4787eaf7c938',
@@ -94,4 +96,7 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
   "AI agents for sales teams": 'text09e71792c6c3',
   "AI agents for marketing teams": 'textaaab3a59b808',
   "AI agents for finance teams": 'text8f480bae8d16',
+  'White-label: your AI product on Platinum.dev compute': 'texta0990a4a86dc',
+  'Fork Kortix, put your brand on it, and sell it as your own product. The license is free. The one requirement is that your compute runs on Platinum.dev.':
+    'text6189ab6313de',
 };

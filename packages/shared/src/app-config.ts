@@ -312,12 +312,45 @@ export function appServicesFor(config: AppReleaseConfig, group: string): AppServ
  * only: nothing about how the App runs or who may open it changes.
  */
 export interface AppDisplay {
-  /** A card in the Apps grid. Default true; an App with a `parent` has none. */
+  /** A card in the Apps grid. Default false: an App is on the Apps page only when registered with `listed: true`. A `parent` puts it in that App's tabs instead. */
   listed?: boolean;
   /** The card thumbnail: `live` frames the App, `none` shows an icon. Default `live`. */
   preview?: 'live' | 'none';
   /** The App, by slug, whose detail shows this one as a tab (a backend's admin dashboard). */
   parent?: string;
+}
+
+/** What the Apps grid reads of an App: the web's `App` and the API's App JSON both fit. */
+export interface GridApp {
+  slug: string;
+  display?: AppDisplay | null;
+  services?: ReadonlyArray<{ name: string; access?: string | null }> | null;
+}
+
+/**
+ * Its primary service is `access: admins` (a backend's admin dashboard): only
+ * project admins can open it, so nobody else is shown a card or tab for it.
+ */
+export function appAdminsOnly(app: GridApp): boolean {
+  return app.services?.find((service) => service.name === 'http')?.access === 'admins';
+}
+
+/**
+ * The Apps the grid shows as cards (`display`): registered with `listed: true`,
+ * not a tab of a parent in the same list, and not admins-only for a non-admin.
+ * A tab whose parent is gone stays reachable as a card. Background Apps (a
+ * poller, a bot, a backend) stay out of the grid unless their author registers
+ * them. The Apps page, a channel's Apps tab and the channel's Apps count all
+ * apply this one rule.
+ */
+export function gridApps<T extends GridApp>(apps: readonly T[], canAdmin = true): T[] {
+  const slugs = new Set(apps.map((app) => app.slug));
+  return apps.filter(
+    (app) =>
+      app.display?.listed === true &&
+      !(app.display?.parent && slugs.has(app.display.parent)) &&
+      (canAdmin || !appAdminsOnly(app)),
+  );
 }
 
 const DISPLAY_KEYS = new Set(['listed', 'preview', 'parent']);

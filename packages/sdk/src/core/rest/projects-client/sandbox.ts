@@ -47,12 +47,19 @@ export interface SandboxTemplate {
   provider_state: string;
   ready: boolean;
   /**
+   * The template's residential IP (kortix.yaml `residential_proxy`, or the
+   * form's "Residential IP"): the sandbox's web traffic leaves through a
+   * residential IP address, in `country` when set. null = off. Absent from an
+   * API older than the field.
+   */
+  residential_proxy?: { country?: string } | null;
+  /**
    * Fresh launch-readiness observations for this exact content-addressed image
    * on every supported provider. The legacy single state follows the project's
    * routing mode; this array preserves the independent provider truth.
    */
   provider_coverage?: Array<{
-    provider: 'daytona' | 'platinum' | 'e2b';
+    provider: 'platinum' | 'daytona';
     available: boolean;
     snapshot_name: string;
     state: 'active' | 'building' | 'build_failed' | 'removing' | 'unknown' | 'missing' | null;
@@ -76,7 +83,7 @@ export interface SandboxTemplatesResponse {
   items: SandboxTemplate[];
   default_slug: string | null;
   provider_mode?: 'automatic' | 'pinned';
-  selected_provider?: 'daytona' | 'platinum' | 'e2b' | null;
+  selected_provider?: 'platinum' | 'daytona' | null;
   /** Whether the warm pool feature is enabled platform-wide. */
   warm_pool_available?: boolean;
 }
@@ -100,7 +107,7 @@ export interface ProjectSnapshotBuild {
   fixable_by_agent: boolean;
   source: 'session-start' | 'project-create' | 'cr-merge' | 'manual' | 'background' | 'startup' | null;
   /** Exact provider recorded for new builds; null/absent on historical rows. */
-  provider?: 'daytona' | 'platinum' | 'e2b' | null;
+  provider?: 'platinum' | 'daytona' | null;
   started_at: string;
   finished_at: string | null;
 }
@@ -157,7 +164,7 @@ export interface ProjectSnapshotsResponse {
   /** Absent on a degraded/older API response — treat as "no alert". */
   status?: SandboxRuntimeStatus | null;
   provider_mode?: 'automatic' | 'pinned';
-  selected_provider?: 'daytona' | 'platinum' | 'e2b' | null;
+  selected_provider?: 'platinum' | 'daytona' | null;
   /** Whether the warm pool feature is enabled platform-wide (gates the per-row control). */
   warm_pool_available?: boolean;
 }
@@ -176,7 +183,7 @@ export interface ProjectSandboxHealth {
   /** Absent on a degraded/older API response — treat as "no alert". */
   status?: SandboxRuntimeStatus | null;
   provider_mode?: 'automatic' | 'pinned';
-  selected_provider?: 'daytona' | 'platinum' | 'e2b' | null;
+  selected_provider?: 'platinum' | 'daytona' | null;
 }
 
 export interface RebuildSnapshotResponse {
@@ -184,8 +191,8 @@ export interface RebuildSnapshotResponse {
   slug: string;
   deleted_existing: boolean;
   snapshot_name: string;
-  providers?: Array<'daytona' | 'platinum' | 'e2b'>;
-  failed_providers?: Array<'daytona' | 'platinum' | 'e2b'>;
+  providers?: Array<'platinum' | 'daytona'>;
+  failed_providers?: Array<'platinum' | 'daytona'>;
 }
 
 /**
@@ -253,6 +260,8 @@ export interface CreateSandboxTemplateInput {
   cpu?: number;
   memory_gb?: number;
   disk_gb?: number;
+  /** Residential IP: true, or a country (ISO 3166-1 alpha-2). Omitted = off. */
+  residential_proxy?: boolean | { country?: string } | null;
 }
 
 export interface UpdateSandboxTemplateInput {
@@ -263,6 +272,8 @@ export interface UpdateSandboxTemplateInput {
   cpu?: number | null;
   memory_gb?: number | null;
   disk_gb?: number | null;
+  /** Residential IP: true or a country turns it on; false or null turns it off. */
+  residential_proxy?: boolean | { country?: string } | null;
 }
 
 export async function createSandboxTemplate(
@@ -304,7 +315,7 @@ export async function buildSandboxTemplate(projectId: string, templateId: string
       status: 'started';
       template_id: string;
       slug: string;
-      providers?: Array<'daytona' | 'platinum' | 'e2b'>;
+      providers?: Array<'platinum' | 'daytona'>;
     }>(
       `/projects/${projectId}/sandbox-templates/${templateId}/build`,
       {},

@@ -97,6 +97,7 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
 }));
 mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
+  stoppedSandboxWakePending: async () => false,
 }));
 // Daytona ingress is a pass-through: the effective port is the addressed port.
 mock.module('../backend', () => ({
@@ -122,6 +123,8 @@ mock.module('../forward/abort-authority', () => ({
     abortAsks.push({ userId: access.kind === 'principal' ? (access.userId ?? null) : null, sessionId: record.sessionId });
     return abortVerdict;
   },
+  // A rewind of the caller's own message (its rule is tested in rewind-authority.test.ts).
+  decideClientRewind: async () => true,
 }));
 const realTurnLedger = await import('../../projects/session-turn-ledger');
 mock.module('../../projects/session-turn-ledger', () => ({

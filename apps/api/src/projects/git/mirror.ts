@@ -20,15 +20,15 @@ import { timeStage } from '../../lib/server-timing';
 
 export const execFileAsync = promisify(execFile);
 
-const refreshLocks = new Map<string, { promise: Promise<string>; forced: boolean }>();
+const refreshLocks = new Map<string, { promise: Promise<string>; forced: boolean; epoch: number }>();
 const lastRefreshAt = new Map<string, number>();
 /** projectId → branch → when that branch was last proven to be at the remote's tip. */
 // replica-local: each API replica refreshes its own bare mirror on local disk
 // (`KORTIX_GIT_CACHE_DIR`), so the proof describes that replica's copy. Every
 // base move Kortix makes or proxies broadcasts `invalidateProjectMirror` to
 // every process, so the copy expires on time; the interval only bounds pushes
-// made directly on the upstream, where a missed proof costs one
-// `git ls-remote`, never a stale read.
+// made directly on the upstream, where a missed proof costs one single-branch
+// fetch, never a stale read.
 const tipProvenAt = new Map<string, Map<string, number>>();
 /** Bumped by every invalidation: a refresh in flight across one records nothing. */
 // replica-local: the broadcast increments every replica's counter, so a
@@ -81,7 +81,7 @@ interface ResolvedMirrorAccess {
   headers: Record<string, string>;
 }
 
-async function ensureMirrorAccess(project: GitBackedProject): Promise<ResolvedMirrorAccess> {
+export async function ensureMirrorAccess(project: GitBackedProject): Promise<ResolvedMirrorAccess> {
   if (project.gitAuthToken || Object.keys(project.gitAuthHeaders ?? {}).length > 0) {
     return {
       repoUrl: project.repoUrl,
@@ -194,19 +194,21 @@ export function stripGitProgress(text: string): string {
  * a retryable 503 + Retry-After WITHOUT paging Sentry (mirroring the Platinum
  * / request-deadline de-noise pattern), since the mirror's own retry usually
  * clears them and they are upstream/network noise, not a code bug.
+ * `kind: 'busy'` means base moves exhausted the bounded freshness retries;
+ * it uses the same retryable 503 without ever returning an invalidated mirror.
  * `kind: 'failed'` is a real non-zero exit (auth, missing repo, bad ref) —
  * still surfaced to Sentry, but now with a meaningful `fatal:` message instead
  * of progress noise.
  */
 export class GitOperationError extends Error {
-  readonly kind: 'timeout' | 'failed';
+  readonly kind: 'timeout' | 'failed' | 'busy';
   readonly gitArgs: readonly string[];
   readonly signal: string | null;
   readonly exitCode: number | null;
   readonly stdout: string;
   readonly stderr: string;
   constructor(opts: {
-    kind: 'timeout' | 'failed';
+    kind: 'timeout' | 'failed' | 'busy';
     message: string;
     gitArgs: readonly string[];
     signal?: string | null;
@@ -340,7 +342,7 @@ const REMOTE_PUSH_TRANSIENT_REJECTION_PATTERN =
 
 export function isTransientGitMirrorError(err: unknown): err is GitOperationError {
   if (!isGitOperationError(err)) return false;
-  if (err.kind === 'timeout') return true;
+  if (err.kind === 'timeout' || err.kind === 'busy') return true;
   const text = `${err.message}\n${err.stderr}\n${err.stdout}`;
   if (err.gitArgs[0] === 'push' && REMOTE_PUSH_TRANSIENT_REJECTION_PATTERN.test(text)) return true;
   return TRANSIENT_MIRROR_ERROR_PATTERN.test(text);
@@ -492,7 +494,8 @@ export function fetchMirrorWithRetry(deps: {
  * failure (auth, corrupt repo, timeout) would. Git emits the stable wording
  * `fatal: path '<path>' does not exist in '<ref>'` on stderr (which becomes the
  * `GitOperationError` message/`stderr` via `classifyGitError`). Anchor on the
- * stable `does not exist in` substring; the path + ref are variable. Used by
+ * stable missing-path wording, including `exists on disk, but not in` when
+ * the path exists locally but not in the requested tree. Used by
  * `readRepoFile` to convert this single class into a null sentinel (mirroring
  * `getFileAtRef`'s `{ found: false }` from #3537) while letting genuine git
  * failures still throw (Better Stack pattern `a8d20288…`).
@@ -500,7 +503,7 @@ export function fetchMirrorWithRetry(deps: {
 export function isGitPathNotFoundError(err: unknown): boolean {
   if (!isGitOperationError(err)) return false;
   const text = `${err.message}\n${err.stderr}`;
-  return text.includes('does not exist in');
+  return text.includes('does not exist in') || /fatal: path '[^\n]*' exists on disk, but not in '/.test(text);
 }
 
 /** `git` could not resolve the ref itself (a branch, tag or commit that does not exist). */
@@ -632,38 +635,34 @@ export function existingProjectMirrorPath(project: GitBackedProject): string | n
 }
 
 /**
- * Is the mirror's tip for ONE branch already the remote's tip?
+ * Bring ONE branch of the mirror to the remote's tip, and nothing else.
  *
- * `git ls-remote --heads origin <branch>` asks the git host for a single ref:
- * one round trip, no pack, no objects. A `git fetch --prune` of a whole project
- * mirror is the same question answered by transferring everything that moved —
- * measured at ~0.9 s against the managed host, on EVERY prompt, because the
+ * `git fetch origin +refs/heads/<b>:refs/heads/<b>` sends that ref as its
+ * protocol v2 `ref-prefix`, so the host lists one ref and sends a pack only
+ * when the branch moved. A whole-mirror `git fetch --prune` answers the same
+ * question by transferring everything that moved, on EVERY prompt, because the
  * per-prompt manifest read forces a refresh to stay fresh (see
- * `remintGrantForAgentSwitch`). When the branch has not moved, the fetch had
- * nothing to do and the ls-remote proves it.
+ * `remintGrantForAgentSwitch`). This used to be `git ls-remote --heads origin
+ * <b>`, which sends no prefix (its patterns tail-match), so the host listed
+ * every branch: 20,872 refs and 1.1–1.5 s per prompt on a project that keeps
+ * one branch per session (2026-10-30), against 0.8 s for this fetch.
  *
- * Answers false on anything unexpected — an unresolvable local ref, a sha
- * instead of a branch, any git failure — so the caller falls back to the fetch
- * it would have done anyway. It can never report "fresh" for a branch that
- * moved: that is exactly the comparison it makes.
+ * Answers false on anything unexpected — a sha instead of a branch, a branch
+ * the remote does not have, any git failure — so the caller falls back to the
+ * full fetch it would have done anyway. True means the branch is at the tip the
+ * remote answered during this call.
  */
-async function mirrorMatchesRemoteTip(
+async function fetchBranchTip(
   repoPath: string,
   access: ResolvedMirrorAccess,
   authHost: string | undefined,
   ref: string,
 ): Promise<boolean> {
-  // Branch names only: a sha or a tag is not what `ls-remote --heads` answers.
+  // Branch names only: a sha or a tag is not a `refs/heads/` ref.
   if (/^[0-9a-f]{7,40}$/i.test(ref) || !/^[\w.\-\/]+$/.test(ref)) return false;
   try {
-    const local = await runGitCapture(
-      ['rev-parse', '--verify', '--quiet', `refs/heads/${ref}^{commit}`],
-      repoPath,
-    );
-    const localSha = local.exitCode === 0 ? local.stdout.trim() : '';
-    if (!/^[0-9a-f]{40}$/i.test(localSha)) return false;
-    const remote = await runGit(
-      ['ls-remote', '--heads', 'origin', ref],
+    await runGit(
+      ['fetch', '--no-tags', '--no-write-fetch-head', 'origin', `+refs/heads/${ref}:refs/heads/${ref}`],
       repoPath,
       true,
       access.token,
@@ -672,8 +671,7 @@ async function mirrorMatchesRemoteTip(
       GIT_DEFAULT_TIMEOUT_MS,
       access.headers,
     );
-    const remoteSha = remote.stdout.trim().split(/\s+/)[0] ?? '';
-    return /^[0-9a-f]{40}$/i.test(remoteSha) && remoteSha === localSha;
+    return true;
   } catch {
     return false;
   }
@@ -763,10 +761,10 @@ async function doRefreshMirror(
   await runGit(['remote', 'set-url', 'origin', access.repoUrl], repoPath);
   // Heal any legacy single-branch clones by widening the refspec.
   await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*'], repoPath, false);
-  // A caller that forced this refresh to read ONE branch gets the cheap proof
-  // first. `lastRefreshAt` is deliberately NOT bumped: only that branch was
-  // compared, so the next interval-driven refresh must still fetch the rest.
-  if (force && freshRef && (await mirrorMatchesRemoteTip(repoPath, access, authHost, freshRef))) {
+  // A caller that forced this refresh to read ONE branch fetches that branch
+  // alone. `lastRefreshAt` is deliberately NOT bumped: only that branch was
+  // fetched, so the next interval-driven refresh must still fetch the rest.
+  if (force && freshRef && (await fetchBranchTip(repoPath, access, authHost, freshRef))) {
     if (unmoved()) {
       const proofs = tipProvenAt.get(project.projectId) ?? new Map<string, number>();
       tipProvenAt.set(project.projectId, proofs.set(freshRef, Date.now()));
@@ -836,12 +834,13 @@ export async function refreshMirror(
   project: GitBackedProject,
   force: MirrorRefresh = false,
   opts?: {
-    /** Freshness is only needed for THIS ref. Forced: prove a branch with one
-     *  `ls-remote` and skip the whole-mirror fetch when it has not moved.
+    /** Freshness is only needed for THIS ref. Forced: fetch that branch alone
+     *  and skip the whole-mirror fetch.
      *  Unforced, a full commit SHA the mirror already holds skips the fetch:
      *  nothing at a commit can change. */
     freshRef?: string;
   },
+  epochRetries = 0,
 ) {
   if (!force && opts?.freshRef && /^[0-9a-f]{40}$/.test(opts.freshRef)) {
     const held = await mirrorHoldingCommit(project, opts.freshRef);
@@ -861,7 +860,16 @@ export async function refreshMirror(
       return warm;
     }
   }
-  return lockedRefreshMirror(project, force, opts);
+  const epoch = invalidations.get(project.projectId) ?? 0;
+  const repoPath = await lockedRefreshMirror(project, force, opts, epochRetries);
+  // A base move can land while a fetch (including one shared with another
+  // reader) is finishing. Dropping its proof is not enough: this reader must
+  // not ground a new session on the checkout that the move invalidated.
+  if (epoch !== (invalidations.get(project.projectId) ?? 0)) {
+    if (epochRetries >= MIRROR_RETRY_MAX_ATTEMPTS) throw new GitOperationError({ kind: 'busy', message: 'Project mirror changed repeatedly during refresh', gitArgs: [] });
+    return refreshMirror(project, force, opts, epochRetries + 1);
+  }
+  return repoPath;
 }
 
 /** The mirror path when it already holds `commit`, else null. */
@@ -879,6 +887,7 @@ async function lockedRefreshMirror(
   project: GitBackedProject,
   force: MirrorRefresh,
   opts?: { freshRef?: string },
+  epochRetries = 0,
 ): Promise<string> {
   // A ref-scoped refresh may skip the fetch, so it must not satisfy a caller
   // that forced a full one: it registers as unforced, and such a caller waits
@@ -886,15 +895,21 @@ async function lockedRefreshMirror(
   const lockForced = !!force && !opts?.freshRef;
   const current = refreshLocks.get(project.projectId);
   if (current) {
-    if (!force || current.forced) return current.promise;
+    if (!force || current.forced) {
+      const repoPath = await current.promise;
+      if (current.epoch === (invalidations.get(project.projectId) ?? 0)) return repoPath;
+      if (epochRetries >= MIRROR_RETRY_MAX_ATTEMPTS) throw new GitOperationError({ kind: 'busy', message: 'Project mirror changed repeatedly during refresh', gitArgs: [] });
+      return refreshMirror(project, force, opts, epochRetries + 1);
+    }
     // The in-flight refresh belongs to another caller, often with another
     // credential: create-repo's template prebuild clones with the token it
     // held. Its failure is not this caller's. Wait for it to settle, then run
     // this caller's own forced refresh — rethrowing it failed the first
     // session on a new project with 503 git_mirror_unavailable.
     await current.promise.catch(() => {});
-    return refreshMirror(project, force, opts);
+    return refreshMirror(project, force, opts, epochRetries);
   }
+  const epoch = invalidations.get(project.projectId) ?? 0;
   const next = doRefreshMirror(project, force, opts?.freshRef)
     .then(async (repoPath) => {
       // Bump the mirror dir's mtime on EVERY access (warm hits included) — the
@@ -909,7 +924,7 @@ async function lockedRefreshMirror(
         refreshLocks.delete(project.projectId);
       }
     });
-  refreshLocks.set(project.projectId, { promise: next, forced: lockForced });
+  refreshLocks.set(project.projectId, { promise: next, forced: lockForced, epoch });
   return next;
 }
 
@@ -918,10 +933,9 @@ function gitCacheMaxBytes(): number {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 4 * 1024 * 1024 * 1024;
 }
 
-// Must stay SHORT: the connector sweep re-touches every mirror on the platform
-// each pass (~11min), so a grace window near the pass duration would shield the
-// whole cache from eviction. It only has to outlive a single in-flight git read
-// that started right after a refreshMirror() touch (seconds, not minutes).
+// Must stay SHORT: a long grace window shields busy mirrors from eviction for
+// no gain. It only has to outlive a single in-flight git read that started
+// right after a refreshMirror() touch (seconds, not minutes).
 const GIT_CACHE_EVICT_GRACE_MS = 5 * 60 * 1000;
 
 async function dirSizeBytes(root: string): Promise<number> {
@@ -940,11 +954,12 @@ async function dirSizeBytes(root: string): Promise<number> {
 }
 
 /**
- * Enforce a total size budget on the bare-mirror cache. The trigger/connector
- * sweeps walk EVERY active project's manifest through `refreshMirror()`, so the
- * leader pod accumulates a full clone of every repo on the platform — unbounded,
- * this fills the pod's ephemeral-storage limit and kubelet EVICTS the pod
- * (observed: 19 prod api evictions 2026-07-05→07 at the 8Gi cap). Evict
+ * Enforce a total size budget on the bare-mirror cache. The leader's connector
+ * sweep reads every active project's manifest, so a new leader clones every
+ * repo on the platform once — unbounded, this fills the pod's ephemeral-storage
+ * limit and kubelet EVICTS the pod (observed: 19 prod api evictions
+ * 2026-07-05→07 at the 8Gi cap). The sweep reads a mirror again only when that
+ * project's default branch moved (`readManifest` `reuseAtTip`). Evict
  * least-recently-used mirrors until under budget; a mirror touched within the
  * grace window is never removed (refreshMirror bumps mtime on every access, so
  * anything an in-flight git op could be reading is inside the grace window).
@@ -1009,10 +1024,21 @@ export function invalidateProjectMirror(projectId: string): void {
   invalidateBranchList(projectId);
 }
 
+/**
+ * A repo path as git names the entry: without `./`, empty and `.` segments and
+ * without leading or trailing `/`. '' is the root. Every check that matches a
+ * caller's path against repo paths (the resource denier) must use this, the
+ * same function the git reads use, or a respelled path slips past the check.
+ */
+export function canonicalTreePath(input: string): string {
+  return input.split('/').filter((segment) => segment !== '' && segment !== '.').join('/');
+}
+
+/** `canonicalTreePath` of a caller's path; null for the root. Throws on an absolute or traversal path. */
 export function normalizeTreePath(input?: string | null) {
-  if (!input || input === '.' || input === '/') return null;
+  if (!input || input === '/') return null;
   if (input.startsWith('/') || input.includes('..')) throw new Error('Invalid path');
-  return input.replace(/^\.\/+/, '').replace(/\/+$/, '');
+  return canonicalTreePath(input) || null;
 }
 
 /**

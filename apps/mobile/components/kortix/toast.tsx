@@ -252,7 +252,6 @@ export function useToastSkin(): ToastSkin {
   );
 }
 
-export type { ToastType };
 
 /** Undo keeps a neutral filled key (web's `UndoToastCard`), not the blue ghost link. */
 export function undoActionStyles(isDark: boolean): { button: ViewStyle; text: TextStyle } {

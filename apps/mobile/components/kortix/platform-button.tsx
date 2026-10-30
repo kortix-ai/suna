@@ -53,19 +53,6 @@ const LABEL_BUTTON_HEIGHT = ICON_BUTTON_SIZE;
 /** True when this binary can render the native SwiftUI button. */
 const hasNativeButtons = swiftUI != null;
 
-/** Liquid Glass button styles exist from iOS 26. */
-const IOS_MAJOR = Platform.OS === 'ios' ? parseInt(String(Platform.Version), 10) : 0;
-/** True when this binary and OS can render a native Liquid Glass button. */
-const hasLiquidGlass = hasNativeButtons && IOS_MAJOR >= 26;
-
-/**
- * Room around a glass button inside its Host. Glass draws a ~17pt shadow
- * outside the button, and the Host clips to its bounds (a hard square halo
- * when there is no room). The Host is padded by this much and the React Native
- * wrapper takes it back with a negative margin, so layout sees only the button.
- */
-const GLASS_SHADOW_BLEED = 18;
-
 interface PlatformButtonProps {
   /** Visible text. Omit for an icon-only button (then `accessibilityLabel` names it). */
   label?: string;
@@ -75,14 +62,6 @@ interface PlatformButtonProps {
   icon?: AppIcon;
   /** Design-system variant used off iOS (and on iOS without the native module). */
   fallbackVariant?: 'default' | 'secondary' | 'outline' | 'ghost';
-  /** Design-system size for a labelled fallback button; icon-only uses `icon`. */
-  fallbackSize?: 'sm' | 'default' | 'lg';
-  /**
-   * iOS 26+: a native Liquid Glass icon button (`buttonStyle('glass')`, circle)
-   * instead of the plain button on the `secondary` fill. Icon-only. Other
-   * platforms and older iOS use the fallback.
-   */
-  glass?: boolean;
   accessibilityLabel: string;
   disabled?: boolean;
   onPress: () => void;
@@ -93,44 +72,11 @@ export function PlatformButton({
   systemImage,
   icon,
   fallbackVariant = 'default',
-  fallbackSize = 'default',
-  glass = false,
   accessibilityLabel,
   disabled,
   onPress,
 }: PlatformButtonProps) {
   const { colorScheme } = useColorScheme();
-
-  if (glass && hasLiquidGlass && swiftUI && swiftUIModifiers && systemImage && !label) {
-    const { Host, Button: NativeButton, Image } = swiftUI;
-    const {
-      accessibilityLabel: a11yLabel,
-      buttonBorderShape,
-      buttonStyle,
-      controlSize,
-      disabled: disabledModifier,
-      padding,
-    } = swiftUIModifiers;
-    return (
-      <View style={{ margin: -GLASS_SHADOW_BLEED }} pointerEvents="box-none">
-        <Host matchContents colorScheme={colorScheme === 'dark' ? 'dark' : 'light'}>
-          <NativeButton
-            modifiers={[
-              buttonStyle('glass'),
-              buttonBorderShape('circle'),
-              controlSize('large'),
-              disabledModifier(!!disabled),
-              a11yLabel(accessibilityLabel),
-              // Outside the glass: room for its shadow (see GLASS_SHADOW_BLEED).
-              padding({ horizontal: GLASS_SHADOW_BLEED, vertical: GLASS_SHADOW_BLEED }),
-            ]}
-            onPress={onPress}>
-            <Image systemName={systemImage} size={17} />
-          </NativeButton>
-        </Host>
-      </View>
-    );
-  }
 
   // A native button needs visible content: a label, a symbol, or both.
   if (swiftUI && swiftUIModifiers && (label || systemImage)) {
@@ -162,10 +108,10 @@ export function PlatformButton({
     ) : (
       <Image systemName={systemImage} size={17} />
     );
-    // No Liquid Glass here (opt in with `glass`, above): glass (both
-    // `buttonStyle('glass')` and `glassEffect`) draws a ~17pt drop shadow
+    // No Liquid Glass here: `buttonStyle('glass')` draws a ~17pt drop shadow
     // outside the button, and a Host sized to the button clips it — a hard,
-    // square-cornered halo (verified on the iOS 26.5 simulator). A plain SwiftUI button on the `secondary` token,
+    // square-cornered halo (verified on the iOS 26.5 simulator). A plain
+    // SwiftUI button on the `secondary` token,
     // clipped to a circle / capsule, keeps native press behaviour with no
     // shadow to clip. The fill must be hex: the modifier silently drops hsl
     // and UIKit semantic names (`secondarySystemFill` rendered no fill at all).
@@ -195,7 +141,7 @@ export function PlatformButton({
   return (
     <Button
       variant={fallbackVariant}
-      size={iconOnly ? 'icon' : fallbackSize}
+      size={iconOnly ? 'icon' : 'default'}
       className="rounded-full"
       accessibilityLabel={accessibilityLabel}
       disabled={disabled}

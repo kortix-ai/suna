@@ -1,7 +1,4 @@
-import {
-  readFileSync as readNodeFileSync,
-  type PathOrFileDescriptor,
-} from 'node:fs';
+import { readFileSync as readNodeFileSync, type PathOrFileDescriptor } from 'node:fs';
 
 import messages from '../../translations/en.json';
 

@@ -196,9 +196,9 @@ describe('purity', () => {
 
   test('mutating the returned entitlements cannot corrupt the catalog', () => {
     const r = resolveBillingFromRow({ tier: 'free' }, NOW);
-    r.entitlements.managedModels = true;
-    expect(PLAN_CATALOG.free?.entitlements.managedModels).toBe(false);
-    expect(resolveBillingFromRow({ tier: 'free' }, NOW).entitlements.managedModels).toBe(false);
+    r.entitlements.sso = true;
+    expect(PLAN_CATALOG.free?.entitlements.sso).toBe(false);
+    expect(resolveBillingFromRow({ tier: 'free' }, NOW).entitlements.sso).toBe(false);
   });
 });
 
@@ -230,6 +230,7 @@ describe('Enterprise is a feature layer: off, demo, licensed', () => {
     expect(r.plan.key).toBe('free');
     expect(r.features.key).toBe('free');
     expect([r.entitlements.sso, r.entitlements.scim, r.entitlements.rbac, r.entitlements.auditAccess, r.entitlements.branding]).toEqual([true, true, true, true, true]);
+    // The plan's own entitlements stay: Free never gets managed models.
     expect(r.entitlements.managedModels).toBe(false);
     expect(r.entitlements.byokFee).toBe(true);
   });

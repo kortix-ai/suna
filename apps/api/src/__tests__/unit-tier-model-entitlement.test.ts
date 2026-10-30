@@ -33,15 +33,15 @@ describe('tierGrantsAllModels', () => {
     }
   });
 
-  test('free and none tiers do NOT unlock the premium gateway', () => {
-    expect(tierGrantsAllModels('free')).toBe(false);
+  test('the none tier does NOT unlock the managed models', () => {
     expect(tierGrantsAllModels('none')).toBe(false);
   });
 
-  test('free tier exposes 200 display credits without premium gateway entitlement', () => {
+  // #10147: Free = 500 credits a month. #10297: never the managed models.
+  test('the free tier grants 500 credits a month and no managed model', () => {
     const free = getTier('free');
-    expect(free.monthlyCredits * 100).toBe(200);
-    expect(free.models).not.toContain('all');
+    expect(free.monthlyCredits * 100).toBe(500);
+    expect(tierGrantsAllModels('free')).toBe(false);
   });
 
   test('credits and every legacy paid plan key are entitled', () => {

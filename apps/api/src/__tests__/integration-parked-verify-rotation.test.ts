@@ -25,7 +25,9 @@ beforeAll(async () => {
 // trigger refuses deleting session_sandboxes rows.
 
 test('a skipped row is stamped too, so the next batch moves on', async () => {
-  const unserved = (['daytona', 'platinum', 'e2b'] as const).find(
+  // `e2b` stays a valid stored value (DB enum) that no deployment serves:
+  // E2B support is discontinued.
+  const unserved = (['platinum', 'daytona', 'e2b'] as const).find(
     (p) => !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(p),
   );
   if (!unserved) throw new Error('every provider is allowed here; the test needs one that is not');

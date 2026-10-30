@@ -15,6 +15,7 @@ import { logger } from '@/lib/log/logger'
  *
  * The link is an implementation detail of the store, so it is created under the
  * same root the releases live in.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function serveConfigDir(dir: string, why: string, root: string = bootConfigRoot(), releaseRoot: string | null = null): Promise<void> {
   const previous = await readBootLinkTarget(root)
@@ -25,7 +26,10 @@ export async function serveConfigDir(dir: string, why: string, root: string = bo
   logger.info('[boot-link] opencode now reads', { dir, previous, releaseRoot, why })
 }
 
-/** The directory OpenCode reads right now, or null before the link exists. */
+/**
+ * The directory OpenCode reads right now, or null before the link exists.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function servingConfigDir(root: string = bootConfigRoot()): Promise<string | null> {
   return readBootLinkTarget(root)
 }

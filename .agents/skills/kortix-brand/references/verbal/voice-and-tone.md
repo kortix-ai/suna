@@ -101,14 +101,14 @@ capitalized only at the start of a sentence or as a UI label.
 
 | Don't say | Prefer | Why |
 | --- | --- | --- |
-| Autonomous Company Operating System, open AGI platform, self-driving companies | AI Operating System | Retired (D1). |
-| AI agent platform, agent platform | AI Operating System; "the Kortix API" (SDK) | A category, not a feature. |
-| AI command center (as category or title) | AI Operating System | D1, D10. "command center" is a descriptor inside a sentence only. |
-| AI Management System, AI management platform | AI Operating System | Retired (D10, 2026-10-04). |
-| AIOS, Ai OS, AI-OS, "the OS" alone | AI OS (after the full name) | D10. One spelling. |
+| Autonomous Company Operating System, open AGI platform, self-driving companies | CompanyOS | Retired (D1). |
+| AI agent platform, agent platform | CompanyOS; "the Kortix API" (SDK) | A category, not a feature. |
+| AI command center (as category or title) | CompanyOS | D1, D10. "command center" is a descriptor inside a sentence only. |
+| AI Management System, AI management platform | CompanyOS | Retired (D10, 2026-10-04). |
+| AI Operating System, AI OS, AIOS, AI-OS, Company OS, "the OS" alone | CompanyOS (after "Kortix CompanyOS") | D28. One spelling. |
 | Chatbot, chat box | A workforce that produces real output | Real deliverables, not chat. |
 | AI assistant, copilot, AI worker, Super AI Worker | A workforce of AI agents; "an agent" | Org-scale and parallel. Legacy Suna copy. |
-| Workflow automation, automation tool | An AI Operating System you own | Not a zap. |
+| Workflow automation, automation tool | A CompanyOS you own | Not a zap. |
 | Container, VM (external copy) | Cloud computer; sandbox | The sanctioned nouns. |
 | Plugins, extensions | Connectors (apps), skills (know-how) | The canonical nouns. |
 | Integrations (headline noun) | Connectors | One noun. |
@@ -119,7 +119,7 @@ capitalized only at the start of a sentence or as a UI label.
 | Fully autonomous | "Opens a change request you approve" | A person approves. |
 | Please (in UI) | Say what to do: "Try again." | Section 4. |
 | Source-available, Elastic License, Apache, MIT | open source | Never name a license. |
-| more powerful, fully extensible, seamless, revolutionary, unlock productivity, next-gen, AI-powered magic, transformative, AI transformation | A concrete mechanism | Banned hype. The old brand guide banned "AI transformation" by name (Q41). |
+| more powerful, fully extensible, seamless, revolutionary, unlock productivity, next-gen, AI-powered magic, transformative, AI transformation | A concrete mechanism | Banned hype. The old brand guide banned "AI transformation" by name (Q41). Exception: "AI Transformation" is the service name on `/services` (D15). |
 | preview, beta (for email) | experimental, per project | The claim word is "experimental" ([claims.md](claims.md)). The one exception is the sanctioned Companies pitch line in [positioning.md](positioning.md), word for word (Q41). |
 
 ### Capitalization and mechanics
@@ -169,7 +169,7 @@ named in each rule. A rule here applies to `apps/web`, `apps/mobile`, and Electr
 
 **Rule.** Do not blame the person and do not apologize. — *Why:* "Something went wrong" and "Sorry" give no fact. "The request failed before we could check your access." gives the fact (`en.json:2933`). — *Where:* app | mobile | email | CLI. — *When silent:* state the system event in the active voice.
 
-**Rule.** Write an empty state as one muted line, plus an optional hint. Describe the future state, not the absence: "Sessions you start will show up here". Layout (no icon tile, no card, the pixel mark): [layout.md](../visual/layout.md) section States. — *Why:* `en.json:1449` and mobile `design.md:115` ("No projects yet" plus one "Create project" button). — *Where:* app | mobile. — *When silent:* "{Plural noun you create} will show up here." plus, if the person can act, one button with the verb-first label.
+**Rule.** Write an empty state as one title and one sentence. Describe the future state, not the absence: "Sessions you start will show up here". Layout (`EmptyState` + `EmptyArt`, outline buttons with icons, D14): [layout.md](../visual/layout.md) section States. — *Why:* `en.json:1449` and mobile `design.md:115` ("No projects yet" plus one "Create project" button). — *Where:* app | mobile. — *When silent:* "{Plural noun you create} will show up here." plus, if the person can act, one button with the verb-first label.
 
 **Rule.** Write a toast as the result in past tense with the object first and no period when it is three words or fewer: "Secret saved", "Labels saved", "Prompt copied", "App access revoked", "Session deleted". — *Why:* A toast reports a finished action beside the page the person stays on (`en.json:74,1586,1693,921`; mobile `design.md:424`). — *Where:* app | mobile. — *When silent:* "{Object} {past participle}". A longer result gets a second line (description) and a period.
 
@@ -233,7 +233,7 @@ example. All examples are synthetic.
 
 Tone: declarative, concrete, calm. A headline states the mechanism or the offer. The body proves it.
 
-**Rule.** Write a headline as one sentence of 12 words or fewer that states what the reader gets. — *Why:* The home H1 is "The open-source AI Operating System" (7 words). Short lines survive translation and truncation. — *Where:* marketing | deck | store listing. — *When silent:* subject, verb, object; no adjective.
+**Rule.** Write a headline as one sentence of 12 words or fewer that states what the reader gets. — *Why:* The home H1 is "The open-source CompanyOS" (7 words). Short lines survive translation and truncation. — *Where:* marketing | deck | store listing. — *When silent:* subject, verb, object; no adjective.
 
 **Rule.** Follow a headline with one sentence of proof from `claims.md`. — *Why:* The hero sub names the pieces: "Your agents, their skills, your company memory and every connector". — *Where:* marketing. — *When silent:* name the three or four objects the reader gets.
 
@@ -252,7 +252,7 @@ Tone: the same as marketing. Short paragraphs. No tagline stunts.
 
 **Rule.** Build a store listing from the Standard line, the four pillars and the three ways work runs. State the status of anything not public. — *Why:* The live Play listing still says "Super AI Worker" and "genius colleague". Neither mobile app is publicly installable (`download/content.ts` gate). — *Where:* mobile | store listing. — *When silent:* subtitle = Short line; first paragraph = Standard line; then pillars as three short lines.
 
-- Approved first line: "Kortix is an open-source AI Operating System. Your agents, skills, company memory, and connectors in one git repo you own."
+- Approved first line: "Kortix is an open-source CompanyOS. Your agents, skills, company memory, and connectors in one git repo you own."
 - Rejected: "Kortix: Your Super AI Worker. Forget simple chatbots. Meet your genius colleague."
 
 ### 5.3 Product UI
@@ -316,7 +316,7 @@ Tone: calm, short, safe. The reader did not expect it and may be anxious (securi
 
 **Rule.** Keep the HTML part of an email that shows the logo above 3,200 bytes. — *Why:* SpamAssassin's `html_image_only` scores an HTML part that contains an `<img>` by its raw length, markup included: 0.726 to 2.799 points between 2,400 and 2,800 bytes (`HTML_IMAGE_ONLY_28`). A dev seed test on 2026-10-02 found every Kortix email between 2,253 and 2,795 bytes. The logo must stay (`visual/brandmark.md`), so the content carries the length. `apps/api/src/__tests__/unit-notifications.test.ts` holds the invite above the window. — *Where:* email. — *When silent:* measure `html.length` of the shortest variant before you cut copy.
 
-**Rule.** End every email with the tagline footer "Kortix — The open-source AI Operating System". Never the retired line. — *Why:* D10. The shipped footer is `BRAND_FOOTER` (`apps/api/src/lib/email/template.ts`) and says the tagline since 2026-10-04. — *Where:* email. — *When silent:* the tagline.
+**Rule.** End every email with the tagline footer "Kortix CompanyOS – the open-source operating system for your company". Never the retired line. — *Why:* D10. The shipped footer is `BRAND_FOOTER` (`apps/api/src/lib/email/template.tsx`) and says the tagline since 2026-10-04. — *Where:* email. — *When silent:* the tagline.
 
 **Rule.** Do not write a kicker or a chip in uppercase. Write it in sentence case. — *Why:* Mono-uppercase is a Badge and deck exception (D4e), not an email style. — *Where:* email. — *When silent:* sentence case.
 
@@ -339,7 +339,7 @@ Tone: calm, specific, brief. The reader has an account and did not ask for this 
 
 **Rule.** Write the closing note of a launch email as the reason the reader gets it: "You get this email because you have a Kortix account." — *Why:* "If you did not request this" does not apply to mail nobody requests (Q18). — *Where:* email. — *When silent:* one sentence on why.
 
-**OPEN (Q19).** Whether a launch email carries an unsubscribe link and merge tags. No code in this repo sends launch mail: the shell in `apps/api/src/lib/email/template.ts` is transactional. The sending tool decides the tag syntax. Do not invent a tag. Mark `{{UNSUBSCRIBE_URL}}` as a placeholder under Guesses until a person names the tool. A button destination and a hosted logo URL that the request does not supply are placeholders too, named for the object (`{{CONNECT_COMPUTER_URL}}`). A launch email that mentions the computer feature names no machine class and no operating system (Q20).
+**OPEN (Q19).** Whether a launch email carries an unsubscribe link and merge tags. No code in this repo sends launch mail: the shell in `apps/api/src/lib/email/template.tsx` is transactional. The sending tool decides the tag syntax. Do not invent a tag. Mark `{{UNSUBSCRIBE_URL}}` as a placeholder under Guesses until a person names the tool. A button destination and a hosted logo URL that the request does not supply are placeholders too, named for the object (`{{CONNECT_COMPUTER_URL}}`). A launch email that mentions the computer feature names no machine class and no operating system (Q20).
 
 ### 5.6 Slack and Teams messages
 

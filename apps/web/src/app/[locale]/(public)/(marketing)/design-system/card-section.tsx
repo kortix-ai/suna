@@ -38,10 +38,10 @@ import {
   CardImage,
   CardMedia,
   CardTitle,
-} from '@/components/ui/card';
+} from '@kortix/ui/card';
 import { DESIGN_SYSTEM_TRANSLATION_KEYS } from '@/i18n/design-system-translation-keys.generated';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { cn } from '@/lib/utils';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { cn } from '@kortix/ui';
 
 /**
  * Body of the Card section. The `#comp-card` anchor, the heading and the

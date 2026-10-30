@@ -55,6 +55,7 @@ import {
   type EnsureSandboxImageResult,
   type SandboxImageSpec,
 } from '../../snapshots/builder';
+import { templateResidentialProxy } from '../../snapshots/templates';
 import { config } from '../../config';
 import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
@@ -63,7 +64,6 @@ import { recordProviderEvent } from './provider-events';
 import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
 import { resolveAgentGrant } from '../../projects/agents';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
@@ -79,6 +79,8 @@ import {
   initialSandboxTurnMetadata,
 } from '../../projects/session-turn-ledger';
 import { resolveSessionSandboxRegion } from './sandbox-region';
+import { resolveSessionResidentialProxy } from './residential-proxy';
+import type { WorkspaceVolume } from './workspace-volume';
 import { logger } from '../../lib/logger';
 
 /**
@@ -351,6 +353,8 @@ interface SessionProvisionState {
   // Provider failover (one-shot, on init): set true once we've handed off to a
   // second provider, so a session never bounces between providers forever.
   fallbackAttempted: boolean;
+  /** The template asks for a residential IP: Platinum only, no failover. */
+  residentialProxyRequested: boolean;
   imageInfo: {
     snapshotName: string;
     slug: string;
@@ -369,6 +373,12 @@ interface SessionProvisionState {
   // provider drops them itself when Platinum refuses the create over them.
   driveMounts: SessionDriveMounts | undefined;
   driveMountsResolved: boolean;
+  // /workspace on a Platinum volume (workspace-volume.ts): undefined until the
+  // first attempt resolves it, null for a box-disk session.
+  workspaceVolume: WorkspaceVolume | null | undefined;
+  // Started with the provisioning, so the volume open runs alongside row+tokens
+  // and the env build instead of before the create. Read once.
+  workspaceVolumePromise: Promise<WorkspaceVolume | null> | undefined;
 }
 
 /** What the detached provisioning loop reads but never changes. */
@@ -378,7 +388,6 @@ interface SessionProvisionContext {
   sessionToken: string;
   providerCreateInput: CreateSandboxOpts;
   tl: ProvisionTimeline;
-  llmGatewayEnabled: boolean;
   providerWasExplicitlySelected: boolean;
   resolveGitProject: () => Promise<GitBackedProject>;
   resolveImage: (gitProject: GitBackedProject, targetProvider: string) => Promise<EnsureSandboxImageResult>;
@@ -536,6 +545,7 @@ export async function provisionSessionSandbox(opts: {
     bgExternalId: null,
     healedStaleSnapshot: false,
     fallbackAttempted: false,
+    residentialProxyRequested: false,
     imageInfo: null,
     activeRouting: null,
     idBootDisabled: false,
@@ -544,6 +554,8 @@ export async function provisionSessionSandbox(opts: {
     platinumCreateAttempt: 0,
     driveMounts: undefined,
     driveMountsResolved: false,
+    workspaceVolume: undefined,
+    workspaceVolumePromise: undefined,
   };
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
@@ -598,12 +610,19 @@ export async function provisionSessionSandbox(opts: {
   // when it awaits the promise.
   state.firstImagePromise?.catch(() => {});
 
+  // The /workspace volume opens in parallel with row+tokens and the env build:
+  // it needs only the session row, which exists before provisioning starts.
+  // The first attempt awaits it (prepareAttemptVolumes).
+  state.workspaceVolumePromise = import('./workspace-volume').then(({ resolveWorkspaceVolume }) =>
+    resolveWorkspaceVolume(sandboxId),
+  );
+  state.workspaceVolumePromise.catch(() => {});
+
   // Sandbox-row insert + tokens + credit lookup all run in parallel. None of
   // them depend on the others — `sandboxId` is known up front, so even the
   // sandbox API key can be minted before the row lands. Previously serial
   // (~100ms each on a warm DB), now ~one round-trip total.
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
-  const llmGatewayEnabled = projectLlmGatewayEnabled(opts.projectMetadata);
   const [rowResult, tokenResult] = await Promise.allSettled([
     createOrClaimSessionSandboxRow(opts, state),
     // Resolve the per-agent grant and mint the sole sandbox credential. Token
@@ -663,13 +682,9 @@ export async function provisionSessionSandbox(opts: {
   // boots clobbered each other and left older sandboxes with a stale token the
   // gateway rejects (401). The PAT is per-session and stable.
   //
-  // Enablement is the project's `llm_gateway` flag alone (operator
-  // availability + per-project opt-in), the same rule prompt-time env-sync
-  // applies (sandbox-env-sync.ts). The account's plan is NOT a boot gate: the
+  // Every box gets the gateway. The account's plan is NOT a boot gate: the
   // gateway limits a free account to free/BYOK models per request
-  // (principal.freeModelsOnly, resolve-candidates.ts). Gating boot on the plan
-  // booted free accounts without the gateway; OpenCode recovered on the first
-  // prompt's env-sync, but pi has no native path and never started.
+  // (principal.freeModelsOnly, resolve-candidates.ts).
 
   const extraEnvVars = await extraEnvRead.catch(async (error) => {
     // The row exists and no box ever will: close it. The caller fails the session.
@@ -697,7 +712,7 @@ export async function provisionSessionSandbox(opts: {
       // executor and Git credentials stay server-side. The route being called
       // determines what this token may do.
       KORTIX_TOKEN: sessionToken,
-      ...(llmGatewayEnabled ? { KORTIX_LLM_BASE_URL: llmBaseUrl } : {}),
+      KORTIX_LLM_BASE_URL: llmBaseUrl,
     },
     // Idle lifecycle: we pass NO explicit autoStopInterval for a normal session,
     // so each provider gets its native idle timer set from
@@ -720,7 +735,6 @@ export async function provisionSessionSandbox(opts: {
       sessionToken,
       providerCreateInput,
       tl,
-      llmGatewayEnabled,
       providerWasExplicitlySelected,
       resolveGitProject,
       resolveImage,
@@ -799,6 +813,8 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
         sessionId: sandbox.sandboxId,
         bootingUserId: userId,
         agentName: opts.agentName ?? 'default',
+        // The /workspace volume takes one of the box's mount slots.
+        reservedSlots: state.workspaceVolume ? 1 : 0,
       }),
     );
   if (drivesRequirePlatinum && providerName !== 'platinum' && drivesSyncAllowed) {
@@ -818,6 +834,18 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
       [],
     );
   }
+  const { applyWorkspaceVolume, resolveWorkspaceVolume } = await import('./workspace-volume');
+  if (state.workspaceVolume === undefined) {
+    // The early open is used once: a retry after it failed opens again.
+    const early = state.workspaceVolumePromise;
+    state.workspaceVolumePromise = undefined;
+    state.workspaceVolume = await (early ?? resolveWorkspaceVolume(sandbox.sandboxId));
+    if (state.workspaceVolume) ctx.tl.mark('workspace-volume');
+  }
+  if (state.workspaceVolume && (providerName !== 'platinum' || slug === META_SANDBOX_SLUG)) {
+    // A box anywhere else would boot without the session's files.
+    throw new Error('[workspace] This session’s files are on a Platinum volume, and this box would not mount it, so the session did not start.');
+  }
   if (providerName !== 'platinum' || slug === META_SANDBOX_SLUG) {
     providerCreateInput.volumes = undefined;
     return;
@@ -827,6 +855,7 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
     state.driveMountsResolved = true;
   }
   providerCreateInput.volumes = state.driveMounts?.volumes;
+  if (state.workspaceVolume) applyWorkspaceVolume(providerCreateInput, state.workspaceVolume);
 }
 
 /** What the box mounted (its drives), for its row. */
@@ -893,8 +922,8 @@ async function createAttemptSandbox(
   const createFn = bootDecision.bootByTemplateId
     ? (o: CreateSandboxOpts) => provider.createFromExternalId!(bootDecision.bootByTemplateId!, o)
     : undefined;
-  // No provider edge is armed at create: one mechanism serves daytona, e2b
-  // and platinum alike. The guest holds a handle; the broker route substitutes server-side.
+  // No provider edge is armed at create: one mechanism serves platinum
+  // and daytona alike. The guest holds a handle; the broker route substitutes server-side.
   let result: ProvisionResult;
   let attempts: number;
   try {
@@ -1072,7 +1101,7 @@ async function activateProvisionedSandbox(
     boot: AttemptBoxMetadata;
   },
 ): Promise<void> {
-  const { opts, sandbox, sessionToken, tl, llmGatewayEnabled } = ctx;
+  const { opts, sandbox, sessionToken, tl } = ctx;
   const { accountId, userId } = opts;
   const { providerName, provider } = state;
   const { result, attempts, timeline, firstStage, branch, boot } = created;
@@ -1149,7 +1178,7 @@ async function activateProvisionedSandbox(
     columns: {
       externalId: result.externalId,
       baseUrl: result.baseUrl || null,
-      config: { serviceKey: sessionToken, llmGatewayEnabled },
+      config: { serviceKey: sessionToken },
       lastUsedAt: new Date(),
     },
     metadata: sandboxInitMetadataPatch(snapshot, finishMetadata),
@@ -1239,11 +1268,20 @@ async function runProvisionAttempt(
 ): Promise<'done' | 'retry'> {
   const { opts, sandbox, tl } = ctx;
   const branch = opts.baseRef || opts.gitProject.defaultBranch;
+  // The template's `residential_proxy` (residential-proxy.ts), read before the
+  // image so a deployment that cannot serve it fails fast. Fails closed: it
+  // throws instead of booting on the sandbox's own address, and once asked,
+  // the session never fails over to another provider.
+  const residentialProxyRequest = await templateResidentialProxy(opts.projectId, ctx.slug);
+  if (residentialProxyRequest) state.residentialProxyRequested = true;
+  const residentialProxy = await resolveSessionResidentialProxy(residentialProxyRequest, state.providerName);
+  if (residentialProxy) ctx.providerCreateInput.residentialProxy = residentialProxy;
+  else delete ctx.providerCreateInput.residentialProxy;
   // Resolved for its VALIDATION only: it re-reads the agent grant and
   // throws on a policy no session could serve, which is what turns a broken
   // secret config into `invalid-secret-boundary-policy` instead of a
   // generic provider fault. There is nothing to register with a provider —
-  // one mechanism serves daytona, e2b and platinum alike: the guest gets a HANDLE
+  // one mechanism serves platinum and daytona alike: the guest gets a HANDLE
   // and the broker route substitutes the real value server-side.
   await resolveSessionNetworkBoundary(opts.projectId, sandbox.sandboxId);
   tl.note('network-boundary');
@@ -1332,7 +1370,13 @@ async function failOverToNextProvider(
   // Drives run on Platinum only: no hand-off to another provider. (With drive
   // sync on, any provider can carry the drives.)
   const next = nextFailoverProvider({
-    providerLocked: providerWasExplicitlySelected || (drivesRequirePlatinum && !drivesSyncAllowed),
+    // A session whose /workspace is a Platinum volume runs on Platinum only.
+    // So does a session whose web traffic leaves through a residential IP.
+    providerLocked:
+      providerWasExplicitlySelected ||
+      (drivesRequirePlatinum && !drivesSyncAllowed) ||
+      !!state.workspaceVolume ||
+      state.residentialProxyRequested,
     fallbackAttempted: state.fallbackAttempted,
     fallbackEnabled: providerFallbackSetting().enabled,
     current: providerName,
@@ -1409,7 +1453,7 @@ async function failSessionSandboxProvisioning(
   const { accountId } = opts;
   const { providerName, provider, bgExternalId } = state;
   // Keep provider SDK text in diagnostic metadata. Show one stable contract
-  // for E2B, Daytona, Platinum, and future providers.
+  // for Platinum, Daytona, and future providers.
   // A project with drives runs on Platinum only: when Platinum cannot be
   // reached at all, say that, instead of a generic provider failure.
   const platinumUnreachable =
@@ -1475,10 +1519,10 @@ async function failSessionSandboxProvisioning(
   } catch (markErr) {
     console.error(`[session-sandbox] Failed to mark sandbox ${sandbox.sandboxId} as error:`, markErr);
   }
-  // Tell the originating channel (Slack) so the live thread shows the friendly
-  // reason now instead of a stranded ⏳ until the 30-min GC. Fire-and-forget;
-  // a no-op for non-channel sessions.
-  notifySessionProvisioningFailed(sandbox.sandboxId, userMessage);
+  // Tell the originating channel (Slack, Teams, Telegram) so it shows the
+  // friendly reason now instead of a stranded ⏳ until the 30-min GC.
+  // Fire-and-forget; a no-op for non-channel sessions.
+  notifySessionProvisioningFailed(sandbox.sandboxId, userMessage, { transient: failureTransient });
   const errTl = tl.summary();
   recordProviderEvent({
     provider: providerName, kind: 'provision', outcome: 'error',

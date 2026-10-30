@@ -49,6 +49,7 @@ import { logger } from '@/lib/log/logger'
  * GETs whose handlers build the caches a prompt resolves before its first
  * model call. `/experimental/tool/ids` is the one that matters most: it builds
  * the tool registry, which builds plugins and waits for config dependencies.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const WARM_PATHS = [
   '/experimental/tool/ids',
@@ -58,7 +59,10 @@ export const WARM_PATHS = [
   '/mcp',
 ] as const
 
-/** How long a loop-starting request waits for an in-flight warm-up. */
+/**
+ * How long a loop-starting request waits for an in-flight warm-up.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const WARM_GATE_MAX_MS = 20_000
 /** A warm GET that has not answered by then is abandoned. A disconnect does
  *  not interrupt OpenCode's handler (verified), so abandoning it is safe. */
@@ -83,39 +87,53 @@ const STOP_POLL_MS = 25
 
 const stopRequestedAt = new Map<string, number>()
 
-/** Record that a caller asked OpenCode to abort this session's turn. */
+/**
+ * Record that a caller asked OpenCode to abort this session's turn.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function noteOpencodeStopRequested(opencodeSessionId: string, source: string, now = Date.now()): void {
   if (!opencodeSessionId) return
   stopRequestedAt.set(opencodeSessionId, now)
   logger.info('[instance-guard] stop requested', { opencodeSessionId, source })
 }
 
-/** Was a stop requested for this session at or after `sinceMs`? */
+/**
+ * Was a stop requested for this session at or after `sinceMs`?
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function opencodeStopRequestedSince(opencodeSessionId: string, sinceMs: number): boolean {
   const at = stopRequestedAt.get(opencodeSessionId)
   return at !== undefined && at >= sinceMs
 }
 
-/** `POST /session/:id/abort` → the session id, else null. */
+/**
+ * `POST /session/:id/abort` → the session id, else null.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function abortTargetOf(method: string, path: string): string | null {
   if (method.toUpperCase() !== 'POST') return null
   const match = /^\/session\/([^/?#]+)\/abort(?:$|[/?#])/.exec(path)
   return match?.[1] ? decodeURIComponent(match[1]) : null
 }
 
-/** The session a loop-starting request (prompt, command, shell) runs in, else null. */
+/**
+ * The session a loop-starting request (prompt, command, shell) runs in, else null.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function loopStartTargetOf(method: string, path: string): string | null {
   if (method.toUpperCase() !== 'POST') return null
   const match = /^\/session\/([^/?#]+)\/(?:prompt_async|message|command|shell)(?:$|[/?#])/.exec(path)
   return match?.[1] ? decodeURIComponent(match[1]) : null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function resetStopRequestsForTests(): void {
   stopRequestedAt.clear()
 }
 
 // ── Guard ────────────────────────────────────────────────────────────────────
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface InstanceGuardDeps {
   getInternalUrl: () => string
   workspace: () => string
@@ -137,6 +155,7 @@ export interface InstanceGuardDeps {
   sleep?: (ms: number) => Promise<void>
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface WarmResult {
   ok: boolean
   /** Per path: HTTP status, or the error name when the request failed. */
@@ -144,6 +163,7 @@ export interface WarmResult {
   ms: number
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface HealResult {
   poisoned: boolean
   disposed: boolean
@@ -151,7 +171,10 @@ export interface HealResult {
   poisonedPaths: string[]
 }
 
-/** What the transcript says about a turn that just ended. */
+/**
+ * What the transcript says about a turn that just ended.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export interface EndedTurnView {
   assistantMessageId: string
   /** `time.created` of the user message the assistant answered (or its own). */
@@ -161,6 +184,7 @@ export interface EndedTurnView {
   empty: boolean
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type AbortedTurnVerdict =
   /** Not an abort, or already handled. Relay as usual. */
   | { kind: 'none' }
@@ -172,6 +196,7 @@ export type AbortedTurnVerdict =
    */
   | { kind: 'unrequested'; heal: HealResult; view: EndedTurnView; resumed: boolean }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface InstanceGuard {
   /** Build the prompt-path caches from requests the daemon owns. Single-flight. */
   warm(reason: string): Promise<WarmResult | null>
@@ -196,6 +221,7 @@ export interface InstanceGuard {
 
 const ABORT_NAMES = new Set(['MessageAbortedError', 'AbortError'])
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function createInstanceGuard(initial: InstanceGuardDeps): InstanceGuard {
   const deps: InstanceGuardDeps = { ...initial }
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))

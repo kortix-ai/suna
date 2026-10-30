@@ -1,0 +1,5 @@
+/* Input of scripts/build-styles.mjs → dist/styles.css, the prebuilt stylesheet
+   for hosts without Tailwind. source(none): only theme.css's @source (the
+   package src) is scanned, never the directory the build runs in. */
+@import 'tailwindcss' source(none);
+@import '../src/styles/tailwind.css';

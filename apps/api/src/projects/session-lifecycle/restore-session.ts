@@ -2,9 +2,9 @@
  * `restoreSession`: take a deleted session out of the trash (KRTX-1734).
  *
  * A delete keeps the session row, its branch, its transcript and its stored
- * files, and removes its box. Until the retention purge takes its rows
- * (`SESSION_DELETE_ROWS_DAYS` after the delete, session-log-purge.ts), a
- * restore brings the session back:
+ * files, and removes its box. Until the retention purge takes its content
+ * and the branch sweep its branch (`SESSION_DELETE_ROWS_DAYS` after the
+ * delete, session-log-purge.ts), a restore brings the session back:
  *
  *  - the tombstone (`deletedAt`, `deletedBy`) goes, so every list and read
  *    serves the session again and the purge skips it;
@@ -13,7 +13,12 @@
  *    claims it and boots a fresh box from the session branch. The row is the
  *    only record of the old box, so it gives up that box only once the
  *    provider confirmed it removed (`providerRemovedAt`), and it is held while
- *    the first provisioning the delete interrupted can still land a box on it.
+ *    the first provisioning the delete interrupted can still land a box on it;
+ *  - the fresh box gets the conversation back: `restoredAt` on the session
+ *    turns the session-log restore at boot on for its boxes
+ *    (`session-sandbox-env-build.ts`, as `lostRecoveredAt` does for a lost
+ *    session). Without it, the box booted an empty conversation and the
+ *    session showed none of its history.
  *
  * Public links and connector tokens the delete revoked stay revoked.
  */
@@ -38,6 +43,9 @@ import { type SessionSandboxRow, transitionSandbox, transitionSession } from './
  */
 export const DELETED_DURING_CREATE_KEY = 'deletedDuringCreateAt';
 
+/** On the session: its boxes restore the conversation from the session log at boot. */
+export const RESTORED_AT_KEY = 'restoredAt';
+
 export type RestoreSessionResult =
   | { ok: true }
   | { status: 404 | 409 | 410; error: string; code?: string };
@@ -59,7 +67,7 @@ const NOT_DELETED = {
 
 const PURGED = {
   status: 410,
-  error: `This session was deleted more than ${SESSION_DELETE_ROWS_DAYS} days ago. Its messages and files are gone.`,
+  error: `This session was deleted more than ${SESSION_DELETE_ROWS_DAYS} days ago. Its messages, files and branch are deleted.`,
   code: 'session_purged',
 } as const;
 
@@ -142,6 +150,7 @@ export async function restoreSession(input: {
         {
           at: now,
           stripMetadata: TOMBSTONE_KEYS,
+          metadata: { [RESTORED_AT_KEY]: now.toISOString() },
           guard: and(
             eq(projectSessions.projectId, projectId),
             eq(projectSessions.accountId, accountId),

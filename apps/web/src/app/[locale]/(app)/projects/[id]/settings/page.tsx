@@ -1,5 +1,3 @@
-'use client';
-
 /**
  * /projects/[id]/settings — the project's settings.
  *
@@ -15,18 +13,13 @@
  * the overlay on that tab.
  */
 
-import { useParams, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { redirect } from 'next/navigation';
 
-export default function ProjectSettingsPage() {
-  const params = useParams<{ id: string }>();
-  const projectId = params?.id ?? '';
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!projectId) return;
-    router.replace(`/projects/${projectId}/customize/settings`);
-  }, [projectId, router]);
-
-  return null;
+export default async function ProjectSettingsPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  redirect(`/projects/${id}/customize/settings`);
 }

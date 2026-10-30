@@ -1,8 +1,8 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { isRuntimeNotReadyNoiseMessage } from '@/lib/browser-error-noise';
-import { reloadForChunkLoadError } from '@/lib/chunk-load-recovery';
+import { Button } from '@kortix/ui/button';
+import { isRuntimeNotReadyNoiseMessage } from '@kortix/ui/internal/lib/browser-error-noise';
+import { reloadForChunkLoadError } from '@kortix/ui/internal/lib/chunk-load-recovery';
 import * as Sentry from '@sentry/nextjs';
 import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';

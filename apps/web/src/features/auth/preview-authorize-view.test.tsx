@@ -49,7 +49,8 @@ describe('PreviewAuthorizeView', () => {
     expect(html).toContain('not a preview this deployment serves');
     expect(html).toContain('example.test/login');
     expect(html).not.toContain('<button');
-    expect(html).not.toContain('<a ');
+    // The only link is the shell's home mark; nothing points at the refused address.
+    expect([...html.matchAll(/href="([^"]*)"/g)].map((match) => match[1])).toEqual(['/']);
   });
 
   test('address not served with no address at all shows no empty row', () => {

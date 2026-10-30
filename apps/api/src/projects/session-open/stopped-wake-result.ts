@@ -156,7 +156,8 @@ export function serializeSandboxRow(
     session_id: row.sessionId,
     project_id: row.projectId,
     account_id: row.accountId,
-    provider: row.provider,
+    // A legacy `e2b` row passes through as stored: E2B support is discontinued.
+    provider: row.provider as ProjectSessionSandbox['provider'],
     external_id: row.externalId,
     base_url: row.baseUrl,
     status: row.status,

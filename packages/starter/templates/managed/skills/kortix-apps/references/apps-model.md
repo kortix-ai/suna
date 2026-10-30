@@ -50,6 +50,9 @@ Every machine gets this environment, besides the release's `env` and `secrets`:
 | `KORTIX_USES_URL_<SLUG>` | the URL of every App this App `uses` (`-` → `_`): a server calls it there |
 | `KORTIX_MACHINE_ID` | the machine id (stable across releases) |
 | `KORTIX_PROCESS_GROUP` | the machine's group |
+| `KORTIX_APP_ID` | the App's id |
+| `KORTIX_APP_TOKEN` | the App's bearer for its App events and scheduled runs (SKILL.md, "Start an agent from an App") |
+| `KORTIX_APP_EVENTS_URL` | where the App posts App events: `…/v1/projects/<project_id>/apps/<app_id>/events` |
 | `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE`, `KORTIX_AUTH_JWKS` | verify the App's Kortix sign-in tokens (sign-in.md) |
 
 ## Services
@@ -76,8 +79,10 @@ services:
   policy. `admins`: the App's policy, then project admins (`project.app.admin`)
   only.
 - The proxy spreads requests over the group's running machines. With
-  `auto_stop_machines: stop`, an idle machine stops and the next request starts
-  one; `min_machines_running` keeps that many up. `always_on: true` is the
+  `auto_stop_machines: stop`, an idle machine stops and the next request, a
+  trigger that calls the App (`run: { app }`) or a scheduled run starts one (a
+  stop keeps the disk and loses memory; `idle_timeout_seconds`, 120–86400,
+  default 300, sets when); `min_machines_running` keeps that many up. `always_on: true` is the
   shorthand for `auto_stop_machines: "off"` and one machine always running.
 - A group with no service is a worker: it runs and is never idle-stopped.
 - Checks run inside the machine. A release is live only when every check of
@@ -134,7 +139,7 @@ App runs and who may open it do not change.
 
 ```yaml
 display:
-  listed: true          # a card in the Apps grid (default true)
+  listed: true          # a card in the Apps grid (default false: Background Apps)
   preview: none         # live (default): the card frames the App; none: an icon card
   parent: backend       # a tab in backend's App detail, not a card of its own
 ```
@@ -143,8 +148,10 @@ display:
   does not exist stays a card. The tab label is the App's name without the
   `<parent>-` prefix (`backend-dashboard` → Dashboard).
 - An App with `preview: none` opens on its first tab.
-- `kortix apps deploy` writes the block's `display` to the App (absent = the
-  defaults). `kortix apps show` prints it on the `shown` row.
+- `display` lives in the App's `kortix.yaml` block: a push applies it on
+  sync, no deploy needed. `--listed` / `--unlisted` on `deploy` or `set`, and
+  Settings → "Show on Apps page", write it to `apps.<slug>.display` first.
+  `kortix apps show` prints it on the `shown` row.
 
 ## Templates
 

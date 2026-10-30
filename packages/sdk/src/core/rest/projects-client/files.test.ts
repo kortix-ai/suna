@@ -155,3 +155,13 @@ test('fetchProjectFileRaw rejects on a non-ok response instead of returning byte
   globalThis.fetch = mock(async () => new Response('File not found', { status: 404 })) as unknown as typeof fetch;
   await expect(fetchProjectFileRaw('P1', 'missing.png', 'main')).rejects.toThrow('File not found');
 });
+
+test('writeProjectFile commits the viewed revision and returns the pushed commit', async () => {
+  const { writeProjectFile } = await import('./files');
+  const body = { path: 'README.md', ref: 'dev', content: 'edited\n', expected_revision: 'a'.repeat(40) };
+  nextResponse = { status: 200, body: { commit_sha: 'b'.repeat(40) } };
+  expect(await writeProjectFile('P1', body)).toEqual({ commit_sha: 'b'.repeat(40) });
+  expect(last().method).toBe('PUT');
+  expect(last().url).toContain('/projects/P1/files/content');
+  expect(last().body).toEqual(body);
+});

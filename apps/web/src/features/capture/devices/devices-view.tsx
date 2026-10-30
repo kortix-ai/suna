@@ -12,16 +12,16 @@ import {
 import Link from 'next/link';
 import { Fragment, useMemo, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/dropdown-menu';
+import { Skeleton } from '@kortix/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -29,16 +29,16 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { StatusDot as DsStatusDot, type StatusTone } from '@/components/ui/status';
-import { cn } from '@/lib/utils';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { StatusDot as DsStatusDot, type StatusTone } from '@kortix/ui/status';
+import { cn } from '@kortix/ui';
+import { UserAvatar } from '@kortix/ui/user-avatar';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
-import { relativeTime } from '@/lib/relative-time';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
 import { CaptureApiModal } from '../api/capture-api-modal';
 import { CapturePage } from '../area/capture-area-shell';
 import {
@@ -47,7 +47,7 @@ import {
   deviceOs,
   useCaptureArea,
   useCaptureDirectory,
-} from '../area/use-capture-area';
+} from '@kortix/ui/internal/capture/use-capture-area';
 import { deviceStatus, type DeviceStatusKey } from './device-status';
 import { DeviceActionsMenu, HealthNote, StatusLabel } from './device-status-ui';
 import { RolloutModal, WaitingComputers } from './rollout';

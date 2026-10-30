@@ -42,7 +42,7 @@ const { initializeFreeTierAccount, ensureFreeTierAccountReady } = await import(
 const { processFreeTierCreditRotation } = await import('../../billing/services/free-tier-rotation');
 
 describe('free tier account setup', () => {
-  test('initializes a free account with one idempotent $2 expiring grant', async () => {
+  test('initializes a free account with one idempotent $5 (500 credits) expiring grant', async () => {
     await initializeFreeTierAccount('acc_free_1');
 
     expect(upsertCreditAccountCalls).toHaveLength(1);
@@ -54,12 +54,14 @@ describe('free tier account setup', () => {
     expect(walletGrants).toHaveLength(1);
     expect(walletGrants[0]).toEqual({
       accountId: 'acc_free_1',
-      amount: 2,
+      amount: 5,
       kind: 'free_tier_grant',
       description: 'Free tier welcome credits',
       expiring: true,
+      expiresAt: expect.any(String),
       key: { event: 'free_tier_signup:acc_free_1' },
     });
+    expect(upsertCreditAccountCalls[0].data.nextCreditGrant).toBe(walletGrants[0].expiresAt);
   });
 
   test('repairs a missing credit account before billing gates run', async () => {
@@ -115,7 +117,7 @@ describe('free tier account setup', () => {
 describe('free tier monthly credit rotation', () => {
   const now = new Date('2026-07-25T10:00:00.000Z');
 
-  test('a due free account is reset to exactly $2 under a monthly UTC key', async () => {
+  test('a due free account is reset to exactly $5 under a monthly UTC key', async () => {
     freeAccountsDueResult = [
       createMockCreditAccount({
         accountId: 'acc_300_left',
@@ -132,9 +134,24 @@ describe('free tier monthly credit rotation', () => {
     expect(result).toEqual({ processed: 1, skipped: 0, errors: [] });
     expect(walletResets).toHaveLength(1);
     expect(walletResets[0].accountId).toBe('acc_300_left');
-    expect(walletResets[0].amount).toBe(2);
-    expect(walletResets[0].description).toBe('Free tier monthly credit reset: 200 credits');
+    expect(walletResets[0].amount).toBe(5);
+    expect(walletResets[0].description).toBe('Free tier monthly credit reset: 500 credits');
     expect(walletResets[0].key).toEqual({ event: 'free_tier_rotation_acc_300_left_2026-07' });
+  });
+
+  test('records the next reset as expiry across October and November rotations', async () => {
+    for (const [now, expiry] of [
+      ['2026-10-20T10:00:00.000Z', '2026-11-20T10:00:00.000Z'],
+      ['2026-11-20T10:00:00.000Z', '2026-12-20T10:00:00.000Z'],
+      ['2026-01-31T10:00:00.000Z', '2026-02-28T10:00:00.000Z'],
+    ]) {
+      freeAccountsDueResult = [createMockCreditAccount({
+        accountId: 'acc_rotation_expiry', tier: 'free', nextCreditGrant: now,
+      })];
+      await processFreeTierCreditRotation(new Date(now));
+      expect(walletResets.at(-1)?.expiresAt).toBe(expiry);
+      expect(updateCreditAccountCalls.at(-1)?.data.nextCreditGrant).toBe(expiry);
+    }
   });
 
   test('updates the next monthly grant anchor after resetting', async () => {

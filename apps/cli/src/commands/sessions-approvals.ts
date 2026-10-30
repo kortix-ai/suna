@@ -428,12 +428,6 @@ export async function runSessionsConnectorApprovals(argv: string[]): Promise<num
       if (args !== undefined) {
         process.stdout.write(`    ${C.dim}args ${JSON.stringify(args)}${C.reset}\n`);
       }
-      // The /approve page handles both decisions; the CLI resolve commands
-      // work for a personal PAT (the human's own token) and stay refused for
-      // session-bound agent and service-account callers (APPROVAL_REQUIRES_HUMAN).
-      if (action.approval_url) {
-        process.stdout.write(`    ${C.dim}decide at ${action.approval_url}${C.reset}\n`);
-      }
       process.stdout.write(
         `    ${C.dim}approve: kortix sessions approvals ${sessionId} approve ${action.execution_id}${C.reset}\n` +
           `    ${C.dim}deny: kortix sessions approvals ${sessionId} deny ${action.execution_id}${C.reset}\n`,

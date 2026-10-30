@@ -45,13 +45,12 @@ export async function reauthorizeWakeLadderActor(
       action: 'session',
       actor: input.actor,
       isServiceAccount: input.isServiceAccount,
-      bypassHeaderPresent: false,
     });
     if (!loaded) return null;
     const visible = await loadVisibleSession(loaded, input.sessionId, null, null);
     if (!visible || sessionIsTombstoned(visible.row) || !visible.canManageLifecycle) return null;
     // Throws `403 agent_not_accessible` when the grant is gone.
-    await resolveAndAuthorizeAgentAs(input.actor, input.onBehalfOf, loaded, input.projectId, null, visible.row.agentName);
+    await resolveAndAuthorizeAgentAs(input.actor, input.onBehalfOf, loaded, input.projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
     return { loaded, visible: { row: visible.row } };
   } catch {
     return null;

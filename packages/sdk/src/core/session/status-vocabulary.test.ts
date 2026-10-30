@@ -91,3 +91,11 @@ describe('a turn waiting to retry', () => {
     expect(turnRetryLabel(null)).toBe('Waiting to retry');
   });
 });
+
+ test('canonical work activity settles an awake session without changing lifecycle', () => {
+  const idle: ProjectSession = { ...session('running'), working: { state: 'idle', since: null, turn_token: null, pending_delivery: false } };
+  expect(sessionListStatus(idle)).toBe('done');
+  expect(sessionListStatus(idle, 1)).toBe('needs-you');
+  expect(idle.status).toBe('running');
+  expect(sessionListStatus({ ...idle, working: { state: 'working', since: null, turn_token: null, pending_delivery: true } })).toBe('running');
+ });

@@ -704,6 +704,13 @@ flow(
         for (const key of ["token", "pat", "private_key", "privateKey", "installation_id", "installationId"]) {
           if (key in body) throw new Error(`GET /git/backend leaks ${key}`);
         }
+        // The operator flag is the client's gate for the operator-only
+        // repositories listing (KRTX-1892): the web may only fire
+        // GET /git/backend/repositories when this says true. It must be a
+        // boolean — never absent, which would make every client guess.
+        if (typeof body.operator !== "boolean") {
+          throw new Error(`expected boolean operator, got: ${JSON.stringify(body)}`);
+        }
       },
     );
 
@@ -723,6 +730,19 @@ flow(
         // repositories (200) or, with no backend configured, 409.
         const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/git/backend/repositories");
         r.status([403, 200, 409]);
+
+        // The flag and the gate must agree (KRTX-1892): the same caller reads
+        // GET /git/backend → `operator` and this listing. `operator: false`
+        // with anything but a 403 here would mean the client-side gate and
+        // the server-side gate disagree — a silent 403 on one side or an
+        // operator who can read but not import on the other.
+        const flag = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/git/backend");
+        flag.status(200);
+        if (flag.json<any>().operator === false && r.statusCode !== 403) {
+          throw new Error(
+            `operator=false but repositories answered ${r.statusCode} — the flag and the gate disagree`,
+          );
+        }
         const body = r.json<any>();
         if (r.statusCode === 403 && typeof body.error !== "string") {
           throw new Error(`403 must carry an error string, got: ${JSON.stringify(body)}`);

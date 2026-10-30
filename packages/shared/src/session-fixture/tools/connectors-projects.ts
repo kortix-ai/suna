@@ -6,7 +6,7 @@
  * Slack through the connector gateway, and schedules a daily cron trigger.
  *
  * Output shapes follow the parsers the renderers call:
- * - apps/web `lib/utils/kortix-tool-output.ts` (mobile port:
+ * - apps/web `packages/ui/src/internal/lib/utils/kortix-tool-output.ts` (mobile port:
  *   `apps/mobile/lib/session/tools/projects-tool-output.ts`) for
  *   `project_*` and `connector_*`;
  * - apps/web `tool/shared/error-and-connector.tsx#parseConnectorOutput`

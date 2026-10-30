@@ -35,7 +35,6 @@ mock.module('./hosting', () => ({
     }
     async stop(_provider: string, externalId: string) { calls.push(`stop ${externalId}`); }
     async start(_provider: string, externalId: string) { calls.push(`start ${externalId}`); }
-    effectiveMachine(_provider: string, machine: unknown) { return machine; }
   },
 }));
 const realProviders = await import('../platform/providers');
