@@ -3,6 +3,11 @@
  * resizable side panel), the project sidebar, sessions list, project home, and the
  * permission and route helpers they share.
  */
+// NOTE: ProjectAdminDashboard is intentionally NOT re-exported here. It pulls
+// every capability data hook (connectors/triggers/reminders/models/secrets/
+// review); since Turbopack does not tree-shake this barrel in dev, re-exporting
+// it made all ~44 routes that import `@kortix/ui/workspace` compile that graph.
+// The /admin route imports it directly from '@kortix/ui/workspace/admin/project-admin-dashboard'.
 export { ProjectPageHeader } from '../internal/layout/project-page-header';
 export { useCapabilityAccess, useProjectNavRows } from '../internal/layout/project-settings-nav';
 export { SidebarToggle } from '../internal/layout/sidebar-toggle';
@@ -67,12 +72,23 @@ export { ProjectSidebar } from './sidebar/project-sidebar';
 export { ShareSessionModal } from './sidebar/modal/share-session-modal';
 export {
   formatGoalTime,
+  goalAssignedTo,
   GoalHealthDot,
   goalHref,
   goalNeedsYou,
+  goalNeedsAttention,
+  goalLastWake,
+  useGoalPerson,
+  useStartGoal,
   goalOpenAsks,
   goalProgress,
   GoalStatusBadge,
   useGoalClock,
   useGoalIssueText,
 } from '../internal/goals/goal-meta';
+// Spaces: the per-viewer active space and the space filter the Goals and Artifacts pages share.
+export { useActiveSpace } from '../internal/stores/active-space-store';
+export { ALL_SPACES } from '../customize/shared/catalog/catalog-space-tabs';
+export { SpaceFilterTabs, spaceFilterLabel } from './space/space-filter-tabs';
+export { useSpaceFilter } from './space/use-space-filter';
+export { SPACES_FLAG, spaceScope, useSpacesEnabled } from '../internal/lib/space-scope';

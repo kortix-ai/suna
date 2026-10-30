@@ -12,8 +12,8 @@ import {
   docRangesForSource,
   docSelectionAnchor,
 } from './doc-comment-positions';
-import { LinkEmbed } from './doc-embed';
-import { markdownToHtml } from './markdown';
+import { LinkEmbed } from '@kortix/ui/markdown/doc-editor/doc-embed';
+import { markdownToHtml } from '@kortix/ui/markdown/doc-editor/markdown';
 
 const window = new Window();
 const schema = getSchema([StarterKit, TableKit, TaskList, TaskItem, Image, LinkEmbed]);

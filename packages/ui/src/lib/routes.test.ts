@@ -15,7 +15,7 @@ afterEach(() => setUiRoutes({}));
 test('the defaults are apps/web paths', () => {
   expect(uiRoutes().session('p', 's')).toBe('/projects/p/sessions/s');
   expect(uiRoutes().sessions('p', 'archived')).toBe('/projects/p/sessions?view=archived');
-  expect(capabilityTabHref('p', 'models')).toBe('/projects/p/customize/models');
+  expect(capabilityTabHref('p', 'models')).toBe('/projects/p/admin/models');
   expect(filesRow('p', 'drive')).toEqual({ label: 'drive', href: '/projects/p/drive' });
 });
 
@@ -29,7 +29,7 @@ test('a route the host maps to null hides its row; the customize pages keep thei
   setUiRoutes({ drive: () => null, customize: () => null });
   expect(filesRow('p', 'drive')).toBeNull();
   expect(uiRoutes().customize('p', 'models')).toBeNull();
-  expect(capabilityTabHref('p', 'models')).toBe('/projects/p/customize/models');
+  expect(capabilityTabHref('p', 'models')).toBe('/projects/p/admin/models');
   // Links from outside the customize pages hide: sidebar row, review and reminders links.
   expect(capabilityLinkHref('p', 'agent')).toBeNull();
   expect(reviewHref('p')).toBeNull();
@@ -39,7 +39,7 @@ test('a route the host maps to null hides its row; the customize pages keep thei
 test('review and reminders links follow the host customize route', () => {
   expect(reviewHref('p')).toBe('/projects/p/customize/review');
   setUiRoutes({ customize: (p, path) => `/w/${p}/setup/${path ?? ''}` });
-  expect(remindersHref('p')).toBe('/w/p/setup/reminders');
+  expect(remindersHref('p')).toBe('/w/p/setup/loops');
 });
 
 test('the open session and project are read through the host routes', () => {

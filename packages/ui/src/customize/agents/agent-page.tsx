@@ -1,59 +1,71 @@
 'use client';
-import { AgentMark } from '../../internal/components/agent-mark';
-import { EntityFilePane } from '../shared/entity/entity-modal';
-import { agentStatus } from './agent-status';
-import { useDefaultAgent } from './use-default-agent';
 
-import { useTranslations as useI18nTranslations } from '../../i18n';
+import { adminPath } from '../../lib/routes';
+
 /**
- * /projects/[id]/agent/[name] — one agent, as a full-page editor. The core
- * screen of Customize.
+ * /projects/[id]/customize/agents/[name]: one agent, as a page with a rail.
  *
- * Customize is agent-centric (Marko, 2026-09-01): the agent is the only
- * object a project manager grants a person or a group, so every other
- * decision — who may use it, which model, which skills, which connectors and
- * secrets, when it runs — hangs off it. This page is built like the Settings
- * page (Marko, 2026-09-03: "make it a regular full page Agent Editor"): a
- * header, a left rail of topics, and one full-width pane per topic.
+ * Customize is agent-first. My Kortix is the one agent a person talks to; every
+ * other agent is a work product with only the access its work needs. So the
+ * page is the agent: one identity header, one rail, and room to edit.
  *
- *   ┌ Agents › name                  ● Name  chips   [Start session] [⋯] ┐
- *   ├──────────────┬──────────────────────────────────────────────────────┤
- *   │ Overview     │                                                      │
- *   │ People       │   the selected topic's pane, one column,            │
- *   │ Access       │   `max-w-2xl` like the Settings page                 │
- *   │ Triggers     │                                                      │
- *   │ Model        │                                                      │
- *   │ Workspace    │                                                      │
- *   │ Tools        │                                                      │
- *   │ Basics       │                                                      │
- *   ├──────────────┴──────────────────────────────────────────────────────┤
- *   │ Unsaved changes · commits to the repo             [Discard] [Save ⌘S] │
- *   └─────────────────────────────────────────────────────────────────────┘
+ *   ┌ ▣ researcher                         [Share] [Start session] [⋯] ┐
+ *   │   ● Enabled · Space: workspace · People start it                 │
+ *   ├ Overview      ┬ the row, full width                              ┤
+ *   │ Triggers      │                                                  │
+ *   │ Access: Connectors None · Secrets All · Skills All · Tools …     │
+ *   │ Runtime: Model · Workspace                                       │
+ *   └────────────────── [ ● Unsaved changes  Skills  Discard  Save ⌘S ]
  *
- * The rail is the Settings rail's dialect (`project-settings-page.tsx`,
- * `settings-panel.tsx`): same width, same row classes, a real `<Link>` per
- * topic so a topic has a URL (`?section=<key>`) a person can be sent to. The
- * draft is shared across topics, so switching never drops an edit, and the
- * save bar spans the page foot. Below `lg` the rail is a horizontal row.
+ * The URL names the tab and its view (`agent-tabs.ts`); every old
+ * `?section=` link still resolves. The rail lists every view as its own row
+ * (2026-10-28: Access and Runtime are group labels, not a second level), each
+ * with its grant state. A view renders the full resource screen in agent
+ * scope (one component, two variants), embedded without its own title
+ * (`CapabilityShellEmbedProvider`).
  *
- * Two bodies behind one header:
+ * The draft is shared across rows, so a row switch never drops an edit; the
+ * row with an edit carries a dot, and the save bar names the changed rows. A
+ * link off the page while dirty asks Stay / Leave / Save and leave.
  *
- *  - **Editable** — a v2 (kortix.yaml) project and a caller with
- *    `project.agent.write`. Every field is live; Save round-trips the whole
- *    `agents.<name>` block through the agent-config route, which commits it to
- *    the project repo. State lives in `useAgentDraft`; the panes are
- *    `AgentConfigSections` with the page's own Overview, People and Triggers
- *    slotted in.
- *  - **Read-only** — a v1 project, or a caller without write. Overview shows
- *    the agent's source file; People, Access (the legacy scope mirror),
- *    Triggers and Model (the gateway pin) remain. We degrade, never blank.
+ * Two bodies under one frame:
+ *  - **Editable**: a v2+ project and a caller with `project.agent.write`.
+ *    Save round-trips the whole `agents.<name>` block through the agent-config
+ *    route, which commits it to the project repo.
+ *  - **Read-only**: a v1 project or a caller without write. The same tabs and
+ *    the same Overview, with values in place of controls and a lock banner.
+ * My Kortix (a platform agent) has no page here: the project home starts it,
+ * and its route reads as not found.
  *
  * The page is keyed on the agent name by its route, so switching agents
- * remounts every draft rather than carrying one agent's edits onto another.
+ * remounts every draft.
  */
 
-import { MarkdownWithFrontmatter } from '../../markdown/markdown-frontmatter';
-import { Badge } from '../../primitives/badge';
+import {
+  type AgentConfigBlock,
+  type AgentGrantSetV2,
+  getProjectDetail,
+  listProjectResourceGrants,
+  type ProjectConfigSummary,
+  readProjectFile,
+} from '@kortix/sdk';
+import { contract, qk, useFeatureFlag, useProjectAccountId, useUnifiedTriggers } from '@kortix/sdk/react';
+import { DotsThreeIcon, LockSimpleIcon, PlayIcon, StarIcon, TrashIcon } from '@phosphor-icons/react';
+import { useQueries, useQuery } from '@tanstack/react-query';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+
+import { useLocale, useTranslations as useI18nTranslations } from '../../i18n';
+import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
+import {
+  agentConfigNeedsUpgrade,
+  useAgentConfig,
+  useUpdateAgentConfig,
+  useProjectCapabilities,
+} from '../../internal/hooks/projects/use-agent-config';
+import { useNewProjectSession } from '../../internal/hooks/projects/use-new-project-session';
+import { agentHref, capabilityTabHref } from '../../internal/lib/capability-tab-routes';
+import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
+import { useProjectCan } from '../../internal/lib/use-project-can';
 import { Button } from '../../primitives/button';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
 import {
@@ -63,130 +75,93 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../../primitives/dropdown-menu';
-import Hint from '../../primitives/hint';
-import { InfoBanner } from '../../primitives/info-banner';
-import { Kbd } from '../../primitives/kbd';
-import Loading from '../../primitives/loading';
-import { Skeleton } from '../../primitives/skeleton';
-import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
-import { Textarea } from '../../primitives/textarea';
-import { errorToast, successToast } from '../../primitives/toast';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
+import Hint from '../../primitives/hint';
+import { InfoBanner } from '../../primitives/info-banner';
+import { errorToast, successToast } from '../../primitives/toast';
+import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import { configEntitySourcePath } from '../sections/component/config-entity-source-path';
 import {
   type AgentConfigSectionKey,
   AgentConfigSections,
   agentConfigSectionKeys,
   agentEditorOptionQueries,
-  DEFAULT_AGENT_CONFIG_SECTION,
-  isAgentConfigSectionKey,
   registryGrantOptions,
   useAgentDraft,
   useAgentEditorOptions,
   useLocalizedAgentConfigCatalog,
 } from '../sections/view/agent-editor';
-import { formatMode, toArray } from '../shared/utils';
-import {
-  editConfigPrompt,
-  useConfigureThread,
-} from '../use-configure-thread';
-import {
-  agentConfigNeedsUpgrade,
-  useAgentConfig,
-  useUpdateAgentConfig,
-} from '../../internal/hooks/projects/use-agent-config';
-import { useNewProjectSession } from '../../internal/hooks/projects/use-new-project-session';
-import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
-import { useProjectCan } from '../../internal/lib/use-project-can';
-import { cn } from '../../internal/lib/utils';
-import {
-  type AgentConfigBlock,
-  getProjectDetail,
-  type ProjectConfigSummary,
-  readProjectFile,
-} from '@kortix/sdk';
-import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
-import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
-import {
-  BookOpenTextIcon,
-  CaretRightIcon,
-  CommandIcon,
-  CpuIcon,
-  CubeIcon,
-  DotsThreeIcon,
-  FileTextIcon,
-  GlobeIcon,
-  HardDriveIcon,
-  type Icon,
-  KeyIcon,
-  PlayIcon,
-  PlugsConnectedIcon,
-  PuzzlePieceIcon,
-  RobotIcon,
-  SlidersHorizontalIcon,
-  StarIcon,
-  TerminalWindowIcon,
-  TimerIcon,
-  TreeStructureIcon,
-  UsersIcon,
-  WrenchIcon,
-} from '@phosphor-icons/react';
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, m } from 'motion/react';
-import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
-
-import { FadedScrollArea } from '../../primitives/faded-scroll-area';
-import { SETTINGS_SIDEBAR_WIDTH_PX } from '../../internal/account-hub/account-settings-shell';
-import { capabilityTabHref } from '../../internal/lib/capability-tab-routes';
-import { useIsMobile } from '../../internal/hooks';
-
-import { EditorSection, EditorSectionStyleProvider } from '../sections/view/agent-editor-primitives';
-import { SettingsSectionHeader } from '../../primitives/settings-section-header';
-
-import { AgentDrivesSection } from './agent-drives-section';
-
+import { EditorSectionStyleProvider } from '../sections/view/agent-editor-primitives';
+import { ToolsSection } from '../sections/view/permission-editor';
+import { type AgentGrant, useAgentGrant } from '../shared/agent-resource-scope';
+import { CapabilityShellEmbedProvider } from '../shared/capability-page-shell';
+import { LeaveGuardProvider, useUnsavedChangesGuard } from '../shared/leave-guard';
+import { toArray } from '../shared/utils';
+import { ExtensionsPage, SkillsPage, ToolsPage } from '../skills/skills-page';
+import { ConnectorsPage } from '../connectors/connectors-page';
+import { SecretsPage } from '../secrets/secrets-page';
+import { TriggersPage } from '../triggers/triggers-page';
+import { editConfigPrompt, useConfigureThread } from '../use-configure-thread';
 import { AgentAuthorityCard } from './agent-authority-card';
 import { AgentModel, AgentScope } from './agent-detail-aside';
+import { AgentDrivesSection } from './agent-drives-section';
+import { pruneRequiredConnectors } from './connectors-required';
+import { useGrantLabel } from './agent-access-text';
+import { AgentOverview, grantExcluded, grantOf, type OverviewFacts } from './agent-overview';
 import {
-  AppsGrantPage,
-  ConnectorsGrantPage,
-  SecretsGrantPage,
-  SkillsGrantPage,
-} from './agent-grant-pages';
-import { connectorPolicySetOptions } from './agent-policy-sets';
-import { AgentPeopleSection } from './agent-people-section';
+  AgentIdentityHeader,
+  AgentPageSkeleton,
+  AgentStatePage,
+  AgentTabBar,
+  type AgentRailItem,
+  type AgentTabGroup,
+  AgentTabBody,
+  type HeaderFact,
+  LeaveDialog,
+  SaveBar,
+} from './agent-page-chrome';
+import { AgentModelView } from './agent-model-view';
+import { AgentApprovalRules } from './agent-approval-rules';
+import { AgentSectionRail, railGroupOf } from './agent-section-rail';
+import { AgentPinButton } from './agent-pin-button';
 import { AgentShareControl } from './agent-share-control';
-import { AgentTriggersSection } from './agent-triggers-section';
+import {
+  ACCESS_VIEWS,
+  AGENT_TABS,
+  type AgentLocation,
+  type AgentTab,
+  agentLocationHref,
+  changedItems,
+  closestAgentName,
+  resolveAgentLocation,
+  railKeyOf,
+  sectionLocationHref,
+} from './agent-tabs';
+import { useSpacesEnabled } from '../../internal/lib/space-scope';
+import { connectorPolicySetOptions } from './agent-policy-sets';
+import { AgentPolicySetsPanel, useAgentPolicySetControls } from './agent-policy-sets-section';
+import { useDefaultAgent } from './use-default-agent';
+
+/**
+ * A host's Apps screen in agent mode: the ONE Apps component (it lives in
+ * the host app) with this agent's grant. Without it Access → Apps is hidden.
+ */
+export type RenderAgentApps = (args: { agentName: string; grant: AgentGrant; needsAppRead: boolean }) => ReactNode;
 
 type Agent = ProjectConfigSummary['agents'][number];
 
-/** The rail's icons — the one place that draws them (`AGENT_CONFIG_SECTIONS`
- *  is pure data, imported by the editor module). */
-const SECTION_ICON: Record<AgentConfigSectionKey, Icon> = {
-  overview: FileTextIcon,
-  people: UsersIcon,
-  basics: SlidersHorizontalIcon,
-  triggers: TimerIcon,
-  skills: BookOpenTextIcon,
-  subagents: TreeStructureIcon,
-  commands: CommandIcon,
-  extensions: PuzzlePieceIcon,
-  connectors: PlugsConnectedIcon,
-  secrets: KeyIcon,
-  apps: GlobeIcon,
-  drives: HardDriveIcon,
-  actions: TerminalWindowIcon,
-  model: CpuIcon,
-  tools: WrenchIcon,
-  workspace: CubeIcon,
-};
-
-export function AgentPage({ projectId, agentName }: { projectId: string; agentName: string }) {
+export function AgentPage({
+  projectId,
+  agentName,
+  renderApps,
+}: {
+  projectId: string;
+  agentName: string;
+  renderApps?: RenderAgentApps;
+}) {
+  const t = useI18nTranslations('agentEditor.tabs');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  // `accountId` skips useProjectCan's own getProject and lets the IAM probe
-  // run on the first render instead of waiting a round-trip for it.
   const accountId = useProjectAccountId(projectId);
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE, { accountId }).allowed === true;
@@ -197,68 +172,106 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
     ...contract('config'),
   });
   const config = detailQuery.data?.config ?? null;
-  const agent = toArray(config?.agents).find((a) => a.name === agentName) ?? null;
-  // Meta (and any platform-owned agent) is injected by the API, not declared in
-  // kortix.yaml. Its configuration is fixed: never editable, no agent-config read.
-  const isPlatform = agent?.platform === true;
+  // A platform agent (My Kortix) has nothing to edit here: not found.
+  const agent = toArray(config?.agents).find((a) => a.name === agentName && !a.platform) ?? null;
 
-  // All reads start on the first render, in parallel. The agent-config read
-  // used to wait for detail to list the agent, and the editor's option reads
-  // for the editor to mount: three round trips in a row, each a Git read on
-  // the API. Now the skeleton lasts as long as the slowest single read.
+  // Every read starts on the first render, in parallel: the skeleton lasts as
+  // long as the slowest single read, not three in a row.
   const configQuery = useAgentConfig(projectId, agentName);
   const editorOptionQueries = agentEditorOptionQueries(projectId);
   useQueries({
-    queries: [
-      editorOptionQueries.secrets,
-      editorOptionQueries.connectors,
-      editorOptionQueries.sandboxes,
-    ].map((query) => ({ ...query, enabled: canWrite })),
+    queries: [editorOptionQueries.secrets, editorOptionQueries.connectors, editorOptionQueries.sandboxes].map(
+      (query) => ({ ...query, enabled: canWrite }),
+    ),
   });
 
-  if (detailQuery.isLoading || (agent && !isPlatform && configQuery.isLoading)) {
+  if (detailQuery.isLoading || (agent && configQuery.isLoading)) {
     return <AgentPageSkeleton />;
   }
 
+  const retry = (
+    <Button variant="outline" size="sm" onClick={() => void detailQuery.refetch()}>
+      {tI18nComplete.raw('text942087cc2d41')}
+    </Button>
+  );
+
   if (detailQuery.isError || !config) {
     return (
-      <CenteredState>
+      <AgentStatePage title={agentDisplayName(agentName)}>
         <ErrorState
           size="sm"
-          title={tI18nComplete.raw('textd70d09b7d701')}
-          action={
-            <Button variant="outline" size="sm" onClick={() => detailQuery.refetch()}>
-              {tI18nComplete.raw('text942087cc2d41')}
-            </Button>
-          }
+          title={t('loadError')}
+          description={<ErrorDetails error={detailQuery.error} />}
+          action={retry}
         />
-      </CenteredState>
+      </AgentStatePage>
     );
   }
 
   if (!agent) {
+    // Only agents this page opens: a platform agent (My Kortix) is not found here either.
+    const suggestion = closestAgentName(
+      agentName,
+      toArray(config.agents)
+        .filter((a) => !a.platform)
+        .map((a) => a.name),
+    );
     return (
-      <CenteredState>
+      <AgentStatePage title={t('notFoundHeader')}>
         <EmptyState
-          icon={RobotIcon}
           size="sm"
-          title={tI18nComplete('text8136e0c475c7', { value0: agentName })}
-          description={tI18nComplete.raw('text2ad30464c3ed')}
+          title={t('notFoundTitle')}
+          description={
+            <span className="space-y-1">
+              <span className="block">
+                {t.rich('notFoundBody', { name: () => <span className="font-mono">{agentName}</span> })}
+              </span>
+              {suggestion ? (
+                <span className="block">
+                  {t.rich('didYouMean', {
+                    link: () => (
+                      <Link
+                        href={agentHref(projectId, suggestion)}
+                        className="text-foreground underline underline-offset-4"
+                      >
+                        {agentDisplayName(suggestion)}
+                      </Link>
+                    ),
+                  })}
+                </span>
+              ) : null}
+            </span>
+          }
           action={
             <Button asChild variant="outline" size="sm">
-              <Link href={capabilityTabHref(projectId, 'agent')}>
-                {tI18nComplete.raw('text54c32d3e2cfa')}
-              </Link>
+              <Link href={capabilityTabHref(projectId, 'agent')}>{t('allAgents')}</Link>
             </Button>
           }
         />
-      </CenteredState>
+      </AgentStatePage>
     );
   }
 
-  const editable = !isPlatform && canWrite && configQuery.data?.editable === true;
-  const isV1 = !isPlatform && agentConfigNeedsUpgrade(configQuery.data);
+  // A writer whose agent-config read failed would otherwise land on the
+  // read-only page with no word on why: say what failed, offer the retry.
+  if (canWrite && configQuery.isError) {
+    return (
+      <AgentStatePage title={agentDisplayName(agent.name)}>
+        <ErrorState
+          size="sm"
+          title={t('configLoadError', { name: agentDisplayName(agent.name) })}
+          description={<ErrorDetails error={configQuery.error} />}
+          action={
+            <Button variant="outline" size="sm" onClick={() => void configQuery.refetch()}>
+              {tI18nComplete.raw('text942087cc2d41')}
+            </Button>
+          }
+        />
+      </AgentStatePage>
+    );
+  }
 
+  const editable = canWrite && configQuery.data?.editable === true;
   return editable ? (
     <EditableAgentPage
       projectId={projectId}
@@ -266,265 +279,333 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
       config={config}
       initial={configQuery.data?.block ?? {}}
       schemaVersion={configQuery.data?.schema_version ?? 2}
+      renderApps={renderApps}
     />
   ) : (
     <ReadOnlyAgentPage
       projectId={projectId}
       agent={agent}
       config={config}
+      block={configQuery.data?.block ?? blockFromScope(agent)}
       canWrite={canWrite}
-      showUpgradeHint={isV1}
-      isPlatform={isPlatform}
+      showUpgradeHint={agentConfigNeedsUpgrade(configQuery.data)}
     />
   );
 }
 
-// ─── Frame ─────────────────────────────────────────────────────────────────
+/** The raw failure, folded, in mono. No fold when there is nothing to show. */
+function ErrorDetails({ error }: { error: unknown }) {
+  const t = useI18nTranslations('agentEditor.tabs');
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  if (!message) return null;
+  return (
+    <details className="mt-2 text-left">
+      <summary className="text-muted-foreground hover:text-foreground cursor-pointer text-xs transition-colors">
+        {t('details')}
+      </summary>
+      <p className="text-muted-foreground mt-2 font-mono text-xs break-words">{message}</p>
+    </details>
+  );
+}
 
-/**
- * Header on top, then the rail beside the pane, then the footer. The pane is
- * the one scroller; the rail is the Settings rail
- * (`project-settings-page.tsx`), row for row.
- */
-function AgentPageFrame({
-  header,
-  section,
-  sections,
-  sectionHref,
-  pane,
-  footer,
-}: {
-  header: ReactNode;
-  section: AgentConfigSectionKey;
-  sections: readonly AgentConfigSectionKey[];
-  sectionHref: (key: AgentConfigSectionKey) => string;
-  pane: ReactNode;
-  footer?: ReactNode;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const isMobile = useIsMobile();
-  const localizedConfig = useLocalizedAgentConfigCatalog();
-  const sectionKeys = new Set(sections);
-  const items = localizedConfig.sections.filter((s) => sectionKeys.has(s.key));
-  // The Preferences rail's rule: a heading over a lone group labels nothing.
-  const groups = localizedConfig.groups
-    .map((group) => ({
-      group,
-      items: items.filter((s) => s.group === group),
-    }))
-    .filter((g) => g.items.length > 0);
-  const showGroupLabels = groups.length > 1;
-  const trigger = (item: (typeof localizedConfig.sections)[number], horizontal: boolean) => {
-    const SectionIcon = SECTION_ICON[item.key];
-    return (
-      <TabsTrigger
-        key={item.key}
-        value={item.key}
-        asChild
-        size={horizontal ? undefined : 'md'}
-        className={
-          horizontal
-            ? 'w-auto shrink-0 gap-2.5 px-3 py-0.75 whitespace-nowrap'
-            : cn(
-                // The Settings rail's row dialect (`project-settings-page.tsx`).
-                'gap-2 px-2.5 py-1 font-normal transition-none has-[>svg]:px-2.5',
-                'text-foreground data-[state=inactive]:text-foreground hover:bg-hover hover:text-foreground',
-                'data-[state=active]:bg-active data-[state=active]:font-medium',
-                '[&_svg]:text-muted-foreground data-[state=active]:[&_svg]:text-foreground',
-              )
-        }
-      >
-        <Link href={sectionHref(item.key)} prefetch>
-          <SectionIcon className="size-4 shrink-0" />
-          <span className={cn(!horizontal && 'truncate')}>{item.label}</span>
-        </Link>
-      </TabsTrigger>
-    );
+/** The block a reader sees when the agent-config read returned nothing. */
+function blockFromScope(agent: Agent): AgentConfigBlock {
+  const scope = agent.scope;
+  return {
+    enabled: agent.enabled,
+    space: agent.space ?? undefined,
+    sandbox: agent.sandbox ?? undefined,
+    connectors: scope?.connectors,
+    secrets: scope?.env,
+    apps: scope?.apps,
+    kortix_permissions: scope?.kortix_permissions ?? scope?.kortix_cli,
+    behavior: {
+      description: agent.description ?? undefined,
+      model: agent.model ?? undefined,
+      mode: (agent.mode as 'primary' | 'subagent' | 'all' | null) ?? undefined,
+      hidden: agent.hidden,
+    },
   };
+}
 
-  return (
-    <div className="relative flex h-full min-h-0 flex-1 flex-col">
-      <div className="border-border/60 shrink-0 border-b px-5 py-3">{header}</div>
-      <div
-        className={cn(
-          'min-h-0 flex-1',
-          isMobile ? 'flex flex-col overflow-hidden' : 'grid overflow-hidden',
-        )}
-        style={isMobile ? undefined : { gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
-      >
-        {isMobile ? (
-          <nav
-            aria-label={tI18nComplete.raw('text7be318295927')}
-            className="border-border/60 flex h-auto shrink-0 items-center border-b"
-          >
-            <FadedScrollArea
-              orientation="horizontal"
-              fadeColor="from-background"
-              className="min-w-0 flex-1 py-2"
-            >
-              <Tabs value={section} className="w-fit">
-                <TabsList orientation="horizontal" className="w-fit">
-                  {items.map((item) => trigger(item, true))}
-                </TabsList>
-              </Tabs>
-            </FadedScrollArea>
-          </nav>
-        ) : (
-          <aside className="flex min-h-0 flex-col border-r bg-inherit">
-            <nav
-              aria-label={tI18nComplete.raw('text7be318295927')}
-              className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col gap-4 overflow-y-auto px-2 pt-3 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-            >
-              <Tabs value={section} orientation="vertical" className="space-y-3">
-                {groups.map((g) => (
-                  <div key={g.group}>
-                    {showGroupLabels ? (
-                      <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
-                        {g.group}
-                      </div>
-                    ) : null}
-                    <TabsList orientation="vertical" className="w-full">
-                      {g.items.map((item) => trigger(item, false))}
-                    </TabsList>
-                  </div>
-                ))}
-              </Tabs>
-            </nav>
-          </aside>
-        )}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-          <div className="mx-auto w-full max-w-2xl px-4 py-10 pb-32 lg:py-14 lg:pb-32">{pane}</div>
-        </main>
-      </div>
-      {footer}
-    </div>
+// ─── Shared hooks ────────────────────────────────────────────────────────────
+
+function useAgentLocation(tabs: readonly AgentTab[], views: readonly AgentConfigSectionKey[]): AgentLocation {
+  const params = useUiSearchParams();
+  return resolveAgentLocation(
+    { tab: params.get('tab'), view: params.get('view'), section: params.get('section') },
+    tabs,
+    views,
   );
 }
 
-function CenteredState({ children }: { children: ReactNode }) {
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl px-6 py-16">{children}</div>
-    </div>
-  );
+/** How many triggers start this agent (kortix.yaml and runtime), and how
+ *  many grants name it. `GET /triggers/all` leaves out what the caller may not read. */
+function useAgentUseCounts(projectId: string, agentName: string, config: ProjectConfigSummary) {
+  const accountId = useProjectAccountId(projectId);
+  const canManageMembers =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { accountId }).allowed === true;
+  const triggers = useUnifiedTriggers(projectId);
+  const grants = useQuery({
+    queryKey: qk.project.resourceGrants(projectId),
+    queryFn: () => listProjectResourceGrants(projectId),
+    enabled: canManageMembers,
+    retry: false,
+    ...contract('inventory'),
+  });
+  // A trigger stored as `default` starts the project's default agent.
+  const fallback = config.default_agent ?? config.open_code_default_agent ?? null;
+  return {
+    triggerCount: triggers.data
+      ? triggers.data.triggers.filter(
+          (a) => a.target.kind === 'agent' && (a.target.agent === 'default' && fallback ? fallback : a.target.agent) === agentName,
+        ).length
+      : undefined,
+    peopleCount: grants.data
+      ? grants.data.grants.filter((g) => g.resource_type === 'agent' && g.resource_id === agentName).length
+      : undefined,
+  };
 }
 
-function AgentPageSkeleton() {
-  return (
-    <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div className="border-border/60 shrink-0 space-y-4 border-b px-5 pt-5 pb-4">
-        <Skeleton className="h-4 w-32 rounded-sm" />
-        <Skeleton className="h-8 w-56 rounded-sm" />
-      </div>
-      <div
-        className="grid min-h-0 flex-1"
-        style={{ gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
-      >
-        <div className="space-y-1.5 border-r px-2 pt-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
-            <Skeleton key={i} className="h-8 w-full rounded-sm" />
-          ))}
-        </div>
-        <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-8">
-          <Skeleton className="h-11 w-full rounded-md" />
-          <Skeleton className="h-72 w-full rounded-md" />
-        </div>
-      </div>
-    </div>
-  );
+/** The Overview's catalog totals and the connectors that need a sign-in. */
+function useOverviewFacts(
+  projectId: string,
+  agentName: string,
+  config: ProjectConfigSummary,
+  block: AgentConfigBlock,
+): OverviewFacts {
+  const queries = agentEditorOptionQueries(projectId);
+  const connectors = useQuery(queries.connectors);
+  const secrets = useQuery(queries.secrets);
+  const counts = useAgentUseCounts(projectId, agentName, config);
+  const all = connectors.data?.connectors ?? [];
+  const granted = block.connectors;
+  const needsSignIn = all
+    .filter((c) => c.status === 'needs_auth' && (granted === 'all' || (Array.isArray(granted) && granted.includes(c.slug))))
+    .map((c) => c.slug);
+  const secretIds = new Set((secrets.data?.items ?? []).map((s) => s.identifier));
+  return {
+    totals: {
+      skills: toArray(config.skills).length,
+      ...(connectors.data ? { connectors: all.length } : {}),
+      ...(secrets.data ? { secrets: secretIds.size } : {}),
+    },
+    needsSignIn,
+    ...counts,
+  };
 }
 
-// ─── Section routing ───────────────────────────────────────────────────────
+/** The header's meta line: status, space (only with spaces on), who starts it, default. */
+function useHeaderFacts(
+  projectId: string,
+  agent: Agent,
+  config: ProjectConfigSummary,
+  block: AgentConfigBlock,
+  editable: boolean,
+): HeaderFact[] {
+  const t = useI18nTranslations('agentEditor.tabs');
+  const tPage = useI18nTranslations('agentEditor.page');
+  const enabled = block.enabled !== false;
+  // Editable pages pass the draft: read it alone, so Project-wide reads as
+  // Project-wide before the save. A reader's block already carries the space.
+  const space = (editable ? block.space : (block.space ?? agent.space)) || null;
+  const mode = (block.behavior?.mode ?? agent.mode ?? 'primary').toLowerCase();
+  const isDefault = (config.default_agent ?? config.open_code_default_agent) === agent.name;
+  // Spaces are Work in progress (`project_channels`): off, no Space fact.
+  const spacesOn = useSpacesEnabled(projectId);
+  return [
+    { label: enabled ? t('enabled') : t('off'), tone: enabled ? 'success' : 'neutral' },
+    ...(spacesOn ? [{ label: space ? t('spaceValue', { space }) : t('projectWide') }] : []),
+    { label: mode === 'subagent' ? t('startSubagent') : mode === 'all' ? t('startBoth') : t('startPrimary') },
+    ...(isDefault ? [{ label: tPage('default') }] : []),
+  ];
+}
+
+interface ShareState {
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}
 
 /**
- * Which topic the page shows. Seeded from `?section=` so the Access hub and
- * the Triggers tab can deep-link one; the rail's links write the same param,
- * so the URL always names the topic on screen.
+ * The header's Share dialog. The old `?tab=people` link opens it; closing it
+ * drops that query, so a reload or a later tab click does not reopen it.
  */
-function useAgentSection(available: readonly AgentConfigSectionKey[]): AgentConfigSectionKey {
-  const searchParams = useUiSearchParams();
-  const fromUrl = searchParams.get('section');
-  if (isAgentConfigSectionKey(fromUrl) && available.includes(fromUrl)) return fromUrl;
-  return available.find((k) => k === DEFAULT_AGENT_CONFIG_SECTION) ?? available[0];
+function useShareDialog(openedByLink: boolean): ShareState {
+  const pathname = useUiPathname();
+  const router = useUiRouter();
+  const [open, setOpenState] = useState(openedByLink);
+  const setOpen = useCallback(
+    (next: boolean) => {
+      setOpenState(next);
+      if (!next && openedByLink) router.replace(pathname);
+    },
+    [openedByLink, router, pathname],
+  );
+  return { open, setOpen };
 }
-
-function sectionHrefFor(pathname: string) {
-  return (key: AgentConfigSectionKey) => `${pathname}?section=${key}`;
-}
-
-// ─── Header ────────────────────────────────────────────────────────────────
 
 /**
- * The two actions every agent has, shared by the full header and the
- * compact bar so the two cannot offer different things.
- *
- * "Start session" creates a session booted on THIS agent through the same
- * hook the sidebar's New session button uses — the same guard against double
- * clicks, the same billing gate, the same navigation. It is the page's
- * primary action because an agent exists to be run. A subagent is called by
- * other agents, never picked for a session — the composer hides it — so the
- * button is disabled with the reason, not offered.
+ * Mod+S saves the agent, only while the draft holds an edit. With nothing to
+ * save the key keeps the browser's own behavior. A key pressed inside an open
+ * dialog (an embedded screen's own editor, the secret form) belongs to that
+ * dialog, never to the agent's draft.
+ */
+function useSaveShortcut(dirty: boolean, onSave: () => void) {
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey || event.key !== 's') return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('[role="dialog"], [role="alertdialog"]')) return;
+      event.preventDefault();
+      onSave();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [dirty, onSave]);
+}
+
+/**
+ * The rail's rows, one flat list in the order of `agents.<name>` in
+ * kortix.yaml: Overview, Model, every grant (`countOf` gives its state),
+ * Workspace, then Triggers and Drives, which live outside the block. Model and
+ * Workspace show their value, or "Project default" when the block sets none.
+ */
+function useRailItems(
+  pathname: string,
+  views: readonly AgentConfigSectionKey[],
+  counts: { triggerCount?: number },
+  countOf?: (view: AgentConfigSectionKey) => string | null,
+  values: { model?: string; workspace?: string } = {},
+): AgentRailItem[] {
+  const t = useI18nTranslations('agentEditor.tabs');
+  const tPage = useI18nTranslations('agentEditor.page');
+  const catalog = useLocalizedAgentConfigCatalog();
+  const labelOf = (key: AgentConfigSectionKey) => catalog.sections.find((s) => s.key === key)?.label ?? key;
+  const viewRow = (view: AgentConfigSectionKey, count?: string): AgentRailItem[] =>
+    views.includes(view) ? [{ key: view, label: labelOf(view), href: sectionLocationHref(pathname, view), count }] : [];
+  const grants = ACCESS_VIEWS.filter((view) => view !== 'drives').flatMap((view) => viewRow(view, countOf?.(view) ?? undefined));
+  return [
+    { key: 'overview', label: t('tabOverview'), href: agentLocationHref(pathname, 'overview') },
+    ...viewRow('model', values.model ?? tPage('projectDefault')),
+    ...grants,
+    ...viewRow('workspace', values.workspace ?? tPage('projectDefault')),
+    {
+      key: 'triggers',
+      label: t('tabTriggers'),
+      href: agentLocationHref(pathname, 'triggers'),
+      count: counts.triggerCount || undefined,
+    },
+    ...viewRow('drives'),
+  ];
+}
+
+/**
+ * The rail rows as the page's top tabs: Overview, Model, Capabilities (the
+ * grants of what the agent can do), Access (what it can reach), Workspace,
+ * Triggers. A tab with several views shows them as pills.
+ */
+function useTabGroups(items: AgentRailItem[]): AgentTabGroup[] {
+  const t = useI18nTranslations('agentEditor.tabs');
+  const pick = (keys: readonly string[]) => keys.flatMap((key) => items.filter((item) => item.key === key));
+  const one = (key: string) => ({ key, label: items.find((item) => item.key === key)?.label ?? key, items: pick([key]) });
+  return [
+    one('overview'),
+    one('model'),
+    { key: 'capabilities', label: t('tabCapabilities'), items: pick(['tools', 'skills', 'subagents', 'commands', 'extensions']) },
+    { key: 'access', label: t('tabAccess'), items: pick(['connectors', 'secrets', 'apps', 'actions', 'drives']) },
+    one('workspace'),
+    one('triggers'),
+  ];
+}
+
+/** The tabs over the one scroller. */
+function TabLayout({ tabs, children }: { tabs: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {tabs}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+    </div>
+  );
+}
+
+// ─── Header actions ──────────────────────────────────────────────────────────
+
+/**
+ * Share, Start session, and the ⋯ menu. Share renders for everyone and gates
+ * itself on `project.members.manage`. The ⋯ menu needs `project.agent.write`.
+ * Start session boots a session
+ * on THIS agent through the sidebar's New session hook. A subagent is called
+ * by other agents, never picked for a session, so its button is disabled with
+ * the reason. Below `sm` Start session is an icon button.
  */
 function AgentActions({
   projectId,
   agent,
   config,
   canWrite,
+  share,
 }: {
   projectId: string;
   agent: Agent;
   config: ProjectConfigSummary;
   canWrite: boolean;
+  /** The Share dialog, owned by the page so the Overview can open it too. */
+  share: ShareState;
 }) {
+  const t = useI18nTranslations('agentEditor.tabs');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const queryClient = useQueryClient();
   const startSession = useNewProjectSession(projectId);
   const configure = useConfigureThread(projectId);
-  const [confirmEditSource, setConfirmEditSource] = useState(false);
+  const makeDefault = useDefaultAgent(projectId);
+  const [confirm, setConfirm] = useState<'edit' | 'delete' | null>(null);
   const isDefault = (config.default_agent ?? config.open_code_default_agent) === agent.name;
   const mode = agent.mode?.toLowerCase();
   const startBlocked =
     agent.enabled === false
-      ? 'This agent is disabled.'
+      ? t('startDisabled')
       : mode === 'subagent'
-        ? 'Subagents are called by other agents, not started directly.'
+        ? t('startSubagentBlocked')
         : null;
+  const startLabel = tI18nComplete.raw('textb1c52ee3677d');
+  const start = (
+    <>
+      <Button
+        size="sm"
+        disabled={startBlocked !== null}
+        onClick={() => startSession({ create: { agent_name: agent.name } })}
+        className="hidden sm:inline-flex"
+      >
+        <PlayIcon weight="fill" className="size-3.5 shrink-0" />
+        {startLabel}
+      </Button>
+      <Button
+        size="icon-base"
+        aria-label={startLabel}
+        disabled={startBlocked !== null}
+        onClick={() => startSession({ create: { agent_name: agent.name } })}
+        className="sm:hidden"
+      >
+        <PlayIcon weight="fill" className="size-3.5" />
+      </Button>
+    </>
+  );
 
-  const makeDefault = useDefaultAgent(projectId);
-
-  const pathname = useUiPathname();
   return (
-    <div className="flex shrink-0 items-center gap-2">
-      <AgentShareControl
-        projectId={projectId}
-        agentName={agent.name}
-        peopleHref={`${pathname}?section=people`}
-      />
+    <>
+      <AgentPinButton projectId={projectId} agent={agent.name} />
+      <AgentShareControl projectId={projectId} agentName={agent.name} open={share.open} onOpenChange={share.setOpen} />
       {startBlocked ? (
         <Hint label={startBlocked}>
-          {/* A span, so the tooltip still fires over a disabled button. */}
-          <span className="inline-flex">
-            <Button size="sm" disabled>
-              <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-              {tI18nComplete.raw('textb1c52ee3677d')}
-            </Button>
-          </span>
+          <span className="inline-flex">{start}</span>
         </Hint>
       ) : (
-        <Button size="sm" onClick={() => startSession({ create: { agent_name: agent.name } })}>
-          <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-          {tI18nComplete.raw('textb1c52ee3677d')}
-        </Button>
+        start
       )}
       {canWrite ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="secondary"
-              size="icon-sm"
-              aria-label={tI18nComplete.raw('textf8d46c2570e7')}
-            >
+            <Button variant="ghost" size="icon-base" aria-label={tI18nComplete.raw('textf8d46c2570e7')}>
               <DotsThreeIcon className="size-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -534,136 +615,101 @@ function AgentActions({
               onSelect={() => makeDefault.mutate(agent.name)}
             >
               <StarIcon className="size-4" />
-              {isDefault
-                ? tI18nComplete.raw('texte8cb80e5c5cb')
-                : tI18nComplete.raw('texte8f43f910a4e')}
+              {isDefault ? tI18nComplete.raw('texte8cb80e5c5cb') : tI18nComplete.raw('texte8f43f910a4e')}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={configure.pending} onSelect={() => setConfirm('edit')}>
+              <AgentMark slug="meta" />
+              {t('askToEditAgent')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              disabled={configure.pending}
-              onSelect={() => setConfirmEditSource(true)}
-            >
-              {tI18nComplete.raw('text4930821dd07b')}
+            <DropdownMenuItem variant="destructive" disabled={configure.pending} onSelect={() => setConfirm('delete')}>
+              <TrashIcon className="size-4" />
+              {t('deleteAgent', { name: agentDisplayName(agent.name) })}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
 
-      {/* Sending a prompt opens a whole new chat, which is a bigger commitment
-          than a menu row implies — confirm first, like the entity modal did. */}
+      {/* Both open a new chat with My Kortix, which proposes the change as a
+          change request. A new chat is a bigger step than a menu row, so ask. */}
       <ConfirmDialog
-        open={confirmEditSource}
-        onOpenChange={setConfirmEditSource}
-        title={tI18nComplete.raw('text24ba36a8ec86')}
-        description={tI18nComplete('text13324ae62b23', { value0: agent.name })}
+        open={confirm !== null}
+        onOpenChange={(open) => (open ? undefined : setConfirm(null))}
+        title={confirm === 'delete' ? t('deleteTitle', { name: agentDisplayName(agent.name) }) : tI18nComplete.raw('text24ba36a8ec86')}
+        description={
+          confirm === 'delete'
+            ? t('deleteBody')
+            : tI18nComplete('text13324ae62b23', { value0: agent.name })
+        }
         confirmLabel={tI18nComplete.raw('text0bce1a892dec')}
         cancelLabel={tI18nComplete.raw('text19766ed6ccb2')}
+        confirmVariant={confirm === 'delete' ? 'destructive' : 'default'}
         onConfirm={() => {
-          setConfirmEditSource(false);
-          configure.start(editConfigPrompt('agent', agent.name, agent.path));
+          const kind = confirm;
+          setConfirm(null);
+          configure.start(
+            kind === 'delete'
+              ? t('deletePrompt', { name: agent.name, path: agent.path })
+              : editConfigPrompt('agent', agent.name, agent.path),
+          );
         }}
       />
-    </div>
-  );
-}
-
-/** The status chips beside the name. Only states worth flagging. */
-function AgentChips({
-  agent,
-  config,
-  size,
-}: {
-  agent: Agent;
-  config: ProjectConfigSummary;
-  size: 'sm' | 'xs';
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const { showMode, isDefault, disabled } = agentStatus(agent, config);
-  return (
-    <span className="flex items-center gap-1.5">
-      {showMode ? (
-        <Badge variant="secondary" size={size}>
-          {formatMode(agent.mode ?? '')}
-        </Badge>
-      ) : null}
-      {isDefault ? (
-        <Badge variant="secondary" size={size}>
-          {tI18nComplete.raw('text21b111cbfe6e')}
-        </Badge>
-      ) : null}
-      {disabled ? (
-        <Badge variant="muted" size={size}>
-          {tI18nComplete.raw('text75081b593d15')}
-        </Badge>
-      ) : null}
-    </span>
+    </>
   );
 }
 
 /**
- * Breadcrumb, avatar, name, chips, actions — the full header at the top of
- * the document. `children` is rendered under the title; the read-only body
- * passes the description there.
+ * The one column every Access and Runtime view sits in, embedded resource
+ * screen or settings form alike: the same width, the same top offset.
+ * Triggers is not a view: it keeps the full width its list
+ * and detail split needs.
  */
-function AgentHeader({
-  projectId,
-  agent,
-  config,
-  canWrite,
+/** A view beside the Capabilities or Access rail, centered in the space right of the rail. */
+const RAIL_COLUMN = 'mx-auto max-w-3xl';
+/** A one-view tab (Workspace, Model): centered, the Overview's column. */
+const CENTER_COLUMN = 'mx-auto max-w-3xl';
+
+/** Frames a full resource screen in agent scope, with `lead` atop its scroller. */
+function Embedded({
+  agentName,
+  lead,
+  column,
   children,
 }: {
-  projectId: string;
-  agent: Agent;
-  config: ProjectConfigSummary;
-  canWrite: boolean;
-  children?: ReactNode;
+  agentName: string;
+  lead?: ReactNode;
+  /** The view column (`RAIL_COLUMN`); omitted for Triggers. */
+  column?: string;
+  children: ReactNode;
 }) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
-    <header className="space-y-2">
-      {/* One row (Marko, 2026-09-03): the breadcrumb's last crumb IS the
-          title — an h1 — with the status chips beside it, and every action on
-          the right. A second row for the name alone said nothing new. */}
-      <div className="flex items-center justify-between gap-3">
-        <nav
-          aria-label={tI18nComplete.raw('text2bd873d6c734')}
-          className="flex min-w-0 items-center gap-1.5 text-sm"
-        >
-          <Link
-            href={capabilityTabHref(projectId, 'agent')}
-            prefetch
-            className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
-          >
-            {tI18nComplete.raw('text279b44d2ab4b')}
-          </Link>
-          <CaretRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
-          <AgentMark slug={agent.name} />
-          <h1 className="text-foreground truncate text-sm font-semibold">
-            {isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
-          </h1>
-          <AgentChips agent={agent} config={config} size="xs" />
-        </nav>
-        <AgentActions projectId={projectId} agent={agent} config={config} canWrite={canWrite} />
-      </div>
-      {children}
-    </header>
+    // A view in a column sits beside the rail, which names no view: the screen shows its own title.
+    <CapabilityShellEmbedProvider value={{ agentName, lead, className: column, titled: column !== undefined }}>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+    </CapabilityShellEmbedProvider>
   );
 }
 
-// ─── Editable body ─────────────────────────────────────────────────────────
+/** Runtime > Model's one way out to the project-wide model screens. */
+function ProjectModelsLink({ projectId }: { projectId: string }) {
+  const t = useI18nTranslations('agentEditor.tabs');
+  return (
+    <p className="text-muted-foreground text-sm text-pretty">
+      {t.rich('projectModelsLink', {
+        link: (chunks) => (
+          <Link
+            href={adminPath(projectId, 'models')}
+            className="text-foreground decoration-border hover:decoration-foreground underline underline-offset-4 transition-colors"
+          >
+            {chunks}
+          </Link>
+        ),
+      })}
+    </p>
+  );
+}
 
-/** What a v1 project, or a reader without write, can still see. */
-const READ_ONLY_SECTIONS: readonly AgentConfigSectionKey[] = [
-  'overview',
-  'people',
-  'triggers',
-  'actions',
-  'model',
-];
-/** A platform agent (Meta) shows one page: its identity and the platform notice.
- *  Its people, triggers, model and permissions are platform-managed, not project
- *  settings to inspect here. */
-const PLATFORM_SECTIONS: readonly AgentConfigSectionKey[] = ['overview'];
+// ─── Editable body ───────────────────────────────────────────────────────────
 
 function EditableAgentPage({
   projectId,
@@ -671,6 +717,7 @@ function EditableAgentPage({
   config,
   initial,
   schemaVersion,
+  renderApps,
 }: {
   projectId: string;
   agent: Agent;
@@ -678,505 +725,468 @@ function EditableAgentPage({
   initial: AgentConfigBlock;
   /** The manifest version: v3 adds the subagent, command and extension grants. */
   schemaVersion: number;
+  renderApps?: RenderAgentApps;
 }) {
+  const tCapabilities = useI18nTranslations('agentCapabilities');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const locale = useLocale();
   const editor = useAgentDraft(initial);
   const options = useAgentEditorOptions(projectId);
+  const capabilities = useProjectCapabilities(projectId);
   const update = useUpdateAgentConfig(projectId, agent.name);
+  const configure = useConfigureThread(projectId);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const pathname = useUiPathname();
+  const drivesOn = useFeatureFlag(projectId, 'drives').enabled;
+  // A v2 agent has no extension grant, but the platform extensions its
+  // sessions load are listed (and two follow tool switches): the Extensions
+  // view opens on v2 too. The Overview counts grants, so it keeps v2's keys.
+  const overviewViews = useMemo(
+    () => agentConfigSectionKeys(schemaVersion).filter((k) => drivesOn || k !== 'drives'),
+    [schemaVersion, drivesOn],
+  );
+  const views = useMemo<AgentConfigSectionKey[]>(
+    () => (schemaVersion === 2 ? [...overviewViews, 'extensions'] : overviewViews),
+    [schemaVersion, overviewViews],
+  );
+  const location = useAgentLocation(AGENT_TABS, views);
+  const share = useShareDialog(location.open === 'share');
+  const registryOptions = useMemo(
+    () => registryGrantOptions({ manifest_raw: config.manifest_raw, agents: toArray(config.agents) }, agent.name),
+    [config.manifest_raw, config.agents, agent.name],
+  );
   const skillsOptions = toArray(config.skills).map((skill) => ({
     id: skill.name,
     label: skill.name,
     description: skill.description ?? undefined,
   }));
-  const pathname = useUiPathname();
-  // Drives exists only with Volumes on (the project's derived `drives` flag).
-  const drivesOn = useFeatureFlag(projectId, 'drives').enabled;
-  const sections = useMemo(
-    () => agentConfigSectionKeys(schemaVersion).filter((k) => drivesOn || k !== 'drives'),
-    [schemaVersion, drivesOn],
-  );
-  const registryOptions = useMemo(
-    () => registryGrantOptions({ manifest_raw: config.manifest_raw, agents: toArray(config.agents) }, agent.name),
-    [config.manifest_raw, config.agents, agent.name],
-  );
   const policySetOptions = useMemo(
     () => connectorPolicySetOptions(config.manifest_raw),
     [config.manifest_raw],
   );
-  const section = useAgentSection(sections);
+  const policySetControl = useAgentPolicySetControls(projectId, editor, policySetOptions);
+  const surface = { kind: 'agent', agentName: agent.name } as const;
+  const defaultAgent = config.default_agent ?? config.open_code_default_agent;
+  const name = agentDisplayName(agent.name);
+  const sourcePath = editor.draft.file ?? configEntitySourcePath(agent.path);
 
-  const onSave = useCallback(async () => {
-    if (!editor.isDirty || update.isPending) return;
+  const { draft, set } = editor;
+  const connectorsGrant = useAgentGrant(draft.connectors, (v) => {
+    set('connectors', v);
+    // `connectors_required` is no longer enforced: keep it inside the grant.
+    const kept = pruneRequiredConnectors(draft.connectors_required, v);
+    if (kept !== draft.connectors_required) set('connectors_required', kept);
+  });
+  const secretsGrant = useAgentGrant(draft.secrets, (v) => set('secrets', v));
+  const appsGrant = useAgentGrant(draft.apps, (v) => set('apps', v));
+
+  const facts = useOverviewFacts(projectId, agent.name, config, draft);
+  const headerFacts = useHeaderFacts(projectId, agent, config, draft, true);
+  const spacesOn = useSpacesEnabled(projectId);
+
+  const onSave = useCallback(async (): Promise<boolean> => {
+    if (!editor.isDirty || update.isPending) return !editor.isDirty;
     try {
       const response = await update.mutateAsync(editor.draft);
       editor.commit(response.block ?? editor.draft);
-      successToast(tI18nComplete('text6b0bbffdbd6e', { value0: capitalizeWords(agent.name) }));
+      successToast(tI18nComplete('text6b0bbffdbd6e', { value0: name }));
+      return true;
     } catch (e) {
       errorToast((e as Error)?.message ?? tI18nComplete.raw('text166442c65e8e'));
+      return false;
     }
-  }, [editor, update, agent.name, tI18nComplete]);
+  }, [editor, update, name, tI18nComplete]);
+  const saveNow = useCallback(() => void onSave(), [onSave]);
 
-  // Rail links change only `?section=` on this same path; the guard lets those
-  // through so switching topics never asks about unsaved edits — the draft is
-  // shared across topics and nothing is lost.
+  // Tab links change only the query on this path: the draft survives them, so
+  // the guard lets them through.
   const leaveGuard = useUnsavedChangesGuard(editor.isDirty, pathname);
-  useSaveShortcut(onSave);
+  useSaveShortcut(editor.isDirty, saveNow);
 
-  return (
-    <AgentPageFrame
-      header={<AgentHeader projectId={projectId} agent={agent} config={config} canWrite />}
-      section={section}
-      sections={sections}
-      sectionHref={sectionHrefFor(pathname)}
-      pane={
-        <AgentConfigSections
-          section={section}
-          editor={editor}
-          options={options}
-          skillsOptions={skillsOptions}
-          registryOptions={registryOptions}
-          skills={<SkillsGrantPage projectId={projectId} config={config} editor={editor} />}
-          connectors={
-            <ConnectorsGrantPage
-              projectId={projectId}
-              editor={editor}
-              policySetOptions={policySetOptions}
-            />
-          }
-          secrets={<SecretsGrantPage projectId={projectId} editor={editor} />}
-          apps={<AppsGrantPage projectId={projectId} editor={editor} />}
-          drives={<AgentDrivesSection projectId={projectId} agentName={agent.name} />}
-          overview={
-            <OverviewPane
-              description={editor.oc.description ?? ''}
-              onDescriptionChange={(next) => editor.setOc('description', next)}
-              descriptionHelp={
-                editor.oc.mode === 'subagent'
-                  ? 'Required. This is how other agents decide to call it.'
-                  : 'One line on what this agent is for. Other agents read it when picking a subagent.'
-              }
-              prompt={editor.oc.prompt ?? ''}
-              onPromptChange={(next) => editor.setOc('prompt', next)}
-            />
-          }
-          triggers={
-            <AgentTriggersSection
-              projectId={projectId}
-              agentName={agent.name}
-              defaultAgent={config.default_agent ?? config.open_code_default_agent}
-            />
-          }
-          people={<AgentPeopleSection projectId={projectId} agentName={agent.name} />}
-          authority={
-            <AgentAuthorityCard
-              projectId={projectId}
-              agentName={agent.name}
-              grant={editor.draft.kortix_permissions ?? editor.draft.kortix_cli}
-            />
-          }
+  const grantLabel = useGrantLabel();
+  // A tool's aliases go off with it (`agent` takes `task`): the tab counts tools, not names.
+  const toolAliases = new Set((capabilities.data?.tools ?? []).flatMap((tool) => tool.aliases));
+  // v2 has no extension grant: that view lists switches, no count.
+  const countOf = (view: AgentConfigSectionKey) => {
+    if (view === 'drives' || (view === 'extensions' && schemaVersion < 3)) return null;
+    const value = grantOf(draft, view);
+    const excluded = grantExcluded(value);
+    return view === 'tools' && excluded.length > 0
+      ? grantLabel({ exclude: excluded.filter((id) => !toolAliases.has(id)) })
+      : grantLabel(value);
+  };
+  const railItems = useRailItems(pathname, views, facts, countOf, {
+    model: modelName(editor.oc.model),
+    workspace: draft.sandbox,
+  });
+  const tabGroups = useTabGroups(railItems);
+  const dirtyItems = useMemo(() => changedItems(editor.draft, editor.baseline), [editor.draft, editor.baseline]);
+  const changed = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
+    dirtyItems.map((key) => railItems.find((item) => item.key === key)?.label ?? key),
+  );
+
+  const editorSection = (view: AgentConfigSectionKey) => (
+    <AgentConfigSections
+      section={view}
+      editor={editor}
+      options={options}
+      skillsOptions={skillsOptions}
+      registryOptions={registryOptions}
+      apps={null}
+      drives={
+        <AgentDrivesSection
+          projectId={projectId}
+          agentName={agent.name}
+          repositoryAccess={draft.repository_access !== false}
         />
       }
-      footer={
-        <>
-          <SaveBar
-            dirty={editor.isDirty}
-            pending={update.isPending}
-            onDiscard={() => setConfirmDiscard(true)}
-            onSave={onSave}
-          />
-
-          <ConfirmDialog
-            open={confirmDiscard}
-            onOpenChange={setConfirmDiscard}
-            title={tI18nComplete.raw('text3b13192b9d88')}
-            description={tI18nComplete('text8a36cce34f68', { value0: capitalizeWords(agent.name) })}
-            confirmLabel={tI18nComplete.raw('texteb1a70e39274')}
-            cancelLabel={tI18nComplete.raw('texte76fd2add010')}
-            confirmVariant="destructive"
-            onConfirm={() => {
-              setConfirmDiscard(false);
-              editor.discard();
-            }}
-          />
-
-          {/* The same question, asked by a link click while dirty — the
-              sidebar, a tab, the breadcrumb. Confirming leaves; cancelling
-              stays put. */}
-          <ConfirmDialog
-            open={leaveGuard.pendingHref !== null}
-            onOpenChange={(open) => {
-              if (!open) leaveGuard.stay();
-            }}
-            title={tI18nComplete.raw('text2190d03af90a')}
-            description={tI18nComplete('textbbc5a3f2ca48', { value0: capitalizeWords(agent.name) })}
-            confirmLabel={tI18nComplete.raw('textfc6e4a408d56')}
-            cancelLabel={tI18nComplete.raw('texte76fd2add010')}
-            confirmVariant="destructive"
-            onConfirm={leaveGuard.leave}
-          />
-        </>
-      }
+      sectionStyle="tab"
     />
   );
-}
 
-/**
- * The Overview topic — what the agent IS: one line of description and the
- * instructions. Laid out like a Settings pane: the pane title, then each
- * field under its own section heading. A field is its own surface; no box
- * wraps a heading and a field together.
- */
-function OverviewPane({
-  description,
-  onDescriptionChange,
-  descriptionHelp,
-  prompt,
-  onPromptChange,
-}: {
-  description: string;
-  onDescriptionChange: (next: string) => void;
-  descriptionHelp: string;
-  prompt: string;
-  onPromptChange: (next: string) => void;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const tEditor = useI18nTranslations('agentEditor');
-  return (
-    <>
-      <SettingsSectionHeader title={tEditor('overviewTitle')} className="pb-1" />
-      <EditorSection title={tI18nComplete.raw('text526e0087cc3f')} description={descriptionHelp} bare>
-        <Textarea
-          aria-label={tI18nComplete.raw('text526e0087cc3f')}
-          value={description}
-          placeholder={tI18nComplete.raw('text446f4eabf99f')}
-          minHeight={44}
-          className="text-sm"
-          onChange={(e) => onDescriptionChange(e.target.value)}
-        />
-      </EditorSection>
-      <InstructionsSection value={prompt} onChange={onPromptChange} />
-    </>
-  );
-}
-
-/**
- * The instructions — the agent's system prompt, and the thing that most IS
- * the agent. Two views of one field: Edit is the textarea, Preview renders
- * the markdown the way the agent's source file reads. It opens on Preview
- * when there is something to read and on Edit when there is not; the toggle
- * is the segmented `TabsList` at the section heading's right edge.
- */
-function InstructionsSection({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (next: string) => void;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const [view, setView] = useState<'edit' | 'preview'>(value.trim() ? 'preview' : 'edit');
-  return (
-    <EditorSection
-      title={tI18nComplete.raw('text934652dce41d')}
-      description={tI18nComplete.raw('text5fe8921b712c')}
-      trailing={
-        <Tabs value={view} onValueChange={(next) => setView(next as 'edit' | 'preview')}>
-          <TabsList aria-label={tI18nComplete.raw('texte75bb2d0d554')}>
-            <TabsTrigger value="edit">{tI18nComplete.raw('text464c4ffd019e')}</TabsTrigger>
-            <TabsTrigger value="preview">{tI18nComplete.raw('text324b134f57c7')}</TabsTrigger>
-          </TabsList>
-        </Tabs>
+  const body = (() => {
+    const view = location.view;
+    switch (location.tab) {
+      case 'overview':
+        return (
+          <AgentTabBody>
+            <AgentOverview
+              agent={agent}
+              config={config}
+              block={draft}
+              prompt={editor.oc.prompt ?? ''}
+              editor={editor}
+              sourcePath={sourcePath}
+              showSpace={spacesOn}
+              onAskMyKortix={() => configure.start(editConfigPrompt('agent', agent.name, agent.path))}
+              focusInstructions={location.open === 'instructions'}
+            />
+          </AgentTabBody>
+        );
+      case 'access':
+      case 'runtime': {
+        if (!view) return null;
+        // Every Access view is the ONE component Project admin shows for the
+        // same library, in agent mode: the agent's grant row and a switch per
+        // item over the project's catalog (Marko, 2026-10-27).
+        if (view === 'skills' || view === 'tools' || view === 'extensions') {
+          const Page = view === 'skills' ? SkillsPage : view === 'tools' ? ToolsPage : ExtensionsPage;
+          return (
+            <Embedded agentName={agent.name} column={RAIL_COLUMN}>
+              <Page
+                projectId={projectId}
+                agent={{ name: agent.name, editor }}
+                footer={
+                  view === 'tools' ? (
+                    <AgentApprovalRules
+                      projectId={projectId}
+                      editor={editor}
+                      rules={
+                        <EditorSectionStyleProvider value="panel">
+                          <ToolsSection
+                            permission={editor.oc.permission}
+                            onChange={(next) => editor.setOc('permission', next)}
+                            title={tCapabilities('rulesTitle')}
+                          />
+                        </EditorSectionStyleProvider>
+                      }
+                    />
+                  ) : undefined
+                }
+              />
+            </Embedded>
+          );
+        }
+        if (view === 'connectors')
+          return (
+            <Embedded agentName={agent.name} column={RAIL_COLUMN}>
+              <ConnectorsPage
+                projectId={projectId}
+                surface={surface}
+                grant={connectorsGrant}
+                rowControl={policySetControl}
+                agentPanel={
+                  <>
+                    <AgentPolicySetsPanel projectId={projectId} editor={editor} catalog={policySetOptions} unlistedOnly />
+                    <RequiredConnectorsNote names={draft.connectors_required} />
+                  </>
+                }
+              />
+            </Embedded>
+          );
+        if (view === 'secrets')
+          return (
+            <Embedded agentName={agent.name} column={RAIL_COLUMN}>
+              <SecretsPage projectId={projectId} surface={surface} grant={secretsGrant} />
+            </Embedded>
+          );
+        if (view === 'apps' && renderApps)
+          return (
+            <Embedded agentName={agent.name} column={RAIL_COLUMN}>
+              {renderApps({ agentName: agent.name, grant: appsGrant, needsAppRead: !grantsAppRead(draft.kortix_permissions ?? draft.kortix_cli) })}
+            </Embedded>
+          );
+        if (view === 'drives')
+          return (
+            <Embedded agentName={agent.name} column={RAIL_COLUMN}>
+              <AgentDrivesSection projectId={projectId} agentName={agent.name} repositoryAccess={draft.repository_access !== false} />
+            </Embedded>
+          );
+        // Model is this agent's model only. The project-wide gateway screens
+        // (providers, routing, costs, logs) live once, in Project admin.
+        if (view === 'model')
+          return (
+            <AgentTabBody>
+              <AgentModelView oc={editor.oc} setOc={editor.setOc} footer={<ProjectModelsLink projectId={projectId} />} />
+            </AgentTabBody>
+          );
+        return (
+          <AgentTabBody className={`${view === 'workspace' ? CENTER_COLUMN : RAIL_COLUMN} space-y-5`}>
+            <CapabilityShellEmbedProvider value={{ agentName: agent.name }}>{editorSection(view)}</CapabilityShellEmbedProvider>
+          </AgentTabBody>
+        );
       }
-      bare
-    >
-      {view === 'edit' ? (
-        <Textarea
-          aria-label={tI18nComplete.raw('text934652dce41d')}
-          value={value}
-          placeholder={tI18nComplete.raw('text1436469ad07f')}
-          minHeight={420}
-          autoFocus={value.trim().length > 0}
-          className="font-mono text-xs leading-relaxed"
-          onChange={(e) => onChange(e.target.value)}
-        />
-      ) : (
-        <div className="bg-popover min-h-[420px] rounded-md border px-5 py-4">
-          <MarkdownWithFrontmatter content={value} />
-        </div>
-      )}
-    </EditorSection>
-  );
-}
+      case 'triggers':
+        return (
+          <Embedded agentName={agent.name}>
+            <TriggersPage projectId={projectId} surface={surface} defaultAgent={defaultAgent} />
+          </Embedded>
+        );
+    }
+  })();
 
-/**
- * The save bar. Exists only while there is something to save — an always-on
- * disabled pair of buttons is chrome that never earns its row. It floats at
- * the bottom centre of the page in the Drive selection bar's shape
- * (`project-files/components/drive-selection-bar.tsx`): a `bg-popover` card
- * as wide as its content — the state as a title over one muted line, then
- * Discard and Save as a spaced pair (a confirm is never glued to its cancel).
- * It sits outside both scrollers, so it is reachable
- * from any point in a long instruction set.
- */
-function SaveBar({
-  dirty,
-  pending,
-  onDiscard,
-  onSave,
-}: {
-  dirty: boolean;
-  pending: boolean;
-  onDiscard: () => void;
-  onSave: () => void;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
-    <AnimatePresence initial={false}>
-      {dirty ? (
-        <m.div
-          key="save-bar"
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 8 }}
-          transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-          className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center px-4"
-        >
-          <div className="bg-popover text-popover-foreground border-border pointer-events-auto flex max-w-full items-center gap-3 rounded-lg border p-2 pl-3.5 shadow-md">
-            <div className="min-w-0" aria-live="polite">
-              <p className="text-foreground truncate text-sm font-medium">
-                {tI18nComplete.raw('textefa5855ff509')}
-              </p>
-              <p className="text-muted-foreground truncate text-xs">
-                {tI18nComplete.raw('textc8134fda3694')}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onDiscard}
-                disabled={pending}
-              >
-                {tI18nComplete.raw('texteb1a70e39274')}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="gap-1.5"
-                onClick={onSave}
-                disabled={pending}
-              >
-                {pending ? <Loading className="size-3.5 shrink-0" /> : null}
-                {tI18nComplete.raw('text1509f561f241')}
-                <Kbd>{tI18nComplete.raw('text8cd003e6301b')}</Kbd>
-              </Button>
-            </div>
-          </div>
-        </m.div>
-      ) : null}
-    </AnimatePresence>
+    // Embedded screens leave through the router too (a configure session):
+    // they ask the same question as a link click.
+    <LeaveGuardProvider value={leaveGuard.confirmLeave}>
+      <div className="relative flex h-full min-h-0 flex-1 flex-col">
+        <AgentIdentityHeader
+          slug={agent.name}
+          title={name}
+          facts={headerFacts}
+          actions={
+            <AgentActions
+              projectId={projectId}
+              agent={agent}
+              config={config}
+              canWrite
+              share={share}
+            />
+          }
+        />
+        <TabLayout tabs={<AgentTabBar groups={tabGroups} active={railKeyOf(location)} dirty={dirtyItems} />}>
+          <AgentSectionRail group={railGroupOf(tabGroups, railKeyOf(location))} active={railKeyOf(location)} dirty={dirtyItems}>
+            {body}
+          </AgentSectionRail>
+        </TabLayout>
+        <SaveBar
+          dirty={editor.isDirty}
+          pending={update.isPending}
+          changed={changed}
+          onDiscard={() => setConfirmDiscard(true)}
+          onSave={saveNow}
+        />
+        <ConfirmDialog
+          open={confirmDiscard}
+          onOpenChange={setConfirmDiscard}
+          title={tI18nComplete.raw('text3b13192b9d88')}
+          description={tI18nComplete('text8a36cce34f68', { value0: name })}
+          confirmLabel={tI18nComplete.raw('texteb1a70e39274')}
+          cancelLabel={tI18nComplete.raw('texte76fd2add010')}
+          confirmVariant="destructive"
+          onConfirm={() => {
+            setConfirmDiscard(false);
+            editor.discard();
+          }}
+        />
+        <LeaveDialog
+          open={leaveGuard.asking}
+          changed={changed}
+          pending={update.isPending}
+          onStay={leaveGuard.stay}
+          onLeave={leaveGuard.leave}
+          onSaveAndLeave={async () => {
+            if (await onSave()) leaveGuard.leave();
+          }}
+        />
+      </div>
+    </LeaveGuardProvider>
   );
 }
 
-/**
- * Mod+S saves. The page is a document you edit, and every editor a person
- * has used saves on that chord; without it the browser offers to save the
- * HTML, which is never what anyone meant.
- */
-function useSaveShortcut(onSave: () => void) {
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        !event.shiftKey &&
-        !event.altKey &&
-        event.key === 's'
-      ) {
-        event.preventDefault();
-        onSave();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [onSave]);
-}
+// ─── Read-only body ──────────────────────────────────────────────────────────
 
-/**
- * Holds a dirty page on the page until the person decides.
- *
- * Two exits, two guards. A tab close or a reload reaches only `beforeunload`,
- * so that is armed while dirty. An in-app link — the sidebar, a tab, the
- * breadcrumb — never fires it, and the App Router has no navigation event to
- * cancel, so anchor clicks are intercepted in the capture phase instead: the
- * click is swallowed, the target href is parked, and the page asks. `leave`
- * pushes the parked href; `stay` drops it. Modified clicks (new tab) and
- * external links pass through — nothing is lost by opening a second tab.
- */
-function useUnsavedChangesGuard(isDirty: boolean, currentPath?: string) {
-  const router = useUiRouter();
-  const [pendingHref, setPendingHref] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isDirty) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-    };
-    const onClick = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0) return;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const anchor = (event.target as Element | null)?.closest?.('a[href]');
-      if (!(anchor instanceof HTMLAnchorElement)) return;
-      if (anchor.target && anchor.target !== '_self') return;
-      if (anchor.origin !== window.location.origin) return;
-      const href = anchor.pathname + anchor.search + anchor.hash;
-      if (href === window.location.pathname + window.location.search + window.location.hash) return;
-      // A link that only changes `?section=` on this page switches topic; the
-      // draft survives that, so it never needs the question.
-      if (currentPath && anchor.pathname === currentPath) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setPendingHref(href);
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    document.addEventListener('click', onClick, true);
-    return () => {
-      window.removeEventListener('beforeunload', onBeforeUnload);
-      document.removeEventListener('click', onClick, true);
-    };
-  }, [isDirty, currentPath]);
-
-  return {
-    pendingHref,
-    stay: () => setPendingHref(null),
-    leave: () => {
-      const href = pendingHref;
-      setPendingHref(null);
-      if (href) router.push(href);
-    },
-  };
-}
-
-// ─── Read-only body ────────────────────────────────────────────────────────
+/** A reader's tabs and views: what can be shown without the editor. */
+const READ_ONLY_VIEWS: readonly AgentConfigSectionKey[] = ['actions', 'model'];
 
 function ReadOnlyAgentPage({
   projectId,
   agent,
   config,
+  block,
   canWrite,
   showUpgradeHint,
-  isPlatform,
 }: {
   projectId: string;
   agent: Agent;
   config: ProjectConfigSummary;
+  block: AgentConfigBlock;
+  /** A v1-project writer keeps Make default and Ask My Kortix to edit. */
   canWrite: boolean;
   showUpgradeHint: boolean;
-  isPlatform: boolean;
 }) {
+  const t = useI18nTranslations('agentEditor.tabs');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tUpgrades = useI18nTranslations('settings.upgrades');
-  // The real repo path, with any manifest anchor stripped. Agents declared in
-  // the manifest rather than as their own file carry one
-  // (`kortix.yaml#agents.<name>`), and reading that verbatim is a 404.
+  const pathname = useUiPathname();
   const sourcePath = configEntitySourcePath(agent.path);
+  // The served block carries the prompt when the read returned it; otherwise
+  // read the agent's source file.
   const fileQuery = useQuery({
     queryKey: ['entity-file-content', projectId, sourcePath],
     queryFn: () => readProjectFile(projectId, sourcePath),
     staleTime: 30_000,
-    // Meta's "source" is /workspace/AGENTS.md, not a repo file — reading it 404s.
-    enabled: !isPlatform,
+    enabled: block.behavior?.prompt === undefined,
   });
-  const pathname = useUiPathname();
-  const section = useAgentSection(isPlatform ? PLATFORM_SECTIONS : READ_ONLY_SECTIONS);
-
-  const source = (
-    <EditorSection
-      title={tI18nComplete.raw('text934652dce41d')}
-      description={<span className="font-mono">{sourcePath}</span>}
-      lead
-      bare
-    >
-      <div className="bg-popover overflow-hidden rounded-md border">
-        <EntityFilePane
-          path={sourcePath}
-          content={fileQuery.data?.content}
-          isLoading={fileQuery.isLoading}
-          isError={fileQuery.isError}
-          error={fileQuery.error}
-          onRetry={() => {
-            void fileQuery.refetch();
-          }}
-          skeletonRows={4}
-          errorTitle={tI18nComplete.raw('text2f2f540650bf')}
-        />
-      </div>
-    </EditorSection>
+  const prompt = block.behavior?.prompt ?? (fileQuery.data ? stripFrontmatter(fileQuery.data.content) : null);
+  const views = useMemo(() => {
+    const own = ACCESS_VIEWS.filter((v) => v === 'skills' || v === 'connectors' || v === 'secrets' || v === 'apps' || v === 'actions');
+    return [...own, 'model'] as AgentConfigSectionKey[];
+  }, []);
+  const location = useAgentLocation(AGENT_TABS, READ_ONLY_VIEWS);
+  const share = useShareDialog(location.open === 'share');
+  const facts = useOverviewFacts(projectId, agent.name, config, block);
+  const headerFacts = useHeaderFacts(projectId, agent, config, block, false);
+  const spacesOn = useSpacesEnabled(projectId);
+  const railItems = useRailItems(pathname, READ_ONLY_VIEWS, facts, undefined, {
+    model: modelName(block.behavior?.model),
+    workspace: block.sandbox,
+  });
+  const tabGroups = useTabGroups(railItems);
+  const name = agentDisplayName(agent.name);
+  // A reader has a page for Kortix permissions and Model only. Every other
+  // Access row shows its grant by name on the Overview and links nowhere.
+  const banner = (
+    <div className="space-y-3">
+      <InfoBanner tone="neutral" icon={LockSimpleIcon} title={t('readOnlyTitle')}>
+        {t.rich('readOnlyBody', { code: (chunks) => <span className="font-mono">{chunks}</span> })}
+      </InfoBanner>
+      {showUpgradeHint ? (
+        <InfoBanner tone="info" title={tI18nComplete.raw('textdc7ab144ca89')}>
+          {tUpgrades.rich('agentEditorHint', { code: (chunks) => <span className="font-mono">{chunks}</span> })}
+        </InfoBanner>
+      ) : null}
+    </div>
   );
 
+  const body = (() => {
+    switch (location.tab) {
+      case 'overview':
+        return (
+          <AgentTabBody className="space-y-6">
+            {banner}
+            <AgentOverview
+              agent={agent}
+              config={config}
+              block={block}
+              prompt={prompt}
+              sourcePath={sourcePath}
+              showSpace={spacesOn}
+            />
+          </AgentTabBody>
+        );
+      case 'access':
+      case 'runtime':
+        return (
+          <AgentTabBody className={`${location.view === 'model' || location.view === 'workspace' ? CENTER_COLUMN : RAIL_COLUMN} space-y-6`}>
+            {banner}
+            <EditorSectionStyleProvider value="panel">
+              {location.view === 'model' ? (
+                <div className="space-y-3">
+                  <AgentModel projectId={projectId} agentName={agent.name} />
+                  <p className="text-muted-foreground text-xs text-pretty">{tI18nComplete.raw('text9dee2a1acfd9')}</p>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  {/* The manifest allowlist: a v1 project's editors change its
+                      secrets and connectors here; everyone else reads it. */}
+                  <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
+                  <AgentAuthorityCard
+                    projectId={projectId}
+                    agentName={agent.name}
+                    grant={block.kortix_permissions ?? block.kortix_cli}
+                  />
+                </div>
+              )}
+            </EditorSectionStyleProvider>
+          </AgentTabBody>
+        );
+      case 'triggers':
+        // The same Triggers screen; its own controls decide what a reader may change.
+        return (
+          <Embedded agentName={agent.name}>
+            <TriggersPage
+              projectId={projectId}
+              surface={{ kind: 'agent', agentName: agent.name }}
+              defaultAgent={config.default_agent ?? config.open_code_default_agent}
+            />
+          </Embedded>
+        );
+    }
+  })();
+
   return (
-    <AgentPageFrame
-      header={
-        <AgentHeader
-          projectId={projectId}
-          agent={agent}
-          config={config}
-          canWrite={canWrite && !isPlatform}
-        >
-          {agent.description ? (
-            <p className="text-muted-foreground max-w-2xl text-sm text-pretty">
-              {agent.description}
-            </p>
-          ) : null}
-        </AgentHeader>
-      }
-      section={section}
-      sections={isPlatform ? PLATFORM_SECTIONS : READ_ONLY_SECTIONS}
-      sectionHref={sectionHrefFor(pathname)}
-      pane={
-        <EditorSectionStyleProvider value="panel">
-          <div className="space-y-8">
-            {isPlatform ? (
-              <InfoBanner tone="info" title={tI18nComplete.raw('text85b7a59cdbd5')}>
-                {tI18nComplete.raw('textd9c0c74b514b')}
-              </InfoBanner>
-            ) : showUpgradeHint ? (
-              <InfoBanner tone="info" title={tI18nComplete.raw('textdc7ab144ca89')}>
-                {tUpgrades.rich('agentEditorHint', {
-                  code: (chunks) => <span className="font-mono">{chunks}</span>,
-                })}
-              </InfoBanner>
-            ) : null}
-            {isPlatform ? null : section === 'overview' ? (
-              <>
-                {source}
-                <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
-              </>
-            ) : section === 'people' ? (
-              <AgentPeopleSection projectId={projectId} agentName={agent.name} />
-            ) : section === 'triggers' ? (
-              <AgentTriggersSection
-                projectId={projectId}
-                agentName={agent.name}
-                defaultAgent={config.default_agent ?? config.open_code_default_agent}
-              />
-            ) : section === 'actions' ? (
-              <AgentAuthorityCard
-                projectId={projectId}
-                agentName={agent.name}
-                grant={agent.scope?.kortix_permissions ?? agent.scope?.kortix_cli}
-              />
-            ) : (
-              <div className="space-y-3">
-                <AgentModel projectId={projectId} agentName={agent.name} />
-                <p className="text-muted-foreground text-xs text-pretty">
-                  {tI18nComplete.raw('text9dee2a1acfd9')}
-                </p>
-              </div>
-            )}
-          </div>
-        </EditorSectionStyleProvider>
-      }
-    />
+    <div className="relative flex h-full min-h-0 flex-1 flex-col">
+      <AgentIdentityHeader
+        slug={agent.name}
+        title={name}
+        facts={headerFacts}
+        actions={
+          <AgentActions
+            projectId={projectId}
+            agent={agent}
+            config={config}
+            canWrite={canWrite}
+            share={share}
+          />
+        }
+      />
+      <TabLayout tabs={<AgentTabBar groups={tabGroups} active={railKeyOf(location)} />}>
+        <AgentSectionRail group={railGroupOf(tabGroups, railKeyOf(location))} active={railKeyOf(location)}>
+          {body}
+        </AgentSectionRail>
+      </TabLayout>
+    </div>
+  );
+}
+
+/** A markdown file's body without its frontmatter. */
+function stripFrontmatter(content: string): string {
+  return content.replace(/^---\n[\s\S]*?\n---\n?/, '');
+}
+
+/** Whether a Kortix permissions grant lets the agent open project Apps. */
+function grantsAppRead(grant: AgentGrantSetV2 | null | undefined): boolean {
+  return grant === 'all' || (Array.isArray(grant) && grant.includes('project.app.read'));
+}
+
+/** The Model row's value: the model id after its provider (`kortix/kimi-k2` → `kimi-k2`). */
+function modelName(model: string | undefined): string | undefined {
+  return model ? model.slice(model.lastIndexOf('/') + 1) : undefined;
+}
+
+/**
+ * `connectors_required` (kortix.yaml), when the block sets it: read-only,
+ * because sessions no longer wait for these connectors.
+ */
+function RequiredConnectorsNote({ names }: { names: readonly string[] | undefined }) {
+  const t = useI18nTranslations('agentEditor.tabs');
+  if (!names || names.length === 0) return null;
+  return (
+    <section className="space-y-1">
+      <h2 className="text-sm font-medium">{t('requiredConnectors')}</h2>
+      <p className="text-foreground font-mono text-sm">{names.join(', ')}</p>
+      <p className="text-muted-foreground text-xs text-pretty">{t('requiredConnectorsHelp')}</p>
+    </section>
   );
 }

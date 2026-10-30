@@ -63,7 +63,7 @@ describe('resolveSessionSecretGrant fails closed through the real manifest loade
 
   test('a genuinely absent manifest is still the unrestricted back-compat path', async () => {
     readManifestFromRepoImpl = async () => null;
-    await expect(resolveSessionSecretGrant({ ...PROJECT, sessionAgent: 'kortix' })).resolves.toBe(
+    await expect(resolveSessionSecretGrant({ ...PROJECT, sessionAgent: 'worker' })).resolves.toBe(
       'all',
     );
   });

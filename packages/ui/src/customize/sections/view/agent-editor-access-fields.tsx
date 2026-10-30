@@ -25,6 +25,7 @@ import { CaretDownIcon, CubeIcon } from '@phosphor-icons/react';
 import { UiLink as Link } from '../../../providers/ui-provider';
 import { EditorSection, SettingRow } from './agent-editor-primitives';
 import { pruneRequiredConnectors } from './connectors-personal';
+import { plainGrant } from '../../shared/agent-resource-scope';
 import { type GrantOption, GrantSetField, KortixPermissionsField } from './grant-mode-field';
 
 type SetKortix = <K extends keyof AgentConfigBlock>(key: K, value: AgentConfigBlock[K]) => void;
@@ -122,7 +123,7 @@ export function SkillsSection({ draft, set, options }: GrantSectionProps) {
       bare
     >
       <GrantSetField
-        value={draft.skills}
+        value={plainGrant(draft.skills)}
         onChange={(v: AgentGrantSetV2) => set('skills', v)}
         options={options}
         emptyLabel={tI18nComplete.raw('text66e36043ff7c')}
@@ -221,7 +222,7 @@ export function RegistryGrantSection({
       bare
     >
       <GrantSetField
-        value={draft[grant]}
+        value={plainGrant(draft[grant])}
         onChange={(v: AgentGrantSetV2) => set(grant, v)}
         options={options}
         emptyLabel={t(`${grant}.empty`)}
@@ -269,6 +270,7 @@ export function WorkspaceSection({
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tRepository = useI18nTranslations('repositoryAccess');
+  const tTabs = useI18nTranslations('agentEditor.tabs');
   const pinned = draft.sandbox ? sandboxTemplates.find((t) => t.slug === draft.sandbox) : undefined;
   const projectDefault = defaultSandboxSlug
     ? sandboxTemplates.find((t) => t.slug === defaultSandboxSlug)
@@ -335,6 +337,15 @@ export function WorkspaceSection({
           checked={draft.repository_access ?? true}
           onCheckedChange={(enabled) => set('repository_access', enabled)}
         />
+      </SettingRow>
+
+      {/* `network_egress` (kortix.yaml): declared only, so it reads, never edits. */}
+      <SettingRow label={tTabs('networkEgress')}>
+        <span className="text-muted-foreground text-sm text-pretty sm:text-right">
+          {(draft as { network_egress?: unknown }).network_egress
+            ? tTabs('networkEgressDeclared')
+            : tTabs('networkEgressNone')}
+        </span>
       </SettingRow>
     </EditorSection>
   );

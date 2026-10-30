@@ -168,26 +168,6 @@ export async function deliverTeamsFollowUpToSession(input: {
   });
 }
 
-/**
- * The RUNNING AGENT's granted env names, resolved lazily — a `codex/*` model
- * needs `CODEX_AUTH_JSON` there or the gateway refuses the turn. Only called
- * when a codex candidate is actually reached.
- */
-export function agentGrantEnvFor(
-  project: { projectId: string } & Record<string, unknown>,
-  agentName: string | null,
-): () => Promise<readonly string[] | 'all' | null> {
-  return async () => {
-    // A resolution failure is NOT "unrestricted": returning an empty list
-    // makes `grantAllowsCodex` fail closed, so a turn is never pinned to a
-    // ChatGPT-backed model this agent might not be allowed to use.
-    const grant = await resolveAgentGrant(agentName || 'default', project as never).catch(() => undefined);
-    if (grant === undefined) return [];
-    const env = (grant as { env?: readonly string[] | 'all' } | null)?.env;
-    return env ?? null;
-  };
-}
-
 /** The project's default agent, as its manifest mirror records it. */
 function projectDefaultAgentOf(metadata: unknown): string | null {
   const value = (metadata as Record<string, unknown> | null | undefined)?.default_agent;
@@ -302,7 +282,6 @@ export interface TeamsFollowUp {
   accountId: string;
   /** The project row, for the conversation's model scope. */
   project: { projectId: string; accountId: string; metadata: unknown };
-  agentGrantEnv?: () => Promise<readonly string[] | 'all' | null>;
   tenantId: string;
   conversationId: string;
   sessionId: string;
@@ -422,7 +401,6 @@ export async function deliverAdmittedFollowUp(
     session: { sessionId, ownerUserId: input.sessionOwnerId, pinnedModel: currentModel },
     chosenModel: selection?.opencodeModel,
     hasImage,
-    agentGrantEnv: input.agentGrantEnv,
   });
   // Nothing reachable can read the image. Say so in the prompt rather than
   // letting the agent discover it by calling `read` and finding nothing — that
@@ -565,7 +543,6 @@ export async function createOrJoinTeamsConversationSession(input: {
         accountId: project.accountId,
         project,
         // The session's own agent: its secret grant decides which keys it may use.
-        agentGrantEnv: agentGrantEnvFor(project, existing.agentName ?? null),
         tenantId,
         conversationId,
         sessionId: existing.sessionId,
@@ -606,7 +583,6 @@ export async function createOrJoinTeamsConversationSession(input: {
         projectId,
         accountId: project.accountId,
         project,
-        agentGrantEnv: agentGrantEnvFor(project, row?.agentName ?? null),
         tenantId,
         conversationId,
         sessionId,
@@ -657,7 +633,6 @@ export async function createOrJoinTeamsConversationSession(input: {
     chosenModel: selection?.opencodeModel,
     agentName: selection?.agentName || projectDefaultAgentOf(project.metadata),
     hasImage: teamsMessageHasImage(activity),
-    agentGrantEnv: agentGrantEnvFor(project, selection?.agentName ?? null),
   });
   const createModel = start.model;
   // Frozen at start: a later `/policy` change applies to NEW sessions only.

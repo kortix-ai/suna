@@ -249,12 +249,16 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   drive: (rest) => runDrive(rest),
   cr: (rest) => runCr(rest),
   review: (rest) => runReview(rest),
+  // Hidden alias, not in the command table: the name `automations` had before Triggers won. Its `add` was runtime.
+  automations: (rest) => runTriggers(rest[0] === 'add' || rest[0] === 'create' ? [...rest, '--runtime'] : rest),
   triggers: (rest) => runTriggers(rest),
+  loops: (rest) => runReminders(rest),
   reminders: (rest) => runReminders(rest),
   chrome: (rest) => runChrome(rest),
   goals: (rest) => runGoals(rest),
   artifacts: (rest) => runArtifacts(rest),
   capture: (rest) => runCapture(rest),
+  loop: (rest) => runReminders(rest, true),
   remind: (rest) => runReminders(rest, true),
   connectors: (rest) => runConnectors(rest),
   secrets: (rest) => runSecrets(rest),
@@ -488,6 +492,10 @@ function closestCommand(input: string): string | undefined {
 }
 
 function printActiveHostNotice(argv: readonly string[]): void {
+  // An agent in a session box runs the CLI from its shell, which captures
+  // stderr into the chat: the host line repeated on every call. It is for a
+  // person at a terminal, so a box without a TTY gets none.
+  if (process.env.KORTIX_SESSION_ID && !process.stderr.isTTY) return;
   const notice = renderHostNotice(argv);
   if (notice) process.stderr.write(notice);
 }

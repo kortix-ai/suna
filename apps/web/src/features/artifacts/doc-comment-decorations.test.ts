@@ -11,7 +11,7 @@ import {
   docCommentPluginKey,
   scrollDocCommentHighlight,
 } from './doc-comment-decorations';
-import { markdownToHtml } from './markdown';
+import { markdownToHtml } from '@kortix/ui/markdown/doc-editor/markdown';
 
 const window = new Window();
 const schema = getSchema([StarterKit]);

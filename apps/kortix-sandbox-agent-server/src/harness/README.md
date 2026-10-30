@@ -794,10 +794,12 @@ describes.
   `/workspace` (`resolvePiV3SkillDirectories`). The image default has no
   project skill. pi does not scan `skills/` or the legacy dir. The agent's
   `permission.skill` allowlist still hides every skill it does not grant.
-- **Subagents.** No built-in `general` or `explore`. The `task` tool offers
+- **Subagents.** No built-in `general` or `explore`. The `agent` tool offers
   only declared, enabled agents with `mode` `subagent` or `all` that the
   calling agent's `permission.task` rule does not deny. The rule's subject is
   `subagent_type`, so a call to a denied name is refused before it runs.
+  The tool also takes an inline ephemeral agent (no manifest entry); the
+  session's tool rules still gate every call its child makes.
 - **Commands.** `GET /command` lists every `compiled.commands` entry with its
   `agents`. `POST /session/:id/command` runs on the body's `agent`, else the
   session's agent. An agent outside `agents` gets `403 { error:
@@ -947,7 +949,7 @@ pi's jiti loader. In the compiled daemon, pi supplies `typebox` and the
 `@earendil-works/pi-*` peers as virtual modules: a compiled probe loaded a
 TypeScript package importing both in 24 ms, and its tool ran.
 
-In-process extensions are `InlineExtension`s (`{ name, factory }`): `subagents`,
+In-process extensions are `InlineExtension`s (`{ name, factory }`): `kortix-subagents`,
 the hidden `kortix-turn`, which adds a prompt's `system` field for that turn,
 the hidden `kortix-nested-calls` gate and `codemode`.
 
@@ -967,9 +969,9 @@ default: the other tools stay declared), `only` (requests declare codemode alone
   `agent.beforeToolCall`, where the policy sits (`toolGate`). `nestedCallGate`, first in the
   extension list (pi stops at the first block), applies the root rule to every call with a
   parent: `deny` blocks, `ask` attaches to the call's own part when it has one (below), else to
-  the codemode part. `task` and `question` are refused from a script (a subagent thread links to
-  its root `task` call; a question needs the model-issued call it answers). A nested call runs
-  in parallel with its siblings unless its tool is `sequential` (pi's `NestedToolCallRunner`):
+  the codemode part. `agent`/`task` and `question` are refused from a script (a subagent thread
+  links to its root `agent` call; a question needs the model-issued call it answers). A nested call
+  runs in parallel with its siblings unless its tool is `sequential` (pi's `NestedToolCallRunner`):
   `Promise.all` over `tools.image_gen()` generates the images at the same time.
   A tool the agent's tool access turns off is not callable from a script either (pi offers
   scripts only active tools).
@@ -1042,29 +1044,83 @@ Child sessions have no `AgentSession`; the runtime routes their tool, context an
 provider hooks to the same runner. `ctx.ui` has no UI bound (`hasUI` is false):
 tools and events work, TUI-only rendering does nothing.
 
-`subagents` registers the `task` tool: input `{ description, prompt,
-subagent_type, task_id? }`, the child id in the part's `metadata.sessionId`
-(set while the child runs), output `task_id: <id>` + `<task_result>`. Each call
+`kortix-subagents` is the `agent` tool (OpenCode called it `task`): input `{
+description, prompt, subagent_type?, agent?, task_id?, session? }`, the child id
+in the part's `metadata.sessionId` (set while the child runs), output `task_id:
+<id>`, a `session: separate|same` line (with the reason when a separate call
+ran in this session), then `<task_result>`. It registers under two names with
+one handler — `agent` (use this) and `task` (a deprecated alias kept so
+OpenCode-era prompts and sessions keep working); both are callable and behave
+identically.
+
+`session` picks where each call runs, per call (`cloud-subagent.ts`
+`routeSubagent`):
+
+| `session` | Where the child runs | Use it for |
+| --- | --- | --- |
+| `separate` (default) | Its own new Kortix session and sandbox, linked to this session as its parent, listed in the sidebar, alive after this turn. | Real tasks, long or parallel work, a whole job handed to another agent. |
+| `same` | In process, in a child session of this session. No boot, no extra sandbox. | Quick lookups and small sub-steps. |
+
+A `separate` call runs as `same`, and the result says why, when the box has
+no control plane (no
+`KORTIX_API_URL`, project id or `KORTIX_TOKEN`). It never fails for that
+reason. A `task_id` resumes the child in the mode it was created in: an id this
+session holds in process is `same`, any other id is a separate session.
+
+A `same` call
 runs an in-process pi agent in a child session (`parentID` = root), with its
 own wire transcript served by `/session`, `/session/:id`,
 `/session/:id/message`, `/session/:root/children`, the state document and
 `/kortix/runtime/messages/:id`, and persisted in the root's dump so `task_id`
-resumes it after a restart. Types: `general` (all workspace and Kortix tools), `explore`
+resumes it after a restart. A call picks one of two sources. A named
+`subagent_type`: `general` (all workspace and Kortix tools), `explore`
 (`bash`/`read`/`glob`/`grep`), and every compiled agent with `mode: subagent`
 or `all`; v3 has only the declared agents. The calling agent's
 `permission.task` rule (subject: `subagent_type`) removes a denied type from
-the list and refuses a call to it. A child gets no `task` (no nesting) and no `question`. On the root,
-several task calls in one message run concurrently; a batch that includes
-any other tool stays sequential (see "Tool concurrency" below). A child runs
-its own calls one at a time (`toolExecution: 'sequential'`). A child session is read-only (prompts to it answer 501).
+the list and refuses a call to it. Or an inline ephemeral agent `agent: {
+instructions, model?, tools?, description? }`, defined on the fly with no
+manifest entry, run under the agent name `inline`; it has no name to deny, so
+the session's own tool rules are its only gate. A `same` child gets no
+`agent`/`task` (no nesting) and no `question`. On the root, several `agent`
+calls in one message run concurrently; a batch that includes any other tool
+stays sequential (see "Tool concurrency" below). A child runs its own calls one
+at a time (`toolExecution: 'sequential'`). A child session is read-only
+(prompts to it answer 501).
 A child's calls are checked against the subagent's own rules and the session's
 rules; a `deny` from either wins, so delegating never unlocks a denied call.
 
+**Separate sessions** (`session: "separate"`, the default; no project
+setting, the model picks per call). The
+call is a real child session (`harness/pi/cloud-subagent.ts`):
+`POST /v1/projects/:id/sessions` with the
+box token, which links the child to this session and authorizes every later
+read of it. A named agent runs as itself; `general`, `explore` and an inline
+spec run as the parent's resolved agent (never the `default` sentinel; the
+platform coordinator sends none), with the spec's instructions in
+`initial_context`. Every child, named ones included, gets the parent agent's
+effective tool list (the tools that pass `rootToolAllowed`), intersected with
+the spec's list, in `runtime_context` `kortix.subagent.tools`. The child's
+runtime narrows its tools to that list, so a child never has a tool its parent
+lacks, as on the in-process path. `variant` and the spec `permission` are not
+sent: the child applies its own agent's. The result text comes from
+`GET …/sessions/:child/transcript?detail=full`, read only from the messages
+after the last user message (the turn this call started): a failed last
+assistant message is an error, and an earlier turn's report is never
+returned. `task_id` sends a follow-up through `POST …/sessions/:child/prompts`
+to a child of this session only. An aborted call, and a wait past the 30 min
+ceiling, stop the child. Guardrails: at most
+`KORTIX_PI_CLOUD_SUBAGENTS_MAX` (4) children wait at once per parent, and a
+session at depth `KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH` (2, from
+`kortix.subagent.depth`) starts no separate child. Both refuse the call with
+an error that names `session: "same"` as the way to run it here. A separate
+child runs its own pi with the `agent` tool, so it may delegate again up to
+that depth.
+
 **Tool concurrency.** The root agent runs `toolExecution: 'parallel'`. Every
 built-in tool is `executionMode: 'sequential'` except `PARALLEL_TOOLS`
-(`image_gen`, `runtime.ts`); `task` is parallel too. pi-agent-core runs a
+(`image_gen`, `runtime.ts`); `agent` (and its `task` alias) is parallel too. pi-agent-core runs a
 model step's calls concurrently only when none of them is `sequential`, so
-several `image_gen` (or `task`) calls in one step run at once and a mixed step
+several `image_gen` (or `agent`) calls in one step run at once and a mixed step
 runs in order. A codemode script's nested calls follow the same per-tool mode
 (pi's `NestedToolCallRunner`).
 

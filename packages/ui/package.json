@@ -64,18 +64,15 @@
     "./context-menu": "./src/primitives/context-menu.tsx",
     "./count-badge": "./src/primitives/count-badge.tsx",
     "./customize": "./src/customize/index.ts",
+    "./customize/agents/agent-apps-grant": "./src/customize/agents/agent-apps-grant.ts",
     "./customize/agents/agent-detail-aside": "./src/customize/agents/agent-detail-aside.tsx",
     "./customize/agents/agent-page": "./src/customize/agents/agent-page.tsx",
     "./customize/agents/agents-page": "./src/customize/agents/agents-page.tsx",
     "./customize/connectors/connector-routes": "./src/customize/connectors/connector-routes.ts",
     "./customize/connectors/connectors-app-return-bar": "./src/customize/connectors/connectors-app-return-bar.tsx",
-    "./customize/connectors/connectors-page": "./src/customize/connectors/connectors-page.tsx",
     "./customize/connectors/detail/app-page": "./src/customize/connectors/detail/app-page.tsx",
     "./customize/connectors/detail/connector-page": "./src/customize/connectors/detail/connector-page.tsx",
     "./customize/migrate-to-v2/upgrade-view": "./src/customize/migrate-to-v2/upgrade-view.tsx",
-    "./customize/models/models-page": "./src/customize/models/models-page.tsx",
-    "./customize/project-settings/project-settings-page": "./src/customize/project-settings/project-settings-page.tsx",
-    "./customize/secrets/secrets-page": "./src/customize/secrets/secrets-page.tsx",
     "./customize/sections/add-account-fields": "./src/customize/sections/add-account-fields.tsx",
     "./customize/sections/component/email-connect-form": "./src/customize/sections/component/email-connect-form.tsx",
     "./customize/sections/component/manifest-copy-block": "./src/customize/sections/component/manifest-copy-block.tsx",
@@ -114,17 +111,17 @@
     "./customize/settings/tabs/snapshots-tab": "./src/customize/settings/tabs/snapshots-tab.tsx",
     "./customize/settings/tabs/tokens-tab": "./src/customize/settings/tabs/tokens-tab.tsx",
     "./customize/settings/type": "./src/customize/settings/type.ts",
+    "./customize/shared/agent-resource-scope": "./src/customize/shared/agent-resource-scope.tsx",
     "./customize/shared/capability-access-gate": "./src/customize/shared/capability-access-gate.tsx",
+    "./customize/shared/capability-page-shell": "./src/customize/shared/capability-page-shell.tsx",
     "./customize/shared/capability-skeleton": "./src/customize/shared/capability-skeleton.tsx",
-    "./customize/shared/capability-tabs": "./src/customize/shared/capability-tabs.tsx",
+    "./customize/shared/customize-tab-bar": "./src/customize/shared/customize-tab-bar.tsx",
     "./customize/shared/entity/entity-files": "./src/customize/shared/entity/entity-files.ts",
     "./customize/shared/feature-gate-screen": "./src/customize/shared/feature-gate-screen.tsx",
     "./customize/shared/use-customize-prefetch": "./src/customize/shared/use-customize-prefetch.ts",
     "./customize/shared/with-search": "./src/customize/shared/with-search.ts",
-    "./customize/skills/skills-page": "./src/customize/skills/skills-page.tsx",
     "./customize/triggers/schedule-view": "./src/customize/triggers/schedule-view.tsx",
     "./customize/triggers/schedule/schedule-copy": "./src/customize/triggers/schedule/schedule-copy.ts",
-    "./customize/triggers/triggers-page": "./src/customize/triggers/triggers-page.tsx",
     "./data-grid": "./src/primitives/data-grid.tsx",
     "./date-range-picker": "./src/primitives/date-range-picker.tsx",
     "./definition-list": "./src/primitives/definition-list.tsx",
@@ -344,7 +341,6 @@
     "./internal/notifications/notification-rows": "./src/internal/notifications/notification-rows.ts",
     "./internal/notifications/session-toast-cards": "./src/internal/notifications/session-toast-cards.tsx",
     "./internal/notifications/web-push": "./src/internal/notifications/web-push.ts",
-    "./internal/reminders/use-refetch-after-fire": "./src/internal/reminders/use-refetch-after-fire.ts",
     "./internal/session-types/index": "./src/internal/session-types/index.ts",
     "./internal/session-types/types": "./src/internal/session-types/types.ts",
     "./internal/stores/account-panel-store": "./src/internal/stores/account-panel-store.ts",
@@ -384,7 +380,6 @@
     "./kortix-loader": "./src/primitives/kortix-loader.tsx",
     "./kortix-logo": "./src/primitives/kortix-logo.tsx",
     "./label": "./src/primitives/label.tsx",
-    "./lib/favicon": "./src/lib/favicon.ts",
     "./lib/host-env": "./src/lib/host-env.ts",
     "./lib/icon-config": "./src/lib/icon-config.ts",
     "./lib/telemetry": "./src/lib/telemetry.ts",
@@ -395,6 +390,10 @@
     "./map": "./src/primitives/map.tsx",
     "./markdown": "./src/markdown/index.tsx",
     "./markdown/copy-button": "./src/markdown/copy-button.tsx",
+    "./markdown/doc-editor/doc-embed": "./src/markdown/doc-editor/doc-embed.tsx",
+    "./markdown/doc-editor/doc-extensions": "./src/markdown/doc-editor/doc-extensions.tsx",
+    "./markdown/doc-editor/doc-menus": "./src/markdown/doc-editor/doc-menus.tsx",
+    "./markdown/doc-editor/markdown": "./src/markdown/doc-editor/markdown.ts",
     "./markdown/setup-links/api-base": "./src/markdown/setup-links/api-base.ts",
     "./markdown/setup-links/approval-decision": "./src/markdown/setup-links/approval-decision.tsx",
     "./markdown/setup-links/connector-handshake": "./src/markdown/setup-links/connector-handshake.tsx",
@@ -519,6 +518,7 @@
     "./user-avatar": "./src/primitives/user-avatar.tsx",
     "./wallpaper-shaders": "./src/primitives/wallpaper-shaders.tsx",
     "./workspace": "./src/workspace/index.ts",
+    "./workspace/admin/project-admin-dashboard": "./src/workspace/admin/project-admin-dashboard.tsx",
     "./workspace/home/access-requests-bell": "./src/workspace/home/access-requests-bell.tsx",
     "./workspace/home/first-chat": "./src/workspace/home/first-chat.tsx",
     "./workspace/home/mobile-app-promo": "./src/workspace/home/mobile-app-promo.tsx",
@@ -547,7 +547,6 @@
     "./workspace/review/mock-data": "./src/workspace/review/mock-data.ts",
     "./workspace/review/review-center": "./src/workspace/review/review-center.tsx",
     "./workspace/review/types": "./src/workspace/review/types.ts",
-    "./workspace/sidebar/customize-sidebar-modal": "./src/workspace/sidebar/customize-sidebar-modal.tsx",
     "./workspace/sidebar/footer/project-apps-nav": "./src/workspace/sidebar/footer/project-apps-nav.tsx",
     "./workspace/sidebar/footer/project-balance-warning": "./src/workspace/sidebar/footer/project-balance-warning.tsx",
     "./workspace/sidebar/footer/project-computer-nav": "./src/workspace/sidebar/footer/project-computer-nav.tsx",
@@ -563,7 +562,8 @@
     "./workspace/sidebar/session-section-labels": "./src/workspace/sidebar/session-section-labels.ts",
     "./workspace/sidebar/session-source-icons": "./src/workspace/sidebar/session-source-icons.ts",
     "./workspace/sidebar/workspace-grouping": "./src/workspace/sidebar/workspace-grouping.ts",
-    "./workspace/sidebar/workspace-menu-section": "./src/workspace/sidebar/workspace-menu-section.tsx"
+    "./workspace/sidebar/workspace-menu-section": "./src/workspace/sidebar/workspace-menu-section.tsx",
+    "./workspace/space/space-page": "./src/workspace/space/space-page.tsx"
   },
   "publishConfig": {
     "access": "public",
@@ -728,6 +728,10 @@
         "types": "./dist/customize/index.d.ts",
         "import": "./dist/customize/index.js"
       },
+      "./customize/agents/agent-apps-grant": {
+        "types": "./dist/customize/agents/agent-apps-grant.d.ts",
+        "import": "./dist/customize/agents/agent-apps-grant.js"
+      },
       "./customize/agents/agent-detail-aside": {
         "types": "./dist/customize/agents/agent-detail-aside.d.ts",
         "import": "./dist/customize/agents/agent-detail-aside.js"
@@ -748,10 +752,6 @@
         "types": "./dist/customize/connectors/connectors-app-return-bar.d.ts",
         "import": "./dist/customize/connectors/connectors-app-return-bar.js"
       },
-      "./customize/connectors/connectors-page": {
-        "types": "./dist/customize/connectors/connectors-page.d.ts",
-        "import": "./dist/customize/connectors/connectors-page.js"
-      },
       "./customize/connectors/detail/app-page": {
         "types": "./dist/customize/connectors/detail/app-page.d.ts",
         "import": "./dist/customize/connectors/detail/app-page.js"
@@ -763,18 +763,6 @@
       "./customize/migrate-to-v2/upgrade-view": {
         "types": "./dist/customize/migrate-to-v2/upgrade-view.d.ts",
         "import": "./dist/customize/migrate-to-v2/upgrade-view.js"
-      },
-      "./customize/models/models-page": {
-        "types": "./dist/customize/models/models-page.d.ts",
-        "import": "./dist/customize/models/models-page.js"
-      },
-      "./customize/project-settings/project-settings-page": {
-        "types": "./dist/customize/project-settings/project-settings-page.d.ts",
-        "import": "./dist/customize/project-settings/project-settings-page.js"
-      },
-      "./customize/secrets/secrets-page": {
-        "types": "./dist/customize/secrets/secrets-page.d.ts",
-        "import": "./dist/customize/secrets/secrets-page.js"
       },
       "./customize/sections/add-account-fields": {
         "types": "./dist/customize/sections/add-account-fields.d.ts",
@@ -928,17 +916,25 @@
         "types": "./dist/customize/settings/type.d.ts",
         "import": "./dist/customize/settings/type.js"
       },
+      "./customize/shared/agent-resource-scope": {
+        "types": "./dist/customize/shared/agent-resource-scope.d.ts",
+        "import": "./dist/customize/shared/agent-resource-scope.js"
+      },
       "./customize/shared/capability-access-gate": {
         "types": "./dist/customize/shared/capability-access-gate.d.ts",
         "import": "./dist/customize/shared/capability-access-gate.js"
+      },
+      "./customize/shared/capability-page-shell": {
+        "types": "./dist/customize/shared/capability-page-shell.d.ts",
+        "import": "./dist/customize/shared/capability-page-shell.js"
       },
       "./customize/shared/capability-skeleton": {
         "types": "./dist/customize/shared/capability-skeleton.d.ts",
         "import": "./dist/customize/shared/capability-skeleton.js"
       },
-      "./customize/shared/capability-tabs": {
-        "types": "./dist/customize/shared/capability-tabs.d.ts",
-        "import": "./dist/customize/shared/capability-tabs.js"
+      "./customize/shared/customize-tab-bar": {
+        "types": "./dist/customize/shared/customize-tab-bar.d.ts",
+        "import": "./dist/customize/shared/customize-tab-bar.js"
       },
       "./customize/shared/entity/entity-files": {
         "types": "./dist/customize/shared/entity/entity-files.d.ts",
@@ -956,10 +952,6 @@
         "types": "./dist/customize/shared/with-search.d.ts",
         "import": "./dist/customize/shared/with-search.js"
       },
-      "./customize/skills/skills-page": {
-        "types": "./dist/customize/skills/skills-page.d.ts",
-        "import": "./dist/customize/skills/skills-page.js"
-      },
       "./customize/triggers/schedule-view": {
         "types": "./dist/customize/triggers/schedule-view.d.ts",
         "import": "./dist/customize/triggers/schedule-view.js"
@@ -967,10 +959,6 @@
       "./customize/triggers/schedule/schedule-copy": {
         "types": "./dist/customize/triggers/schedule/schedule-copy.d.ts",
         "import": "./dist/customize/triggers/schedule/schedule-copy.js"
-      },
-      "./customize/triggers/triggers-page": {
-        "types": "./dist/customize/triggers/triggers-page.d.ts",
-        "import": "./dist/customize/triggers/triggers-page.js"
       },
       "./data-grid": {
         "types": "./dist/primitives/data-grid.d.ts",
@@ -1842,10 +1830,6 @@
         "types": "./dist/internal/notifications/web-push.d.ts",
         "import": "./dist/internal/notifications/web-push.js"
       },
-      "./internal/reminders/use-refetch-after-fire": {
-        "types": "./dist/internal/reminders/use-refetch-after-fire.d.ts",
-        "import": "./dist/internal/reminders/use-refetch-after-fire.js"
-      },
       "./internal/session-types/index": {
         "types": "./dist/internal/session-types/index.d.ts",
         "import": "./dist/internal/session-types/index.js"
@@ -2002,10 +1986,6 @@
         "types": "./dist/primitives/label.d.ts",
         "import": "./dist/primitives/label.js"
       },
-      "./lib/favicon": {
-        "types": "./dist/lib/favicon.d.ts",
-        "import": "./dist/lib/favicon.js"
-      },
       "./lib/host-env": {
         "types": "./dist/lib/host-env.d.ts",
         "import": "./dist/lib/host-env.js"
@@ -2045,6 +2025,22 @@
       "./markdown/copy-button": {
         "types": "./dist/markdown/copy-button.d.ts",
         "import": "./dist/markdown/copy-button.js"
+      },
+      "./markdown/doc-editor/doc-embed": {
+        "types": "./dist/markdown/doc-editor/doc-embed.d.ts",
+        "import": "./dist/markdown/doc-editor/doc-embed.js"
+      },
+      "./markdown/doc-editor/doc-extensions": {
+        "types": "./dist/markdown/doc-editor/doc-extensions.d.ts",
+        "import": "./dist/markdown/doc-editor/doc-extensions.js"
+      },
+      "./markdown/doc-editor/doc-menus": {
+        "types": "./dist/markdown/doc-editor/doc-menus.d.ts",
+        "import": "./dist/markdown/doc-editor/doc-menus.js"
+      },
+      "./markdown/doc-editor/markdown": {
+        "types": "./dist/markdown/doc-editor/markdown.d.ts",
+        "import": "./dist/markdown/doc-editor/markdown.js"
       },
       "./markdown/setup-links/api-base": {
         "types": "./dist/markdown/setup-links/api-base.d.ts",
@@ -2524,6 +2520,10 @@
         "types": "./dist/workspace/index.d.ts",
         "import": "./dist/workspace/index.js"
       },
+      "./workspace/admin/project-admin-dashboard": {
+        "types": "./dist/workspace/admin/project-admin-dashboard.d.ts",
+        "import": "./dist/workspace/admin/project-admin-dashboard.js"
+      },
       "./workspace/home/access-requests-bell": {
         "types": "./dist/workspace/home/access-requests-bell.d.ts",
         "import": "./dist/workspace/home/access-requests-bell.js"
@@ -2636,10 +2636,6 @@
         "types": "./dist/workspace/review/types.d.ts",
         "import": "./dist/workspace/review/types.js"
       },
-      "./workspace/sidebar/customize-sidebar-modal": {
-        "types": "./dist/workspace/sidebar/customize-sidebar-modal.d.ts",
-        "import": "./dist/workspace/sidebar/customize-sidebar-modal.js"
-      },
       "./workspace/sidebar/footer/project-apps-nav": {
         "types": "./dist/workspace/sidebar/footer/project-apps-nav.d.ts",
         "import": "./dist/workspace/sidebar/footer/project-apps-nav.js"
@@ -2703,6 +2699,10 @@
       "./workspace/sidebar/workspace-menu-section": {
         "types": "./dist/workspace/sidebar/workspace-menu-section.d.ts",
         "import": "./dist/workspace/sidebar/workspace-menu-section.js"
+      },
+      "./workspace/space/space-page": {
+        "types": "./dist/workspace/space/space-page.d.ts",
+        "import": "./dist/workspace/space/space-page.js"
       }
     },
     "files": [
@@ -2832,7 +2832,14 @@
     "uqr": "0.1.3",
     "use-intl": "^4.13.4",
     "vaul": "^1.1.2",
-    "zustand": "^5.0.3"
+    "zustand": "^5.0.3",
+    "@tiptap/extension-code": "3.30.5",
+    "@tiptap/extension-code-block": "3.30.5",
+    "@tiptap/extension-image": "3.30.5",
+    "marked": "^16.4.2",
+    "turndown": "^7.2.1",
+    "turndown-plugin-gfm": "^1.0.2",
+    "yaml": "^2.8.2"
   },
   "peerDependencies": {
     "@kortix/sdk": "workspace:^",
@@ -2887,6 +2894,7 @@
     "tsc-alias": "^1.8.17",
     "tsup": "^8.5.1",
     "tw-animate-css": "^1.2.4",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "@types/turndown": "^5.0.5"
   }
 }

@@ -1,5 +1,21 @@
 # Stage 1 as built: the goal loop
 
+## Engine on GOAL.md (2026-10-28, branch project-admin)
+
+Supersedes the `goal.json` format and the lifecycle below; the platform
+parts, the flag gate and the UI table still hold. A legacy `goal.json`
+folder still lists and reads.
+
+| Part | Where |
+| --- | --- |
+| `GOAL.md` front matter (goal, state, assigned_user, assigned_agent, done_criteria, links, waiting_on, heartbeat, max_wakes_per_day, max_sessions, sessions, transitions, wake counters) | `packages/sdk/src/core/rest/projects-client/goal-file.ts` (`parseGoalFile`, `formatGoalFile`; YAML subset, no dependency) |
+| Lifecycle draft → active ⇄ waiting_on_user → verifying → done / back to active; any → stopped | `apps/cli/src/commands/goals.ts`: `transitionViolations`, `verifyViolations`, `verdictViolations` |
+| Only the current verifier, never an owner, sets done (`kortix goals verdict`); `verify` starts the verifier itself, no session contract | same file, `verifyGoal`, `verdictGoal`; contract exception in `sessions-files.ts` `SESSION_CONTRACT` |
+| One owner at a time; `handover` starts a fresh owner | `handoverGoal`; kortixd finds the last `role: owner` (`harness/shared/on-idle-hook.ts`) |
+| Caps: wakes per UTC day (the heartbeat moves to the next day), sessions per goal | `recordWake`, `repair` (run by `check --enforce` after each owner turn) |
+| Wake on a merged change request (origin session metadata `goal=<folder>`) | `apps/api/src/projects/lib/goal-wake.ts` `wakeGoal`: the one seam for the Triggers "change request merged" source and goal targets |
+| A person stops a goal or starts one (New goal) | SDK `stopProjectGoal`; `useStartGoal` (`MAKE_GOAL_PROMPT`); `apps/web/src/features/workspace/goals/*`, `session-goal-indicator.tsx` |
+
 Merged on `dev`: #10314 (`b6d7c82ca7`), the flag gate #10589 (`4693ec3103`),
 the CLI help coverage #10591 (`2fdff2edba`). Production gets it with the next
 release. Web UI behind the same flag (see "Goals UI" below).

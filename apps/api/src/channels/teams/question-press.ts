@@ -22,7 +22,7 @@ import { runWebhookWork } from '../webhook-work';
 import { QUESTION_EARLIER, buildNoticeCard } from './cards';
 import type { TeamsInbound } from './inbound';
 import { type TeamsInvokeResponse, cardResponse, messageResponse } from './interactivity';
-import { type TeamsFollowUp, admitTeamsFollowUp, agentGrantEnvFor, deliverAdmittedFollowUp, resolveTeamsTurnActor } from './session';
+import { type TeamsFollowUp, admitTeamsFollowUp, deliverAdmittedFollowUp, resolveTeamsTurnActor } from './session';
 import { noticeOnLiveCard, startTurn } from './turn';
 import type { TeamsActivity, TeamsLiveTurn } from './types';
 
@@ -98,7 +98,6 @@ export async function answerTeamsQuestion(
     projectId,
     accountId: project.accountId,
     project,
-    agentGrantEnv: agentGrantEnvFor(project, thread.agentName),
     tenantId,
     conversationId,
     sessionId,

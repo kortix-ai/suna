@@ -63,7 +63,7 @@ describe('starter template agent model declarations', () => {
     const files = agentDefinitionFiles();
 
     expect(files.length).toBeGreaterThan(50);
-    expect(files.some((f) => f.endsWith('templates/base/agents/kortix.md'))).toBe(
+    expect(files.some((f) => f.endsWith('templates/base/agents/worker.md'))).toBe(
       true,
     );
     expect(

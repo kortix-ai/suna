@@ -21,5 +21,6 @@ planned, in flight, or parked, so another person or agent can pick it up.
 | [`goals-and-workflows/`](goals-and-workflows/README.md) | stage 1 merged on dev (flag `goals`); stage 2 planning |
 | [`email-cost-passthrough/`](email-cost-passthrough/README.md) | parked: meter managed Resend inboxes and emails per account |
 | [`connector-policy-sets/`](connector-policy-sets/README.md) | in progress: one connector profile, a named rule set per agent |
+| [`kortix-yaml-versionless/`](kortix-yaml-versionless/README.md) | planned: one versionless kortix.yaml schema, imports kept, old shapes auto-upgraded |
 | [`image-generation/`](image-generation/README.md) | in progress (branch `image-gen`): `image_gen` tool, gpt-image-2 on a connected ChatGPT plan |
 | [`platinum-machines-apps/`](platinum-machines-apps/README.md) | planning: the sandbox becomes a Machine, Apps move into Platinum; 7 decisions open; parked idea: bare-metal marketplace |

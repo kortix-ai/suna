@@ -118,7 +118,7 @@ async function thread(ctx: FlowContext, world: AgentPrincipalsWorld, spaceId: st
   world.sessions.push(sessionId);
   await world.db.query(
     `INSERT INTO kortix.project_sessions (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, space_id)
-     VALUES ($1, $2, $3, $1, 'kortix', 'stopped', $4, 'project', $5)`,
+     VALUES ($1, $2, $3, $1, 'worker', 'stopped', $4, 'project', $5)`,
     [sessionId, world.accountId, world.projectId, world.ownerUserId, spaceId],
   );
   // A session credential needs a live sandbox lease (`validateAccountToken`); `world.close()` deletes it.
@@ -265,7 +265,7 @@ flow('MEMORY-2', meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.r
     const member = await team.addMember('member');
     await team.grantProjectRole(projectId, member.userId!, 'member');
     const asMember = ctx.client.as(member);
-    const dmId = (await world.owner.post(DM, { agent_name: 'kortix' }, { params: { projectId } })).status(200).json<Space>().space_id;
+    const dmId = (await world.owner.post(DM, { agent_name: 'worker' }, { params: { projectId } })).status(200).json<Space>().space_id;
     const storage = await hasStorage(world);
 
     await ctx.step('a malformed layer key and an unknown space id → 404 memory_not_found', async () => {
@@ -304,13 +304,13 @@ flow('MEMORY-2', meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.r
       return;
     }
 
-    await ctx.step('the layers name their folders: /Company/Memory, the channel’s Memory folder, the owner’s Memory folder with agent folder kortix', async () => {
+    await ctx.step('the layers name their folders: /Company/Memory, the channel’s Memory folder, the owner’s Memory folder with agent folder worker', async () => {
       const { personalFolder } = await driveOf(world.owner, projectId);
       read<MemoryLayer>((await world.owner.get(LAYER, { params: { projectId, layerKey: 'company' } })).status(200), (b) =>
         b.schema(MemoryLayerSchema).has('$.folder', '/Company/Memory').has('$.agent_folder', null).has('$.can_write', true));
       (await world.owner.get(LAYER, { params: { projectId, layerKey: launch.space_id } })).status(200).body().has('$.folder', '/Company/Channels/launch/Memory');
       (await world.owner.get(LAYER, { params: { projectId, layerKey: dmId } })).status(200).body()
-        .has('$.folder', `${personalFolder}/Memory`).has('$.agent_folder', `${personalFolder}/Memory/kortix`);
+        .has('$.folder', `${personalFolder}/Memory`).has('$.agent_folder', `${personalFolder}/Memory/worker`);
     });
 
     await ctx.step('every member reads and writes Company and channel memory', async () => {
@@ -453,7 +453,7 @@ flow('MEMORY-5', meta([R.layer, R.pages, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIV
 
     await ctx.step('project_channels on: Company and the DM layer list the files already in Drive, in place', async () => {
       await world.setFeature('project_channels', true);
-      const dmId = (await world.owner.post(DM, { agent_name: 'kortix' }, { params: { projectId } })).status(200).json<Space>().space_id;
+      const dmId = (await world.owner.post(DM, { agent_name: 'worker' }, { params: { projectId } })).status(200).json<Space>().space_id;
       const company = (await world.owner.get(PAGES, { params: { projectId, layerKey: 'company' } })).status(200).json<{ pages: MemoryPageSummary[] }>().pages;
       const dm = (await world.owner.get(PAGES, { params: { projectId, layerKey: dmId } })).status(200).json<{ pages: MemoryPageSummary[] }>().pages;
       if (!company.some((p) => p.path === '/Company/Memory/launch-plan.md') || !dm.some((p) => p.path === `${personalFolder}/Memory/preferences.md`)) fail('pages', { company, dm });
@@ -524,7 +524,7 @@ flow(
     const member = await team.addMember('member');
     await team.grantProjectRole(projectId, member.userId!, 'member');
     // A DM runs its agent: the member needs the agent's run grant to open one.
-    await world.grantRun('kortix', member);
+    await world.grantRun('worker', member);
     // An account member with no access to this project: never on its roster.
     const outsider = await team.addMember('member');
     const asMember = ctx.client.as(member);
@@ -537,7 +537,7 @@ flow(
       world.sessions.push(sessionId);
       await world.db.query(
         `INSERT INTO kortix.project_sessions (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility)
-         VALUES ($1, $2, $3, $1, 'kortix', 'stopped', $4, 'project')`,
+         VALUES ($1, $2, $3, $1, 'worker', 'stopped', $4, 'project')`,
         [sessionId, world.accountId, projectId, world.ownerUserId],
       );
       return sessionId;
@@ -605,7 +605,7 @@ flow(
         if (note.statusCode === 503) (await mark(asMember, 'get_started.remember')).status(204);
         else note.status(201);
         (await asMember.get(ONBOARDING, { params })).status(200).body().has('$.get_started', { visible: true, create_channel: true, remember: true, open_dm: false });
-        (await asMember.post(DM, { agent_name: 'kortix' }, { params })).status(200);
+        (await asMember.post(DM, { agent_name: 'worker' }, { params })).status(200);
         (await asMember.get(ONBOARDING, { params })).status(200).body().has('$.get_started', { visible: false, create_channel: true, remember: true, open_dm: true });
         // The member's facts are the member's: the owner's rows stay open.
         (await world.owner.get(ONBOARDING, { params })).status(200).body().has('$.get_started', closed);

@@ -681,7 +681,7 @@ describe('pi harness', () => {
     }
     expect(await r.user('/command').then((res) => res.json())).toEqual([])
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'agent', 'task'])
     expect((await r.user('/session/status').then((res) => res.json()))).toEqual({})
     expect((await r.user('/lsp/diagnostics')).status).toBe(200)
     expect((await r.user('/no/such/route')).status).toBe(404)
@@ -699,8 +699,8 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
     // Step 2 of 2 is the last: the model may not call another tool.
     expect(gateway.sampling.slice(before)).toEqual([
-      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 15, toolNames: expect.arrayContaining(['bash', 'codemode']) },
-      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 15, toolNames: expect.arrayContaining(['bash', 'codemode']) },
+      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 16, toolNames: expect.arrayContaining(['bash', 'codemode']) },
+      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 16, toolNames: expect.arrayContaining(['bash', 'codemode']) },
     ])
   })
 
@@ -992,7 +992,7 @@ describe('pi harness', () => {
     }
   })
 
-  test('the kortix-genui skill is listed only while KORTIX_GENUI=1', async () => {
+  test('the kortix-genui skill is always listed, also with flag-era env that turned it off', async () => {
     const managed = mkdtempSync(join(tmpdir(), 'pi-managed-'))
     for (const name of ['kortix-memory', 'kortix-genui']) {
       mkdirSync(join(managed, name), { recursive: true })
@@ -1001,16 +1001,17 @@ describe('pi harness', () => {
     const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
     process.env.KORTIX_MANAGED_SKILLS_DIR = managed
     try {
-      for (const [flag, listed] of [['1', true], ['0', false]] as const) {
-        const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_GENUI: flag } })
+      const envs: Array<Record<string, string>> = [{}, { KORTIX_GENUI: '0', KORTIX_FEATURE_FLAGS: 'agent_rooms' }]
+      for (const env of envs) {
+        const r = await boot({ script: [{ text: 'ok' }], env })
         const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
-        expect(skills.map((s) => s.name).sort()).toEqual(listed ? ['kortix-genui', 'kortix-memory'] : ['kortix-memory'])
+        expect(skills.map((s) => s.name).sort()).toEqual(['kortix-genui', 'kortix-memory'])
         const root = r.service.runtime()!.rootId
         const before = gateway.sent.length
         expect((await prompt(r, root, { parts: [{ type: 'text', text: 'hi' }] })).status).toBe(204)
         await waitFor(() => !r.service.runtime()!.busy())
         const system = JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'system'))
-        expect(system.includes('kortix-genui')).toBe(listed)
+        expect(system).toContain('kortix-genui')
         expect(system).not.toContain('Generative UI')
       }
     } finally {
@@ -1572,7 +1573,7 @@ describe('project tools on pi', () => {
       env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ lookup_order: 'integrations/orders/lookup.ts' }) },
       prepare: (workspace) => write(workspace, 'integrations/orders/lookup.ts', LOOKUP),
     })
-    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'codemode', 'task'])
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'codemode', 'agent', 'task'])
     await promptAndSettle(r, 'look up order 42')
     const part = toolParts(await page(r), 'lookup_order')[0]!
     expect(part.state.status).toBe('completed')
@@ -1601,7 +1602,7 @@ describe('project tools on pi', () => {
       script: [{ tool: 'show', args: { action: 'show', type: 'text', content: 'hi' } }, { tool: 'memory', args: { command: 'view', path: 'memory' } }, { text: 'done' }],
       env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: {} }, kortix_tools: ['web_search', 'image_search', 'scrape_webpage', 'memory'] }) },
     })
-    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'question', 'codemode', 'task'])
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'question', 'codemode', 'agent', 'task'])
     await promptAndSettle(r, 'show hi, then view memory')
     const show = toolParts(await page(r), 'show')[0]!
     expect(show.state.status).toBe('error')
@@ -1616,6 +1617,21 @@ describe('project tools on pi', () => {
       prepare: (workspace) => write(workspace, 'tools/lookup.ts', LOOKUP),
     })
     expect(await ids(r)).toEqual(['read', 'lookup_order'])
+    await promptAndSettle(r, 'run a command')
+    expect(toolParts(await page(r), 'bash')[0]!.state.status).toBe('error')
+    expect(existsSync(join(r.workspace, 'ran.txt'))).toBe(false)
+  })
+
+  test('a cloud subagent session narrows to the tools its parent gave it (kortix.subagent.tools); other calls are denied', async () => {
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'touch ran.txt' } }, { text: 'done' }],
+      env: {
+        KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: {} } }),
+        KORTIX_SESSION_CONTEXT: JSON.stringify({ 'kortix.subagent.depth': 1, 'kortix.subagent.tools': 'read,grep' }),
+      },
+    })
+    // No `agent`/`task` either: the narrowed child cannot delegate further.
+    expect(await ids(r)).toEqual(['read', 'grep'])
     await promptAndSettle(r, 'run a command')
     expect(toolParts(await page(r), 'bash')[0]!.state.status).toBe('error')
     expect(existsSync(join(r.workspace, 'ran.txt'))).toBe(false)
@@ -1821,7 +1837,7 @@ describe('pi packages', () => {
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
     expect(tools).toEqual(expect.arrayContaining(['system_echo', 'project_echo', 'local_echo', 'repo_echo', 'task', 'bash']))
     const status = r.service.runtime()!.extensionStatus()
-    expect(status.loaded).toEqual(expect.arrayContaining(['subagents', 'npm:system-ext@1.0.0', 'npm:project-ext@2.0.0']))
+    expect(status.loaded).toEqual(expect.arrayContaining(['kortix-subagents', 'npm:system-ext@1.0.0', 'npm:project-ext@2.0.0']))
     // A pre-built package still brings its skills: pi reads them from its folder.
     expect(((await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>).map((s) => s.name)).toContain('package-skill')
     expect(status.failed).toEqual([
@@ -1994,6 +2010,81 @@ describe('pi packages', () => {
 describe('pi subagents extension', () => {
   const TASK = (args: Record<string, unknown>) => ({ tool: 'task', args: { description: 'Write the note', prompt: 'write sub.txt', subagent_type: 'general', ...args } })
 
+  test('separate sessions (the default, no `session` arg): every child carries the narrowed parent tools and the resolved parent agent, never `default`', async () => {
+    // A fake Kortix API: it records each create and answers an already-settled child with a report.
+    const creates: Array<Record<string, any>> = []
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const path = new URL(req.url).pathname
+        if (req.method === 'POST' && path === '/v1/projects/proj-pi-test/sessions') {
+          creates.push((await req.json()) as Record<string, any>)
+          return Response.json({ session_id: `cloud-child-${creates.length}` }, { status: 201 })
+        }
+        if (path.endsWith('/transcript')) return Response.json({ messages: [{ role: 'user', text: 'go' }, { role: 'assistant', text: 'cloud report' }] })
+        if (req.method === 'GET' && path.startsWith('/v1/projects/proj-pi-test/sessions/cloud-child-')) {
+          return Response.json({ status: 'running', working: { state: 'idle', since: '2026-10-24T10:00:00.000Z', pending_delivery: false } })
+        }
+        return new Response('not found', { status: 404 })
+      },
+    })
+    try {
+      const compiled = {
+        default_agent: 'build',
+        agent: {
+          build: { mode: 'primary', tools: { '*': false, read: true, grep: true, task: true } },
+          reviewer: { mode: 'subagent', description: 'Reviews one change', prompt: 'You review.' },
+        },
+      }
+      const r = await boot({
+        script: [TASK({ subagent_type: 'reviewer', prompt: 'review it' }), TASK({ subagent_type: 'general', prompt: 'look' }), { text: 'parent done' }],
+        env: {
+          KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(compiled),
+          KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1`,
+          KORTIX_AGENT_NAME: 'default',
+        },
+      })
+      await promptAndSettle(r, 'delegate both')
+      expect(creates.map((c) => c.agent_name)).toEqual(['reviewer', 'build'])
+      for (const create of creates) {
+        expect(create.runtime_context['kortix.subagent.depth']).toBe(1)
+        expect(String(create.runtime_context['kortix.subagent.tools']).split(',').sort()).toEqual(['grep', 'read', 'task'])
+      }
+      const root = r.service.runtime()!.rootId
+      const wire = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+      const parts = toolParts(wire, 'task')
+      expect(parts.map((part) => part.state.metadata.sessionId)).toEqual(['cloud-child-1', 'cloud-child-2'])
+      expect(parts[0]!.state.output).toContain('cloud report')
+      expect(parts[0]!.state.output).toContain('task_id: cloud-child-1 (for resuming to continue this task if needed)\nsession: separate\n')
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('session "same" runs the child in this session: no session create', async () => {
+    let creates = 0
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        if (req.method === 'POST' && new URL(req.url).pathname === '/v1/projects/proj-pi-test/sessions') creates += 1
+        return new Response('not found', { status: 404 })
+      },
+    })
+    try {
+      const apiUrl = `http://127.0.0.1:${server.port}/v1`
+      const same = await boot({ script: [TASK({ session: 'same' }), { text: 'child report' }, { text: 'parent done' }], env: { KORTIX_API_URL: apiUrl } })
+      await promptAndSettle(same, 'delegate it')
+      const samePart = toolParts((await same.bearer(`/kortix/runtime/messages/${same.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage, 'task')[0]!
+      expect(samePart.state.metadata.sessionId).toMatch(/^ses_pi[0-9a-f]{24}$/)
+      expect(samePart.state.output).toContain('\nsession: same\n')
+      expect(samePart.state.output).toContain('<task_result>\nchild report\n</task_result>')
+
+      expect(creates).toBe(0)
+    } finally {
+      server.stop(true)
+    }
+  })
+
   test('task runs a child session whose transcript the product can read', async () => {
     const r = await boot({
       script: [TASK({}), { tool: 'bash', args: { command: 'printf from-subagent > sub.txt && cat sub.txt' } }, { text: 'child wrote sub.txt' }, { text: 'parent done' }],
@@ -2012,6 +2103,8 @@ describe('pi subagents extension', () => {
     expect(childId).not.toBe(root)
     expect(task.state.status).toBe('completed')
     expect(task.state.output).toContain(`task_id: ${childId}`)
+    // No KORTIX_API_URL: the default separate call has no control plane, so it ran here and says so.
+    expect(task.state.output).toContain('session: same (This session has no Kortix control plane to start a separate session from, so the subagent ran inside this session.)')
     expect(task.state.output).toContain('<task_result>\nchild wrote sub.txt\n</task_result>')
     expect(page.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'parent done' })
 
@@ -2049,6 +2142,58 @@ describe('pi subagents extension', () => {
       .map((line) => JSON.parse(line.slice(6)))
       .find((e) => e.type === 'message.part.updated' && e.payload.part.tool === 'task' && e.payload.part.state.status === 'running' && e.payload.part.state.metadata?.sessionId)
     expect(running?.payload.part.state.metadata.sessionId).toBe(childId)
+  })
+
+  test('the tool is `agent`, with `task` as a deprecated alias, and both spawn a named subagent', async () => {
+    const r = await boot({
+      script: [
+        { tool: 'agent', args: { description: 'Write a', prompt: 'write a.txt', subagent_type: 'general' } },
+        { tool: 'bash', args: { command: 'printf A > a.txt' } },
+        { text: 'agent child done' },
+        { tool: 'task', args: { description: 'Write b', prompt: 'write b.txt', subagent_type: 'general' } },
+        { tool: 'bash', args: { command: 'printf B > b.txt' } },
+        { text: 'task child done' },
+        { text: 'parent done' },
+      ],
+    })
+    const ids = (await r.user('/tool/ids').then((res) => res.json())) as string[]
+    expect(ids).toContain('agent')
+    expect(ids).toContain('task')
+    const tools = (await r.user('/tool').then((res) => res.json())) as Array<{ id: string; description: string }>
+    expect(tools.find((t) => t.id === 'task')!.description.startsWith('Deprecated alias of `agent`')).toBe(true)
+    expect(tools.find((t) => t.id === 'agent')!.description).not.toContain('Deprecated')
+
+    await promptAndSettle(r, 'delegate twice')
+    expect(readFileSync(join(r.workspace, 'a.txt'), 'utf8')).toBe('A')
+    expect(readFileSync(join(r.workspace, 'b.txt'), 'utf8')).toBe('B')
+    const root = r.service.runtime()!.rootId
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(toolParts(page, 'agent')[0]!.state.status).toBe('completed')
+    expect(toolParts(page, 'task')[0]!.state.status).toBe('completed')
+    expect(toolParts(page, 'agent')[0]!.state.output).toContain('<task_result>\nagent child done\n</task_result>')
+    expect(toolParts(page, 'task')[0]!.state.output).toContain('<task_result>\ntask child done\n</task_result>')
+  })
+
+  test('an inline ephemeral agent spec spawns a child with no named subagent_type', async () => {
+    const r = await boot({
+      script: [
+        { tool: 'agent', args: { description: 'Write note', prompt: 'write inline.txt', agent: { instructions: 'You are an ephemeral agent. Write the file.' } } },
+        { tool: 'bash', args: { command: 'printf from-inline > inline.txt && cat inline.txt' } },
+        { text: 'inline child wrote it' },
+        { text: 'parent done' },
+      ],
+    })
+    await promptAndSettle(r, 'delegate inline')
+    expect(readFileSync(join(r.workspace, 'inline.txt'), 'utf8')).toBe('from-inline')
+    const root = r.service.runtime()!.rootId
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    const task = toolParts(page, 'agent')[0]!
+    expect(task.state.status).toBe('completed')
+    expect(task.state.output).toContain('<task_result>\ninline child wrote it\n</task_result>')
+    const childId = task.state.metadata.sessionId as string
+    const child = (await r.bearer(`/kortix/runtime/messages/${childId}`).then((res) => res.json())) as WirePage
+    expect(child.messages[1]!.info.agent).toBe('inline')
+    expect(toolParts(child, 'bash')[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('from-inline') })
   })
 
   test('a subagent whose stream is cut retries and returns its answer', async () => {
@@ -2104,6 +2249,8 @@ describe('pi subagents extension', () => {
     const described = ((await r.user('/tool').then((res) => res.json())) as Array<{ id: string; description: string }>).find((t) => t.id === 'task')!
     expect(described.description).toContain('reviewer: Reviews one change')
     expect(described.description).not.toContain('hidden')
+    expect(described.description).toContain('- session: "separate" (default): the subagent gets its own new Kortix session with its own computer.')
+    expect(described.description).toContain('- session: "same": the subagent runs inside this session, on this computer.')
     await promptAndSettle(r, 'review')
     const root = r.service.runtime()!.rootId
     let page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
@@ -2174,14 +2321,14 @@ describe('pi subagents extension', () => {
     const compiled = (tools?: Record<string, boolean>) => JSON.stringify({ agent: { build: { tools } } })
     const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ bash: false }) } })
     const ids = async () => (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'agent', 'task'])
     const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled()
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'agent', 'task'])
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled({ grep: false })
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'agent', 'task'])
   })
 
   test('several task calls in one message run their subagents concurrently', async () => {
@@ -2598,7 +2745,7 @@ describe('config releases on pi', () => {
     })
     expect(((await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>).config.source).toBe('release')
     expect(await skillsOf(r)).toEqual([['review', 'review from the release']])
-    const loaded = r.service.runtime()!.extensionStatus().loaded.filter((name) => name !== 'subagents')
+    const loaded = r.service.runtime()!.extensionStatus().loaded.filter((name) => name !== 'kortix-subagents')
     expect(loaded).toHaveLength(1)
     expect(loaded[0]!.startsWith(join(dir, 'store')) && loaded[0]!.endsWith('/extensions/package.ts')).toBe(true)
     const first = await ask(r, 'first question')
@@ -4246,8 +4393,9 @@ describe('pi codemode', () => {
     const only = await boot({ script: [script("return await tools.bash({ command: 'echo only' })"), { text: 'done' }], env: { KORTIX_PI_CODEMODE: 'only' } })
     first = gateway.sampling.length
     const parts = await run(only)
-    expect(gateway.sampling[first]!.toolNames.sort()).toEqual(['codemode', 'image_gen', 'show'])
-    expect(String(gateway.sent[first]!.find((m) => m.role === 'system')?.content)).toContain('Call show directly to present outputs')
+    // `agent` and `question` stay direct: a script may not call them (nested-call gate).
+    expect(gateway.sampling[first]!.toolNames.sort()).toEqual(['agent', 'codemode', 'image_gen', 'question', 'show'])
+    expect(String(gateway.sent[first]!.find((m) => m.role === 'system')?.content)).toContain('Call show directly to present outputs, and agent and question directly too')
     expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('only') })
   })
 
@@ -4258,7 +4406,7 @@ describe('pi codemode', () => {
     })
     const first = gateway.sampling.length
     const [part] = await run(r)
-    expect(gateway.sampling[first]?.toolNames.sort()).toEqual(['codemode', 'image_gen', 'show'])
+    expect(gateway.sampling[first]?.toolNames.sort()).toEqual(['agent', 'codemode', 'image_gen', 'question', 'show'])
     expect(part?.tool).toBe('show')
     expect(part?.state).toMatchObject({ status: 'completed', input: { type: 'text', content: 'Presentation proof' } })
     expect(JSON.parse(part?.state.output)).toMatchObject({ success: true, entry: { type: 'text', content: 'Presentation proof' } })
@@ -4879,7 +5027,7 @@ describe('kortix.yaml v3 on pi', () => {
     })
     expect(await skillNames(r)).toEqual(['deploy', 'review'])
     // `subagents` is the runtime's own task tool, not a project extension.
-    expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['subagents'], failed: [] })
+    expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['kortix-subagents'], failed: [] })
     // No prompt template from a harness folder: the registered skills are the only rows.
     const rows = (await r.user('/command').then((res) => res.json())) as Array<{ name: string; source: string }>
     expect(rows.map((c) => [c.source, c.name])).toEqual([['skill', 'deploy'], ['skill', 'review']])

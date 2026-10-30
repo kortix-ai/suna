@@ -4,8 +4,8 @@ import type { CSSProperties } from 'react';
 
 import { cn } from '../lib/utils';
 import { Hint } from '../../primitives/hint';
-import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
-import { PIXEL_MARK_SIZE, pixelMark } from '../lib/pixel-mark';
+import { isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
+import { pixelMark } from '../lib/pixel-mark';
 
 /** Mark size → tile size. The mark is a multiple of 7, so each pixel lands on
  *  whole device pixels; any other size blurs the edges. Literal px because
@@ -20,27 +20,45 @@ export type AgentMarkSize = keyof typeof TILE;
  */
 export function agentMarkVars(slug: string): CSSProperties {
   const { tone } = pixelMark(slug);
+  // The Kortix tile (My Kortix, the starter `kortix` agent) follows the Kortix
+  // tile rule: the page surface with a hairline, never an inverted black tile
+  // (decisions.md #8421). `agentMarkTileClass` adds the hairline.
+  if (tone.name === 'brand') {
+    return { '--mark-tile': 'var(--background)', '--mark-ink': 'var(--foreground)' } as CSSProperties;
+  }
   return {
     '--mark-tile': `light-dark(${tone.tile}, ${tone.tileDark})`,
     '--mark-ink': `light-dark(${tone.ink}, ${tone.inkDark})`,
   } as CSSProperties;
 }
 
-/** The bare pixel figure, painted with `--mark-ink` from an ancestor. */
+/** The tile's boundary: a hairline on the Kortix tile, none on a tinted one. */
+export function agentMarkTileClass(slug: string): string | undefined {
+  return pixelMark(slug).tone.name === 'brand' ? 'ring-1 ring-inset ring-border' : undefined;
+}
+
+/** The bare pixel figure, painted with `--mark-ink` from an ancestor. A 7 × 7
+ *  mark fills `size`; a wider reserved grid (My Kortix's 12 × 10 symbol) keeps
+ *  whole-pixel cells, `floor(size / 12)` px each. */
 export function AgentMarkGlyph({ slug, size }: { slug: string; size: AgentMarkSize }) {
+  const mark = pixelMark(slug);
+  const cell = mark.width === 7 ? size / 7 : Math.max(1, Math.floor(size / 12));
   return (
     <svg
       aria-hidden
-      width={size}
-      height={size}
+      width={mark.width * cell}
+      height={mark.height * cell}
+      viewBox={`0 0 ${mark.width} ${mark.height}`}
       // Inline, so a host's `[&_svg]:size-4` default (menu rows) cannot rescale
-      // the 7-pixel grid off whole device pixels.
-      style={{ width: size, height: size }}
-      viewBox={`0 0 ${PIXEL_MARK_SIZE} ${PIXEL_MARK_SIZE}`}
+      // the pixel grid off whole device pixels.
+      style={{ width: mark.width * cell, height: mark.height * cell }}
       shapeRendering="crispEdges"
       className="shrink-0"
     >
-      <path d={pixelMark(slug).path} className="fill-(--mark-ink)" />
+      <path d={mark.path} className="fill-(--mark-ink)" />
+      {mark.ditherPath ? (
+        <path d={mark.ditherPath} className="fill-(--mark-ink)" opacity={0.5} />
+      ) : null}
     </svg>
   );
 }
@@ -73,6 +91,7 @@ export function AgentMark({
       className={cn(
         'inline-flex shrink-0 items-center justify-center bg-(--mark-tile)',
         size >= 28 ? 'rounded-md' : 'rounded-sm',
+        agentMarkTileClass(slug),
         className,
       )}
     >
@@ -80,12 +99,20 @@ export function AgentMark({
     </span>
   );
   return (
-    <Hint side="top" sideOffset={6} alignOffset={0} label={label ?? agentLabel(slug)}>
+    <Hint side="top" sideOffset={6} alignOffset={0} label={label ?? agentDisplayName(slug)}>
       {mark}
     </Hint>
   );
 }
 
-function agentLabel(slug: string): string {
-  return isMetaAgentName(slug) ? META_AGENT_DISPLAY_NAME : capitalizeWords(slug);
+/**
+ * An agent's name as a person reads it: My Kortix for the built-in agent,
+ * otherwise the manifest key in sentence case with its separators as spaces
+ * (`session-reviewer` → "Session reviewer"). One helper, so the sidebar, the
+ * agent page, the index and the hover hint name an agent the same way.
+ */
+export function agentDisplayName(slug: string): string {
+  if (isMetaAgentName(slug)) return META_AGENT_DISPLAY_NAME;
+  const words = slug.replace(/[-_]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }

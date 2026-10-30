@@ -2,6 +2,8 @@
 // Pure leaf module: no runtime imports, only type declarations (the
 // manifest-verdict import below is `import type`, so it erases at build).
 
+import type { SpaceV3 } from '@kortix/manifest-schema';
+
 import type { ProjectManifestVerdict } from '../lib/manifest-verdict';
 
 export interface GitBackedProject {
@@ -36,6 +38,9 @@ export interface ProjectConfigSummary {
   open_code_raw: string | null;
   /** The project's default agent. */
   default_agent: string | null;
+  /** Which built-in agents the project runs (`builtin_agents` in kortix.yaml,
+   *  absent = on). Set by GET /detail; `my_kortix` is the `meta` agent. */
+  builtin_agents?: { my_kortix: boolean };
   /** @deprecated The pre-W4 name of `default_agent`. Same value. */
   open_code_default_agent: string | null;
   agent_discovery: 'opencode' | 'declarative';
@@ -55,6 +60,9 @@ export interface ProjectConfigSummary {
     platform?: boolean;
     enabled?: boolean;
     sandbox?: string | null;
+    /** The space from `agents.<name>.space`. Grouping only; null/absent is
+     *  Project-wide. */
+    space?: string | null;
     /** Per-agent governance from the manifest's `agents` declarations (v2
      *  `agents:` map, or legacy v1 `[[agents]]`; declarative agents only).
      *  Read-only mirror of the allowlists the parser resolved — `'all'`
@@ -74,6 +82,9 @@ export interface ProjectConfigSummary {
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
+  /** The spaces from the manifest's top-level `spaces:` map, sorted by
+   *  `order`, then slug. Each one is a channel: a room plus `tabs`. */
+  spaces?: Array<SpaceV3 & { name: string }>;
 }
 
 export interface RepoGrepMatch {

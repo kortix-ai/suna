@@ -789,7 +789,7 @@ flow(
         const mailpit = ctx.env.mailpitUrl;
         if (!mailpit && ctx.env.target === 'local') throw new Error('the local profile always has Mailpit: KE2E_MAILPIT_URL is missing');
         if (!mailpit) return; // a deployed target without Mailpit proves the send by the stamp alone
-        const subject = (message: { Subject: string }) => message.Subject === `Automation failing: ${name}`;
+        const subject = (message: { Subject: string }) => message.Subject === `Trigger failing: ${name}`;
         await waitForMailpit(mailpit, creator.email!, (messages) => messages.some(subject));
         expectCount((await mailpitMessagesTo(mailpit, creator.email!)).filter(subject).length, 1, "the creator's alert emails");
         expectCount((await mailpitMessagesTo(mailpit, ctx.P.OWNER.email!)).filter(subject).length, 0, "OWNER's alert emails");
@@ -1211,7 +1211,7 @@ flow(
           expectCount(await storedCount(db, who.userId!, { projectId: triggers.id }), 0, `${label}'s rows for the trigger project`);
           if (!ctx.env.mailpitUrl) continue; // the row count above already proves it: an alert email follows its row
           const mails = await mailpitMessagesTo(ctx.env.mailpitUrl, who.email!);
-          expectCount(mails.filter((m) => m.Subject === `Automation failing: ${name}`).length, 0, `${label}'s alert emails`);
+          expectCount(mails.filter((m) => m.Subject === `Trigger failing: ${name}`).length, 0, `${label}'s alert emails`);
         }
       });
 

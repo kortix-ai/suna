@@ -213,7 +213,7 @@ export async function deleteSession(input: {
 
 /**
  * Delete every unclaimed warm session of a project, all users. A warm box boots
- * with the project's env of that moment (KORTIX_GENUI is boot-only), so a flag
+ * with the project's env of that moment (KORTIX_FEATURE_FLAGS is boot-only), so a flag
  * change must not let a box provisioned before it be adopted. Deleting also
  * removes the box, so it stops billing.
  *

@@ -123,6 +123,8 @@ export interface AgentDraft {
   set: SetKortix;
   setOc: SetRuntime;
   isDirty: boolean;
+  /** The last saved block: the draft compares against it. */
+  baseline: AgentConfigBlock;
   /** Throw the draft away and return to the baseline. */
   discard: () => void;
   /** A save landed: the server's block is the new baseline AND the new draft. */
@@ -184,7 +186,7 @@ export function useAgentDraft(initial: AgentConfigBlock): AgentDraft {
     setDraft(block);
   }, []);
 
-  return { draft, oc: draft.behavior ?? {}, set, setOc, isDirty, discard, commit };
+  return { draft, oc: draft.behavior ?? {}, set, setOc, isDirty, baseline, discard, commit };
 }
 
 export interface AgentEditorOptions {
@@ -306,8 +308,9 @@ export type AgentConfigSectionGroup = (typeof AGENT_CONFIG_SECTION_GROUPS)[numbe
 /**
  * The page's topics, in rail order, each under a group heading.
  *
- * General is the agent itself and who runs it: overview, identity, people,
- * triggers. Access is one topic per grant set — skills, connectors, secrets,
+ * General is the agent itself and who runs it: the overview (the agent at a
+ * glance, every grant summarized), its instructions, people, triggers and the
+ * basic switches. Access is one topic per grant set — skills, connectors, secrets,
  * Apps, project actions — each its own page (Marko, 2026-09-03: "split up
  * ACCESS … into its own standalone menu items on the left & we can have nicer
  * UX/UI for each"). Runtime is what a session runs on: model, tools,
@@ -318,11 +321,13 @@ export type AgentConfigSectionGroup = (typeof AGENT_CONFIG_SECTION_GROUPS)[numbe
  */
 export const AGENT_CONFIG_SECTIONS = [
   { key: 'overview', label: 'Overview', group: 'General' },
-  { key: 'basics', label: 'Basics', group: 'General' },
+  { key: 'instructions', label: 'Instructions', group: 'General' },
   { key: 'people', label: 'People', group: 'General' },
   { key: 'triggers', label: 'Triggers', group: 'General' },
+  { key: 'basics', label: 'Basics', group: 'General' },
   { key: 'skills', label: 'Skills', group: 'Access' },
-  { key: 'subagents', label: 'Subagents', group: 'Access' },
+  { key: 'subagents', label: 'Agents', group: 'Access' },
+  { key: 'tools', label: 'Tools', group: 'Access' },
   { key: 'commands', label: 'Commands', group: 'Access' },
   { key: 'extensions', label: 'Extensions', group: 'Access' },
   { key: 'connectors', label: 'Connectors', group: 'Access' },
@@ -331,7 +336,6 @@ export const AGENT_CONFIG_SECTIONS = [
   { key: 'drives', label: 'Drives', group: 'Access' },
   { key: 'actions', label: 'Kortix permissions', group: 'Access' },
   { key: 'model', label: 'Model', group: 'Runtime' },
-  { key: 'tools', label: 'Tools', group: 'Runtime' },
   { key: 'workspace', label: 'Workspace', group: 'Runtime' },
 ] as const satisfies readonly { key: string; label: string; group: AgentConfigSectionGroup }[];
 
@@ -421,6 +425,7 @@ export function AgentConfigSections({
   skillsOptions,
   registryOptions,
   overview,
+  instructions,
   triggers,
   people,
   skills,
@@ -428,16 +433,21 @@ export function AgentConfigSections({
   secrets,
   apps,
   drives,
-  authority,
+  sectionStyle = 'panel',
 }: {
   section: AgentConfigSectionKey;
+  /** `tab` under the agent page's view switcher: the lead title goes, the
+   *  switcher names the view. */
+  sectionStyle?: 'panel' | 'tab';
   editor: AgentDraft;
   options: AgentEditorOptions;
   skillsOptions: GrantOption[];
   /** The v3 grant pick lists (`registryGrantOptions`). */
   registryOptions?: Record<RegistryGrant, GrantOption[]>;
-  /** Description + instructions — a page-owned section, the Overview tab. */
+  /** The agent at a glance — a page-owned section, the Overview tab. */
   overview?: React.ReactNode;
+  /** The system prompt editor — a page-owned section, the Instructions tab. */
+  instructions?: React.ReactNode;
   /** The agent's triggers — a page-owned section, the Triggers tab. */
   triggers?: React.ReactNode;
   /** Who may use the agent — a page-owned section, the People tab. */
@@ -453,9 +463,6 @@ export function AgentConfigSections({
   apps?: React.ReactNode;
   /** Which shared drives the agent mounts. Page-owned, and only with Volumes on. */
   drives?: React.ReactNode;
-  /** What the agent can do once its Kortix permissions meet its IAM ceiling —
-   *  a page-owned card under the Kortix permissions checklist. */
-  authority?: React.ReactNode;
 }) {
   const { draft, oc, set, setOc } = editor;
   // Every pane opens with a `lead` section (the pane title) and stacks its
@@ -464,6 +471,8 @@ export function AgentConfigSections({
     switch (section) {
       case 'overview':
         return <>{overview}</>;
+      case 'instructions':
+        return <>{instructions}</>;
       case 'people':
         return <>{people}</>;
       case 'skills':
@@ -497,7 +506,6 @@ export function AgentConfigSections({
         return (
           <>
             <ProjectActionsSection draft={draft} set={set} />
-            {authority}
           </>
         );
       case 'triggers':
@@ -524,7 +532,7 @@ export function AgentConfigSections({
     }
   })();
   return (
-    <EditorSectionStyleProvider value="panel">
+    <EditorSectionStyleProvider value={sectionStyle}>
       <div className="space-y-8">{body}</div>
     </EditorSectionStyleProvider>
   );

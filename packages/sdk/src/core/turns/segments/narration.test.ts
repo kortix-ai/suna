@@ -284,17 +284,17 @@ describe('narrateStep - identical components narrate identically regardless of a
 });
 
 describe('narrateStep - automations must distinguish create/update from read from delete', () => {
-  it('never narrates trigger_delete as setting up an automation', () => {
+  it('never narrates trigger_delete as setting up a trigger', () => {
     const line = narrateStep('automations', [part('trigger_delete')]);
     expect(line.toLowerCase()).not.toContain('set up');
   });
 
-  it('never narrates trigger_list as setting up an automation', () => {
+  it('never narrates trigger_list as setting up a trigger', () => {
     const line = narrateStep('automations', [part('trigger_list')]);
     expect(line.toLowerCase()).not.toContain('set up');
   });
 
-  it('never narrates trigger_get as setting up an automation', () => {
+  it('never narrates trigger_get as setting up a trigger', () => {
     const line = narrateStep('automations', [part('trigger_get')]);
     expect(line.toLowerCase()).not.toContain('set up');
   });
@@ -304,15 +304,15 @@ describe('narrateStep - automations must distinguish create/update from read fro
     expect(line.toLowerCase()).not.toContain('set up');
   });
 
-  it('still narrates trigger_create as setting up an automation', () => {
+  it('still narrates trigger_create as setting up a trigger', () => {
     const line = narrateStep('automations', [part('trigger_create')]);
     expect(line.toLowerCase()).toContain('set up');
   });
 
-  it('is grammatical for one deleted automation and for several', () => {
-    expect(narrateStep('automations', [part('trigger_delete')])).not.toMatch(/1 automations/);
+  it('is grammatical for one deleted trigger and for several', () => {
+    expect(narrateStep('automations', [part('trigger_delete')])).not.toMatch(/1 triggers/);
     expect(narrateStep('automations', [part('trigger_delete'), part('trigger_delete')])).toContain(
-      '2 automations',
+      '2 triggers',
     );
   });
 });
@@ -657,12 +657,12 @@ describe('narrateStep - automations must not guess a read for an unrecognized ac
     // "Triggers" title, NOT the "List Triggers" branch — narration must not
     // pretend to know it's a read when the tool itself doesn't.
     const line = narrateStep('automations', [part('triggers', { action: 'disable' })]);
-    expect(line).toBe('Worked with your automations');
+    expect(line).toBe('Worked with your triggers');
   });
 
   it('still defaults an absent action to a read (matches TriggersTool:199)', () => {
     const line = narrateStep('automations', [part('triggers', {})]);
-    expect(line).toBe('Checked your automations');
+    expect(line).toBe('Checked your triggers');
   });
 });
 

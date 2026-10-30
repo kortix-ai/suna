@@ -15,8 +15,14 @@ import {
   parseManifestText,
   SKILLS_DIR,
   skillDirs,
+  SPACE_HEADER_ITEMS,
+  SPACE_TAB_TYPES,
+  type SpaceBlockV3,
+  type SpaceHeaderItem,
+  type SpaceTabV3,
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
+import { parse as parseYaml } from 'yaml';
 import { listManagedSkills } from '../../skills/catalog';
 import { disconnectedManifestVerdict, resolveManifestVerdict } from '../lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
@@ -115,10 +121,29 @@ function parseJsonCString(raw: string | null, key: string) {
   return match?.[1] || null;
 }
 
-function parseFrontmatter(raw: string | null) {
+/** A file's frontmatter, every scalar as text. The YAML parser reads what a
+ *  YAML writer emits, including a long scalar folded over several lines (the
+ *  agent editor's `stringifyYaml`). A block the parser refuses falls back to
+ *  the one-line reader below, so a hand-written, not-quite-YAML header still
+ *  yields its simple keys. */
+function parseFrontmatter(raw: string | null): Record<string, string> {
   if (!raw?.startsWith('---')) return {};
   const end = raw.indexOf('\n---', 3);
   if (end === -1) return {};
+  try {
+    const parsed: unknown = parseYaml(raw.slice(3, end));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const meta: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          meta[key] = String(value);
+        }
+      }
+      return meta;
+    }
+  } catch {
+    // Not valid YAML: read it line by line below.
+  }
   const meta: Record<string, string> = {};
   for (const line of raw.slice(3, end).split(/\r?\n/)) {
     const match = line.match(/^([A-Za-z0-9_-]+):\s*(.+)$/);
@@ -217,6 +242,7 @@ export function resolveConfigAgents(
           mode: native?.mode ?? null,
           ...(native?.hidden === true ? { hidden: true } : {}),
           model: native?.model ?? null,
+          space: native?.space ?? null,
           source: 'kortix.yaml' as const,
           enabled: spec.enabled,
           sandbox: spec.sandbox ?? null,
@@ -464,6 +490,65 @@ export function disconnectedProjectConfig(): ProjectConfigSummary {
   };
 }
 
+function manifestMap(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+function manifestText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+/** The top-level `spaces:` map as a sorted array. Version-agnostic: v2 and v3
+ *  read it the same way. A tab or block of an unknown type is dropped, so a
+ *  manifest mid-edit never breaks the listing. Empty when none are declared. */
+function spacesFromManifest(manifest: Record<string, unknown>): NonNullable<ProjectConfigSummary['spaces']> {
+  const text = (value: unknown) => manifestText(value)?.trim() || undefined;
+  const BLOCK_TYPES: readonly string[] = ['chat', 'artifact', 'app', 'iframe', 'text'];
+  const block = (b: Record<string, unknown>): SpaceBlockV3 => ({
+    type: b.type as SpaceBlockV3['type'],
+    label: text(b.label),
+    room: text(b.room),
+    path: text(b.path),
+    app: text(b.app),
+    url: text(b.url),
+    text: manifestText(b.text) ?? undefined,
+  });
+  const tab = (t: Record<string, unknown>): SpaceTabV3 => ({
+    type: t.type as SpaceTabV3['type'],
+    label: text(t.label),
+    path: text(t.path),
+    app: text(t.app),
+    artifact: text(t.artifact),
+    url: text(t.url),
+    ...(typeof t.embed === 'boolean' ? { embed: t.embed } : {}),
+    ...(Array.isArray(t.blocks)
+      ? { blocks: t.blocks.map(manifestMap).filter((b) => BLOCK_TYPES.includes(b.type as string)).map(block) }
+      : {}),
+  });
+  return Object.entries(manifestMap(manifest.spaces))
+    .map(([name, meta]) => {
+      const m = manifestMap(meta);
+      const header = Array.isArray(m.header)
+        ? m.header.filter((item): item is SpaceHeaderItem => (SPACE_HEADER_ITEMS as readonly unknown[]).includes(item))
+        : undefined;
+      const tabs = Array.isArray(m.tabs)
+        ? m.tabs.map(manifestMap).filter((t) => (SPACE_TAB_TYPES as readonly unknown[]).includes(t.type)).map(tab)
+        : undefined;
+      return {
+        name,
+        label: text(m.label),
+        description: text(m.description),
+        order: typeof m.order === 'number' ? m.order : undefined,
+        ...(header ? { header } : {}),
+        ...(tabs ? { tabs } : {}),
+      };
+    })
+    .sort(
+      (a, b) =>
+        (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) ||
+        a.name.localeCompare(b.name),
+    );
+}
+
 export async function loadProjectConfig(
   project: GitBackedProject,
   files?: ProjectFileEntry[],
@@ -510,11 +595,21 @@ export async function loadProjectConfig(
   );
 
   const nativeAgents = await scanAgents(project, repoFiles, agentRe, declaredAgentPaths);
-  const { agent_discovery, agents } = resolveConfigAgents(
+  const { agent_discovery, agents: baseAgents } = resolveConfigAgents(
     nativeAgents,
     loadedAgents,
     declaredAgentFile,
   );
+  // `space` is declared on the manifest's `agents.<name>` block (kortix.yaml),
+  // but the v2 listing builds agents from the scanned `.md` files, which carry
+  // no space. Merge it from the manifest block here so a v2 project groups the
+  // same way a v3 one does. The `spaces:` map is read version-agnostically.
+  const manifestAgentBlocks = manifestMap(manifest.agents);
+  const agents = baseAgents.map((agent) => ({
+    ...agent,
+    space: agent.space ?? manifestText(manifestMap(manifestAgentBlocks[agent.name]).space),
+  }));
+  const spaces = spacesFromManifest(manifest);
   const skills = withKortixSkills(await scanSkills(project, repoFiles, skillDirs(manifest)));
   const commands = await scanCommands(project, repoFiles, commandRe);
   // v2 makes the manifest's declared default authoritative. Legacy projects
@@ -550,6 +645,7 @@ export async function loadProjectConfig(
     agents,
     skills,
     commands,
+    spaces,
   };
 }
 
@@ -564,7 +660,7 @@ async function loadProjectConfigV3(
   manifest: Record<string, unknown>,
   loadedAgents: LoadedAgents,
   repoPaths: ReadonlySet<string>,
-): Promise<Pick<ProjectConfigSummary, 'agent_discovery' | 'agents' | 'skills' | 'commands'>> {
+): Promise<Pick<ProjectConfigSummary, 'agent_discovery' | 'agents' | 'skills' | 'commands' | 'spaces'>> {
   const map = (value: unknown) =>
     value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value : null);
@@ -578,6 +674,7 @@ async function loadProjectConfigV3(
       mode: text(block.mode),
       ...(block.hidden === true ? { hidden: true } : {}),
       model: text(block.model),
+      space: text(block.space),
     };
   });
   const { agents } = resolveConfigAgents(natives, loadedAgents, (spec) => text(map(blocks[spec.name]).prompt_file) ?? undefined);
@@ -600,7 +697,7 @@ async function loadProjectConfigV3(
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  return { agent_discovery: 'declarative', agents, skills, commands };
+  return { agent_discovery: 'declarative', agents, skills, commands, spaces: spacesFromManifest(manifest) };
 }
 
 /**

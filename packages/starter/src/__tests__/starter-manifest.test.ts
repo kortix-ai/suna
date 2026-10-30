@@ -1,0 +1,163 @@
+import { describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { validateManifest } from '@kortix/manifest-schema';
+
+import {
+  DEFAULT_STARTER_TEMPLATE_ID,
+  STARTER_TEMPLATE_IDS,
+  getStarterCatalogSourceMap,
+  getStarterFiles,
+} from '../index';
+
+const REPO_ROOT = join(import.meta.dir, '..', '..', '..', '..');
+
+const NATIVE_HARNESS_CONFIG_PATHS = [
+  '.claude/CLAUDE.md',
+  '.codex/AGENTS.md',
+  '.pi/README.md',
+] as const;
+
+function filesFor(template?: string) {
+  return getStarterFiles({
+    projectName: 'Harness Lab',
+    repoFullName: 'kortix/harness-lab',
+    template: template as never,
+  });
+}
+
+function manifestFor(template?: string): string {
+  return filesFor(template).find((file) => file.path === 'kortix.yaml')?.content ?? '';
+}
+
+describe('one starter', () => {
+  test('general-knowledge-worker is the default', () => {
+    expect(DEFAULT_STARTER_TEMPLATE_ID).toBe('general-knowledge-worker');
+  });
+
+  test('an absent or unrecognized id scaffolds the default starter verbatim', () => {
+    expect(filesFor(undefined)).toEqual(filesFor('general-knowledge-worker'));
+    expect(filesFor('bogus')).toEqual(filesFor('general-knowledge-worker'));
+  });
+
+  test('every accepted id scaffolds the same OpenCode-native manifest', () => {
+    for (const id of STARTER_TEMPLATE_IDS) {
+      expect(manifestFor(id)).toBe(manifestFor('general-knowledge-worker'));
+    }
+  });
+});
+
+describe('the starter is a kortix_version 3 manifest', () => {
+  test('scaffolds a kortix_version 3 manifest', () => {
+    expect(manifestFor()).toContain('kortix_version: 3');
+    expect(manifestFor()).not.toContain('kortix_version: 2');
+  });
+
+  test('declares no runtimes block and no non-opencode harness', () => {
+    const manifest = manifestFor();
+
+    expect(manifest).not.toContain('runtimes:');
+    for (const harness of ['claude', 'codex', 'pi']) {
+      expect(manifest).not.toContain(`harness: ${harness}`);
+    }
+  });
+
+  test('retires the opencode config block and the runtime selector', () => {
+    const manifest = manifestFor();
+
+    // v3 reads no harness config folder: no top-level `opencode:` block and
+    // no deprecated `runtime:` selector.
+    expect(manifest).not.toContain('opencode:');
+    expect(manifest).not.toContain('config_dir:');
+    expect(manifest).not.toContain('runtime:');
+  });
+
+  test('its default agent is the one worker agent', () => {
+    expect(manifestFor()).toContain('default_agent: worker');
+  });
+
+  test('the manifest advertises no other starter to switch to', () => {
+    const manifest = manifestFor();
+
+    expect(manifest).not.toContain('multi-harness');
+    expect(manifest).not.toContain('EXPERIMENTAL');
+  });
+
+  test('no accepted id ships native config for another harness', () => {
+    for (const id of [...STARTER_TEMPLATE_IDS, 'bogus', undefined]) {
+      const paths = filesFor(id).map((file) => file.path);
+      for (const path of NATIVE_HARNESS_CONFIG_PATHS) expect(paths).not.toContain(path);
+    }
+  });
+
+  test('the scaffolded README names no harness', () => {
+    const readme = filesFor().find((file) => file.path === 'README.md')?.content ?? '';
+
+    expect(readme).not.toContain('OpenCode');
+    expect(readme).not.toContain('Claude Code');
+    expect(readme).not.toContain('Codex');
+    expect(readme).not.toContain('multi-harness');
+  });
+
+  test('the manifest is schema-valid with zero errors', () => {
+    const result = validateManifest(manifestFor(), 'yaml');
+
+    expect(result.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  test('keeps the general-knowledge skill kit', () => {
+    const paths = filesFor().map((file) => file.path);
+
+    expect(paths).toContain('skills/pdf/SKILL.md');
+    expect(paths).toContain('agents/worker.md');
+  });
+
+  test('ships no harness folder and no maintenance agents: one worker agent, My Kortix runs it', () => {
+    const paths = filesFor().map((file) => file.path);
+    expect(paths.filter((path) => path.startsWith('harnesses/'))).toEqual([]);
+    expect(paths.filter((path) => path.startsWith('agents/'))).toEqual(['agents/worker.md']);
+    const manifest = manifestFor();
+    expect(manifest).not.toContain('harness-reflector');
+    expect(manifest).not.toContain('session-reviewer');
+    expect(manifest).toContain('tools: all');
+  });
+});
+
+describe('starter catalog source map', () => {
+  test('every entry points at a template file that exists on disk', () => {
+    const missing = [...getStarterCatalogSourceMap().values()].filter(
+      (source) => !existsSync(join(REPO_ROOT, source)),
+    );
+
+    expect(missing).toEqual([]);
+  });
+
+  test('names no multi-harness template root', () => {
+    const roots = new Set(
+      [...getStarterCatalogSourceMap().values()].map((source) => source.split('/')[3]),
+    );
+
+    expect([...roots].sort()).toEqual([
+      'base',
+      'general-knowledge-worker',
+      'managed',
+      'marketplace',
+    ]);
+  });
+});
+
+describe('internal minimal build', () => {
+  test('lays down the same kortix_version 3 floor', () => {
+    const manifest = manifestFor('minimal');
+
+    expect(manifest).toContain('kortix_version: 3');
+    expect(manifest).not.toContain('harness: claude');
+  });
+
+  test('carries no general-knowledge domain skill', () => {
+    const paths = filesFor('minimal').map((file) => file.path);
+
+    expect(paths).not.toContain('skills/pdf/SKILL.md');
+  });
+});
