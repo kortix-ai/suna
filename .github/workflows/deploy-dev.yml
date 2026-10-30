@@ -181,6 +181,7 @@ jobs:
               - 'apps/web/**'
               - 'packages/**'
               - 'infra/scripts/ecs-deploy.sh'
+              - 'infra/scripts/carry-web-static.sh'
               - 'infra/scripts/render-web-env.mjs'
               - 'infra/scripts/sync-web-env.sh'
               - 'infra/scripts/sync-web-dns.mjs'
@@ -1034,6 +1035,24 @@ jobs:
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
+      - name: Carry earlier builds' static chunks
+        # A tab opened before this deploy still requests its own build's
+        # hashed chunks; without them its next lazy import fails with
+        # "Failed to load chunk". `:dev` is the build that serves now (it moves
+        # only after verify-web-ecs), `:dev-latest` the last one built (a
+        # cancelled run can leave it unserved). Each carries its own earlier
+        # builds, so the image holds the newest 5 builds (~20 MB each).
+        run: |
+          set -euo pipefail
+          images=()
+          seen=""
+          for ref in kortix/kortix-frontend:dev kortix/kortix-frontend:dev-latest; do
+            digest="$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest.Digest}}' 2>/dev/null || true)"
+            if [ -n "$digest" ] && [[ "$seen" != *"$digest"* ]]; then
+              images+=("$ref"); seen="$seen $digest"
+            fi
+          done
+          bash infra/scripts/carry-web-static.sh apps/web/.next/static 5 "${images[@]}"
       - name: Build and push (amd64)
         # Single-arch amd64 for dev (see the API build for the full rationale).
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
