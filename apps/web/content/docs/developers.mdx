@@ -2081,6 +2081,9 @@ The commands below are `kortix sessions <subcommand>`. `kortix sessions --help` 
 | `chat <session_id> -p "<text>" --queue` | Store the prompt in the session's inbox and return at once. It survives a sleeping or busy sandbox. |
 | `chat <session_id> -p "<text>" --steer` | Give the prompt to the running turn. The agent reads it at its next step. With no turn running, it starts one. |
 | `queue <session_id>` | The inbox: `ls`, `rm <prompt-id>`, `now <prompt-id>`, `hold`, `release`. |
+| `message <to> "<text>"` | Send another session a message from this one (`$KORTIX_SESSION_ID`, else `--from <session_id>`). `--summary`, `--notify-idle`. Exit `1` when it was not sent. See [Messages between sessions](#messages-between-sessions). |
+| `reachable` | The sessions this one can message. `--scope project` lists every live session. |
+| `inbound <session_id> [accept\|hold\|refuse]` | What the session does with messages from other sessions. `ls`, `approve <id>`, `deny <id>` decide held messages. |
 
 #### Watch
 
