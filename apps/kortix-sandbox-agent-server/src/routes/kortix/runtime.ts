@@ -101,6 +101,9 @@ export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | strin
   }
 }
 
+/** The attachment types the blob route serves as themselves. */
+const INERT_IMAGE = /^image\/(png|jpeg|gif|webp)$/
+
 /** A seq from a query parameter, or null when absent or not a non-negative integer. */
 function seqParam(value: string | undefined): number | null {
   return value !== undefined && /^\d+$/.test(value) ? Number(value) : null
@@ -292,7 +295,17 @@ export function createRuntimeRouter(
       if (!/^[0-9a-f]{64}$/.test(sha256)) return c.json({ error: 'invalid sha256' }, 400)
       const blob = await turns.readBlob(sha256)
       if (!blob) return c.json({ error: 'unknown attachment' }, 404)
-      return new Response(blob.bytes, { headers: { 'content-type': blob.mime, 'cache-control': 'private, max-age=31536000, immutable' } })
+      // The bytes are untrusted. Only a raster image keeps its type; anything else is served inert,
+      // with the headers the API's attachment download sends.
+      return new Response(blob.bytes, {
+        headers: {
+          'content-type': INERT_IMAGE.test(blob.mime) ? blob.mime : 'application/octet-stream',
+          'content-disposition': 'attachment',
+          'x-content-type-options': 'nosniff',
+          'content-security-policy': "default-src 'none'; sandbox",
+          'cache-control': 'private, max-age=31536000, immutable',
+        },
+      })
     })
   }
 

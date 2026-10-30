@@ -22,14 +22,34 @@ function sessionLogOf(rt: PiRuntime) {
   return snapshot ? piSessionLog(snapshot) : null
 }
 
-/** The `mime` an attachment with this digest carries anywhere in the log (a block or a tool result's content). */
-function mimeOf(value: unknown, sha256: string): string | null {
-  if (!value || typeof value !== 'object') return null
-  const record = value as Record<string, unknown>
-  if (record.sha256 === sha256 && typeof record.mime === 'string') return record.mime
-  for (const child of Object.values(record)) {
-    const found = Array.isArray(child) ? child.map((item) => mimeOf(item, sha256)).find(Boolean) : mimeOf(child, sha256)
-    if (found) return found
+/**
+ * The `mime` the log's own attachment records give this digest: an attachment
+ * block, or an attachment in a tool result's content. A tool call's input is
+ * the model's own JSON and never types the bytes.
+ */
+function mimeOf(log: { threads?: Array<{ messages?: Array<{ blocks?: unknown[] }> }> }, sha256: string): string | null {
+  const inItems = (items: unknown[]): string | null => {
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue
+      const block = item as Record<string, unknown>
+      if (block.type === 'attachment') {
+        if (block.sha256 === sha256 && typeof block.mime === 'string') return block.mime
+        continue
+      }
+      if (block.type !== 'tool_call' || !block.result || typeof block.result !== 'object') continue
+      const result = block.result as Record<string, unknown>
+      for (const list of [result.content, result.model_content]) {
+        const found = Array.isArray(list) ? inItems(list) : null
+        if (found) return found
+      }
+    }
+    return null
+  }
+  for (const thread of log.threads ?? []) {
+    for (const message of thread.messages ?? []) {
+      const found = inItems(message.blocks ?? [])
+      if (found) return found
+    }
   }
   return null
 }

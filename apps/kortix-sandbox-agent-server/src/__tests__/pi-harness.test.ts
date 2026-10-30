@@ -5474,15 +5474,24 @@ describe('session-log actions (runtime.actions.v1)', () => {
     mkdirSync(join(workspace, 'uploads/.kortix-inbox/cmd_1'), { recursive: true })
     const path = join(workspace, 'uploads/.kortix-inbox/cmd_1/1-swatch.png')
     writeFileSync(path, PNG)
-    const r = await boot({ workspace, script: [{ text: 'seen' }], catalog: testModel({ attachment: true }) })
+    const sha = createHash('sha256').update(PNG).digest('hex')
+    // The model names the digest with an HTML type in a tool input first: only the attachment's own record types the bytes.
+    const r = await boot({
+      workspace,
+      script: [{ tool: 'bash', args: { command: 'true', sha256: sha, mime: 'text/html' } }, { text: 'ran' }, { text: 'seen' }],
+      catalog: testModel({ attachment: true }),
+    })
     const rt = r.service.runtime()!
+    await promptAndSettle(r, 'run a command')
     const tag = `<file path="${path}" mime="image/png" filename="swatch.png">\nuploaded\n</file>`
     expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: `what colours? ${tag}` }] })).status).toBe(204)
     await waitFor(() => !rt.busy())
-    const sha = createHash('sha256').update(PNG).digest('hex')
     const res = await call(r, `/log/blobs/${sha}`, undefined, 'GET')
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('image/png')
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(res.headers.get('content-disposition')).toBe('attachment')
+    expect(res.headers.get('content-security-policy')).toBe("default-src 'none'; sandbox")
     expect(Buffer.from(await res.arrayBuffer()).equals(PNG)).toBe(true)
   })
 
