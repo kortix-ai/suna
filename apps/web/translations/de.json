@@ -24839,5 +24839,214 @@
     "tools": "Tools",
     "extensions": "Extensions",
     "drives": "Drives"
+  },
+  "multiAgent": {
+    "peer": {
+      "message": "Nachricht von {from}",
+      "idleNotice": "{from} ist fertig",
+      "shutdownRequest": "Beenden-Anfrage von {from}",
+      "shutdownResponse": "Antwort auf die Beenden-Anfrage von {from}",
+      "expand": "Ganze Nachricht anzeigen",
+      "collapse": "Nachricht ausblenden"
+    },
+    "notice": {
+      "completed": "{name} ist fertig",
+      "failed": "{name} wurde nicht abgeschlossen",
+      "stopped": "{name} wurde gestoppt",
+      "fallbackName": "Dein Agent",
+      "openSession": "Sitzung öffnen",
+      "expand": "Ganzes Ergebnis anzeigen",
+      "collapse": "Ergebnis ausblenden"
+    },
+    "tools": {
+      "running": {
+        "sending": "Nachricht wird gesendet…",
+        "checkingAgents": "Andere Agenten werden geprüft…",
+        "checkingTasks": "Aufgaben des Teams werden geprüft…",
+        "updatingTasks": "Aufgaben des Teams werden aktualisiert…",
+        "stopping": "Agent wird gestoppt…"
+      },
+      "to": "An",
+      "peerStatus": {
+        "delivered": "Zugestellt",
+        "held": "Wartet auf Freigabe",
+        "refused": "Nicht gesendet",
+        "denied": "Abgelehnt",
+        "expired": "Abgelaufen",
+        "dropped": "Nicht erneut gesendet"
+      },
+      "relation": {
+        "parent": "Übergeordnet",
+        "child": "Helfer",
+        "lead": "Leitung",
+        "teammate": "Teammitglied",
+        "session": "Sitzung"
+      },
+      "cannotReceive": "Kann keine Nachrichten empfangen",
+      "state": {
+        "working": "Arbeitet",
+        "needsInput": "Eingabe nötig",
+        "idle": "Inaktiv",
+        "completed": "Erledigt",
+        "failed": "Nicht abgeschlossen",
+        "stopped": "Gestoppt"
+      },
+      "taskStatus": {
+        "pending": "Ausstehend",
+        "inProgress": "In Bearbeitung",
+        "completed": "Erledigt"
+      },
+      "blockedBy": "blockiert durch {tasks}",
+      "stopped": "Gestoppt",
+      "alreadyEnded": "Bereits beendet",
+      "openSession": "Sitzung öffnen"
+    },
+    "strip": {
+      "label": "Agenten",
+      "agents": "{count, plural, one {# Agent} other {# Agenten}}",
+      "working": "{count, plural, one {# arbeitet} other {# arbeiten}}",
+      "needsInput": "{count, plural, one {# braucht dich} other {# brauchen dich}}",
+      "workflows": "{count, plural, one {# Workflow} other {# Workflows}}{running, plural, =0 {} other { aktiv}}",
+      "tasks": "Aufgaben",
+      "tasksHint": "Aufgaben des Teams anzeigen (Ctrl+T)",
+      "team": "Team",
+      "workflowsGroup": "Workflows",
+      "idleFolded": "{count, plural, one {# inaktiver Agent} other {# inaktive Agenten}}",
+      "idleCollapse": "Inaktive Agenten einklappen",
+      "state": {
+        "working": "Arbeitet",
+        "needs_input": "Braucht dich",
+        "idle": "Inaktiv",
+        "completed": "Erledigt",
+        "failed": "Nicht abgeschlossen",
+        "stopped": "Gestoppt"
+      },
+      "attention": {
+        "question": "Hat eine Frage an dich",
+        "approval": "Wartet auf deine Freigabe"
+      },
+      "openAgent": "{name} öffnen",
+      "stopHint": "Diesen Agenten stoppen (x)",
+      "stopAgent": "{name} stoppen",
+      "stopAgentFailed": "{name} konnte nicht gestoppt werden",
+      "stopFailed": "Der Agent konnte nicht gestoppt werden",
+      "runProgress": "{done} von {total} erledigt",
+      "runBackground": "Läuft im Hintergrund",
+      "runRunning": "Läuft",
+      "runStatus": {
+        "done": "Erledigt",
+        "failed": "Nicht abgeschlossen",
+        "stopped": "Gestoppt"
+      },
+      "runFallback": "Workflow",
+      "openRun": "Lauf öffnen",
+      "runNoAgents": "Noch keine Agenten"
+    },
+    "tasks": {
+      "label": "Aufgaben des Teams",
+      "empty": "Aufgaben, die das Team plant, erscheinen hier.",
+      "group": {
+        "pending": "Ausstehend",
+        "in_progress": "In Bearbeitung",
+        "completed": "Abgeschlossen"
+      },
+      "blockedBy": "Blockiert durch {tasks}",
+      "unowned": "Offen"
+    },
+    "held": {
+      "label": "Nachrichten, die auf dich warten",
+      "title": "Nachricht von @{from}",
+      "titleShutdown": "@{from} bittet darum, diese Sitzung zu stoppen",
+      "waiting": "Wartet auf deine Freigabe. Sie läuft nach 5 Minuten ab.",
+      "deny": "Ablehnen",
+      "approve": "Genehmigen",
+      "approveFailed": "Die Nachricht konnte nicht zugestellt werden",
+      "denyFailed": "Die Nachricht konnte nicht abgelehnt werden"
+    },
+    "workflow": {
+      "large": "Großer Workflow",
+      "largeHint": "Dieser Lauf startet mehr als 25 Agenten. Du kannst ihn oder jeden Agenten hier stoppen.",
+      "paused": "Pausiert",
+      "pause": "Lauf pausieren",
+      "resume": "Lauf fortsetzen",
+      "pauseHint": "Pausieren: Kein neuer Agent startet, laufende Agenten werden fertig (p)",
+      "resumeHint": "Lauf fortsetzen (p)",
+      "stop": "Lauf stoppen",
+      "stopHint": "Alle Agenten stoppen und den Lauf beenden (x)",
+      "save": "Speichern",
+      "saveHint": "Das Skript dieses Laufs als Workflow speichern, den du erneut ausführen kannst (s)",
+      "savePrompt": "Speichere den Workflow-Lauf „{title}“ (Lauf {runId}) als gespeicherten Workflow: Schreibe sein Skript nach {file} und eröffne dafür eine Änderungsanfrage.",
+      "saveSent": "Speichern des Workflows angefragt",
+      "saveFailed": "Das Speichern des Workflows konnte nicht angefragt werden",
+      "restartHint": "Diesen Agenten mit demselben Prompt neu starten (r)",
+      "restartAgent": "{label} neu starten",
+      "failed": {
+        "pause": "Der Lauf konnte nicht pausiert werden",
+        "resume": "Der Lauf konnte nicht fortgesetzt werden",
+        "stop": "Der Lauf konnte nicht gestoppt werden",
+        "restart": "{label} konnte nicht neu gestartet werden"
+      }
+    },
+    "board": {
+      "layoutLabel": "Ansicht",
+      "layoutList": "Liste",
+      "layoutBoard": "Board",
+      "dispatchLabel": "Eine Sitzung starten oder das Board filtern",
+      "dispatchPlaceholder": "Sitzung starten: @agent und eine Aufgabe. Filtern: s:working a:agent",
+      "tooShort": "Zu kurz",
+      "dispatched": "Sitzung gestartet",
+      "dispatchFailed": "Die Sitzung konnte nicht gestartet werden",
+      "openSession": "Sitzung öffnen",
+      "stopSession": "Sitzung stoppen",
+      "stopped": "Sitzung gestoppt",
+      "stopFailed": "Die Sitzung konnte nicht gestoppt werden",
+      "stateFilter": "Nach Status filtern",
+      "agentFilter": "Nach Agent filtern",
+      "allStates": "Alle Status",
+      "allAgents": "Alle Agenten",
+      "loadError": "Die Sitzungen konnten nicht geladen werden. Versuche es erneut.",
+      "retry": "Erneut versuchen",
+      "emptyTitle": "Sitzungen, die du startest, erscheinen hier",
+      "emptyDescription": "Gib oben eine Aufgabe ein und drücke Enter. Jede Aufgabe läuft in einer eigenen Sitzung.",
+      "noMatches": "Keine Sitzung passt zu diesen Filtern",
+      "clearFilters": "Filter löschen",
+      "listLabel": "Sitzungen nach Status",
+      "loadMore": "Mehr Sitzungen laden",
+      "loadingMore": "Weitere Sitzungen werden geladen…",
+      "more": "… {count} weitere",
+      "keys": {
+        "move": "bewegen",
+        "peek": "Vorschau",
+        "open": "öffnen",
+        "stop": "stoppen"
+      },
+      "group": {
+        "pinned": "Angeheftet",
+        "needs_input": "Eingabe nötig",
+        "working": "Arbeitet",
+        "review": "Bereit zur Prüfung",
+        "completed": "Abgeschlossen",
+        "ended": "Fehlgeschlagen · Gestoppt"
+      },
+      "state": {
+        "working": "Arbeitet",
+        "needs_input": "Eingabe nötig",
+        "idle": "Inaktiv",
+        "completed": "Abgeschlossen",
+        "failed": "Fehlgeschlagen",
+        "stopped": "Gestoppt"
+      },
+      "result": "Ergebnis",
+      "noResult": "Noch keine Antwort.",
+      "replyPlaceholder": "Antworte. Die Antwort erreicht den Agenten bei seinem nächsten Schritt.",
+      "replyLabel": "Auf {title} antworten",
+      "sendReply": "Antwort senden",
+      "replySent": "Antwort gesendet",
+      "replyFailed": "Die Antwort konnte nicht gesendet werden"
+    },
+    "ultracode": {
+      "hint": "Läuft als Workflow aus Agenten",
+      "dismiss": "{key}, um es als normalen Prompt zu senden"
+    }
   }
 }

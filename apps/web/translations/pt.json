@@ -24839,5 +24839,214 @@
     "tools": "Tools",
     "extensions": "Extensions",
     "drives": "Drives"
+  },
+  "multiAgent": {
+    "peer": {
+      "message": "Mensagem de {from}",
+      "idleNotice": "{from} terminou",
+      "shutdownRequest": "Pedido de encerramento de {from}",
+      "shutdownResponse": "Resposta ao pedido de encerramento de {from}",
+      "expand": "Mostrar a mensagem inteira",
+      "collapse": "Ocultar a mensagem"
+    },
+    "notice": {
+      "completed": "{name} terminou",
+      "failed": "{name} não terminou",
+      "stopped": "{name} foi parado",
+      "fallbackName": "Seu agente",
+      "openSession": "Abrir sessão",
+      "expand": "Mostrar o resultado inteiro",
+      "collapse": "Ocultar o resultado"
+    },
+    "tools": {
+      "running": {
+        "sending": "Enviando uma mensagem…",
+        "checkingAgents": "Verificando os outros agentes…",
+        "checkingTasks": "Verificando as tarefas da equipe…",
+        "updatingTasks": "Atualizando as tarefas da equipe…",
+        "stopping": "Parando um agente…"
+      },
+      "to": "Para",
+      "peerStatus": {
+        "delivered": "Entregue",
+        "held": "Aguardando aprovação",
+        "refused": "Não enviada",
+        "denied": "Negada",
+        "expired": "Expirada",
+        "dropped": "Não enviada de novo"
+      },
+      "relation": {
+        "parent": "Principal",
+        "child": "Ajudante",
+        "lead": "Líder",
+        "teammate": "Colega de equipe",
+        "session": "Sessão"
+      },
+      "cannotReceive": "Não pode receber mensagens",
+      "state": {
+        "working": "Trabalhando",
+        "needsInput": "Precisa da sua resposta",
+        "idle": "Ocioso",
+        "completed": "Concluído",
+        "failed": "Não terminou",
+        "stopped": "Parado"
+      },
+      "taskStatus": {
+        "pending": "Pendente",
+        "inProgress": "Em andamento",
+        "completed": "Concluída"
+      },
+      "blockedBy": "bloqueada por {tasks}",
+      "stopped": "Parado",
+      "alreadyEnded": "Já terminou",
+      "openSession": "Abrir sessão"
+    },
+    "strip": {
+      "label": "Agentes",
+      "agents": "{count, plural, one {# agente} other {# agentes}}",
+      "working": "{count} trabalhando",
+      "needsInput": "{count, plural, one {# precisa de você} other {# precisam de você}}",
+      "workflows": "{count, plural, one {# fluxo de trabalho} other {# fluxos de trabalho}}{running, plural, =0 {} other { em andamento}}",
+      "tasks": "Tarefas",
+      "tasksHint": "Mostrar as tarefas da equipe (Ctrl+T)",
+      "team": "Equipe",
+      "workflowsGroup": "Fluxos de trabalho",
+      "idleFolded": "{count, plural, one {# agente ocioso} other {# agentes ociosos}}",
+      "idleCollapse": "Recolher agentes ociosos",
+      "state": {
+        "working": "Trabalhando",
+        "needs_input": "Precisa de você",
+        "idle": "Ocioso",
+        "completed": "Concluído",
+        "failed": "Não terminou",
+        "stopped": "Parado"
+      },
+      "attention": {
+        "question": "Tem uma pergunta para você",
+        "approval": "Aguarda a sua aprovação"
+      },
+      "openAgent": "Abrir {name}",
+      "stopHint": "Parar este agente (x)",
+      "stopAgent": "Parar {name}",
+      "stopAgentFailed": "Não foi possível parar {name}",
+      "stopFailed": "Não foi possível parar o agente",
+      "runProgress": "{done} de {total} concluídos",
+      "runBackground": "Em segundo plano",
+      "runRunning": "Em andamento",
+      "runStatus": {
+        "done": "Concluído",
+        "failed": "Não terminou",
+        "stopped": "Parado"
+      },
+      "runFallback": "Fluxo de trabalho",
+      "openRun": "Abrir execução",
+      "runNoAgents": "Ainda não há agentes"
+    },
+    "tasks": {
+      "label": "Tarefas da equipe",
+      "empty": "As tarefas que a equipe planejar aparecerão aqui.",
+      "group": {
+        "pending": "Pendentes",
+        "in_progress": "Em andamento",
+        "completed": "Concluídas"
+      },
+      "blockedBy": "Bloqueada por {tasks}",
+      "unowned": "Sem responsável"
+    },
+    "held": {
+      "label": "Mensagens esperando por você",
+      "title": "Mensagem de @{from}",
+      "titleShutdown": "@{from} pede para parar esta sessão",
+      "waiting": "Aguardando a sua aprovação. Expira em 5 minutos.",
+      "deny": "Negar",
+      "approve": "Aprovar",
+      "approveFailed": "Não foi possível entregar a mensagem",
+      "denyFailed": "Não foi possível negar a mensagem"
+    },
+    "workflow": {
+      "large": "Fluxo de trabalho grande",
+      "largeHint": "Esta execução inicia mais de 25 agentes. Você pode pará-la, ou parar qualquer agente, por aqui.",
+      "paused": "Pausada",
+      "pause": "Pausar a execução",
+      "resume": "Retomar a execução",
+      "pauseHint": "Pausar: nenhum agente novo começa; os agentes em andamento terminam (p)",
+      "resumeHint": "Retomar a execução (p)",
+      "stop": "Parar a execução",
+      "stopHint": "Parar todos os agentes e encerrar a execução (x)",
+      "save": "Salvar",
+      "saveHint": "Salvar o script desta execução como um fluxo de trabalho que você pode executar de novo (s)",
+      "savePrompt": "Salve a execução do fluxo de trabalho “{title}” (execução {runId}) como fluxo de trabalho salvo: escreva o script dela em {file} e abra uma solicitação de alteração para ele.",
+      "saveSent": "Pedido para salvar o fluxo de trabalho enviado",
+      "saveFailed": "Não foi possível pedir para salvar o fluxo de trabalho",
+      "restartHint": "Reiniciar este agente com o mesmo prompt (r)",
+      "restartAgent": "Reiniciar {label}",
+      "failed": {
+        "pause": "Não foi possível pausar a execução",
+        "resume": "Não foi possível retomar a execução",
+        "stop": "Não foi possível parar a execução",
+        "restart": "Não foi possível reiniciar {label}"
+      }
+    },
+    "board": {
+      "layoutLabel": "Layout",
+      "layoutList": "Lista",
+      "layoutBoard": "Quadro",
+      "dispatchLabel": "Iniciar uma sessão ou filtrar o quadro",
+      "dispatchPlaceholder": "Inicie uma sessão: @agent e uma tarefa. Filtre: s:working a:agent",
+      "tooShort": "Curto demais",
+      "dispatched": "Sessão iniciada",
+      "dispatchFailed": "Não foi possível iniciar a sessão",
+      "openSession": "Abrir sessão",
+      "stopSession": "Parar sessão",
+      "stopped": "Sessão parada",
+      "stopFailed": "Não foi possível parar a sessão",
+      "stateFilter": "Filtrar por estado",
+      "agentFilter": "Filtrar por agente",
+      "allStates": "Todos os estados",
+      "allAgents": "Todos os agentes",
+      "loadError": "Não foi possível carregar as sessões. Tente novamente.",
+      "retry": "Tentar novamente",
+      "emptyTitle": "As sessões que você iniciar aparecerão aqui",
+      "emptyDescription": "Digite uma tarefa acima e pressione Enter. Cada tarefa é executada na própria sessão.",
+      "noMatches": "Nenhuma sessão corresponde a estes filtros",
+      "clearFilters": "Limpar filtros",
+      "listLabel": "Sessões por estado",
+      "loadMore": "Carregar mais sessões",
+      "loadingMore": "Carregando mais sessões…",
+      "more": "… mais {count}",
+      "keys": {
+        "move": "mover",
+        "peek": "prévia",
+        "open": "abrir",
+        "stop": "parar"
+      },
+      "group": {
+        "pinned": "Fixadas",
+        "needs_input": "Precisa da sua resposta",
+        "working": "Trabalhando",
+        "review": "Prontas para revisão",
+        "completed": "Concluídas",
+        "ended": "Com falha · Paradas"
+      },
+      "state": {
+        "working": "Trabalhando",
+        "needs_input": "Precisa da sua resposta",
+        "idle": "Ociosa",
+        "completed": "Concluída",
+        "failed": "Falhou",
+        "stopped": "Parada"
+      },
+      "result": "Resultado",
+      "noResult": "Ainda sem resposta.",
+      "replyPlaceholder": "Responda. A resposta chega ao agente no próximo passo dele.",
+      "replyLabel": "Responder a {title}",
+      "sendReply": "Enviar resposta",
+      "replySent": "Resposta enviada",
+      "replyFailed": "Não foi possível enviar a resposta"
+    },
+    "ultracode": {
+      "hint": "Executa como um fluxo de trabalho de agentes",
+      "dismiss": "{key} para enviar como um prompt normal"
+    }
   }
 }
