@@ -13439,3 +13439,19 @@ test('keeps the runtime gate reporting for an Illegal invocation (runtime captur
     );
   }
 });
+
+test('ignores injected content-script onMessage errors without hiding first-party errors', () => {
+  const message = "Cannot read properties of undefined (reading 'onMessage')";
+  const filename = 'app:///js/content.js';
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ message, filename }), true);
+  const event = (source: string) => ({ exception: { values: [{ type: 'TypeError', value: message,
+    stacktrace: { frames: [{ filename: source, function: 'Object.<anonymous>' }] },
+  }] } });
+  assert.equal(shouldIgnoreSentryBrowserNoise(event(filename)), true);
+  for (const source of ['app:///_next/static/chunks/content.js', 'apps/web/src/content.ts', 'https://kortix.com/js/content.js', 'app:///js/content.js.map']) {
+    assert.equal(shouldIgnoreBrowserRuntimeNoise({ message, filename: source }), false);
+    assert.equal(shouldIgnoreSentryBrowserNoise(event(source)), false);
+  }
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ message }), false);
+  assert.equal(shouldIgnoreSentryBrowserNoise(event('')), false);
+});
