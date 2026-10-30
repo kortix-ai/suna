@@ -55,3 +55,4 @@ import './web-fetch-tool';
 import './web-search-tool';
 import './workflow-tool';
 import './write-tool';
+import './multi-agent-tools';

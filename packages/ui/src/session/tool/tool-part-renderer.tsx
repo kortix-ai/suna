@@ -23,7 +23,7 @@ import { type InlinePermissionReply, replyToInlinePermission } from './inline-pe
 import { errorToast } from '../../primitives/toast';
 import { cn } from '../../lib/utils';
 import { partError, partMetadata, partStreamingInput } from './shared/infrastructure-parts';
-import { kortixPlatformTool, parseKortixToolResult } from './tools/kortix-tool-card';
+import { kortixCardTool, parseKortixToolResult } from './tools/kortix-tool-card';
 import { isWorkflowTool, parseWorkflowRun } from './tools/workflow-run';
 import {
   PERMISSION_LABELS,
@@ -183,7 +183,7 @@ function ToolPartRendererImpl({
     childBearingTaskError ||
     call.name === 'codemode' ||
     call.name === 'image_gen' ||
-    (errorStr !== undefined && kortixPlatformTool(call.name) !== undefined && parseKortixToolResult(errorStr) !== null) ||
+    (errorStr !== undefined && kortixCardTool(call.name) !== undefined && parseKortixToolResult(errorStr, call.name) !== null) ||
     (errorStr !== undefined && isWorkflowTool(call.name) && parseWorkflowRun(partMetadata(call)) !== null);
 
   if (errorStr !== undefined && !drawsOwnError) {

@@ -106,6 +106,8 @@ import { Button } from '../../primitives/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../primitives/disclosure';
 import { useUserPreferencesStore, type ConversationDensity } from '../../internal/stores/user-preferences-store';
 import { SubSessionModal } from './sub-session-modal';
+import { parseSubagentNotice, type SubagentNotice } from '../turn/subagent-notice';
+import { SubagentNoticeRow } from '../turn/subagent-notice-row';
 import { ToolPartRenderer, TurnLiveContext } from '../tool/tool-renderers';
 import {
   ImageGenDigestsContext,
@@ -1041,6 +1043,15 @@ const sessionReport = useMemo<SessionReport | null>(() => {
   }
   return null;
 }, [texts]);
+// A background subagent's end notice (`subagentNoticeText` in the API): a compact row, not a card.
+const subagentNotice = useMemo<SubagentNotice | null>(() => {
+  if (!sessionReport) return null;
+  for (const t of texts) {
+    const notice = parseSubagentNotice(t.text);
+    if (notice) return notice;
+  }
+  return null;
+}, [texts, sessionReport]);
 // Extract kortix_system messages for inline rendering (goal continuations, etc.)
 const systemMessages = useMemo<KortixSystemMessage[]>(() => {
   const msgs: KortixSystemMessage[] = [];
@@ -1095,7 +1106,7 @@ const commandOutput = useMemo(() => {
   const source = Array.isArray(commands) ? commands.find((c) => c.name === commandForTurn.name)?.source : undefined;
   return source === 'skill' ? undefined : commandForTurn;
 }, [commandForTurn, commands]);
-  return { sessionReport, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput };
+  return { sessionReport, subagentNotice, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput };
 }
 
 /** The throttled working status of the working turn: one status change per
@@ -1522,12 +1533,16 @@ function TurnUserBlock(
   },
 ) {
   const { userContent } = props;
-  const { sessionReport, systemMessages, hasVisibleUserContent } = userContent;
+  const { sessionReport, subagentNotice, systemMessages, hasVisibleUserContent } = userContent;
   // P5.6: the note a partial restore left for the agent is a notice, not a person's prompt.
   if (isSessionLogRestoreNote(props.turn.user)) return <RestoreNoteMarker />;
   return (
     <>
-      {sessionReport && <TurnSessionReport report={sessionReport} />}
+      {subagentNotice ? (
+        <SubagentNoticeRow notice={subagentNotice} />
+      ) : (
+        sessionReport && <TurnSessionReport report={sessionReport} />
+      )}
       {/* ── System message indicator — shown for kortix_system-only messages ── */}
       {!hasVisibleUserContent && !sessionReport && systemMessages.length > 0 && (
         <SystemMessageIndicator messages={systemMessages} />

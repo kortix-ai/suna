@@ -84,6 +84,8 @@ import {
 } from '../thread/mention-segments';
 import { parseChannelMessage, slackConversationName, type ChannelMessageInfo } from './channel-message';
 import { SourceCard, SourcePill } from './source-pill';
+import { PeerMessageRow } from './peer-message-row';
+import { parsePeerMessagePrompt } from '@kortix/shared';
 import { useChannelBindings } from '../../internal/hooks/use-channel-bindings';
 import { useSessionIds } from '../../providers/session-ids';
 import { CHANNEL_BRAND_COLOR, ChannelBrandMark, channelPlatformLabel } from './channel-brand';
@@ -1779,6 +1781,8 @@ export function UserMessage({
   const roomInfo = useMemo(() => parseRoomPrompt(rawText), [rawText]);
   // A batched digest of room traffic: `[room <name> · #a–#b · N new messages]`.
   const roomDigestInfo = useMemo(() => parseRoomDigest(rawText), [rawText]);
+  // A message from another Kortix session (`send_message`): `[message from reviewer · session 3f2a1b9c · #m_1]`.
+  const peerInfo = useMemo(() => parsePeerMessagePrompt(rawText), [rawText]);
 
   // `messageCreatedAt`'s rule on the record's ISO time: a missing or non-positive time is no time.
   const createdAt = Date.parse(message.created_at);
@@ -2013,6 +2017,10 @@ export function UserMessage({
 
   if (reminderInfo) {
     return <ReminderMessage info={reminderInfo} actions={actions} />;
+  }
+
+  if (peerInfo) {
+    return <PeerMessageRow info={peerInfo} actions={actions} />;
   }
 
   if (roomInfo) {

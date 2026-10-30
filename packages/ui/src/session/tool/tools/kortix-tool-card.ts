@@ -19,6 +19,26 @@ export const KORTIX_PLATFORM_TOOLS = [
 ] as const;
 export type KortixPlatformTool = (typeof KORTIX_PLATFORM_TOOLS)[number];
 
+/**
+ * The multi-agent tools (`packages/api-contract/src/multi-agent.ts`): the same
+ * `KortixToolResult`, with `data` = the contract object the card body draws.
+ * `task_create`, `task_list`, `task_get` and `task_update` are also the names of
+ * older plugin tools: `multi-agent-tools.tsx` tells the two apart by the output.
+ */
+export const MULTI_AGENT_TOOLS = [
+  'send_message',
+  'list_agents',
+  'task_create',
+  'task_list',
+  'task_get',
+  'task_update',
+  'task_stop',
+] as const;
+export type MultiAgentTool = (typeof MULTI_AGENT_TOOLS)[number];
+
+/** Every tool whose result is a `KortixToolResult` card. */
+export type KortixCardTool = KortixPlatformTool | MultiAgentTool;
+
 export type KortixCardStatus = 'done' | 'running' | 'needs_you' | 'denied' | 'error';
 
 export interface KortixCardRow {
@@ -66,10 +86,12 @@ export interface KortixToolError {
 
 export interface KortixToolResult {
   ok: boolean;
-  tool: KortixPlatformTool;
+  tool: KortixCardTool;
   action: string;
   card: KortixToolCard;
   error?: KortixToolError;
+  /** What the model reads. Only the multi-agent card bodies draw it, each through its own defensive parser. */
+  data?: unknown;
 }
 
 const STATUSES = new Set<KortixCardStatus>(['done', 'running', 'needs_you', 'denied', 'error']);
@@ -90,6 +112,17 @@ export function kortixPlatformTool(name: string): KortixPlatformTool | undefined
   return (KORTIX_PLATFORM_TOOLS as readonly string[]).includes(normalized)
     ? (normalized as KortixPlatformTool)
     : undefined;
+}
+
+/** A multi-agent tool a call name names: `send_message`, also as `send-message` or `oc-send_message`. */
+export function multiAgentTool(name: string): MultiAgentTool | undefined {
+  const normalized = name.replace(/^oc[-_]/, '').replace(/-/g, '_');
+  return (MULTI_AGENT_TOOLS as readonly string[]).includes(normalized) ? (normalized as MultiAgentTool) : undefined;
+}
+
+/** Any tool that answers with a `KortixToolResult` card. */
+export function kortixCardTool(name: string): KortixCardTool | undefined {
+  return kortixPlatformTool(name) ?? multiAgentTool(name);
 }
 
 /** An in-app path: one leading `/`, never `//` (a protocol-relative URL leaves the app). */
@@ -167,9 +200,10 @@ function toolError(value: unknown): KortixToolError | undefined {
 
 /**
  * The result in a platform call's output (or its error text, when the call threw
- * it): one JSON object. `null` when the text is not that object.
+ * it): one JSON object. `null` when the text is not that object. `callName` names
+ * the tool when the result leaves `tool` out.
  */
-export function parseKortixToolResult(raw: string | undefined): KortixToolResult | null {
+export function parseKortixToolResult(raw: string | undefined, callName?: string): KortixToolResult | null {
   const source = raw?.trim();
   if (!source || !source.startsWith('{')) return null;
   let value: unknown;
@@ -179,7 +213,8 @@ export function parseKortixToolResult(raw: string | undefined): KortixToolResult
     return null;
   }
   if (!isObject(value) || typeof value.ok !== 'boolean' || !isObject(value.card)) return null;
-  const tool = typeof value.tool === 'string' ? kortixPlatformTool(value.tool) : undefined;
+  const tool =
+    typeof value.tool === 'string' ? kortixCardTool(value.tool) : callName !== undefined ? kortixCardTool(callName) : undefined;
   const title = text(value.card.title);
   if (!tool || !title) return null;
   const error = toolError(value.error);
@@ -205,6 +240,7 @@ export function parseKortixToolResult(raw: string | undefined): KortixToolResult
       links: list(value.card.links, link),
     },
     ...(error ? { error } : {}),
+    ...(value.data !== undefined ? { data: value.data } : {}),
   };
 }
 

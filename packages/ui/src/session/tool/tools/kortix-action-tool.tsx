@@ -41,10 +41,13 @@ import {
   type Icon,
 } from '@phosphor-icons/react';
 import { useContext, useMemo } from 'react';
+import { MULTI_AGENT_ICON, multiAgentBody, runningKey } from './multi-agent-tool-bodies';
 import {
   KORTIX_PLATFORM_TOOLS,
   isReadAction,
+  kortixCardTool,
   kortixPlatformTool,
+  multiAgentTool,
   parseKortixToolResult,
   type KortixCardChange,
   type KortixCardLink,
@@ -65,6 +68,11 @@ import {
  * A refused action is not a failure: Kortix's permission check worked, and a
  * person can grant the permission. It reads as "Needs a permission" with the
  * people who can grant it (color.md: a refusal by design takes `kortix-orange`).
+ *
+ * The multi-agent tools (`send_message`, `list_agents`, `task_*`) draw a richer
+ * body from the result's `data` (`multi-agent-tool-bodies.tsx`): the message and
+ * whether it arrived, the agents with their state, the tasks with owner and
+ * blockers.
  *
  * A result that does not parse renders as the generic tool card.
  */
@@ -331,26 +339,31 @@ function SettledTrigger({
 export function KortixActionTool(props: ToolProps) {
   const { call, defaultOpen, forceOpen, locked } = props;
   const t = useTranslations('tools.kortixAction');
+  const tMulti = useTranslations('multiAgent.tools');
   const running = useContext(ToolRunningContext);
-  const tool = kortixPlatformTool(call.name);
+  const tool = kortixCardTool(call.name);
+  const platform = kortixPlatformTool(call.name);
+  const multi = multiAgentTool(call.name);
   const status = partStatus(call);
   const settled = status === 'completed' || status === 'error';
   const raw = status === 'error' ? (partError(call) ?? '') : partRawOutput(call);
-  const result = useMemo(() => (settled ? parseKortixToolResult(raw) : null), [settled, raw]);
+  const result = useMemo(() => (settled ? parseKortixToolResult(raw, call.name) : null), [settled, raw, call.name]);
 
   if (!tool || (settled && !result)) {
     return <GenericTool call={call} defaultOpen={defaultOpen} forceOpen={forceOpen} locked={locked} />;
   }
 
-  const { icon: ToolIcon, object } = TOOL_META[tool];
+  const ToolIcon = platform ? TOOL_META[platform].icon : MULTI_AGENT_ICON[multi!];
   const icon = <ToolIcon className="size-4 shrink-0" />;
 
   if (!result) {
-    const mode = isReadAction(partInput(call).action) ? 'read' : 'change';
+    const title = platform
+      ? t(`running.${TOOL_META[platform].object}.${isReadAction(partInput(call).action) ? 'read' : 'change'}`)
+      : tMulti(`running.${runningKey(multi!)}`);
     return (
       <BasicTool
         icon={icon}
-        trigger={<CardTrigger title={t(`running.${object}.${mode}`)} live={running} />}
+        trigger={<CardTrigger title={title} live={running} />}
         defaultOpen={defaultOpen}
         forceOpen={forceOpen}
         locked={locked}
@@ -363,7 +376,9 @@ export function KortixActionTool(props: ToolProps) {
   const failure = card.status === 'error' && error && error.message && error.message !== card.title ? error.message : undefined;
   // `fail()` puts the error message in the subtitle; the open card shows it in full instead.
   const subtitleInBody = denied || (failure !== undefined && failure === card.subtitle);
-  const hasBody = denied || Boolean(failure) || card.rows.length > 0 || card.changes.length > 0 || card.links.length > 0 || Boolean(raw);
+  // A multi-agent result draws its own body from `data`; the card's rows would say it twice.
+  const rich = multi && !denied ? multiAgentBody(multi, result) : null;
+  const hasBody = denied || Boolean(failure) || Boolean(rich) || card.rows.length > 0 || card.changes.length > 0 || card.links.length > 0 || Boolean(raw);
   // What the person must see or act on opens itself: a refusal, a change, a sign-in link.
   const attention = denied || card.status === 'needs_you' || card.changes.length > 0 || card.links.some((link) => link.external);
 
@@ -385,7 +400,8 @@ export function KortixActionTool(props: ToolProps) {
                 <p className="text-muted-foreground text-xs wrap-break-word">{failure}</p>
               </ToolResultCard>
             )}
-            {card.rows.length > 0 && (
+            {rich}
+            {!rich && card.rows.length > 0 && (
               <ToolResultCard bodyClassName="py-0.5">
                 <ul>
                   {card.rows.map((row, index) => (
@@ -415,3 +431,6 @@ export function KortixActionTool(props: ToolProps) {
 }
 
 for (const name of KORTIX_PLATFORM_TOOLS) ToolRegistry.register(name, KortixActionTool);
+// The multi-agent tools no older tool shares a name with. `task_create`, `task_list`,
+// `task_get` and `task_update` register in `multi-agent-tools.tsx`, beside the older tools.
+for (const name of ['send_message', 'list_agents', 'task_stop']) ToolRegistry.register(name, KortixActionTool);
