@@ -4,7 +4,8 @@
  * Reads ./kortix.yaml (or --file <path>), runs the canonical
  * `@kortix/manifest-schema` validator, then the project checks in
  * `project-lint.ts`: every sandbox Dockerfile the manifest points at, the agent
- * wiring, and the size of the files Git stores. Prints one colored report.
+ * wiring, and the size of the files Git stores. Prints one line per issue:
+ * `<file>:<line>:<col>  <severity>  <path>  <message>`.
  *
  *   exit 0   — no errors (warnings may be present)
  *   exit 1   — one or more errors
@@ -15,21 +16,10 @@
  * warning: a large repository still pushes and its sessions still start, but
  * above 512 MiB compressed a running session stops picking up config changes.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
-import {
-  DEPRECATED_KORTIX_PERMISSION_ALIASES,
-  GRANTABLE_KORTIX_PERMISSIONS,
-  type ManifestIssue,
-  ManifestImportError,
-  formatIssues,
-  hasManifestImports,
-  manifestFormatForPath,
-  validateManifest,
-} from '@kortix/manifest-schema';
-import { lintProject } from '../project-lint.ts';
-import { resolveLocalManifestImports } from '../manifest-imports.ts';
-import { resolveLocalManifest } from '../manifest.ts';
+import { DEPRECATED_KORTIX_PERMISSION_ALIASES, GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
+import { type FileIssue, formatIssueLine, resolveLocalManifest, validateManifestFile } from '../manifest.ts';
 import { C, help, status } from '../style.ts';
 import { takeFlags } from '../command-argv.ts';
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
@@ -44,6 +34,10 @@ Warn when the files in Git are large: every session downloads them, and above
 from the base branch. Keep big static assets in object storage, not in Git.
 \`kortix ship\` runs these checks.
 
+Prints one line per issue: <file>:<line>:<col>  <severity>  <path>  <message>.
+An entry that \`imports:\` brings in is reported in the file that declares it.
+Exit 1 on any error; warnings alone exit 0.
+
 Options:
   --file <path>          Validate this file instead of ./kortix.yaml.
   --no-dockerfile-lint   Skip the sandbox Dockerfile checks (manifest only).
@@ -52,28 +46,17 @@ Options:
   -h, --help             Show this help.
 `;
 
-/** One line per agent: its assigned connectors + Kortix permissions. */
+/** One line per agent: what it enables. Every grant is deny-by-default. */
 function describeAgents(parsed: Record<string, unknown> | null): string {
   const agents = parsed?.agents;
+  if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return '';
   const show = (v: unknown): string =>
     v === 'all' ? 'all' : Array.isArray(v) ? v.join(', ') || 'none' : 'none (default-deny)';
-  // kortix_version 3: what each agent enables. Every grant is deny-by-default.
-  if (Number(parsed?.kortix_version) === 3 && agents && typeof agents === 'object' && !Array.isArray(agents)) {
-    const keys = ['skills', 'subagents', 'commands', 'extensions', 'connectors', 'secrets'];
-    const lines = Object.entries(agents as Record<string, Record<string, unknown> | null>).map(
-      ([name, block]) => `  ${C.cyan}${name}${C.reset}  ${keys.map((key) => `${key}=[${show(block?.[key])}]`).join('  ')}`,
-    );
-    return `\n${C.dim}What each agent enables:${C.reset}\n${lines.join('\n')}\n`;
-  }
-  if (!Array.isArray(agents) || agents.length === 0) return '';
-  const lines = agents.map((a: any) => {
-    const name = typeof a?.name === 'string' ? a.name : '(unnamed)';
-    // `env` omitted == 'all' (the parser's default), so render it that way rather
-    // than as default-deny — otherwise the summary misreports an unscoped agent.
-    const env = a?.env === undefined || a?.env === null ? 'all' : a?.env;
-    return `  ${C.cyan}${name}${C.reset}  connectors=[${show(a?.connectors)}]  kortix_permissions=[${show(a?.kortix_permissions ?? a?.kortix_cli)}]  env=[${show(env)}]`;
-  });
-  return `\n${C.dim}Per-agent scope (kortix.yaml [[agents]]):${C.reset}\n${lines.join('\n')}\n`;
+  const keys = ['skills', 'subagents', 'commands', 'extensions', 'connectors', 'secrets'];
+  const lines = Object.entries(agents as Record<string, Record<string, unknown> | null>).map(
+    ([name, block]) => `  ${C.cyan}${name}${C.reset}  ${keys.map((key) => `${key}=[${show(block?.[key])}]`).join('  ')}`,
+  );
+  return lines.length === 0 ? '' : `\n${C.dim}What each agent enables:${C.reset}\n${lines.join('\n')}\n`;
 }
 
 export function runValidate(argv: string[]): number {
@@ -104,8 +87,7 @@ export function runValidate(argv: string[]): number {
     return 0;
   }
 
-  // Explicit --file wins; otherwise resolve the project's manifest, preferring
-  // kortix.yaml over kortix.toml (falls back to kortix.yaml for the not-found msg).
+  // Explicit --file wins; otherwise the project's kortix.yaml (or kortix.yml).
   const filePath = flags.file
     ? resolve(process.cwd(), flags.file)
     : (resolveLocalManifest(process.cwd())?.path ?? resolve(process.cwd(), 'kortix.yaml'));
@@ -124,9 +106,13 @@ export function runValidate(argv: string[]): number {
     return 2;
   }
 
-  let raw: string;
+  // Manifest issues first, then the project checks — one merged report, one
+  // exit code. A Dockerfile `error` fails `validate` exactly like a schema
+  // error does; `ship` runs the same checks and stops on it too.
+  let parsed: Record<string, unknown> | null;
+  let issues: FileIssue[];
   try {
-    raw = readFileSync(filePath, 'utf8');
+    ({ parsed, issues } = validateManifestFile(filePath, { dockerfileLint: flags.dockerfileLint }));
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     if (flags.json) {
@@ -136,67 +122,22 @@ export function runValidate(argv: string[]): number {
     }
     return 2;
   }
-
-  let result = validateManifest(raw, manifestFormatForPath(filePath));
-  // `imports:` — validate the MERGED document, the one the platform runs. A
-  // broken import (missing file, duplicate name, cycle, root-only key in an
-  // imported file) is an error here, the same one the CR-merge gate returns.
-  if (result.parsed && hasManifestImports(result.parsed) && manifestFormatForPath(filePath) === 'yaml') {
-    try {
-      const merged = resolveLocalManifestImports(filePath, 'yaml');
-      result = validateManifest(merged.raw, 'yaml');
-    } catch (err) {
-      if (!(err instanceof ManifestImportError)) throw err;
-      result = {
-        ...result,
-        valid: false,
-        issues: [...result.issues, { path: 'imports', message: err.message, severity: 'error' }],
-      };
-    }
-  }
-
-  // Manifest issues first, then the project checks — one merged report, one
-  // exit code. A Dockerfile `error` fails `validate` exactly like a schema
-  // error does; `ship` runs the same `lintProject` list and stops on it too.
-  const issues = [
-    ...result.issues,
-    ...lintProject(result.parsed, filePath, { dockerfileLint: flags.dockerfileLint }),
-  ];
-  const valid = !issues.some((i) => i.severity === 'error');
-
-  if (flags.json) {
-    process.stdout.write(
-      JSON.stringify({
-        valid,
-        path: filePath,
-        issues,
-      }) + '\n',
-    );
-    return valid ? 0 : 1;
-  }
-
   const errors = issues.filter((i) => i.severity === 'error');
   const warnings = issues.filter((i) => i.severity === 'warning');
 
-  if (valid && warnings.length === 0) {
-    process.stdout.write(`${status.ok(`${basename(filePath)} is valid`)}\n`);
-    process.stdout.write(describeAgents(result.parsed));
-    return 0;
+  if (flags.json) {
+    process.stdout.write(JSON.stringify({ valid: errors.length === 0, path: filePath, issues }) + '\n');
+    return errors.length === 0 ? 0 : 1;
   }
 
-  if (warnings.length > 0) {
-    process.stdout.write(
-      `${C.yellow}${warnings.length} warning${warnings.length === 1 ? '' : 's'}:${C.reset}\n`,
-    );
-    process.stdout.write(formatIssues(warnings) + '\n');
-  }
+  for (const w of warnings) process.stdout.write(`${formatIssueLine(w)}\n`);
+  for (const e of errors) process.stderr.write(`${formatIssueLine(e)}\n`);
+  const counts = `${errors.length} error${errors.length === 1 ? '' : 's'}, ${warnings.length} warning${warnings.length === 1 ? '' : 's'}`;
   if (errors.length > 0) {
-    process.stderr.write(
-      `\n${C.red}${errors.length} error${errors.length === 1 ? '' : 's'}:${C.reset}\n`,
-    );
-    process.stderr.write(formatIssues(errors) + '\n');
+    process.stderr.write(`\n${status.err(`${basename(filePath)}: ${counts}`)}\n`);
     return 1;
   }
-
+  process.stdout.write(`${warnings.length > 0 ? '\n' : ''}${status.ok(`${basename(filePath)} is valid${warnings.length > 0 ? ` (${counts})` : ''}`)}\n`);
+  process.stdout.write(describeAgents(parsed));
   return 0;
 }

@@ -690,7 +690,7 @@ flow(
   async (ctx) => {
     if (ctx.env.target !== "local") return; // the agent file is pushed straight to the bare repository
     const { execFileSync } = await import("node:child_process");
-    const { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
     const { Client: PgClient } = await import("pg");
@@ -706,7 +706,7 @@ flow(
     const granted = await member();
     const scopedOut = ctx.client.as(await member());
     const AGENT = "agents/ke2e-hidden-bot.md";
-    const BODY = "---\ndescription: ke2e hidden agent\n---\nhidden instructions\n";
+    const BODY = "hidden instructions\n";
     const SPELLINGS = [
       AGENT,
       `./${AGENT}`,
@@ -725,10 +725,9 @@ flow(
         const { rows } = await db.query("SELECT repo_url, default_branch FROM kortix.projects WHERE project_id = $1", [project.id]);
         const git = (...a: string[]) => execFileSync("git", a, { cwd: work, stdio: "pipe" });
         git("clone", "-q", "--branch", String(rows[0]?.default_branch || "main"), String(rows[0]?.repo_url), ".");
-        if (existsSync(join(work, "kortix.toml"))) rmSync(join(work, "kortix.toml"));
         writeFileSync(
           join(work, "kortix.yaml"),
-          "kortix_version: 2\nproject:\n  name: ke2e-file15\ndefault_agent: kortix\nagents:\n  kortix: {}\n  ke2e-hidden-bot: {}\n",
+          `project:\n  name: ke2e-file15\ndefault_agent: kortix\nagents:\n  kortix: {}\n  ke2e-hidden-bot:\n    prompt_file: ${AGENT}\n`,
         );
         mkdirSync(join(work, "agents"), { recursive: true });
         writeFileSync(join(work, AGENT), BODY);

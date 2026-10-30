@@ -2,7 +2,7 @@
 
 pi is the runtime of every Kortix session. It runs inside the Kortix daemon
 in the sandbox, calls models only through the Kortix LLM gateway, and reads
-its config from `kortix.yaml` (kortix_version 3). It reads no harness folder.
+its config from `kortix.yaml` and the files it names.
 
 ## Tools
 
@@ -60,8 +60,8 @@ permission:
   govern `bash`: `cat secrets/a` is a `bash` command.
 - `ask` stops the call and asks the user: `once`, `always` (this permission
   key, for the session) or `reject`. A `deny` still wins after `always`.
-- No rule: `allow`. `skill` and `task` are not permission keys in v3: use
-  the `skills` and `subagents` grants.
+- No rule: `allow`. `skill` and `task` are not permission keys: use the
+  `skills` and `subagents` grants.
 - `agents.<name>.tools` hides tools; `permission` decides calls to visible
   ones.
 

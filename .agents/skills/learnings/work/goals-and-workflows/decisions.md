@@ -68,7 +68,7 @@ each section. "Marko" = the decision owner.
 - Whether the API goal runtime can receive room messages and idle notices as
   events directly (asked the rooms session).
 - TypeScript-first Kortix (`kortix.config.ts` compiling to the manifest): a
-  separate initiative, related to the `kortix.yaml` v3 redesign.
+  separate initiative, related to the `kortix.yaml` format work.
 - Software factory as a workflow: one definition, one running copy per issue.
 - Node share on Platinum prod: a Kortix-org canary after all 6 prod hosts run
   the new host agent; Marko schedules.

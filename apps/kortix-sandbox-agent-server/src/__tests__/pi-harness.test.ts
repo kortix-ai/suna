@@ -963,7 +963,7 @@ describe('pi harness', () => {
     }
   })
 
-  test('the manifest skills grant hides every other skill: managed, project and pi skill dirs (W1 B3)', async () => {
+  test('the manifest skills grant hides every other skill: managed and registered (W1 B3)', async () => {
     const skill = (dir: string, name: string) => {
       mkdirSync(join(dir, name), { recursive: true })
       writeFileSync(join(dir, name, 'SKILL.md'), `---\nname: ${name}\ndescription: The ${name} skill\n---\nDo ${name}.\n`)
@@ -975,12 +975,18 @@ describe('pi harness', () => {
     try {
       const r = await boot({
         script: [{ text: 'ok' }],
-        // What compileAgentConfig emits for `skills: [deploy]`.
-        env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { skill: { deploy: 'allow', '*': 'deny' } } } } }) },
+        // What compileAgentConfig emits for `skills: [deploy]`, with two registered skills.
+        env: {
+          KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({
+            schema: 3,
+            agent: { build: { permission: { skill: { deploy: 'allow', '*': 'deny' } } } },
+            skills: { deploy: 'skills/deploy', review: 'skills/review' },
+          }),
+        },
         prepare: (workspace) => {
           skill(join(workspace, 'skills'), 'deploy')
-          skill(join(workspace, '.kortix', 'opencode', 'skills'), 'review')
-          // pi's own project skill dir, read by its resource loader.
+          skill(join(workspace, 'skills'), 'review')
+          // pi's own project skill dir: never read.
           skill(join(workspace, '.pi', 'skills'), 'secrets-dump')
         },
       })
@@ -1227,7 +1233,11 @@ describe('pi harness', () => {
     const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
     process.env.KORTIX_MANAGED_SKILLS_DIR = managed
     try {
-      const r = await boot({ script: [{ text: 'ok' }], start: false })
+      const r = await boot({
+        script: [{ text: 'ok' }],
+        start: false,
+        env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ schema: 3, agent: { build: {} }, skills: { 'kortix-cli': 'skills/kortix-cli' } }) },
+      })
       const write = (root: string, name: string, description: string) => {
         mkdirSync(join(root, name), { recursive: true })
         writeFileSync(join(root, name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nBody.\n`)
@@ -1249,36 +1259,6 @@ describe('pi harness', () => {
         ['kortix-cli', 'Managed copy'],
         ['kortix-system', 'Platform reference'],
       ])
-    } finally {
-      if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
-      else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
-    }
-  })
-
-  test('skills in the project are loaded into the system prompt: root skills/, then the legacy dir', async () => {
-    // A hosted sandbox ships a real managed-skills dir; pin it to an empty one
-    // so only the two project skills below exist (same pattern as the
-    // managed-overlay test above).
-    const managed = mkdtempSync(join(tmpdir(), 'pi-managed-empty-'))
-    const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
-    process.env.KORTIX_MANAGED_SKILLS_DIR = managed
-    try {
-    const r = await boot({ script: [{ text: 'ok' }], start: false })
-    const skill = (root: string, name: string, description: string) => {
-      const dir = join(r.workspace, root, name)
-      mkdirSync(dir, { recursive: true })
-      writeFileSync(join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nBody.\n`)
-    }
-    skill('skills', 'deploy', 'Ship to prod')
-    skill('.kortix/opencode/skills', 'review', 'Review a change')
-    // Same name in both roots: the root layout wins.
-    skill('.kortix/opencode/skills', 'deploy', 'Stale legacy copy')
-    await r.service.lifecycle.start()
-    const skills = skillList(r)
-    expect(skills.map((s) => [s.name, s.description]).sort()).toEqual([
-      ['deploy', 'Ship to prod'],
-      ['review', 'Review a change'],
-    ])
     } finally {
       if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
       else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
@@ -1519,13 +1499,16 @@ function echoTool(tool: string, prefix: string): string {
 `
 }
 
-/** A repo extension as a project commits it: `.pi/extensions/<name>.ts`, loaded by pi's own loader. */
+/** A repo extension as a project commits it: `extensions/<name>.ts`. It loads only as a `./` pi package (`repoPackages`). */
 function repoExtension(workspace: string, name: string, source: string): string {
-  const path = join(workspace, '.pi', 'extensions', `${name}.ts`)
+  const path = join(workspace, 'extensions', `${name}.ts`)
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, source)
   return path
 }
+
+/** `KORTIX_PI_PACKAGES` for the repo extensions `names`: what the API sends for the agent's kortix.yaml `extensions`. */
+const repoPackages = (...names: string[]) => ({ KORTIX_PI_PACKAGES: JSON.stringify(names.map((name) => `./extensions/${name}.ts`)) })
 
 /** The system prompt of one model request. */
 function systemSent(messages: Array<{ role: string; content: unknown }>): string {
@@ -1534,27 +1517,6 @@ function systemSent(messages: Array<{ role: string; content: unknown }>): string
     .map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))
     .join('\n')
 }
-
-describe('pi project config', () => {
-  test('loads .kortix/pi native extensions and skills on the daemon HTTP surface', async () => {
-    const r = await boot({
-      script: [{ text: 'ok' }],
-      prepare: (workspace) => {
-        const dir = join(workspace, '.kortix', 'pi')
-        mkdirSync(join(dir, 'extensions'), { recursive: true })
-        mkdirSync(join(dir, 'skills', 'native'), { recursive: true })
-        writeFileSync(join(dir, 'extensions', 'native.ts'), `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\nNATIVE PI' }))`)
-        writeFileSync(join(dir, 'skills', 'native', 'SKILL.md'), '---\nname: native\ndescription: Native Pi skill\n---\nDo it.\n')
-      },
-    })
-    const skills = skillList(r)
-    expect(skills.map((skill) => skill.name)).toContain('native')
-    expect(r.service.runtime()!.extensionStatus().loaded.some((name) => name.endsWith('/.kortix/pi/extensions/native.ts'))).toBe(true)
-    const sentBefore = gateway.sent.length
-    await promptAndSettle(r, 'hello')
-    expect(gateway.sent.slice(sentBefore).map(systemSent).some((prompt) => prompt.includes('NATIVE PI'))).toBe(true)
-  })
-})
 
 describe('project tools on pi', () => {
   // A harness-neutral tool module (services/tools/tool.ts): no import, a plain default export.
@@ -1650,6 +1612,7 @@ describe('pi extensions', () => {
   test('a tool_call handler blocks a tool and a tool_result handler patches another', async () => {
     const r = await boot({
       script: [{ tool: 'write', args: { path: 'blocked.txt', content: 'x' } }, { tool: 'bash', args: { command: 'echo real' } }, { text: 'done' }],
+      env: repoPackages('guard'),
       prepare: (workspace) =>
         void repoExtension(
           workspace,
@@ -1673,13 +1636,14 @@ describe('pi extensions', () => {
     expect(toolParts(page, 'bash')[0]!.state.output).toBe('patched output')
     expect(gateway.sent.slice(sentBefore).map(systemSent).every((system) => system.includes('GUARD ACTIVE'))).toBe(true)
     const status = r.service.runtime()!.extensionStatus()
-    expect(status.loaded.some((name) => name.endsWith('/.pi/extensions/guard.ts'))).toBe(true)
+    expect(status.loaded.some((name) => name.endsWith('/extensions/guard.ts'))).toBe(true)
     expect(status.failed).toEqual([])
   })
 
   test('the prompt system field reaches the model for its turn only, on top of extension edits', async () => {
     const r = await boot({
       script: [{ text: 'a' }, { text: 'b' }],
+      env: repoPackages('rule'),
       prepare: (workspace) =>
         void repoExtension(workspace, 'rule', `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n\\nEXTENSION RULE' }))\n`),
     })
@@ -1738,6 +1702,7 @@ describe('pi extensions', () => {
     let log = ''
     const r = await boot({
       script: [{ text: 'ok' }],
+      env: repoPackages('broken', 'lifecycle'),
       prepare(workspace) {
         log = join(workspace, 'events.log')
         repoExtension(workspace, 'broken', `export default function () {\n  throw new Error('boom')\n}\n`)
@@ -1756,10 +1721,10 @@ export default function (pi) {
       },
     })
     const status = r.service.runtime()!.extensionStatus()
-    expect(status.loaded.some((name) => name.endsWith('/.pi/extensions/lifecycle.ts'))).toBe(true)
-    expect(status.loaded.some((name) => name.endsWith('/.pi/extensions/broken.ts'))).toBe(false)
+    expect(status.loaded.some((name) => name.endsWith('/extensions/lifecycle.ts'))).toBe(true)
+    expect(status.loaded.some((name) => name.endsWith('/extensions/broken.ts'))).toBe(false)
     expect(status.failed).toHaveLength(1)
-    expect(status.failed[0]!.name).toEndWith('/.pi/extensions/broken.ts')
+    expect(status.failed[0]!.name).toEndWith('/extensions/broken.ts')
     expect(status.failed[0]!.error).toContain('boom')
     await promptAndSettle(r, 'hi')
     await r.service.lifecycle.stop()
@@ -1769,6 +1734,7 @@ export default function (pi) {
   test('a context handler rewrites what the model receives', async () => {
     const r = await boot({
       script: [{ text: 'first' }, { text: 'second' }],
+      env: repoPackages('trim'),
       prepare: (workspace) => void repoExtension(workspace, 'trim', `export default (pi) => pi.on('context', (event) => ({ messages: event.messages.slice(-1) }))\n`),
     })
     await promptAndSettle(r, 'one')
@@ -1819,7 +1785,7 @@ describe('pi packages', () => {
     const r = await boot({
       script: [{ tool: 'system_echo', args: { text: 'hi' } }, { tool: 'project_echo', args: { text: 'yo' } }, { tool: 'local_echo', args: { text: 'l' } }, { text: 'done' }],
       env: {
-        KORTIX_PI_PACKAGES: JSON.stringify(['npm:project-ext@2.0.0', 'npm:project-missing@1.0.0', './.kortix/pi/local.ts']),
+        KORTIX_PI_PACKAGES: JSON.stringify(['npm:project-ext@2.0.0', 'npm:project-missing@1.0.0', './extensions/local.ts']),
         KORTIX_PI_PACKAGES_BUNDLE_DIGEST: DIGEST,
       },
       prepare(workspace) {
@@ -1836,14 +1802,16 @@ describe('pi packages', () => {
             files: { 'skills/package-skill/SKILL.md': '---\nname: package-skill\ndescription: Shipped by a package\n---\nDo it.\n' },
           },
         ])
-        mkdirSync(join(workspace, '.kortix', 'pi'), { recursive: true })
-        writeFileSync(join(workspace, '.kortix', 'pi', 'local.ts'), echoTool('local_echo', 'local'))
+        mkdirSync(join(workspace, 'extensions'), { recursive: true })
+        writeFileSync(join(workspace, 'extensions', 'local.ts'), echoTool('local_echo', 'local'))
+        // pi's own `.pi/extensions` discovery is off: a project declares what it loads.
         mkdirSync(join(workspace, '.pi', 'extensions'), { recursive: true })
         writeFileSync(join(workspace, '.pi', 'extensions', 'repo.ts'), echoTool('repo_echo', 'repo'))
       },
     })
     const tools = toolIds(r)
-    expect(tools).toEqual(expect.arrayContaining(['system_echo', 'project_echo', 'local_echo', 'repo_echo', 'task', 'bash']))
+    expect(tools).toEqual(expect.arrayContaining(['system_echo', 'project_echo', 'local_echo', 'task', 'bash']))
+    expect(tools).not.toContain('repo_echo')
     const status = r.service.runtime()!.extensionStatus()
     expect(status.loaded).toEqual(expect.arrayContaining(['kortix-subagents', 'npm:system-ext@1.0.0', 'npm:project-ext@2.0.0']))
     // A pre-built package still brings its skills: pi reads them from its folder.
@@ -2497,13 +2465,22 @@ describe('pi AGENTS.md', () => {
 })
 
 describe('config releases on pi', () => {
-  const PROVISIONED = JSON.stringify({ default_agent: 'build', agent: { build: { prompt: 'PROVISIONED: the prompt compiled at provision.' } } })
+  // The working tree's kortix.yaml registers two skills; the release's governance replaces it while a release runs.
+  const PROVISIONED = JSON.stringify({
+    schema: 3,
+    default_agent: 'build',
+    agent: { build: { prompt: 'PROVISIONED: the prompt compiled at provision.' } },
+    skills: { deploy: 'skills/deploy', draft: 'skills/draft' },
+  })
   let api: FakeApi
   let dir: string
   let repo: string
   let managedBefore: string | undefined
+  /** The skills the base branch's kortix.yaml registers so far (`releaseWith`). */
+  let registered: Record<string, string>
 
   beforeEach(() => {
+    registered = {}
     api = startFakeApi(TOKEN)
     dir = mkdtempSync(join(tmpdir(), 'pi-releases-'))
     repo = join(dir, 'repo')
@@ -2524,14 +2501,15 @@ describe('config releases on pi', () => {
     else process.env.KORTIX_MANAGED_SKILLS_DIR = managedBefore
   })
 
-  /** Commit a skill to the base branch and build its release with `prompt` as the agent's prompt. */
+  /** Commit and register a skill on the base branch and build its release with `prompt` as the agent's prompt. */
   const releaseWith = (skill: string, prompt: string) => {
-    write(repo, '.kortix/opencode/opencode.json', '{}\n')
-    write(repo, `.kortix/opencode/skills/${skill}/SKILL.md`, `---\nname: ${skill}\ndescription: ${skill} from the base branch\n---\nBody.\n`)
+    registered[skill] = `skills/${skill}`
+    write(repo, 'kortix.yaml', `skills:\n${Object.entries(registered).map(([name, folder]) => `  ${name}: ${folder}\n`).join('')}`)
+    write(repo, `skills/${skill}/SKILL.md`, `---\nname: ${skill}\ndescription: ${skill} from the base branch\n---\nBody.\n`)
     const commit = commitAll(repo, skill)
-    return buildRelease(repo, commit, '.kortix/opencode', {
+    return buildRelease(repo, commit, {
       projectId: 'proj-pi-test',
-      governance: JSON.stringify({ default_agent: 'build', agent: { build: { prompt } } }),
+      governance: JSON.stringify({ schema: 3, default_agent: 'build', agent: { build: { prompt } }, skills: { ...registered } }),
     })
   }
 
@@ -2623,86 +2601,27 @@ describe('config releases on pi', () => {
     expect(again).toMatchObject({ ok: true, outcome: 'unchanged' })
   })
 
-  test("the release's pi dir replaces the working tree's; a new extension reaches the session by an in-place restart", async () => {
-    const extension = (marker: string) =>
-      `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n${marker}' }))\n`
-    write(repo, 'harnesses/pi/extensions/native.ts', extension('RELEASED-PI-V1'))
-    write(repo, 'harnesses/pi/skills/released-native/SKILL.md', '---\nname: released-native\ndescription: pi skill from the base branch\n---\nDo it.\n')
-    const one = releaseWith('deploy', 'RELEASE-ONE')
-    serveRelease(api, one)
-    const r = await boot({
-      script: [{ text: 'first' }, { text: 'second' }],
-      env: { KORTIX_API_URL: api.url, KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED },
-      releases: { root: join(dir, 'store'), noticePath: join(dir, 'notice.md') },
-      prepare: (workspace) => {
-        // The session's checkout has a pi dir of its own; a release must not read it.
-        const own = join(workspace, '.kortix', 'pi')
-        mkdirSync(join(own, 'extensions'), { recursive: true })
-        mkdirSync(join(own, 'skills', 'workspace-native'), { recursive: true })
-        writeFileSync(join(own, 'extensions', 'native.ts'), extension('WORKSPACE-PI'))
-        writeFileSync(join(own, 'skills', 'workspace-native', 'SKILL.md'), '---\nname: workspace-native\ndescription: w\n---\nx\n')
-      },
-    })
-    const root = r.service.runtime()!.rootId
-    const names = async () => (await skillsOf(r)).map(([name]) => name)
-    expect(await names()).toContain('released-native')
-    expect(await names()).not.toContain('workspace-native')
-    const loaded = () => r.service.runtime()!.extensionStatus().loaded
-    expect(loaded().some((path) => path.startsWith(join(dir, 'store')) && path.endsWith('/harnesses/pi/extensions/native.ts'))).toBe(true)
-    expect(loaded().some((path) => path.includes('/.kortix/pi/'))).toBe(false)
-    const first = await ask(r, 'first question')
-    expect(first).toContain('RELEASED-PI-V1')
-    expect(first).not.toContain('WORKSPACE-PI')
-
-    write(repo, 'harnesses/pi/extensions/native.ts', extension('RELEASED-PI-V2'))
-    serveRelease(api, releaseWith('deploy', 'RELEASE-TWO'))
-    const converged = await r.bearer('/kortix/config/converge', { method: 'POST' }).then((res) => res.json())
-    expect(converged).toMatchObject({ ok: true, outcome: 'applied', reload: null })
-    expect(r.service.runtime()!.rootId).toBe(root)
-    const second = await ask(r, 'second question')
-    expect(second).toContain('RELEASED-PI-V2')
-    expect(second).not.toContain('RELEASED-PI-V1')
-    expect(second).toContain('RELEASE-TWO')
-    // The restart restored the transcript: both turns are still there.
-    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
-    expect(page.messages.filter((m) => m.info.role === 'user')).toHaveLength(2)
-  })
-
-  test("pi's own .pi/ and .agents/skills discovery reads the release, never the working tree", async () => {
-    const extension = (marker: string) =>
-      `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n${marker}' }))\n`
-    write(repo, '.pi/extensions/discovered.ts', extension('RELEASED-DISCOVERY'))
-    write(repo, '.agents/skills/released-agents/SKILL.md', '---\nname: released-agents\ndescription: from the release\n---\nDo it.\n')
-    serveRelease(api, releaseWith('deploy', 'RELEASE-ONE'))
-    const r = await boot({
-      script: [{ text: 'first' }],
-      env: { KORTIX_API_URL: api.url, KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED },
-      releases: { root: join(dir, 'store'), noticePath: join(dir, 'notice.md') },
-      prepare: (workspace) => {
-        // The checkout carries its own copies; while a release runs, none is config.
-        mkdirSync(join(workspace, '.pi', 'extensions'), { recursive: true })
-        writeFileSync(join(workspace, '.pi', 'extensions', 'discovered.ts'), extension('WORKSPACE-DISCOVERY'))
-        mkdirSync(join(workspace, '.agents', 'skills', 'workspace-agents'), { recursive: true })
-        writeFileSync(join(workspace, '.agents', 'skills', 'workspace-agents', 'SKILL.md'), '---\nname: workspace-agents\ndescription: w\n---\nx\n')
-      },
-    })
-    const loaded = r.service.runtime()!.extensionStatus().loaded
-    expect(loaded.some((path) => path.startsWith(join(dir, 'store')) && path.endsWith('/.pi/extensions/discovered.ts'))).toBe(true)
-    expect(loaded.some((path) => !path.startsWith(join(dir, 'store')) && path.endsWith('/.pi/extensions/discovered.ts'))).toBe(false)
-    const names = (await skillsOf(r)).map(([name]) => name)
-    expect(names).toContain('released-agents')
-    expect(names).not.toContain('workspace-agents')
-    const first = await ask(r, 'first question')
-    expect(first).toContain('RELEASED-DISCOVERY')
-    expect(first).not.toContain('WORKSPACE-DISCOVERY')
+  test("kortix.yaml issues in the release's governance reach the model in the session notice", async () => {
+    write(repo, 'kortix.yaml', 'agents:\n  build:\n    model: x\n')
+    const issue = { path: 'agents.build.model', message: 'Unknown model "x".', severity: 'error', line: 3, column: 12 }
+    const governance = JSON.stringify({ schema: 3, default_agent: 'build', agent: { build: { prompt: 'RELEASE-ONE' } }, manifest_issues: [issue] })
+    serveRelease(api, buildRelease(repo, commitAll(repo, 'bad model'), { projectId: 'proj-pi-test', governance }))
+    const r = await bootOnReleases([{ text: 'first' }])
+    const system = await ask(r, 'first question')
+    expect(system).toContain('kortix.yaml on the base branch has 1 error and 0 warnings:')
+    expect(system).toContain('- kortix.yaml:3:12 error agents.build.model Unknown model')
+    expect(system).toContain('An agent or trigger with an error is off until the error is fixed.')
+    expect(system).toContain('run `kortix validate`')
   })
 
   test('a ./ pi package loads from the release, not the working tree; a change to it reaches the session by a restart', async () => {
     const extension = (marker: string) =>
       `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n${marker}' }))\n`
-    // No OpenCode config dir: the release is the whole tree with `config_dir: null` (a pi-only project).
     const pinned = (prompt: string) =>
-      buildRelease(repo, commitAll(repo, prompt), null, { projectId: 'proj-pi-test', governance: JSON.stringify({ default_agent: 'build', agent: { build: { prompt } } }) })
+      buildRelease(repo, commitAll(repo, prompt), {
+        projectId: 'proj-pi-test',
+        governance: JSON.stringify({ schema: 3, default_agent: 'build', agent: { build: { prompt } }, skills: { deploy: 'skills/deploy' } }),
+      })
     write(repo, 'skills/deploy/SKILL.md', '---\nname: deploy\ndescription: deploy from the base branch\n---\nBody.\n')
     write(repo, 'extensions/native.ts', extension('PACKAGE-V1'))
     serveRelease(api, pinned('RELEASE-ONE'))
@@ -2732,7 +2651,7 @@ describe('config releases on pi', () => {
     expect(second).not.toContain('PACKAGE-V1')
   })
 
-  test('a v3 release loads its ./ extension package and registered skills from the release root, and no harness folder', async () => {
+  test('a release loads its ./ extension package and registered skills from the release root, and no harness folder', async () => {
     const extension = (text: string) => `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n${text}' }))\n`
     write(repo, 'harnesses/pi/extensions/native.ts', extension('FOLDER-EXTENSION'))
     write(repo, 'harnesses/pi/skills/folder-skill/SKILL.md', '---\nname: folder-skill\ndescription: f\n---\nx\n')
@@ -2741,7 +2660,7 @@ describe('config releases on pi', () => {
     write(repo, 'team/review/SKILL.md', '---\nname: review\ndescription: review from the release\n---\nx\n')
     write(repo, 'extensions/package.ts', extension('PACKAGE-FROM-RELEASE'))
     const governance = JSON.stringify({ schema: 3, default_agent: 'build', agent: { build: { mode: 'primary', prompt: 'V3', permission: 'allow' } }, skills: { review: 'team/review' } })
-    serveRelease(api, buildRelease(repo, commitAll(repo, 'v3'), null, { projectId: 'proj-pi-test', governance }))
+    serveRelease(api, buildRelease(repo, commitAll(repo, 'v3'), { projectId: 'proj-pi-test', governance }))
     const r = await boot({
       script: [{ text: 'first' }],
       env: { KORTIX_API_URL: api.url, KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED, KORTIX_PI_PACKAGES: JSON.stringify(['./extensions/package.ts']) },
@@ -2773,7 +2692,7 @@ describe('config releases on pi', () => {
         `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n' + marker('NATIVE-V1') }))\n`,
     )
     write(repo, 'extensions/broken.ts', `throw new Error('broken at import')\n`)
-    serveRelease(api, buildRelease(repo, commitAll(repo, 'native'), null, { projectId: 'proj-pi-test', governance: JSON.stringify({ default_agent: 'build', agent: { build: { prompt: 'P' } } }) }))
+    serveRelease(api, buildRelease(repo, commitAll(repo, 'native'), { projectId: 'proj-pi-test', governance: JSON.stringify({ schema: 3, default_agent: 'build', agent: { build: { prompt: 'P' } } }) }))
     const r = await boot({
       script: [{ text: 'first' }, { text: 'second' }],
       env: { KORTIX_API_URL: api.url, KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED, KORTIX_PI_PACKAGES: JSON.stringify(['./extensions/native.ts', './extensions/broken.ts']) },
@@ -2842,13 +2761,11 @@ describe('config releases on pi', () => {
   })
 
   test("config releases on: the release's AGENTS.md is in the prompt, and the working tree's never is", async () => {
-    // The root layout: agents, skills and AGENTS.md at the repository root.
-    write(repo, 'harnesses/opencode/opencode.json', '{}\n')
     write(repo, 'skills/deploy/SKILL.md', '---\nname: deploy\ndescription: deploy from the base branch\n---\nBody.\n')
     write(repo, 'AGENTS.md', 'RELEASED-RULES\n')
-    const one = buildRelease(repo, commitAll(repo, 'root layout'), 'harnesses/opencode', {
+    const one = buildRelease(repo, commitAll(repo, 'root layout'), {
       projectId: 'proj-pi-test',
-      governance: JSON.stringify({ default_agent: 'build', agent: { build: { prompt: 'RELEASE-ONE' } } }),
+      governance: JSON.stringify({ schema: 3, default_agent: 'build', agent: { build: { prompt: 'RELEASE-ONE' } }, skills: { deploy: 'skills/deploy' } }),
     })
     serveRelease(api, one)
     const r = await bootOnReleases([{ text: 'first' }, { text: 'second' }], (workspace) => writeFileSync(join(workspace, 'AGENTS.md'), 'WORKSPACE-RULES\n'))
@@ -2880,7 +2797,6 @@ describe('config releases on pi', () => {
         release_id: null,
         mode: 'follow-base',
         source_commit: null,
-        config_dir: null,
         config_tree_id: null,
         archive: null,
         files: null,
@@ -2966,8 +2882,9 @@ describe('config releases on pi', () => {
  */
 const SUMMARY: Step[] = [{ text: 'SUMMARY-ONE' }, { text: 'SUMMARY-TWO' }]
 const compactEverything = (workspace: string) => {
-  mkdirSync(join(workspace, 'harnesses/pi'), { recursive: true })
-  writeFileSync(join(workspace, 'harnesses/pi/settings.json'), JSON.stringify({ compaction: { keepRecentTokens: 1 } }))
+  // pi's global settings (`KORTIX_PI_AGENT_DIR`): no project settings file is read.
+  mkdirSync(join(workspace, '.pi-agent'), { recursive: true })
+  writeFileSync(join(workspace, '.pi-agent/settings.json'), JSON.stringify({ compaction: { keepRecentTokens: 1 } }))
 }
 const summarize = (r: Rig, root: string) => r.user(`/session/${root}/summarize`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
 const sentText = (messages: Array<{ role: string; content: unknown }>) => JSON.stringify(messages)
@@ -3249,12 +3166,12 @@ describe('pi compaction', () => {
     expect(sentText(gateway.sent.at(-1)!)).toContain('SUMMARY-ONE')
   })
 
-  test('a project reserve compacts earlier than the model output budget, never later', async () => {
-    // The project asks pi to cut at 28,000 (reserve 100,000 of a 128,000 window, capped at 64,000),
+  test('a configured reserve compacts earlier than the model output budget, never later', async () => {
+    // pi's settings ask to cut at 28,000 (reserve 100,000 of a 128,000 window, capped at 64,000),
     // well before this model's own 32,768 reserve would (95,232). A 70,000-token reply is over.
     const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
-    mkdirSync(join(workspace, 'harnesses/pi'), { recursive: true })
-    writeFileSync(join(workspace, 'harnesses/pi/settings.json'), JSON.stringify({ compaction: { keepRecentTokens: 1, reserveTokens: 100_000 } }))
+    mkdirSync(join(workspace, '.pi-agent'), { recursive: true })
+    writeFileSync(join(workspace, '.pi-agent/settings.json'), JSON.stringify({ compaction: { keepRecentTokens: 1, reserveTokens: 100_000 } }))
     const r = await boot({
       workspace,
       catalog: testModel({ limit: { context: 128_000, output: 32_768 } }),
@@ -3389,27 +3306,33 @@ describe('pi compaction', () => {
 
 describe('pi slash commands', () => {
   const TEMPLATE = 'Review the change named $1 and list its risks.\n\nFocus: $ARGUMENTS'
-  const withReviewCommand = (workspace: string) => {
-    mkdirSync(join(workspace, 'harnesses/pi/prompts'), { recursive: true })
-    writeFileSync(join(workspace, 'harnesses/pi/prompts/review.md'), `---\ndescription: Review a change\n---\n${TEMPLATE}\n`)
-  }
+  /** kortix.yaml compiled: one `review` command the build agent enables, and optionally two registered skills. */
+  const compiled = (skills = false) => ({
+    KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({
+      schema: 3,
+      default_agent: 'build',
+      agent: { build: { mode: 'primary', permission: 'allow' } },
+      commands: { review: { description: 'Review a change', template: TEMPLATE, agents: ['build'] } },
+      ...(skills ? { skills: { deploy: 'skills/deploy', review: 'skills/review' } } : {}),
+    }),
+  })
   const command = (r: Rig, root: string, body: Record<string, unknown>) =>
     r.user(`/session/${root}/command`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
-  test('the command list is the prompt templates of the pi config directory', async () => {
-    const r = await boot({ script: [], prepare: withReviewCommand })
+  test('the command list and the state document carry the compiled commands', async () => {
+    const r = await boot({ script: [], env: compiled() })
     expect(await r.user('/command').then((res) => res.json())).toEqual([
-      { name: 'review', description: 'Review a change', source: 'command', template: TEMPLATE, hints: ['$1', '$ARGUMENTS'] },
+      { name: 'review', description: 'Review a change', source: 'command', template: TEMPLATE, hints: ['$1', '$ARGUMENTS'], agents: ['build'] },
     ])
     const state = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as { commands: { known: boolean; value: unknown[] } }
     expect(state.commands).toEqual({
       known: true,
-      value: [{ name: 'review', description: 'Review a change', agent: null, model: null, source: 'command', subtask: null, hints: ['$1', '$ARGUMENTS'], template_bytes: TEMPLATE.length }],
+      value: [{ name: 'review', description: 'Review a change', agent: null, model: null, source: 'command', subtask: null, hints: ['$1', '$ARGUMENTS'], agents: ['build'], template_bytes: TEMPLATE.length }],
     })
   })
 
   test('a command runs its template: the model and the transcript get the expanded text', async () => {
-    const r = await boot({ script: [{ text: 'Two risks.' }], prepare: withReviewCommand })
+    const r = await boot({ script: [{ text: 'Two risks.' }], env: compiled() })
     const root = r.service.runtime()!.rootId
     const messageID = 'msg_0198e2a4b0e3ABCDEFGHIJKLMN'
     const res = await command(r, root, { command: 'review', arguments: 'auth-fix', messageID })
@@ -3425,8 +3348,7 @@ describe('pi slash commands', () => {
     expect(user.parts.map((p) => p.text)).toEqual([expanded])
   })
 
-  const withDeploySkill = (workspace: string) => {
-    withReviewCommand(workspace)
+  const withSkills = (workspace: string) => {
     for (const name of ['deploy', 'review']) {
       mkdirSync(join(workspace, 'skills', name), { recursive: true })
       writeFileSync(join(workspace, 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: The ${name} skill\n---\nSKILL-BODY-${name}\n`)
@@ -3434,15 +3356,15 @@ describe('pi slash commands', () => {
   }
 
   test('the command list carries the granted skills after the commands; a command keeps its name', async () => {
-    const r = await boot({ script: [], prepare: withDeploySkill })
+    const r = await boot({ script: [], env: compiled(true), prepare: withSkills })
     expect(await r.user('/command').then((res) => res.json())).toEqual([
-      { name: 'review', description: 'Review a change', source: 'command', template: TEMPLATE, hints: ['$1', '$ARGUMENTS'] },
+      { name: 'review', description: 'Review a change', source: 'command', template: TEMPLATE, hints: ['$1', '$ARGUMENTS'], agents: ['build'] },
       { name: 'deploy', description: 'The deploy skill', source: 'skill', template: '', hints: [] },
     ])
   })
 
   test('a skill runs as its SKILL.md body plus the arguments', async () => {
-    const r = await boot({ script: [{ text: 'Deployed.' }], prepare: withDeploySkill })
+    const r = await boot({ script: [{ text: 'Deployed.' }], env: compiled(true), prepare: withSkills })
     const root = r.service.runtime()!.rootId
     const res = await command(r, root, { command: 'deploy', arguments: 'to staging' })
     expect(res.status).toBe(200)
@@ -3453,7 +3375,7 @@ describe('pi slash commands', () => {
   })
 
   test('a command pi does not have is refused with 400 and runs no turn', async () => {
-    const r = await boot({ script: [{ text: 'never' }], prepare: withReviewCommand })
+    const r = await boot({ script: [{ text: 'never' }], env: compiled() })
     const root = r.service.runtime()!.rootId
     const calls = gateway.requests.length
     const res = await command(r, root, { command: 'deploy', arguments: '' })
@@ -3591,6 +3513,7 @@ describe('pi steering', () => {
     const r = await boot({
       script: [{ text: 'first reply' }, { text: 'second reply' }],
       hooks,
+      env: repoPackages('settle-late'),
       // Holds the turn open after its last model step: the window a late steer lands in.
       prepare: (workspace) =>
         void repoExtension(workspace, 'settle-late', `export default function (pi) {\n  pi.on('agent_settled', () => new Promise((resolve) => setTimeout(resolve, 800)))\n}\n`),
@@ -4739,8 +4662,7 @@ describe('pi codemode', () => {
       let logPath = ''
       const r = await boot({
         script: [TASK, script("return (await tools.bash({ command: 'echo nested' })).trim()"), { text: 'child done' }, { text: 'parent done' }],
-        // v3 discovers no `.pi/extensions`: register the extension as a project package.
-        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'on' }), KORTIX_PI_PACKAGES: JSON.stringify(['./.pi/extensions/watch.ts']) },
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'on' }), ...repoPackages('watch') },
         prepare: (workspace) => {
           logPath = join(workspace, 'calls.log')
           repoExtension(
@@ -4996,15 +4918,15 @@ export default function (pi) {
   })
 })
 
-// kortix.yaml v3: the compiled set (`schema: 3`) is the only config input. Every
-// behavior is per agent: skills, subagents, commands and codemode.
-describe('kortix.yaml v3 on pi', () => {
+// kortix.yaml: the compiled set is the only config input. Every behavior is per
+// agent: skills, subagents, commands and codemode.
+describe('kortix.yaml on pi', () => {
   const marker = (text: string) => `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n${text}' }))\n`
   const skill = (workspace: string, path: string, name: string) => {
     mkdirSync(join(workspace, path), { recursive: true })
     writeFileSync(join(workspace, path, 'SKILL.md'), `---\nname: ${name}\ndescription: ${name} skill\n---\nBody.\n`)
   }
-  /** Every harness folder and discovery path a v2 project could use, each with a skill, an extension, a prompt and a setting. */
+  /** Every harness folder and discovery path a legacy project used, each with a skill, an extension, a prompt and a setting. */
   const harnessFolders = (workspace: string) => {
     for (const dir of ['harnesses/pi', '.kortix/pi']) {
       mkdirSync(join(workspace, dir, 'extensions'), { recursive: true })
@@ -5014,7 +4936,8 @@ describe('kortix.yaml v3 on pi', () => {
       writeFileSync(join(workspace, dir, 'settings.json'), JSON.stringify({ packages: ['./extensions/native.ts'] }))
       skill(workspace, `${dir}/skills/folder-${dir.replaceAll(/[/.]/g, '')}`, `folder-${dir.replaceAll(/[/.]/g, '')}`)
     }
-    repoExtension(workspace, 'discovered', marker('DISCOVERED'))
+    mkdirSync(join(workspace, '.pi', 'extensions'), { recursive: true })
+    writeFileSync(join(workspace, '.pi', 'extensions', 'discovered.ts'), marker('DISCOVERED'))
     skill(workspace, '.agents/skills/agents-dir', 'agents-dir')
     skill(workspace, '.pi/skills/pi-dir', 'pi-dir')
     skill(workspace, 'skills/unregistered', 'unregistered')
@@ -5024,7 +4947,7 @@ describe('kortix.yaml v3 on pi', () => {
   const v3 = (set: Record<string, unknown>) => JSON.stringify({ schema: 3, ...set })
   const skillNames = async (r: Rig) => skillList(r).map((s) => s.name).sort()
 
-  test('v3 reads no harness folder and no discovery path: only the registered skill folders and the managed skills load', async () => {
+  test('pi reads no harness folder and no discovery path: only the registered skill folders and the managed skills load', async () => {
     const r = await boot({
       script: [{ text: 'ok' }],
       prepare: harnessFolders,
@@ -5049,7 +4972,7 @@ describe('kortix.yaml v3 on pi', () => {
     expect(system).toContain('deploy')
   })
 
-  test('a disabled compiled agent is not listed: the built-ins v3 disables never reach a picker', async () => {
+  test('a disabled compiled agent is not listed: the built-ins kortix.yaml disables never reach a picker', async () => {
     const r = await boot({
       script: [],
       env: {
@@ -5063,15 +4986,18 @@ describe('kortix.yaml v3 on pi', () => {
     expect(agents).toEqual(['lead'])
   })
 
-  test('v2 with the same tree keeps reading the harness folder and the skills/ dir', async () => {
-    const r = await boot({ script: [], prepare: harnessFolders })
-    const names = await skillNames(r)
-    expect(names).toContain('folder-harnessespi')
-    expect(names).toContain('unregistered')
-    expect(names).not.toContain('review')
-    const rows = (await r.user('/command').then((res) => res.json())) as Array<{ name: string; source: string }>
-    expect(rows.filter((c) => c.source === 'command').map((c) => c.name)).toEqual(['folder-prompt'])
-    expect(rows.filter((c) => c.source === 'skill').map((c) => c.name).sort()).toEqual([...names].sort())
+  test.each([
+    ['a set without schema: 3 (My Kortix, an older API)', { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { mode: 'primary' } } }) }],
+    ['no compiled set', {}],
+  ])('%s reads no harness folder and scans no skills/ dir: built-in agents only', async (_name, env) => {
+    const r = await boot({ script: [{ text: 'ok' }], prepare: harnessFolders, env })
+    expect(await skillNames(r)).toEqual([])
+    expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['kortix-subagents'], failed: [] })
+    expect(await r.user('/command').then((res) => res.json())).toEqual([])
+    const before = gateway.sent.length
+    await promptAndSettle(r, 'hello')
+    const system = systemSent(gateway.sent[before]!)
+    for (const text of ['FOLDER-harnesses/pi', 'FOLDER-.kortix/pi', 'DISCOVERED', 'unregistered', 'agents-dir', 'pi-dir']) expect(system).not.toContain(text)
   })
 
   test('the per-agent skill grant still filters the registered skills', async () => {
@@ -5120,7 +5046,7 @@ describe('kortix.yaml v3 on pi', () => {
     expect((await children(r)).length).toBe(1)
   })
 
-  test('with every subagent granted, general is still unknown in v3', async () => {
+  test('with every subagent granted, general is still unknown to a kortix.yaml set', async () => {
     const set = v3({ agent: { build: { mode: 'primary', permission: 'allow' }, reviewer: { mode: 'subagent', description: 'Reviews', permission: 'allow' } } })
     const r = await boot({ script: [TASK('general'), { text: 'done' }], env: { KORTIX_COMPILED_AGENT_CONFIG: set } })
     await promptAndSettle(r, 'delegate')
@@ -5128,7 +5054,7 @@ describe('kortix.yaml v3 on pi', () => {
     expect(toolParts(page, 'task')[0]!.state.error).toBe('Unknown subagent_type "general". Available: reviewer.')
   })
 
-  test('v2 keeps the built-in general and explore subagents', async () => {
+  test('a set without schema: 3 keeps the built-in general and explore subagents', async () => {
     const r = await boot({ script: [], env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { mode: 'primary' } } }) } })
     const described = taskTool(r).description
     expect(described).toContain('- general:')

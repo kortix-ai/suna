@@ -6,7 +6,7 @@
 // sections they can't read. Pure + exported so the gating is unit-tested
 // independent of git/DB (the handler just supplies the resolved booleans).
 
-import { restrictedManifestVerdict } from './manifest-verdict';
+import { manifestHealthWithout } from './manifest-health';
 
 export interface DetailCaps {
   /** project.file.read — the repo file list. */
@@ -53,11 +53,9 @@ export function applyDetailCapabilityFilter<C extends object, F>(
           manifest: {},
           env: [],
           open_code_raw: null,
-          // The verdict is derived FROM the raw manifest, so it has to be
-          // blanked with it — otherwise a caller who cannot read the config
-          // still learns its version, and worse, is shown an upgrade prompt
-          // for a manifest they have no permission to change.
-          manifest_version: restrictedManifestVerdict(),
+          // The health is derived FROM the raw manifest, so it is blanked with
+          // it: a caller who cannot read the config must not learn its issues.
+          manifest_health: manifestHealthWithout('restricted'),
         }),
   } as C;
   return {

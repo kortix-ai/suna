@@ -9,7 +9,7 @@ function validate(args: string[]) {
   const cwd = mkdtempSync(join(tmpdir(), 'validate-argv-'));
   try {
     writeFileSync(join(cwd, 'kortix.yaml'), 'invalid: true\n');
-    writeFileSync(join(cwd, 'selected.yaml'), 'kortix_version: 1\nproject:\n  name: argv-test\n');
+    writeFileSync(join(cwd, 'selected.yaml'), 'project:\n  name: argv-test\n');
     const env: Record<string, string | undefined> = { ...process.env, NO_COLOR: '1', KORTIX_DISABLE_SANDBOX_ENV_FILE: '1', KORTIX_NO_UPDATE_CHECK: '1', KORTIX_CONFIG_FILE: join(cwd, 'config.json') };
     delete env.KORTIX_TOKEN;
     delete env.KORTIX_SESSION_ID;
@@ -78,27 +78,25 @@ describe('validate project tools', () => {
     }
   }
   const manifest = (tools: string, agentTools = '') =>
-    `kortix_version: 2\ndefault_agent: kortix\nagents:\n  kortix:\n    file: agents/kortix.md\n${agentTools}tools:\n${tools}`;
+    `default_agent: kortix\nagents:\n  kortix:\n    mode: primary\n${agentTools}tools:\n${tools}`;
 
   test('a declared tool whose module exists, and an agent naming it, validate', () => {
     const result = validateProject({
-      'kortix.yaml': manifest('  web_search: kortix:web_search\n  lookup_order: integrations/lookup.ts\n', '    tools: [read, lookup_order]\n'),
-      'agents/kortix.md': '---\ndescription: d\n---\nPrompt.\n',
+      'kortix.yaml': manifest('  lookup_order: integrations/lookup.ts\n', '    tools: [read, lookup_order]\n'),
       'integrations/lookup.ts': 'export default {}\n',
     });
     expect(result.report.issues.filter((issue) => issue.path.includes('tools'))).toEqual([]);
     expect(result.exitCode).toBe(0);
   });
 
-  test('a declared tool whose module is missing fails; a typo in an agent list warns', () => {
+  test('a declared tool whose module is missing fails; a typo in an agent list fails', () => {
     const result = validateProject({
-      'kortix.yaml': manifest('  web_search: kortix:web_search\n  lookup_order: tools/lookup.ts\n', '    tools: { exclude: [bassh] }\n'),
-      'agents/kortix.md': '---\ndescription: d\n---\nPrompt.\n',
+      'kortix.yaml': manifest('  lookup_order: tools/lookup.ts\n', '    tools: { exclude: [bassh] }\n'),
     });
     expect(result.exitCode).not.toBe(0);
     expect(result.report.issues.filter((issue) => issue.path.includes('tools'))).toEqual([
-      { path: 'agents.kortix.tools', message: expect.stringContaining('"bassh"'), severity: 'warning' },
-      { path: 'tools.lookup_order', message: '"tools/lookup.ts" does not exist in the project files.', severity: 'error' },
+      expect.objectContaining({ path: 'agents.kortix.tools', message: expect.stringContaining('bassh'), severity: 'error', line: 5, column: 5 }),
+      expect.objectContaining({ path: 'tools.lookup_order', message: '"tools/lookup.ts" does not exist in the project files.', severity: 'error', line: 7, column: 3 }),
     ]);
   });
 });

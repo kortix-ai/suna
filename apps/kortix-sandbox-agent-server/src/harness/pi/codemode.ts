@@ -1,8 +1,8 @@
 /**
  * pi's `codemode` tool (pi-coding-agent `createCodemodeExtension`): the model writes a
  * JavaScript script that calls the other tools as `tools.<name>(args)`, in a QuickJS
- * sandbox, and only the script's output reaches the model. kortix.yaml
- * `harnesses.pi.codemode` (`KORTIX_PI_CODEMODE`) picks `off`, `on` (the other tools stay
+ * sandbox, and only the script's output reaches the model. The agent's kortix.yaml
+ * `codemode` (`KORTIX_PI_CODEMODE`) picks `off`, `on` (the other tools stay
  * declared; the default) or `only` (the model gets codemode plus direct output presentation).
  *
  * A script's tool calls are nested calls (`ctx.executeTool`): pi runs them through the

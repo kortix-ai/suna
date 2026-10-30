@@ -13,7 +13,7 @@ import { MCP_SOURCE_ID, connectorEventApp } from '../trigger-events/mcp-source';
 import { streamSchedules } from '../trigger-events/poll-store';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { nextTriggerScheduleSlot, validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
-import { GIT_TRIGGER_SESSION_MODES, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseOverlap, parseRunCaps, parseAppField, parseEventFields, parseEvery, parseTargetField, readManifest, triggerSpecToTomlEntry, MONITOR_REMOVED } from '../triggers';
+import { GIT_TRIGGER_SESSION_MODES, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseOverlap, parseRunCaps, parseAppField, parseEventFields, parseEvery, parseTargetField, readManifest, triggerSpecToFlatEntry, MONITOR_REMOVED } from '../triggers';
 import { PRIVATE_TRIGGER_SESSION_ACCESS, loadTriggerSessionAccessMap } from '../trigger-session-access';
 import { withProjectGitAuth } from './git';
 import { type ProjectRow, deriveKortixApiRoot, normalizeBoolean, normalizeString } from './serializers';
@@ -573,8 +573,7 @@ export function draftToSpec(
 ): GitTriggerSpec {
   return {
     slug: draft.slug,
-    // Use the ACTUAL manifest path so a YAML project's trigger spec reports
-    // `kortix.yaml#triggers.<slug>`, not a hardcoded `kortix.toml#…`.
+    // Use the ACTUAL manifest path (`kortix.yml`, a custom path).
     path: `${manifestPath}#triggers.${draft.slug}`,
     name: draft.name,
     type: draft.type,

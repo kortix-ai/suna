@@ -312,9 +312,6 @@ importers:
       react-dom:
         specifier: 19.2.0
         version: 19.2.0(react@19.2.0)
-      smol-toml:
-        specifier: 1.9.0
-        version: 1.9.0
       stripe:
         specifier: ^14.0.0
         version: 14.25.0
@@ -1790,9 +1787,6 @@ importers:
       croner:
         specifier: ^9.1.0
         version: 9.1.0
-      smol-toml:
-        specifier: 1.9.0
-        version: 1.9.0
       yaml:
         specifier: ^2.8.2
         version: 2.9.1

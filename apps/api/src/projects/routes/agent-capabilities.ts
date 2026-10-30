@@ -81,7 +81,6 @@ async function projectCatalog(c: Parameters<typeof loadProjectForUser>[0], proje
     catalog: buildAgentCapabilities({
       agentName: agentName ?? '',
       manifest: manifest.raw,
-      schemaVersion: manifest.schemaVersion,
       managedSkills: listManagedSkills(),
       projectSkillDescriptions,
       enabledFlags: new Set(featureFlagsEnvValue(loaded.row.metadata).split(',')),

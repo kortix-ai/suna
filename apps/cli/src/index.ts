@@ -29,7 +29,6 @@ import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
 import { runMarketplace } from './commands/marketplace.ts';
 import { runMembers } from './commands/members.ts';
-import { runMigrate } from './commands/migrate.ts';
 import { runModels } from './commands/models.ts';
 import { runPermissions } from './commands/permissions.ts';
 import { runProjects } from './commands/projects.ts';
@@ -223,7 +222,6 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   ship: (rest) => runShip(rest),
   deploy: (rest) => runShip(rest),
   validate: (rest) => runValidate(rest),
-  migrate: (rest) => runMigrate(rest),
   schema: (rest) => runSchema(rest),
   'self-host': (rest) => runSelfHost(rest),
   login: (rest) => runLogin(rest),
@@ -319,8 +317,8 @@ async function main(rawArgv: string[]): Promise<number> {
   }
   // Only the LEADING `--version`/`-v` is the global "print the CLI's own
   // version" flag. Scanning the whole argv used to hijack any subcommand's
-  // own same-named flag (e.g. `kortix schema --version 2`, `kortix self-host
-  // update --version <tag>`) before it ever reached the subcommand parser.
+  // own same-named flag (e.g. `kortix self-host update --version <tag>`)
+  // before it ever reached the subcommand parser.
   if (argv[0] === '--version' || argv[0] === '-v') {
     printVersion();
     return 0;

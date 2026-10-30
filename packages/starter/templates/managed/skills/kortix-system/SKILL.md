@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "How Kortix works and how to change a Kortix project from a session: land work through a change request, drive Kortix with the in-sandbox `kortix` CLI, keep files where they last, store or request credentials, schedule work, know what the session runtime (pi) can and cannot do, and edit `kortix.yaml` (kortix_version 3). Load when the user asks what Kortix can do or how it works; asks to create or change an agent, skill, tool, command, extension, permission, model, trigger or loop; or asks to save, persist, schedule or ship work."
+description: "How Kortix works and how to change a Kortix project from a session: land work through a change request, drive Kortix with the in-sandbox `kortix` CLI, keep files where they last, store or request credentials, schedule work, know what the session runtime (pi) can and cannot do, and edit or fix `kortix.yaml`. Load when the user asks what Kortix can do or how it works; asks to create or change an agent, skill, tool, command, extension, permission, model, trigger or loop; asks to save, persist, schedule or ship work; or your system prompt lists `kortix.yaml` issues."
 ---
 
 <skill name="kortix-system">
@@ -123,7 +123,7 @@ state. Use `git` and the file tools for files and commits.
 | Connect Slack or Teams | `kortix channels connect` (the `kortix-slack` skill) |
 | Agents and models | `kortix agents ls\|default\|config\|scope`, `kortix models ls\|default <model-id>` |
 | Tools, feature flags | `kortix tools ls\|eject <name>`, `kortix projects features [enable <flag>]` |
-| The manifest | `kortix validate [--scopes]`, `kortix schema --version 3` |
+| The manifest | `kortix validate [--scopes]`, `kortix schema` |
 
 `kortix triggers add|rm|enable|disable` edit the local `kortix.yaml` for
 your CR. With `--apply` they commit to the default branch through the API,
@@ -216,23 +216,21 @@ Tools, permissions, extensions: `references/pi.md`.
 </runtime>
 
 <manifest>
-## kortix.yaml, kortix_version 3
+## kortix.yaml
 
-The project registers things by name. Each agent enables what it uses.
-Grants are deny-by-default. Unknown keys are errors.
+One format, no version line. Declare everything in `kortix.yaml` (or
+`kortix.yml`) and the files it names. The project registers things by name;
+each agent enables what it uses. Unknown keys are errors.
 
 ```yaml
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
-kortix_version: 3
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.schema.json
 default_agent: kortix
-project: { name: Acme ops }
 env: { optional: [ORDERS_API_KEY] }       # secret names; values live in Kortix
 skills: { triage: skills/triage }         # folder that holds triage/SKILL.md
 tools: { lookup_order: tools/lookup_order.ts }
 commands:
   standup: { description: Post the standup summary., prompt_file: commands/standup.md }
-extensions:
-  audit: { pi: extensions/audit.ts }      # or "npm:<package>@1.2.3"
+extensions: { audit: { pi: extensions/audit.ts } }   # or "npm:<package>@1.2.3"
 agents:
   kortix:
     description: Front-door agent.
@@ -240,6 +238,7 @@ agents:
     prompt_file: agents/kortix.md         # or prompt: "…"
     permission: { bash: { "git push --force *": ask, "*": allow } }
     workspace: { project_repository: true }
+    tools: all
     skills: all                           # omitted = none, Kortix skills too
     subagents: [researcher]
     commands: [standup]
@@ -258,9 +257,8 @@ triggers:
     run: { agent: kortix, prompt: "Summarize yesterday's merged change requests." }
 ```
 
-- A new project starts with one agent, `worker`, the general-purpose agent
-  My Kortix routes work to. A project created earlier keeps its `kortix`
-  agent; nothing renames it.
+- `agents` and `default_agent` (a new project: `worker`) are optional: a
+  session or trigger that names no agent runs `default_agent`, else My Kortix.
 - An agent gets nothing it does not grant. Without `skills` it loads no
   skill, `kortix-system` included. `skills` and `extensions` also take
   `{ exclude: [names] }`: every one but those.
@@ -278,16 +276,16 @@ triggers:
   `kortix-*`; frontmatter `name` and a quoted `description` that says when
   to load it. Register it, grant it, land it through a CR.
 - Connectors: the `kortix-connectors` skill. Apps: the `kortix-apps` skill.
-- Check every edit: `kortix validate` exits 0. `kortix schema --version 3`
-  prints the full schema.
+- Check every edit: `kortix validate` exits 0. Each issue names
+  `<file>:<line>:<col>` and the fix. `kortix schema` prints the full schema.
+- A running project never stops on an error: it turns off or drops the
+  broken part (`references/kortix/kortix-yaml.md` → Problems).
+- When your system prompt lists `kortix.yaml` issues, tell the user and fix
+  them through a CR when asked. A retired format: rewrite the file in this
+  format and keep its agents, prompts and skills.
 
 Keys, `imports:`, sandbox templates, triggers: `references/kortix/kortix-yaml.md`.
-Tools: `references/kortix/tools.md`. People: https://kortix.com/docs/#kortixyaml-reference
-
-**Not on version 3?** Another `kortix_version`, or a TOML manifest: this
-sheet does not apply. Upgrade first, as a CR: `kortix migrate` (preview),
-`kortix migrate --write`, `kortix validate`, commit, `kortix cr open`. Or the
-user runs **Settings → Upgrades**.
+Tools: `references/kortix/tools.md`. People: https://kortix.com/docs/developers#kortixyaml-reference
 </manifest>
 
 <gotchas>
@@ -297,8 +295,6 @@ user runs **Settings → Upgrades**.
   `kortix validate` warns at 10 MiB per file and at 512 MiB in total. Above
   512 MiB compressed, running sessions stop picking up config changes. Put
   media and datasets in object storage; add build output to `.gitignore`.
-- A v3 session reads no harness folder (`harnesses/`, `.kortix/`). Do not add
-  one: declare everything in `kortix.yaml`.
 </gotchas>
 
 </skill>

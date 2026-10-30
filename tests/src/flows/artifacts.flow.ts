@@ -421,7 +421,6 @@ flow(
 );
 
 const GOVERNED_ARTIFACT_MANIFEST = [
-  'kortix_version: 2',
   'project:',
   '  name: ke2e-artifacts',
   'default_agent: writer',

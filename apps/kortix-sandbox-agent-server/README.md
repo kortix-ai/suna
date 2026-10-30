@@ -86,13 +86,15 @@ import rules, and where new code goes; `bun run lint` enforces them.
    hydration has settled. Materialization failures are logged but non-fatal in
    non-required modes.
 4. Resolve the skill directories. pi reads the managed system skills from the
-   image's overlay directory first, then the project's root `skills/` (root
-   layout) or `<config dir>/skills` (legacy `.kortix/opencode`). It writes
-   nothing into the working tree. A `kortix_version: 3` session takes its
+   image's overlay directory first, then exactly the skill folders kortix.yaml
+   registers. It writes nothing into the working tree. Every session takes its
    agents, registered skill folders, commands and extensions only from the
-   compiled set
-   (`KORTIX_COMPILED_AGENT_CONFIG`, `schema: 3`) and reads no `harnesses/`,
-   `.kortix/`, `.opencode/` or `.pi/` folder; config dirs are a v1/v2 concern.
+   compiled agent set (`KORTIX_COMPILED_AGENT_CONFIG`) and reads no
+   `harnesses/`, `.kortix/`, `.opencode/` or `.pi/` folder and scans no
+   `skills/` folder. A set without `schema: 3` (My Kortix's, an older API's)
+   runs its agents with the built-in subagents (`general`, `explore`). Without
+   a compiled set, pi runs `KORTIX_AGENT_NAME` (else `build`) on its default
+   system prompt.
 5. Start the Hono server on `0.0.0.0:KORTIX_SERVICE_PORT`.
 6. Start pi in the daemon process ([harness README](src/harness/README.md),
    "The pi harness"). A box that OpenCode booted before the sunset restores its

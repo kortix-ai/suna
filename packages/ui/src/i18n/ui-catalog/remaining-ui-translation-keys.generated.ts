@@ -241,10 +241,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Everything an owner can do except deleting the account or transferring ownership. Also Manager on every project.':
     'textc8ef36aed650',
   Expired: 'text424a2551d356',
-  'Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review.':
-    'text7823a1f3af93',
   Extensions: 'textfe3436af86b4',
-  'Upgrade manifest to v3 (kortix.yaml)': 'text08edd5b6dcdc',
   Failed: 'text031a8f0f659d',
   Favicon: 'text4295528943df',
   'Fetching deals updated ≤ 7d': 'text5bae674104b6',
@@ -577,8 +574,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'your-company/': 'text7a9f6daee641',
   '. The session keeps its id; the sandbox is rebuilt.': 'text09a3bb2aced6',
   '· grant no longer matches an agent': 'textc795f93da2e5',
-  "(kortix_version 2) to edit this agent's instructions, model, tool permissions and access here.":
-    'text479d92cbfaa1',
   ') stops running and is removed.': 'text3109205d1fc7',
   '@ already has access to this repo': 'texta9ab51e18b56',
   '⌘S': 'text8cd003e6301b',
@@ -626,8 +621,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Can edit': 'text5abe9e1fbc5b',
   'Can view': 'text151dc282a69e',
   'Change what can do in .': 'text8c4e24be27f2',
-  'Changes an agent makes to this workspace. Every run opens a change request for you to review — nothing merges on its own.':
-    'textc6414eb01d9a',
   'Clear notifications': 'texte6f312c6b6ef',
   'Clone address': 'textac830bd3c755',
   'Clone command': 'text6264f3bfdd91',
@@ -846,7 +839,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Try a different term.': 'textce18e358bf01',
   'Try adjusting the filters or clearing the search.': 'text0713dbee5126',
   'Unsaved changes.': 'textefa5855ff509',
-  Upgrades: 'texte02a5941602a',
   'Use the agent&apos;s usual model': 'text6960ac83d152',
   'Use your own Git client': 'textd29222de0472',
   'Uses the selected agent, project, or platform default.': 'text4eb861e5d86e',

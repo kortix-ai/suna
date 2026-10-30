@@ -134,7 +134,7 @@ export function registerProjectDetailRoutes(): void {
       allowStaleMirrorReads();
 
       // A disconnected repository still renders the project shell: no files,
-      // and a config whose `manifest_version.unknown_reason` names the cause.
+      // and a config whose `manifest_health.state` names the cause.
       // `git_connection` below carries the reason and the fix.
       const gitProject = await withProjectGitAuth(loaded.row).catch((error) => {
         if (isRepositoryDisconnectedError(error)) return null;

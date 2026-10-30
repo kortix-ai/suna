@@ -92,8 +92,8 @@ describe('releaseVariantFor', () => {
   });
 });
 
-describe('resolveSessionReleaseAgent on kortix_version 3', () => {
-  test('an undeclared built-in the v3 config disables re-points to the default', () => {
+describe('resolveSessionReleaseAgent: only declared agents run', () => {
+  test('an undeclared built-in the compiled config disables re-points to the default', () => {
     expect(resolveSessionReleaseAgent('build', roster({ onlyDeclared: true }))).toEqual({ kind: 'repoint', agent: 'kortix', dropped: 'build' });
   });
 

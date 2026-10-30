@@ -1,7 +1,6 @@
 // Characterization tests for `loadProjectConfig`: they pin the exact summary a
-// repo with an imported manifest plus agent/skill/command files produces —
-// every field, and the ordering of the `agents`/`skills`/`commands` lists.
-// They pass before and after the manifest-resolver / resource-scanner split.
+// repo with an imported manifest produces — every field, the ordering of the
+// `agents`/`skills`/`commands` lists, and `manifest_health`.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFile } from 'node:child_process';
@@ -23,7 +22,6 @@ async function git(args: string[], cwd?: string): Promise<string> {
 }
 
 const ROOT = `# Synthetic root manifest
-kortix_version: 2
 imports:
   - .kortix/triggers/
 env:
@@ -32,14 +30,6 @@ env:
     - BAR_KEY
   optional:
     - OPTIONAL_ONE
-opencode:
-  config_dir: .kortix/opencode
-`;
-
-const OPENCODE_JSONC = `{
-  // synthetic default agent
-  "default_agent": "builder"
-}
 `;
 
 const SEED: Record<string, string> = {
@@ -50,40 +40,6 @@ const SEED: Record<string, string> = {
     cron: "0 3 * * *"
     prompt: run the nightly job
 `,
-  '.kortix/opencode/opencode.jsonc': OPENCODE_JSONC,
-  // Agents: both `agent/` and `agents/` forms, one with no frontmatter.
-  '.kortix/opencode/agent/zeta.md': `---
-name: Zeta
-description: The zeta agent
-mode: primary
-model: test/zeta-model
----
-Zeta body.
-`,
-  '.kortix/opencode/agents/alpha.md': `---
-description: The alpha agent
----
-Alpha body.
-`,
-  '.kortix/opencode/agent/untitled.md': 'No frontmatter here.\n',
-  '.kortix/opencode/agent/notes.txt': 'not an agent\n',
-  // Skills: sorted by slug; one with no frontmatter.
-  '.kortix/opencode/skills/bravo/SKILL.md': `---
-name: Bravo Skill
-description: The bravo skill
----
-`,
-  '.kortix/opencode/skills/alpha/SKILL.md': 'Alpha skill body.\n',
-  '.kortix/opencode/skills/ignored/README.md': 'not a skill\n',
-  // Commands: both `command/` and `commands/` forms.
-  '.kortix/opencode/commands/deploy.md': `---
-description: Deploy the app
----
-`,
-  '.kortix/opencode/command/rollback.md': `---
-name: Rollback
----
-`,
 };
 
 let testRoot = '';
@@ -92,6 +48,13 @@ let seedPath = '';
 let cacheDir = '';
 let previousCacheDir: string | undefined;
 let project: GitBackedProject;
+
+/** Remove files from the remote's default branch. */
+async function remove(paths: string[], message: string): Promise<void> {
+  await git(['rm', '-q', ...paths], seedPath);
+  await git(['commit', '-m', message], seedPath);
+  await git(['push', 'origin', 'main'], seedPath);
+}
 
 /** Commit files straight to the remote, as a user pushing from their laptop. */
 async function push(files: Record<string, string>, message: string): Promise<void> {
@@ -144,29 +107,17 @@ describe('loadProjectConfig characterization', () => {
     expect(projectConfigAgentsToRuntimeAgents({ ...config, agents: config.agents.map((agent) => ({ ...agent, source: undefined })) }).filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['worker']);
   });
 
-  test('hidden primary agents stay registered but are excluded from pickers', async () => {
-    await push({
-      'kortix.yaml': 'kortix_version: 2\ndefault_agent: assistant\nagents:\n  assistant:\n    file: agents/assistant.md\n  internal:\n    file: agents/internal.md\n',
-      'agents/assistant.md': '---\nmode: primary\nhidden: false\n---\nCustomer assistant',
-      'agents/internal.md': '---\nmode: primary\nhidden: true\n---\nScheduled automation',
-    }, 'declare hidden automation');
+  test('hidden primary agents keep their visibility marker', async () => {
+    await push({ 'kortix.yaml': 'default_agent: assistant\nagents:\n  assistant:\n    mode: primary\n  internal:\n    mode: primary\n    hidden: true\n' }, 'declare automation');
     const config = await loadProjectConfig(project);
     expect(config.agents.map((agent) => agent.name)).toEqual(['assistant', 'internal']);
     expect(config.agents.filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['assistant']);
   });
 
-  test('v3 hidden primary agents keep their visibility marker', async () => {
-    await push({ 'kortix.yaml': 'kortix_version: 3\ndefault_agent: assistant\nagents:\n  assistant:\n    mode: primary\n  internal:\n    mode: primary\n    hidden: true\n' }, 'declare v3 automation');
-    const config = await loadProjectConfig(project);
-    expect(config.agents.map((agent) => agent.name)).toEqual(['assistant', 'internal']);
-    expect(config.agents.filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['assistant']);
-  });
-
-  test('v3 spaces: agents carry their space, and spaces list header and tabs, dropping unknown tab types', async () => {
+  test('spaces: agents carry their space, and spaces list header and tabs, dropping unknown tab types', async () => {
     await push(
       {
         'kortix.yaml': [
-          'kortix_version: 3',
           'default_agent: assistant',
           'spaces:',
           '  ops:',
@@ -195,7 +146,7 @@ describe('loadProjectConfig characterization', () => {
           '',
         ].join('\n'),
       },
-      'declare v3 spaces',
+      'declare spaces',
     );
     const config = await loadProjectConfig(project);
     expect(config.agents.map((agent) => [agent.name, agent.space])).toEqual([['assistant', 'eng']]);
@@ -222,11 +173,8 @@ describe('loadProjectConfig characterization', () => {
     await push(
       {
         'kortix.yaml': `# Synthetic root manifest
-kortix_version: 2
 imports:
   - domains/kortix.yaml
-opencode:
-  config_dir: .kortix/opencode
 `,
         'domains/kortix.yaml': `agents:
   builder:
@@ -252,111 +200,28 @@ opencode:
     expect(config.agents[1]?.scope?.connectors).toBe('all');
   });
 
-  test('pins the manifest, signals and opencode.jsonc fields of an imported manifest', async () => {
+  test('pins the manifest, signals and health fields of an imported manifest', async () => {
     const config = await loadProjectConfig(project);
 
     expect(config.is_kortix_repo).toBe(true);
-    expect(config.signals).toEqual({ manifest: true, openCodeConfig: true, openCodeAgent: true });
+    expect(config.signals).toEqual({ manifest: true, openCodeConfig: false, openCodeAgent: false });
     // `manifest_raw` stays the ROOT file text even when imports merge into `manifest`.
     expect(config.manifest_raw).toBe(ROOT);
-    expect(config.manifest_version).toEqual({
-      version: 2,
-      latest_version: 3,
-      migration_offered: true,
-      target_version: 3,
-      unknown_reason: null,
-      path: 'kortix.yaml',
-    });
-    // The merged document carries the imported trigger and the root env/opencode keys.
+    expect(config.manifest_health).toEqual({ path: 'kortix.yaml', state: 'ok', errors: 0, warnings: 0, issues: [] });
+    // The merged document carries the imported trigger and the root env.
     expect(config.manifest.env).toEqual({
       required: ['FOO_TOKEN', 'BAR_KEY'],
       optional: ['OPTIONAL_ONE'],
     });
-    expect(config.manifest.opencode).toEqual({ config_dir: '.kortix/opencode' });
     expect(config.manifest.triggers).toEqual([
       { slug: 'nightly', type: 'cron', cron: '0 3 * * *', prompt: 'run the nightly job' },
     ]);
     expect(config.env).toEqual({ required: ['FOO_TOKEN', 'BAR_KEY'], optional: ['OPTIONAL_ONE'] });
-    expect(config.open_code_raw).toBe(OPENCODE_JSONC);
-    expect(config.open_code_default_agent).toBe('builder');
-    expect(config.default_agent).toBe('builder');
-  });
-
-  test('pins the agents list and its ordering (sorted by path)', async () => {
-    const config = await loadProjectConfig(project);
-
-    // No manifest agents declaration → OpenCode native discovery, native list verbatim.
-    expect(config.agent_discovery).toBe('opencode');
-    expect(config.agents).toEqual([
-      {
-        name: 'untitled',
-        path: '.kortix/opencode/agent/untitled.md',
-        description: null,
-        mode: null,
-        model: null,
-        space: null,
-        source: 'opencode',
-        enabled: true,
-      },
-      {
-        name: 'Zeta',
-        path: '.kortix/opencode/agent/zeta.md',
-        description: 'The zeta agent',
-        mode: 'primary',
-        model: 'test/zeta-model',
-        space: null,
-        source: 'opencode',
-        enabled: true,
-      },
-      {
-        name: 'alpha',
-        path: '.kortix/opencode/agents/alpha.md',
-        description: 'The alpha agent',
-        mode: null,
-        model: null,
-        space: null,
-        source: 'opencode',
-        enabled: true,
-      },
-    ]);
-  });
-
-  test('pins the skills list and its ordering (sorted by slug, path normalized)', async () => {
-    const config = await loadProjectConfig(project);
-
-    // Every manifest version lists the Kortix skills kortixd injects into each session.
-    expect(config.skills.filter((s) => s.name.startsWith('kortix-')).map((s) => s.name)).toEqual(
-      listManagedSkills().map((s) => s.name).sort(),
-    );
-    expect(config.skills.filter((s) => !s.name.startsWith('kortix-'))).toEqual([
-      {
-        name: 'alpha',
-        path: '.kortix/opencode/skills/alpha/SKILL.md',
-        description: null,
-      },
-      {
-        name: 'Bravo Skill',
-        path: '.kortix/opencode/skills/bravo/SKILL.md',
-        description: 'The bravo skill',
-      },
-    ]);
-  });
-
-  test('pins the commands list and its ordering (sorted by slug, both dir forms)', async () => {
-    const config = await loadProjectConfig(project);
-
-    expect(config.commands).toEqual([
-      {
-        name: 'deploy',
-        path: '.kortix/opencode/commands/deploy.md',
-        description: 'Deploy the app',
-      },
-      {
-        name: 'Rollback',
-        path: '.kortix/opencode/command/rollback.md',
-        description: null,
-      },
-    ]);
+    expect(config.open_code_raw).toBeNull();
+    expect(config.default_agent).toBeNull();
+    expect(config.agent_discovery).toBe('declarative');
+    expect(config.agents).toEqual([]);
+    expect(config.commands).toEqual([]);
   });
 
   // The skill-create route serializes every frontmatter string as a
@@ -367,6 +232,7 @@ opencode:
   test('reads a quoted frontmatter scalar with escapes back to its text', async () => {
     await push(
       {
+        'kortix.yaml': `${ROOT}skills:\n  quoted: skills/quoted\n`,
         'skills/quoted/SKILL.md': `---
 name: "Quoted \\"Skill\\""
 description: "Runs deploys: say \\"go\\""
@@ -378,32 +244,8 @@ description: "Runs deploys: say \\"go\\""
     const config = await loadProjectConfig(project);
 
     const skill = config.skills.find((s) => s.path === 'skills/quoted/SKILL.md');
-    expect(skill?.name).toBe('Quoted "Skill"');
+    expect(skill?.name).toBe('quoted');
     expect(skill?.description).toBe('Runs deploys: say "go"');
-  });
-
-  // The agent editor writes an agent's `.md` frontmatter with `stringifyYaml`,
-  // which folds a long double-quoted scalar over several lines. A line reader
-  // took only the first line and kept its opening quote, so every agent list
-  // showed `"Generic … handles coding` while the editor showed the text.
-  test('reads a folded multi-line frontmatter scalar back to its text', async () => {
-    await push(
-      {
-        '.kortix/opencode/agents/long.md': `---
-description: "Generic knowledge worker. Hands-on: handles coding
-  / research / content tasks end-to-end."
-mode: primary
----
-Long body.
-`,
-      },
-      'add the folded agent',
-    );
-    const config = await loadProjectConfig(project);
-
-    const agent = config.agents.find((a) => a.name === 'long');
-    expect(agent?.description).toBe('Generic knowledge worker. Hands-on: handles coding / research / content tasks end-to-end.');
-    expect(agent?.mode).toBe('primary');
   });
 
   // A plain scalar (the writer emits one when the text needs no quoting) may
@@ -411,6 +253,7 @@ Long body.
   test('reads a plain scalar that ends in a quote back intact', async () => {
     await push(
       {
+        'kortix.yaml': `${ROOT}skills:\n  plain: skills/plain\n`,
         'skills/plain/SKILL.md': '---\nname: Deploy "v1"\ndescription: Covers the don\'t path\n---\n',
       },
       'add the plain skill',
@@ -418,17 +261,16 @@ Long body.
     const config = await loadProjectConfig(project);
 
     const skill = config.skills.find((s) => s.path === 'skills/plain/SKILL.md');
-    expect(skill?.name).toBe('Deploy "v1"');
+    expect(skill?.name).toBe('plain');
     expect(skill?.description).toBe("Covers the don't path");
   });
 });
 
-describe('loadProjectConfig on kortix_version 3', () => {
+describe('loadProjectConfig: kortix.yaml is the only source', () => {
   test('agents come from the YAML blocks, skills from the registry plus the Kortix skills, commands from the registry', async () => {
     await push(
       {
-        'kortix.yaml': `kortix_version: 3
-default_agent: lead
+        'kortix.yaml': `default_agent: lead
 skills:
   triage: support/skills/triage
 commands:
@@ -453,10 +295,10 @@ agents:
         'agents/lead.md': 'You lead.\n',
         'commands/report.md': 'Report on $ARGUMENTS.\n',
         'support/skills/triage/SKILL.md': '---\nname: triage\ndescription: Sort tickets.\n---\n',
-        // Not registered: a v3 project never lists it.
+        // Not registered: never listed.
         'skills/stray/SKILL.md': '---\nname: stray\n---\n',
       },
-      'v3 manifest',
+      'manifest',
     );
 
     const config = await loadProjectConfig(project);
@@ -482,3 +324,44 @@ agents:
   });
 });
 
+describe('loadProjectConfig: manifest_health', () => {
+  test('a manifest with no issue is ok', async () => {
+    await push({ 'kortix.yaml': 'default_agent: lead\nagents:\n  lead:\n    prompt: Lead.\n    tools: all\n' }, 'a clean manifest');
+    const config = await loadProjectConfig(project);
+    expect(config.manifest_health).toEqual({ path: 'kortix.yaml', state: 'ok', errors: 0, warnings: 0, issues: [] });
+  });
+
+  test('an unknown agent key is an error at its path and line', async () => {
+    await push(
+      { 'kortix.yaml': 'default_agent: lead\nagents:\n  lead:\n    prompt: Lead.\n    tools: all\n    descripton: Leads.\n' },
+      'a typo in an agent key',
+    );
+    const config = await loadProjectConfig(project);
+    expect(config.manifest_health.state).toBe('issues');
+    expect(config.manifest_health.errors).toBe(1);
+    const [issue] = config.manifest_health.issues;
+    expect(issue).toMatchObject({ path: 'agents.lead.descripton', severity: 'error', line: 6 });
+    expect(issue?.message).toContain('description');
+    // The raw file is still served, so an editor can show it.
+    expect(config.manifest_raw).toContain('descripton');
+  });
+
+  test('no manifest file is missing: the project runs its built-in agents only', async () => {
+    await remove(['kortix.yaml', '.kortix/triggers/nightly.yaml'], 'remove the manifest');
+    const config = await loadProjectConfig(project);
+    expect(config.manifest_health).toEqual({ path: null, state: 'missing', errors: 0, warnings: 0, issues: [] });
+    expect(config.is_kortix_repo).toBe(false);
+    expect(config.manifest_raw).toBeNull();
+  });
+
+  test('a repository with only a retired kortix.toml gets one error naming it', async () => {
+    await remove(['kortix.yaml', '.kortix/triggers/nightly.yaml'], 'remove the manifest');
+    await push({ 'kortix.toml': '[project]\nname = "legacy"\n' }, 'a retired manifest');
+    const config = await loadProjectConfig(project);
+    expect(config.manifest_health.state).toBe('issues');
+    expect(config.manifest_health.path).toBe('kortix.toml');
+    expect(config.manifest_health.errors).toBe(1);
+    expect(config.manifest_health.issues[0]).toMatchObject({ path: 'kortix.toml', severity: 'error' });
+    expect(config.manifest_health.issues[0]?.message).toContain('https://kortix.com/docs/developers#kortixyaml-reference');
+  });
+});

@@ -5,7 +5,6 @@ import {
   type ManifestImportReader,
   type ResolvedManifest,
   hasManifestImports,
-  manifestFormatForPath,
   parseManifestText,
   resolveManifestImports,
   serializeManifestObject,
@@ -432,13 +431,13 @@ export function isRepoFileNotFoundError(err: unknown): err is RepoFileNotFoundEr
 
 /**
  * Resolve + read the project's manifest, preferring the first candidate path
- * that exists (the dual-format rule: kortix.yaml over kortix.toml). ONE ls-tree
+ * that exists (kortix.yaml over kortix.yml). ONE ls-tree
  * finds which candidates exist at the ref, then a single `show` reads the
  * highest-priority present one — refreshing the mirror once, unlike probing each
  * path via readRepoFile (which would refresh + spawn a process per candidate).
  * Returns the matched path + content, or null when no candidate exists.
  *
- * IMPORTS: a YAML manifest that declares `imports:` is resolved HERE, at the one
+ * IMPORTS: a manifest that declares `imports:` is resolved HERE, at the one
  * read every consumer goes through, so none of them can forget to. `content`
  * is then the MERGED document (root + every imported file) re-serialized as
  * YAML — byte-identical consumers (agent grants, the CR-merge gate, the config
@@ -547,14 +546,13 @@ export async function readManifestFromRepo(
   // the feature — skip the extra YAML parse on the (hot) common path.
   if (
     opts?.resolveImports === false ||
-    manifestFormatForPath(winner) !== 'yaml' ||
     !/^imports\s*:/m.test(shown.stdout)
   ) {
     return found;
   }
   let rootRaw: Record<string, unknown>;
   try {
-    rootRaw = parseManifestText(shown.stdout, 'yaml');
+    rootRaw = parseManifestText(shown.stdout);
   } catch {
     // A root syntax error is the caller's to report, from the same text.
     return found;
@@ -566,7 +564,7 @@ export async function readManifestFromRepo(
     { path: winner, raw: rootRaw, revision },
     gitManifestImportReader(repoPath, commit ?? treeRef),
   );
-  return { ...found, content: serializeManifestObject(imports.raw, 'yaml'), imports };
+  return { ...found, content: serializeManifestObject(imports.raw), imports };
 }
 
 /** `ManifestImportReader` over a bare mirror at one fixed ref. */

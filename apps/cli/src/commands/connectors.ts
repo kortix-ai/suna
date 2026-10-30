@@ -425,7 +425,6 @@ Give an agent it: kortix agents scope <agent> --policy-set <slug>=<name>
 Back to base:     kortix agents scope <agent> --policy-set <slug>=base
 
 Names: a-z, 0-9, - and _, at most 64 characters; \`base\` is reserved.
-Policy sets need kortix.yaml (kortix_version 2 or 3).
 
 Global:
   --project <id>     Operate on this project id (default: linked).

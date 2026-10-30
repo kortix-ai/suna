@@ -72,7 +72,6 @@
     "./customize/connectors/connectors-app-return-bar": "./src/customize/connectors/connectors-app-return-bar.tsx",
     "./customize/connectors/detail/app-page": "./src/customize/connectors/detail/app-page.tsx",
     "./customize/connectors/detail/connector-page": "./src/customize/connectors/detail/connector-page.tsx",
-    "./customize/migrate-to-v2/upgrade-view": "./src/customize/migrate-to-v2/upgrade-view.tsx",
     "./customize/sections/add-account-fields": "./src/customize/sections/add-account-fields.tsx",
     "./customize/sections/component/email-connect-form": "./src/customize/sections/component/email-connect-form.tsx",
     "./customize/sections/component/manifest-copy-block": "./src/customize/sections/component/manifest-copy-block.tsx",
@@ -305,7 +304,7 @@
     "./internal/lib/github-user-proof": "./src/internal/lib/github-user-proof.ts",
     "./internal/lib/interface-theme-defaults": "./src/internal/lib/interface-theme-defaults.ts",
     "./internal/lib/kortix-cli": "./src/internal/lib/kortix-cli.ts",
-    "./internal/lib/manifest-version": "./src/internal/lib/manifest-version.ts",
+    "./internal/lib/manifest-health": "./src/internal/lib/manifest-health.ts",
     "./internal/lib/mobile-store-urls": "./src/internal/lib/mobile-store-urls.ts",
     "./internal/lib/navigation/modified-click": "./src/internal/lib/navigation/modified-click.ts",
     "./internal/lib/navigation/router-bridge": "./src/internal/lib/navigation/router-bridge.ts",
@@ -550,7 +549,7 @@
     "./workspace/sidebar/footer/project-apps-nav": "./src/workspace/sidebar/footer/project-apps-nav.tsx",
     "./workspace/sidebar/footer/project-balance-warning": "./src/workspace/sidebar/footer/project-balance-warning.tsx",
     "./workspace/sidebar/footer/project-computer-nav": "./src/workspace/sidebar/footer/project-computer-nav.tsx",
-    "./workspace/sidebar/footer/project-manifest-upgrade-alert": "./src/workspace/sidebar/footer/project-manifest-upgrade-alert.tsx",
+    "./workspace/sidebar/footer/project-manifest-issues-alert": "./src/workspace/sidebar/footer/project-manifest-issues-alert.tsx",
     "./workspace/sidebar/footer/project-mcp-nav": "./src/workspace/sidebar/footer/project-mcp-nav.tsx",
     "./workspace/sidebar/footer/project-sandbox-alert": "./src/workspace/sidebar/footer/project-sandbox-alert.tsx",
     "./workspace/sidebar/footer/project-upgrade-button": "./src/workspace/sidebar/footer/project-upgrade-button.tsx",
@@ -759,10 +758,6 @@
       "./customize/connectors/detail/connector-page": {
         "types": "./dist/customize/connectors/detail/connector-page.d.ts",
         "import": "./dist/customize/connectors/detail/connector-page.js"
-      },
-      "./customize/migrate-to-v2/upgrade-view": {
-        "types": "./dist/customize/migrate-to-v2/upgrade-view.d.ts",
-        "import": "./dist/customize/migrate-to-v2/upgrade-view.js"
       },
       "./customize/sections/add-account-fields": {
         "types": "./dist/customize/sections/add-account-fields.d.ts",
@@ -1686,9 +1681,9 @@
         "types": "./dist/internal/lib/kortix-cli.d.ts",
         "import": "./dist/internal/lib/kortix-cli.js"
       },
-      "./internal/lib/manifest-version": {
-        "types": "./dist/internal/lib/manifest-version.d.ts",
-        "import": "./dist/internal/lib/manifest-version.js"
+      "./internal/lib/manifest-health": {
+        "types": "./dist/internal/lib/manifest-health.d.ts",
+        "import": "./dist/internal/lib/manifest-health.js"
       },
       "./internal/lib/mobile-store-urls": {
         "types": "./dist/internal/lib/mobile-store-urls.d.ts",
@@ -2648,9 +2643,9 @@
         "types": "./dist/workspace/sidebar/footer/project-computer-nav.d.ts",
         "import": "./dist/workspace/sidebar/footer/project-computer-nav.js"
       },
-      "./workspace/sidebar/footer/project-manifest-upgrade-alert": {
-        "types": "./dist/workspace/sidebar/footer/project-manifest-upgrade-alert.d.ts",
-        "import": "./dist/workspace/sidebar/footer/project-manifest-upgrade-alert.js"
+      "./workspace/sidebar/footer/project-manifest-issues-alert": {
+        "types": "./dist/workspace/sidebar/footer/project-manifest-issues-alert.d.ts",
+        "import": "./dist/workspace/sidebar/footer/project-manifest-issues-alert.js"
       },
       "./workspace/sidebar/footer/project-mcp-nav": {
         "types": "./dist/workspace/sidebar/footer/project-mcp-nav.d.ts",

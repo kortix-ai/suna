@@ -158,11 +158,9 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
 }> {
   let agentGrantEnv: string[] | 'all' | undefined;
 
-  // v2-only: compile the manifest's `agents:` map into an OpenCode-native
-  // config the sandbox receives sealed (see compile-agent-config.ts). `null`
-  // for a v1 project (no `kortix_version: 2`) or any read/parse failure — no
-  // KORTIX_COMPILED_AGENT_CONFIG key is emitted below in that case, so a v1
-  // project's sandbox env is byte-for-byte unaffected by this. Gated on the
+  // Compile kortix.yaml into the agent config the sandbox receives sealed (see
+  // compile-agent-config.ts). `null` for a project with no manifest file — no
+  // KORTIX_COMPILED_AGENT_CONFIG key is emitted below in that case. Gated on the
   // same `defaultBranch` presence as the `agents:` grant resolution below
   // (both need git context; optional call sites that omit it get neither).
   let compiledAgentConfig: string | null = input.platformMetaAgent

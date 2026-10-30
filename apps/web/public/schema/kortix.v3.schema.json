@@ -1,29 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kortix.com/schema/kortix.v3.schema.json",
-  "title": "Kortix manifest (kortix_version 3)",
-  "description": "kortix.yaml, schema version 3. The project registers skills, tools, commands and extensions; each agent is one block of behavior (prompt, model, permission) and enables registered things by name. No harness config folder is read. Unknown keys are errors.",
+  "$id": "https://kortix.com/schema/kortix.schema.json",
+  "title": "Kortix manifest (kortix.yaml)",
+  "description": "kortix.yaml. The project registers skills, tools, commands and extensions; each agent is one block of behavior (prompt, model, permission) and enables registered things by name. The format has no version: it changes only by adding optional keys. Unknown keys are errors when you write the file; a running project ignores them.",
   "type": "object",
-  "required": [
-    "kortix_version",
-    "default_agent"
-  ],
-  "if": {
-    "not": {
-      "required": [
-        "imports"
-      ]
-    }
-  },
-  "then": {
-    "required": [
-      "agents"
-    ]
-  },
   "properties": {
     "kortix_version": {
       "const": 3,
-      "description": "`3`. A higher version is an error."
+      "deprecated": true,
+      "description": "Obsolete and ignored. Remove it."
     },
     "imports": {
       "type": "array",
@@ -2658,6 +2643,18 @@
       "description": "The decision for a connector call that no rule matches.",
       "properties": {
         "default_mode": {
+          "type": "string",
+          "anyOf": [
+            {
+              "enum": [
+                "risk",
+                "allow_all"
+              ]
+            },
+            {
+              "pattern": "^\\s*(?:[rR][iI][sS][kKK]|[aA][lL][lL][oO][wW]_[aA][lL][lL])\\s*$(?![\\s\\S])"
+            }
+          ],
           "default": "allow_all",
           "description": "`allow_all`: the call runs. `risk`: a read runs, and a write or a delete waits for approval."
         }
@@ -2667,11 +2664,31 @@
       "type": "array",
       "description": "Connector rules for the whole project. They run before every policy set and base rule.",
       "items": {
+        "type": "object",
+        "required": [
+          "match",
+          "action"
+        ],
         "properties": {
           "match": {
-            "description": "Required. A glob over `<connector-slug>.<tool>`, such as `gmail.send_*` or `*.delete*`. Case-insensitive."
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Required. A glob over `<connector-slug>.<tool>`, such as `gmail.send_*` or `*.delete*`, or a `/regex/flags`. Case-insensitive."
           },
           "action": {
+            "type": "string",
+            "anyOf": [
+              {
+                "enum": [
+                  "always_run",
+                  "require_approval",
+                  "block"
+                ]
+              },
+              {
+                "pattern": "^\\s*(?:[aA][lL][wW][aA][yY][sS]_[rR][uU][nN]|[rR][eE][qQ][uU][iI][rR][eE]_[aA][pP][pP][rR][oO][vV][aA][lL]|[bB][lL][oO][cC][kKK])\\s*$(?![\\s\\S])"
+              }
+            ],
             "description": "Required. What a matching call does."
           },
           "conditions": {
@@ -2895,8 +2912,7 @@
     },
     "agents": {
       "type": "object",
-      "description": "Agent name → agent block. At least 1 agent, here or in an imported file. A name is lowercase letters, digits, `-` and `_`, at most 128 characters.",
-      "minProperties": 1,
+      "description": "Agent name → agent block, here or in an imported file. A name is lowercase letters, digits, `-` and `_`, at most 128 characters.",
       "propertyNames": {
         "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
       },
@@ -3114,7 +3130,7 @@
             ]
           },
           "skills": {
-            "description": "Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. \"all\", \"none\" (default), a list of names, or { exclude: [names] } for every name but those.",
+            "description": "Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. \"all\", \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
             "oneOf": [
               {
                 "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
@@ -3230,7 +3246,7 @@
             "default": "none"
           },
           "extensions": {
-            "description": "Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. \"all\", \"none\" (default), a list of names, or { exclude: [names] } for every name but those.",
+            "description": "Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. \"all\", \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
             "oneOf": [
               {
                 "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",

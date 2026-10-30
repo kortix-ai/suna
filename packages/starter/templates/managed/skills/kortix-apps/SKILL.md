@@ -83,8 +83,8 @@ The command waits for `ready` for up to 1200 s. Use `--app <slug>` (or the
 `kortix.yaml` block) for every later release of the same App. Never create a
 new slug for a normal update.
 
-Declare Apps in `kortix.yaml` `apps.<slug>` (`kortix schema --version 3`
-prints every key). The file owns `resources`,
+Declare Apps in `kortix.yaml` `apps.<slug>` (`kortix schema` prints every
+key). The file owns `resources`,
 `idle_timeout_seconds`, `always_on`, `labels`, `display` and `uses`: a write
 from the web, CLI, SDK or API commits to `apps.<slug>` first, and a push
 applies them on sync without a deploy. Deleting an App removes its block. The

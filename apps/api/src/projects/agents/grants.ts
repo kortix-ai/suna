@@ -3,8 +3,8 @@ import { isMetaAgentName } from '@kortix/shared';
 import { canonicalizeGrantActions, canonicalizeGrantConnectors } from '../../iam/agent-scope';
 import type { GitBackedProject } from '../git';
 import { disabledPlatformMetaAgentGrant, platformMetaAgentGrant } from '../lib/platform-meta-agent';
-import { type ManifestFormat, OPENCODE_BUILTIN_AGENTS_V3 } from '@kortix/manifest-schema';
-import { parseManifestString } from '../manifest-io';
+import { OPENCODE_BUILTIN_AGENTS_V3 } from '@kortix/manifest-schema';
+import { manifestIssueSummary, parseManifestString } from '../manifest-io';
 import { extractAgents, loadProjectAgents } from './parse';
 import type { AgentSpec, LoadedAgents } from './types';
 
@@ -20,13 +20,11 @@ export const DEFAULT_AGENT_SENTINEL = 'default';
  * Resolve the per-agent grant to stamp onto a session token at birth.
  *
  * Backward-compatible + secure-on-adoption:
- *   - Manifest declares NO `[[agents]]` at all → returns `null` (no restriction;
+ *   - Manifest declares NO `agents` at all → returns `null` (no restriction;
  *     full access, capped at the launching user by the route's own role check).
- *     Every existing project keeps working exactly as today.
  *   - Agent IS listed → its declared overlay (connectors + kortix_permissions).
- *   - Project adopted `[[agents]]` but the agent is NOT listed → default-DENY
- *     (the agent still runs its `.md` behavior, but with no connectors and no
- *     Kortix permissions).
+ *   - Project declares `agents` but the agent is NOT listed (or is off) →
+ *     default-DENY (no connectors, no secrets, no Kortix permissions).
  *
  * The `∩ launching-user role` is NOT applied here — it's enforced for free at
  * the route layer (the account token resolves to the user, whose role is
@@ -66,9 +64,8 @@ export const OPENCODE_BUILTIN_AGENT_NAMES: ReadonlySet<string> = new Set([
  *
  *   - `default`, My Kortix (`meta`, unless `builtin_agents.my_kortix: false`)
  *     and OpenCode's built-in agents are launchable: none of them is ever
- *     another project's agent. In a v3
- *     project `build`/`plan`/`general`/`explore` are launchable only when
- *     declared.
+ *     another project's agent. `build`/`plan`/`general`/`explore` are
+ *     launchable only when declared.
  *   - A project with no per-agent governance (no specs, no parse errors) keeps
  *     the runtime roster as the authority, unchanged.
  *   - Otherwise the name must be a declared, enabled spec. A manifest that
@@ -85,11 +82,11 @@ export function isLaunchableAgentName(agentName: string, loaded: LoadedAgents): 
   // OpenCode ships these in every runtime and a governed project's picker can
   // still send one. They are the runtime's own, not another project's, so they
   // keep running exactly as before: an undeclared built-in resolves to the
-  // deny-all grant in `grantFromLoadedAgents`, never a widening. kortix_version 3
-  // runs only declared agents: its compiled config disables build/plan/general/
-  // explore unless the manifest declares the name.
-  const v3Disabled = (loaded.schemaVersion ?? 0) >= 3 && (OPENCODE_BUILTIN_AGENTS_V3 as readonly string[]).includes(name);
-  if (OPENCODE_BUILTIN_AGENT_NAMES.has(name) && !v3Disabled) return true;
+  // deny-all grant in `grantFromLoadedAgents`, never a widening. Only declared
+  // agents run: the compiled config disables build/plan/general/explore unless
+  // the manifest declares the name.
+  const compiledOff = (OPENCODE_BUILTIN_AGENTS_V3 as readonly string[]).includes(name);
+  if (OPENCODE_BUILTIN_AGENT_NAMES.has(name) && !compiledOff) return true;
   if (loaded.specs.length === 0 && loaded.errors.length === 0) return true;
   return loaded.specs.some((s) => s.name === name && s.enabled);
 }
@@ -151,10 +148,10 @@ export function grantsByAgent(loaded: LoadedAgents): Map<string, AgentGrant> {
  * unparseable manifest declares no grants: the runtime default-denies every
  * agent of an unparseable manifest, so reading it as empty never widens.
  */
-export function grantsOfManifestText(text: string | null, format: ManifestFormat): Map<string, AgentGrant> {
+export function grantsOfManifestText(text: string | null): Map<string, AgentGrant> {
   if (!text?.trim()) return new Map();
   try {
-    return grantsByAgent(extractAgents(parseManifestString(text, format)));
+    return grantsByAgent(extractAgents(parseManifestString(text)));
   } catch {
     return new Map();
   }
@@ -177,7 +174,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
     return loaded.builtinAgents?.my_kortix === false ? disabledPlatformMetaAgentGrant() : platformMetaAgentGrant();
   }
 
-  // No [[agents]] section parsed and no errors → project hasn't adopted
+  // No `agents` parsed and no errors → project hasn't adopted
   // per-agent governance → no restriction (today's behavior).
   if (loaded.specs.length === 0 && loaded.errors.length === 0) return null;
 
@@ -186,23 +183,12 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
     return grantFromSpec(agentName, spec);
   }
 
-  // The `default` sentinel is non-binding for v1: no agent is ever named
-  // `default`, so a `default`-booted session is OpenCode's configured
-  // `default_agent` (a general-purpose agent, conventionally `kortix`, granted
-  // "all") — NOT an unlisted concrete agent. Default-denying it stripped EVERY
-  // connector from such sessions (the `kortix connectors ls` → [] bug,
-  // and synthetic channel/computer connectors never reaching the agent) even
-  // though OpenCode runs them as the fully-privileged default agent. Resolve
-  // it the way the proxy already does: non-binding → null (no restriction,
-  // still capped at the launching user's role; identical to a project that
-  // never adopted [[agents]]).
-  //
-  // v2 changes this: the manifest declares a top-level `default_agent` that
-  // MUST always resolve to a concrete declared agent (spec §2.1 — "closes
-  // trigger seam 7(a) structurally"). `loaded.defaultAgent` is only ever
-  // non-null for a v2 manifest (see `extractAgentsV2`), so this branch is
-  // absent from v1 behavior — a v1 project (defaultAgent always null) falls
-  // through to the unchanged `return null` below.
+  // No agent is ever named `default`: a `default`-booted session runs the
+  // manifest's `default_agent` (spec §2.1 — "closes trigger seam 7(a)
+  // structurally") and gets that agent's grant. With no declared default it is
+  // non-binding → null (no restriction, still capped at the launching user's
+  // role). Default-denying it stripped EVERY connector from such sessions (the
+  // `kortix connectors ls` → [] bug).
   if (agentName === DEFAULT_AGENT_SENTINEL) {
     if (loaded.defaultAgent) {
       const declared = loaded.specs.find((s) => s.name === loaded.defaultAgent && s.enabled);
@@ -213,10 +199,9 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
     // A project locks down its default by setting `default_agent` to a
     // CONCRETE declared agent, which reaches us by that name and gets its
     // (possibly narrow) grant — so this never weakens an intentionally-
-    // restricted default. Falling through here means either v1 (no
-    // manifest-level default_agent to honor) or a v2 manifest whose declared
-    // default_agent doesn't resolve to an enabled spec (a validation-time
-    // error the CR-merge gate should already have caught).
+    // restricted default. Falling through here means no `default_agent`, or
+    // one that doesn't resolve to an enabled spec (a validation-time error the
+    // CR-merge gate should already have caught).
     //
     // EXCEPT when the manifest could not be read or parsed. `null` here means
     // NO RESTRICTION (agent-scope.ts), and the mint resolves this grant with
@@ -247,12 +232,14 @@ export function sandboxFromLoadedAgents(agentName: string, loaded: LoadedAgents)
 }
 
 /** Resolve the selected agent's project file delivery mode without repository I/O.
- *  An agent block that fails to parse gets no repository: a typo in
+ *  An agent block that fails to parse, or is off, gets no repository: a typo in
  *  `workspace` must not grant the checkout it tried to withhold. */
 export function repositoryAccessFromLoadedAgents(agentName: string, loaded: LoadedAgents): boolean {
   const name = agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent ? loaded.defaultAgent : agentName;
   if (loaded.errors.some((error) => error.name === name)) return false;
-  return loaded.specs.find((spec) => spec.name === name && spec.enabled)?.repositoryAccess ?? true;
+  const spec = loaded.specs.find((candidate) => candidate.name === name);
+  if (spec && !spec.enabled) return false;
+  return spec?.repositoryAccess ?? true;
 }
 
 /** Legacy read remains unavailable until its owner explicitly chooses a boolean policy. */
@@ -296,7 +283,7 @@ export type GovernedAgentGrantResult = { ok: true; grant: AgentGrant | null } | 
  * unchanged behavior), so a non-subject project is provably unaffected.
  *
  * When subject:
- *   - a concrete agent name not declared (or disabled) in `[[agents]]` is
+ *   - a concrete agent name not declared (or off) in `agents` is
  *     REJECTED with an explicit error — never silently resolved to the
  *     permissive null grant `grantFromLoadedAgents` would return for an
  *     ungoverned project, and never silently default-denied-to-running either.
@@ -305,9 +292,8 @@ export type GovernedAgentGrantResult = { ok: true; grant: AgentGrant | null } | 
  *     that doesn't name a declared/enabled agent, is rejected the same way —
  *     this is what closes trigger/spec seam 7(a) structurally (§2.1).
  *     `opts.projectDefaultAgent` (the DB `project.metadata.default_agent`
- *     mirror callers pass in) wins when set; `loaded.defaultAgent` (the v2
- *     manifest's own top-level `default_agent` — always null for v1) is the
- *     fallback, so a project that never separately configured the DB-side
+ *     mirror callers pass in) wins when set; `loaded.defaultAgent` (the
+ *     manifest's own top-level `default_agent`) is the fallback, so a project that never separately configured the DB-side
  *     field still resolves the sentinel to what it actually declared in git.
  *
  * Exported for tests. Callers needing the historical `AgentGrant | null`
@@ -342,7 +328,7 @@ export function resolveGovernedAgentGrant(
       return {
         ok: false,
         code: 'AGENT_NOT_DECLARED',
-        error: `This project's default agent "${declaredDefault}" is not declared (or is disabled) in \`agents\` — the "default" sentinel cannot resolve.`,
+        error: `This project's default agent "${declaredDefault}" is not declared (or is disabled) in \`agents\` — the "default" sentinel cannot resolve.${offReason(declaredDefault, loaded)}`,
       };
     }
     return {
@@ -356,8 +342,18 @@ export function resolveGovernedAgentGrant(
     return {
       ok: false,
       code: 'AGENT_NOT_DECLARED',
-      error: `Agent "${agentName}" is not declared in this project's \`agents\` manifest — this project requires every session/trigger to name a declared agent.`,
+      error: loaded.specs.some((s) => s.name === agentName)
+        ? `Agent "${agentName}" is off in this project's \`agents\` manifest.${offReason(agentName, loaded)}`
+        : `Agent "${agentName}" is not declared in this project's \`agents\` manifest — this project requires every session/trigger to name a declared agent.`,
     };
   }
   return { ok: true, grant: grantFromSpec(agentName, spec) };
+}
+
+/** Why a declared agent is off: its own validation errors, else the file's. Empty when none is known. Unknown keys are ignored at run time, so they never explain it. */
+function offReason(agentName: string, loaded: LoadedAgents): string {
+  const issues = (loaded.issues ?? []).filter((issue) => issue.severity === 'error' && !issue.unknownKey);
+  const own = issues.filter((issue) => issue.path === `agents.${agentName}` || issue.path.startsWith(`agents.${agentName}.`));
+  const summary = manifestIssueSummary(own.length > 0 ? own : issues);
+  return summary ? ` ${summary}` : '';
 }

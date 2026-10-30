@@ -1056,42 +1056,40 @@ flow(
 );
 
 /**
- * A manifest with one extra agent, `no-edit`, whose `.md` denies every way to
- * write a file: the file tools (`edit`), the shell (`bash`, which also covers
- * OpenCode's `pty_*` tools, W5 E9), and delegation.
- */
-/**
  * A synthetic value only a successful read of `private/notes.txt` can put in the
  * conversation. Not `secrets/…`: a model refuses on its own to read a file named
  * like a credential, and the rule is never exercised (OpenCode, 2026-10-23).
  */
 const RUN10_PRIVATE = 'RUN10-PRIVATE-c41f9e';
 
+/**
+ * A manifest with one extra agent, `no-edit`, whose `permission` denies every
+ * way to write a file: the file tools (`edit`) and the shell (`bash`, which
+ * also covers the `pty_*` tools, W5 E9). It starts no subagent (`subagents`
+ * omitted). It has the checkout, so `private/notes.txt` exists to be refused.
+ */
 const NO_EDIT_FILES = {
   'kortix.yaml': [
-    'kortix_version: 2',
     'default_agent: kortix',
     'agents:',
     '  kortix:',
     '    kortix_permissions: all',
     '    skills: all',
+    '    tools: all',
     '  no-edit:',
+    '    description: Reads this repository and never writes files.',
+    '    mode: primary',
+    '    prompt: You answer questions about this repository. Follow the user instructions exactly.',
     '    kortix_permissions: all',
-    '',
-  ].join('\n'),
-  '.kortix/opencode/agents/no-edit.md': [
-    '---',
-    'description: Reads this repository and never writes files.',
-    'mode: primary',
-    'permission:',
-    '  edit: deny',
-    '  bash: deny',
-    '  task: deny',
-    '  read:',
-    "    '*': allow",
-    "    'private/*': deny",
-    '---',
-    'You answer questions about this repository. Follow the user instructions exactly.',
+    '    tools: all',
+    '    workspace:',
+    '      project_repository: true',
+    '    permission:',
+    '      edit: deny',
+    '      bash: deny',
+    '      read:',
+    "        '*': allow",
+    "        'private/*': deny",
     '',
   ].join('\n'),
   'private/notes.txt': `${RUN10_PRIVATE}\n`,
@@ -1223,21 +1221,21 @@ harnessFlow(
 );
 
 // ─── RUN-20: a codemode script runs its tool calls on pi ─────────────────────
-// pi only: codemode is a pi tool. The project sets `harnesses.pi.codemode: only`, so the
-// manifest reaches the box (API -> KORTIX_PI_CODEMODE) and the model has no other tool to
-// call: a direct bash call cannot pass for a script. The script's two bash calls write
-// files, so the flow reads the effect back; the runtime's own message list holds the
-// nested calls the transcript flattens away.
+// pi only: codemode is a pi tool. The agent sets `codemode: only`, so the manifest
+// reaches the box and the model has no other tool to call: a direct bash call cannot
+// pass for a script. The script's two bash calls write files into the checkout, so the
+// flow reads the effect back; the runtime's own message list holds the nested calls the
+// transcript flattens away.
 const RUN20_MANIFEST = [
-  'kortix_version: 2',
   'default_agent: kortix',
   'agents:',
   '  kortix:',
   '    kortix_permissions: all',
   '    skills: all',
-  'harnesses:',
-  '  pi:',
+  '    tools: all',
   '    codemode: only',
+  '    workspace:',
+  '      project_repository: true',
   '',
 ].join('\n');
 
@@ -1259,7 +1257,7 @@ flow(
     const project = await ctx.fixtures.project({ seed: true });
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
-      await ctx.step('the project runs pi with harnesses.pi.codemode: only', async () => {
+      await ctx.step('the project runs pi with agents.kortix.codemode: only', async () => {
         await world.commitToMain({ 'kortix.yaml': RUN20_MANIFEST }, 'ke2e RUN-20: codemode only');
       });
       const session = await bootSession(ctx, 'pi', { project });
@@ -1314,7 +1312,6 @@ flow(
 // of trusting the model's text.
 const PROJECT_TOOL_FILES = {
   'kortix.yaml': [
-    'kortix_version: 2',
     'default_agent: kortix',
     'tools:',
     '  ke2e_marker: tools/ke2e_marker.ts',
@@ -1322,34 +1319,29 @@ const PROJECT_TOOL_FILES = {
     '  kortix:',
     '    kortix_permissions: all',
     '    skills: all',
+    '    tools: all',
+    '    workspace:',
+    '      project_repository: true',
     '  limited:',
+    '    description: Reads this repository with the read tool only.',
+    '    mode: primary',
+    '    prompt: You answer questions about this repository. Follow the user instructions exactly.',
     '    kortix_permissions: all',
     '    tools: [read]',
+    '    workspace:',
+    '      project_repository: true',
     // No checkout and no file tools: the box receives only the tool's modules.
     '  locked:',
+    '    description: Records markers with the ke2e_marker tool only.',
+    '    mode: primary',
+    '    prompt: You record markers. Follow the user instructions exactly.',
     '    kortix_permissions: all',
     '    workspace:',
     '      project_repository: false',
     '    tools: [ke2e_marker]',
     '',
   ].join('\n'),
-  'agents/locked.md': [
-    '---',
-    'description: Records markers with the ke2e_marker tool only.',
-    'mode: primary',
-    '---',
-    'You record markers. Follow the user instructions exactly.',
-    '',
-  ].join('\n'),
   'tools/lib/marker-text.ts': 'export const markerText = (nonce: string, agent: string) => `${nonce}:${agent}`\n',
-  'agents/limited.md': [
-    '---',
-    'description: Reads this repository with the read tool only.',
-    'mode: primary',
-    '---',
-    'You answer questions about this repository. Follow the user instructions exactly.',
-    '',
-  ].join('\n'),
   'tools/ke2e_marker.ts': [
     "import { writeFileSync } from 'node:fs'",
     "import { join } from 'node:path'",
@@ -1431,23 +1423,21 @@ harnessFlow(
   },
 );
 
-// ─── RUN-19: Kortix tools in kortix.yaml, removed and ejected ────────────────
-// The project lists four Kortix tools (no `show`) and owns a changed copy of
-// `web_search`, made by the real `kortix tools eject`. The copy answers a
-// `ke2e-` query itself and writes its proof to the workspace, so the flow reads
+// ─── RUN-19: Kortix tools in kortix.yaml, excluded and ejected ───────────────
+// The agent excludes the Kortix tool `show` and the project owns a changed copy
+// of `web_search`, made by the real `kortix tools eject`. The copy answers a
+// `ke2e-` query itself and writes its proof to the checkout, so the flow reads
 // the effect back instead of trusting the model's text.
 const RUN19_MANIFEST = [
-  'kortix_version: 2',
   'default_agent: kortix',
-  'tools:',
-  '  web_search: kortix:web_search',
-  '  image_search: kortix:image_search',
-  '  scrape_webpage: kortix:scrape_webpage',
-  '  memory: kortix:memory',
   'agents:',
   '  kortix:',
   '    kortix_permissions: all',
   '    skills: all',
+  '    tools:',
+  '      exclude: [show]',
+  '    workspace:',
+  '      project_repository: true',
   '',
 ].join('\n');
 const EJECTED_EXECUTE = '  async execute(args: Record<string, any>, { env, signal }: ToolContext): Promise<string> {\n';
@@ -1483,7 +1473,7 @@ harnessFlow(
     const query = `ke2e-run19-${Date.now()}`;
     const done = `RUN19_DONE_${Date.now()}`;
     try {
-      await ctx.step(`the project ejects web_search with kortix tools eject, changes the copy, lists no show, and runs ${harness}`, async () => {
+      await ctx.step(`the project ejects web_search with kortix tools eject, changes the copy, excludes show, and runs ${harness}`, async () => {
         cli.writeFile('kortix.yaml', RUN19_MANIFEST);
         const ejected = await cli.run(['tools', 'eject', 'web_search']);
         if (ejected.exitCode !== 0) throw new Error(`kortix tools eject web_search exited ${ejected.exitCode}: ${ejected.all}`);
@@ -1491,7 +1481,7 @@ harnessFlow(
         if (!manifest.includes('  web_search: tools/web_search.ts  # ejected from kortix:web_search\n')) throw new Error(`eject did not point kortix.yaml at the copy:\n${manifest}`);
         const source = cli.readFile('tools/web_search.ts');
         if (!source.includes(EJECTED_EXECUTE)) throw new Error('the ejected web_search no longer has the execute line this flow changes');
-        await world.commitToMain({ 'kortix.yaml': manifest, 'tools/web_search.ts': source.replace(EJECTED_EXECUTE, CHANGED_EXECUTE) }, 'ke2e RUN-19: four Kortix tools and an ejected web_search');
+        await world.commitToMain({ 'kortix.yaml': manifest, 'tools/web_search.ts': source.replace(EJECTED_EXECUTE, CHANGED_EXECUTE) }, 'ke2e RUN-19: no show and an ejected web_search');
       });
 
       const session = await bootSession(ctx, harness, {
@@ -1510,7 +1500,7 @@ harnessFlow(
           .matches('$.content', new RegExp(`^EJECTED ${query}$`));
       });
 
-      await ctx.step('show is not loaded: no show call completes, and the box reports memory among its tools and no show', async () => {
+      await ctx.step('show is excluded: no show call completes, and the box reports memory among its tools and no show', async () => {
         const { messages } = await readTranscript(ctx, session.projectId, session.sessionId);
         const shown = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'show' && t.status === 'completed');
         if (shown.length > 0) throw new Error(`a show call completed on ${harness}: ${JSON.stringify(shown)}`);
@@ -1548,9 +1538,10 @@ async function runtimeCapabilities(ctx: FlowContext, sandboxId: string): Promise
 const messageText = (message: RuntimeMessage): string =>
   message.parts.map((part) => (part.type === 'text' && typeof part.text === 'string' ? part.text : '')).join('');
 
-// pi keeps the last `keepRecentTokens` (20,000 by default) of a conversation out
-// of a summary, so a two-turn session has nothing to summarize. 1 makes it compactable.
-const PI_COMPACT_FILES = { 'harnesses/pi/settings.json': `${JSON.stringify({ compaction: { keepRecentTokens: 1 } })}\n` };
+// pi keeps the last 20,000 tokens of a conversation (`keepRecentTokens`) out of a
+// summary, so a session of short turns has nothing to summarize. ~91,000 characters
+// (~22,800 tokens at pi's 4 characters per token) put the boot turn before that cut.
+const RUN13_FILLER = 'This line is filler for a long conversation; ignore it.\n'.repeat(1_600);
 
 // ─── RUN-13: a session compacts its conversation on demand ───────────────────
 harnessFlow(
@@ -1571,64 +1562,70 @@ harnessFlow(
   },
   async (ctx, harness) => {
     const project = await ctx.fixtures.project({ seed: true });
-    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
-    try {
-      await ctx.step(`the project runs ${harness}`, async () => {
-        await world.commitToMain(PI_COMPACT_FILES, 'ke2e RUN-13: pi keeps no recent context out of a summary');
-      });
-      const session = await bootSession(ctx, harness, { project });
-      const { projectId, sessionId, sandboxId } = session;
-      const root = await pinnedRoot(ctx, projectId, sessionId);
+    const session = await bootSession(ctx, harness, { project });
+    const { projectId, sessionId, sandboxId } = session;
+    const root = await pinnedRoot(ctx, projectId, sessionId);
 
-      await ctx.step('the runtime lists `session.compact`, and the session answers a second prompt', async () => {
-        const capabilities = await runtimeCapabilities(ctx, sandboxId);
-        if (!capabilities.includes('session.compact')) throw new Error(`${harness} lists no session.compact: ${JSON.stringify(capabilities)}`);
-        const marker = `RUN13_BEFORE_${Date.now()}`;
-        await sendPrompt(ctx, projectId, sessionId, echo(marker));
-        await waitForAssistantText(ctx, projectId, sessionId, marker);
-      });
+    await ctx.step('the runtime lists `session.compact`, and the session answers a second prompt of ~22,800 tokens', async () => {
+      const capabilities = await runtimeCapabilities(ctx, sandboxId);
+      if (!capabilities.includes('session.compact')) throw new Error(`${harness} lists no session.compact: ${JSON.stringify(capabilities)}`);
+      const marker = `RUN13_BEFORE_${Date.now()}`;
+      await sendPrompt(ctx, projectId, sessionId, `${echo(marker)}\n\n${RUN13_FILLER}`);
+      await waitForAssistantText(ctx, projectId, sessionId, marker);
+    });
 
-      await ctx.step('summarize is accepted with the model of the last reply', async () => {
-        const last = (await runtimeMessages(ctx, sandboxId, root)).filter((m) => m.info.role === 'assistant' && m.info.modelID).at(-1);
-        if (!last) throw new Error('no assistant message names a model');
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .post(runtimePath(sandboxId, `/session/${root}/summarize`), { providerID: last.info.providerID, modelID: last.info.modelID });
-        r.status(200);
-      });
+    await ctx.step('summarize is accepted with the model of the last reply', async () => {
+      const last = (await runtimeMessages(ctx, sandboxId, root)).filter((m) => m.info.role === 'assistant' && m.info.modelID).at(-1);
+      if (!last) throw new Error('no assistant message names a model');
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(runtimePath(sandboxId, `/session/${root}/summarize`), { providerID: last.info.providerID, modelID: last.info.modelID });
+      r.status(200);
+    });
 
-      await ctx.step('the conversation carries the compaction request and a finished summary with text', async () => {
-        await waitFor(() => runtimeMessages(ctx, sandboxId, root), {
-          until: (messages) => {
-            const summary = messages.find((m) => m.info.role === 'assistant' && m.info.summary === true);
-            if (summary?.info.error) throw new Error(`the compaction failed on ${harness}: ${JSON.stringify(summary.info.error)}`);
-            return (
-              messages.some((m) => m.info.role === 'user' && m.parts.some((part) => part.type === 'compaction')) &&
-              Boolean(summary?.info.time?.completed) &&
-              messageText(summary!).trim().length > 0
-            );
-          },
-          timeoutMs: 180_000,
-          intervalMs: 2_000,
-          description: `a finished compaction summary in session ${sessionId}`,
-          retryOnError: isKe2eRetryableError,
-        });
+    await ctx.step('the conversation carries the compaction request and a finished summary with text', async () => {
+      await waitFor(() => runtimeMessages(ctx, sandboxId, root), {
+        until: (messages) => {
+          const summary = messages.find((m) => m.info.role === 'assistant' && m.info.summary === true);
+          if (summary?.info.error) throw new Error(`the compaction failed on ${harness}: ${JSON.stringify(summary.info.error)}`);
+          return (
+            messages.some((m) => m.info.role === 'user' && m.parts.some((part) => part.type === 'compaction')) &&
+            Boolean(summary?.info.time?.completed) &&
+            messageText(summary!).trim().length > 0
+          );
+        },
+        timeoutMs: 180_000,
+        intervalMs: 2_000,
+        description: `a finished compaction summary in session ${sessionId}`,
+        retryOnError: isKe2eRetryableError,
       });
+    });
 
-      await ctx.step('the compacted session answers the next prompt', async () => {
-        const marker = `RUN13_AFTER_${Date.now()}`;
-        await sendPrompt(ctx, projectId, sessionId, echo(marker));
-        await waitForAssistantText(ctx, projectId, sessionId, marker);
-      });
-    } finally {
-      await world.close();
-    }
+    await ctx.step('the compacted session answers the next prompt', async () => {
+      const marker = `RUN13_AFTER_${Date.now()}`;
+      await sendPrompt(ctx, projectId, sessionId, echo(marker));
+      await waitForAssistantText(ctx, projectId, sessionId, marker);
+    });
   },
 );
 
 const COMMAND = 'ke2e-echo';
 const COMMAND_LEAD = 'Reply with exactly this single token and nothing else:';
-const COMMAND_TEMPLATE = `---\ndescription: Echo one token (ke2e)\n---\n${COMMAND_LEAD} $ARGUMENTS\n`;
+/** The project registers the command in kortix.yaml and the default agent enables it. */
+const COMMAND_MANIFEST = [
+  'default_agent: kortix',
+  'commands:',
+  `  ${COMMAND}:`,
+  '    description: Echo one token (ke2e)',
+  `    prompt: '${COMMAND_LEAD} $ARGUMENTS'`,
+  'agents:',
+  '  kortix:',
+  '    kortix_permissions: all',
+  '    skills: all',
+  '    tools: all',
+  `    commands: [${COMMAND}]`,
+  '',
+].join('\n');
 
 // ─── RUN-14: a project slash command runs its template ───────────────────────
 harnessFlow(
@@ -1650,9 +1647,8 @@ harnessFlow(
     const project = await ctx.fixtures.project({ seed: true });
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
-      await ctx.step(`the project runs ${harness} and commits the command where that harness reads it`, async () => {
-        const path = `harnesses/pi/prompts/${COMMAND}.md`;
-        await world.commitToMain({ [path]: COMMAND_TEMPLATE }, `ke2e RUN-14: the ${COMMAND} command`);
+      await ctx.step(`the project runs ${harness} and declares the command in kortix.yaml`, async () => {
+        await world.commitToMain({ 'kortix.yaml': COMMAND_MANIFEST }, `ke2e RUN-14: the ${COMMAND} command`);
       });
       const session = await bootSession(ctx, harness, { project });
       const { projectId, sessionId, sandboxId } = session;
@@ -1696,26 +1692,28 @@ harnessFlow(
   },
 );
 
-/** A second primary agent whose prompt names it `token` (RUN-17). */
+/**
+ * A second primary agent whose prompt names it `token` (RUN-17). The session
+ * agent has the checkout: a session without it is compiled for its own agent
+ * alone, and its runtime would never list `marker`.
+ */
 function agentPickFiles(token: string): Record<string, string> {
   return {
     'kortix.yaml': [
-      'kortix_version: 2',
       'default_agent: kortix',
       'agents:',
       '  kortix:',
       '    kortix_permissions: all',
       '    skills: all',
+      '    tools: all',
+      '    workspace:',
+      '      project_repository: true',
       '  marker:',
+      '    description: Knows its own name.',
+      '    mode: primary',
+      `    prompt: Your name is ${token}. When anyone asks for your name, answer with exactly ${token} and nothing else.`,
       '    kortix_permissions: all',
-      '',
-    ].join('\n'),
-    '.kortix/opencode/agents/marker.md': [
-      '---',
-      'description: Knows its own name.',
-      'mode: primary',
-      '---',
-      `Your name is ${token}. When anyone asks for your name, answer with exactly ${token} and nothing else.`,
+      '    tools: all',
       '',
     ].join('\n'),
   };

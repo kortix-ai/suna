@@ -78,11 +78,8 @@ describe('settings tab coverage', () => {
   });
 
   test('the derivation walks every rail group and invents nothing', () => {
-    // `rail.ts` used to export a pinned `UPGRADE_ITEM` alongside
-    // `railGroups()`, and a derivation that walked only the groups silently
-    // dropped it. Upgrades is a section of `/projects/<id>/config` now and the
-    // rail has no pinned row left, so the invariant is simply that the derived
-    // list and the rail agree exactly.
+    // The rail has no pinned row, so the invariant is that the derived list
+    // and the rail agree exactly.
     expect([...tabsFor(IN_A_PROJECT)].sort()).toEqual([...SETTINGS_TABS].sort());
   });
 

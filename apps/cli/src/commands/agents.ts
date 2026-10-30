@@ -66,7 +66,7 @@ Scope options (each replaces the field; --policy-set merges):
   --apps all|none|a,b             Which Kortix Apps it may open by slug, when
                                   the App is restricted or private. The agent
                                   also needs project.app.read in its Kortix
-                                  permissions. Needs kortix.yaml (kortix_version 2 or 3).
+                                  permissions.
   --policy-set <slug>=<name>      Repeatable. The connector's rule set this
                                   agent is checked against, merged per
                                   connector. <slug>=base puts it back on the
@@ -561,11 +561,10 @@ function renderPolicySets(map: Record<string, string>, fallback: string): string
 
 // ── config ──────────────────────────────────────────────────────────────────
 
-/** The other file a saved config commits: v2 the agent's `.md`, v3 its `prompt_file` (an inline prompt stays in kortix.yaml). */
-function savedPromptFile(resp: { schema_version?: number; block: AgentConfigBlock }, sent: AgentConfigBlock): string {
+/** The other file a saved config commits: the agent's `prompt_file` (an inline prompt stays in kortix.yaml). */
+function savedPromptFile(resp: { block: AgentConfigBlock }, sent: AgentConfigBlock): string {
   if (!(sent.behavior ?? sent.opencode)) return '';
-  if ((resp.schema_version ?? 2) >= 3) return resp.block?.file ? ` + ${resp.block.file}` : '';
-  return ' + the agent .md';
+  return resp.block?.file ? ` + ${resp.block.file}` : '';
 }
 
 /** The keys `PUT /projects/:id/agents/:name/config` accepts (AgentBlockSchema
@@ -620,7 +619,7 @@ async function agentsConfig(
     if (cfg.builtin) return printBuiltinAgent(cfg, false);
     if (!cfg.editable) {
       process.stdout.write(
-        `  ${C.yellow}!${C.reset}  ${C.dim}kortix_version ${cfg.schema_version} manifest — this block is read-only. Run \`kortix projects upgrade\` to move it to kortix.yaml.${C.reset}\n`,
+        `  ${C.yellow}!${C.reset}  ${C.dim}This block is read-only: the project's manifest is not a current kortix.yaml. Run \`kortix validate\` for the fix.${C.reset}\n`,
       );
     }
     process.stdout.write(`${JSON.stringify(cfg.block ?? {}, null, 2)}\n`);
@@ -657,7 +656,7 @@ async function agentsConfig(
     }
   }
 
-  const resp = await ctx.client.put<{ ok: boolean; agent: string; schema_version?: number; block: AgentConfigBlock }>(
+  const resp = await ctx.client.put<{ ok: boolean; agent: string; block: AgentConfigBlock }>(
     path,
     block,
   );

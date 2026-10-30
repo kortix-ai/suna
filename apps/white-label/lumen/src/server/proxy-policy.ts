@@ -407,8 +407,9 @@ const KORTIX_WORD = /\bKortix\b/g;
  */
 const OPERATOR_ID_KEYS = new Set(['account_id', 'created_by', 'owner_id', 'owner_user_id', 'user_id', 'updated_by', 'merged_by', 'closed_by', 'deleted_by', 'author_id']);
 // Platform plumbing on the project record: the managed repository and the manifest file.
-// The raw manifest and the feature catalog's descriptions name the platform's own env vars and daemon.
-const PLATFORM_KEYS = new Set(['repo_url', 'manifest_path', 'git_url', 'clone_url', 'git_origin_url', 'dashboard_url', 'manifest_raw']);
+// The raw manifest, its health report (file path, messages with platform docs links) and the
+// feature catalog's descriptions name the platform's own files, env vars and daemon.
+const PLATFORM_KEYS = new Set(['repo_url', 'manifest_path', 'git_url', 'clone_url', 'git_origin_url', 'dashboard_url', 'manifest_raw', 'manifest_health']);
 
 function dropOperatorIds(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(dropOperatorIds);

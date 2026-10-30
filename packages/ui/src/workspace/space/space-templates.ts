@@ -2,10 +2,12 @@
  * Space templates and the pure `kortix.yaml` edits that create a space and
  * set its tabs. A space is `spaces.<slug>` (see `ManifestSpace` in
  * `@kortix/sdk`). Every edit round-trips through the `yaml` document model,
- * so comments and the rest of the manifest stay as they were.
+ * so comments and the rest of the manifest stay as they were. Each edit drops
+ * the obsolete `kortix_version`: a Kortix write never keeps it.
  */
 
-import { isSeq, parseDocument } from 'yaml';
+import { dropVersionLine } from '@kortix/manifest-schema';
+import { type Document, isSeq, parseDocument } from 'yaml';
 
 import { DEFAULT_SPACE_TABS, type SpaceTab } from '@kortix/sdk';
 
@@ -52,35 +54,40 @@ export function slugifySpace(name: string): string {
   );
 }
 
+function editManifest(yamlText: string, edit: (doc: Document) => void): string {
+  // The line, not the key: a comment above it stays.
+  const doc = parseDocument(dropVersionLine(yamlText));
+  edit(doc);
+  return doc.toString();
+}
+
 /** Add `spaces.<slug>` to a `kortix.yaml` text. Returns the new text. */
 export function addSpaceToManifest(
   yamlText: string,
   input: { slug: string; label: string; description?: string; tabs: SpaceTab[] },
 ): string {
-  const doc = parseDocument(yamlText);
   const description = input.description?.trim();
-  doc.setIn(['spaces', input.slug], {
-    label: input.label,
-    ...(description ? { description } : {}),
-    tabs: input.tabs,
-  });
-  return doc.toString();
+  return editManifest(yamlText, (doc) =>
+    doc.setIn(['spaces', input.slug], {
+      label: input.label,
+      ...(description ? { description } : {}),
+      tabs: input.tabs,
+    }),
+  );
 }
 
 /** Replace `spaces.<slug>.tabs` in a `kortix.yaml` text, declaring the space
  *  when only an agent names it. Returns the new text. */
 export function setSpaceTabs(yamlText: string, slug: string, tabs: SpaceTab[]): string {
-  const doc = parseDocument(yamlText);
-  doc.setIn(['spaces', slug, 'tabs'], tabs);
-  return doc.toString();
+  return editManifest(yamlText, (doc) => doc.setIn(['spaces', slug, 'tabs'], tabs));
 }
 
 /** Append one tab to `spaces.<slug>.tabs` as the file has it now. A space
  *  with no `tabs` shows the default set, so the new list starts from it. */
 export function appendSpaceTab(yamlText: string, slug: string, tab: SpaceTab): string {
-  const doc = parseDocument(yamlText);
-  const current = doc.getIn(['spaces', slug, 'tabs']);
-  const tabs = isSeq(current) ? (current.toJSON() as SpaceTab[]) : [...DEFAULT_SPACE_TABS];
-  doc.setIn(['spaces', slug, 'tabs'], [...tabs, tab]);
-  return doc.toString();
+  return editManifest(yamlText, (doc) => {
+    const current = doc.getIn(['spaces', slug, 'tabs']);
+    const tabs = isSeq(current) ? (current.toJSON() as SpaceTab[]) : [...DEFAULT_SPACE_TABS];
+    doc.setIn(['spaces', slug, 'tabs'], [...tabs, tab]);
+  });
 }

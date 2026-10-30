@@ -25,7 +25,7 @@ export { editConfigPrompt, newConfigPrompt, type ConfigureKind } from '@kortix/s
 export interface ConfigureThread {
   /** Spin up a configure session for `prompt`, then close Customize + navigate.
    *  A bare string becomes the default durable payload; a `PendingSessionPrompt`
-   *  (see `pendingUpgradePrompt`) is passed through unchanged. */
+   *  (an agent pick, as `ProjectManifestIssuesAlert` sends) is passed through unchanged. */
   start: (prompt: string | PendingSessionPrompt) => void;
   /**
    * True while a session is being created. Creating one is a network round-trip

@@ -820,9 +820,7 @@ export function extractSandboxTemplates(
   const out: SandboxTemplate[] = [];
   const seenSlugs = new Set<string>();
 
-  // kortix.yaml: `sandbox: { templates: [...] }` — legacy kortix.toml:
-  // `[[sandbox.templates]]` (array of tables). Both parse to the same
-  // `sandbox.templates` shape below.
+  // kortix.yaml: `sandbox: { templates: [...] }`.
   const sandbox = manifestRaw.sandbox;
   const nested =
     sandbox && typeof sandbox === 'object' && !Array.isArray(sandbox)

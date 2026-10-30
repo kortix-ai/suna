@@ -18,9 +18,7 @@ here. It has five components, all in git:
 | **Memory** | `memory/` | Persistent facts, strategies, observations |
 
 An agent's model, permission and grants live in its `agents.<name>` block
-in `kortix.yaml`. This skill describes a `kortix_version: 3` project. With
-an older `kortix_version`, edit files where they already are;
-`kortix migrate` previews the v3 layout and changes nothing.
+in `kortix.yaml`.
 
 **Refinement** means: read your recent trajectory, find where the harness
 failed you, and fix the harness — not just the immediate task. A memory

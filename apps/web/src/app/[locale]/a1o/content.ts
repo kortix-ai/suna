@@ -17,7 +17,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * HONESTY RULES (same bar as features/marketing/security-page/content.ts):
  * - SOC 2 Type I is verified. Never mention Type II (kortix-brand D17).
  * - Do NOT advertise multi-harness / harness-agnostic / ACP. Every session
- *   runs pi inside kortixd, and new projects are kortix_version 3.
+ *   runs pi inside kortixd, and every project has one kortix.yaml schema.
  */
 
 export type Layer = {

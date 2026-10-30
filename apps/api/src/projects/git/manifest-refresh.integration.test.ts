@@ -29,7 +29,6 @@ async function writeManifest(required: boolean): Promise<void> {
   await writeFile(
     join(repositoryPath, 'kortix.yaml'),
     [
-      'kortix_version: 2',
       'default_agent: support',
       'agents:',
       '  support:',

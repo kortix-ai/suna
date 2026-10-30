@@ -1,4 +1,4 @@
-import type { ManifestFormat, ResolvedManifest, TriggerFilter } from '@kortix/manifest-schema';
+import type { ResolvedManifest, TriggerFilter } from '@kortix/manifest-schema';
 
 /**
  * The source of a trigger (a kortix.yaml trigger or a loop). `change_request` fires
@@ -27,10 +27,8 @@ export interface GitTriggerSpec {
   /** URL-safe slug — unique per project. */
   slug: string;
   /**
-   * Where the entry is sourced from. Always `<manifest-file>#triggers.<slug>`
-   * now that triggers are centralized — `kortix.yaml` for v2 projects,
-   * `kortix.toml` for legacy v1 ones. The hash is just a hint for the UI;
-   * the platform doesn't use it for routing.
+   * Where the entry is sourced from: `<manifest-file>#triggers.<slug>`. The
+   * hash is just a hint for the UI; the platform doesn't use it for routing.
    */
   path: string;
   /** Human label; defaults to the slug when not set. */
@@ -196,15 +194,11 @@ export interface GitTriggerParseError {
 }
 
 export interface ParsedManifest {
-  schemaVersion: number;
   /** The raw decoded object — callers shouldn't usually need this. */
   raw: Record<string, unknown>;
-  /** Which on-disk format this manifest is in. Drives serialization back to the
-   *  same format on commit. Required so every construction site is explicit. */
-  format: ManifestFormat;
   /** The repo-relative file the manifest was read from (or should be written to
-   *  for a synthesized one) — e.g. `kortix.yaml` or `kortix.toml`. Lets the
-   *  commit path write to the exact same file, honoring `.yml` and custom dirs. */
+   *  for a synthesized one) — `kortix.yaml`, `kortix.yml`, or a custom path.
+   *  Lets the commit path write to the exact same file. */
   path: string;
   /** Git blob SHA observed with this manifest, or null when the file was absent. */
   revision?: string | null;
@@ -221,13 +215,11 @@ export interface ParsedManifest {
    */
   imports?: ResolvedManifest;
   /**
-   * The exact source text this manifest was parsed from, when it was read as
-   * YAML. Comment preservation is per-FORMAT: the `yaml` package's Document
-   * is lossless (comments + blank lines ride on the node tree), while a TOML
-   * parser only decodes data, so a TOML write is a full re-serialize. The
-   * edit path (serializeManifest) splices its changes into this text instead
-   * of reserializing; reads never need it. null/undefined = fall back to a
-   * full re-serialize.
+   * The exact source text this manifest was parsed from. The `yaml` package's
+   * Document is lossless (comments + blank lines ride on the node tree), so
+   * the edit path (serializeManifest) splices its changes into this text
+   * instead of reserializing; reads never need it. null/undefined = fall back
+   * to a full re-serialize.
    */
   source?: string | null;
 }

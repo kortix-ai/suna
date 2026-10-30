@@ -38,7 +38,6 @@ type Thread = {
 };
 
 const AGENTS = [
-  'kortix_version: 2',
   'project:',
   '  name: artifact-comments',
   'default_agent: commenter',

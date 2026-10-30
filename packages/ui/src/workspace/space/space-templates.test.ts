@@ -23,12 +23,13 @@ test('every template is a list of starting tabs; the first is the default', () =
   for (const template of SPACE_TEMPLATES) expect(Array.isArray(template.tabs)).toBe(true);
 });
 
-test('addSpaceToManifest creates the spaces map when absent and keeps the rest', () => {
+test('addSpaceToManifest creates the spaces map when absent, keeps the rest, and drops kortix_version', () => {
   const yaml = '# keep me\nkortix_version: 3\nagents:\n  a:\n    mode: primary\n';
   const text = addSpaceToManifest(yaml, { slug: 'sales', label: 'Sales', description: 'Deals.', tabs: [{ type: 'goals' }] });
   const next = parseYaml(text);
   expect(next.spaces.sales).toEqual({ label: 'Sales', description: 'Deals.', tabs: [{ type: 'goals' }] });
-  expect(next.kortix_version).toBe(3);
+  expect(next.agents).toEqual({ a: { mode: 'primary' } });
+  expect(next.kortix_version).toBeUndefined();
   expect(text).toContain('# keep me');
 });
 

@@ -1,13 +1,18 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import {
   ENV_NAME_RE,
-  type ManifestFormat,
   type ManifestIssue,
+  ManifestImportError,
+  type ResolvedManifest,
+  hasManifestImports,
+  locateIssues,
   manifestCandidatePaths,
   validateManifest,
 } from '@kortix/manifest-schema';
 import { resolveLocalManifestImports } from './manifest-imports.ts';
+import { type ProjectIssue, lintProject } from './project-lint.ts';
+import { C } from './style.ts';
 
 /** The `[env]` contract from the manifest — names the runtime needs. */
 export interface EnvSpec {
@@ -16,21 +21,11 @@ export interface EnvSpec {
 }
 
 export interface LocalManifest {
-  /** Absolute path to the manifest we read (kortix.yaml or kortix.toml). */
+  /** Absolute path to the manifest we read (kortix.yaml or kortix.yml). */
   path: string;
-  /** The on-disk format — toml or yaml. */
-  format: ManifestFormat;
   raw: string;
   data: Record<string, unknown>;
   env: EnvSpec;
-}
-
-/** Result of `verifyManifest` — hard errors block a ship, warnings don't. */
-export interface ManifestIssues {
-  errors: string[];
-  warnings: string[];
-  /** Structured issues from the canonical validator. */
-  raw: ManifestIssue[];
 }
 
 /**
@@ -62,16 +57,13 @@ export function envSpecFromManifest(data: Record<string, unknown>): EnvSpec {
 }
 
 /**
- * Resolve the on-disk manifest, preferring `kortix.yaml` over `kortix.toml`
- * (the dual-format rule). Returns the first candidate that exists, or null when
- * the repo has no manifest.
+ * Resolve the on-disk manifest: `kortix.yaml`, else `kortix.yml`. Returns null
+ * when the repo has no manifest.
  */
-export function resolveLocalManifest(
-  cwd: string = process.cwd(),
-): { path: string; format: ManifestFormat } | null {
-  for (const cand of manifestCandidatePaths()) {
-    const abs = resolve(cwd, cand.path);
-    if (existsSync(abs)) return { path: abs, format: cand.format };
+export function resolveLocalManifest(cwd: string = process.cwd()): { path: string } | null {
+  for (const candidate of manifestCandidatePaths()) {
+    const abs = resolve(cwd, candidate);
+    if (existsSync(abs)) return { path: abs };
   }
   return null;
 }
@@ -83,7 +75,7 @@ export function manifestPath(cwd: string = process.cwd()): string {
 }
 
 /**
- * Parse the local manifest (kortix.yaml or kortix.toml). Returns null when
+ * Parse the local manifest (kortix.yaml or kortix.yml). Returns null when
  * there's no manifest (a project may be `.kortix/`-only). Throws the parser's
  * syntax error — callers surface that as the "does it compile" failure.
  */
@@ -93,39 +85,81 @@ export function loadLocalManifest(cwd: string = process.cwd()): LocalManifest | 
   const raw = readFileSync(resolved.path, 'utf8');
   // `data` is the MERGED document when the manifest declares `imports:` — what
   // the platform runs. `raw` stays the root file's own text.
-  const data = resolveLocalManifestImports(resolved.path, resolved.format).raw;
+  const data = resolveLocalManifestImports(resolved.path).raw;
   return {
     path: resolved.path,
-    format: resolved.format,
     raw,
     data,
     env: envSpecFromManifest(data),
   };
 }
 
-/**
- * Static-validate a parsed manifest the way the backend would. Thin shim
- * over `@kortix/manifest-schema/validateManifest` — kept as the legacy entry
- * point for callers that already had a parsed object handy. The canonical
- * schema covers every versioned section, including v2 OpenCode config, plus
- * project, env, sandboxes, triggers, connectors, channels, and apps.
- */
-export function lintManifest(
-  data: Record<string, unknown>,
-  format: ManifestFormat = 'toml',
-  projectIssues: ManifestIssue[] = [],
-): ManifestIssues {
-  const { issues } = validateManifest(data, format);
-  return classifyIssues([...issues, ...projectIssues]);
+/** A manifest or project issue with the absolute path of the file that holds it. */
+export interface FileIssue extends ManifestIssue {
+  file: string;
 }
 
-function classifyIssues(issues: ManifestIssue[]): ManifestIssues {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-  for (const issue of issues) {
-    const formatted = `${issue.path}: ${issue.message}`;
-    if (issue.severity === 'error') errors.push(formatted);
-    else warnings.push(formatted);
+/**
+ * The `kortix validate` checks for the manifest at `path`: the schema over the
+ * document the platform runs (`imports:` merged), then the project checks
+ * (`lintProject`). Each issue names the file that declares the entry, with the
+ * line and column `locateIssues` finds there. `parsed` is null on a YAML
+ * syntax error.
+ */
+export function validateManifestFile(
+  path: string,
+  opts: { dockerfileLint?: boolean } = {},
+): { parsed: Record<string, unknown> | null; issues: FileIssue[] } {
+  const text = readFileSync(path, 'utf8');
+  let { parsed, issues } = validateManifest(text);
+  let resolved: ResolvedManifest | null = null;
+  if (parsed && hasManifestImports(parsed)) {
+    try {
+      resolved = resolveLocalManifestImports(path);
+      parsed = resolved.raw;
+      issues = validateManifest(parsed).issues;
+    } catch (err) {
+      if (!(err instanceof ManifestImportError)) throw err;
+      issues.push({ path: 'imports', message: err.message, severity: 'error' });
+    }
   }
-  return { errors, warnings, raw: issues };
+  const located = [...issues, ...lintProject(parsed, path, opts)].map((issue) => declaringFile(issue, path, resolved));
+  // One parse per file: `locateIssues` fills `line`/`column` on every issue that has none.
+  // A Dockerfile issue always has its line, so its file is never read here.
+  for (const file of new Set(located.map((issue) => issue.file))) {
+    const inFile = located.filter((issue) => issue.file === file);
+    if (inFile.some((issue) => issue.line === undefined)) locateIssues(file === path ? text : readFileSync(file, 'utf8'), inFile);
+  }
+  return { parsed, issues: located };
+}
+
+/**
+ * The file that holds `issue`. A collection entry (`agents.<name>`,
+ * `triggers[<i>]`, …) of a manifest with imports is in the file that declares
+ * it, and a list entry's index becomes its index in that file. Everything else
+ * is in the root manifest.
+ */
+function declaringFile(issue: ProjectIssue, rootPath: string, resolved: ResolvedManifest | null): FileIssue {
+  const m = resolved && !issue.file ? /^([a-z_]+)(?:\.([^.[]+)|\[(\d+)\])/.exec(issue.path) : null;
+  if (!resolved || !m) return { ...issue, file: issue.file ?? rootPath };
+  const key = m[1]!;
+  const merged = resolved.raw[key];
+  const entry = m[3] !== undefined && Array.isArray(merged) ? merged[Number(m[3])] : undefined;
+  // A list entry keeps its object identity through the merge; a map entry is found by its origin.
+  const origin = (resolved.origins as Record<string, Record<string, string> | undefined>)[key]?.[m[2] ?? ''];
+  const declaring = resolved.files.find((f) =>
+    entry !== undefined ? Array.isArray(f.raw[key]) && (f.raw[key] as unknown[]).includes(entry) : f.path === origin,
+  );
+  if (!declaring) return { ...issue, file: rootPath };
+  const path = entry === undefined ? issue.path : `${key}[${(declaring.raw[key] as unknown[]).indexOf(entry)}]${issue.path.slice(m[0].length)}`;
+  return { ...issue, path, file: resolve(dirname(rootPath), declaring.path) };
+}
+
+/** One issue as `<file>:<line>:<col>  <severity>  <path>  <message>`; the file is relative to `cwd` when under it. */
+export function formatIssueLine(issue: FileIssue, cwd: string = process.cwd()): string {
+  const rel = relative(cwd, issue.file);
+  const file = rel && !rel.startsWith('..') ? rel : issue.file;
+  const at = issue.line ? `:${issue.line}${issue.column ? `:${issue.column}` : ''}` : '';
+  const severity = issue.severity === 'error' ? `${C.red}error${C.reset}` : `${C.yellow}warning${C.reset}`;
+  return `${file}${at}  ${severity}  ${issue.path}  ${issue.message}`;
 }

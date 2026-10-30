@@ -21,14 +21,13 @@ import {
   run,
   setOrigin,
 } from '../git-ops.ts';
-import { type EnvSpec, type LocalManifest, lintManifest, loadLocalManifest } from '../manifest.ts';
+import { type EnvSpec, type LocalManifest, formatIssueLine, loadLocalManifest, validateManifestFile } from '../manifest.ts';
 import {
   type ProjectGitTarget,
   configureProjectGitAuth,
   resolveProjectGitTarget,
 } from '../project-git.ts';
 import { isKortixProject, loadLink, saveLink } from '../project-link.ts';
-import { lintProject } from '../project-lint.ts';
 import { promptSecret } from '../prompts.ts';
 import { C, help, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
@@ -237,8 +236,7 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
   // NO MANIFEST AT ALL. This used to pass as "a `.kortix/`-only project —
   // nothing to verify", and it is the client half of the same defect as the
   // server's opt-in seeding: it let `kortix ship` push a project that has no
-  // kortix.yaml, so the project came out with no declared agents, no skills,
-  // and manifest detection falling back to v1 `kortix.toml`.
+  // kortix.yaml, so the project came out with no declared agents and no skills.
   //
   // A project always has a manifest (apps/api/src/projects/managed-repo-seed.ts).
   // Ship declares `seed_starter: false` — it takes responsibility for the first
@@ -258,20 +256,15 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
 
   if (!flags.noVerify) {
     // The same checks as `kortix validate`: schema, sandbox Dockerfiles,
-    // agent wiring, and the repository size warning.
-    const { errors, warnings } = lintManifest(
-      manifest.data,
-      manifest.format,
-      lintProject(manifest.data, manifest.path),
-    );
-    for (const w of warnings) process.stdout.write(`  ${status.warn(w)}\n`);
+    // agent wiring, and the repository size warning. One line per issue.
+    const { issues } = validateManifestFile(manifest.path);
+    const errors = issues.filter((issue) => issue.severity === 'error');
+    for (const w of issues.filter((issue) => issue.severity === 'warning')) process.stdout.write(`  ${formatIssueLine(w)}\n`);
     if (errors.length > 0) {
       process.stderr.write(
-        `\n${status.err(
-          `kortix.yaml has ${errors.length} error${errors.length === 1 ? '' : 's'}:`,
-        )}\n`,
+        `\n${status.err(`kortix.yaml has ${errors.length} error${errors.length === 1 ? '' : 's'}:`)}\n`,
       );
-      for (const e of errors) process.stderr.write(`  ${C.dim}•${C.reset} ${e}\n`);
+      for (const e of errors) process.stderr.write(`  ${formatIssueLine(e)}\n`);
       process.stderr.write(
         `  ${C.dim}Fix them, or bypass with ${C.reset}${C.cyan}--no-verify${C.reset}${C.dim}.${C.reset}\n\n`,
       );

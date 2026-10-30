@@ -1,16 +1,18 @@
-# kortix.yaml, kortix_version 3: key reference
+# kortix.yaml: key reference
 
 The example is in `SKILL.md` → `<manifest>`. This page lists the keys and
-rules. The schema is the authority: `kortix schema --version 3` prints it
-(https://kortix.com/schema/kortix.v3.schema.json). `kortix validate` also
+rules. The schema is the authority: `kortix schema` prints it
+(https://kortix.com/schema/kortix.schema.json). `kortix validate` also
 checks the cross-key rules. Unknown keys are errors.
+
+The format has no version. It changes only by adding optional keys whose
+defaults keep today's behavior, so a valid file stays valid.
 
 ## Top-level keys
 
 | Key | Holds |
 | --- | --- |
-| `kortix_version` | `3`. Required. |
-| `default_agent` | The agent a session or trigger runs when it names none. Required. A declared, enabled agent that is not `mode: subagent`. |
+| `default_agent` | The agent a session or trigger runs when it names none. A declared, enabled agent that is not `mode: subagent`. Omitted: My Kortix. |
 | `project` | `name`, `description`: shown in the dashboard. |
 | `imports` | Repository paths of more YAML files or folders (below). |
 | `env` | `required` and `optional` secret names. Values live in Kortix, never here. |
@@ -25,7 +27,7 @@ checks the cross-key rules. Unknown keys are errors.
 | `policy`, `policies`, `approvals` | Connector call policies and how long a held call stays decidable (`approvals.ttl`: `30m`, `4h`, `7d`; default 24h). Approve runs the held call once, as its caller, and resumes the agent with the result: the agent does not repeat it. A caller without a project-scoped token repeats it within 15 minutes. |
 | `builtin_agents` | `my_kortix: false` removes My Kortix, the built-in agent (slug `meta`). Absent = on. |
 | `spaces` | Work in progress: channels per area of work (below). |
-| `agents` | Map of agent name → agent block. At least one. |
+| `agents` | Map of agent name → agent block. Omitted: My Kortix only. |
 
 ## Agent block
 
@@ -190,7 +192,7 @@ triggers:
 
 | `run:` | Does |
 | --- | --- |
-| `prompt` (+ `agent`, `model`, `session`, `session_key`, `session_id`) | Prompts an agent session. `agent` defaults to `default_agent`. |
+| `prompt` (+ `agent`, `model`, `session`, `session_key`, `session_id`) | Prompts an agent session. `agent` defaults to `default_agent`, else My Kortix. |
 | `app` (+ `path` default `/`, `method` `POST` or `GET`, `payload`) | Calls the App. No session, no model. |
 
 - Other fields: `slug` (required, `[a-z0-9][a-z0-9_-]{0,127}`, unique across
@@ -222,6 +224,24 @@ Prompt variables, `{{ dotted.path }}` (a missing value renders empty):
 | Webhook | `fired_at`, `body.*`, `headers.content_type`, `headers.user_agent`, `headers.forwarded_for` |
 | App event | `event.name`, `event.data.*`, `event.id`, `event.emitted_at`, `app.slug` |
 | Change request merged | `fired_at`, `change_request.cr_id`, `.number`, `.title`, `.base_ref`, `.head_ref`, `.merge_commit_sha` |
+
+## Problems
+
+`kortix validate` exits `1` on an error, unknown keys included. `kortix
+ship`, the CR merge and every Kortix write refuse such a file. A file
+already on the default branch never stops the project. What runs with an
+error:
+
+| The error is in | At run time |
+| --- | --- |
+| An unknown key, anywhere | Ignored. |
+| An agent or a trigger | That entry is off. A session that names the agent fails with the issue. |
+| A connector, App, skill, tool, command, extension, space or sandbox template | That entry is gone. |
+| `project` or `default_agent` | The key falls back to its default. |
+| Anything else (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, a retired format, YAML syntax) | Only My Kortix runs, so it can fix the file. |
+
+Each rule only takes access away. The project page shows the issues with
+**Fix with My Kortix**. Every session's system prompt lists them.
 
 ## Edits from the dashboard and the CLI
 

@@ -1,8 +1,8 @@
 ---
 title: kortix.yaml without versions
-status: planned (not started); Marko's picks 2026-10-27
+status: building on branch `one-schema` (hard cut, Marko 2026-10-30); the soft-cut plan below is superseded where the 2026-10-30 section says so
 owner: Marko
-updated: 2026-10-27
+updated: 2026-10-30
 ---
 
 # kortix.yaml without versions
@@ -10,6 +10,30 @@ updated: 2026-10-27
 `kortix.yaml` loses its version line. One schema describes the latest shape,
 every reader accepts every old shape, and every write saves the latest shape.
 Validation says, per line, what is supported and what to change.
+
+## 2026-10-30: hard cut (supersedes "Old files", "Cut" and WP2)
+
+Marko, 2026-10-30: "remove v1/v2/v3, toml support & just have 1 like infinitely
+maintained schema", "we dont have that much customers, we can just rm these
+projects", "be bold with old stuff", and "do we want silent failures? like it
+will always default to some good default but send clear warnings wherever
+necessary for self fixing".
+
+| Topic | 2026-10-27 plan | 2026-10-30 decision (built on `one-schema`) |
+| --- | --- | --- |
+| Old files (TOML, v1, v2) | converter in the reader, heal job, census | no converter, no `kortix migrate`, no upgrade UI. A retired file gets one error and the project runs built-in agents only (My Kortix). |
+| `kortix_version` | deprecated with a fix | obsolete: `3` is a warning ("remove it"), any other value is the retired-format error |
+| `agents`, `default_agent` | required | optional: no agents means built-ins only, no `default_agent` means My Kortix |
+| Run time | the reader drops only the broken entry | `usableManifest(parsed, issues)`: unknown keys ignored; an agent or trigger with an error is off; a broken connector, app, skill, tool, command, extension, space or sandbox template is dropped; `project`, `default_agent`, `runtime` fall back to their defaults; any other error means built-ins only. Every case only removes access. |
+| Write time | — | errors block (`kortix validate`, `kortix ship`, the change-request merge gate, API writes, the editor). Writers never write `kortix_version`. |
+| Surfaces | issue lines with file:line:col | every issue has line and column, unknown keys get "Did you mean"; `GET /v1/projects/:id/detail` returns `manifest_health`; the project banner offers "Fix with My Kortix"; the compiled agent set carries `manifest_issues` and the sandbox writes them into the agent's system prompt |
+| JSON Schema | generated from zod | one hand-kept document (`/schema/kortix.schema.json`, alias `kortix.v3.schema.json`); the zod single source (WP1) is the next PR |
+
+Still open after `one-schema`: WP1 (one zod source for validator, types, JSON
+Schema, docs), comment-keeping writes, `kortix validate --fix`, validators for
+the top-level `policy`, `policies` and `approvals` keys (today only
+`apps/api/src/projects/policies.ts` reads them), and removing the `V2`/`V3`
+suffixes from names.
 
 ## Problem (verified on `project-admin`, 2026-10-27)
 

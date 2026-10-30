@@ -14,8 +14,8 @@
  * AND custom), or `AGENT_DEFAULT_CEILING` when nobody bound one. The launcher's
  * role and super-admin bit are not inputs.
  *
- * An ungoverned (null-grant) token — the `meta` coordinator, or a v1 project
- * with no `[[agents]]` — authorizes as its launcher.
+ * An ungoverned (null-grant) token — the `meta` coordinator, or a project
+ * that declares no agents — authorizes as its launcher.
  *
  * This module holds the PURE decision. The engine wiring
  * lives in `authorize.ts` (step 5a); the credential classification in
