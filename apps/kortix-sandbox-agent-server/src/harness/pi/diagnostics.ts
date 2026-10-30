@@ -2,7 +2,7 @@
  * `/kortix/health`, `/kortix/diag` and `/kortix/logs` for a pi session.
  *
  * Health is pi's closed `harness` block; `routes/kortix/health.ts` adds the
- * host facts, the pre-W3 flat fields the API still reads, and `runtimeReady`.
+ * host facts and `runtimeReady`.
  */
 import { HARNESS_RUNTIME_CAPABILITIES } from '@kortix/api-contract/session-log'
 import type { HarnessDiagnosticsService, HarnessHealthReport } from '../contract/diagnostics'

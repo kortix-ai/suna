@@ -90,7 +90,6 @@ describe('daemon file write routes', () => {
     'kortix',
     'kortix/refresh',
     'kortix/pty',
-    'kortix/opencode',
   ]) {
     it(`unknown /${namespace} routes terminate before the harness proxy`, async () => {
       const harness = fakeHarness({

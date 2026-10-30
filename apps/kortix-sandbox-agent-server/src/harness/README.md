@@ -33,7 +33,6 @@ start). On that box:
   agent env file never writes them.
 
 Names that say `opencode` but serve pi (`opencode_session_id`,
-`/kortix/opencode/*`, the flat health fields in `routes/kortix/legacy-names.ts`,
 the OpenCode-shaped event wire pi emits) are wire names, not OpenCode code.
 They stay until a separate rename. The E18 lint rule
 ([ARCHITECTURE.md](../../ARCHITECTURE.md)) rejects any new OpenCode name.
@@ -661,9 +660,7 @@ are in `details`), `runtimeReady` computed once from both, and
 (`HarnessDiagnosticsService.capabilities()`, read on each health call:
 `session.subagents`, `session.compact`, `session.commands`, `session.steer`
 and `session.log.v2`). The pre-W3 flat fields (`opencode`, `opencode_pid`,
-`opencode_port`, `opencode_session_id`, …) are composed from the block in
-`routes/kortix/legacy-names.ts` for an older API; `opencode_pid` and
-`opencode_port` are `null` on pi.
+`opencode_port`, `opencode_session_id`, …) are gone since 2026-10-30.
 
 The host retains its entrypoint (`src/app/`), Git/files/PTYs,
 authentication, static previews, the LLM/connector proxy, the resource sampler,
@@ -1248,7 +1245,7 @@ inside `pi/`. No silent feature fallback or harness switching is added.
 
 `createService` does not spawn a process or subscribe to events. Controllers
 receive the resolved service through dependency injection; `/kortix/runtime/*`
-(and its pre-W3 alias `/kortix/opencode/*`) is a URL, not an implementation selector. The adapter cannot
+is a URL, not an implementation selector. The adapter cannot
 register routes or receive a Hono context.
 
 ## Unchanged contracts

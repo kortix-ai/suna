@@ -276,9 +276,6 @@ const OPENCODE_WORD = /[A-Za-z0-9_.$-]*open.?code[A-Za-z0-9_.$-]*/gi
 const OPENCODE_SCOPE = /^(?:(?:lib|types|services|routes|app|harness\/contract|harness\/shared|harness\/pi)\/.*|main\.ts)$/
 /** Allowed OpenCode words per file, package-relative. Delete entries; never add. @type {Record<string, string[]>} */
 export const OPENCODE_NAMES_ALLOWED = {
-  // W3 exit: the pre-W3 wire names an older API still reads and sends. Only
-  // this compatibility module spells them; delete it with its callers.
-  'src/routes/kortix/legacy-names.ts': ['opencode', 'opencodeEnv', 'opencode_env_changed', 'opencode_env_names', 'opencode_pid', 'opencode_port', 'opencode_reload', 'opencode_session_id', 'opencode_session_required', 'opencode_turn_ended', 'opencode_version'],
   // The legacy project layout's config directory, `.kortix/opencode`: pi reads
   // its skills and releases it for a project that has not moved to the root layout.
   'src/harness/pi/config.ts': ['opencode'],
