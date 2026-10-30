@@ -57,7 +57,7 @@ function nonActiveSandboxSkip(
  * Such a box receives compiled governance inside its config release. A separate
  * `KORTIX_COMPILED_AGENT_CONFIG` push through `/kortix/env` would restart
  * OpenCode on governance that does not match the release it runs — and the box
- * drops it anyway (`releaseGovernanceActive`, daemon `harness/open-code/control.ts`).
+ * drops it anyway (`releaseGovernanceActive`, the daemon's OpenCode adapter).
  *
  * This reads the box's STATE (`config.release_id`), not the binary's
  * `config.release.v1` capability. The capability is compiled in and is present

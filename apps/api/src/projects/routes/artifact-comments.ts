@@ -10,6 +10,8 @@ import { requireFeatureFlag } from '../../feature-flags/gate';
 import { privateChannelFoldersFor, sessionPrivateChannelFolder } from '../../drives/service';
 import { DriveStorageError } from '../../drives/volumes';
 import { ArtifactError, canView, getArtifact, mayWrite, type Viewer } from '../../artifacts/service';
+import { readArtifactCommentContext } from '../../artifacts/comment-context';
+import { ARTIFACT_COMMENT_SEND_LIMIT } from '../../artifacts/comment-routing-context';
 import { readArtifactActivity } from '../../artifacts/activity-service';
 import { ArtifactActivityQueryError } from '../../artifacts/activity-query';
 import { ArtifactCommentDeliveryError, sendArtifactCommentThreads } from '../../artifacts/comment-delivery';
@@ -31,6 +33,7 @@ const ThreadParams = ArtifactParams.extend({ threadId: z.string().uuid() });
 const CommentParams = ThreadParams.extend({ commentId: z.string().uuid() });
 const ThreadLookupParams = z.object({ projectId: z.string().uuid(), threadId: z.string().uuid() });
 const Status = z.enum(['open', 'resolved']);
+const Version = z.string().min(1).max(80).regex(/^[A-Za-z0-9_-]+$/);
 const Body = z.string().min(1).max(10_000).refine((value) => value.trim().length > 0 && !value.includes('\0'));
 const nullableId = z.string().nullable();
 const nullableDate = z.string().nullable();
@@ -40,10 +43,12 @@ const CommentSchema = z.object({
     z.object({ kind: z.literal('user'), user_id: z.string(), name: z.string() }),
     z.object({ kind: z.literal('session'), session_id: z.string(), agent_name: z.string(), title: z.string().nullable() }),
   ]),
+  can_edit: z.boolean(), can_delete: z.boolean(),
   body: z.string(), mentions: z.unknown(), marks: z.unknown(), screenshot_key: nullableId,
   created_at: z.string(), edited_at: nullableDate, deleted_at: nullableDate,
 }).openapi('ArtifactComment');
 const ThreadSchema = z.object({
+  can_reply: z.boolean(), can_resolve: z.boolean(),
   thread_id: z.string(), artifact_id: z.string(), project_id: z.string(), anchor: z.unknown(), anchor_version: z.string(),
   created_by_user_id: nullableId, created_by_session_id: nullableId, status: Status,
   resolved_by_user_id: nullableId, resolved_by_session_id: nullableId, resolved_at: nullableDate,
@@ -83,7 +88,7 @@ async function authorizeComments(c: Context, projectId: string, target: string |
   if (!(await can(PROJECT_ACTIONS.PROJECT_ARTIFACT_READ)) && !canComment) return forbidden();
   if (write && !canComment) return forbidden();
   const canEdit = artifactWrite && await mayWrite(artifact, viewer);
-  return { ok: true as const, actor: await actorOf(c, loaded.row.accountId), scope: { artifact, viewer, sessionId, canEdit } };
+  return { ok: true as const, actor: await actorOf(c, loaded.row.accountId), scope: { artifact, viewer, sessionId, canEdit, canComment } };
 }
 
 function failure(c: Context, error: unknown) {
@@ -134,9 +139,28 @@ export function registerArtifactCommentRoutes(): void {
   }));
 
   projectsApp.openapi(createRoute({
+    method: 'get', path: '/{projectId}/artifacts/{artifactId}/comments/context', tags: ['artifacts'],
+    summary: 'Read comment permissions, accepted mention tokens and the proposed Send target', ...auth,
+    request: { params: ArtifactParams, query: z.object({ version: Version.optional(), agent: z.string().min(1).max(128).optional() }) },
+    responses: { 200: json(z.object({
+      can_comment: z.boolean(), can_moderate: z.boolean(), comment_count: z.number().int(),
+      people: z.array(z.object({ user_id: z.string(), name: z.string(), avatar_url: nullableId, token: z.string() })),
+      agents: z.array(z.object({ agent_name: z.string(), name: z.string(), session_id: nullableId, token: z.string() })),
+      send_target: z.object({ kind: z.enum(['session', 'new']), session_id: nullableId, agent_name: z.string() }).nullable(),
+      send_thread_ids: z.array(z.string()).max(ARTIFACT_COMMENT_SEND_LIMIT), send_thread_count: z.number().int().nonnegative(), version: z.object({ commit_id: nullableId, entry_version: nullableId }),
+    }), 'The current or historical comment context'), ...responses },
+  }), async (c) => {
+    const { projectId, artifactId } = c.req.valid('param');
+    const access = await authorizeComments(c, projectId, artifactId, false);
+    if (!access.ok) return access.response;
+    try { return c.json(await readArtifactCommentContext(access.scope, access.actor, c.req.valid('query')), 200); }
+    catch (error) { return failure(c, error); }
+  });
+
+  projectsApp.openapi(createRoute({
     method: 'post', path: '/{projectId}/artifacts/{artifactId}/comments/send', tags: ['artifacts'],
     summary: 'Send selected Artifact comment threads to an agent', ...auth,
-    request: { params: ArtifactParams, body: body(z.object({ thread_ids: z.array(z.string().uuid()).min(1).max(100), batch_id: z.string().uuid().optional(), agent: z.string().min(1).max(128).optional() })) },
+    request: { params: ArtifactParams, body: body(z.object({ thread_ids: z.array(z.string().uuid()).min(1).max(ARTIFACT_COMMENT_SEND_LIMIT), batch_id: z.string().uuid().optional(), agent: z.string().min(1).max(128).optional() })) },
     responses: { 200: json(z.object({ session_id: z.string(), created: z.boolean() }), 'The selected or reserved agent session'), ...responses },
   }), async (c) => {
     const { projectId, artifactId } = c.req.valid('param');
@@ -150,14 +174,14 @@ export function registerArtifactCommentRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'get', path: '/{projectId}/artifacts/{artifactId}/comments', tags: ['artifacts'],
     summary: 'Read comment threads on an Artifact', ...auth,
-    request: { params: ArtifactParams, query: z.object({ status: z.enum(['open', 'resolved', 'all']).optional() }) },
+    request: { params: ArtifactParams, query: z.object({ status: z.enum(['open', 'resolved', 'all']).optional(), version: Version.optional() }) },
     responses: { 200: json(z.object({ threads: z.array(ThreadSchema) }), 'The threads and comments'), ...responses },
   }), async (c) => {
     const { projectId, artifactId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, artifactId, false);
     if (!access.ok) return access.response;
     try {
-      return c.json({ threads: await listArtifactCommentThreads(access.scope, c.req.valid('query').status ?? 'open') }, 200);
+      return c.json({ threads: await listArtifactCommentThreads(access.scope, c.req.valid('query').status ?? 'open', c.req.valid('query').version) }, 200);
     } catch (error) { return failure(c, error); }
   });
 

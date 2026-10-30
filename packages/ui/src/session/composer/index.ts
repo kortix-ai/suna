@@ -28,6 +28,7 @@ export { type DraftScope } from './draft/composer-draft';
 export { ComposerEditor, type ComposerEditorHandle } from './editor/composer-editor';
 export { baseExtensions } from './editor/extensions';
 export { MentionNode } from './editor/mention-node';
+export { MentionChip } from '../thread/mention-chip';
 export { baseSuggestion, type MenuController } from './editor/suggestion';
 export { ReasoningEffortSelector } from './reasoning-effort-selector';
 export { SessionChatInput, type SessionChatInputProps } from './session-chat-input';

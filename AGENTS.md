@@ -441,21 +441,21 @@ these as standing rules whenever you touch the data/runtime layer:
   (`kortix.session(pid, sid).health() / .previewUrl() / .restart() / …`).
   The sandbox provider and the harness are server-side concerns. Host code
   must not implement a second transport.
-- **Build on the Kortix contract, not on OpenCode.** Every new session runs
-  pi inside kortixd. OpenCode is deprecated (2026-10-23): there is no
-  `pi_harness` flag, `runtime:` in `kortix.yaml` selects nothing, and OpenCode
-  serves only sessions that started on it. It will be deleted. Code that exists
-  only for OpenCode carries `@deprecated`: never call it from new code, never
-  add a feature to it, and change it only to fix a bug that breaks a running
-  OpenCode session. pi calls models only through the LLM gateway. pi serves
+- **Build on the Kortix contract, not on OpenCode.** Every session runs pi
+  inside kortixd. kortixd has no OpenCode harness (deleted 2026-10-30): a box
+  OpenCode booted before the sunset boots pi on its next daemon start and
+  restores its session log into pi. There is no `pi_harness` flag, and
+  `runtime:` in `kortix.yaml` selects nothing. OpenCode code that remains in
+  apps/api, the SDK and the clients serves old transcripts and old daemons and
+  carries `@deprecated`: never call it from new code and never add a feature to
+  it. pi calls models only through the LLM gateway. pi serves
   the daemon routes (`/kortix/runtime/*`), the transcript
   (`kortix.transcript.v1`, `packages/api-contract/src/transcript.ts`) and the
   events. New code reads those, never an OpenCode route, type, file or
   process. A feature pi lacks is a capability, not a harness check:
   `GET /kortix/health` lists `capabilities` (`RUNTIME_CAPABILITIES` in
   `packages/api-contract/src/runtime-relay.ts`), and a client gates the
-  control with `runtimeSupports`. OpenCode lists all eleven (`session.steer`
-  only on OpenCode 1.18.15 or later); pi lists `session.subagents`,
+  control with `runtimeSupports`. pi lists `session.subagents`,
   `session.compact`, `session.commands` and `session.steer`. pi does not
   serve rewind, MCP servers, the todo list, shell turns, part edits or
   `session.attach`.

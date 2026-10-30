@@ -37,7 +37,7 @@ import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './e
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
-import type { PiModels, SelectedModel } from './model'
+import type { CatalogModel, PiModels, SelectedModel } from './model'
 import { compactionSettings, nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
@@ -372,6 +372,9 @@ export class PiRuntime {
   private childAgentOptions: Partial<AgentOptions> = {}
   /** The project package bundle; fetched from construction so the download overlaps the repo clone. */
   private projectBundle: Promise<string | null> | null = null
+  /** The live model list, fetched from construction so boot does not wait on it. */
+  private catalogFetch: Promise<Record<string, CatalogModel> | null> | null = null
+  private modelsRefresh: Promise<void> | null = null
   private readonly children = new Map<string, ChildSession>()
   private skills: Skill[] = []
   /** The root AGENTS.md, read with the skills: never per turn, so an edit reaches the next re-read. */
@@ -451,6 +454,7 @@ export class PiRuntime {
     this.title = 'New session'
     this.bindRoot()
     void this.prefetchProjectBundle()
+    void this.prefetchCatalog()
   }
 
   /** The brokers publish under the root id. */
@@ -502,6 +506,12 @@ export class PiRuntime {
         return root
       })
     return this.projectBundle
+  }
+
+  /** Start the live model list fetch, or join the one in flight. */
+  private prefetchCatalog(): Promise<Record<string, CatalogModel> | null> {
+    this.catalogFetch ??= import('./model').then(({ fetchPickerCatalog }) => fetchPickerCatalog(this.env))
+    return this.catalogFetch
   }
 
   // ── lifecycle ────────────────────────────────────────────────────────────
@@ -556,9 +566,13 @@ export class PiRuntime {
       const { convertToLlm } = coding
       this.compiled = parseCompiledAgentConfig(compiledAgentConfigFromEnv(this.env))
       this.sessionAgentName = this.agentName = this.resolveAgentName()
+      // A restart keeps the list it has; the first start takes the one fetched since construction.
+      const catalog = this.models?.live ? this.models.catalog : await this.prefetchCatalog()
+      this.catalogFetch = null
       this.models = await createPiModels({
         env: this.env,
         defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
+        catalog,
       })
       this.selected = this.models.select(nativeModelId(this.env.KORTIX_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
       // `KORTIX_PI_CODEMODE` (the API sends the session agent's), else the session agent's compiled
@@ -702,10 +716,13 @@ export class PiRuntime {
     const before = `${this.selected?.modelID}|${this.agentName}|${this.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG ?? ''}`
     this.compiled = parseCompiledAgentConfig(compiledAgentConfigFromEnv(this.env))
     this.sessionAgentName = this.agentName = this.resolveAgentName()
+    // The list it has: an env push never waits for the gateway. The refresh below picks up a newly connected provider.
     this.models = await createPiModels({
       env: this.env,
       defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
+      catalog: this.models.live ? this.models.catalog : null,
     })
+    this.refreshModelsSoon()
     this.selected = this.models.select(nativeModelId(this.env.KORTIX_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
     this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
     this.permissions.setPolicy(this.policy)
@@ -720,8 +737,20 @@ export class PiRuntime {
     return { changed: before !== after }
   }
 
-  /** Re-read the served models and their limits (a custom endpoint saved), keeping the selected model. */
-  async refreshModels(): Promise<void> {
+  /** Re-read the served models and their limits (a custom endpoint saved), keeping the selected model. One fetch at a time. */
+  refreshModels(): Promise<void> {
+    this.modelsRefresh ??= this.reloadModels().finally(() => {
+      this.modelsRefresh = null
+    })
+    return this.modelsRefresh
+  }
+
+  /** {@link refreshModels} without waiting: nothing on a push or a turn path holds for the gateway. */
+  refreshModelsSoon(): void {
+    void this.refreshModels().catch((err) => logger.warn('[pi] model list refresh failed', { err: String(err) }))
+  }
+
+  private async reloadModels(): Promise<void> {
     if (!this.agent || !this.models) return
     const { createPiModels } = await import('./model')
     this.models = await createPiModels({
@@ -1185,6 +1214,8 @@ export class PiRuntime {
       turn.resolve(outcome)
       this.hooks.onTurnEnd?.({ rootId: this.rootId, messageId: turn.messageId, status: outcome === 'error' ? 'error' : 'idle', ...(error ? { error } : {}) })
     }
+    // Started while the live model list was down: fetch it again, so the next turn runs on real limits.
+    if (this.models?.live === false) this.refreshModelsSoon()
     // Steered messages the turn did not read. A stopped turn drops them (the
     // API's Stop path owns them). Otherwise they start the next turn: the first
     // is its prompt, the rest are read before its first model call. Same queue
@@ -2021,7 +2052,7 @@ export class PiRuntime {
     }
   }
 
-  /** The `/kortix/opencode/state` document. */
+  /** The `/kortix/runtime/state` document. */
   stateDoc(): Record<string, unknown> {
     const bus = kortixEventBus()
     const selected = this.selected

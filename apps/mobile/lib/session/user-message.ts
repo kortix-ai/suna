@@ -20,6 +20,7 @@ import {
   serializePromptWithPastes,
   splitPastedContent,
   tagBlocks,
+  type ChannelPlatform,
   type PastedContent,
   type TagBlock,
 } from '@kortix/shared';
@@ -401,6 +402,13 @@ export function userMessageSentLabel({ timestamp, now }: { timestamp: number | n
         ? `${MONTHS[sent.getMonth()]} ${sent.getDate()}`
         : `${MONTHS[sent.getMonth()]} ${sent.getDate()}, ${sent.getFullYear()}`;
   return `${day}, ${clockTime(sent)}`;
+}
+
+// ─── Channel card ────────────────────────────────────────────────────────────
+
+/** The channel card's label for where a message was sent: an email's subject, else its channel or chat (web `ChannelOrigin`). */
+export function channelPlaceLabel(platform: ChannelPlatform): string {
+  return platform === 'Email' ? 'Subject' : 'Channel';
 }
 
 // ─── Queued prompt state ─────────────────────────────────────────────────────

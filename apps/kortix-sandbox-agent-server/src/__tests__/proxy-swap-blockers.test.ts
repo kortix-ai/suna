@@ -16,8 +16,8 @@
  * module-level `requestAgentSwapIfIdle` — so it is a behavior assertion, not
  * a source-text one.
  *
- * `harness.control.convergenceInFlight` — not a direct import of
- * `harness/open-code/config-release` — is deliberate: `app/server.ts`
+ * `harness.control.convergenceInFlight` — not a direct import of the
+ * adapter's config-release module — is deliberate: `app/server.ts`
  * is host production code, and importing a concrete adapter from there is
  * exactly what the boundary lint (eslint.config.mjs, "only harness.ts imports
  * an adapter") forbids.
@@ -27,7 +27,7 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Config } from '@/lib/config/config'
 import type { HarnessService } from '@/harness/harness'
 import type { HarnessQueryService } from '@/harness/contract/queries'
 import { startProxy } from '@/app/server'
@@ -44,15 +44,12 @@ const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 function baseConfig(over: Partial<Config> = {}): Config {
   return {
     servicePort: 0,
-    opencodeInternalPort: 4096,
-    opencodeStandbyPort: 4097,
     staticPort: 3213,
     workspace: '/tmp',
     projectTarget: '/tmp',
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,
-    defaultOpencodeConfigDir: '/ephemeral/opencode',
     autoClone: false,
     projectId: undefined,
     apiUrl: undefined,

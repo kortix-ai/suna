@@ -110,28 +110,6 @@ export function releaseDir(root: string, releaseId: string): string {
   return join(root, releaseId)
 }
 
-/**
- * The release root `path` is in (a release is a checkout of the repository at
- * one commit), or null when `path` is not inside a release in the store.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export function releaseRootOf(path: string, root: string = bootConfigRoot()): string | null {
-  const rel = relative(resolve(root), resolve(path))
-  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return null
-  const first = rel.split(sep)[0]!
-  return isReleaseId(first) ? join(resolve(root), first) : null
-}
-
-/**
- * The release's files under its OpenCode config dir, relative to that dir.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export function configDirFiles(files: readonly ConfigReleaseFile[], configDir: string | null): ConfigReleaseFile[] {
-  if (!configDir) return []
-  const prefix = `${configDir}/`
-  return files.filter(([path]) => path.startsWith(prefix)).map(([path, mode, blob]) => [path.slice(prefix.length), mode, blob])
-}
-
 function manifestPath(root: string, releaseId: string): string {
   return `${releaseDir(root, releaseId)}.json`
 }
@@ -150,14 +128,6 @@ async function managedSkillNames(dir: string | undefined): Promise<Set<string>> 
   // `undefined` means "the box's overlay", never "no managed skills".
   const entries = await readdir(dir ?? managedSkillsDir(), { withFileTypes: true }).catch(() => [])
   return new Set(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name))
-}
-
-/**
- * Is `dir` a release in the store (the platform's own copy)?
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export function isInReleaseStore(dir: string, root: string = bootConfigRoot()): boolean {
-  return insideRoot(root, dir)
 }
 
 /**
@@ -673,75 +643,6 @@ export async function readBootConfigPointer(root: string = bootConfigRoot()): Pr
   } catch {
     return null
   }
-}
-
-/**
- * `<root>/boot`: the fixed `OPENCODE_CONFIG_DIR` of the process spawned at
- * boot. It is spawned at once, before the checkout and the release exist, and
- * the link is repointed to the chosen config before the workspace gate opens.
- * OpenCode reads the directory at Instance init, on the first
- * directory-scoped request, so the repointed target is what it loads.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export function bootLinkPath(root: string = bootConfigRoot()): string {
-  return join(root, 'boot')
-}
-
-/**
- * The directory the boot link names right now, or null when there is no link.
- *
- * `OPENCODE_CONFIG_DIR` is the link and only the link, so this is how anything
- * asks "which config dir does OpenCode read?" without keeping a second copy of
- * the answer in memory.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export async function readBootLinkTarget(root: string = bootConfigRoot()): Promise<string | null> {
-  try {
-    return resolve(await readlink(bootLinkPath(root)))
-  } catch {
-    return null
-  }
-}
-
-/**
- * `<root>/boot-release`: the release the boot link's config dir comes from,
- * where project tools load from. Absent when no release is served. A release
- * with no OpenCode config dir serves the image default, so the boot link
- * alone cannot name it.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export function bootReleaseLinkPath(root: string = bootConfigRoot()): string {
-  return join(root, 'boot-release')
-}
-
-/**
- * The release root the boot link serves from, or null.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export async function readBootReleaseRoot(root: string = bootConfigRoot()): Promise<string | null> {
-  try {
-    return resolve(await readlink(bootReleaseLinkPath(root)))
-  } catch {
-    return null
-  }
-}
-
-/**
- * Point the boot link at `target` with one atomic rename. Returns the link path.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export async function pointBootLink(target: string, root: string = bootConfigRoot(), link: string = bootLinkPath(root)): Promise<string> {
-  await mkdir(root, { recursive: true })
-  const staged = `${link}.${randomUUID()}.tmp`
-  await symlink(resolve(target), staged)
-  try {
-    // rename(2) replaces the link itself; it never follows it.
-    await rename(staged, link)
-  } catch (err) {
-    await rm(staged, { force: true }).catch(() => undefined)
-    throw err
-  }
-  return link
 }
 
 /** Written only after a proven promotion. */

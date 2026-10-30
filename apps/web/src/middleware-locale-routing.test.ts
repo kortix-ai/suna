@@ -21,7 +21,7 @@ const GERMAN_SESSION = `base64-${Buffer.from(
 
 describe('locale rewrite onto app/[locale]', () => {
   test('unprefixed public pages render in English', async () => {
-    for (const path of ['/pricing', '/legal', '/auth', '/game-of-life', '/blog', '/blog/some-post']) {
+    for (const path of ['/pricing', '/legal', '/auth', '/game-of-life']) {
       const response = await middleware(request(path));
       expect(response.headers.get('x-middleware-rewrite')).toBe(`${ORIGIN}/en${path}`);
       expect(response.headers.get('x-middleware-request-x-next-intl-locale')).toBe('en');
@@ -86,11 +86,38 @@ describe('locale rewrite onto app/[locale]', () => {
       '/download/macos',
       '/auth/callback',
       '/scim/v2/Users',
+      '/blog',
+      '/blog/some-post',
       '/blog/rss.xml',
       '/blog/some-post.md',
     ]) {
       const response = await middleware(request(path));
       expect(response.headers.get('x-middleware-rewrite')).toBeNull();
+    }
+  });
+
+  test('a /blog request reaches the blog app without the session cookie or Authorization', async () => {
+    // next.config.ts proxies /blog to another deployment; a kortix.com session
+    // must never cross to it. Next forwards the headers listed in
+    // x-middleware-override-headers, each as x-middleware-request-<name>.
+    for (const path of ['/blog', '/blog/some-post', '/blog/rss.xml', '/blog/some-post.md']) {
+      const response = await middleware(
+        new NextRequest(
+          new Request(`${ORIGIN}${path}`, {
+            headers: {
+              accept: 'text/html',
+              cookie: `${KORTIX_SUPABASE_AUTH_COOKIE}=${GERMAN_SESSION}; other=1`,
+              authorization: 'Bearer token',
+            },
+          }),
+        ),
+      );
+      const forwarded = (response.headers.get('x-middleware-override-headers') ?? '').split(',');
+      expect(forwarded, path).toContain('accept');
+      expect(forwarded, path).not.toContain('cookie');
+      expect(forwarded, path).not.toContain('authorization');
+      expect(response.headers.get('x-middleware-request-cookie'), path).toBeNull();
+      expect(response.headers.get('x-middleware-request-authorization'), path).toBeNull();
     }
   });
 });

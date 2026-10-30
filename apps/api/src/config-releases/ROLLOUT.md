@@ -11,11 +11,9 @@ inside it exactly as it reads them in `/workspace` (`harnesses/opencode`,
 `skills/`, `harnesses/pi`). The one change from the commit is per-agent plugin
 selection: an agent variant drops the plugin entry files its manifest does not
 select.
-Both session runtimes apply them: OpenCode swaps in a proven replacement
-process, pi reloads the release in place. Full contract:
+pi reloads the release in place (OpenCode is deleted from the daemon). Full contract:
 `apps/api/src/config-releases/`,
 `apps/kortix-sandbox-agent-server/src/services/config-provider/`,
-`apps/kortix-sandbox-agent-server/src/harness/open-code/config-release.ts`,
 `apps/kortix-sandbox-agent-server/src/harness/pi/config-release.ts`.
 
 ## Status: graduated, no lever
@@ -199,14 +197,6 @@ request. The store is a cache; the Git mirror is always the source of truth.
   behind converges first.
 - A tool that imports another file of the repository by a relative path
   (`../../../shared/x`) resolves inside the release exactly as in `/workspace`.
-- OpenCode resolves a relative `instructions` entry against the session
-  directory (`/workspace`), not its config dir. While OpenCode serves a release,
-  the platform plugin `kortix-release-instructions.js`
-  (`harness/open-code/release-instructions.ts`) rewrites each relative entry to
-  the release root, so `"rules/RULES.md"` reads the base branch's file. URLs,
-  `~/`, absolute paths and globs in a directory part keep OpenCode's own
-  resolution. The project's `AGENTS.md` is OpenCode's own lookup from
-  `/workspace` and is not rewritten.
 - The descriptor format is `config-release-v3` for a daemon that sends
   `{"accept":["config-release-v3"]}`, else `config-release-v2`. A daemon built
   for v1 (the composed layout) refuses both and keeps its running config until

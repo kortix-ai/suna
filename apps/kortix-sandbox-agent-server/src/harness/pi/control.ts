@@ -126,8 +126,9 @@ export function createPiControlService(
             reload = 'disposed'
             logger.info('[env] runtime env applied to pi in place', { runtimeEnvNames, changed: applied.changed })
           } else if (rt && body.refreshModels === true) {
-            // Only the served models changed (a custom endpoint saved): re-read their limits.
-            await rt.refreshModels()
+            // Only the served models changed (a custom endpoint saved), or nothing did: re-read their
+            // limits in the background. The prompt this push precedes never waits for the gateway.
+            rt.refreshModelsSoon()
           }
           onStateChanged()
 

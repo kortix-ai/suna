@@ -66,7 +66,11 @@ export async function forwardToSandbox(
   // and the HTTP route (the row read while this request authenticated). The
   // turn-begin write below re-checks the box's status in the database, so a
   // row that went stale in between cannot deliver a turn.
-  opts: { originMode?: boolean; record?: SandboxRecord } = {},
+  //
+  // `promptSource`: the queued row's source, when the API forwards its prompt
+  // (`postPrompt`). The turn record keeps it (`beginSandboxTurn`). No HTTP
+  // edge sets it.
+  opts: { originMode?: boolean; record?: SandboxRecord; promptSource?: string } = {},
 ): Promise<Response> {
   let requestBody = body;
 
@@ -348,7 +352,7 @@ export async function forwardToSandbox(
       prefetchedIngress,
       promptDedupeKey,
       turnIdentity,
-      turn: createTurnLifecycle(sandboxId, turnIdentity),
+      turn: createTurnLifecycle(sandboxId, turnIdentity, opts.promptSource),
     },
     requestBody,
   );

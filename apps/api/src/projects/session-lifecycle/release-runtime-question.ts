@@ -13,7 +13,7 @@ export type ReleaseOutcome = 'released' | 'already_answered' | 'unreachable';
  * box is parked.
  *
  * That release used to live only in the sandbox daemon
- * (`harness/open-code/boot.ts`), gated on SLACK_THREAD_TS / SLACK_CHANNEL_ID.
+ * (its OpenCode adapter, since deleted), gated on SLACK_THREAD_TS / SLACK_CHANNEL_ID.
  * A Teams session carries MS_TEAMS_* instead, so the gate returned null and a
  * Teams agent that asked a question hung — after the card had already been
  * posted, because the relay that posts it is ungated. The daemon now accepts

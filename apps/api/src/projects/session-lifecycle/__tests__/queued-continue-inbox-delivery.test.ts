@@ -72,6 +72,8 @@ let quickQueueControlRequests: Array<{ url: string; method: string; body: Record
 /** When set, the daemon never answers the interrupt arm — the wedged-box case. */
 let quickQueueArmFails = false;
 let capturedKeys: string[] = [];
+/** The source each prompt POST asked the proxy to record on its turn. */
+let capturedSources: Array<string | undefined> = [];
 const seenKeys = new Set<string>();
 let succeededCalls: Array<{ commandId: string; result: unknown }> = [];
 // A delivered row that carries a wire id no longer closes — it stays OPEN as
@@ -230,6 +232,10 @@ mock.module('../../../sandbox-proxy/forward', () => ({
     query: string,
     _headers: Headers,
     body?: ArrayBuffer,
+    _origin?: string,
+    _redirectPrefix?: string,
+    _publicOrigin?: string,
+    opts?: { promptSource?: string },
   ) => {
     const messageMatch = /\/message\/([^/]+)$/.exec(path);
     if (method === 'GET' && messageMatch) {
@@ -273,6 +279,7 @@ mock.module('../../../sandbox-proxy/forward', () => ({
         return Response.json({ status: 'duplicate', deduplicated: true });
       }
       capturedBodies.push(JSON.parse(new TextDecoder().decode(body)));
+      capturedSources.push(opts?.promptSource);
       // The claim outlives only a delivery the daemon ACCEPTED: a 5xx is
       // provable non-delivery and the real proxy releases it, so a retry under
       // the same key after a 500 is forwarded again, not deduped.
@@ -579,6 +586,7 @@ beforeEach(() => {
   quickQueueControlRequests = [];
   quickQueueArmFails = false;
   capturedKeys = [];
+  capturedSources = [];
   seenKeys.clear();
   succeededCalls = [];
   forwardedCalls = [];
@@ -672,6 +680,10 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       capturedBodies = [];
       seenKeys.clear();
     }
+  });
+  test("the prompt POST asks the proxy to record the row's source on the turn it starts", async () => {
+    expect(await executeQueuedContinue(baseRow({ source: 'trigger:reminder' }))).toBe('succeeded');
+    expect(capturedSources).toEqual(['trigger:reminder']);
   });
   // A conversation with people opens with the asking agent's message: it joins
   // the transcript and starts no turn — the people answer it.

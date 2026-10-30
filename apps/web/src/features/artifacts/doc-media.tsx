@@ -158,17 +158,6 @@ export const DocCodeBlock = CodeBlock.extend({
     const controls = (target: unknown) => !!elementOf(target)?.closest('.kx-diagram, .kx-code > figcaption');
     return ReactNodeViewRenderer(CodeBlockView, {
       stopEvent: ({ event }) => controls(event.target),
-      // Changes in the controls (Edit, Copy, the language field), the focus and selection a click
-      // there moves included, are not the editor's. Otherwise Tiptap's own rule: only the code text
-      // (`data-node-view-content`) is the editor's.
-      ignoreMutation: ({ mutation }) => {
-        if (controls(mutation.target)) return true;
-        if (mutation.type === 'selection') return false;
-        const el = elementOf(mutation.target);
-        const content = el?.closest('[data-node-view-content]');
-        if (!content) return true;
-        return mutation.type === 'attributes' && el === content;
-      },
     });
   },
 });
