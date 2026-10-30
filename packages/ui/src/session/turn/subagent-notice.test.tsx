@@ -68,6 +68,9 @@ const textOf = (html: string) =>
 describe('parseSubagentNotice', () => {
   test('reads the child, its status, its name and its result', () => {
     expect(parseSubagentNotice(noticeText('completed', REPORT))).toEqual({
+      kind: 'subagent',
+      handle: null,
+      ownedTasks: null,
       sessionId: CHILD,
       status: 'completed',
       agent: 'writer',

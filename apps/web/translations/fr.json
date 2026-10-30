@@ -1330,6 +1330,10 @@
         "chrome": {
           "name": "Kortix dans Chrome",
           "description": "Autorisez une session à utiliser votre navigateur Chrome connecté. Vous pouvez reprendre le contrôle ou l’arrêter à tout moment."
+        },
+        "agent_teams": {
+          "name": "Équipes d’agents",
+          "description": "Une session principale lance des coéquipiers nommés qui partagent une liste de tâches. Chaque coéquipier prend une tâche, la traite dans sa propre session et prévient la session principale quand elle est terminée. Vous voyez chaque coéquipier et ses tâches sous la zone de saisie de la session principale. Les messages entre sessions fonctionnent sans cette option."
         }
       },
       "channelsSwitch": {
@@ -24856,7 +24860,9 @@
       "fallbackName": "Votre agent",
       "openSession": "Ouvrir la session",
       "expand": "Afficher tout le résultat",
-      "collapse": "Masquer le résultat"
+      "collapse": "Masquer le résultat",
+      "batchTitle": "{count, plural, one {# agent a terminé} other {# agents ont terminé}}",
+      "ownsTasks": "A encore {tasks}"
     },
     "tools": {
       "running": {

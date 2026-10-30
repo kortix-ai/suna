@@ -85,6 +85,8 @@ import {
 import { parseChannelMessage, slackConversationName, type ChannelMessageInfo } from './channel-message';
 import { SourceCard, SourcePill } from './source-pill';
 import { PeerMessageRow } from './peer-message-row';
+import { NoticeBatchGroup } from './notice-batch-group';
+import { parseNoticeBatch } from './subagent-notice';
 import { parsePeerMessagePrompt } from '@kortix/shared';
 import { useChannelBindings } from '../../internal/hooks/use-channel-bindings';
 import { useSessionIds } from '../../providers/session-ids';
@@ -1783,6 +1785,12 @@ export function UserMessage({
   const roomDigestInfo = useMemo(() => parseRoomDigest(rawText), [rawText]);
   // A message from another Kortix session (`send_message`): `[message from reviewer · session 3f2a1b9c · #m_1]`.
   const peerInfo = useMemo(() => parsePeerMessagePrompt(rawText), [rawText]);
+  // Several notices in one prompt (`session-notice-batch.ts`), whatever the first one is: a peer
+  // idle notice first must not read as one peer message with the rest of the batch inside it.
+  const noticeBatch = useMemo(() => {
+    const batch = parseNoticeBatch(rawText);
+    return batch && batch.length > 1 ? batch : null;
+  }, [rawText]);
 
   // `messageCreatedAt`'s rule on the record's ISO time: a missing or non-positive time is no time.
   const createdAt = Date.parse(message.created_at);
@@ -2017,6 +2025,10 @@ export function UserMessage({
 
   if (reminderInfo) {
     return <ReminderMessage info={reminderInfo} actions={actions} />;
+  }
+
+  if (noticeBatch) {
+    return <NoticeBatchGroup items={noticeBatch} actions={actions} />;
   }
 
   if (peerInfo) {

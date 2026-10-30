@@ -1330,6 +1330,10 @@
         "chrome": {
           "name": "Kortix en Chrome",
           "description": "Permite que una sesión use tu navegador Chrome conectado. Puedes tomar el control o detenerla en cualquier momento."
+        },
+        "agent_teams": {
+          "name": "Equipos de agentes",
+          "description": "Una sesión líder inicia compañeros de equipo con nombre que comparten una lista de tareas. Cada compañero toma una tarea, la trabaja en su propia sesión y avisa al líder cuando termina. Ves a cada compañero y sus tareas bajo el cuadro de mensaje del líder. Los mensajes entre sesiones funcionan sin esta opción."
         }
       },
       "channelsSwitch": {
@@ -24856,7 +24860,9 @@
       "fallbackName": "Tu agente",
       "openSession": "Abrir sesión",
       "expand": "Mostrar el resultado completo",
-      "collapse": "Ocultar el resultado"
+      "collapse": "Ocultar el resultado",
+      "batchTitle": "{count, plural, one {# agente ha terminado} other {# agentes han terminado}}",
+      "ownsTasks": "Aún tiene {tasks}"
     },
     "tools": {
       "running": {

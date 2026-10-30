@@ -1330,6 +1330,10 @@
         "chrome": {
           "name": "Kortix in Chrome",
           "description": "Consenti a una sessione di usare il browser Chrome collegato. Puoi riprendere il controllo o interromperla in qualsiasi momento."
+        },
+        "agent_teams": {
+          "name": "Team di agenti",
+          "description": "Una sessione principale avvia compagni di squadra con un nome che condividono un elenco di attività. Ogni compagno prende un’attività, la svolge nella propria sessione e avvisa la sessione principale quando ha finito. Vedi ogni compagno e le sue attività sotto il campo di scrittura della sessione principale. I messaggi tra sessioni funzionano anche senza questa opzione."
         }
       },
       "channelsSwitch": {
@@ -24856,7 +24860,9 @@
       "fallbackName": "Il tuo agente",
       "openSession": "Apri sessione",
       "expand": "Mostra tutto il risultato",
-      "collapse": "Nascondi il risultato"
+      "collapse": "Nascondi il risultato",
+      "batchTitle": "{count, plural, one {# agente ha finito} other {# agenti hanno finito}}",
+      "ownsTasks": "Ha ancora {tasks}"
     },
     "tools": {
       "running": {

@@ -841,6 +841,10 @@ const catalog = {
         "chrome": {
           "name": "Kortix in Chrome",
           "description": "Let a session use your connected Chrome browser. You can take over or stop it at any time."
+        },
+        "agent_teams": {
+          "name": "Agent teams",
+          "description": "A lead session starts named teammates that share one task list. Each teammate takes a task, works on it in its own session and tells the lead when it is done. You see every teammate and its tasks under the lead's composer. Messages between sessions work without this flag."
         }
       },
       "channelsSwitch": {
@@ -9298,7 +9302,9 @@ const catalog = {
       "fallbackName": "Your agent",
       "openSession": "Open session",
       "expand": "Show the whole result",
-      "collapse": "Hide the result"
+      "collapse": "Hide the result",
+      "batchTitle": "{count, plural, one {# agent finished} other {# agents finished}}",
+      "ownsTasks": "Still owns {tasks}"
     },
     "tools": {
       "running": {

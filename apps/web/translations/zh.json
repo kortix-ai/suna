@@ -1330,6 +1330,10 @@
         "chrome": {
           "name": "Chrome 中的 Kortix",
           "description": "允许会话使用已连接的 Chrome 浏览器。你可以随时接管或停止。"
+        },
+        "agent_teams": {
+          "name": "智能体团队",
+          "description": "主导会话启动有名字的队友，共享一个任务列表。每个队友领取一个任务，在自己的会话中完成，完成后通知主导会话。你可以在主导会话的输入框下方看到每个队友及其任务。会话之间的消息无需此开关即可使用。"
         }
       },
       "channelsSwitch": {
@@ -24856,7 +24860,9 @@
       "fallbackName": "你的智能体",
       "openSession": "打开会话",
       "expand": "显示完整结果",
-      "collapse": "收起结果"
+      "collapse": "收起结果",
+      "batchTitle": "{count, plural, other {# 个智能体已完成}}",
+      "ownsTasks": "仍负责 {tasks}"
     },
     "tools": {
       "running": {

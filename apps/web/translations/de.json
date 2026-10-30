@@ -1330,6 +1330,10 @@
         "chrome": {
           "name": "Kortix in Chrome",
           "description": "Lass eine Session deinen verbundenen Chrome-Browser nutzen. Du kannst jederzeit übernehmen oder sie stoppen."
+        },
+        "agent_teams": {
+          "name": "Agenten-Teams",
+          "description": "Eine leitende Session startet benannte Teammitglieder mit einer gemeinsamen Aufgabenliste. Jedes Teammitglied übernimmt eine Aufgabe, bearbeitet sie in seiner eigenen Session und meldet der Leitung, wenn sie erledigt ist. Du siehst jedes Teammitglied und seine Aufgaben unter dem Eingabefeld der Leitung. Nachrichten zwischen Sessions funktionieren auch ohne dieses Flag."
         }
       },
       "channelsSwitch": {
@@ -24856,7 +24860,9 @@
       "fallbackName": "Dein Agent",
       "openSession": "Sitzung öffnen",
       "expand": "Ganzes Ergebnis anzeigen",
-      "collapse": "Ergebnis ausblenden"
+      "collapse": "Ergebnis ausblenden",
+      "batchTitle": "{count, plural, one {# Agent ist fertig} other {# Agenten sind fertig}}",
+      "ownsTasks": "Hat noch {tasks}"
     },
     "tools": {
       "running": {

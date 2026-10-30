@@ -36,10 +36,21 @@ const KIND_KEY: Record<PeerMessageKind, string> = {
   shutdown_response: 'shutdownResponse',
 };
 
-/** The preview after the sender: the summary, else the first line of the text. CSS cuts it with `…`. */
-export function peerMessagePreview(info: Pick<PeerMessagePromptInfo, 'summary' | 'text'>): string {
+/**
+ * The preview after the sender: the summary, else the first line of the text. CSS cuts it with `…`.
+ * An idle notice (`firePeerIdleNotices` in the API) previews its "Its last answer:" line; its
+ * first line ("reviewer finished its turn and is idle.") repeats the headline, so it shows only
+ * when it says something else (an error).
+ */
+export function peerMessagePreview(info: Pick<PeerMessagePromptInfo, 'summary' | 'text'> & { kind?: PeerMessageKind }): string {
   if (info.summary?.trim()) return info.summary.trim();
-  return info.text.split('\n').find((line) => line.trim())?.trim() ?? '';
+  const lines = info.text.split('\n').map((line) => line.trim()).filter(Boolean);
+  if (info.kind === 'idle_notice') {
+    const answer = lines.find((line) => line.startsWith('Its last answer:'));
+    if (answer) return answer.slice('Its last answer:'.length).trim();
+    return lines[0] && !/finished its turn and is idle\.?$/.test(lines[0]) ? lines[0] : '';
+  }
+  return lines[0] ?? '';
 }
 
 export function PeerMessageRow({ info, actions }: { info: PeerMessagePromptInfo; actions?: React.ReactNode }) {

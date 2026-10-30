@@ -14,7 +14,7 @@ import type { SubagentNotice } from './subagent-notice';
 
 /**
  * A background subagent (or a background workflow run) this session started
- * has ended, and the API delivered its notice as a prompt. It is not something
+ * has ended, or a teammate of its agent team went idle, and the API delivered its notice as a prompt. It is not something
  * the person typed, and its report is often long, so it draws as one compact
  * row: "✅ post writer finished · <first line of the result>". The row opens in
  * place to the whole result; "Open session" opens the child's own session.
@@ -30,7 +30,7 @@ export function SubagentNoticeRow({ notice }: { notice: SubagentNotice }) {
   const bodyId = useId();
   // The name its parent gave it (`agent({ name })`) reads best: "writer finished".
   const child = useProjectSession(ids.projectId, notice.sessionId, { enabled: !!ids.projectId });
-  const name = child.data?.agent_handle || notice.title || notice.agent || t('fallbackName');
+  const name = child.data?.agent_handle || notice.handle || notice.title || notice.agent || t('fallbackName');
   const headline = t(notice.status, { name });
   const expandable = notice.result.trim().length > 0 && notice.result.trim() !== notice.excerpt;
   const mark =
@@ -97,6 +97,11 @@ export function SubagentNoticeRow({ notice }: { notice: SubagentNotice }) {
           </Button>
         </Hint>
       </div>
+      {notice.ownedTasks && (
+        <p className="text-muted-foreground ml-5 min-w-0 truncate text-xs" title={notice.ownedTasks}>
+          {t('ownsTasks', { tasks: notice.ownedTasks })}
+        </p>
+      )}
       {expandable && open && (
         <div id={bodyId} className="text-muted-foreground border-border ml-1.5 border-l pl-3 text-sm">
           <UnifiedMarkdown content={notice.result} trust="agent" isStreaming={false} />

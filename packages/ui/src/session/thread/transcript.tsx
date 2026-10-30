@@ -106,8 +106,9 @@ import { Button } from '../../primitives/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../primitives/disclosure';
 import { useUserPreferencesStore, type ConversationDensity } from '../../internal/stores/user-preferences-store';
 import { SubSessionModal } from './sub-session-modal';
-import { parseSubagentNotice, type SubagentNotice } from '../turn/subagent-notice';
+import { parseNoticeBatch, parseSubagentNotice, type NoticeBatchItem, type SubagentNotice } from '../turn/subagent-notice';
 import { SubagentNoticeRow } from '../turn/subagent-notice-row';
+import { NoticeBatchGroup } from '../turn/notice-batch-group';
 import { ToolPartRenderer, TurnLiveContext } from '../tool/tool-renderers';
 import {
   ImageGenDigestsContext,
@@ -1043,15 +1044,24 @@ const sessionReport = useMemo<SessionReport | null>(() => {
   }
   return null;
 }, [texts]);
+// Several notices the API coalesced into one prompt (`session-notice-batch.ts`): one group of
+// compact rows. Read whether or not a session report is in it: idle notices carry none.
+const noticeBatch = useMemo<NoticeBatchItem[] | null>(() => {
+  for (const t of texts) {
+    const batch = parseNoticeBatch(t.text);
+    if (batch && batch.length > 1) return batch;
+  }
+  return null;
+}, [texts]);
 // A background subagent's end notice (`subagentNoticeText` in the API): a compact row, not a card.
 const subagentNotice = useMemo<SubagentNotice | null>(() => {
-  if (!sessionReport) return null;
+  if (!sessionReport || noticeBatch) return null;
   for (const t of texts) {
     const notice = parseSubagentNotice(t.text);
     if (notice) return notice;
   }
   return null;
-}, [texts, sessionReport]);
+}, [texts, sessionReport, noticeBatch]);
 // Extract kortix_system messages for inline rendering (goal continuations, etc.)
 const systemMessages = useMemo<KortixSystemMessage[]>(() => {
   const msgs: KortixSystemMessage[] = [];
@@ -1063,7 +1073,7 @@ const systemMessages = useMemo<KortixSystemMessage[]>(() => {
 
 const hasVisibleUserContent = useMemo(() => {
   // Session reports render as their own card — don't show as user bubble
-  if (sessionReport) return false;
+  if (sessionReport || noticeBatch) return false;
   // The prompt is not loaded (a long run's tail): its stand-in has no blocks
   // and must not render as the empty bubble a loading prompt would.
   if (turn.partial) return false;
@@ -1080,7 +1090,7 @@ const hasVisibleUserContent = useMemo(() => {
   // Has any agent mention?
   if (turn.user.blocks.some((b) => b.type === 'harness' && b.kind === 'agent')) return true;
   return false;
-}, [turn.partial, turn.user.blocks, turn.attachments, texts, sessionReport]);
+}, [turn.partial, turn.user.blocks, turn.attachments, texts, sessionReport, noticeBatch]);
 
 // User message text — for copy action
 const userMessageText = useMemo(() => {
@@ -1106,7 +1116,7 @@ const commandOutput = useMemo(() => {
   const source = Array.isArray(commands) ? commands.find((c) => c.name === commandForTurn.name)?.source : undefined;
   return source === 'skill' ? undefined : commandForTurn;
 }, [commandForTurn, commands]);
-  return { sessionReport, subagentNotice, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput };
+  return { sessionReport, noticeBatch, subagentNotice, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput };
 }
 
 /** The throttled working status of the working turn: one status change per
@@ -1533,18 +1543,20 @@ function TurnUserBlock(
   },
 ) {
   const { userContent } = props;
-  const { sessionReport, subagentNotice, systemMessages, hasVisibleUserContent } = userContent;
+  const { sessionReport, noticeBatch, subagentNotice, systemMessages, hasVisibleUserContent } = userContent;
   // P5.6: the note a partial restore left for the agent is a notice, not a person's prompt.
   if (isSessionLogRestoreNote(props.turn.user)) return <RestoreNoteMarker />;
   return (
     <>
-      {subagentNotice ? (
+      {noticeBatch ? (
+        <NoticeBatchGroup items={noticeBatch} />
+      ) : subagentNotice ? (
         <SubagentNoticeRow notice={subagentNotice} />
       ) : (
         sessionReport && <TurnSessionReport report={sessionReport} />
       )}
       {/* ── System message indicator — shown for kortix_system-only messages ── */}
-      {!hasVisibleUserContent && !sessionReport && systemMessages.length > 0 && (
+      {!hasVisibleUserContent && !sessionReport && !noticeBatch && systemMessages.length > 0 && (
         <SystemMessageIndicator messages={systemMessages} />
       )}
       {hasVisibleUserContent && <TurnUserBubble {...props} />}
@@ -2401,7 +2413,7 @@ function SessionTurnImpl(props: SessionTurnProps) {
     const showAnswer = turn.assistant.length > 0 || model.working || !!errors.turnErrorRow.text;
     return (
       <div className="text-factor-[2]">
-        {userContent.hasVisibleUserContent || userContent.sessionReport || userContent.systemMessages.length > 0 ? (
+        {userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.systemMessages.length > 0 ? (
           <MessageRow
             // The first message's turn clips its toolbar's overhang: it sits inside the row.
             className={cn('group/turn', props.isFirstTurn && '[&_[data-slot=row-toolbar]]:top-0.5')}
