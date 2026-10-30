@@ -25,7 +25,8 @@ mock.module('../projects/session-lifecycle/drain', () => ({
 }));
 
 const { db } = await import('../shared/db');
-const { notifyParentOfFailedStart, notifyParentOfSubagentTurn } = await import('../projects/subagent-notice');
+const { notifyParentOfFailedStart, notifyParentOfSubagentTurn, stoppedSubagentNotice } = await import('../projects/subagent-notice');
+const { enqueueContinueSessionCommand } = await import('../projects/session-lifecycle/store');
 
 const ACCOUNT_ID = crypto.randomUUID();
 const PROJECT_ID = crypto.randomUUID();
@@ -141,6 +142,25 @@ describe('a background subagent turn end', () => {
     expect(await notifyParentOfSubagentTurn({ sessionId: foreground, status: 'idle', turnMessageId: 'm' })).toBe(false);
     expect(await notifyParentOfSubagentTurn({ sessionId: forged, status: 'idle', turnMessageId: 'm' })).toBe(false);
     expect((await parentRows()).map((r) => r.idempotency_key)).toEqual([`subagent-finished:${CHILD}:msg_done`]);
+  });
+
+  test('a stop by a person mid-turn reports stopped once; the parent stopping it, or an idle child, sends nothing', async () => {
+    await insertSession(CHILD, { parent: PARENT, metadata: background });
+    // Idle: nothing to report.
+    expect(await stoppedSubagentNotice(CHILD, null)).toBeNull();
+    // A prompt on its way to the child: the child is working.
+    await enqueueContinueSessionCommand({
+      source: 'ui', projectId: PROJECT_ID, accountId: ACCOUNT_ID, sessionId: CHILD, actorUserId: AUTHOR,
+      text: 'go on', clientMessageId: 'q_stop', idempotencyKey: `prompt:${CHILD}:q_stop`, placement: 'composer',
+    });
+    expect(await stoppedSubagentNotice(CHILD, PARENT)).toBeNull();
+    const send = await stoppedSubagentNotice(CHILD, null);
+    expect(await send!()).toBe(true);
+    expect(await (await stoppedSubagentNotice(CHILD, null))!()).toBe(false);
+    const rows = await parentRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.payload.text).toContain('status: stopped\n');
+    expect(rows[0]!.payload.text).toContain('<task_error>\nA person stopped it before it finished.\n</task_error>');
   });
 
   test('a child that never started reports failed, once', async () => {

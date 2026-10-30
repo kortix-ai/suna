@@ -23,6 +23,7 @@
  *    child of its own still working, is not done. Its parent hears once,
  *    after the last of them settles, never once per grandchild.
  *  - A child that never started (provisioning failed) reports `failed` once.
+ *  - A child someone other than its parent stops mid-turn reports `stopped`.
  *
  * Never throws: it runs beside the turn-end relay and provisioning cleanup.
  * ponytail: the report is read between the turn end and the enqueue (~1 s);
@@ -136,6 +137,37 @@ export async function notifyParentOfFailedStart(sessionId: string, message: stri
 }
 
 registerSessionFailureNotifier(notifyParentOfFailedStart);
+
+/**
+ * Before a stop (`POST …/sessions/:id/stop`): when `sessionId` is a background
+ * subagent with live work and the stopper is not its parent, the notice to
+ * send once the stop lands. A stop ends the turn without a turn end the
+ * parent would hear. The parent's own stop needs no notice: its command
+ * output already says so. Keyed on the stopped turn, so a second Stop of the
+ * same turn sends nothing.
+ */
+export async function stoppedSubagentNotice(
+  sessionId: string,
+  stoppedBySession: string | null,
+): Promise<(() => Promise<boolean>) | null> {
+  try {
+    const child = await loadSession(sessionId);
+    const parentId = child && noticeParentOf(child);
+    if (!child || !parentId || parentId === stoppedBySession) return null;
+    const working = (await readSessionsWorking([sessionId])).get(sessionId);
+    if (working?.state !== 'working') return null;
+    const turnKey = `stopped:${working.turn_token ?? working.since ?? 'pending'}`;
+    const by = stoppedBySession ? 'Another session' : 'A person';
+    return () =>
+      deliver(child, parentId, turnKey, { status: 'stopped', report: '', error: `${by} stopped it before it finished.` }).catch((err) => {
+        logger.warn('[subagent-notice] stop notice failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
+        return false;
+      });
+  } catch (err) {
+    logger.warn('[subagent-notice] stop notice check failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
 
 async function loadSession(sessionId: string): Promise<ProjectSessionRow | null> {
   const [row] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, sessionId)).limit(1);
