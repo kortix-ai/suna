@@ -333,7 +333,21 @@ flow(
         ownerFolder = drive.personalFolder;
         await waitForFilesStatus(ctx, listFiles, 200, member);
         const mine = (await asMember.get('/v1/drives', listFiles)).status(200).json<{ drives: any[] }>().drives[0];
-        path = `${mine.personalFolder}/big.bin`;
+        path = `${mine.personalFolder}/uploads/big.bin`;
+      });
+
+      await ctx.step('the member makes a folder for the upload → 200 (503 drive_storage_unavailable without drive storage)', async () => {
+        const mkdir = () => asMember.post('/v1/drives/:driveId/files/mkdir', { path: path.slice(0, path.lastIndexOf('/')) }, { params: { driveId } });
+        let r = await mkdir();
+        // The drive's first write creates its storage volume (~24 s locally): a
+        // 25 s request deadline can answer 503 first. The volume is made either way.
+        if (r.statusCode === 503 && r.json<{ code?: string }>().code === 'request_deadline') r = await mkdir();
+        if (r.statusCode === 503) {
+          r.body().has('$.code', 'drive_storage_unavailable');
+          storage = false;
+          return;
+        }
+        r.status([200, 409]);
       });
 
       await ctx.step('ANON cannot plan an upload → 401', async () => {
@@ -346,18 +360,14 @@ flow(
         (await asMember.post('/v1/drives/:driveId/files/upload', { path, size: content.length, blocks: ['NOT-A-SHA', blocks[1]] }, { params: { driveId } })).status(400);
       });
 
+      if (!storage) return;
+
       await ctx.step('the member plans a 2-block file in their folder → 200: an upload id and the blocks storage lacks', async () => {
         const r = await asMember.post('/v1/drives/:driveId/files/upload', { path, size: content.length, blocks }, { params: { driveId } });
-        if (r.statusCode === 503) {
-          r.body().has('$.code', 'drive_storage_unavailable');
-          storage = false;
-          return;
-        }
         const planned = r.status(200).json<{ uploadId: string; missing: string[] }>();
         uploadId = planned.uploadId;
         if (!uploadId || !planned.missing.every((m) => blocks.includes(m))) throw new Error(`plan ${r.text()}`);
       });
-      if (!storage) return;
 
       await ctx.step("OWNER cannot use the member's upload id, and a changed id is refused → 404 upload_not_found", async () => {
         (await owner.put('/v1/drives/:driveId/files/upload/:uploadId/blocks/:sha', content.slice(0, MiB), { ...block(uploadId, blocks[0]!), raw: true }))
@@ -399,8 +409,8 @@ flow(
           .has('$.code', 'file_changed');
       });
 
-      await ctx.step('cleanup: the member deletes the file → 204', async () => {
-        (await asMember.del('/v1/drives/:driveId/files', { params: { driveId }, query: { path } })).status(204);
+      await ctx.step('cleanup: the member deletes the upload folder → 204', async () => {
+        (await asMember.del('/v1/drives/:driveId/files', { params: { driveId }, query: { path: path.slice(0, path.lastIndexOf('/')), recursive: 'true' } })).status(204);
       });
     } finally {
       await setVolumes(null).catch(() => undefined);
