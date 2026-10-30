@@ -401,13 +401,9 @@ test('34 — a stopped session with no computer shows its conversation and a liv
     await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
 
     await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
-    // The SDK's `SESSION_NOTICE.idle`: a sent message wakes the computer and
-    // is delivered, so the composer stays and no terminal banner replaces it.
-    await expect(
-      page.getByText("This session's computer is asleep. Your next message wakes it up and is delivered.", {
-        exact: true,
-      }),
-    ).toBeVisible();
+    // A sent message wakes the computer and is delivered, so the composer
+    // stays live and says nothing about sleep.
+    await expect(page.getByText("computer is asleep", { exact: false })).toHaveCount(0);
     await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible();
     await expect(page.locator('[data-session-notice-banner]')).toHaveCount(0);
     await expect(page.getByText('This session is stopped', { exact: false })).toHaveCount(0);
