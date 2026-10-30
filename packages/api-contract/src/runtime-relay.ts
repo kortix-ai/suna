@@ -241,6 +241,13 @@ export const RUNTIME_CAPABILITIES = [
    * `SESSION_LOG_EVENTS`). Without `schema` the stream is the v1 stream.
    */
   'session.log.v2',
+  /**
+   * Cross-session messages: the `send_message` and `list_agents` tools
+   * (`@kortix/api-contract/multi-agent`).
+   */
+  'session.messaging',
+  /** A team's shared task list: the `task_*` tools (flag `agent_teams`). */
+  'session.team_tasks',
 ] as const;
 export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 
