@@ -398,8 +398,10 @@ export function Splash({
   useEffect(() => {
     if (lifeSignal === undefined || lifeSignal === seenSignal.current) return;
     seenSignal.current = lifeSignal;
-    start();
-  }, [lifeSignal, start]);
+    // A toggle: the first signal starts Life, the next one sends it home.
+    if (runRef.current?.phase === 'run') finish();
+    else if (!runRef.current) start();
+  }, [lifeSignal, start, finish]);
 
   useEffect(() => {
     if (!living) return;
@@ -509,6 +511,8 @@ export function Splash({
         onMouseDown={(event: MouseEvent) => {
           if (event.button !== 0) return;
           event.preventDefault();
+          // Ours: the container that also listens must not toggle it again.
+          event.stopPropagation();
           finish();
         }}
       >
@@ -563,8 +567,10 @@ export function Splash({
             height={artRows(scale)}
             onMouseDown={(event: MouseEvent) => {
               if (event.button !== 0) return;
-              // The click is ours: no renderer auto-focus of an ancestor.
+              // The click is ours: no renderer auto-focus of an ancestor, and no
+              // second toggle from a container that also listens.
               event.preventDefault();
+              event.stopPropagation();
               start();
             }}
           >

@@ -29,6 +29,7 @@ import {
   classifySessionLogMessage,
 } from '@kortix/sdk';
 import { useSession, useSessionLogThread } from '@kortix/sdk/react';
+import type { BoxRenderable, MouseEvent } from '@opentui/core';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ResolvedHost } from '../../auth/hosts.ts';
@@ -297,6 +298,8 @@ export function SessionView({
   const contentRows = Math.max(height - frame, 1);
   const innerWidth = Math.max(sessionWidth - frame - 2, 12);
   const empty = (thread?.messages.length ?? 0) === 0 && !session.isBusy;
+  const columnRef = useRef<BoxRenderable>(null);
+  const [clicks, setClicks] = useState(0);
   const composerContext = useMemo<CommandContext>(
     () => ({ ...context, hasSession: true, capabilities }),
     [context, capabilities],
@@ -342,11 +345,20 @@ export function SessionView({
           minWidth={20}
         >
           <box
+            ref={columnRef}
             flexDirection="column"
             height={contentRows}
             paddingLeft={1}
             paddingRight={1}
             overflow="hidden"
+            onMouseDown={(event: MouseEvent) => {
+              // An empty session's splash sits under the transcript slot and
+              // the composer, so clicks on it arrive here: a click in the slot
+              // (above the input and any menu) toggles Game of Life.
+              if (!empty || event.button !== 0) return;
+              const row = event.y - (columnRef.current?.y ?? 0) - (showHeader ? 1 : 0);
+              if (row >= 0 && row < rows) setClicks((value) => value + 1);
+            }}
           >
             {showHeader ? (
               <box flexDirection="row" height={1} justifyContent="space-between">
@@ -378,7 +390,7 @@ export function SessionView({
                     width={innerWidth}
                     height={restingRows}
                     center
-                    lifeSignal={lifeSignal}
+                    lifeSignal={(lifeSignal ?? 0) + clicks}
                     tagline="Type a prompt to start. / for commands."
                     lines={splashLines}
                   />

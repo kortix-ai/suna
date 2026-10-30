@@ -12,7 +12,8 @@
  * `PromptInput` directly and not `Composer`.
  */
 
-import { type ReactNode, useCallback, useState } from 'react';
+import type { BoxRenderable, MouseEvent } from '@opentui/core';
+import { type ReactNode, useCallback, useRef, useState } from 'react';
 
 import type { CommandContext, CommandName, MenuEntry } from '../../commands/registry.ts';
 import { theme } from '../../theme.ts';
@@ -91,13 +92,28 @@ export function DraftView({
   );
 
   const hasPanel = panel !== null;
+  // What the input stack covers right now: its text rows and what opens above
+  // it. A click above that is a click on the background (the symbol).
+  const [covered, setCovered] = useState({ rows: 1, aboveRows: 0 });
   const reportMetrics = useCallback(
-    (metrics: PromptInputMetrics) =>
+    (metrics: PromptInputMetrics) => {
+      setCovered((current) =>
+        current.rows === metrics.rows && current.aboveRows === metrics.aboveRows
+          ? current
+          : { rows: metrics.rows, aboveRows: metrics.aboveRows },
+      );
       onMetrics?.(
         hasPanel ? { ...metrics, aboveRows: PICKER_RESERVE_ROWS, menuOpen: false } : metrics,
-      ),
+      );
+    },
     [hasPanel, onMetrics],
   );
+
+  // A click on the background toggles Game of Life. The input stack sits on
+  // top of the splash layer, so the splash itself never sees those clicks:
+  // this box (their common parent) does, and decides by row.
+  const boxRef = useRef<BoxRenderable>(null);
+  const [clicks, setClicks] = useState(0);
 
   const frame = borderless ? 0 : 2;
   // Rows the splash may fill (and Game of Life may run over): everything
@@ -126,11 +142,22 @@ export function DraftView({
   return (
     <Panel borderless={borderless} focused={focused} flexGrow={1} minWidth={20}>
       <box
+        ref={boxRef}
         flexDirection="column"
         height={Math.max(height - frame, 1)}
         paddingLeft={1}
         paddingRight={1}
         overflow="hidden"
+        onMouseDown={(event: MouseEvent) => {
+          if (event.button !== 0) return;
+          const row = event.y - (boxRef.current?.y ?? 0);
+          const open =
+            splashArea -
+            (covered.rows - 1) -
+            (hasPanel ? PICKER_RESERVE_ROWS : covered.aboveRows) -
+            (starting ? 1 : 0);
+          if (row >= 0 && row < open) setClicks((value) => value + 1);
+        }}
       >
         {/* The splash is the background: a fixed layer sized from the whole
             area, never from the input. The slash menu, a picker or a longer
@@ -141,7 +168,7 @@ export function DraftView({
             width={innerWidth}
             center
             height={splashArea}
-            lifeSignal={lifeSignal}
+            lifeSignal={(lifeSignal ?? 0) + clicks}
             tagline={
               context.hasProject
                 ? 'Type a prompt to start. / for commands.'
