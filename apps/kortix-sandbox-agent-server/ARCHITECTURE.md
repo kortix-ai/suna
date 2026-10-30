@@ -68,7 +68,7 @@ provider, so neither service imports the other.
 | `src/lib/**` | the shared layer | none |
 | `src/services/<name>/**` | its own folder, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract`. `config-provider`, `runtime-assets`, `tools`: `@kortix/api-contract` |
 | `src/harness/harness.ts` | the harness, all services, the shared layer | none |
-| `src/harness/pi/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`, `@earendil-works/*`, `typebox`, `quickjs-wasi`, `@silvia-odwyer/photon-node`, `@kortix/sdk/wire-message-id` |
+| `src/harness/pi/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`, `@earendil-works/*`, `typebox`, `quickjs-wasi`, `@silvia-odwyer/photon-node`, `@kortix/sdk/wire-message-id`, `@kortix/shared/peer-message-prompt` and `@kortix/shared/room-prompt` (the prompt envelopes a turn's origin is read from) |
 | `src/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract` (the daemon-to-API wire, `runtime-relay`), `@kortix/sdk/wire-message-id` (the session-log boot's restore note) |
 | `src/routes/**` | `src/routes/**`, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `hono`, `@kortix/api-contract` |
 | `src/app/**`, `src/main.ts` | everything above except adapter internals | `hono`, `@kortix/api-contract` |
@@ -111,8 +111,9 @@ path outside `src/` (another package, `package.json`) stays relative. The
 No other package imports or reads `src/`, and `src/` imports no other app
 (`tests/unit/kortixd-package-boundary.test.ts`). A value the daemon shares with
 apps/api, the CLI or `@kortix/shared` lives in `packages/api-contract` and both
-sides import it. The daemon reaches those files, and the SDK's import-free
-`wire-message-id.ts`, through tsconfig paths. `KORTIXD_SHARED_SOURCES`
+sides import it. The daemon reaches those files, the SDK's import-free
+`wire-message-id.ts` and `@kortix/shared`'s import-free prompt envelopes
+(`peer-message-prompt.ts`, `room-prompt.ts`) through tsconfig paths. `KORTIXD_SHARED_SOURCES`
 (`@kortix/api-contract/sandbox-layout`) lists them: apps/api fingerprints them
 with this source, and the Dockerfiles copy them (`src/__tests__/shared-sources.test.ts`).
 

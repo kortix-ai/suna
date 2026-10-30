@@ -985,16 +985,17 @@ export async function sendAndWaitForReply(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 1_000));
+    // The status read is cheap; the log is read only once the root is idle.
+    const { statuses } = await withKortixScope(target.auth, () => target.handle.pendingRequests());
+    const status = statuses[target.runtimeSessionId];
+    if (status && status !== 'idle') continue;
     const messages = await tip();
     const prompt = messages.find((message) => message.role === 'user' && !before.has(message.message_id));
     if (!prompt) continue;
     const reply = [...messages]
       .reverse()
       .find((message) => message.role === 'assistant' && message.reply_to === prompt.message_id);
-    if (!reply || reply.status === 'streaming') continue;
-    const { statuses } = await withKortixScope(target.auth, () => target.handle.pendingRequests());
-    const status = statuses[target.runtimeSessionId];
-    if (!status || status === 'idle') return reply;
+    if (reply && reply.status !== 'streaming') return reply;
   }
   throw new Error('Timed out waiting for the reply.');
 }
@@ -1038,7 +1039,11 @@ to include stopped ones. Aliases: \`overview\`, \`ps\`.
   --json            Structured output for scripting; each session carries
                     model, its resolved model id (null when none stored).
                     status is computer lifecycle; working is canonical activity;
-                    display_status is the list verdict.
+                    display_status is the list verdict. board_state
+                    (working, needs_input, idle, completed, failed,
+                    stopped), attention (question, approval or null),
+                    agent_handle and team_lead_session_id are the agent
+                    board's fields (null on an older API).
   --project <id>    Operate on this project id (default: linked).
   --host <name>     Operate against a non-default Kortix host.
   -h, --help        Show this help.
@@ -1138,6 +1143,11 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
         model: s.model === undefined ? sessionModelPin(s) : s.model,
         updated_at: s.updated_at,
         activity: activity.get(s.session_id) ?? null,
+        // Agent board fields; null on an API that does not serve them yet.
+        board_state: s.board_state ?? null,
+        attention: s.attention ?? null,
+        agent_handle: s.agent_handle ?? null,
+        team_lead_session_id: s.team_lead_session_id ?? null,
       })),
     );
     return 0;
@@ -1154,17 +1164,19 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
   const headline = Object.entries(counts)
     .map(([k, v]) => `${v} ${k}`)
     .join(' · ');
-  const labels = shown.map((s) => s.name ?? s.agent_name);
+  const labels = shown.map((s) => (s.agent_handle ? `@${s.agent_handle}` : (s.name ?? s.agent_name)));
   const labelW = Math.max(...labels.map((l) => l.length), 4);
 
   process.stdout.write(`\n  ${C.dim}${headline}${C.reset}\n\n`);
   for (const s of shown) {
     const dot = statusDot(sessionListStatus(s));
-    const label = s.name ?? s.agent_name;
+    const label = s.agent_handle ? `@${s.agent_handle}` : (s.name ?? s.agent_name);
     const id = shortId(s.session_id);
     const act = activity.get(s.session_id);
     const doing =
-      s.status === 'running'
+      s.attention
+        ? `${C.yellow}needs you: ${s.attention}${C.reset}`
+        : s.status === 'running'
         ? act
           ? `${act.working ? C.yellow : C.faded}${act.summary}${C.reset}`
           : `${C.faded}—${C.reset}`

@@ -8,7 +8,8 @@ import type { SessionLogMessage } from '@kortix/api-contract/session-log'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import type { HarnessTurnResponse, HarnessTurnService, RuntimePromptInput } from '../contract/turns'
 import { CommandNotEnabled, PromptRejected, parsePromptBody, type PiRuntime, type PromptInput } from './runtime'
-import { piSessionLog } from './session-log'
+import { sessionLogView } from '../shared/session-log-journal'
+import { piQueued, piSessionLog } from './session-log'
 
 const answer = (status: number, body: unknown): HarnessTurnResponse => ({ status, body })
 const NOT_STARTED = answer(503, { error: 'pi runtime is not started' })
@@ -16,10 +17,10 @@ const READ = answer(409, { code: MESSAGE_READ_CODE, error: 'a model call read th
 const OK = answer(200, { ok: true })
 const NOT_ROOT = answer(404, { error: 'not the session root' })
 
-/** The box's own session log, built from the runtime's store; null while the runtime is down. */
+/** The box's own session log, built from the runtime's store, and its queued prompts; null while the runtime is down. */
 function sessionLogOf(rt: PiRuntime) {
   const snapshot = rt.sessionLogSnapshot()
-  return snapshot ? piSessionLog(snapshot) : null
+  return snapshot ? { ...piSessionLog(snapshot), queued: piQueued(snapshot) } : null
 }
 
 /**
@@ -222,7 +223,8 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
       const commands: RuntimeCommandInfo[] = rt.commandList().map((command) => ({
         name: command.name,
         description: command.description || null,
-        source: command.source === 'skill' ? 'skill' : command.agents ? 'command' : 'template',
+        // A workflow command (`/deep-research`) lists as a template: a prompt the runtime expands.
+        source: command.source === 'skill' ? 'skill' : command.source === 'command' && command.agents ? 'command' : 'template',
         ...(command.agents ? { agents: command.agents } : {}),
       }))
       return answer(200, { commands })
@@ -239,9 +241,13 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
       const exported = sessionLogOf(rt)
       if (!exported) return NOT_STARTED
       const id = threadId ?? rt.rootId
-      const thread = exported.log.threads.find((t) => t.thread_id === id)
+      const { threads, ...session } = exported.log
+      const thread = threads.find((t) => t.thread_id === id)
       if (!thread) return answer(404, { error: 'unknown thread' })
-      const ordered = [...thread.messages].sort((a, b) => a.seq - b.seq)
+      // As apps/api stores the log (its seqs, its session fields), then the queued prompts at the queued seq.
+      const view = sessionLogView()
+      const queued = id === rt.rootId ? exported.queued : []
+      const ordered = [...thread.messages.map((m) => view.message(m)), ...queued].sort((a, b) => a.seq - b.seq)
       let messages: SessionLogMessage[]
       let hasMore: boolean
       if (afterSeq !== null) {
@@ -253,7 +259,14 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
         messages = before.slice(-limit)
         hasMore = before.length > limit
       }
-      return answer(200, { thread_id: id, messages, has_more: hasMore })
+      return answer(200, {
+        session: view.session(session),
+        generation: view.generation,
+        threads: threads.map(({ messages: _messages, ...head }) => head),
+        thread_id: id,
+        messages,
+        has_more: hasMore,
+      })
     },
 
     async readLogMessage(messageId) {
@@ -263,9 +276,10 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
       if (!exported) return NOT_STARTED
       for (const thread of exported.log.threads) {
         const message = thread.messages.find((m) => m.message_id === messageId)
-        if (message) return answer(200, message)
+        if (message) return answer(200, sessionLogView().message(message))
       }
-      return answer(404, { error: 'unknown message' })
+      const queued = exported.queued.find((m) => m.message_id === messageId)
+      return queued ? answer(200, queued) : answer(404, { error: 'unknown message' })
     },
 
     async readBlob(sha256) {
@@ -274,6 +288,18 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
       const data = exported?.images.get(sha256)
       if (data === undefined) return null
       return { bytes: Buffer.from(data, 'base64'), mime: mimeOf(exported!.log, sha256) ?? 'application/octet-stream' }
+    },
+
+    async workflows() {
+      const rt = runtime()
+      return rt ? answer(200, { runs: rt.workflowList() }) : NOT_STARTED
+    },
+
+    async controlWorkflow(runId, body) {
+      const rt = runtime()
+      if (!rt) return NOT_STARTED
+      const result = rt.controlWorkflow(runId, body)
+      return answer(result.status, result.body)
     },
 
     async agents() {

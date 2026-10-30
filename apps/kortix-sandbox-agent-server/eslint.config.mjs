@@ -61,6 +61,9 @@ const API_CONTRACT = [`${apiContract}/**`, at('../../packages/api-contract/src/*
 // The SDK's import-free message-id codec, reached the same way (pi and the session-log boot mint ids with it).
 const SDK_WIRE_MESSAGE_ID_FILE = 'packages/sdk/src/core/session/wire-message-id.ts'
 const SDK_WIRE_MESSAGE_ID = [resolve(import.meta.dirname, '../..', SDK_WIRE_MESSAGE_ID_FILE).split(sep).join('/'), at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)]
+// The import-free prompt envelopes of a cross-session and a room message (pi reads a turn's origin from them).
+const PROMPT_ENVELOPE_FILES = ['packages/shared/src/peer-message-prompt.ts', 'packages/shared/src/room-prompt.ts']
+const PROMPT_ENVELOPES = PROMPT_ENVELOPE_FILES.flatMap((file) => [resolve(import.meta.dirname, '../..', file).split(sep).join('/'), at(`../../${file}`)])
 /** @type {Record<string, string[]>} */
 const SERVICE_EXTERNALS = {
   // How the compiled agent config is carried in env (`@kortix/api-contract/compiled-agent-config-env`).
@@ -86,6 +89,7 @@ export const ADAPTERS = {
     at('node_modules/@earendil-works/pi-coding-agent/dist/config.*'),
     at('node_modules/@earendil-works/pi-coding-agent/dist/extensions/codemode/tool.*'),
     ...SDK_WIRE_MESSAGE_ID,
+    ...PROMPT_ENVELOPES,
   ],
 }
 
@@ -125,6 +129,8 @@ const independentModules = createIndependentModules({
       '@kortix/shared/ssrf-guard': [at('../../packages/shared/src/ssrf-guard.ts')],
       '@kortix/api-contract/*': [at('../../packages/api-contract/src/*')],
       '@kortix/sdk/wire-message-id': [at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)],
+      '@kortix/shared/peer-message-prompt': [at('../../packages/shared/src/peer-message-prompt.ts')],
+      '@kortix/shared/room-prompt': [at('../../packages/shared/src/room-prompt.ts')],
     },
   },
   reusableImportPatterns: { sharedLayer: [lib, types] },

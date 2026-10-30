@@ -162,6 +162,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       email_channel: false,
       session_groups: false,
       chrome: false,
+      agent_teams: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -910,6 +911,7 @@ describe('envelopes', () => {
       'email_channel',
       'session_groups',
       'chrome',
+      'agent_teams',
     ]);
   });
 

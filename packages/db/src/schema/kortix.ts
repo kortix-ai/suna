@@ -8509,6 +8509,87 @@ export const sessionIdleWatches = kortixSchema.table('session_idle_watches', {
 ]);
 
 /**
+ * Cross-session messages (`send_message`, `@kortix/api-contract/multi-agent`):
+ * one row per message one session sent another. A delivered message is also a
+ * durable `continue_session` row in `session_lifecycle_commands`; this row is
+ * the record both sides list, the rate and duplicate checks, the hold a
+ * receiver set to `hold` approves or denies, and the `notify_when_idle`
+ * watch (`idle_notice_until`). No `account_id`: the project
+ * names it. The retention purge deletes a session's rows with its content.
+ */
+export const sessionPeerMessages = kortixSchema.table('session_peer_messages', {
+  /** `m_` + 10 base62 characters: the `#m_…` the delivered text names. */
+  id: text('id').primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  fromSessionId: text('from_session_id').notNull(),
+  fromHandle: text('from_handle').notNull(),
+  toSessionId: text('to_session_id').notNull(),
+  toHandle: text('to_handle').notNull(),
+  type: varchar('type', { length: 24 }).notNull(),
+  message: text('message').notNull(),
+  summary: text('summary'),
+  status: varchar('status', { length: 16 }).notNull(),
+  notifyWhenIdle: boolean('notify_when_idle').default(false).notNull(),
+  /** The person the delivered turn acts as: the one who passed the prompt check at send time. */
+  actorUserId: uuid('actor_user_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  /** A held message expires at this instant. Null for every other status. */
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  /**
+   * `notify_when_idle`: the receiver's next turn end owes the sender one idle
+   * notice until this instant. Cleared when the notice goes out. Null: none owed.
+   */
+  idleNoticeUntil: timestamp('idle_notice_until', { withTimezone: true }),
+}, (table) => [
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'session_peer_messages_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.fromSessionId], foreignColumns: [projectSessions.sessionId], name: 'session_peer_messages_from_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.toSessionId], foreignColumns: [projectSessions.sessionId], name: 'session_peer_messages_to_fk' }).onDelete('cascade'),
+  // The sender's rate and duplicate checks, and `direction=out`.
+  index('idx_session_peer_messages_from').on(table.fromSessionId, table.createdAt.desc()),
+  // `direction=in`.
+  index('idx_session_peer_messages_to').on(table.toSessionId, table.createdAt.desc()),
+  // The receiver's held count and the hold expiry.
+  index('idx_session_peer_messages_held').on(table.toSessionId, table.expiresAt).where(sql`${table.status} = 'held'`),
+  // The idle notices a receiver's turn end owes.
+  index('idx_session_peer_messages_idle_due').on(table.toSessionId).where(sql`${table.idleNoticeUntil} is not null`),
+  check('session_peer_messages_type_check', sql`${table.type} in ('message', 'shutdown_request', 'shutdown_response')`),
+  check('session_peer_messages_status_check', sql`${table.status} in ('delivered', 'held', 'refused', 'denied', 'expired', 'dropped')`),
+]).enableRLS();
+
+/**
+ * A team's shared task list (flag `agent_teams`): the tasks of one lead
+ * session, numbered `seq` from 1 per lead. A teammate claims a task with one
+ * compare-and-set UPDATE (pending, unowned, every `blocked_by` completed).
+ * No `account_id`: the project names it.
+ */
+export const sessionTasks = kortixSchema.table('session_tasks', {
+  taskId: uuid('task_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  leadSessionId: text('lead_session_id').notNull(),
+  seq: integer('seq').notNull(),
+  subject: text('subject').notNull(),
+  description: text('description').default('').notNull(),
+  status: varchar('status', { length: 16 }).default('pending').notNull(),
+  ownerHandle: text('owner_handle'),
+  ownerSessionId: text('owner_session_id'),
+  /** Task numbers (`seq`) of the same lead this task waits for. */
+  blockedBy: integer('blocked_by').array().default(sql`'{}'::integer[]`).notNull(),
+  createdBySessionId: text('created_by_session_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'session_tasks_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.leadSessionId], foreignColumns: [projectSessions.sessionId], name: 'session_tasks_lead_fk' }).onDelete('cascade'),
+  // One number per task in a team; serves the list by lead in seq order.
+  unique('session_tasks_lead_seq_key').on(table.leadSessionId, table.seq),
+  // "The tasks this teammate still owns" (the teammate notice).
+  index('idx_session_tasks_owner').on(table.ownerSessionId).where(sql`${table.ownerSessionId} is not null`),
+  check('session_tasks_status_check', sql`${table.status} in ('pending', 'in_progress', 'completed')`),
+  check('session_tasks_seq_check', sql`${table.seq} > 0`),
+]).enableRLS();
+
+/**
  * A browser's Web Push subscription. Bound to the sign-in that registered it:
  * a push goes only while that sign-in lives, like push_device_tokens.
  */
