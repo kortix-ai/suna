@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import type { SessionUsage, SessionUsageEntry } from '@kortix/sdk';
 import { useTranslations } from '../../i18n';
+import { agentDisplayName } from '../../internal/components/agent-mark';
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
 import { formatSessionCostUsd } from '../../internal/billing/session-cost-format';
 import { projectSessionHref } from '../../internal/lib/navigation/session-href';
@@ -123,7 +124,9 @@ function UsageRow({
             {name}
           </HoverPrefetchLink>
         )}
-        {entry.agent_name && <span className="text-muted-foreground shrink-0 truncate">{entry.agent_name}</span>}
+        {entry.agent_name && (
+          <span className="text-muted-foreground shrink-0 truncate">{agentDisplayName(entry.agent_name)}</span>
+        )}
       </span>
       <span className="text-muted-foreground text-right tabular-nums">{entry.request_count.toLocaleString()}</span>
       <span className="text-foreground w-20 text-right tabular-nums">{formatSessionCostUsd(entry.cost)}</span>
