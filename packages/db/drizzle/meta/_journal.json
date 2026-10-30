@@ -1401,6 +1401,13 @@
       "when": 1793372724266,
       "tag": "20261030150524_session_turn_message_time",
       "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "7",
+      "when": 1793379800509,
+      "tag": "20261030170320_base_tip_proven_at",
+      "breakpoints": true
     }
   ]
 }

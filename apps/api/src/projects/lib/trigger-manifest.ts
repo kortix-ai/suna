@@ -201,8 +201,7 @@ async function commitGitCliRepoFile(
   // Any other host (GitLab, generic HTTPS remote): commit via the git CLI.
   // The old code bailed here with "Project repo URL is
   // not a GitHub URL", which broke every connector and trigger manifest edit
-  // on managed/self-hosted projects. Mirrors createRemoteSessionBranch's
-  // GitHub-fast-path / git-CLI-fallback split.
+  // on managed/self-hosted projects.
   const gitProject = await gitAuthOr502(
     hasResolvedGitAuth(project) ? { ...project, gitAuthToken: project.gitAuthToken ?? null } : null,
     () => withProjectGitAuth(project),

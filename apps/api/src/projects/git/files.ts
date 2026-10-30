@@ -52,7 +52,7 @@ export async function listRepoFiles(
       })
       .filter((entry): entry is ProjectFileEntry => Boolean(entry));
   };
-  const first = await list(await refreshMirror(project)).catch((err) => {
+  const first = await list(await refreshMirror(project, false, { freshRef: treeRef })).catch((err) => {
     if (isMissingAtRef(err) && isExplicitBranch(project, ref, opts)) return null;
     throw err;
   });
@@ -196,7 +196,7 @@ export async function listRepoDirectory(
     return { sha, entries };
   };
   const listAtRef = async () => {
-    let read = await list(await refreshMirror(project)).catch((err) => {
+    let read = await list(await refreshMirror(project, false, { freshRef: treeRef })).catch((err) => {
       if (isMissingAtRef(err) && isExplicitBranch(project, ref, opts)) return null;
       throw err;
     });
@@ -274,7 +274,7 @@ export async function grepRepoFiles(
   const q = pattern.trim();
   if (!q) return [];
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project);
+  const repoPath = await refreshMirror(project, false, { freshRef: treeRef });
   const result = await runGitCapture(
     ['grep', '-n', '-I', '-i', '-F', '-m', '10', '-e', q, treeRef],
     repoPath,
@@ -308,7 +308,7 @@ export async function readRepoFile(
   const normalized = normalizeTreePath(filePath);
   if (!normalized) throw new Error('File path is required');
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project);
+  const repoPath = await refreshMirror(project, false, { freshRef: treeRef });
   try {
     return await readFileAt(repoPath, treeRef, normalized);
   } catch (err) {
@@ -355,7 +355,7 @@ export async function readRepoFileBytes(
   const normalized = normalizeTreePath(filePath);
   if (!normalized) throw new Error('File path is required');
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project);
+  const repoPath = await refreshMirror(project, false, { freshRef: treeRef });
   const cat = async (at: string) => {
     const object = `${at}:${normalized}`;
     try {
@@ -608,7 +608,7 @@ export async function archiveRepoSubtree(
   path?: string | null,
 ): Promise<ReadableStream<Uint8Array>> {
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project);
+  const repoPath = await refreshMirror(project, false, { freshRef: treeRef });
   const normalized = path ? normalizeTreePath(path) : null;
   const treeish = normalized ? `${treeRef}:${normalized}` : treeRef;
 

@@ -718,6 +718,12 @@ export const baseTipChecks = kortixSchema.table(
     /** Null while the first check runs. */
     tip: varchar('tip', { length: 64 }),
     checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
+    /**
+     * When the check that stored `tip` asked the upstream. A later claim moves
+     * `checked_at` while the old `tip` stays readable, so only this column says
+     * how old the stored tip is. Null until a check lands and after a base move.
+     */
+    provenAt: timestamp('proven_at', { withTimezone: true }),
   },
   (table) => [primaryKey({ columns: [table.projectId, table.ref] })],
 );

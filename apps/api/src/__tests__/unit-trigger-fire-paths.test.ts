@@ -51,7 +51,6 @@ process.env.KORTIX_URL = 'https://api.example.test';
 let repoFiles: Map<string, string>;
 let commitCalls: Array<{ path: string; message: string }>;
 let deleteCalls: Array<{ path: string; message: string }>;
-let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let lastProvisionEnv: Record<string, string> | null = null;
 let runtimeRows: any[];
@@ -121,7 +120,6 @@ function resetState() {
   repoFiles = new Map();
   commitCalls = [];
   deleteCalls = [];
-  branchCreateCalls = 0;
   sandboxProvisionCalls = 0;
   lastProvisionEnv = null;
   runtimeRows = [];
@@ -183,9 +181,6 @@ mock.module('../projects/git', () => ({
   ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
-  createRemoteSessionBranch: async () => {
-    branchCreateCalls += 1;
-  },
   archiveRepoSubtree: async () => undefined,
   listRepoFiles: async (_project: any, _ref: string, path?: string) => {
     const prefix = (path ?? '').replace(/\/$/, '');

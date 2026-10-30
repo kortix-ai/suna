@@ -488,6 +488,44 @@ interface CompileReadOptions {
 }
 
 /**
+ * Compiled configs by the commit they were compiled from. A commit never
+ * changes, so an entry is never stale. Session create, restart and open
+ * compiled the same commit once each; the company project's config is
+ * ~380 KB from ~40 files (2026-10-30).
+ */
+// replica-local: a cache of immutable per-commit output; a miss recompiles.
+const compiledAtCommit = new Map<string, { raw: Record<string, unknown>; compiled: string | null }>();
+const COMPILED_AT_COMMIT_MAX = 32;
+
+function compiledAt(key: string | null): { raw: Record<string, unknown>; compiled: string | null } | undefined {
+  const hit = key ? compiledAtCommit.get(key) : undefined;
+  if (hit) {
+    // Re-insert: the Map's insertion order is the eviction order.
+    compiledAtCommit.delete(key!);
+    compiledAtCommit.set(key!, hit);
+  }
+  return hit;
+}
+
+function rememberCompiled(key: string | null, entry: { raw: Record<string, unknown>; compiled: string | null }): void {
+  if (!key) return;
+  compiledAtCommit.set(key, entry);
+  while (compiledAtCommit.size > COMPILED_AT_COMMIT_MAX) {
+    compiledAtCommit.delete(compiledAtCommit.keys().next().value!);
+  }
+}
+
+/** The cache key of a compile from the manifest read `found`, or null when its commit is unknown. */
+function commitKey(project: GitBackedProject, found: { commit: string | null; path: string }, selection: string): string | null {
+  return found.commit ? [project.projectId, found.commit, found.path, selection].join('\0') : null;
+}
+
+/** Test seam: start from a cold cache. */
+export function __resetCompiledAtCommitForTests(): void {
+  compiledAtCommit.clear();
+}
+
+/**
  * Every prompt file the manifest names (agents and commands), read at `ref`.
  * A missing file is left out (the compile turns its agent off and names the
  * file in `manifest_issues`); any other read failure throws.
@@ -517,7 +555,7 @@ async function readManifestForCompile(
   project: GitBackedProject,
   ref: string,
   options: CompileReadOptions,
-): Promise<{ usable: Record<string, unknown>; issues: ManifestIssue[] } | null> {
+): Promise<{ usable: Record<string, unknown>; issues: ManifestIssue[]; found: { commit: string | null; path: string } } | null> {
   const found = await readManifestFromRepo(project, manifestCandidatePaths(project.manifestPath), ref, {
     forceRefresh: options.forceRefresh,
   });
@@ -526,7 +564,7 @@ async function readManifestForCompile(
   const { parsed, issues } = validateManifest(found.imports ? found.imports.raw : found.content);
   const usable = usableManifest(parsed, issues);
   options.onManifest?.(usable);
-  return { usable, issues };
+  return { usable, issues, found };
 }
 
 /**
@@ -557,7 +595,14 @@ export async function resolveCompiledAgentConfigForSession(
   const ref = baseRef?.trim() || project.defaultBranch;
   const read = await readManifestForCompile(project, ref, options);
   if (!read) return null;
-  return JSON.stringify(compileAgentConfig(read.usable, await readPromptFiles(project, read.usable, ref), [...read.issues]));
+  const key = commitKey(project, read.found, '*');
+  const hit = compiledAt(key);
+  if (hit) return hit.compiled;
+  // Every file is read at the commit the manifest came from: a sha read
+  // needs no mirror fetch, and all files come from one commit.
+  const compiled = JSON.stringify(compileAgentConfig(read.usable, await readPromptFiles(project, read.usable, read.found.commit ?? ref), [...read.issues]));
+  rememberCompiled(key, { raw: read.usable, compiled });
+  return compiled;
 }
 
 /**
@@ -590,6 +635,11 @@ export async function resolveSelectedAgentConfigForSession(
       agentName,
     );
   }
-  const issues = [...read.issues];
-  return JSON.stringify(compileSelectedAgentConfig(read.usable, agentName, await readPromptFiles(project, read.usable, ref), issues));
+  const key = commitKey(project, read.found, `agent:${agentName}`);
+  const hit = compiledAt(key);
+  if (hit?.compiled) return hit.compiled;
+  // Read at the manifest's own commit, as the full compile does.
+  const compiled = JSON.stringify(compileSelectedAgentConfig(read.usable, agentName, await readPromptFiles(project, read.usable, read.found.commit ?? ref), [...read.issues]));
+  rememberCompiled(key, { raw: read.usable, compiled });
+  return compiled;
 }

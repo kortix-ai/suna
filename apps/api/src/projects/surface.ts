@@ -146,7 +146,7 @@ export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
 
 // Git reads (consumed by config-releases/publish.ts and config-releases/base-tip.ts).
 export { resolveCommitSha, resolveCommitShaAt } from './git/commits';
-export { refreshIntervalMs, refreshMirror } from './git/mirror';
+export { refreshIntervalMs, refreshMirror, useSharedTipProof } from './git/mirror';
 export type { GitBackedProject } from './git/types';
 
 // Who may stop a running turn (consumed by channels/core/turn-stop.ts and

@@ -182,19 +182,16 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
       manifestPackages = manifestPiPackages(raw, input.agentName);
       manifestCodemode = manifestPiCodemode(raw, input.agentName);
     };
+    // `'tip-proof'`: the base ref was at the remote's tip within the refresh
+    // interval, proven by this process or adopted from another
+    // (projects/git/mirror.ts). The plain TTL read fetched all of a large
+    // repo's branches whenever this process had not fetched for 60 s: p50
+    // 742 ms, p90 4.7 s on prod for this step (2026-10-30).
+    const read = { onManifest, forceRefresh: 'tip-proof' as const };
     compiledAgentConfig =
       !(input.repositoryAccess ?? true)
-        ? await resolveSelectedAgentConfigForSession(
-            gitProject,
-            input.agentName,
-            input.baseRef,
-            { onManifest },
-          )
-          : await resolveCompiledAgentConfigForSession(
-              gitProject,
-              input.baseRef,
-              { onManifest },
-            );
+        ? await resolveSelectedAgentConfigForSession(gitProject, input.agentName, input.baseRef, read)
+        : await resolveCompiledAgentConfigForSession(gitProject, input.baseRef, read);
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
@@ -215,6 +212,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
       defaultBranch: input.defaultBranch,
       manifestPath: input.manifestPath,
       sessionAgent: input.agentName,
+      forceRefresh: 'tip-proof',
     });
   }
   return { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode };
