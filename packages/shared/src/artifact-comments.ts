@@ -33,6 +33,30 @@ export const artifactCommentAnchorSchema = z.discriminatedUnion('type', [
   }
 });
 
+const markPoint = z.object({ x: fraction, y: fraction }).strict();
+const markStyle = {
+  color: z.enum(['black', 'red', 'blue']),
+  width: z.number().finite().min(0.001).max(0.05),
+};
+export const artifactCommentMarkSchema = z.discriminatedUnion('tool', [
+  z.object({ tool: z.literal('pen'), ...markStyle, points: z.array(markPoint).min(2).max(1024) }).strict(),
+  z.object({ tool: z.literal('arrow'), ...markStyle, points: z.array(markPoint).length(2) }).strict(),
+  z.object({ tool: z.literal('rectangle'), ...markStyle, points: z.array(markPoint).length(2) }).strict(),
+]).superRefine((mark, ctx) => {
+  if (mark.tool === 'pen') return;
+  const [start, end] = mark.points;
+  if (!start || !end) return;
+  if (mark.tool === 'rectangle' ? start.x === end.x || start.y === end.y : start.x === end.x && start.y === end.y) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['points'], message: 'Mark endpoints must define a visible shape' });
+  }
+});
+export const artifactCommentMarksSchema = z.array(artifactCommentMarkSchema).max(64).superRefine((marks, ctx) => {
+  if (marks.reduce((total, mark) => total + mark.points.length, 0) > 8192) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Marks exceed the total point limit' });
+  }
+});
+export type ArtifactCommentMark = z.infer<typeof artifactCommentMarkSchema>;
+
 export type ArtifactCommentAnchor = z.infer<typeof artifactCommentAnchorSchema>;
 export type ArtifactTextAnchor = Extract<ArtifactCommentAnchor, { type: 'text' }>;
 export type ArtifactTextPosition = { start: number | null; end: number | null; outdated: boolean };

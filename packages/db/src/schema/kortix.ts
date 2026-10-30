@@ -8716,6 +8716,29 @@ export const artifactComments = kortixSchema.table('artifact_comments', {
   check('artifact_comments_body_check', sql`char_length(${table.body}) <= 10000 and (${table.deletedAt} is not null or char_length(${table.body}) >= 1)`),
 ]).enableRLS();
 
+export const artifactCommentScreenshotObjects = kortixSchema.table('artifact_comment_screenshot_objects', {
+  objectKey: text('object_key').primaryKey(),
+  uploadConfirmed: boolean('upload_confirmed').notNull().default(false),
+  sizeBytes: integer('size_bytes'),
+  projectId: uuid('project_id').notNull(),
+  commentId: uuid('comment_id'),
+  state: text('state').notNull().default('uploading').$type<'uploading' | 'attached' | 'deleting'>(),
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().default(sql`now() + interval '1 hour'`),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  leaseId: uuid('lease_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_artifact_screenshot_project').on(table.projectId),
+  index('idx_artifact_screenshot_comment').on(table.commentId),
+  index('idx_artifact_screenshot_due').on(table.nextAttemptAt).where(sql`${table.state} <> 'attached'`),
+  foreignKey({ name: 'artifact_screenshot_comment_fk', columns: [table.commentId], foreignColumns: [artifactComments.commentId] }).onDelete('set null'),
+  check('artifact_screenshot_state_check', sql`${table.state} in ('uploading', 'attached', 'deleting')`),
+  check('artifact_screenshot_attempts_check', sql`${table.attempts} >= 0`),
+  check('artifact_screenshot_attached_check', sql`${table.state} <> 'attached' or ${table.commentId} is not null`),
+  check('artifact_screenshot_key_check', sql`${table.objectKey} ~ ('^' || ${table.projectId}::text || '/artifact-comments/[0-9a-f-]{36}[.](png|webp)$')`),
+]).enableRLS();
+
 export const artifactCommentWriteLimits = kortixSchema.table('artifact_comment_write_limits', {
   artifactId: uuid('artifact_id').notNull(),
   actorKey: text('actor_key').notNull(),

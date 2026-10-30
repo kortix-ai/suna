@@ -1408,6 +1408,27 @@
       "when": 1793379800509,
       "tag": "20261030170320_base_tip_proven_at",
       "breakpoints": true
+    },
+    {
+      "idx": 201,
+      "version": "7",
+      "when": 1793382851000,
+      "tag": "20261030175411_artifact_comment_screenshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 202,
+      "version": "7",
+      "when": 1793382852000,
+      "tag": "20261030175412_artifact_screenshot_upload_confirmation",
+      "breakpoints": true
+    },
+    {
+      "idx": 203,
+      "version": "7",
+      "when": 1793382854000,
+      "tag": "20261030175414_artifact_screenshot_verified_size",
+      "breakpoints": true
     }
   ]
 }

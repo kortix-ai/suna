@@ -23989,7 +23989,23 @@
       "panelTitle": "Kommentare und Aktivität",
       "resizePanel": "Größe des Kommentarbereichs ändern",
       "unshareComments": "{count, plural, one {# Kommentar wird gelöscht.} other {# Kommentare werden gelöscht.}}",
-      "systemActor": "System"
+      "systemActor": "System",
+      "draw": "Feedback zeichnen",
+      "drawPen": "Stift",
+      "drawArrow": "Pfeil",
+      "drawRectangle": "Rechteck",
+      "drawBlack": "Schwarz",
+      "drawRed": "Rot",
+      "drawBlue": "Blau",
+      "drawUndo": "Strich rückgängig machen",
+      "drawPageChanged": "Die Seite hat sich geändert. Brich ab und zeichne erneut.",
+      "drawLimit": "Zeichenlimit erreicht. Mache einen Strich rückgängig, um fortzufahren.",
+      "openScreenshot": "Screenshot öffnen",
+      "drawingScreenshot": "Feedback-Screenshot",
+      "screenshotReadFailed": "Der Screenshot konnte nicht geladen werden.",
+      "screenshotMissing": "Screenshot nicht verfügbar. Die Zeichnung ist gespeichert.",
+      "screenshotCaptureFailed": "Screenshot nicht möglich. Dein Kommentar enthält die Zeichnung ohne Bild.",
+      "sendScreenshotLimit": "Diese Auswahl überschreitet 20 Screenshots oder 12 MiB pro kodierter Anfrage. Sende weniger Bildanhänge oder verwende ein reines Textmodell."
     }
   },
   "emailConnect": {
