@@ -665,7 +665,9 @@ describe('/copy and /export', () => {
   });
 
   test('the default export name is the slugged title plus the session id', () => {
-    expect(exportFileName('Fix the login bug!', '1a2b3c4d-xyz')).toBe('kortix-fix-the-login-bug-1a2b3c4d.md');
+    expect(exportFileName('Fix the login bug!', '1a2b3c4d-xyz')).toBe(
+      'kortix-fix-the-login-bug-1a2b3c4d.md',
+    );
     expect(exportFileName('', '1a2b3c4d-xyz')).toBe('kortix-1a2b3c4d.md');
   });
 });

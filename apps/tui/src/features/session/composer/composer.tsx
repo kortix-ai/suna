@@ -310,7 +310,7 @@ export function Composer({
   );
 
   return (
-    <box flexDirection="column" width={width}>
+    <box flexDirection="column" width={width} zIndex={1}>
       {panel}
 
       {picker === 'model' ? (

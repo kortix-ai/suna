@@ -20,4 +20,10 @@ export { StatusBar, type StatusBarProps } from './status-bar.tsx';
 export { Spinner, type SpinnerProps } from './spinner.tsx';
 export { Kbd, type KbdProps } from './kbd.tsx';
 export { Toast, type ToastKind, type ToastProps } from './toast.tsx';
-export { Splash, type SplashLine, type SplashProps, splashHeight } from './splash.tsx';
+export {
+  Splash,
+  type SplashLine,
+  type SplashProps,
+  splashHeight,
+  splashIndent,
+} from './splash.tsx';

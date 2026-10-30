@@ -17,7 +17,11 @@ export {
 export { Composer, type ComposerProps } from './composer/composer.tsx';
 export { COMPOSER_KEYMAP } from './composer/keys.ts';
 export { DraftView, type DraftViewProps } from './draft-view.tsx';
-export { PromptInput, type PromptInputMetrics, type PromptInputProps } from './composer/prompt-input.tsx';
+export {
+  PromptInput,
+  type PromptInputMetrics,
+  type PromptInputProps,
+} from './composer/prompt-input.tsx';
 export {
   SessionPrompts,
   type SessionState,

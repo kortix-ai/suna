@@ -1,5 +1,5 @@
 /**
- * The boot screen: the KORTIX wordmark and one line per boot step while the
+ * The boot screen: the Kortix symbol splash and one line per boot step while the
  * TUI proves the token, resolves the project and (with `--new`) creates the
  * session.
  *
@@ -10,11 +10,10 @@
  * optional step and shows the reason as a toast.
  */
 
-import { KORTIX_WORDMARK_WIDTH } from '@kortix/shared/wordmark';
 import { useTerminalDimensions } from '@opentui/react';
 
 import { glyph, theme } from '../../theme.ts';
-import { Spinner, Splash } from '../../ui/index.ts';
+import { Spinner, Splash, splashIndent } from '../../ui/index.ts';
 
 export type BootStepState = 'waiting' | 'running' | 'done' | 'failed';
 
@@ -40,10 +39,8 @@ function stepGlyph(state: BootStepState): { mark: string; color: string } {
 export function BootScreen({ steps, version }: BootScreenProps) {
   const dimensions = useTerminalDimensions();
   const width = dimensions.width;
-  // The same left edge `Splash center` computes, so the steps line up under
-  // the wordmark.
-  const blockWidth = Math.min(Math.max(KORTIX_WORDMARK_WIDTH, 40), width - 2);
-  const blockIndent = Math.max(Math.floor((width - blockWidth) / 2), 0);
+  // The left edge `Splash center` uses, so the steps line up under the symbol.
+  const blockIndent = splashIndent(width, true);
 
   return (
     <box
@@ -53,30 +50,36 @@ export function BootScreen({ steps, version }: BootScreenProps) {
       backgroundColor={theme.bg}
       justifyContent="center"
     >
-      <Splash width={width} center tagline={`Kortix CompanyOS · tui ${version}`} />
-      <box flexDirection="column" paddingLeft={blockIndent} marginTop={1}>
-        {steps.map((step) => {
-          const { mark, color } = stepGlyph(step.state);
-          return (
-            <box key={step.id} flexDirection="row" height={1}>
-              {step.state === 'running' ? (
-                <Spinner />
-              ) : (
-                <text fg={color} wrapMode="none">
-                  {mark}
+      <Splash width={width} center ambient tagline={`Kortix CompanyOS · tui ${version}`} />
+      {/* The steps are one left-aligned block, centred under the symbol. */}
+      <box flexDirection="column" alignItems="center" marginTop={1}>
+        <box flexDirection="column" alignItems="flex-start">
+          {steps.map((step) => {
+            const { mark, color } = stepGlyph(step.state);
+            return (
+              <box key={step.id} flexDirection="row" height={1}>
+                {step.state === 'running' ? (
+                  <Spinner />
+                ) : (
+                  <text fg={color} wrapMode="none">
+                    {mark}
+                  </text>
+                )}
+                <text fg={step.state === 'waiting' ? theme.faint : theme.fg} wrapMode="none">
+                  {` ${step.label}`}
                 </text>
-              )}
-              <text fg={step.state === 'waiting' ? theme.faint : theme.fg} wrapMode="none">
-                {` ${step.label}`}
-              </text>
-              {step.detail ? (
-                <text fg={step.state === 'failed' ? theme.danger : theme.faint} wrapMode="none">
-                  {`  ${step.detail}`.slice(0, Math.max(width - blockIndent - step.label.length - 4, 0))}
-                </text>
-              ) : null}
-            </box>
-          );
-        })}
+                {step.detail ? (
+                  <text fg={step.state === 'failed' ? theme.danger : theme.faint} wrapMode="none">
+                    {`  ${step.detail}`.slice(
+                      0,
+                      Math.max(width - blockIndent - step.label.length - 4, 0),
+                    )}
+                  </text>
+                ) : null}
+              </box>
+            );
+          })}
+        </box>
       </box>
     </box>
   );

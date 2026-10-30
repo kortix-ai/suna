@@ -202,7 +202,9 @@ export function InlinePicker({
         visible.map((item, offset) => {
           const isHeader = headerIds.has(item.id);
           const isSelected = start + offset === index && !isHeader;
-          const label = isHeader ? item.label : `${item.glyph ? `${item.glyph} ` : '  '}${item.label}`;
+          const label = isHeader
+            ? item.label
+            : `${item.glyph ? `${item.glyph} ` : '  '}${item.label}`;
           const right = item.right ?? '';
           const padded = layoutRow(label, right, inner - 1);
           const fg = isHeader ? theme.faint : isSelected ? theme.fg : theme.dim;

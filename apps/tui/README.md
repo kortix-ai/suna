@@ -229,6 +229,11 @@ selection is on the clipboard. Nothing in the app needs a click. `kortix tui
 --mouse` (`KORTIX_TUI_MOUSE=1`) gives the mouse to the app instead, and
 then Shift+drag is the way to select natively in most terminals.
 
+One exception: while the Kortix symbol is on screen (the empty state), the
+app takes the mouse so a click on the symbol can start Game of Life from it
+(`/life` does the same from the keyboard). Shift+drag selects there; the
+mouse goes back to the terminal as soon as a session shows.
+
 ### Layout: `/ui`
 
 Every region around the chat is a module, off until you turn it on:

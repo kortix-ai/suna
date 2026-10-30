@@ -48,8 +48,14 @@ describe('tui.json', () => {
   });
 
   test('the flag outranks the saved sidebar for one run', () => {
-    const saved = { ui: { ...DEFAULT_UI, sidebar: { on: true, side: 'right' as const } }, onboarded: true };
-    expect(initialUi({ KORTIX_TUI_SIDEBAR: '0' }, saved).sidebar).toEqual({ on: false, side: 'right' });
+    const saved = {
+      ui: { ...DEFAULT_UI, sidebar: { on: true, side: 'right' as const } },
+      onboarded: true,
+    };
+    expect(initialUi({ KORTIX_TUI_SIDEBAR: '0' }, saved).sidebar).toEqual({
+      on: false,
+      side: 'right',
+    });
     expect(initialUi({ KORTIX_TUI_SIDEBAR: '1' }, DEFAULT_PREFS).sidebar.on).toBe(true);
     expect(initialUi({}, saved).sidebar.on).toBe(true);
   });

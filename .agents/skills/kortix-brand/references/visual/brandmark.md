@@ -91,11 +91,11 @@ Duplicate files to delete in a cleanup change (not an agent decision): `apps/web
 
 | | app | marketing | mobile | deck | image | email | CLI |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Mark | `KortixLogo` | symbol or logo in the nav; one hero mark at most | `KortixLogo`; hero symbol 88 to 150pt | symbol, top-left | one mark, composited | logo PNG, hosted | ASCII wordmark in `terminal-accent` (CLI landing, TUI splash; D31) |
+| Mark | `KortixLogo` | symbol or logo in the nav; one hero mark at most | `KortixLogo`; hero symbol 88 to 150pt | symbol, top-left | one mark, composited | logo PNG, hosted | CLI: ASCII wordmark in `terminal-accent` (landing, D31). TUI: the pixel symbol, monochrome (boot and empty state, D32) |
 | Light | black file or `currentColor` | same | `color` prop picks the file | follow the theme | by background | black PNG | n/a |
 | Dark | white file or `currentColor` | same | same | same | white file | n/a: email ships light only (Q34) | n/a |
 
-The email wordmark is the logo PNG, hosted, not bold text. The CLI banner is a block-letter ASCII "KORTIX" with the tagline. It ignores `NO_COLOR` today, and the same art ships inside customer-site templates. The ASCII wordmark is sanctioned on the CLI landing screen and the TUI boot and empty-session splash (D31). On customer output it stays OPEN (D8c).
+The email wordmark is the logo PNG, hosted, not bold text. The CLI banner is a block-letter ASCII "KORTIX" with the tagline. It ignores `NO_COLOR` today, and the same art ships inside customer-site templates. The ASCII wordmark is sanctioned on the CLI landing screen (D31). The TUI draws the pixel symbol from `@kortix/shared/pixel-mark` instead, monochrome (D32). On customer output it stays OPEN (D8c).
 
 ## App icons, favicons, share images
 

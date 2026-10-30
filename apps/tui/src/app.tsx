@@ -79,6 +79,8 @@ import { theme } from './theme.ts';
 import { Panel, type SplashLine, StatusBar, Toast, type ToastKind } from './ui/index.ts';
 
 const SIDEBAR_WIDTH = 28;
+/** The draft's tab id: no session has it. */
+const DRAFT_TAB = 'draft';
 /** Where `/feedback` sends a bug report or an idea. */
 const FEEDBACK_URL = 'https://github.com/kortix-ai/suna/issues/new';
 /** Below this width the terminal panel takes the whole main area. */
@@ -256,6 +258,8 @@ export function App({
   );
   const [seed, setSeed] = useState<{ text: string; seq: number } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  /** `/life`: each bump starts Game of Life on the splash. */
+  const [lifeSignal, setLifeSignal] = useState(0);
   // Hoisted from `SessionView`: the ports API, the links rows and the
   // runtime's capabilities. The overlays they feed live at the root.
   const [portsApi, setPortsApi] = useState<UsePortsResult | null>(null);
@@ -328,7 +332,9 @@ export function App({
     (projectId ? projectId.slice(0, 8) : 'no project');
   const accountName =
     accounts.data?.find((account) => account.account_id === accountId)?.name ?? null;
-  const hostLabel = host.source === 'env' ? 'env' : host.name;
+  // An env-token host has no name: its address is what tells it apart.
+  const hostLabel =
+    host.source === 'env' ? hostOrigin(host.backendUrl).replace(/^https?:\/\//, '') : host.name;
 
   const flags = useCommandFlags(projectId);
 
@@ -370,16 +376,12 @@ export function App({
     .filter(Boolean)
     .join(' · ');
 
-  const splashLines = useMemo<SplashLine[]>(() => {
-    const lines: SplashLine[] = [
-      { label: 'host', value: `${hostLabel}  ${hostOrigin(host.backendUrl)}` },
-    ];
-    if (host.userEmail) lines.push({ label: 'user', value: host.userEmail });
-    if (accountName) lines.push({ label: 'account', value: accountName });
-    lines.push({ label: 'project', value: projectName });
-    if (title) lines.push({ label: 'session', value: title });
-    return lines;
-  }, [hostLabel, host.backendUrl, host.userEmail, accountName, projectName, title]);
+  // The empty state is the symbol, one hint and where you are — one quiet
+  // line. The host, the user and the ids are `/status`.
+  const splashLines = useMemo<SplashLine[]>(
+    () => [{ label: '', value: [projectName, accountName].filter(Boolean).join(' · ') }],
+    [projectName, accountName],
+  );
 
   // The terminal window's title follows the open session (the `title`
   // module). Cleared on the way out so the shell gets its own title back.
@@ -696,6 +698,8 @@ export function App({
         case 'customize':
         case 'account':
           return openScreen(command);
+        case 'life':
+          return setLifeSignal((value) => value + 1);
         case 'help':
           return setOverlay('help');
         case 'quit':
@@ -796,8 +800,11 @@ export function App({
     const row = sessions.sessions.find((entry) => entry.session_id === id);
     return { sessionId: id, title: row ? sessionTitle(row) : id.slice(0, 8) };
   });
+  // The draft is a tab too: the session it is about to start (opencode's
+  // "New session" tab), so the bar never prints an empty-state sentence.
+  if (!sessionId && route === 'session') tabs.push({ sessionId: DRAFT_TAB, title: 'New session' });
   const tabsNode = tabsShown ? (
-    <TabsBar tabs={tabs} activeId={sessionId} width={dimensions.width} />
+    <TabsBar tabs={tabs} activeId={sessionId ?? DRAFT_TAB} width={dimensions.width} />
   ) : null;
   const mainWidth = Math.max(dimensions.width - (showSidebar ? SIDEBAR_WIDTH : 0), 20);
   const borderless = !showSidebar;
@@ -914,6 +921,7 @@ export function App({
             showHeader={ui.header.on}
             showTray={ui.tray.on}
             forwardedPorts={forwardedPorts}
+            lifeSignal={lifeSignal}
             onPortsApi={onPortsApi}
             onLinks={setLinks}
           />
@@ -929,6 +937,7 @@ export function App({
             splashLines={splashLines}
             trayLeft={trayLeft}
             showTray={ui.tray.on}
+            lifeSignal={lifeSignal}
             onStart={(prompt) => start(prompt)}
             onCommand={runCommand}
             onToast={pushToast}

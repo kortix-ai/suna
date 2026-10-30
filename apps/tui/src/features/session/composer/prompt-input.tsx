@@ -292,7 +292,7 @@ export function PromptInput({
   );
 
   return (
-    <box flexDirection="column" width={width}>
+    <box flexDirection="column" width={width} backgroundColor={theme.bg}>
       {menuOpen ? (
         <SlashMenu entries={entries} selected={selected} width={width} query={query ?? ''} />
       ) : null}

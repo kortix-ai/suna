@@ -40,7 +40,9 @@ const HOST: ResolvedHost = {
 
 describe('row budget', () => {
   test('a one-line composer reserves its chrome plus one row', () => {
-    expect(composerReserve({ rows: 1, aboveRows: 0, menuOpen: false })).toBe(1 + COMPOSER_CHROME_ROWS);
+    expect(composerReserve({ rows: 1, aboveRows: 0, menuOpen: false })).toBe(
+      1 + COMPOSER_CHROME_ROWS,
+    );
   });
 
   test('an open slash menu reserves exactly the rows it draws', () => {
@@ -61,8 +63,12 @@ describe('row budget', () => {
   });
 
   test('the transcript never goes below its floor, however big the composer gets', () => {
-    expect(transcriptRows(10, { rows: 6, aboveRows: 12, menuOpen: true }, true)).toBe(TRANSCRIPT_MIN_ROWS);
-    expect(transcriptRows(1, { rows: 6, aboveRows: 12, menuOpen: true }, true)).toBe(TRANSCRIPT_MIN_ROWS);
+    expect(transcriptRows(10, { rows: 6, aboveRows: 12, menuOpen: true }, true)).toBe(
+      TRANSCRIPT_MIN_ROWS,
+    );
+    expect(transcriptRows(1, { rows: 6, aboveRows: 12, menuOpen: true }, true)).toBe(
+      TRANSCRIPT_MIN_ROWS,
+    );
   });
 });
 

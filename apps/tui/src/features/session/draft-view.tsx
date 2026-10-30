@@ -32,6 +32,8 @@ export interface DraftViewProps {
   trayLeft: string;
   /** The tray module: the row under the input. Default on. */
   showTray?: boolean;
+  /** Each new value starts Game of Life on the splash (`/life`). */
+  lifeSignal?: number;
   /** Create the session with this first prompt. Resolves when it is open. */
   onStart(prompt: string): Promise<void>;
   onCommand(command: CommandName, args: string): void;
@@ -50,6 +52,7 @@ export function DraftView({
   splashLines,
   trayLeft,
   showTray = true,
+  lifeSignal,
   onStart,
   onCommand,
   onToast,
@@ -97,6 +100,9 @@ export function DraftView({
   );
 
   const frame = borderless ? 0 : 2;
+  // Rows the splash may fill (and Game of Life may run over): everything
+  // above the input box (3 rows) and the tray.
+  const splashArea = Math.max(height - frame - 3 - (showTray ? 1 : 0), 6);
   const innerWidth = Math.max(width - frame - 2, 12);
   const seed = restore && (!hostSeed || restore.seq > hostSeed.seq) ? restore : hostSeed;
 
@@ -126,31 +132,34 @@ export function DraftView({
         paddingRight={1}
         overflow="hidden"
       >
-        <box
-          flexDirection="column"
-          flexGrow={1}
-          flexShrink={1}
-          justifyContent="center"
-          overflow="hidden"
-        >
+        {/* The splash is the background: a fixed layer sized from the whole
+            area, never from the input. The slash menu, a picker or a longer
+            draft draws OVER it and nothing moves (measured: it used to slide
+            up and clip when the menu opened). */}
+        <box position="absolute" top={0} left={1} width={innerWidth} height={splashArea} zIndex={0}>
           <Splash
             width={innerWidth}
             center
+            height={splashArea}
+            lifeSignal={lifeSignal}
             tagline={
               context.hasProject
-                ? 'Type a prompt to start a session. / lists every command.'
-                : 'No project yet. Type /projects to pick one.'
+                ? 'Type a prompt to start. / for commands.'
+                : 'No project yet. /projects picks one.'
             }
             lines={splashLines}
           />
-          {starting ? (
-            <box paddingLeft={2} marginTop={1}>
-              <Spinner label="Starting a session…" />
-            </box>
-          ) : null}
         </box>
+        <box flexGrow={1} flexShrink={1} />
+        {starting ? (
+          <box height={1} justifyContent="center" flexDirection="row" zIndex={1}>
+            <Spinner label="Starting a session…" />
+          </box>
+        ) : null}
 
-        {panel}
+        <box flexDirection="column" flexShrink={0} zIndex={1}>
+          {panel}
+        </box>
 
         <PromptInput
           focused={focused && !panel && !starting}

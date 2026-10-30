@@ -1,10 +1,10 @@
 /**
  * The block-letter KORTIX wordmark the terminal surfaces print.
  *
- * One copy for the CLI landing banner (`apps/cli/src/banner.ts`) and the TUI
- * boot and empty-session splash (`apps/tui/src/ui/splash.tsx`). Brand
- * decision D31 sanctions it there, in `terminal-accent`. Rows are plain text
- * with no indent and no color: each caller adds its own.
+ * The CLI landing banner (`apps/cli/src/banner.ts`) prints it, in
+ * `terminal-accent` (brand decision D31). The TUI draws the pixel symbol
+ * instead (`@kortix/shared/pixel-mark`, D32). Rows are plain text with no
+ * indent and no color: each caller adds its own.
  */
 export const KORTIX_WORDMARK: readonly string[] = [
   '██╗  ██╗ ██████╗ ██████╗ ████████╗██╗██╗  ██╗',

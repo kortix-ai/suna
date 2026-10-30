@@ -156,6 +156,8 @@ export interface SessionViewProps {
   showTray?: boolean;
   /** Local ports forwarded from this sandbox, for the info panel. */
   forwardedPorts?: readonly number[];
+  /** Each new value starts Game of Life on the empty-session splash (`/life`). */
+  lifeSignal?: number;
   /** Ports panel (`Alt+P`) state, hoisted so `app.tsx` can render its overlay
    *  at the root — same reason `onMetrics` hoists composer metrics. */
   onPortsApi?: (api: UsePortsResult) => void;
@@ -198,6 +200,7 @@ export function SessionView({
   showHeader = true,
   showTray = true,
   forwardedPorts = [],
+  lifeSignal,
   onPortsApi,
   onLinks,
   readHealth = readSessionHealth,
@@ -300,6 +303,14 @@ export function SessionView({
   );
   const promptOpen = session.questions.length > 0 || session.permissions.length > 0;
   const rows = transcriptRows(contentRows, metrics, promptOpen, showHeader ? 1 : 0);
+  // The empty-session splash is sized as if the input were one line with no
+  // menu open, so it never moves while you type or open `/`.
+  const restingRows = transcriptRows(
+    contentRows,
+    { rows: 1, aboveRows: 0, menuOpen: false },
+    promptOpen,
+    showHeader ? 1 : 0,
+  );
 
   const header = useMemo(() => {
     const parts: string[] = [];
@@ -356,13 +367,27 @@ export function SessionView({
             ) : null}
 
             {empty ? (
-              <box flexDirection="column" height={rows} paddingTop={1} overflow="hidden">
-                <Splash
+              <>
+                {/* A fixed background layer: the input and the menu draw over it. */}
+                <box
+                  position="absolute"
+                  top={showHeader ? 1 : 0}
+                  left={1}
                   width={innerWidth}
-                  tagline="Type a prompt to start. / lists every command."
-                  lines={splashLines}
-                />
-              </box>
+                  height={restingRows}
+                  zIndex={0}
+                >
+                  <Splash
+                    width={innerWidth}
+                    height={restingRows}
+                    center
+                    lifeSignal={lifeSignal}
+                    tagline="Type a prompt to start. / for commands."
+                    lines={splashLines}
+                  />
+                </box>
+                <box height={rows} flexShrink={0} />
+              </>
             ) : (
               <Transcript
                 session={session}

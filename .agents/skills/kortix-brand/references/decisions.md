@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-30
 
+### D32 The TUI shows the pixel Kortix symbol, monochrome; turquoise only on the selection marker and the cursor
+- **Date:** 2026-10-30
+- **Decision:** The TUI's boot screen and empty state draw the Kortix symbol from `PIXEL_KORTIX_ROWS` (now `@kortix/shared/pixel-mark`, the grid the web's pixel mark, the merch chips and My Kortix's agent mark use), solid cells in the foreground color and curve cells at half ink. No block-letter wordmark and no turquoise on the symbol. The empty state is the symbol, one hint and one quiet line, centred. The dither field (the web CTA's Bayer-dithered fbm, in braille) runs only on the boot screen. A click on the symbol, or `/life`, plays Conway's Game of Life seeded from it, as the web's `/game-of-life` page does. `terminal-accent` stays on two TUI marks: the `▌` selection marker and the text cursor. The CLI banner keeps the turquoise wordmark (D31).
+- **Why:** founder, 2026-10-30, on the turquoise wordmark splash: "can u make this not be turqoise make it the be the actual like kortix symbol [...] do the whole conway game of life thing if u Click it", "go through the web codebase and takeover as necessary like we already have this ascii style going", and on the result: "it can be giga-minimal but everything that's centered and clean".
+- **Where:** `apps/tui/src/ui/splash.tsx`, `apps/tui/src/lib/life.ts`, `apps/tui/src/lib/dither.ts`, `packages/shared/src/pixel-mark.ts`, `apps/tui/src/theme.ts`, `visual/brandmark.md`, `visual/color.md`.
+- **Supersedes:** D31 for the TUI: the wordmark on the TUI splash, and turquoise on the TUI wordmark.
+- **Source:** the `tui-session-first` branch.
+
 ### D31 The terminal accent is turquoise; the ASCII wordmark is sanctioned in the CLI and the TUI
 - **Date:** 2026-10-30
 - **Decision:** The CLI and the TUI share one accent, `terminal-accent` (turquoise; the CLI prints it as ANSI cyan). It marks three things only: the block-letter KORTIX wordmark, the one-column `▌` selection marker, and the text cursor. Focus borders, prompts and highlights stay monochrome. The ASCII wordmark in `apps/cli/src/banner.ts` is sanctioned on the CLI landing screen and on the TUI boot and empty-session splash. Customer output (D8c) is not affected.

@@ -101,6 +101,7 @@ export function UiPanel({ ui, width, welcome = false, onChange, onClose }: UiPan
       bottomTitleAlignment="right"
       flexDirection="column"
       width={width}
+      backgroundColor={theme.bg}
       paddingLeft={1}
       paddingRight={1}
     >

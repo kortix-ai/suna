@@ -413,6 +413,11 @@ export const COMMANDS = [
     group: 'app',
   },
   {
+    name: 'life',
+    description: "Play Conway's Game of Life from the Kortix symbol. Clicking the symbol does too.",
+    group: 'app',
+  },
+  {
     name: 'help',
     aliases: ['keys', '?'],
     description: 'Show every command and key.',

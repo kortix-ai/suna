@@ -242,6 +242,7 @@ function StatusPanel({
       borderColor={theme.border}
       title=" Status "
       titleColor={theme.dim}
+      backgroundColor={theme.bg}
       bottomTitle=" Esc close "
       bottomTitleAlignment="right"
       flexDirection="column"

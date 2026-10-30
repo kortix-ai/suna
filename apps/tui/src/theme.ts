@@ -5,8 +5,8 @@
  * monochrome surfaces, one earned accent, no decorative color. `accent` is
  * the monochrome emphasis (white on dark). `brand` is the terminal turquoise
  * the `kortix` CLI banner prints (`apps/cli/src/banner.ts`, ANSI cyan; brand
- * decision D31), rationed to three marks: the KORTIX wordmark, the one-column
- * `▌` selection marker, and the text cursor. Focus borders, prompts and
+ * decisions D31, D32), rationed to two marks: the one-column `▌` selection
+ * marker and the text cursor. The Kortix symbol, focus borders, prompts and
  * highlights stay monochrome: turquoise on every focused frame was too much.
  *
  * Every color a component draws comes from this file — a component never
