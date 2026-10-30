@@ -850,6 +850,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "DELETE|v1|projects|:projectId|sessions|:sessionId|turns|:turnId|share",
   "GET|v1|projects|:projectId|sessions|:sessionId|turns|:turnId|share",
   "PUT|v1|projects|:projectId|sessions|:sessionId|turns|:turnId|share",
+  "GET|v1|projects|:projectId|sessions|:sessionId|usage",
   "GET|v1|projects|:projectId|sessions|:sessionId|watch",
   "PUT|v1|projects|:projectId|sessions|:sessionId|watch",
   "POST|v1|projects|:projectId|sessions|warm",

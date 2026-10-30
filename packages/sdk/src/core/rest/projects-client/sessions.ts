@@ -2493,3 +2493,54 @@ export async function getSessionModelUsage(
     ),
   );
 }
+
+/** The model usage of one session or of a session tree, from the gateway's request record. */
+export interface SessionUsageTotals {
+  /** Every dollar the model requests cost, in USD: `kortix_cost + provider_cost`. */
+  cost: number;
+  /** Debited from the Kortix wallet, in USD. */
+  kortix_cost: number;
+  /** Paid to the account's own provider key, in USD. */
+  provider_cost: number;
+  request_count: number;
+  error_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cache_write_tokens: number;
+}
+
+/** One session of a `SessionUsage` tree. */
+export interface SessionUsageEntry extends SessionUsageTotals {
+  session_id: string;
+  /** Null for the session the read starts at. */
+  parent_session_id: string | null;
+  /** 0 for the session the read starts at. */
+  depth: number;
+  title: string | null;
+  agent_name: string | null;
+  status: string;
+  created_at: string;
+}
+
+export interface SessionUsage {
+  session_id: string;
+  currency: 'USD';
+  /** The sum over `sessions`. */
+  total: SessionUsageTotals;
+  /** The session first, then every session it started that the caller may open, depth-first, oldest child first. */
+  sessions: SessionUsageEntry[];
+  /** Started sessions the caller may not open. Their cost is not in `total`. */
+  hidden_sessions: number;
+  /** True when the read stopped at its limit (10 levels, 500 sessions). */
+  truncated: boolean;
+}
+
+/** What a session and every session it started cost, in USD, from the gateway's
+ *  request record. A sub-agent in the session's sandbox bills under the session
+ *  itself, so its cost is in the session's own entry. */
+export async function getSessionUsage(projectId: string, sessionId: string): Promise<SessionUsage> {
+  return unwrap(
+    await backendApi.get<SessionUsage>(`/projects/${projectId}/sessions/${sessionId}/usage`, { showErrors: false }),
+  );
+}
