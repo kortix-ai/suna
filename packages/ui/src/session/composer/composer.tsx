@@ -48,7 +48,6 @@ import { type ModelDefaultControls } from '../models/model-selector';
 import { useModelConnectionGate } from '../models/use-model-connection-gate';
 import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
 import { useComposerDropZone } from './composer-drop-zone';
-import { useComposerEscapeStop } from './hooks/use-composer-escape-stop';
 import type { DraftScope, StoredDraft } from './draft/composer-draft';
 import { finishedDraftUploads, keepUnsentUploadFile, restoreDraftUploads } from './draft/draft-uploads';
 import { useComposerDraft } from './draft/use-composer-draft';
@@ -523,7 +522,6 @@ function ComposerImpl(props: SessionChatInputProps) {
   runtimeReady = true,
   onStop,
   stopDisabled = false,
-  canStop = true,
   isSending = false,
   rewind,
   agents = EMPTY_AGENTS,
@@ -1253,12 +1251,6 @@ function ComposerImpl(props: SessionChatInputProps) {
     !isEmpty ||
     attachedFiles.length > 0 ||
     (!lockForQuestion && (quotes.length > 0 || pastes.length > 0));
-  useComposerEscapeStop({
-    editorElement,
-    enabled: isBusy && canStop && !stopDisabled && !isSending && !lockForQuestion && !props.submitLabel,
-    hasDraft: canSubmit,
-    onStop,
-  });
   /**
    * No agent may run this prompt. Refused here rather than at the server:
    * `lockForQuestion` is exempt because answering an open question is not a new
