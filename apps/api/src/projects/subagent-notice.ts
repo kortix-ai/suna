@@ -191,15 +191,13 @@ async function stillWorking(childId: string): Promise<boolean> {
 
 /**
  * The child's final report: the newest assistant text after the last user
- * message (the turn that just ended), as kortixd reads it for a blocking call.
+ * message (the turn that just ended), from the API's copy of its session log.
+ * pi's turn-end relay flushes that log before it reports the turn end.
  */
 async function readReport(child: ProjectSessionRow): Promise<{ text: string; error?: string }> {
   try {
     const transcript = await buildSessionTranscriptDigest({
       session: child,
-      projectId: child.projectId,
-      accountId: child.accountId,
-      userId: child.createdBy ?? '',
       limit: READ_BACK_MESSAGES,
       maxChars: 700,
       full: true,
