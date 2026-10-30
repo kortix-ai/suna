@@ -89,16 +89,34 @@ export function registerPeerMessagesRoutes(): void {
     method: 'get', path: '/{projectId}/sessions/{sessionId}/reachable', tags: ['sessions'],
     summary: 'List the agents a session can message',
     description:
-      '`scope=mine` (default): its parent, children, lead and teammates. `scope=project`: every live session of the project the caller may see. ' +
+      '`scope=mine` (default): its parent, children, lead and teammates. `scope=project`: every live session of the project the caller may see; ' +
+      'with `project_id`, of that project of the account instead. ' +
       'Each row says how it relates to the session, its board state, its inbound setting and whether a message would reach it.',
     ...auth,
-    request: { params: SessionParams, query: z.object({ scope: ReachableScopeSchema.optional() }) },
+    request: {
+      params: SessionParams,
+      query: z.object({
+        scope: ReachableScopeSchema.optional(),
+        // With scope=project: list another project of the account, as the caller's person sees it.
+        project_id: z.string().uuid().optional(),
+      }),
+    },
     responses: { 200: json(ReachableAgentsSchema, 'The session and the agents it can reach'), ...errors(400, 403, 404) },
   }), async (c) => {
     const { projectId, sessionId } = c.req.valid('param');
+    const query = c.req.valid('query');
     const access = await authorize(c, projectId, sessionId, 'speak');
     if (!access.ok) return access.response;
-    return c.json(await reachableAgents({ self: access.session, scope: c.req.valid('query').scope ?? 'mine', caller: access.caller }), 200);
+    try {
+      return c.json(await reachableAgents({
+        self: access.session,
+        scope: query.scope ?? (query.project_id ? 'project' : 'mine'),
+        caller: access.caller,
+        projectId: query.project_id ?? null,
+      }), 200);
+    } catch (err) {
+      return peerError(c, err);
+    }
   });
 
   projectsApp.openapi(createRoute({

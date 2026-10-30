@@ -7,7 +7,7 @@
  *
  * | Route | Body | Answer |
  * | --- | --- | --- |
- * | `GET /projects/:id/sessions/:sid/reachable?scope=` | none | `200 ReachableAgents` |
+ * | `GET /projects/:id/sessions/:sid/reachable?scope=&project_id=` | none | `200 ReachableAgents`; `project_id` (with `scope=project`) lists another project of the account as the caller's person sees it |
  * | `POST /projects/:id/sessions/:sid/peer-messages` (`:sid` = sender) | `PeerMessageSendBody` | `200 PeerMessageSendResult`; `409` ambiguous `to` |
  * | `GET /projects/:id/sessions/:sid/peer-messages?direction=in\|out` | none | `200 { messages: PeerMessage[] }` |
  * | `POST /projects/:id/sessions/:sid/peer-messages/:mid/approve` (`:sid` = receiver) | none | `200 PeerMessage` |

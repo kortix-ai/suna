@@ -174,10 +174,25 @@ async function describe(self: SessionRow, rows: SessionRow[], caller: PeerCaller
   });
 }
 
-/** `list_agents`: the sessions `self` can reach, the ones the caller may see. */
-export async function reachableAgents(input: { self: SessionRow; scope: ReachableScope; caller: PeerCaller }): Promise<ReachableAgents> {
+/**
+ * `list_agents`: the sessions `self` can reach, the ones the caller may see.
+ * `projectId` (scope `project` only) lists another project of the account;
+ * the caller's person must be able to read its sessions, or the list is empty.
+ */
+export async function reachableAgents(input: {
+  self: SessionRow;
+  scope: ReachableScope;
+  caller: PeerCaller;
+  projectId?: string | null;
+}): Promise<ReachableAgents> {
   const { self, caller } = input;
-  const candidates = input.scope === 'project' ? await projectSessionsOf(self.projectId) : await circleOf(self);
+  const otherProject = input.projectId && input.projectId !== self.projectId ? input.projectId : null;
+  if (otherProject) {
+    const [project] = await db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, otherProject)).limit(1);
+    if (!project || project.accountId !== self.accountId) throw new PeerMessageError(404, 'Project not found', 'project_not_found');
+    if (input.scope !== 'project') throw new PeerMessageError(400, 'project_id needs scope=project', 'project_id_needs_project_scope');
+  }
+  const candidates = input.scope === 'project' ? await projectSessionsOf(otherProject ?? self.projectId) : await circleOf(self);
   const others = candidates.filter((row) => row.sessionId !== self.sessionId);
   const visible = await maySeeSessions(caller.userId, [...(await loadSessionAccessRows(others.map((row) => row.sessionId))).values()]);
   const described = await describe(self, [self, ...others.filter((row) => visible.has(row.sessionId))], caller);

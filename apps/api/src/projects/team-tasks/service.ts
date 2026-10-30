@@ -45,9 +45,14 @@ export type TeamCaller =
   | { kind: 'session'; sessionId: string; handle: string; role: 'lead' | 'teammate' }
   | { kind: 'person'; userId: string };
 
-/** `true` when `metadata` makes the session a teammate of `leadSessionId`. */
+/**
+ * `true` when `metadata` makes the session a teammate of `leadSessionId`:
+ * `team_lead` names the lead AND the lead created it (`spawned_by_session`,
+ * server-managed). A `team_lead` alone is never trusted.
+ */
 export function isTeammateOf(metadata: unknown, leadSessionId: string): boolean {
-  return sessionTeamLead(metadata) === leadSessionId;
+  return sessionTeamLead(metadata) === leadSessionId &&
+    ((metadata ?? {}) as Record<string, unknown>).spawned_by_session === leadSessionId;
 }
 
 /** The handle a team uses for a session: its `agent_handle`, else its agent name and short id. */
@@ -65,6 +70,7 @@ export async function listTeammates(leadSessionId: string) {
     .from(projectSessions)
     .where(and(
       sql`${projectSessions.metadata}->>'team_lead' = ${leadSessionId}`,
+      sql`${projectSessions.metadata}->>'spawned_by_session' = ${leadSessionId}`,
       sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`,
     ))
     .orderBy(asc(projectSessions.createdAt))
@@ -305,4 +311,49 @@ export async function loadLeadRow(projectId: string, leadSessionId: string) {
     .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.sessionId, leadSessionId)))
     .limit(1);
   return row ?? null;
+}
+
+/** Runtime-context key kortixd gives a teammate: its lead's session id. */
+export const TEAM_LEAD_RUNTIME_CONTEXT_KEY = 'kortix.team.lead' as const;
+const AGENT_HANDLE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const RESERVED_HANDLES = new Set(['parent', 'main']);
+
+/**
+ * `POST /projects/:id/sessions` with the multi-agent metadata a box sends for
+ * a child (`agent({ name })`, a teammate). Null when the request may go on.
+ *
+ * - `team_lead` (and the runtime context `kortix.team.lead`) must name the
+ *   creating session itself: a session never joins someone else's team.
+ * - `agent_handle` is a plain name, unique among the parent's live children.
+ */
+export async function teamCreateMetadataError(input: {
+  metadata: unknown;
+  runtimeContext: unknown;
+  callerSessionId: string | null;
+  parentSessionId: string | null;
+}): Promise<{ error: string; code: string; status: 400 | 409 } | null> {
+  const meta = (input.metadata && typeof input.metadata === 'object' ? input.metadata : {}) as Record<string, unknown>;
+  const context = (input.runtimeContext && typeof input.runtimeContext === 'object' ? input.runtimeContext : {}) as Record<string, unknown>;
+  for (const lead of [meta.team_lead, context[TEAM_LEAD_RUNTIME_CONTEXT_KEY]]) {
+    if (lead === undefined) continue;
+    if (typeof lead !== 'string' || !input.callerSessionId || lead !== input.callerSessionId) {
+      return { status: 400, code: 'team_lead_must_be_caller', error: 'team_lead must be the session that creates the teammate' };
+    }
+  }
+  const handle = meta.agent_handle;
+  if (handle === undefined) return null;
+  if (typeof handle !== 'string' || !AGENT_HANDLE.test(handle) || RESERVED_HANDLES.has(handle)) {
+    return { status: 400, code: 'invalid_agent_handle', error: 'agent_handle is 1-64 letters, digits, dots, dashes or underscores, and not parent or main' };
+  }
+  const parent = input.callerSessionId ?? input.parentSessionId;
+  if (!parent) return null;
+  const [taken] = await db.select({ sessionId: projectSessions.sessionId }).from(projectSessions).where(and(
+    eq(projectSessions.parentSessionId, parent),
+    sql`${projectSessions.metadata}->>'agent_handle' = ${handle}`,
+    sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`,
+    sql`${projectSessions.status} not in ('failed', 'archived')`,
+  )).limit(1);
+  return taken
+    ? { status: 409, code: 'agent_handle_taken', error: `Another live child of this session is already named "${handle}"` }
+    : null;
 }

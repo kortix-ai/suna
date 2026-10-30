@@ -73,6 +73,7 @@ import { sessionCreateSurface } from '../lib/session-surface';
 
 import { readSessionsWorking } from '../lib/session-working-read';
 import { HIDDEN_SESSION_BOARD, readSessionBoards } from '../lib/session-board';
+import { teamCreateMetadataError } from '../team-tasks/service';
 import { readSessionReplyCounts } from '../lib/session-reply-counts';
 import { turnPublishVerdict } from '../lib/http-session-access';
 
@@ -217,6 +218,15 @@ export function registerProjectSessionsRoutes(): void {
     }
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // A child's multi-agent metadata (`agent_handle`, `team_lead`): a session
+    // names only its own teammates, and a handle is unique among its children.
+    const teamError = await teamCreateMetadataError({
+      metadata: body.metadata,
+      runtimeContext: body.runtime_context,
+      callerSessionId: callerKortixSessionId(c),
+      parentSessionId: typeof body.parent_session_id === 'string' ? body.parent_session_id : null,
+    });
+    if (teamError) return c.json({ error: teamError.error, code: teamError.code }, teamError.status);
     if (body.fork_from_session_id !== undefined) {
       const forkInput = SessionCreateInputSchema.shape.fork_from_session_id.safeParse(body.fork_from_session_id);
       if (!forkInput.success || !forkInput.data) return c.json({ error: 'Invalid fork source' }, 400);

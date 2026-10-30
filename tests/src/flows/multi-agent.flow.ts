@@ -266,6 +266,8 @@ flow(
       'PATCH /v1/projects/:projectId/sessions/:sessionId/tasks/:seq',
       'DELETE /v1/projects/:projectId/sessions/:sessionId/tasks/:seq',
       'GET /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions',
+      'PATCH /v1/projects/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx) => {
@@ -324,6 +326,14 @@ flow(
         const rows = res.json<Array<{ session_id: string; team_lead_session_id: string | null; agent_handle: string | null; board_state: string }>>();
         if (rows.map((r) => r.session_id).sort().join() !== [x, y].sort().join()) throw new Error(JSON.stringify(rows.map((r) => r.session_id)));
         if (rows.some((r) => r.team_lead_session_id !== lead || !r.agent_handle || !r.board_state)) throw new Error(JSON.stringify(rows));
+      });
+      await ctx.step("no session joins another's team: team_lead naming another session → 400 team_lead_must_be_caller; a taken handle → 409; PATCH team_lead → 400", async () => {
+        (await asOutsider!.post(SESSIONS, { metadata: { team_lead: lead } }, { params: p })).status(400).body().has('$.code', 'team_lead_must_be_caller');
+        (await asOutsider!.post(SESSIONS, { runtime_context: { 'kortix.team.lead': lead } }, { params: p })).status(400).body().has('$.code', 'team_lead_must_be_caller');
+        (await owner.post(SESSIONS, { metadata: { team_lead: lead } }, { params: p })).status(400).body().has('$.code', 'team_lead_must_be_caller');
+        (await asLead!.post(SESSIONS, { metadata: { team_lead: lead, agent_handle: 'builder' } }, { params: p })).status(409).body().has('$.code', 'agent_handle_taken');
+        (await asLead!.post(SESSIONS, { metadata: { agent_handle: 'has space' } }, { params: p })).status(400).body().has('$.code', 'invalid_agent_handle');
+        (await owner.patch(SESSION, { metadata: { team_lead: lead } }, { params: { ...p, sessionId: outsider } })).status(400);
       });
       await ctx.step('the lead deletes #1 → {deleted:true}; #2 no longer waits for it', async () => {
         (await asLead!.del(TASK, { params: { ...l, seq: 1 } })).status(200).body().has('$.deleted', true);
