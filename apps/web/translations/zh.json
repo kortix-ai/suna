@@ -2880,7 +2880,6 @@
     },
     "unified": {
       "welcome": "欢迎使用 Kortix CompanyOS",
-      "tagline": "开源的 CompanyOS",
       "email": "邮箱",
       "emailPlaceholder": "您的邮箱地址",
       "password": "密码",

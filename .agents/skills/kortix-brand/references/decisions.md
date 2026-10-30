@@ -10,6 +10,16 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-30
+
+### D30 The sign-in screen has no subtitle
+- **Date:** 2026-10-30
+- **Decision:** The sign-in entry step shows only "Welcome to Kortix CompanyOS". The tagline "The open-source CompanyOS" no longer sits under it, and no other line replaces it. The tagline is never placed directly under a heading that already says "Kortix CompanyOS".
+- **Why:** founder, 2026-10-30, on "Welcome to Kortix CompanyOS / The open-source CompanyOS": "kinda repetitive, fix that", then "just remove that second line".
+- **Where:** `apps/web/src/app/[locale]/(auth)/auth/page.tsx`, `StepHeader` in `packages/ui/src/internal/auth/auth-primitives.tsx` (the `tagline` prop is gone), `auth.unified.tagline` removed from every locale catalog, [positioning.md](verbal/positioning.md) Tagline and "Auth screen subtitle" rows.
+- **Supersedes:** the "auth screen" use of the tagline in positioning.md.
+- **Source:** the `auth-subtitle-promise` branch.
+
 ## 2026-10-29
 
 ### D29 Kortix CompanyOS is the product name on every identity surface; the Promise says "AI agents"
