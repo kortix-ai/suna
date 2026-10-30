@@ -439,7 +439,10 @@ async function queuePrompt(
 async function waitForInitialReply(resolved: ResolvedSession, json: boolean): Promise<number> {
   for (let attempt = 0; attempt < 120; attempt += 1) {
     try {
-      const messages = await readRecentMessages(resolved, 10);
+      // A finished step is not the reply while the turn runs on: wait for the root to go idle.
+      const { statuses } = await withKortixScope(resolved.auth, () => resolved.handle.pendingRequests());
+      const status = statuses[resolved.runtimeSessionId];
+      const messages = status && status !== 'idle' ? [] : await readRecentMessages(resolved, 10);
       for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = messages[index];
         if (!message || message.role !== 'assistant') continue;
