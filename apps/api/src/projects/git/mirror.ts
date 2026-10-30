@@ -27,8 +27,8 @@ const lastRefreshAt = new Map<string, number>();
 // (`KORTIX_GIT_CACHE_DIR`), so the proof describes that replica's copy. Every
 // base move Kortix makes or proxies broadcasts `invalidateProjectMirror` to
 // every process, so the copy expires on time; the interval only bounds pushes
-// made directly on the upstream, where a missed proof costs one
-// `git ls-remote`, never a stale read.
+// made directly on the upstream, where a missed proof costs one single-branch
+// fetch, never a stale read.
 const tipProvenAt = new Map<string, Map<string, number>>();
 /** Bumped by every invalidation: a refresh in flight across one records nothing. */
 // replica-local: the broadcast increments every replica's counter, so a
@@ -635,38 +635,34 @@ export function existingProjectMirrorPath(project: GitBackedProject): string | n
 }
 
 /**
- * Is the mirror's tip for ONE branch already the remote's tip?
+ * Bring ONE branch of the mirror to the remote's tip, and nothing else.
  *
- * `git ls-remote --heads origin <branch>` asks the git host for a single ref:
- * one round trip, no pack, no objects. A `git fetch --prune` of a whole project
- * mirror is the same question answered by transferring everything that moved —
- * measured at ~0.9 s against the managed host, on EVERY prompt, because the
+ * `git fetch origin +refs/heads/<b>:refs/heads/<b>` sends that ref as its
+ * protocol v2 `ref-prefix`, so the host lists one ref and sends a pack only
+ * when the branch moved. A whole-mirror `git fetch --prune` answers the same
+ * question by transferring everything that moved, on EVERY prompt, because the
  * per-prompt manifest read forces a refresh to stay fresh (see
- * `remintGrantForAgentSwitch`). When the branch has not moved, the fetch had
- * nothing to do and the ls-remote proves it.
+ * `remintGrantForAgentSwitch`). This used to be `git ls-remote --heads origin
+ * <b>`, which sends no prefix (its patterns tail-match), so the host listed
+ * every branch: 20,872 refs and 1.1–1.5 s per prompt on a project that keeps
+ * one branch per session (2026-10-30), against 0.8 s for this fetch.
  *
- * Answers false on anything unexpected — an unresolvable local ref, a sha
- * instead of a branch, any git failure — so the caller falls back to the fetch
- * it would have done anyway. It can never report "fresh" for a branch that
- * moved: that is exactly the comparison it makes.
+ * Answers false on anything unexpected — a sha instead of a branch, a branch
+ * the remote does not have, any git failure — so the caller falls back to the
+ * full fetch it would have done anyway. True means the branch is at the tip the
+ * remote answered during this call.
  */
-async function mirrorMatchesRemoteTip(
+async function fetchBranchTip(
   repoPath: string,
   access: ResolvedMirrorAccess,
   authHost: string | undefined,
   ref: string,
 ): Promise<boolean> {
-  // Branch names only: a sha or a tag is not what `ls-remote --heads` answers.
+  // Branch names only: a sha or a tag is not a `refs/heads/` ref.
   if (/^[0-9a-f]{7,40}$/i.test(ref) || !/^[\w.\-\/]+$/.test(ref)) return false;
   try {
-    const local = await runGitCapture(
-      ['rev-parse', '--verify', '--quiet', `refs/heads/${ref}^{commit}`],
-      repoPath,
-    );
-    const localSha = local.exitCode === 0 ? local.stdout.trim() : '';
-    if (!/^[0-9a-f]{40}$/i.test(localSha)) return false;
-    const remote = await runGit(
-      ['ls-remote', '--heads', 'origin', ref],
+    await runGit(
+      ['fetch', '--no-tags', '--no-write-fetch-head', 'origin', `+refs/heads/${ref}:refs/heads/${ref}`],
       repoPath,
       true,
       access.token,
@@ -675,8 +671,7 @@ async function mirrorMatchesRemoteTip(
       GIT_DEFAULT_TIMEOUT_MS,
       access.headers,
     );
-    const remoteSha = remote.stdout.trim().split(/\s+/)[0] ?? '';
-    return /^[0-9a-f]{40}$/i.test(remoteSha) && remoteSha === localSha;
+    return true;
   } catch {
     return false;
   }
@@ -766,10 +761,10 @@ async function doRefreshMirror(
   await runGit(['remote', 'set-url', 'origin', access.repoUrl], repoPath);
   // Heal any legacy single-branch clones by widening the refspec.
   await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*'], repoPath, false);
-  // A caller that forced this refresh to read ONE branch gets the cheap proof
-  // first. `lastRefreshAt` is deliberately NOT bumped: only that branch was
-  // compared, so the next interval-driven refresh must still fetch the rest.
-  if (force && freshRef && (await mirrorMatchesRemoteTip(repoPath, access, authHost, freshRef))) {
+  // A caller that forced this refresh to read ONE branch fetches that branch
+  // alone. `lastRefreshAt` is deliberately NOT bumped: only that branch was
+  // fetched, so the next interval-driven refresh must still fetch the rest.
+  if (force && freshRef && (await fetchBranchTip(repoPath, access, authHost, freshRef))) {
     if (unmoved()) {
       const proofs = tipProvenAt.get(project.projectId) ?? new Map<string, number>();
       tipProvenAt.set(project.projectId, proofs.set(freshRef, Date.now()));
@@ -839,8 +834,8 @@ export async function refreshMirror(
   project: GitBackedProject,
   force: MirrorRefresh = false,
   opts?: {
-    /** Freshness is only needed for THIS ref. Forced: prove a branch with one
-     *  `ls-remote` and skip the whole-mirror fetch when it has not moved.
+    /** Freshness is only needed for THIS ref. Forced: fetch that branch alone
+     *  and skip the whole-mirror fetch.
      *  Unforced, a full commit SHA the mirror already holds skips the fetch:
      *  nothing at a commit can change. */
     freshRef?: string;

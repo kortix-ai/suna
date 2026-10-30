@@ -35,7 +35,7 @@ mock.module('../runtime/hooks/use-binary-blob', () => ({
       : { blobUrl: null, blob: null, isLoading: false, error: null },
 }));
 
-import { ShowContentRenderer, showBlobSource } from './show-content-renderer';
+import { ShowCarousel, ShowContentRenderer, showBlobSource } from './show-content-renderer';
 
 // ShowContentRenderer calls `useFileContent` (react-query) unconditionally, and
 // its error copy goes through `useTranslations` — both providers are required
@@ -51,6 +51,23 @@ function withProviders(node: ReactNode) {
 }
 
 const HTML = '<h1>hello</h1>';
+
+describe('ShowContentRenderer — nullable tool paths', () => {
+  test('renders inline content when the tool explicitly supplies a null path', () => {
+    const html = renderToStaticMarkup(
+      withProviders(<ShowContentRenderer type="text" path={null} content="Synthetic report" />),
+    );
+    expect(html).toContain('Synthetic report');
+    expect(blobReads.at(-1)).toBeNull();
+  });
+
+  test('renders a carousel item whose JSON payload contains a null path', () => {
+    const items = JSON.parse('[{"type":"text","path":null,"content":"Carousel report"}]');
+    const html = renderToStaticMarkup(withProviders(<ShowCarousel items={items} />));
+    expect(html).toContain('Carousel report');
+    expect(blobReads.at(-1)).toBeNull();
+  });
+});
 
 describe('ShowContentRenderer — the HTML preview blob URL is minted in an effect, not in render', () => {
   // The blob URL used to come out of a `useMemo` and be revoked by an effect

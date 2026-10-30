@@ -156,6 +156,8 @@ export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './
 export { turnPromptSource } from './lib/notification-recipients';
 // Who may rewind a session (consumed by sandbox-proxy/forward/forward-to-sandbox.ts).
 export { mayRewindSession } from './session-lifecycle/rewind-authority';
+// Wakes the first prompts waiting on a box that went active on any replica (consumed by bootstrap.ts).
+export { signalSessionRuntimeActive } from './session-lifecycle/runtime-active-signal';
 
 export { registerRuntimeFork } from './lib/runtime-session-snapshot';
 
