@@ -351,7 +351,7 @@ export async function teamCreateMetadataError(input: {
     eq(projectSessions.parentSessionId, parent),
     sql`${projectSessions.metadata}->>'agent_handle' = ${handle}`,
     sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`,
-    sql`${projectSessions.status} not in ('failed', 'archived')`,
+    sql`${projectSessions.status} <> 'failed'`,
   )).limit(1);
   return taken
     ? { status: 409, code: 'agent_handle_taken', error: `Another live child of this session is already named "${handle}"` }
