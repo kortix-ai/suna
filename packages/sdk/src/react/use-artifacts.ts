@@ -1,6 +1,7 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { ApiError } from '../core/http/api-client';
 import {
   createArtifact,
   createArtifactComment,
@@ -8,6 +9,7 @@ import {
   deleteArtifactComment,
   editArtifactComment,
   getArtifact,
+  getArtifactCommentContext,
   listArtifactTypes,
   listArtifactComments,
   listArtifactActivity,
@@ -46,13 +48,13 @@ function commentScope(projectId: string | null | undefined, artifactId: string |
 export function useArtifactComments(
   projectId: string | null | undefined,
   artifactId: string | null | undefined,
-  options: { status?: ArtifactCommentStatus | 'all'; enabled?: boolean } = {},
+  options: { status?: ArtifactCommentStatus | 'all'; version?: string; enabled?: boolean } = {},
 ) {
   const client = useQueryClient();
   const status = options.status ?? 'open';
   const query = useQuery({
-    queryKey: qk.project.artifactComments(projectId ?? '', artifactId ?? '', status),
-    queryFn: () => listArtifactComments(...commentScope(projectId, artifactId), { status }),
+    queryKey: qk.project.artifactComments(projectId ?? '', artifactId ?? '', status, options.version),
+    queryFn: () => listArtifactComments(...commentScope(projectId, artifactId), { status, ...(options.version ? { version: options.version } : {}) }),
     enabled: options.enabled !== false && !!projectId && !!artifactId,
     ...contract('inventory'),
     refetchInterval: 10_000,
@@ -62,32 +64,36 @@ export function useArtifactComments(
     client.invalidateQueries({ queryKey: qk.project.artifactComments(projectId ?? '', artifactId ?? '') }),
     client.invalidateQueries({ queryKey: qk.project.artifactActivity(projectId ?? '', artifactId ?? '') }),
   ]);
+  const writeScope = (): [string, string] => {
+    if (options.version) throw new ApiError('Historical Artifact comments are read-only', { status: 403, code: 'artifact_comments_read_only' });
+    return commentScope(projectId, artifactId);
+  };
   const create = useMutation({
-    mutationFn: (input: CreateArtifactCommentInput) => createArtifactComment(...commentScope(projectId, artifactId), input),
+    mutationFn: (input: CreateArtifactCommentInput) => createArtifactComment(...writeScope(), input),
     onSuccess: refresh,
   });
   const reply = useMutation({
     mutationFn: ({ threadId, input }: { threadId: string; input: ArtifactCommentBodyInput }) =>
-      replyArtifactComment(...commentScope(projectId, artifactId), threadId, input),
+      replyArtifactComment(...writeScope(), threadId, input),
     onSuccess: refresh,
   });
   const setStatus = useMutation({
     mutationFn: ({ threadId, status }: { threadId: string; status: ArtifactCommentStatus }) =>
-      setArtifactCommentStatus(...commentScope(projectId, artifactId), threadId, status),
+      setArtifactCommentStatus(...writeScope(), threadId, status),
     onSuccess: refresh,
   });
   const edit = useMutation({
     mutationFn: ({ threadId, commentId, input }: { threadId: string; commentId: string; input: ArtifactCommentBodyInput }) =>
-      editArtifactComment(...commentScope(projectId, artifactId), threadId, commentId, input),
+      editArtifactComment(...writeScope(), threadId, commentId, input),
     onSuccess: refresh,
   });
   const remove = useMutation({
     mutationFn: ({ threadId, commentId }: { threadId: string; commentId: string }) =>
-      deleteArtifactComment(...commentScope(projectId, artifactId), threadId, commentId),
+      deleteArtifactComment(...writeScope(), threadId, commentId),
     onSuccess: refresh,
   });
   const send = useMutation({
-    mutationFn: (input: SendArtifactCommentsInput) => sendArtifactComments(...commentScope(projectId, artifactId), input),
+    mutationFn: (input: SendArtifactCommentsInput) => sendArtifactComments(...writeScope(), input),
     onSuccess: refresh,
   });
   return {
@@ -100,6 +106,49 @@ export function useArtifactComments(
     send: send.mutateAsync,
     isWriting: create.isPending || reply.isPending || setStatus.isPending || edit.isPending || remove.isPending || send.isPending,
   };
+}
+
+/** Permissions and mention choices share the comments cache prefix, so writes refresh their counts and target. */
+export function useArtifactCommentContext(
+  projectId: string | null | undefined,
+  artifactId: string | null | undefined,
+  options: { version?: string; agent?: string; enabled?: boolean } = {},
+) {
+  const params = { ...(options.version ? { version: options.version } : {}), ...(options.agent ? { agent: options.agent } : {}) };
+  return useQuery({
+    queryKey: qk.project.artifactCommentContext(projectId ?? '', artifactId ?? '', params),
+    queryFn: () => getArtifactCommentContext(...commentScope(projectId, artifactId), params),
+    enabled: options.enabled !== false && !!projectId && !!artifactId,
+    ...contract('inventory'),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** Cursor pages stay in the SDK cache. Comment writes refresh the loaded pages through their shared prefix. */
+export function useInfiniteArtifactActivity(
+  projectId: string | null | undefined,
+  artifactId: string | null | undefined,
+  options: { limit?: number; enabled?: boolean } = {},
+) {
+  const limit = options.limit ?? 50;
+  const query = useInfiniteQuery({
+    queryKey: qk.project.artifactActivityInfinite(projectId ?? '', artifactId ?? '', limit),
+    queryFn: ({ pageParam }) => listArtifactActivity(...commentScope(projectId, artifactId), { limit, ...(pageParam ? { cursor: pageParam } : {}) }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    enabled: options.enabled !== false && !!projectId && !!artifactId,
+    ...contract('inventory'),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+  });
+  const seen = new Set<string>();
+  const items = (query.data?.pages.flatMap((page) => page.items) ?? []).filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+  return { ...query, items, olderVersions: query.data?.pages.some((page) => page.older_versions) ?? false };
 }
 
 /** One page of activity. Polls while mounted until realtime change pings are available. */
