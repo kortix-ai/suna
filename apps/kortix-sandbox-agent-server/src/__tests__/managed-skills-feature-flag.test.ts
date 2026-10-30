@@ -9,7 +9,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { enabledFeatureFlags, skillFeatureFlag } from '@/lib/config/feature-flags'
-import { ensureInjectedManagedSkills, withheldManagedSkills } from '@/services/skills/managed-skills'
+import { withheldManagedSkills } from '@/services/skills/managed-skills'
 
 const roots: string[] = []
 
@@ -46,11 +46,8 @@ describe('feature flag parsing', () => {
 })
 
 describe('a flagged managed skill follows its flag', () => {
-  test('flag off: withheld from the overlay, the rest is written', async () => {
-    const { bakedDir, configDir } = await fixture()
+  test('flag off: the flagged skill is withheld, the rest is not', async () => {
+    const { bakedDir } = await fixture()
     expect(await withheldManagedSkills({}, bakedDir)).toEqual(['kortix-rooms'])
-    await ensureInjectedManagedSkills(configDir, { bakedDir, env: {} })
-    expect(existsSync(join(configDir, 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true)
-    expect(existsSync(join(configDir, 'skills', 'kortix-rooms'))).toBe(false)
   })
 })

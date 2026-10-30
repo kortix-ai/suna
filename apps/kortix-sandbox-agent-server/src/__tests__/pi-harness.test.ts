@@ -23,7 +23,7 @@ import { createPiHarnessService, piDefinition, type PiHarnessService } from '@/h
 import type { PiBootState } from '@/harness/pi/boot-state'
 import { extensionAgentHooks, installedPackages, parseNpmSource, systemPackageCacheDir, warmSystemPackageCache } from '@/harness/pi/extensions/host'
 import { ensureProjectPackageBundle } from '@/harness/pi/extensions/bundle'
-import { signTestUserContext } from './helpers/open-code-harness'
+import { signTestUserContext } from './helpers/daemon-test-app'
 import { readHostHealth } from '@/harness/shared/host-health'
 import { sanitizeRuntimeEvent } from '@/harness/shared/audit-relay'
 import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'

@@ -1,6 +1,6 @@
 /**
  * The pre-W3 (OpenCode-era) names of kortixd's wire fields, and the only
- * module outside `harness/open-code/` that still spells them.
+ * module that still spells them.
  *
  * An API deploy built before W3 reads and sends these names, and a box keeps
  * its daemon across API deploys and rollbacks, so the routes answer in both

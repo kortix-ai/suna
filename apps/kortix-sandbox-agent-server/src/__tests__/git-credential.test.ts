@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'bun:test'
 
-import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Config } from '@/lib/config/config'
 import {
   buildGitAuthArgs,
   configureGitCredentialHelper,
@@ -19,15 +19,12 @@ const execFileAsync = promisify(execFile)
 function baseConfig(over: Partial<Config> = {}): Config {
   return {
     servicePort: 8000,
-    opencodeInternalPort: 4096,
-    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/workspace',
     projectTarget: '/workspace',
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,
-    defaultOpencodeConfigDir: '/ephemeral/opencode',
     autoClone: false,
     projectId: 'proj-1',
     apiUrl: undefined,
