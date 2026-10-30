@@ -11,7 +11,6 @@ src/__tests__/unit-slow-request-stage-log.test.ts
 src/projects/session-lifecycle/__tests__/stop.test.ts
 src/__tests__/e2e-slack-cli.test.ts
 src/mcp/cli.test.ts
-src/config-releases/agent-plugins.test.ts
 src/platform/services/session-sandbox.test.ts
 src/projects/git/config.test.ts
 src/config-releases/store.supabase.test.ts
@@ -32,7 +31,7 @@ src/projects/trigger-schedule.jitter.test.ts
 src/__tests__/unit-hosted-deployment-vendor-removal.test.ts
 src/projects/git/mirror-fetch-transient.test.ts
 src/__tests__/unit-iam-gate-codemod-pin.test.ts
-src/projects/git/opencode-config-dir-staleness.test.ts
+src/projects/git/loaded-files.test.ts
 src/shared/platinum.test.ts
 src/config-releases/serve-archive.test.ts
 src/projects/git/fast-boot-bundle.test.ts

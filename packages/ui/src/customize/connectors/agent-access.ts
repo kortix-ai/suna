@@ -3,7 +3,7 @@ import type { AgentGrantSet } from '@kortix/sdk';
 
 /**
  * Which agents can use which connector, and with which rule set, read from
- * the root kortix.yaml (v2/v3): `agents.<a>.connectors` is the grant and
+ * the root kortix.yaml: `agents.<a>.connectors` is the grant and
  * `agents.<a>.policy_sets.<slug>` the set. The connector page's Agents tab and
  * the Rules matrix both read this, and both write through `setAgentScope`.
  *
@@ -17,23 +17,21 @@ export interface AgentConnectorAccess {
 }
 
 export interface AgentGrants {
-  /** `all`, or the granted slugs. An absent grant is none (v2 denies by default). */
+  /** `all`, or the granted slugs. An absent grant is none (deny by default). */
   connectors: 'all' | string[];
   policySets: Record<string, string>;
 }
 
-/** Every declared agent's connector grant and sets, by agent name. Null when the manifest is not v2/v3 YAML. */
-export function manifestAgentGrants(manifestRaw: string | null | undefined): Record<string, AgentGrants> | null {
-  if (!manifestRaw) return null;
+/** Every declared agent's connector grant and sets, by agent name. Empty when there is no manifest or it does not parse. */
+export function manifestAgentGrants(manifestRaw: string | null | undefined): Record<string, AgentGrants> {
+  if (!manifestRaw) return {};
   let manifest: Record<string, unknown>;
   try {
-    manifest = parseManifestText(manifestRaw, 'yaml');
+    manifest = parseManifestText(manifestRaw);
   } catch {
-    return null;
+    return {};
   }
-  const version = Number(manifest.kortix_version);
   const agents = manifest.agents;
-  if (!(version >= 2)) return null;
   if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return {};
   const out: Record<string, AgentGrants> = Object.create(null);
   for (const [name, block] of Object.entries(agents as Record<string, unknown>)) {
@@ -92,11 +90,11 @@ export interface RuleSetUsage {
 
 /** Each connector's rule sets (`connectors[].policy_sets`) with their agent count, by slug. */
 export function connectorRuleSetUsage(manifestRaw: string | null | undefined): Record<string, RuleSetUsage[]> {
+  if (!manifestRaw) return {};
   const grants = manifestAgentGrants(manifestRaw);
-  if (!grants || !manifestRaw) return {};
   let manifest: Record<string, unknown>;
   try {
-    manifest = parseManifestText(manifestRaw, 'yaml');
+    manifest = parseManifestText(manifestRaw);
   } catch {
     return {};
   }

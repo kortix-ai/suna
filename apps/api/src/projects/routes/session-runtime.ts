@@ -22,6 +22,8 @@ import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
 import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
 import { recoverLostSession } from '../session-lifecycle/recover-lost-session';
+import { stoppedSubagentNotice } from '../subagent-notice';
+import { trackDetached } from '../../shared/drain';
 import { isWarmProjectSession } from '../lib/warm-sessions';
 import { dropWarmSessionMarkerOnAdopt, warmSessionPlacement } from './warm-sessions';
 import { readSessionTurnState } from '../lib/session-turn-read';
@@ -335,6 +337,8 @@ export function registerSessionRuntimeRoutes(): void {
         );
       }
 
+      // Read before the stop ends the turn: a background subagent's parent hears it.
+      const parentNotice = await stoppedSubagentNotice(sessionId, callerKortixSessionId(c));
       const result = await stopSession({
         projectId,
         sessionId,
@@ -343,6 +347,7 @@ export function registerSessionRuntimeRoutes(): void {
         // The person the stopped turn names; an agent credential names nobody.
         stoppedBy: isProjectSessionPrincipal(c) ? null : loaded.userId,
       });
+      if (parentNotice && result.status === 200) trackDetached(parentNotice());
       return c.json(result.body, result.status as any);
     },
   );

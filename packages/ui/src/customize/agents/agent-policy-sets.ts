@@ -23,7 +23,7 @@ export function connectorPolicySetOptions(
 ): Record<string, PolicySetOption[]> {
   let manifest: Record<string, unknown> = {};
   try {
-    manifest = manifestRaw ? parseManifestText(manifestRaw, 'yaml') : {};
+    manifest = manifestRaw ? parseManifestText(manifestRaw) : {};
   } catch {
     return {};
   }

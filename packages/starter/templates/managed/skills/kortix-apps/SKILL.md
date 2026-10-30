@@ -83,8 +83,8 @@ The command waits for `ready` for up to 1200 s. Use `--app <slug>` (or the
 `kortix.yaml` block) for every later release of the same App. Never create a
 new slug for a normal update.
 
-Declare Apps in `kortix.yaml` `apps.<slug>` (`kortix schema --version 3`
-prints every key). The file owns `resources`,
+Declare Apps in `kortix.yaml` `apps.<slug>` (`kortix schema` prints every
+key). The file owns `resources`,
 `idle_timeout_seconds`, `always_on`, `labels`, `display` and `uses`: a write
 from the web, CLI, SDK or API commits to `apps.<slug>` first, and a push
 applies them on sync without a deploy. Deleting an App removes its block. The
@@ -338,7 +338,7 @@ Every session downloads the whole repository, so keep it small. Create
    Never `public` for internal data: a public App has no signed-in member.
 9. **Integrations** only through Kortix connectors (references/connectors.md).
 10. **Ship** once Verify passed: commit, push the session branch, open a
-    change request (kortix-system, `<change-requests>`). Never merge your own CR.
+    change request (kortix-system, `<change-requests>`). Merge it only when the user asks.
 
 ### Redeploy after a change, and undo
 

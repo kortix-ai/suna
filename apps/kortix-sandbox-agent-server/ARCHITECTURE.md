@@ -45,7 +45,7 @@ provider, so neither service imports the other.
 | `src/services/sandbox-env/` | services | The project env store and the secret-capability instruction file. |
 | `src/services/skills/` | services | Image-baked managed Kortix skills: which ones a feature flag withholds (`withheldManagedSkills`). |
 | `src/services/static-web/` | services | The static file server on port 3211. |
-| `src/services/tools/` | services | The hosted tools: the Kortix tools (`kortix/`: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) and the project's kortix.yaml `tools`, one module each, run the same way by every harness. In `kortix_version` 3 every Kortix tool loads and each agent's `tools` grant hides tools; in a v2 project a `tools` key gets only the Kortix tools it lists. |
+| `src/services/tools/` | services | The hosted tools: the Kortix tools (`kortix/`: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) and the project's kortix.yaml `tools`, one module each, run the same way by every harness. Every Kortix tool loads unless the compiled set lists `kortix_tools` (then only those), and each agent's `tools` grant hides tools. |
 | `src/services/event-bus/` | services | The daemon event sequencer. |
 | `src/services/resources/` | services | Box resource telemetry (memory, cgroup, load, disk, RSS). |
 | `src/lib/config/` | shared | Host env parsing (`loadHostConfig`), manifest reads, the runtime state directory, the managed-skills directory. |
@@ -124,19 +124,14 @@ identifier or string that matches `/open.?code/i` in `src/lib/`, `src/types/`,
 `src/harness/contract/`, `src/harness/shared/` and `src/harness/pi/`. Tests and
 `src/harness/harness.ts` are out of scope: the resolver names the `opencode` id
 it maps to pi (see the [harness README](src/harness/README.md)). Comments are
-not checked.
-
-`OPENCODE_NAMES_ALLOWED` in `eslint.config.mjs` lists the names that exist
-today, per file. The list only shrinks: an entry whose word no longer occurs in
-its file fails the lint, so the PR that removes a name deletes its entry. Do not
-add an entry; name the new code neutrally.
+not checked. No file is allowlisted: name new code neutrally.
 
 The routes use the Kortix names only (`runtime_*`, `runtime_session_id`,
 `harness_version`). The pre-W3 wire names (`opencode_pid`, `opencodeEnv`,
-`/kortix/opencode`, …) are gone from the daemon since 2026-10-30. The two pi
-entries (`src/harness/pi/config.ts`, `config-release.ts`) name the legacy
-layout's config directory, `.kortix/opencode`, which a project that has not
-moved to the root layout still uses.
+`/kortix/opencode`, …) are gone from the daemon since 2026-10-30. The legacy
+project layout (`.kortix/opencode`, `harnesses/`) is gone since the one
+kortix.yaml schema: the daemon reads its config only from the compiled agent
+set.
 
 ## Where a type goes
 

@@ -37,7 +37,6 @@ function spec(
     connectors: [],
     permissions: [],
     env,
-    file: null,
     model: null,
     ...extra,
   } as AgentSpec;

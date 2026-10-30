@@ -31,8 +31,8 @@ export async function manifestChange(
   project: GitBackedProject,
   cr: { baseRef: string; headRef: string },
 ): Promise<{ required: string[]; grantsBefore: Map<string, AgentGrant>; grantsAfter: Map<string, AgentGrant> }> {
-  const { manifestCandidatePaths, manifestFormatForPath } = await import('@kortix/manifest-schema');
-  const candidates = manifestCandidatePaths(project.manifestPath).map((cand) => cand.path);
+  const { manifestCandidatePaths } = await import('@kortix/manifest-schema');
+  const candidates = manifestCandidatePaths(project.manifestPath);
   // One ls-remote per ref when it has not moved; a fetch when it has or when
   // this mirror has never seen it.
   await refreshMirror(project, true, { freshRef: cr.headRef });
@@ -42,13 +42,11 @@ export async function manifestChange(
     readManifestFromRepo(project, candidates, mergeBase ?? cr.baseRef, { strictRef: true }),
     readManifestFromRepo(project, candidates, cr.headRef, { strictRef: true }),
   ]);
-  const baseFormat = manifestFormatForPath(before?.path ?? after?.path ?? 'kortix.yaml');
-  const headFormat = manifestFormatForPath(after?.path ?? before?.path ?? 'kortix.yaml');
   const baseText = before?.content ?? null;
   const headText = after?.content ?? null;
   return {
-    required: requiredManifestActions(baseText, headText, baseFormat, headFormat),
-    grantsBefore: grantsOfManifestText(baseText, baseFormat),
-    grantsAfter: grantsOfManifestText(headText, headFormat),
+    required: requiredManifestActions(baseText, headText),
+    grantsBefore: grantsOfManifestText(baseText),
+    grantsAfter: grantsOfManifestText(headText),
   };
 }

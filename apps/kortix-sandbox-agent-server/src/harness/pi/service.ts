@@ -9,6 +9,7 @@ import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import type { HarnessDefinition, HarnessService, HarnessStartupOptions } from '../harness'
 import { isRepoMaterialized } from '@/services/workspace-provider/checkout'
 import { runtimeAssetsActivity } from '@/services/runtime-assets/runtime-assets'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import { createPiAssetsService, registerPiSkillReload } from './assets'
 import { startPiBackground } from './background'
 import type { PiBootState } from './boot-state'
@@ -19,7 +20,7 @@ import { createPiDiagnosticsService } from './diagnostics'
 import { createPiQueryService } from './queries'
 import { registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import { stopSessionLogJournal } from '../shared/session-log-journal'
-import { PiRuntime, type PiRuntimeHooks } from './runtime'
+import { PiRuntime, parseCompiledAgentConfig, type PiRuntimeHooks } from './runtime'
 import { createPiSurface } from './surface'
 import { createPiTurnService } from './turns'
 
@@ -124,7 +125,8 @@ export const piDefinition: HarnessDefinition = {
     isInternalVariable: (name) => name.startsWith('KORTIX_PI_'),
     protectedPathSegments: [],
   },
-  resolveSkillDirectories: async (cfg) => resolvePiSkillDirectories(cfg),
+  resolveSkillDirectories: async (cfg) =>
+    resolvePiSkillDirectories(parseCompiledAgentConfig(compiledAgentConfigFromEnv(process.env))?.skills, cfg.projectTarget || cfg.workspace || '/workspace'),
   loadConfig: loadPiEnvironment,
   createBootState: (): PiBootState => ({
     repoMaterializationError: null,

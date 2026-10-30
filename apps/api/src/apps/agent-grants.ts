@@ -52,6 +52,6 @@ export async function readAgentsGrantingApp(
   appSlug: string,
 ): Promise<AppAgentGrant[]> {
   const manifest = await readManifest(project, { rethrowReadErrors: true, forceRefresh: true });
-  if (!manifest || manifest.schemaVersion < 2) return [];
+  if (!manifest) return [];
   return agentsGrantingApp(manifest.raw.agents, appSlug, manifest.path, manifest.imports?.origins.agents);
 }

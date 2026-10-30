@@ -44,7 +44,7 @@ const SPACES = '/v1/projects/:projectId/spaces';
 const SPACE = '/v1/projects/:projectId/spaces/:spaceId';
 const DM = '/v1/projects/:projectId/spaces/dm';
 const MANIFEST =
-  'kortix_version: 2\nproject:\n  name: ke2e-spaces\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
+  'project:\n  name: ke2e-spaces\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
 
 type Space = { space_id: string; kind: string; slug: string | null; name: string; is_default: boolean; archived_at: string | null; can_edit: boolean };
 type Session = {
@@ -1403,7 +1403,7 @@ flow('SPACE-21', meta([TAB_ROUTES.links, TAB_ROUTES.addLink, ROUTES.create, FEAT
 });
 
 const TWO_AGENT_MANIFEST =
-  'kortix_version: 2\nproject:\n  name: ke2e-spaces\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n  writer:\n    kortix_permissions: all\n';
+  'project:\n  name: ke2e-spaces\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n  writer:\n    kortix_permissions: all\n';
 
 flow('SPACE-22', meta([ROUTES.list, ROUTES.create, ROUTES.update, ROUTES.dm, FEATURES_ROUTE]), async (ctx) => {
   const { team, project, world } = await openWorld(ctx);

@@ -173,8 +173,8 @@ export function GrantModeTabs({
 
 /**
  * A grant in the plain All · Specific · None form. `{ exclude }` exists only
- * on kortix_version 3 skills and extensions, which the capability switches
- * edit; a v2 screen that receives one reads it as All.
+ * on skills and extensions, which the capability switches edit; a screen
+ * without switches reads it as All.
  */
 export function plainGrant(value: AgentCapabilityGrant | undefined): AgentGrantSetV2 | undefined {
   return value === undefined || typeof value === 'string' || Array.isArray(value) ? value : 'all';

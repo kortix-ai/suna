@@ -7,13 +7,14 @@ import {
   declaredBuiltinAgents,
   enabledBuiltinAgentKey,
   MY_KORTIX_DESCRIPTION,
+  MY_KORTIX_PROMPT,
   platformMetaAgentGrant,
   resolveBuiltinAgents,
   resolvePlatformMetaSandbox,
 } from '../projects/lib/platform-meta-agent';
 import { grantFromLoadedAgents } from '../projects/agents';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
+import { manifestHealthWithout } from '../projects/lib/manifest-health';
 
 describe('platform meta agent', () => {
   test('adds one reserved meta agent and replaces a project collision', () => {
@@ -33,11 +34,7 @@ describe('platform meta agent', () => {
       signals: {},
       manifest_raw: null,
       manifest: {},
-      manifest_version: resolveManifestVerdict({
-        raw: null,
-        format: 'yaml',
-        path: null,
-      }),
+      manifest_health: manifestHealthWithout('missing'),
       env: { required: [], optional: [] },
       open_code_raw: null,
       default_agent: null,
@@ -67,10 +64,7 @@ describe('platform meta agent', () => {
         meta: {
           description: MY_KORTIX_DESCRIPTION,
           mode: 'primary',
-          prompt:
-            "You are My Kortix. Follow /workspace/AGENTS.md. Run the project through the Kortix CLI with the user's own permissions: answer and configure yourself, delegate every production task to a session of the narrowest project agent via --prompt, and report the verified result.\n\n" +
-            'When you hand a task to another agent (an AI employee) with the `agent` tool, leave `session` at its default (separate): the agent gets its own session the user can open. Use `session: "same"` only for quick sub-steps.\n\n' +
-            'Prefer generative UI: when an answer is a plan, comparison, ranking, list of places or options, steps, a checklist, or 2 or more numbers, load the `kortix-genui` skill first and answer with `openui` blocks. Keep chat, short facts and code as prose.',
+          prompt: MY_KORTIX_PROMPT,
         },
       },
     });
@@ -111,8 +105,9 @@ describe('platform meta agent', () => {
     expect(enabledBuiltinAgentKey('meta', { my_kortix: true })).toBe('my_kortix');
     expect(enabledBuiltinAgentKey('meta', { my_kortix: false })).toBeNull();
     expect(enabledBuiltinAgentKey('kortix', { my_kortix: true })).toBeNull();
-    expect(builtinAgentConfigView('my_kortix', 3, 'kortix')).toMatchObject({
+    expect(builtinAgentConfigView('my_kortix', 'kortix')).toMatchObject({
       agent: 'meta',
+      schema_version: 3,
       builtin: 'my_kortix',
       editable: false,
       block: null,
@@ -121,7 +116,7 @@ describe('platform meta agent', () => {
   });
 
   test('a kortix.yaml that turns My Kortix off strips a meta session to no project action', () => {
-    const governed = { specs: [], errors: [], defaultAgent: 'kortix', schemaVersion: 3 };
+    const governed = { specs: [], errors: [], defaultAgent: 'kortix' };
     expect(grantFromLoadedAgents('meta', governed)).toEqual(platformMetaAgentGrant());
     expect(grantFromLoadedAgents('meta', { ...governed, builtinAgents: { my_kortix: true } })).toEqual(
       platformMetaAgentGrant(),

@@ -1,11 +1,5 @@
 import { posix } from 'node:path';
-import {
-  AGENTS_DIR,
-  manifestCandidatePaths,
-  opencodeConfigDirCandidates,
-  parseManifestText,
-  SKILLS_DIR,
-} from '@kortix/manifest-schema';
+import { manifestCandidatePaths, parseManifestText } from '@kortix/manifest-schema';
 import { runGitCapture } from './mirror';
 import type { GitBackedProject } from './types';
 
@@ -15,11 +9,11 @@ export async function readManifestAtSha(
   project: Pick<GitBackedProject, 'manifestPath'>,
   sha: string,
 ): Promise<Record<string, unknown> | null> {
-  for (const candidate of manifestCandidatePaths(project.manifestPath)) {
-    const manifest = await runGitCapture(['show', `${sha}:${candidate.path}`], mirror);
+  for (const path of manifestCandidatePaths(project.manifestPath)) {
+    const manifest = await runGitCapture(['show', `${sha}:${path}`], mirror);
     if (manifest.exitCode !== 0) continue;
     try {
-      return parseManifestText(manifest.stdout, candidate.format);
+      return parseManifestText(manifest.stdout);
     } catch {
       return null;
     }
@@ -28,49 +22,21 @@ export async function readManifestAtSha(
 }
 
 /**
- * Resolve the OpenCode config dir the daemon WILL pick for `sourceSha`, from
- * the API's bare mirror: the first of `opencodeConfigDirCandidates` (the
- * manifest's `opencode.config_dir`, else `harnesses/opencode`, then the legacy
- * `.kortix/opencode`) that ships an `opencode.json[c]`. `null` means the
- * revision carries no project OpenCode config, so the daemon runs on its baked
- * default dir. Mirrors `resolveOpencodeConfigDir` of the daemon's OpenCode
- * adapter (since deleted), evaluated server-side.
- */
-export async function resolveOpencodeConfigDirAtSha(
-  mirror: string,
-  project: Pick<GitBackedProject, 'manifestPath'>,
-  sourceSha: string,
-  manifest?: Record<string, unknown> | null,
-): Promise<string | null> {
-  const parsed = manifest === undefined ? await readManifestAtSha(mirror, project, sourceSha) : manifest;
-  for (const configDir of opencodeConfigDirCandidates(parsed)) {
-    for (const filename of ['opencode.jsonc', 'opencode.json']) {
-      const exists = await runGitCapture(
-        ['cat-file', '-e', `${sourceSha}:${configDir}/${filename}`],
-        mirror,
-      );
-      if (exists.exitCode === 0) return configDir;
-    }
-  }
-  return null;
-}
-
-/**
- * Did the harness config change between the commit a box holds and `tipSha`?
+ * Did the files a session loads from the repository change between the commit
+ * a box holds and `tipSha`?
  *
- * The compiled agent-config etag answers "did governance or an agent's
- * frontmatter change". It cannot see a skill body, a tool, or a plugin — none of
+ * The compiled agent-config etag answers "did an agent, a prompt or a command
+ * change". It cannot see a skill body, a tool, or an extension module — none of
  * them enter the compiled config — so a merge that touched only those left every
  * running session reporting `stale: false`, and the header never offered the
- * reload. This is the other half: for v2 the OpenCode config dir plus the root
- * `skills/` and `agents/` a session loads beside it; for v3 the registered skill
- * folders and the tool and extension module folders (`v3LoadedPaths`).
+ * reload. This is the other half: the registered skill folders and the tool
+ * and extension module folders (`loadedPaths`).
  *
  * Tri-state, like `isConfigStale`: `null` when it cannot be told. That is a
  * commit the mirror has never seen — a session that committed without pushing
  * reports a HEAD only it holds — and it must never read as "up to date".
  */
-export async function opencodeConfigDirChangedBetween(
+export async function loadedFilesChangedBetween(
   mirror: string,
   project: Pick<GitBackedProject, 'manifestPath'>,
   boxSha: string,
@@ -83,15 +49,7 @@ export async function opencodeConfigDirChangedBetween(
     if (known.exitCode !== 0) return null;
   }
   const manifest = await readManifestAtSha(mirror, project, tipSha);
-  let paths: string[];
-  if (Number(manifest?.kortix_version) === 3) {
-    paths = v3LoadedPaths(manifest!);
-  } else {
-    const configDir = await resolveOpencodeConfigDirAtSha(mirror, project, tipSha, manifest);
-    // The tip ships no project config: there is nothing a reload could bring in.
-    if (!configDir) return false;
-    paths = [configDir, SKILLS_DIR, AGENTS_DIR];
-  }
+  const paths = manifest ? loadedPaths(manifest) : [];
   if (paths.length === 0) return false;
   // `GIT_LITERAL_PATHSPECS`: the paths come from a repo-controlled manifest.
   const diff = await runGitCapture(
@@ -106,12 +64,12 @@ export async function opencodeConfigDirChangedBetween(
 }
 
 /**
- * What a v3 session loads from the repository that the compiled config does
- * not carry: each registered skill folder, and the folder of each tool and
+ * What a session loads from the repository that the compiled config does not
+ * carry: each registered skill folder, and the folder of each tool and
  * extension module (a module imports its siblings). Prompts and commands are
  * compiled in, so the etag already sees them.
  */
-function v3LoadedPaths(manifest: Record<string, unknown>): string[] {
+function loadedPaths(manifest: Record<string, unknown>): string[] {
   const map = (value: unknown) =>
     value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   const repoPath = (value: unknown) => (typeof value === 'string' && !value.startsWith('npm:') ? value : null);
@@ -126,4 +84,3 @@ function v3LoadedPaths(manifest: Record<string, unknown>): string[] {
   }
   return [...paths].filter((path) => path && path !== '.');
 }
-

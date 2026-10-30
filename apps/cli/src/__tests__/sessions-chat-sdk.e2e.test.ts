@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { runSessions } from '../commands/sessions.ts';
 
 const PROJECT_ID = '00000000-0000-4000-a000-00000000c111';
@@ -40,6 +41,9 @@ let replyError = false;
 let provisioning = false;
 let startPosts = 0;
 let stopped = false;
+/** The initial prompt's turn: its messages so far, and how many more pending reads see the root busy. */
+let initialTurn: unknown[] | null = null;
+let busyReads = 0;
 
 function sessionRow() {
   return {
@@ -106,6 +110,8 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     provisioning = false;
     startPosts = 0;
     stopped = false;
+    initialTurn = null;
+    busyReads = 0;
 
     server = Bun.serve({
       port: 0,
@@ -154,10 +160,16 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
           runtimeAuthorization = request.headers.get('authorization');
           // `chat --new` reads the reply to its initial prompt, which session
           // creation queued.
-          const messages = transcript.length ? transcript : [userMessage('msg_user', 'one initial prompt'), assistantReply()];
+          const messages = transcript.length ? transcript : (initialTurn ?? [userMessage('msg_user', 'one initial prompt'), assistantReply()]);
           return Response.json({ thread_id: ROOT_THREAD_ID, messages, has_more: false });
         }
         if (request.method === 'GET' && url.pathname === `/v1/p/${EXTERNAL_ID}/8000/kortix/runtime/pending`) {
+          if (busyReads > 0) {
+            busyReads -= 1;
+            // The turn ends with this read: its last step lands.
+            if (busyReads === 0 && initialTurn) initialTurn.push(record('msg_user-final', 4, { role: 'assistant', reply_to: 'msg_user', blocks: [{ type: 'text', id: 'final-b0', text: 'Final answer' }] }));
+            return Response.json({ statuses: { [ROOT_THREAD_ID]: 'busy' }, permissions: [], questions: [] });
+          }
           return Response.json({ statuses: {}, permissions: [], questions: [] });
         }
         return Response.json(
@@ -196,9 +208,21 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     }) as typeof process.stderr.write;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     process.stdout.write = realStdoutWrite;
     process.stderr.write = realStderrWrite;
+    if (server) {
+      // The SDK keeps the session's runtime per session id: drop it with the server it points at.
+      const auth = {
+        api_base: `http://127.0.0.1:${server.port}`,
+        token: TOKEN,
+        user_id: 'user-cli-sdk',
+        user_email: 'cli-sdk@example.test',
+        account_id: ACCOUNT_ID,
+        logged_in_at: '2026-07-30T00:00:00.000Z',
+      };
+      await withKortixScope(auth, () => kortixFromAuth(auth).session(PROJECT_ID, SESSION_ID).stop()).catch(() => {});
+    }
     server?.stop(true);
     server = null;
     for (const key of ENV_KEYS) {
@@ -324,5 +348,17 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
       error: { code: 'APIError', message: 'Synthetic model requires a paid plan.' },
     });
 
+  });
+  test('chat --new prints the reply that ends the first turn, not a step the turn has not finished', async () => {
+    // A finished tool step while the root is still busy, then the final answer.
+    initialTurn = [
+      userMessage('msg_user', 'one initial prompt'),
+      record('msg_user-step', 3, { role: 'assistant', reply_to: 'msg_user', blocks: [{ type: 'tool_call', id: 'step-b0', call_id: 'c1', name: 'question', kind: 'question', input: {}, status: 'complete', result: { content: [{ type: 'text', text: 'Pear' }], is_error: false } }] }),
+    ];
+    busyReads = 2;
+    const code = await runSessions(['chat', '--new', '--project', PROJECT_ID, '--prompt', 'one initial prompt', '--json']);
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout).text).toBe('Final answer');
+    expect(busyReads).toBe(0);
   });
 });

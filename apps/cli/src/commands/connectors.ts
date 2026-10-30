@@ -425,7 +425,6 @@ Give an agent it: kortix agents scope <agent> --policy-set <slug>=<name>
 Back to base:     kortix agents scope <agent> --policy-set <slug>=base
 
 Names: a-z, 0-9, - and _, at most 64 characters; \`base\` is reserved.
-Policy sets need kortix.yaml (kortix_version 2 or 3).
 
 Global:
   --project <id>     Operate on this project id (default: linked).
@@ -2475,7 +2474,7 @@ function connectorAddLocal(
       ? `  ${C.dim}This edited the session branch only, not the live project. To make it live now: ${C.reset}${C.cyan}kortix connectors add ${slug} --provider ${f.provider}${f.app ? ` --app ${f.app}` : ''} --apply${C.reset}${C.dim} (undo this edit first: git checkout kortix.yaml).${C.reset}\n`
       : '';
     process.stdout.write(
-      `${status.ok(`Added [[connectors]] ${C.bold}${slug}${C.reset} to kortix.yaml`)}\n` +
+      `${status.ok(`Added connector ${C.bold}${slug}${C.reset} to kortix.yaml`)}\n` +
         sessionNote +
         `  ${C.dim}Apply it with ${C.reset}${C.cyan}kortix ship${C.reset}${C.dim}; authentication will be detected from the source unless --auth-type overrides it.${C.reset}\n` +
         `  ${C.dim}Then ${f.provider === 'composio' || f.provider === 'pipedream' ? 'connect it with' : 'set the credential with'} ${C.reset}${C.cyan}kortix connectors ${f.provider === 'composio' || f.provider === 'pipedream' ? `connect ${slug}` : `credential ${slug}`}${C.reset}\n`,
@@ -2492,7 +2491,7 @@ function connectorRmLocal(slug: string | undefined): number {
   try {
     const removed = removeArrayBlock('connectors', 'slug', slug);
     if (!removed) {
-      process.stderr.write(`${status.err(`No [[connectors]] "${slug}" in kortix.yaml.`)}\n`);
+      process.stderr.write(`${status.err(`No connector "${slug}" in kortix.yaml.`)}\n`);
       return 1;
     }
     process.stdout.write(
