@@ -4,9 +4,11 @@
  * A chat platform plugs in as a `ChannelPort`: what the platform does for the
  * core, addressed by a `ChannelTarget` (one conversation). The adapter hands
  * the core one `ChannelMessage` per inbound message: its target, its persisted
- * keys, the follow-up text and how a new session would start. The adapter
- * keeps what only its platform has: webhook verification and intake, the
- * sender gate, commands, typing, prompts and the wording of every notice.
+ * keys, its envelope (`ChannelEnvelope`) and how a new session would start. The
+ * core renders the envelope (`channelPromptText`), with the revived note when
+ * it starts a thread over. The adapter keeps what only its platform has: webhook
+ * verification and intake, the sender gate, commands, typing, the envelope's
+ * fields and the wording of every notice.
  *
  *   a message whose create started → nothing: the lifecycle delivers it (a retry)
  *   a known thread       → a follow-up into its session
@@ -22,7 +24,7 @@
  */
 import { chatEventDedup, projectSessions } from '@kortix/db';
 import type { CHANNEL_PLATFORMS } from '@kortix/manifest-schema';
-import { isModelNativeAttachmentMime } from '@kortix/shared';
+import { type ChannelEnvelope, channelPromptText, isModelNativeAttachmentMime } from '@kortix/shared';
 import { eq } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { logger } from '../../lib/logger';
@@ -164,11 +166,12 @@ export interface ChannelMessage {
     /** `chat_event_dedup` key that lets one message per thread create its session. */
     createClaim: string;
   };
-  followUp: { text: string };
+  /** The message as the agent and the session view read it, rendered by the core. */
+  followUp: ChannelEnvelope;
   /** The message's own files, never a quoted message's. Read once per attempt, after the retry guard, on the way into a session. */
   files?: readonly ChannelFile[];
-  /** How the thread's session starts. `revived`: its earlier session is gone. Null drops the message (the adapter logs why). */
-  plan(revived: boolean): Promise<ChannelSessionPlan | null>;
+  /** How the thread's session starts. Null drops the message (the adapter logs why). */
+  plan(): Promise<ChannelSessionPlan | null>;
 }
 
 /** One file of an inbound message. The adapter lists it from the stored event, with no network call. */
@@ -214,8 +217,8 @@ export interface ChannelSessionPlan {
   metadata: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   mayManageSystemConnections?: boolean;
-  /** The first prompt, delivered once the session is bound to the thread. */
-  prompt: string;
+  /** The first prompt, delivered once the session is bound to the thread. The core renders it. */
+  prompt: ChannelEnvelope;
 }
 
 /** Up to 8 s for a racing message's create to bind the thread. */
@@ -275,7 +278,7 @@ export async function routeChannelMessage(
     await dropChatThread(target, existing.sessionId);
   }
 
-  const plan = await message.plan(existing !== null);
+  const plan = await message.plan();
   if (!plan) return;
   const userId = plan.userId ?? (await lifecycle.resolveProjectAutomationActor(plan.project.accountId));
   if (!userId) {
@@ -283,7 +286,8 @@ export async function routeChannelMessage(
     return;
   }
   // Before the claim: a read that throws holds no claim, and a racing message's 8 s wait does not grow.
-  const first = await withFiles(plan.prompt, await files(), async () => ({
+  // `revived`: the thread's earlier session is gone, and the agent is told it has no history.
+  const first = await withFiles(channelPromptText(plan.prompt, { revived: existing !== null }), await files(), async () => ({
     projectId: target.projectId,
     accountId: plan.project.accountId,
     userId,
@@ -420,7 +424,7 @@ export async function forgetChatThread(target: ChannelTarget, createClaim: strin
 
 async function followUp(
   port: ChannelPort,
-  { target, keys, followUp: { text } }: ChannelMessage,
+  { target, keys, followUp: envelope }: ChannelMessage,
   thread: { sessionId: string; projectId: string },
   run: { finalAttempt: boolean },
   files: () => Promise<MessageFiles>,
@@ -439,7 +443,7 @@ async function followUp(
         return null;
       })
     : null;
-  const prompt = await withFiles(text, await files(), () => sessionImageTurn(target.projectId, thread.sessionId, model), model);
+  const prompt = await withFiles(channelPromptText(envelope), await files(), () => sessionImageTurn(target.projectId, thread.sessionId, model), model);
   const outcome = await lifecycle.deliverThroughQueue({
     source: target.platform,
     idempotencyKey: keys.followUp,

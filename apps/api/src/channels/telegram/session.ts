@@ -21,7 +21,7 @@
  */
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
 import { chatThreads, projects } from '@kortix/db';
-import { type ChannelEnvelope, channelPromptText } from '@kortix/shared';
+import type { ChannelEnvelope } from '@kortix/shared';
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { and, eq, like, or } from 'drizzle-orm';
 import { type IntegrationEvent, registerEventConsumer } from '../../integrations/event-inbox';
@@ -484,7 +484,7 @@ export async function handleTelegramEvent(
         create: `telegram:create:${install.botId}:${event.id}`,
         createClaim,
       },
-      followUp: { text: channelPromptText(telegramEnvelope(message)) },
+      followUp: telegramEnvelope(message),
       files: file
         ? [{
             kind: file.kind,
@@ -494,7 +494,7 @@ export async function handleTelegramEvent(
             read: (maxBytes) => telegramFile(token, file.ref.file_id, maxBytes),
           }]
         : [],
-      plan: async (revived) => {
+      plan: async () => {
         const start = await chatSessionStart(telegramSettings(target), project).catch((error) => {
           logger.warn('[telegram] chat settings unreadable; the session starts on the defaults', { projectId: event.projectId, error: String(error) });
           return { agentName: 'default' } as Awaited<ReturnType<typeof chatSessionStart>>;
@@ -521,7 +521,7 @@ export async function handleTelegramEvent(
               message_id: message.message_id,
             },
           },
-          prompt: channelPromptText(telegramEnvelope(message), { revived }),
+          prompt: telegramEnvelope(message),
         };
       },
     },
@@ -577,7 +577,7 @@ export async function handleTelegramPress(
           create: `telegram:create:${install.botId}:${event.id}`,
           createClaim: `telegram:threadcreate:${event.projectId}:${install.botId}:${threadId}`,
         },
-        followUp: { text: channelPromptText(telegramEnvelope(reply)) },
+        followUp: telegramEnvelope(reply),
       };
     },
     run,
@@ -733,15 +733,15 @@ async function sendTelegramReply(token: string, target: ChannelTarget, text: str
   );
 }
 
-/**
- * One message for the agent and the session view (`channelPromptText`). A
- * button press keeps no names (`telegramPressEvent`), so its sender is the
- * username or the id.
- */
 /** "/new, /stop, … and /help": the commands the agent never receives. */
 const COMMAND_NAMES = CHANNEL_COMMANDS.map((c) => `/${c.name}`);
 const KORTIX_COMMANDS = `${COMMAND_NAMES.slice(0, -1).join(', ')} and ${COMMAND_NAMES.at(-1)}`;
 
+/**
+ * One message for the agent and the session view: the core renders it
+ * (`channelPromptText`). A button press keeps no names (`telegramPressEvent`),
+ * so its sender is the username or the id.
+ */
 export function telegramEnvelope(message: TelegramMessage): ChannelEnvelope {
   const { chat, from } = message;
   const name = [from?.first_name, from?.last_name].filter(Boolean).join(' ');
