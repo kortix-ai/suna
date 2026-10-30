@@ -31,7 +31,7 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { warmClaimFiling } from '../lib/project-spaces';
 import { GitOperationError } from '../git/mirror';
-import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
+import { resolveSessionPlacement } from '../../platform/services/sandbox-region';
 import { storedResidentialProxy } from '../../snapshots/templates';
 
 /**
@@ -84,8 +84,9 @@ const TEMPLATE_WANTS_RESIDENTIAL_PROXY = sql`EXISTS (
 export async function warmSessionPlacement(
   sessionId: string,
   projectMetadata: unknown,
+  projectId: string,
 ): Promise<'compatible' | 'pending' | 'mismatch'> {
-  const region = resolveSessionSandboxRegion(projectMetadata);
+  const region = (await resolveSessionPlacement(projectId, projectMetadata)).location;
   const [row] = await db
     .select({
       sessionStatus: projectSessions.status,
@@ -151,7 +152,7 @@ export async function findWarmProjectSession(scope: {
   includeProvisioning?: boolean;
 }) {
   const instanceId = currentInstanceId();
-  const region = resolveSessionSandboxRegion(scope.projectMetadata);
+  const region = (await resolveSessionPlacement(scope.projectId, scope.projectMetadata)).location;
   const [row] = await db
     .select()
     .from(projectSessions)

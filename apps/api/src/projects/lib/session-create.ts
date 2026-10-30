@@ -34,7 +34,7 @@ import {
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
-import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
+import { resolveSessionPlacement } from '../../platform/services/sandbox-region';
 import { startWorkspaceVolume, WORKSPACE_VOLUME_SESSION_KEY, type WorkspaceVolume } from '../../platform/services/workspace-volume';
 import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from './warm-sessions';
 
@@ -1062,6 +1062,8 @@ function buildSessionCreateMetadata(params: {
   /** Filed into a space: the first prompt is stored for the channel timeline. */
   filed: boolean;
   workspaceVolume: WorkspaceVolume | null;
+  /** The region the session's boxes run in (sandbox-region.ts resolveSessionPlacement); undefined = home. */
+  sandboxLocation: string | undefined;
 }) {
   const {
     input,
@@ -1084,6 +1086,7 @@ function buildSessionCreateMetadata(params: {
     sandboxSlug,
     filed,
     workspaceVolume,
+    sandboxLocation,
   } = params;
   const { project, userId, body } = input;
   // A name supplied at create is an EXPLICIT, user-chosen name — the same thing
@@ -1171,7 +1174,7 @@ function buildSessionCreateMetadata(params: {
     ...(input.metadata ?? {}),
     // Server-owned creation intent, never caller metadata or actual placement.
     ...((input.metadata?.[WARM_SESSION_METADATA_KEY] ?? requestMetadata[WARM_SESSION_METADATA_KEY]) === true
-      ? { [WARM_SESSION_LOCATION_KEY]: resolveSessionSandboxRegion(project.metadata) ?? 'home' }
+      ? { [WARM_SESSION_LOCATION_KEY]: sandboxLocation ?? 'home' }
       : {}),
     // Persist the coordinator→worker link. The sidebar badges child sessions
     // with it, and the turn-end deadline shortener stops child sandboxes on a
@@ -1701,10 +1704,14 @@ export async function createProjectSession(input: {
   // so the open runs alongside the checks below instead of before the box create.
   const identity = resolveSessionIdentity({ input, projectId, accountId });
   if (identity.error) return { error: identity.error };
+  // Where the session's boxes run: the project's Files' region, else its
+  // `us_region` flag. The /workspace volume opens there, so no box ever has to
+  // mount volumes of two regions.
+  const sandboxRegion = await resolveSessionPlacement(projectId, project.metadata);
   const workspaceVolume = startWorkspaceVolume({
     sessionId: identity.sessionId,
     projectMetadata: project.metadata,
-    location: resolveSessionSandboxRegion(project.metadata),
+    location: sandboxRegion.location,
   });
   const requestedSpace = await resolveRequestedSessionSpace(input);
   if (requestedSpace.error) return { error: requestedSpace.error };
@@ -1876,6 +1883,7 @@ export async function createProjectSession(input: {
     filed: requestedSpace.filed,
     // Only a Platinum session box mounts it. An unrecorded open is deleted.
     workspaceVolume: providerName === 'platinum' && sandboxSlug !== META_SANDBOX_SLUG ? workspaceVolume : null,
+    sandboxLocation: sandboxRegion.location,
   });
 
   let sessionRow: ProjectSessionRow | null = null;

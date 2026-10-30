@@ -115,7 +115,7 @@ export function registerSessionRuntimeRoutes(): void {
         // A held browser entry can predate the project's region preference.
         // Wait for actual placement while creation is pending; never adopt an
         // EU or unknown active box as US, and never move an existing box.
-        const placement = await warmSessionPlacement(sessionId, projectMetadata);
+        const placement = await warmSessionPlacement(sessionId, projectMetadata, loaded.row.projectId);
         if (placement === 'pending') {
           return c.json({
             stage: 'provisioning' as const,
