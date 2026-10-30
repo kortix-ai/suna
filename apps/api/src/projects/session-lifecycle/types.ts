@@ -29,6 +29,8 @@ export type SessionInvocationSource =
   | 'system:room-message'
   /** A background subagent finished a turn: its report, delivered into the parent (`projects/subagent-notice.ts`). */
   | 'system:subagent-finished'
+  /** A cross-session message (`send_message`) or its idle notice (`projects/peer-messages`). */
+  | 'system:peer-message'
   /** The continuation of a turn a provider-originated `runtime_gone` cut short
    *  when no `continue_session` row took the turn over — the session's own
    *  initial prompt, or an unattended session's row that could not be requeued

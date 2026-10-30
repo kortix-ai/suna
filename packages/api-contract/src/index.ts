@@ -17,6 +17,7 @@
  */
 import { z } from 'zod';
 import { SessionLogPageSchema } from './session-log/wire';
+import { SessionAttentionSchema, SessionBoardStateSchema, SessionInboundSchema } from './multi-agent';
 
 export * from './memory';
 
@@ -1150,6 +1151,24 @@ export const ProjectSessionSchema = z.object({
   model: z.string().nullable().optional(),
   /** Work activity, independent of the computer lifecycle status. Older servers may omit it. */
   working: SessionWorkingSchema.optional(),
+  /**
+   * Board state, as Claude Code's agent view groups sessions
+   * (`@kortix/api-contract/multi-agent`). The fields below are descriptive;
+   * older servers omit them.
+   */
+  board_state: SessionBoardStateSchema.optional(),
+  /** What the session waits for from its person: `question`, `approval`, or null. */
+  attention: SessionAttentionSchema.optional(),
+  /** The newest turn start, turn end or accepted prompt (ISO), or null. */
+  last_activity_at: z.string().nullable().optional(),
+  /** At most 280 characters of the last assistant text of the newest completed turn. */
+  result_excerpt: z.string().nullable().optional(),
+  /** The name a lead gave this child (`metadata.agent_handle`); `send_message` resolves `to` by it. */
+  agent_handle: z.string().nullable().optional(),
+  /** The lead of a teammate (`metadata.team_lead`, agent teams). */
+  team_lead_session_id: z.string().nullable().optional(),
+  /** Who may send this session a message: `accept`, `hold` or `refuse`. */
+  inbound: SessionInboundSchema.optional(),
   session_id: z.string(),
   account_id: z.string(),
   project_id: z.string(),
