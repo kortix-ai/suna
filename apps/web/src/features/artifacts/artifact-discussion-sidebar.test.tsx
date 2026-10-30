@@ -226,6 +226,17 @@ async function click(target: InstanceType<typeof browser.HTMLElement>) {
   });
 }
 
+test('the top-level discussion tabs expose the overlay header boundary', async () => {
+  await render(props());
+  const header = browser.document.querySelector('[data-artifact-discussion-header]');
+  expect(header).not.toBeNull();
+  expect(
+    [...header!.querySelectorAll('[role="tab"]')].map((tab) =>
+      tab.textContent?.replace(/\d+/g, ''),
+    ),
+  ).toEqual(['Comments', 'Activity']);
+});
+
 test('a failed comment retains its draft through tabs and filters', async () => {
   const value = props();
   value.comments.create = mock(async () => {

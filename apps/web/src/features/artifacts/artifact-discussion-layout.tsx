@@ -75,7 +75,9 @@ export function ArtifactDiscussionLayout({
             className="!inset-y-0 !right-0 !left-auto !flex !h-full !max-h-none !w-full !max-w-sm !translate-x-0 !translate-y-0 !flex-col !space-y-0 overflow-clip !rounded-none"
           >
             <ModalTitle className="sr-only">{title}</ModalTitle>
-            <div className="min-h-0 flex-1">{discussion}</div>
+            <div className="min-h-0 flex-1 [&_[data-artifact-discussion-header]]:pr-14">
+              {discussion}
+            </div>
           </ModalContent>
         </Modal>
       ) : null}
