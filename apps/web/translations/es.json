@@ -2865,7 +2865,6 @@
     },
     "unified": {
       "welcome": "Te damos la bienvenida a Kortix CompanyOS",
-      "tagline": "El CompanyOS de código abierto",
       "email": "Correo electrónico",
       "emailPlaceholder": "Tu dirección de correo electrónico",
       "password": "Contraseña",
@@ -24675,6 +24674,8 @@
     "title": "Escritorio",
     "openTab": "Abrir en una pestaña nueva",
     "offline": "El escritorio no se está ejecutando en este equipo.",
+    "noDesktop": "Este equipo no tiene escritorio.",
+    "noDesktopHint": "My Kortix se ejecuta en un equipo mínimo. Las sesiones de tus agentes tienen escritorio.",
     "start": "Pide a Kortix que ejecute",
     "retry": "Reintentar",
     "takeOver": "Tomar el control",

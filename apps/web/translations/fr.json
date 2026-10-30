@@ -2865,7 +2865,6 @@
     },
     "unified": {
       "welcome": "Bienvenue sur Kortix CompanyOS",
-      "tagline": "Le CompanyOS open source",
       "email": "E-mail",
       "emailPlaceholder": "Votre adresse e-mail",
       "password": "Mot de passe",
@@ -24675,6 +24674,8 @@
     "title": "Bureau",
     "openTab": "Ouvrir dans un nouvel onglet",
     "offline": "Le bureau ne fonctionne pas sur cet ordinateur.",
+    "noDesktop": "Cet ordinateur n’a pas de bureau.",
+    "noDesktopHint": "My Kortix fonctionne sur un ordinateur minimal. Les sessions de vos agents ont un bureau.",
     "start": "Demandez à Kortix d’exécuter",
     "retry": "Réessayer",
     "takeOver": "Prendre le contrôle",

@@ -11,7 +11,7 @@ Rule format: **Rule.** — *Why:* — *Where:* — *When silent:*.
 | Layer | Line | Use for |
 | --- | --- | --- |
 | Category | CompanyOS (full name: Kortix CompanyOS) | What Kortix is. The default noun everywhere. |
-| Tagline | The open-source CompanyOS | Page titles, hero, README, CLI banner, GitHub About, auth screen. The default lead. |
+| Tagline | The open-source CompanyOS | Page titles, hero, README, CLI banner, GitHub About. The default lead. Never directly under a heading that already says "Kortix CompanyOS" (D30). |
 | Comparative | The leading open-source alternative to Claude Cowork and ChatGPT Work | Search, social, launch, GitHub. Anchors against the known category. |
 | Manifesto line | A company is going to be a git repository | The deep thesis. Manifesto, founder voice, vision talks. Never a page title. |
 | Mission | Take a company from human to AGI, and let it keep every byte of itself on the way there. | Founder voice, about, hiring. Never a category. |
@@ -54,7 +54,7 @@ Kortix is the open-source CompanyOS: your agents, their skills, your company mem
 | PWA manifest `name` | "Kortix" | `description` = Short. |
 | README, GitHub About | Tagline (README) and Short (About) | Already correct. |
 | CLI banner and `--help` | Tagline | Already correct. |
-| Auth screen subtitle | Tagline | Not "Your AI Command Center". |
+| Auth screen subtitle | None | The heading "Welcome to Kortix CompanyOS" stands alone (D30). |
 | Transactional email footer | "Kortix CompanyOS – the open-source operating system for your company" | Shipped since 2026-10-01 (`BRAND_FOOTER`). |
 | Slack and Teams app description | Standard, then one sentence on the channel | "Start a session from any Slack thread." |
 | Package descriptions (root, CLI, SDK) | Short (root, CLI); "the Kortix API" (SDK) | Not "agent platform". |

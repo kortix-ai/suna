@@ -2865,7 +2865,6 @@
     },
     "unified": {
       "welcome": "Willkommen bei Kortix CompanyOS",
-      "tagline": "Das Open-Source-CompanyOS",
       "email": "E-Mail",
       "emailPlaceholder": "Deine E-Mail-Adresse",
       "password": "Passwort",
@@ -24675,6 +24674,8 @@
     "title": "Desktop",
     "openTab": "In neuem Tab öffnen",
     "offline": "Der Desktop läuft auf diesem Computer nicht.",
+    "noDesktop": "Dieser Computer hat keinen Desktop.",
+    "noDesktopHint": "My Kortix läuft auf einem minimalen Computer. Die Sitzungen deiner Agenten haben einen Desktop.",
     "start": "Bitte Kortix, Folgendes auszuführen:",
     "retry": "Erneut versuchen",
     "takeOver": "Übernehmen",

@@ -2865,7 +2865,6 @@
     },
     "unified": {
       "welcome": "Kortix CompanyOSへようこそ",
-      "tagline": "オープンソースのCompanyOS",
       "email": "メールアドレス",
       "emailPlaceholder": "メールアドレスを入力",
       "password": "パスワード",
@@ -24675,6 +24674,8 @@
     "title": "デスクトップ",
     "openTab": "新しいタブで開く",
     "offline": "このコンピューターではデスクトップが起動していません。",
+    "noDesktop": "このコンピューターにはデスクトップがありません。",
+    "noDesktopHint": "My Kortix は最小構成のコンピューターで動作します。エージェントのセッションにはデスクトップがあります。",
     "start": "Kortix に次のコマンドの実行を依頼してください：",
     "retry": "再試行",
     "takeOver": "操作を引き継ぐ",

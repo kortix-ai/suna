@@ -761,6 +761,56 @@ describe('pi harness', () => {
     expect(text).toContain('event: permission.replied')
   })
 
+  test('allow all for the session (PATCH /session/:id `permission`) answers every ask; an empty list asks again; a deny still wins; a restart keeps it', async () => {
+    const compiled = JSON.stringify({ agent: { build: { permission: { bash: 'ask', edit: 'deny' } } } })
+    const r = await boot({
+      script: [
+        { tool: 'bash', args: { command: 'echo granted' } },
+        { text: 'one' },
+        { tool: 'write', args: { path: 'denied.txt', content: 'x' } },
+        { text: 'two' },
+      ],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: compiled },
+    })
+    const root = r.service.runtime()!.rootId
+    const allowAll = [{ permission: '*', pattern: '*', action: 'allow' }, { permission: 'bash', pattern: '*', action: 'allow' }]
+    const patch = (permission: unknown) => r.user(`/session/${root}`, { method: 'PATCH', body: JSON.stringify({ permission }) })
+    expect((await patch(allowAll)).status).toBe(200)
+
+    await promptAndSettle(r, 'run it')
+    expect(r.service.runtime()!.permissions.list()).toEqual([])
+    let page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(toolParts(page, 'bash')[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('granted') })
+    await promptAndSettle(r, 'write it')
+    page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(toolParts(page, 'write')[0]!.state.status).toBe('error')
+    expect(existsSync(join(r.workspace, 'denied.txt'))).toBe(false)
+
+    // The grant is in the dump: a restarted runtime still answers the ask itself.
+    await r.service.lifecycle.stop()
+    const restarted = await boot({ script: [{ tool: 'bash', args: { command: 'echo restarted' } }, { text: 'three' }], workspace: r.workspace, env: { KORTIX_COMPILED_AGENT_CONFIG: compiled } })
+    rigs.splice(rigs.indexOf(r), 1)
+    await promptAndSettle(restarted, 'again')
+    expect(restarted.service.runtime()!.permissions.list()).toEqual([])
+
+    // An empty list clears every grant: the next bash call asks.
+    expect((await restarted.user(`/session/${root}`, { method: 'PATCH', body: JSON.stringify({ permission: [] }) })).status).toBe(200)
+    gateway.script([{ tool: 'bash', args: { command: 'echo asked' } }, { text: 'four' }])
+    expect((await prompt(restarted, root, { parts: [{ type: 'text', text: 'once more' }] })).status).toBe(204)
+    await waitFor(() => restarted.service.runtime()!.permissions.list().length === 1)
+    const [pending] = restarted.service.runtime()!.permissions.list()
+    expect(pending).toMatchObject({ permission: 'bash' })
+    expect((await restarted.user(`/permission/${pending!.id}/reply`, { method: 'POST', body: JSON.stringify({ reply: 'reject' }) })).status).toBe(200)
+    await waitFor(() => !restarted.service.runtime()!.busy())
+  })
+
+  test('PATCH /session/:id refuses a permission that is not a list of rules', async () => {
+    const r = await boot({ script: [] })
+    const root = r.service.runtime()!.rootId
+    const res = await r.user(`/session/${root}`, { method: 'PATCH', body: JSON.stringify({ permission: { bash: 'allow' } }) })
+    expect(res.status).toBe(400)
+  })
+
   test('a new prompt dismisses an open question, so an unattended session never wedges behind it', async () => {
     // Prod 2026-10-09: a keyed cron session called `question`, nobody answered,
     // and every later fire queued behind the blocked turn for 5 days.

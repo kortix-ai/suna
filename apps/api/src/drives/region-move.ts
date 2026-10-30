@@ -263,7 +263,11 @@ async function liftFence(driveId: string, startedAt: string): Promise<boolean> {
 export async function moveDriveToRegion(driveId: string, to: MoveTarget, opts: { apply: boolean }): Promise<DriveMoveReport> {
   const t0 = Date.now();
   const drive = await getDrive(driveId);
-  if (!drive) throw new Error(`drive ${driveId} not found`);
+  if (!drive) {
+    // Deleted since the run listed it (its project went): nothing to move.
+    const none: DriveVolume = { name: '', region: null };
+    return { driveId, projectId: null, from: none, to: { name: movedVolumeName(driveId, to), region: to }, outcome: 'skipped', reason: 'the drive no longer exists', files: 0, dirs: 0, bytes: 0, detached: 0, ms: Date.now() - t0 };
+  }
   const from = driveVolume(drive);
   const target: DriveVolume = { name: movedVolumeName(drive.driveId, to), region: to, unfenced: true };
   const report: DriveMoveReport = {

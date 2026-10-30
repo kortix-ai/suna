@@ -520,7 +520,10 @@ control with `runtimeSupports(health?.capabilities, 'session.rewind')`. pi lists
 `session.log.v2`. It does not list `session.rewind`, `session.fork`,
 `session.mcp`, `session.todo`, `session.shell`, `session.attach` or
 `session.config`, so rewind, fork, MCP servers, the todo list, shell turns and
-the runtime config document stay hidden or empty on a pi session.
+the runtime config document stay hidden or empty on a pi session. The desktop is a property of the session's computer, not of its runtime: the
+daemon lists `machine.desktop` when the image installs it, and
+`hasSessionDesktop(health?.capabilities)` (or `useHasSessionDesktop()`, which is
+`undefined` until the runtime answers) gates a desktop control.
 
 Every session saves its transcript at the end of each turn. `useSession` reads saved
 messages from the platform database while `/start` continues. It uses the

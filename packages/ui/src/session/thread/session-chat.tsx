@@ -11,7 +11,6 @@ import { useTranslations } from '../../i18n';
 import { errorMessageOf, isDeliveredButDisconnected } from '../../internal/lib/delivered-but-disconnected';
 import { useQueuedDraftStore, useQueuedDrafts } from '../composer/stores/queued-draft-store';
 import {
-  type SandboxLifecycle,
   type SessionPrompt,
   type SessionPromptDelivery,
   type SessionPromptPart,
@@ -22,7 +21,6 @@ import {
   SESSION_LOG_MINOR,
   SESSION_LOG_SCHEMA,
   listSessionPrompts,
-  projectSessionConnection,
   sessionLogOfV1Rows,
   sessionLogPromptMessage,
   sessionLogRetrying,
@@ -4049,22 +4047,8 @@ export function SessionChat({
   // its cause attached instead of a shrug. An actionable cause reports to
   // Sentry; a routine browser tab discard only leaves a breadcrumb.
   useReloadForensics(projectSessionId);
-  // ONE answer for every surface that draws this session's runtime, and the
-  // reason the composer no longer guesses: `unknown` and `connecting` are
-  // waits, and a wait is not a fault. A routine wake says nothing either; only
-  // a parked box with no wake under way earns the asleep notice.
-  const sessionConnection = projectSessionConnection({
-    sandbox: (projectSessionRow?.status as SandboxLifecycle | undefined) ?? null,
-    runtimeReady,
-    unreachable: runtimePhase === 'unreachable' || runtimeUnreachable,
-    stalled: runtimeStalled,
-    activityFresh: working.state === 'working' && working.source === 'stream',
-  });
   const composerReadiness = sessionComposerReadiness({
     runtimeReady,
-    pendingPrompt: allowSendBeforeReady && working.state === 'working',
-    pendingDelivery: working.pendingDelivery,
-    connection: sessionConnection,
     // Only an OPEN TURN the control plane is holding counts here. This tab's
     // optimistic receipt and a stream frame both survive a box that died
     // mid-turn, and a durable inbox row (which the projection also sources to
@@ -4073,13 +4057,6 @@ export function SessionChat({
     serverTurnLive: serverHoldsOpenTurn(working),
     unreachable: runtimePhase === 'unreachable' || runtimeUnreachable,
     stalled: runtimeStalled,
-    // The route's `/start` is bringing the computer up (or has not answered):
-    // the same fact the boot pill above the thread shows.
-    starting:
-      !!sessionState &&
-      (sessionState.stage == null ||
-        sessionState.stage === 'provisioning' ||
-        sessionState.stage === 'starting'),
   });
   // #6509's `promptLikelyDropped` notice is deliberately NOT carried over: it
   // instrumented the deleted prompt-observation stall machinery to warn about
@@ -4991,7 +4968,6 @@ export function SessionChat({
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.
                 notice={hostNotice(composerReadiness.notice, rowsContext?.notices)}
-                noticeAsleep={composerReadiness.notice === SESSION_NOTICE.idle}
                 // Inside the thread panel's bordered box, as the channel composer.
                 // A phone keeps the row under the card; a 720px desktop window does not.
                 underbarPlacement={transcriptRows && !isPhone ? 'inline' : undefined}

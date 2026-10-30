@@ -1663,7 +1663,6 @@ const catalog = {
     },
     "unified": {
       "welcome": "Welcome to Kortix CompanyOS",
-      "tagline": "The open-source CompanyOS",
       "email": "Email",
       "emailPlaceholder": "Your email address",
       "password": "Password",
@@ -9073,6 +9072,8 @@ const catalog = {
     "title": "Desktop",
     "openTab": "Open in new tab",
     "offline": "The desktop is not running on this computer.",
+    "noDesktop": "This computer has no desktop.",
+    "noDesktopHint": "My Kortix runs on a minimal computer. Your agents' sessions have a desktop.",
     "start": "Ask Kortix to run",
     "retry": "Retry",
     "takeOver": "Take over",
