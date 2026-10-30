@@ -6,7 +6,6 @@ import { logger } from '@/lib/log/logger'
 import { runSandboxOnBoot } from '@/harness/shared/on-boot'
 import { runConvergence } from './config'
 import { authorizeControl } from './control-auth'
-import { legacyRefreshFields } from './legacy-names'
 
 interface RefreshRouterDeps {
   runSandboxOnBoot: (cfg: Config) => void
@@ -117,7 +116,6 @@ export function createRefreshRouter(
         if (rerunOnBoot) deps.runSandboxOnBoot(cfg)
         return c.json({
           ...result,
-          ...legacyRefreshFields(result),
           on_boot: rerunOnBoot ? 'started' : undefined,
         })
       } catch (err) {

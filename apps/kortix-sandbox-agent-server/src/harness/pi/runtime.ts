@@ -2052,7 +2052,7 @@ export class PiRuntime {
     }
   }
 
-  /** The `/kortix/opencode/state` document. */
+  /** The `/kortix/runtime/state` document. */
   stateDoc(): Record<string, unknown> {
     const bus = kortixEventBus()
     const selected = this.selected

@@ -132,11 +132,7 @@ import rules, and where new code goes; `bun run lint` enforces them.
     "session": { "id": "ses_…", "required": true },
     "turn": null,
     "details": { "model": "kortix/…", "extensions": { "…": "…" }, "agentsMd": null }
-  },
-  "opencode": "ok",
-  "opencode_pid": null,
-  "opencode_port": null,
-  "opencode_session_id": "ses_…"
+  }
 }
 ```
 
@@ -146,11 +142,7 @@ import rules, and where new code goes; `bun run lint` enforces them.
   `harness.ready`. `capabilities` lists the host features, then the session
   features pi serves (E1): `session.subagents`, `session.compact`,
   `session.commands`, `session.steer` and `session.log.v2`.
-- `opencode`, `opencode_pid`, `opencode_port`, `opencode_session_id` and
-  `opencode_session_required` are the pre-W3 flat names of the block's fields
-  (`routes/kortix/legacy-names.ts`), kept for an API built before W3. pi has no
-  process id or port, so `opencode_pid` and `opencode_port` are `null`.
-- `harness.state` (flat: `opencode`) is `"ok"`, `"starting"` or `"down"`. A pi
+- `harness.state` is `"ok"`, `"starting"` or `"down"`. A pi
   that cannot start reports `"down"` and its reason in `harness.error`.
 - `repo`, `branch`, `commit_sha` come from `git` in `KORTIX_PROJECT_TARGET` and
   are `null` when no repo has been materialized.

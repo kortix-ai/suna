@@ -14,8 +14,7 @@ export interface HarnessEnvironmentInput {
 }
 
 /**
- * Response of `POST /kortix/env`. `runtime*` describes the session runtime of
- * either harness; `routes/kortix/env.ts` adds the pre-W3 `opencode*` aliases.
+ * Response of `POST /kortix/env`. `runtime*` describes the session runtime.
  */
 export interface HarnessEnvironmentResult {
   ok: true

@@ -209,8 +209,8 @@ const opencodeNameCases = [
   ['the pi adapter, since E2', 'src/harness/pi/boot.ts', 'const opencodePort = 1', ['opencodePort']],
   ['the resolver', 'src/harness/harness.ts', 'const opencodePort = 1', []],
   ['a test file', 'src/__tests__/pi-harness.test.ts', 'const opencodePort = 1', []],
-  ['an allowlisted word in its own file', 'src/routes/kortix/legacy-names.ts', 'const opencodeEnv = 1', []],
-  ['an allowlisted word in another file', 'src/routes/kortix/health.ts', 'const opencodeEnv = 1', ['opencodeEnv']],
+  ['an allowlisted word in its own file', 'src/harness/pi/config.ts', "const dir = 'opencode'", []],
+  ['an allowlisted word in another file', 'src/routes/kortix/health.ts', "const dir = 'opencode'", ['opencode']],
 ]
 for (const [name, file, code, words] of opencodeNameCases) {
   test(`opencode names: ${name}`, async () => {
@@ -222,7 +222,7 @@ for (const [name, file, code, words] of opencodeNameCases) {
 }
 
 test('opencode names: an allowlisted word that no longer occurs is stale', async () => {
-  const file = 'src/routes/kortix/legacy-names.ts'
+  const file = 'src/harness/pi/config.ts'
   const [result] = await eslint.lintText('export {}', { filePath: resolve(root, file) })
   const stale = result.messages.filter((m) => m.ruleId === 'kortixd/opencode-names' && m.messageId === 'stale').map((m) => m.message.split("'")[1])
   assert.deepEqual(stale, OPENCODE_NAMES_ALLOWED[file])
