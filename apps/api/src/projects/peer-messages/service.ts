@@ -55,7 +55,7 @@ import { db } from '../../shared/db';
 import { trackDetached } from '../../shared/drain';
 import { isUuid } from '../../shared/validate';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
-import { RESULT_EXCERPT_KEY, RESULT_EXCERPT_MAX_CHARS, readSessionBoards, sessionInbound, sessionTeamLead } from '../lib/session-board';
+import { RESULT_EXCERPT_KEY, RESULT_EXCERPT_MAX_CHARS, plainExcerpt, readSessionBoards, sessionInbound, sessionTeamLead } from '../lib/session-board';
 import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
 import { readSessionsWorking } from '../lib/session-working-read';
 import type { ProjectSessionRow } from '../lib/serializers';
@@ -546,6 +546,7 @@ export async function setSessionInbound(sessionId: string, inbound: SessionInbou
 
 // ── Turn end ────────────────────────────────────────────────────────────────
 
+
 /**
  * The last assistant text of the turn that just ended, ≤ 280 characters, into
  * `metadata.result_excerpt` (the session row's `result_excerpt`). pi flushes
@@ -560,7 +561,7 @@ export async function recordResultExcerpt(sessionId: string): Promise<string | n
     const lastUser = messages.map((m) => m.role).lastIndexOf('user');
     const text = messages.slice(lastUser + 1).filter((m) => m.role === 'assistant').map((m) => m.text.trim()).filter(Boolean).at(-1);
     if (!text) return null;
-    const excerpt = text.replace(/\s+/g, ' ').slice(0, RESULT_EXCERPT_MAX_CHARS);
+    const excerpt = plainExcerpt(text).slice(0, RESULT_EXCERPT_MAX_CHARS);
     await db.update(projectSessions)
       .set({ metadata: projectSessionMetadataMerge({ [RESULT_EXCERPT_KEY]: excerpt }) })
       .where(eq(projectSessions.sessionId, sessionId));

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { deriveSessionBoard } from './session-board';
+import { deriveSessionBoard, plainExcerpt } from './session-board';
 
 const row = (metadata: Record<string, unknown> = {}, status = 'stopped') => ({ sessionId: 's1', status, metadata }) as never;
 const working = { state: 'working' as const, since: '2026-10-30T10:00:00.000Z', turn_token: 't', pending_delivery: false };
@@ -32,5 +32,12 @@ describe('deriveSessionBoard', () => {
     expect(board).toMatchObject({ agent_handle: 'reviewer', team_lead_session_id: 'lead-1', inbound: 'hold', last_activity_at: '2026-10-30T11:00:00.000Z' });
     expect(board.result_excerpt).toHaveLength(280);
     expect(deriveSessionBoard({ row: row({ inbound: 'whatever' }), working: undefined, attention: null, lastEnded: undefined }).inbound).toBe('accept');
+  });
+});
+
+describe('plainExcerpt', () => {
+  test('a board row reads words, not markdown', () => {
+    expect(plainExcerpt('Saved to `/workspace/out/t.md`. **Option 1** We built *Kortix*:\n\n## Next\n- one [agent](https://example.com) runs\n```js\ncode\n```\nsnake_case_name stays'))
+      .toBe('Saved to /workspace/out/t.md. Option 1 We built Kortix: Next one agent runs snake_case_name stays');
   });
 });

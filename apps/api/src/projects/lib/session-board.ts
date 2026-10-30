@@ -38,6 +38,17 @@ import type { ProjectSessionRow } from './serializers';
 
 /** Session metadata key: ≤ 280 characters of the last assistant text, stamped at turn end. */
 export const RESULT_EXCERPT_KEY = 'result_excerpt' as const;
+
+/** Markdown to one plain line: a board row and a notice show words, not `**` or backticks. */
+export function plainExcerpt(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, '')
+    .replace(/(\*\*|\*|`|~~)(?=\S)([^\n]*?\S)\1/g, '$2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 export const RESULT_EXCERPT_MAX_CHARS = 280;
 
 export interface SessionBoardFields {
