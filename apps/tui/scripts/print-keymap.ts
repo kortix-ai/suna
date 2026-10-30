@@ -13,7 +13,7 @@
 
 import { COMMANDS, GROUP_TITLE } from '../src/commands/registry.ts';
 import { helpLines } from '../src/features/help/help-overlay.tsx';
-import { SCOPE_TITLE, allBindings, formatBinding, hintFor } from '../src/keymap.ts';
+import { allBindings, formatBinding, hintFor } from '../src/keymap.ts';
 
 function escapePipes(text: string): string {
   return text.replaceAll('|', '\\|');
@@ -41,13 +41,14 @@ for (const line of lines) {
   if (line.kind === 'section') {
     out.push(
       '',
-      `### ${SCOPE_TITLE[line.scope] ?? line.scope}`,
+      `### ${line.title}`,
       '',
       '| Keys | Action |',
       '| --- | --- |',
     );
     continue;
   }
+  if (line.kind !== 'binding') continue;
   const keys = formatBinding(line.binding) || 'any other key';
   out.push(`| \`${escapePipes(keys)}\` | ${escapePipes(line.binding.description)} |`);
 }
