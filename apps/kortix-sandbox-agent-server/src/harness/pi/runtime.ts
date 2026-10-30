@@ -22,10 +22,10 @@ import { join } from 'node:path'
 import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
 import type { AgentSessionEvent, SessionEntry, SessionHeader, Skill } from '@earendil-works/pi-coding-agent'
-import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
+import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet, type RuntimePending } from '@kortix/api-contract/runtime-relay'
 import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, RuntimePermissionRequest, RuntimeQuestionRequest, RuntimeToolRef, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
-import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
+import { kortixEventBus, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
 import { withheldManagedSkills } from '@/services/skills/managed-skills'
@@ -472,12 +472,27 @@ export class PiRuntime {
     void this.prefetchCatalog()
   }
 
-  /** The brokers publish under the root id. */
+  /**
+   * The brokers publish under the root id. A change of what waits for an answer
+   * sends the session log at once: its `pending` reaches the API and the
+   * `log.state` frame without waiting for the turn to end.
+   */
   private bindRoot(): void {
-    this.permissions = new PermissionBroker(this.rootId, this.workspace, (frame) => this.publish(frame), {}, (request) => this.hooks.onPermissionAsked?.(request))
-    this.questions = new QuestionBroker(this.rootId, (frame) => this.publish(frame), (request) => {
-      this.hooks.onQuestionAsked?.(request, (answers) => void this.questions.reply(request.id, answers))
-    })
+    const pendingChanged = () => void flushSessionLogJournal()
+    this.permissions = new PermissionBroker(
+      this.rootId,
+      this.workspace,
+      (frame) => this.publish(frame),
+      {},
+      (request) => this.hooks.onPermissionAsked?.(request),
+      pendingChanged,
+    )
+    this.questions = new QuestionBroker(
+      this.rootId,
+      (frame) => this.publish(frame),
+      (request) => this.hooks.onQuestionAsked?.(request, (answers) => void this.questions.reply(request.id, answers)),
+      pendingChanged,
+    )
   }
 
   /**
@@ -1359,9 +1374,10 @@ export class PiRuntime {
     }
   }
 
-  /** The session row changed (`time.compacting`). */
+  /** The session row changed (`time.compacting`); `log.status` says the root compacts, then what it does after. */
   private publishSessionUpdated(): void {
     this.publish({ type: 'session.updated', properties: { sessionID: this.rootId, info: this.sessionObject() } })
+    sessionLogEventBus().publish('log.status', { thread_id: this.rootId, status: this.compaction ? 'compacting' : this.status }, this.rootId)
   }
 
   private onAgentEvent(event: AgentEvent): void {
@@ -1886,6 +1902,15 @@ export class PiRuntime {
     if (opts.transcriptOnly) return
     kortixEventBus().publish(frame.type, p, session)
     this.hooks.onFrame?.(frame)
+    if (frame.type === 'session.status' && session) this.publishLogStatus(session, p.status)
+  }
+
+  /** `log.status` (`SessionLogStatusEvent`): what a thread does now, beside the wire's `session.status`. */
+  private publishLogStatus(threadId: string, status: unknown): void {
+    const s = status as { type?: string; attempt?: number; message?: string; next?: number } | undefined
+    if (s?.type !== 'busy' && s?.type !== 'idle' && s?.type !== 'retry') return
+    const retry = s.type === 'retry' ? { retry: { attempt: s.attempt ?? 1, message: s.message ?? '', next_at: new Date(s.next ?? this.now()).toISOString() } } : {}
+    sessionLogEventBus().publish('log.status', { thread_id: threadId, status: s.type, ...retry }, threadId)
   }
 
   private publishUserMessage(
@@ -2137,11 +2162,30 @@ export class PiRuntime {
     return { type: this.status }
   }
 
+  /** What each thread does now and what waits on a person (`GET /kortix/runtime/pending`). */
+  pendingNow(): RuntimePending {
+    return {
+      statuses: Object.fromEntries([
+        [this.rootId, this.compaction ? 'compacting' : this.status],
+        ...[...this.children.values()].map((child) => [child.id, child.status === 'busy' ? 'busy' : 'idle']),
+      ]),
+      permissions: this.permissions.records(),
+      questions: this.questions.records(),
+    }
+  }
+
   /** The runtime wire's `Session` object for this root. */
   /** Replace the session's permission grants (`PATCH /session/:id` `permission`), and keep them across a restart. */
   setSessionPermission(rules: readonly SessionPermissionRule[]): void {
     this.permissions.setSessionRules(rules)
     this.persist()
+  }
+
+  /** Replace the session's permission grants (`PUT /kortix/runtime/sessions/:id/grants`), and keep them across a restart. */
+  setGrants(grants: readonly string[]): string[] {
+    this.permissions.setGrants(grants)
+    this.persist()
+    return this.permissions.grantList()
   }
 
   sessionObject(): Record<string, unknown> {
@@ -2331,6 +2375,7 @@ export class PiRuntime {
       }),
       busy: this.status === 'busy' || this.active !== null,
       reply: replying(this.agent, this.adapter),
+      pending: { questions: this.questions.records(), permissions: this.permissions.records() },
       agent: this.sessionAgentName,
       model: this.selected ? { provider: this.selected.providerID, model: this.selected.modelID } : null,
     }
