@@ -60,6 +60,7 @@ imports:
 agents:
   kortix:
     connectors: all
+    tools: all
 triggers:
   - slug: root-trigger
     type: cron
@@ -194,7 +195,7 @@ describe('kortix.yaml imports over a real git repository', () => {
     expect(root.imports).toEqual(['.kortix/triggers/', '.kortix/agents.yaml']);
     // The emptied imported file keeps its key rather than collapsing to `{}`.
     expect(await remoteFile('.kortix/triggers/dockets.yaml')).toBe('triggers: []\n');
-    expect(root.agents).toEqual({ kortix: { connectors: 'all' } });
+    expect(root.agents).toEqual({ kortix: { connectors: 'all', tools: 'all' } });
 
     const reread = await loadProjectTriggers(project, { forceRefresh: true });
     expect(reread.errors).toEqual([]);
