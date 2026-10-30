@@ -91,10 +91,17 @@ describe('a background subagent turn end', () => {
       'A background subagent you started has finished. This message is from the platform, not from the user.',
       `task_id: ${CHILD}`,
       'status: completed',
-      'agent: reviewer',
-      'title: Audit logs',
       '',
-      '<task_result>\nFound 2 errors in api.log.\n</task_result>',
+      // The element the web transcript draws as the "Worker complete" card.
+      '<kortix_system type="session-report" source="subagent">',
+      '<session-report>',
+      `<session-id>${CHILD}</session-id>`,
+      '<status>COMPLETE</status>',
+      '<project>reviewer</project>',
+      '<prompt>Audit logs</prompt>',
+      '<result>\n<task_result>\nFound 2 errors in api.log.\n</task_result>\n</result>',
+      '</session-report>',
+      '</kortix_system>',
       '',
       `Continue your task with this result. To send this subagent a follow-up, call \`agent\` with task_id ${CHILD}. To read its whole transcript: \`kortix sessions log ${CHILD}\`.`,
     ].join('\n'));
@@ -112,6 +119,7 @@ describe('a background subagent turn end', () => {
     await notifyParentOfSubagentTurn({ sessionId: CHILD, status: 'error', errorInfo: { name: 'MessageAbortedError', message: 'aborted' }, turnMessageId: 'msg_s' });
     const [error, stopped] = (await parentRows()).map((r) => r.payload.text as string);
     expect(error).toContain('status: error\n');
+    expect(error).toContain('<status>FAILED</status>');
     expect(error).toContain('<task_error>\nAPIError: model overloaded\n</task_error>');
     expect(stopped).toContain('status: stopped\n');
   });

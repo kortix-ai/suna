@@ -1044,7 +1044,8 @@ provider hooks to the same runner. `ctx.ui` has no UI bound (`hasUI` is false):
 tools and events work, TUI-only rendering does nothing.
 
 `kortix-subagents` is the `agent` tool (OpenCode called it `task`): input `{
-description, prompt, subagent_type?, agent?, task_id?, session? }`, the child id
+description, prompt, subagent_type?, agent?, task_id?, session?,
+run_in_background? }`, the child id
 in the part's `metadata.sessionId` (set while the child runs), output `task_id:
 <id>`, a `session: separate|same` line (with the reason when a separate call
 ran in this session), then `<task_result>`. It registers under two names with
@@ -1114,6 +1115,23 @@ session at depth `KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH` (2, from
 an error that names `session: "same"` as the way to run it here. A separate
 child runs its own pi with the `agent` tool, so it may delegate again up to
 that depth.
+
+**Background** (`run_in_background: true`, separate sessions only; default
+`false`). The create body carries `metadata.notify_parent: true` and the call
+returns as soon as the child exists: output `task_id: <id>`, `session:
+separate`, then `<task_started>` with the commands to check (`kortix sessions
+info|log <id>`) and stop (`kortix sessions stop <id>`) it; the part's
+`metadata.background` is `true`. The box does not wait. The API delivers the
+child's report into this session when the child settles (apps/api
+`projects/subagent-notice.ts`): one synthetic `steer` message per finished
+turn, source `system:subagent-finished`, holding a `session-report` element
+(the web transcript draws it as a "Worker complete / failed" card) and the
+child's `<task_result>` or `<task_error>`. It wakes a stopped parent, so it
+survives this box restarting. A `task_id` follow-up to a background child
+returns at once too. A background call routed to `same` (asked for, or no
+control plane) waits, and the result says so. The live cap counts this box's
+slots plus the background children `GET …/sessions?parent=<this>` lists as
+provisioning or working.
 
 **Tool concurrency.** The root agent runs `toolExecution: 'parallel'`. Every
 built-in tool is `executionMode: 'sequential'` except `PARALLEL_TOOLS`

@@ -3,8 +3,9 @@
 Status: draft for review (Marko). Authored 2026-10-24 from four parallel
 read-only investigations (subagent-as-session, continuation primitives,
 spaces-as-channels, rooms deletion). Implemented so far: the Pillar 2
-user-facing rename Reminders → Loops (presentation only; see Pillar 2).
-Everything else is unbuilt.
+user-facing rename Reminders → Loops (presentation only; see Pillar 2),
+Pillar 1 separate-session subagents, and Pillar 1b background subagents with
+the parent notice (branch `cloud-agents`, 2026-10-30).
 
 ## Thesis
 
@@ -161,6 +162,63 @@ The `agent` tool takes `session: "separate" | "same"` (decided by Marko):
 Files: `pi/extensions/subagents.ts`, `pi/runtime.ts`, `pi/surface.ts:135-153`;
 `apps/api/src/projects/session-open/`, `lib/session-create.ts`,
 `lib/session-list.ts`, `routes/project-sessions.ts:188`.
+
+---
+
+## Pillar 1b — Background subagents, cloud level (2026-10-30)
+
+Mandate (Marko): "properly spawn async & will get notified like a webhook when
+that subagent finishes", and "take over all these core concepts from Claude
+Code local harness to a CLOUD level by making MyKortix agent be the ultimate
+agent". Source: `code.claude.com/docs/en/agents` and `/sub-agents`, read
+2026-10-30.
+
+### Concept map
+
+| Claude Code (local) | Kortix cloud equivalent | Before | This PR (`cloud-agents`) | Later |
+|---|---|---|---|---|
+| `Agent` tool, foreground subagent | `agent` tool, `session: "separate"`: a real child session with its own Platinum sandbox | built: the parent call blocks, polls every 2 s, 30 min ceiling | default unchanged (blocking) | — |
+| background subagent (`background: true`, Ctrl+B) | `agent` `run_in_background: true` | missing: every call held the parent turn | **built**: returns `task_id` once the child exists | move a running foreground call to the background |
+| completion notification "in a later turn" | one durable `continue_session` row in the PARENT, source `system:subagent-finished`, `steer` into a live turn else a new turn; wakes a stopped parent | missing | **built** (API, `projects/subagent-notice.ts`) | — |
+| `SubagentStop` hook | API turn-end relay (`settleTurnEnd`) | rooms `fireIdleWatches` only (flag `agent_rooms`, root sessions) | **built**, server side, survives a parent box restart | user hooks on child completion |
+| `SendMessage` to a finished subagent | `agent` + `task_id` (follow-up prompt) | built, blocking | a background child resumes in the background | p2p on rooms (Pillar 4) |
+| `TaskStop`, `/tasks`, `TaskOutput` | `kortix sessions stop\|info\|log <task_id>` in the box; `?parent=<id>` list | CLI + routes existed, authorized by the parent link | named in the tool text and the notice | a typed tool: needs the name in `manifest-schema` built-ins |
+| concurrency cap (20) | `KORTIX_PI_CLOUD_SUBAGENTS_MAX` (4) | in-box counter, blocking calls only | counter + background children the API lists as working (true after a box restart) | per-account quota, billing roll-up |
+| nesting depth (3) | `KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH` (2) | built | unchanged | — |
+| subagent never wider than parent | tool-list intersection + agent policy | built | unchanged; the notice runs as the child's identity, only for a server-written parent link | — |
+| transcript files, 30 d cleanup | the child session and its mirror | built | — | — |
+| fork subagent (inherits context) | `fork_from_session_id` exists on create | missing as a mode | — | `agent({ fork: true })` |
+| agent teams (task list, mailbox) | rooms + `session.steer` | rooms behind a flag | — | Pillar 4 |
+| agent view (`claude agents`) | board over `?parent=<id>` children | sidebar child rows | the notice renders as the existing "Worker complete/failed" card (`session-report`) | live background-agent strip in the session |
+
+### What this PR builds
+
+1. `agent` tool: `run_in_background?: boolean`, default `false`. Blocking stays
+   the default: every prompt written today (My Kortix's routing included)
+   expects the report in the same turn. Background needs `session:
+   "separate"`; a `same` or no-control-plane call waits, and the result says so.
+2. The child carries `metadata.notify_parent: true`
+   (`SUBAGENT_NOTIFY_PARENT_KEY`, owner-managed).
+3. API: each closed turn of such a child writes one row into the parent:
+   idempotency key `subagent-finished:<child>:<turn_message_id>`. Only a child
+   whose `parent_session_id` equals the server-managed `spawned_by_session`.
+   "Finished" means settled: a queued prompt, or a background grandchild still
+   working, defers the notice to the turn that settles them (no storm up the
+   tree). A child whose box never started reports `failed` once.
+4. Cap: `live.count` (this box) plus the API-listed working background children.
+5. My Kortix's prompt: long or parallel work runs in the background; never wait
+   or poll.
+
+### Later (ranked)
+
+1. Agent view: a background-agent strip in the session (children, state, open, stop).
+2. Fork subagents: inherit the parent context (`fork_from_session_id`) in the background.
+3. Agent teams on rooms + `session.steer` (Pillar 4): sibling messages, a shared task list.
+4. Move a running foreground call to the background; per-account quota and billing roll-up for children.
+
+Known ceiling: the report is read between the child's turn end and the enqueue
+(~1 s). An API process killed in that window drops that one notice; the parent
+still reads the child with `kortix sessions log <task_id>`.
 
 ---
 

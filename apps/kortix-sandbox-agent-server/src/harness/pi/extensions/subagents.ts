@@ -199,7 +199,7 @@ function describe(types: Map<string, SubagentType>): string {
     '- Write a complete prompt: the subagent sees nothing of this conversation.',
     '- Launch several subagents in one message when their work is independent.',
     '- The result is not shown to the user; summarize what matters in your own reply.',
-    '- To continue a previous task with its context, pass the task_id its output returned.',
+    '- To continue a previous task with its context, pass the task_id its output returned. A separate-session task needs no subagent_type then.',
     '',
     'Session (where the subagent runs):',
     '- session: "separate" (default): the subagent gets its own new Kortix session with its own computer. It is linked to this session as its parent, the user sees it in the sidebar, and it keeps running after your turn ends. Use it for real tasks, long or parallel work, and any whole job you hand to another agent.',
@@ -225,6 +225,9 @@ const BACKGROUND_STARTED = (taskId: string) =>
     'Do not wait or poll for it: continue with other work, or end your turn.',
     `Check on it: \`kortix sessions info ${taskId}\`. Stop it: \`kortix sessions stop ${taskId}\`. Send it a follow-up: call agent with task_id ${taskId}.`,
   ].join('\n')
+
+/** A new child needs a named type or an inline spec. */
+export const SUBAGENT_SPEC_REQUIRED = 'Set subagent_type to a named agent, or pass an inline `agent` spec.'
 
 /** The child agent name an inline ephemeral spec runs under; labels the child's messages. */
 const INLINE_AGENT = 'inline'
@@ -292,7 +295,12 @@ function resolveSpawn(params: SubagentParams, host: KortixHost): Omit<SpawnSessi
     }
   }
   const types = subagentTypes(host)
-  if (!params.subagent_type) throw new Error('Set subagent_type to a named agent, or pass an inline `agent` spec.')
+  if (!params.subagent_type) {
+    // A follow-up to an existing child (`task_id`) keeps that child's own agent: a
+    // separate child ignores the spec, and the runtime refuses an in-process one without it.
+    if (params.task_id) return { title: params.description, agent: '', systemPrompt: '' }
+    throw new Error(SUBAGENT_SPEC_REQUIRED)
+  }
   const type = types.get(params.subagent_type)
   if (!type) throw new Error(`Unknown subagent_type "${params.subagent_type}". Available: ${[...types.keys()].join(', ')}.`)
   return {

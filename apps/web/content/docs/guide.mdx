@@ -182,6 +182,8 @@ Access is deny-by-default. An agent gets no connector, secret, skill, App or pro
 
 You talk to **My Kortix**, the built-in agent. It routes each task to the project agent made for it and runs it with your permissions.
 
+My Kortix can run long or parallel work in the background. Each task runs in its own session, listed under your conversation in the sidebar, and My Kortix stays free to talk with you. When a background task finishes, a **Worker complete** or **Worker failed** card appears in your conversation and My Kortix continues from the result. Select the card to open that session.
+
 Every new project starts with one agent called `worker`, the general-purpose agent My Kortix routes work to. It is the default agent: a session that names no other agent runs it. It has access to all connectors, secrets, skills and Kortix permissions in the project. You can edit its instructions to fit your company. A project created before this keeps its `kortix` agent.
 
 ### Create your own agent

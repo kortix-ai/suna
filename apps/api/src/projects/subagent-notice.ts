@@ -55,7 +55,12 @@ export function noticeParentOf(row: Pick<ProjectSessionRow, 'parentSessionId' | 
   return parent && meta.spawned_by_session === parent ? parent : null;
 }
 
-/** The message the parent receives. Exported for tests. */
+/**
+ * The message the parent receives. The `session-report` element is the one
+ * the web transcript already draws as a "Worker complete / failed" card that
+ * opens the child session (`@kortix/ui` `SessionReportCard`); the lines around
+ * it are for the model. Exported for tests.
+ */
 export function subagentNoticeText(input: {
   childId: string;
   status: SubagentNoticeStatus;
@@ -67,15 +72,21 @@ export function subagentNoticeText(input: {
   const body =
     input.status === 'completed'
       ? `<task_result>\n${input.report || 'The subagent finished without a text report.'}\n</task_result>`
-      : `<task_error>\n${input.error || `The subagent ${input.status === 'stopped' ? 'was stopped' : 'failed'}.`}\n</task_error>${input.report ? `\n\n<task_result>\n${input.report}\n</task_result>` : ''}`;
+      : `<task_error>\n${input.error || `The subagent ${input.status === 'stopped' ? 'was stopped' : 'failed'}.`}\n</task_error>${input.report ? `\n<task_result>\n${input.report}\n</task_result>` : ''}`;
   return [
     'A background subagent you started has finished. This message is from the platform, not from the user.',
     `task_id: ${input.childId}`,
     `status: ${input.status}`,
-    ...(input.agent ? [`agent: ${input.agent}`] : []),
-    ...(input.title ? [`title: ${input.title}`] : []),
     '',
-    body,
+    '<kortix_system type="session-report" source="subagent">',
+    '<session-report>',
+    `<session-id>${input.childId}</session-id>`,
+    `<status>${input.status === 'completed' ? 'COMPLETE' : 'FAILED'}</status>`,
+    `<project>${input.agent ?? ''}</project>`,
+    `<prompt>${input.title ?? ''}</prompt>`,
+    `<result>\n${body}\n</result>`,
+    '</session-report>',
+    '</kortix_system>',
     '',
     `Continue your task with this result. To send this subagent a follow-up, call \`agent\` with task_id ${input.childId}. To read its whole transcript: \`kortix sessions log ${input.childId}\`.`,
   ].join('\n');
