@@ -38,7 +38,7 @@ import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './e
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { cloudSpawnSession, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
-import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
+import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule, type SessionPermissionRule } from './interactions'
 import type { CatalogModel, PiModels, SelectedModel } from './model'
 import { compactionSettings, nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
@@ -329,6 +329,8 @@ export interface PiDump {
   contextId?: string
   transcript: KortixMessage[]
   turns: Array<{ messageId: string; status: 'idle' | 'error' }>
+  /** The session's permission grants (an "always" reply, the session ruleset). Absent when there are none. */
+  grants?: string[]
   /** Absent in dumps written before child sessions existed. */
   children?: PiChildDump[]
 }
@@ -1708,7 +1710,9 @@ export class PiRuntime {
       const session = this.permissions.rule(tool, args)
       if (own === 'deny' || session === 'deny' || !this.rootToolAllowed(tool)) return 'deny'
       if (!toolAllowed(childTools, tool) && !allowlistExempt.has(tool)) return 'deny'
-      return own ?? session
+      // The session's grants (allow all, an "always" reply) cover its subagents too.
+      const decided = own ?? session
+      return decided === 'ask' && this.permissions.grants(tool, args) ? 'allow' : decided
     }, false, this.childExtensionGate())
     const afterToolCall = this.childToolResult()
     // Wire codemode when the subagent's agent sets it and nothing turns it off (see builtinAvailable).
@@ -2134,6 +2138,12 @@ export class PiRuntime {
   }
 
   /** The runtime wire's `Session` object for this root. */
+  /** Replace the session's permission grants (`PATCH /session/:id` `permission`), and keep them across a restart. */
+  setSessionPermission(rules: readonly SessionPermissionRule[]): void {
+    this.permissions.setSessionRules(rules)
+    this.persist()
+  }
+
   sessionObject(): Record<string, unknown> {
     return {
       id: this.rootId,
@@ -2347,6 +2357,7 @@ export class PiRuntime {
         ...(this.contextId && { contextId: this.contextId }),
         transcript: this.transcript.all(),
         turns: [...this.completedTurns.entries()].map(([messageId, status]) => ({ messageId, status })),
+        ...(this.permissions.grantList().length > 0 && { grants: this.permissions.grantList() }),
         children: [...this.children.values()].map((child) => ({
           id: child.id,
           title: child.title,
@@ -2400,6 +2411,7 @@ export class PiRuntime {
       this.transcript.load(dump.transcript)
       for (const message of dump.transcript) this.clock.observe(message.info.id as string)
       for (const turn of dump.turns) this.completedTurns.set(turn.messageId, turn.status)
+      this.permissions.restoreGrants(dump.grants ?? [])
       for (const [entryId, messageId] of Object.entries(dump.messageIds ?? {})) this.entryIds.set(entryId, messageId)
       this.entrySeqs = dump.seqs ?? {}
       this.contextId = dump.contextId

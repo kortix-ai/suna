@@ -172,11 +172,11 @@ describe('session runtime verbs', () => {
     expect(requests.filter((r) => r.method === 'POST')).toHaveLength(1);
   });
 
-  test('compact() summarizes the root with the given model, else the runtime default model', async () => {
+  test('compact() summarizes the root with the given model, else the model the runtime state document names', async () => {
     const { fetch, requests } = fakeRuntime({
       'GET /session/status': { body: { ses_root: { type: 'idle' }, ses_child: { type: 'busy' } } },
       'POST /session/ses_root/summarize': { body: true },
-      'GET /global/config': { body: { model: 'kortix/claude-sonnet' } },
+      'GET /kortix/runtime/state': { body: { schema: 'kortix.runtime.v1', config: { known: true, value: { model: 'kortix/claude-sonnet' } } } },
     });
     const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
     expect(await verbs.compact({ providerID: 'anthropic', modelID: 'claude' })).toEqual({ providerID: 'anthropic', modelID: 'claude' });
@@ -184,15 +184,19 @@ describe('session runtime verbs', () => {
     expect(requests.map((r) => [r.method, r.path, r.body])).toEqual([
       ['GET', '/session/status', null],
       ['POST', '/session/ses_root/summarize', { providerID: 'anthropic', modelID: 'claude' }],
-      ['GET', '/global/config', null],
+      ['GET', '/kortix/runtime/state', null],
       ['GET', '/session/status', null],
       ['POST', '/session/ses_root/summarize', { providerID: 'kortix', modelID: 'claude-sonnet' }],
     ]);
   });
 
   test('compact() without a model anywhere throws MODEL_REQUIRED instead of guessing', async () => {
-    for (const config of [{ body: {} }, { status: 404, body: { error: 'not found' } }]) {
-      const { fetch, requests } = fakeRuntime({ 'GET /session/status': { body: {} }, 'GET /global/config': config });
+    for (const state of [
+      { body: { config: { known: true, value: { model: null } } } },
+      { body: { config: { known: false, value: null } } },
+      { status: 404, body: { error: 'not found' } },
+    ]) {
+      const { fetch, requests } = fakeRuntime({ 'GET /session/status': { body: {} }, 'GET /kortix/runtime/state': state });
       const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
       const error = await verbs.compact().catch((e: unknown) => e);
       expect(error).toBeInstanceOf(ApiError);
