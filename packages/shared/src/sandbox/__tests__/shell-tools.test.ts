@@ -25,6 +25,8 @@ const IMAGES: Array<{ label: string; dockerfile: string }> = [
       agentBinaryPath: 'a',
       cliBinaryPath: 'a',
       entrypointScriptPath: 'a',
+      machineDocPath: 'MACHINE.md',
+      slackCliPath: 'kortix-slack-cli',
       managedSkillsPath: 'a',
     }),
   },

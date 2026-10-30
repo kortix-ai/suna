@@ -34,6 +34,10 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
       { label: 'cli', path: resolve(root, 'apps/cli/src') },
       { label: 'cli-package', path: resolve(root, 'apps/cli/package.json') },
       { label: 'entrypoint', path: resolve(root, 'apps/sandbox/entrypoint.sh') },
+      // The rest of the Kortix defaults' staged artifacts (defaults.ts): the
+      // same inputs as a project agent's image fingerprint.
+      { label: 'machine-doc', path: resolve(root, 'apps/sandbox/MACHINE.md') },
+      { label: 'slack-cli', path: resolve(root, 'apps/sandbox/slack-cli') },
       { label: 'meta-renderer', path: resolve(root, 'packages/shared/src/sandbox/meta-dockerfile.ts') },
       { label: 'sdk', path: resolve(root, 'packages/sdk/src') },
       { label: 'llm-catalog', path: resolve(root, 'packages/llm-catalog/src') },
