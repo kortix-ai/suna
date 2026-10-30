@@ -8,6 +8,7 @@
 
 import { ApiError } from '../http/api/errors';
 import { authenticatedFetch } from '../http/auth';
+import type { SessionLogMessage } from '../session-log/types';
 import { getActiveRuntimeUrl } from './server-store/active';
 
 /** The health capability of a box that serves the session-log actions. */
@@ -34,6 +35,16 @@ export interface RuntimePending {
   statuses: Record<string, RuntimeThreadStatus>;
   permissions: RuntimePendingRecord[];
   questions: RuntimePendingRecord[];
+}
+
+/** One page of a thread of the box's own session log (`GET /kortix/runtime/log`). */
+export interface RuntimeLogPage {
+  generation?: number;
+  thread_id: string;
+  /** Ascending `seq`; the running turn's reply is a `streaming` message. */
+  messages: SessionLogMessage[];
+  /** Older messages exist: ask again with `before_seq` = the first message's `seq`. */
+  has_more: boolean;
 }
 
 /** Where the session's checkout is (`GET /kortix/runtime/workspace`). */

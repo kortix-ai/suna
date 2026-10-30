@@ -5,7 +5,7 @@ import {
   type RuntimeVerbs,
   type TranscriptPage,
 } from '../session/runtime-verbs';
-import type { RuntimePending } from '../session/runtime-actions';
+import type { RuntimeLogPage, RuntimePending } from '../session/runtime-actions';
 import type { RuntimePermissionReply, RuntimeQuestionAnswer } from '../runtime/transcript-types';
 import type { SessionBindingContext } from './session-context';
 
@@ -34,6 +34,12 @@ export function bindSessionRuntime(ctx: SessionBindingContext) {
     pending: async (): Promise<PendingInteractions> => (await sessionVerbs()).pending(),
     /** Each thread's status (`idle`, `busy`, `compacting`) and the permission requests and questions that wait on a person. */
     pendingRequests: async (): Promise<RuntimePending> => (await sessionVerbs()).pendingRequests(),
+    /**
+     * One page of a thread of the box's own session log, ahead of `log()` while a turn runs.
+     * Null on a box without the session-log actions: read `log()` instead.
+     */
+    liveLog: async (query?: { thread?: string; before_seq?: number; limit?: number }): Promise<RuntimeLogPage | null> =>
+      (await sessionVerbs()).liveLog(query),
     /** Answer a permission request: `once`, `always` (the capability, for this session) or `reject`. */
     answerPermission: async (requestId: string, reply: RuntimePermissionReply, message?: string) =>
       (await sessionVerbs()).answerPermission(requestId, reply, message),
