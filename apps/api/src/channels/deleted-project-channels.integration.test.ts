@@ -137,13 +137,16 @@ describe('Teams on a deleted project (tombstone) — migrated PostgreSQL', () =>
   });
 });
 
-describe('the project delete releases Slack and Teams — migrated PostgreSQL', () => {
+describe('the project delete releases Slack, Teams and Telegram — migrated PostgreSQL', () => {
   test('the installs, their secrets and the channel bindings go; the email inbox stays', async () => {
     await saveSlackInstall({ projectId: DELETED, teamId: ws('TDEL'), teamName: 'synthetic', botToken: 'xoxb-synthetic', signingSecret: 'synthetic', botUserId: 'UBOT' });
     await saveTeamsInstall({ projectId: DELETED, tenantId: ws('tenant-del-'), appId: 'synthetic-app', appPassword: 'synthetic' });
     await install('email', ws('inbox-'), DELETED);
     await bind('slack', ws('TDEL'), 'CDEL', DELETED);
     await bind('teams', ws('tenant-del-'), 'conv-del', DELETED);
+    // A Telegram chat's settings (`/model`, `/agent`). No bot token: the release calls no Telegram API.
+    await install('telegram', ws('bot-del-'), DELETED);
+    await bind('telegram', ws('bot-del-'), 'chat-del', DELETED);
 
     const res = await asOwner('DELETE', `/v1/projects/${DELETED}`);
     expect(res.status).toBe(200);

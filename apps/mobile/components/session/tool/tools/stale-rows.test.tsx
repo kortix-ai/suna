@@ -62,6 +62,8 @@ mock.module('@/lib/utils/theme', () => ({ THEME: { accent: { red: 'red' } } }));
 mock.module('../shared/navigation', () => ({
   InlineServicePreview: none,
   ServicePreviewActions: none,
+  // show-tool imports it (#10990); a stub without it fails to link when that module loads.
+  ServicePreviewRow: none,
   ServicePreviewUrlFallback: none,
   ServicePreviewViewport: none,
   ToolFilePreviewHost: none,

@@ -20,6 +20,19 @@ import { DELIVERY_FAILURE_COPY, type SessionDeliveryOutcome, type SessionInvocat
 const NOT_LANDED_RETRY_DELAY_MS = 2_000;
 type Status = 'succeeded' | 'queued' | 'failed';
 
+export async function refreshArtifactCommentQueuedPrompt(row: SessionLifecycleCommandRow): Promise<{ text: string }> {
+  const { ArtifactCommentDeliveryError, rebuildArtifactCommentContinuePrompt } = await import('../../artifacts/comment-delivery');
+  const { ArtifactCommentAuthorityError } = await import('../../artifacts/comment-authority');
+  try {
+    return { text: await rebuildArtifactCommentContinuePrompt(row) };
+  } catch (error) {
+    if (error instanceof ArtifactCommentDeliveryError || error instanceof ArtifactCommentAuthorityError) {
+      throw new PromptDeliveryRefused(error.status, error.code, error.message);
+    }
+    throw error;
+  }
+}
+
 async function settleDelivery(row: SessionLifecycleCommandRow, delivery: Exclude<SessionDeliveryOutcome, 'delivered'>): Promise<Status> {
   if (delivery === 'unreachable') {
     const parked = await parkPromptForUnreachableRuntime(row, DELIVERY_FAILURE_COPY[delivery], { sessionId: row.sessionId });
@@ -159,7 +172,10 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         ...(payload.opencodeEnv ? { opencodeEnv: payload.opencodeEnv } : {}),
         ...(payload.clientMessageId ? {} : { queuedAt: row.createdAt }),
       }, attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId, tl,
-      payload.clientMessageId ? () => assertInboxDeliveryActive(row) : undefined);
+      payload.clientMessageId || row.source === 'system:artifact-comment' ? async () => {
+        if (payload.clientMessageId) await assertInboxDeliveryActive(row);
+        if (row.source === 'system:artifact-comment') return refreshArtifactCommentQueuedPrompt(row);
+      } : undefined);
       tl.mark('delivered');
       if (delivery !== 'delivered') break;
       // A repair round re-sends after round 0's forward closed the claim.
@@ -220,14 +236,19 @@ export async function deliverSteer(row: SessionLifecycleCommandRow, payload: Que
   text: string, steerInto: string, tl: ProvisionTimeline): Promise<Status> {
   const sessionId = row.sessionId!;
   const attempt = Number(payload.deliveryAttempt ?? 0);
+  let promptText = text;
   try {
     if (payload.clientMessageId) await assertInboxDeliveryActive(row);
     const target = await awakeDeliveryTarget(sessionId);
     if (!target?.externalId || !target.opencodeSessionId) throw new SteerNotTaken('turn_ended');
+    if (row.source === 'system:artifact-comment') {
+      promptText = (await refreshArtifactCommentQueuedPrompt(row)).text;
+      payload.parts = undefined;
+    }
     const wireMessageId = payload.remintOnDelivery
       ? await remintWireMessageId(row, payload, await readInboxTranscriptState(row, []))
       : payload.wireMessageId!;
-    const delivery = await postPrompt(target.externalId, target.opencodeSessionId, text, row.actorUserId!, sessionId,
+    const delivery = await postPrompt(target.externalId, target.opencodeSessionId, promptText, row.actorUserId!, sessionId,
       `${attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId}:steer`, {
         ...(payload.parts?.length ? { parts: payload.parts } : {}),
         wireMessageId, materializationKey: row.commandId,

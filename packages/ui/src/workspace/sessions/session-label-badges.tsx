@@ -14,7 +14,8 @@ export function SessionLabelBadges({
   max?: number;
   className?: string;
 }) {
-  const labels = session.labels ?? [];
+  // `artifact:<id>` ties an artifact's Ask agent sessions together (its history reads it): a key, not a name.
+  const labels = (session.labels ?? []).filter((label) => !label.startsWith('artifact:'));
   if (labels.length === 0) return null;
   const shown = labels.slice(0, max);
   const rest = labels.slice(max);

@@ -75,6 +75,8 @@ export function writePanelMarker(): void {
  */
 export function safePanelNext(raw: string | null | undefined): string {
   if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) return PANEL_DEFAULT_NEXT;
+  // A browser drops tab, CR and LF from a URL, so `/\t/evil.example` would open `//evil.example`.
+  if (/[\u0000-\u001f\u007f]/.test(raw)) return PANEL_DEFAULT_NEXT;
   if (raw === '/auth' || raw.startsWith('/auth/') || raw.startsWith('/auth?')) return PANEL_DEFAULT_NEXT;
   return raw;
 }

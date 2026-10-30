@@ -4,6 +4,7 @@
 // for someone's private folder.
 
 import { logger } from '../lib/logger';
+import { recordDriveCommitAuthor } from '../artifacts/events-store';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -543,6 +544,10 @@ drivesApp.openapi(
         writeVolumeFile(volume, path, body, { overwrite: true, ...(ifMatch ? { ifMatch } : {}) }),
       ),
     );
+    await recordDriveCommitAuthor(caller.drive.driveId, written.commit, {
+      userId: caller.userId,
+      sessionId: callerKortixSessionId(c),
+    });
     noteDriveWrite(caller.drive.driveId);
     // The version this write made, as storage answered it: a read afterwards
     // could name a later save's version and let the next save clobber it.

@@ -81,8 +81,11 @@ export function hiddenParticipantCount(participants: SessionParticipants | undef
  */
 export function SessionParticipantStack({
   participants,
+  label: labelOverride,
 }: {
   participants: SessionParticipants | undefined;
+  /** The stack's accessible name, for a host that is not a session (an artifact's people with access). */
+  label?: string;
 }) {
   const t = useTranslations('sessionParticipants');
   const [open, setOpen] = useState(false);
@@ -94,7 +97,7 @@ export function SessionParticipantStack({
     .map((person) => participantLabel(person))
     .filter(Boolean)
     .join(', ');
-  const label = more > 0 ? t('peopleMore', { names, count: more }) : t('people', { names });
+  const label = labelOverride ?? (more > 0 ? t('peopleMore', { names, count: more }) : t('people', { names }));
 
   return (
     <HoverCard open={open} onOpenChange={setOpen} openDelay={300} closeDelay={100}>

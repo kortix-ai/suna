@@ -242,10 +242,7 @@ describe('ImageGenTool', () => {
     // Wide enough to fit, it keeps the column width.
     const wide = render({ status: 'running', input: { action: 'generate', prompts: ['a'], aspect_ratio: '16:9' } });
     expect(heightAt(styleOf(wide, 'aria-busy="true"'), 360, 480)).toBeCloseTo(360 / (16 / 9));
-    for (const prompts of [['a', 'b'], ['a', 'b', 'c'], ['a', 'b', 'c', 'd']]) {
-      const html = render({ status: 'running', input: { action: 'generate', prompts, aspect_ratio: '9:16' } });
-      expect(heightAt(styleOf(html, 'data-image-gen-bento'), 720, 480)).toBeLessThanOrEqual(288 + 1e-9);
-    }
+    // Two to four 9:16 images are one strip row (see the run tests): side by side, at most 288 px tall.
   });
 
   test('the tile button names its full-screen action in the viewer\'s language', () => {
@@ -290,6 +287,9 @@ describe('ImageGenTool', () => {
         expect(html).not.toContain('aria-label="Full screen"');
         // The one corner hint shows on hover only.
         expect(html).toMatch(/data-image-gen-expand=""[^>]*class="[^"]*opacity-0[^"]*group-hover:opacity-100/);
+        // The hint is a child of the image's own box, not of the full-width
+        // row: a tall image narrows the box, and the hint stays on its corner.
+        expect(html).toMatch(/<div aria-busy="false" class="[^"]*\bgroup\b[^"]*"[^>]*><button[^>]*><img[^>]*\/?><\/button><span data-image-gen-expand=""/);
       }
     } finally {
       blob = { blobUrl: null, blob: null, isLoading: true, error: null };
@@ -705,24 +705,74 @@ describe('one grid per turn (R38)', () => {
     ]);
   });
 
-  test('eight images are two 2×2 rows: 4+4, no row taller than the cap', () => {
-    const html = renderRun([genCall('a', 4, false, '9:16'), genCall('b', 4, false, '9:16')]);
-    expect(gridOf(html)).toBe('4+4');
+  test('portrait images are a strip: every row side by side, no row taller than the cap', () => {
+    // A prod session: four 9:16 calls of 3 + 2 + 3 + 2. The bento's large tile was taller than the grid was wide.
+    const html = renderRun([genCall('a', 3, false, '9:16'), genCall('b', 2, false, '9:16'), genCall('c', 3, false, '9:16'), genCall('d', 2, false, '9:16')]);
+    expect(gridOf(html)).toBe('4+3+3');
+    expect(html).toContain('data-image-gen-strip=""');
+    expect(html).toMatch(/data-image-gen-grid="4\+3\+3"[^>]*class="[^"]*grid-cols-12/);
     expect(placesOf(html)).toEqual([
       'grid-column:1 / span 3;grid-row:1',
       'grid-column:4 / span 3;grid-row:1',
-      'grid-column:1 / span 3;grid-row:2',
-      'grid-column:4 / span 3;grid-row:2',
-      'grid-column:1 / span 3;grid-row:3',
-      'grid-column:4 / span 3;grid-row:3',
-      'grid-column:1 / span 3;grid-row:4',
-      'grid-column:4 / span 3;grid-row:4',
+      'grid-column:7 / span 3;grid-row:1',
+      'grid-column:10 / span 3;grid-row:1',
+      'grid-column:1 / span 4;grid-row:2',
+      'grid-column:5 / span 4;grid-row:2',
+      'grid-column:9 / span 4;grid-row:2',
+      'grid-column:1 / span 4;grid-row:3',
+      'grid-column:5 / span 4;grid-row:3',
+      'grid-column:9 / span 4;grid-row:3',
     ]);
-    // Each 2×2 row of 9:16 tiles is 9:16; the grid's width keeps each at most 60vh tall.
-    expect(gridStyleOf(html)).toContain('width:min(100cqw, 60vh * 0.5625)');
-    const { tracks } = layoutOf(html, 720, 480);
-    // Two 2×2 rows: each row is two tracks and a gap, at most 60vh (288 px) tall.
-    expect(tracks[0]! + SPACING + tracks[1]!).toBeLessThanOrEqual(288 + 1e-9);
+    const r = 9 / 16;
+    for (const [column, viewport] of [[720, 900], [720, 480], [360, 800]] as const) {
+      const { tracks, width } = layoutOf(html, column, viewport);
+      // One track per row, each `width / (n·r)`: n 9:16 tiles side by side, never cropped.
+      expect(tracks).toHaveLength(3);
+      expect(tracks[0]).toBeCloseTo(width / (4 * r));
+      expect(tracks[1]).toBeCloseTo(width / (3 * r));
+      expect(tracks[2]).toBeCloseTo(width / (3 * r));
+      expect(Math.max(...tracks)).toBeLessThanOrEqual(0.6 * viewport + 1e-9);
+      // The whole run is shorter than the old bento's first row alone (≈ 1.19 × the width).
+      expect(tracks.reduce((sum, track) => sum + track, 0) + 2 * SPACING).toBeLessThan(2.1 * width);
+    }
+    // Two to four portrait images are one strip row, not a bento.
+    for (const n of [2, 3, 4]) {
+      const one = renderRun([genCall('a', n, false, '9:16')]);
+      expect(bentoOf(one)).toBeNull();
+      expect(gridOf(one)).toBe(String(n));
+      expect(layoutOf(one, 720, 480).tracks[0]).toBeLessThanOrEqual(288 + 1e-9);
+    }
+  });
+
+  test('a call the image cap refused draws nothing: no slot in the grid, no card alone', () => {
+    const refused = (id: string, n: number, scope = 'turn') =>
+      toolCallBlock({
+        type: 'tool',
+        tool: 'image_gen',
+        callID: id,
+        id,
+        state: {
+          status: 'error',
+          input: { prompts: Array.from({ length: n }, (_, i) => `${id} ${i}`), aspect_ratio: '9:16' },
+          error: `Image limit for this ${scope} reached (10 images; 10 used, ${n} asked).`,
+          time: { start: 1 },
+        },
+      } as unknown as ToolPart);
+    // The prod turn: 3 + 2 + 3 + 2 images, then two calls the turn cap refused.
+    const html = renderRun([
+      genCall('a', 3, false, '9:16'),
+      genCall('b', 2, false, '9:16'),
+      genCall('c', 3, false, '9:16'),
+      genCall('d', 2, false, '9:16'),
+      refused('e', 3),
+      refused('f', 2),
+    ]);
+    expect(gridOf(html)).toBe('4+3+3');
+    expect(tilesOf(html)).toHaveLength(10);
+    expect(html).not.toContain('Image limit');
+    // Alone, or a run of refused calls only: no markup at all.
+    expect(renderRun([refused('e', 3)])).toBe('');
+    expect(renderRun([refused('e', 3), refused('f', 2, 'session')])).toBe('');
   });
 
   test('a tile keeps its frame while the run grows: tiles are keyed by call and place', async () => {

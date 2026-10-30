@@ -114,14 +114,14 @@
       "passwordTooShort": "Password must be at least 8 characters"
     },
     "drawer": {
-      "defaultTitle": "Welcome to Kortix",
-      "defaultMessage": "The AI Super Mega Giga app.",
-      "signInToChat": "Welcome to Kortix",
-      "signInToChatMessage": "The AI Super Mega Giga app.",
-      "signUpUnlock": "Welcome to Kortix",
-      "signUpUnlockMessage": "The AI Super Mega Giga app.",
-      "welcomeBack": "Welcome to Kortix",
-      "welcomeBackMessage": "The AI Super Mega Giga app.",
+      "defaultTitle": "Welcome to Kortix CompanyOS",
+      "defaultMessage": "The open-source CompanyOS.",
+      "signInToChat": "Welcome to Kortix CompanyOS",
+      "signInToChatMessage": "The open-source CompanyOS.",
+      "signUpUnlock": "Welcome to Kortix CompanyOS",
+      "signUpUnlockMessage": "The open-source CompanyOS.",
+      "welcomeBack": "Welcome to Kortix CompanyOS",
+      "welcomeBackMessage": "The open-source CompanyOS.",
       "signUpToContinue": "Sign up to continue",
       "signUpToContinueMessage": "Please sign up or sign in to create and select workers, connect apps and much more"
     },

@@ -29,3 +29,4 @@ export * from './chat-mention';
 export * from './webhook-signing';
 export * from './pasted-content';
 export * from './space-slug';
+export * from './artifact-comments';

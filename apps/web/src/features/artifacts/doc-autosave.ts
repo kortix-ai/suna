@@ -13,6 +13,10 @@
  *   back, write ours on top;
  * - anything else: another writer (an agent, another tab). Autosave stops and
  *   the person picks Reload or Keep mine.
+ *
+ * An editor with nothing unsaved does not need that choice: when the artifact
+ * says its file moved (an agent wrote it), `refresh` hands the editor the new
+ * text to show.
  */
 
 /** What the file holds, as far as this tab knows: the entry version and its Markdown. */
@@ -247,6 +251,27 @@ export function createDocSaver(start: Known, deps: DocSaverDeps) {
       conflict = false;
       known = { version: null, text: '' };
       void save(deps.text());
+    },
+    /**
+     * The file moved while this editor holds nothing unsaved (an agent wrote
+     * it): resolves to what the file holds now, for the editor to show. Null
+     * when there is nothing to show: no change, unsaved edits (their save
+     * meets the change as a conflict), or an older copy of this tab's own
+     * text (written back, as after a save).
+     */
+    async refresh(version?: string | null): Promise<Known | null> {
+      const idle = () => !closed && !conflict && !saving && queued === null && debounce === null && next === null;
+      // The version this editor already holds (its own save): nothing to read.
+      if (!idle() || (version !== undefined && version === known.version)) return null;
+      const at = known;
+      const now = await deps.read().catch(() => null);
+      if (!now || known !== at || !idle() || now.version === at.version) return null;
+      const verdict = reconcile(now, at.text, at.text);
+      if (verdict === 'ours') later(0);
+      if (verdict !== 'theirs') return null;
+      known = now;
+      remember(id, now.text, true);
+      return now;
     },
     /** Something is not in the file yet. */
     busy: () => debounce !== null || saving || next !== null || conflict,

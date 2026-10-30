@@ -11,7 +11,7 @@ import { WorkspaceFramework } from './workspace-framework';
 const PILLAR_WORDS = ['sovereign', 'multiplayer', 'extensible', 'open'];
 
 /**
- * "The <word> AI Operating System", the word changing every 2.5 s. The new
+ * "The <word> CompanyOS", the word changing every 2.5 s. The new
  * word mounts and fades in (opacity only, so reduced motion needs no variant,
  * motion.md); the line reflows to its width. Screen readers get one static
  * sentence.
@@ -54,15 +54,16 @@ export function SandBandHero() {
         <div className="flex flex-col gap-4 lg:gap-5">
           <h1 className="max-w-261 text-3xl font-medium tracking-tight text-balance sm:text-4xl lg:text-[44px] lg:leading-13">
             <span className="sr-only">
-              The sovereign, multiplayer, extensible and open AI Operating System
+              The sovereign, multiplayer, extensible and open CompanyOS
             </span>
             <span aria-hidden className="text-foreground block">
-              The <PillarWord /> AI Operating System
+              The <PillarWord /> CompanyOS
             </span>
           </h1>
           <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
-            Hand it an outcome and agents run it 24/7. Multiplayer AI for your whole team, your
-            company as code, sovereign and open source on your infrastructure or ours.
+            Hand it an outcome and AI agents run it 24/7. Connect your company&rsquo;s tools, share
+            agents and context across your whole team, and own all of it as code: open source, on
+            your infrastructure or ours.
           </p>
         </div>
 

@@ -33,7 +33,6 @@ const cliPath = join(fixtureRoot, 'kortix');
 const cliAttestationPath = join(fixtureRoot, 'kortix-connectors-runtime.attestation.json');
 const entrypointPath = join(fixtureRoot, 'entrypoint.sh');
 const slackCliPath = join(fixtureRoot, 'slack-cli');
-const opencodeConfigPath = join(fixtureRoot, 'opencode-config');
 
 writeFileSync(agentPath, '#!/bin/sh\n');
 writeFileSync(cliPath, '#!/bin/sh\n');
@@ -53,7 +52,6 @@ await chmod(agentPath, 0o755);
 await chmod(cliPath, 0o755);
 await chmod(entrypointPath, 0o755);
 await mkdir(slackCliPath, { recursive: true });
-await mkdir(opencodeConfigPath, { recursive: true });
 
 // Set per-test (NOT at module load): build-context reads these lazily, so setting
 // them in beforeEach makes THIS suite's fixtures win during its own tests without
@@ -64,7 +62,6 @@ beforeEach(() => {
   process.env.KORTIX_SNAPSHOT_CLI_ATTESTATION_PATH = cliAttestationPath;
   process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH = entrypointPath;
   process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH = slackCliPath;
-  process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = opencodeConfigPath;
   getSnapshotImpl = async () => ({ state: snapshotState() });
   deleteSnapshotImpl = async () => {};
 });

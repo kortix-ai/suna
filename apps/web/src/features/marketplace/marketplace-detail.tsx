@@ -179,7 +179,7 @@ function BundleMemberRow({
 /** The README renders in full (no collapse) — it's the primary content. */
 function ReadmeMarkdown({ content }: { content: string }) {
   return (
-    <div className="bg-secondary rounded-md border px-4 py-2.5">
+    <div className="bg-secondary/40 rounded-md border px-4 py-2.5">
       <div className="prose-sm text-foreground max-w-none">
         <UnifiedMarkdown content={content} trust="untrusted" variant="document" />
       </div>
@@ -769,6 +769,7 @@ export function MarketplaceDetail({
                     sourceUrl={sourceUrl}
                     label={data.marketplaceLabel}
                     size="xs"
+                    className="rounded"
                   />
                   <span className="truncate">{companyLabel}</span>
                 </Link>

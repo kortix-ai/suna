@@ -9,7 +9,7 @@ updated: "2026-10-22"
 slug: "/best-self-hosted-ai-workspace"
 coverLogos: [{"domain": "openwebui.com", "name": "Open WebUI"}, {"domain": "anythingllm.com", "name": "AnythingLLM"}, {"domain": "dify.ai", "name": "Dify"}]
 ---
-Most self-hosted AI lists are written for one person with a free weekend. Day one looks the same everywhere: a chat window, a model picker, a folder of PDFs. The differences arrive in the second month, when a second person needs what the first one taught the agent, when a session installs a package nobody vetted, or when finished work lands where nobody looked first. Six projects are worth running on your own hardware once a team is involved, five of them open source and one fair-code. Kortix, the open-source AI Operating System, is the one built for that second month. The rest are strongest at a narrower job.
+Most self-hosted AI lists are written for one person with a free weekend. Day one looks the same everywhere: a chat window, a model picker, a folder of PDFs. The differences arrive in the second month, when a second person needs what the first one taught the agent, when a session installs a package nobody vetted, or when finished work lands where nobody looked first. Six projects are worth running on your own hardware once a team is involved, five of them open source and one fair-code. Kortix CompanyOS is the one built for that second month. The rest are strongest at a narrower job.
 
 ## Three tests a demo never reaches
 

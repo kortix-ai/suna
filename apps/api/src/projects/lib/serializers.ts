@@ -895,6 +895,7 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
     daytona_state: t.daytonaState,
     provider_state: t.providerState,
     ready: t.ready,
+    residential_proxy: t.residentialProxy,
     ...(t.providerCoverage ? { provider_coverage: t.providerCoverage } : {}),
   };
 }

@@ -1,6 +1,6 @@
 ---
-title: "Kortix vs Nimbalyst: a coding workspace, or the open-source AI Operating System"
-description: "Nimbalyst is a visual coding workspace; Kortix is the open-source AI Operating System that keeps a company's agents and connector grants in one reviewed repo."
+title: "Kortix vs Nimbalyst: a coding workspace, or the open-source CompanyOS"
+description: "Nimbalyst is a visual coding workspace; Kortix is the open-source CompanyOS that keeps a company's agents and connector grants in one reviewed repo."
 date: "2026-10-13"
 canonical: "https://kortix.com/blog/kortix-vs-nimbalyst"
 author: "team"
@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/kortix-vs-nimbalyst"
 ---
-Nimbalyst gives one developer a visual window for Claude Code and Codex sessions, and Kortix is the open-source AI Operating System: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. The difference shows when an agent's work stops being a patch and becomes a permission, a connector or a decision somebody else has to approve.
+Nimbalyst gives one developer a visual window for Claude Code and Codex sessions, and Kortix is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. The difference shows when an agent's work stops being a patch and becomes a permission, a connector or a decision somebody else has to approve.
 
 ```logos
 label: 'Compared here:'

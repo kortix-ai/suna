@@ -4,7 +4,13 @@ import { useTranslations } from '@/i18n/use-translations';
 import { YamlLine } from '@/features/marketing/code-panel';
 import { FILES, TREE } from '@/features/marketing/framework/content';
 import { cn } from '@kortix/ui';
-import { FileTextIcon, FolderSimpleIcon, GitBranchIcon, TerminalIcon } from '@phosphor-icons/react';
+import {
+  CpuIcon,
+  FileTextIcon,
+  FolderSimpleIcon,
+  GitBranchIcon,
+  TerminalIcon,
+} from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 
 import { H, useFitScale, W } from './session-window';
@@ -130,6 +136,10 @@ export function FrameworkWindow({
               <span className="text-muted-foreground flex items-center gap-1.5 font-mono text-xs">
                 <GitBranchIcon className="size-3.5" aria-hidden />
                 main
+              </span>
+              <span className="text-muted-foreground ms-auto flex items-center gap-1.5 text-xs">
+                <CpuIcon className="size-3.5" aria-hidden />
+                {tMarketing('text152a04716eb3')}
               </span>
             </div>
             <div className="grid min-h-0 flex-1 grid-cols-[20rem_1fr]">

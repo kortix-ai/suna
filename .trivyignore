@@ -72,3 +72,13 @@ GHSA-965c-763c-88jm
 GHSA-r4xp-prcw-77qf
 GHSA-q84f-53jg-9ppm
 GHSA-44jh-23m7-hpcf
+
+# zip (Rust) <= 9.0.4: CVE-2026-115905 / GHSA-m665-v7pm-7grj, a parser
+# differential between the local and central headers that can write outside the
+# target. apps/capture opens one zip only: the onnxruntime 1.23.2 Windows release
+# asset, downloaded from a fixed GitHub URL and checked against a hard-coded
+# SHA-256 before it is opened (src/memory/privacy_model.rs). It reads one entry by
+# its exact name into a fixed path and extracts nothing else, so no crafted archive
+# reaches the parser. Remove when apps/capture moves to zip 9.0.5.
+CVE-2026-115905
+GHSA-m665-v7pm-7grj

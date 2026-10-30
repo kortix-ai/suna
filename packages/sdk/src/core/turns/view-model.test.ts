@@ -38,9 +38,9 @@ describe('toolViewModel — web-search / image-search', () => {
       output: JSON.stringify({
         query: 'kortix ai',
         success: true,
-        answer: 'Kortix is an open-source AI Operating System.',
+        answer: 'Kortix CompanyOS is an open-source operating system for a company.',
         results: [
-          { title: 'Kortix', url: 'https://kortix.ai', snippet: 'The open-source AI Operating System.' },
+          { title: 'Kortix', url: 'https://kortix.ai', snippet: 'The open-source CompanyOS.' },
         ],
       }),
       title: 'Web Search',
@@ -52,9 +52,9 @@ describe('toolViewModel — web-search / image-search', () => {
       kind: 'web-search',
       query: 'kortix ai',
       results: [
-        { title: 'Kortix', url: 'https://kortix.ai', snippet: 'The open-source AI Operating System.' },
+        { title: 'Kortix', url: 'https://kortix.ai', snippet: 'The open-source CompanyOS.' },
       ],
-      answer: 'Kortix is an open-source AI Operating System.',
+      answer: 'Kortix CompanyOS is an open-source operating system for a company.',
     });
   });
 

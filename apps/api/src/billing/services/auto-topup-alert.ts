@@ -32,7 +32,6 @@ export function notifyAutoTopupDisabled(accountId: string, reason: string): Prom
     subject: `Auto top-up is off for ${accountName}`,
     category: 'billing-auto-topup-disabled',
     html: renderEmail({
-      kicker: 'Billing',
       title,
       body: `
         <p style="${S.p}">

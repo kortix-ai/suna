@@ -9,7 +9,7 @@ updated: "2026-10-25"
 slug: "/gpt-6-astra-for-agent-teams"
 coverLogos: [{"domain": "openai.com", "name": "OpenAI"}]
 ---
-You want to hand agents more work, and every task you hand over adds something to check. GPT-6 Astra, OpenAI's frontier model, widens what an agent team can delegate. Its agents test their own work, drive apps with no API, and stay inside an authorized scope. The same release lowers how much of that work OpenAI can watch, so the question is which tasks you delegate now and what you still verify. Kortix is the open-source AI Operating System, and it keeps those checks in a repo you own.
+You want to hand agents more work, and every task you hand over adds something to check. GPT-6 Astra, OpenAI's frontier model, widens what an agent team can delegate. Its agents test their own work, drive apps with no API, and stay inside an authorized scope. The same release lowers how much of that work OpenAI can watch, so the question is which tasks you delegate now and what you still verify. Kortix is the open-source CompanyOS, and it keeps those checks in a repo you own.
 
 ## What OpenAI shipped
 

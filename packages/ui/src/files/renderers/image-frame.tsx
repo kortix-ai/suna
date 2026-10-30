@@ -33,6 +33,8 @@ export interface ImageFrameProps {
   naturalRatio?: string | null;
   /** Reports the image's natural size once it decoded. */
   onNaturalSize?: (width: number, height: number) => void;
+  /** Drawn over the frame's own box (an overlay on the image's corner), which narrows with `maxHeight`. */
+  children?: ReactNode;
 }
 
 /** `'3 / 2'` → `1.5`; anything unreadable → `1`. */
@@ -61,6 +63,7 @@ export function ImageFrame({
   openLabel,
   naturalRatio = null,
   onNaturalSize,
+  children,
 }: ImageFrameProps) {
   const img = useRef<HTMLImageElement>(null);
   const [loaded, setLoaded] = useState(false);
@@ -129,6 +132,7 @@ export function ImageFrame({
       {label ? (
         <div className="absolute inset-0 flex items-center justify-center p-4 text-center">{label}</div>
       ) : null}
+      {children}
     </div>
   );
 }

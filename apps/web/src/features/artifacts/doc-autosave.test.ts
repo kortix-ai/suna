@@ -89,6 +89,37 @@ function setup(start = 'start') {
 }
 
 describe('doc autosave', () => {
+  test('an idle editor takes what an agent wrote: refresh resolves to the new text, no conflict, no write', async () => {
+    const { file, saver, statuses, conflicts } = setup('# Untitled');
+    file.replace('# How LLMs work\n');
+    expect(await saver.refresh()).toEqual({ version: 'v2', text: '# How LLMs work\n' });
+    expect(file.writes).toEqual([]);
+    expect(conflicts()).toBe(0);
+    expect(statuses).not.toContain('conflict');
+    // Once taken, the same version is nothing new: no second read.
+    expect(await saver.refresh('v2')).toBeNull();
+  });
+
+  test('refresh leaves unsaved edits alone: the save that follows meets the agent version as a conflict', async () => {
+    const { clock, file, saver, type, conflicts } = setup('start');
+    type('mine');
+    file.replace('theirs');
+    expect(await saver.refresh()).toBeNull();
+    await clock.advance(20_000);
+    expect(conflicts()).toBe(1);
+    expect(file.text).toBe('theirs');
+  });
+
+  test('refresh on an older copy of our own text (the mount merge) writes ours back instead of showing it', async () => {
+    const { clock, file, saver, type } = setup('a');
+    type('ab');
+    await clock.advance(AUTOSAVE_MS + 1);
+    file.replace('a');
+    expect(await saver.refresh()).toBeNull();
+    await clock.advance(20_000);
+    expect(file.text).toBe('ab');
+  });
+
   test('edits during a slow save wait for it and go out as one follow-up save on the new version', async () => {
     const { clock, file, type, statuses } = setup();
     file.latency = 3_000;

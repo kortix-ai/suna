@@ -363,14 +363,15 @@ function ChannelsButton({ count, onOpen }: { count: number; onOpen: () => void }
 
 /**
  * What follows a connected Slack before its first channel: the one-time "now
- * do this in Slack" nudge. It retires itself as soon as `bindings.length > 0`:
- * a bound channel is proof the user already invited the bot and mentioned it,
+ * do this in Slack" nudge. It retires itself as soon as a Slack channel is
+ * bound: that is proof the user already invited the bot and mentioned it,
  * and from then on the Slack row's "N channels" opens the bindings dialog.
+ * Another platform's row (a Telegram chat's `/model`) proves nothing about Slack.
  */
 function SlackFollowUp({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const bindingsQuery = useChannelBindings(projectId);
-  const bindings = bindingsQuery.data?.bindings ?? [];
+  const bindings = (bindingsQuery.data?.bindings ?? []).filter((b) => b.platform === 'slack');
 
   return bindings.length === 0 && !bindingsQuery.isLoading ? (
     <InfoBanner tone="neutral" icon={AtIcon} title={tI18nComplete.raw('textd63af8edd3d6')}>

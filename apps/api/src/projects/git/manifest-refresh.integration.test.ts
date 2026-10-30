@@ -101,11 +101,10 @@ describe('manifest refresh', () => {
 
   test('a forced manifest read skips the fetch when its branch has not moved', async () => {
     // The per-prompt grant read forces a refresh purely to keep ONE branch
-    // current. When that branch is already at the remote's tip, the mirror
-    // proves it with a single `ls-remote` and does not transfer the repository
-    // — so a ref pushed in the meantime is deliberately NOT mirrored by this
-    // call. That absence is the observable difference between the cheap proof
-    // and the fetch it replaces.
+    // current, so the mirror fetches that branch alone and does not transfer
+    // the repository — a ref pushed in the meantime is deliberately NOT
+    // mirrored by this call. That absence is the observable difference between
+    // the single-branch fetch and the whole-mirror fetch it replaces.
     await loadProjectAgents(project);
     await git(['branch', 'unrelated'], repositoryPath);
     await git(['push', 'origin', 'unrelated'], repositoryPath);
@@ -123,6 +122,23 @@ describe('manifest refresh', () => {
     // …and the manifest itself still reads, from the branch that did not move.
     const agents = await loadProjectAgents(project, { forceRefresh: true });
     expect(requiredConnectorsForAgent('support', agents)).toEqual([]);
+  });
+
+  test('a forced manifest read of a moved branch fetches that branch alone', async () => {
+    await loadProjectAgents(project);
+    await git(['branch', 'unrelated'], repositoryPath);
+    await git(['push', 'origin', 'unrelated'], repositoryPath);
+    await pushRequiredManifest();
+
+    const agents = await loadProjectAgents(project, { forceRefresh: true });
+    expect(requiredConnectorsForAgent('support', agents)).toEqual(['required-check']);
+    const unrelated = await exec('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/unrelated'], {
+      cwd: repoCachePath(project),
+    }).then(
+      () => 'present',
+      () => 'absent',
+    );
+    expect(unrelated).toBe('absent');
   });
 
   describe('tip-proof reads (the per-prompt grant read)', () => {

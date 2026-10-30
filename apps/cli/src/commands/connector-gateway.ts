@@ -46,6 +46,11 @@ import { tokenRejectedLine } from '../command-helpers.ts';
 
 const PROVIDERS = ['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
 
+// Mirrors APPROVAL_RERUN_RULE in apps/api/src/connectors/approval-expiry.ts:
+// the rule for a gate that holds no input (`runs_on_approval` absent).
+const APPROVAL_RERUN_RULE =
+  'Approval alone does not run the call: after approval, repeat this exact call (same arguments and account) within 15 minutes, and it runs once.';
+
 // Built-in channels are never added/connected through the connector — the
 // platform materializes their connectors automatically after the channel is
 // wired up. Catch the slugs client-side so an agent gets pointed at the ONE
@@ -299,9 +304,16 @@ async function call({ args, flags, repeated }: Invocation): Promise<void> {
     result.approval_url = undefined;
     const projectId = resolveProjectId(stringValue(flags.project));
     const scope = projectId ? ` --project ${projectId}` : '';
+    // `runs_on_approval`: the gate holds the input, so Kortix runs the call
+    // once after approval (mirrors heldRunRule in approval-expiry.ts).
+    const runsOnApproval = (result as { runs_on_approval?: boolean }).runs_on_approval === true;
+    const rule =
+      runsOnApproval && result.execution_id
+        ? `Kortix runs this exact call once a human approves. Do not repeat the call. In a session, stop this turn: Kortix resumes it with the result. Otherwise read the outcome with kortix review show call:${result.execution_id}${scope}.`
+        : APPROVAL_RERUN_RULE;
     result.approval_instructions = result.execution_id
-      ? `Have an authorized human review the call and use their personal CLI credentials to run kortix review act call:${result.execution_id} approve${scope} or kortix review act call:${result.execution_id} reject${scope}.`
-      : 'Ask a human to review the pending call in the project Review Center.';
+      ? `Have an authorized human review the call and use their personal CLI credentials to run kortix review act call:${result.execution_id} approve${scope} or kortix review act call:${result.execution_id} reject${scope}. ${rule}`
+      : `Ask a human to review the pending call in the project Review Center. ${rule}`;
   }
   // `--out <file>`: the full result goes to the file, a summary to stdout
   // (bytes, the shape of `data`, the path). Large results stay out of the

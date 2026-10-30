@@ -14,7 +14,7 @@ Kortix compare to <tool>?". For configuration, use `SKILL.md`.
 
 ## What Kortix is
 
-Kortix is an open-source AI operating system for a company. Agents, skills,
+Kortix is an open-source CompanyOS. Agents, skills,
 memory and automations are files in one Git repository: versioned,
 reviewable and self-hostable.
 

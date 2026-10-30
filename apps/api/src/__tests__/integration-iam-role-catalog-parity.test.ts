@@ -105,7 +105,7 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     // `capture.read_all` and `capture.manage` (20261015003000001). Then rooms'
     // `project.room.read` and `project.room.write` (20261020130102200). Then
     // artifacts' `project.artifact.{read,write,manage,public}` (20261024055005000).
-    expect(seeded).toHaveLength(86);
+    expect(seeded).toHaveLength(87);
     expect(seeded.filter((a) => a.startsWith('project.customize.'))).toEqual([]);
     // The decisions, stated positively so a regression is unambiguous.
     expect(seeded).not.toContain('project.cr.open');
@@ -170,7 +170,7 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     // project.customize.* (20261017134834494). Both: +2 project.room.*
     // (20261020130102200). Manager +4, member +3 project.artifact.* (manage is
     // the manager's alone) (20261024055005000).
-    expect([manager.length, member.length]).toEqual([55, 20]);
+    expect([manager.length, member.length]).toEqual([56, 21]);
     expect(member.filter((a) => !manager.includes(a))).toEqual([]);
     // The floor role is read + RUN: it starts sessions and fires triggers, and
     // holds project.agent.read (a grant cannot ADD a permission, so without this
