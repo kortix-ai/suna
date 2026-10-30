@@ -57,6 +57,7 @@ import { useFileExplorerSource } from '../explorer-source';
 import { buildGitStatusMap } from '../hooks';
 import {
   forEachLimit,
+  MAX_UPLOAD_BYTES,
   partitionUploadBatch,
   resolveUploadTarget,
   UPLOAD_CONCURRENCY,
@@ -199,6 +200,7 @@ export function DriveExplorer({
     ? { ...source.capabilities, write: false, search: false }
     : source.capabilities;
   const canWrite = capabilities.write;
+  const uploadLimit = capabilities.maxUploadBytes === undefined ? MAX_UPLOAD_BYTES : capabilities.maxUploadBytes;
 
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
@@ -677,7 +679,7 @@ export function DriveExplorer({
    */
   const handleUploadFiles = useCallback(
     async (fileList: FileList | File[], targetDirPath?: string) => {
-      const { accepted, rejected } = partitionUploadBatch(Array.from(fileList));
+      const { accepted, rejected } = partitionUploadBatch(Array.from(fileList), uploadLimit);
 
       for (const { reason } of rejected) errorToast(reason);
       if (accepted.length === 0) return;
@@ -702,7 +704,7 @@ export function DriveExplorer({
         targetDirPath ?? currentPath,
       );
     },
-    [currentPath, isRootPath, pendingNode, startBatch],
+    [currentPath, isRootPath, pendingNode, startBatch, uploadLimit],
   );
 
   /**
@@ -712,7 +714,7 @@ export function DriveExplorer({
    */
   const uploadTree = useCallback(
     async (tree: TreeFile[], base: string) => {
-      const { accepted, rejected } = partitionUploadBatch(tree.map((t) => t.file));
+      const { accepted, rejected } = partitionUploadBatch(tree.map((t) => t.file), uploadLimit);
       for (const { reason } of rejected) errorToast(reason);
       const acceptedSet = new Set(accepted);
       const items = tree.filter((t) => acceptedSet.has(t.file));
@@ -758,7 +760,7 @@ export function DriveExplorer({
         tops.length === 1 ? at(tops[0]!) : root || '/',
       );
     },
-    [currentPath, normalizedCurrentPath, pendingNode, settlePending, mkdirMutation, startBatch, tHardcodedUi],
+    [currentPath, normalizedCurrentPath, pendingNode, settlePending, mkdirMutation, startBatch, tHardcodedUi, uploadLimit],
   );
 
   /** The folder picker (`webkitRelativePath` is `Picked/sub/file.png`). The browser already asked. */
