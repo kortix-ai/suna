@@ -57,17 +57,23 @@ export async function turnPrompterOf(sessionId: string, messageId: string | null
 /**
  * The newest running turn of a session, or null when nothing runs. The same
  * authority `GET .../turn` and admission read: a box that is not running holds
- * no turn, whatever its metadata still says.
+ * no turn, whatever its metadata still says. `sources`: the prompt source each
+ * live turn recorded, null for one that recorded none. pi runs the oldest live
+ * turn and queues the rest behind it, and a record can outlive its turn, so no
+ * one record is surely the turn that runs.
  */
-export async function readRunningTurn(sessionId: string): Promise<{ messageId: string | null } | null> {
+export async function readRunningTurn(
+  sessionId: string,
+): Promise<{ messageId: string | null; sources: Array<string | null> } | null> {
   const [box] = await db
     .select({ status: sessionSandboxes.status, metadata: sessionSandboxes.metadata })
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.sessionId, sessionId))
     .limit(1);
   if (!box || !sessionHoldsTurnAuthority(box)) return null;
-  const turn = newestStoredTurn(storedSandboxTurns(box.metadata));
-  return turn ? { messageId: turn.messageId ?? null } : null;
+  const turns = storedSandboxTurns(box.metadata);
+  const turn = newestStoredTurn(turns);
+  return turn ? { messageId: turn.messageId ?? null, sources: turns.map((t) => t.source ?? null) } : null;
 }
 
 /** May this caller stop the session's running turn right now? */
