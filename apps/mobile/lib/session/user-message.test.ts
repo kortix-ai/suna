@@ -4,6 +4,7 @@ import { channelPromptText, channelPromptTail, parseChannelMessage, serializePro
 import {
   WEB_SPACING_PX,
   buildSessionRefsBlock,
+  channelPlaceLabel,
   commandMessageText,
   editResendAttachments,
   extractReplyContexts,
@@ -527,6 +528,21 @@ describe('messageAttachments — the files of a Telegram message', () => {
   test('a `<file>` tag the sender typed is their text, not a tile', () => {
     const typed = '<file path="/workspace/notes.txt" mime="text/plain" filename="notes.txt">x</file>';
     expect(strip(`see ${typed}`).map((a) => a.filename)).toEqual(['photo.jpg']);
+  });
+});
+
+describe('channelPlaceLabel — the card row for where a channel message was sent', () => {
+  const placeOf = (platform: 'Email' | 'Telegram', where: string) => {
+    const info = parseChannelMessage(channelPromptText({ platform, sender: 'a@example.test', where, text: 'hi', reply: 'send', notes: [] }))!;
+    return [channelPlaceLabel(info.platform), info.context];
+  };
+
+  test("an email's row is its subject", () => {
+    expect(placeOf('Email', 'Q3 report')).toEqual(['Subject', 'Q3 report']);
+  });
+
+  test("a chat's row is its channel", () => {
+    expect(placeOf('Telegram', 'direct message')).toEqual(['Channel', 'direct message']);
   });
 });
 
