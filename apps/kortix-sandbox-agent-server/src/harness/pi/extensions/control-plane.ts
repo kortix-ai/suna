@@ -25,14 +25,23 @@ export interface ApiAnswer {
   body: unknown
 }
 
-/** One JSON call. A network failure throws; any HTTP status is an answer. */
+/**
+ * The longest one call may take. No multi-agent tool waits on another
+ * session: the API answers each from its own state (a message is queued for
+ * delivery, a watch is recorded), so a normal answer takes well under 2 s and
+ * this only bounds a hung network.
+ */
+export const CONTROL_PLANE_CALL_TIMEOUT_MS = 10_000
+
+/** One JSON call. A network failure or the timeout throws; any HTTP status is an answer. */
 export async function callApi(plane: ControlPlane, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown, signal?: AbortSignal): Promise<ApiAnswer> {
   const origin = plane.apiUrl.trim().replace(/\/+$/, '').replace(/\/v1$/, '')
+  const timeout = AbortSignal.timeout(CONTROL_PLANE_CALL_TIMEOUT_MS)
   const res = await fetch(`${origin}/v1${path}`, {
     method,
     headers: { authorization: `Bearer ${plane.token}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    ...(signal ? { signal } : {}),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   })
   const text = await res.text().catch(() => '')
   let parsed: unknown = null

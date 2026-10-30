@@ -248,7 +248,7 @@ const parameters = Type.Object({
   name: Type.Optional(
     Type.String({
       description:
-        'A short name for the subagent (letters, digits, "-", "_"), such as "reviewer". It makes the subagent addressable: send_message({ to: name }) reaches it while it runs and after it finishes, and task_stop({ name }) stops it. Unique among your running subagents.',
+        'A short name for the subagent (letters, digits, "-", "_"), such as "auditor". It makes the subagent addressable: send_message({ to: name }) reaches it while it runs and after it finishes, and task_stop({ name }) stops it. Unique among your running subagents.',
     }),
   ),
   fork: Type.Optional(
@@ -320,7 +320,7 @@ function describe(types: Map<string, SubagentType>, anyProjectAgent = false, top
     '- Check on one: list_agents (scope "mine"), or `kortix sessions info <task_id>`. Message one while it works: send_message({ to: name or task_id }). Stop one: task_stop({ task_id } or { name }). Send a finished one a follow-up: call this tool with its task_id.',
     '',
     'Names and forks:',
-    '- name: "reviewer" makes the subagent addressable by send_message and task_stop. Give one to every subagent you may want to talk to later.',
+    '- name (for example "auditor") makes the subagent addressable by send_message and task_stop. Give one to every subagent you may want to talk to later.',
     '- fork: true starts the subagent from a copy of this conversation, so it knows everything you know; a short prompt is enough. A fork runs as your own agent.',
     ...(teams
       ? [

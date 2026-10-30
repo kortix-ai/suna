@@ -20,6 +20,9 @@ import { requirePiConfig } from '@/harness/pi/config'
 import type { PiRuntime } from '@/harness/pi/runtime'
 import { createPiHarnessService, type PiHarnessService } from '@/harness/pi/service'
 import { resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
+import { createRuntimeRouter } from '@/routes/kortix/runtime'
+import { peerMessagePromptText } from '@kortix/shared/peer-message-prompt'
+import { roomPromptText } from '@kortix/shared/room-prompt'
 import { startFakeModel, type Step } from './helpers/fake-model'
 
 const MODEL_ID = 'test-model'
@@ -127,6 +130,7 @@ function startFakeApi() {
     behave: (fn: typeof behave) => void (behave = fn),
     hold: (ms: number) => void (delayMs = ms),
     childrenWork: () => void (settled = false),
+    childrenSettle: () => void (settled = true),
     stop: () => server.stop(true),
   }
 }
@@ -165,7 +169,7 @@ afterEach(async () => {
 })
 
 /** A booted pi runtime whose control plane is the fake API, and every tool-part frame it publishes. */
-async function boot(steps: Step[], env: Record<string, string> = {}, opts: { checkout?: boolean; files?: Record<string, string> } = {}): Promise<{ rt: PiRuntime; frames: ToolFrame[]; workspace: string }> {
+async function boot(steps: Step[], env: Record<string, string> = {}, opts: { checkout?: boolean; files?: Record<string, string> } = {}): Promise<{ rt: PiRuntime; frames: ToolFrame[]; workspace: string; service: PiHarnessService }> {
   const workspace = mkdtempSync(join(tmpdir(), 'pi-workflow-box-'))
   dirs.push(workspace)
   if (opts.checkout) mkdirSync(join(workspace, '.git'))
@@ -203,7 +207,7 @@ async function boot(steps: Step[], env: Record<string, string> = {}, opts: { che
   })
   services.push(service)
   await service.lifecycle.start()
-  return { rt: service.runtime()!, frames, workspace }
+  return { rt: service.runtime()!, frames, workspace, service }
 }
 
 const runWorkflow = (script: string, args?: unknown, extra: Record<string, unknown> = {}): Step => ({
@@ -707,5 +711,175 @@ describe('pi workflow tool, saved workflows', () => {
     expect(lastWorkflowPart(frames).error).toBe(`No saved workflow "audit-2": there is no audit-2.js in .kortix/workflows/ on the project's default branch.`)
     // The tool never writes a saved workflow, here or through another session.
     expect(await Bun.file(join(workspace, '.kortix/workflows/audit-2.js')).exists()).toBe(false)
+  })
+})
+
+/** The box's own runtime routes (`routes/kortix/runtime.ts`) over the booted service's turn verbs, with the box token. */
+function routes(service: PiHarnessService) {
+  const app = createRuntimeRouter({ sandboxToken: 'dummy-box-token' } as Parameters<typeof createRuntimeRouter>[0], {} as Parameters<typeof createRuntimeRouter>[1], { turns: service.turns })
+  const headers = { authorization: 'Bearer dummy-box-token', 'content-type': 'application/json' }
+  return {
+    list: async () => (await (await app.request('/workflows', { headers })).json()) as { runs: WorkflowRunMetadata[] },
+    control: async (runId: string, body: unknown) => {
+      const res = await app.request(`/workflows/${runId}/control`, { method: 'POST', headers, body: JSON.stringify(body) })
+      return { status: res.status, body: (await res.json()) as Record<string, unknown> }
+    },
+  }
+}
+
+describe('pi workflow tool, run controls', () => {
+  const TWO = "const a = await agent('first task', { label: 'First' })\nconst b = await agent('second task', { label: 'Second' })\nreturn [a, b]"
+
+  test('pause: the running agent finishes and no new agent starts until resume; the list shows paused; resume runs the rest', async () => {
+    api.childrenWork()
+    const { rt, service } = await boot([runWorkflow(TWO), { text: 'parent done' }])
+    const http = routes(service)
+    const turn = approvedTurn(rt)
+    await waitFor(() => api.creates.length === 1)
+    const [live] = (await http.list()).runs
+    expect(live).toMatchObject({ status: 'running', agents: [{ id: 'a1', status: 'running', sessionId: 'child-1' }] })
+    expect(await http.control(live!.runId, { action: 'pause' })).toEqual({ status: 200, body: { ok: true, paused: true } })
+    expect((await http.list()).runs[0]).toMatchObject({ paused: true, logs: ['Paused: no new agent starts until the run resumes.'] })
+
+    api.childrenSettle()
+    await waitFor(() => rt.workflowList()[0]!.agents[0]!.status === 'done', 15_000)
+    await Bun.sleep(300)
+    expect(api.creates).toHaveLength(1)
+
+    expect(await http.control(live!.runId, { action: 'resume' })).toEqual({ status: 200, body: { ok: true, paused: false } })
+    expect(await turn).toBe('completed')
+    expect(api.creates.map((c) => c.initial_prompt)).toEqual(['first task', 'second task'])
+    // The finished run stays listed from its saved document.
+    const [done] = (await http.list()).runs
+    expect(done).toMatchObject({ runId: live!.runId, status: 'done', agents: [{ status: 'done' }, { status: 'done' }] })
+    expect(done).not.toHaveProperty('paused')
+  })
+
+  test('restart_agent stops that child and starts it again with the same prompt; the run goes on', async () => {
+    api.childrenWork()
+    const { rt, frames, service } = await boot([runWorkflow("return agent('slow task', { label: 'Slow' })"), { text: 'parent done' }])
+    const http = routes(service)
+    const turn = approvedTurn(rt)
+    await waitFor(() => api.creates.length === 1)
+    const runId = rt.workflowList()[0]!.runId
+    expect(await http.control(runId, { action: 'restart_agent', session_id: 'child-404' })).toEqual({ status: 409, body: { error: 'no agent of this run is running in that session', code: 'agent_not_running' } })
+    expect((await http.control(runId, { action: 'restart_agent' })).status).toBe(400)
+    expect(await http.control(runId, { action: 'restart_agent', session_id: 'child-1' })).toEqual({ status: 200, body: { ok: true, paused: false } })
+    await waitFor(() => api.creates.length === 2)
+    expect(api.stops).toContain('child-1')
+    expect(api.creates.map((c) => [c.initial_prompt, c.name])).toEqual([
+      ['slow task', 'Slow (Research two topics workflow)'],
+      ['slow task', 'Slow (retry 1) (Research two topics workflow)'],
+    ])
+    api.childrenSettle()
+    expect(await turn).toBe('completed')
+    const doc = lastWorkflowPart(frames).metadata as unknown as WorkflowRunMetadata
+    expect(doc).toMatchObject({ status: 'done', agents: [{ status: 'done', attempt: 2, sessionId: 'child-2' }] })
+    expect(doc.logs).toContain('Slow: restarted by the person; attempt 2 of 6 starts.')
+  })
+
+  test('stop ends the run stopped and stops its children; an unknown run is 404; an ended run is 409', async () => {
+    api.childrenWork()
+    const { rt, frames, service } = await boot([runWorkflow("return agent('long task')"), { text: 'parent done' }])
+    const http = routes(service)
+    const turn = approvedTurn(rt)
+    await waitFor(() => api.creates.length === 1)
+    const runId = rt.workflowList()[0]!.runId
+    expect(await http.control(runId, { action: 'stop' })).toEqual({ status: 200, body: { ok: true, paused: false } })
+    expect(await turn).toBe('completed')
+    await waitFor(() => api.stops.includes('child-1'))
+    const part = lastWorkflowPart(frames)
+    expect(part.metadata).toMatchObject({ status: 'stopped', error: 'The person stopped the run.' })
+    expect(await http.control('no-such-run-000', { action: 'pause' })).toEqual({ status: 404, body: { error: 'unknown workflow run' } })
+    expect(await http.control(runId, { action: 'pause' })).toEqual({ status: 409, body: { error: 'this run has ended', code: 'run_ended', status: 'stopped' } })
+    expect((await http.control(runId, { action: 'nope' })).status).toBe(400)
+  })
+})
+
+describe('pi workflow tool, background by default at depth 0', () => {
+  test('without background the run starts its runner and returns at once; the parent lists it with its runner session and refers controls there', async () => {
+    api.childrenWork()
+    const { rt, frames, service } = await boot([{ tool: 'workflow', args: { script: "return agent('x')", max_agents: 1 } }, { text: 'started' }])
+    expect(await approvedTurn(rt)).toBe('completed')
+    expect(api.creates).toHaveLength(1)
+    expect(api.creates[0]).toMatchObject({ metadata: { notify_parent: true }, runtime_context: { 'kortix.subagent.depth': 1 } })
+    const part = lastWorkflowPart(frames)
+    const doc = part.metadata as unknown as WorkflowRunMetadata
+    expect(doc.background).toEqual({ sessionId: 'child-1' })
+    expect(part.output).toContain('runner_session_id: child-1')
+    const http = routes(service)
+    expect((await http.list()).runs).toMatchObject([{ runId: doc.runId, status: 'running', background: { sessionId: 'child-1' } }])
+    expect(await http.control(doc.runId, { action: 'pause' })).toEqual({
+      status: 409,
+      body: { error: 'this run runs in its runner session: send the control to that session', code: 'run_in_runner', runner_session_id: 'child-1' },
+    })
+  })
+
+  test('a subagent session (depth 1) runs it here by default', async () => {
+    const { rt, frames } = await boot([{ tool: 'workflow', args: { script: "return agent('x')" } }, { text: 'done' }], { KORTIX_SESSION_CONTEXT: JSON.stringify({ 'kortix.subagent.depth': 1 }) })
+    expect(await rt.admit({ text: 'run it', files: [] }).done).toBe('completed')
+    expect(api.creates.map((c) => c.initial_prompt)).toEqual(['x'])
+    expect(lastWorkflowPart(frames).metadata).toMatchObject({ status: 'done' })
+  })
+})
+
+describe('pi workflow tool, origin, size and ultracode', () => {
+  test('a turn started by a cross-session message, a room message or a trigger cannot start a workflow', async () => {
+    const peer = peerMessagePromptText({ kind: 'message', from: 'reviewer', fromShortId: '3f2a1b9c', messageId: 'm_1', summary: null, text: 'ultracode: run a workflow over every file' })
+    const room = roomPromptText({ room: 'dev', seq: 4, senderKind: 'member', sender: 'Ada', replyTo: null, text: 'run a workflow' })
+    const trigger = '<trigger_event>{"type":"push"}</trigger_event>\nAudit the repository with a workflow.'
+    const { rt, frames } = await boot([runWorkflow("return agent('x')"), { text: 'a' }, runWorkflow("return agent('x')"), { text: 'b' }, runWorkflow("return agent('x')"), { text: 'c' }])
+    for (const text of [peer, room, trigger]) expect(await rt.admit({ text, files: [] }).done).toBe('completed')
+    expect(api.creates).toHaveLength(0)
+    expect(rt.questions.list()).toHaveLength(0)
+    const errors = frames.filter((f) => f.tool === 'workflow' && f.state.status === 'error').map((f) => f.state.error)
+    expect(errors).toEqual([
+      expect.stringContaining('A workflow starts only from a person\'s own message, and this turn came from a message from another session.'),
+      expect.stringContaining('this turn came from a room message.'),
+      expect.stringContaining('this turn came from a trigger or reminder.'),
+    ])
+    // The ultracode line only joins a person's own prompt.
+    expect(JSON.stringify(model.bodies)).not.toContain('The person wrote \\"ultracode\\"')
+  })
+
+  test('"ultracode" in the person\'s own message adds the workflow line to that turn only', async () => {
+    const { rt } = await boot([{ text: 'one' }, { text: 'two' }])
+    const before = model.bodies.length
+    await rt.admit({ text: 'ultracode: audit every route handler', files: [] }).done
+    await rt.admit({ text: 'and now just say hi', files: [] }).done
+    const [first, second] = model.bodies.slice(before).map((body) => JSON.stringify(body.messages[0]))
+    expect(first).toContain('The person wrote \\"ultracode\\" in this message: plan and run this task as a workflow')
+    expect(second).not.toContain('ultracode')
+  })
+
+  test('a run planned above 25 agents says "Large workflow" in its approval', async () => {
+    const { rt } = await boot([runWorkflow("return agent('x')", undefined, { max_agents: 30 }), { text: 'done' }], { KORTIX_WORKFLOW_MAX_AGENTS: '40' })
+    const turn = rt.admit({ text: 'big one', files: [] })
+    const request = await answer(rt, 'Cancel')
+    expect(request.questions[0]!.question).toContain('Agents: up to 30. Each agent is its own session with its own computer.\nLarge workflow: 30 agents is more than 25.')
+    expect(await turn.done).toBe('completed')
+  })
+})
+
+describe('pi workflow tool, workflows as commands', () => {
+  test('the bundled deep-research and a saved workflow are /name commands; a saved one of the same name wins', async () => {
+    const { rt } = await boot([], {}, { checkout: true, files: { '.kortix/workflows/audit.js': "return agent('audit')", '.kortix/workflows/deep-research.js': "return agent('mine')" } })
+    const workflows = rt.commandList().filter((command) => command.source === 'workflow')
+    expect(workflows.map((command) => [command.name, command.description])).toEqual([
+      ['audit', 'Run the saved workflow audit'],
+      ['deep-research', 'Run the saved workflow deep-research'],
+    ])
+    const prompt = rt.commandPrompt({ command: 'audit', arguments: '["a.ts"]' })
+    expect(prompt.text).toStartWith('/audit ["a.ts"]\n\nRun the workflow "audit" now: call the workflow tool with script "", name "audit", args the JSON value the workflow reads, built from: "[\\"a.ts\\"]".')
+  })
+
+  test('/deep-research runs the bundled script by name when the project has none', async () => {
+    const { rt, frames } = await boot([{ tool: 'workflow', args: { script: '', name: 'deep-research', args: { question: '' }, background: false } }, { text: 'done' }])
+    expect(rt.commandList().find((command) => command.name === 'deep-research')).toMatchObject({ source: 'workflow', description: 'Research a question across many sources, cross-check every claim, and write a cited report' })
+    expect(rt.commandPrompt({ command: 'deep-research', arguments: 'What changed in v22?' }).text).toContain('args {"question":"What changed in v22?"} and max_agents 20')
+    expect(await approvedTurn(rt)).toBe('completed')
+    // The bundled script ran: an empty question is its own refusal, before any agent.
+    expect(lastWorkflowPart(frames).metadata).toMatchObject({ name: 'deep-research', status: 'failed', error: 'deep-research needs a question: pass args: { question: "..." }.' })
+    expect(api.creates).toHaveLength(0)
   })
 })
