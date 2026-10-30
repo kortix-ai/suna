@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 
@@ -20,3 +21,16 @@ test(
     assert.match(result.stdout, /translated non-linguistic bindings: 0/);
   },
 );
+
+// Catalog parity cannot detect a namespace missing from every locale.
+test('desktop control translations exist in every supported locale', () => {
+  const keys = ['title', 'openTab', 'offline', 'start', 'retry', 'takeOver',
+    'userControl', 'agentControl', 'returnControl', 'escape'];
+  for (const locale of ['en', 'de', 'es', 'fr', 'it', 'ja', 'pt', 'sr', 'zh']) {
+    const catalog = JSON.parse(readFileSync(`translations/${locale}.json`, 'utf8'));
+    for (const key of keys) {
+      assert.equal(typeof catalog.sessionDesktop?.[key], 'string', `${locale}: ${key}`);
+      assert.ok(catalog.sessionDesktop[key].trim().length > 0, `${locale}: empty ${key}`);
+    }
+  }
+});
