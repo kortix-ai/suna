@@ -51,9 +51,9 @@ export const sandboxExplorerSource: FileExplorerSource = {
    * parked Platinum box: the daemon answers `503 sandbox_not_ready` in 2ms
    * while the mirror returns the tree in 33ms.
    *
-   * The mirror is best-effort — `createRemoteSessionBranch` pushes the branch in
-   * the background and records a failure in session metadata — so it can come
-   * back empty. `DriveExplorer` treats "parked and empty" as idle rather than as
+   * A session that never published has no branch of its own: the files
+   * routes then read its base branch, which is what the box checked out. A
+   * read can still fail and come back empty. `DriveExplorer` treats "parked and empty" as idle rather than as
    * an empty folder, which is the one case this must not state as fact.
    *
    * Both hooks run every render; only one is ever enabled.

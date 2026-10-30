@@ -52,7 +52,6 @@ import {
   repositoryAccessFromLoadedAgents,
   legacyReadWorkspaceFromLoadedAgents,
 } from '../agents';
-import { createRemoteSessionBranch } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 
 import { listResolvedProjectSecrets, parseSessionSecretsAllowlist, secretKeyCollisionInAllowlist } from '../secrets';
@@ -1422,54 +1421,7 @@ async function resolveCreatedSessionProjectSnapshot(
   };
 }
 
-/** Push the session branch to origin in the background and record the outcome. */
-function publishCreatedSessionBranch(params: {
-  body: Record<string, unknown>;
-  repositoryAccess: boolean;
-  projectWithGitAuthPromise: ReturnType<typeof withProjectGitAuth>;
-  sessionId: string;
-  baseRef: string;
-  tl: ProvisionTimeline;
-}): void {
-  const { body, repositoryAccess, projectWithGitAuthPromise, sessionId, baseRef, tl } = params;
-  // Origin branch creation is publishing work, not readiness work. The
-  // sandbox now creates the session branch locally from the base checkout
-  // immediately, so this remote push runs fully in the background. The
-  // metadata writes that record success/failure are pure telemetry —
-  // fire-and-forget so they never block the IIFE itself.
-  const branchAlreadyCreated =
-    body.branch_already_created === true || body.branchAlreadyCreated === true;
-  const branchPromise: Promise<void> = !repositoryAccess || branchAlreadyCreated
-    ? Promise.resolve()
-    : projectWithGitAuthPromise
-        .then((projectWithGitAuth) =>
-        createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef),
-        )
-        .then(() => {
-        tl.mark('branch-pushed');
-        void mergeCreatedSessionMetadata(sessionId, {
-            remote_branch: {
-              status: 'ready',
-              branch: sessionId,
-              updated_at: new Date().toISOString(),
-            },
-        }).catch(() => {});
-      });
-  branchPromise.catch((err) => {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(`[projects] Remote branch creation failed for session ${sessionId}:`, err);
-    void mergeCreatedSessionMetadata(sessionId, {
-      remote_branch: {
-        status: 'failed',
-        branch: sessionId,
-        error: message.slice(0, 500),
-        updated_at: new Date().toISOString(),
-      },
-    }).catch(() => {});
-  });
-}
-
-/** Build the env, publish the branch, and kick off provisionSessionSandbox() for a new session row. */
+/** Build the env and kick off provisionSessionSandbox() for a new session row. */
 async function provisionCreatedSession(params: {
   input: CreateProjectSessionInput;
   sessionId: string;
@@ -1504,8 +1456,8 @@ async function provisionCreatedSession(params: {
   const tl = new ProvisionTimeline(sessionId, 'session-create');
   try {
     // Resolve git auth and user env concurrently. Git auth is needed for
-    // background freshness checks / remote branch publishing, but a warm
-    // session can boot from an existing ready snapshot without waiting for it.
+    // background freshness checks, but a warm session can boot from an
+    // existing ready snapshot without waiting for it.
     const projectWithGitAuthPromise = withProjectGitAuth(project).then((gitProject) => {
       tl.mark('git-auth');
       return gitProject;
@@ -1570,7 +1522,12 @@ async function provisionCreatedSession(params: {
         return envVars;
       });
 
-    publishCreatedSessionBranch({ body, repositoryAccess, projectWithGitAuthPromise, sessionId, baseRef, tl });
+    // No session branch is pushed to origin here. The box creates it locally
+    // from the base checkout and publishes it with the session's first push
+    // (`git push origin HEAD:refs/heads/<session>`) or change request. The
+    // push at create made one origin branch per session (the company repo
+    // held ~20,900, 2026-10-30) and dropped the project's git mirror proofs
+    // on every create.
 
     // Not awaited here: provisioning reads it only when it builds the provider
     // input, so the env build overlaps the image check and the token mint.
@@ -1629,8 +1586,8 @@ async function provisionCreatedSession(params: {
     console.error(`[projects] Failed to kick off sandbox for session ${sessionId}:`, err);
     try {
       // Merge, never re-write the create-time snapshot: by the time
-      // provisioning fails the row may already carry a generated title,
-      // remote_branch or the start timeline. A session deleted meanwhile
+      // provisioning fails the row may already carry a generated title
+      // or the start timeline. A session deleted meanwhile
       // keeps its tombstone.
       await transitionSession('fail', sessionId, {
         error: message,

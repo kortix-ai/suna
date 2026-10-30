@@ -376,7 +376,7 @@ const trimmedCustomName = sql`btrim(${projectSessions.metadata}->>'custom_name',
  * is first-writer-wins: a loser is a no-op instead of stomping a user rename or
  * a better title that landed in between. The jsonb merge expression evaluates
  * AFTER PostgreSQL takes the row lock, so a title written here can never clobber
- * a concurrent `remote_branch` / `session_start_timeline`
+ * a concurrent `session_start_timeline`
  * write (or be clobbered by one) the way a read-modify-write of the whole
  * metadata object would.
  *

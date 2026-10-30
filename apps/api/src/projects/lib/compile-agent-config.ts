@@ -821,6 +821,44 @@ interface CompileReadOptions {
 }
 
 /**
+ * Compiled configs by the commit they were compiled from. A commit never
+ * changes, so an entry is never stale. Session create, restart and open
+ * compiled the same commit once each; the company project's config is
+ * ~380 KB from ~40 files (2026-10-30).
+ */
+// replica-local: a cache of immutable per-commit output; a miss recompiles.
+const compiledAtCommit = new Map<string, { raw: Record<string, unknown>; compiled: string | null }>();
+const COMPILED_AT_COMMIT_MAX = 32;
+
+function compiledAt(key: string | null): { raw: Record<string, unknown>; compiled: string | null } | undefined {
+  const hit = key ? compiledAtCommit.get(key) : undefined;
+  if (hit) {
+    // Re-insert: the Map's insertion order is the eviction order.
+    compiledAtCommit.delete(key!);
+    compiledAtCommit.set(key!, hit);
+  }
+  return hit;
+}
+
+function rememberCompiled(key: string | null, entry: { raw: Record<string, unknown>; compiled: string | null }): void {
+  if (!key) return;
+  compiledAtCommit.set(key, entry);
+  while (compiledAtCommit.size > COMPILED_AT_COMMIT_MAX) {
+    compiledAtCommit.delete(compiledAtCommit.keys().next().value!);
+  }
+}
+
+/** The cache key of a compile from the manifest read `found`, or null when its commit is unknown. */
+function commitKey(project: GitBackedProject, found: { commit: string | null; path: string }, selection: string): string | null {
+  return found.commit ? [project.projectId, found.commit, found.path, selection].join('\0') : null;
+}
+
+/** Test seam: start from a cold cache. */
+export function __resetCompiledAtCommitForTests(): void {
+  compiledAtCommit.clear();
+}
+
+/**
  * Every prompt file a v3 manifest names (agents and commands), read at `ref`.
  * Any read failure throws: a v3 session never compiles with a missing prompt.
  */
@@ -861,26 +899,46 @@ export async function resolveCompiledAgentConfigForSession(
       forceRefresh: options.forceRefresh,
     });
     if (!found) return null;
-
+    const key = commitKey(project, found, '*');
+    const hit = compiledAt(key);
     const format = manifestFormatForPath(found.path);
-    const raw = parseManifestText(found.content, format);
-    options.onManifest?.(raw as Record<string, unknown>);
+    const raw = hit?.raw ?? (parseManifestText(found.content, format) as Record<string, unknown>);
+    options.onManifest?.(raw);
     manifestVersion = manifestSchemaVersion(raw);
-    if (![2, 3].includes(manifestVersion)) return null;
-    if (manifestSchemaVersion(raw) === 3) {
-      const validation = validateManifest(raw, format);
-      if (!validation.valid) throw new CompileAgentConfigError(validation.issues.filter((issue) => issue.severity === 'error').map((issue) => `${issue.path}: ${issue.message}`).join('; '));
-    }
+    if (hit) return hit.compiled;
+    // Every file is read at the commit the manifest came from: a sha read
+    // needs no mirror fetch, and all files come from one commit.
+    const compiled = await compileManifestAt(project, raw, format, found.commit ?? ref);
+    rememberCompiled(key, { raw, compiled });
+    return compiled;
+  } catch (err) {
+    console.warn(
+      `[compile-agent-config] project ${project.projectId}: compile failed: ${(err as Error).message}`,
+    );
+    if (manifestVersion === 3) throw err;
+    return null;
+  }
+}
 
-    const v2 = raw as unknown as ManifestV2;
-    const agents =
-      v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents) ? v2.agents : {};
+/** Compile a parsed manifest with its prompt files read at `at`. Null for a manifest that is not v2 or v3. */
+async function compileManifestAt(
+  project: GitBackedProject,
+  raw: Record<string, unknown>,
+  format: ReturnType<typeof manifestFormatForPath>,
+  at: string,
+): Promise<string | null> {
+  const manifestVersion = manifestSchemaVersion(raw);
+  if (![2, 3].includes(manifestVersion)) return null;
+  if (manifestVersion === 3) {
+    const validation = validateManifest(raw, format);
+    if (!validation.valid) throw new CompileAgentConfigError(validation.issues.filter((issue) => issue.severity === 'error').map((issue) => `${issue.path}: ${issue.message}`).join('; '));
+    return JSON.stringify(compileAgentConfig(raw, 'opencode', await readPromptFilesV3(project, raw, at)));
+  }
 
-    if (manifestVersion === 3) {
-      const compiled = compileAgentConfig(raw, 'opencode', await readPromptFilesV3(project, raw, ref));
-      return JSON.stringify(compiled);
-    }
-
+  const v2 = raw as unknown as ManifestV2;
+  const agents =
+    v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents) ? v2.agents : {};
+  {
     const agentMdFiles: Record<string, string> = {};
     await Promise.all(
       Object.keys(agents).map(async (name) => {
@@ -895,7 +953,7 @@ export async function resolveCompiledAgentConfigForSession(
         // `readAgentMarkdownFile` rethrows it, so the outer catch returns null:
         // the session keeps the config it has and `stale` reads null ("could
         // not tell") rather than a confident and wrong "up to date".
-        const md = await readAgentMarkdownFile(project, raw, name, ref);
+        const md = await readAgentMarkdownFile(project, raw, name, at);
         if (md.content !== null) {
           agentMdFiles[md.path] = md.content;
         }
@@ -904,12 +962,6 @@ export async function resolveCompiledAgentConfigForSession(
 
     const compiled = compileAgentConfig(raw, 'opencode', agentMdFiles);
     return compiled ? JSON.stringify(compiled) : null;
-  } catch (err) {
-    console.warn(
-      `[compile-agent-config] project ${project.projectId}: compile failed: ${(err as Error).message}`,
-    );
-    if (manifestVersion === 3) throw err;
-    return null;
   }
 }
 
@@ -934,9 +986,12 @@ export async function resolveSelectedAgentConfigForSession(
     );
   }
 
+  const key = commitKey(project, found, `agent:${agentName}`);
+  const hit = compiledAt(key);
   const format = manifestFormatForPath(found.path);
-  const raw = parseManifestText(found.content, format);
-  options.onManifest?.(raw as Record<string, unknown>);
+  const raw = hit?.raw ?? (parseManifestText(found.content, format) as Record<string, unknown>);
+  options.onManifest?.(raw);
+  if (hit?.compiled) return hit.compiled;
   if (manifestSchemaVersion(raw) === 3) {
     const validation = validateManifest(raw, format);
     if (!validation.valid) throw new CompileAgentConfigError(validation.issues.filter((issue) => issue.severity === 'error').map((issue) => `${issue.path}: ${issue.message}`).join('; '));
@@ -948,12 +1003,17 @@ export async function resolveSelectedAgentConfigForSession(
     );
   }
 
+  // Read at the manifest's own commit, as the full compile does.
+  const at = found.commit ?? ref;
+  let compiled: string;
   if (manifestSchemaVersion(raw) === 3) {
-    return JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', await readPromptFilesV3(project, raw, ref)));
+    compiled = JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', await readPromptFilesV3(project, raw, at)));
+  } else {
+    const agentMdFiles: Record<string, string> = {};
+    const md = await readAgentMarkdownFile(project, raw, agentName, at);
+    if (md.content !== null) agentMdFiles[md.path] = md.content;
+    compiled = JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles));
   }
-  const agentMdFiles: Record<string, string> = {};
-  const md = await readAgentMarkdownFile(project, raw, agentName, ref);
-  if (md.content !== null) agentMdFiles[md.path] = md.content;
-
-  return JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles));
+  rememberCompiled(key, { raw, compiled });
+  return compiled;
 }

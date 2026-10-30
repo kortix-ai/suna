@@ -37,7 +37,10 @@ export async function resolveAgentGrant(
   agentName: string,
   project: GitBackedProject,
 ): Promise<AgentGrant | null> {
-  return grantFromLoadedAgents(agentName, await loadProjectAgents(project));
+  // `'tip-proof'`, as the per-prompt grant read: the plain TTL read fetched all
+  // of a large repo's branches on a process that had not fetched for 60 s, on
+  // the session's credential path (`row+tokens` p50 1.1 s on prod, 2026-10-30).
+  return grantFromLoadedAgents(agentName, await loadProjectAgents(project, { forceRefresh: 'tip-proof' }));
 }
 
 /**

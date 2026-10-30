@@ -52,7 +52,6 @@ process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum,daytona';
 
 const { config } = await import('../config');
 
-let branchCreateCalls = 0;
 // Committed manifest text served by the git mock; null = a blank project.
 // A declared agent only gets the project checkout with `repository_access: true`
 // (KRTX-165), so a test that names a non-default agent declares it here.
@@ -145,7 +144,6 @@ const projectRow: typeof projects.$inferSelect = {
 };
 
 function resetState() {
-  branchCreateCalls = 0;
   manifestYaml = null;
   sandboxProvisionCalls = 0;
   envBuildError = null;
@@ -329,9 +327,6 @@ const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
   ...actualGit,
   MergeConflictError: class MergeConflictError extends Error {},
-  createRemoteSessionBranch: async () => {
-    branchCreateCalls += 1;
-  },
   remoteBranchExists: async () => true,
   archiveRepoSubtree: async () => undefined,
   deleteRemoteSessionBranch: async () => undefined,
@@ -2970,8 +2965,6 @@ describe('project session runtime guards', () => {
     expect(body.status).toBe('provisioning');
     expect(body.opencode_session_id).toBeNull();
     expect(body.name).toBe('Contract session');
-    await flushUntil(() => branchCreateCalls === 1);
-    expect(branchCreateCalls).toBe(1);
     expect(sessionRow?.baseRef).toBe('dev');
     expect(sessionRow?.runtimeSessionId).toBeNull();
 

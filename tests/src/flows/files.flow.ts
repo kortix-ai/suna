@@ -800,3 +800,104 @@ flow(
     }
   },
 );
+
+/**
+ * FILE-16 — a session that has not pushed reads as its base. Session create
+ * pushes no branch to the remote: the box branches locally and its first push
+ * publishes the branch. Until then, a read at the session's ref reads the
+ * session's base ref. A session that pushed reads its own branch.
+ */
+flow(
+  "FILE-16",
+  {
+    domain: "files",
+    requires: ["database"],
+    routes: [
+      "GET /v1/projects/:projectId/files",
+      "GET /v1/projects/:projectId/files/content",
+      "GET /v1/projects/:projectId/version-diff",
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== "local") return; // the session branch is pushed straight to the bare repository
+    const { execFileSync } = await import("node:child_process");
+    const { randomUUID } = await import("node:crypto");
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { Client: PgClient } = await import("pg");
+    const team = await ctx.fixtures.team();
+    const project = await team.project({ managedGit: true });
+    const params = { projectId: project.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const unpushed = randomUUID();
+    const pushed = randomUUID();
+    const SESSION_FILE = "ke2e-file16-session-only.txt";
+    const db = new PgClient({ connectionString: ctx.env.databaseUrl! });
+    await db.connect();
+    const work = mkdtempSync(join(tmpdir(), "ke2e-file16-"));
+    try {
+      const { rows } = await db.query("SELECT account_id, repo_url, default_branch FROM kortix.projects WHERE project_id = $1", [project.id]);
+      const base = String(rows[0]?.default_branch || "main");
+      for (const sessionId of [unpushed, pushed]) {
+        await db.query(
+          `INSERT INTO kortix.project_sessions
+             (session_id, account_id, project_id, branch_name, base_ref, agent_name, status, created_by, visibility)
+           VALUES ($1, $2, $3, $1, $4, 'kortix', 'stopped', $5, 'private')`,
+          [sessionId, rows[0]?.account_id, project.id, base, ctx.P.OWNER.userId],
+        );
+      }
+      type Entry = { path: string; type: string };
+      const listing = async (ref?: string) => {
+        const r = await owner.get("/v1/projects/:projectId/files", { params, query: { depth: "1", ...(ref ? { ref } : {}) } });
+        r.status(200);
+        return r.json<{ entries: Entry[] }>().entries;
+      };
+
+      let firstFile = "";
+      await ctx.step("a session that never pushed lists its base's tree → 200, the same entries", async () => {
+        const atBase = await listing();
+        const atSession = await listing(unpushed);
+        if (atBase.length === 0) throw new Error("the base tree is empty");
+        if (JSON.stringify(atSession) !== JSON.stringify(atBase)) {
+          throw new Error(`session tree ${JSON.stringify(atSession).slice(0, 300)} != base tree ${JSON.stringify(atBase).slice(0, 300)}`);
+        }
+        firstFile = atBase.find((e) => e.type === "file")?.path ?? "";
+        if (!firstFile) throw new Error("the base tree has no file at its root");
+      });
+
+      await ctx.step("its file reads the base's text, and the response names the ref asked for → 200", async () => {
+        const atBase = await owner.get("/v1/projects/:projectId/files/content", { params, query: { path: firstFile } });
+        atBase.status(200);
+        const atSession = await owner.get("/v1/projects/:projectId/files/content", { params, query: { path: firstFile, ref: unpushed } });
+        atSession.status(200).body().has("$.ref", unpushed).has("$.content", atBase.json<{ content: string }>().content);
+      });
+
+      await ctx.step("version-diff of the session against its base → 200, up to date", async () => {
+        const r = await owner.get("/v1/projects/:projectId/version-diff", { params, query: { from: unpushed, into: base } });
+        r.status(200).body().has("$.from", unpushed).has("$.is_up_to_date", true).has("$.files_changed", 0);
+      });
+
+      await ctx.step("a session that pushed reads its own branch: its pushed file → 200, absent on the base → 404", async () => {
+        const git = (...a: string[]) => execFileSync("git", a, { cwd: work, stdio: "pipe" });
+        git("clone", "-q", "--branch", base, String(rows[0]?.repo_url), ".");
+        writeFileSync(join(work, SESSION_FILE), "pushed by the session\n");
+        git("add", SESSION_FILE);
+        git("-c", "user.name=KE2E", "-c", "user.email=ke2e@kortix.invalid", "commit", "-qm", "session work");
+        git("push", "-q", "origin", `HEAD:refs/heads/${pushed}`);
+        const atSession = await owner.get("/v1/projects/:projectId/files/content", { params, query: { path: SESSION_FILE, ref: pushed } });
+        atSession.status(200).body().has("$.content", "pushed by the session\n");
+        (await owner.get("/v1/projects/:projectId/files/content", { params, query: { path: SESSION_FILE } })).status(404);
+      });
+
+      await ctx.step("a ref that names no session and no branch → 404 ref not found", async () => {
+        const r = await owner.get("/v1/projects/:projectId/files/content", { params, query: { path: firstFile, ref: randomUUID() } });
+        r.status(404).body().has("$.error", "ref not found");
+      });
+    } finally {
+      await db.query("DELETE FROM kortix.project_sessions WHERE session_id = ANY($1::uuid[])", [[unpushed, pushed]]).catch(() => {});
+      rmSync(work, { recursive: true, force: true });
+      await db.end();
+    }
+  },
+);
