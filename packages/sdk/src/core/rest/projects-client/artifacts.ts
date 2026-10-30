@@ -11,6 +11,7 @@ import { ApiError, backendApi } from '../../http/api-client';
 import { authenticatedFetch } from '../../http/auth';
 import { platformConfig } from '../../http/config';
 import { stripTrailingSlashes } from '../../../platform/strings';
+import type { SessionParticipants } from './sessions';
 import { unwrap } from './shared';
 
 /** `doc`: a document Kortix styles and people edit in place. `html`: any page or bundle, served as written. */
@@ -101,6 +102,105 @@ export interface ArtifactDetail extends Artifact {
   /** The entry file's version now: pass it as `base_version` when you save. */
   entry_version: string | null;
   version: { id: string | null; files: ArtifactFile[]; view_url: string };
+  /** Who can open it, owner first, in a session's participants shape. Only on a read (`getArtifact`). */
+  participants?: SessionParticipants;
+}
+
+export type ArtifactCommentStatus = 'open' | 'resolved';
+export type ArtifactCommentAuthor =
+  | { kind: 'user'; user_id: string; name: string }
+  | { kind: 'session'; session_id: string; agent_name: string; title: string | null };
+
+export type ArtifactCommentMention =
+  | { kind: 'user'; user_id: string }
+  | { kind: 'session'; session_id: string; agent_name: string }
+  | { kind: 'agent'; agent_name: string };
+
+export type ArtifactCommentAnchor =
+  | { type: 'none'; version: string }
+  | { type: 'text'; version: string; quote: string; prefix: string; suffix: string }
+  | {
+    type: 'point'; version: string; selector: string; snippet: string; viewport_width: number;
+    scroll: { x: number; y: number }; offset: { x: number; y: number };
+  }
+  | {
+    type: 'region'; version: string; selector: string; snippet: string; viewport_width: number;
+    scroll: { x: number; y: number }; offset: { x: number; y: number; width: number; height: number };
+  };
+
+export interface ArtifactComment {
+  comment_id: string;
+  thread_id: string;
+  author_user_id: string | null;
+  author_session_id: string | null;
+  author: ArtifactCommentAuthor;
+  body: string;
+  mentions: ArtifactCommentMention[];
+  marks: unknown[];
+  screenshot_key: string | null;
+  created_at: string;
+  edited_at: string | null;
+  deleted_at: string | null;
+}
+
+export interface ArtifactCommentThread {
+  thread_id: string;
+  artifact_id: string;
+  project_id: string;
+  anchor: ArtifactCommentAnchor;
+  anchor_version: string;
+  created_by_user_id: string | null;
+  created_by_session_id: string | null;
+  status: ArtifactCommentStatus;
+  resolved_by_user_id: string | null;
+  resolved_by_session_id: string | null;
+  resolved_at: string | null;
+  agent_state: 'none' | 'pending' | 'sent' | 'paused';
+  /** A bounded delivery failure; null for the loop guard. Absent from older APIs. */
+  agent_error?: string | null;
+  sent_session_id: string | null;
+  sent_at: string | null;
+  created_at: string;
+  updated_at: string;
+  comments: ArtifactComment[];
+  outdated: boolean;
+  position: { start: number; end: number } | null;
+}
+
+export interface CreateArtifactCommentInput {
+  /** Text quotes and their prefix/suffix are at most 32 UTF-16 code units each. */
+  anchor: ArtifactCommentAnchor;
+  body: string;
+}
+
+export interface ArtifactCommentBodyInput { body: string }
+
+export interface SendArtifactCommentsInput {
+  thread_ids: string[];
+  /** Reuse this id when retrying one handoff. The SDK generates it when omitted. */
+  batch_id?: string;
+  agent?: string;
+}
+
+export interface SendArtifactCommentsResult {
+  session_id: string;
+  created: boolean;
+}
+
+export interface ArtifactActivityItem {
+  id: string;
+  type: 'saved' | 'published' | 'renamed' | 'visibility_changed' | 'shared_with_changed' | 'restored'
+    | 'thread_opened' | 'replied' | 'resolved' | 'reopened' | 'comment_deleted' | 'sent_to_agent';
+  at: string;
+  actor: { kind: 'user' | 'session'; id: string; name: string } | { kind: 'system'; id: null; name: string };
+  data: Record<string, unknown>;
+}
+
+export interface ArtifactActivityPage {
+  items: ArtifactActivityItem[];
+  next_cursor: string | null;
+  /** The Files history reached its 100-commit limit; older saves can be unavailable. */
+  older_versions: boolean;
 }
 
 export interface ArtifactTypeInfo {
@@ -155,6 +255,45 @@ export interface UpdateArtifactInput extends ArtifactBindingInput {
 
 const base = (projectId: string) => `/projects/${projectId}/artifacts`;
 
+export async function listArtifactComments(projectId: string, artifactId: string, options: { status?: ArtifactCommentStatus | 'all' } = {}) {
+  return unwrap(await backendApi.get<{ threads: ArtifactCommentThread[] }>(`${base(projectId)}/${artifactId}/comments${query(options)}`)).threads;
+}
+
+/** Resolve a thread id without scanning a project's Artifacts. Visibility still applies. */
+export async function getArtifactCommentThread(projectId: string, threadId: string) {
+  return unwrap(await backendApi.get<{ thread: ArtifactCommentThread }>(`/projects/${projectId}/artifact-comment-threads/${threadId}`)).thread;
+}
+
+export async function createArtifactComment(projectId: string, artifactId: string, input: CreateArtifactCommentInput) {
+  return unwrap(await backendApi.post<{ thread: ArtifactCommentThread }>(`${base(projectId)}/${artifactId}/comments`, input)).thread;
+}
+
+export async function replyArtifactComment(projectId: string, artifactId: string, threadId: string, input: ArtifactCommentBodyInput) {
+  return unwrap(await backendApi.post<{ comment: ArtifactComment }>(`${base(projectId)}/${artifactId}/comments/${threadId}/replies`, input)).comment;
+}
+
+export async function setArtifactCommentStatus(projectId: string, artifactId: string, threadId: string, status: ArtifactCommentStatus) {
+  return unwrap(await backendApi.patch<{ thread: ArtifactCommentThread }>(`${base(projectId)}/${artifactId}/comments/${threadId}`, { status })).thread;
+}
+
+export async function editArtifactComment(projectId: string, artifactId: string, threadId: string, commentId: string, input: ArtifactCommentBodyInput) {
+  return unwrap(await backendApi.patch<{ comment: ArtifactComment }>(`${base(projectId)}/${artifactId}/comments/${threadId}/${commentId}`, input)).comment;
+}
+
+export async function deleteArtifactComment(projectId: string, artifactId: string, threadId: string, commentId: string) {
+  return unwrap(await backendApi.delete<{ comment: ArtifactComment }>(`${base(projectId)}/${artifactId}/comments/${threadId}/${commentId}`)).comment;
+}
+
+export async function listArtifactActivity(projectId: string, artifactId: string, options: { limit?: number; cursor?: string } = {}) {
+  return unwrap(await backendApi.get<ArtifactActivityPage>(`${base(projectId)}/${artifactId}/activity${query(options)}`));
+}
+
+/** Send selected threads. A newly reserved session stays pending until its queued creation completes. */
+export async function sendArtifactComments(projectId: string, artifactId: string, input: SendArtifactCommentsInput) {
+  const body = { ...input, batch_id: input.batch_id ?? crypto.randomUUID() };
+  return unwrap(await backendApi.post<SendArtifactCommentsResult>(`${base(projectId)}/${artifactId}/comments/send`, body));
+}
+
 function query(params: Record<string, string | number | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '') search.set(key, String(value));
@@ -173,6 +312,25 @@ export async function listArtifacts(projectId: string, options: ListArtifactsOpt
   if (unbound) search.set('unbound', '1');
   const text = search.toString();
   return unwrap(await backendApi.get<{ artifacts: Artifact[] }>(`${base(projectId)}${text ? `?${text}` : ''}`)).artifacts;
+}
+
+/** A web page as a doc's link card shows it. Nulls where the page says nothing (or could not be read). */
+export interface LinkPreview {
+  url: string;
+  title: string | null;
+  description: string | null;
+  site_name: string | null;
+  /** The page's og:image, https only. */
+  image_url: string | null;
+}
+
+/**
+ * Read a web page's title, description and image, through the API (a browser
+ * cannot read another site's page). Public addresses only; a page that cannot
+ * be read answers nulls.
+ */
+export async function getLinkPreview(projectId: string, url: string) {
+  return unwrap(await backendApi.get<LinkPreview>(`/projects/${projectId}/link-preview?url=${encodeURIComponent(url)}`));
 }
 
 export async function getArtifact(projectId: string, artifactId: string, options: { version?: string } = {}) {

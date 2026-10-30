@@ -42,7 +42,7 @@ Two details matter when you forecast. The meter counts the size a sandbox reserv
 
 ## Self-hosting moves the bill to your hardware
 
-Self-hosting runs the open-source AI Operating System on a server you control, and it removes the credit balance entirely. The stack is frontend, API, LLM gateway, Supabase and Caddy, all in one Compose project. The daily updater pulls new images, migrates the database and rolls the services ([self-hosting docs](https://kortix.com/docs/host)). There are no managed models, so every project brings a provider key. Sessions still run on a cloud sandbox provider that you pay directly.
+Self-hosting runs the open-source CompanyOS on a server you control, and it removes the credit balance entirely. The stack is frontend, API, LLM gateway, Supabase and Caddy, all in one Compose project. The daily updater pulls new images, migrates the database and rolls the services ([self-hosting docs](https://kortix.com/docs/host)). There are no managed models, so every project brings a provider key. Sessions still run on a cloud sandbox provider that you pay directly.
 
 ```sh
 curl -fsSL https://kortix.com/install | bash

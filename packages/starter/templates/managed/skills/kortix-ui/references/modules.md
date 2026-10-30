@@ -314,7 +314,7 @@ Source: `src/session/index.ts`. The conversation: the drop-in thread, turns, too
 Mount: Pass the `useSession(projectId, sessionId)` result: `<SessionThread session={session} />`. Importing the entry registers the built-in tool rows.
 
 Props:
-- `SessionThread`: `session` (required), `hideHeader`, `readOnly`, `className`. Without a side panel on the page, file and preview opens show in a dialog.
+- `SessionThread`: `session` (required), `hideHeader`, `readOnly`, `composerPlaceholder`, `quote`, `firstPrompt`, `density`, `className`. Without a side panel on the page, file and preview opens show in a dialog. `firstPrompt`: the prompt of a session the host just created; the thread shows it, with the agent's Thinking row, while the computer boots, then hands it to the transcript. `density="compact"`: tighter conversation gutters for a narrow column, such as a side sheet; the composer keeps its own.
 - `ToolRegistry.register(name, Row)`: `Row` gets `ToolProps` (`call`: `name`, `input`, `status`, `result`); `BasicTool` draws the standard row.
 - `ModelSelector`, `AgentSelector`: the composer's model and agent pickers. They are controlled (`models`/`agents`, the selection, `onSelect`), so a form outside a session uses them too.
 

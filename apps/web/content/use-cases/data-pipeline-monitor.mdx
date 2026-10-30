@@ -64,64 +64,122 @@ issue are the only outputs.
 ## How it works
 
 <Steps>
-<Step title="Run on an hourly cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent once an hour. Each firing spawns a fresh
-**session** in its own sandbox. One hour maps to one run on one disposable
-machine, so every check is recomputed from the warehouse's current state and
-nothing carries over between runs.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the health check skill and the hourly
+trigger, and opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent the health rules">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up an hourly data pipeline monitor agent in this project.
 
-What counts as stale, what a normal row-count trend looks like, and how a
-schema is expected to shape up live as **skills** and **memory** that travel
-with the agent: per-table freshness SLAs, the tables that are expected to grow
-in bursts versus steadily, and past incidents worth checking new anomalies
-against. When we tighten an SLA or learn a table has a legitimate weekly gap, we
-write it down and the checks adjust.
+1. Create the agent agents/data-pipeline-monitor.md. Its job is to watch the warehouse for stale tables, row-count anomalies, schema drift and failed loads. It may use the PostgreSQL and Slack connectors and a GH_TOKEN secret for GitHub.
 
-</Step>
-<Step title="Connect the warehouse read-only">
+2. Create the skill skills/pipeline-health-check/SKILL.md with these rules:
+   - Check every table in the public schema. A table is stale when its newest load is older than its SLA. The default SLA is 24 hours.
+   - Compare each table's daily row count with its own 14-day trend. Flag a count far below or far above it.
+   - Diff each table's columns and types against the last-seen shape. Flag any added, dropped, renamed or retyped column.
+   - Flag any load job from the last 2 hours that failed or never finished, with its error message.
+   - Read only. Never run INSERT, UPDATE, DELETE, ALTER, DROP or TRUNCATE, and never restart a pipeline.
+   - For each anomaly, post one alert to #data-alerts and draft a GitHub issue in owner/repo with the evidence and the likely cause.
 
-Through a scoped **connector**, brokered server-side so no raw credential
-reaches the model, the agent reads the warehouse directly:
+3. Add a cron trigger pipeline-health-sweep to kortix.yaml. It runs the data-pipeline-monitor agent every hour, on the hour, with the prompt "Load the pipeline-health-check skill and run one complete health sweep over the public schema."
 
-- **Table freshness** — the most recent load timestamp per monitored table,
-  checked against its SLA.
-- **Row counts** — today's count against the table's own trailing baseline, to
-  catch a load that ran short or doubled up.
-- **Schema state** — the current column set and types, diffed against the
-  last-seen shape, to catch drift before it breaks a downstream query.
-- **Load history** — recent job runs, to catch a failed or silently stalled
-  load.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Alert and draft, never fix">
+<Step title="Connect your tools">
 
-When a check comes back out of bounds, the agent posts to **Slack** — the
-table, the anomaly, and its best guess at the cause — and drafts a **GitHub**
-issue with the same diagnosis, using a scoped token so the incident lands as a
-trackable draft, not a merged change. It does not touch the pipeline, the
-schema, or the data.
+Open **Connectors** in your project and connect your warehouse and Slack.
+Credentials are brokered server-side and never enter the agent's machine. Add a GitHub token as the `GH_TOKEN` secret so the agent can draft
+issues.
+
+<ToolList>
+  <ToolNeed name="PostgreSQL" domain="postgresql.org" tag="Required" alternatives={[['Snowflake', 'snowflake.com'], ['BigQuery', 'cloud.google.com'], ['Amazon Redshift', 'aws.amazon.com']]}>
+    Checks freshness, row counts and schema drift, read-only.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com'], ['PagerDuty', 'pagerduty.com']]}>
+    Posts each anomaly with its evidence and likely cause.
+  </ToolNeed>
+  <ToolNeed name="GitHub" domain="github.com" tag="Required" alternatives={[['Linear', 'linear.app']]}>
+    Drafts an issue with the same diagnosis.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Run it once with this prompt">
 
-The agent is **read-only** across the entire warehouse. It has no write access
-to any table, schema, or pipeline configuration — it can only observe and
-report. Its outputs are exactly two: the Slack alert and the drafted GitHub
-issue. Credentials are encrypted in the Secrets Manager and injected at
-runtime, scoped to the agents you grant them to.
+Merge the change request, then start a session with the **data-pipeline-monitor** agent
+and send this prompt. Check its alerts against what you know
+about your tables before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one health sweep over the public schema.
+
+1. List every table in the schema.
+2. Check each table's newest load against its SLA. The default is 24 hours.
+3. Compare each table's row count with its 14-day trend.
+4. Diff each table's columns against the last-seen shape.
+5. Check the load log for jobs from the last 2 hours that failed or stalled.
+6. For each anomaly, post an alert to #data-alerts and draft a GitHub issue in owner/repo. Change nothing in the warehouse.`}
+/>
 
 </Step>
-<Step title="Let the warehouse watch itself">
+<Step title="Let the hourly schedule take over">
 
-With that in place, every hour brings a clean pass over the warehouse: freshness
-checked against SLA, row counts checked against trend, schema checked against
-the last-seen shape, loads checked for failures. Anything out of bounds shows
-up in Slack within the hour, with a GitHub issue already drafted and the likely
-cause attached. The data team decides what to do; nothing changes on its own.
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every hour, on the hour, each run in a new session on its own cloud
+computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: pipeline-health-sweep
+    name: Hourly pipeline health sweep
+    on:
+      cron: "0 0 * * * *"
+    run:
+      agent: data-pipeline-monitor
+      prompt: Load the pipeline-health-check skill and run one complete health sweep over the public schema.`}
+/>
+
+</Step>
+<Step title="Stay read-only on the warehouse">
+
+Every query the agent runs is a read. It never changes a row, a table or a
+pipeline, and it never restarts a load. Its only outputs are the Slack alert
+and the drafted GitHub issue. A person decides the fix.
+
+</Step>
+<Step title="Read the alerts">
+
+A sweep that finds an anomaly posts one alert per table, and a clean sweep posts
+nothing. This is what a run looks like in the session:
+
+<ExampleRun
+  title="Hourly pipeline health sweep · 14:00"
+  message="Load the pipeline-health-check skill and run one complete health sweep over the public schema."
+  worked="Worked for 1m 52s"
+  tools={[
+    'postgresql · list tables',
+    'postgresql · query × 64',
+    'slack · post message → #data-alerts × 2',
+    'github · create issue × 2',
+  ]}
+  note="Illustrative example. Your tables and SLAs differ."
+>
+  Checked **32** tables. **orders_daily** is **31 hours** old against a
+  24-hour SLA, and **events** has a new nullable column. Posted **2** alerts
+  and drafted **2** issues. The other **30** tables are healthy.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -132,6 +190,25 @@ cause attached. The data team decides what to do; nothing changes on its own.
   The agent reads everything and writes nothing but the Slack alert and a
   drafted GitHub issue.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Set a tighter SLA"
+  code="Add to memory that the tables our revenue dashboard reads have a 2-hour freshness SLA, and check them first in every sweep."
+/>
+
+<CopyBlock
+  title="Morning health digest"
+  code="Every weekday at 08:00, post one line per anomaly from the last 24 hours to #data-alerts, with whether its issue is still open."
+/>
+
+<CopyBlock
+  title="Show the downstream impact"
+  code="For each anomaly, list the views and tables that read from the affected table, so the alert shows what else is wrong."
+/>
 
 ## Guardrails
 

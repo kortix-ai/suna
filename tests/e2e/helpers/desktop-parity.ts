@@ -960,9 +960,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           });
           const rootId = `ses_${sessionId.replaceAll("-", "")}`;
           const now = Date.now() - 60_000;
-          // The web run keeps its history in the session log; the desktop run
-          // seeds an old session's v1 mirror, which its first read converts
-          // into the log (P8.2), so this journey covers both.
+          // The history is in the session log, journaled as a box writes it.
           await seedSessionTranscript(loadEnv(), {
             projectId: project.id,
             accountId: accounts[0].account_id,
@@ -1011,7 +1009,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
                 ];
                 return { info, parts };
               }),
-            ...(!desktop && { log: { bearer: auth.access_token } }),
+            bearer: auth.access_token,
           });
           // Keep the cached conversation mounted. The local test sandbox has
           // no provider behind it, so a real /start eventually marks it stopped.

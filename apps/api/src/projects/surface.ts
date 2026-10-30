@@ -30,6 +30,7 @@ export {
 } from './lib/sessions';
 
 export {
+  buildContinueSessionCommandValues,
   createCommandStatus,
   createSession,
   startSession,
@@ -39,6 +40,8 @@ export {
   resolveProjectAutomationActor,
   retireWarmProjectSessions,
 } from './session-lifecycle';
+export type { CreateSessionCommand } from './session-lifecycle';
+export { sessionIsTombstoned } from './lib/session-visibility';
 
 // The shutdown hand-back of lifecycle claims (consumed by bootstrap.ts).
 export { handBackClaims } from './session-lifecycle/claim-handover';
@@ -56,7 +59,11 @@ export {
 } from './lib/triggers';
 
 // Every declared agent's grant (consumed by the connectors rules matrix).
-export { extractAgents, grantsByAgent } from './agents';
+export { extractAgents, grantsByAgent, loadProjectAgents } from './agents';
+export { mentionTokens, mentionsMember } from './rooms/envelope';
+export { resolveAndAuthorizeAgentAs } from './lib/agent-access';
+export { loadVisibleSession } from './lib/session-visibility';
+export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
 
 // Project access, the route app and the secret envelope.
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
@@ -130,13 +137,12 @@ export { releaseRuntimeQuestion } from './session-lifecycle/release-runtime-ques
 // The stored transcript (`toV1` of the session log), consumed by the public share route.
 export { readStoredTranscriptWindow } from './session-log-read';
 
-// Abort a session's running turn (consumed by chrome/, on a user's Stop in Chrome).
+// Abort a session's running turn (consumed by chrome/, on a user's Stop in Chrome, and by
+// channels/core/commands.ts, on a chat's /stop and /new).
 export { abortRuntimeTurn } from './session-lifecycle/abort-runtime-turn';
 
 // The retention purge of session content (consumed by workers/session-log-purge-worker.ts).
 export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
-// The backfill of old sessions into the session log (consumed by workers/session-log-backfill-worker.ts).
-export { backfillSessionLogs } from './session-log-backfill';
 
 // Git reads (consumed by config-releases/publish.ts and config-releases/base-tip.ts).
 export { resolveCommitSha, resolveCommitShaAt } from './git/commits';
@@ -146,6 +152,8 @@ export type { GitBackedProject } from './git/types';
 // Who may stop a running turn (consumed by channels/core/turn-stop.ts and
 // sandbox-proxy/forward/abort-authority.ts).
 export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './session-lifecycle/turn-stop-authority';
+// A chat's /stop and /new: the source of the running turn's prompt (consumed by channels/core/commands.ts).
+export { turnPromptSource } from './lib/notification-recipients';
 // Who may rewind a session (consumed by sandbox-proxy/forward/forward-to-sandbox.ts).
 export { mayRewindSession } from './session-lifecycle/rewind-authority';
 

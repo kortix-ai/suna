@@ -17,8 +17,8 @@
  * integration`, not the default hermetic gate.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { accounts, projectSessions, projects, sessionSandboxes } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { accounts, projectSessions, projects, sandboxTemplates, sessionSandboxes } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
 
 import { config } from '../config';
 import { findWarmProjectSession, warmSessionPlacement } from '../projects/routes/warm-sessions';
@@ -43,7 +43,11 @@ async function seedWarmSession(
     boxRegion?: string | null;
     boxStatus?: 'active' | 'provisioning';
     boxProvider?: 'platinum' | 'daytona';
+    /** `residentialProxy` on the box row, as platinum.ts records it; absent = a box from before the flag. */
+    boxResidentialProxy?: boolean;
     requestedLocation?: string;
+    /** `metadata.sandbox_slug`: the session's sandbox template. */
+    sandboxSlug?: string;
     noSandbox?: boolean;
   } = {},
 ): Promise<string> {
@@ -59,6 +63,7 @@ async function seedWarmSession(
     metadata: overrides.warm === false ? {} : {
       warm: true,
       ...(overrides.requestedLocation ? { [WARM_SESSION_LOCATION_KEY]: overrides.requestedLocation } : {}),
+      ...(overrides.sandboxSlug ? { sandbox_slug: overrides.sandboxSlug } : {}),
     },
     ...(overrides.createdAt ? { createdAt: overrides.createdAt } : {}),
   });
@@ -72,6 +77,7 @@ async function seedWarmSession(
       status: overrides.boxStatus ?? 'active',
       metadata: {
         ...(overrides.boxInstanceId ? { instanceId: overrides.boxInstanceId } : {}),
+        ...(overrides.boxResidentialProxy === undefined ? {} : { residentialProxy: overrides.boxResidentialProxy }),
         ...((overrides.boxRegion === undefined ? 'eu-west' : overrides.boxRegion)
           ? { platinumRegion: overrides.boxRegion ?? 'eu-west' }
           : {}),
@@ -345,6 +351,64 @@ describe('warm sessions — compute placement', () => {
     expect((await lookup(off, true))?.sessionId).toBe(sessionId);
     expect(await lookup(off)).toBeNull();
     expect(await warmSessionPlacement(sessionId, off)).toBe('pending');
+  });
+});
+
+describe('warm sessions — residential proxy from the sandbox template', () => {
+  const TEMPLATE = 'web';
+  /** The project's `web` template asks for a residential IP (`metadata.residentialProxy`), or not. */
+  async function templateAsks(asks: boolean) {
+    await db
+      .insert(sandboxTemplates)
+      .values({ projectId: PROJECT, slug: TEMPLATE, name: TEMPLATE, metadata: asks ? { residentialProxy: { country: 'us' } } : {} })
+      .onConflictDoUpdate({
+        target: [sandboxTemplates.projectId, sandboxTemplates.slug],
+        set: { metadata: asks ? { residentialProxy: { country: 'us' } } : {} },
+      });
+  }
+  afterEach(async () => {
+    await db.delete(sandboxTemplates).where(and(eq(sandboxTemplates.projectId, PROJECT), eq(sandboxTemplates.slug, TEMPLATE)));
+  });
+  const lookup = () => findWarmProjectSession({ accountId: ACCOUNT, projectId: PROJECT, userId: USER, projectMetadata: {} });
+
+  test('a box created without the proxy never serves a session whose template asks for one', async () => {
+    await templateAsks(true);
+    const legacy = await seedWarmSession({ sandboxSlug: TEMPLATE });
+    const plain = await seedWarmSession({ sandboxSlug: TEMPLATE, boxResidentialProxy: false });
+    expect(await lookup()).toBeNull();
+    expect(await warmSessionPlacement(legacy, {})).toBe('mismatch');
+    expect(await warmSessionPlacement(plain, {})).toBe('mismatch');
+  });
+
+  test('a proxied box serves only while its template still asks for the proxy', async () => {
+    await templateAsks(true);
+    const proxied = await seedWarmSession({ sandboxSlug: TEMPLATE, boxResidentialProxy: true });
+    expect((await lookup())?.sessionId).toBe(proxied);
+    expect(await warmSessionPlacement(proxied, {})).toBe('compatible');
+
+    await templateAsks(false);
+    expect(await lookup()).toBeNull();
+    expect(await warmSessionPlacement(proxied, {})).toBe('mismatch');
+  });
+
+  test('a session on a template without the proxy is unchanged, and never gets a proxied box', async () => {
+    await templateAsks(false);
+    const plain = await seedWarmSession({ sandboxSlug: TEMPLATE, boxResidentialProxy: false });
+    const onDefault = await seedWarmSession({ boxResidentialProxy: true, createdAt: new Date(Date.now() - 60_000) });
+    expect((await lookup())?.sessionId).toBe(plain);
+    expect(await warmSessionPlacement(plain, {})).toBe('compatible');
+    // `default` (no project template row) never asks: a proxied box there is a mismatch.
+    expect(await warmSessionPlacement(onDefault, {})).toBe('mismatch');
+  });
+
+  test('a box on another provider never serves a session whose template asks', async () => {
+    await templateAsks(true);
+    const daytona = await seedWarmSession({ sandboxSlug: TEMPLATE, boxProvider: 'daytona', boxRegion: null });
+    expect(await lookup()).toBeNull();
+    expect(await warmSessionPlacement(daytona, {})).toBe('mismatch');
+
+    await templateAsks(false);
+    expect((await lookup())?.sessionId).toBe(daytona);
   });
 });
 

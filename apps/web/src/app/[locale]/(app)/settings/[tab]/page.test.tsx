@@ -54,7 +54,9 @@ const uiButtonMock = () => ({
   Button: ({ onClick, children }: { onClick: () => void; children: React.ReactNode }) =>
     createElement('button', { onClick }, children),
 });
-mock.module('@kortix/ui/button', uiButtonMock);
+// The real module keeps exports such as buttonVariants that the page's imports read.
+const realButton = await import('@kortix/ui/button');
+mock.module('@kortix/ui/button', () => ({ ...realButton, ...uiButtonMock() }));
 mock.module('@/components/common/route-loading', () => ({
   RouteLoadingFallback: () => createElement('p', null, 'Loading'),
 }));

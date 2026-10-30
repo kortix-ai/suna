@@ -97,7 +97,7 @@ function WithOneThread({
 
 /**
  * Loads a sub-agent's thread into the store, as the sub-agent's own view does (`useSessionSync`
- * with `savedChild`): its saved window, then the runtime's. The section mounts one per requested
+ * with `savedChild`): the session's log, then the runtime's. The section mounts one per requested
  * id (a row that scrolled into view, or "Load all"), outside the tree, so collapsing a row
  * does not unload its children. Reports whether its last runtime read failed.
  */

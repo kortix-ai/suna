@@ -283,7 +283,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'artifacts',
             args: '<subcommand>',
-            blurb: 'Share Files paths as docs and pages: publish, add, share, versions',
+            blurb: 'Share and review docs and pages: publish, comments, reply, activity',
             featureFlag: 'artifacts',
           },
           {

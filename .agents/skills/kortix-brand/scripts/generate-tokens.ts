@@ -312,15 +312,20 @@ function emailLayout() {
   const e = vs.email;
   return {
     containerWidth: e.container_width_px as number,
-    sidePadding: e.side_padding_px as number,
+    framePadding: e.frame_padding as string,
+    cardPadding: e.card_padding as string,
+    mobileFramePadding: e.mobile_frame_padding as string,
+    mobileCardPadding: e.mobile_card_padding as string,
     cardRadius: vs.radius.web[e.card_radius].px as number,
     buttonRadius: vs.radius.web[e.button_radius].px as number,
     buttonPadding: e.button_padding as string,
-    logoHeight: e.logo_height_px as number,
     logoUrl: e.logo_url as string,
-    fontSize: e.font_size_px as { title: number; body: number; kicker: number; small: number },
-    lineHeight: e.line_height as { title: number; body: number },
-    gap: e.gap_px as { kicker_before: number; kicker_after: number; title_after: number; block_after: number },
+    logoWidth: e.logo_width_px as number,
+    fontSize: e.font_size_px as { title: number; body: number; label: number; small: number },
+    fontWeight: e.font_weight as { title: number; body: number; strong: number },
+    lineHeight: e.line_height as { title: number; body: number; label: number },
+    letterSpacing: e.letter_spacing_px as { title: number; body: number; label: number; small: number },
+    gap: e.gap_px as { title_after: number; block_after: number; button_before: number; note_before: number },
   };
 }
 
@@ -360,21 +365,25 @@ function kitTokens(): string {
   const em = emailLayout();
   shared.push(
     `  --email-container-width: ${em.containerWidth}px;`,
-    `  --email-side-padding: ${em.sidePadding}px;`,
+    `  --email-frame-padding: ${em.framePadding};`,
+    `  --email-card-padding: ${em.cardPadding};`,
     `  --email-card-radius: ${em.cardRadius}px;`,
     `  --email-button-radius: ${em.buttonRadius}px;`,
     `  --email-button-padding: ${em.buttonPadding};`,
-    `  --email-logo-height: ${em.logoHeight}px;`,
+    `  --email-logo-width: ${em.logoWidth}px;`,
     `  --email-title-size: ${em.fontSize.title}px;`,
     `  --email-body-size: ${em.fontSize.body}px;`,
-    `  --email-kicker-size: ${em.fontSize.kicker}px;`,
+    `  --email-label-size: ${em.fontSize.label}px;`,
     `  --email-small-size: ${em.fontSize.small}px;`,
+    `  --email-title-weight: ${em.fontWeight.title};`,
+    `  --email-strong-weight: ${em.fontWeight.strong};`,
     `  --email-title-line-height: ${em.lineHeight.title};`,
     `  --email-body-line-height: ${em.lineHeight.body};`,
-    `  --email-gap-kicker-before: ${em.gap.kicker_before}px;`,
-    `  --email-gap-kicker-after: ${em.gap.kicker_after}px;`,
+    `  --email-title-tracking: ${em.letterSpacing.title}px;`,
     `  --email-gap-title: ${em.gap.title_after}px;`,
-    `  --email-gap-block: ${em.gap.block_after}px;`
+    `  --email-gap-block: ${em.gap.block_after}px;`,
+    `  --email-gap-button: ${em.gap.button_before}px;`,
+    `  --email-gap-note: ${em.gap.note_before}px;`
   );
   for (const [k, v] of Object.entries<any>(vs.motion.duration)) shared.push(`  --duration-${k}: ${v.ms}ms;`);
   for (const [k, v] of Object.entries<any>(vs.motion.easing))

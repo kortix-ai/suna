@@ -60,54 +60,118 @@ channel for a human to assign by hand. It never deletes or merges a lead.
 ## How it works
 
 <Steps>
-<Step title="Run on a 15-minute cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent every 15 minutes. Each firing spawns a
-fresh **session** in its own sandbox — there's no persistent process and no
-local ledger. The HubSpot record itself is the memory: a routing-status
-property marks a lead as handled, so the next sweep only looks at what's
-genuinely new.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the routing rules skill and the 15-minute trigger, and
+opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent the routing rules">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a lead routing agent in this project.
 
-The territory map, the segment-to-specialist mapping, and the round-robin
-pool live as a **skill** and **memory** that travels with the agent, not as a
-workflow buried in the CRM. When territories get redrawn or a rep joins the
-rotation, we update the skill and the very next sweep routes against the new
-rules — no CRM workflow to rebuild.
+1. Create the agent agents/lead-routing.md. Its job is to assign each new HubSpot lead to the right rep and notify the rep in Slack. It may use the HubSpot connector and post to Slack.
 
-</Step>
-<Step title="Connect HubSpot and Slack">
+2. Create the skill skills/lead-routing-rules/SKILL.md with these rules:
+   - A new lead is a contact on lifecycle stage lead without the kortix_routing_status property. Skip every contact that has it.
+   - A lead is high-intent when it meets two or more of these: a VP-level title or above, company size at or above our enterprise threshold, a timeline or budget inside this quarter, a demo request or repeat pricing-page visits.
+   - Route in this order: the territory owner for the region, then the segment specialist for company size and industry, then the round-robin rep with the fewest leads this week. Break ties alphabetically.
+   - When no rule resolves a lead, never guess an owner. Post it to #sales-ops with what you checked.
+   - Write only the HubSpot owner and kortix_routing_status, set to routed or flagged. Never delete or merge a lead.
 
-Through a scoped **connector**, brokered server-side so no raw token reaches
-the model, the agent:
+3. Add a cron trigger lead-routing-sweep to kortix.yaml. It runs the lead-routing agent every 15 minutes with the prompt "Load the lead-routing-rules skill and run one complete lead-routing sweep."
 
-- **Reads new leads from HubSpot** — lifecycle stage, region, company size,
-  industry, title, and engagement signals.
-- **Writes the owner and a routing-status marker back to HubSpot** — the only
-  writes it makes, and never a delete or a merge.
-- **Posts to Slack** — an assignment notification to the rep, a distinct flag
-  for high-intent leads, and a separate escalation post for anything it can't
-  confidently route.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent assigns and notifies strictly per the routing rules. It never
-deletes or merges a lead record under any circumstance, and it never guesses
-an owner for a lead that's ambiguous or doesn't match the rules — that lead
-goes to a human instead. Credentials are encrypted in the Secrets Manager and
-injected at runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect your CRM and Slack.
+Credentials are brokered server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="HubSpot" domain="hubspot.com" tag="Required" alternatives={[['Salesforce', 'salesforce.com'], ['Pipedrive', 'pipedrive.com']]}>
+    Scores each new lead and writes the assigned owner.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Notifies the assigned rep and escalates ambiguous leads.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Assign, notify, and escalate">
+<Step title="Run it once with this prompt">
 
-With that in place, every 15 minutes brings one pass over the new-lead queue:
-each lead lands on the right rep's desk with the reason it was routed there,
-high-intent leads are called out so they get worked first, and anything
-genuinely ambiguous waits in a separate channel for a human to assign. No
-lead sits unrouted for more than one cycle without someone knowing why.
+Merge the change request, then start a session with the **lead-routing** agent
+and send this prompt. Check each owner and routing reason before you let the
+schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one lead-routing sweep on HubSpot.
+
+1. Find contacts on lifecycle stage lead that do not have the kortix_routing_status property.
+2. Score each lead for intent with the rules in the lead-routing-rules skill.
+3. Route each lead by territory, then segment, then the round-robin rep with the fewest leads this week, and set the HubSpot owner.
+4. Post each assignment to #sales-routing with the reason, and mark high-intent leads clearly.
+5. Post any lead that no rule resolves to #sales-ops instead of guessing. Set kortix_routing_status to routed or flagged on every lead.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every 15 minutes, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: lead-routing-sweep
+    name: Lead routing sweep
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: lead-routing
+      prompt: Load the lead-routing-rules skill and run one complete lead-routing sweep.`}
+/>
+
+</Step>
+<Step title="Send unroutable leads to a person">
+
+The agent assigns a lead only when a rule resolves it. A lead with missing
+data, a gap in the territory map or an empty round-robin pool goes to
+#sales-ops with what the agent checked, and a person assigns it in HubSpot.
+The agent writes only the owner and the routing status. It never deletes or
+merges a record.
+
+</Step>
+<Step title="Read the assignments">
+
+Each sweep ends with one post per lead in Slack. This is what a run looks
+like in the session:
+
+<ExampleRun
+  title="Lead routing sweep · 14:30"
+  message="Load the lead-routing-rules skill and run one complete lead-routing sweep."
+  worked="Worked for 1m 08s"
+  tools={[
+    'hubspot · search contacts',
+    'hubspot · list owners',
+    'hubspot · update contact × 6',
+    'slack · post message → #sales-routing × 5',
+    'slack · post message → #sales-ops',
+  ]}
+  note="Illustrative example. Your counts depend on your inbound volume and routing rules."
+>
+  Routed **5** new leads: **2** by territory, **2** by segment and **1** by
+  round-robin. **2** of them are flagged high-intent. **1** lead had no region,
+  size or industry, so it is waiting in #sales-ops for a person to assign.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -119,6 +183,25 @@ lead sits unrouted for more than one cycle without someone knowing why.
   notifies exactly per those rules, and hands anything it can't confidently
   route to a human.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Explain a routing decision"
+  code="When a rep asks in #sales-routing why a lead came to them, reply in the thread with the rule that matched and the fields it used."
+/>
+
+<CopyBlock
+  title="Weekly load report"
+  code="Every Friday at 16:00, post each rep's count of routed leads this week and the number of flagged leads to #sales-ops."
+/>
+
+<CopyBlock
+  title="Skip reps who are out"
+  code="Before you assign a round-robin lead, skip any rep marked out of office in memory, and say so in the routing reason."
+/>
 
 ## Guardrails
 

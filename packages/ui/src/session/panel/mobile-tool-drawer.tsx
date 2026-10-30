@@ -23,6 +23,7 @@ import { BrowserPanel } from '../../browser/browser-panel';
 import { CloseButton } from './easy/detail-view';
 import { SessionAuditPanel } from './session-audit-panel';
 import { SessionRemindersPanel } from './session-reminders-panel';
+import { SessionDesktop } from './session-desktop';
 import { SessionFilesExplorer } from './session-files-explorer';
 import { SessionTerminalPanel } from '../../terminal/session-terminal-panel';
 import { SessionBootStatus } from '../status/session-starting-loader';
@@ -34,6 +35,7 @@ import {
   AlarmIcon,
   FolderOpenIcon,
   GlobeIcon,
+  MonitorIcon,
   ScrollIcon,
   TerminalWindowIcon,
   type Icon,
@@ -45,6 +47,7 @@ const TOOL_META: Record<QuickView, { label: string; Icon: Icon }> = {
   files: { label: 'Files', Icon: FolderOpenIcon },
   audit: { label: 'Audit', Icon: ScrollIcon },
   reminders: { label: 'Loops', Icon: AlarmIcon },
+  desktop: { label: 'Desktop', Icon: MonitorIcon },
 };
 
 export function MobileToolDrawer({
@@ -64,7 +67,7 @@ export function MobileToolDrawer({
   // shows the wake status in their place.
   const booting =
     !!useOptionalSessionPanel()?.booting &&
-    (view === 'terminal' || view === 'browser' || view === 'files');
+    (view === 'terminal' || view === 'browser' || view === 'files' || view === 'desktop');
 
   return (
     <Drawer open={view !== null} onOpenChange={(next) => !next && closeMobileTool()}>
@@ -99,6 +102,13 @@ export function MobileToolDrawer({
               chatSessionId={sessionId}
               projectId={projectId}
               projectSessionId={projectSessionId}
+            />
+          )}
+          {!booting && view === 'desktop' && (
+            <SessionDesktop
+              projectId={projectId}
+              projectSessionId={projectSessionId}
+              onClose={closeMobileTool}
             />
           )}
           {view === 'audit' && (

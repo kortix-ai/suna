@@ -1,14 +1,16 @@
 /** DB-backed GatewayDeps for one principal (makeDbGatewayDeps) and the approval carry-over reads it uses. */
 import {
+  accountTokens,
   connectionCredentials,
   connectorConnections,
   connectorActions,
   connectors,
   connectorCalls,
+  connectorHeldCalls,
   connectorProjectSettings,
 } from '@kortix/db';
 import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
-import { and, desc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { resolveEmailApiKey } from '../channels/resend-email-api';
 import { bindSlackThreadToSession } from '../channels/slack/binding';
 import { slackUserNames } from '../channels/slack/labels';
@@ -35,15 +37,17 @@ import {
   resolveSessionConnectorConnectionOutcome,
 } from '../projects/lib/session-connector-bindings';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
-import { DEFAULT_APPROVAL_TTL_SECONDS, approvalNotExpired } from './approval-expiry';
+import { APPROVAL_RERUN_WINDOW_MS, DEFAULT_APPROVAL_TTL_SECONDS, approvalNotExpired } from './approval-expiry';
 import { connectorAttachmentStore } from './attachments';
 import { gateChannelRead } from './channel-read-scope';
 import { gateChannelWrite } from './channel-write-scope';
 import { resolveCredentialValue, resolveConnectionCredentialValue } from './credentials';
 import { connectorEgressFetch } from './egress';
 import { CredentialNotSharedError } from './gateway';
-import type { GatewayAction, GatewayConnector, GatewayDeps } from './gateway';
+import type { ExecutionRecord, GatewayAction, GatewayConnector, GatewayDeps, HeldApprovalVerdict } from './gateway';
+import { HELD_RUN_CEILING_MS, sealHeldInput } from './held-call-store';
 import { graphToken } from '../channels/teams-auth';
 import { runPipedreamAction, runPipedreamProxy } from './pipedream';
 import type { ConnectorPrincipal } from './router-contract';
@@ -65,12 +69,6 @@ import {
   loadProjectPoliciesFor,
   resolveActiveConnectorConnection,
 } from './db-deps-rows';
-
-/** How long an unconsumed human approve stays claimable by a fresh call. Long
- *  enough for the "agent gave up → approve lands → nudge/`continue` retries"
- *  round-trip, short enough that a stale yes can't silently authorize a much
- *  later call. */
-const APPROVAL_CARRYOVER_WINDOW_MS = 15 * 60 * 1000;
 
 /**
  * The call path reads connector/project policies and the project's default
@@ -96,7 +94,7 @@ export async function consumeApprovedExecution(input: {
   actionPath: string;
   requestDigest: string;
 }): Promise<false | { resolvedDigest: string | null; resolvedError: boolean }> {
-  const cutoff = new Date(Date.now() - APPROVAL_CARRYOVER_WINDOW_MS);
+  const cutoff = new Date(Date.now() - APPROVAL_RERUN_WINDOW_MS);
   const candidates = await db
     .select({
       executionId: connectorCalls.executionId,
@@ -119,6 +117,8 @@ export async function consumeApprovedExecution(input: {
         gt(connectorCalls.resolvedAt, cutoff),
         sql`${connectorCalls.resultSummary} ->> 'decision' = 'approve'`,
         sql`${connectorCalls.resultSummary} ->> 'consumed_at' IS NULL`,
+        // A gate that held its input runs through the held run, never through a repeat.
+        sql`NOT EXISTS (SELECT 1 FROM kortix.connector_held_calls h WHERE h.execution_id = ${qualifiedColumn(connectorCalls.executionId)})`,
       ),
     )
     .orderBy(desc(connectorCalls.resolvedAt))
@@ -189,6 +189,88 @@ export async function isPendingApprovalExecution(input: {
   return Boolean(row);
 }
 
+/**
+ * The approved held run's claim: the gate is `approved`, its held row is
+ * `dispatched` (the run's fence), and the re-computed digest is the gate's.
+ */
+export async function verifyHeldApproval(input: {
+  executionId: string;
+  projectId: string;
+  requestDigest: string;
+}): Promise<HeldApprovalVerdict> {
+  const [row] = await db
+    .select({
+      status: connectorCalls.status,
+      requestDigest: connectorCalls.requestDigest,
+      resultSummary: connectorCalls.resultSummary,
+      state: connectorHeldCalls.state,
+    })
+    .from(connectorCalls)
+    .innerJoin(connectorHeldCalls, eq(connectorHeldCalls.executionId, connectorCalls.executionId))
+    .where(and(eq(connectorCalls.executionId, input.executionId), eq(connectorCalls.projectId, input.projectId)))
+    .limit(1);
+  if (!row || row.status !== 'approved' || row.state !== 'dispatched') {
+    return { ok: false, reason: 'approval_not_found' };
+  }
+  if (row.requestDigest !== input.requestDigest) return { ok: false, reason: 'request_changed' };
+  const summary = (row.resultSummary ?? {}) as Record<string, unknown>;
+  return {
+    ok: true,
+    resolvedDigest: typeof summary.resolved_digest === 'string' ? summary.resolved_digest : null,
+    resolvedError: typeof summary.resolved_error === 'string',
+  };
+}
+
+/**
+ * The newest gate of this exact request whose held call can still finish: held
+ * and decidable, queued inside its run window, or dispatched inside the run
+ * ceiling. A queued row whose job died, or a run that never settled, no
+ * longer matches: the repeat opens a new gate instead of waiting forever.
+ */
+export async function findOpenHeldExecution(input: {
+  projectId: string;
+  sessionId: string | null;
+  actingUserId: string;
+  connectorId: string;
+  actionPath: string;
+  requestDigest: string;
+}): Promise<string | null> {
+  const [row] = await db
+    .select({ executionId: connectorCalls.executionId })
+    .from(connectorCalls)
+    .innerJoin(connectorHeldCalls, eq(connectorHeldCalls.executionId, connectorCalls.executionId))
+    .where(
+      and(
+        eq(connectorCalls.projectId, input.projectId),
+        input.sessionId ? eq(connectorCalls.sessionId, input.sessionId) : isNull(connectorCalls.sessionId),
+        eq(connectorCalls.actingUserId, input.actingUserId),
+        eq(connectorCalls.connectorId, input.connectorId),
+        eq(connectorCalls.actionPath, input.actionPath),
+        eq(connectorCalls.requestDigest, input.requestDigest),
+        or(
+          and(
+            eq(connectorHeldCalls.state, 'held'),
+            eq(connectorCalls.status, 'pending_approval'),
+            approvalNotExpired,
+          ),
+          and(
+            eq(connectorCalls.status, 'approved'),
+            eq(connectorHeldCalls.state, 'queued'),
+            gt(connectorHeldCalls.runDeadline, sql`now()`),
+          ),
+          and(
+            eq(connectorCalls.status, 'approved'),
+            eq(connectorHeldCalls.state, 'dispatched'),
+            gt(connectorHeldCalls.dispatchedAt, sql`now() - make_interval(secs => ${HELD_RUN_CEILING_MS / 1000})`),
+          ),
+        ),
+      ),
+    )
+    .orderBy(desc(connectorCalls.createdAt))
+    .limit(1);
+  return row?.executionId ?? null;
+}
+
 async function channelToken(
   projectId: string,
   platform: string | null,
@@ -249,6 +331,97 @@ export function toGatewayConnector(
     enabled: row.enabled,
     sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
   };
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Inserts the audit row and returns its execution id. */
+async function insertConnectorCall(exec: Tx | typeof db, rec: ExecutionRecord): Promise<string | null> {
+  const [row] = await exec
+    .insert(connectorCalls)
+    .values({
+      accountId: rec.accountId,
+      projectId: rec.projectId,
+      connectorId: rec.connectorId,
+      connectionId: rec.connectionId,
+      actionPath: rec.actionPath,
+      actingUserId: rec.actingUserId,
+      sessionId: rec.sessionId,
+      status: rec.status,
+      risk: rec.risk,
+      requestDigest: rec.requestDigest ?? null,
+      resultSummary: rec.resultSummary,
+      // A pending_approval row is genuinely UNRESOLVED — it's awaiting a human
+      // approve/deny (the approvals inbox). Every terminal status (ok/error/
+      // denied) resolves at insert. Leaving pending rows unresolved is what lets
+      // the inbox query surface exactly the actions still waiting on a decision.
+      resolvedAt: rec.status === 'pending_approval' ? null : new Date(),
+      // The decision window: the project's `approvals.ttl`, else 24 h.
+      expiresAt:
+        rec.status === 'pending_approval'
+          ? sql`now() + make_interval(secs => coalesce((select ${connectorProjectSettings.approvalTtlSeconds} from ${connectorProjectSettings} where ${connectorProjectSettings.projectId} = ${rec.projectId}), ${DEFAULT_APPROVAL_TTL_SECONDS}))`
+          : null,
+    })
+    .returning({ id: connectorCalls.executionId });
+  return row?.id ?? null;
+}
+
+/**
+ * Writes the held input in a savepoint inside the gate's transaction. A failed
+ * write rolls back only the held row: the gate commits and Approve falls back
+ * to the carry-over. The log names the gate, never the input.
+ */
+async function holdCallInput(
+  tx: Tx,
+  principal: ConnectorPrincipal,
+  rec: ExecutionRecord,
+  executionId: string,
+): Promise<void> {
+  const tokenId = principal.tokenId;
+  if (!config.KORTIX_APPROVAL_RUNS_HELD_CALL || !rec.held || !rec.requestDigest || !tokenId) return;
+  try {
+    const inputEnc = sealHeldInput({
+      v: 1,
+      execution_id: executionId,
+      project_id: rec.projectId,
+      request_digest: rec.requestDigest,
+      account_id: principal.accountId,
+      connector_slug: rec.held.connectorSlug,
+      action_path: rec.held.actionPath,
+      args: rec.held.args,
+      connection_id: rec.connectionId,
+      approval_context: rec.held.approvalContext,
+      policy_set: rec.held.policySet,
+      acting_token_id: tokenId,
+      session_id: principal.sessionId,
+      user_id: principal.userId,
+      agent_grant: principal.agentGrant ?? null,
+      agent_principal: principal.agentPrincipal ?? null,
+    });
+    await tx.transaction(async (sp) => {
+      // Only a project-scoped token can be re-checked server-side at run
+      // time. A dashboard JWT or an unscoped PAT keeps the carry-over.
+      const [token] = await sp
+        .select({ tokenId: accountTokens.tokenId })
+        .from(accountTokens)
+        .where(and(eq(accountTokens.tokenId, tokenId), eq(accountTokens.projectId, rec.projectId)))
+        .limit(1);
+      if (!token) return;
+      await sp.insert(connectorHeldCalls).values({
+        executionId,
+        projectId: rec.projectId,
+        accountId: rec.accountId,
+        inputEnc,
+        state: 'held',
+        updatedAt: new Date(),
+      });
+    });
+  } catch (error) {
+    logger.warn('[approvals] held input not stored; approve falls back to the carry-over', {
+      executionId,
+      error: error instanceof Error ? error.name : 'unknown',
+    });
+  }
 }
 
 export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
@@ -502,38 +675,19 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     // Lazy: channels import connectors, so a static import here would cycle.
     postApprovalCard: async (input) =>
       (await import('../channels/approval-card-relay')).postApprovalCard(input),
-    recordExecution: async (rec) => {
-      const [row] = await db
-        .insert(connectorCalls)
-        .values({
-          accountId: rec.accountId,
-          projectId: rec.projectId,
-          connectorId: rec.connectorId,
-          connectionId: rec.connectionId,
-          actionPath: rec.actionPath,
-          actingUserId: rec.actingUserId,
-          sessionId: rec.sessionId,
-          status: rec.status,
-          risk: rec.risk,
-          requestDigest: rec.requestDigest ?? null,
-          resultSummary: rec.resultSummary,
-          // A pending_approval row is genuinely UNRESOLVED — it's awaiting a human
-          // approve/deny (the approvals inbox). Every terminal status (ok/error/
-          // denied) resolves at insert. Leaving pending rows unresolved is what lets
-          // the inbox query surface exactly the actions still waiting on a decision.
-          resolvedAt: rec.status === 'pending_approval' ? null : new Date(),
-          // The decision window: the project's `approvals.ttl`, else 24 h.
-          expiresAt:
-            rec.status === 'pending_approval'
-              ? sql`now() + make_interval(secs => coalesce((select ${connectorProjectSettings.approvalTtlSeconds} from ${connectorProjectSettings} where ${connectorProjectSettings.projectId} = ${rec.projectId}), ${DEFAULT_APPROVAL_TTL_SECONDS}))`
-              : null,
-        })
-        .returning({ id: connectorCalls.executionId });
-      if (!row?.id) return null;
-      return row.id;
-    },
+    // A held call writes the gate and its held input in one transaction.
+    recordExecution: (rec) =>
+      rec.held && rec.status === 'pending_approval'
+        ? db.transaction(async (tx) => {
+            const executionId = await insertConnectorCall(tx, rec);
+            if (executionId) await holdCallInput(tx, principal, rec, executionId);
+            return executionId;
+          })
+        : insertConnectorCall(db, rec),
     consumeApprovedExecution: consumeApprovedExecution,
     isPendingApprovalExecution: isPendingApprovalExecution,
+    verifyHeldApproval,
+    findOpenHeldExecution,
     executePipedream: ({ projectId, connectorSlug, app, actionKey, args, accountId, userId }) =>
       runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
     executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>

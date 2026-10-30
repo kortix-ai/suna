@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/kortix-vs-open-webui"
 ---
-Open WebUI gives people a private interface to their own models, and it does that job properly; Kortix, the open-source AI Operating System, takes the next question: what happens to the work once an answer is written. The agents that do the work, and the memory they draw on, live in your own repo.
+Open WebUI gives people a private interface to their own models, and it does that job properly; Kortix CompanyOS takes the next question: what happens to the work once an answer is written. The agents that do the work, and the memory they draw on, live in your own repo.
 
 ## What Open WebUI is great at
 

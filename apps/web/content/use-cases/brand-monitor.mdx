@@ -57,51 +57,118 @@ Slack digest.
 ## How it works
 
 <Steps>
-<Step title="Run on a daily reusable session">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the project once a day, re-prompting the same
-**session** rather than starting from a blank slate. Because the session is
-reusable, it remembers what it already reported yesterday and only surfaces
-what's new today.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the brand-mention-monitor skill and the daily
+trigger, and opens a change request for you to review. Prefer clicks? Choose
+**Use this template** instead.
 
-</Step>
-<Step title="Give the agent the brand to watch">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a daily brand monitor agent in this project.
 
-The brand name, aliases, product names, and common misspellings to search for
-live as **skills** and **memory**, along with the running ledger of every
-mention already seen. When the brand adds a product line or a new alias starts
-getting used, the watch list is updated the same way.
+1. Create the agent agents/brand-monitor.md. Its job is to find new mentions of our brand on the public web and post a daily digest. It may use web search and fetch, and the Slack connector.
 
-</Step>
-<Step title="Search and fetch the web">
+2. Create the skill skills/brand-mention-monitor/SKILL.md with these rules:
+   - Search news, social platforms and forums for the brand terms I give you: brand name, aliases, product names and common misspellings.
+   - Keep a ledger of every reported mention in memory/brand-monitor-log.md, and never report the same mention twice.
+   - Classify each new mention as positive, neutral or negative. Mark it notable when it is negative, has high reach, comes from an influential source, or states a wrong fact about us.
+   - For each notable mention, draft one suggested response and label it as a draft. Never reply, comment or post anywhere.
+   - Post one digest to #marketing per run: a one-line rollup for routine mentions and a full callout for notable ones.
 
-Through the sandbox's **built-in web search and fetch** — no connector, no
-login, no credential, because these are public pages — plus a scoped **Slack
-connector** for the digest, the agent can:
+3. Add a cron trigger daily-brand-monitor to kortix.yaml. It runs the brand-monitor agent every day at 06:00 with the prompt "Load the brand-mention-monitor skill and run today's brand-monitor sweep."
 
-- **Search news, social platforms, and forums** — for the brand terms on the
-  watch list, this run only.
-- **Fetch the full text of each candidate mention** — enough to classify
-  sentiment and reach, not just a search snippet.
-- **Post to Slack** — one digest per run, in the marketing channel.
+4. Tell me which of these connectors are not connected yet.
 
-</Step>
-<Step title="Set the guardrails">
-
-The agent only searches and reads public pages, and it only ever writes to one
-Slack channel. It never replies to a post, comments, or publishes anywhere on
-the open web — for anything flagged as notable, it drafts a suggested response
-and clearly marks it as a draft awaiting human approval. Any credential it needs
-is encrypted in the secrets manager and injected at runtime, scoped to the agents you grant them to.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Post the digest">
+<Step title="Connect your tools">
 
-Each run ends with one Slack message: how many new mentions were found, a
-sentiment breakdown, and — for anything negative or notable — the source, the
-excerpt, why it was flagged, and a suggested response draft. Routine mentions get
-a one-line rollup instead of a full callout. The team reads one digest and
-decides what, if anything, to say back.
+The agent searches the public web with its built-in search and fetch, so the
+sources need no connector. Open **Connectors** in your project and connect
+Slack for the digest. Credentials are brokered server-side and never enter the
+agent's machine.
+
+<ToolList>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com'], ['Gmail', 'gmail.com']]}>
+    Posts the daily digest with suggested responses.
+  </ToolNeed>
+  <ToolNeed name="Reddit" domain="reddit.com" tag="Optional" alternatives={[['Hacker News', 'news.ycombinator.com'], ['X', 'x.com'], ['LinkedIn', 'linkedin.com']]}>
+    Searches threads for new brand mentions, read-only.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the **brand-monitor**
+agent and send this prompt. The first run fills the ledger, so check what it
+logged before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one brand-monitor sweep for our brand terms.
+
+1. Read memory/brand-monitor-log.md for mentions already reported.
+2. Search news, social platforms and forums for each brand term.
+3. Skip every mention already in the ledger. Classify each new one by sentiment and notability.
+4. Draft one suggested response for each notable mention. Do not post it anywhere.
+5. Post one digest to #marketing, then add today's mentions to the ledger.`}
+/>
+
+</Step>
+<Step title="Let the daily schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every day at 06:00 and picks up from its ledger in `memory/`. To change the time, edit the cron line, or open
+**Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: daily-brand-monitor
+    name: Daily brand monitor
+    on:
+      cron: "0 0 6 * * *"
+    run:
+      agent: brand-monitor
+      prompt: Load the brand-mention-monitor skill and run today's brand-monitor sweep.`}
+/>
+
+</Step>
+<Step title="Draft responses, never post them">
+
+The agent only searches and reads public pages, and it writes only to one
+Slack channel. A suggested response appears in the digest as a labeled draft.
+A person reads it, edits it and decides whether to send it.
+
+</Step>
+<Step title="Read the digest">
+
+Each run ends with one digest in the channel. This is what a run looks like
+in the session:
+
+<ExampleRun
+  title="Daily brand monitor · 06:00"
+  message="Load the brand-mention-monitor skill and run today's brand-monitor sweep."
+  worked="Worked for 3m 05s"
+  tools={[
+    'web · search × 8',
+    'web · fetch page × 15',
+    'memory · read brand-monitor-log',
+    'memory · update brand-monitor-log',
+    'slack · post message → #marketing',
+  ]}
+  note="Illustrative example. Your counts depend on how often people mention your brand."
+>
+  Found **15** new mentions: **9** positive, **4** neutral and **2** negative.
+  Flagged **2** as notable, a forum thread with a pricing complaint and a news
+  article that misstates a feature. Each has a drafted response for your review.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -112,6 +179,25 @@ decides what, if anything, to say back.
   reported, classifies sentiment, and posts a Slack digest. Anything notable
   gets a suggested response — drafted, never sent.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Track a launch"
+  code="For the next 14 days, add our new product name to the brand terms and post a separate launch digest each evening."
+/>
+
+<CopyBlock
+  title="Weekly sentiment trend"
+  code="Every Monday, post the count of positive, neutral and negative mentions for each of the last 8 weeks to #marketing."
+/>
+
+<CopyBlock
+  title="Route bug reports"
+  code="When a mention describes a product bug, also post its link and excerpt to #support."
+/>
 
 ## Guardrails
 

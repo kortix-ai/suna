@@ -70,13 +70,9 @@
     "./customize/agents/agents-page": "./src/customize/agents/agents-page.tsx",
     "./customize/connectors/connector-routes": "./src/customize/connectors/connector-routes.ts",
     "./customize/connectors/connectors-app-return-bar": "./src/customize/connectors/connectors-app-return-bar.tsx",
-    "./customize/connectors/connectors-page": "./src/customize/connectors/connectors-page.tsx",
     "./customize/connectors/detail/app-page": "./src/customize/connectors/detail/app-page.tsx",
     "./customize/connectors/detail/connector-page": "./src/customize/connectors/detail/connector-page.tsx",
     "./customize/migrate-to-v2/upgrade-view": "./src/customize/migrate-to-v2/upgrade-view.tsx",
-    "./customize/models/models-page": "./src/customize/models/models-page.tsx",
-    "./customize/project-settings/project-settings-page": "./src/customize/project-settings/project-settings-page.tsx",
-    "./customize/secrets/secrets-page": "./src/customize/secrets/secrets-page.tsx",
     "./customize/sections/add-account-fields": "./src/customize/sections/add-account-fields.tsx",
     "./customize/sections/component/email-connect-form": "./src/customize/sections/component/email-connect-form.tsx",
     "./customize/sections/component/manifest-copy-block": "./src/customize/sections/component/manifest-copy-block.tsx",
@@ -107,6 +103,7 @@
     "./customize/settings/rail-copy-context": "./src/customize/settings/rail-copy-context.tsx",
     "./customize/settings/settings-tab-header": "./src/customize/settings/settings-tab-header.tsx",
     "./customize/settings/settings-tabs": "./src/customize/settings/settings-tabs.ts",
+    "./customize/settings/tabs/chrome-connections-tab": "./src/customize/settings/tabs/chrome-connections-tab.tsx",
     "./customize/settings/tabs/connected-apps": "./src/customize/settings/tabs/connected-apps.tsx",
     "./customize/settings/tabs/experimental-tab": "./src/customize/settings/tabs/experimental-tab.tsx",
     "./customize/settings/tabs/general-tab": "./src/customize/settings/tabs/general-tab.tsx",
@@ -123,10 +120,8 @@
     "./customize/shared/feature-gate-screen": "./src/customize/shared/feature-gate-screen.tsx",
     "./customize/shared/use-customize-prefetch": "./src/customize/shared/use-customize-prefetch.ts",
     "./customize/shared/with-search": "./src/customize/shared/with-search.ts",
-    "./customize/skills/skills-page": "./src/customize/skills/skills-page.tsx",
     "./customize/triggers/schedule-view": "./src/customize/triggers/schedule-view.tsx",
     "./customize/triggers/schedule/schedule-copy": "./src/customize/triggers/schedule/schedule-copy.ts",
-    "./customize/triggers/triggers-page": "./src/customize/triggers/triggers-page.tsx",
     "./data-grid": "./src/primitives/data-grid.tsx",
     "./date-range-picker": "./src/primitives/date-range-picker.tsx",
     "./definition-list": "./src/primitives/definition-list.tsx",
@@ -251,7 +246,6 @@
     "./internal/billing/use-transactions": "./src/internal/billing/use-transactions.ts",
     "./internal/branding/branding-provider": "./src/internal/branding/branding-provider.tsx",
     "./internal/capture/use-capture-area": "./src/internal/capture/use-capture-area.ts",
-    "./internal/chrome/chrome-connections-tab": "./src/internal/chrome/chrome-connections-tab.tsx",
     "./internal/chrome/extension": "./src/internal/chrome/extension.ts",
     "./internal/chrome/use-chrome-offered": "./src/internal/chrome/use-chrome-offered.ts",
     "./internal/components/agent-mark": "./src/internal/components/agent-mark.tsx",
@@ -280,6 +274,7 @@
     "./internal/hooks/use-copy": "./src/internal/hooks/use-copy.ts",
     "./internal/hooks/use-debounced-value": "./src/internal/hooks/use-debounced-value.ts",
     "./internal/hooks/use-notification-center": "./src/internal/hooks/use-notification-center.ts",
+    "./internal/hooks/use-slash-focus": "./src/internal/hooks/use-slash-focus.ts",
     "./internal/icons/claude": "./src/internal/icons/claude.tsx",
     "./internal/icons/download": "./src/internal/icons/download.tsx",
     "./internal/icons/edge": "./src/internal/icons/edge.tsx",
@@ -318,6 +313,7 @@
     "./internal/lib/onboarding/last-project-cookie": "./src/internal/lib/onboarding/last-project-cookie.ts",
     "./internal/lib/onboarding/provision-errors": "./src/internal/lib/onboarding/provision-errors.ts",
     "./internal/lib/onboarding/use-app-home": "./src/internal/lib/onboarding/use-app-home.ts",
+    "./internal/lib/project-preamble": "./src/internal/lib/project-preamble.ts",
     "./internal/lib/promo-art": "./src/internal/lib/promo-art.ts",
     "./internal/lib/provider-branding": "./src/internal/lib/provider-branding.tsx",
     "./internal/lib/query-client-singleton": "./src/internal/lib/query-client-singleton.ts",
@@ -345,7 +341,6 @@
     "./internal/notifications/notification-rows": "./src/internal/notifications/notification-rows.ts",
     "./internal/notifications/session-toast-cards": "./src/internal/notifications/session-toast-cards.tsx",
     "./internal/notifications/web-push": "./src/internal/notifications/web-push.ts",
-    "./internal/reminders/use-refetch-after-fire": "./src/internal/reminders/use-refetch-after-fire.ts",
     "./internal/session-types/index": "./src/internal/session-types/index.ts",
     "./internal/session-types/types": "./src/internal/session-types/types.ts",
     "./internal/stores/account-panel-store": "./src/internal/stores/account-panel-store.ts",
@@ -395,6 +390,7 @@
     "./map": "./src/primitives/map.tsx",
     "./markdown": "./src/markdown/index.tsx",
     "./markdown/copy-button": "./src/markdown/copy-button.tsx",
+    "./markdown/doc-editor/doc-embed": "./src/markdown/doc-editor/doc-embed.tsx",
     "./markdown/doc-editor/doc-extensions": "./src/markdown/doc-editor/doc-extensions.tsx",
     "./markdown/doc-editor/doc-menus": "./src/markdown/doc-editor/doc-menus.tsx",
     "./markdown/doc-editor/markdown": "./src/markdown/doc-editor/markdown.ts",
@@ -448,6 +444,7 @@
     "./session/models/model-selector": "./src/session/models/model-selector.tsx",
     "./session/panel/audit/audit-credential-label": "./src/session/panel/audit/audit-credential-label.ts",
     "./session/panel/easy/detail-view": "./src/session/panel/easy/detail-view.tsx",
+    "./session/participants/session-participants": "./src/session/participants/session-participants.tsx",
     "./session/prompts/session-approval-review": "./src/session/prompts/session-approval-review.ts",
     "./session/status/agent-git-reconciliation": "./src/session/status/agent-git-reconciliation.ts",
     "./session/status/previous-repository-session": "./src/session/status/previous-repository-session.tsx",
@@ -755,10 +752,6 @@
         "types": "./dist/customize/connectors/connectors-app-return-bar.d.ts",
         "import": "./dist/customize/connectors/connectors-app-return-bar.js"
       },
-      "./customize/connectors/connectors-page": {
-        "types": "./dist/customize/connectors/connectors-page.d.ts",
-        "import": "./dist/customize/connectors/connectors-page.js"
-      },
       "./customize/connectors/detail/app-page": {
         "types": "./dist/customize/connectors/detail/app-page.d.ts",
         "import": "./dist/customize/connectors/detail/app-page.js"
@@ -770,18 +763,6 @@
       "./customize/migrate-to-v2/upgrade-view": {
         "types": "./dist/customize/migrate-to-v2/upgrade-view.d.ts",
         "import": "./dist/customize/migrate-to-v2/upgrade-view.js"
-      },
-      "./customize/models/models-page": {
-        "types": "./dist/customize/models/models-page.d.ts",
-        "import": "./dist/customize/models/models-page.js"
-      },
-      "./customize/project-settings/project-settings-page": {
-        "types": "./dist/customize/project-settings/project-settings-page.d.ts",
-        "import": "./dist/customize/project-settings/project-settings-page.js"
-      },
-      "./customize/secrets/secrets-page": {
-        "types": "./dist/customize/secrets/secrets-page.d.ts",
-        "import": "./dist/customize/secrets/secrets-page.js"
       },
       "./customize/sections/add-account-fields": {
         "types": "./dist/customize/sections/add-account-fields.d.ts",
@@ -903,6 +884,10 @@
         "types": "./dist/customize/settings/settings-tabs.d.ts",
         "import": "./dist/customize/settings/settings-tabs.js"
       },
+      "./customize/settings/tabs/chrome-connections-tab": {
+        "types": "./dist/customize/settings/tabs/chrome-connections-tab.d.ts",
+        "import": "./dist/customize/settings/tabs/chrome-connections-tab.js"
+      },
       "./customize/settings/tabs/connected-apps": {
         "types": "./dist/customize/settings/tabs/connected-apps.d.ts",
         "import": "./dist/customize/settings/tabs/connected-apps.js"
@@ -967,10 +952,6 @@
         "types": "./dist/customize/shared/with-search.d.ts",
         "import": "./dist/customize/shared/with-search.js"
       },
-      "./customize/skills/skills-page": {
-        "types": "./dist/customize/skills/skills-page.d.ts",
-        "import": "./dist/customize/skills/skills-page.js"
-      },
       "./customize/triggers/schedule-view": {
         "types": "./dist/customize/triggers/schedule-view.d.ts",
         "import": "./dist/customize/triggers/schedule-view.js"
@@ -978,10 +959,6 @@
       "./customize/triggers/schedule/schedule-copy": {
         "types": "./dist/customize/triggers/schedule/schedule-copy.d.ts",
         "import": "./dist/customize/triggers/schedule/schedule-copy.js"
-      },
-      "./customize/triggers/triggers-page": {
-        "types": "./dist/customize/triggers/triggers-page.d.ts",
-        "import": "./dist/customize/triggers/triggers-page.js"
       },
       "./data-grid": {
         "types": "./dist/primitives/data-grid.d.ts",
@@ -1473,10 +1450,6 @@
         "types": "./dist/internal/capture/use-capture-area.d.ts",
         "import": "./dist/internal/capture/use-capture-area.js"
       },
-      "./internal/chrome/chrome-connections-tab": {
-        "types": "./dist/internal/chrome/chrome-connections-tab.d.ts",
-        "import": "./dist/internal/chrome/chrome-connections-tab.js"
-      },
       "./internal/chrome/extension": {
         "types": "./dist/internal/chrome/extension.d.ts",
         "import": "./dist/internal/chrome/extension.js"
@@ -1588,6 +1561,10 @@
       "./internal/hooks/use-notification-center": {
         "types": "./dist/internal/hooks/use-notification-center.d.ts",
         "import": "./dist/internal/hooks/use-notification-center.js"
+      },
+      "./internal/hooks/use-slash-focus": {
+        "types": "./dist/internal/hooks/use-slash-focus.d.ts",
+        "import": "./dist/internal/hooks/use-slash-focus.js"
       },
       "./internal/icons/claude": {
         "types": "./dist/internal/icons/claude.d.ts",
@@ -1741,6 +1718,10 @@
         "types": "./dist/internal/lib/onboarding/use-app-home.d.ts",
         "import": "./dist/internal/lib/onboarding/use-app-home.js"
       },
+      "./internal/lib/project-preamble": {
+        "types": "./dist/internal/lib/project-preamble.d.ts",
+        "import": "./dist/internal/lib/project-preamble.js"
+      },
       "./internal/lib/promo-art": {
         "types": "./dist/internal/lib/promo-art.d.ts",
         "import": "./dist/internal/lib/promo-art.js"
@@ -1848,10 +1829,6 @@
       "./internal/notifications/web-push": {
         "types": "./dist/internal/notifications/web-push.d.ts",
         "import": "./dist/internal/notifications/web-push.js"
-      },
-      "./internal/reminders/use-refetch-after-fire": {
-        "types": "./dist/internal/reminders/use-refetch-after-fire.d.ts",
-        "import": "./dist/internal/reminders/use-refetch-after-fire.js"
       },
       "./internal/session-types/index": {
         "types": "./dist/internal/session-types/index.d.ts",
@@ -2048,6 +2025,10 @@
       "./markdown/copy-button": {
         "types": "./dist/markdown/copy-button.d.ts",
         "import": "./dist/markdown/copy-button.js"
+      },
+      "./markdown/doc-editor/doc-embed": {
+        "types": "./dist/markdown/doc-editor/doc-embed.d.ts",
+        "import": "./dist/markdown/doc-editor/doc-embed.js"
       },
       "./markdown/doc-editor/doc-extensions": {
         "types": "./dist/markdown/doc-editor/doc-extensions.d.ts",
@@ -2254,6 +2235,10 @@
       "./session/panel/easy/detail-view": {
         "types": "./dist/session/panel/easy/detail-view.d.ts",
         "import": "./dist/session/panel/easy/detail-view.js"
+      },
+      "./session/participants/session-participants": {
+        "types": "./dist/session/participants/session-participants.d.ts",
+        "import": "./dist/session/participants/session-participants.js"
       },
       "./session/prompts/session-approval-review": {
         "types": "./dist/session/prompts/session-approval-review.d.ts",

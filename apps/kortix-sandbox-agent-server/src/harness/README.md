@@ -177,9 +177,9 @@ restore must not present it.
 The OpenCode export reads `opencode.db` through `OpencodeDb.storeSnapshot()`
 (every session, message, part and todo row, one WAL snapshot), assembles the
 v1 rows as OpenCode's HTTP serves them, drops attachment bytes as the API's
-mirror does, and converts them with `fromV1`: one mapping with the API's
-capture (P2.7) and backfill (P3.1). Its records equal `fromV1` of the mirror
-rows except in the fields only the daemon knows: `seq`, `producer`
+journal-less capture does, and converts them with `fromV1`: one mapping with
+that capture (P8). Its records equal the capture's `fromV1` of the same rows
+except in the fields only the daemon knows: `seq`, `producer`
 (`opencode`), attachment `ref`/`bytes`/`sha256`, and the session's title,
 `created_at`, todos, `restore_grade: 'native'` and harness history (the list
 is in the header of `open-code/session-log.ts`). `seq` is issued once per

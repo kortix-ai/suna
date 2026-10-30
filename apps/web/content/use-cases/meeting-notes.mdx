@@ -51,51 +51,121 @@ ticket assigned to the person who owns it.
 ## How it works
 
 <Steps>
-<Step title="Connect the calendar as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-A signed webhook tied to Google Calendar points at the project. When a meeting
-ends, it fires, and each firing spawns a fresh **session** in its own sandbox,
-seeded with the event and its transcript. One meeting, one session, one
-disposable machine. Sessions don't share state, and back-to-back calls run as
-parallel sessions.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the meeting recap skill and the 15-minute trigger, and
+opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent our conventions">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a meeting notes agent in this project.
 
-How we take notes lives as **skills** and **memory** loaded into every session:
-our notes structure, how we phrase an action item, who owns which area, and past
-meetings for context. The agent writes to that standard rather than inventing
-one, and the memory updates as projects move.
+1. Create the agent agents/meeting-notes.md. Its job is to turn each finished meeting's transcript into structured notes and Linear tickets. It may use the Google Calendar, Google Drive and Linear connectors.
 
-</Step>
-<Step title="Connect what note-taking can touch">
+2. Create the skill skills/meeting-recap/SKILL.md with these rules:
+   - Work only on meetings that ended since the last check and have a transcript attached. Skip an event with no transcript.
+   - Write the notes in three parts: decisions, discussion, and next steps phrased as "[Owner] will [do X] by [when]". Attach them to the meeting record.
+   - Assign each action item to the owner named in the transcript, or to the area owner in the ownership map in memory.
+   - When no owner is clear, file the ticket unassigned with the ambiguity in its description. Never guess.
+   - Only create tickets. Never close, reassign or edit a ticket that existed before the meeting, and never post to chat.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger meeting-ended-check to kortix.yaml. It runs the meeting-notes agent every 15 minutes with the prompt "Load the meeting-recap skill and write notes and tickets for every meeting that ended since the last check."
 
-- **Read the event and transcript** — attendees, agenda, and the full record of
-  what was said.
-- **Write structured notes** — decisions, discussion, and next steps in our
-  format, attached where the team looks.
-- **File tickets in Linear** — each action item becomes a ticket assigned to its
-  owner, linked back to the meeting.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent writes notes and files tickets, but it only creates — it doesn't close,
-reassign, or touch existing work. An action item it can't confidently assign gets
-flagged for a person rather than routed to a guess. Credentials are encrypted in
-the secrets manager and injected at runtime, scoped to the agents you grant them to or written
-to logs.
+Open **Connectors** in your project and connect your calendar, the drive that
+holds your transcripts and your ticket tracker. Credentials are brokered
+server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Google Calendar" domain="calendar.google.com" tag="Required" alternatives={[['Microsoft Outlook', 'outlook.com']]}>
+    Finds finished meetings and their attendees.
+  </ToolNeed>
+  <ToolNeed name="Google Drive" domain="drive.google.com" tag="Required" alternatives={[['Google Meet', 'meet.google.com'], ['Zoom', 'zoom.us']]}>
+    Reads the meeting transcript.
+  </ToolNeed>
+  <ToolNeed name="Linear" domain="linear.app" tag="Required" alternatives={[['Jira', 'atlassian.com'], ['Asana', 'asana.com'], ['GitHub', 'github.com']]}>
+    Files a ticket for each action item.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Let each meeting run">
+<Step title="Run it once with this prompt">
 
-With that in place, a finished call turns into a set of notes and a handful of
-tickets before the next meeting starts. "Sarah will handle the migration" becomes
-a ticket assigned to Sarah. "We decided to ship Friday" becomes a line in the
-notes. The follow-up exists as tasks instead of as a memory that fades.
+Merge the change request, then start a session with the **meeting-notes** agent
+and send this prompt. Read the notes and check each ticket's assignee before you
+let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Write up the meetings that ended since the last check.
+
+1. Find Google Calendar events that ended in the last 15 minutes and have a transcript attached.
+2. Read each event and its full transcript from Google Drive.
+3. Write notes with decisions, discussion and next steps, and attach them to the meeting record.
+4. File one Linear ticket in the Team team for each action item, assigned to its owner.
+5. When an owner is not clear, file the ticket unassigned and say why. Do not touch any ticket that existed before the meeting.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every 15 minutes, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: meeting-ended-check
+    name: Meeting-ended check
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: meeting-notes
+      prompt: Load the meeting-recap skill and write notes and tickets for every meeting that ended since the last check.`}
+/>
+
+</Step>
+<Step title="File unclear action items unassigned">
+
+The agent assigns a ticket only when the transcript names the owner or the
+ownership map in memory covers the topic. Every other action item becomes an
+unassigned ticket with the ambiguity in its description, for a person to
+triage. The agent only creates tickets. It never closes, reassigns or edits
+existing work.
+
+</Step>
+<Step title="Read the notes and tickets">
+
+Each meeting ends with notes on the meeting record and tickets in Linear.
+This is what a run looks like in the session:
+
+<ExampleRun
+  title="Meeting-ended check · 11:15"
+  message="Load the meeting-recap skill and write notes and tickets for every meeting that ended since the last check."
+  worked="Worked for 1m 52s"
+  tools={[
+    'google calendar · list events',
+    'google drive · read transcript',
+    'google calendar · update event',
+    'linear · create issue × 5',
+  ]}
+  note="Illustrative example. Your counts depend on your meetings."
+>
+  Wrote notes for **1** meeting with **2** decisions. Filed **5** tickets in
+  Linear: **4** assigned to the owners named in the call, and **1** unassigned
+  because nobody took the pricing page copy.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -106,6 +176,25 @@ notes. The follow-up exists as tasks instead of as a memory that fades.
   conventions as **skills** and **memory**, and route each action item to the
   person who owns it.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Pre-meeting brief"
+  code="Fifteen minutes before each recurring meeting, add the open tickets from its last session to the event description."
+/>
+
+<CopyBlock
+  title="Weekly decisions log"
+  code="Every Friday, collect the decisions from this week's meeting notes into one Google Doc in Drive, grouped by meeting."
+/>
+
+<CopyBlock
+  title="Point to related work"
+  code="When an action item matches an open Linear ticket, link that ticket in the new ticket's description instead of repeating its context."
+/>
 
 ## Guardrails
 

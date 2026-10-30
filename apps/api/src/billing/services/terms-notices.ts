@@ -42,7 +42,6 @@ function compose(change: TermsChange) {
     category: 'legal-terms-notice',
     replyTo: LEGAL_EMAIL,
     html: renderEmail({
-      kicker: 'Legal',
       title,
       body: `<p style="${S.p}">${escapeHtml(intro)}</p>${change.changes.map((item) => `<p style="${S.p}">${escapeHtml(item)}</p>`).join('')}<p style="${S.p}">${escapeHtml(outro)}</p>${actionButton(url, 'Read the Terms')}`,
     }),
@@ -129,7 +128,6 @@ async function reportToLegal(change: TermsChange, users: number, done: boolean, 
     subject: `[Kortix compliance] ${title}`,
     category: 'legal-terms-notice-report',
     html: renderEmail({
-      kicker: 'Compliance',
       title,
       body: paragraphs.map((p) => `<p style="${S.p}">${escapeHtml(p)}</p>`).join(''),
     }),

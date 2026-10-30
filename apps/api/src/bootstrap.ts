@@ -1,4 +1,5 @@
 import { logger as appLogger, isLoggingTransportError } from './lib/logger';
+import { config } from './config';
 import { captureException, flushSentry } from './lib/sentry';
 import { stopModelPricing } from './router/config/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
@@ -33,6 +34,7 @@ import { startCaptureWorkers, stopCaptureWorkers } from './workers/capture-worke
 import { startBillingRotation, stopBillingRotation } from './workers/billing-rotation-worker';
 import { startEventLoopLagSampler, stopEventLoopLagSampler } from './workers/event-loop-lag-worker';
 import { startGatewaySpendBackfillWorker, stopGatewaySpendBackfillWorker } from './workers/gateway-spend-backfill-worker';
+import { startResidentialProxyBillingWorker, stopResidentialProxyBillingWorker } from './workers/residential-proxy-billing-worker';
 import { startJobWorker, stopJobWorker } from './workers/job-queue-worker';
 import { startManagedLineupRefresh, stopManagedLineupRefresh } from './workers/managed-lineup-worker';
 import { startNotificationWorker, stopNotificationWorker } from './workers/notification-worker';
@@ -40,7 +42,6 @@ import { startProjectMaintenance, stopProjectMaintenance } from './workers/proje
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers/project-snapshot-worker';
 import { startProviderTransitionWorker, stopProviderTransitionWorker } from './workers/provider-transition-worker';
 import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './workers/session-lifecycle-worker';
-import { startSessionLogBackfillWorker, stopSessionLogBackfillWorker } from './workers/session-log-backfill-worker';
 import { startSessionLogPurgeWorker, stopSessionLogPurgeWorker } from './workers/session-log-purge-worker';
 import { startSessionModelFallbackWorker, stopSessionModelFallbackWorker } from './workers/session-model-fallback-worker';
 import { handBackClaims } from './projects/surface';
@@ -142,7 +143,7 @@ async function startReplicaServices() {
   warnIfPreviewOriginsMissing(appLogger);
   startEventLoopLagSampler();
   startAccessControlCache();
-  startManagedLineupRefresh();
+  if (config.KORTIX_WORKERS_ENABLED) startManagedLineupRefresh();
   startTunnelService();
   // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
   // toggles (warm_snapshot / provider_fallback) are honored from
@@ -166,26 +167,29 @@ async function startReplicaServices() {
   // Warm the maintenance config, so a fresh pod serves the stored config from
   // request #1, not the cold-cache default.
   await maintenanceSetting.refresh().catch(() => {});
+  // The durable job queue (Capture ingest, held connector calls): every replica runs jobs.
+  if (config.KORTIX_WORKERS_ENABLED || config.KORTIX_JOB_WORKER_ENABLED) startJobWorker();
   // Every replica stages snapshot/session-boot build contexts in tmpdir and can
   // leak them on error paths; sweep stale ones so they don't fill node disk and
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
-  startTmpReaper();
-  startSessionLifecycleWorker();
-  // The durable job queue (Kortix Capture ingest): every replica runs jobs.
-  startJobWorker();
-  // Kortix-polled app events: every replica checks due streams.
-  startTriggerEventPollWorker();
-  // Keep the shared Teams bot token warm so the first message after a deploy
-  // does not wait on login.microsoftonline.com before its live card is posted.
-  startTeamsBotTokenRefresh();
+  if (config.KORTIX_WORKERS_ENABLED) {
+    startTmpReaper();
+    startSessionLifecycleWorker();
+    // Kortix-polled app events: every replica checks due streams.
+    startTriggerEventPollWorker();
+    // Keep the shared Teams bot token warm before the first message.
+    startTeamsBotTokenRefresh();
+  }
   // Fill the Composio catalogue snapshot, the hidden-toolkit list, the toolkit
   // metadata and the first discovery page in the background, so the first
   // Customize → Connectors view on a fresh replica reads memory instead of
   // waiting ~2 s on Composio round trips. Not awaited: boot never waits on a
   // third party.
-  void import('./connectors/composio')
-    .then((composio) => composio.warmComposioDiscovery())
-    .catch(() => {});
+  if (config.KORTIX_WORKERS_ENABLED) {
+    void import('./connectors/composio')
+      .then((composio) => composio.warmComposioDiscovery())
+      .catch(() => {});
+  }
   // Every api process must learn that a base branch moved, not just the one
   // that handled the push — otherwise the turn-start gate answers `current`
   // from a memo resolved before it (shared/pg-broadcast.ts). Awaited because it
@@ -215,7 +219,7 @@ let singletonWorkersRunning = false;
 // stop before its first await.
 const lazyStops: Array<() => void> = [];
 async function startSingletonWorkers() {
-  if (singletonWorkersRunning) return;
+  if (!config.KORTIX_WORKERS_ENABLED || singletonWorkersRunning) return;
   singletonWorkersRunning = true;
   startActiveTurnRenewal();
   startProjectMaintenance();
@@ -280,10 +284,10 @@ async function startSingletonWorkers() {
   startSessionLogPurgeWorker();
   // Idle sessions off a fallback model once their own model serves again.
   startSessionModelFallbackWorker();
-  // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=write (default) converts them.
-  startSessionLogBackfillWorker();
   // Closed pending days of the gateway spend running total, recomputed from the log rows.
   startGatewaySpendBackfillWorker();
+  // Residential proxy charges from Platinum's billing feed, debited once per event.
+  startResidentialProxyBillingWorker();
 }
 // Every stop runs before the first await, then the in-flight ticks drain together. A stop after an
 // await left its worker "started" across that await; a re-acquire then started nothing, and the
@@ -312,8 +316,8 @@ async function stopSingletonWorkers() {
   stopNotificationWorker();
   stopSessionLogPurgeWorker();
   stopSessionModelFallbackWorker();
-  stopSessionLogBackfillWorker();
   stopGatewaySpendBackfillWorker();
+  stopResidentialProxyBillingWorker();
   await Promise.all(drains);
 }
 
@@ -326,10 +330,12 @@ export async function bootServices() {
   // Only pods that actually run singleton workers join the election. An API-only
   // pod (workers disabled) that won the lease would become a dead-weight leader,
   // holding it while running nothing and starving the scheduler fleet-wide.
-  const eligible = runsSingletonWorkers();
+  const eligible = config.KORTIX_WORKERS_ENABLED && runsSingletonWorkers();
   if (!eligible) {
     appLogger.info(
-      '[workers] API-only pod — singleton workers disabled; not joining leader election',
+      config.KORTIX_WORKERS_ENABLED
+        ? '[workers] Singleton workers disabled; not joining leader election'
+        : '[workers] API-only pod — background workers disabled; not joining leader election',
     );
   }
   startLeaderElection(
@@ -344,7 +350,7 @@ export async function bootServices() {
   // a third party. Until it lands, the catalogue routes answer from the live
   // paged API (`indexReady: false`), so a cold pod serves correct results the
   // whole time — just without category facets.
-  warmPipedreamCatalog();
+  if (config.KORTIX_WORKERS_ENABLED) warmPipedreamCatalog();
   // Hash the sandbox runtime binaries off the request path.
   //
   // `/v1/runtime-assets/manifest` sha256s the CLI (~104 MB) and the agent

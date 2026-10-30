@@ -168,6 +168,12 @@ export {
   sessionIdleWatches,
   // Artifacts: published HTML pages (flag artifacts)
   artifacts,
+  artifactCommentThreads,
+  artifactComments,
+  artifactCommentWriteLimits,
+  artifactEvents,
+  driveCommitAuthors,
+  sessionSandboxIdentities,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Kortix in Chrome (apps/api/src/chrome)
@@ -295,6 +301,7 @@ export {
   connectorProjectSettings,
   connectorSyncFences,
   connectorCalls,
+  connectorHeldCalls,
   connectorAttachments,
   promptAttachments,
   jobQueue,
@@ -315,7 +322,7 @@ export {
   connectorProjectPoliciesRelations,
   connectorProjectSettingsRelations,
 } from './schema/kortix';
-export type { AgentGrant, StoredAgentGrant } from './schema/kortix';
+export type { AgentGrant, StoredAgentGrant, ArtifactCommentMention } from './schema/kortix';
 export { readStoredAgentGrant } from './schema/kortix';
 export type { AccountBrandingRecord } from './schema/kortix';
 export type { MemoryThreadLoadLayer } from './schema/kortix';

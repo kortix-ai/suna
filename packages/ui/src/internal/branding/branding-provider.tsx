@@ -134,8 +134,8 @@ const originals = new WeakMap<HTMLLinkElement, { href: string; media: string | n
  * trade-off (host-based tenancy would be the way to remove it).
  *
  * Title: Next writes `<title>` on every navigation from the route's metadata:
- * the site default (`Kortix – The open-source AI Operating System`) on
- * routes with no title of their own, `<page> | Kortix` elsewhere. A
+ * the site default (`Kortix CompanyOS – the open-source operating system for your company`) on
+ * routes with no title of their own, `<page> | Kortix CompanyOS` elsewhere. A
  * `MutationObserver` on `<head>` rewrites whatever Next just wrote, so the
  * swap survives navigation without touching every page's metadata: the site
  * default collapses to the org name alone (its tagline is Kortix's, not
@@ -237,7 +237,7 @@ function BrandingDocumentEffect({ branding }: { branding: AccountBranding | null
       const current = document.title;
       if (!current.includes('Kortix')) return;
       const next =
-        current === siteMetadata.title ? appName : current.replace(/\bKortix\b/g, appName);
+        current === siteMetadata.title ? appName : current.replace(/\bKortix(?: CompanyOS)?\b/g, appName);
       if (next !== current) document.title = next;
     };
     rewrite();

@@ -12,7 +12,7 @@ cover: "/banner.png"
 ---
 > Cowork is now one excellent agent inside Claude itself. Kortix gives that same working power to a whole company, governed and self-hostable.
 
-Claude Cowork earned its reputation as a strong single-player agent. On September 16, 2026, Anthropic folded it into Claude itself: what it does now starts from any conversation. The rollout reaches Pro and Max plans first, moving gradually across web, desktop, and mobile. What changed is reach. The terms are the ones Cowork always had: closed source, Claude models only, no self-hosting. Kortix, an open-source AI Operating System, was built for the teams that need the opposite. The choice in front of a team is starker now: rent a feature, or own the system.
+Claude Cowork earned its reputation as a strong single-player agent. On September 16, 2026, Anthropic folded it into Claude itself: what it does now starts from any conversation. The rollout reaches Pro and Max plans first, moving gradually across web, desktop, and mobile. What changed is reach. The terms are the ones Cowork always had: closed source, Claude models only, no self-hosting. Kortix, an open-source CompanyOS, was built for the teams that need the opposite. The choice in front of a team is starker now: rent a feature, or own the system.
 
 ```logos
 label: 'Compared here:'

@@ -8,12 +8,10 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { VIRTUAL_MODULES } from '../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/virtual-modules.js'
-import { PI_HOST_MODULES } from '../../../api/src/pi-packages/prebuild'
 import { loadPrebuiltPackages } from '@/harness/pi/extensions/prebuilt'
 
-test("the API's PI_HOST_MODULES and the daemon's host modules are pi's VIRTUAL_MODULES", async () => {
+test("the daemon's host modules are pi's VIRTUAL_MODULES", async () => {
   const pi = Object.keys(VIRTUAL_MODULES).sort()
-  expect(([...PI_HOST_MODULES] as string[]).sort()).toEqual(pi)
   const root = mkdtempSync(join(tmpdir(), 'pi-host-modules-'))
   try {
     await loadPrebuiltPackages(root, [])

@@ -291,6 +291,7 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   // Artifacts: read = gallery and viewer; write = publish and edit; manage =
   // anyone's sharing; public = public links.
   'project.artifact.read',
+  'project.artifact.comment',
   'project.artifact.write',
   'project.artifact.manage',
   'project.artifact.public',

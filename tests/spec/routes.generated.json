@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 980,
+  "count": 990,
   "routes": [
     {
       "method": "GET",
@@ -2096,6 +2096,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/artifact-comment-threads/:threadId"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/artifacts"
     },
     {
@@ -2117,6 +2121,38 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/activity"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/:commentId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/:commentId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/replies"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/send"
     },
     {
       "method": "GET",
@@ -2701,6 +2737,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/jwks.json"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/link-preview"
     },
     {
       "method": "GET",

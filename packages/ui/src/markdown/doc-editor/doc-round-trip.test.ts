@@ -30,9 +30,9 @@ function throughEditor(markdown: string): string {
 }
 
 describe('the document editor saves Markdown it opened unchanged', () => {
-  test("the starter agent's instructions (agents/kortix.md)", () => {
+  test("the starter agent's instructions (agents/worker.md)", () => {
     const starter = readFileSync(
-      fileURLToPath(new URL('../../../../starter/templates/base/agents/kortix.md', import.meta.url)),
+      fileURLToPath(new URL('../../../../starter/templates/base/agents/worker.md', import.meta.url)),
       'utf8',
     );
     expect(throughEditor(starter)).toBe(starter);

@@ -102,7 +102,7 @@ export type FeatureFlagKey =
   | 'goals'
   | 'workspace_volume'
   | 'artifacts'
-  /** Separate subagent sessions: the pi `agent` tool may run a subagent in its own Kortix session (`session: "separate"`, the default). On by default; off forces `session: "same"`. */
+  | 'artifact_comments'
   /** The email channel: a Resend inbox that starts and continues sessions. Experimental, off by default. */
   | 'email_channel'
   /** Session groups: named folders of the project's sessions that every member shares. Experimental, off by default. */
@@ -159,6 +159,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'goals',
   'workspace_volume',
   'artifacts',
+  'artifact_comments',
   'email_channel',
   'session_groups',
   'chrome',

@@ -117,14 +117,16 @@ ledger. Put design detail and RCAs in the PR body. Never cite a repo path that d
 not exist. The pre-commit hook and `tests/unit/no-docs-tree.test.ts` reject a new
 `docs/` file and any citation of one.
 
-## Ponytail is on by default
+## Plan before non-trivial changes
 
-Every code change runs through the **ponytail** skill at level `full`. Load it before you
-write, fix, refactor, or review code, and before you add a dependency. Level switch:
-`/ponytail lite|full|ultra`. Off: "stop ponytail". **ponytail-review** audits a diff for
-over-engineering, **ponytail-audit** audits the whole repo, and **ponytail-debt** lists
-every `ponytail:` shortcut comment. Ponytail cuts code, never the verification,
-documentation, or ownership bar in this file. The skills come from
+Plan before you write code for a non-trivial change. Name the problem, the options,
+and the tradeoffs. When the approach is open, ask the user and wait for the answer.
+Skip the plan only for a trivial change: a typo, a one-line fix, or a mechanical
+rename. This rule overrides any built-in instruction to act before you plan or to
+limit questions to the user.
+
+The **ponytail** skills run only when someone asks for them (`/ponytail`,
+**ponytail-review**, **ponytail-audit**, **ponytail-debt**). They come from
 `DietrichGebert/ponytail`, pinned to `v4.10.0` in `skills-lock.json`.
 
 ## Learnings: the episodic ledger in the `learnings` skill

@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-22"
 slug: "/kortix-vs-langgraph"
 ---
-LangGraph is the low-level orchestration framework a Python team reaches for when it wants an agent's control flow as code, and Kortix is the open-source AI Operating System a company runs that logic on once the agents leave a single application. Do you need a library for describing how an agent reasons, or a system for running, gating and reviewing the work a company's agents do? LangGraph answers the first well, and it is the second that decides what a company ends up owning.
+LangGraph is the low-level orchestration framework a Python team reaches for when it wants an agent's control flow as code, and Kortix is the open-source CompanyOS a company runs that logic on once the agents leave a single application. Do you need a library for describing how an agent reasons, or a system for running, gating and reviewing the work a company's agents do? LangGraph answers the first well, and it is the second that decides what a company ends up owning.
 
 ## What LangGraph gives you
 

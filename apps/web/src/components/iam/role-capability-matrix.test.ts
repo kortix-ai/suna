@@ -169,10 +169,13 @@ function seededRolePermissions(): Map<string, string[]> {
     // BASE TABLE `kortix.role_permissions`: `kortix.iam_role_actions` is a view
     // now, and a view cannot take ON CONFLICT.
     for (const one of sql.matchAll(
-      /INSERT INTO kortix\.(?:iam_role_actions|role_permissions) \(role_id, action\)\s*SELECT r\.role_id, '([^']+)'[\s\S]*?r\.key = '([^']+)'[\s\S]*?r\.scope_type = '([^']+)'/gi,
+      /INSERT INTO kortix\.(?:iam_role_actions|role_permissions) \(role_id, action\)\s*SELECT r\.role_id, '([^']+)'[\s\S]*?r\.key\s*(?:=\s*'([^']+)'|IN\s*\(([^)]*)\))[\s\S]*?r\.scope_type = '([^']+)'/gi,
     )) {
-      const key = `${one[2]}:${one[3]}`;
-      out.set(key, [...(out.get(key) ?? []), one[1]]);
+      const keys = one[2] ? [one[2]] : [...one[3].matchAll(/'([^']+)'/g)].map((match) => match[1]);
+      for (const name of keys) {
+        const key = `${name}:${one[4]}`;
+        out.set(key, [...(out.get(key) ?? []), one[1]]);
+      }
     }
     // The removal shape (20261013172952181: the member role loses
     // `member.read` and `group.read`).
@@ -239,9 +242,37 @@ describe('the built-in member role reads no directory', () => {
 });
 
 describe('the area table covers the catalog', () => {
+  test('Artifact comments have an independent cell without file or Artifact writes', () => {
+    const area = buildAreaTable('project', CATALOG).find((entry) => entry.key === 'artifacts')!;
+    expect(area.comment).toEqual(['project.artifact.comment']);
+    expect(area.edit).not.toContain('project.artifact.comment');
+    const edit = applyCell('project', new Set(), 'artifacts', 'edit', true, CATALOG);
+    expect(edit.has('project.artifact.comment')).toBe(false);
+    for (const action of ['project.artifact.write', 'project.artifact.manage', 'project.artifact.public']) {
+      expect(edit.has(action)).toBe(true);
+    }
+    const next = applyCell('project', new Set(), 'artifacts', 'comment', true, CATALOG);
+    expect(sorted(next)).toEqual(['project.artifact.comment', 'project.artifact.read']);
+    const fold = foldSelection('project', CATALOG, next);
+    const row = fold.areas.find((entry) => entry.area.key === 'artifacts')!;
+    expect(row.comment.state).toBe('on');
+    expect(row.edit.state).toBe('off');
+    expect(sorted(expandFold(fold))).toEqual(sorted(next));
+    expect(fold.selectedCount).toBe(2);
+  });
+
+  test('removing Artifact read removes comments while removing comments preserves writes', () => {
+    const next = applyCell('project', new Set(), 'artifacts', 'comment', true, CATALOG);
+    const withEdit = applyCell('project', next, 'artifacts', 'edit', true, CATALOG);
+    const withoutComments = applyCell('project', withEdit, 'artifacts', 'comment', false, CATALOG);
+    expect(withoutComments.has('project.artifact.comment')).toBe(false);
+    expect(withoutComments.has('project.artifact.write')).toBe(true);
+    expect(withoutComments.has('project.artifact.read')).toBe(true);
+    expect(applyCell('project', next, 'artifacts', 'view', false, CATALOG).has('project.artifact.comment')).toBe(false);
+  });
+
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {
-    // 55 since artifacts' `project.artifact.{read,write,manage,public}` (20261024055005000).
-    expect(PROJECT_LEAVES.length).toBe(55);
+    expect(PROJECT_LEAVES.length).toBe(56);
     // 31 since Kortix Capture's `capture.read_all` and `capture.manage` (20261015003000001).
     expect(ACCOUNT_LEAVES.length).toBe(31);
     // The retired spellings must not come back: `project.cr.*` collapsed into
@@ -274,7 +305,7 @@ describe('the area table covers the catalog', () => {
     for (const scope of ['project', 'account'] as const) {
       const seen = new Set<string>();
       for (const area of buildAreaTable(scope, CATALOG)) {
-        for (const leaf of [...area.view, ...area.edit]) {
+        for (const leaf of [...area.view, ...area.comment, ...area.edit]) {
           expect(seen.has(leaf)).toBe(false);
           seen.add(leaf);
         }
@@ -286,7 +317,7 @@ describe('the area table covers the catalog', () => {
     for (const scope of ['project', 'account'] as const) {
       const known = new Set(CATALOG.filter((a) => a.resource_type === scope).map((a) => a.action));
       for (const area of buildAreaTable(scope, CATALOG)) {
-        for (const leaf of [...area.view, ...area.edit]) {
+        for (const leaf of [...area.view, ...area.comment, ...area.edit]) {
           expect({ scope, leaf, known: known.has(leaf) }).toEqual({ scope, leaf, known: true });
         }
       }
@@ -309,14 +340,14 @@ describe('foldSelection → expandFold is lossless', () => {
     const fold = foldSelection('project', CATALOG, new Set());
     expect([...expandFold(fold)]).toEqual([]);
     expect(fold.selectedCount).toBe(0);
-    expect(fold.totalCount).toBe(55);
+    expect(fold.totalCount).toBe(56);
   });
 
   test('a full project role round-trips', () => {
     const selected = new Set(PROJECT_LEAVES);
     const fold = foldSelection('project', CATALOG, selected);
     expect(sorted(expandFold(fold))).toEqual(sorted(selected));
-    expect(fold.selectedCount).toBe(55);
+    expect(fold.selectedCount).toBe(56);
     expect(fold.areas.every((a) => a.view.state !== 'partial' && a.edit.state !== 'partial')).toBe(
       true,
     );
@@ -352,6 +383,9 @@ describe('cell state', () => {
     // The catalog dropped them, so the manager is now on everywhere.
     expect(fold.areas.filter((a) => a.partial).map((a) => a.area.key)).toEqual([]);
     expect(fold.areas.every((a) => a.view.state === 'on' && a.edit.state === 'on')).toBe(true);
+    expect(PROJECT_MANAGER).toContain('project.artifact.comment');
+    expect(roleActions('member', 'project')).toContain('project.artifact.comment');
+    expect(fold.areas.find((row) => row.area.key === 'artifacts')?.comment.state).toBe('on');
   });
 
   test('the member floor role reads as partial where §7 splits a cell', () => {
@@ -608,6 +642,7 @@ describe('label fallbacks', () => {
         key: 'brand_new_area',
         label: 'Brand New Area',
         view: ['x.brand_new_area.read'],
+        comment: [],
         edit: ['x.brand_new_area.write'],
       },
     ]);

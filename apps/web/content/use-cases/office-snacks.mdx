@@ -49,44 +49,119 @@ anything.
 ## How it works
 
 <Steps>
-<Step title="Collect requests through a Slack shortcut">
+<Step title="Copy the setup prompt into a new session">
 
-Slack is connected as a **channel**, and a shortcut is the way people submit
-requests. Each submission is collected against the week's batch. There's one place
-to ask, and nobody has to track requests in their head.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the snack batching skill and the weekly trigger, and
+opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Batch them on a weekly cron">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a weekly office snacks agent in this project.
 
-A **cron trigger** fires once a week and spawns a fresh **session** in its own
-isolated sandbox. The run gathers every request submitted since the last order.
-One run, one sandbox, torn down when it's done.
+1. Create the agent agents/office-snacks.md. Its job is to batch the week's snack requests into one draft order for the office manager to approve. It may read and post in #office through Slack, and it uses the ORDERING_ACCOUNT_API_KEY secret for the ordering account.
 
-</Step>
-<Step title="Give the agent the ordering rules">
+2. Create the skill skills/snack-batching/SKILL.md with these rules:
+   - The cutoff is your last posted draft order in #office, or the last 7 days if there is none. Collect every snack-shortcut request since then.
+   - Merge duplicate and near-duplicate items into one line, add up the quantities and list every requester.
+   - Always add the standing staples: coffee beans, sparkling water and oat milk.
+   - Build the cart on Amazon within $150. When it runs over, trim the non-staple items with the fewest requesters first. Never check out.
+   - Post the draft with its total and say that nothing is purchased. Place the order only after the office manager writes an explicit approval in the draft's thread.
 
-The preferred vendor, the budget, standing staples to always include, and how to
-consolidate duplicate requests live as **skills** and **memory**. The rules are
-updated as preferences and the budget change.
+3. Add a cron trigger weekly-snack-batch to kortix.yaml. It runs the office-snacks agent every Monday at 08:00 with the prompt "Load the snack-batching skill and run this week's snack-batching pass."
 
-</Step>
-<Step title="Connect Slack and the ordering account">
+4. Tell me which of these connectors are not connected yet.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
-
-- **Read requests from Slack** — the week's submissions from the shortcut.
-- **Prepare an order in the ordering account** — build the cart against the
-  vendor, but not check out.
-- **Post to Slack** — the draft order for the office manager to review.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Approve before it places anything">
+<Step title="Connect your tools">
 
-The prepared order stops at a **human approval gate** in Slack. The office manager
-sees the full cart and the total, and nothing is purchased until they approve.
-Credentials for the ordering account are encrypted in the secrets manager and
-injected at runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect Slack. Credentials are
+brokered server-side and never enter the agent's machine. Then add your
+ordering account's API key as the `ORDERING_ACCOUNT_API_KEY` secret, granted
+to this agent only.
+
+<ToolList>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Collects requests and posts the draft order for approval.
+  </ToolNeed>
+  <ToolNeed name="Amazon" domain="amazon.com" tag="Required" alternatives={[['Instacart', 'instacart.com']]}>
+    Builds the cart within budget and orders only after approval.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the **office-snacks** agent
+and send this prompt. Check the cart and the total before you let the schedule
+take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run this week's snack-batching pass in #office.
+
+1. Find your last posted draft order in #office and collect every snack-shortcut request since then.
+2. Merge duplicates into one line each, with the total quantity and every requester.
+3. Add the standing staples: coffee beans, sparkling water and oat milk.
+4. Build the cart on Amazon within $150, and trim the least-requested items first if it runs over. Do not check out.
+5. Post the draft order with its total to #office, and say that nothing is purchased yet.`}
+/>
+
+</Step>
+<Step title="Let the weekly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every Monday at 08:00, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: weekly-snack-batch
+    name: Weekly snack batch
+    on:
+      cron: "0 0 8 * * 1"
+    run:
+      agent: office-snacks
+      prompt: Load the snack-batching skill and run this week's snack-batching pass.`}
+/>
+
+</Step>
+<Step title="Buy nothing without a written yes">
+
+The draft post is the only output of the weekly run. The agent checks out only
+after the office manager writes an explicit approval in the draft's thread.
+Silence, an emoji or a question is not approval. When the thread is still open
+at the next weekly run, its items roll into the new batch instead of a stale
+order.
+
+</Step>
+<Step title="Read the draft order">
+
+Each run ends with one draft order in the channel. This is what a run looks
+like in the session:
+
+<ExampleRun
+  title="Weekly snack batch · Mon 08:00"
+  message="Load the snack-batching skill and run this week's snack-batching pass."
+  worked="Worked for 1m 46s"
+  tools={[
+    'slack · search messages → #office',
+    'ordering account · search items × 11',
+    'ordering account · add to cart × 11',
+    'slack · post message → #office',
+  ]}
+  note="Illustrative example. Your cart depends on what people request."
+>
+  Collected **14** requests and merged them into **8** lines, plus the **3**
+  standing staples. The cart totals **$138.40** against the **$150** budget.
+  Nothing is purchased until the office manager approves in the thread.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -97,6 +172,25 @@ injected at runtime, scoped to the agents you grant them to.
   the order at a **human approval gate** before it spends. One place in, one approved
   order out.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Suggest new staples"
+  code="Once a month, list every item requested in three or more weeks and propose it as a standing staple in a change request."
+/>
+
+<CopyBlock
+  title="Label dietary needs"
+  code="Mark each line in the draft order as vegan, gluten-free or contains nuts when the vendor listing says so."
+/>
+
+<CopyBlock
+  title="Announce the delivery"
+  code="After an order is placed, post in #office on the morning it is due to arrive, with the list of what is coming."
+/>
 
 ## Guardrails
 

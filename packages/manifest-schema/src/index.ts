@@ -943,13 +943,7 @@ function validateSandboxTemplates(node: unknown, path: string, issues: ManifestI
         severity: 'error',
       });
     }
-    if (!hasImage && !hasDockerfile) {
-      issues.push({
-        path: where,
-        message: 'set one of `image` or `dockerfile`.',
-        severity: 'error',
-      });
-    }
+    // Neither: the template builds the platform base image with its own size and settings.
     if (hasImage && typeof entry.image === 'string') {
       const img = entry.image.trim();
       if (img.endsWith(':latest')) {
@@ -982,6 +976,7 @@ function validateSandboxTemplates(node: unknown, path: string, issues: ManifestI
         severity: 'error',
       });
     }
+    validateResidentialProxy(entry.residential_proxy, `${where}.residential_proxy`, issues);
     if (entry.gpu !== undefined) {
       issues.push({
         path: `${where}.gpu`,
@@ -989,6 +984,41 @@ function validateSandboxTemplates(node: unknown, path: string, issues: ManifestI
         severity: 'warning',
       });
     }
+  });
+}
+
+/**
+ * `residential_proxy: true` or `residential_proxy: { country: us }` on a
+ * sandbox template. The deployment decides whether it can serve it, which the
+ * manifest cannot know: a template that asks for it always gets the warning
+ * that its sessions do not start where no residential IP is offered.
+ */
+function validateResidentialProxy(value: unknown, path: string, issues: ManifestIssue[]): void {
+  if (value === undefined || value === false) return;
+  if (value !== true && !isTable(value)) {
+    issues.push({ path, message: '`residential_proxy` must be true, false, or a table with `country`.', severity: 'error' });
+    return;
+  }
+  if (isTable(value)) {
+    for (const key of Object.keys(value)) {
+      if (key !== 'country') {
+        issues.push({ path: `${path}.${key}`, message: 'unknown key; `residential_proxy` takes `country`.', severity: 'warning' });
+      }
+    }
+    const country = value.country;
+    if (country !== undefined && !(typeof country === 'string' && /^[A-Za-z]{2}$/.test(country.trim()))) {
+      issues.push({
+        path: `${path}.country`,
+        message: '`country` must be an ISO 3166-1 alpha-2 code, such as `us` or `de`.',
+        severity: 'error',
+      });
+    }
+  }
+  issues.push({
+    path,
+    message:
+      "Sessions of this template start only on a deployment that offers a residential IP address (Platinum with the residential proxy on). Elsewhere they fail to start; they never fall back to the sandbox's own address.",
+    severity: 'warning',
   });
 }
 

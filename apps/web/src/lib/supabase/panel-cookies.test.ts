@@ -48,7 +48,7 @@ describe('safePanelNext', () => {
   test('keeps same-origin relative paths', () => {
     expect(safePanelNext('/projects/abc?tab=1')).toBe('/projects/abc?tab=1');
   });
-  test.each([null, undefined, '', 'https://evil.example', '//evil.example', '/\\evil.example', 'projects', '/auth', '/auth/panel?next=/x', '/auth?redirect=/x'])(
+  test.each([null, undefined, '', 'https://evil.example', '//evil.example', '/\\evil.example', 'projects', '/auth', '/auth/panel?next=/x', '/auth?redirect=/x', '/\t/evil.example', '/\n/evil.example', '/\r/evil.example'])(
     'falls back to /projects for %p',
     (value) => {
       expect(safePanelNext(value as string | null)).toBe('/projects');

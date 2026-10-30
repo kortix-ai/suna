@@ -419,8 +419,6 @@ function opencodeSchema(): JsonSchemaFragment {
 
 /** One `[[sandbox.templates]]` entry. */
 function sandboxTemplateSchema(): JsonSchemaFragment {
-  const image = { required: ['image'], properties: { image: NON_BLANK_STRING } };
-  const dockerfile = { required: ['dockerfile'], properties: { dockerfile: NON_BLANK_STRING } };
   const clamped = (what: string, max: number) =>
     `${what}. Above ${max} is a warning, and Kortix uses ${max}. Default: the platform default.`;
   return {
@@ -434,9 +432,12 @@ function sandboxTemplateSchema(): JsonSchemaFragment {
       name: { type: 'string', description: 'The label in the template picker. Default: the slug.' },
       entrypoint: { type: 'string', description: "Overrides the container entrypoint. Default: the image's." },
       image: {
-        description: 'An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both.',
+        description:
+          'An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both. Neither: the platform base image.',
       },
       dockerfile: {
+        // Blank is absent (`validateSandboxTemplates`); a set path must stay inside the repository.
+        anyOf: [{ not: NON_BLANK_STRING }, relativePathSchema()],
         description:
           'A repository path to a Dockerfile. `kortix validate` lints it: no `COPY` from the repository, no `RUN` heredoc, a Debian-family base image.',
       },
@@ -444,12 +445,22 @@ function sandboxTemplateSchema(): JsonSchemaFragment {
       memory: { type: 'integer', minimum: SANDBOX_MEMORY_BOUNDS.min, description: clamped('GiB of memory', SANDBOX_MEMORY_BOUNDS.max) },
       disk: { type: 'integer', minimum: SANDBOX_DISK_BOUNDS.min, description: clamped('GiB of disk', SANDBOX_DISK_BOUNDS.max) },
       container_runtime: { type: 'boolean', default: false, description: '`true`: Docker runs inside the sandbox.' },
+      residential_proxy: {
+        description:
+          "`true`, or `{ country: us }`: the sandbox's web traffic leaves through a residential IP address, billed per GB from credits. Kortix hosts and package registries connect directly. Sessions start only where the deployment offers it. Not part of the image.",
+        oneOf: [
+          { type: 'boolean' },
+          {
+            type: 'object',
+            properties: {
+              country: { type: 'string', pattern: '^[A-Za-z]{2}$', description: 'ISO 3166-1 alpha-2 country code of the IP address.' },
+            },
+          },
+        ],
+      },
     },
-    // Exactly one of image/dockerfile (`validateSandboxTemplates`).
-    oneOf: [
-      { ...image, not: dockerfile },
-      { ...dockerfile, properties: { dockerfile: relativePathSchema() }, not: image },
-    ],
+    // At most one non-blank image/dockerfile (`validateSandboxTemplates`); neither is the platform base image.
+    not: { required: ['image', 'dockerfile'], properties: { image: NON_BLANK_STRING, dockerfile: NON_BLANK_STRING } },
   };
 }
 

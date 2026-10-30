@@ -408,7 +408,8 @@ export function ApprovalDecisionPanel({
     {
       status: expired ? 'expired' : details.status,
       resolution:
-        !details.pending && details.status === 'ok'
+        // `approved`: Kortix runs the held call; `ok`: an approve the caller repeats.
+        !details.pending && (details.status === 'ok' || details.status === 'approved')
           ? 'approve'
           : !details.pending && details.status === 'denied'
             ? 'deny'

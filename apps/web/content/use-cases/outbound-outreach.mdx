@@ -52,55 +52,123 @@ person to approve, under a daily cap.
 ## How it works
 
 <Steps>
-<Step title="Connect the lead list as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-A new segment or lead list in the CRM is the trigger. On a schedule, the agent
-fires a fresh **session** in its own sandbox and works through the batch of
-contacts that list contains. Each contact is handled as an independent unit —
-a research or drafting failure on one contact is logged and skipped, and never
-blocks the rest of the batch — with the run capped so a sweep always stays a
-size a person can review.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the outreach skill and the weekday trigger, and
+opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent the outreach playbook">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up an outbound outreach agent in this project.
 
-What genuine personalization looks like lives as **skills** and **memory** that
-travel with the agent: our angles, the proof points that resonate, what to avoid,
-and which signals in an account are worth writing to. When a message pattern
-works, we write it down and the agent reuses it on the next batch.
+1. Create the agent agents/outbound-outreach.md. Its job is to draft personalized outbound sequences for new HubSpot contacts. It may use the HubSpot and Clearbit connectors.
 
-</Step>
-<Step title="Connect enrichment, the CRM, and email">
+2. Create the skill skills/personalized-outreach/SKILL.md with these rules:
+   - Work on contacts in the New Prospects list without the kortix_outreach_drafted property. Take at most 25 per run.
+   - Enrich each contact first: role, seniority, company size, industry and recent signals such as funding or hiring.
+   - Pick the angle and the proof point from memory that fit the account. If a draft reads the same without the enrichment data, rewrite it.
+   - Write a first-touch email and its follow-ups with one clear ask, and log the drafts and research notes to the HubSpot contact. Never change deal stage, pipeline or lifecycle stage.
+   - Never send. Hold the batch in the email channel for a person to approve and send, then set kortix_outreach_drafted on each contact.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger outreach-sweep to kortix.yaml. It runs the outbound-outreach agent every weekday at 08:00 with the prompt "Load the personalized-outreach skill and run one outreach sweep on the New Prospects list."
 
-- **Enrich each contact** — role, company, recent signals, and the real context
-  that makes a message specific.
-- **Draft a genuine sequence** — a first-touch and follow-ups grounded in the
-  account's context, not a template with a name swapped in.
-- **Log every draft to the CRM** — each message written back against the contact,
-  so the history is complete.
-- **Send on approval** — the email goes out only after a person clears the batch.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-Nothing sends without a person approving it, and it never mass-sends unreviewed.
-Every batch stops at a **human approval gate**, and a **daily cap** limits how many
-messages can go out even once approved. A wrong segment can't turn into thousands
-of unreviewed emails, because the send is gated and capped regardless of how big
-the list is. Credentials are encrypted in the Secrets Manager and injected at
-runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect your CRM and an enrichment
+provider. Connect the email account that holds the drafts under **Settings →
+Channels**. Credentials are brokered server-side and never enter the agent's
+machine.
+
+<ToolList>
+  <ToolNeed name="HubSpot" domain="hubspot.com" tag="Required" alternatives={[['Salesforce', 'salesforce.com'], ['Pipedrive', 'pipedrive.com']]}>
+    Reads new leads from the list and logs each sequence.
+  </ToolNeed>
+  <ToolNeed name="Clearbit" domain="clearbit.com" tag="Required" alternatives={[['Apollo', 'apollo.io']]}>
+    Enriches each lead with company and role details.
+  </ToolNeed>
+  <ToolNeed name="Gmail" domain="gmail.com" tag="Required" alternatives={[['Microsoft Outlook', 'outlook.com']]}>
+    Drafts the outreach sequence for approval.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Run personalized outbound at a safe rate">
+<Step title="Run it once with this prompt">
 
-With that in place, loading a segment produces a batch of researched, account-
-specific drafts logged to the CRM and waiting for review. A person reads the
-batch, approves what's ready, and the daily cap meters the sends. The
-personalization is real because each message is written to a researched account,
-and nothing leaves without a person clearing it.
+Merge the change request, then start a session with the **outbound-outreach** agent
+and send this prompt. Read a few drafts against their accounts before you let the
+schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one outreach sweep on the New Prospects list in HubSpot.
+
+1. Find up to 25 contacts in the list without the kortix_outreach_drafted property.
+2. Enrich each contact with Clearbit: role, company size, industry and recent signals.
+3. Draft a first-touch email and its follow-ups, each grounded in one specific fact about the account.
+4. Log the drafts and research notes to each HubSpot contact.
+5. Hold the batch in the email channel for me to review, and set kortix_outreach_drafted on each contact. Do not send anything.`}
+/>
+
+</Step>
+<Step title="Let the weekday schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every weekday at 08:00, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: outreach-sweep
+    name: Outbound outreach sweep
+    on:
+      cron: "0 0 8 * * 1-5"
+    run:
+      agent: outbound-outreach
+      prompt: Load the personalized-outreach skill and run one outreach sweep on the New Prospects list.`}
+/>
+
+</Step>
+<Step title="Cap each batch and send nothing">
+
+Each run drafts at most 25 contacts, however large the list is. The agent
+never sends an email. A person reviews the batch, edits what needs it and
+sends. HubSpot writes stay limited to notes, drafts and the drafted marker, so
+deal and lifecycle stages never change.
+
+</Step>
+<Step title="Read the batch">
+
+Each run ends with a batch of drafts in the email channel. This is what a run
+looks like in the session:
+
+<ExampleRun
+  title="Outbound outreach sweep · 08:00"
+  message="Load the personalized-outreach skill and run one outreach sweep on the New Prospects list."
+  worked="Worked for 7m 39s"
+  tools={[
+    'hubspot · read list memberships',
+    'hubspot · batch read contacts',
+    'clearbit · enrich person × 25',
+    'hubspot · create note × 25',
+    'email · save draft × 25',
+  ]}
+  note="Illustrative example. Your counts depend on your list."
+>
+  Drafted sequences for **25** of **61** new contacts in New Prospects, the
+  run cap. **7** use the recent-funding angle and **5** the hiring angle. All
+  **25** wait in the email channel for review, and the other **36** carry over
+  to the next sweep.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -111,6 +179,25 @@ and nothing leaves without a person clearing it.
   encoded as **skills** and **memory**. Every batch is approved by a person and
   the daily cap meters the sends — nothing mass-sends unreviewed.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Stop on a reply"
+  code="Before you draft a follow-up, check the HubSpot timeline for a reply, and drop the sequence for any contact who already answered."
+/>
+
+<CopyBlock
+  title="Learn from edits"
+  code="Every Friday, compare the emails people sent with your drafts and propose skill changes for the edits they make most often."
+/>
+
+<CopyBlock
+  title="Plan by account"
+  code="When two or more contacts at one company are in the batch, give them different angles and note the link on each HubSpot record."
+/>
 
 ## Guardrails
 

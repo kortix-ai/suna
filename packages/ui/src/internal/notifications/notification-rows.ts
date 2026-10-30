@@ -90,7 +90,8 @@ export function notificationTag(row: InboxNotification): string {
  * conversation (a message), its session, the Reminders page (a reminder
  * alert), or the Triggers page.
  */
-export function rowDestination(row: InboxNotification): 'room' | 'session' | 'reminders' | 'triggers' {
+export function rowDestination(row: InboxNotification): 'artifact' | 'room' | 'session' | 'reminders' | 'triggers' {
+  if (row.artifact_id) return 'artifact';
   if (row.room_id) return 'room';
   if (row.session_id) return 'session';
   const path = new URL(row.url, 'http://kortix.invalid').pathname;

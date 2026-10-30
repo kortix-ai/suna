@@ -4681,7 +4681,7 @@ flow(
         const r = await expectHeld('charges_create');
         r.body().has(
           '$.approval_instructions',
-          'Share approval_url with a human. Retry this exact call once they approve it. Next time pass approval_context (CLI: --reason) describing the effect, so the approver can judge it.',
+          'Share approval_url with a human. Approval alone does not run the call: after approval, repeat this exact call (same arguments and account) within 15 minutes, and it runs once. Next time pass approval_context (CLI: --reason) describing the effect, so the approver can judge it.',
         );
       });
 
@@ -6353,6 +6353,115 @@ flow(
       await db.query(`DELETE FROM kortix.session_sandboxes WHERE session_id = $1`, [sessionId]).catch(() => {});
       await db.query(`DELETE FROM kortix.project_sessions WHERE session_id = $1`, [sessionId]).catch(() => {});
       await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1`, [p.id]).catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);
+
+// ── CONN-42 — Approve runs a sessionless held call once, as its caller ──────
+// A PAT created with `project_id` is a project-scoped caller: the gate holds
+// its input, Approve runs the call in the job-queue worker, and the caller
+// reads the outcome by id. The provider is a runner-local stub: local only.
+flow(
+  'CONN-42',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: [
+      'POST /v1/accounts/tokens',
+      'DELETE /v1/accounts/tokens/:tokenId',
+      'POST /v1/connectors/projects/:projectId/call',
+      'POST /v1/projects/:projectId/approvals/:executionId',
+      'GET /v1/projects/:projectId/review/items/:reviewItemId',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') {
+      await ctx.step('deployed targets cannot reach a runner-local provider stub: skipped', async () => {});
+      return;
+    }
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    const { createServer } = await import('node:http');
+    const db = await connectFlowDb(ctx);
+    const hits: string[] = [];
+    const upstream = createServer((req, res) => {
+      hits.push(`${req.method} ${req.url}`);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"charge":"ch_synthetic","done":true}');
+    });
+    const port = await new Promise<number>((resolve) => upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)));
+    const slug = `ke2e-held-${Date.now().toString(36)}`;
+    const owner = ctx.client.as(ctx.P.OWNER);
+    let tokenId = '';
+    let pat: ReturnType<typeof ctx.client.withBearer> | null = null;
+    let executionId = '';
+    const callAsPat = () =>
+      pat!.post('/v1/connectors/projects/:projectId/call', { connector: slug, action: 'charges_create', args: { amount: 4242 } }, { params: { projectId: p.id }, timeoutMs: 60_000 });
+    const readItem = () =>
+      pat!.get('/v1/projects/:projectId/review/items/:reviewItemId', { params: { projectId: p.id, reviewItemId: `call:${executionId}` } });
+    type RunDetail = { next_step: string; run?: { state: string; finished_at: string | null; outcome: { status?: string; output_preview?: string } | null } };
+
+    try {
+      await ctx.step('seed an OpenAPI write on a runner-local stub behind a require_approval rule', async () => {
+        const connectorId = await seedOpenApiConnector(db, { accountId: team.id, projectId: p.id, slug, name: 'KE2E Held', auth: { type: 'none' } });
+        await db.query(
+          `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+           VALUES ($1, 'charges_create', 'charges_create', 'charges_create', '{"type":"object"}'::jsonb, 'write', $2::jsonb)`,
+          [connectorId, JSON.stringify({ kind: 'openapi', method: 'POST', path: '/charges', server: `http://127.0.0.1:${port}` })],
+        );
+        await db.query(`INSERT INTO kortix.connector_policies (connector_id, match, action, position) VALUES ($1, 'charges_*', 'require_approval', 0)`, [connectorId]);
+      });
+
+      await ctx.step('a PAT created with project_id → 201 and the project id on the token', async () => {
+        const minted = await owner.post('/v1/accounts/tokens', { name: ctx.fixtures.name('held-pat'), account_id: team.id, project_id: p.id });
+        minted.status(201).body().has('$.project_id', p.id);
+        const credential = minted.json<{ token_id: string; secret_key: string }>();
+        tokenId = credential.token_id;
+        pat = ctx.client.withBearer(credential.secret_key, 'PROJECT_PAT');
+      });
+
+      await ctx.step('the PAT call → 202 runs_on_approval:true, "do not repeat", the by-id outcome path, no upstream request', async () => {
+        const r = await callAsPat();
+        r.status(202).body().has('$.status', 'pending_approval').has('$.runs_on_approval', true);
+        const body = r.json<{ execution_id: string; approval_instructions: string }>();
+        executionId = body.execution_id;
+        const rule = `Kortix runs this exact call once a human approves. Do not repeat the call. Read the outcome at GET /v1/projects/${p.id}/review/items/call:${executionId}.`;
+        if (!body.approval_instructions.startsWith(`Share approval_url with a human. ${rule}`)) throw new Error(`instructions: ${body.approval_instructions}`);
+        if (body.approval_instructions.includes('Approval alone does not run')) throw new Error('a held gate still tells the caller to repeat');
+        if (hits.length !== 0) throw new Error(`a held call reached the upstream: ${hits.join(', ')}`);
+      });
+
+      await ctx.step('a repeat while held → 202 with the same execution_id and the "already waiting" answer', async () => {
+        const r = await callAsPat();
+        r.status(202).body().has('$.execution_id', executionId).has('$.runs_on_approval', true);
+        if (!r.json<{ approval_instructions: string }>().approval_instructions.startsWith('This exact call is already waiting for approval or running.')) throw new Error(r.text());
+        if (hits.length !== 0) throw new Error('a repeat reached the upstream');
+      });
+
+      await ctx.step('the owner approves → 200; the by-id read reaches run.state ok with the redacted result', async () => {
+        (await owner.post('/v1/projects/:projectId/approvals/:executionId', { decision: 'approve' }, { params: { projectId: p.id, executionId } })).status(200);
+        const r = await waitFor(readItem, {
+          until: (res) => res.statusCode === 200 && ['ok', 'error', 'refused', 'unknown'].includes(res.json<{ review_item: { detail: RunDetail } }>().review_item.detail.run?.state ?? ''),
+          timeoutMs: 45_000,
+          intervalMs: 1_000,
+          description: 'the held call run settles',
+        });
+        r.status(200).body().has('$.review_item.status', 'approved').has('$.review_item.detail.run.state', 'ok');
+        const detail = r.json<{ review_item: { detail: RunDetail } }>().review_item.detail;
+        if (!detail.run?.outcome?.output_preview?.includes('ch_synthetic')) throw new Error(`outcome: ${JSON.stringify(detail.run)}`);
+        if (!detail.run.finished_at) throw new Error('no finished_at');
+        if (!detail.next_step.includes('ran once') || !detail.next_step.includes('Do not repeat it')) throw new Error(`next_step: ${detail.next_step}`);
+      });
+
+      await ctx.step('the provider stub received exactly one request', async () => {
+        if (hits.length !== 1 || hits[0] !== 'POST /charges') throw new Error(`upstream saw: ${JSON.stringify(hits)}`);
+      });
+    } finally {
+      upstream.close();
+      if (tokenId) await owner.del('/v1/accounts/tokens/:tokenId', { params: { tokenId } }).catch(() => undefined);
+      await db.query('DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2', [p.id, slug]).catch(() => {});
       await db.end().catch(() => {});
     }
   },

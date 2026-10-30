@@ -3,18 +3,30 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
   createArtifact,
+  createArtifactComment,
   deleteArtifact,
+  deleteArtifactComment,
+  editArtifactComment,
   getArtifact,
   listArtifactTypes,
+  listArtifactComments,
+  listArtifactActivity,
   listArtifactVersions,
   listArtifacts,
   readArtifactFile,
+  replyArtifactComment,
   saveArtifact,
   shareArtifactPath,
   restoreArtifactVersion,
   setArtifactPinned,
+  setArtifactCommentStatus,
+  sendArtifactComments,
   updateArtifact,
   type ArtifactDetail,
+  type ArtifactCommentStatus,
+  type ArtifactCommentBodyInput,
+  type CreateArtifactCommentInput,
+  type SendArtifactCommentsInput,
   type ListArtifactsOptions,
   type PublishArtifactInput,
   type SaveArtifactInput,
@@ -23,6 +35,88 @@ import {
 } from '../core/rest/projects-client';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
+
+function commentScope(projectId: string | null | undefined, artifactId: string | null | undefined): [string, string] {
+  if (!projectId || !artifactId) throw new Error('An Artifact comment needs a project and Artifact id');
+  return [projectId, artifactId];
+}
+
+/** Threads and their writes. Each successful write refreshes both mounted tabs. */
+export function useArtifactComments(
+  projectId: string | null | undefined,
+  artifactId: string | null | undefined,
+  options: { status?: ArtifactCommentStatus | 'all'; enabled?: boolean } = {},
+) {
+  const client = useQueryClient();
+  const status = options.status ?? 'open';
+  const query = useQuery({
+    queryKey: qk.project.artifactComments(projectId ?? '', artifactId ?? '', status),
+    queryFn: () => listArtifactComments(...commentScope(projectId, artifactId), { status }),
+    enabled: options.enabled !== false && !!projectId && !!artifactId,
+    ...contract('inventory'),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+  });
+  const refresh = () => Promise.all([
+    client.invalidateQueries({ queryKey: qk.project.artifactComments(projectId ?? '', artifactId ?? '') }),
+    client.invalidateQueries({ queryKey: qk.project.artifactActivity(projectId ?? '', artifactId ?? '') }),
+  ]);
+  const create = useMutation({
+    mutationFn: (input: CreateArtifactCommentInput) => createArtifactComment(...commentScope(projectId, artifactId), input),
+    onSuccess: refresh,
+  });
+  const reply = useMutation({
+    mutationFn: ({ threadId, input }: { threadId: string; input: ArtifactCommentBodyInput }) =>
+      replyArtifactComment(...commentScope(projectId, artifactId), threadId, input),
+    onSuccess: refresh,
+  });
+  const setStatus = useMutation({
+    mutationFn: ({ threadId, status }: { threadId: string; status: ArtifactCommentStatus }) =>
+      setArtifactCommentStatus(...commentScope(projectId, artifactId), threadId, status),
+    onSuccess: refresh,
+  });
+  const edit = useMutation({
+    mutationFn: ({ threadId, commentId, input }: { threadId: string; commentId: string; input: ArtifactCommentBodyInput }) =>
+      editArtifactComment(...commentScope(projectId, artifactId), threadId, commentId, input),
+    onSuccess: refresh,
+  });
+  const remove = useMutation({
+    mutationFn: ({ threadId, commentId }: { threadId: string; commentId: string }) =>
+      deleteArtifactComment(...commentScope(projectId, artifactId), threadId, commentId),
+    onSuccess: refresh,
+  });
+  const send = useMutation({
+    mutationFn: (input: SendArtifactCommentsInput) => sendArtifactComments(...commentScope(projectId, artifactId), input),
+    onSuccess: refresh,
+  });
+  return {
+    ...query,
+    create: create.mutateAsync,
+    reply: (threadId: string, input: ArtifactCommentBodyInput) => reply.mutateAsync({ threadId, input }),
+    setStatus: (threadId: string, status: ArtifactCommentStatus) => setStatus.mutateAsync({ threadId, status }),
+    edit: (threadId: string, commentId: string, input: ArtifactCommentBodyInput) => edit.mutateAsync({ threadId, commentId, input }),
+    remove: (threadId: string, commentId: string) => remove.mutateAsync({ threadId, commentId }),
+    send: send.mutateAsync,
+    isWriting: create.isPending || reply.isPending || setStatus.isPending || edit.isPending || remove.isPending || send.isPending,
+  };
+}
+
+/** One page of activity. Polls while mounted until realtime change pings are available. */
+export function useArtifactActivity(
+  projectId: string | null | undefined,
+  artifactId: string | null | undefined,
+  options: { limit?: number; cursor?: string; enabled?: boolean } = {},
+) {
+  const page = { ...(options.limit === undefined ? {} : { limit: options.limit }), ...(options.cursor === undefined ? {} : { cursor: options.cursor }) };
+  return useQuery({
+    queryKey: qk.project.artifactActivity(projectId ?? '', artifactId ?? '', page),
+    queryFn: () => listArtifactActivity(...commentScope(projectId, artifactId), page),
+    enabled: options.enabled !== false && !!projectId && !!artifactId,
+    ...contract('inventory'),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+  });
+}
 
 /** The project's artifacts the caller may view (flag `artifacts`), newest change first. */
 export function useArtifacts(
@@ -90,6 +184,20 @@ export async function prefetchArtifact(queryClient: QueryClient, projectId: stri
   });
 }
 
+/**
+ * After a create: the new artifact's detail, and for a doc the Markdown just
+ * written, so navigating to it opens without a request.
+ */
+export function seedCreatedArtifact(
+  queryClient: QueryClient,
+  projectId: string,
+  created: ArtifactDetail,
+  input: Pick<PublishArtifactInput, 'files'>,
+): void {
+  queryClient.setQueryData(qk.project.artifact(projectId, created.artifact_id, 'current'), created);
+  seedSavedText(queryClient, projectId, created, input);
+}
+
 /** After a doc save: the Markdown just written is the text of the new entry version. */
 export function seedSavedText(
   queryClient: QueryClient,
@@ -127,7 +235,13 @@ export function useArtifactMutations(projectId: string) {
   const refresh = () => qc.invalidateQueries({ queryKey: qk.project.artifacts(projectId) });
   const opts = { onSuccess: refresh };
   return {
-    create: useMutation({ mutationFn: (input: PublishArtifactInput) => createArtifact(projectId, input), ...opts }),
+    create: useMutation({
+      mutationFn: (input: PublishArtifactInput) => createArtifact(projectId, input),
+      onSuccess: (created, input) => {
+        seedCreatedArtifact(qc, projectId, created, input);
+        return refresh();
+      },
+    }),
     share: useMutation({ mutationFn: (input: ShareArtifactPathInput) => shareArtifactPath(projectId, input), ...opts }),
     save: useMutation({
       mutationFn: ({ artifactId, ...input }: SaveArtifactInput & { artifactId: string }) => saveArtifact(projectId, artifactId, input),

@@ -25,6 +25,68 @@ case ":${PATH:-}:" in
 esac
 export PATH
 
+# ---------------------------------------------------------------------------
+# The session desktop: Xvfb on :1, XFCE, PulseAudio, and voxl streaming it to
+# the browser on :6901 (H.264 over a WebSocket; the Kortix proxy is its only
+# way in). The image links /usr/local/bin/kortix-desktop to this script, so
+# `kortix-desktop start|stop|status` is the in-box control; the boot below runs
+# `start` once. `run` is the foreground supervisor that `start` detaches.
+# ---------------------------------------------------------------------------
+DESKTOP_PORT=6901
+DESKTOP_PID=/tmp/kortix-desktop.pid
+DESKTOP_LOG=/tmp/kortix-desktop.log
+desktop() {
+  export DISPLAY="${DISPLAY:-:1}" XDG_RUNTIME_DIR="/tmp/kortix-desktop-xdg"
+  case "${1:-status}" in
+    run)
+      echo $$ > "${DESKTOP_PID}"
+      mkdir -p -m 700 "${XDG_RUNTIME_DIR}"
+      # The start size is the most voxl can grow to; it shrinks the desktop to
+      # each viewer's window (--enable-resize).
+      Xvfb "${DISPLAY}" -screen 0 2560x1600x24 -shmem -nolisten tcp &
+      for _ in $(seq 1 50); do xset q >/dev/null 2>&1 && break; sleep 0.1; done
+      xset s off -dpms s noblank || true
+      # No sound card: voxl streams the monitor of a null sink named `output`.
+      pulseaudio --start --exit-idle-time=-1 \
+        && pactl load-module module-null-sink sink_name=output >/dev/null \
+        && pactl set-default-sink output || true
+      dbus-launch --exit-with-session startxfce4 &
+      # ponytail: voxl restarts on exit; Xvfb or XFCE dying needs `kortix-desktop stop && kortix-desktop start`.
+      while :; do
+        voxl --port="${DESKTOP_PORT}" --enable-resize=true --files-root="${HOME}" || true
+        sleep 1
+      done
+      ;;
+    start)
+      desktop status >/dev/null && { desktop status; return 0; }
+      command -v voxl >/dev/null || { echo "kortix-desktop: this image has no desktop" >&2; return 1; }
+      setsid -f "$0" run >"${DESKTOP_LOG}" 2>&1 </dev/null
+      for _ in $(seq 1 100); do desktop status >/dev/null && break; sleep 0.1; done
+      desktop status
+      ;;
+    stop)
+      [ -s "${DESKTOP_PID}" ] && kill -- "-$(cat "${DESKTOP_PID}")" 2>/dev/null || true
+      # PulseAudio and the session bus daemonize out of the process group.
+      pulseaudio --kill 2>/dev/null || true
+      pkill -u "$(id -u)" -f '^dbus-(launch|daemon)' 2>/dev/null || true
+      rm -f "${DESKTOP_PID}" "/tmp/.X${DISPLAY#:}-lock"
+      echo "desktop stopped; agent-browser needs AGENT_BROWSER_HEADED=false until \`kortix-desktop start\`"
+      ;;
+    status)
+      if curl -fs -o /dev/null "http://127.0.0.1:${DESKTOP_PORT}/"; then
+        echo "desktop running on display ${DISPLAY}, streamed on port ${DESKTOP_PORT}"
+      else
+        echo "desktop not running"; return 1
+      fi
+      ;;
+    *) echo "usage: kortix-desktop start|stop|status" >&2; return 2 ;;
+  esac
+}
+if [ "$(basename "$0")" = kortix-desktop ]; then
+  desktop "$@"
+  exit
+fi
+
 # No core dumps: a crash dump carries the process environment, secrets included.
 # Set before the privilege drop so the hard limit binds every descendant.
 ulimit -c 0 2>/dev/null || true
@@ -459,6 +521,14 @@ if command -v flock >/dev/null 2>&1 && exec 9>"${AGENT_STATE_DIR}/supervisor.loc
     echo "[entrypoint] another supervisor owns this box; exiting without launching a daemon" >&2
     exit 0
   fi
+fi
+
+# The desktop never blocks or fails the boot. The daemon, its tools and every
+# terminal inherit DISPLAY, so GUI programs and agent-browser (headed) open on
+# the desktop the user watches. An image without one keeps headless Chromium.
+if [ -e /usr/local/bin/kortix-desktop ]; then
+  export DISPLAY=:1 AGENT_BROWSER_HEADED=true
+  ( /usr/local/bin/kortix-desktop start || true ) 9>&- >&2 &
 fi
 
 echo "[entrypoint] daemon takeover (cwd=/, workspace=${WORKSPACE})" >&2

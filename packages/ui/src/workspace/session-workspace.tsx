@@ -411,13 +411,19 @@ function DesktopSessionLayout({ panel, children }: SessionSurfaceProps) {
             <ResizablePanel
               ref={mainPanelRef}
               defaultSize={shouldShowPanel ? (isEasy ? 65 : 50) : 100}
-              minSize={shouldShowPanel ? (isAnimating ? 0 : isExpanded ? 0 : 30) : 100}
-              maxSize={shouldShowPanel ? (isAnimating ? 100 : isExpanded ? 0 : 65) : 100}
+              // Expanded: no constraint, so the frozen split survives the
+              // layer covering it (see `SessionPanelSide`).
+              minSize={shouldShowPanel ? (isAnimating || isExpanded ? 0 : 30) : 100}
+              maxSize={shouldShowPanel ? (isAnimating || isExpanded ? 100 : 65) : 100}
               collapsible={isExpanded || isAnimating}
               className={cn(
-                'relative flex w-full flex-col overflow-hidden bg-transparent transition-[padding] duration-300 ease-out',
-                isExpanded && !isAnimating && 'pointer-events-none opacity-0',
+                // `isolate`: the chat's own z-indexes (the site header is
+                // z-50) stay inside this panel, so the full-screen layer
+                // (z-30, `SessionPanelSide`) always paints above all of it.
+                'relative isolate flex w-full flex-col overflow-hidden bg-transparent transition-[padding] duration-(--duration-slow) ease-out',
+                isExpanded && 'pointer-events-none',
               )}
+              aria-hidden={isExpanded || undefined}
             >
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
             </ResizablePanel>
@@ -457,7 +463,7 @@ function SessionPanelHandle({ panel }: { panel: SessionPanelProps }) {
       withHandle={handleEnabled}
       disabled={!handleEnabled}
       className={cn(
-        'z-20 w-0 transition-opacity duration-300',
+        'z-20 w-0 transition-opacity duration-(--duration-slow)',
         'after:absolute after:inset-y-0 after:-left-1.5 after:w-3',
         handleEnabled ? '-right-3' : 'pointer-events-none',
         handleVisible
@@ -483,18 +489,37 @@ function SessionPanelSide({ panel }: { panel: SessionPanelProps }) {
     <ResizablePanel
       ref={sidePanelRef}
       defaultSize={shouldShowPanel ? (isEasy ? 35 : 50) : 0}
-      minSize={shouldShowPanel ? (isAnimating ? 0 : isExpanded ? 100 : 35) : 0}
-      maxSize={shouldShowPanel ? (isAnimating ? 100 : isExpanded ? 100 : 70) : 0}
+      minSize={shouldShowPanel ? (isAnimating || isExpanded ? 0 : 35) : 0}
+      maxSize={shouldShowPanel ? (isAnimating || isExpanded ? 100 : 70) : 0}
       collapsible={!isExpanded || isAnimating}
-      className={cn('bg-background relative overflow-hidden', !shouldShowPanel && 'hidden')}
+      className={cn(
+        'bg-background overflow-hidden',
+        // Full screen is a LAYER over the chat, not a split at 100%. The
+        // panel drops `relative`, so the content below positions against the
+        // panel group instead (the panel's own overflow cannot clip a child
+        // whose containing block is outside it). Same nodes, same parent: the
+        // open document does not remount. The split behind stays frozen
+        // (`usePanelGlide`), so the chat never squeezes under the viewer.
+        !isExpanded && 'relative',
+        !shouldShowPanel && 'hidden',
+      )}
     >
-      <div className={cn('bg-background h-full transition-[padding] duration-300 ease-out')}>
+      <div
+        className={cn(
+          'bg-background h-full transition-[padding] duration-(--duration-slow) ease-out',
+          // The backdrop fades over the chat while the detail card slides in
+          // on top of it (`DetailLayer`) — one layer arriving, nothing resizing.
+          isExpanded &&
+            'animate-in fade-in-0 absolute inset-0 z-30 duration-(--duration-normal)',
+        )}
+      >
         <div
           className={cn(
             'border-border flex h-full min-h-0 w-full min-w-0 flex-col overflow-clip',
             // Easy mode is chrome-free — the cards carry their own
-            // borders, so a panel border would just box a box.
-            !isEasy && 'border-l',
+            // borders, so a panel border would just box a box. A full-screen
+            // layer has no neighbour to separate from.
+            !isEasy && !isExpanded && 'border-l',
           )}
         >
           {effectivePanelHeader}

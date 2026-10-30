@@ -23,8 +23,62 @@ import { useState } from 'react';
 import { useTranslations } from '../../i18n';
 import { Button } from '../../primitives/button';
 import Hint from '../../primitives/hint';
+import { SessionDotMatrix } from '../../primitives/dot-matrix/session-dot-matrix';
 import { MermaidRenderer } from '../../primitives/mermaid-renderer';
+import { TextShimmer } from '../../primitives/text-shimmer';
 import { CopyButton } from '../copy-button';
+import { LinkEmbed } from './doc-embed';
+
+/**
+ * `uploading`: a pasted or dropped file shown from a local URL while it
+ * uploads (`data-uploading`). Never saved: `htmlToMarkdown` drops it.
+ */
+const uploadingAttribute = {
+  uploading: {
+    default: false,
+    parseHTML: (el: HTMLElement) => el.hasAttribute('data-uploading'),
+    renderHTML: (attrs: Record<string, unknown>) => (attrs.uploading ? { 'data-uploading': '' } : {}),
+  },
+};
+
+/** An image or video in the editor, with an "Uploading…" chip while its file uploads. */
+function MediaView({ node }: ReactNodeViewProps) {
+  const t = useTranslations('artifacts');
+  const { src, alt, title, uploading } = node.attrs as { src: string; alt?: string; title?: string; uploading: boolean };
+  return (
+    <NodeViewWrapper className="kx-media" data-uploading={uploading || undefined} data-drag-handle="">
+      {node.type.name === 'video' ? (
+        <video src={src} controls preload="metadata" />
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element -- a doc's own media, any origin
+        <img src={src} alt={alt ?? ''} title={title} />
+      )}
+      {uploading ? (
+        <span
+          contentEditable={false}
+          className="bg-popover text-foreground absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium shadow-sm"
+        >
+          {/* The session's working loader, as the image tool shows while it generates. */}
+          <SessionDotMatrix sessionId={src} size={14} className="shrink-0" />
+          <TextShimmer duration={1} spread={2} className="text-xs">
+            {t('uploading')}
+          </TextShimmer>
+        </span>
+      ) : null}
+    </NodeViewWrapper>
+  );
+}
+
+/** An image in a doc (`![alt](src)` in the file). */
+export const DocImage = Image.extend({
+  draggable: true,
+  addAttributes() {
+    return { ...this.parent?.(), ...uploadingAttribute };
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(MediaView);
+  },
+});
 
 /** A video in a doc: `<video src controls>`, kept as HTML in the Markdown file. */
 export const Video = Node.create({
@@ -33,7 +87,10 @@ export const Video = Node.create({
   atom: true,
   draggable: true,
   addAttributes() {
-    return { src: { default: null } };
+    return { src: { default: null }, ...uploadingAttribute };
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(MediaView);
   },
   parseHTML() {
     return [{ tag: 'video[src]' }];
@@ -84,9 +141,8 @@ function CodeBlockView({ node, editor, updateAttributes }: ReactNodeViewProps) {
               editor.isEditable ? (
                 <Hint label={editing ? t('diagramDone') : t('diagramEdit')} side="top">
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     size="icon-sm"
-                    className="bg-background/90 backdrop-blur-sm"
                     aria-label={editing ? t('diagramDone') : t('diagramEdit')}
                     aria-pressed={editing}
                     onClick={() => setEditing((v) => !v)}
@@ -103,10 +159,31 @@ function CodeBlockView({ node, editor, updateAttributes }: ReactNodeViewProps) {
   );
 }
 
-/** Code blocks; a ```mermaid block also shows its diagram under the source. */
+/**
+ * Code blocks; a ```mermaid block also shows its diagram under the source.
+ * The editor ignores events in the caption and the diagram: they belong to the
+ * language field, Copy and Edit. A doc's diagram has no fullscreen view.
+ */
 export const DocCodeBlock = CodeBlock.extend({
   addNodeView() {
-    return ReactNodeViewRenderer(CodeBlockView);
+    // The element a DOM node or event target is, or sits in (a text node's parent).
+    const elementOf = (target: unknown): Element | null =>
+      target instanceof Element ? target : ((target as { parentElement?: Element | null } | null)?.parentElement ?? null);
+    const controls = (target: unknown) => !!elementOf(target)?.closest('.kx-diagram, .kx-code > figcaption');
+    return ReactNodeViewRenderer(CodeBlockView, {
+      stopEvent: ({ event }) => controls(event.target),
+      // Changes in the controls (Edit, Copy, the language field), the focus and selection a click
+      // there moves included, are not the editor's. Otherwise Tiptap's own rule: only the code text
+      // (`data-node-view-content`) is the editor's.
+      ignoreMutation: ({ mutation }) => {
+        if (controls(mutation.target)) return true;
+        if (mutation.type === 'selection') return false;
+        const el = elementOf(mutation.target);
+        const content = el?.closest('[data-node-view-content]');
+        if (!content) return true;
+        return mutation.type === 'attributes' && el === content;
+      },
+    });
   },
 });
 
@@ -156,10 +233,11 @@ export function docExtensions({
     DocCodeBlock,
     SoftBreak,
     TableKit.configure({ table: { resizable: false } }),
-    Image,
+    DocImage,
     Video,
     TaskList,
     TaskItem.configure({ nested: true }),
+    LinkEmbed,
     Placeholder.configure({ placeholder: ({ node }) => placeholder(node) }),
   ];
 }

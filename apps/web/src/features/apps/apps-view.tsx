@@ -29,7 +29,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useDebounce, cn } from '@kortix/ui';
 import { createAppAccessSession, type App } from '@kortix/sdk';
 import { useAppAccess, useProjectApps, useProjectTriggers } from '@kortix/sdk/react';
-import { HardDrivesIcon, InfoIcon, PlusIcon } from '@phosphor-icons/react';
+import { HardDrivesIcon, InfoIcon, PlusIcon, SquaresFourIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
@@ -443,6 +443,7 @@ function AppsEmptyState() {
   // hint points at an agent, not at a CLI command.
   return (
     <EmptyState
+      icon={SquaresFourIcon}
       title={tI18nComplete.raw('textdb4764b8b3e7')}
       description={tI18nComplete.raw('texta7a8d2a5fb25')}
     />

@@ -138,7 +138,8 @@ function userDockerfileForTemplate(
   }
   if (template.image)
     return { text: `FROM ${template.image}\n`, source: `(image: ${template.image})` };
-  return { error: `Template "${template.slug}" declares neither a dockerfile nor an image.` };
+  // Neither: the platform base, built for this template, as the server builds it.
+  return { text: PLATFORM_DEFAULT_USER_DOCKERFILE, source: '(platform base)' };
 }
 
 /**

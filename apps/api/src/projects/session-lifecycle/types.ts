@@ -24,6 +24,7 @@ export type SessionInvocationSource =
   | 'system:approval-resume'
   | 'system:secret-submitted'
   | 'system:connector-connected'
+  | 'system:artifact-comment'
   /** A message another participant posted in a room the session joined (`projects/rooms`). */
   | 'system:room-message'
   /** The continuation of a turn a provider-originated `runtime_gone` cut short
@@ -85,6 +86,7 @@ export type SessionLifecycleStatus =
   | 'deleted';
 
 export interface CreateSessionCommand {
+  artifactId?: string;
   /** Internal retained-upload authority from an already accepted create command. */
   attachmentSourceCommandId?: string;
   /**

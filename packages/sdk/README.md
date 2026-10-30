@@ -593,6 +593,60 @@ Message retries keep the originating sandbox URL after navigation. A `404` or
 `410` message read stops automatic retries and preserves the cached transcript.
 An explicit reconciliation can recover the controller when the session returns.
 
+## Artifact comments and activity
+
+Projects enable `artifacts` and `artifact_comments` before using comments.
+`artifact_comments` defaults off. Agent tokens need `project.artifact.comment`.
+Every comment identifies its author as a user or a session.
+
+```ts
+const artifact = kortix.project(projectId).artifacts;
+const thread = await artifact.comments.create(artifactId, {
+  anchor: { type: 'none', version: entryVersion },
+  body: 'Confirm the forecast.',
+});
+await artifact.comments.reply(artifactId, thread.thread_id, { body: 'Confirmed.' });
+const handoff = await artifact.comments.send(artifactId, {
+  thread_ids: [thread.thread_id],
+  batch_id: crypto.randomUUID(),
+  agent: 'reviewer',
+});
+await artifact.comments.setStatus(artifactId, thread.thread_id, 'resolved');
+const threads = await artifact.comments.list(artifactId, { status: 'all' });
+const activity = await artifact.activity(artifactId, { limit: 50 });
+```
+
+Text anchors carry `version`, `quote`, `prefix`, and `suffix`. `quote`,
+`prefix`, and `suffix` each accept up to 32 UTF-16 code units. Point and region anchors carry a CSS selector,
+element-relative fractions, viewport width, and scroll position.
+
+The root exports `listArtifactComments`, `createArtifactComment`,
+`replyArtifactComment`, `setArtifactCommentStatus`, `editArtifactComment`,
+`deleteArtifactComment`, and `listArtifactActivity`. The write functions return
+the thread or comment. `getArtifactCommentThread(projectId, threadId)` resolves
+a bare thread id with the same visibility checks. Activity returns
+`{ items, next_cursor, older_versions }`; pass `next_cursor` as `cursor` to
+read the next page. Unknown historical save authors remain `System`.
+
+`sendArtifactComments` sends selected threads to an agent. Reuse `batch_id`
+when retrying the same handoff. An omitted id is generated once by the SDK.
+The result identifies the target session. A newly reserved session remains
+pending until queued creation succeeds. Read the thread's `agent_state` before
+opening it. `agent_error` distinguishes a delivery failure from the loop guard.
+Editing a comment updates its mentions without requesting another turn; use
+Send to agent to deliver an edited request.
+
+`ArtifactCommentMention` identifies a person (`kind: 'user', user_id`), an
+existing session (`kind: 'session', session_id, agent_name`), or a project agent
+(`kind: 'agent', agent_name`). Comments return the server-resolved mentions.
+
+`useArtifactComments(projectId, artifactId, { status?, enabled? })` returns the
+thread query and `create`, `reply`, `setStatus`, `edit`, `remove`, and `send` writes.
+Each successful write refetches mounted Comments and Activity queries.
+`useArtifactActivity(projectId, artifactId, { limit?, cursor?, enabled? })`
+returns one activity page. Both hooks poll every 10 seconds while mounted and
+visible. A missing project or Artifact id disables reads.
+
 ## The facade surface
 
 `createKortix(config)` returns one client. The table below is illustrative, not

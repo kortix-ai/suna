@@ -7,12 +7,13 @@ const escapeHtml = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '
 /**
  * Raw HTML in the Markdown shows as the text it is (`<package>` in a
  * sentence), so the editor keeps it and saves it back. The editor has no
- * node for an unknown tag and would drop it. A `<video>` is the one tag a
- * doc holds as HTML.
+ * node for an unknown tag and would drop it. A `<video>` and a link card
+ * (`<div class="kx-embed">`, doc-embed.tsx) are the tags a doc holds as HTML.
  */
+const DOC_HTML = /^(<\/?video\b|<div class="kx-embed">)/i;
 const parser = new Marked({
   renderer: {
-    html: ({ text }) => (/^<\/?video\b/i.test(text.trim()) ? text : escapeHtml(text)),
+    html: ({ text }) => (DOC_HTML.test(text.trim()) ? text : escapeHtml(text)),
   },
 });
 
@@ -115,6 +116,11 @@ function turndown(): TurndownService {
   td.remove(['label']);
   // A video stays an HTML tag inside the Markdown: Markdown has none.
   td.keep(['video']);
+  // A link card stays one line of HTML (doc-embed.tsx): a Markdown HTML block, served as written.
+  td.addRule('linkEmbed', {
+    filter: (node) => node.nodeName === 'DIV' && (node as HTMLElement).classList.contains('kx-embed'),
+    replacement: (_content, node) => `\n\n${(node as HTMLElement).outerHTML.replace(/\s*\n\s*/g, ' ')}\n\n`,
+  });
   service = td;
   return td;
 }
@@ -126,6 +132,8 @@ export function htmlToMarkdown(html: string): string {
   // A list item with one paragraph is one line: unwrap it, so the list stays tight.
   doc.querySelectorAll('li > p:only-of-type').forEach((p) => p.replaceWith(...Array.from(p.childNodes)));
   doc.querySelectorAll('colgroup').forEach((c) => c.remove());
+  // Media still uploading is a local preview: the file gets it once the upload lands.
+  doc.querySelectorAll('[data-uploading]').forEach((el) => el.remove());
   // Empty, so turndown adds no flanking space: the soft break saves as a bare newline.
   doc.querySelectorAll('span[data-soft-break]').forEach((s) => {
     s.textContent = '';

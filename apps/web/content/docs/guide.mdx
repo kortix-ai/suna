@@ -1,9 +1,9 @@
 ---
 title: Guide
-description: "A plain-language guide to Kortix, the open-source AI Operating System: every part of it, how it works and how to set it up."
+description: "A plain-language guide to Kortix CompanyOS: every part of it, how it works and how to set it up."
 ---
 
-Kortix is an open-source AI Operating System. It is two things:
+Kortix is an open-source CompanyOS. It is two things:
 
 1. **A backend framework and server for agents.** Your agents, their skills and their access are code in one git repo. Kortix runs them.
 2. **A workspace and command center for people.** Your team starts work, reviews and approves what agents do, and manages the agents from the Kortix apps.
@@ -477,11 +477,13 @@ Open **Review** → **Needs you**, follow the approval link, or use the approval
 The page shows what the app will receive, with private values hidden.
 </Step>
 <Step title="Decide">
-Choose **Approve** or **Deny**, with an optional note to the agent. The agent then continues.
+Choose **Approve** or **Deny**, with an optional note to the agent. Approve runs the action once, as the agent that asked, and Kortix resumes the agent with the result.
 </Step>
 </Steps>
 
 - An approval covers one exact action. A changed detail needs a new approval.
+- An approval runs the action once. The agent does not send it again. Kortix checks the project's rules again when it runs the action, and a **Block** rule still wins.
+- A script that signs in with a project token gets the same: Approve runs its call, and the script reads the outcome. A script with any other token must send the same call again within 15 minutes after approval.
 - A held action expires when nobody decides within 24 hours, unless your project sets another time.
 - A project manager, or the person who started the session, decides.
 - There is no "approve everything for this session". An action that must run unattended needs an **Allow** rule.
@@ -629,6 +631,30 @@ A sandbox template sets what is installed on the cloud computer and how large it
 #### Previews
 
 Any website or tool that the agent starts on its computer is reachable from outside it. The session page's preview panel offers common ports, such as **App preview** and **Frontend preview**, plus any other port. A preview asks you to sign in to Kortix first. To show it to someone outside Kortix, the session owner creates a public link.
+
+#### Desktop
+
+Every cloud computer has a desktop. Select the **Desktop** button in the session header to watch it live. The browser the agent uses opens there, so you see each page it visits. Kortix has control by default. Select **Take over** to click and type yourself, for example in the browser, the terminal, or the file manager on the dock. Select **Return control** to hand it back. The desktop resizes to fit the panel.
+
+A session on a custom sandbox template gets the desktop when the template's base image is Ubuntu 24.04.
+
+#### Residential IP address
+
+Some websites block or limit traffic from data centers. A sandbox template can send its web traffic through a residential IP address instead of the cloud computer's own address: set `residential_proxy: true` on the template in `kortix.yaml`, or check **Residential IP** on a template in **Customize** → **Settings** → **Sandbox templates**. Sessions on that template use it.
+
+```yaml
+sandbox:
+  default: web
+  templates:
+    - slug: web
+      residential_proxy: true
+```
+
+- Traffic through the residential address is billed per GB from your credits. It shows as **Residential proxy** in the credit history.
+- Kortix's own services and common package registries connect directly. That traffic is not billed as proxy traffic.
+- UDP is blocked while it is on, so QUIC and WebRTC cannot reveal the computer's own address. Browsers and tools fall back to TCP.
+- Sessions start only where your deployment offers a residential IP. Elsewhere they do not start; they never use the computer's own address instead.
+- `{ country: us }` instead of `true` picks the country of the address. The details are in the [kortix.yaml reference](/docs/developers#residential-ip).
 
 #### When you delete a session
 
@@ -914,6 +940,16 @@ A message from an allowed user starts a session. Anyone else gets a reply that s
 
 - **One chat is one session.** In a forum group, each topic is its own session. After `/new`, your next message starts a new session.
 - **Photos, files, voice notes and videos reach the agent.** Kortix downloads up to 8 MB of files per message into the session's workspace. In the session, the message shows each photo and file above its text, as a file you attach in Kortix shows. The agent sees a photo when the project has a model that reads images. A larger file does not arrive, and the agent tells you. No speech-to-text tool is preinstalled, so a voice note takes the agent about a minute: it installs one to transcribe the recording. Each photo of an album arrives as its own message, and a sticker arrives as its emoji.
+- **Commands run in Kortix, not in the agent.** `/help` (also `/start`) lists them. `/status` shows the chat's project, agent, model and session. `/stop` stops the agent's run. `/new` stops the run and starts a new conversation. `/model` lists the models, and `/model <id>` switches the chat to one. `/agent` lists the agents, and `/agent <name>` switches the chat to one. `/model default` and `/agent default` go back to the project default.
+- **Commands open menus.** `/model` and `/agent` without an argument list the choices as buttons, 8 per page, after **Project default** on the first page, with **More ›** and **‹ Back**. `/help` and `/status` add buttons that run a command, such as **New conversation**, **Stop** and **Change model**. A tap changes the menu message to the result.
+- **A menu works once.** A pick, **Stop** or **New conversation** takes the menu's buttons off. Only a menu Kortix sent takes taps. A tap on a used menu, on one whose option or session is gone, on a copy forwarded into another chat, or on a menu older than 30 days answers "This menu is out of date": send the command again.
+- **Kortix keeps 11 verbs:** `new`, `reset`, `stop`, `cancel`, `status`, `model`, `models`, `agent`, `agents`, `help` and `start`. Every other message goes to the agent, also one that starts with `/`, and a command for another bot, such as `/status@other_bot`.
+- **Any allowed user can run every command.** In a group, every member sees the reply, also members who are not allowed. A reply can show the project name, model ids and a link to the session; the link opens only for people with access to the project.
+- **`/stop` and `/new` stop the current run of the chat's session.** The exception is a run Kortix knows was started from the web or by an automation: it keeps going, and the reply links to it. A message sent before `/stop` can still run after it.
+- **`/model` and `/agent` apply to the whole chat.** The topics of a forum group share one model and one agent. A chat uses only models and provider keys the whole project shares, never one person's key or ChatGPT subscription. Messages you send after the reply use the new model. A new agent applies to the next session: send `/new`.
+- **A command in a photo's caption runs the command.** Kortix does not send the photo or file to the agent: send it again without the command.
+- **`/new` while the chat's session still starts** does not stop that session: it still answers your earlier message here. While Kortix is still creating it, it can also take your next message. The reply says so; send `/new` again.
+- **Kortix adds its commands to the bot's menu.** Connecting the bot puts them first and keeps every entry you set in @BotFather. When an entry of yours has the same name, or the menu would pass Telegram's 100 commands, Kortix leaves its own entry out. Disconnecting the bot, or connecting another bot in its place, removes only the entries Kortix added.
 - **Questions come with buttons.** When the agent asks one question with up to 6 options, Kortix posts one button per option. Several questions, a multi-select question or a longer list arrive as a numbered list. Tap a button, or reply with your own answer.
 - **A question follows the connector's rules.** Kortix posts it only where the agent may send a Telegram message without approval. Otherwise the agent asks in its own words, and that message waits for approval or is refused.
 - **Telegram has no account link.** The allowed-user list decides who may talk to the bot. Only an allowed user's tap counts.
@@ -1219,6 +1255,7 @@ Enterprise is not a plan. It turns on extra features on either plan: single sign
 | Models on your own key | Nothing for the first $1,000 of usage a month. After that, 5% of each request's list price. A ChatGPT subscription is never charged. With an Enterprise license, there is no fee. |
 | Session machines | The size the machine reserves, for the seconds it runs. App machines count too. |
 | Web tools | Each web search, image search or web scraping request that goes through Kortix. |
+| Residential proxy | The data a session sends and receives through a residential IP address, per GB. Only for sandbox templates that ask for it. See [Residential IP address](/docs/guide#residential-ip-address). |
 
 A stopped or sleeping machine costs nothing. The default machine costs about $0.11 an hour, about 11 credits.
 

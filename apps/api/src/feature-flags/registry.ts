@@ -424,6 +424,16 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'IAM: project.artifact.* leave the account permission catalog until a project of the account has it on.',
   },
   {
+    key: 'artifact_comments',
+    name: 'Artifact comments',
+    description: 'Discuss docs and pages in threads with people and agents. Requires Artifacts.',
+    stability: 'experimental',
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    enforcement: 'routes',
+    iamActions: ['project.artifact.comment'],
+  },
+  {
     key: 'email_channel',
     name: 'Email channel',
     description:
@@ -599,6 +609,7 @@ export function resolveFeatureFlag(metadata: unknown, key: FeatureFlagKey): bool
   const def = FLAG_BY_KEY[key];
   if (!def || !def.available()) return false;
   if (def.derivedFrom) return resolveFeatureFlag(metadata, def.derivedFrom);
+  if (key === 'artifact_comments' && !resolveFeatureFlag(metadata, 'artifacts')) return false;
   return explicitOverride(metadata, key) ?? def.platformDefault();
 }
 
