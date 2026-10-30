@@ -46,7 +46,7 @@ import {
 } from '@kortix/api-contract/multi-agent';
 import { projectSessions, projects, sessionLifecycleCommands, sessionPeerMessages } from '@kortix/db';
 import { peerMessagePromptText, type PeerMessageKind } from '@kortix/shared';
-import { and, desc, eq, gt, gte, inArray, isNotNull, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, lte, or, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import type { Actor } from '../../iam/actor';
 import { logger } from '../../lib/logger';
@@ -572,9 +572,12 @@ export async function recordResultExcerpt(sessionId: string): Promise<string | n
 }
 
 /**
- * The receiver's turn ended: every `notify_when_idle` message it owes sends
- * its sender one idle notice. The watch is taken in one UPDATE, so a second
- * end of the same turn sends nothing. Returns the notices sent.
+ * The receiver's turn ended: every sender with a `notify_when_idle` message
+ * the receiver has READ gets one idle notice. A watch counts only once its
+ * delivery row succeeded: a turn that ended before the message reached the
+ * box never read it, so that watch waits for the next turn end. The watches
+ * are taken in one UPDATE, so a second end of the same turn sends nothing.
+ * Several watches of one sender send one notice. Returns the notices sent.
  */
 export async function firePeerIdleNotices(input: {
   sessionId: string;
@@ -586,18 +589,28 @@ export async function firePeerIdleNotices(input: {
   // second statement drops the watches that lapsed unsent.
   const live = await db.update(sessionPeerMessages)
     .set({ idleNoticeUntil: null })
-    .where(and(eq(sessionPeerMessages.toSessionId, input.sessionId), gt(sessionPeerMessages.idleNoticeUntil, new Date())))
+    .where(and(
+      eq(sessionPeerMessages.toSessionId, input.sessionId),
+      gt(sessionPeerMessages.idleNoticeUntil, new Date()),
+      sql`exists (select 1 from ${sessionLifecycleCommands} where ${sessionLifecycleCommands.idempotencyKey} = 'peer:' || ${sessionPeerMessages.id} and ${sessionLifecycleCommands.status} = 'succeeded')`,
+    ))
     .returning();
   await db.update(sessionPeerMessages)
     .set({ idleNoticeUntil: null })
-    .where(and(eq(sessionPeerMessages.toSessionId, input.sessionId), isNotNull(sessionPeerMessages.idleNoticeUntil)));
+    .where(and(eq(sessionPeerMessages.toSessionId, input.sessionId), lte(sessionPeerMessages.idleNoticeUntil, new Date())));
   if (live.length === 0) return 0;
+  // One notice per sender: its newest watched message carries it.
+  const newestBySender = new Map<string, (typeof live)[number]>();
+  for (const row of live) {
+    const seen = newestBySender.get(row.fromSessionId);
+    if (!seen || row.createdAt > seen.createdAt) newestBySender.set(row.fromSessionId, row);
+  }
   const senders = await db.select().from(projectSessions)
     .where(and(inArray(projectSessions.sessionId, [...new Set(live.map((row) => row.fromSessionId))]), liveSql));
   const byId = new Map(senders.map((row) => [row.sessionId, row]));
   const what = input.outcome === 'error' ? `ended its turn with an error${input.errorName ? ` (${input.errorName})` : ''}` : 'finished its turn and is idle';
   let sent = 0;
-  for (const row of live) {
+  for (const row of newestBySender.values()) {
     const sender = byId.get(row.fromSessionId);
     if (!sender) continue;
     const text = peerMessagePromptText({

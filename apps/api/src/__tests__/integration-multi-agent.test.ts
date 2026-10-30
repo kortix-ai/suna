@@ -196,7 +196,10 @@ describe('cross-session messages', () => {
     expect(await commandsOf(quiet)).toHaveLength(1);
     await expect(decideHeldMessage({ receiver: await session(quiet), messageId: held.result.message!.id, approve: false })).rejects.toThrow();
 
-    // The receiver's turn ends: the sender gets one idle notice, once.
+    // A turn that ends before the message reached the box never read it: no notice yet.
+    expect(await firePeerIdleNotices({ sessionId: quiet, outcome: 'idle', excerpt: 'Too early.' })).toBe(0);
+    await db.execute(sql`UPDATE kortix.session_lifecycle_commands SET status = 'succeeded' WHERE session_id = ${quiet}`);
+    // The turn that read it ends: the sender gets one idle notice, once.
     expect(await firePeerIdleNotices({ sessionId: quiet, outcome: 'idle', excerpt: 'Done.' })).toBe(1);
     expect(await firePeerIdleNotices({ sessionId: quiet, outcome: 'idle', excerpt: 'Done.' })).toBe(0);
     const [idle] = (await commandsOf(LEAD)).filter((r) => r.source === 'system:peer-message');
