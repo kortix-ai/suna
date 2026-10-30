@@ -603,7 +603,9 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     '    && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\',
     '    && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\',
     '    && bash -n /usr/local/bin/kortix-entrypoint \\',
-    '    && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\',
+    // 0755, not +x: a build context staged under umask 007 (a PTXP box) copies the
+    // entrypoint as 0770, and +x left the `kortix` user unable to read it.
+    '    && chmod 0755 /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\',
     '        /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\',
     '    && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\',
     // Fail the build loudly if the CLI didn't land — every sandbox must ship it.

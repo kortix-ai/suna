@@ -145,7 +145,7 @@ RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
     && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\
     && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\
     && bash -n /usr/local/bin/kortix-entrypoint \\
-    && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\
+    && chmod 0755 /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\
         /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\
     && kortix --version \\
@@ -328,7 +328,7 @@ RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
     && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\
     && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\
     && bash -n /usr/local/bin/kortix-entrypoint \\
-    && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\
+    && chmod 0755 /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\
         /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\
     && kortix --version \\
