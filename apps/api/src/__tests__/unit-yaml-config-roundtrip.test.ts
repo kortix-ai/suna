@@ -178,3 +178,35 @@ ${triggerExtra}`;
     if (!('error' in fresh)) expect(fresh.pinnedSessionId).toBe(null);
   });
 });
+
+describe('a non-trigger edit keeps the file as written', () => {
+  const SOURCE = [
+    '# The project manifest: each comment explains a grant. Keep them.',
+    'default_agent: worker',
+    '',
+    '# Project skills, registered by name.',
+    'skills: {}',
+    '',
+    'agents:',
+    '  worker:',
+    '    tools: [read, bash]',
+    '    # Full checkout: this agent edits files.',
+    '    workspace: { project_repository: true }',
+    '    secrets: all',
+    '',
+  ].join('\n');
+
+  test('adding a skill and narrowing a grant change only those lines; every comment stays', () => {
+    const manifest = parseManifestString(SOURCE, 'kortix.yaml');
+    manifest.raw = {
+      ...manifest.raw,
+      skills: { 'release-notes': 'skills/release-notes' },
+      agents: { worker: { ...(manifest.raw.agents as any).worker, secrets: ['HELPDESK_TOKEN'] } },
+    };
+    const written = serializeManifest(manifest);
+    for (const comment of SOURCE.match(/#.*/g) ?? []) expect(written).toContain(comment);
+    expect(written).toContain('    tools: [read, bash]\n');
+    expect(written).toContain('    workspace: { project_repository: true }\n');
+    expect(parseManifestString(written, 'kortix.yaml').raw).toEqual(manifest.raw);
+  });
+});

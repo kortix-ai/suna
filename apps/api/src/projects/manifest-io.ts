@@ -7,6 +7,7 @@ import {
   manifestCandidatePaths,
   parseManifestText,
   renderManifest,
+  rewriteManifestText,
   serializeManifestObject,
   splitManifestByOrigin,
   usableManifest,
@@ -251,6 +252,11 @@ export function serializeManifest(manifest: ParsedManifest): string {
     const source = fixManifestText(manifest.source).text;
     const spliced = spliceTriggerEntriesIntoYaml(out, source);
     if (spliced !== null) return spliced;
+  }
+  // Any other edit is written into the file's own text: comments and untouched lines keep their bytes.
+  if (typeof manifest.source === 'string') {
+    const rewritten = rewriteManifestText(manifest.source, out);
+    if (rewritten !== null) return rewritten;
   }
   return serializeManifestObject(out);
 }
@@ -503,7 +509,9 @@ export function manifestWrites(manifest: ParsedManifest, fallbackPath?: string):
     files.push({ path: rootPath, content: rootContent(root.raw) });
   }
   for (const file of changedImports) {
-    files.push({ path: file.path, content: serializeManifestObject(file.raw) });
+    const text = manifest.imports.files.find((source) => source.path === file.path)?.text;
+    const rewritten = typeof text === 'string' ? rewriteManifestText(text, file.raw) : null;
+    files.push({ path: file.path, content: rewritten ?? serializeManifestObject(file.raw) });
   }
   files.push(...healed);
   const alsoExpect = imported.flatMap((file) =>

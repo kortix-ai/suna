@@ -20,6 +20,7 @@
  * named (`RETIRED_*_KEYS` in `./index.v3.ts`).
  */
 
+import { isDeepStrictEqual } from 'node:util';
 import { type Document, isMap, isScalar, isSeq, type Node, type Pair, parseDocument, Scalar, type YAMLMap } from 'yaml';
 import { DEPRECATED_KORTIX_PERMISSION_ALIASES, LEGACY_SANDBOX_KEYS, RETIRED_KORTIX_TOOLS } from './constants';
 
@@ -274,6 +275,55 @@ export function fixManifestText(text: string): { text: string; fixed: AppliedFix
   // No folding of long lines, no padding inside `[a, b]`.
   const rendered = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
   return { text: keepUnchangedLines(text, rendered), fixed };
+}
+
+/**
+ * `source` with its content replaced by `desired`, written into the file's own
+ * YAML document: every comment and every line the edit does not touch keep
+ * their bytes. Deprecated shapes are rewritten first (`fixManifestText`). Null
+ * when `source` does not parse or the result would not read as `desired`: the
+ * caller then renders `desired` from scratch.
+ */
+export function rewriteManifestText(source: string, desired: Record<string, unknown>): string | null {
+  const healed = fixManifestText(source).text;
+  const doc = parseDocument(healed);
+  if (doc.errors.length > 0 || !isMap(doc.contents)) return null;
+  syncNode(doc, doc.contents, desired);
+  const text = keepUnchangedLines(healed, doc.toString({ lineWidth: 0, flowCollectionPadding: false }));
+  const read = parseDocument(text);
+  if (read.errors.length > 0 || !isDeepStrictEqual(read.toJS(), desired)) return null;
+  return text;
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+/** Make `node` hold `value`: a map or a list of the same length is synced entry by entry, anything else replaced. */
+function syncNode(doc: Document, node: unknown, value: unknown): unknown {
+  if (isMap(node) && isPlainObject(value)) {
+    // An empty `{}` that gains entries is written as a block; a filled flow map keeps its style.
+    if (node.flow && node.items.length === 0 && Object.keys(value).length > 0) node.flow = false;
+    for (const pair of [...node.items]) {
+      const key = isScalar(pair.key) ? String(pair.key.value) : String(pair.key);
+      if (!Object.hasOwn(value, key)) node.delete(pair.key);
+    }
+    for (const [key, next] of Object.entries(value)) {
+      if (next === undefined) continue;
+      const pair = node.items.find((item) => (isScalar(item.key) ? String(item.key.value) : String(item.key)) === key);
+      if (!pair) node.set(doc.createNode(key), doc.createNode(next));
+      else pair.value = syncNode(doc, pair.value, next) as Node;
+    }
+    return node;
+  }
+  // An empty `[]` that gains items is written as a block list.
+  if (isSeq(node) && Array.isArray(value) && node.items.length === 0 && value.length > 0) return doc.createNode(value);
+  if (isSeq(node) && Array.isArray(value) && node.items.length === value.length) {
+    node.items = node.items.map((item, index) => syncNode(doc, item, value[index]) as Node);
+    return node;
+  }
+  const current = node && typeof node === 'object' && 'toJSON' in node ? (node as { toJSON: () => unknown }).toJSON() : node;
+  if (isDeepStrictEqual(current, value)) return node;
+  return doc.createNode(value);
 }
 
 /** A line without the whitespace the YAML renderer may change in a line it did not edit: runs, and space beside `[]{},:`. */
