@@ -164,6 +164,7 @@ export function telegramMessageEvent(
     type: TELEGRAM_MESSAGE_EVENT,
     time: new Date((message.date ?? Date.now() / 1000) * 1000).toISOString(),
     subject: telegramThreadId(message),
+    sequence: update.update_id,
     projectId,
     data: { message: message as unknown as Record<string, unknown> },
   };
@@ -196,7 +197,9 @@ export function telegramPressEvent(projectId: string, botId: string, update: Tel
     source: `telegram:${botId}`,
     type: TELEGRAM_PRESS_EVENT,
     time: new Date().toISOString(),
-    subject: message ? String(message.chat.id) : null,
+    // The topic's subject: a press waits for the messages sent before it there.
+    subject: message ? telegramThreadId(message) : null,
+    sequence: update.update_id,
     projectId,
     // Only what the press handler reads: no names, no question text.
     data: { callback_query: stored as unknown as Record<string, unknown> },
@@ -770,7 +773,9 @@ export function telegramEnvelope(message: TelegramMessage): ChannelEnvelope {
 }
 
 // One queue for every Telegram update: a replica on older code fails a press
-// (it has no message), and the retry reaches a replica that knows it.
+// (it has no message), and the retry reaches a replica that knows it. And one
+// order per chat or forum topic: a message and a button press run in
+// Telegram's update order (event-inbox.ts `sequence`).
 registerEventConsumer('telegram.', (event, run) =>
   event.type === TELEGRAM_PRESS_EVENT ? handleTelegramPress(event, run) : handleTelegramEvent(event, run));
 registerSessionPort('telegram', telegramPort);

@@ -14,13 +14,14 @@ const message: TelegramMessage = {
 };
 
 describe('telegram inbox envelope', () => {
-  test('a message becomes one event keyed by bot and update id, routed by chat', () => {
+  test('a message becomes one event keyed by bot and update id, routed and ordered by chat', () => {
     expect(telegramMessageEvent('p1', '555', { update_id: 9, message })).toEqual({
       id: '9',
       source: 'telegram:555',
       type: 'telegram.message.created',
       time: new Date(1_760_000_000_000).toISOString(),
       subject: '-100123',
+      sequence: 9,
       projectId: 'p1',
       data: { message: message as unknown as Record<string, unknown> },
     });
