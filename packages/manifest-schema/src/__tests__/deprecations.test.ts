@@ -22,6 +22,8 @@ const CASES: Record<string, [string, string, Record<string, unknown>]> = {
   'agent-repository-access': ['agents:\n  a:\n    prompt: x\n    tools: all\n    repository_access: true\n', 'agents.a.repository_access', { agents: { a: { prompt: 'x', tools: 'all', workspace: { project_repository: true } } } }],
   'agent-workspace-mode': ['agents:\n  a:\n    prompt: x\n    tools: all\n    workspace: branch\n', 'agents.a.workspace', { agents: { a: { prompt: 'x', tools: 'all', workspace: { project_repository: true } } } }],
   'sandbox-templates': ['sandboxes:\n  - slug: py\n    image: python:3.12-slim\n', 'sandboxes', { sandbox: { templates: [{ slug: 'py', image: 'python:3.12-slim' }] } }],
+  'sandbox-singular': ['sandbox:\n  dockerfile: Dockerfile\n  context: .\n', 'sandbox', { sandbox: { templates: [{ slug: 'project', dockerfile: 'Dockerfile', context: '.' }], default: 'project' } }],
+  'acp-runtimes': ['runtimes:\n  opencode:\n    harness: opencode\nagents:\n  a:\n    prompt: x\n    tools: all\n    runtime: opencode\n', 'runtimes', { agents: { a: { prompt: 'x', tools: 'all' } } }],
   'permission-renamed': ['agents:\n  a:\n    prompt: x\n    tools: all\n    kortix_permissions: [project.cr.open]\n', 'agents.a.kortix_permissions', { agents: { a: { prompt: 'x', tools: 'all', kortix_permissions: ['project.gitops.push'] } } }],
   'tool-retired': ['agents:\n  a:\n    prompt: x\n    tools: [web_search, kortix-connectors_call]\n', 'agents.a.tools', { agents: { a: { prompt: 'x', tools: ['web_search'] } } }],
 };

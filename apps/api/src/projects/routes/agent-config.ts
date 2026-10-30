@@ -325,6 +325,7 @@ export function registerAgentConfigRoutes(): void {
         const writes = manifestWrites(manifest, manifestPath);
         await commitMultipleFilesToBranch(gitProject, {
           files: writes.files,
+          deletes: writes.deletes,
           alsoExpect: writes.alsoExpect,
           message: `chore: set default agent to ${agentName}`,
           branch: loaded.row.defaultBranch,
@@ -513,7 +514,8 @@ export function registerAgentConfigRoutes(): void {
       // tree/commit, same helper the marketplace install/uninstall paths use
       // for their own atomic multi-file writes (marketplace-install-session.ts).
       const writes = manifestWrites(manifest, manifestPath);
-      const files = [...writes.files, ...(edit.extraWrite ? [edit.extraWrite] : [])];
+      // The edited prompt file wins over its healed copy (a legacy manifest's first write).
+      const files = [...writes.files.filter((file) => file.path !== edit.extraWrite?.path), ...(edit.extraWrite ? [edit.extraWrite] : [])];
       const message = edit.extraWrite
         ? `chore: update agent ${agentName} + prompt`
         : `chore: update agent ${agentName} governance`;
@@ -522,6 +524,7 @@ export function registerAgentConfigRoutes(): void {
         const gitProject = await withProjectGitAuth(loaded.row);
         await commitMultipleFilesToBranch(gitProject, {
           files,
+          deletes: writes.deletes,
           alsoExpect: writes.alsoExpect,
           message,
           branch: loaded.row.defaultBranch,

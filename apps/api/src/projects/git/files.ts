@@ -2,6 +2,8 @@
 // file reads, subtree archive streaming, and per-file/at-ref history.
 
 import {
+  parseLegacyToml,
+  convertLegacyManifestAsync,
   type ManifestImportReader,
   type ResolvedManifest,
   hasManifestImports,
@@ -479,11 +481,16 @@ export async function readManifestFromRepo(
   rootContent: string;
   /** Set only when the manifest declares `imports:`. */
   imports?: ResolvedManifest;
+  /** Set when the file is a legacy format (`kortix_version` 1 or 2, or `kortix.toml`): `content` is its conversion. */
+  legacy?: ManifestLegacy;
 } | null> {
   const normalized = candidatePaths
     .map((p) => normalizeTreePath(p))
     .filter((p): p is string => !!p);
   if (normalized.length === 0) return null;
+  // A legacy `kortix.toml` is read only when no YAML manifest exists.
+  const tomlPath = /\.ya?ml$/i.test(normalized[0]!) ? normalized[0]!.replace(/\.ya?ml$/i, '.toml') : null;
+  const lookup = tomlPath ? [...normalized, tomlPath] : normalized;
   const treeRef = validateRef(ref || project.defaultBranch);
   // A forced refresh here exists to make THIS ref's manifest current (the
   // per-prompt grant read is the hot caller), so the mirror only has to prove
@@ -495,11 +502,11 @@ export async function readManifestFromRepo(
   const treeSha = await resolveRefSha(repoPath, treeRef);
   const listed = treeSha
     ? await cachedGitRead(repoPath, treeSha, 'ls-tree-candidates', normalized.join('\u0000'), async () => {
-        const captured = await runGitCapture(['ls-tree', treeSha, '--', ...normalized], repoPath);
+        const captured = await runGitCapture(['ls-tree', treeSha, '--', ...lookup], repoPath);
         if (captured.exitCode !== 0) throw new Error(captured.stderr || 'ls-tree failed');
         return captured;
-      }).catch(() => runGitCapture(['ls-tree', treeRef, '--', ...normalized], repoPath))
-    : await runGitCapture(['ls-tree', treeRef, '--', ...normalized], repoPath);
+      }).catch(() => runGitCapture(['ls-tree', treeRef, '--', ...lookup], repoPath))
+    : await runGitCapture(['ls-tree', treeRef, '--', ...lookup], repoPath);
   if (listed.exitCode !== 0 && opts?.strictRef) {
     // A ref that does not resolve is NOT "the manifest is absent". Returning
     // null here made an unreadable mirror indistinguishable from a blank
@@ -520,7 +527,7 @@ export async function readManifestFromRepo(
     const match = line.match(/^\d+\s+blob\s+([0-9a-f]{40})\t(.+)$/);
     if (match?.[1] && match[2]) revisions.set(match[2], match[1]);
   }
-  const winner = normalized.find((p) => revisions.has(p));
+  const winner = normalized.find((p) => revisions.has(p)) ?? (tomlPath && revisions.has(tomlPath) ? tomlPath : undefined);
   if (!winner) return null;
   const revision = revisions.get(winner);
   if (!revision) return null;
@@ -542,13 +549,15 @@ export async function readManifestFromRepo(
     commit,
     rootContent: shown.stdout,
   };
+  const legacyFrom = winner === tomlPath ? 1 : legacyVersionLine(shown.stdout);
   // `imports` is a top-level key, so a manifest without that line cannot use
   // the feature — skip the extra YAML parse on the (hot) common path.
   if (
     opts?.resolveImports === false ||
+    winner === tomlPath ||
     !/^imports\s*:/m.test(shown.stdout)
   ) {
-    return found;
+    return legacyFrom ? convertLegacyRead(found, legacyFrom, repoPath, commit ?? treeRef) : found;
   }
   let rootRaw: Record<string, unknown>;
   try {
@@ -557,14 +566,75 @@ export async function readManifestFromRepo(
     // A root syntax error is the caller's to report, from the same text.
     return found;
   }
-  if (!hasManifestImports(rootRaw)) return found;
+  if (!hasManifestImports(rootRaw)) return legacyFrom ? convertLegacyRead(found, legacyFrom, repoPath, commit ?? treeRef) : found;
   // Read imports at the commit the root was read at, not the branch name: a
   // push landing between the two reads would otherwise mix two revisions.
   const imports = await resolveManifestImports(
     { path: winner, raw: rootRaw, revision },
     gitManifestImportReader(repoPath, commit ?? treeRef),
   );
-  return { ...found, content: serializeManifestObject(imports.raw), imports };
+  const merged = { ...found, content: serializeManifestObject(imports.raw), imports };
+  return legacyFrom ? convertLegacyRead(merged, legacyFrom, repoPath, commit ?? treeRef, imports.raw) : merged;
+}
+
+/** A legacy manifest as the latest shape, and what the conversion read (`legacy`). */
+export interface ManifestLegacy {
+  /** The format the file is in: 1 (`kortix.toml`) or 2. */
+  from: 1 | 2;
+  /** Repo path → the text a reader uses for it (prompts without their frontmatter). */
+  overlay: Record<string, string>;
+  /** What the latest shape has no place for. */
+  dropped: string[];
+  /** The files the conversion replaces (`kortix.toml`, the OpenCode config and agent files): the first write deletes them. */
+  deletes: string[];
+  /** Set when the legacy file could not be read at all (a TOML syntax error). */
+  error?: string;
+}
+
+/** `kortix_version: 1` or `2` on its own line, or null. */
+function legacyVersionLine(text: string): 1 | 2 | null {
+  const match = /^kortix_version[ \t]*:[ \t]*['"]?([12])['"]?[ \t]*(?:#.*)?$/m.exec(text);
+  return match ? (Number(match[1]) as 1 | 2) : null;
+}
+
+/**
+ * Convert a legacy manifest read: `content` becomes the latest shape, built from
+ * the root (or the merged `imports` document) and the files it points at, all
+ * read at `ref`. A TOML syntax error leaves an empty manifest and says why.
+ */
+async function convertLegacyRead<T extends { path: string; content: string; rootContent: string }>(
+  found: T,
+  from: 1 | 2,
+  repoPath: string,
+  ref: string,
+  merged?: Record<string, unknown>,
+): Promise<T & { legacy: ManifestLegacy }> {
+  let raw: Record<string, unknown>;
+  try {
+    raw = merged ?? (found.path.endsWith('.toml') ? parseLegacyToml(found.rootContent) : parseManifestText(found.rootContent));
+  } catch (err) {
+    const error = `${found.path}: ${err instanceof Error ? err.message : String(err)}`;
+    return { ...found, content: '', legacy: { from, overlay: {}, dropped: [], deletes: [], error } };
+  }
+  const cache = <V>(op: string, arg: string, load: () => Promise<V>) =>
+    /^[0-9a-f]{40}$/.test(ref) ? cachedGitRead(repoPath, ref, op, arg, load) : load();
+  const listed = await cache('legacy-ls-tree', '', () => runGitCapture(['ls-tree', '-r', '--name-only', '-z', ref], repoPath));
+  const paths = listed.exitCode === 0 ? listed.stdout.split('\0').filter(Boolean) : [];
+  const conversion = await convertLegacyManifestAsync(raw, from, found.path, paths, async (path) => {
+    if (!paths.includes(path)) return null;
+    const shown = await cache('legacy-show', path, () => runGitCapture(['show', `${ref}:${path}`], repoPath));
+    return shown.exitCode === 0 ? shown.stdout : null;
+  });
+  return {
+    ...found,
+    content: serializeManifestObject(conversion.raw),
+    legacy: {
+      from,
+      overlay: conversion.overlay,
+      dropped: conversion.dropped,
+      deletes: conversion.changes.filter((change) => change.action === 'delete').map((change) => change.path),
+    },
+  };
 }
 
 /** `ManifestImportReader` over a bare mirror at one fixed ref. */

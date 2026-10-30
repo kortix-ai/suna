@@ -6,6 +6,7 @@ import {
   isTable,
   manifestCandidatePaths,
   parseManifestText,
+  renderManifest,
   serializeManifestObject,
   splitManifestByOrigin,
   usableManifest,
@@ -92,6 +93,11 @@ export async function readManifest(
   if (!found) return null;
   const manifest = parseManifestString(found.content, found.path, found.sha, found.candidatePaths, found.commit);
   if (found.imports) manifest.imports = found.imports;
+  if (found.legacy) {
+    manifest.legacy = found.legacy;
+    // `source` is the legacy text: never splice an edit into it.
+    manifest.source = null;
+  }
   return manifest;
 }
 
@@ -184,8 +190,8 @@ export function parseManifestString(
  * validator's errors, so a refusal can name them.
  */
 export function runtimeManifest(manifest: ParsedManifest): ParsedManifest & { issues: ManifestIssue[] } {
-  // The root text carries line numbers; a merged `imports:` document has none to give.
-  const { issues } = validateManifest(!manifest.imports && typeof manifest.source === 'string' ? manifest.source : manifest.raw);
+  // The root text carries line numbers; a merged `imports:` document, and a converted legacy file, have none to give.
+  const { issues } = validateManifest(!manifest.imports && !manifest.legacy && typeof manifest.source === 'string' ? manifest.source : manifest.raw);
   const usable = usableManifest(manifest.raw, issues);
   const raw = structuredClone(manifest.raw);
   const on = (entry: unknown) => isTable(entry) && entry.enabled !== false;
@@ -464,6 +470,8 @@ function dataVerified(desired: Record<string, unknown>, text: string): string | 
 export interface ManifestWrites {
   files: Array<{ path: string; content: string }>;
   alsoExpect: Array<{ path: string; sha: string }>;
+  /** Files the same commit removes: the `kortix.toml` a healed legacy manifest replaces. */
+  deletes: string[];
 }
 
 /**
@@ -476,21 +484,30 @@ export interface ManifestWrites {
  * entry into it and make the next read fail on duplicate names.
  */
 export function manifestWrites(manifest: ParsedManifest, fallbackPath?: string): ManifestWrites {
-  const rootPath = manifest.path || fallbackPath || MANIFEST_FILENAME;
+  // A legacy file's first write saves the latest shape: `kortix.toml` becomes `kortix.yaml`,
+  // and each prompt file loses its frontmatter (the overlay). Harness files left behind are no longer read.
+  const rootPath = (manifest.path || fallbackPath || MANIFEST_FILENAME).replace(/\.toml$/i, manifest.legacy ? '.yaml' : '.toml');
+  const healed = manifest.legacy ? Object.entries(manifest.legacy.overlay).map(([path, content]) => ({ path, content })) : [];
+  // The same conversion `kortix validate --fix` writes: the replaced files go in this commit.
+  const written = new Set([rootPath, ...healed.map((file) => file.path)]);
+  const deletes = (manifest.legacy?.deletes ?? []).filter((path) => !written.has(path));
+  // A healed legacy root is written exactly as `kortix validate --fix` writes it.
+  const rootContent = (raw: Record<string, unknown>) => (manifest.legacy ? renderManifest(raw) : serializeManifest({ ...manifest, raw }));
   if (!manifest.imports) {
-    return { files: [{ path: rootPath, content: serializeManifest(manifest) }], alsoExpect: [] };
+    return { files: [{ path: rootPath, content: rootContent(manifest.raw) }, ...healed], alsoExpect: [], deletes };
   }
   const [root, ...imported] = splitManifestByOrigin(manifest.imports, manifest.raw);
   const files: ManifestWrites['files'] = [];
   const changedImports = imported.filter((file) => file.changed);
   if (root && (root.changed || changedImports.length === 0)) {
-    files.push({ path: rootPath, content: serializeManifest({ ...manifest, raw: root.raw }) });
+    files.push({ path: rootPath, content: rootContent(root.raw) });
   }
   for (const file of changedImports) {
     files.push({ path: file.path, content: serializeManifestObject(file.raw) });
   }
+  files.push(...healed);
   const alsoExpect = imported.flatMap((file) =>
     typeof file.revision === 'string' ? [{ path: file.path, sha: file.revision }] : [],
   );
-  return { files, alsoExpect };
+  return { files, alsoExpect, deletes };
 }

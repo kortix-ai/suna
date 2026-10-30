@@ -42,7 +42,7 @@ any time to sync. It's the everyday "save my work to the cloud" command.
 Every run:
   1. run the kortix validate checks          (skip with --no-verify)
   2. git add -A + commit                      (skipped if nothing changed)
-  3. offer to set any [env] secret not yet set (prompts you; skip with --no-env)
+  3. offer to set any env secret not yet set (prompts you; skip with --no-env)
   4. push the branch you're on → the same-named branch on the project's repo
   5. connect any declared connector that still needs auth   (skip with --no-connect)
 
@@ -88,7 +88,7 @@ Options:
   -m, --message <msg>  Commit message for the sync (default: "kortix: ship").
   --no-commit          Don't commit. Fail if the working tree is dirty.
   --no-verify          Skip the kortix validate checks.
-  --no-env             Skip the [env] secret check + prompts.
+  --no-env             Skip the env secret check + prompts.
   --no-connect         Skip the connector connect/credential prompts.
   -y, --yes            Don't prompt; use the active account, skip secret prompts.
   -n, --dry-run        Print what would happen, do nothing.

@@ -32,12 +32,12 @@ export type ProjectIssue = ManifestIssue & { file?: string };
 export function lintProject(
   parsed: Record<string, unknown> | null,
   manifestPath: string,
-  opts: { dockerfileLint?: boolean } = {},
+  opts: { dockerfileLint?: boolean; wiring?: boolean } = {},
 ): ProjectIssue[] {
   const root = dirname(manifestPath);
   return [
     ...(opts.dockerfileLint === false ? [] : lintSandboxDockerfiles(parsed, manifestPath)),
-    ...lintWiring(parsed, root),
+    ...(opts.wiring === false ? [] : lintWiring(parsed, root)),
     ...lintRepoSize(root),
   ];
 }

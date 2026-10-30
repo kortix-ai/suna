@@ -986,13 +986,18 @@ flow(
         if (issue?.severity !== 'error') throw new Error(`default_agent issue: ${r.text()}`);
       },
     );
-    await ctx.step('kortix_version: 2 → 200 valid:false with exactly one error, at kortix_version', async () => {
+    await ctx.step('kortix_version: 2 → 200 valid:true with one legacy-format warning; the converted body is validated', async () => {
+      type LegacyIssue = Issue & { fix?: string; line?: number };
       const r = await validate({ raw: 'kortix_version: 2\ndefault_agent: kortix\nagents:\n  kortix: {}\n' });
-      r.status(200).body().has('$.valid', false);
-      const issues = r.json<{ issues: Issue[] }>().issues;
-      if (issues.length !== 1 || issues[0]!.path !== 'kortix_version' || issues[0]!.severity !== 'error') {
-        throw new Error(`expected one retired-format error: ${JSON.stringify(issues)}`);
+      r.status(200).body().has('$.valid', true);
+      const issues = r.json<{ issues: LegacyIssue[] }>().issues;
+      if (issues.length !== 1 || issues[0]!.path !== 'kortix_version' || issues[0]!.severity !== 'warning' || issues[0]!.fix !== 'legacy-format' || issues[0]!.line !== 1) {
+        throw new Error(`expected one legacy-format warning at line 1: ${JSON.stringify(issues)}`);
       }
+      const broken = await validate({ raw: 'kortix_version: 2\ndefault_agent: nope\nagents:\n  kortix: {}\n' });
+      broken.status(200).body().has('$.valid', false);
+      const error = broken.json<{ issues: LegacyIssue[] }>().issues.find((i) => i.severity === 'error');
+      if (error?.path !== 'default_agent' || error.line !== 2) throw new Error(`expected an error at default_agent, line 2: ${broken.text()}`);
     });
     await ctx.step('NONMEMBER → 403/404', async () => {
       (await validate({ raw: 'agents: {}\n' }, ctx.P.NONMEMBER)).status([403, 404]);

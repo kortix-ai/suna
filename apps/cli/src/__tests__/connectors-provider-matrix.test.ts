@@ -57,7 +57,7 @@ async function runProviderCase(input: {
   const manifest = await readFile(manifestPath, 'utf8');
 
   expect(code).toBe(0);
-  expect(stdout).toContain(`Added [[connectors]] ${input.provider}-tools`);
+  expect(stdout).toContain(`Added connector ${input.provider}-tools`);
   expect(stderr).toBe('host cloud (https://api.kortix.com, not logged in)\n');
   expect(manifest.startsWith(prefix)).toBe(true);
   expect(manifest).not.toContain('kortix_version');

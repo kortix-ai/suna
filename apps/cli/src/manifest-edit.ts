@@ -1,8 +1,9 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { parseDocument, stringify as stringifyYaml } from 'yaml';
-import { fixManifestText, manifestCandidatePaths } from '@kortix/manifest-schema';
+import { fixManifestText, legacyFormatOf, manifestCandidatePaths, parseManifestText } from '@kortix/manifest-schema';
 import { resolveLocalManifestImports } from './manifest-imports.ts';
+import { legacyWriteRefusal } from './manifest-legacy.ts';
 
 type YamlDocument = ReturnType<typeof parseDocument>;
 type YamlComments = { commentBefore?: string | null; comment?: string | null };
@@ -25,12 +26,15 @@ function resolveManifest(cwd: string = process.cwd()): { path: string; exists: b
     const abs = resolve(cwd, candidate);
     if (existsSync(abs)) return { path: abs, exists: true };
   }
+  // A legacy kortix.toml still runs; the CLI edits only the current format.
+  if (existsSync(resolve(cwd, 'kortix.toml'))) throw new Error(legacyWriteRefusal('kortix.toml', 1));
   return { path: resolve(cwd, 'kortix.yaml'), exists: false };
 }
 
-
-/** Write a manifest file (the root or an imported one). */
+/** Write a manifest file (the root or an imported one). A legacy format is converted first, by `kortix validate --fix`. */
 function writeManifest(file: string, text: string): void {
+  const from = existsSync(file) ? legacyFormatOf(parseManifestText(readFileSync(file, 'utf8'))) : null;
+  if (from) throw new Error(legacyWriteRefusal(basename(file), from));
   writeFileSync(file, fixManifestText(text).text, 'utf8');
 }
 

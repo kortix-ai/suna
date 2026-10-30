@@ -7,11 +7,13 @@ import {
   ManifestImportError,
   type ResolvedManifest,
   hasManifestImports,
+  legacyFormatMessage,
   locateIssues,
   manifestCandidatePaths,
   validateManifest,
 } from '@kortix/manifest-schema';
 import { resolveLocalManifestImports } from './manifest-imports.ts';
+import { convertLocalLegacy, localLegacyManifest, readLegacyManifest } from './manifest-legacy.ts';
 import { type ProjectIssue, lintProject } from './project-lint.ts';
 import { C } from './style.ts';
 
@@ -81,6 +83,12 @@ export function manifestPath(cwd: string = process.cwd()): string {
  * syntax error — callers surface that as the "does it compile" failure.
  */
 export function loadLocalManifest(cwd: string = process.cwd()): LocalManifest | null {
+  // A legacy format (`kortix_version` 1 or 2, or `kortix.toml`) reads as the latest shape, as the platform runs it.
+  const legacy = localLegacyManifest(cwd);
+  if (legacy) {
+    const data = convertLocalLegacy(cwd, legacy).raw;
+    return { path: legacy.path, raw: readFileSync(legacy.path, 'utf8'), data, env: envSpecFromManifest(data) };
+  }
   const resolved = resolveLocalManifest(cwd);
   if (!resolved) return null;
   const raw = readFileSync(resolved.path, 'utf8');
@@ -112,6 +120,10 @@ export function validateManifestFile(
   opts: { dockerfileLint?: boolean } = {},
 ): { parsed: Record<string, unknown> | null; issues: FileIssue[] } {
   const text = readFileSync(path, 'utf8');
+  if (/\.toml$/i.test(path) || /^kortix_version\s*:/m.test(text)) {
+    const legacy = validateLegacyManifestFile(path, text, opts);
+    if (legacy) return legacy;
+  }
   let { parsed, issues } = validateManifest(text);
   let resolved: ResolvedManifest | null = null;
   if (parsed && hasManifestImports(parsed)) {
@@ -139,6 +151,42 @@ export function validateManifestFile(
     if (inFile.some((issue) => issue.line === undefined)) locateIssues(file === path ? text : readFileSync(file, 'utf8'), inFile);
   }
   return { parsed, issues: located };
+}
+
+/**
+ * `kortix validate` for a legacy file (`kortix_version` 1 or 2, or
+ * `kortix.toml`): what the platform runs is the converted manifest. One
+ * warning says it still works and `--fix` converts it, one per thing the
+ * conversion cannot carry over, then the converted manifest's issues and the
+ * project checks. The wiring check waits for `--fix`: the converted prompt
+ * files exist only after it. Null when the file is not a legacy format.
+ */
+function validateLegacyManifestFile(
+  path: string,
+  text: string,
+  opts: { dockerfileLint?: boolean },
+): { parsed: Record<string, unknown> | null; issues: FileIssue[] } | null {
+  const versionLine = text.split('\n').findIndex((line) => /^kortix_version\s*[:=]/.test(line));
+  const at = versionLine >= 0 ? { line: versionLine + 1, column: 1 } : {};
+  let legacy;
+  try {
+    legacy = readLegacyManifest(path);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { parsed: null, issues: [{ path: '<toml>', message: `Syntax error: ${detail}`, severity: 'error', file: path }] };
+  }
+  if (!legacy) return null;
+  const conversion = convertLocalLegacy(dirname(path), legacy);
+  const converted = validateManifest(conversion.raw).issues;
+  const issues: FileIssue[] = [
+    { path: 'kortix_version', message: legacyFormatMessage(legacy.from), severity: 'warning', fix: 'legacy-format', ...at, file: path },
+    ...conversion.dropped.map((note) => ({ path: 'kortix_version', message: `Not carried over: ${note}`, severity: 'warning' as const, ...at, file: path })),
+    ...converted.map((issue) => ({ ...issue, file: path })),
+    ...lintProject(conversion.raw, path, { ...opts, wiring: false }).map((issue) => ({ ...issue, file: issue.file ?? path })),
+  ];
+  // A YAML file keeps most of its keys: an issue points at the nearest one.
+  if (legacy.from === 2) locateIssues(text, issues.filter((issue) => issue.file === path));
+  return { parsed: conversion.raw, issues };
 }
 
 /**

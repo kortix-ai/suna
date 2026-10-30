@@ -354,14 +354,85 @@ describe('loadProjectConfig: manifest_health', () => {
     expect(config.manifest_raw).toBeNull();
   });
 
-  test('a repository with only a retired kortix.toml gets one error naming it', async () => {
-    await remove(['kortix.yaml', '.kortix/triggers/nightly.yaml'], 'remove the manifest');
-    await push({ 'kortix.toml': '[project]\nname = "legacy"\n' }, 'a retired manifest');
+  test('a YAML manifest beside a leftover kortix.toml warns that the TOML is not read', async () => {
+    await push({ 'kortix.toml': '[project]\nname = "leftover"\n' }, 'a leftover toml');
     const config = await loadProjectConfig(project);
-    expect(config.manifest_health.state).toBe('issues');
-    expect(config.manifest_health.path).toBe('kortix.toml');
+    expect(config.manifest_health.errors).toBe(0);
+    expect(config.manifest_health.issues).toEqual([
+      expect.objectContaining({ path: 'kortix.toml', severity: 'warning', file: 'kortix.toml', message: expect.stringContaining('no longer read') }),
+    ]);
+  });
+});
+
+// A legacy format still works: a `kortix_version: 2` or `kortix.toml` project is
+// read as the latest shape, its sessions run the converted agents, and the
+// first write saves the files in the latest shape.
+describe('a legacy format still works', () => {
+  const V2: Record<string, string> = {
+    'kortix.yaml': '# synthetic v2 project\nkortix_version: 2\ndefault_agent: lead\nopencode:\n  config_dir: harnesses/opencode\nagents:\n  lead:\n    file: agents/lead.md\n    connectors: all\n',
+    'agents/lead.md': '---\ndescription: Leads the work.\nmode: primary\n---\n\nYou lead.\n',
+    'harnesses/opencode/opencode.jsonc': '{ "permission": { "bash": "ask" } }\n',
+  };
+  const TOML: Record<string, string> = {
+    'kortix.toml': 'kortix_version = 1\n[project]\nname = "legacy"\n\n[[agents]]\nname = "ops"\n',
+    '.kortix/opencode/agents/ops.md': '---\nmode: primary\ndescription: Runs ops.\n---\nYou run ops.\n',
+  };
+  const replaceWith = async (files: Record<string, string>) => {
+    await remove(['kortix.yaml', '.kortix/triggers/nightly.yaml'], 'remove the current manifest');
+    await push(files, 'a legacy project');
+  };
+
+  test('kortix_version 2: one warning, no error, the converted agents listed', async () => {
+    await replaceWith(V2);
+    const config = await loadProjectConfig(project);
+    expect(config.manifest_health).toMatchObject({ path: 'kortix.yaml', errors: 0, warnings: 1 });
+    expect(config.manifest_health.issues[0]).toMatchObject({ path: 'kortix_version', severity: 'warning', fix: 'legacy-format', line: 2 });
+    expect(config.is_kortix_repo).toBe(true);
+    const lead = config.agents.find((agent) => agent.name === 'lead');
+    expect(lead).toMatchObject({ description: 'Leads the work.', mode: 'primary' });
+  });
+
+  test('kortix_version 2: a session compiles the agent with its prompt body, without the frontmatter', async () => {
+    await replaceWith(V2);
+    const { resolveCompiledAgentConfigForSession } = await import('../lib/compile-agent-config');
+    const compiled = JSON.parse((await resolveCompiledAgentConfigForSession(project))!) as { agent: Record<string, { prompt?: string; permission?: unknown }>; manifest_issues?: unknown };
+    expect(compiled.agent.lead?.prompt).toBe('You lead.\n');
+    // The opencode.jsonc permission is copied onto the agent; v2 granted no skill or subagent the agent omits.
+    expect(compiled.agent.lead?.permission).toMatchObject({ bash: 'ask', skill: 'deny', task: 'deny' });
+    expect(compiled.manifest_issues).toBeUndefined();
+  });
+
+  test('kortix_version 2: the first write saves the latest shape and the prompt bodies', async () => {
+    await replaceWith(V2);
+    const { readManifest, manifestWrites } = await import('../manifest-io');
+    const { validateManifest } = await import('@kortix/manifest-schema');
+    const manifest = (await readManifest(project))!;
+    expect(manifest.legacy?.from).toBe(2);
+    const { files, deletes } = manifestWrites(manifest);
+    expect(files.map((file) => file.path)).toEqual(['kortix.yaml', 'agents/lead.md']);
+    expect(deletes).toEqual(['harnesses/opencode/opencode.jsonc']);
+    expect(files[0]!.content).toStartWith('# yaml-language-server: $schema=https://kortix.com/schema/kortix.schema.json\n');
+    expect(files[0]!.content).not.toContain('kortix_version');
+    expect(validateManifest(files[0]!.content).issues).toEqual([]);
+    expect(files[1]!.content).toBe('You lead.\n');
+  });
+
+  test('kortix.toml: one warning, the folder agent listed, the first write is kortix.yaml', async () => {
+    await replaceWith(TOML);
+    const config = await loadProjectConfig(project);
+    expect(config.manifest_health).toMatchObject({ path: 'kortix.toml', errors: 0, warnings: 1 });
+    expect(config.manifest_health.issues[0]).toMatchObject({ path: 'kortix_version', fix: 'legacy-format', line: 1 });
+    expect(config.agents.find((agent) => agent.name === 'ops')).toMatchObject({ description: 'Runs ops.' });
+    const { readManifest, manifestWrites } = await import('../manifest-io');
+    const writes = manifestWrites((await readManifest(project))!);
+    expect(writes.files[0]!.path).toBe('kortix.yaml');
+    expect(writes.deletes).toEqual(expect.arrayContaining(['kortix.toml']));
+  });
+
+  test('kortix.toml with a syntax error: one error, the project runs My Kortix only', async () => {
+    await replaceWith({ 'kortix.toml': 'kortix_version = 1\n[project\n' });
+    const config = await loadProjectConfig(project);
     expect(config.manifest_health.errors).toBe(1);
-    expect(config.manifest_health.issues[0]).toMatchObject({ path: 'kortix.toml', severity: 'error' });
-    expect(config.manifest_health.issues[0]?.message).toContain('https://kortix.com/docs/developers#kortixyaml-reference');
+    expect(config.manifest_health.issues).toEqual(expect.arrayContaining([expect.objectContaining({ path: '<toml>', severity: 'error' })]));
   });
 });

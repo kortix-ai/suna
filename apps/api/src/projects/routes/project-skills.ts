@@ -142,7 +142,7 @@ export function registerProjectSkillsRoutes(): void {
         return c.json({ error: 'Skill folder contains manifest configuration' }, 409);
       }
       const result = await commitMultipleFilesToBranch(project, {
-        files: writes.files, deletes: plan.deletes, alsoExpect: writes.alsoExpect,
+        files: writes.files, deletes: [...plan.deletes, ...writes.deletes], alsoExpect: writes.alsoExpect,
         branch: project.defaultBranch, expectedCommit: commit,
         expectedFileRevision: { path: manifest.path || loaded.row.manifestPath || 'kortix.yaml', sha: manifest.revision, candidatePaths: manifest.candidatePaths },
         message: `chore: remove project skill ${body.data.folder}`,
@@ -269,6 +269,7 @@ export function registerProjectSkillsRoutes(): void {
       const writes = manifestWrites(manifest);
       await commitMultipleFilesToBranch(gitProject, {
         files: [...writes.files, { path, content }],
+        deletes: writes.deletes,
         alsoExpect: writes.alsoExpect,
         branch: gitProject.defaultBranch,
         expectedCommit: commit,

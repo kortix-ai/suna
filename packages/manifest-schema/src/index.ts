@@ -24,6 +24,7 @@ import { Cron } from 'croner';
 import { normalizeTriggerList } from './trigger-shape';
 import { Document, isMap, LineCounter, parseDocument } from 'yaml';
 import { type AppliedFix, applyDeprecations, DEPRECATIONS } from './deprecations';
+import { legacyFormatMessage, legacyFormatOf } from './legacy';
 import { areValidConditions, isValidMatcher, MAX_CONDITIONS_PER_POLICY } from './policy-rules';
 import { parseConnectorHeaders } from './connector-headers';
 import { normalizeImportPath } from './imports';
@@ -100,6 +101,19 @@ export {
 } from './format';
 
 export { slugifySlug } from './slug';
+export {
+  type LegacyChange,
+  type LegacyConversion,
+  type LegacyRepo,
+  convertLegacyManifest,
+  convertLegacyManifestAsync,
+  legacyFormatMessage,
+  legacyFormatOf,
+  parseJsonc,
+  parseLegacyToml,
+  renderManifest,
+  splitFrontmatter,
+} from './legacy';
 export { type AppliedFix, type Deprecation, DEPRECATIONS, applyDeprecations, fixManifestText } from './deprecations';
 export {
   type PolicyArgCondition,
@@ -330,7 +344,8 @@ const RESET_KEYS = new Set(['project', 'default_agent', 'runtime']);
  * so My Kortix can still start and fix the file. Pure: `raw` is not changed.
  */
 export function usableManifest(raw: Record<string, unknown> | null, issues: readonly ManifestIssue[]): Record<string, unknown> {
-  if (!raw) return {};
+  // A legacy file is usable only once converted (`convertLegacyManifest`); unconverted it means nothing here.
+  if (!raw || legacyFormatOf(raw)) return {};
   const out = structuredClone(raw);
   const drop = new Map<string, Set<string>>();
   for (const issue of issues) {
@@ -673,16 +688,23 @@ export function deprecationIssues(text: string): ManifestIssue[] {
 export const MANIFEST_DOCS_URL = 'https://kortix.com/docs/developers#kortixyaml-reference';
 
 /**
- * `kortix_version` is obsolete. `3` is ignored with a warning. Any other value
- * is a retired format: one error, and the body is not validated (its keys
- * would only add noise). Returns whether to validate the body.
+ * `kortix_version` is obsolete. `3` is the deprecation `drop-kortix-version`.
+ * `1` and `2` are the legacy formats: one warning, and the body is left to the
+ * converter (`./legacy.ts`), which needs the files the manifest points at. Any
+ * other value is one error. Returns whether to validate the body.
  */
 function validateVersionKey(value: unknown, issues: ManifestIssue[]): boolean {
   // `3` is the deprecation `drop-kortix-version`.
   if (value === undefined || value === null || value === 3) return true;
+  // A legacy format still works: a reader converts it with the files it points at (`./legacy.ts`).
+  const legacy = legacyFormatOf({ kortix_version: value });
+  if (legacy) {
+    issues.push({ path: 'kortix_version', message: legacyFormatMessage(legacy), severity: 'warning', fix: 'legacy-format' });
+    return false;
+  }
   issues.push({
     path: 'kortix_version',
-    message: `\`kortix_version: ${JSON.stringify(value)}\` is a retired manifest format. Kortix reads one kortix.yaml format with no version: remove \`kortix_version\` and rewrite the file (${MANIFEST_DOCS_URL}).`,
+    message: `\`kortix_version: ${JSON.stringify(value)}\` is not a format Kortix knows. kortix.yaml has no version: delete the line (${MANIFEST_DOCS_URL}).`,
     severity: 'error',
   });
   return false;
@@ -691,7 +713,7 @@ function validateVersionKey(value: unknown, issues: ManifestIssue[]): boolean {
 export function validateProject(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return; // optional
   if (!isTable(node)) {
-    issues.push({ path, message: '[project] must be a table.', severity: 'error' });
+    issues.push({ path, message: '`project` must be a map.', severity: 'error' });
     return;
   }
   expectStringOrAbsent(node.name, `${path}.name`, issues);
@@ -701,7 +723,7 @@ export function validateProject(node: unknown, path: string, issues: ManifestIss
 export function validateEnv(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return;
   if (!isTable(node)) {
-    issues.push({ path, message: '[env] must be a table.', severity: 'error' });
+    issues.push({ path, message: '`env` must be a map.', severity: 'error' });
     return;
   }
   for (const key of ['required', 'optional'] as const) {
@@ -736,7 +758,7 @@ export function validateEnv(node: unknown, path: string, issues: ManifestIssue[]
     if (!['required', 'optional'].includes(key)) {
       issues.push({
         path: `${path}.${key}`,
-        message: `Unknown [env] key "${key}". Expected one of: required, optional.`,
+        message: `Unknown \`env\` key "${key}". Expected one of: required, optional.`,
         severity: 'warning',
       });
     }
@@ -754,7 +776,7 @@ export function validateSandbox(node: unknown, path: string, issues: ManifestIss
   if (!isTable(node)) {
     issues.push({
       path,
-      message: '`[sandbox]` must be a table holding `[[sandbox.templates]]` entries.',
+      message: '`sandbox` must be a map holding a `sandbox.templates` list.',
       severity: 'error',
     });
     return;
@@ -767,7 +789,7 @@ export function validateSandbox(node: unknown, path: string, issues: ManifestIss
   if (stray.length > 0) {
     issues.push({
       path,
-      message: `The singular \`[sandbox]\` table is no longer supported. Define each image under \`[[sandbox.templates]]\` (array of tables) with a named slug, and remove the \`${stray.join('`, `')}\` key${stray.length === 1 ? '' : 's'} from \`[sandbox]\`.`,
+      message: `Image keys set on \`sandbox\` itself (\`${stray.join('`, `')}\`) are not read next to \`sandbox.templates\`. Move them into a \`sandbox.templates\` entry with a slug.`,
       severity: 'error',
     });
   }
@@ -798,7 +820,7 @@ export function validateSandbox(node: unknown, path: string, issues: ManifestIss
       if (!slugs.includes(want)) {
         issues.push({
           path: `${path}.default`,
-          message: `\`default\` = "${want}" does not match any \`[[sandbox.templates]]\` slug (or the reserved "${RESERVED_SANDBOX_SLUG}").`,
+          message: `\`default\` = "${want}" does not match any \`sandbox.templates\` slug (or the reserved "${RESERVED_SANDBOX_SLUG}").`,
           severity: 'error',
         });
       }

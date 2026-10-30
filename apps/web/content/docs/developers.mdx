@@ -790,11 +790,22 @@ Kortix refuses to write a file with an error, an unknown key included: `kortix s
 | An agent or a trigger | That agent or trigger is off. A session that names the agent fails with an error that names the issue. A trigger that is off does not fire. |
 | A connector, App, skill, tool, command, extension, space or sandbox template | That entry is not available. |
 | `project` or `default_agent` | The key takes its default. |
-| Any other key (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, `builtin_agents`), a YAML syntax error, or a retired format | Only My Kortix runs, so that it can fix the file. |
+| Any other key (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, `builtin_agents`), a YAML syntax error, or an unknown `kortix_version` | Only My Kortix runs, so that it can fix the file. |
 
 Each rule takes access away. No error gives an agent more than the file grants.
 
-`kortix_version` with a value other than `3` marks a retired format. `kortix validate` reports one error with a link to this reference, and Kortix reads nothing else in the file. Rewrite the file in the format on this page, or ask My Kortix to do it.
+### Older formats
+
+A project made before this format still works, with no change:
+
+- a `kortix.yaml` with `kortix_version: 2`;
+- a `kortix.toml` (`kortix_version = 1`) with no `kortix.yaml` beside it.
+
+Kortix reads the file and the files it points at as the format on this page: each agent's `.md` frontmatter becomes the agent's keys, its body the prompt, and the OpenCode `permission` and commands become `permission` and `commands`. The settings that have no place in this format, such as an OpenCode plugin, are listed as warnings. `kortix validate` reports one warning, `fix: legacy-format`, and then validates the converted file.
+
+`kortix validate --fix` converts the files for good: it writes `kortix.yaml`, keeps only the prompt in each agent `.md`, and deletes `kortix.toml` and the OpenCode files it replaces. The first change Kortix itself writes to the project, such as a new trigger, makes the same conversion in that commit. The other `kortix` commands that edit `kortix.yaml` ask you to run `kortix validate --fix` first.
+
+`kortix_version` with any other value is an error, and only My Kortix runs.
 
 ### Deprecated keys
 
@@ -802,6 +813,7 @@ Each row still works. `kortix validate --fix` writes the replacement with the sa
 
 | Fix id | Deprecated | Write instead |
 | --- | --- | --- |
+| `legacy-format` | A `kortix_version: 2` file, or a `kortix.toml` | The converted files: run `kortix validate --fix` (see [Older formats](#older-formats)). |
 | `drop-kortix-version` | `kortix_version: 3` | Nothing: delete the line. |
 | `tools-explicit` | An agent without `tools` (it gets every tool) | `tools: all`, or the list of tools it needs |
 | `agent-disable` | `disable: true` | `enabled: false` |
@@ -811,6 +823,8 @@ Each row still works. `kortix validate --fix` writes the replacement with the sa
 | `agent-repository-access` | `repository_access: true` | `workspace: { project_repository: true }` |
 | `agent-workspace-mode` | `workspace: branch` or `workspace: runtime` | `workspace: { project_repository: true }` or `false` |
 | `sandbox-templates` | The top-level `sandboxes` list | `sandbox.templates` |
+| `sandbox-singular` | Image keys (`image`, `dockerfile`, `context`, …) set on `sandbox` itself | One `sandbox.templates` entry, named as `sandbox.default` |
+| `acp-runtimes` | `runtimes`, and an agent's `runtime` and `agent` | Nothing: delete them. Every session runs pi. |
 | `permission-renamed` | A renamed Kortix permission, such as `project.cr.open` | Its new name (`kortix validate --scopes` lists them) |
 | `tool-retired` | A retired Kortix tool name in `tools` | Nothing: the name is removed. |
 

@@ -1,6 +1,6 @@
 ---
 title: kortix.yaml without versions
-status: building on branch `one-schema` (hard cut, Marko 2026-10-30); the soft-cut plan below is superseded where the 2026-10-30 section says so
+status: building on branch `one-schema` (PR #11236): one format, older formats read converted; the plan below is superseded where the 2026-10-30 sections say so
 owner: Marko
 updated: 2026-10-30
 ---
@@ -10,6 +10,28 @@ updated: 2026-10-30
 `kortix.yaml` loses its version line. One schema describes the latest shape,
 every reader accepts every old shape, and every write saves the latest shape.
 Validation says, per line, what is supported and what to change.
+
+## 2026-10-30, later: older formats still work (supersedes the hard cut's "Old files" row)
+
+A census of dev (1,527 projects, read-only, counts only) before the merge:
+675 on `kortix_version: 2`, 91 with only a `kortix.toml`, 715 with no
+manifest, 46 on the v3 shape. 188 of the 766 legacy projects belong to real
+accounts and 24 were active in the last 30 days. Prod received the v3 starter
+only in v0.14.11 (2026-10-30), so nearly every prod project is v2 or TOML. The
+hard cut would have turned off their agents, so it is reversed:
+
+- Read: `readManifestFromRepo` converts a legacy file (`legacy.ts`, the old
+  `kortix migrate` planner) with the files it points at. Sessions run the
+  converted agents; `manifest_health` has one `legacy-format` warning, one
+  warning per setting with no place in the format, and the converted issues.
+- Write: the first Kortix write saves the converted files in that commit
+  (kortix.yaml, prompt bodies, deletes of `kortix.toml` and the OpenCode
+  files). `kortix validate --fix` writes the same conversion. The other CLI
+  writers refuse a legacy file.
+- Checked: all 54 historical starter and marketplace templates convert with 0
+  errors; real sessions on a v2 and a TOML project ran the converted agent.
+- Retire the converter only when a census finds 0 legacy files on every
+  environment.
 
 ## 2026-10-30: hard cut (supersedes "Old files", "Cut" and WP2)
 
@@ -30,10 +52,9 @@ necessary for self fixing".
 | JSON Schema | generated from zod | one hand-kept document (`/schema/kortix.schema.json`, alias `kortix.v3.schema.json`); the zod single source (WP1) is the next PR |
 
 Still open after `one-schema`: WP1 (one zod source for validator, types, JSON
-Schema, docs), comment-keeping writes, `kortix validate --fix`, validators for
-the top-level `policy`, `policies` and `approvals` keys (today only
-`apps/api/src/projects/policies.ts` reads them), and removing the `V2`/`V3`
-suffixes from names.
+Schema, docs), comment-keeping API writes, and removing the `V2`/`V3`
+suffixes from names. Built on `one-schema` since: `kortix validate --fix`,
+the deprecation table, validators for `policy`, `policies` and `approvals`.
 
 ## Problem (verified on `project-admin`, 2026-10-27)
 

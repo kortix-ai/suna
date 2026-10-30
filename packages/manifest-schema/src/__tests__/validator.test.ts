@@ -27,16 +27,20 @@ describe('validateManifest — syntax', () => {
 });
 
 describe('validateManifest — kortix_version (obsolete)', () => {
-  test('rejects a string kortix_version', () => {
-    expect(summarize('kortix_version: "1"').errorPaths).toContain('kortix_version');
+  test('a quoted legacy version is the legacy format too: a warning, not an error', () => {
+    const result = validateManifest('kortix_version: "1"');
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual([expect.objectContaining({ path: 'kortix_version', severity: 'warning', fix: 'legacy-format' })]);
   });
 
   test('rejects a decimal kortix_version', () => {
     expect(summarize('kortix_version: 1.5').errorPaths).toContain('kortix_version');
   });
 
-  test('rejects a retired version', () => {
-    expect(summarize('kortix_version: 2').errorPaths).toContain('kortix_version');
+  test('kortix_version 2 still works: one legacy-format warning', () => {
+    const result = validateManifest('kortix_version: 2');
+    expect(result.valid).toBe(true);
+    expect(result.issues.map((i) => [i.severity, i.fix])).toEqual([['warning', 'legacy-format']]);
   });
 
   test('accepts a missing kortix_version', () => {
@@ -270,12 +274,14 @@ sandbox:
     expect(errorPaths).toContain('sandbox.templates[0].dockerfile');
   });
 
-  test('rejects legacy singular sandbox table', () => {
-    const { errorPaths } = summarize(`
+  test('reads the singular sandbox table as one template named as the default (deprecated)', () => {
+    const result = validateManifest(`
 sandbox:
   dockerfile: .kortix/Dockerfile
 `);
-    expect(errorPaths).toContain('sandbox');
+    expect(result.valid).toBe(true);
+    expect(result.issues.find((i) => i.path === 'sandbox')).toMatchObject({ severity: 'warning', fix: 'sandbox-singular' });
+    expect(result.parsed?.sandbox).toEqual({ templates: [{ slug: 'project', dockerfile: '.kortix/Dockerfile' }], default: 'project' });
   });
 
   test('accepts sandbox.default pointing at a defined template', () => {

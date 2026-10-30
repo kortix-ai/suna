@@ -5,7 +5,8 @@
 // register is never listed.
 
 import {
-  MANIFEST_DOCS_URL,
+  legacyFormatMessage,
+  locateIssues,
   ManifestImportError,
   type ManifestIssue,
   manifestCandidatePaths,
@@ -23,7 +24,7 @@ import { type LoadedAgents, extractAgents } from '../agents';
 import { parse as parseYaml } from 'yaml';
 import { listManagedSkills } from '../../skills/catalog';
 import { runtimeManifest } from '../manifest-io';
-import { type ManifestHealth, manifestHealthOf, manifestHealthWithout } from '../lib/manifest-health';
+import { type FileManifestIssue, type ManifestHealth, manifestHealthOf, manifestHealthWithout } from '../lib/manifest-health';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
@@ -217,8 +218,11 @@ async function readProjectManifest(
 }
 
 /**
- * `manifest_health` of what `readProjectManifest` read. A project with only a
- * retired `kortix.toml` (no YAML manifest) gets one error saying so.
+ * `manifest_health` of what `readProjectManifest` read. A legacy file
+ * (`kortix_version` 1 or 2, or `kortix.toml`) is read converted: one warning
+ * that it still works and `--fix` converts it, one per thing the conversion
+ * could not carry over, and the issues of the converted manifest. A YAML
+ * manifest beside a leftover `kortix.toml` warns that the TOML is not read.
  */
 function projectManifestHealth(
   read: Awaited<ReturnType<typeof readProjectManifest>>,
@@ -226,19 +230,35 @@ function projectManifestHealth(
   manifestPath: string,
 ): ManifestHealth {
   if (read.failed) return manifestHealthWithout('unreadable');
-  if (!read.found) {
-    const toml = manifestCandidatePaths(manifestPath)[0]!.replace(/\.yaml$/, '.toml');
-    if (!repoPaths.has(toml)) return manifestHealthWithout('missing');
-    return manifestHealthOf(toml, [{
-      path: toml,
-      message: `${toml} is a retired format and is not read: the project runs its built-in agents only. Move the configuration to kortix.yaml. See ${MANIFEST_DOCS_URL}`,
-      severity: 'error',
-    }]);
-  }
+  if (!read.found) return manifestHealthWithout('missing');
   const found = read.found;
+  if (found.legacy) {
+    const { legacy } = found;
+    const versionLine = found.rootContent.split('\n').findIndex((line) => /^kortix_version\s*[:=]/.test(line));
+    const converted = legacy.error ? [] : validateManifest(parseManifestText(found.content)).issues;
+    // A YAML file keeps most of its keys: an issue points at the nearest one.
+    if (legacy.from === 2) locateIssues(found.rootContent, converted);
+    const issues: FileManifestIssue[] = [
+      {
+        path: 'kortix_version',
+        message: legacyFormatMessage(legacy.from),
+        severity: 'warning',
+        fix: 'legacy-format',
+        ...(versionLine >= 0 ? { line: versionLine + 1, column: 1 } : {}),
+      },
+      ...(legacy.error ? [{ path: '<toml>', message: `Syntax error: ${legacy.error}. Only My Kortix runs until it is fixed.`, severity: 'error' as const }] : []),
+      ...legacy.dropped.map((note) => ({ path: 'kortix_version', message: `Not carried over: ${note}`, severity: 'warning' as const, ...(versionLine >= 0 ? { line: versionLine + 1, column: 1 } : {}) })),
+      ...converted,
+    ];
+    return manifestHealthOf(found.path, read.importError ? [read.importError, ...issues] : issues);
+  }
+  const leftoverToml = manifestCandidatePaths(manifestPath)[0]!.replace(/\.ya?ml$/, '.toml');
+  const tomlNote: FileManifestIssue[] = found.path.endsWith('.toml') || !repoPaths.has(leftoverToml)
+    ? []
+    : [{ path: leftoverToml, message: `${leftoverToml} is no longer read: ${found.path} is the manifest. Delete it.`, severity: 'warning', file: leftoverToml }];
   if (!found.imports) {
     const { issues } = validateManifest(found.content);
-    return manifestHealthOf(found.path, read.importError ? [read.importError, ...issues] : issues);
+    return manifestHealthOf(found.path, [...(read.importError ? [read.importError] : []), ...issues, ...tomlNote]);
   }
   // A merged `imports:` document is already in the latest shape and has no lines:
   // each file reports its own deprecated shapes, at its own lines.
@@ -247,7 +267,7 @@ function projectManifestHealth(
     return text ? deprecationIssues(text).map((issue) => (file.path === found.path ? issue : { ...issue, file: file.path })) : [];
   });
   const { issues } = validateManifest(found.imports.raw);
-  return manifestHealthOf(found.path, [...(read.importError ? [read.importError] : []), ...issues, ...deprecated]);
+  return manifestHealthOf(found.path, [...(read.importError ? [read.importError] : []), ...issues, ...deprecated, ...tomlNote]);
 }
 
 function manifestMap(value: unknown): Record<string, unknown> {

@@ -19,8 +19,9 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, relative, resolve } from 'node:path';
 import { DEPRECATED_KORTIX_PERMISSION_ALIASES, fixManifestText, GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
-import { type FileIssue, formatIssueLine, resolveLocalManifest, validateManifestFile } from '../manifest.ts';
+import { type FileIssue, formatIssueLine, validateManifestFile } from '../manifest.ts';
 import { resolveLocalManifestImports } from '../manifest-imports.ts';
+import { applyLocalLegacy, convertLocalLegacy, localManifestFile, readLegacyManifest } from '../manifest-legacy.ts';
 import { C, help, status } from '../style.ts';
 import { takeFlags } from '../command-argv.ts';
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
@@ -41,10 +42,13 @@ Exit 1 on any error; warnings alone exit 0.
 
 A deprecated shape still works and is a warning with \`fix: <id>\`. \`--fix\`
 rewrites every deprecated shape to the latest one, in kortix.yaml and in the
-files it imports, keeping comments, then validates.
+files it imports, keeping comments, then validates. An older format
+(\`kortix_version: 2\`, or a kortix.toml) still works too: it is validated as
+converted, and \`--fix\` converts the files (kortix.toml becomes kortix.yaml,
+each agent .md keeps only its prompt).
 
 Options:
-  --file <path>          Validate this file instead of ./kortix.yaml.
+  --file <path>          Validate this file instead of ./kortix.yaml (or kortix.toml).
   --fix                  Rewrite deprecated shapes to the latest shape first.
   --no-dockerfile-lint   Skip the sandbox Dockerfile checks (manifest only).
   --json                 Emit a machine-readable JSON report (no color).
@@ -63,6 +67,40 @@ function describeAgents(parsed: Record<string, unknown> | null): string {
     ([name, block]) => `  ${C.cyan}${name}${C.reset}  ${keys.map((key) => `${key}=[${show(block?.[key])}]`).join('  ')}`,
   );
   return lines.length === 0 ? '' : `\n${C.dim}What each agent enables:${C.reset}\n${lines.join('\n')}\n`;
+}
+
+/**
+ * `--fix` for a legacy file (`kortix_version` 1 or 2, or `kortix.toml`):
+ * write the converted project, and return the manifest to validate next. A
+ * file in the current format is returned as is. Null when the legacy file
+ * cannot be read.
+ */
+function convertLegacyFile(filePath: string, json: boolean): string | null {
+  const root = dirname(filePath);
+  let legacy;
+  try {
+    legacy = readLegacyManifest(filePath);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    if (json) process.stdout.write(JSON.stringify({ valid: false, error: 'read_failed', detail }) + '\n');
+    else process.stderr.write(`${status.err(`Failed to read ${filePath}: ${detail}`)}\n`);
+    return null;
+  }
+  if (!legacy) return filePath;
+  const conversion = convertLocalLegacy(root, legacy);
+  const touched = applyLocalLegacy(root, legacy, conversion);
+  const manifest = resolve(root, conversion.changes[0]!.path);
+  if (!json) {
+    const shown = relative(process.cwd(), legacy.path) || basename(legacy.path);
+    const target = relative(process.cwd(), manifest) || basename(manifest);
+    process.stdout.write(`${status.ok(`${shown}: converted to ${target === shown ? '' : `${target}, `}the current format`)}\n`);
+    for (const change of conversion.changes) {
+      if (!touched.includes(change.path)) continue;
+      process.stdout.write(`  ${C.dim}${change.action === 'delete' ? 'deleted' : 'wrote'} ${change.path}${change.note ? ` (${change.note})` : ''}${C.reset}\n`);
+    }
+    for (const note of conversion.dropped) process.stdout.write(`  ${C.yellow}not carried over${C.reset} ${note}\n`);
+  }
+  return manifest;
 }
 
 export function runValidate(argv: string[]): number {
@@ -94,10 +132,10 @@ export function runValidate(argv: string[]): number {
     return 0;
   }
 
-  // Explicit --file wins; otherwise the project's kortix.yaml (or kortix.yml).
-  const filePath = flags.file
+  // Explicit --file wins; otherwise the project's kortix.yaml (or kortix.yml, or a legacy kortix.toml).
+  let filePath = flags.file
     ? resolve(process.cwd(), flags.file)
-    : (resolveLocalManifest(process.cwd())?.path ?? resolve(process.cwd(), 'kortix.yaml'));
+    : (localManifestFile(process.cwd()) ?? resolve(process.cwd(), 'kortix.yaml'));
   if (!existsSync(filePath)) {
     if (flags.json) {
       process.stdout.write(
@@ -115,6 +153,9 @@ export function runValidate(argv: string[]): number {
 
   if (flags.fix) {
     const root = dirname(filePath);
+    const converted = convertLegacyFile(filePath, flags.json);
+    if (converted === null) return 2;
+    filePath = converted;
     let paths = [filePath];
     try {
       paths = resolveLocalManifestImports(filePath).files.map((file) => resolve(root, file.path));

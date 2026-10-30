@@ -14,8 +14,14 @@ describe('kortix_version is obsolete', () => {
     expect(result.issues.map((i) => [i.path, i.severity])).toEqual([['kortix_version', 'warning']]);
   });
 
-  test('kortix_version: 2 is one error and the body is not validated', () => {
+  test('kortix_version: 2 is the legacy format: one warning, the body is left to the converter', () => {
     const result = check('kortix_version: 2\nnot_a_key: 1\nagents: nope\n');
+    expect(result.valid).toBe(true);
+    expect(result.issues.map((i) => [i.path, i.severity, i.fix])).toEqual([['kortix_version', 'warning', 'legacy-format']]);
+  });
+
+  test('a version that never existed is one error', () => {
+    const result = check('kortix_version: 7\n');
     expect(result.valid).toBe(false);
     expect(result.issues.map((i) => [i.path, i.severity])).toEqual([['kortix_version', 'error']]);
   });
@@ -87,7 +93,7 @@ describe('usableManifest', () => {
     expect(apply({ agents, sandbox: { default: 'ghost' } })).toEqual({});
   });
 
-  test('a retired format gives {}', () => {
+  test('an unconverted legacy format gives {}: the reader converts it first', () => {
     expect(apply({ kortix_version: 2, agents })).toEqual({});
   });
 

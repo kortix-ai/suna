@@ -41,16 +41,20 @@ describe('validateManifestFile', () => {
     expect(formatIssueLine(issue!, dir)).toStartWith('kortix.yaml:5:5  error  agents.main.toolz  ');
   });
 
-  test('kortix_version: 3 is one warning; any other value is one retired-format error', () => {
+  test('kortix_version: 3 is one deprecation; 2 is one legacy-format warning; any other value is one error', () => {
     const file = join(dir, 'kortix.yaml');
     writeFileSync(file, 'kortix_version: 3\nproject:\n  name: x\n');
     expect(validateManifestFile(file).issues).toEqual([
-      expect.objectContaining({ path: 'kortix_version', severity: 'warning', file, line: 1, column: 1 }),
+      expect.objectContaining({ path: 'kortix_version', severity: 'warning', fix: 'drop-kortix-version', file, line: 1, column: 1 }),
     ]);
     writeFileSync(file, 'kortix_version: 2\nproject:\n  name: x\n');
-    const retired = validateManifestFile(file).issues;
-    expect(retired).toHaveLength(1);
-    expect(retired[0]).toMatchObject({ path: 'kortix_version', severity: 'error', file, line: 1 });
+    expect(validateManifestFile(file).issues).toEqual([
+      expect.objectContaining({ path: 'kortix_version', severity: 'warning', fix: 'legacy-format', file, line: 1, column: 1 }),
+    ]);
+    writeFileSync(file, 'kortix_version: 9\nproject:\n  name: x\n');
+    expect(validateManifestFile(file).issues).toEqual([
+      expect.objectContaining({ path: 'kortix_version', severity: 'error', file, line: 1 }),
+    ]);
   });
 
   test('a YAML syntax error has no parsed document and keeps its position', () => {
@@ -85,9 +89,9 @@ describe('loadLocalManifest', () => {
     expect(m!.env.optional).toEqual(['BAR']);
   });
 
-  test('reads kortix.yml when there is no kortix.yaml, and ignores a kortix.toml', () => {
-    writeFileSync(join(dir, 'kortix.toml'), `[project]\nname = "from-toml"\n`);
-    expect(loadLocalManifest(dir)).toBeNull();
+  test('reads a legacy kortix.toml as the latest shape, and kortix.yml over it', () => {
+    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n[project]\nname = "from-toml"\n`);
+    expect((loadLocalManifest(dir)!.data.project as { name: string }).name).toBe('from-toml');
     writeFileSync(join(dir, 'kortix.yml'), `project:\n  name: from-yml\n`);
     expect((loadLocalManifest(dir)!.data.project as { name: string }).name).toBe('from-yml');
   });

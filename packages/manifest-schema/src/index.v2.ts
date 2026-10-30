@@ -30,6 +30,7 @@ import {
 } from './constants';
 import { expectStringOrAbsent, isTable, type ManifestIssue, validateGrantList, validateKortixPermissionFields } from './index';
 import { safeAgentFile, safeToolFile } from './layout';
+import { META_AGENT_NAME } from '@kortix/shared/meta-agent';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -556,10 +557,11 @@ export function validateTriggerAgentRefsV2(
       return;
     }
     const name = entry.agent.trim();
-    if (!agentNames.includes(name)) {
+    // `default` is the runtime's "the default agent" sentinel; `meta` is My Kortix.
+    if (!agentNames.includes(name) && name !== 'default' && name !== META_AGENT_NAME) {
       issues.push({
         path: where,
-        message: `agent "${name}" does not match any declared agent in \`agents\`; omit it to fall back to \`default_agent\`.`,
+        message: `agent "${name}" does not match any declared agent in \`agents\`; omit it to run My Kortix (\`default_agent\` when My Kortix is off).`,
         severity: 'error',
       });
     }

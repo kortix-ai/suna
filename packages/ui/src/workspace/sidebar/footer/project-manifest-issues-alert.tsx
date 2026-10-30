@@ -65,7 +65,7 @@ Rules for how the fix lands:
 
 1. Read \`${file}\` before you change it. Change only what fixes an issue. If your session has no checkout of the repository, hand the whole task to a project agent that has one (the \`agent\` tool), with this message.
 2. Work on your session branch only.
-3. Run \`kortix validate --fix\` first: it rewrites every deprecated shape to the latest one, keeping comments. Then fix each remaining error by hand and run \`kortix validate\` until it reports none. Do not land a manifest that fails validation.
+3. Run \`kortix validate --fix\` first: it rewrites every deprecated shape to the latest one, keeping comments. For an older format (\`kortix_version: 2\` or a kortix.toml) it converts the project: it writes kortix.yaml, keeps only the prompt in each agent \`.md\`, and deletes the OpenCode files it replaces. Keep all of those changes. Then fix each remaining error by hand and run \`kortix validate\` until it reports none. Do not land a manifest that fails validation.
 4. Land it: \`git fetch origin\` (rebase onto origin/main if it advanced), commit, \`git push origin HEAD\`, then \`kortix cr open --title "Fix ${file}" --description "<each issue and its fix>"\`. Verify with \`kortix cr diff <n>\` that the change request carries your diff. If the push is rejected because the remote session branch moved, fetch and \`git push --force-with-lease origin HEAD\` (your own session branch only).
 5. Do NOT run \`kortix cr merge\`. Stop once the change request is open and not empty, and tell the user its number.
 6. If \`kortix validate\` reports no issues on the latest origin/main, say so and stop. Do not open an empty change request.`;

@@ -116,8 +116,9 @@ export async function commitRepoFile(
   message: string,
   expectedFileRevision?: string | null,
   expectedCandidatePaths?: readonly string[],
-  /** Same-commit companions of `path`: more files to write, and more blobs
-   *  that must be unchanged. Only a manifest with `imports:` passes these. */
+  /** Same-commit companions of `path`: more files to write, files to remove,
+   *  and more blobs that must be unchanged (a manifest with `imports:`, or a
+   *  healed legacy manifest). */
   extra?: {
     files?: Array<{ path: string; content: string }>;
     alsoExpect?: Array<{ path: string; sha: string }>;
@@ -125,6 +126,8 @@ export async function commitRepoFile(
      *  to an imported entry writes only that file, yet the root manifest's
      *  revision is still the one the read was anchored on. */
     expectedPath?: string;
+    /** Files the same commit removes. */
+    deletes?: string[];
   },
 ): Promise<{ ok: true } | { error: string; status: number }> {
   const repo = parseGitHubRepoUrl(project.repoUrl);
@@ -221,6 +224,7 @@ async function commitGitCliRepoFile(
       await commitMultipleFilesToBranch(gitProject.value, {
         ...commit,
         files: [{ path, content }, ...(extra.files ?? [])],
+        deletes: extra.deletes,
         alsoExpect: extra.alsoExpect,
         expectedFileRevision:
           expectedFileRevision === undefined
@@ -292,8 +296,9 @@ export async function commitManifest(
     message,
     manifest.revision,
     manifest.candidatePaths,
-    manifest.imports
-      ? { files: rest, alsoExpect: writes.alsoExpect, expectedPath: manifestFile }
+    // A manifest with `imports:` or a healed legacy one writes more than one file in this commit.
+    manifest.imports || rest.length > 0 || writes.deletes.length > 0
+      ? { files: rest, alsoExpect: writes.alsoExpect, deletes: writes.deletes, expectedPath: manifestFile }
       : undefined,
   );
 }

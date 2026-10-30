@@ -21,7 +21,7 @@
  */
 
 import { type Document, isMap, isScalar, isSeq, type Node, type Pair, parseDocument, Scalar, type YAMLMap } from 'yaml';
-import { DEPRECATED_KORTIX_PERMISSION_ALIASES, RETIRED_KORTIX_TOOLS } from './constants';
+import { DEPRECATED_KORTIX_PERMISSION_ALIASES, LEGACY_SANDBOX_KEYS, RETIRED_KORTIX_TOOLS } from './constants';
 
 export interface Deprecation {
   /** Stable id, shown as `fix: <id>`. Never reused. */
@@ -179,6 +179,50 @@ export const DEPRECATIONS: readonly Deprecation[] = [
       doc.setIn(['sandbox', 'templates'], list);
       deleteKeepingComments(doc.contents as YAMLMap, 'sandboxes');
       return ['sandboxes'];
+    },
+  },
+  {
+    id: 'sandbox-singular',
+    since: '2026-05-26',
+    summary: 'image keys set on `sandbox` itself (the singular `[sandbox]` table) are now one `sandbox.templates` entry, named as `sandbox.default`.',
+    apply: (doc) => {
+      const sandbox = doc.get('sandbox', true);
+      if (!isMap(sandbox)) return [];
+      const keys = LEGACY_SANDBOX_KEYS.filter((key) => sandbox.has(key));
+      if (keys.length === 0) return [];
+      const values = sandbox.toJSON() as Record<string, unknown>;
+      const slug = typeof values.slug === 'string' && values.slug.trim() ? values.slug.trim() : 'project';
+      const template = Object.fromEntries([['slug', slug], ...keys.filter((key) => key !== 'slug').map((key) => [key, values[key]])]);
+      const templates = sandbox.get('templates', true);
+      if (isSeq(templates)) {
+        if ((templates.toJSON() as Array<{ slug?: unknown }>).some((t) => t?.slug === slug)) return [];
+        templates.add(doc.createNode(template));
+      } else if (!sandbox.has('templates')) {
+        sandbox.set('templates', doc.createNode([template]));
+      } else return [];
+      for (const key of keys) sandbox.delete(key);
+      if (!sandbox.has('default')) sandbox.set('default', slug);
+      return ['sandbox'];
+    },
+  },
+  {
+    id: 'acp-runtimes',
+    since: '2026-07-30',
+    summary: '`runtimes` and an agent\'s `runtime` and `agent` keys selected a harness that was removed: every session runs pi. Delete them.',
+    apply: (doc) => {
+      const paths: string[] = [];
+      if (doc.has('runtimes') && isMap(doc.contents)) {
+        deleteKeepingComments(doc.contents as YAMLMap, 'runtimes');
+        paths.push('runtimes');
+      }
+      for (const [name, block] of agentBlocks(doc)) {
+        for (const key of ['runtime', 'agent']) {
+          if (!block.has(key)) continue;
+          deleteKeepingComments(block, key);
+          paths.push(`agents.${name}.${key}`);
+        }
+      }
+      return paths;
     },
   },
   {

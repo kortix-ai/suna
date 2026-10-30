@@ -497,15 +497,15 @@ flow(
         }
       });
 
-      await ctx.step("kortix_version: 2 → exactly one retired-format error that names the docs; the body is not validated", async () => {
-        const health = await healthOf(`kortix_version: 2\n${HEALTHY_MANIFEST}    descripton: Tidies.\n`, "ke2e: retired format");
-        const [issue] = health.issues;
-        if (health.state !== "issues" || health.errors !== 1 || health.warnings !== 0 || health.issues.length !== 1) {
-          fail("expected exactly one error", health);
+      await ctx.step("kortix_version: 2 → one legacy-format warning that names `kortix validate --fix`; the converted body is validated", async () => {
+        const health = await healthOf(`kortix_version: 2\n${HEALTHY_MANIFEST}    descripton: Tidies.\n`, "ke2e: legacy format");
+        const legacy = health.issues.find((i) => i.path === "kortix_version");
+        const unknown = health.issues.find((i) => i.path === "agents.worker.descripton");
+        if (health.state !== "issues" || health.errors !== 1 || health.warnings !== 1) fail("expected 1 error and 1 warning", health);
+        if (legacy?.severity !== "warning" || legacy.line !== 1 || !legacy.message.includes("kortix validate --fix")) {
+          fail("the legacy warning is not at line 1 or does not name `kortix validate --fix`", health);
         }
-        if (issue?.path !== "kortix_version" || issue.severity !== "error" || !issue.message.includes("https://kortix.com/docs/developers#kortixyaml-reference")) {
-          fail("the error does not name kortix_version and the docs URL", health);
-        }
+        if (unknown?.severity !== "error" || unknown.line !== 9) fail("the unknown key in the converted body is not an error at line 9", health);
       });
     } finally {
       await world.close();

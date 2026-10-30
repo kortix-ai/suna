@@ -93,7 +93,7 @@ Global:
 
 \`scope\`, \`default\` and \`config\` need \`project.agent.write\`; model pins
 need \`project.model.write\`. Model pins live in the gateway, not in the repo —
-the declarative one is kortix.yaml's \`[[agents]].model\`.
+the declarative one is kortix.yaml's \`agents.<name>.model\`.
 `;
 
 export async function runAgents(argv: string[]): Promise<number> {

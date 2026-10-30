@@ -47,10 +47,18 @@ export function registerManifestValidationRoutes(): void {
       return c.json({ error: 'Missing `raw` (manifest string) in body.' }, 400);
     }
 
-    const { validateManifest } = await import('@kortix/manifest-schema');
+    const { convertLegacyManifest, legacyFormatOf, locateIssues, validateManifest } = await import('@kortix/manifest-schema');
     const verdict = validateManifest(raw);
+    // A legacy format (`kortix_version: 2`) runs converted: validate what runs. The text has no repo files beside it.
+    const from = legacyFormatOf(verdict.parsed);
+    if (from && verdict.parsed) {
+      const converted = validateManifest(convertLegacyManifest(verdict.parsed, from, 'kortix.yaml', { paths: [], read: () => null }).raw).issues;
+      locateIssues(raw, converted);
+      verdict.issues.push(...converted);
+    }
+    const valid = !verdict.issues.some((issue) => issue.severity === 'error');
     return c.json({
-      valid: verdict.valid,
+      valid,
       ...boundedIssues(verdict.issues),
     });
   },

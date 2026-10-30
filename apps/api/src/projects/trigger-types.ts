@@ -222,6 +222,13 @@ export interface ParsedManifest {
    * to a full re-serialize.
    */
   source?: string | null;
+  /**
+   * Set when the file is a legacy format (`kortix_version` 1 or 2, or
+   * `kortix.toml`). `raw` is then its conversion to the latest shape, and the
+   * first write saves that shape (`manifestWrites`): the manifest, and the
+   * prompt files from `overlay`.
+   */
+  legacy?: { from: 1 | 2; overlay: Record<string, string>; dropped: string[]; error?: string };
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */

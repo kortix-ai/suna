@@ -94,7 +94,7 @@ test("removal writes imported registrations and grants back to their owning file
   const raw = { imports: ["config/"] };
   const texts: Record<string, string> = {
     "config/skills.yaml": "skills:\n  pdf: skills/pdf\n",
-    "config/agents.yaml": "agents:\n  helper:\n    skills: [pdf]\n",
+    "config/agents.yaml": "agents:\n  helper:\n    tools: all\n    skills: [pdf]\n",
   };
   const imports = resolveManifestImportsSync(
     { path: "kortix.yaml", raw },
@@ -127,7 +127,7 @@ test("removal writes imported registrations and grants back to their owning file
     skills: {},
   });
   expect(parseManifestText(agentWrite?.content ?? "")).toEqual({
-    agents: { helper: { skills: [] } },
+    agents: { helper: { tools: "all", skills: [] } },
   });
   expect(writes.alsoExpect).toHaveLength(2);
 });

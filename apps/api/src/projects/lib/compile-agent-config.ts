@@ -35,6 +35,7 @@ import {
   excludedNamesV3,
   grantedNamesV3,
   type ManifestIssue,
+  parseManifestText,
   type PermissionActionV2,
   type PermissionConfigObjectV2,
   type PermissionConfigV2,
@@ -530,13 +531,18 @@ export function __resetCompiledAtCommitForTests(): void {
  * A missing file is left out (the compile turns its agent off and names the
  * file in `manifest_issues`); any other read failure throws.
  */
-async function readPromptFiles(project: GitBackedProject, raw: Record<string, unknown>, ref: string): Promise<Record<string, string>> {
+async function readPromptFiles(project: GitBackedProject, raw: Record<string, unknown>, ref: string, overlay: Record<string, string> = {}): Promise<Record<string, string>> {
   const paths = new Set<string>();
   for (const block of [...Object.values(mapOf<{ prompt_file?: unknown }>(raw.agents)), ...Object.values(mapOf<{ prompt_file?: unknown }>(raw.commands))]) {
     if (typeof block?.prompt_file === 'string' && safeAgentFile(block.prompt_file)) paths.add(block.prompt_file);
   }
   const files: Record<string, string> = {};
   await Promise.all([...paths].map(async (path) => {
+    // A converted legacy file: the prompt without its frontmatter, or a command moved out of the harness folder.
+    if (overlay[path] !== undefined) {
+      files[path] = overlay[path];
+      return;
+    }
     try {
       files[path] = await readRepoFile(project, path, ref);
     } catch (err) {
@@ -555,13 +561,13 @@ async function readManifestForCompile(
   project: GitBackedProject,
   ref: string,
   options: CompileReadOptions,
-): Promise<{ usable: Record<string, unknown>; issues: ManifestIssue[]; found: { commit: string | null; path: string } } | null> {
+): Promise<{ usable: Record<string, unknown>; issues: ManifestIssue[]; found: { commit: string | null; path: string; legacy?: { overlay: Record<string, string> } } } | null> {
   const found = await readManifestFromRepo(project, manifestCandidatePaths(project.manifestPath), ref, {
     forceRefresh: options.forceRefresh,
   });
   if (!found) return null;
-  // The root text carries line numbers; a merged `imports:` document has none to give.
-  const { parsed, issues } = validateManifest(found.imports ? found.imports.raw : found.content);
+  // The root text carries line numbers; a merged `imports:` document, and a converted legacy file, have none to give.
+  const { parsed, issues } = validateManifest(found.legacy ? parseManifestText(found.content) : found.imports ? found.imports.raw : found.content);
   const usable = usableManifest(parsed, issues);
   options.onManifest?.(usable);
   return { usable, issues, found };
@@ -600,7 +606,7 @@ export async function resolveCompiledAgentConfigForSession(
   if (hit) return hit.compiled;
   // Every file is read at the commit the manifest came from: a sha read
   // needs no mirror fetch, and all files come from one commit.
-  const compiled = JSON.stringify(compileAgentConfig(read.usable, await readPromptFiles(project, read.usable, read.found.commit ?? ref), [...read.issues]));
+  const compiled = JSON.stringify(compileAgentConfig(read.usable, await readPromptFiles(project, read.usable, read.found.commit ?? ref, read.found.legacy?.overlay), [...read.issues]));
   rememberCompiled(key, { raw: read.usable, compiled });
   return compiled;
 }
@@ -639,7 +645,7 @@ export async function resolveSelectedAgentConfigForSession(
   const hit = compiledAt(key);
   if (hit?.compiled) return hit.compiled;
   // Read at the manifest's own commit, as the full compile does.
-  const compiled = JSON.stringify(compileSelectedAgentConfig(read.usable, agentName, await readPromptFiles(project, read.usable, read.found.commit ?? ref), [...read.issues]));
+  const compiled = JSON.stringify(compileSelectedAgentConfig(read.usable, agentName, await readPromptFiles(project, read.usable, read.found.commit ?? ref, read.found.legacy?.overlay), [...read.issues]));
   rememberCompiled(key, { raw: read.usable, compiled });
   return compiled;
 }
