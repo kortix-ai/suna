@@ -30,8 +30,15 @@ mock.module('../platform/services/runtime-settings', () => ({ refreshRuntimeSett
 mock.module('../platform/services/github-app-identity', () => ({ refreshAppIdentity: async () => {} }));
 mock.module('../platform/services/managed-git-backend', () => ({ refreshGitBackend: async () => {} }));
 const broadcast = await import('../shared/pg-broadcast');
-mock.module('../shared/pg-broadcast', () => ({ ...broadcast, startConfigBaseMoveBroadcast: async () => false }));
-mock.module('../projects/surface', () => ({ handBackClaims: async () => 0 }));
+mock.module('../shared/pg-broadcast', () => ({
+  ...broadcast,
+  startConfigBaseMoveBroadcast: async () => false,
+  onSessionChanged: record('onSessionChanged'),
+}));
+mock.module('../projects/surface', () => ({
+  handBackClaims: async () => 0,
+  signalSessionRuntimeActive() {},
+}));
 
 const bootstrap = readFileSync(new URL('../bootstrap.ts', import.meta.url), 'utf8');
 const imports = /import\s*\{([\w,\s]+)\}\s*from\s*'(\.\/workers\/[^']+)'|\{([\w,\s]+)\}\s*=\s*await import\('(\.\/workers\/[^']+)'\)/g;
@@ -56,7 +63,7 @@ test('API-only boot keeps request services but starts no queued jobs, lifecycle 
   await bootServices();
   await Promise.resolve();
   expect(eligible).toBe(false);
-  expect(started.sort()).toEqual(['startAccessControlCache', 'startEventLoopLagSampler', 'startTunnelService']);
+  expect(started.sort()).toEqual(['onSessionChanged', 'startAccessControlCache', 'startEventLoopLagSampler', 'startTunnelService']);
   await handlers.onAcquire();
   expect(started).not.toContain('kickStartupPreBuild');
   expect(started).not.toContain('startActiveTurnRenewal');
