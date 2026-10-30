@@ -84,7 +84,8 @@ export function createPiDiagnosticsService(
           agent: rt?.agentNameValue() ?? null,
           busy: rt?.busy() ?? false,
           messages: rt?.transcript.count ?? 0,
-          skills: rt?.skillList().length ?? 0,
+          skills: rt?.skillList().map((skill) => skill.name) ?? [],
+          tools: rt?.toolNames() ?? [],
           start_error: startError(),
         },
         boot: {

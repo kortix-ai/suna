@@ -14,12 +14,11 @@ const TURN_RETRY_DEFAULT_BASE_MS = 2_000
 /**
  * The pi harness environment contract.
  *
- * pi runs INSIDE the daemon process (no child, no port), so most of the
- * OpenCode contract has no analogue here. What remains is where its durable
- * state lives.
+ * pi runs INSIDE the daemon process (no child, no port), so this contract is
+ * mostly where its durable state lives.
  *
- * Model, agent, prompts and the gateway are read from the SAME variables the
- * OpenCode path receives (`KORTIX_MODEL`, `KORTIX_COMPILED_AGENT_CONFIG`,
+ * Model, agent, prompts and the gateway are read from the harness-neutral
+ * variables the control plane sets (`KORTIX_MODEL`, `KORTIX_COMPILED_AGENT_CONFIG`,
  * `KORTIX_AGENT_NAME`, `KORTIX_LLM_BASE_URL`, `KORTIX_TOKEN`): the control plane
  * does not know which harness reads them, and it must not have to.
  */
@@ -103,7 +102,7 @@ export function requirePiConfig(cfg: HostConfig): PiConfig {
  * The baked managed `kortix-*` overlay comes first, so the platform's latest
  * copy wins over one a project tracks, with nothing written into the working
  * tree. Then the project's `skills/`, then the legacy `.kortix/opencode/skills`
- * a project authored for OpenCode, so switching `runtime:` never loses them.
+ * of a project authored for OpenCode before the sunset, so pi still loads them.
  */
 export async function resolvePiProjectConfigDir(cfg: HostConfig): Promise<string | null> {
   const workspace = cfg.projectTarget || cfg.workspace || '/workspace'
@@ -159,7 +158,7 @@ export interface ProjectInstructions {
 
 /**
  * The root `AGENTS.md` of `root`, else its `CLAUDE.md`: the first name that
- * exists wins, as on OpenCode 1.18.23 (`session/instruction.ts`). Only the
+ * exists wins. Only the
  * root: no ancestor directory, no nested file, no agent-dir file. Null when
  * there is none or it is empty. Null and one warning when it is not a regular
  * file, resolves out of `root`, or cannot be read.

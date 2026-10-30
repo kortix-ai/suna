@@ -25,7 +25,7 @@ export type PermissionReply = RuntimePermissionReply
 
 /** `allow` | `ask` | `deny` per tool name, `*` as the default. */
 export type PermissionRule = 'allow' | 'ask' | 'deny'
-/** OpenCode's `PermissionRuleConfig`: a bare action, or a glob-pattern -> action map. */
+/** One tool's rule in the compiled `permission` block: a bare action, or a glob-pattern -> action map. */
 export type PermissionRuleConfig = PermissionRule | Record<string, PermissionRule>
 export type PermissionPolicy = Record<string, PermissionRuleConfig>
 
@@ -33,13 +33,13 @@ const RULES = new Set(['allow', 'ask', 'deny'])
 const isRule = (value: unknown): value is PermissionRule => typeof value === 'string' && RULES.has(value)
 
 /**
- * Compile the manifest's compiled `permission` block (OpenCode's
- * PermissionConfig: `{ [tool]: 'allow'|'ask'|'deny' | { [pattern]: rule } }`).
+ * Compile the manifest's compiled `permission` block
+ * (`{ [tool]: 'allow'|'ask'|'deny' | { [pattern]: rule } }`).
  * Pattern maps are KEPT whole and matched per call by {@link resolveRule} —
  * collapsing them to their `*` entry would turn an explicit
  * `bash: { 'rm -rf *': 'deny', '*': 'allow' }` into an unconditional allow.
- * A tool with no rule is `allow`, OpenCode's default. A bare action
- * (`permission: deny`) is OpenCode's whole-agent form: it covers every tool.
+ * A tool with no rule is `allow`. A bare action (`permission: deny`) is the
+ * whole-agent form: it covers every tool.
  */
 export function compilePermissionPolicy(raw: unknown): PermissionPolicy {
   const policy: PermissionPolicy = {}
@@ -59,7 +59,7 @@ export function compilePermissionPolicy(raw: unknown): PermissionPolicy {
 }
 
 /**
- * OpenCode's `Wildcard.match` (`packages/opencode/src/util/wildcard.ts`):
+ * The permission pattern match:
  * backslashes normalise to `/`, `*` becomes `.*`, `?` becomes `.`, every other
  * regex metacharacter is escaped, and the whole pattern is anchored and
  * dot-all. A pattern ending in ` *` also matches the bare command, so `ls *`
@@ -93,11 +93,11 @@ const RESERVED_PREFIX = /^(?:(?:if|then|elif|else|do|while|until|time|!|\{)\s+)+
 const RESERVED_ALONE = new Set(['fi', 'done', 'esac', '}'])
 
 /**
- * The commands of a bash line, as OpenCode's tree-sitter walk asks about them:
+ * The commands of a bash line, as the permission check asks about them:
  * the line splits on unquoted `;`, `&`, `|` and newlines (so `&&`, `||` and
  * `|&` too), and every `$(…)`, `` `…` ``, `<(…)`, `>(…)` and `( … )` body is
- * read as commands of its own. A command keeps its substitutions' text, as
- * OpenCode's does. `null` when the quotes or brackets do not balance.
+ * read as commands of its own. A command keeps its substitutions' text.
+ * `null` when the quotes or brackets do not balance.
  * ponytail: not a bash grammar — `case` arms and heredoc bodies read as
  * unbalanced or as extra commands, so they fail closed. Use tree-sitter-bash
  * when a manifest needs them exact.
@@ -187,11 +187,10 @@ export function toolPath(raw: string, workspace: string): string | undefined {
 }
 
 /**
- * The string a pattern is tested against, per tool — the subject OpenCode sends
- * as the permission request's pattern: the command line for `bash`, the skill
- * name for `skill`, the subagent name for `task`, and for the workspace tools
- * the file the path names, relative to the workspace (`tool/read.ts`,
- * `edit.ts`, `write.ts`). So `./secrets/a`, `x/../secrets/a` and
+ * The string a pattern is tested against, per tool — the permission
+ * request's pattern: the command line for `bash`, the skill name for `skill`,
+ * the subagent name for `task`, and for the workspace tools the file the path
+ * names, relative to the workspace. So `./secrets/a`, `x/../secrets/a` and
  * `/workspace/secrets/a` are all `secrets/a`.
  */
 export function permissionSubject(tool: string, args: unknown, workspace: string): string | undefined {
@@ -239,11 +238,11 @@ export function toolCapability(tool: string, args?: unknown): string {
 /**
  * One call's rule under `policy`. Every key that names the tool or its
  * capability (`*` and `pty_*` are patterns too) is tried most specific first;
- * the first that has a rule for this call decides, as OpenCode's last match
- * does over an ordered block. `undefined` means the policy says nothing.
+ * the first that has a rule for this call decides. `undefined` means the
+ * policy says nothing.
  *
- * A bash line is decided command by command (`bashCommands`), as OpenCode
- * does, and the strictest answer wins: `allowed x; env` is the rule for `env`,
+ * A bash line is decided command by command (`bashCommands`), and the
+ * strictest answer wins: `allowed x; env` is the rule for `env`,
  * never the allowed prefix's. A line that does not parse is decided as a call
  * with no subject, so a restriction asks.
  *
@@ -276,14 +275,14 @@ function resolveKeys(policy: PermissionPolicy, names: string[], subject: string 
   return undefined
 }
 
-/** pi's tools that OpenCode's `external_directory` check covers; glob and grep take a directory. */
+/** pi's tools that the `external_directory` check covers; glob and grep take a directory. */
 const FILE_TOOLS = new Set(['read', 'write', 'edit', 'glob', 'grep'])
 
 /**
  * The `external_directory` rule for a file tool whose path leaves the
- * workspace. The subject is the directory glob `<dir>/*`, as OpenCode asks it
- * (`tool/external-directory.ts`). `undefined` inside the workspace, and when
- * the policy has no rule for it: unlike OpenCode, pi does not ask by default.
+ * workspace. The subject is the directory glob `<dir>/*`. `undefined` inside
+ * the workspace, and when the policy has no rule for it: pi does not ask by
+ * default.
  */
 function externalRule(policy: PermissionPolicy, tool: string, args: unknown, workspace: string): PermissionRule | undefined {
   const raw = (args as { path?: unknown } | null | undefined)?.path
@@ -296,7 +295,7 @@ function externalRule(policy: PermissionPolicy, tool: string, args: unknown, wor
 
 /**
  * Whether an agent may see a skill. The manifest `skills:` grant compiles to
- * OpenCode's `permission.skill` rule; only a `deny` hides a skill. pi has no
+ * the `permission.skill` rule; only a `deny` hides a skill. pi has no
  * skill tool to gate on load, so an `ask` skill stays listed.
  */
 export function skillGranted(policy: PermissionPolicy, name: string): boolean {

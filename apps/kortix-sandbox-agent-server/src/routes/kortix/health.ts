@@ -23,7 +23,7 @@ export function createHealthRouter(
         }
       : undefined
     const [host, report, runtimeCapabilities] = await Promise.all([
-      readHostHealth(context, diagnostics.catalogSnapshot),
+      readHostHealth(context),
       diagnostics.health(context, { turn }),
       diagnostics.capabilities(),
     ])

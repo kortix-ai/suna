@@ -32,9 +32,8 @@ start). On that box:
   `isHarnessInternalVariable` still treats `OPENCODE_*` as internal, so the
   agent env file never writes them.
 
-Names that say `opencode` but serve pi (`opencode_session_id`,
-the OpenCode-shaped event wire pi emits) are wire names, not OpenCode code.
-They stay until a separate rename. The E18 lint rule
+The runtime wire pi emits (`kortix.transcript.v1`) keeps OpenCode 1.18's
+field names. Those are wire names, not OpenCode code. The E18 lint rule
 ([ARCHITECTURE.md](../../ARCHITECTURE.md)) rejects any new OpenCode name.
 Build new behavior in `pi/` or `shared/`, behind a capability
 (`RUNTIME_CAPABILITIES`), never behind a harness check.
@@ -83,7 +82,7 @@ id, `kortix`. There is no native provider mode, and every model ref is
 | `pi/service.ts` | Composition; loads pi's packages lazily |
 | `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, the root `AGENTS.md`, today's date (each turn), turns, transcript, durability |
 | `pi/boot.ts` | Session boot: the host steps (workspace, config release, relays), then `pi-ready` |
-| `pi/surface.ts` | The raw routes of the OpenCode-shaped wire, answered in-process |
+| `pi/surface.ts` | The raw routes of the runtime wire, answered in-process |
 | `pi/vcs.ts` | The Changes tab on pi: `vcs: 'git'` on `/project/current` and `GET /vcs/diff` (`mode=branch` against the merge base with `KORTIX_DEFAULT_BRANCH`, `mode=git` against HEAD), the wire's `VcsFileDiff` shape |
 | `pi/turn-events.ts`, `pi/transcript.ts` | pi events → Kortix session events (`@kortix/api-contract/transcript`); the transcript store |
 | `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts`, `pi/sampling.ts` | Permissions/questions, workspace tools, gateway model, the agent's `temperature`/`top_p`/`steps` on each model request |
@@ -743,12 +742,12 @@ tools" below). A project needs no `harnesses/pi/` file for any of them.
 Every model request goes to the Kortix LLM gateway through the
 daemon's localhost LLM proxy, under the `kortix` provider id.
 
-pi's events are reshaped into the OpenCode-shaped wire the clients read
-(`message.updated`, `message.part.updated`, `message.part.delta`,
+pi's events are reshaped into the v1 wire (`kortix.transcript.v1`) the
+clients read (`message.updated`, `message.part.updated`, `message.part.delta`,
 `session.status`, `session.idle`, `permission.*`, `question.*`), served over
-the `/kortix/runtime/*` namespace and the raw routes (`/session`, `/session/:id/prompt_async`, `/session/:id/message`,
-`/permission/:id/reply`, …). pi does not serve `/config`, `/agent` or
-`/provider` (they answer `404`). One pi session is one Kortix
+the `/kortix/runtime/*` namespace and the raw routes (`/global/event`,
+`/session`, `/session/:id/prompt_async`, `/session/:id/message`,
+`/permission/:id/reply`, …). Any other raw route answers `404`. One pi session is one Kortix
 session: the root id is `ses_pi<sha256(sessionId)[:24]>`, deterministic (or the
 root thread id a session-log restore wrote into the dump), so a restart
 resolves the same root and restores the transcript from
@@ -1046,8 +1045,8 @@ tools and events work, TUI-only rendering does nothing.
 subagent_type, task_id? }`, the child id in the part's `metadata.sessionId`
 (set while the child runs), output `task_id: <id>` + `<task_result>`. Each call
 runs an in-process pi agent in a child session (`parentID` = root), with its
-own wire transcript served by `/session`, `/session/:id`,
-`/session/:id/message`, `/session/:root/children`, the state document and
+own wire transcript served by `/session` (the root and its children),
+`/session/:id`, `/session/:id/message`, the state document and
 `/kortix/runtime/messages/:id`, and persisted in the root's dump so `task_id`
 resumes it after a restart. Types: `general` (all workspace and Kortix tools), `explore`
 (`bash`/`read`/`glob`/`grep`), and every compiled agent with `mode: subagent`
@@ -1191,21 +1190,20 @@ command pi does not have is a 400. pi does not read a `commands/` directory.
 Not supported by pi today (answered honestly, never silently): session rewind
 (`/session/:id/revert`, 501 `feature_not_supported`), MCP/connector tools, todo
 tools, `ctx.ui` prompts from extensions. `/kortix/health` reports `harness: 'pi'`
-and keeps `opencode: <state>` as the compatibility field the control plane
-already reads for readiness.
+in the closed `harness` block ("Health and capabilities" above).
 
 ## Hosted tools
 
 A tool that is not a harness's own (`bash`, `read`, …) is written once, as a
-harness-neutral module, and the daemon runs it for pi
-(`../services/tools/`):
+harness-neutral module, and pi runs it in-process
+(`../services/tools/`). No route runs a hosted tool from outside the daemon
+process.
 
 | Module | What |
 | --- | --- |
 | `services/tools/tool.ts` | The contract: a default export `{ description, parameters (JSON Schema), execute(args, context) }`, with `context` = `{ sessionId, agent, directory, env, signal }`. |
 | `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show` (an entry whose `path` is an image file of at most 32 MiB gains `sha256`, hashed streamed and concurrently within 2 s; a read error or the deadline leaves it out), `image_gen` (any image model the project can use). Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. `image_gen` takes 1–4 `prompts` and posts one request per prompt, all at once (`n: 1` each), to the LLM gateway (`KORTIX_LLM_BASE_URL` + `/images/{generations,edits}`, `KORTIX_TOKEN`); the platform picks the image model (`auto` or the one asked for) and resolves its credential. Each image is written under `<checkout>/output/images/<prompt slug>-<time>.{png,jpg,webp}` (the bytes decide the type; never overwriting). The output is `{ action, model, provider, images: [{ path, size, prompt, sha256 }], failed?: [{ prompt, error }] }` (`sha256`: hex digest of the saved bytes); when every prompt fails the call throws the first failure (`… [<code>]`). Code caps it at 10 images per turn and 50 per session, counted before the first await (a batch that would pass a cap is refused whole). The turn is `context.turnId` (pi: the turn's message id, `ToolContext.turnId` in `services/tools/tool.ts`), so direct, parallel, script, retried and subagent calls of one turn share the 10; a call that names no turn keys the turn cap on its abort signal; a reference image must be a real png/jpeg/webp inside the checkout. |
 | `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all six when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
-| `routes/kortix/tools.ts` | `POST /kortix/tools/:name` for a caller outside the daemon process: the box's tool-bridge key (`toolBridgeKey`, kept in the runtime state dir) or the control credential; `403` when the agent's tool access refuses the tool. |
 
 pi loads them at `start()` and registers each as an `AgentTool`
 (`pi/tools.ts` `createWorkspaceTools`); subagents get them too. A release that

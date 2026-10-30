@@ -19,8 +19,9 @@ export interface DaemonServer {
  * apps/sandbox/entrypoint.sh and src/services/runtime-assets/runtime-assets.ts.
  *
  * A self-update MUST come through here rather than calling `process.exit`
- * directly: opencode is a child of this process, and leaving it alive would
- * hand the relaunched daemon a port that is already taken.
+ * directly: this path flushes drive changes and the session log, shreds the
+ * agent env file and stops the harness before the exit. A bare exit skips all
+ * of it.
  */
 export interface DaemonShutdown {
   (opts: { reason: string; exitCode?: number; signal?: NodeJS.Signals }): void

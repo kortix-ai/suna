@@ -1926,9 +1926,9 @@ harnessFlow(
           intervalMs: 3_000,
           description: 'the box serves the release with the merged skill',
         });
-        const r = await ctx.client.as(ctx.P.OWNER).get(box.box('/skill'));
+        const r = await ctx.client.as(ctx.P.OWNER).get(box.box('/kortix/diag?tail=1'));
         r.status(200);
-        const names = r.json<Array<{ name: string }>>().map((entry) => entry.name);
+        const names = r.json<{ pi?: { skills?: string[] } }>().pi?.skills ?? [];
         const missing = expected.filter((name) => !names.includes(name));
         if (missing.length > 0) {
           throw new Error(`the running session does not list ${missing.join(', ')}: ${names.join(', ')}`);

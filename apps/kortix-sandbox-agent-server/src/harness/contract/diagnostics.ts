@@ -19,12 +19,6 @@ export interface HarnessHealthQuery {
 }
 
 /**
- * A harness's live model-catalog signal for the health `runtime` block (see `runtimeConvergenceReport`).
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export type CatalogSnapshot = () => { ids: string[] | null; fallbackReason: string | null }
-
-/**
  * What the selected harness reports on `GET /kortix/health`.
  * `routes/kortix/health.ts` composes it with the host facts and computes
  * `runtimeReady` from both.
@@ -73,11 +67,6 @@ export interface HarnessDiagnosticsService {
    * each health call: a feature can depend on the running runtime's version.
    */
   capabilities(): Promise<readonly RuntimeCapability[]>
-  /**
-   * The live model-catalog signal, for a harness that has one.
-   * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
-   */
-  readonly catalogSnapshot?: CatalogSnapshot
   health(context: HarnessDiagnosticsContext, query: HarnessHealthQuery): Promise<HarnessHealthReport>
   report(context: HarnessDiagnosticsContext, tail: number): Promise<HarnessDiagnosticReport>
   logSources(): readonly string[]

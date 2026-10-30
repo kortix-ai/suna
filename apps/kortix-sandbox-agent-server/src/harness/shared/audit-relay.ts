@@ -23,8 +23,7 @@ import {
  * The session's tool audit trail, for every harness (E12). Each runtime event
  * is sanitized to a digest-and-identity record, batched, spooled to disk until
  * apps/api accepts it, and posted to `POST …/sessions/:id/audit/events`. The
- * events are the runtime wire: OpenCode's event contract, which pi emits too
- * until E2 gives Kortix its own.
+ * events are the frames pi publishes on the runtime wire (`PiRuntimeHooks.onFrame`).
  */
 
 export type { RuntimeAuditEvent };
@@ -84,7 +83,7 @@ const SAFE_KEYS = new Set([
   'multiple',
   'custom',
   'count',
-  // OpenCode wraps the safe identity and lifecycle fields below in these
+  // The wire wraps the safe identity and lifecycle fields below in these
   // objects. Raw prompt, input, output, error text, and arbitrary metadata are
   // still excluded by the recursive allowlist.
   'session',
@@ -411,25 +410,23 @@ export interface AuditRelay {
  * `/v1/projects/:p/sessions/:s/audit/events` ran 3,395 times across 20 session
  * opens in one hour — 680 ms median, 2,265 s cumulative, the single largest
  * line in the whole performance corpus. One local session
- * (`kortix.audit_events`) shows the mechanism: 117,437 relayed OpenCode events in 64 minutes, and the relay's own
+ * (`kortix.audit_events`) shows the mechanism: 117,437 relayed runtime events in 64 minutes, and the relay's own
  * access log records 4,848 POSTs for that ONE session.
  *
- * The volume was never batched away because the relay forwarded EVERY OpenCode
- * SSE event 1:1 (`main.ts` `onEvent` -> `enqueue`) at `batchSize = 50`. Three
- * rules now bound it, in the order they apply:
+ * The volume was never batched away because the relay forwarded EVERY runtime
+ * event 1:1 at `batchSize = 50`. Three rules now bound it, in the order they
+ * apply:
  *
- * 1. DROP a class that carries no audited fact (`dropTypes`). Two qualify, and
- *    together they are 91.7% of that session's traffic:
+ * 1. DROP a class that carries no audited fact (`dropTypes`). It was 91.4% of
+ *    that session's traffic:
  *      - `message.part.delta` (107,394 rows / 91.4%) is one row per streamed
  *        TOKEN. The token itself is stripped by `sanitizeRuntimeEvent`, so the
  *        persisted row is identity + hashes and nothing a reconstruction can
  *        use. The API already names this the one droppable class
- *        (`shared/opencode-audit-rate-guard.ts:62`) — it just dropped it AFTER
+ *        (`SUPPRESSED_ACTION_CLASS`, apps/api `shared/opencode-audit-rate-guard.ts`) — it just dropped it AFTER
  *        paying for the network hop, the two scope queries and the insert.
- *      - `server.heartbeat` (384 rows) is a daemon liveness ping: no actor, no
- *        resource, no state change.
  *    Dropping happens BEFORE `sanitizeRuntimeEvent` and before `persist()`, so
- *    it also removes 91.7% of the spool's fsyncs from the sandbox's hot path.
+ *    it also removes that share of the spool's fsyncs from the sandbox's hot path.
  *
  * 2. COALESCE repeats, never transitions (`coalesceTypes`). A streaming text
  *    part emits one `message.part.updated` per chunk; every one of them has the
@@ -445,7 +442,7 @@ export interface AuditRelay {
  *    whichever comes first — the timer runs from the OLDEST pending event, so
  *    a steady stream cannot keep postponing a flush. `batchSize` defaults to
  *    the API's own ceiling
- *    (`MAX_BATCH_SIZE = 200`, `shared/opencode-audit-ingestion.ts:10`) and is
+ *    (`MAX_BATCH_SIZE = 200`, apps/api `shared/opencode-audit-ingestion.ts`) and is
  *    clamped to it, so a misconfigured env can never produce a 400. The route
  *    still writes in 25-row chunks server-side, so a 200-event POST costs the
  *    same insert work as four 50-event POSTs but ONE auth pass and ONE pair of
@@ -479,19 +476,16 @@ export const DEFAULT_BATCH_SIZE = MAX_RELAY_BATCH_SIZE;
  * an incident without a daemon release.
  *
  * 10 s is affordable because `kortix.audit_events` has NO real-time consumer.
- * The approval gate and the question relay run on the live OpenCode SSE stream
- * and `relayQuestionToApi` (main.ts), not on this ledger; what reads the ledger
+ * The approval gate and the question relay run on the turn relay
+ * (`shared/turn-relay.ts`), not on this ledger; what reads the ledger
  * is the IAM audit log, the session audit panel, exports and the SIEM webhook.
  * Nothing is lost by waiting: the spool is fsynced per accepted event and
  * `stop()` drains it on SIGTERM/SIGINT.
  */
 export const DEFAULT_FLUSH_MS = 10_000;
 
-/** Raw OpenCode event types the relay never forwards. See rule 1 above. */
-export const DEFAULT_DROPPED_EVENT_TYPES: readonly string[] = [
-  'message.part.delta',
-  'server.heartbeat',
-];
+/** Runtime event types the relay never forwards. See rule 1 above. */
+export const DEFAULT_DROPPED_EVENT_TYPES: readonly string[] = ['message.part.delta'];
 
 /** Raw types whose same-state repeats collapse in the queue. See rule 2. */
 export const DEFAULT_COALESCED_EVENT_TYPES: readonly string[] = [
@@ -499,9 +493,6 @@ export const DEFAULT_COALESCED_EVENT_TYPES: readonly string[] = [
   'message.part.updated',
   'session.status',
   'session.updated',
-  'session.diff',
-  'catalog.updated',
-  'file.watcher.updated',
 ];
 
 /**
@@ -711,7 +702,7 @@ export function computeRetryDelay(input: {
 export const MAX_RETRY_MS_DEFAULT = 30_000;
 
 /**
- * A rejected batch can carry the server's own backoff. `main.ts` attaches
+ * A rejected batch can carry the server's own backoff. `createRuntimeAuditRelay` attaches
  * `retryAfterMs` from the 503's `Retry-After` header; anything else backs off
  * on the relay's own schedule.
  */
@@ -732,9 +723,9 @@ export function createAuditRelay(
     jitter?: () => number;
     spoolPath?: string;
     maxSpoolBytes?: number;
-    /** Raw OpenCode types never forwarded. Defaults to `DEFAULT_DROPPED_EVENT_TYPES`. */
+    /** Runtime event types never forwarded. Defaults to `DEFAULT_DROPPED_EVENT_TYPES`. */
     dropTypes?: readonly string[];
-    /** Raw OpenCode types whose same-state repeats collapse. Empty disables rule 2. */
+    /** Runtime event types whose same-state repeats collapse. Empty disables rule 2. */
     coalesceTypes?: readonly string[];
   } = {},
 ): AuditRelay {

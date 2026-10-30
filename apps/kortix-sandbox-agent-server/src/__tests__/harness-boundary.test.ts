@@ -78,8 +78,7 @@ describe('harness ownership boundary', () => {
       turns: { prompt: unexpected, steer: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, retractMessage: unexpected, agents: unexpected },
       background: { start: unexpected },
       assets: {
-        harness: 'test', componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
-        reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
+        harness: 'test', componentNames: [],          reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
       },
     }
     const app = buildDaemonApp(cfg, service, 0)

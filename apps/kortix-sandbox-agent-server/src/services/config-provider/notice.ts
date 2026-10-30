@@ -7,21 +7,15 @@ import { dirname } from 'node:path'
  * A config release is served from a read-only directory under
  * `/opt/kortix/config`. `/workspace` is a separate, editable checkout that may
  * be behind the commit the release was built from. Without being told, an
- * agent reads `/workspace/skills` or `/workspace/harnesses/opencode`, sees
+ * agent reads `/workspace/skills` or `/workspace/harnesses/pi`, sees
  * different bytes from the ones it is running, and edits files that change
  * nothing.
  *
- * CHANNEL: the agent's system context, through OpenCode's `instructions`
- * array — the same mechanism `secret-capabilities.ts` uses. Chosen over
- * posting a message into the session because:
- *
- *   - Applying a release RESTARTS OpenCode. `instructions` is composed at
- *     every spawn (`writeComposedConfig`), so it survives the restart the
- *     convergence itself performs; a message posted to the old process does
- *     not.
- *   - It costs no model call and starts no turn. `POST /session/:id/
- *     prompt_async`, the only other in-box channel, would begin a real turn
- *     after every convergence.
+ * CHANNEL: the agent's system prompt. pi appends this file to it, as it does
+ * the `secret-capabilities.ts` file. Chosen over posting a message into the
+ * session because it costs no model call and starts no turn: `POST
+ * /session/:id/prompt_async`, the only other in-box channel, would begin a
+ * real turn after every convergence.
  *
  * It is a STATEMENT OF STATE, not an event, so it stays true on every later
  * turn. It names the commit, which is the identity a human checks.
@@ -53,9 +47,9 @@ export interface ConfigReleaseNotice {
    * default and writes the sentence that explains it. Paraphrasing it here
    * would make two surfaces disagree about an access decision, and a second
    * channel would tell the session twice. It rides the notice, which is
-   * already composed into OpenCode's `instructions` at every spawn and is
-   * already written only when its text changes — so this is stated once per
-   * change, like the commit line beside it.
+   * already in the system prompt and is already written only when its text
+   * changes — so this is stated once per change, like the commit line beside
+   * it.
    */
   agentRepoint?: string | null
 }

@@ -1,8 +1,7 @@
 /**
  * The session turn verbs `routes/kortix/runtime.ts` serves: start a turn,
- * stop it, read or remove one message, and list the agents. Each harness
- * implements them its own way (OpenCode through its REST API, pi in-process),
- * so the host speaks only Kortix names.
+ * stop it, read or remove one message, and list the agents. The harness
+ * implements them (pi in-process), so the host speaks only Kortix names.
  */
 
 /** A validated `POST /kortix/runtime/sessions/:id/prompt` body. */

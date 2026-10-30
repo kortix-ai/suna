@@ -270,6 +270,15 @@ async function boot(input: {
   return built
 }
 
+/** The root agent's tools, as the model is offered them. */
+const rootTools = (r: Rig) => (r.service.runtime() as unknown as { agent: { state: { tools: Array<{ name: string; description: string }> } } }).agent.state.tools
+const toolIds = (r: Rig) => rootTools(r).map((tool) => tool.name)
+const taskTool = (r: Rig) => rootTools(r).find((tool) => tool.name === 'task')!
+const skillList = (r: Rig) => r.service.runtime()!.skillList()
+/** The sub-agent sessions of the root, from the runtime state document. */
+const children = async (r: Rig) =>
+  ((await r.bearer('/kortix/runtime/state').then((res) => res.json())) as { sessions: { value: Array<{ id: string; parent_id: string | null }> } }).sessions.value.filter((session) => session.parent_id !== null)
+
 async function readSse(response: Response, until: (text: string) => boolean, timeoutMs = 3_000): Promise<string> {
   const reader = response.body!.getReader()
   const decoder = new TextDecoder()
@@ -412,7 +421,7 @@ describe('pi harness', () => {
     // pure read — identity real, components unknown until pi runs the ticker.
     const truth = after.runtime_truth as { daemon_build: unknown; components: Record<string, { state: string }> }
     expect(truth.daemon_build).toBeDefined()
-    expect(Object.keys(truth.components).sort()).toEqual(['catalog', 'cli', 'config_release', 'daemon', 'managed_skills'])
+    expect(Object.keys(truth.components).sort()).toEqual(['cli', 'config_release', 'daemon', 'managed_skills'])
     const host = await readHostHealth({ cfg: loadConfig(r.env), bootTime: Date.now(), bootState: r.bootState, staticWebPort: null, resources: () => null })
     expect(Object.keys(after)).toEqual(expect.arrayContaining(Object.keys(host)))
   })
@@ -549,8 +558,8 @@ describe('pi harness', () => {
     // text again and the reply renders twice.
     const r = await boot({ script: [{ text: 'Streamed answer.' }] })
     const root = r.service.runtime()!.rootId
-    const first = await r.user('/event')
-    const second = await r.user('/event')
+    const first = await r.user('/global/event')
+    const second = await r.user('/global/event')
     expect(first.headers.get('content-type')).toContain('text/event-stream')
     await prompt(r, root, { messageID: 'msg_0198e2a4b0c1ABCDEFGHIJKLMN', parts: [{ type: 'text', text: 'say something' }] })
     const frames = async (res: Response) =>
@@ -680,10 +689,9 @@ describe('pi harness', () => {
       expect({ path, status: (await r.user(path)).status }).toEqual({ path, status: 404 })
     }
     expect(await r.user('/command').then((res) => res.json())).toEqual([])
-    const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
+    const tools = toolIds(r)
     expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
     expect((await r.user('/session/status').then((res) => res.json()))).toEqual({})
-    expect((await r.user('/lsp/diagnostics')).status).toBe(200)
     expect((await r.user('/no/such/route')).status).toBe(404)
   })
 
@@ -976,7 +984,7 @@ describe('pi harness', () => {
           skill(join(workspace, '.pi', 'skills'), 'secrets-dump')
         },
       })
-      const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
+      const skills = skillList(r)
       expect(skills.map((s) => s.name)).toEqual(['deploy'])
       const root = r.service.runtime()!.rootId
       const before = gateway.sent.length
@@ -1003,7 +1011,7 @@ describe('pi harness', () => {
     try {
       for (const [flag, listed] of [['1', true], ['0', false]] as const) {
         const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_GENUI: flag } })
-        const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
+        const skills = skillList(r)
         expect(skills.map((s) => s.name).sort()).toEqual(listed ? ['kortix-genui', 'kortix-memory'] : ['kortix-memory'])
         const root = r.service.runtime()!.rootId
         const before = gateway.sent.length
@@ -1226,15 +1234,15 @@ describe('pi harness', () => {
       write(join(r.workspace, 'skills'), 'kortix-cli', 'Committed copy')
       await r.service.lifecycle.start()
       const list = async () =>
-        ((await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description: string }>)
+        skillList(r)
           .map((s) => [s.name, s.description])
           .sort()
       expect(await list()).toEqual([['kortix-cli', 'Committed copy']])
 
-      // runtime-assets writes the overlay after the harness started, then calls injectSkills.
+      // runtime-assets writes the overlay after the harness started, then calls skillsUpdated.
       write(managed, 'kortix-cli', 'Managed copy')
       write(managed, 'kortix-system', 'Platform reference')
-      await piDefinition.assets.injectSkills(r.workspace, managed)
+      await piDefinition.assets.skillsUpdated?.()
 
       expect(await list()).toEqual([
         ['kortix-cli', 'Managed copy'],
@@ -1265,7 +1273,7 @@ describe('pi harness', () => {
     // Same name in both roots: the root layout wins.
     skill('.kortix/opencode/skills', 'deploy', 'Stale legacy copy')
     await r.service.lifecycle.start()
-    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description: string }>
+    const skills = skillList(r)
     expect(skills.map((s) => [s.name, s.description]).sort()).toEqual([
       ['deploy', 'Ship to prod'],
       ['review', 'Review a change'],
@@ -1538,7 +1546,7 @@ describe('pi project config', () => {
         writeFileSync(join(dir, 'skills', 'native', 'SKILL.md'), '---\nname: native\ndescription: Native Pi skill\n---\nDo it.\n')
       },
     })
-    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
+    const skills = skillList(r)
     expect(skills.map((skill) => skill.name)).toContain('native')
     expect(r.service.runtime()!.extensionStatus().loaded.some((name) => name.endsWith('/.kortix/pi/extensions/native.ts'))).toBe(true)
     const sentBefore = gateway.sent.length
@@ -1563,7 +1571,7 @@ describe('project tools on pi', () => {
     mkdirSync(dirname(join(workspace, path)), { recursive: true })
     writeFileSync(join(workspace, path), source)
   }
-  const ids = async (r: Rig) => (await r.user('/tool/ids').then((res) => res.json())) as string[]
+  const ids = async (r: Rig) => toolIds(r)
   const page = async (r: Rig) => (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
 
   test('a tool declared in kortix.yaml runs with the call context, beside the Kortix tools', async () => {
@@ -1818,12 +1826,12 @@ describe('pi packages', () => {
         writeFileSync(join(workspace, '.pi', 'extensions', 'repo.ts'), echoTool('repo_echo', 'repo'))
       },
     })
-    const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
+    const tools = toolIds(r)
     expect(tools).toEqual(expect.arrayContaining(['system_echo', 'project_echo', 'local_echo', 'repo_echo', 'task', 'bash']))
     const status = r.service.runtime()!.extensionStatus()
     expect(status.loaded).toEqual(expect.arrayContaining(['subagents', 'npm:system-ext@1.0.0', 'npm:project-ext@2.0.0']))
     // A pre-built package still brings its skills: pi reads them from its folder.
-    expect(((await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>).map((s) => s.name)).toContain('package-skill')
+    expect(skillList(r).map((s) => s.name)).toContain('package-skill')
     expect(status.failed).toEqual([
       { name: 'npm:system-missing@1.0.0', error: 'package is not installed' },
       { name: 'npm:project-missing@1.0.0', error: 'package is not installed' },
@@ -1999,7 +2007,7 @@ describe('pi subagents extension', () => {
       script: [TASK({}), { tool: 'bash', args: { command: 'printf from-subagent > sub.txt && cat sub.txt' } }, { text: 'child wrote sub.txt' }, { text: 'parent done' }],
     })
     const root = r.service.runtime()!.rootId
-    const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
+    const tools = toolIds(r)
     expect(tools).toContain('task')
 
     await promptAndSettle(r, 'delegate it')
@@ -2032,7 +2040,7 @@ describe('pi subagents extension', () => {
     expect(((await olderPage.json()) as unknown[]).length).toBe(2)
     expect(olderPage.headers.get('x-next-cursor')).toBeNull()
     expect(await r.user(`/session/${childId}`).then((res) => res.json())).toMatchObject({ id: childId, parentID: root, title: expect.stringContaining('Write the note') })
-    expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as Array<{ id: string }>).map((s) => s.id)).toEqual([childId])
+    expect((await children(r)).map((s) => s.id)).toEqual([childId])
     expect(((await r.user('/session').then((res) => res.json())) as Array<{ id: string }>).map((s) => s.id)).toEqual([root, childId])
     // The root transcript holds no child message.
     expect(page.messages.every((m) => m.info.sessionID === root)).toBe(true)
@@ -2086,7 +2094,7 @@ describe('pi subagents extension', () => {
     const child = (await r.bearer(`/kortix/runtime/messages/${explore!.state.metadata.sessionId}`).then((res) => res.json())) as WirePage
     expect(toolParts(child, 'write')[0]!.state.status).toBe('error')
     expect(toolParts(child, 'task')[0]!.state.status).toBe('error')
-    expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as unknown[]).length).toBe(1)
+    expect((await children(r)).length).toBe(1)
   })
 
   test('a compiled subagent is offered and used; task_id resumes the same child after a restart', async () => {
@@ -2101,7 +2109,7 @@ describe('pi subagents extension', () => {
       script: [TASK({ subagent_type: 'reviewer', prompt: 'review it' }), { text: 'looks good' }, { text: 'first done' }],
       env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(compiled) },
     })
-    const described = ((await r.user('/tool').then((res) => res.json())) as Array<{ id: string; description: string }>).find((t) => t.id === 'task')!
+    const described = taskTool(r)
     expect(described.description).toContain('reviewer: Reviews one change')
     expect(described.description).not.toContain('hidden')
     await promptAndSettle(r, 'review')
@@ -2120,7 +2128,7 @@ describe('pi subagents extension', () => {
     expect(child.messages.map((m) => m.info.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
     page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     expect(toolParts(page, 'task')[1]!.state.output).toContain('<task_result>\nstill good\n</task_result>')
-    expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as unknown[]).length).toBe(1)
+    expect((await children(r)).length).toBe(1)
   })
 
   test('a subagent cannot run a call the session denies, even when its own rules allow it', async () => {
@@ -2161,19 +2169,19 @@ describe('pi subagents extension', () => {
   test('a live agent-config change re-lists the subagent types in the task tool', async () => {
     const r = await boot({ script: [{ text: 'ok' }] })
     const describe = async () =>
-      ((await r.user('/tool').then((res) => res.json())) as Array<{ id: string; description: string }>).find((t) => t.id === 'task')!.description
+      taskTool(r).description
     expect(await describe()).not.toContain('reviewer')
     const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = JSON.stringify({ agent: { build: { mode: 'primary' }, reviewer: { mode: 'subagent', description: 'Reviews one change' } } })
     await runtime.reconfigure()
     expect(await describe()).toContain('reviewer: Reviews one change')
-    expect(((await r.user('/tool/ids').then((res) => res.json())) as string[]).filter((id) => id === 'task')).toHaveLength(1)
+    expect(toolIds(r).filter((id) => id === 'task')).toHaveLength(1)
   })
 
   test("a live agent-config change turns the agent's built-in tools off and back on", async () => {
     const compiled = (tools?: Record<string, boolean>) => JSON.stringify({ agent: { build: { tools } } })
     const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ bash: false }) } })
-    const ids = async () => (await r.user('/tool/ids').then((res) => res.json())) as string[]
+    const ids = async () => toolIds(r)
     expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
     const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled()
@@ -2396,7 +2404,7 @@ describe('config releases on pi', () => {
     })
 
   const skillsOf = async (r: Rig) =>
-    ((await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description: string }>)
+    skillList(r)
       .map((s) => [s.name, s.description])
       .sort()
   const systemOf = (index: number) => JSON.stringify(gateway.sent[index]!.filter((m) => m.role === 'system'))
@@ -2888,9 +2896,12 @@ describe('pi compaction', () => {
     await promptAndSettle(r, 'ALPHA question')
     await r.service.lifecycle.stop()
     const dumpPath = join(r.workspace, '.state', 'sess-pi-test.json')
-    const { entries, ...legacy } = JSON.parse(readFileSync(dumpPath, 'utf8')) as Record<string, unknown>
+    const { entries, header: _header, ...current } = JSON.parse(readFileSync(dumpPath, 'utf8')) as { entries: Array<{ type: string; message?: unknown }>; header?: unknown }
     expect(Array.isArray(entries)).toBe(true)
-    writeFileSync(dumpPath, JSON.stringify(legacy))
+    expect('agentMessages' in current).toBe(false)
+    // A pre-1.0 dump: the conversation as plain agent messages, no entries.
+    const agentMessages = entries.filter((entry) => entry.type === 'message').map((entry) => entry.message)
+    writeFileSync(dumpPath, JSON.stringify({ ...current, agentMessages }))
 
     const restarted = await boot({ script: [{ text: 'after restart' }], workspace: r.workspace })
     rigs.splice(rigs.indexOf(r), 1)
@@ -4863,7 +4874,7 @@ describe('kortix.yaml v3 on pi', () => {
     skill(workspace, 'team/review', 'review')
   }
   const v3 = (set: Record<string, unknown>) => JSON.stringify({ schema: 3, ...set })
-  const skillNames = async (r: Rig) => ((await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>).map((s) => s.name).sort()
+  const skillNames = async (r: Rig) => skillList(r).map((s) => s.name).sort()
 
   test('v3 reads no harness folder and no discovery path: only the registered skill folders and the managed skills load', async () => {
     const r = await boot({
@@ -4944,7 +4955,7 @@ describe('kortix.yaml v3 on pi', () => {
       script: [TASK('auditor'), TASK('general'), TASK('reviewer'), { text: 'reviewed' }, { text: 'parent done' }],
       env: { KORTIX_COMPILED_AGENT_CONFIG: SUBAGENTS },
     })
-    const described = ((await r.user('/tool').then((res) => res.json())) as Array<{ id: string; description: string }>).find((t) => t.id === 'task')!.description
+    const described = taskTool(r).description
     expect(described).toContain('- reviewer: Reviews one change')
     for (const name of ['auditor', 'general', 'explore']) expect(described).not.toContain(`- ${name}:`)
 
@@ -4958,7 +4969,7 @@ describe('kortix.yaml v3 on pi', () => {
     expect(general!.state.status).toBe('error')
     expect(String(general!.state.error)).toContain('denies')
     expect(reviewer!.state.status).toBe('completed')
-    expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as unknown[]).length).toBe(1)
+    expect((await children(r)).length).toBe(1)
   })
 
   test('with every subagent granted, general is still unknown in v3', async () => {
@@ -4971,7 +4982,7 @@ describe('kortix.yaml v3 on pi', () => {
 
   test('v2 keeps the built-in general and explore subagents', async () => {
     const r = await boot({ script: [], env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { mode: 'primary' } } }) } })
-    const described = ((await r.user('/tool').then((res) => res.json())) as Array<{ id: string; description: string }>).find((t) => t.id === 'task')!.description
+    const described = taskTool(r).description
     expect(described).toContain('- general:')
     expect(described).toContain('- explore:')
   })
@@ -5020,9 +5031,9 @@ describe('kortix.yaml v3 on pi', () => {
   test('codemode follows the session agent when KORTIX_PI_CODEMODE is absent; the env still wins', async () => {
     const set = v3({ default_agent: 'build', agent: { build: { mode: 'primary', permission: 'allow', codemode: 'off' } } })
     const off = await boot({ script: [], env: { KORTIX_COMPILED_AGENT_CONFIG: set } })
-    expect((await off.user('/tool/ids').then((res) => res.json())) as string[]).not.toContain('codemode')
+    expect(toolIds(off)).not.toContain('codemode')
     const env = await boot({ script: [], env: { KORTIX_COMPILED_AGENT_CONFIG: set, KORTIX_PI_CODEMODE: 'on' } })
-    expect((await env.user('/tool/ids').then((res) => res.json())) as string[]).toContain('codemode')
+    expect(toolIds(env)).toContain('codemode')
   })
 })
 
