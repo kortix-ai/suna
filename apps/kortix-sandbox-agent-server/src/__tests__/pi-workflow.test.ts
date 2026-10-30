@@ -462,7 +462,8 @@ describe('pi workflow tool', () => {
     expect(await approvedTurn(rt)).toBe('completed')
     const first = lastWorkflowPart(frames).metadata as unknown as WorkflowRunMetadata
     expect(first.agents.map((a) => a.status)).toEqual(['done', 'failed', 'done', 'done'])
-    expect(api.creates.map((c) => c.initial_prompt)).toEqual(['A', 'B', 'C', 'D'])
+    // parallel() starts the four at once: their sessions are created in any order.
+    expect(api.creates.map((c) => c.initial_prompt).sort()).toEqual(['A', 'B', 'C', 'D'])
 
     // The relaunch names only the run: its saved script runs again.
     bFails = false
@@ -472,7 +473,8 @@ describe('pi workflow tool', () => {
     expect(asked.questions[0]!.question).toContain(`It relaunches run ${first.runId}: agents that completed there return their saved results.`)
     expect(await request.done).toBe('completed')
 
-    expect(api.creates.map((c) => c.initial_prompt)).toEqual(['A', 'B', 'C', 'D', 'B', 'C', 'D'])
+    // A returns from the saved run: only B, C and D get new sessions.
+    expect(api.creates.slice(4).map((c) => c.initial_prompt).sort()).toEqual(['B', 'C', 'D'])
     const part = lastWorkflowPart(frames)
     const second = part.metadata as unknown as WorkflowRunMetadata
     expect(second.runId).not.toBe(first.runId)

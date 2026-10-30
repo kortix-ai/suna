@@ -258,7 +258,7 @@ const parameters = Type.Object({
     }),
   ),
   prompt: Type.String({ description: 'The task for the agent to perform' }),
-  subagent_type: Type.Optional(Type.String({ description: 'The named agent to use for this task. Omitted: the general-purpose agent `general` (for the platform coordinator: the project's default agent). Ignored when you pass an inline `agent` spec.' })),
+  subagent_type: Type.Optional(Type.String({ description: 'The named agent to use for this task. Omitted: the general-purpose agent `general` (for the platform coordinator: the default agent of the project). Ignored when you pass an inline `agent` spec.' })),
   agent: Type.Optional(inlineAgent),
   task_id: Type.Optional(Type.String({ description: 'Set only to resume a previous task: the task_id a previous task output returned. The task resumes in the session it was created in.' })),
   session: Type.Optional(
