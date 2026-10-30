@@ -24701,6 +24701,8 @@
     "title": "桌面",
     "openTab": "在新标签页中打开",
     "offline": "此计算机上的桌面未运行。",
+    "noDesktop": "这台计算机没有桌面。",
+    "noDesktopHint": "My Kortix 运行在精简的计算机上。你的智能体会话有桌面。",
     "start": "请让 Kortix 运行",
     "retry": "重试",
     "takeOver": "接管",

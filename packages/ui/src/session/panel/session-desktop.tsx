@@ -17,6 +17,11 @@
  * viewer to the slowest one, and a background tab stops acking frames, so a
  * forgotten tab would slow the stream for everyone watching. It reconnects,
  * on a fresh keyframe, when the tab is shown again.
+ *
+ * A computer without a desktop (My Kortix's minimal image, a template on
+ * another base) says so; the header does not offer the panel there. The
+ * control bar appears only once the desktop answers, never over the proxy's
+ * "not answering" page.
  */
 
 import { useTranslations } from '../../i18n';
@@ -30,11 +35,14 @@ import { framePolicy } from '../../files/viewer/preview-policy';
 import { PanelWidthButton } from '../../files/viewer/viewer-actions';
 import { CloseButton, DetailSidebarToggle } from '../../files/viewer/viewer-chrome';
 import { cn } from '../../lib/utils';
-import { probePreviewPort } from '@kortix/sdk';
+import { probePreviewPort, type PreviewPortProbe } from '@kortix/sdk';
+import { useHasSessionDesktop } from '@kortix/sdk/react';
 import { ArrowSquareOutIcon, MonitorIcon } from '@phosphor-icons/react';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 export const DESKTOP_URL = 'http://localhost:6901/';
+/** How often the panel asks again until the desktop answers. */
+const PROBE_INTERVAL_MS = 3_000;
 
 const subscribeVisibility = (onChange: () => void) => {
   document.addEventListener('visibilitychange', onChange);
@@ -60,20 +68,33 @@ export function SessionDesktop({
   }).url;
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [control, setControl] = useState(false);
-  // 'off' = the proxy answered 502/503/504: nothing listens on 6901.
-  const [state, setState] = useState<'probing' | 'on' | 'off'>('probing');
+  // `undefined` until the session's daemon answers its health probe.
+  const hasDesktop = useHasSessionDesktop();
+  // `unreachable` = the proxy answered 502/503/504: nothing listens on 6901.
+  const [probe, setProbe] = useState<PreviewPortProbe>('unknown');
   const [attempt, setAttempt] = useState(0);
   const visible = useSyncExternalStore(subscribeVisibility, tabVisible, () => true);
-  const live = !!src && state === 'on';
+  const live = probe === 'reachable';
 
+  // Ask until the desktop answers. The first answer is often `unknown`: the
+  // preview cookie arrives with the frame's first load. A stopped desktop
+  // answers `unreachable`, and the panel shows it again once it starts.
   useEffect(() => {
-    if (!src) return;
+    if (!src || !hasDesktop || !visible) return;
     const abort = new AbortController();
-    void probePreviewPort(src, { signal: abort.signal }).then((probe) => {
-      if (!abort.signal.aborted) setState(probe === 'unreachable' ? 'off' : 'on');
-    });
-    return () => abort.abort();
-  }, [src, attempt]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const ask = async () => {
+      const result = await probePreviewPort(src, { signal: abort.signal });
+      if (abort.signal.aborted) return;
+      setProbe(result);
+      if (result !== 'reachable') timer = setTimeout(ask, PROBE_INTERVAL_MS);
+    };
+    void ask();
+    return () => {
+      abort.abort();
+      clearTimeout(timer);
+    };
+  }, [src, hasDesktop, visible, attempt]);
 
   const takeOver = () => {
     setControl(true);
@@ -112,25 +133,22 @@ export function SessionDesktop({
             control && 'ring-2 ring-primary',
           )}
         >
-          {state === 'off' ? (
-            <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm">
-              <MonitorIcon className="size-10 opacity-20" />
-              <p>{t('offline')}</p>
-              <p className="text-xs">
-                {t('start')} <code>kortix-desktop start</code>.
-              </p>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setState('probing');
-                  setAttempt((n) => n + 1);
-                }}
-              >
+          {hasDesktop === false ? (
+            <DesktopNotice title={t('noDesktop')} hint={t('noDesktopHint')} />
+          ) : probe === 'unreachable' ? (
+            <DesktopNotice
+              title={t('offline')}
+              hint={
+                <>
+                  {t('start')} <code>kortix-desktop start</code>.
+                </>
+              }
+            >
+              <Button variant="secondary" size="sm" onClick={() => setAttempt((n) => n + 1)}>
                 {t('retry')}
               </Button>
-            </div>
-          ) : !live || !visible ? (
+            </DesktopNotice>
+          ) : !hasDesktop || !src || !visible ? (
             <div className="flex h-full items-center justify-center">
               <Loading className="size-4" />
             </div>
@@ -177,6 +195,17 @@ export function SessionDesktop({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function DesktopNotice({ title, hint, children }: { title: string; hint: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm">
+      <MonitorIcon className="size-10 opacity-20" />
+      <p>{title}</p>
+      <p className="text-xs">{hint}</p>
+      {children}
     </div>
   );
 }

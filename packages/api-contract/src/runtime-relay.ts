@@ -260,6 +260,15 @@ export const RUNTIME_TURNS_CAPABILITY = 'runtime.turns.v1' as const;
 export const RUNTIME_RETRACT_CAPABILITY = 'runtime.retract.v1' as const;
 
 /**
+ * The session's computer has the desktop (`kortix-desktop`: Xvfb, XFCE and voxl
+ * streaming it on port 6901). The daemon lists it beside the host's own entries
+ * when the image installs the desktop. My Kortix's minimal image, and a custom
+ * template on a base other than Ubuntu 24.04, do not; a client then hides the
+ * Desktop panel.
+ */
+export const MACHINE_DESKTOP_CAPABILITY = 'machine.desktop' as const;
+
+/**
  * `code` on the daemon's `409` to a retract: a model call read the message
  * (its turn runs or ran), so it stays where it is.
  */

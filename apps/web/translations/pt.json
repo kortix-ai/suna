@@ -24701,6 +24701,8 @@
     "title": "Área de trabalho",
     "openTab": "Abrir em nova aba",
     "offline": "A área de trabalho não está em execução neste computador.",
+    "noDesktop": "Este computador não tem área de trabalho.",
+    "noDesktopHint": "O My Kortix roda em um computador mínimo. As sessões dos seus agentes têm área de trabalho.",
     "start": "Peça ao Kortix para executar",
     "retry": "Tentar novamente",
     "takeOver": "Assumir o controle",
