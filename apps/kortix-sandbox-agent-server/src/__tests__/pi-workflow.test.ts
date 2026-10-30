@@ -480,12 +480,15 @@ describe('pi workflow tool', () => {
     expect(second.runId).not.toBe(first.runId)
     expect(second.resumedFrom).toBe(first.runId)
     expect(second.title).toBe('Research two topics')
-    expect(second.agents.map((a) => [a.label, a.status, a.cached ?? false, a.sessionId ?? null])).toEqual([
-      ['A', 'done', true, null],
-      ['B', 'done', false, 'child-5'],
-      ['C', 'done', false, 'child-6'],
-      ['D', 'done', false, 'child-7'],
+    expect(second.agents.map((a) => [a.label, a.status, a.cached ?? false])).toEqual([
+      ['A', 'done', true],
+      ['B', 'done', false],
+      ['C', 'done', false],
+      ['D', 'done', false],
     ])
+    // A has no new session; B, C and D each got one of the three new sessions, in any order.
+    expect(second.agents[0]!.sessionId ?? null).toBeNull()
+    expect(second.agents.slice(1).map((a) => a.sessionId).sort()).toEqual(['child-5', 'child-6', 'child-7'])
     expect(part.output).toContain('agents: 4 (4 done; 1 reused from the earlier run)')
     expect(part.output).toContain(JSON.stringify(['answer: A', 'answer: B', 'answer: C', 'answer: D'], null, 2))
 
@@ -737,7 +740,8 @@ describe('pi workflow tool, run controls', () => {
     const { rt, service } = await boot([runWorkflow(TWO), { text: 'parent done' }])
     const http = routes(service)
     const turn = approvedTurn(rt)
-    await waitFor(() => api.creates.length === 1)
+    // The run records the child's session a moment after the create call returns.
+    await waitFor(() => rt.workflowList()[0]?.agents.some((a) => a.sessionId === 'child-1' && a.status === 'running') === true)
     const [live] = (await http.list()).runs
     expect(live).toMatchObject({ status: 'running', agents: [{ id: 'a1', status: 'running', sessionId: 'child-1' }] })
     expect(await http.control(live!.runId, { action: 'pause' })).toEqual({ status: 200, body: { ok: true, paused: true } })
@@ -762,7 +766,8 @@ describe('pi workflow tool, run controls', () => {
     const { rt, frames, service } = await boot([runWorkflow("return agent('slow task', { label: 'Slow' })"), { text: 'parent done' }])
     const http = routes(service)
     const turn = approvedTurn(rt)
-    await waitFor(() => api.creates.length === 1)
+    // The run records the child's session a moment after the create call returns.
+    await waitFor(() => rt.workflowList()[0]?.agents.some((a) => a.sessionId === 'child-1' && a.status === 'running') === true)
     const runId = rt.workflowList()[0]!.runId
     expect(await http.control(runId, { action: 'restart_agent', session_id: 'child-404' })).toEqual({ status: 409, body: { error: 'no agent of this run is running in that session', code: 'agent_not_running' } })
     expect((await http.control(runId, { action: 'restart_agent' })).status).toBe(400)
@@ -785,7 +790,8 @@ describe('pi workflow tool, run controls', () => {
     const { rt, frames, service } = await boot([runWorkflow("return agent('long task')"), { text: 'parent done' }])
     const http = routes(service)
     const turn = approvedTurn(rt)
-    await waitFor(() => api.creates.length === 1)
+    // The run records the child's session a moment after the create call returns.
+    await waitFor(() => rt.workflowList()[0]?.agents.some((a) => a.sessionId === 'child-1' && a.status === 'running') === true)
     const runId = rt.workflowList()[0]!.runId
     expect(await http.control(runId, { action: 'stop' })).toEqual({ status: 200, body: { ok: true, paused: false } })
     expect(await turn).toBe('completed')
