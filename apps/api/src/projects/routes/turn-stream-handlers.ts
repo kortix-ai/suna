@@ -6,7 +6,7 @@
  * bodies are moved verbatim, so the traffic contract — statuses, response
  * fields, and side-effect order — is unchanged.
  */
-import type { TurnStreamRelayBody } from '@kortix/api-contract/runtime-relay';
+import { SUBAGENT_NOTIFY_PARENT_KEY, type TurnStreamRelayBody } from '@kortix/api-contract/runtime-relay';
 import { isTurnErrorCode } from '@kortix/api-contract/transcript';
 import { projectSessions } from '@kortix/db';
 import { genuiToMarkdown } from '@kortix/sdk/genui';
@@ -46,6 +46,7 @@ import {
   turnCompletionAllowsQueuePromotion,
 } from '../session-turn-ledger';
 import { fireIdleWatches } from '../rooms/service';
+import { notifyParentOfSubagentTurn } from '../subagent-notice';
 
 /** The relay request body, shape only — the route parses JSON into this. */
 export type TurnStreamBody = Partial<TurnStreamRelayBody>;
@@ -565,6 +566,23 @@ export async function settleTurnEnd(
   const promotedPromptId = await promoteAfterTurnEnd(ctx, body, settled);
   const response = await publishTurnEnd(c, ctx, body, settled, promotedPromptId);
   await sessionList;
+  // THE TURN ENDED, SO A BACKGROUND SUBAGENT'S PARENT HEARS IT (subagent-notice.ts).
+  // After the promotion: a prompt queued for this child starts its next turn
+  // first, so the child is not finished yet. Tracked, never awaited.
+  if (
+    settled.turnCompletion.outcome === 'closed' &&
+    ctx.childSession &&
+    ctx.turnStreamMetadata[SUBAGENT_NOTIFY_PARENT_KEY] === true
+  ) {
+    trackDetached(
+      notifyParentOfSubagentTurn({
+        sessionId: ctx.sessionId,
+        status: settled.status,
+        errorInfo: settled.errorInfo ?? null,
+        turnMessageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : null,
+      }),
+    );
+  }
   return response;
 }
 

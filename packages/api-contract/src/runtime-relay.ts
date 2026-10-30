@@ -260,6 +260,15 @@ export const RUNTIME_TURNS_CAPABILITY = 'runtime.turns.v1' as const;
 export const RUNTIME_RETRACT_CAPABILITY = 'runtime.retract.v1' as const;
 
 /**
+ * Session metadata key, value `true`: a cloud subagent its parent started in
+ * the background (the pi `agent` tool's `run_in_background`, kortixd
+ * `harness/pi/cloud-subagent.ts`). The parent's tool call returned at once,
+ * so the API delivers each finished turn of this session into the parent as
+ * a new message (apps/api `projects/subagent-notice.ts`).
+ */
+export const SUBAGENT_NOTIFY_PARENT_KEY = 'notify_parent' as const;
+
+/**
  * `code` on the daemon's `409` to a retract: a model call read the message
  * (its turn runs or ran), so it stays where it is.
  */
