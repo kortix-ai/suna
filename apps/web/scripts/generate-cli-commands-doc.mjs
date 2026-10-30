@@ -18,6 +18,8 @@ const SCRIPT = 'apps/web/scripts/generate-cli-commands-doc.mjs';
 const UNDOCUMENTED = {
   // Attaches the OpenCode TUI; a pi session has no `session.attach` and the command exits 1.
   connect: 'OpenCode only',
+  // Served only where KORTIX_CHROME_ENABLED is on (dev) until the Chrome Web Store listing is public.
+  chrome: 'not launched',
 };
 
 /** The usage cell, where the table's arguments name more than the docs describe. */
@@ -62,7 +64,6 @@ const COMMANDS = {
   env: ['Pull secret names into a `.env` file, or push a `.env` file as secrets.', '[Security](/docs/guide#security)'],
   channels: ['Slack and Microsoft Teams connections, and the agent each channel runs.', '[Channels](/docs/guide#channels)'],
   sandboxes: ['Sandbox templates, their builds and their health.', '[Computers](/docs/guide#computers)'],
-  chrome: ['Attach your connected Chrome to the session, and release it. The browser then answers on port 9333 for any DevTools Protocol client.', '[Kortix in Chrome](/docs/connect/chrome)'],
   apps: ['Deploy and manage Apps: sites and servers with stable Kortix URLs.', '[Apps reference](/docs/developers#apps-reference)'],
   marketplace: ['Search, show, install and uninstall marketplace skills.', '[Skills](/docs/guide#skills)'],
   files: ['Read the committed repository: files, history, branches, commits, diffs and a zip download.', '[Git](/docs/developers#git)'],

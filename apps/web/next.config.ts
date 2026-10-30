@@ -1242,6 +1242,13 @@ const nextConfig = (): NextConfig => ({
         source: '/.well-known/apple-app-site-association',
         headers: [{ key: 'Content-Type', value: 'application/json' }],
       },
+      // Kortix in Chrome is not launched: its docs page is reachable by link from the app on
+      // dev, and no search engine indexes it (content/docs/connect/chrome.mdx `noindex`).
+      // Remove with the page's `noindex` at launch.
+      ...['/docs/connect/chrome', '/docs/connect/chrome.md', '/docs/connect/chrome.mdx'].map((source) => ({
+        source,
+        headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+      })),
       {
         source: '/fonts/:path*',
         headers: [
