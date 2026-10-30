@@ -87,11 +87,16 @@ export function reminderTitle(reminder: Pick<SessionReminder, 'name' | 'prompt'>
   return reminder.name ?? reminder.prompt.split('\n')[0]!.trim();
 }
 
-/** "Cron 0 9 * * * Europe/Berlin", "Every 1h" or "Once"; `t` is the `reminders` translator. */
+/**
+ * "Cron 0 9 * * * Europe/Berlin", "Every 1h", "Once", or "On an event" for a
+ * session-target trigger a webhook, connector or App event, or merge fires;
+ * `t` is the `reminders` translator.
+ */
 export function scheduleLabel(
-  reminder: Pick<SessionReminder, 'cron' | 'timezone' | 'every'>,
-  t: (key: 'cron' | 'every' | 'once', values?: Record<string, string>) => string,
+  reminder: Pick<SessionReminder, 'cron' | 'timezone' | 'every' | 'source_type'>,
+  t: (key: 'cron' | 'every' | 'once' | 'onEvent', values?: Record<string, string>) => string,
 ): string {
+  if (reminder.source_type && reminder.source_type !== 'schedule') return t('onEvent');
   if (reminder.cron)
     return t('cron', { expression: [reminder.cron, reminder.timezone ?? ''].join(' ').trim() });
   return reminder.every ? t('every', { period: reminder.every }) : t('once');

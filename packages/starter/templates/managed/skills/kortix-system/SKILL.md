@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "How Kortix works and how to change a Kortix project from a session: land work through a change request, drive Kortix with the in-sandbox `kortix` CLI, keep files where they last, store or request credentials, schedule work, know what the session runtime (pi) can and cannot do, and edit `kortix.yaml` (kortix_version 3). Load when the user asks what Kortix can do or how it works; asks to create or change an agent, skill, tool, command, extension, permission, model, trigger or reminder; or asks to save, persist, schedule or ship work."
+description: "How Kortix works and how to change a Kortix project from a session: land work through a change request, drive Kortix with the in-sandbox `kortix` CLI, keep files where they last, store or request credentials, schedule work, know what the session runtime (pi) can and cannot do, and edit `kortix.yaml` (kortix_version 3). Load when the user asks what Kortix can do or how it works; asks to create or change an agent, skill, tool, command, extension, permission, model, trigger or loop; or asks to save, persist, schedule or ship work."
 ---
 
 <skill name="kortix-system">
@@ -112,10 +112,10 @@ state. Use `git` and the file tools for files and commits.
 | Task | Command |
 | --- | --- |
 | What every session does, talk to one | `kortix sessions status`, `sessions log <id>` (read-only), `sessions chat <id> --prompt "…"` |
-| Parallel work in its own sandbox | `kortix sessions new --prompt "…" --json`, then `sessions wait-for <id>` (the turn ends) |
+| Hand a task to another agent | The `agent` tool (default `session: "separate"`: its own session; one call waits up to 30 min and returns its final message). Not `sessions new` + `wait-for` in bash: bash stops after 30 s |
 | Change requests, the review inbox | `kortix cr ls\|show\|diff\|merge-preview`, `kortix review ls` |
 | Triggers | `kortix triggers ls\|info\|fire\|add\|set\|enable\|disable` |
-| Reminders on this session | `kortix remind "…" --in 24h`, `kortix reminders ls\|pause\|resume\|rm` |
+| Loops on this session | `kortix loop "…" --in 24h`, `kortix loops ls\|pause\|resume\|rm` |
 | Secrets | `kortix secrets ls\|set\|request\|sync` |
 | Connectors and accounts | `kortix connectors …` (the `kortix-connectors` skill) |
 | Apps: sites, servers, backends | `kortix apps …` (the `kortix-apps` skill) |
@@ -162,18 +162,18 @@ install link. Owners, accounts, `not granted`, `undecryptable`:
 
 | The user wants | Use |
 | --- | --- |
-| Follow up on THIS task later ("check tomorrow if they replied") | A reminder: `kortix remind "<what to check, what to do>" --in 24h [--every 1h]` |
-| Wait mid-task, resume with full context | A reminder, then end the turn |
+| Follow up on THIS task later ("check tomorrow if they replied") | A loop: `kortix loop "<what to check, what to do>" --in 24h [--every 1h]` |
+| Wait mid-task, resume with full context (later, or when a CR merges / a webhook or event arrives) | A loop, then end the turn; on an event: `kortix triggers add "<what to do>" --on cr-merged --cr <id>` |
 | Recurring project work (a daily digest) | A trigger: `on: { cron: "0 0 9 * * 1-5", timezone: <IANA> }` or `on: { every: 1h }` |
 | A one-off project job | A trigger: `on: { at: <ISO-8601> }` |
 | Project code on a cadence, no agent | A trigger: `run: { app: <slug>, path: /tick }` |
 | React to a system that can call a URL | A webhook trigger: `on: { webhook: { secret: <SECRET_NAME> } }` |
 | React to a source that sends nothing | A schedule that checks; last resort, an App that posts App events |
 
-- A reminder re-prompts THIS session and wakes it. No `kortix.yaml` change.
-  Remove a recurring one (`kortix reminders rm <id>`) as soon as its
+- A loop re-prompts THIS session and wakes it. No `kortix.yaml` change.
+  Remove a recurring one (`kortix loops rm <id>`) as soon as its
   condition holds: every fire is a model turn.
-  `403 feature_disabled`: the project turned Reminders off. Tell the user
+  `403 feature_disabled`: the project turned Loops off. Tell the user
   (`kortix projects features enable reminders`); use an `at` trigger meanwhile.
 - A trigger lives in `kortix.yaml` `triggers:` or an imported file. It fires
   only after its CR merges, or after `kortix triggers add … --apply`.
@@ -182,7 +182,7 @@ install link. Owners, accounts, `not granted`, `undecryptable`:
 - Kortix fires each slot once but does not dedupe your work. Scope each run
   by `{{ cron.last_scheduled_for }}` and record what you handled.
 - Run `kortix triggers fire <slug>` once the trigger is live.
-- Say "scheduled run" or "reminder" to people, not "cron job".
+- Say "scheduled run" or "loop" to people, not "cron job".
 
 Playbook: `references/scheduling.md`. Fields: `references/kortix/kortix-yaml.md`.
 </scheduling>
@@ -258,8 +258,12 @@ triggers:
     run: { agent: kortix, prompt: "Summarize yesterday's merged change requests." }
 ```
 
+- A new project starts with one agent, `worker`, the general-purpose agent
+  My Kortix routes work to. A project created earlier keeps its `kortix`
+  agent; nothing renames it.
 - An agent gets nothing it does not grant. Without `skills` it loads no
-  skill, `kortix-system` included.
+  skill, `kortix-system` included. `skills` and `extensions` also take
+  `{ exclude: [names] }`: every one but those.
 - A grant is `all`, `none` or a list of registered names. `subagents` names
   declared agents with `mode: subagent` or `all`.
 - `tools`: `all` (default), `none`, a list, or `{ exclude: [names] }`. The

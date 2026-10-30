@@ -93,7 +93,9 @@ export function upsertTriggerInManifest(
   );
   // A new trigger is written as `on:` / `run:`; an edit keeps the shape the entry has.
   const existing = idx >= 0 ? current[idx] : null;
-  const entry = !existing || existing.on !== undefined ? triggerSpecToOnRunEntry(spec) : triggerSpecToTomlEntry(spec);
+  // A change_request trigger has no `on:` form: it is written flat, `type: change_request` + `filter.base`.
+  const flat = spec.type === 'change_request' || (existing != null && existing.on === undefined);
+  const entry = flat ? triggerSpecToTomlEntry(spec) : triggerSpecToOnRunEntry(spec);
   const next = current.slice();
   if (idx >= 0) next[idx] = entry;
   else next.push(entry);

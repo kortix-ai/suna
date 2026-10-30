@@ -15,6 +15,7 @@ import {
   type DriveConflict,
   type DriveEntry,
   type FolderAccess,
+  type AgentMountPlan,
   type FolderAccessView,
   type FolderLevel,
   type FolderPrincipalType,
@@ -22,6 +23,8 @@ import {
   type SessionDrives,
   dismissDriveConflict,
   getFolderAccess,
+  listAgentMounts,
+  listProjectMounts,
   getProjectDrive,
   getSessionDrives,
   listDriveConflicts,
@@ -65,6 +68,28 @@ export function folderAccessQueryOptions(driveId: string | null, path: string, e
     queryKey: [...qk.drives.grants(driveId ?? ''), path] as const,
     queryFn: (): Promise<FolderAccessView> => getFolderAccess(driveId!, path),
     enabled: !!driveId && enabled,
+  };
+}
+
+/** The folders every new session of the project mounts. Under the drive's key, so a share or unshare refreshes it. */
+export function projectMountsQueryOptions(driveId: string | null, enabled = true) {
+  return {
+    queryKey: [...qk.drives.drive(driveId ?? ''), 'project-mounts'] as const,
+    queryFn: (): Promise<AgentMountPlan> => listProjectMounts(driveId!),
+    enabled: !!driveId && enabled,
+  };
+}
+
+export function useProjectMounts(driveId: string | null, enabled = true) {
+  return useQuery(projectMountsQueryOptions(driveId, enabled));
+}
+
+/** The folders a new session of an agent mounts. Under the drive's key, so a share or unshare refreshes it. */
+export function agentMountsQueryOptions(driveId: string | null, agentName: string, enabled = true) {
+  return {
+    queryKey: [...qk.drives.drive(driveId ?? ''), 'agent-mounts', agentName] as const,
+    queryFn: (): Promise<AgentMountPlan> => listAgentMounts(driveId!, agentName),
+    enabled: !!driveId && !!agentName && enabled,
   };
 }
 
@@ -119,6 +144,10 @@ export function useDriveFolder(driveId: string | null, path: string) {
 
 export function useFolderAccess(driveId: string | null, path: string, enabled = true) {
   return useQuery(folderAccessQueryOptions(driveId, path, enabled));
+}
+
+export function useAgentMounts(driveId: string | null, agentName: string, enabled = true) {
+  return useQuery(agentMountsQueryOptions(driveId, agentName, enabled));
 }
 
 export function useFolderPrincipals(driveId: string | null, enabled = true) {

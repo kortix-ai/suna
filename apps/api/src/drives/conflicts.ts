@@ -11,8 +11,8 @@ import { driveConflicts, drives, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { conflictOriginal } from './access';
-import { DRIVE_MOUNTS_METADATA_KEY, type DriveRow, recordedDriveMounts, refreshDriveNotes } from './service';
-import { getDriveVolume, isMissingVolume, listVolumeFiles, readVolumeFile } from './volumes';
+import { DRIVE_MOUNTS_METADATA_KEY, type DriveRow, driveVolume, recordedDriveMounts, refreshDriveNotes } from './service';
+import { type DriveVolume, getDriveVolume, isMissingVolume, listVolumeFiles, readVolumeFile } from './volumes';
 
 /** Drives written through the API lately: scanned even when no session mounts them. */
 // replica-local: a hint for the scanner on this replica. The scanner also
@@ -53,13 +53,13 @@ export async function scanDriveConflicts(drive: DriveRow): Promise<string[]> {
   if (!drive.platinumVolumeId) return [];
   let head: string | null;
   try {
-    head = (await getDriveVolume(drive.platinumVolumeName, AbortSignal.timeout(5_000))).head_commit_id ?? null;
+    head = (await getDriveVolume(driveVolume(drive), AbortSignal.timeout(5_000))).head_commit_id ?? null;
   } catch (err) {
     if (isMissingVolume(err)) return [];
     throw err;
   }
   if (head && head === drive.conflictScanHead) return [];
-  const entries = await listVolumeFiles(drive.platinumVolumeName, '/', true, AbortSignal.timeout(30_000));
+  const entries = await listVolumeFiles(driveVolume(drive), '/', true, AbortSignal.timeout(30_000));
   const found = new Map<string, string>();
   for (const e of entries) {
     const original = conflictOriginal(e.path);
@@ -78,7 +78,7 @@ export async function scanDriveConflicts(drive: DriveRow): Promise<string[]> {
     // A copy byte-for-byte equal to the version kept at the path loses
     // nothing: storage can leave several for one race. Record it closed so
     // nobody is asked to resolve a duplicate.
-    const redundant = await sameBytes(drive.platinumVolumeName, path, found.get(path)!, sizes).catch(() => false);
+    const redundant = await sameBytes(driveVolume(drive), path, found.get(path)!, sizes).catch(() => false);
     if (!redundant) fresh.push(path);
     // New, or back after it was resolved: a new conflict, so a dismissal of the old one no longer applies.
     await db
@@ -109,7 +109,7 @@ export async function scanDriveConflicts(drive: DriveRow): Promise<string[]> {
 const SAME_BYTES_LIMIT = 4 * 1024 * 1024;
 
 /** Whether a conflict copy holds exactly the bytes of the file it was made from (small files only). */
-async function sameBytes(volume: string, copy: string, original: string, sizes: Map<string, number>): Promise<boolean> {
+async function sameBytes(volume: DriveVolume, copy: string, original: string, sizes: Map<string, number>): Promise<boolean> {
   const a = sizes.get(copy);
   const b = sizes.get(original);
   if (a === undefined || b === undefined || a !== b || a < 0 || a > SAME_BYTES_LIMIT) return false;

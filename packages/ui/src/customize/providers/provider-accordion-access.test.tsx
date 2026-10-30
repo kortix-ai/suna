@@ -15,6 +15,10 @@ mock.module('../sections/llm-provider/use-live-catalog', () => ({
   useLiveLlmProviderCatalog: () => {},
   useLlmProviderCatalogRevision: () => 0,
 }));
+let showUpgradeOption = true;
+mock.module('../../session/models/use-model-connection-gate', () => ({
+  useModelConnectionGate: () => ({ openUpgrade: () => {}, showUpgradeOption }),
+}));
 const connect = await import('./provider-connect');
 mock.module('./provider-connect', () => ({
   ...connect,
@@ -28,6 +32,19 @@ test('quick Models dialog does not advertise a managed provider with no usable m
     const markup = renderToStaticMarkup(<ProviderAccordion projectId="synthetic-project" />);
     expect(markup).not.toContain('Paid from credits');
     expect(markup).not.toContain('aria-label="Included"');
-    expect(markup).toContain('connect your own provider');
+    expect(markup).toContain('Included with a paid plan');
   }
+});
+
+test('the managed row says its line once with Upgrade inline, and is absent where billing sells no plan', () => {
+  models = {};
+  showUpgradeOption = true;
+  let markup = renderToStaticMarkup(<ProviderAccordion projectId="synthetic-project" />);
+  expect(markup.split('Included with a paid plan').length - 1).toBe(1);
+  expect(markup).toContain('Upgrade');
+  showUpgradeOption = false;
+  markup = renderToStaticMarkup(<ProviderAccordion projectId="synthetic-project" />);
+  expect(markup).not.toContain('Included with a paid plan');
+  expect(markup).not.toContain('data-accordion-row="kortix"');
+  showUpgradeOption = true;
 });

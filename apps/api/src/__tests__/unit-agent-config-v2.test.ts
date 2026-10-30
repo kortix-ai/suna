@@ -269,10 +269,10 @@ describe('the raw path `loadManifestForEdit` actually produces for a blank proje
     // `kortix_version` key reads as unversioned to `validateRoot`.
     expect(manifest.raw.kortix_version).toBe(3);
 
-    const applied = applyDefaultAgentV2(manifest, 'kortix');
+    const applied = applyDefaultAgentV2(manifest, 'worker');
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
-    expect(applied.raw.default_agent).toBe('kortix');
+    expect(applied.raw.default_agent).toBe('worker');
   });
 
   test('applyAgentBlockV2 validates a new agent block against the synthesized manifest as-is', () => {
@@ -288,7 +288,7 @@ describe('the raw path `loadManifestForEdit` actually produces for a blank proje
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
     const agents = applied.raw.agents as Record<string, unknown>;
-    expect(Object.keys(agents).sort()).toEqual(['kortix', 'release-bot']);
+    expect(Object.keys(agents).sort()).toEqual(['release-bot', 'worker']);
     // The write result still carries kortix_version — a second edit in the
     // same request (or a subsequent PUT before the first commit lands) must
     // keep validating too, not just the very first one.

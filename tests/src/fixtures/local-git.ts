@@ -24,7 +24,7 @@ export async function createLocalGitRepository(
     await writeFile(join(work, "README.md"), `# ${name}\n`);
     await writeFile(
       join(work, "kortix.yaml"),
-      `kortix_version: 2\nproject:\n  name: ${name}\ndefault_agent: kortix\nagents:\n  kortix:${
+      `kortix_version: 2\nproject:\n  name: ${name}\ndefault_agent: worker\nagents:\n  worker:${
         opts?.allowAllSecrets || opts?.allowAllConnectors
           ? `${opts.allowAllSecrets ? '\n    secrets: all' : ''}${opts.allowAllConnectors ? '\n    connectors: all' : ''}`
           : ' {}'

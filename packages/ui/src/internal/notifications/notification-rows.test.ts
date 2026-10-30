@@ -45,8 +45,8 @@ describe('withoutNotificationParam', () => {
     expect(withoutNotificationParam('/projects/p1?a=1&notification=n1&b=2#top')).toBe(
       '/projects/p1?a=1&b=2#top',
     );
-    expect(withoutNotificationParam('/projects/p1/customize/triggers')).toBe(
-      '/projects/p1/customize/triggers',
+    expect(withoutNotificationParam('/projects/p1/admin/triggers')).toBe(
+      '/projects/p1/admin/triggers',
     );
   });
 });
@@ -148,10 +148,14 @@ describe('tags and types', () => {
     expect(rowDestination(row({ session_id: 'ses-b' }))).toBe('session');
     const alert = { kind: 'automation_failed', session_id: null } as const;
     expect(
+      rowDestination(row({ ...alert, trigger_slug: 'reminder.0a1b2c3d4e5f', url: '/projects/p1/admin/loops?notification=n1' })),
+    ).toBe('reminders');
+    // A row stored before 2026-10-28 carries the old path.
+    expect(
       rowDestination(row({ ...alert, trigger_slug: 'reminder.0a1b2c3d4e5f', url: '/projects/p1/reminders?notification=n1' })),
     ).toBe('reminders');
     expect(
-      rowDestination(row({ ...alert, trigger_slug: 'nightly', url: '/projects/p1/customize/triggers?notification=n1' })),
+      rowDestination(row({ ...alert, trigger_slug: 'nightly', url: '/projects/p1/admin/triggers?notification=n1' })),
     ).toBe('triggers');
   });
 

@@ -29,8 +29,7 @@ import {
   type ArtifactCommentBodyInput,
   type CreateArtifactCommentInput,
   type SendArtifactCommentsInput,
-  type ArtifactListScope,
-  type ArtifactType,
+  type ListArtifactsOptions,
   type PublishArtifactInput,
   type SaveArtifactInput,
   type ShareArtifactPathInput,
@@ -171,7 +170,7 @@ export function useArtifactActivity(
 /** The project's artifacts the caller may view (flag `artifacts`), newest change first. */
 export function useArtifacts(
   projectId: string | null | undefined,
-  filter: { scope?: ArtifactListScope; type?: ArtifactType; q?: string } = {},
+  filter: ListArtifactsOptions = {},
 ) {
   return useQuery({
     queryKey: qk.project.artifactList(projectId ?? '', JSON.stringify(filter)),

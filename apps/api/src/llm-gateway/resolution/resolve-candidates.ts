@@ -90,10 +90,6 @@ async function selectedPool(context: Context, providerId: string, name: string) 
   });
 }
 
-function codexGrantAllowed(principal: AuthedPrincipal) {
-  return !Array.isArray(principal.agentGrant?.env) ||
-    principal.agentGrant.env.some((name) => name.toUpperCase() === 'CODEX_AUTH_JSON');
-}
 
 /**
  * Every ChatGPT account in reach is resting. A rest past a minute is the
@@ -115,11 +111,6 @@ function chatGptAccountsResting(subject: string, retryAfterSeconds: number | und
     'Choose another model, or connect another ChatGPT account.', undefined, retryAfterSeconds);
 }
 
-function codexGrantRefusal() {
-  return new GatewayResolutionError('agent_grant_excludes',
-    'The running agent cannot use ChatGPT connections.',
-    'Add CODEX_AUTH_JSON to the agent secret grant, or choose another agent.');
-}
 
 /** Names the ChatGPT accounts whose login failed, three at most. */
 function accountsNeedReconnection(labels: string[], scope: 'selected' | 'shared'): string {
@@ -166,9 +157,9 @@ async function codexAccountCandidates(context: Context, secrets: Array<{ secretI
  * no pool row, and a member who did not create a shared account has no personal
  * one. A project gateway API key (`keyId`) carries no member, so it gets only
  * accounts shared with the whole project (`grantUserId: null`): never its
- * creator's personal connection or a member-restricted account. An agent whose
- * grant excludes CODEX_AUTH_JSON still reaches the legacy connection, never a
- * shared account.
+ * creator's personal connection or a member-restricted account. The agent's
+ * secret grant does not narrow it: a model login is a project secret the
+ * gateway uses, and the agent's model access decides who calls the model.
  */
 async function codexSharedCandidates(context: Context): Promise<UpstreamDescriptor[] | GatewayResolutionError | null> {
   const { principal, personalUserId } = context;
@@ -177,7 +168,6 @@ async function codexSharedCandidates(context: Context): Promise<UpstreamDescript
     userId: principal.userId, grantUserId: principal.keyId ? null : personalUserId,
     providerId: 'codex', name: 'CODEX_AUTH_JSON',
   });
-  if ((shared.secrets.length || shared.coolingDown) && !codexGrantAllowed(principal)) return codexGrantRefusal();
   if (shared.secrets.length) {
     const { candidates, failed } = await codexAccountCandidates(context, shared.secrets);
     if (candidates.length) return candidates;
@@ -220,7 +210,6 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
     'Connect Codex to use this model.', 'Connect your ChatGPT/Codex account in project settings, then retry.');
   const pool = await selectedPool(context, 'codex', 'CODEX_AUTH_JSON');
   if (pool?.configured) {
-    if (!codexGrantAllowed(principal)) throw codexGrantRefusal();
     if (!pool.secrets.length) throw pool.coolingDown
       ? chatGptAccountsResting('All selected ChatGPT connections', pool.retryAfterSeconds,
         'Select a granted ChatGPT connection in session settings.')
@@ -239,8 +228,7 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
   if (pooledEnabled && personalUserId && !principal.keyId) {
     const personal = await resolveDefaultCodexAccountSecret(principal.accountId, principal.projectId, personalUserId);
     if (personal) {
-      if (!codexGrantAllowed(principal)) throw codexGrantRefusal();
-      // Resting after a rate or usage limit: a shared account may serve,
+        // Resting after a rate or usage limit: a shared account may serve,
       // else the routed model is unavailable and the project's chain takes
       // over, instead of every request being refused by ChatGPT again.
       if (personal.restingSeconds) {
@@ -368,11 +356,6 @@ async function resolveByokCandidates(context: Context, provider: string,
   byok: NonNullable<ReturnType<typeof resolveCatalogUpstream>>): Promise<UpstreamDescriptor[]> {
   const { principal } = context;
   const pool = await selectedPool(context, provider, byok.envVar);
-  if (pool?.configured && Array.isArray(principal.agentGrant?.env) &&
-    !principal.agentGrant.env.some((name) => name.toUpperCase() === byok.envVar.toUpperCase())) {
-    throw new GatewayResolutionError('agent_grant_excludes', `The running agent cannot use ${provider} keys.`,
-      `Add ${byok.envVar} to the agent's secret grant, or choose another agent.`);
-  }
   const keys = pool?.configured
     // A pooled key this API cannot decrypt is skipped, as if it were not selected.
     ? pool.secrets.flatMap((secret) => secret.value === null ? [] : [{ identifier: secret.secretId, secretId: secret.secretId, value: secret.value }])

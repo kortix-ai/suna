@@ -125,7 +125,7 @@ export async function buildProjectSeedFilesFromItem(input: ProjectSeedFilesFromI
  * projects/lib/sessions.ts and llm-gateway/resolution/default-model.ts) at
  * project-creation time, the same value `PUT /:projectId/default-agent`
  * writes later. Without this, a brand-new project's manifest declares a
- * default agent (the starter template ships `default_agent: kortix`) that the
+ * default agent (the starter template ships `default_agent: worker`) that the
  * DB mirror never learns about — every session then stores the non-binding
  * `'default'` sentinel instead, and any agent-scope model pin set on the real
  * agent name is silently never applied (the bug this closes).

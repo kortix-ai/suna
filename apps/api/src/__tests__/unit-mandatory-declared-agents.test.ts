@@ -267,7 +267,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
 // `metadata.default_agent` mirror set (sessions.ts's `projectDefaultAgent` is
 // `undefined`/null the very first time). The starter it seeds
 // (@kortix/starter, packages/starter/templates/base) MUST therefore ship a
-// v2 manifest with a `default_agent` that resolves — otherwise
+// v3 manifest with a `default_agent` that resolves — otherwise
 // EVERY brand-new project's first session (agent 'default', the UI's
 // no-explicit-agent path) is rejected with AGENT_NOT_DECLARED before a sandbox
 // is ever provisioned. This exercises the REAL shipped starter (not a
@@ -306,17 +306,17 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
     // configuration, so it must carry the full grant — a narrowed default is a
     // silently crippled first session.
     expect(governed.grant).toEqual({
-      agent: 'kortix',
+      agent: 'worker',
       connectors: 'all',
       permissions: 'all',
       env: 'all',
     });
   });
 
-  test('the starter\'s declared "kortix" agent also resolves when named explicitly', () => {
+  test('the starter\'s declared "worker" agent also resolves when named explicitly', () => {
     const manifest = parseManifestString(manifestFile!.content, 'yaml', 'kortix.yaml');
     const loaded = extractAgents(manifest);
-    const governed = resolveGovernedAgentGrant('kortix', loaded, {
+    const governed = resolveGovernedAgentGrant('worker', loaded, {
       subject: true,
       projectDefaultAgent: null,
     });

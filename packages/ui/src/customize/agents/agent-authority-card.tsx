@@ -5,6 +5,9 @@
  *
  *   Kortix permissions (kortix.yaml) ∩ ceiling role (IAM) − human-only
  *
+ * The UI says "Granted in kortix.yaml" and "Maximum allowed". The fixed
+ * human-only set is named in the effective-permissions help, not as a row.
+ *
  * This is how Kortix works, not a mode the project chose: there is no switch,
  * so the card states it flatly.
  *
@@ -93,10 +96,6 @@ export function AgentAuthorityCard({
               </Button>
             ) : null}
           </div>
-        </SettingRow>
-
-        <SettingRow label={t('humanOnly')} help={t('humanOnlyHelp')}>
-          <span className="text-foreground block text-sm sm:text-right">{t('humanOnlyValue')}</span>
         </SettingRow>
 
         <SettingBlock label={t('effective')} help={t('effectiveHelp')}>

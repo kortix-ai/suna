@@ -100,6 +100,31 @@ describe('init — the plain new-project path', () => {
     expect(result.stdout).toContain('Git: initialized (main)');
   });
 
+  test('--force wires a clone of a new project: kortix.yaml, no OpenCode folder', () => {
+    const clone = realpathSync(mkdtempSync(resolve(tmpdir(), 'kortix-init-clone-')));
+    writeFileSync(resolve(clone, 'kortix.yaml'), 'kortix_version: 3\nproject:\n  name: Clone\n');
+    mkdirSync(resolve(clone, 'skills'));
+    const result = spawnSync(process.execPath, [cli, 'init', '--force', '--primary', 'codex', '-y', '--no-git'], {
+      cwd: clone,
+      encoding: 'utf8',
+    });
+
+    expect(result.stderr).not.toContain('not a cloned Kortix project');
+    expect(result.status).toBe(0);
+    expect(existsSync(resolve(clone, '.opencode'))).toBe(false);
+  });
+
+  test('--force refuses a directory with no kortix.yaml', () => {
+    const empty = realpathSync(mkdtempSync(resolve(tmpdir(), 'kortix-init-noclone-')));
+    const result = spawnSync(process.execPath, [cli, 'init', '--force', '--primary', 'codex', '-y'], {
+      cwd: empty,
+      encoding: 'utf8',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Expected kortix.yaml (or kortix.toml).');
+  });
+
   test('a non-empty target directory is refused', () => {
     const parent = realpathSync(mkdtempSync(resolve(tmpdir(), 'kortix-init-occupied-')));
     mkdirSync(resolve(parent, 'occupied'));

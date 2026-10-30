@@ -120,7 +120,7 @@ export async function processMonitorEvent(
   }
   // A monitor fire is project automation, so the project-wide pause switch
   // stops it exactly like it stops a cron fire.
-  // The project's pause, or the account's Pause all automations (KRTX-1721).
+  // The project's pause, or the account's Pause all triggers (KRTX-1721).
   const pausedReason = await automaticFirePauseReason(project);
   if (pausedReason) {
     return skip(pausedReason);

@@ -7,6 +7,7 @@ import type { Config as HostConfig } from '@/lib/config/config'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { logger } from '@/lib/log/logger'
 import { managedSkillsDir } from '@/lib/config/managed-skills-dir'
+import { DEFAULT_MAX_CLOUD_SUBAGENT_DEPTH, DEFAULT_MAX_LIVE_CLOUD_SUBAGENTS } from './cloud-subagent'
 
 /** First backoff of a transient model-error retry (transient-retry.ts): 2, 4, 8, 16, 30 s. */
 const TURN_RETRY_DEFAULT_BASE_MS = 2_000
@@ -43,6 +44,10 @@ const EnvironmentSchema = z.object({
   // The session agent's codemode (`off`, `on` or `only`, codemode.ts), sent by the API. Absent or invalid: the
   // compiled agent's `codemode`, else `on` (runtime.ts `codemode`).
   KORTIX_PI_CODEMODE: z.enum(['off', 'on', 'only']).optional().catch(undefined),
+  // Cloud subagent guardrails (cloud-subagent.ts): children one parent waits on at
+  // once, and the depth a cloud child may still delegate from. Invalid: the default.
+  KORTIX_PI_CLOUD_SUBAGENTS_MAX: z.coerce.number().int().positive().optional().catch(undefined),
+  KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH: z.coerce.number().int().nonnegative().optional().catch(undefined),
 })
 
 export interface PiEnvironment {
@@ -56,6 +61,10 @@ export interface PiEnvironment {
   piTurnRetryBaseMs: number
   piNoProgressMs: number
   piCodemode?: 'off' | 'on' | 'only'
+  /** Cloud children one parent waits on at once. */
+  piCloudSubagentsMax: number
+  /** A session at this subagent depth starts no cloud child. */
+  piCloudSubagentsMaxDepth: number
 }
 
 export const DEFAULT_PI_AGENT_DIR = '/opt/kortix/pi-agent'
@@ -72,6 +81,8 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     KORTIX_PI_TURN_RETRY_BASE_MS: env.KORTIX_PI_TURN_RETRY_BASE_MS?.trim() || undefined,
     KORTIX_PI_NO_PROGRESS_MS: env.KORTIX_PI_NO_PROGRESS_MS?.trim() || undefined,
     KORTIX_PI_CODEMODE: env.KORTIX_PI_CODEMODE?.trim() || undefined,
+    KORTIX_PI_CLOUD_SUBAGENTS_MAX: env.KORTIX_PI_CLOUD_SUBAGENTS_MAX?.trim() || undefined,
+    KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH: env.KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH?.trim() || undefined,
   })
   return {
     piStateDir: parsed.KORTIX_PI_STATE_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi'),
@@ -84,6 +95,8 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     piTurnRetryBaseMs: parsed.KORTIX_PI_TURN_RETRY_BASE_MS ?? TURN_RETRY_DEFAULT_BASE_MS,
     piNoProgressMs: parsed.KORTIX_PI_NO_PROGRESS_MS ?? 10 * 60_000,
     piCodemode: parsed.KORTIX_PI_CODEMODE,
+    piCloudSubagentsMax: parsed.KORTIX_PI_CLOUD_SUBAGENTS_MAX ?? DEFAULT_MAX_LIVE_CLOUD_SUBAGENTS,
+    piCloudSubagentsMaxDepth: parsed.KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH ?? DEFAULT_MAX_CLOUD_SUBAGENT_DEPTH,
   }
 }
 

@@ -219,6 +219,9 @@ export interface AgentBlockV2 {
    *  Writers always set it; readers fall back to the conventional paths when
    *  it is omitted. */
   file?: string;
+  /** The space the agent works in (a `spaces` key, or a bare slug).
+   *  Grouping only: no behavior, no grants. */
+  space?: string;
   /** Kortix governance: can this agent start a session at all? Default true
    *  when omitted. Compiles to the runtime's `disable` field (inverted,
    *  and only ever forces it ON — a hand-authored `disable: true` in the
@@ -255,8 +258,9 @@ export interface AgentBlockV2 {
    *  (compile-agent-config.ts) maps it onto the agent's `permission.skill`, so
    *  it's a first-class, cleanly-named governance control instead of
    *  something the author has to express by hand-writing glob rules in the
-   *  agent's own frontmatter. */
-  skills?: GrantSetV2;
+   *  agent's own frontmatter. `{ exclude: [...] }` grants every skill but
+   *  the listed ones. */
+  skills?: GrantSetV2 | { exclude: string[] };
   /** Which of the project's Kortix Apps (by App slug) an agent-session
    *  credential may open when the App's access mode is `restricted` or
    *  `private` (spec 2026-09-22 §2.5). Same grant-set shape as connectors
@@ -865,7 +869,15 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   validateGrantList(entry.secrets, `${where}.secrets`, 'secrets', issues, false, 2);
   // No fixed catalog to check entries against (skill names are project-defined,
   // like connectors) — same shape/validation, no `checkAction`.
-  validateGrantList(entry.skills, `${where}.skills`, 'skills', issues, false, 2);
+  // `{ exclude: [names] }`: every skill but those, including skills added later.
+  if (isTable(entry.skills)) {
+    const exclude = entry.skills.exclude;
+    if (Object.keys(entry.skills).length !== 1 || !Array.isArray(exclude) || exclude.some((name) => typeof name !== 'string' || !name.trim())) {
+      issues.push({ path: `${where}.skills`, message: 'skills must be `all`, `none`, a list of skill names, or `{ exclude: [names] }`.', severity: 'error' });
+    }
+  } else {
+    validateGrantList(entry.skills, `${where}.skills`, 'skills', issues, false, 2);
+  }
   validateAppGrantList(entry.apps, `${where}.apps`, issues);
   validateHarnessesV2(entry.harnesses, `${where}.harnesses`, issues, 'agent');
   // v2 clean break: a LEGACY_TOLERATED action is a hard error here, not a
@@ -1091,9 +1103,16 @@ function toolValueMessage(name: string): string {
   return `must be ${module}. \`kortix:<name>\` names a Kortix tool under its own name: ${KORTIX_TOOL_NAMES.map((tool) => `\`${tool}: kortix:${tool}\``).join(', ')}.`;
 }
 
+/** An agent without `tools` gets every tool, unlike every other grant (omitted = none). */
+export const TOOLS_UNSET_WARNING = 'not set: this agent gets every tool. Write `tools: all`, or list the tools it needs.';
+
 /** `agents.<name>.tools` — see `AgentToolsV2`. */
 function validateAgentToolsV2(value: unknown, where: string, issues: ManifestIssue[]): void {
-  if (value === undefined || value === 'all' || value === 'none') return;
+  if (value === undefined) {
+    issues.push({ path: where, message: TOOLS_UNSET_WARNING, severity: 'warning' });
+    return;
+  }
+  if (value === 'all' || value === 'none') return;
   const names = (list: unknown, at: string) => {
     if (!Array.isArray(list) || list.some((name) => typeof name !== 'string' || !name.trim())) {
       issues.push({ path: at, message: 'must be a list of tool names.', severity: 'error' });

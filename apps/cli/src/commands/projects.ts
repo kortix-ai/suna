@@ -425,7 +425,7 @@ interface ProjectWithIcon extends ProjectSummary {
 
 const SET_HELP = help`Usage: kortix projects set [<id>] [options]
 
-Update one project's settings — the dashboard's Customize → Settings →
+Update one project's settings — the dashboard's Project admin → General →
 General (PATCH /projects/:id). Only the fields you pass are written.
 
 Options:

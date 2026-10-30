@@ -275,6 +275,7 @@ export function SessionFilterMenu({
   const t = useTranslations('sidebar.filter');
   const tPinArchive = useTranslations('sidebar.pinArchive');
   const tDeleted = useTranslations('sidebar.recentlyDeleted');
+  const sessionsHref = uiRoutes().sessions(projectId);
   const archivedHref = uiRoutes().sessions(projectId, 'archived');
   const deletedHref = uiRoutes().sessions(projectId, 'deleted');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -658,8 +659,12 @@ export function SessionFilterMenu({
         {t('collapseAll')}
       </DropdownMenuItem>
       {/* The sidebar hides archived and deleted sessions; the sessions page lists them. */}
-      {!pageFacets && archivedHref && deletedHref && (
+      {!pageFacets && sessionsHref && archivedHref && deletedHref && (
         <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild className="cursor-pointer">
+            <Link href={sessionsHref}>{tI18nComplete.raw('text78648d4d6649')}</Link>
+          </DropdownMenuItem>
           <DropdownMenuItem asChild className="cursor-pointer">
             <Link href={archivedHref}>{tPinArchive('showArchived')}</Link>
           </DropdownMenuItem>

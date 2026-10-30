@@ -245,13 +245,6 @@ describe('mode pickers use the shared component library', () => {
     expect(primitivesSource).not.toContain('FieldRow');
   });
 
-  test('the grant-mode field is built from Tabs', () => {
-    expect(grantFieldSource).toContain("from '../../../primitives/tabs'");
-    for (const mode of ['all', 'pick', 'none']) {
-      expect(grantFieldSource).toContain(`value: '${mode}'`);
-    }
-  });
-
   test('Tabs stay scoped to grants; repository access uses a Switch and enums use Select', () => {
     for (const source of sectionSources) {
       expect(source).not.toContain('@/components/ui/tabs');

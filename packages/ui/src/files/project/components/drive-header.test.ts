@@ -53,7 +53,7 @@ const headerSource = readFileSync(join(import.meta.dir, 'drive-header.tsx'), 'ut
 const headerCode = headerSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 const capabilityTabsSource = readFileSync(
-  join(repoRoot, 'packages/ui/src/customize/shared/capability-tabs.tsx'),
+  join(repoRoot, 'packages/ui/src/customize/agents/agent-page-chrome.tsx'),
   'utf8',
 );
 

@@ -96,18 +96,16 @@ Click **Create project**. To work on it from a terminal, run `kortix projects cl
 
 ```text
 my-agent/
-├── kortix.yaml        the manifest (kortix_version: 3): skills, agents, one trigger, secret names
-├── agents/            the prompt of each agent: kortix.md, harness-reflector.md, session-reviewer.md
+├── kortix.yaml        the manifest (kortix_version: 3): one agent and its grants
+├── agents/            the agent's prompt: worker.md
 ├── skills/            11 skills, one folder each, with a SKILL.md
 ├── memory/MEMORY.md   the project memory
 ├── README.md
 └── .gitignore
 ```
 
-- `kortix` is the default agent. Every grant it has is `all`.
-- `harness-reflector` refines the agents' prompts, skills and tools from recent sessions, through one change request. Its daily trigger is off until you set `enabled: true`.
-- `session-reviewer` is a subagent of `harness-reflector`.
-- All three set `workspace: { project_repository: true }`, so each session gets a checkout of the repository on its own branch in `/workspace`.
+- `worker` is the default agent, the general-purpose agent My Kortix routes work to. Every grant it has is `all`. A project created earlier keeps its `kortix` agent.
+- It sets `workspace: { project_repository: true }`, so each session gets a checkout of the repository on its own branch in `/workspace`.
 - The Kortix skills (`kortix-*`) are always registered. The `skills` key in `kortix.yaml` lists the other 10.
 
 `kortix init` also writes files for the coding tools you picked. Codex, pi and Cursor get `AGENTS.md`. Codex, Claude Code and pi get a link to `skills/` in `.agents/`, `.claude/` or `.pi/`. Every key is in the [kortix.yaml reference](/docs/developers#kortixyaml-reference).
@@ -168,7 +166,7 @@ kortix doctor
   <Card icon="git-branch" title="Git" href="/docs/developers#git">Clone, push, session branches and change requests.</Card>
   <Card icon="bot" title="Agents" href="/docs/guide#agents">Write agents and decide what each one may do.</Card>
   <Card icon="plug" title="Connectors" href="/docs/guide#connectors">Give agents governed access to apps, APIs and MCP servers.</Card>
-  <Card icon="clock" title="Automations" href="/docs/guide#automations">Start sessions or call your Apps on a schedule, a webhook or an App event.</Card>
+  <Card icon="clock" title="Triggers" href="/docs/guide#triggers">Start sessions or call your Apps on a schedule, a webhook, an App event or a merged change request.</Card>
 </CardGroup>
 ## Git
 
@@ -944,7 +942,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `project` | map | — | `name`: the project's name. A push that changes it renames the project, and a rename in Kortix commits it here. `description`: text for people who read the repository. |
 | `env` | map | — | The secret names the project expects. Values live in Secrets, never in this file. See [env keys](#env-keys). |
 | `sandbox` | map | the platform image | Sandbox templates and the project's default template. See [sandbox keys](#sandbox-keys). |
-| `triggers` | list | — | Schedules, webhooks and App events that start agent work. See [triggers keys](#triggers-keys) and [Automations](/docs/guide#automations). |
+| `triggers` | list | — | Schedules, webhooks, connector and App events and merged change requests that start agent work. See [triggers keys](#triggers-keys) and [Triggers](/docs/guide#triggers). |
 | `connectors` | list | — | Apps and APIs agents can call. See [connectors keys](#connectors-keys) and [Connectors](/docs/guide#connectors). |
 | `apps` | map | — | App slug → App block. See [apps keys](#apps-keys). |
 | `skills` | map | the Kortix skills | Skill name → repository folder. The Kortix skills (`kortix-*`) are always registered. See [skills entries](#skills-entries). |
@@ -983,7 +981,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `connectors` | grant | `none` | Connector slugs the agent may call. |
 | `connectors_required` | list | — | Connector slugs, a subset of `connectors`. Sessions do not check it. |
 | `policy_sets` | map | the base rules | Connector slug → the name of a policy set on that connector. See [Connector rules and approvals](#connector-rules-and-approvals). |
-| `secrets` | grant | `none` | Secret names the agent's sandbox receives. |
+| `secrets` | grant | `none` | Secret names the agent's sandbox receives: environment variables and network-enforced secrets. Model logins, connector and git credentials are used by Kortix services; the agent's model and connector settings decide their use. |
 | `apps` | grant | `none` | App slugs the agent may open when the App's access is restricted or private. |
 | `kortix_permissions` | grant | `none` | Project permissions (`project.*`) the agent holds, whoever starts the session. `kortix validate --scopes` prints them. An account permission is an error. See [Agents](/docs/guide#agents). |
 | `workspace` | map | — | What new sessions of this agent get in /workspace. Any other key under `workspace` is an error. |
@@ -1306,7 +1304,7 @@ Kortix maintains six tools. A `kortix_version: 3` project registers all six with
 `image_gen` generates one to four images from prompts, or edits images that are in the workspace. It uses an image model the project can reach: `gpt-image-2` on a connected ChatGPT plan, or an image model of an OpenAI, Google, xAI, or OpenRouter key. You can also name a model of your custom endpoint. Kortix-managed models do not generate images yet. It saves each image under `/workspace/output/images/`.
 
 - **One call, one to four images.** Each prompt is one image. The tool sends one request per prompt, all at the same time.
-- **It needs an image model.** Connect ChatGPT in **Customize → Models** (**Connect ChatGPT**) or with `kortix providers login openai`, or add an OpenAI, Google, xAI, or OpenRouter key. See [Models](/docs/guide#models). With none, the call fails with `image_model_unavailable`.
+- **It needs an image model.** Connect ChatGPT in **Project admin → Models** (**Connect ChatGPT**) or with `kortix providers login openai`, or add an OpenAI, Google, xAI, or OpenRouter key. See [Models](/docs/guide#models). With none, the call fails with `image_model_unavailable`.
 - **The output is paths, not images.** The model receives `{ action, model, provider, images: [{ path, size, prompt, sha256 }], failed: [{ prompt, error }] }`. `model` and `provider` name what made the first saved image. `size` is `WxH`, read from the saved file when its header is readable, else the size the provider reported. `sha256` is the lowercase hex SHA-256 of the saved file's bytes. `failed` is present only when a prompt failed. When every prompt fails, the call fails with the first error.
 
 | Argument | Value |
@@ -1658,7 +1656,7 @@ jobs:
           kortix sessions log "$id" --limit 1
 ```
 
-Pipe `--json` output into `jq`. Update checks are off when `CI` is set or stdout is not a terminal. To start sessions on a schedule inside Kortix itself, use [Automations](/docs/guide#automations).
+Pipe `--json` output into `jq`. Update checks are off when `CI` is set or stdout is not a terminal. To start sessions on a schedule inside Kortix itself, use [Triggers](/docs/guide#triggers).
 
 ### Use Kortix from your coding agent
 
@@ -1732,7 +1730,8 @@ Commands an agent uses:
 | `kortix secrets sync` | Pull this session's secrets and grants now. |
 | `kortix cr open --title "<text>"` | Open a change request from the session branch. Inside a session it fills `--head` itself. |
 | `kortix review submit --kind <kind> --title "<text>"` | Submit an output, a decision or a batch for review. |
-| `kortix remind "<prompt>" --in 24h` | Prompt this session again later. Reminders are a project flag, on by default; `kortix projects features disable reminders` turns them off. |
+| `kortix loop "<prompt>" --in 24h` | Prompt this session again later (a loop). Loops are a project flag, on by default; `kortix projects features disable reminders` turns them off. `kortix remind` is an alias. |
+| `kortix triggers add "<prompt>" --on cr-merged --cr <id>` | Wake this session when a change request merges. Other sources: `--on webhook --secret-env NAME`, `--on event`, `--on app`, or a schedule flag. `--agent <name>` starts a new session of that agent instead. |
 | `kortix sessions update --label <label>` | Label the session the agent runs in. |
 
 What an agent may do is set by its `kortix_permissions` in `kortix.yaml`. When the API refuses a command, the CLI prints the token kind, the agent and its grant. See [Agents](/docs/guide#agents). These commands are refused for an agent session's token, whatever the grant:
@@ -1829,8 +1828,8 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 | `drive <subcommand>` | The project's Drive: list, read, upload, move and delete files, and share folders. | [Drive](/docs/guide#drive) |
 | `cr <subcommand>` | Change requests: list, show, diff, open, merge, request changes, close and reopen. | [Git](/docs/developers#git) |
 | `review <subcommand>` | The review inbox: change requests, held connector calls and submitted outputs. | [Git](/docs/developers#git) |
-| `triggers <subcommand>` | List, add, fire, enable, disable, pause and resume triggers. | [Automations](/docs/guide#automations) |
-| `reminders <subcommand>` | Prompt one session later or on repeat. `kortix remind "…" --in 24h` adds one. | [Automations](/docs/guide#automations) |
+| `triggers <subcommand>` | Every trigger, `kortix.yaml` and runtime: `ls` lists both, `add` writes `kortix.yaml` (with `--on`, `--session` or `--runtime` it creates a runtime trigger), `fire`, `enable`, `disable`, `run`, `pause`, `resume` and `rm` take a slug or a runtime id. | [Triggers](/docs/guide#triggers) |
+| `loops <subcommand>` | A schedule into one session (a loop: a trigger that wakes the session that created it). `kortix loop "…" --in 24h` adds one. Alias: `reminders`. | [Triggers](/docs/guide#triggers) |
 | `capture <subcommand>` | Search the Capture timeline of the person you act for. Capture is off until an account admin turns it on. | [Capture](/docs/capture) |
 
 **Access and permissions**
@@ -2267,8 +2266,8 @@ take a different credential or protocol than a plain bearer call:
 |---|---|
 | The session runtime under `/v1/p/<external_id>/8000/kortix/runtime/*`: prompts, the event stream, files, and the transcript of a running session. The path takes the sandbox's external id at the provider, not the `session_id`. Read it from `sandbox_url` in `kortix sessions info <session_id> --json` (after `/v1/p/`), or from `sandboxId` in the SDK's `ensureReady()`. | The SDK session handle, `kortix.session(projectId, sessionId)`. See [Sessions from code](/docs/developers#sessions-from-code). |
 | SCIM 2.0 under `/scim/v2/accounts/<account_id>`. It takes a `kortix_scim_` token, not a personal key. | [Single sign-on and directory sync](/docs/guide#single-sign-on-and-directory-sync) |
-| Inbound trigger webhooks, `POST /v1/webhooks/projects/<project_id>/<slug>`. They authenticate with the trigger secret, not a Kortix token: send an HMAC signature (`X-Kortix-Signature` or `X-Hub-Signature-256`), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. | [Webhooks](/docs/guide#automations) |
-| App events and App runs: `POST …/apps/<app_id>/events`, `POST` and `DELETE …/apps/<app_id>/runs`. They take the App's `KORTIX_APP_TOKEN`, not a Kortix token. | [App events](/docs/guide#automations) |
+| Inbound trigger webhooks, `POST /v1/webhooks/projects/<project_id>/<slug>`. They authenticate with the trigger secret, not a Kortix token: send an HMAC signature (`X-Kortix-Signature` or `X-Hub-Signature-256`), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. | [Webhooks](/docs/guide#triggers) |
+| App events and App runs: `POST …/apps/<app_id>/events`, `POST` and `DELETE …/apps/<app_id>/runs`. They take the App's `KORTIX_APP_TOKEN`, not a Kortix token. | [App events](/docs/guide#triggers) |
 | The LLM gateway's OpenAI- and Anthropic-compatible endpoints. They take a `kortix_gw_` key. | [Models](/docs/guide#models) |
 | The project git origin, `https://api.kortix.com/v1/git/<project_id>.git`. | [Git](/docs/developers#git) |
 
@@ -2528,7 +2527,7 @@ sits in the **Background** list under the grid.
 Each row shows the App's
 status, how it runs, the trigger that calls it and its last activity. Opening
 a background App shows what it does: how it runs, the triggers that call it
-and the agents its [events](/docs/guide#automations) start. In the
+and the agents its [events](/docs/guide#triggers) start. In the
 web app, **Settings → Show on Apps page** moves an App between the grid and
 the list. Like every App setting kortix.yaml can declare, the switch commits
 `display.listed` to `apps.<slug>` in kortix.yaml; a push that edits it applies
@@ -2969,9 +2968,9 @@ An App can start agents, and triggers can call it.
 
 | You want | Use |
 |---|---|
-| An agent to run when the App sees something | The App posts an App event to `$KORTIX_APP_EVENTS_URL` with `Authorization: Bearer $KORTIX_APP_TOKEN`. A trigger with `on: { event, app }` picks the agent. See [App events](/docs/guide#automations). |
-| The App called on a schedule or an event | A trigger with `run: { app, path, method, payload }`. Kortix wakes an on-demand App and sends the request. No session, no model. See [Call an App](/docs/guide#automations). |
-| The App to call itself later | `POST /v1/projects/<project_id>/apps/<app_id>/runs` with the App token: `run_after` or `run_at`. See [Call an App](/docs/guide#automations). |
+| An agent to run when the App sees something | The App posts an App event to `$KORTIX_APP_EVENTS_URL` with `Authorization: Bearer $KORTIX_APP_TOKEN`. A trigger with `on: { event, app }` picks the agent. See [App events](/docs/guide#triggers). |
+| The App called on a schedule or an event | A trigger with `run: { app, path, method, payload }`. Kortix wakes an on-demand App and sends the request. No session, no model. See [Call an App](/docs/guide#triggers). |
+| The App to call itself later | `POST /v1/projects/<project_id>/apps/<app_id>/runs` with the App token: `run_after` or `run_at`. See [Call an App](/docs/guide#triggers). |
 
 To react to the outside world, try a webhook first, then a schedule. Post App
 events only when neither works. An App never starts an agent itself: it posts
@@ -2997,7 +2996,7 @@ Kortix sets these variables in every machine:
 | `KORTIX_APP_VIEWER_SECRET` | The key that verifies the signed viewer header |
 | `KORTIX_APP_ACCOUNT_ID` | The account that owns the App |
 | `KORTIX_APP_ID` | The App's id |
-| `KORTIX_APP_TOKEN` | The App's token for [App events](/docs/guide#automations) and scheduled runs. A secret. |
+| `KORTIX_APP_TOKEN` | The App's token for [App events](/docs/guide#triggers) and scheduled runs. A secret. |
 | `KORTIX_APP_EVENTS_URL` | Where the App posts App events |
 
 Your own values come from `env` and `secrets` in the `kortix.yaml` block:
@@ -3518,7 +3517,7 @@ SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` on
 2. **Connect managed git.** Open `/admin/git`. Kortix creates and pushes every new project repository through this one GitHub identity. Pick **Create a GitHub App** (recommended), **Paste an existing App**, or **Use an access token**. Until it is set, Kortix cannot create project repositories. You can still connect an existing repository. See [Git](/docs/developers#git).
 3. **Create the team account.** Your sign-up account is personal. It cannot hold SAML SSO (`403` `sso_personal_account`), and a project cannot move to another account. The menu that creates accounts lives inside a project, so first create one project at `/new`. In it, open the project menu → **Switch Project** → **Create an account…**. Only platform admins can create accounts by default. Invite your team and set up SSO in this account.
 4. **Create a project** in the team account. After **Create an account…**, Kortix opens `/new` with the new account selected.
-5. **Add a model key** in the project: **Customize → Models → Providers**, or `kortix providers set <provider>`. Each project needs its own key. A self-hosted instance has no Kortix-managed models. A project can connect **Platinum** as its provider with a Platinum API key. See [Connect your own provider](/docs/guide#models).
+5. **Add a model key** in the project: **Project admin → Models → Providers**, or `kortix providers set <provider>`. Each project needs its own key. A self-hosted instance has no Kortix-managed models. A project can connect **Platinum** as its provider with a Platinum API key. See [Connect your own provider](/docs/guide#models).
 6. **Turn on email.** Set one connection string:
 
    ```sh
@@ -3567,7 +3566,7 @@ What the stack does by itself:
 - [Connectors](/docs/guide#connectors) refuse private and internal addresses with `connector_egress_blocked`. List the internal hosts they may reach in `KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS`.
 - `kortix-updater` holds the Docker socket, so its image is pinned by digest.
 
-Keep `.env` safe: it holds every secret, and `API_KEY_SECRET` in it encrypts every stored secret, connector credential and token. A lost `API_KEY_SECRET` makes them unreadable. The Secrets page marks each such project secret **Undecryptable**, and **Customize → Models → Providers** does the same for each account key and ChatGPT login.
+Keep `.env` safe: it holds every secret, and `API_KEY_SECRET` in it encrypts every stored secret, connector credential and token. A lost `API_KEY_SECRET` makes them unreadable. The Secrets page marks each such project secret **Undecryptable**, and **Project admin → Models → Providers** does the same for each account key and ChatGPT login.
 
 A connector credential shows no mark: a call through it returns `credential_undecryptable`. A session start names the first value it needs, and any other request that needs one answers `409 SECRET_UNDECRYPTABLE`. Enter each value again to fix it, and save each OAuth application again before you reconnect its account.
 
@@ -5062,7 +5061,7 @@ const { applied_live, push_failed } = await s.changeModel('glm-5.3-flash');
 
 A refused `restore()` throws an `ApiError` with `code` `session_not_deleted`, `session_sandbox_removal_pending` (retry in a minute) or `session_purged`. A refused `recover()` throws `session_not_lost`, `session_transcript_missing`, `session_sandbox_removal_pending` or `session_log_restore_off`.
 
-Sharing, public links and reminders are in [SDK reference](/docs/developers#sdk-reference).
+Sharing, public links and loops are in [SDK reference](/docs/developers#sdk-reference).
 
 ### Files and previews
 
@@ -5543,7 +5542,7 @@ console.log(run.status, run.session_id, run.run_id);
 
 | `create` field | Rule |
 | --- | --- |
-| `name` · `type` | Required. `type` is `cron`, `webhook` or `app`. The API refuses `monitor` with `400`: monitor triggers were removed. |
+| `name` · `type` | Required. `type` is `cron`, `webhook`, `event`, `app` or `change_request`. The API refuses `monitor` with `400`: monitor triggers were removed. |
 | `slug` | Derived from `name` when omitted. It cannot change after create. |
 | `prompt_template` | Required unless `target` calls an App. |
 | `cron` · `every` · `run_at` · `timezone` | A schedule for `cron`: a 6-field cron expression, a period such as `5m` or `1h` (at least `1m`), or one ISO-8601 instant. `timezone` defaults to `UTC`. |
@@ -5553,7 +5552,7 @@ console.log(run.status, run.session_id, run.run_id);
 | `target` | `{ app, path?, method?, payload? }`: call an App instead of an agent. |
 | `agent` · `model` | The agent (default `default`) and a `provider/model` override. |
 
-Every field, including session reuse and rate caps, is in [Automations](/docs/guide#automations).
+Every field, including session reuse and rate caps, is in [Triggers](/docs/guide#triggers).
 
 | Call | What it does |
 | --- | --- |
@@ -7707,19 +7706,22 @@ Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`,
 | `policies.list()` · `policies.set(policies)` | Project policies. |
 | `agentIdentities()` · `setAgentScope(agentName, scope)` | The project's agents as principals · bind secrets, connectors and policy sets to one agent. `scope.policy_sets` is `{ <slug>: <name> \| null }`, merged per connector; `null` or `'base'` removes the entry. |
 
-#### Triggers and reminders
+#### Triggers and loops
 
 | Method | What it does |
 | --- | --- |
+| `triggers.all()` | Every trigger the caller can see: `kortix.yaml` triggers (`origin: 'declared'`) and runtime ones (`origin: 'runtime'`: loops and `triggers.createRuntime` rows), `GET /v1/projects/<id>/triggers/all`. Each has a `source` (`schedule`, `webhook`, `event`, `app`, `change_request`) and a `target` (`agent`, `session` or `app`). Root export: `listUnifiedTriggers(projectId)`. React: `useUnifiedTriggers(projectId)`. |
+| `triggers.createRuntime({ prompt, name?, source, target })` | A runtime trigger, stored in the database (`POST …/triggers/runtime`, id `trigger.<hex>`). `target: { session_id }` wakes that session on each fire; `target: { agent }` starts a new session of that agent. `source: { type: 'change_request', cr_id?, base? }` fires when a change request merges. |
+| `triggers.updateRuntime(id, { enabled })` · `.runRuntime(id)` · `.removeRuntime(id)` | Pause or resume, fire once now, or delete a runtime trigger. A `kortix.yaml` one changes through `triggers.update` and the other slug methods. |
 | `triggers.list()` | Every trigger, with parse errors and `triggers_paused`. |
-| `triggers.create(input)` · `.update(slug, input)` · `.remove(slug)` | Write a trigger. `name` and `type` are required. `type` is `cron`, `webhook` or `app`. The API rejects `type: monitor` with `MONITOR_REMOVED` and names the replacement: an App and a `type: app` trigger. `prompt_template` is required unless `target` (`{ app, path?, method?, payload? }`) calls an App. A schedule takes `cron`, `every` or `run_at`. `type: 'app'` takes `app` and, optionally, `filter: { 'event.name': … }`. |
+| `triggers.create(input)` · `.update(slug, input)` · `.remove(slug)` | Write a trigger. `name` and `type` are required. `type` is `cron`, `webhook`, `event`, `app` or `change_request`. The API rejects `type: monitor` with `MONITOR_REMOVED` and names the replacement: an App and a `type: app` trigger. `prompt_template` is required unless `target` (`{ app, path?, method?, payload? }`) calls an App. A schedule takes `cron`, `every` or `run_at`. `type: 'app'` takes `app` and, optionally, `filter: { 'event.name': … }`. `type: 'change_request'` takes an optional `filter: { base: '<branch>' }`. |
 | `triggers.fire(slug, { payload?, dryRun? }?)` | Runs one trigger now, also while triggers are paused. `payload` deep-merges over the manual payload. `dryRun: true` writes nothing and returns `ProjectTriggerDryRunResult` (`rendered_prompt`, `filter_matches`, `session_key`, `payload`). A real fire returns `status` (`fired`, `queued` or `deduped`), `session_id`, `command_id` and `run_id`. |
 | `triggers.runs(slug, { cursor?, limit? }?)` · `triggers.projectRuns({ status?, cursor?, limit? }?)` | One trigger's runs · every run of the project, newest first: `{ runs, next_cursor }`. `limit` is 1 to 100, default 25. A page can hold fewer than `limit` runs while `next_cursor` is set. |
 | `triggers.replay(slug, runId, { confirmUnverified? }?)` | Fires again with the run's stored payload and the current spec. `409 run_in_progress` while the run is queued or running. `409 payload_unverified` for an unverified webhook payload without `confirmUnverified: true`. `422 payload_truncated` for a payload over 64 KiB. |
 | `triggers.setActivation(paused)` | Pauses or resumes every trigger of the project. |
-| `reminders.list()` · `reminders.updateMany(…)` · `reminders.removeMany(…)` | Reminders on every session the caller can open. One session's reminders are `s.reminders`. |
+| `reminders.list()` · `reminders.updateMany(…)` · `reminders.removeMany(…)` | Loops (SDK name: reminders) on every session the caller can open. One session's loops are `s.reminders`. |
 
-All trigger fields are in [Run triggers](/docs/developers#run-triggers) and [Automations](/docs/guide#automations).
+All trigger fields are in [Run triggers](/docs/developers#run-triggers) and [Triggers](/docs/guide#triggers).
 
 #### Apps
 
@@ -7827,7 +7829,7 @@ See [Computers](/docs/guide#computers).
 | People | `presence({ tab_id, active, alerts? }, { keepalive? }?)` | This tab's presence lease. Returns `{ ok, awake_until, awake_cap_at }`. |
 | People | `publicShares.list()` · `.create(…)` · `.revoke(…)` | Public share links for a preview or a workspace file. A `{ transcript: true }` body returns `400`. |
 | Git | `commit(input?)` | Commits and pushes the sandbox's pending changes to the session branch. |
-| Reminders | `reminders.list()` · `.create(input)` · `.update(reminderId, input)` · `.remove(reminderId)` · `.run(reminderId)` | The session's reminders. `run` fires one now; the schedule does not move. |
+| Loops | `reminders.list()` · `.create(input)` · `.update(reminderId, input)` · `.remove(reminderId)` · `.run(reminderId)` | The session's reminders. `run` fires one now; the schedule does not move. |
 
 `s.transcript()`, `s.transcriptSync()` and `s.runtime` are deprecated. See [Deprecated names](#deprecated-names).
 
@@ -7848,7 +7850,7 @@ Every hook is in `@kortix/sdk/react`. Most are React Query hooks: unless a row s
 | `useSessionLog(session)` · `useSessionLogThread(session, threadId?, { throttleMs? }?)` | The session log, or `null` · one thread of it. |
 | `useChatTurns(messages)` | `TurnView[]`: each message classified with `classifyTurn`. |
 | `useSessionChildren(projectId, parentSessionId, { q, limit, enabled })` | The sessions one parent started, paged. |
-| `useSessionReminders(projectId, sessionId)` | Reminders, with `update` and `remove`. |
+| `useSessionReminders(projectId, sessionId)` | The session's loops, with `update` and `remove`. |
 
 #### Project and account hooks
 
@@ -7867,7 +7869,7 @@ Every hook is in `@kortix/sdk/react`. Most are React Query hooks: unless a row s
 | `useAccountSecretResources(accountId, projectId?)` | Account secret resources. |
 | `useProjectTriggers(projectId)` | Triggers, with `create`, `update`, `remove`, `fire`, `dryRun` and `replay`. `fire.mutate(slug)` or `fire.mutate({ slug, payload? })` returns `FireProjectTriggerResponse`. `dryRun.mutate(slug \| { slug, payload? })` returns `ProjectTriggerDryRunResult` and writes nothing. `replay.mutate({ slug, runId, confirmUnverified? })`. A fire and a replay refresh the triggers and every run list. |
 | `useTriggerRuns(projectId, slug, { enabled?, refetchInterval?, limit? }?)` · `useProjectTriggerRuns(projectId, { status? }?, { enabled?, refetchInterval? }?)` | Runs as an infinite query paged by `next_cursor`. Read `data.pages[].runs`; call `fetchNextPage()` while `hasNextPage`. No polling unless you pass `refetchInterval` (ms). `limit` is 1 to 100 (server default 25), and a set limit is its own cache entry. |
-| `useProjectReminders(projectId)` | Reminders, with `update`, `remove`, `updateMany` and `removeMany`. |
+| `useProjectReminders(projectId)` | The project's loops, with `update`, `remove`, `updateMany` and `removeMany`. |
 | `useChangeRequests(projectId, status?)` | Change requests, with `open`, `merge`, `close` and `requestChanges`. |
 | `useReviewItemPages(projectId, query)` · `useReviewSummary(projectId)` · `useSessionsNeedingInput(projectId)` | The review inbox as an infinite query (rows: `reviewItemsOf(query.data)`) · the summary, polled every 60 s · blocked sessions, polled every 30 s. |
 | `useProjectApps(projectId)` | Apps, with `create`, `update`, `start`, `stop` and `remove`. |

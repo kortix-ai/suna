@@ -141,7 +141,7 @@ describe('a warn budget reaches its thresholds', () => {
     expect(sent[0]!.subject).toBe('budget-alerts reached 80% of its gateway budget');
     expect(sent[0]!.text).toContain('The daily budget of budget-alerts is at 850 of 1,000 credits (85%).');
     expect(sent[0]!.text).toContain('It is a warn-only budget: requests keep running.');
-    expect(sent[0]!.text).toContain(`/projects/${project.project_id}/customize/models`);
+    expect(sent[0]!.text).toContain(`/projects/${project.project_id}/admin/models`);
     expect(sent[0]!.category).toBe('billing-budget-alert');
   });
 
