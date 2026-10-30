@@ -16,6 +16,7 @@ import {
   type SessionTaskCreateBody,
   type SessionTaskUpdateBody,
   type WorkflowControlBody,
+  type WorkflowControlResult,
   type WorkflowRunMetadata,
 } from '../core/rest/projects-client';
 import { controlSessionWorkflowRun, readSessionWorkflowRuns } from '../core/session/runtime-workflows';
@@ -150,7 +151,14 @@ export function useSessionWorkflows(
     // A background run asked on its parent is followed once to its runner session (`409 run_in_runner`).
     mutationFn: ({ runId, body }: { runId: string; body: WorkflowControlBody }) =>
       controlSessionWorkflowRun(projectId as string, sessionId as string, runId, body),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: key }),
+    // The answer says whether the run is paused: show it now, then refresh in the background.
+    onSuccess: (result: WorkflowControlResult, variables: { runId: string; body: WorkflowControlBody }) => {
+      if (typeof result?.paused === 'boolean')
+        queryClient.setQueryData<WorkflowRunMetadata[]>(key, (runs) =>
+          runs?.map((run) => (run.runId === variables.runId ? { ...run, paused: result.paused } : run)),
+        );
+      void queryClient.invalidateQueries({ queryKey: key });
+    },
   });
   return { ...query, control };
 }

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // Same harness as `./use-rooms.test.ts`: `useQuery`/`useMutation` return their
 // config so the wiring can be asserted without a render tree.
 let invalidated: unknown[][] = [];
+let cache = new Map<string, unknown>();
 mock.module('@tanstack/react-query', () => ({
   useQuery: (config: Record<string, unknown>) => config,
   useInfiniteQuery: (config: Record<string, unknown>) => config,
@@ -12,6 +13,9 @@ mock.module('@tanstack/react-query', () => ({
   useQueryClient: () => ({
     invalidateQueries: (opts: { queryKey: unknown[] }) => {
       invalidated.push(opts.queryKey);
+    },
+    setQueryData: (key: unknown[], update: (old: unknown) => unknown) => {
+      cache.set(JSON.stringify(key), update(cache.get(JSON.stringify(key))));
     },
   }),
 }));
@@ -23,6 +27,7 @@ const { qk } = await import('./query-keys');
 
 beforeEach(() => {
   invalidated = [];
+  cache = new Map();
 });
 
 const interval = (hook: any, data?: unknown) =>
@@ -104,9 +109,12 @@ describe('multi-agent hooks', () => {
     ]);
   });
 
-  test('a workflow control refreshes the runs', () => {
+  test('a workflow control shows its answer at once, then refreshes the runs', () => {
+    const key = JSON.stringify([...qk.project.sessionWorkflows('p1', 's1')]);
+    cache.set(key, [{ runId: 'r1', status: 'running' }, { runId: 'r2', status: 'running' }]);
     const workflows = useSessionWorkflows('p1', 's1') as any;
-    workflows.control.onSuccess();
+    workflows.control.onSuccess({ ok: true, paused: true }, { runId: 'r1', body: { action: 'pause' } });
+    expect(cache.get(key)).toEqual([{ runId: 'r1', status: 'running', paused: true }, { runId: 'r2', status: 'running' }]);
     expect(invalidated).toEqual([[...qk.project.sessionWorkflows('p1', 's1')]]);
   });
 
