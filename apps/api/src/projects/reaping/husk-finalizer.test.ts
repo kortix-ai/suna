@@ -17,8 +17,6 @@ import {
 let serviceKey: string | null = 'daemon-service-key';
 let fetchCalls: Array<{ url: string; method: string; headers: Record<string, string> }> = [];
 let responses: Array<() => Promise<Response>> = [];
-/** What `/kortix/health` lists; answered outside the script. */
-let capabilities: string[] = [];
 const originalFetch = globalThis.fetch;
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
@@ -36,7 +34,6 @@ mock.module('../../sandbox-proxy/backend', () => ({
 }));
 
 const { finalizeHuskTurn } = await import('./husk-finalizer');
-const { __resetRuntimeTurnVerbsMemo } = await import('../session-lifecycle/runtime-fetch');
 
 const TARGET = {
   sandboxId: 'sb-1',
@@ -45,17 +42,16 @@ const TARGET = {
   messageId: 'msg_turn_1',
 };
 
-// The read is TAIL-BOUNDED. `/session/:id/message` returns every message with
+// The read is TAIL-BOUNDED. The transcript route returns every message with
 // its full `parts` array and the request forces `Accept-Encoding: identity`, so
 // an unbounded read drags the whole transcript across the provider ingress —
 // and blows READ_TIMEOUT_MS on exactly the long sessions that leave husks.
-const READ_URL =
-  'https://daemon.example.test/session/ses_root/message?directory=%2Fworkspace&limit=4';
-const ABORT_URL = 'https://daemon.example.test/session/ses_root/abort?directory=%2Fworkspace';
+const READ_URL = 'https://daemon.example.test/kortix/runtime/messages/ses_root?limit=4';
+const ABORT_URL = 'https://daemon.example.test/kortix/runtime/sessions/ses_root/abort';
 
-/** A `/session/:id/message` body, shaped exactly as OpenCode returns it. */
+/** One page of the Kortix transcript route. */
 function transcript(...infos: Array<Record<string, unknown>>): () => Promise<Response> {
-  return async () => new Response(JSON.stringify(infos.map((info) => ({ info }))), { status: 200 });
+  return async () => Response.json({ messages: infos.map((info) => ({ info, parts: [] })), has_more: false });
 }
 
 function status(code: number): () => Promise<Response> {
@@ -74,10 +70,7 @@ beforeEach(() => {
   serviceKey = 'daemon-service-key';
   fetchCalls = [];
   responses = [];
-  capabilities = [];
-  __resetRuntimeTurnVerbsMemo();
   globalThis.fetch = (async (url: unknown, init: unknown) => {
-    if (String(url).endsWith('/kortix/health')) return Response.json({ capabilities });
     const request = (init ?? {}) as { method?: string; headers?: Record<string, string> };
     fetchCalls.push({
       url: String(url),
@@ -323,27 +316,6 @@ describe('finalizeHuskTurn', () => {
     ];
 
     expect(await finalizeHuskTurn(TARGET, { settleMs: 0 })).toBe('finalized');
-  });
-
-  test('a daemon with the Kortix turn routes is read and aborted through them (W5 E4)', async () => {
-    capabilities = ['runtime.turns.v1'];
-    const page = (...infos: Array<Record<string, unknown>>) => async () =>
-      Response.json({ messages: infos.map((info) => ({ info, parts: [] })), has_more: false });
-    responses = [
-      page(OPEN_TURN),
-      page(OPEN_TURN),
-      status(200),
-      page({ ...OPEN_TURN, error: { name: 'MessageAbortedError', data: { message: 'aborted' } } }),
-    ];
-
-    expect(await finalizeHuskTurn(TARGET, { settleMs: 0 })).toBe('finalized');
-    const read = 'https://daemon.example.test/kortix/runtime/messages/ses_root?limit=4';
-    expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
-      `GET ${read}`,
-      `GET ${read}`,
-      'POST https://daemon.example.test/kortix/runtime/sessions/ses_root/abort',
-      `GET ${read}`,
-    ]);
   });
 
   test('every request carries the signed system-reaper context and the service-key bearer', async () => {
