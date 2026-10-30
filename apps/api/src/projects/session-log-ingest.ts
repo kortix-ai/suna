@@ -406,7 +406,7 @@ async function hideConvertedPiThreads(tx: Tx, sessionId: string, puts: readonly 
 
 /**
  * Per put: the stored row holds it already (this generation's journal row, live, the same content
- * hash), so the put writes nothing. These are exactly the puts `applyPut`'s `setWhere` leaves alone.
+ * hash), so the put writes nothing. These are exactly the puts `insertPuts`'s `setWhere` leaves alone.
  */
 async function storedUnchanged(tx: Tx, sessionId: string, generation: number, puts: readonly SessionLogPut[], hashes: readonly string[]): Promise<boolean[]> {
   if (puts.length === 0) return [];
