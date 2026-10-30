@@ -278,6 +278,17 @@ mock.module('../lib/notification-recipients', () => ({
   },
 }));
 
+// A background subagent's turn end notifies its parent (lib/subagent-notice.ts).
+// The decision is the real one; the delivery is recorded.
+const realSubagentNotice = await import('../lib/subagent-notice');
+const subagentNotices: unknown[] = [];
+mock.module('../lib/subagent-notice', () => ({
+  ...realSubagentNotice,
+  notifyParentOfSubagent: async (notice: unknown) => {
+    subagentNotices.push(notice);
+  },
+}));
+
 const { projectsApp } = await import('../lib/app');
 (await import('./turn-stream')).registerTurnStreamRoutes();
 
@@ -356,6 +367,7 @@ beforeEach(() => {
   steerTargets = {};
   confirmOutcome = 'confirmed';
   failDaemonBootWrite = false;
+  subagentNotices.length = 0;
 });
 
 describe('POST /v1/projects/:projectId/turn-stream — sleeve gates', () => {
@@ -1083,5 +1095,40 @@ describe('POST /v1/projects/:projectId/turn-stream — the session list at turn 
     sessionRow = session({}, null);
     expect((await post({ session_id: SESSION_ID, kind: 'end' })).status).toBe(200);
     expect(projectionRefreshes).toEqual([]);
+  });
+});
+
+describe('POST /v1/projects/:projectId/turn-stream — background subagent notice', () => {
+  test('a flagged child that closes a turn notifies its parent once, keyed by child and turn', async () => {
+    sessionRow = session({ spawned_by_session: 'parent-1', notify_parent_on_turn_end: true });
+    const response = await post({ session_id: SESSION_ID, kind: 'turn_end', status: 'idle', turn_message_id: 'msg_child' }, sandboxCtx);
+    expect(response.status).toBe(200);
+    expect(subagentNotices).toEqual([
+      {
+        due: { parentSessionId: 'parent-1', idempotencyKey: `subagent-finished:${SESSION_ID}:msg_child` },
+        childSessionId: SESSION_ID,
+        projectId: PROJECT_ID,
+        status: 'idle',
+      },
+    ]);
+  });
+
+  test('an error end carries the turn error to the notice', async () => {
+    sessionRow = session({ spawned_by_session: 'parent-1', notify_parent_on_turn_end: true });
+    await post(
+      { session_id: SESSION_ID, kind: 'turn_end', status: 'error', turn_message_id: 'msg_child', error_name: 'APIError', error_message: 'model overloaded' },
+      sandboxCtx,
+    );
+    expect(subagentNotices).toMatchObject([{ status: 'error', error: { name: 'APIError', message: 'model overloaded' } }]);
+  });
+
+  test('a re-sent end of a turn already closed, and a child without the flag, notify nobody', async () => {
+    sessionRow = session({ spawned_by_session: 'parent-1', notify_parent_on_turn_end: true });
+    completionResult = { outcome: 'already_closed', activeTurnCount: 0, closedTurnCount: 0 };
+    await post({ session_id: SESSION_ID, kind: 'turn_end', status: 'idle', turn_message_id: 'msg_child' }, sandboxCtx);
+    completionResult = { outcome: 'closed', activeTurnCount: 0, closedTurnCount: 1 };
+    sessionRow = session({ spawned_by_session: 'parent-1' });
+    await post({ session_id: SESSION_ID, kind: 'turn_end', status: 'idle', turn_message_id: 'msg_child' }, sandboxCtx);
+    expect(subagentNotices).toEqual([]);
   });
 });

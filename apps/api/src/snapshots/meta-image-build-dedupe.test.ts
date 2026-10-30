@@ -18,7 +18,7 @@ setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
 setTestEnv('PLATINUM_API_URL', 'https://platinum.test');
 setTestEnv('PLATINUM_API_KEY', 'pt_live_testkey');
 
-const { ensureMetaSandboxImage } = await import('./builder');
+const { ensureMyKortixSandboxImage } = await import('./builder');
 const { platinumProvider } = await import('./providers/platinum');
 
 const originalIsConfigured = platinumProvider.isConfigured;
@@ -59,8 +59,8 @@ test('concurrent meta cold builds share one provider build', async () => {
   };
   platinumProvider.listSnapshots = async () => [];
 
-  const first = ensureMetaSandboxImage({ source: 'session-start', provider: 'platinum' });
-  const second = ensureMetaSandboxImage({ source: 'session-start', provider: 'platinum' });
+  const first = ensureMyKortixSandboxImage({ source: 'session-start', provider: 'platinum' });
+  const second = ensureMyKortixSandboxImage({ source: 'session-start', provider: 'platinum' });
   await buildStarted.promise;
 
   expect(stateCalls).toBe(1);
@@ -80,7 +80,7 @@ test('a meta image reports the size it was built with, so metering bills that si
   };
   platinumProvider.listSnapshots = async () => [];
 
-  const result = await ensureMetaSandboxImage({ source: 'session-start', provider: 'platinum' });
+  const result = await ensureMyKortixSandboxImage({ source: 'session-start', provider: 'platinum' });
   expect(builtSpec).toEqual({ cpu: 1, memoryGb: 2, diskGb: 8 });
   expect(result.spec).toEqual(builtSpec as typeof result.spec);
 });

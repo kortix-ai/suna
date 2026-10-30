@@ -82,6 +82,6 @@ export interface LoadedAgents {
   /** The manifest's `kortix_version` (2 or 3) for a map-shaped roster; absent for v1. */
   schemaVersion?: number;
   /** The manifest's explicit `builtin_agents` booleans (v3). Absent key = not
-   *  set; `resolveBuiltinAgents` (lib/platform-meta-agent.ts) adds the fallback. */
+   *  set; `resolveBuiltinAgents` (lib/my-kortix-agent.ts) adds the fallback. */
   builtinAgents?: Partial<Record<BuiltinAgentKey, boolean>>;
 }

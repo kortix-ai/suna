@@ -3096,6 +3096,73 @@
       "scriptFailed": "スクリプトが失敗しました",
       "calls": "{count, plural, other {# 件のツール呼び出し}}",
       "noOutput": "出力なし"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "エージェントを確認中…",
+          "change": "エージェントを更新中…"
+        },
+        "sessions": {
+          "read": "セッションを確認中…",
+          "change": "セッションを更新中…"
+        },
+        "schedules": {
+          "read": "スケジュールを確認中…",
+          "change": "スケジュールを更新中…"
+        },
+        "connectors": {
+          "read": "コネクタを確認中…",
+          "change": "コネクタを更新中…"
+        },
+        "people": {
+          "read": "メンバーを確認中…",
+          "change": "メンバーを更新中…"
+        },
+        "access": {
+          "read": "アクセス権を確認中…",
+          "change": "アクセス権を更新中…"
+        },
+        "usage": {
+          "read": "使用量を確認中…",
+          "change": "使用量を確認中…"
+        }
+      },
+      "status": {
+        "done": "完了",
+        "needsYou": "対応が必要",
+        "denied": "権限が必要",
+        "error": "完了しませんでした",
+        "running": "実行中"
+      },
+      "deniedTitle": "権限が必要です",
+      "grantors": "付与できる人",
+      "grantorsUnknown": "このプロジェクトを管理している人なら誰でも付与できます。",
+      "newSetting": "新規",
+      "removedSetting": "削除済み",
+      "opensInNewTab": "新しいタブで開きます",
+      "showDetails": "詳細を表示"
+    },
+    "workflow": {
+      "fallbackTitle": "ワークフロー",
+      "starting": "ワークフローを開始中…",
+      "progress": "{total} 件中 {done} 件完了",
+      "failedCount": "{total} 件中 {failed} 件失敗",
+      "agents": "{count, plural, other {# 個のエージェント}}",
+      "background": "バックグラウンドで実行中",
+      "status": {
+        "starting": "開始中",
+        "running": "実行中",
+        "done": "完了",
+        "failed": "失敗",
+        "stopped": "停止"
+      },
+      "openAgent": "{label} を開く",
+      "showDetails": "詳細を表示"
+    },
+    "agent": {
+      "backgroundWorking": "バックグラウンドで作業中",
+      "backgroundSession": "専用のセッションで実行"
     }
   },
   "agentRunLimit": {

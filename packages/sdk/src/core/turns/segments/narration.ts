@@ -35,6 +35,8 @@ export type StepFamily =
   | 'create'
   | 'plan'
   | 'delegate'
+  | 'workflow'
+  | 'platform'
   | 'sessions'
   | 'memory'
   | 'connectors'
@@ -70,6 +72,10 @@ const FAMILY_OF_KIND: Record<ToolKind, StepFamily | 'hidden'> = {
   // an explicit delegation, so they narrate the same way.
   task: 'delegate',
   delegate: 'delegate',
+  // pi's workflow runs several agents at once: one sentence for the run, not one per agent.
+  workflow: 'workflow',
+  // My Kortix's platform tools: what it checked or changed in the project, by the tool's object.
+  platform: 'platform',
   sessions: 'sessions',
   // The model's own step checklist — nothing is delegated.
   todowrite: 'plan',
@@ -175,6 +181,8 @@ const DELEGATE_ACTION: Record<string, DelegateAction> = {
   agent_task_create: 'spawn',
   agent_task_start: 'spawn',
   task: 'spawn',
+  // pi's subagent tool; `task` is its deprecated alias.
+  agent: 'spawn',
   task_create: 'spawn',
   task_start: 'spawn',
   session_spawn: 'spawn',
@@ -229,6 +237,57 @@ function delegateAction(part: ToolPart): DelegateAction {
     }
   }
   return DELEGATE_ACTION[t] ?? 'message';
+}
+
+// ─── platform: what a My Kortix tool checked or changed, and whether it did ─
+
+/** The object each platform tool works on, as a sentence names it: when it reads, and when it changes. */
+const PLATFORM_OBJECT: Record<string, { read: string; change: string }> = {
+  kortix_agents: { read: 'your agents', change: 'your agents' },
+  kortix_sessions: { read: 'your sessions', change: 'your sessions' },
+  kortix_schedules: { read: 'your schedules', change: 'your schedules' },
+  kortix_connectors: { read: 'your connectors', change: 'your connectors' },
+  kortix_people: { read: 'the members', change: 'the members' },
+  kortix_access: { read: 'who has access', change: 'access' },
+  kortix_usage: { read: 'your usage', change: 'your usage' },
+};
+const PROJECT_OBJECT = { read: 'your project', change: 'your project' };
+
+/** The actions that only read. Every other action changes something; an unknown one is never guessed a read. */
+const PLATFORM_READ_ACTIONS = new Set(['', 'list', 'get', 'read', 'find', 'show', 'search', 'check', 'status', 'pending', 'who']);
+
+function platformChanges(part: ToolPart): boolean {
+  const action = rawInput(part).action;
+  return !PLATFORM_READ_ACTIONS.has(typeof action === 'string' ? action : '');
+}
+
+/**
+ * The result a settled platform call returned: its `KortixToolResult` says `ok: false` with
+ * `error.kind` when Kortix refused or the action failed. The call itself completes, so the
+ * part status alone would narrate a refused invite as done.
+ */
+function platformRefusal(part: ToolPart): 'denied' | 'failed' | undefined {
+  const output = (part.state as { output?: unknown } | undefined)?.output;
+  if (typeof output !== 'string' || !output.trimStart().startsWith('{')) return undefined;
+  try {
+    const result = JSON.parse(output) as { ok?: unknown; error?: { kind?: unknown } } | null;
+    if (result?.ok !== false) return undefined;
+    return result.error?.kind === 'denied' ? 'denied' : 'failed';
+  } catch {
+    return undefined;
+  }
+}
+
+/** The object a group of platform calls worked on: one tool names its own, several name the project. */
+function platformObject(parts: ToolPart[], changes: boolean): string {
+  const names = new Set(parts.map((p) => normalizeName(p.tool)));
+  const object = names.size === 1 ? (PLATFORM_OBJECT[[...names][0]] ?? PROJECT_OBJECT) : PROJECT_OBJECT;
+  return changes ? object.change : object.read;
+}
+
+function platformFailedSentence(parts: ToolPart[]): string {
+  const changes = parts.some(platformChanges);
+  return `Couldn't ${changes ? 'update' : 'check'} ${platformObject(parts, changes)}`;
 }
 
 // ─── automations: create/update vs read vs delete vs pause/resume vs a test dry run ─
@@ -629,6 +688,15 @@ export function narrateStep(family: StepFamily, calls: ReadonlyArray<ToolPart | 
       return n === 1 ? 'Ran a command' : `Ran ${n} commands`;
     case 'script':
       return n === 1 ? 'Ran a script' : `Ran ${n} scripts`;
+    case 'workflow':
+      return n === 1 ? 'Ran a workflow' : `Ran ${n} workflows`;
+    case 'platform': {
+      const changes = parts.some(platformChanges);
+      const refusals = parts.map(platformRefusal);
+      if (refusals.includes('denied')) return `${changes ? 'Updating' : 'Checking'} ${platformObject(parts, changes)} needs a permission`;
+      if (refusals.includes('failed')) return platformFailedSentence(parts);
+      return `${changes ? 'Updated' : 'Checked'} ${platformObject(parts, changes)}`;
+    }
     case 'web': {
       const isSearch = (p: ToolPart) => {
         const t = normalizeName(p.tool);
@@ -825,6 +893,10 @@ export function narrateFailedStep(family: StepFamily, calls: ReadonlyArray<ToolP
       return 'A command failed';
     case 'script':
       return 'A script failed';
+    case 'workflow':
+      return 'A workflow hit a problem';
+    case 'platform':
+      return platformFailedSentence(parts);
     case 'web':
       return "Couldn't finish searching the web";
     case 'create':

@@ -64,7 +64,7 @@ import {
   validateTriggerAgentRefsV2,
 } from './index.v2';
 import { safeAgentFile, safeRepoPath, safeToolFile } from './layout';
-import { BUILTIN_AGENT_KEYS, BUILTIN_AGENTS, type BuiltinAgentKey } from '@kortix/shared/meta-agent';
+import { BUILTIN_AGENT_KEYS, BUILTIN_AGENTS, LEGACY_MY_KORTIX_AGENT_NAME, type BuiltinAgentKey } from '@kortix/shared/my-kortix-agent';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -793,7 +793,7 @@ function validateNetworkEgressV3(value: unknown, where: string, issues: Manifest
 
 /**
  * `builtin_agents`: built-in key → on/off. Absent or `true` = on. A built-in's
- * slug (`meta` for My Kortix) is reserved whatever the switch says: the
+ * slug (`mykortix` for My Kortix, and its old `meta`) is reserved whatever the switch says: the
  * platform keys that slug's grant, prompt and sandbox, so a declared block
  * would never run as written.
  */
@@ -812,9 +812,12 @@ function validateBuiltinAgentsV3(node: unknown, path: string, agents: AgentScanV
     }
   }
   for (const key of BUILTIN_AGENT_KEYS) {
-    const { agent, displayName } = BUILTIN_AGENTS[key];
-    if (agents.has(agent)) {
-      issues.push({ path: `agents.${agent}`, message: `"${agent}" is reserved for ${displayName}, the built-in agent. Rename this agent. To turn ${displayName} off, set \`${path}.${key}: false\`.`, severity: 'error' });
+    const { agent: slug, displayName } = BUILTIN_AGENTS[key];
+    // My Kortix's slug before the rename stays reserved: every read still treats it as My Kortix.
+    for (const agent of key === 'my_kortix' ? [slug, LEGACY_MY_KORTIX_AGENT_NAME] : [slug]) {
+      if (agents.has(agent)) {
+        issues.push({ path: `agents.${agent}`, message: `"${agent}" is reserved for ${displayName}, the built-in agent. Rename this agent. To turn ${displayName} off, set \`${path}.${key}: false\`.`, severity: 'error' });
+      }
     }
   }
 }

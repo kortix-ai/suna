@@ -63,6 +63,11 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // but still not the client's to write.
   'spawned_by_session',
   'on_behalf_of_cleared_at',
+  // A background subagent's "notify my parent at turn end" flag
+  // (`subagent-notice.ts`). Set only from the `notify_parent_on_turn_end` create
+  // field of a session-bound caller: a client value would push this session's
+  // answer into whatever `spawned_by_session` names.
+  'notify_parent_on_turn_end',
   // The session a failed reminder's successor replaces (`trigger-fire.ts`).
   // Telegram write confinement follows it (connectors/channel-write-scope.ts).
   'reminder_successor_of',

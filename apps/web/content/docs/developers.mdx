@@ -1299,6 +1299,25 @@ Kortix maintains six tools. A `kortix_version: 3` project registers all six with
 - **Own a Kortix tool:** `kortix tools eject <name>` writes the source the sandbox runs to `tools/<name>.ts` and points the tool at it. The copy imports only `node:*` modules. `web_search`, `image_search`, and `scrape_webpage` call the Kortix API with `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env`. `image_gen` calls the Kortix LLM gateway with `KORTIX_LLM_BASE_URL` and `KORTIX_TOKEN`. `memory` and `show` work on files in the project checkout. In a v2 project with no `tools:` key, the eject creates one and also lists the other five Kortix tools as `kortix:<name>`, so it removes nothing.
 - **`context.turnId`** is optional in the `context` a tool's `execute(args, context)` receives: the turn the call belongs to, when the harness names it. pi sets it, and it is the same for every call of one turn, also for calls from a `codemode` script or a subagent. `context.signal` can differ per call. Key a per-turn limit on `turnId`. An OpenCode session does not set it.
 
+### My Kortix tools
+
+My Kortix, the built-in agent, has seven more tools. Each one runs the in-sandbox `kortix` CLI with `--json` and returns one JSON object: a `card` the web app shows in the session, `data` for the model, and an `error` when Kortix refused or the command failed. The contract is `@kortix/api-contract/kortix-tool-card`. The tools load only when a compiled config names them in `kortix_tools`. The platform's My Kortix config names them; a project's own agents do not get them.
+
+| Tool | Actions | CLI it runs |
+| --- | --- | --- |
+| `kortix_agents` | `list`, `get`, `create`, `update`, `set_access` | `kortix agents ls`, `agents config`, `agents scope` |
+| `kortix_sessions` | `list`, `read`, `message`, `stop` | `kortix sessions ls`, `sessions log`, `sessions chat --queue`, `sessions stop` |
+| `kortix_schedules` | `list`, `create`, `pause`, `resume`, `delete`, `run_now` | `kortix triggers ls`, `triggers add --runtime`, `triggers pause/resume/rm/run` |
+| `kortix_connectors` | `list`, `find`, `add`, `connect` | `kortix connectors ls`, `connectors catalog`, `connectors catalog install`, `connectors connect` |
+| `kortix_people` | `list`, `pending`, `invite`, `set_role`, `remove` | `kortix access ls`, `access pending`, `access invite`, `access grant`, `access revoke` |
+| `kortix_access` | `me`, `who_can_grant` | `kortix whoami`, `kortix access ls` |
+| `kortix_usage` | `summary`, `top_sessions` | `kortix billing costs` |
+
+- **Permissions.** Each tool acts with the session token, so Kortix checks every action against the person's own project role. A refusal comes back as `error.kind: "denied"` with `error.grantors`: the project managers, account owners and admins who can grant it. The card shows them.
+- **Machine-readable errors.** The CLI writes one `{"kortix_error":{…}}` line to stderr instead of its human footer when `KORTIX_ERROR_FORMAT=json` is set. The line has `kind` (`denied` or `failed`), `status`, `code`, `action` and `message`, each when known. Any program that runs the CLI can set it.
+- **Start work** with the `agent` tool, not with these tools. Each hand-off is its own session. `background: true` returns at once, and the API wakes the calling session with the result when the child's turn ends.
+- **Run several agents** with the `workflow` tool: a short script with `agent()`, `parallel()`, `pipeline()` and `phase()`. Each `agent()` is a real child session. The session shows the run as a live card.
+
 ### Generate images
 
 `image_gen` generates one to four images from prompts, or edits images that are in the workspace. It uses an image model the project can reach: `gpt-image-2` on a connected ChatGPT plan, or an image model of an OpenAI, Google, xAI, or OpenRouter key. You can also name a model of your custom endpoint. Kortix-managed models do not generate images yet. It saves each image under `/workspace/output/images/`.

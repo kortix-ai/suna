@@ -1022,6 +1022,13 @@ export const SessionCreateInputSchema = z
      * every renderer already hides synthetic text parts.
      */
     initial_context: z.string().min(1).max(SESSION_INITIAL_CONTEXT_MAX_CHARS).optional(),
+    /**
+     * A session-bound caller (a session's own sandbox token) starts a
+     * background child: when the new session ends its next turn, the API
+     * sends that session's answer to the caller session once, as a
+     * `<task-notification>` message. Ignored for any other caller.
+     */
+    notify_parent_on_turn_end: z.boolean().optional(),
     pending_prompt: PendingSessionPromptSchema.optional(),
     provider_secret_pools: z.record(
       z.string().min(1).max(100),

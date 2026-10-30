@@ -3096,6 +3096,73 @@
       "scriptFailed": "Error en el script",
       "calls": "{count, plural, one {# llamada a herramienta} other {# llamadas a herramientas}}",
       "noOutput": "Sin salida"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "Revisando agentes…",
+          "change": "Actualizando agentes…"
+        },
+        "sessions": {
+          "read": "Revisando sesiones…",
+          "change": "Actualizando sesiones…"
+        },
+        "schedules": {
+          "read": "Revisando programaciones…",
+          "change": "Actualizando programaciones…"
+        },
+        "connectors": {
+          "read": "Revisando conectores…",
+          "change": "Actualizando conectores…"
+        },
+        "people": {
+          "read": "Revisando miembros…",
+          "change": "Actualizando miembros…"
+        },
+        "access": {
+          "read": "Revisando el acceso…",
+          "change": "Actualizando el acceso…"
+        },
+        "usage": {
+          "read": "Revisando el uso…",
+          "change": "Revisando el uso…"
+        }
+      },
+      "status": {
+        "done": "Hecho",
+        "needsYou": "Te necesita",
+        "denied": "Necesita un permiso",
+        "error": "No terminó",
+        "running": "En curso"
+      },
+      "deniedTitle": "Necesita un permiso",
+      "grantors": "Quién puede concederlo",
+      "grantorsUnknown": "Cualquier persona que gestione este proyecto puede concederlo.",
+      "newSetting": "Nuevo",
+      "removedSetting": "Eliminado",
+      "opensInNewTab": "Se abre en una pestaña nueva",
+      "showDetails": "Mostrar detalles"
+    },
+    "workflow": {
+      "fallbackTitle": "Flujo de trabajo",
+      "starting": "Iniciando el flujo de trabajo…",
+      "progress": "{done} de {total} hechos",
+      "failedCount": "{failed} de {total} fallaron",
+      "agents": "{count, plural, one {# agente} other {# agentes}}",
+      "background": "En segundo plano",
+      "status": {
+        "starting": "Iniciando",
+        "running": "En curso",
+        "done": "Hecho",
+        "failed": "Falló",
+        "stopped": "Detenido"
+      },
+      "openAgent": "Abrir {label}",
+      "showDetails": "Mostrar detalles"
+    },
+    "agent": {
+      "backgroundWorking": "Trabajando en segundo plano",
+      "backgroundSession": "En su propia sesión"
     }
   },
   "agentRunLimit": {

@@ -940,7 +940,7 @@ flow(
       // has no `bun`, so it failed every `project` release it was assigned, and
       // two coordinators quarantined each one for the whole project.
       await ctx.step('a meta coordinator is assigned the platform governance alone, and its failures quarantine nothing', async () => {
-        const metaA = await fixture.mint({ agentName: 'meta' });
+        const metaA = await fixture.mint({ agentName: 'mykortix' });
         const metaB = await fixture.mint({ agentName: 'meta' });
         const r = await fixture.descriptor(metaA.secret, metaA.sessionId);
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
@@ -948,7 +948,7 @@ flow(
         if (d.archive !== null || d.files !== null || d.config_tree_id !== null) throw new Error(`meta got a config dir: ${JSON.stringify(d)}`);
         if (!d.release_id || d.release_id === bad.release_id || d.release_id === good.release_id) throw new Error(`meta release ${d.release_id}`);
         const agents = Object.keys(JSON.parse(d.compiled_governance ?? '{}').agent ?? {});
-        if (agents.join() !== 'meta') throw new Error(`meta governance declares ${agents.join()}`);
+        if (agents.join() !== 'mykortix') throw new Error(`My Kortix governance declares ${agents.join()}`);
         await failed(bad.release_id!, metaA.sessionId);
         await failed(bad.release_id!, metaB.sessionId);
         const still = await fixture.descriptor(b.secret, b.sessionId);

@@ -162,11 +162,25 @@ export function isEmptyShowPart(call: ActivityPartLike | ToolCallBlock): boolean
  *
  *   - the deliverables (`NO_GROUP_ACTIVITY_TOOLS`): handed to the user.
  *     Folding one behind a collapsed row means it can be missed.
- *   - agent_*: a spawned sub-agent has its own lifecycle and status. Folding it
- *     in would hide a running agent behind a collapsed row.
+ *   - agent_*, `agent` / `task` and `workflow`: a spawned sub-agent (one, or a
+ *     workflow run of several) has its own lifecycle and status. Folding it in
+ *     would hide a running agent behind a collapsed row.
+ *   - My Kortix's platform tools (`kortix_*`): each card is the outcome of an
+ *     action taken for the person (what changed, a sign-in to click, who can
+ *     grant a refused permission).
  */
 export const STANDALONE_TOOLS: ReadonlySet<string> = new Set([
   ...NO_GROUP_ACTIVITY_TOOLS,
+  'agent',
+  'task',
+  'workflow',
+  'kortix_agents',
+  'kortix_sessions',
+  'kortix_schedules',
+  'kortix_connectors',
+  'kortix_people',
+  'kortix_access',
+  'kortix_usage',
   'agent_spawn',
   'agent_status',
   'agent_message',

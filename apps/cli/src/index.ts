@@ -62,7 +62,7 @@ import { runToken, runWhoami } from './commands/whoami.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
 import { confirm } from './prompts.ts';
 import { C, header, pad, rule, visibleWidth } from './style.ts';
-import { printPermissionDenialIdentity } from './token-denial.ts';
+import { machineErrors, printPermissionDenialIdentity, withIssues, writeMachineError } from './token-denial.ts';
 import {
   getUpdateNotice,
   isUpdateSnoozed,
@@ -545,8 +545,15 @@ main(argvForInvocation(process.argv0 ?? '', process.argv.slice(2)))
     return code;
   })
   .then((code) => finish(code))
-  .catch((err: unknown) => {
+  .catch(async (err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`${C.red}kortix:${C.reset} ${msg}\n`);
+    if (machineErrors()) {
+      // A refused call records its denial before it throws: that line names the action.
+      await printPermissionDenialIdentity();
+      const status = typeof (err as { status?: unknown })?.status === 'number' ? (err as { status: number }).status : undefined;
+      writeMachineError({ kind: 'failed', message: withIssues(msg, (err as { body?: unknown })?.body), ...(status ? { status } : {}) });
+    } else {
+      process.stderr.write(`${C.red}kortix:${C.reset} ${msg}\n`);
+    }
     finish(1);
   });

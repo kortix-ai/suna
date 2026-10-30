@@ -23,7 +23,7 @@ checks the cross-key rules. Unknown keys are errors.
 | `apps` | Map of Apps and their settings (the `kortix-apps` skill). |
 | `triggers` | List of triggers (below). |
 | `policy`, `policies`, `approvals` | Connector call policies and how long a held call stays decidable (`approvals.ttl`: `30m`, `4h`, `7d`; default 24h). Approve runs the held call once, as its caller, and resumes the agent with the result: the agent does not repeat it. A caller without a project-scoped token repeats it within 15 minutes. |
-| `builtin_agents` | `my_kortix: false` removes My Kortix, the built-in agent (slug `meta`). Absent = on. |
+| `builtin_agents` | `my_kortix: false` removes My Kortix, the built-in agent (slug `mykortix`). Absent = on. |
 | `spaces` | Work in progress: channels per area of work (below). |
 | `agents` | Map of agent name → agent block. At least one. |
 

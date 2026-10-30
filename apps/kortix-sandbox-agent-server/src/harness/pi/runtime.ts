@@ -23,6 +23,7 @@ import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeTo
 import type { AssistantMessage, ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
 import type { AgentSessionEvent, SessionEntry, SessionHeader, Skill } from '@earendil-works/pi-coding-agent'
 import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
+import { KORTIX_PLATFORM_TOOL_NAMES } from '@kortix/api-contract/kortix-tool-card'
 import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, RuntimePermissionRequest, RuntimeQuestionRequest, RuntimeToolRef, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
@@ -199,8 +200,11 @@ export function parsePromptBody(raw: unknown): PromptInput {
 
 export type TurnOutcome = 'completed' | 'error' | 'aborted'
 
-/** Tools whose call renders as its own transcript part (a card), also when a codemode script makes it. */
-const NATIVE_PART_TOOLS: readonly string[] = ['show', 'image_gen']
+/**
+ * Tools whose call renders as its own transcript part (a card), also when a codemode script makes it.
+ * My Kortix's platform tools are here: each card is the outcome of an action taken for the person.
+ */
+const NATIVE_PART_TOOLS: readonly string[] = ['show', 'image_gen', ...KORTIX_PLATFORM_TOOL_NAMES]
 /**
  * Built-in tools the model calls directly also with codemode `only`: presentation (NATIVE_PART_TOOLS)
  * and `question`, which a script may not call (`nestedCallGate`). `agent` is the subagents
@@ -565,13 +569,14 @@ export class PiRuntime {
       this.bindRoot()
     }
     try {
-      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, coding, host, { subagents }, { codemodeExtensions }, prebuiltRoot] = await Promise.all([
+      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, coding, host, { subagents }, { workflow }, { codemodeExtensions }, prebuiltRoot] = await Promise.all([
         import('./model'),
         import('./tools'),
         import('@earendil-works/pi-agent-core'),
         import('@earendil-works/pi-coding-agent'),
         import('./extensions/host'),
         import('./extensions/subagents'),
+        import('./extensions/workflow'),
         import('./codemode'),
         // Started in the constructor: by now it has run beside the repo clone.
         this.prefetchProjectBundle(),
@@ -671,7 +676,7 @@ export class PiRuntime {
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
         // The nested-call gate is first: pi runs `tool_call` handlers in load order and stops at the first block.
-        extensions: [this.nestedCallGate(), this.presentationExtension(), this.turnExtension(), subagents(this.kortixHost()), ...codemodeExtensions(this.codemodeMode, coding.createCodemodeExtension), ...local, ...project.extensions],
+        extensions: [this.nestedCallGate(), this.presentationExtension(), this.turnExtension(), subagents(this.kortixHost()), workflow(this.kortixHost()), ...codemodeExtensions(this.codemodeMode, coding.createCodemodeExtension), ...local, ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
@@ -1441,8 +1446,9 @@ export class PiRuntime {
           if (!parent) return undefined
           // A subagent's script call already passed the child's own gate (stricter than rootRule); re-deciding here would double an `ask`.
           if (this.childNestedCalls.has(event.toolCallId)) return undefined
-          // A subagent thread links to its root `agent`/`task` call; a question needs the model-issued call it answers.
-          if (event.toolName === 'agent' || event.toolName === 'task' || event.toolName === 'question') {
+          // A subagent thread links to its root `agent`/`task` call; a question needs the model-issued call it answers;
+          // a workflow holds the turn for hours and must not run inside a script's worker.
+          if (event.toolName === 'agent' || event.toolName === 'task' || event.toolName === 'question' || event.toolName === 'workflow') {
             return { block: true, reason: `Call ${event.toolName} directly, not from a script.` }
           }
           return this.decide(this.rootRule(event.toolName, event.input), event.toolName, event.input, () => this.adapter?.toolRef(event.toolCallId) ?? this.adapter?.toolRef(parent))
@@ -1563,8 +1569,34 @@ export class PiRuntime {
       builtInSubagents: () => !this.v3(),
       subagentAllowed: (name) => this.permissions.rule('task', { subagent_type: name }) !== 'deny',
       codemodeOnly: () => this.codemodeMode === 'only',
+      // My Kortix's box (the coordinator): its config declares only itself, and every hand-off names a project agent.
+      anyProjectAgent: () => this.env.KORTIX_META_AGENT === '1',
       spawnSession: (input) => this.resolveSpawn(input),
+      workflowLimits: () => {
+        const cloud = this.cloudTarget()
+        if (cloud && cloud.depth >= cloud.maxDepth) {
+          return {
+            maxParallel: 0,
+            refusal: `Separate subagent sessions nest at most ${cloud.maxDepth} levels and this session is level ${cloud.depth}, so it cannot run a workflow. Do the work here, or use the agent tool with session: "same".`,
+          }
+        }
+        return { maxParallel: cloud?.maxLive ?? this.cfg.piCloudSubagentsMax }
+      },
     }
+  }
+
+  /** The separate-session target, built once per box: its live-child counter is the per-parent cap. Null without a control plane. */
+  private cloudTarget(): CloudSubagentApi | null {
+    this.cloudSubagents ??= cloudSubagentApiFrom({
+      apiUrl: this.cfg.apiUrl,
+      projectId: this.cfg.projectId,
+      sandboxToken: this.cfg.sandboxToken,
+      sessionId: this.env.KORTIX_SESSION_ID,
+      context: this.subagentContext,
+      maxLive: this.cfg.piCloudSubagentsMax,
+      maxDepth: this.cfg.piCloudSubagentsMaxDepth,
+    })
+    return this.cloudSubagents
   }
 
   /**
@@ -1576,26 +1608,17 @@ export class PiRuntime {
    * identical either way, so the tool contract and the UI do not change.
    */
   private async resolveSpawn(input: SpawnSessionInput): Promise<SpawnSessionResult> {
-    // One target per box: its live-child counter is the per-parent cap.
-    this.cloudSubagents ??= cloudSubagentApiFrom({
-      apiUrl: this.cfg.apiUrl,
-      projectId: this.cfg.projectId,
-      sandboxToken: this.cfg.sandboxToken,
-      sessionId: this.env.KORTIX_SESSION_ID,
-      context: this.subagentContext,
-      maxLive: this.cfg.piCloudSubagentsMax,
-      maxDepth: this.cfg.piCloudSubagentsMaxDepth,
-    })
+    const cloud = this.cloudTarget()
     const route = routeSubagent({
       requested: input.session,
       taskId: input.sessionId,
       localChild: !!input.sessionId && this.children.has(input.sessionId),
-      controlPlane: this.cloudSubagents !== null,
+      controlPlane: cloud !== null,
     })
-    if (route.session === 'separate' && this.cloudSubagents) {
+    if (route.session === 'separate' && cloud) {
       // The agent and its tools are read per call: a prompt may switch the agent (applyAgent).
       // The spread keeps the shared `live` counter.
-      const result = await cloudSpawnSession({ ...this.cloudSubagents, ...this.cloudParent() }, input)
+      const result = await cloudSpawnSession({ ...cloud, ...this.cloudParent() }, input)
       return { ...result, session: 'separate' }
     }
     if (route.notice) logger.info('[pi] separate subagent session ran in this session', { notice: route.notice })
@@ -1635,6 +1658,8 @@ export class PiRuntime {
    * (`kortix.subagent.tools` in KORTIX_SESSION_CONTEXT). Only ever narrows.
    */
   private rootToolAllowed(name: string): boolean {
+    // A workflow runs `agent` calls: it follows the agent tool's grant, unless the agent's `tools` names it.
+    if (name === 'workflow' && !Object.hasOwn(this.compiledAgent()?.tools ?? {}, 'workflow')) return this.rootToolAllowed('agent') || this.rootToolAllowed('task')
     const narrowed = this.subagentContext.tools
     return toolAllowed(this.compiledAgent()?.tools, name) && (!narrowed || narrowed.includes(name))
   }

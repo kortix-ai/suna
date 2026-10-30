@@ -3096,6 +3096,73 @@
       "scriptFailed": "Échec du script",
       "calls": "{count, plural, one {# appel d’outil} other {# appels d’outils}}",
       "noOutput": "Aucune sortie"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "Vérification des agents…",
+          "change": "Mise à jour des agents…"
+        },
+        "sessions": {
+          "read": "Vérification des sessions…",
+          "change": "Mise à jour des sessions…"
+        },
+        "schedules": {
+          "read": "Vérification des planifications…",
+          "change": "Mise à jour des planifications…"
+        },
+        "connectors": {
+          "read": "Vérification des connecteurs…",
+          "change": "Mise à jour des connecteurs…"
+        },
+        "people": {
+          "read": "Vérification des membres…",
+          "change": "Mise à jour des membres…"
+        },
+        "access": {
+          "read": "Vérification des accès…",
+          "change": "Mise à jour des accès…"
+        },
+        "usage": {
+          "read": "Vérification de l’utilisation…",
+          "change": "Vérification de l’utilisation…"
+        }
+      },
+      "status": {
+        "done": "Terminé",
+        "needsYou": "Vous attend",
+        "denied": "Nécessite une autorisation",
+        "error": "Non terminé",
+        "running": "En cours"
+      },
+      "deniedTitle": "Nécessite une autorisation",
+      "grantors": "Qui peut l’accorder",
+      "grantorsUnknown": "Toute personne qui gère ce projet peut l’accorder.",
+      "newSetting": "Nouveau",
+      "removedSetting": "Supprimé",
+      "opensInNewTab": "S’ouvre dans un nouvel onglet",
+      "showDetails": "Afficher les détails"
+    },
+    "workflow": {
+      "fallbackTitle": "Workflow",
+      "starting": "Démarrage du workflow…",
+      "progress": "{done} sur {total} terminés",
+      "failedCount": "{failed} sur {total} en échec",
+      "agents": "{count, plural, one {# agent} other {# agents}}",
+      "background": "En arrière-plan",
+      "status": {
+        "starting": "Démarrage",
+        "running": "En cours",
+        "done": "Terminé",
+        "failed": "Échec",
+        "stopped": "Arrêté"
+      },
+      "openAgent": "Ouvrir {label}",
+      "showDetails": "Afficher les détails"
+    },
+    "agent": {
+      "backgroundWorking": "Travaille en arrière-plan",
+      "backgroundSession": "Dans sa propre session"
     }
   },
   "agentRunLimit": {

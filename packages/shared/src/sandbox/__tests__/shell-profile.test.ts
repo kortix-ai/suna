@@ -27,7 +27,7 @@ import {
   kortixShellProfileScript,
   kortixToolchainLayer,
 } from '../dockerfile-layer';
-import { buildMetaSandboxDockerfile } from '../meta-dockerfile';
+import { buildMyKortixSandboxDockerfile } from '../my-kortix-dockerfile';
 
 const KORTIX_DIRS = KORTIX_USER_PATH_DIRS.split(':');
 const DEBIAN_USER_PATH = '/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games';
@@ -182,7 +182,7 @@ describe('every image that runs the web terminal bakes the hook as root', () => 
   });
 
   test('the meta image (debian:bookworm-slim) writes it before its entrypoint', () => {
-    const meta = buildMetaSandboxDockerfile({
+    const meta = buildMyKortixSandboxDockerfile({
       agentBinaryPath: 'kortix-agent.gz',
       cliBinaryPath: 'kortix.gz',
       entrypointScriptPath: 'kortix-entrypoint',

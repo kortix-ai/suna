@@ -36,7 +36,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { createGzip } from 'node:zlib';
 import { AGENT_BROWSER_VERSION } from '@kortix/shared';
-import { buildMetaSandboxDockerfile } from '@kortix/shared/sandbox';
+import { buildMyKortixSandboxDockerfile } from '@kortix/shared/sandbox';
 import { managedSkillOverlayFiles } from '../runtime-assets/managed-skills';
 import { appCaddyBinaryPath, appdBinaryPath } from '../apps/runtime-artifacts';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
@@ -183,7 +183,7 @@ async function stageManagedSkills(outDir: string): Promise<void> {
 }
 
 
-export async function stageMetaBuildContext(): Promise<StagedContext> {
+export async function stageMyKortixBuildContext(): Promise<StagedContext> {
   const agentPath = agentBinPath();
   const cliPath = cliBinPath();
   const entrypointPath = entrypointSrcPath();
@@ -201,7 +201,7 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
   const composedPath = join(contextDir, dockerfileName);
   await writeFileFs(
     composedPath,
-    buildMetaSandboxDockerfile({
+    buildMyKortixSandboxDockerfile({
       agentBinaryPath: 'kortix-agent.gz',
       cliBinaryPath: 'kortix.gz',
       entrypointScriptPath: 'kortix-entrypoint',
@@ -211,7 +211,7 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
   return { contextDir, composedPath, dockerfileName };
 }
 
-export type RuntimeBuildProfile = 'standard' | 'meta' | 'app';
+export type RuntimeBuildProfile = 'standard' | 'mykortix' | 'app';
 
 /** Select one runtime renderer for every provider adapter. */
 export async function stageRuntimeBuildContext(input: {
@@ -225,8 +225,8 @@ export async function stageRuntimeBuildContext(input: {
     case 'app':
       if (!input.appContext) throw new Error('app runtime profile requires appContext');
       return stageAppBuildContext(input.snapshotName, input.userDockerfile, input.appContext);
-    case 'meta':
-      return stageMetaBuildContext();
+    case 'mykortix':
+      return stageMyKortixBuildContext();
     default:
       return stageBuildContext(input.snapshotName, input.userDockerfile, input.containerRuntime);
   }

@@ -1,7 +1,7 @@
 /**
  * The meta-image reap, and the property that makes it safe to run at all.
  *
- * Incident it comes from: `ensureMetaSandboxImage` deleted a snapshot only when
+ * Incident it comes from: `ensureMyKortixSandboxImage` deleted a snapshot only when
  * its OWN build had failed, never when a newer one superseded it. The meta
  * fingerprint hashes the agent/CLI/SDK/shared/starter source trees, so it moves
  * on roughly every deploy. Measured 2026-08-12 on the live organisation: 118
@@ -17,7 +17,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { config } from '../config';
-import { metaSnapshotName, reapSupersededMetaSnapshots } from './builder';
+import { myKortixSnapshotName, reapSupersededMyKortixSnapshots } from './builder';
 
 /**
  * No-op protection lookup: "nothing was built recently".
@@ -45,12 +45,12 @@ const HASH_B = 'b'.repeat(64);
 
 describe('meta snapshot naming', () => {
   test('is namespaced by environment', () => {
-    const name = metaSnapshotName(HASH_A);
-    expect(name).toBe(`kortix-meta-${config.INTERNAL_KORTIX_ENV}-${'a'.repeat(16)}`);
+    const name = myKortixSnapshotName(HASH_A);
+    expect(name).toBe(`kortix-mykortix-${config.INTERNAL_KORTIX_ENV}-${'a'.repeat(16)}`);
   });
 
   test('two different fingerprints get different names', () => {
-    expect(metaSnapshotName(HASH_A)).not.toBe(metaSnapshotName(HASH_B));
+    expect(myKortixSnapshotName(HASH_A)).not.toBe(myKortixSnapshotName(HASH_B));
   });
 });
 
@@ -60,24 +60,34 @@ describe('meta snapshot reap', () => {
     // delete the image production is booting from.
     const env = config.INTERNAL_KORTIX_ENV;
     const others = ['dev', 'staging', 'prod', 'preview'].filter((e) => e !== env);
-    const foreign = others.map((e) => `kortix-meta-${e}-${'f'.repeat(16)}`);
-    const provider = fakeProvider([metaSnapshotName(HASH_A), ...foreign]);
+    const foreign = others.flatMap((e) => [`kortix-mykortix-${e}-${'f'.repeat(16)}`, `kortix-meta-${e}-${'f'.repeat(16)}`]);
+    const provider = fakeProvider([myKortixSnapshotName(HASH_A), ...foreign]);
 
-    await reapSupersededMetaSnapshots(provider, metaSnapshotName(HASH_B), NOTHING_RECENT);
+    await reapSupersededMyKortixSnapshots(provider, myKortixSnapshotName(HASH_B), NOTHING_RECENT);
 
     // Only our own superseded image goes.
-    expect(provider.deleted).toEqual([metaSnapshotName(HASH_A)]);
+    expect(provider.deleted).toEqual([myKortixSnapshotName(HASH_A)]);
     for (const name of foreign) expect(provider.deleted).not.toContain(name);
   });
 
   test('keeps the image just built', async () => {
-    const keep = metaSnapshotName(HASH_B);
-    const provider = fakeProvider([keep, metaSnapshotName(HASH_A)]);
+    const keep = myKortixSnapshotName(HASH_B);
+    const provider = fakeProvider([keep, myKortixSnapshotName(HASH_A)]);
 
-    await reapSupersededMetaSnapshots(provider, keep, NOTHING_RECENT);
+    await reapSupersededMyKortixSnapshots(provider, keep, NOTHING_RECENT);
 
     expect(provider.deleted).not.toContain(keep);
-    expect(provider.deleted).toContain(metaSnapshotName(HASH_A));
+    expect(provider.deleted).toContain(myKortixSnapshotName(HASH_A));
+  });
+
+  test('also tidies this environment\'s images from before the rename (`kortix-meta-<env>-*`)', async () => {
+    const env = config.INTERNAL_KORTIX_ENV;
+    const renamed = `kortix-meta-${env}-${'d'.repeat(16)}`;
+    const provider = fakeProvider([renamed, myKortixSnapshotName(HASH_A)]);
+
+    await reapSupersededMyKortixSnapshots(provider, myKortixSnapshotName(HASH_B), NOTHING_RECENT);
+
+    expect(provider.deleted).toEqual([myKortixSnapshotName(HASH_A), renamed]);
   });
 
   test('leaves un-namespaced legacy names alone', async () => {
@@ -85,9 +95,9 @@ describe('meta snapshot reap', () => {
     // They cannot be attributed to an environment, so the reap must not guess —
     // they need one deliberate cleanup instead.
     const legacy = `kortix-meta-${'c'.repeat(16)}`;
-    const provider = fakeProvider([legacy, metaSnapshotName(HASH_A)]);
+    const provider = fakeProvider([legacy, myKortixSnapshotName(HASH_A)]);
 
-    await reapSupersededMetaSnapshots(provider, metaSnapshotName(HASH_B), NOTHING_RECENT);
+    await reapSupersededMyKortixSnapshots(provider, myKortixSnapshotName(HASH_B), NOTHING_RECENT);
 
     expect(provider.deleted).not.toContain(legacy);
   });
@@ -102,14 +112,14 @@ describe('meta snapshot reap', () => {
       deleteSnapshot: async () => {},
     };
     await expect(
-      reapSupersededMetaSnapshots(provider, metaSnapshotName(HASH_B), NOTHING_RECENT),
+      reapSupersededMyKortixSnapshots(provider, myKortixSnapshotName(HASH_B), NOTHING_RECENT),
     ).resolves.toBeUndefined();
   });
 
   test('nothing to reap is not an error', async () => {
-    const keep = metaSnapshotName(HASH_B);
+    const keep = myKortixSnapshotName(HASH_B);
     const provider = fakeProvider([keep]);
-    await reapSupersededMetaSnapshots(provider, keep, NOTHING_RECENT);
+    await reapSupersededMyKortixSnapshots(provider, keep, NOTHING_RECENT);
     expect(provider.deleted).toEqual([]);
   });
 });
@@ -120,20 +130,20 @@ describe('meta snapshot reap — fail-closed protection', () => {
     // query fails, which a reaper reads as "nothing is protected — delete it
     // all". Mid-rollout that deletes the image the not-yet-restarted replicas
     // are booting. This reap must do the opposite and delete nothing.
-    const provider = fakeProvider([metaSnapshotName(HASH_A), metaSnapshotName(HASH_B)]);
-    await reapSupersededMetaSnapshots(provider, metaSnapshotName(HASH_B), async () => {
+    const provider = fakeProvider([myKortixSnapshotName(HASH_A), myKortixSnapshotName(HASH_B)]);
+    await reapSupersededMyKortixSnapshots(provider, myKortixSnapshotName(HASH_B), async () => {
       throw new Error('database unreachable');
     });
     expect(provider.deleted).toEqual([]);
   });
 
   test('a protected name survives while its siblings are reaped', async () => {
-    const keep = metaSnapshotName(HASH_B);
-    const protectedName = metaSnapshotName(HASH_A);
-    const stale = metaSnapshotName('d'.repeat(64));
+    const keep = myKortixSnapshotName(HASH_B);
+    const protectedName = myKortixSnapshotName(HASH_A);
+    const stale = myKortixSnapshotName('d'.repeat(64));
     const provider = fakeProvider([keep, protectedName, stale]);
 
-    await reapSupersededMetaSnapshots(provider, keep, async () => new Set([protectedName]));
+    await reapSupersededMyKortixSnapshots(provider, keep, async () => new Set([protectedName]));
 
     expect(provider.deleted).toEqual([stale]);
   });
@@ -151,8 +161,8 @@ describe('meta snapshot reap — local stacks', () => {
     const before = flags.KORTIX_LOCAL_DEV;
     flags.KORTIX_LOCAL_DEV = true;
     try {
-      const provider = fakeProvider([metaSnapshotName(HASH_A), metaSnapshotName('d'.repeat(64))]);
-      await reapSupersededMetaSnapshots(provider, metaSnapshotName(HASH_B), NOTHING_RECENT);
+      const provider = fakeProvider([myKortixSnapshotName(HASH_A), myKortixSnapshotName('d'.repeat(64))]);
+      await reapSupersededMyKortixSnapshots(provider, myKortixSnapshotName(HASH_B), NOTHING_RECENT);
       expect(provider.deleted).toEqual([]);
     } finally {
       flags.KORTIX_LOCAL_DEV = before;

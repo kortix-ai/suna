@@ -228,6 +228,9 @@ async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
               name: agent.name,
               path: agent.path,
               model: agentModel(agent, pins[agent.name]),
+              ...(agent.description ? { description: agent.description } : {}),
+              ...(agent.platform ? { builtin: true } : {}),
+              ...(agent.enabled === false ? { enabled: false } : {}),
             })),
           },
     );
@@ -505,7 +508,7 @@ async function agentsScope(
 }
 
 /**
- * A built-in agent (My Kortix, slug `meta`) has no kortix.yaml block: the
+ * A built-in agent (My Kortix, slug `mykortix`) has no kortix.yaml block: the
  * config GET answers `block: null`. Print what it actually holds, never the
  * block defaults (`secrets all`), and never a "Change it" hint: every write
  * answers 409 builtin_agent_managed.

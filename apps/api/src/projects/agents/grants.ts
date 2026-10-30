@@ -1,8 +1,8 @@
 import type { AgentGrant } from '@kortix/db';
-import { isMetaAgentName } from '@kortix/shared';
+import { isMyKortixAgentName } from '@kortix/shared';
 import { canonicalizeGrantActions, canonicalizeGrantConnectors } from '../../iam/agent-scope';
 import type { GitBackedProject } from '../git';
-import { disabledPlatformMetaAgentGrant, platformMetaAgentGrant } from '../lib/platform-meta-agent';
+import { disabledMyKortixAgentGrant, myKortixAgentGrant } from '../lib/my-kortix-agent';
 import { type ManifestFormat, OPENCODE_BUILTIN_AGENTS_V3 } from '@kortix/manifest-schema';
 import { parseManifestString } from '../manifest-io';
 import { extractAgents, loadProjectAgents } from './parse';
@@ -81,7 +81,7 @@ export function isLaunchableAgentName(agentName: string, loaded: LoadedAgents): 
   if (!name) return false;
   if (name === DEFAULT_AGENT_SENTINEL) return true;
   // My Kortix is launchable unless kortix.yaml turned it off.
-  if (isMetaAgentName(name)) return loaded.builtinAgents?.my_kortix !== false;
+  if (isMyKortixAgentName(name)) return loaded.builtinAgents?.my_kortix !== false;
   // OpenCode ships these in every runtime and a governed project's picker can
   // still send one. They are the runtime's own, not another project's, so they
   // keep running exactly as before: an undeclared built-in resolves to the
@@ -173,8 +173,8 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // refuse the prompt outright. Its grant is platform-owned, at mint and here.
   // A kortix.yaml that turned My Kortix off (`builtin_agents.my_kortix: false`)
   // strips an existing `meta` session of every project action on its next prompt.
-  if (isMetaAgentName(agentName)) {
-    return loaded.builtinAgents?.my_kortix === false ? disabledPlatformMetaAgentGrant() : platformMetaAgentGrant();
+  if (isMyKortixAgentName(agentName)) {
+    return loaded.builtinAgents?.my_kortix === false ? disabledMyKortixAgentGrant() : myKortixAgentGrant();
   }
 
   // No [[agents]] section parsed and no errors → project hasn't adopted

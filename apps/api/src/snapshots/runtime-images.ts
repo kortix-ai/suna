@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MY_KORTIX_SANDBOX_SLUG } from '@kortix/shared';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
 import { config } from '../config';
 import { logger } from '../lib/logger';
@@ -17,9 +18,9 @@ export class SnapshotBuildError extends Error {
   }
 }
 
-export const META_RUNTIME_SPEC: SandboxImageSpec = Object.freeze({ cpu: 1, memoryGb: 2, diskGb: 8 });
+export const MY_KORTIX_RUNTIME_SPEC: SandboxImageSpec = Object.freeze({ cpu: 1, memoryGb: 2, diskGb: 8 });
 
-const metaImageBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
+const myKortixImageBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
 let metaRuntimeFingerprint: Promise<string> | null = null;
 
 function currentMetaRuntimeFingerprint(): Promise<string> {
@@ -34,7 +35,7 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
       { label: 'cli', path: resolve(root, 'apps/cli/src') },
       { label: 'cli-package', path: resolve(root, 'apps/cli/package.json') },
       { label: 'entrypoint', path: resolve(root, 'apps/sandbox/entrypoint.sh') },
-      { label: 'meta-renderer', path: resolve(root, 'packages/shared/src/sandbox/meta-dockerfile.ts') },
+      { label: 'meta-renderer', path: resolve(root, 'packages/shared/src/sandbox/my-kortix-dockerfile.ts') },
       { label: 'sdk', path: resolve(root, 'packages/sdk/src') },
       { label: 'llm-catalog', path: resolve(root, 'packages/llm-catalog/src') },
       { label: 'manifest-schema', path: resolve(root, 'packages/manifest-schema/src') },
@@ -58,8 +59,10 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
  */
 const RUNTIME_REAP_PROTECT_MS = 60 * 60 * 1000;
 
-/** Names are `kortix-meta-<env>-<hash16>`; see `metaSnapshotName`. */
-const META_SNAPSHOT_PREFIX = 'kortix-meta';
+/** Names are `kortix-mykortix-<env>-<hash16>`; see `myKortixSnapshotName`. */
+const MY_KORTIX_SNAPSHOT_PREFIX = 'kortix-mykortix';
+/** The prefix before the My Kortix rename (2026-10-30). The reap still tidies its superseded images. */
+const LEGACY_MY_KORTIX_SNAPSHOT_PREFIX = 'kortix-meta';
 
 /**
  * The meta image name, namespaced by environment.
@@ -74,8 +77,8 @@ const META_SNAPSHOT_PREFIX = 'kortix-meta';
  * not match this prefix pattern and are left alone by the reap; they need one
  * deliberate cleanup.
  */
-export function metaSnapshotName(contentHash: string): string {
-  return `${META_SNAPSHOT_PREFIX}-${config.INTERNAL_KORTIX_ENV}-${contentHash.slice(0, 16)}`;
+export function myKortixSnapshotName(contentHash: string): string {
+  return `${MY_KORTIX_SNAPSHOT_PREFIX}-${config.INTERNAL_KORTIX_ENV}-${contentHash.slice(0, 16)}`;
 }
 
 /**
@@ -83,7 +86,7 @@ export function metaSnapshotName(contentHash: string): string {
  *
  * The meta fingerprint hashes the source trees of the agent, CLI, SDK, shared,
  * starter and friends, so it changes on essentially every commit that touches
- * them — roughly every deploy. Nothing reaped the old ones: `ensureMetaSandboxImage`
+ * them — roughly every deploy. Nothing reaped the old ones: `ensureMyKortixSandboxImage`
  * deleted a snapshot only when its own build had FAILED, never when a newer one
  * superseded it. Measured 2026-08-12: 118 `kortix-meta-*` snapshots, all under
  * 14 days old, ~8 per day, against a 200-snapshot organisation quota that was
@@ -93,19 +96,15 @@ export function metaSnapshotName(contentHash: string): string {
  * Best-effort by construction: a reap failure must never fail the build that
  * triggered it. The image is already there; tidying is not on the critical path.
  */
-export async function reapSupersededMetaSnapshots(
+export async function reapSupersededMyKortixSnapshots(
   provider: Pick<SandboxProviderAdapter, 'listSnapshots' | 'deleteSnapshot'>,
   keepName: string,
   /** Test seam for the protection lookup; production uses the strict query. */
   recentLookup: (names: string[], withinMs: number) => Promise<Set<string>> = recentlyBuiltStrict,
 ): Promise<void> {
-  return reapSupersededEnvironmentRuntimeSnapshots(
-    provider,
-    META_SNAPSHOT_PREFIX,
-    'meta',
-    keepName,
-    recentLookup,
-  );
+  for (const prefix of [MY_KORTIX_SNAPSHOT_PREFIX, LEGACY_MY_KORTIX_SNAPSHOT_PREFIX]) {
+    await reapSupersededEnvironmentRuntimeSnapshots(provider, prefix, 'mykortix', keepName, recentLookup);
+  }
 }
 
 async function reapSupersededEnvironmentRuntimeSnapshots(
@@ -152,7 +151,7 @@ async function reapSupersededEnvironmentRuntimeSnapshots(
   }
 }
 
-export async function ensureMetaSandboxImage(opts: {
+export async function ensureMyKortixSandboxImage(opts: {
   source?: SnapshotBuildSource;
   provider: string;
 }): Promise<EnsureSandboxImageResult> {
@@ -162,9 +161,9 @@ export async function ensureMetaSandboxImage(opts: {
   }
   const fingerprint = await currentMetaRuntimeFingerprint();
   const contentHash = createHash('sha256').update(`meta-runtime-v1\0${fingerprint}`).digest('hex');
-  const snapshotName = metaSnapshotName(contentHash);
+  const snapshotName = myKortixSnapshotName(contentHash);
   const buildKey = `${opts.provider}:${snapshotName}`;
-  let image = metaImageBuilds.get(buildKey);
+  let image = myKortixImageBuilds.get(buildKey);
   let ownsImage = false;
   if (!image) {
     ownsImage = true;
@@ -174,42 +173,42 @@ export async function ensureMetaSandboxImage(opts: {
       if (state === 'active') {
         return {
           snapshotName,
-          slug: 'meta',
+          slug: MY_KORTIX_SANDBOX_SLUG,
           contentHash,
           built: false,
           isDefault: false,
-          runtimeProfile: 'meta' as const,
-          spec: { ...META_RUNTIME_SPEC },
+          runtimeProfile: 'mykortix' as const,
+          spec: { ...MY_KORTIX_RUNTIME_SPEC },
         };
       }
       if (state === 'build_failed') await provider.deleteSnapshot(snapshotName);
       await provider.buildSnapshot({
         snapshotName,
         userDockerfile: '# platform meta runtime',
-        spec: { ...META_RUNTIME_SPEC },
-        slug: 'meta',
+        spec: { ...MY_KORTIX_RUNTIME_SPEC },
+        slug: MY_KORTIX_SANDBOX_SLUG,
         isShared: true,
-        runtimeProfile: 'meta' as const,
+        runtimeProfile: 'mykortix' as const,
       });
       // Tidy only after the replacement is actually active, so a failed build
       // can never leave the environment with nothing to boot.
-      await reapSupersededMetaSnapshots(provider, snapshotName);
+      await reapSupersededMyKortixSnapshots(provider, snapshotName);
       return {
         snapshotName,
-        slug: 'meta',
+        slug: MY_KORTIX_SANDBOX_SLUG,
         contentHash,
         built: true,
         isDefault: false,
-        runtimeProfile: 'meta' as const,
-        spec: { ...META_RUNTIME_SPEC },
+        runtimeProfile: 'mykortix' as const,
+        spec: { ...MY_KORTIX_RUNTIME_SPEC },
       };
     })();
-    metaImageBuilds.set(buildKey, image);
+    myKortixImageBuilds.set(buildKey, image);
   }
   try {
     return await image;
   } finally {
-    if (ownsImage) metaImageBuilds.delete(buildKey);
+    if (ownsImage) myKortixImageBuilds.delete(buildKey);
   }
 }
 

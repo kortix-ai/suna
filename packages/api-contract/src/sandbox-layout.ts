@@ -25,6 +25,7 @@ export const KORTIXD_SHARED_SOURCES = [
   'packages/api-contract/src/compiled-agent-config-env.ts',
   'packages/api-contract/src/egress-shim-rules.ts',
   'packages/api-contract/src/fallback-models.ts',
+  'packages/api-contract/src/kortix-tool-card.ts',
   'packages/api-contract/src/permission-rules.ts',
   'packages/api-contract/src/runtime-relay.ts',
   'packages/api-contract/src/sandbox-layout.ts',

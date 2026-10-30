@@ -24,3 +24,4 @@ planned, in flight, or parked, so another person or agent can pick it up.
 | [`kortix-yaml-versionless/`](kortix-yaml-versionless/README.md) | planned: one versionless kortix.yaml schema, imports kept, old shapes auto-upgraded |
 | [`image-generation/`](image-generation/README.md) | in progress (branch `image-gen`): `image_gen` tool, gpt-image-2 on a connected ChatGPT plan |
 | [`platinum-machines-apps/`](platinum-machines-apps/README.md) | planning: the sandbox becomes a Machine, Apps move into Platinum; 7 decisions open; parked idea: bare-metal marketplace |
+| [`my-kortix-account-actions/`](my-kortix-account-actions/README.md) | planned: account-level My Kortix actions as server-side held approvals |

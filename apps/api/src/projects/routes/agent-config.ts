@@ -51,7 +51,7 @@ import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { extractAgents, agentNotDeclaredError, grantsByAgent } from '../agents';
 import { projectBuiltinAgents } from '../lib/builtin-agents';
-import { builtinAgentConfigView, builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/platform-meta-agent';
+import { builtinAgentConfigView, builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/my-kortix-agent';
 import { assertNoGrantEscalation, changedPolicySet } from '../../iam/agent-grant-ceiling';
 import { isRepoFileNotFoundError, readRepoFile } from '../git';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
@@ -307,7 +307,7 @@ export function registerAgentConfigRoutes(): void {
       const read = readAgentBlockV2(manifest, agentName);
       if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
 
-      // A built-in agent the project runs (My Kortix, slug `meta`) is listed by
+      // A built-in agent the project runs (My Kortix, slug `mykortix`) is listed by
       // /detail but declared nowhere in kortix.yaml. Its config is
       // platform-owned: answer the read-only view, never the roster 404.
       const builtinKey = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw, loaded.row.metadata));

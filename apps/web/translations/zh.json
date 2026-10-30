@@ -3096,6 +3096,73 @@
       "scriptFailed": "脚本运行失败",
       "calls": "{count, plural, other {# 次工具调用}}",
       "noOutput": "无输出"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "正在查看智能体…",
+          "change": "正在更新智能体…"
+        },
+        "sessions": {
+          "read": "正在查看会话…",
+          "change": "正在更新会话…"
+        },
+        "schedules": {
+          "read": "正在查看计划…",
+          "change": "正在更新计划…"
+        },
+        "connectors": {
+          "read": "正在查看连接器…",
+          "change": "正在更新连接器…"
+        },
+        "people": {
+          "read": "正在查看成员…",
+          "change": "正在更新成员…"
+        },
+        "access": {
+          "read": "正在查看访问权限…",
+          "change": "正在更新访问权限…"
+        },
+        "usage": {
+          "read": "正在查看用量…",
+          "change": "正在查看用量…"
+        }
+      },
+      "status": {
+        "done": "已完成",
+        "needsYou": "需要你处理",
+        "denied": "需要权限",
+        "error": "未完成",
+        "running": "运行中"
+      },
+      "deniedTitle": "需要权限",
+      "grantors": "可以授予权限的人",
+      "grantorsUnknown": "任何管理此项目的人都可以授予。",
+      "newSetting": "新增",
+      "removedSetting": "已移除",
+      "opensInNewTab": "在新标签页中打开",
+      "showDetails": "显示详情"
+    },
+    "workflow": {
+      "fallbackTitle": "工作流",
+      "starting": "正在启动工作流…",
+      "progress": "已完成 {done}/{total}",
+      "failedCount": "{failed}/{total} 失败",
+      "agents": "{count, plural, other {# 个智能体}}",
+      "background": "在后台运行",
+      "status": {
+        "starting": "启动中",
+        "running": "运行中",
+        "done": "已完成",
+        "failed": "失败",
+        "stopped": "已停止"
+      },
+      "openAgent": "打开 {label}",
+      "showDetails": "显示详情"
+    },
+    "agent": {
+      "backgroundWorking": "正在后台工作",
+      "backgroundSession": "在独立会话中"
     }
   },
   "agentRunLimit": {

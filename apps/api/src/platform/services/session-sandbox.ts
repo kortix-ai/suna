@@ -14,7 +14,7 @@
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
+import { isMyKortixAgentName, isMyKortixSandboxSlug, MY_KORTIX_SANDBOX_SLUG } from '@kortix/shared';
 import type { SessionDriveMounts } from '../../drives/service';
 import { db } from '../../shared/db';
 import {
@@ -48,7 +48,7 @@ import {
 } from './sandbox-init-state';
 import {
   ensureSandboxImage,
-  ensureMetaSandboxImage,
+  ensureMyKortixSandboxImage,
   deleteSandboxImage,
   resolveTemplate,
   DEFAULT_SANDBOX_SLUG,
@@ -70,7 +70,7 @@ import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { instanceStampMetadata } from '../../projects/instance-scope';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
-import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
+import { myKortixAgentGrant } from '../../projects/lib/my-kortix-agent';
 import { resolveSessionOnBehalfOf } from '../../projects/lib/on-behalf-of';
 import { agentPrincipalModeFor } from '../../iam/agent-principal';
 import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
@@ -180,12 +180,12 @@ export async function mintSessionToken(opts: {
   agentName: string;
   gitProject: GitBackedProject;
 }): Promise<string> {
-  const platformMetaAgent = isMetaAgentName(opts.agentName);
+  const platformMetaAgent = isMyKortixAgentName(opts.agentName);
   // The reserved coordinator uses a platform-owned full project grant. It acts
   // as the launching user and never resolves through a project-declared agent
   // or standing service account.
   const [agentGrant, serviceAccountId] = platformMetaAgent
-    ? [platformMetaAgentGrant(), null]
+    ? [myKortixAgentGrant(), null]
     : await Promise.all([
         // Resolve the per-session grant AND the agent's standing-identity
         // service account in parallel. Grant resolution must throw on failure.
@@ -360,7 +360,7 @@ interface SessionProvisionState {
     slug: string;
     contentHash: string;
     isDefault: boolean;
-    runtimeProfile?: 'standard' | 'meta';
+    runtimeProfile?: 'standard' | 'mykortix';
     spec?: SandboxImageSpec;
   } | null;
   activeRouting: ActiveRouting | null;
@@ -569,7 +569,7 @@ export async function provisionSessionSandbox(opts: {
     return opts.resolveGitProject();
   };
   const drivesRequirePlatinum =
-    slug !== META_SANDBOX_SLUG &&
+    !isMyKortixSandboxSlug(slug) &&
     (await import('../../drives/service')
       .then((m) => m.sessionDrivesEnabled(projectId))
       .catch(() => false));
@@ -579,8 +579,8 @@ export async function provisionSessionSandbox(opts: {
     gitProject: GitBackedProject,
     targetProvider: string,
   ): Promise<EnsureSandboxImageResult> =>
-    slug === META_SANDBOX_SLUG
-      ? ensureMetaSandboxImage({ source: 'session-start', provider: targetProvider })
+    isMyKortixSandboxSlug(slug)
+      ? ensureMyKortixSandboxImage({ source: 'session-start', provider: targetProvider })
       : ensureSandboxImage(gitProject, {
           slug,
           accountId,
@@ -845,11 +845,11 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
     state.workspaceVolume = await (early ?? resolveWorkspaceVolume(sandbox.sandboxId));
     if (state.workspaceVolume) ctx.tl.mark('workspace-volume');
   }
-  if (state.workspaceVolume && (providerName !== 'platinum' || slug === META_SANDBOX_SLUG)) {
+  if (state.workspaceVolume && (providerName !== 'platinum' || isMyKortixSandboxSlug(slug))) {
     // A box anywhere else would boot without the session's files.
     throw new Error('[workspace] This session’s files are on a Platinum volume, and this box would not mount it, so the session did not start.');
   }
-  if (providerName !== 'platinum' || slug === META_SANDBOX_SLUG) {
+  if (providerName !== 'platinum' || isMyKortixSandboxSlug(slug)) {
     providerCreateInput.volumes = undefined;
     return;
   }

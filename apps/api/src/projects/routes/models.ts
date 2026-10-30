@@ -32,7 +32,7 @@ import { projectsApp } from '../lib/app';
 import { requestPersonalOwner } from '../lib/personal-resources';
 import { agentNotDeclaredError } from '../agents';
 import { projectBuiltinAgents } from '../lib/builtin-agents';
-import { builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/platform-meta-agent';
+import { builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/my-kortix-agent';
 import { readAgentBlockV2 } from '../lib/agent-config-v2';
 import { loadManifestForEdit } from '../lib/triggers';
 import type { ProjectRow } from '../lib/serializers';

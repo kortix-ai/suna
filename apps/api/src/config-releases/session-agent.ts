@@ -40,7 +40,7 @@
  * 2026-08-13 platform-principal lesson.
  */
 
-import { isMetaAgentName } from '@kortix/shared';
+import { isMyKortixAgentName } from '@kortix/shared';
 import { OPENCODE_BUILTIN_AGENTS_V3 } from '@kortix/manifest-schema';
 import { OPENCODE_BUILTIN_AGENT_NAMES } from '../projects/agents';
 import type { ConfigReleaseVariant } from './builder';
@@ -103,7 +103,7 @@ export function resolveSessionReleaseAgent(
   // A v3 project runs only declared agents: an undeclared built-in it disables
   // is dropped like any other agent.
   const disabledBuiltin = roster.onlyDeclared === true && (OPENCODE_BUILTIN_AGENTS_V3 as readonly string[]).includes(name);
-  if (isMetaAgentName(name) || (OPENCODE_BUILTIN_AGENT_NAMES.has(name) && !disabledBuiltin)) {
+  if (isMyKortixAgentName(name) || (OPENCODE_BUILTIN_AGENT_NAMES.has(name) && !disabledBuiltin)) {
     return { kind: 'declared', agent: name };
   }
 
@@ -134,7 +134,7 @@ export function resolveSessionReleaseAgent(
  * gives it a checkout (`KORTIX_PROJECT_AUTO_CLONE=0`).
  */
 export function releaseVariantFor(agent: string | null, repositoryAccess: boolean): ConfigReleaseVariant {
-  if (isMetaAgentName(agent)) return 'meta';
+  if (isMyKortixAgentName(agent)) return 'mykortix';
   if (repositoryAccess) return 'project';
   return agent ? `agent:${agent}` : 'none';
 }

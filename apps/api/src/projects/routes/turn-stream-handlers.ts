@@ -46,6 +46,7 @@ import {
   turnCompletionAllowsQueuePromotion,
 } from '../session-turn-ledger';
 import { fireIdleWatches } from '../rooms/service';
+import { notifyParentOfSubagent, subagentNoticeDue } from '../lib/subagent-notice';
 
 /** The relay request body, shape only — the route parses JSON into this. */
 export type TurnStreamBody = Partial<TurnStreamRelayBody>;
@@ -559,6 +560,24 @@ export async function settleTurnEnd(
   // Fire-and-forget: a notice never holds the daemon's relay, and it never throws.
   if (settled.turnCompletion.outcome === 'closed' && !ctx.childSession) {
     void fireIdleWatches(ctx.sessionId, settled.status, settled.errorInfo?.name ?? null);
+  }
+  // A BACKGROUND SUBAGENT ENDED ITS TURN, SO ITS PARENT HEARS THE ANSWER: one
+  // durable prompt, keyed by child and turn. Tracked, so a deploy drain waits;
+  // never awaited, so the daemon's acknowledgement does not wait on the read.
+  const notice = subagentNoticeDue({
+    childSessionId: ctx.sessionId,
+    metadata: ctx.turnStreamMetadata,
+    outcome: settled.turnCompletion.outcome,
+    turnMessageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : null,
+  });
+  if (notice) {
+    trackDetached(notifyParentOfSubagent({
+      due: notice,
+      childSessionId: ctx.sessionId,
+      projectId: ctx.projectId,
+      status: settled.status,
+      ...(settled.errorInfo ? { error: settled.errorInfo } : {}),
+    }));
   }
   // Started beside the promotion, awaited before the acknowledgement.
   const sessionList = refreshSessionListAtTurnEnd(ctx);

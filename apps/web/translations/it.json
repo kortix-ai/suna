@@ -3096,6 +3096,73 @@
       "scriptFailed": "Script non riuscito",
       "calls": "{count, plural, one {# chiamata a strumento} other {# chiamate a strumenti}}",
       "noOutput": "Nessun output"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "Controllo degli agenti…",
+          "change": "Aggiornamento degli agenti…"
+        },
+        "sessions": {
+          "read": "Controllo delle sessioni…",
+          "change": "Aggiornamento delle sessioni…"
+        },
+        "schedules": {
+          "read": "Controllo delle pianificazioni…",
+          "change": "Aggiornamento delle pianificazioni…"
+        },
+        "connectors": {
+          "read": "Controllo dei connettori…",
+          "change": "Aggiornamento dei connettori…"
+        },
+        "people": {
+          "read": "Controllo dei membri…",
+          "change": "Aggiornamento dei membri…"
+        },
+        "access": {
+          "read": "Controllo degli accessi…",
+          "change": "Aggiornamento degli accessi…"
+        },
+        "usage": {
+          "read": "Controllo dell’utilizzo…",
+          "change": "Controllo dell’utilizzo…"
+        }
+      },
+      "status": {
+        "done": "Fatto",
+        "needsYou": "Serve il tuo intervento",
+        "denied": "Serve un permesso",
+        "error": "Non completato",
+        "running": "In corso"
+      },
+      "deniedTitle": "Serve un permesso",
+      "grantors": "Chi può concederlo",
+      "grantorsUnknown": "Chiunque gestisca questo progetto può concederlo.",
+      "newSetting": "Nuovo",
+      "removedSetting": "Rimosso",
+      "opensInNewTab": "Si apre in una nuova scheda",
+      "showDetails": "Mostra dettagli"
+    },
+    "workflow": {
+      "fallbackTitle": "Workflow",
+      "starting": "Avvio del workflow…",
+      "progress": "{done} di {total} fatti",
+      "failedCount": "{failed} di {total} non riusciti",
+      "agents": "{count, plural, one {# agente} other {# agenti}}",
+      "background": "In background",
+      "status": {
+        "starting": "Avvio",
+        "running": "In corso",
+        "done": "Fatto",
+        "failed": "Non riuscito",
+        "stopped": "Interrotto"
+      },
+      "openAgent": "Apri {label}",
+      "showDetails": "Mostra dettagli"
+    },
+    "agent": {
+      "backgroundWorking": "Al lavoro in background",
+      "backgroundSession": "Nella sua sessione"
     }
   },
   "agentRunLimit": {

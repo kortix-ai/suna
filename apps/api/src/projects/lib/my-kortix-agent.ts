@@ -1,4 +1,4 @@
-// No runtime imports beyond @kortix/shared: `projects/agents.ts` resolves the
+// No runtime imports beyond @kortix/shared and pure constant modules: `projects/agents.ts` resolves the
 // coordinator's grant from here, and `projects/git/config.ts` imports that —
 // which `e2e-project-session-branch-git` loads in a `bun --eval` subprocess and
 // parses stdout from. Pulling `feature-flags/registry` (and through it the
@@ -7,7 +7,8 @@
 // `resolveFeatureFlag(metadata, 'meta_agent')` and passed to
 // `resolveBuiltinAgents` below as the fallback.
 //
-// My Kortix is the platform's built-in agent. Its slug stays `meta`: session
+// My Kortix is the platform's built-in agent, slug `mykortix` (`meta` until
+// 2026-10-30: every read still accepts it, `isMyKortixAgentName`). Session
 // rows, token grants, the sandbox slug, image names and the config-release
 // variant all key on it. Users only ever see the display name.
 import {
@@ -15,10 +16,16 @@ import {
   BUILTIN_AGENTS,
   builtinAgentKeyOf,
   type BuiltinAgentKey,
-  META_AGENT_NAME,
-  META_SANDBOX_SLUG,
+  isMyKortixAgentName,
+  isMyKortixSandboxSlug,
+  MY_KORTIX_AGENT_NAME,
+  MY_KORTIX_SANDBOX_SLUG,
 } from '@kortix/shared';
 import type { AgentGrant } from '@kortix/db';
+// Pure constants, no side effects: safe in the `bun --eval` chain above.
+import { KORTIX_PLATFORM_TOOL_NAMES } from '@kortix/api-contract/kortix-tool-card';
+import { KORTIX_TOOL_NAMES } from '@kortix/manifest-schema';
+import { MY_KORTIX_PROMPT } from './my-kortix-prompt';
 import type { ProjectConfigSummary } from '../git/types';
 
 /** My Kortix's one-line description, the same in the agent list and the compiled config. */
@@ -95,21 +102,21 @@ export function builtinAgentWriteRefusal(key: BuiltinAgentKey) {
   };
 }
 
-export function addPlatformMetaAgent(config: ProjectConfigSummary): ProjectConfigSummary {
+export function addMyKortixAgent(config: ProjectConfigSummary): ProjectConfigSummary {
   return {
     ...config,
-    default_agent: META_AGENT_NAME,
-    open_code_default_agent: META_AGENT_NAME,
+    default_agent: MY_KORTIX_AGENT_NAME,
+    open_code_default_agent: MY_KORTIX_AGENT_NAME,
     agents: [
       {
-        name: META_AGENT_NAME,
+        name: MY_KORTIX_AGENT_NAME,
         path: '/workspace/AGENTS.md',
         description: MY_KORTIX_DESCRIPTION,
         mode: 'primary',
         source: 'opencode',
         platform: true,
         enabled: true,
-        sandbox: META_SANDBOX_SLUG,
+        sandbox: MY_KORTIX_SANDBOX_SLUG,
         scope: {
           env: [],
           connectors: [],
@@ -118,31 +125,30 @@ export function addPlatformMetaAgent(config: ProjectConfigSummary): ProjectConfi
           kortix_cli: 'all',
         },
       },
-      ...config.agents.filter((agent) => agent.name !== META_AGENT_NAME),
+      ...config.agents.filter((agent) => !isMyKortixAgentName(agent.name)),
     ],
   };
 }
 
-/**
- * My Kortix's system prompt. Generative UI is always on and the `kortix-genui`
- * skill is always listed, so the prompt tells it when to answer with `openui`
- * blocks instead of prose.
- */
-export const MY_KORTIX_PROMPT = [
-  "You are My Kortix. Follow /workspace/AGENTS.md. Run the project through the Kortix CLI with the user's own permissions: answer and configure yourself, delegate every production task to a session of the narrowest project agent via --prompt, and report the verified result.",
-  'When you hand a task to another agent (an AI employee) with the `agent` tool, leave `session` at its default (separate): the agent gets its own session the user can open. Use `session: "same"` only for quick sub-steps.',
-  'Prefer generative UI: when an answer is a plan, comparison, ranking, list of places or options, steps, a checklist, or 2 or more numbers, load the `kortix-genui` skill first and answer with `openui` blocks. Keep chat, short facts and code as prose.',
-].join('\n\n');
+export { MY_KORTIX_PROMPT } from './my-kortix-prompt';
 
-export function buildPlatformMetaOpenCodeConfig(): string {
+/**
+ * The tools My Kortix loads beyond the harness built-ins: every Kortix tool
+ * plus the platform tools (`apps/kortix-sandbox-agent-server/src/services/tools/platform/`),
+ * which load only when a compiled config names them here.
+ */
+export const MY_KORTIX_TOOLS: readonly string[] = [...KORTIX_TOOL_NAMES, ...KORTIX_PLATFORM_TOOL_NAMES];
+
+export function buildMyKortixConfig(): string {
   return JSON.stringify({
     agent: {
-      [META_AGENT_NAME]: {
+      [MY_KORTIX_AGENT_NAME]: {
         description: MY_KORTIX_DESCRIPTION,
         mode: 'primary',
         prompt: MY_KORTIX_PROMPT,
       },
     },
+    kortix_tools: MY_KORTIX_TOOLS,
   });
 }
 
@@ -153,9 +159,9 @@ export function buildPlatformMetaOpenCodeConfig(): string {
  * authorization boundaries. Project secrets and connectors stay unavailable
  * because the coordinator delegates project work to specialized sessions.
  */
-export function platformMetaAgentGrant(): AgentGrant {
+export function myKortixAgentGrant(): AgentGrant {
   return {
-    agent: META_AGENT_NAME,
+    agent: MY_KORTIX_AGENT_NAME,
     permissions: 'all',
     connectors: [],
     env: [],
@@ -167,13 +173,13 @@ export function platformMetaAgentGrant(): AgentGrant {
  * off: no project action beyond reading it. The per-prompt re-mint writes it
  * onto a session that started while My Kortix was on.
  */
-export function disabledPlatformMetaAgentGrant(): AgentGrant {
-  return { agent: META_AGENT_NAME, permissions: [], connectors: [], env: [] };
+export function disabledMyKortixAgentGrant(): AgentGrant {
+  return { agent: MY_KORTIX_AGENT_NAME, permissions: [], connectors: [], env: [] };
 }
 
-export function resolvePlatformMetaSandbox(requestedSlug: string | null | undefined): string {
-  if (requestedSlug && requestedSlug !== META_SANDBOX_SLUG) {
+export function resolveMyKortixSandbox(requestedSlug: string | null | undefined): string {
+  if (requestedSlug && !isMyKortixSandboxSlug(requestedSlug)) {
     throw new Error('META_SANDBOX_LOCKED');
   }
-  return META_SANDBOX_SLUG;
+  return MY_KORTIX_SANDBOX_SLUG;
 }

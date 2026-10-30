@@ -27,6 +27,8 @@ export type SessionInvocationSource =
   | 'system:artifact-comment'
   /** A message another participant posted in a room the session joined (`projects/rooms`). */
   | 'system:room-message'
+  /** A background subagent session ended a turn: its answer for the session that started it (`projects/lib/subagent-notice.ts`). */
+  | 'system:subagent-finished'
   /** The continuation of a turn a provider-originated `runtime_gone` cut short
    *  when no `continue_session` row took the turn over — the session's own
    *  initial prompt, or an unattended session's row that could not be requeued

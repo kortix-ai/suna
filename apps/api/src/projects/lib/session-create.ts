@@ -6,7 +6,7 @@ import { SESSION_INITIAL_CONTEXT_MAX_CHARS, SessionCreateInputSchema } from '@ko
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
-import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/shared';
+import { canonicalAgentName, isMyKortixAgentName, isMyKortixSandboxSlug, MY_KORTIX_AGENT_NAME, MY_KORTIX_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
@@ -70,7 +70,7 @@ import {
 
 import { type ProjectRow, type ProjectSessionRow, type RequestAuditContext, normalizeString } from './serializers';
 import { normalizeJsonObject } from '../../shared/json';
-import { resolveBuiltinAgents } from './platform-meta-agent';
+import { resolveBuiltinAgents } from './my-kortix-agent';
 import { isUuid } from '../../shared/validate';
 import {
   canonicalConnectorAlias,
@@ -96,7 +96,7 @@ import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { resolvePlatformMetaSandbox } from './platform-meta-agent';
+import { resolveMyKortixSandbox } from './my-kortix-agent';
 import { spaceAccessFor } from '../../shared/space-access';
 import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, forkSourceVisibility, findLiveChannel, findSessionSpace, inheritedPrivateSpace, spaceSessionVisibility } from './project-spaces';
 import { liveTriggerSpace, triggerRunSpace } from './trigger-space';
@@ -111,6 +111,7 @@ import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } fro
 import type { Actor } from '../../iam/actor';
 import { loadVisibleSession, sessionIsTombstoned } from './session-visibility';
 import { HUMAN_SESSION_SURFACES } from './session-surface';
+import { subagentNotifyMetadata } from './subagent-notice';
 import type { SessionInvocationSource } from '../session-lifecycle/types';
 /** Every status a failed create answers with. Routes that create a session
  *  declare these, so the published spec lists them. */
@@ -528,18 +529,19 @@ async function resolveSessionAgent(params: {
   // The literal "default" is a non-binding legacy sentinel. It must not block
   // the configured project default. This rule applies to every caller,
   // including older triggers and channel adapters that still send the sentinel.
+  // A client from before the My Kortix rename sends `meta`: it starts a `mykortix` session.
   const requestedAgent =
-    normalizeString(body.agent_name ?? body.agentName) ??
+    canonicalAgentName(normalizeString(body.agent_name ?? body.agentName)) ??
     params.channelAgents.find((name) => isLaunchableAgentName(name, loadedAgents)) ??
     null;
   const mirroredDefaultAgent = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
-  // My Kortix (slug `meta`) is on unless kortix.yaml sets
+  // My Kortix (slug `mykortix`) is on unless kortix.yaml sets
   // `builtin_agents.my_kortix: false` (no key: the legacy `meta_agent` switch).
   // Off: agent resolution below is the pre-meta behavior, and a session that
-  // would run `meta` is refused with 409 builtin_agent_disabled. Without the
+  // would run My Kortix is refused with 409 builtin_agent_disabled. Without the
   // refusal it ran with My Kortix's grant, prompt and sandbox anyway.
   const metaAgentEnabled = resolveBuiltinAgents(
     loadedAgents.builtinAgents ?? {},
@@ -563,17 +565,17 @@ async function resolveSessionAgent(params: {
         ),
       )
       .limit(1);
-    callerIsMeta = !!caller && isMetaAgentName(caller.agentName);
+    callerIsMeta = !!caller && isMyKortixAgentName(caller.agentName);
   }
   const agentName =
     metaAgentEnabled && !requestedAgent && !callerIsMeta
-      ? META_AGENT_NAME
+      ? MY_KORTIX_AGENT_NAME
       : resolveSessionAgentName({
           requestedAgent,
           manifestDefaultAgent: normalizeString(loadedAgents.defaultAgent),
           mirroredDefaultAgent,
         });
-  if (!metaAgentEnabled && isMetaAgentName(agentName)) {
+  if (!metaAgentEnabled && isMyKortixAgentName(agentName)) {
     return {
       error: {
         status: 409,
@@ -585,7 +587,7 @@ async function resolveSessionAgent(params: {
       },
     };
   }
-  const platformMetaAgent = metaAgentEnabled && isMetaAgentName(agentName);
+  const platformMetaAgent = metaAgentEnabled && isMyKortixAgentName(agentName);
   if (platformMetaAgent && callerIsMeta) {
     return {
       error: {
@@ -856,13 +858,13 @@ async function resolveSessionSandboxPlacement(params: {
     // The meta coordinator is locked to its own sandbox. An explicit request for
     // any other slug is the only failure here, so scope the catch to this branch.
     try {
-      sandboxSlug = resolvePlatformMetaSandbox(requestedSandboxSlug);
+      sandboxSlug = resolveMyKortixSandbox(requestedSandboxSlug);
     } catch {
       return {
         error: {
           status: 400,
           body: {
-            error: `Agent "meta" always uses sandbox "${META_SANDBOX_SLUG}"`,
+            error: `Agent "${MY_KORTIX_AGENT_NAME}" always uses sandbox "${MY_KORTIX_SANDBOX_SLUG}"`,
             code: 'META_SANDBOX_LOCKED',
           },
         },
@@ -1180,6 +1182,10 @@ function buildSessionCreateMetadata(params: {
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
+    // A background subagent (kortixd `agent` tool, `background: true`): its
+    // turn end wakes the caller with its answer (`subagent-notice.ts`). Only a
+    // session-bound caller, for this child of its own; ignored otherwise.
+    ...subagentNotifyMetadata(input.callerSessionId, body.notify_parent_on_turn_end),
     ...(sessionSource && sessionSource !== invocationSource ? { source: sessionSource } : {}),
     repository_access: repositoryAccess,
     repository_generation: repositoryGeneration(project.metadata as Record<string, unknown>),
@@ -1882,7 +1888,7 @@ export async function createProjectSession(input: {
     sandboxSlug,
     filed: requestedSpace.filed,
     // Only a Platinum session box mounts it. An unrecorded open is deleted.
-    workspaceVolume: providerName === 'platinum' && sandboxSlug !== META_SANDBOX_SLUG ? workspaceVolume : null,
+    workspaceVolume: providerName === 'platinum' && !isMyKortixSandboxSlug(sandboxSlug) ? workspaceVolume : null,
     sandboxLocation: sandboxRegion.location,
   });
 

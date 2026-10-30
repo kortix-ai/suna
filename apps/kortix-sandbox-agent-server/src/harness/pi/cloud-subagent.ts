@@ -39,6 +39,11 @@
  *    a built-in or inline spec has none) and the spec `permission` (the child
  *    runs under its agent's permission policy, never a wider one).
  *
+ * Background (`input.background`): the create body asks the API to notify this
+ * session when the child's turn ends (`notify_parent_on_turn_end`), and the
+ * spawn returns once the child exists. It holds a `maxLive` slot only for the
+ * create, because nothing on this box waits on it.
+ *
  * Guardrails: at most `maxLive` children wait at once per parent box, and a
  * child at depth `maxDepth` cannot start another separate child (depth rides in
  * `runtime_context` as `kortix.subagent.depth`). Both refuse with an error
@@ -270,6 +275,7 @@ export async function cloudSpawnSession(
     }
     // Publish the child id to the tool part NOW, so the UI links the real child while it works.
     input.onSession?.({ sessionId: childId, model })
+    if (input.background) return { sessionId: childId, status: 'completed', text: '', model, background: true }
     return await settleAndRead(http, childId, null, input.signal, model, opts)
   } finally {
     api.live.count -= 1
@@ -299,6 +305,8 @@ function buildCreateBody(api: CloudSubagentApi, input: SpawnSessionInput): Recor
     ...(agentName ? { agent_name: agentName } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(instructions ? { initial_context: instructions } : {}),
+    // The API accepts it only from a session-bound caller, for its own new child (session-create.ts).
+    ...(input.background ? { notify_parent_on_turn_end: true } : {}),
     runtime_context: {
       [SUBAGENT_DEPTH_KEY]: api.depth + 1,
       ...(tools ? { [SUBAGENT_TOOLS_KEY]: toolsValue ?? '' } : {}),

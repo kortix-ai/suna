@@ -1889,6 +1889,73 @@ const catalog = {
       "scriptFailed": "Script failed",
       "calls": "{count, plural, one {# tool call} other {# tool calls}}",
       "noOutput": "No output"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "Checking agents…",
+          "change": "Updating agents…"
+        },
+        "sessions": {
+          "read": "Checking sessions…",
+          "change": "Updating sessions…"
+        },
+        "schedules": {
+          "read": "Checking schedules…",
+          "change": "Updating schedules…"
+        },
+        "connectors": {
+          "read": "Checking connectors…",
+          "change": "Updating connectors…"
+        },
+        "people": {
+          "read": "Checking members…",
+          "change": "Updating members…"
+        },
+        "access": {
+          "read": "Checking access…",
+          "change": "Updating access…"
+        },
+        "usage": {
+          "read": "Checking usage…",
+          "change": "Checking usage…"
+        }
+      },
+      "status": {
+        "done": "Done",
+        "needsYou": "Needs you",
+        "denied": "Needs a permission",
+        "error": "Didn't finish",
+        "running": "Running"
+      },
+      "deniedTitle": "Needs a permission",
+      "grantors": "Who can grant it",
+      "grantorsUnknown": "Anyone who manages this project can grant it.",
+      "newSetting": "New",
+      "removedSetting": "Removed",
+      "opensInNewTab": "Opens in a new tab",
+      "showDetails": "Show details"
+    },
+    "workflow": {
+      "fallbackTitle": "Workflow",
+      "starting": "Starting the workflow…",
+      "progress": "{done} of {total} done",
+      "failedCount": "{failed} of {total} failed",
+      "agents": "{count, plural, one {# agent} other {# agents}}",
+      "background": "Running in the background",
+      "status": {
+        "starting": "Starting",
+        "running": "Running",
+        "done": "Done",
+        "failed": "Failed",
+        "stopped": "Stopped"
+      },
+      "openAgent": "Open {label}",
+      "showDetails": "Show details"
+    },
+    "agent": {
+      "backgroundWorking": "Working in the background",
+      "backgroundSession": "In its own session"
     }
   },
   "agentScope": {

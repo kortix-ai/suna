@@ -22,7 +22,7 @@ import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { MANIFEST_PROJECT_NAME_KEY, commitProjectName } from '../lib/manifest-project-name';
-import { addPlatformMetaAgent } from '../lib/platform-meta-agent';
+import { addMyKortixAgent } from '../lib/my-kortix-agent';
 import { projectBuiltinAgents } from '../lib/builtin-agents';
 import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { normalizeProjectIcon } from '../lib/project-icon';
@@ -164,13 +164,13 @@ export function registerProjectDetailRoutes(): void {
         actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
       };
       const filteredConfig = await filterConfigResourcesForUser(rawConfig, denierCtx);
-      // My Kortix (slug `meta`) is listed first and is the default agent unless
+      // My Kortix (slug `mykortix`) is listed first and is the default agent unless
       // kortix.yaml sets `builtin_agents.my_kortix: false` (or, with no key, the
       // project's legacy `meta_agent` switch is off). Off: the config is
       // exactly the repo-declared surface.
       const builtinAgents = projectBuiltinAgents(rawConfig.manifest, loaded.row.metadata);
       const withAgents = {
-        ...(builtinAgents.my_kortix ? addPlatformMetaAgent(filteredConfig) : filteredConfig),
+        ...(builtinAgents.my_kortix ? addMyKortixAgent(filteredConfig) : filteredConfig),
         builtin_agents: builtinAgents,
       };
       // A Kortix skill behind a feature flag is listed only while the flag is on: the box does

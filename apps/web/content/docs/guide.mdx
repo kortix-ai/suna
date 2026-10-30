@@ -182,6 +182,12 @@ Access is deny-by-default. An agent gets no connector, secret, skill, App or pro
 
 You talk to **My Kortix**, the built-in agent. It routes each task to the project agent made for it and runs it with your permissions.
 
+- **It has your rights, no more.** In this project, My Kortix can do what your role lets you do: create and change agents, connectors, schedules and people. When your role does not allow something, it says so and names the people who can grant it.
+- **It asks first** before an action that affects other people (an invitation, a role change), deletes something, or gives an agent more access. It shows what changes, before and after.
+- **It hands off the work.** Writing, research, code and anything with a connected app goes to the agent made for it, in its own session. Open that session from the card in the chat. For a job with several steps, My Kortix runs a workflow and shows each agent's progress in one card.
+- **Each action is a card** in the chat: what it did, what changed, and a link to the page where you see it.
+- **Account settings stay with you.** Billing, the account's members and other projects are outside My Kortix's reach. It tells you where to click.
+
 Every new project starts with one agent called `worker`, the general-purpose agent My Kortix routes work to. It is the default agent: a session that names no other agent runs it. It has access to all connectors, secrets, skills and Kortix permissions in the project. You can edit its instructions to fit your company. A project created before this keeps its `kortix` agent.
 
 ### Create your own agent
