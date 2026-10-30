@@ -38,6 +38,7 @@ mock.module('../opencode-mapping', () => ({
 }));
 
 const { SteerNotTaken, postPrompt, readRuntimeMessage, readSessionMessageTip, retractRuntimeMessage } = await import('./runtime-client');
+const { __resetRuntimeCapabilitiesMemo } = await import('./runtime-fetch');
 
 const fetched: string[] = [];
 let pages: Record<string, unknown> = {};
@@ -49,6 +50,7 @@ const resourceMissing = () =>
   Response.json({ error: 'message not found' }, { status: 404, headers: { 'X-Kortix-Turn-Verb': '1' } });
 
 beforeEach(() => {
+  __resetRuntimeCapabilitiesMemo();
   forwarded.length = 0;
   fetched.length = 0;
   forwardStatus = 202;
