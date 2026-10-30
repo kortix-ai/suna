@@ -10,6 +10,7 @@
     "./channel-descriptors": "./src/channel-descriptors.ts",
     "./artifact-doc": "./src/artifact-doc.ts",
     "./artifact-comments": "./src/artifact-comments.ts",
+    "./artifact-annotations": "./src/artifact-annotations.ts",
     "./brand-css": "./src/brand-css.generated.ts",
     "./tools": "./src/tools/index.ts",
     "./utils": "./src/utils/index.ts",
