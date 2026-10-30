@@ -160,6 +160,7 @@ interface KortixComputerState {
   // from the Easy/Advanced panel — no `isSidePanelOpen`, no pending consume.
   // Closing the drawer lands back on chat. Desktop never sets this.
   mobileToolView: QuickView | null;
+  mobileToolTarget: QuickViewTarget | null;
 
   // === ACTIONS ===
 
@@ -269,7 +270,7 @@ interface KortixComputerState {
   ) => { view: QuickView; target?: QuickViewTarget } | null;
 
   /** Mobile only — open `view` in the standalone tool drawer. */
-  openMobileTool: (view: QuickView) => void;
+  openMobileTool: (view: QuickView, target?: QuickViewTarget) => void;
   closeMobileTool: () => void;
 
   // Reset all state (full reset)
@@ -302,6 +303,7 @@ const initialState = {
     target?: QuickViewTarget;
   } | null,
   mobileToolView: null as QuickView | null,
+  mobileToolTarget: null as QuickViewTarget | null,
   /** A quick-view consumed by the transient BOOT shell (e.g. Terminal clicked
    *  while the sandbox boots). The shell's provider dies at the boot→ready
    *  handoff, taking the view with it — this remembers the intent so
@@ -591,6 +593,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           pendingToolNavIndex: null,
           // A tool drawer belonging to the session the user just left.
           mobileToolView: null,
+          mobileToolTarget: null,
           // The ⌘I restore memory dies with the session. Within a session the
           // key is a minimise/restore pair; across one it is not, and a detail
           // last seen on a page the user has navigated away from must never be
@@ -739,11 +742,11 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         return { view: pending.view, target: pending.target };
       },
 
-      openMobileTool: (view: QuickView) => {
-        set({ mobileToolView: view });
+      openMobileTool: (view: QuickView, target?: QuickViewTarget) => {
+        set({ mobileToolView: view, mobileToolTarget: target ? { ...target } : null });
       },
       closeMobileTool: () => {
-        set({ mobileToolView: null });
+        set({ mobileToolView: null, mobileToolTarget: null });
       },
 
       reset: () => {

@@ -75,7 +75,6 @@ const SERVICE_EXTERNALS = {
 }
 /** Harness adapters and the packages only they may load. @type {Record<string, string[]>} */
 export const ADAPTERS = {
-  'open-code': ['bun:sqlite'],
   // quickjs-wasi: codemode's VM, embedded as a file. The pi-coding-agent dist paths: a setter and the codemode tool
   // (for a subagent) pi does not export (pi/codemode.ts).
   // photon-node: pi's image resizer wasm, embedded as a file (pi/images.ts).
@@ -266,8 +265,8 @@ const importStyle = {
   },
 }
 
-// E18: OpenCode names live in harness/open-code/ only. Outside both adapters a
-// new OpenCode-named identifier or string fails; the names that exist today are
+// E18: OpenCode is deleted. A new OpenCode-named identifier or string fails
+// (the resolver, harness.ts, may name the id it maps); the names that exist today are
 // allowlisted per file. The list only shrinks: an entry whose word no longer
 // occurs in its file fails too, so the PR that removes a name deletes its entry.
 // harness/pi/ is in the scope since W5 E2: pi emits the Kortix format.
@@ -277,9 +276,6 @@ const OPENCODE_WORD = /[A-Za-z0-9_.$-]*open.?code[A-Za-z0-9_.$-]*/gi
 const OPENCODE_SCOPE = /^(?:(?:lib|types|services|routes|app|harness\/contract|harness\/shared|harness\/pi)\/.*|main\.ts)$/
 /** Allowed OpenCode words per file, package-relative. Delete entries; never add. @type {Record<string, string[]>} */
 export const OPENCODE_NAMES_ALLOWED = {
-  // W3 exit: the pre-W3 wire names an older API still reads and sends. Only
-  // this compatibility module spells them; delete it with its callers.
-  'src/routes/kortix/legacy-names.ts': ['opencode', 'opencodeEnv', 'opencode_env_changed', 'opencode_env_names', 'opencode_pid', 'opencode_port', 'opencode_reload', 'opencode_session_id', 'opencode_session_required', 'opencode_turn_ended', 'opencode_version'],
   // The legacy project layout's config directory, `.kortix/opencode`: pi reads
   // its skills and releases it for a project that has not moved to the root layout.
   'src/harness/pi/config.ts': ['opencode'],
@@ -290,7 +286,7 @@ const opencodeNames = {
   meta: {
     type: 'problem',
     messages: {
-      unexpected: "OpenCode name '{{word}}' outside harness/open-code/. Use a harness-neutral name or move the code into the adapter (E18, ARCHITECTURE.md).",
+      unexpected: "OpenCode name '{{word}}'. OpenCode is deleted: use a harness-neutral name (E18, ARCHITECTURE.md).",
       stale: "E18 allowlist entry '{{word}}' no longer occurs in this file. Delete it from OPENCODE_NAMES_ALLOWED.",
     },
     schema: [],

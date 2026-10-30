@@ -1,14 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { orderPermissionRules } from '@kortix/api-contract/permission-rules'
-import { buildOpencodeConfigContent } from '@/harness/open-code/lifecycle'
-import { compilePermissionPolicy, permissionSubject, resolvePolicyRule, toolCapability } from '@/harness/pi/interactions'
-import { openCodeAction } from './helpers/opencode-permission'
+import { compilePermissionPolicy, resolvePolicyRule, toolCapability } from '@/harness/pi/interactions'
 
 /**
- * Kortix guarantees one precedence on both harnesses: the most specific
- * matching rule wins, whatever order the keys are written in. pi resolves it
- * directly; OpenCode applies the last match in key order, so kortixd orders
- * every block first. Each row is evaluated both ways and must agree.
+ * Kortix guarantees one precedence: the most specific matching rule wins,
+ * whatever order the keys are written in.
  */
 const CASES: [string, Record<string, unknown>, string, Record<string, unknown>, string | undefined][] = [
   ['a trailing `*` does not override a specific bash rule', { bash: { 'git push *': 'ask', '*': 'allow' } }, 'bash', { command: 'git push origin main' }, 'ask'],
@@ -26,43 +21,17 @@ const CASES: [string, Record<string, unknown>, string, Record<string, unknown>, 
   ['a narrow allow above a broad deny', { read: { 'docs/*': 'allow', '*': 'deny' } }, 'read', { path: 'docs/a.md' }, 'allow'],
 ]
 
-describe('both harnesses resolve every rule the same way', () => {
+describe('the most specific rule wins, in any key order', () => {
   test.each(CASES)('%s', (_name, rules, tool, args, expected) => {
-    const pi = resolvePolicyRule(compilePermissionPolicy(rules), tool, args, '/workspace')
-    const openCode = openCodeAction([orderPermissionRules(rules)], tool, permissionSubject(tool, args, '/workspace')!)
-    expect(pi).toBe(expected as never)
-    expect(openCode).toBe(expected)
+    expect(resolvePolicyRule(compilePermissionPolicy(rules), tool, args, '/workspace')).toBe(expected as never)
   })
 })
 
 /** The Kortix tools that write files in the checkout (`output/images/`, `memory/`). */
 const WORKSPACE_WRITERS = ['image_gen', 'memory']
 
-describe('`edit` governs every Kortix tool that writes the workspace, on both harnesses', () => {
-  const compose = async (permission: Record<string, unknown>) => {
-    const content = await buildOpencodeConfigContent({
-      KORTIX_LLM_BASE_URL: 'http://gateway.test/v1',
-      KORTIX_TOKEN: 'kortix_test_token',
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({ agent: { writer: { permission } } }),
-    })
-    const config = JSON.parse(content!) as { permission?: unknown; agent: { writer: { permission: unknown } } }
-    return [config.permission, config.agent.writer.permission]
-  }
-
-  test.each(WORKSPACE_WRITERS)('OpenCode: an agent with `edit: deny` is denied %s', async (tool) => {
-    expect(openCodeAction(await compose({ edit: 'deny' }), tool, '*')).toBe('deny')
-  })
-
-  test.each(WORKSPACE_WRITERS)('OpenCode: `edit: ask` denies %s, which cannot ask (fail closed)', async (tool) => {
-    expect(openCodeAction(await compose({ edit: 'ask' }), tool, '*')).toBe('deny')
-  })
-
-  test.each(WORKSPACE_WRITERS)('OpenCode: `edit: allow` keeps %s, and its own rule wins', async (tool) => {
-    expect(openCodeAction(await compose({ edit: 'allow' }), tool, '*')).toBe('allow')
-    expect(openCodeAction(await compose({ edit: 'deny', [tool]: 'allow' }), tool, '*')).toBe('allow')
-  })
-
-  test.each(WORKSPACE_WRITERS)('pi: %s answers to `edit`', (tool) => {
+describe('`edit` governs every Kortix tool that writes the workspace', () => {
+  test.each(WORKSPACE_WRITERS)('%s answers to `edit`', (tool) => {
     expect(toolCapability(tool, { command: 'create' })).toBe('edit')
     expect(resolvePolicyRule(compilePermissionPolicy({ edit: 'deny' }), tool, { command: 'create' }, '/workspace')).toBe('deny')
   })

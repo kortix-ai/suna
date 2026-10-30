@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 
 import { checkoutSessionBranch, isShallowRepo } from '@/services/workspace-provider/checkout'
 import { __setScaffoldRepoPathForTests, materializeRepo, scheduleHistoryBackfill } from '@/services/workspace-provider/git'
-import { testOpenCodeConfig as baseConfig } from './helpers/open-code-harness'
+import { testConfig as baseConfig } from './helpers/daemon-test-app'
 
 function git(args: string[], cwd?: string) {
   execFileSync('git', args, {

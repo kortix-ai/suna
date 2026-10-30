@@ -39,11 +39,6 @@ export const SANDBOX_DESKTOP_PACKAGES = [
   'xvfb',
 ];
 
-// --test-type and --disable-infobars hide the --no-sandbox and Chrome for
-// Testing warning bars.
-const CHROMIUM =
-  '/home/kortix/.local/bin/chromium --no-sandbox --test-type --disable-infobars --no-first-run --no-default-browser-check';
-
 /**
  * The path data of the brand kit's master files, as is (kortix-brand
  * `brandmark.md`: composite the file, never redraw it). `desktop.test.ts`
@@ -103,6 +98,7 @@ SOFTWARE.
 `;
 
 const DIR = '/usr/share/kortix/desktop';
+const BROWSER = '/usr/local/bin/kortix-desktop browser';
 const XFCONF = '/etc/xdg/xfce4/xfconf/xfce-perchannel-xml';
 
 /** xfconf properties as XML. Nested objects are groups, arrays are arrays. */
@@ -162,12 +158,13 @@ export const SANDBOX_DESKTOP_FILES: Record<string, string> = {
     },
   })),
   ['/etc/xdg/xfce4/panel/default.xml']: panelXml(),
-  // The dock's launchers open Chromium, xfce4-terminal and Thunar without
-  // asking which one to use.
-  ['/usr/share/xfce4/helpers/kortix-chromium.desktop']: `[Desktop Entry]\nType=X-XFCE-Helper\nX-XFCE-Category=WebBrowser\nName=Chromium\nIcon=web-browser\nX-XFCE-Commands=${CHROMIUM}\nX-XFCE-CommandsWithParameter=${CHROMIUM} "%s"\n`,
+  // The dock's launchers open the browser, xfce4-terminal and Thunar without
+  // asking which one to use. The browser is the agent's own (`kortix-desktop
+  // browser` in apps/sandbox/entrypoint.sh): the desktop has no second one.
+  ['/usr/share/xfce4/helpers/kortix-browser.desktop']: `[Desktop Entry]\nType=X-XFCE-Helper\nX-XFCE-Category=WebBrowser\nName=Browser\nIcon=web-browser\nX-XFCE-Commands=${BROWSER}\nX-XFCE-CommandsWithParameter=${BROWSER} "%s"\n`,
   ['/etc/xdg/xfce4/terminal/terminalrc']:
     '[Configuration]\nMiscMenubarDefault=FALSE\nMiscToolbarDefault=FALSE\nScrollingBar=TERMINAL_SCROLLBAR_NONE\nFontName=DejaVu Sans Mono 10\nColorForeground=#0A0A0A\nColorBackground=#FFFFFF\nColorCursor=#0A0A0A\nColorBold=#0A0A0A\nColorPalette=#0A0A0A;#C01C28;#26A269;#A2734C;#12488B;#A347BA;#2A7BDE;#D0CFCC;#5E5C64;#F66151;#33D17A;#C88800;#2A7BDE;#C061CB;#33C7DE;#FFFFFF\nMiscDefaultGeometry=100x30\n',
-  ['/etc/xdg/xfce4/helpers.rc']: 'WebBrowser=kortix-chromium\nTerminalEmulator=xfce4-terminal\nFileManager=thunar\n',
+  ['/etc/xdg/xfce4/helpers.rc']: 'WebBrowser=kortix-browser\nTerminalEmulator=xfce4-terminal\nFileManager=thunar\n',
 };
 
 function panelXml(): string {

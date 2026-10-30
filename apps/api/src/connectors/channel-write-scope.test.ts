@@ -1,11 +1,18 @@
 /**
- * The decisions of the Slack write confinement, against a fake ownership
- * source. The SQL behind the real source is proven on PostgreSQL in
+ * The decisions of the Slack and Telegram write confinement, against a fake
+ * ownership source. The SQL behind the real source is proven on PostgreSQL in
  * `__tests__/integration-channel-write-scope.test.ts`.
  */
 import { describe, expect, test } from 'bun:test';
 import { CHANNEL_READ_SCOPES, CONVERSATION_NOT_IN_PROJECT, type ChannelOwnership } from './channel-read-scope';
-import { SLACK_WRITE_TARGETS, gateChannelWrite, slackWriteRefusal } from './channel-write-scope';
+import {
+  SLACK_WRITE_TARGETS,
+  TELEGRAM_READS,
+  gateChannelWrite,
+  slackWriteRefusal,
+  telegramReplyRefusal,
+  telegramWriteRefusal,
+} from './channel-write-scope';
 import { channelCatalog } from './channels';
 
 const MINE = 'project-mine';
@@ -211,5 +218,65 @@ describe('where a post landed', () => {
   test('only a post is checked where it landed: every other write takes an id', async () => {
     const reaction = await gate('add_reaction', { channel: 'C0MINE0001', timestamp: '1.2', name: 'eyes' });
     expect(reaction.misfire({ ok: true, channel: 'C0ELSEWHERE' })).toBeNull();
+  });
+});
+
+describe('Telegram writes', () => {
+  const OTHER_CHAT = 'This session answers Telegram chat 111222333 only. It does not send to, edit or delete messages in other chats.';
+
+  test('every Telegram action but the two reads is a write into the chat its `chat_id` names', () => {
+    const writes = channelCatalog('telegram').filter((a) => !TELEGRAM_READS.has(a.path));
+    expect(writes.map((a) => a.path).sort()).toEqual(['delete_message', 'edit_message_text', 'send_chat_action', 'send_message']);
+    for (const action of writes) {
+      expect((action.inputSchema as { required: string[] }).required).toContain('chat_id');
+    }
+    expect([...TELEGRAM_READS].sort()).toEqual(['get_chat', 'get_me']);
+  });
+
+  test('a session no Telegram chat started or is bound to writes to any chat of the bot', () => {
+    for (const chatId of [111222333, 444555666, '-1001234567890', '@any_channel']) {
+      expect(telegramWriteRefusal(chatId, null)).toBeNull();
+    }
+  });
+
+  test("a chat's session writes to its own chat, as a number or a string", () => {
+    expect(telegramWriteRefusal(111222333, ['111222333'])).toBeNull();
+    expect(telegramWriteRefusal('111222333', ['111222333'])).toBeNull();
+    expect(telegramWriteRefusal(-1001234567890, ['-1001234567890'])).toBeNull();
+  });
+
+  test('another chat, a channel username and a malformed id are refused', () => {
+    for (const chatId of [444555666, '444555666', '@other_channel', '111222333 ', '0111222333', 'abc', 111222333.5, '', undefined, null, [111222333]]) {
+      expect(telegramWriteRefusal(chatId, ['111222333'])).toBe(OTHER_CHAT);
+    }
+  });
+
+  test('a session bound to several chats writes to each of them and to no other', () => {
+    expect(telegramWriteRefusal(111222333, ['111222333', '-100777888'])).toBeNull();
+    expect(telegramWriteRefusal(-100777888, ['111222333', '-100777888'])).toBeNull();
+    expect(telegramWriteRefusal(444555666, ['111222333', '-100777888'])).toBe(
+      'This session answers Telegram chat 111222333 or -100777888 only. It does not send to, edit or delete messages in other chats.',
+    );
+  });
+
+  test('a reply quotes a message of one of the chats the session answers, given as an object', () => {
+    const own = ['111222333'];
+    expect(telegramReplyRefusal(undefined, own)).toBeNull();
+    expect(telegramReplyRefusal({ message_id: 5 }, own)).toBeNull();
+    expect(telegramReplyRefusal({ chat_id: 111222333, message_id: 5 }, own)).toBeNull();
+    expect(telegramReplyRefusal({ chat_id: 444555666, message_id: 5 }, own)).toBe(OTHER_CHAT);
+    expect(telegramReplyRefusal({ chat_id: '@other_channel', message_id: 5 }, own)).toBe(OTHER_CHAT);
+    for (const notAnObject of ['{"chat_id":444555666,"message_id":5}', null, 5, [5]]) {
+      expect(telegramReplyRefusal(notAnObject, own)).toBe('`reply_parameters` must be an object, for example {"message_id": 5}.');
+    }
+    // A session no chat started quotes any chat, in any shape Telegram reads.
+    expect(telegramReplyRefusal({ chat_id: 444555666, message_id: 5 }, null)).toBeNull();
+    expect(telegramReplyRefusal('{"chat_id":444555666,"message_id":5}', null)).toBeNull();
+  });
+
+  test('a confined session whose chat is not on record writes nowhere', () => {
+    expect(telegramWriteRefusal(111222333, [])).toBe(
+      "This session's Telegram chat is not on record, so it writes to no chat. It does not send to, edit or delete messages in other chats.",
+    );
   });
 });

@@ -19,6 +19,13 @@ const thread: artifacts.ArtifactCommentThread = {
   resolved_by_session_id: null, resolved_at: null, agent_state: 'none', sent_session_id: null, sent_at: null,
   created_at: comment.created_at, updated_at: comment.created_at, comments: [comment], outdated: false, position: { start: 0, end: 7 },
 };
+const context: artifacts.ArtifactCommentContext = {
+  can_comment: true, can_moderate: false, comment_count: 2, send_thread_count: 1, send_thread_ids: ['thread-a'],
+  people: [{ user_id: 'user-a', name: 'Ada', avatar_url: null, token: '@ada@example.test' }],
+  agents: [{ agent_name: 'writer', name: 'Writer', session_id: null, token: '@agent.writer' }],
+  send_target: { kind: 'new', session_id: null, agent_name: 'writer' },
+  version: { commit_id: 'vc_pinned', entry_version: 'entry-etag' },
+};
 let calls: { url: string; method: string; body: unknown; authorization: string | null }[] = [];
 let response: unknown;
 let status: number;
@@ -38,11 +45,22 @@ afterEach(() => { globalThis.fetch = originalFetch; });
 
 test('resolved comment mentions expose the exact person, session, and agent union', () => {
   type Mention = { kind: 'user'; user_id: string }
-    | { kind: 'session'; session_id: string; agent_name: string }
-    | { kind: 'agent'; agent_name: string };
+    | { kind: 'session'; session_id: string; agent_name: string; token?: string }
+    | { kind: 'agent'; agent_name: string; token?: string };
   const exported: Equal<artifacts.ArtifactCommentMention, Mention> = true;
   const returned: Equal<artifacts.ArtifactComment['mentions'], Mention[]> = true;
   expect([exported, returned]).toEqual([true, true]);
+});
+
+test('stored agent mention tokens survive comment reads without a runnable agent roster', async () => {
+  const mentions: artifacts.ArtifactCommentMention[] = [
+    { kind: 'agent', agent_name: 'writer', token: '@agent.writer' },
+    { kind: 'session', session_id: 'session-a', agent_name: 'writer', token: '@agent.writer' },
+  ];
+  response = { threads: [{ ...thread, comments: [{ ...comment, mentions }] }] };
+  const result = await artifacts.listArtifactComments('project-a', 'artifact-a');
+  expect(result[0]?.comments[0]?.mentions).toEqual(mentions);
+  expect(calls).toHaveLength(1);
 });
 
 test('listArtifactComments reads open threads by default and supports resolved or all', async () => {
@@ -53,6 +71,50 @@ test('listArtifactComments reads open threads by default and supports resolved o
   expect(calls.at(-1)?.url).toBe(`${base}/comments?status=resolved`);
   await artifacts.listArtifactComments('project-a', 'artifact-a', { status: 'all' });
   expect(calls.at(-1)?.url).toBe(`${base}/comments?status=all`);
+});
+
+test('historical comment reads preserve the explicit Files commit and authoritative action rights', async () => {
+  const historical: artifacts.ArtifactCommentThread = { ...thread, can_reply: false, can_resolve: false,
+    comments: [{ ...comment, can_edit: false, can_delete: false }] };
+  response = { threads: [historical] };
+  expect(await artifacts.listArtifactComments('project-a', 'artifact-a', { status: 'all', version: 'vc old' })).toEqual([historical]);
+  expect(calls[0]?.url).toBe(`${base}/comments?status=all&version=vc+old`);
+});
+
+test('comment context returns insertion tokens, permissions, eligible threads, and the actual Send target', async () => {
+  response = context;
+  expect(await artifacts.getArtifactCommentContext('project-a', 'artifact-a', { version: 'vc old', agent: 'writer one' })).toEqual(context);
+  expect(calls[0]).toMatchObject({ url: `${base}/comments/context?version=vc+old&agent=writer+one`, method: 'GET' });
+  const handle = createKortix({ backendUrl: 'https://artifact-sdk.example/v1', getToken: async () => 'session-token' }).project('project-a');
+  expect(await handle.artifacts.comments.context('artifact-a')).toEqual(context);
+});
+
+test('comment snapshots read immutable content at the context commit, never its entry ETag', async () => {
+  const urls: string[] = [];
+  globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+    urls.push(String(input));
+    return urls.length === 1 ? Response.json(context) : new Response('# Exact saved Markdown\n');
+  }) as unknown as typeof fetch;
+  const handle = createKortix({ backendUrl: 'https://artifact-sdk.example/v1', getToken: async () => 'session-token' }).project('project-a');
+  expect(await handle.artifacts.comments.snapshot('artifact-a')).toEqual({ version: 'vc_pinned', text: '# Exact saved Markdown\n' });
+  expect(urls).toEqual([`${base}/comments/context`, `${base}/content?version=vc_pinned`]);
+});
+
+test('a comment snapshot without a saved commit rejects before reading content', async () => {
+  response = { ...context, version: { commit_id: null, entry_version: null } };
+  await expect(artifacts.readArtifactCommentSnapshot('project-a', 'artifact-a')).rejects.toMatchObject({ code: 'artifact_comment_snapshot_unavailable' });
+  expect(calls).toHaveLength(1);
+});
+
+test('comment context exposes the total separately from its bounded Send batch', async () => {
+  const typed: Equal<artifacts.ArtifactCommentContext['send_thread_count'], number> = true;
+  const ids = Array.from({ length: 100 }, (_, index) => `thread-${index}`);
+  response = { ...context, send_thread_ids: ids, send_thread_count: 101 };
+  const result = await artifacts.getArtifactCommentContext('project-a', 'artifact-a');
+  expect(typed).toBe(true);
+  expect(result.send_thread_ids).toEqual(ids);
+  expect(result.send_thread_count).toBe(101);
+  expect(calls).toHaveLength(1);
 });
 
 test('createArtifactComment sends the selected version, anchor and body and unwraps the thread', async () => {

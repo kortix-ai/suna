@@ -25,7 +25,6 @@ const IMAGES: Array<{ label: string; dockerfile: string }> = [
       agentBinaryPath: 'a',
       cliBinaryPath: 'a',
       entrypointScriptPath: 'a',
-      catalogPath: 'a',
       managedSkillsPath: 'a',
     }),
   },

@@ -242,17 +242,10 @@ export interface KortixArtifactLayerOpts {
    */
   slackCliPath: string;
   /**
-   * Path (in the build context) to the baked full gateway model catalog JSON.
-   * COPY'd into the image so the no-restart warm seed — which has no sandbox
-   * token / projectId to fetch the catalog at PARK — gets the full model picker
-   * instead of the daemon's minimal fallback. Optional; omit to skip.
-   */
-  catalogPath?: string;
-  /**
    * Build-context path to the staged managed `kortix-*` skill overlay, baked
    * at {@link SANDBOX_MANAGED_SKILLS_DIR}.
    *
-   * REQUIRED, unlike `catalogPath`. Optional is how this diverged in the first
+   * REQUIRED. Optional is how this diverged in the first
    * place: the meta image passed a path, the standard layer had no field at
    * all, and every ordinary session sandbox — dev, prod and preview alike —
    * booted with nothing to overlay and downloaded the whole overlay on its
@@ -512,7 +505,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // below still hard-fails the build if every attempt came up empty, so a total
     // failure never ships a browser-less image.
     '    && for pw_try in 1 2 3 4 5; do \\',
-    `        pnpm dlx playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium && break; \\`,
+    `        pnpm dlx playwright@${PLAYWRIGHT_VERSION} install --with-deps --no-shell chromium && break; \\`,
     '        echo "playwright chromium install attempt $pw_try failed, retrying..."; \\',
     '        sleep $((pw_try*10)); \\',
     '    done \\',
@@ -522,6 +515,16 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && ln -sf "$pw_chrome" /home/kortix/.local/bin/chromium \\',
     '    && mkdir -p /home/kortix/.agent-browser/browsers \\',
     '    && ln -sf "$(dirname "$pw_chrome")" /home/kortix/.agent-browser/browsers/chrome-linux64 \\',
+    // One browser on the machine: no separate headless shell (~260 MB). Its
+    // path, where Playwright's headless launches look, is the same Chromium.
+    // The markers stop a later `playwright install` from fetching it anyway.
+    '    && pw_rev="${pw_chrome#/opt/pw-browsers/chromium-}" && pw_rev="${pw_rev%%/*}" \\',
+    '    && pw_shell_dir="/opt/pw-browsers/chromium_headless_shell-${pw_rev}" \\',
+    '    && case "$(uname -m)" in x86_64) pw_shell=chrome-headless-shell-linux64/chrome-headless-shell ;; *) pw_shell=chrome-linux/headless_shell ;; esac \\',
+    '    && mkdir -p "$(dirname "${pw_shell_dir}/${pw_shell}")" \\',
+    '    && ln -sf "$pw_chrome" "${pw_shell_dir}/${pw_shell}" \\',
+    '    && touch "${pw_shell_dir}/INSTALLATION_COMPLETE" "${pw_shell_dir}/DEPENDENCIES_VALIDATED" \\',
+    '    && test -x "${pw_shell_dir}/${pw_shell}" \\',
     '    && chromium --version \\',
     // Assert agent-browser RESOLVES the browser via its env-independent cache —
     // match the resolved path (deterministic), not the browser NAME (which is
@@ -567,8 +570,8 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
 
 /**
  * The staged-artifact half of the Kortix runtime layer: the COPYs of Kortix's
- * own build outputs (agent + CLI binaries, entrypoint, slack-cli, the optional
- * LLM catalog, scaffold.git), the unpack/shim RUN
+ * own build outputs (agent + CLI binaries, entrypoint, slack-cli,
+ * scaffold.git), the unpack/shim RUN
  * that puts them on PATH, and the container's ENV/WORKDIR/EXPOSE/ENTRYPOINT.
  *
  * Every path here must exist in the build context — see
@@ -581,7 +584,6 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     entrypointScriptPath,
     machineDocPath,
     slackCliPath,
-    catalogPath,
     managedSkillsPath,
   } = opts;
 
@@ -593,9 +595,6 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     `COPY ${machineDocPath} /MACHINE.md`,
     // The channel shims delegate Connector calls to the compiled `kortix` CLI.
     `COPY ${slackCliPath}/ /opt/kortix/apps/sandbox/slack-cli/`,
-    // Full gateway model catalog, baked at build so the token-less no-restart
-    // warm seed serves the full picker (daemon reads KORTIX_LLM_CATALOG_FILE).
-    ...(catalogPath ? [`COPY ${catalogPath} /opt/kortix/llm-catalog.json`] : []),
     // Canonical scaffold repo (bare). Its root commit matches every seeded
     // project's root (pinned dates, seed.ts), enabling local-clone +
     // delta-fetch repo materialization in the daemon (git.ts).

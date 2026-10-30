@@ -1,7 +1,6 @@
 import { Hono } from 'hono'
 import type { HarnessDiagnosticsContext, HarnessDiagnosticsService } from '@/harness/contract/diagnostics'
 import { readHostHealth } from '@/harness/shared/host-health'
-import { legacyHealthFields, legacyRunningFields } from './legacy-names'
 import { COMPILED_AGENT_CONFIG_GZ_CAPABILITY } from '@kortix/api-contract/compiled-agent-config-env'
 
 /**
@@ -45,7 +44,6 @@ export function createHealthRouter(
       runtimeReady,
       boot_error: repoError ?? harness.error,
       ...host,
-      runtime: { ...host.runtime, running: { ...running, ...legacyRunningFields(running) } },
       harness,
       ...(report.config ? { config: report.config } : {}),
       ...(report.configDirSha !== undefined ? { config_dir_sha: report.configDirSha } : {}),
@@ -57,7 +55,6 @@ export function createHealthRouter(
             turn_orphaned_prompt: harness.turn.orphaned_prompt,
           }
         : {}),
-      ...legacyHealthFields(harness),
     })
   })
   return router

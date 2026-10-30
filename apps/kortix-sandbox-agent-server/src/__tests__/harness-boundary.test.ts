@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { loadConfig, resolveHarness, type HarnessService } from '@/harness/harness'
+import { harnessProtectedPathSegments, isHarnessInternalVariable, loadConfig, resolveHarness, type HarnessService } from '@/harness/harness'
 import { buildDaemonApp } from '@/app/server'
 import { createRuntimeProxyRouter } from '@/routes/proxy/runtime-proxy'
 import type { HarnessQueryService } from '@/harness/contract/queries'
@@ -8,18 +8,33 @@ import type { HarnessQueryService } from '@/harness/contract/queries'
 // (eslint.config.mjs, run by architecture-boundaries.test.ts). This file owns the
 // runtime half: selection, and controllers that keep an adapter's native features.
 describe('harness ownership boundary', () => {
-  test('KORTIX_HARNESS selects the adapter (default opencode); the selected adapter loads its own environment', () => {
-    expect(resolveHarness().id).toBe('opencode')
-    expect(resolveHarness(loadConfig())).toBe(resolveHarness())
-    const pi = loadConfig({ KORTIX_HARNESS: 'pi', KORTIX_PROJECT_AUTO_CLONE: '0' })
-    expect(pi.harness).toBe('pi')
-    expect(resolveHarness(pi).id).toBe('pi')
-    expect('piStateDir' in pi).toBe(true)
-    expect('opencodeInternalPort' in pi).toBe(false)
-    const opencode = loadConfig({ KORTIX_HARNESS: ' OpenCode ', KORTIX_PROJECT_AUTO_CLONE: '0' })
-    expect(opencode.harness).toBe('opencode')
-    expect('opencodeInternalPort' in opencode).toBe(true)
+  test('every box boots pi, a box OpenCode booted before the sunset too; an unknown id fails the boot', () => {
+    for (const harness of ['pi', ' OpenCode ', '']) {
+      const cfg = loadConfig({ KORTIX_HARNESS: harness, KORTIX_PROJECT_AUTO_CLONE: '0' })
+      expect(cfg.harness).toBe('pi')
+      expect(resolveHarness(cfg).id).toBe('pi')
+      expect('piStateDir' in cfg).toBe(true)
+    }
+    expect(resolveHarness().id).toBe('pi')
     expect(() => loadConfig({ KORTIX_HARNESS: 'codex' })).toThrow('Unsupported harness: codex')
+  })
+
+  test('a box OpenCode booted asks for the session-log restore; a pi box keeps what apps/api set', () => {
+    for (const harness of ['opencode', ' OpenCode ', '', undefined]) {
+      const env: NodeJS.ProcessEnv = { KORTIX_HARNESS: harness, KORTIX_PROJECT_AUTO_CLONE: '0' }
+      loadConfig(env)
+      expect(env.KORTIX_SESSION_LOG_RESTORE).toBe('1')
+    }
+    const pi: NodeJS.ProcessEnv = { KORTIX_HARNESS: 'pi', KORTIX_PROJECT_AUTO_CLONE: '0' }
+    loadConfig(pi)
+    expect(pi.KORTIX_SESSION_LOG_RESTORE).toBeUndefined()
+  })
+
+  test("a box OpenCode booted keeps OpenCode's data directory and variables away from the agent", () => {
+    expect(harnessProtectedPathSegments()).toContain('/.local/share/opencode/')
+    expect(isHarnessInternalVariable('OPENCODE_SERVER_PASSWORD')).toBe(true)
+    expect(isHarnessInternalVariable('KORTIX_PI_PACKAGES')).toBe(true)
+    expect(isHarnessInternalVariable('MY_PROJECT_SECRET')).toBe(false)
   })
 
   test('host controllers call a different resolved service and retain its extra fields and native features', async () => {
@@ -72,18 +87,17 @@ describe('harness ownership boundary', () => {
     expect(response.status).toBe(200)
     // The route composes the host facts, the closed harness block (adapter
     // facts ride in `details`) and one readiness verdict (E19).
-    expect(await response.json()).toMatchObject({
+    const body = await response.json()
+    expect(body).toMatchObject({
       daemon: 'ok',
       capabilities: ['file.import', 'file.append', 'agent-config.env-gz.v1', 'runtime.turns.v1', 'runtime.retract.v1', 'session.subagents'],
       status: 'ok',
       runtimeReady: true,
       boot_error: null,
       harness: { id: 'test-only-adapter', version: '1.0.0', ready: true, details: { exclusiveFeature: 'preserved' } },
-      // The pre-W3 flat names, composed from the block for an older API.
-      opencode: 'ok',
-      opencode_session_id: 'ses_root',
-      opencode_session_required: true,
     })
+    // Kortix names only: no pre-W3 `opencode*` field, at the top or in `runtime.running`.
+    expect(JSON.stringify(body)).not.toMatch(/"opencode/)
     expect((await app.request('/session/native-command')).status).toBe(503)
 
     // The transport controller preserves features that are not common methods.

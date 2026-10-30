@@ -250,6 +250,7 @@ export async function continueSession(
         wireMessageId: command.wireMessageId,
         materializationKey: command.materializationKey,
         noReply: command.noReply,
+        source: command.source,
         accountId: session.accountId,
         projectId: session.projectId,
         sandboxRecord,

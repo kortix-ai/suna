@@ -3,6 +3,10 @@
  *
  *   enqueueJob(queue, key, payload)  idempotent per (queue, key): a key that
  *                                    exists is a no-op, so producers re-send freely
+ *   enqueueJob(…, { order })         `{ key, seq }`: jobs of the queue that share
+ *                                    `key` run one at a time, lowest `seq` first.
+ *                                    An earlier job holds the later ones until it
+ *                                    is done or dead, or its second attempt failed
  *   claimJobs(queues, n, visibility) FOR UPDATE SKIP LOCKED; a claimed row is
  *                                    hidden until `locked_until`, then claimable
  *                                    again (the worker that held it crashed)
@@ -42,12 +46,18 @@ export function registerJobHandler(queue: string, run: JobHandler, visibilityMs 
   handlers.set(queue, { run, visibilityMs, batch, running: 0 });
 }
 
+/** Jobs of one queue that share `key` run one at a time, lowest `seq` first (claimJobs). */
+export interface JobOrder {
+  key: string;
+  seq: number;
+}
+
 /** Insert a job unless `(queue, key)` exists. True when this call inserted it. */
 export async function enqueueJob(
   queue: string,
   key: string,
   payload: Record<string, unknown> = {},
-  opts: { runAt?: Date; maxAttempts?: number } = {},
+  opts: { runAt?: Date; maxAttempts?: number; order?: JobOrder } = {},
 ): Promise<boolean> {
   const inserted = await db
     .insert(jobQueue)
@@ -57,6 +67,7 @@ export async function enqueueJob(
       payload,
       ...(opts.runAt ? { runAt: opts.runAt } : {}),
       ...(opts.maxAttempts ? { maxAttempts: opts.maxAttempts } : {}),
+      ...(opts.order ? { orderKey: opts.order.key, orderSeq: opts.order.seq } : {}),
     })
     .onConflictDoNothing({ target: [jobQueue.queue, jobQueue.jobKey] })
     .returning({ jobId: jobQueue.jobId });
@@ -90,15 +101,23 @@ export async function enqueueJobs(
 /** Claim up to `limit` due jobs of these queues, hidden from other workers for `visibilityMs`. */
 export async function claimJobs(queues: string[], limit: number, visibilityMs: number): Promise<Job[]> {
   if (queues.length === 0 || limit < 1) return [];
+  // An ordered job waits while an earlier job of its key holds it: not run yet,
+  // running, or waiting out its first retry. After its second failure, or once
+  // done or dead, an earlier job holds nothing.
   const due = sql`(
-    SELECT job_id FROM kortix.job_queue
-     WHERE queue IN (${sql.join(queues.map((q) => sql`${q}`), sql`, `)})
-       AND status = 'queued' AND run_at <= now()
-       AND (locked_until IS NULL OR locked_until < now())
-     ORDER BY run_at
+    SELECT j.job_id FROM kortix.job_queue j
+     WHERE j.queue IN (${sql.join(queues.map((q) => sql`${q}`), sql`, `)})
+       AND j.status = 'queued' AND j.run_at <= now()
+       AND (j.locked_until IS NULL OR j.locked_until < now())
+       AND (j.order_key IS NULL OR NOT EXISTS (
+         SELECT 1 FROM kortix.job_queue e
+          WHERE e.queue = j.queue AND e.order_key = j.order_key AND e.order_seq < j.order_seq
+            AND e.status = 'queued' AND (e.attempts <= 1 OR e.locked_until > now())))
+     ORDER BY j.run_at
      LIMIT ${limit}
      FOR UPDATE SKIP LOCKED)`;
-  return db
+  const started = Date.now();
+  const claimed = await db
     .update(jobQueue)
     .set({
       lockedUntil: sql`now() + make_interval(secs => ${visibilityMs / 1000})`,
@@ -107,7 +126,13 @@ export async function claimJobs(queues: string[], limit: number, visibilityMs: n
     })
     .where(inArray(jobQueue.jobId, due))
     .returning();
+  // The order check scans each key's held backlog: ~30 ms at 10k held rows, ~325 ms at 100k.
+  const ms = Date.now() - started;
+  if (ms > SLOW_CLAIM_MS) logger.warn('[job-queue] slow claim', { queues, ms, claimed: claimed.length });
+  return claimed;
 }
+
+const SLOW_CLAIM_MS = 200;
 
 const ownClaim = (job: Job) =>
   and(eq(jobQueue.jobId, job.jobId), eq(jobQueue.attempts, job.attempts), eq(jobQueue.status, 'queued'));

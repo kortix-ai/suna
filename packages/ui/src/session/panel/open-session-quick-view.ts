@@ -55,7 +55,7 @@ export function openSessionQuickView(
   // for behind the close button. The panel toggle still opens the panel;
   // this path is only the "show me this one tool" intent.
   if (isMobileViewport()) {
-    useKortixComputerStore.getState().openMobileTool(view);
+    useKortixComputerStore.getState().openMobileTool(view, target);
     track('panel_opened', { source, surface: 'mobile-tool', view });
     return;
   }

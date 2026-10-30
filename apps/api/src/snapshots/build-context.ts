@@ -37,7 +37,6 @@ import { promisify } from 'node:util';
 import { createGzip } from 'node:zlib';
 import { AGENT_BROWSER_VERSION } from '@kortix/shared';
 import { buildMetaSandboxDockerfile } from '@kortix/shared/sandbox';
-import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { managedSkillOverlayFiles } from '../runtime-assets/managed-skills';
 import { appCaddyBinaryPath, appdBinaryPath } from '../apps/runtime-artifacts';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
@@ -197,10 +196,6 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
   await gzipFile(cliPath, join(contextDir, 'kortix.gz'));
   await copyFile(entrypointPath, join(contextDir, 'kortix-entrypoint'));
   await stageManagedSkills(join(contextDir, 'managed-skills'));
-  await writeFileFs(
-    join(contextDir, 'kortix-llm-catalog.json'),
-    JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
-  );
 
   const dockerfileName = 'Dockerfile';
   const composedPath = join(contextDir, dockerfileName);
@@ -210,7 +205,6 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
       agentBinaryPath: 'kortix-agent.gz',
       cliBinaryPath: 'kortix.gz',
       entrypointScriptPath: 'kortix-entrypoint',
-      catalogPath: 'kortix-llm-catalog.json',
       managedSkillsPath: 'managed-skills',
     }),
   );
@@ -294,16 +288,6 @@ export async function stageBuildContext(
     await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
     await copyFile(MACHINE_DOC_SRC_PATH, join(contextDir, 'MACHINE.md'));
     await cp(SLACK_CLI_SRC_PATH, join(contextDir, 'kortix-slack-cli'), { recursive: true });
-    // Bake the FULL gateway model catalog into the image. The no-restart warm seed
-    // has no sandbox token / projectId to fetch the catalog at PARK, so without this
-    // its model picker would fall back to the daemon's minimal (~11) set. Computed
-    // server-side at build time → full picker, no token, no runtime fetch. The shared
-    // seed's captureEnv (builder.ts) points KORTIX_LLM_CATALOG_FILE at the COPY target.
-    await writeFileFs(
-      join(contextDir, 'kortix-llm-catalog.json'),
-      JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
-    );
-
     // Canonical scaffold repo baked at /opt/kortix/scaffold.git. Built from the
     // DEFAULT starter with the SAME pinned commit metadata the project seeder
     // uses (git-backends/seed.ts), so its root SHA equals every seeded project's
@@ -332,7 +316,6 @@ export async function stageBuildContext(
       entrypointScriptPath: 'kortix-entrypoint',
       machineDocPath: 'MACHINE.md',
       slackCliPath: 'kortix-slack-cli',
-      catalogPath: 'kortix-llm-catalog.json',
       managedSkillsPath: 'managed-skills',
       containerRuntime,
     });
@@ -398,13 +381,6 @@ async function assertContextComplete(
     'scaffold.git',
     'kortix-agent.gz',
     'MACHINE.md',
-    // The baked model catalog is what keeps the harness off the network at
-    // boot: the daemon reads /opt/kortix/llm-catalog.json instead of fetching
-    // the gateway's ~400KB /models. If it silently fails to stage, the image
-    // still builds and every session on it pays a synchronous cross-region
-    // fetch that gates the harness's boot. That is invisible in build logs and
-    // shows up only as "boot got slower", so assert it here.
-    'kortix-llm-catalog.json',
     // The managed skill overlay. A miss here is the defect this guard exists
     // for: the image still builds, and every box on it silently downloads the
     // overlay on its first reconcile instead of booting with it.

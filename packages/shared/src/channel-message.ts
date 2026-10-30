@@ -300,7 +300,8 @@ function headerLabel(value: string): string {
  * `\s*\r?\n\s*` says the same and re-reads a run with no line break from each
  * of its spaces: 240k spaces took 58 s.
  */
-const oneLine = (value: string) => value.replace(/\s+/g, (run) => (run.includes('\n') ? ' ' : run));
+const oneLine = (value: string) =>
+  value.replace(/[\s\u0085]+/g, (run) => (/[\n\r\u0085\u2028\u2029]/.test(run) ? ' ' : run));
 
 /**
  * The prompt for one channel message. The header line is the one every client

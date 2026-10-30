@@ -21,7 +21,7 @@ function deps(state: { running: boolean; prompter: string | null; manages: boole
   return {
     readRunningTurn: async () => {
       reads.push('running');
-      return state.running ? { messageId: 'msg_1' } : null;
+      return state.running ? { messageId: 'msg_1', sources: [] } : null;
     },
     turnPrompterOf: async (_sessionId, messageId) => {
       reads.push(`prompter:${messageId}`);

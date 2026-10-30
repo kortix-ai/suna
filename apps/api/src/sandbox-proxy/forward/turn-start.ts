@@ -75,6 +75,7 @@ export interface TurnLifecycle {
 export function createTurnLifecycle(
   sandboxId: string,
   turnIdentity: SandboxTurnIdentity | null,
+  source?: string,
 ): TurnLifecycle {
   const turnToken = turnIdentity ? crypto.randomUUID() : null;
   let turnLifecycleBegun = false;
@@ -84,7 +85,7 @@ export function createTurnLifecycle(
     try {
       const outcome = await beginSandboxTurn(
         { externalId: sandboxId },
-        { token: turnToken, ...turnIdentity },
+        { token: turnToken, ...turnIdentity, source },
       );
       turnLifecycleBegun = outcome === 'granted';
       return outcome === 'no_box' ? 'unavailable' : outcome;

@@ -3,10 +3,12 @@ import { artifactCommentAnchorSchema, reanchorArtifactText, type ArtifactComment
 import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { Actor } from '../iam/actor';
 import { db } from '../shared/db';
-import { canView, readArtifactFile, type ArtifactRow, type Viewer } from './service';
+import { canView, entryVersion, readArtifactFile, type ArtifactRow, type Viewer } from './service';
 import { recordArtifactEvent } from './events-store';
+import { artifactCommentPermissions } from './comment-permissions';
 import { hydrateCommentAuthors } from './comment-authors';
 import { resolveArtifactCommentMentions } from './comment-mentions';
+import { hydrateArtifactCommentMentions } from './comment-tokens';
 import { dispatchArtifactCommentJobs, enqueueArtifactCommentRouting } from './comment-delivery';
 
 export class ArtifactCommentError extends Error {
@@ -21,6 +23,7 @@ export interface ArtifactCommentAccess {
   viewer: Viewer;
   sessionId: string | null;
   canEdit: boolean;
+  canComment?: boolean;
 }
 
 type Thread = typeof artifactCommentThreads.$inferSelect;
@@ -48,14 +51,21 @@ function bodyText(body: string): string {
   return body;
 }
 
-function commentView(row: Comment) {
+function rights(access: ArtifactCommentAccess, creator: { userId: string | null; sessionId: string | null }, sentSessionId: string | null, deleted: boolean, historical: boolean) {
+  return artifactCommentPermissions({ userId: access.viewer.userId, sessionId: access.sessionId, canComment: access.canComment ?? true,
+    canEdit: access.canEdit, manageAny: access.viewer.manageAny ?? false }, creator, sentSessionId, deleted, historical);
+}
+
+function commentView(row: Comment, access: ArtifactCommentAccess, rootDeleted = false, historical = false) {
   return {
+    ...rights(access, { userId: row.authorUserId, sessionId: row.authorSessionId }, null, rootDeleted, historical)
+      .comment({ userId: row.authorUserId, sessionId: row.authorSessionId }, !!row.deletedAt),
     comment_id: row.commentId,
     thread_id: row.threadId,
     author_user_id: row.authorUserId,
     author_session_id: row.authorSessionId,
     body: row.deletedAt ? '' : row.body,
-    mentions: row.deletedAt ? [] : row.mentions,
+    mentions: row.deletedAt ? [] : hydrateArtifactCommentMentions(row.mentions),
     marks: row.deletedAt ? [] : row.marks,
     screenshot_key: row.deletedAt ? null : row.screenshotKey,
     created_at: row.createdAt.toISOString(),
@@ -64,10 +74,14 @@ function commentView(row: Comment) {
   };
 }
 
-function threadView(row: Thread, comments: Comment[], text?: string) {
+function threadView(row: Thread, comments: Comment[], access: ArtifactCommentAccess, text?: string, historical = false) {
+  const rootDeleted = !comments.length || !!comments[0]!.deletedAt;
+  const permissions = rights(access, { userId: row.createdByUserId, sessionId: row.createdBySessionId }, row.sentSessionId, rootDeleted, historical);
   const anchor = row.anchor as ArtifactCommentAnchor;
   const position = text !== undefined && anchor.type === 'text' ? reanchorArtifactText(text, anchor) : null;
   return {
+    can_reply: permissions.can_reply,
+    can_resolve: permissions.can_resolve,
     thread_id: row.threadId,
     artifact_id: row.artifactId,
     project_id: row.projectId,
@@ -85,7 +99,7 @@ function threadView(row: Thread, comments: Comment[], text?: string) {
     sent_at: row.sentAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
-    comments: comments.map(commentView),
+    comments: comments.map((comment) => commentView(comment, access, rootDeleted, historical)),
     outdated: position?.outdated ?? false,
     position: position && position.start !== null && position.end !== null ? { start: position.start, end: position.end } : null,
   };
@@ -97,23 +111,26 @@ async function hydrateThreads(access: ArtifactCommentAccess, threads: ReturnType
   return threads.map((thread) => ({ ...thread, comments: thread.comments.map((comment) => byId.get(comment.comment_id)!) }));
 }
 
-async function readThreads(access: ArtifactCommentAccess, status: CommentStatus | 'all', threadId?: string) {
-  const threads = await db.select().from(artifactCommentThreads)
+async function readThreads(access: ArtifactCommentAccess, status: CommentStatus | 'all', threadId?: string, version?: string) {
+  const selectedEntry = version ? await entryVersion(access.artifact, version) : null;
+  if (version && !selectedEntry) throw new ArtifactCommentError(404, 'Artifact version not found', 'version_not_found');
+  const rows = await db.select().from(artifactCommentThreads)
     .where(and(eq(artifactCommentThreads.artifactId, access.artifact.artifactId), eq(artifactCommentThreads.projectId, access.artifact.projectId),
       status === 'all' ? undefined : eq(artifactCommentThreads.status, status), threadId ? eq(artifactCommentThreads.threadId, threadId) : undefined))
     .orderBy(asc(artifactCommentThreads.createdAt), asc(artifactCommentThreads.threadId));
+  const threads = version ? rows.filter((thread) => thread.anchorVersion === version || thread.anchorVersion === selectedEntry) : rows;
   if (!threads.length) return [];
   const comments = await db.select().from(artifactComments)
     .where(inArray(artifactComments.threadId, threads.map((t) => t.threadId)))
     .orderBy(asc(artifactComments.createdAt), asc(artifactComments.commentId));
   const text = access.artifact.type === 'doc' && threads.some((t) => (t.anchor as ArtifactCommentAnchor).type === 'text')
-    ? await (await readArtifactFile(access.artifact, access.artifact.entry)).text()
+    ? await (await readArtifactFile(access.artifact, access.artifact.entry, version)).text()
     : undefined;
-  return hydrateThreads(access, threads.map((thread) => threadView(thread, comments.filter((c) => c.threadId === thread.threadId), text)));
+  return hydrateThreads(access, threads.map((thread) => threadView(thread, comments.filter((c) => c.threadId === thread.threadId), access, text, version !== undefined)));
 }
 
-export async function listArtifactCommentThreads(access: ArtifactCommentAccess, status: CommentStatus | 'all') {
-  return readThreads(access, status);
+export async function listArtifactCommentThreads(access: ArtifactCommentAccess, status: CommentStatus | 'all', version?: string) {
+  return readThreads(access, status, undefined, version);
 }
 
 export async function getArtifactCommentThread(access: ArtifactCommentAccess, threadId: string) {
@@ -215,7 +232,7 @@ export async function createArtifactCommentThread(actor: Actor, access: Artifact
     await enqueueArtifactCommentRouting(tx, access.artifact, actor, access.sessionId, thread!.threadId, comment!.commentId, false);
     const [updated] = await tx.select().from(artifactCommentThreads).where(eq(artifactCommentThreads.threadId, thread!.threadId));
     Object.assign(thread!, updated!);
-    return threadView(thread!, [comment!]);
+    return threadView(thread!, [comment!], access);
   });
   await dispatchArtifactCommentJobs(`artifact-comments:${thread.thread_id}:${thread.comments[0]!.comment_id}`);
   return (await hydrateThreads(access, [thread]))[0]!;
@@ -234,7 +251,7 @@ export async function replyArtifactCommentThread(actor: Actor, access: ArtifactC
     await tx.update(artifactCommentThreads).set({ updatedAt: sql`now()` }).where(eq(artifactCommentThreads.threadId, threadId));
     await recordArtifactEvent(tx, access.artifact, who, 'replied', { thread_id: threadId, comment_id: comment!.commentId });
     await enqueueArtifactCommentRouting(tx, access.artifact, actor, access.sessionId, threadId, comment!.commentId, true);
-    return commentView(comment!);
+    return commentView(comment!, access);
   });
   await dispatchArtifactCommentJobs(`artifact-comments:${threadId}:${comment.comment_id}`);
   return (await hydrateCommentAuthors(access.artifact, [comment]))[0]!;
@@ -260,7 +277,7 @@ export async function setArtifactCommentThreadStatus(actor: Actor, access: Artif
     }
     const comments = await tx.select().from(artifactComments).where(eq(artifactComments.threadId, threadId))
       .orderBy(asc(artifactComments.createdAt), asc(artifactComments.commentId));
-    return threadView(thread, comments);
+    return threadView(thread, comments, access);
   });
   return (await hydrateThreads(access, [thread]))[0]!;
 }
@@ -281,7 +298,7 @@ export async function changeArtifactComment(actor: Actor, access: ArtifactCommen
       .where(eq(artifactComments.commentId, commentId)).returning();
     await tx.update(artifactCommentThreads).set({ updatedAt: sql`now()` }).where(eq(artifactCommentThreads.threadId, threadId));
     if (text === null) await recordArtifactEvent(tx, access.artifact, author(actor, access), 'comment_deleted', { thread_id: threadId, comment_id: commentId });
-    return commentView(updated!);
+    return commentView(updated!, access);
   });
   return (await hydrateCommentAuthors(access.artifact, [comment]))[0]!;
 }

@@ -39,7 +39,6 @@ const ARTIFACTS = kortixArtifactLayer({
   entrypointScriptPath: 'kortix-entrypoint',
   machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
-  catalogPath: 'llm-catalog.json',
   managedSkillsPath: 'managed-skills',
 });
 
@@ -55,7 +54,6 @@ const IMAGES: Array<{ label: string; dockerfile: string }> = [
       agentBinaryPath: 'a',
       cliBinaryPath: 'a',
       entrypointScriptPath: 'a',
-      catalogPath: 'a',
       managedSkillsPath: 'a',
     }),
   },
