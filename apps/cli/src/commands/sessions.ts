@@ -27,6 +27,7 @@ import {
 } from './sessions-approvals.ts';
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
 import { runSessionsForward } from './sessions-forward.ts';
+import { runSessionsInbound, runSessionsMessage, runSessionsReachable } from './sessions-peer.ts';
 import type { Auth } from '../api/auth.ts';
 import { confirm } from '../prompts.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
@@ -151,6 +152,22 @@ Subcommands:
                                     runtime. --steer stores it the same way and
                                     hands it to the running turn at its next
                                     step.
+  message <to> ["<text>"]           Send another session a message from this
+                                    one ($KORTIX_SESSION_ID, else --from
+                                    <session>). <to>: a handle, a session id
+                                    or 8+ characters, parent. --summary,
+                                    --notify-idle (one notice back when its
+                                    turn ends), --json. Reads stdin when no
+                                    text is given.
+  reachable                         The sessions this one can message:
+                                    parent, children, lead, teammates
+                                    (--scope project: every live session).
+                                    --from, --json.
+  inbound <session-id> [<mode>]     What a session does with messages from
+                                    other sessions: accept (default), hold
+                                    (a person approves each), refuse. ls,
+                                    approve <id>, deny <id> decide held
+                                    messages. --json.
   queue <session-id> [<sub>]        The durable prompt inbox: ls (default), rm
                                     <prompt-id>, now <prompt-id>, hold,
                                     release. --json.
@@ -338,6 +355,16 @@ export async function runSessions(argv: string[]): Promise<number> {
   }
   if (sub === 'update' || sub === 'label' || sub === 'set') {
     return runSessionsUpdate(argv.slice(1));
+  }
+  // Messages between sessions own their flags, a positional `to` and a stdin body.
+  if (sub === 'message') {
+    return runSessionsMessage(argv.slice(1));
+  }
+  if (sub === 'reachable') {
+    return runSessionsReachable(argv.slice(1));
+  }
+  if (sub === 'inbound') {
+    return runSessionsInbound(argv.slice(1));
   }
   // Everything below owns its own flag parsing (repeatable flags, positional
   // subcommands, or a stdin body), so route before the shared parse.

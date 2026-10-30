@@ -459,6 +459,31 @@ every given label, and `useProjectSessions(projectId, { labels })` does the same
 React. Each label is 1–64 characters, at most 20 per session; one metadata write is at
 most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
 
+### Agents working together
+
+The session-scoped surface for messages between sessions, agent teams and
+workflow runs. The wire contract is `@kortix/api-contract/multi-agent`; the
+product docs are "Agents working together" in `apps/web/content/docs/developers.mdx`.
+
+| Call | Route | Resolves |
+|---|---|---|
+| `session.reachable({ scope })` | `GET …/sessions/:sid/reachable?scope=mine\|project` | `ReachableAgents`: `{ self, agents }` |
+| `session.peerMessages.send(body)` | `POST …/sessions/:sid/peer-messages` (this session is the sender) | `PeerMessageSendResult`; `409 ambiguous_recipient` throws `ApiError` with the `candidates` |
+| `session.peerMessages.list({ direction })` | `GET …/sessions/:sid/peer-messages?direction=in\|out` | `{ messages }` |
+| `session.peerMessages.approve(id)` · `.deny(id)` | `POST …/peer-messages/:mid/approve\|deny` (this session is the receiver) | `PeerMessage` |
+| `session.setInbound(inbound)` | `PUT …/sessions/:sid/inbound` | `{ inbound }`: `accept`, `hold` or `refuse` |
+| `session.tasks.list()` · `.create(body)` · `.update(seq, body)` · `.remove(seq)` | `…/sessions/:lead/tasks` (this session is the lead; flag `agent_teams`) | `SessionTask`; a lost claim throws `ApiError` `409 task_taken` |
+| `session.workflows.list()` · `.control(runId, body)` | the runtime's `GET /kortix/runtime/workflows`, `POST …/workflows/:runId/control` | `{ runs }`; `{ ok, paused }` |
+
+React (`@kortix/sdk/react`): `useReachableAgents(pid, sid, scope?)`,
+`usePeerMessages(pid, sid, direction?)`, `useTeamTasks(pid, leadSid)`,
+`useSessionWorkflows(pid, sid)`, `useTeammates(pid, leadSid)`. Session rows
+carry `board_state`, `attention`, `last_activity_at`, `result_excerpt`,
+`agent_handle`, `team_lead_session_id` and `inbound`.
+
+Limits: 16,000 characters per message, 30 messages per minute per sender, a
+held message expires after 5 minutes.
+
 ### Who wrote each message
 
 `kortix.session(projectId, sessionId).messageAuthors()` (or `getSessionMessageAuthors`) returns

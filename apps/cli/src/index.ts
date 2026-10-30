@@ -36,6 +36,7 @@ import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runReminders } from './commands/reminders.ts';
 import { runGoals } from './commands/goals.ts';
+import { runTasks } from './commands/tasks.ts';
 import { runArtifacts } from './commands/artifacts.ts';
 import { runReview } from './commands/review.ts';
 import { runRoles } from './commands/roles.ts';
@@ -286,6 +287,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   uninstall: (rest) => runUninstall(rest),
   rooms: (rest) => runRooms(rest),
   peers: (rest) => runPeers(rest),
+  tasks: (rest) => runTasks(rest),
 };
 
 async function main(rawArgv: string[]): Promise<number> {
