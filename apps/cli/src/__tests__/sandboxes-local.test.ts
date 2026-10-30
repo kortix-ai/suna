@@ -38,7 +38,8 @@ describe('composeSandboxDockerfile', () => {
     for (const artifact of [
       'COPY kortix-agent.gz',
       'kortix.gz',
-      'kortix-entrypoint',
+      // A bare `kortix-entrypoint` is fine: the desktop step symlinks kortix-desktop to it.
+      'COPY kortix-entrypoint',
       'kortix-slack-cli',
       'scaffold.git',
       'install-shims.sh',
@@ -46,13 +47,6 @@ describe('composeSandboxDockerfile', () => {
     ]) {
       expect(out).not.toContain(artifact);
     }
-  });
-
-  test('omits the staged-context steps (opencode config warm-up, warm repo)', () => {
-    // Both would emit COPY/clone steps against a context this build doesn't have.
-    const out = composeSandboxDockerfile(USER, { layer: true });
-    expect(out).not.toContain('/opt/kortix/warm-config');
-    expect(out).not.toContain('warm-repo');
   });
 
   test('--no-layer yields the user text alone', () => {

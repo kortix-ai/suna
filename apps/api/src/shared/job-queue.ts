@@ -70,7 +70,7 @@ export async function enqueueJob(
 export async function enqueueJobs(
   queue: string,
   jobs: Array<{ key: string; payload?: Record<string, unknown> }>,
-  opts: { maxAttempts?: number; executor?: Pick<typeof db, 'insert'> } = {},
+  opts: { maxAttempts?: number; executor?: Pick<typeof db, 'insert'>; artifactId?: string } = {},
 ): Promise<number> {
   if (jobs.length === 0) return 0;
   const inserted = await (opts.executor ?? db)
@@ -79,6 +79,7 @@ export async function enqueueJobs(
       queue,
       jobKey: job.key,
       payload: job.payload ?? {},
+      ...(opts.artifactId ? { artifactId: opts.artifactId } : {}),
       ...(opts.maxAttempts ? { maxAttempts: opts.maxAttempts } : {}),
     })))
     .onConflictDoNothing({ target: [jobQueue.queue, jobQueue.jobKey] })
@@ -146,7 +147,10 @@ export async function failJob(job: Job, error: unknown): Promise<void> {
 /** Delete done and dead jobs older than `days`. Bounds the table. */
 export async function pruneFinishedJobs(days = 7): Promise<void> {
   await db.execute(
-    sql`DELETE FROM kortix.job_queue WHERE status <> 'queued' AND updated_at < now() - make_interval(days => ${days})`,
+    sql`DELETE FROM kortix.job_queue j WHERE status <> 'queued' AND updated_at < now() - make_interval(days => ${days})
+      AND (artifact_id IS NULL OR NOT EXISTS (
+        SELECT 1 FROM kortix.session_lifecycle_commands c WHERE c.artifact_id = j.artifact_id AND c.status IN ('queued', 'running')
+      ))`,
   );
 }
 

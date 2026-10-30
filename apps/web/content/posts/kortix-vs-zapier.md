@@ -8,7 +8,7 @@ tags: ["Comparisons"]
 updated: "2026-10-21"
 slug: "/kortix-vs-zapier"
 ---
-Zapier is the right tool when the work repeats exactly: one trigger, a handful of actions, the same run on every fire. If that describes your job, a hosted flow tool serves you well. Kortix is the open-source AI Operating System, and it is built for the jobs nobody can draw in advance. You state the outcome, and an agent works out the steps on a cloud computer it does not share.
+Zapier is the right tool when the work repeats exactly: one trigger, a handful of actions, the same run on every fire. If that describes your job, a hosted flow tool serves you well. Kortix is the open-source CompanyOS, and it is built for the jobs nobody can draw in advance. You state the outcome, and an agent works out the steps on a cloud computer it does not share.
 
 ```logos
 label: 'Compared here:'

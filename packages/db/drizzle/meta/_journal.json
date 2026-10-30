@@ -1345,6 +1345,27 @@
       "when": 1793309438986,
       "tag": "20261029213038_artifact_activity_tables_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "7",
+      "when": 1793312793000,
+      "tag": "20261029222633_artifact_comment_routing",
+      "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "7",
+      "when": 1793312797000,
+      "tag": "20261029222637_artifact_comment_delivery_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "7",
+      "when": 1793312801000,
+      "tag": "20261029222641_artifact_comment_tables_rls",
+      "breakpoints": true
     }
   ]
 }

@@ -44,7 +44,7 @@ If the work is chat, research, decks and documents done inside ChatGPT by people
 
 ## What the same work costs when the meter counts seconds
 
-Kortix is the open-source AI Operating System: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers.
+Kortix is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers.
 
 The pricing is built the other way round. Free is $0 with 500 credits a month and one project. Paid credits start at $50 a month, at the same rate on every tier. One credit is $0.01, and eleven buy an hour on an agent computer (2 vCPU, 4 GB), billed per second with nothing charged while it is stopped. $200 a month buys 20,000 credits, about 1,830 agent-computer hours ([Kortix pricing](https://kortix.com/pricing)). Members are unlimited and free, and the account shares one credit pool. Model calls are separate: any model provider with your own keys, the first $1,000 a month free and 5% after, or the ChatGPT plan you already pay for, which spends no credits.
 

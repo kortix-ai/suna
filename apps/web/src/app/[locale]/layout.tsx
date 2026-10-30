@@ -178,11 +178,11 @@ const SITE_JSON_LD = {
     {
       '@type': 'SoftwareApplication',
       '@id': `${siteMetadata.url}/#software`,
-      name: siteMetadata.name,
-      alternateName: ['Kortix AI Operating System', 'Kortix AI OS', 'Suna'],
+      name: 'Kortix CompanyOS',
+      alternateName: ['Kortix', 'Suna'],
       url: siteMetadata.url,
       applicationCategory: 'BusinessApplication',
-      applicationSubCategory: 'AI Operating System',
+      applicationSubCategory: 'Company operating system',
       operatingSystem: 'Web, macOS, Linux',
       downloadUrl: `${siteMetadata.url}/download`,
       description: siteMetadata.description,
@@ -210,7 +210,7 @@ const SITE_JSON_LD = {
     {
       '@type': 'SoftwareSourceCode',
       '@id': `${siteMetadata.url}/#source`,
-      name: 'Kortix',
+      name: 'Kortix CompanyOS',
       codeRepository: 'https://github.com/kortix-ai/suna',
       programmingLanguage: 'TypeScript',
       isPartOf: { '@id': `${siteMetadata.url}/#software` },

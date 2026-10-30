@@ -1,7 +1,7 @@
 import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
 import { localizeUiCatalog } from '@kortix/ui/i18n';
 /**
- * Case studies for the AI OS home page and /services: eight cards in one horizontal row. No
+ * Case studies for the CompanyOS home page and /services: eight cards in one horizontal row. No
  * card links anywhere, by founder decision.
  *
  * ACCURACY AND NAMING (read before editing):
@@ -137,7 +137,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         'Candidate research agents',
         'Client and pitch materials',
         'Internal operations automated',
-        'The whole firm on one AI OS',
+        'The whole firm on one CompanyOS',
       ],
     },
     {

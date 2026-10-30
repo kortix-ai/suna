@@ -83,6 +83,7 @@ import {
   FileArrowDownIcon as FileDown,
   FolderSimpleIcon,
   GlobeSimpleIcon,
+  MonitorIcon,
   StackIcon as Layers,
   PencilSimpleIcon,
   PushPinIcon,
@@ -106,6 +107,8 @@ const DEV_TOOLS: {
 }[] = [
     { view: 'terminal', label: 'Terminal', Icon: TerminalIcon },
     { view: 'browser', label: 'Browser', Icon: GlobeSimpleIcon },
+    // The computer's live screen (`session-desktop.tsx`).
+    { view: 'desktop', label: 'Desktop', Icon: MonitorIcon },
     { view: 'files', label: 'Files', Icon: FolderSimpleIcon },
   ];
 

@@ -1449,7 +1449,7 @@ function AuthContent() {
   // visual change at all.
   //
   // It used to render `<AuthFrame footerVariant="default">` with the entry
-  // step's own "Welcome to Kortix" / "Your AI Command Center" header. That is
+  // step's own "Welcome to Kortix CompanyOS" / "Your AI Command Center" header. That is
   // the headline a signed-OUT visitor is greeted with, so replaying it the
   // instant a password is accepted read as the form bouncing backwards — and
   // the legal footer it pinned then vanished one navigation later. Three

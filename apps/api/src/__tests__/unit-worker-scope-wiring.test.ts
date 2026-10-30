@@ -68,6 +68,7 @@ const WORKERS: Record<string, string> = {
   'notification-digest': 'workers/notification-worker.ts',
   'session-log-purge': 'workers/session-log-purge-worker.ts',
   'gateway-spend-backfill': 'workers/gateway-spend-backfill-worker.ts',
+  'residential-proxy-billing': 'workers/residential-proxy-billing-worker.ts',
 };
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
@@ -123,6 +124,7 @@ const STARTS: Record<string, string> = {
   startSessionLogPurgeWorker: 'session-log-purge',
   startSessionModelFallbackWorker: 'session-model-fallback',
   startGatewaySpendBackfillWorker: 'gateway-spend-backfill',
+  startResidentialProxyBillingWorker: 'residential-proxy-billing',
   startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
   startEventLoopLagSampler: 'not a worker: measures this process event-loop lag',
   startSessionLifecycleWorker: 'session-lifecycle',

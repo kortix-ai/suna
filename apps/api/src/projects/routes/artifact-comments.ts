@@ -12,6 +12,7 @@ import { DriveStorageError } from '../../drives/volumes';
 import { ArtifactError, canView, getArtifact, mayWrite, type Viewer } from '../../artifacts/service';
 import { readArtifactActivity } from '../../artifacts/activity-service';
 import { ArtifactActivityQueryError } from '../../artifacts/activity-query';
+import { ArtifactCommentDeliveryError, sendArtifactCommentThreads } from '../../artifacts/comment-delivery';
 import {
   ArtifactCommentError,
   artifactIdForCommentThread,
@@ -46,7 +47,7 @@ const ThreadSchema = z.object({
   thread_id: z.string(), artifact_id: z.string(), project_id: z.string(), anchor: z.unknown(), anchor_version: z.string(),
   created_by_user_id: nullableId, created_by_session_id: nullableId, status: Status,
   resolved_by_user_id: nullableId, resolved_by_session_id: nullableId, resolved_at: nullableDate,
-  agent_state: z.enum(['none', 'pending', 'sent', 'paused']), sent_session_id: nullableId, sent_at: nullableDate,
+  agent_state: z.enum(['none', 'pending', 'sent', 'paused']), agent_error: z.string().nullable(), sent_session_id: nullableId, sent_at: nullableDate,
   created_at: z.string(), updated_at: z.string(), comments: z.array(CommentSchema), outdated: z.boolean(),
   position: z.object({ start: z.number().int(), end: z.number().int() }).nullable(),
 }).openapi('ArtifactCommentThread');
@@ -86,10 +87,11 @@ async function authorizeComments(c: Context, projectId: string, target: string |
 }
 
 function failure(c: Context, error: unknown) {
-  if (error instanceof ArtifactError || error instanceof ArtifactCommentError || error instanceof ArtifactActivityQueryError || error instanceof DriveStorageError) {
+  if (error instanceof ArtifactError || error instanceof ArtifactCommentError || error instanceof ArtifactCommentDeliveryError || error instanceof ArtifactActivityQueryError || error instanceof DriveStorageError) {
     if (error instanceof ArtifactCommentError && error.status === 429) c.header('Retry-After', String(error.retryAfterSeconds));
     return c.json({ error: error.message, code: error.code }, error.status);
   }
+  if (error instanceof Error && error.name === 'ArtifactCommentAuthorityError') return c.json({ error: 'You cannot send Artifact comments to that agent', code: 'artifact_comment_agent_forbidden' }, 403);
   throw error;
 }
 
@@ -130,6 +132,20 @@ export function registerArtifactCommentRoutes(): void {
     maxSize: 64 * 1024,
     onError: (c) => c.json({ error: 'A comment request cannot exceed 64 KiB', code: 'comment_too_large' }, 413),
   }));
+
+  projectsApp.openapi(createRoute({
+    method: 'post', path: '/{projectId}/artifacts/{artifactId}/comments/send', tags: ['artifacts'],
+    summary: 'Send selected Artifact comment threads to an agent', ...auth,
+    request: { params: ArtifactParams, body: body(z.object({ thread_ids: z.array(z.string().uuid()).min(1).max(100), batch_id: z.string().uuid().optional(), agent: z.string().min(1).max(128).optional() })) },
+    responses: { 200: json(z.object({ session_id: z.string(), created: z.boolean() }), 'The selected or reserved agent session'), ...responses },
+  }), async (c) => {
+    const { projectId, artifactId } = c.req.valid('param');
+    const access = await authorizeComments(c, projectId, artifactId, true);
+    if (!access.ok) return access.response;
+    try {
+      return c.json(await sendArtifactCommentThreads(access.scope.artifact, access.actor, access.scope.sessionId, c.req.valid('json')), 200);
+    } catch (error) { return failure(c, error); }
+  });
 
   projectsApp.openapi(createRoute({
     method: 'get', path: '/{projectId}/artifacts/{artifactId}/comments', tags: ['artifacts'],

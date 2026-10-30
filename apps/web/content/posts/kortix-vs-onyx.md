@@ -9,7 +9,7 @@ tags: ["Comparisons"]
 ---
 Canonical: https://kortix.com/blog/kortix-vs-onyx
 
-Onyx is an open-source, self-hostable search layer for a company's knowledge, and Kortix is the open-source AI Operating System that runs the work that search surfaces. Both index what your team knows and both run on infrastructure you control. The difference is what happens after a search result appears, when someone has to act on it.
+Onyx is an open-source, self-hostable search layer for a company's knowledge, and Kortix is the open-source CompanyOS that runs the work that search surfaces. Both index what your team knows and both run on infrastructure you control. The difference is what happens after a search result appears, when someone has to act on it.
 
 ```logos
 label: 'Compared here:'

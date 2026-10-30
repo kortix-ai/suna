@@ -16,6 +16,7 @@ const Empty = () => null;
 const listeners: { response?: (response: unknown) => void; received?: (notification: unknown) => void } = {};
 const reads: unknown[] = [];
 const invalidated: unknown[] = [];
+const openedLinks: string[] = [];
 let readFails = false;
 
 const Notifications = {
@@ -52,7 +53,7 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@tanstack/react-query': { useQueryClient: () => queryClient },
   '@kortix/sdk': {
     // lib/notifications/push (real) reads the kinds.
-    INBOX_NOTIFICATION_KINDS: ['turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered'],
+    INBOX_NOTIFICATION_KINDS: ['turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'artifact_comment'],
     markNotificationsRead: async (input: unknown) => {
       reads.push(input);
       if (readFails) throw new Error('offline');
@@ -62,6 +63,8 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@kortix/sdk/react': { qk: { notifications: { scope: () => ['kx', 'notifications'] } } },
   '@/contexts': { useAuthContext: () => ({ isAuthenticated: true, mfaRequired: false }) },
   '@/lib/logger': { log: { warn() {}, log() {}, error() {} } },
+  '@/lib/kortix-web': { KORTIX_WEB_URL: 'https://configured-web.example.test' },
+  '@/lib/utils/open-link': { openLink: async (url: string) => { openedLinks.push(url); } },
   '@/lib/notifications/registration': {
     flushPendingRelease: async () => {},
     getNotifications: () => Notifications,
@@ -97,6 +100,7 @@ let responseId = 0;
 beforeEach(async () => {
   reads.length = 0;
   invalidated.length = 0;
+  openedLinks.length = 0;
   readFails = false;
   usePushStore.setState({ pendingOpen: null });
   await act(async () => {
@@ -122,6 +126,21 @@ const tap = (data: unknown) => act(async () => listeners.response?.({ actionIden
 const arrive = (data: unknown) => act(async () => listeners.received?.(content(data)));
 
 describe('PushNotificationsBridge', () => {
+  test('an Artifact tap marks read and opens the configured web deployment without native project navigation', async () => {
+    const projectId = '11111111-1111-4111-8111-111111111111';
+    const path = `/projects/${projectId}/artifacts/22222222-2222-4222-8222-222222222222?thread=33333333-3333-4333-8333-333333333333`;
+    await tap({ kind: 'artifact_comment', notificationId: 'artifact-note', projectId, url: path });
+    expect(reads).toEqual([{ ids: ['artifact-note'] }]);
+    expect(openedLinks).toEqual([`https://configured-web.example.test${path}`]);
+    expect(usePushStore.getState().pendingOpen).toBeNull();
+  });
+
+  test('an Artifact push cannot open an arbitrary external URL', async () => {
+    await tap({ kind: 'artifact_comment', projectId: '11111111-1111-4111-8111-111111111111', url: 'https://evil.example.test/' });
+    expect(openedLinks).toEqual([]);
+    expect(usePushStore.getState().pendingOpen).toBeNull();
+    expect(reads).toEqual([]);
+  });
   test('a tap marks its inbox row read, refetches the inbox, and opens its session', async () => {
     await tap(SESSION_PUSH);
     expect(reads).toEqual([{ ids: ['note-1'] }]);

@@ -15,17 +15,8 @@ describe('buildMetaSandboxDockerfile', () => {
   test('contains only the platform coordination runtime', () => {
     expect(dockerfile).toContain('FROM debian:bookworm-slim');
     expect(dockerfile).toContain('pnpm runtime set node 22.23.1 --global');
-    expect(dockerfile).toContain('opencode-ai@1.18.23');
-    expect(dockerfile).toContain(
-      "opencode_native=\"$(sed -n 's/^# cmd-shim-target=//p' \"$(command -v opencode)\" | tail -n 1)\"",
-    );
     expect(dockerfile).not.toContain('pnpm list -g');
     expect(dockerfile).not.toContain('pnpm root -g');
-    expect(dockerfile).toContain('test "$(wc -c < "$opencode_native")" -gt 50000000');
-    expect(dockerfile).toContain('ln -sfn "$opencode_native" /opt/kortix/opencode.current');
-    expect(dockerfile).toContain(
-      'ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix',
-    );
     expect(dockerfile).toContain('PNPM_HOME=/home/kortix/.local/share/pnpm');
     expect(dockerfile).toContain('PATH="/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:${PATH}"');
     expect(dockerfile).toContain('/usr/local/bin/kortix-agent');
@@ -57,13 +48,11 @@ describe('buildMetaSandboxDockerfile', () => {
       'It cannot access another project, account administration, project secrets, or connectors.',
     );
     expect(dockerfile).not.toContain('artifacts/AGENTS.md');
-    expect(dockerfile).toContain('/ephemeral/kortix-master/opencode');
     expect(dockerfile).toContain('/opt/kortix/llm-catalog.json');
     expect(dockerfile).toContain(
       'COPY --chown=kortix:kortix artifacts/managed-skills /opt/kortix/managed-skills',
     );
     expect(dockerfile).toContain('KORTIX_PROJECT_AUTO_CLONE=0');
-    expect(dockerfile).toContain('KORTIX_OPENCODE_PROCESS_TRANSPORT=rest');
 
     expect(dockerfile).not.toContain('playwright');
     expect(dockerfile).not.toContain('chromium');

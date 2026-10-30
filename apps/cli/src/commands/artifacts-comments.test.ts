@@ -117,3 +117,20 @@ test('real CLI prints one HTTP status prefix for an SDK server error', async () 
     server.stop(true);
   }
 });
+
+test('real CLI distinguishes a failed handoff from the agent loop guard', async () => {
+  const server = Bun.serve({ port: 0, fetch() {
+    return Response.json({ threads: [
+      { thread_id: 'loop', status: 'open', agent_state: 'paused', agent_error: null, comments: [] },
+      { thread_id: 'failed', status: 'open', agent_state: 'paused', agent_error: 'Check access and send it again.', comments: [] },
+    ] });
+  } });
+  try {
+    const result = await run(['comments', aid], `http://127.0.0.1:${server.port}`);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('loop  open · Waiting for a person');
+    expect(result.stdout).toContain('failed  open · Delivery failed: Check access and send it again.');
+  } finally {
+    server.stop(true);
+  }
+});

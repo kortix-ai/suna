@@ -95,6 +95,8 @@ async function claimDueRows(userId: string): Promise<DigestRow[]> {
       triggerSlug: notifications.triggerSlug,
       roomId: notifications.roomId,
       roomThreadSeq: notifications.roomThreadSeq,
+      artifactId: notifications.artifactId,
+      artifactThreadId: notifications.artifactThreadId,
       kind: notifications.kind,
       title: notifications.title,
       body: notifications.body,
