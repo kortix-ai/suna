@@ -221,12 +221,6 @@ export const KEYMAP: readonly Binding[] = [
     description: 'Open the account screen: members, invites, billing.',
   },
   {
-    id: 'attach',
-    scope: 'global',
-    chords: [chord('o', { alt: true })],
-    description: 'Hand this OpenCode session to the stock opencode TUI. Returning repaints the app.',
-  },
-  {
     // `Alt+H` is FIRST because `Ctrl+H` is the ASCII backspace byte (0x08).
     // A legacy terminal cannot tell the two apart, and OpenTUI's parser reports
     // the byte as `{ name: 'backspace', ctrl: false }` — measured — so the
@@ -351,8 +345,8 @@ function shiftIsSignificant(key: string): boolean {
  * `@opentui/core/chunk-bun-37s3zwb6.js:5447`). The kitty keyboard protocol
  * reports the same press as `{ option: true, meta: true }`
  * (`:5019`). Testing `option` alone — which this matcher did through wave 1 —
- * means no `alt` chord ever fires outside kitty, so `Alt+T`, `Alt+F`, `Alt+O`
- * and the whole terminal-panel table were dead in Terminal.app and iTerm2.
+ * means no `alt` chord ever fires outside kitty, so `Alt+T`, `Alt+F` and the
+ * whole terminal-panel table were dead in Terminal.app and iTerm2.
  */
 export function altPressed(event: KeyEvent): boolean {
   return Boolean(event.option) || Boolean(event.meta);

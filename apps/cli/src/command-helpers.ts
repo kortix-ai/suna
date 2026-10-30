@@ -365,7 +365,7 @@ interface LocatedSession {
  * scanned too before giving up and moving on. With neither flag, every
  * other logged-in host is scanned as well. `retryCommand` builds the full
  * CLI invocation to suggest for a host without stored credentials (e.g.
- * `(host) => \`kortix sessions connect ${id} --host ${host}\``). Prints its
+ * `(host) => \`kortix sessions chat ${id} --host ${host}\``). Prints its
  * own progress/error messages; returns null on failure.
  */
 export async function locateSessionAnywhere(

@@ -1,6 +1,7 @@
 'use client';
 
 import { qk } from '../query-keys';
+import { activeRuntimeAction, runtimeActionError, runtimeActionPaths } from '../../core/session/runtime-actions';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import { isRuntimeConfigInvalidError } from '../../core/http/runtime-errors';
@@ -284,6 +285,12 @@ export function useSummarizeRuntimeSession() {
       providerID?: string;
       modelID?: string;
     }) => {
+      // A box with the session-log actions compacts with the model it runs.
+      const compacted = await activeRuntimeAction('POST', runtimeActionPaths.compact(params.sessionId));
+      if (compacted) {
+        if (!compacted.ok) throw await runtimeActionError(compacted, 'Compacting the session failed');
+        return params.sessionId;
+      }
       const client = getClient();
 
       let { providerID, modelID } = params;

@@ -45,7 +45,6 @@ import { runSchema } from './commands/schema.ts';
 import { runSecrets } from './commands/secrets.ts';
 import { runSelfHost } from './commands/self-host.ts';
 import { runSessionsChat } from './commands/sessions-chat.ts';
-import { runSessionsConnect } from './commands/sessions-connect.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
 import { runSystemSkills } from './commands/system-skills.ts';
@@ -204,8 +203,8 @@ async function offerInteractiveUpdate(): Promise<boolean> {
 
 /**
  * argv[0] → handler for every routed command. Aliases point at the same
- * handler (`deploy`→ship, `attach`→sessions connect, `t`→tui,
- * `perms`→permissions, `session`→sessions); the token-only, remind and
+ * handler (`deploy`→ship, `t`→tui, `perms`→permissions,
+ * `session`→sessions); the token-only, remind and
  * skills adapters keep their extra arguments; `registry` keeps its stderr
  * warning. `help`, `version`, `git-credential` and bare `kortix` stay
  * special-cased in main() — they are landing-screen or protocol verbs, not
@@ -241,8 +240,6 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   sessions: (rest) => runSessions(rest),
   session: (rest) => runSessions(rest),
   chat: (rest) => runSessionsChat(rest),
-  connect: (rest) => runSessionsConnect(rest),
-  attach: (rest) => runSessionsConnect(rest),
   tui: (rest) => runTui(rest),
   t: (rest) => runTui(rest),
   files: (rest) => runFiles(rest),
@@ -328,8 +325,7 @@ async function main(rawArgv: string[]): Promise<number> {
   // Bare `kortix` and explicit help are the same landing screen. Only the bare
   // form offers to update: `kortix --help` is what people (and scripts) reach
   // for to READ something, and it must never block on a question. Bare
-  // `kortix` must ALWAYS land here — the interactive session picker is an
-  // explicit verb (`kortix connect`), never the front door.
+  // `kortix` must ALWAYS land here, never an interactive picker.
   //
   // `kortix help <topic>` prints the topic's own help (the git/npm/gh
   // convention, KRTX-2604): a known command's usage, `version`'s version,
@@ -410,8 +406,8 @@ async function main(rawArgv: string[]): Promise<number> {
     return 2;
   }
   // argv[0] → handler. One exact-match dispatch replaces the old 47-branch
-  // if-chain. Aliases point at the same handler (`deploy`→ship, `attach`→
-  // sessions connect, `t`→tui, `perms`→permissions, `session`→sessions);
+  // if-chain. Aliases point at the same handler (`deploy`→ship, `t`→tui,
+  // `perms`→permissions, `session`→sessions);
   // the token-only, remind and skills adapters keep their extra arguments.
   //
   // The record's KEY ORDER is load-bearing for behavior, not cosmetics: the

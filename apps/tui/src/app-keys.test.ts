@@ -27,7 +27,6 @@ function state(overrides: Partial<AppKeyState> = {}): AppKeyState {
     route: 'session',
     overlay: null,
     quitArmed: false,
-    attaching: false,
     ...overrides,
   };
 }
@@ -163,14 +162,13 @@ describe('routes and navigation', () => {
     });
   });
 
-  test('Ctrl+P, Ctrl+N, Ctrl+H and Alt+O are global', () => {
+  test('Ctrl+P, Ctrl+N and Ctrl+H are global', () => {
     expect(globalKeyAction(key('p', { ctrl: true }), state())).toEqual({
       kind: 'overlay',
       overlay: 'switcher',
     });
     expect(globalKeyAction(key('n', { ctrl: true }), state())).toEqual({ kind: 'new-session' });
     expect(globalKeyAction(key('h', { ctrl: true }), state())).toEqual({ kind: 'switch-host' });
-    expect(globalKeyAction(key('o', { meta: true }), state())).toEqual({ kind: 'attach' });
   });
 
   test('Ctrl+N still works while the composer is focused: it is not a bare key', () => {

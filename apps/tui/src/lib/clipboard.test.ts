@@ -5,7 +5,7 @@ import { CLIPBOARD_COMMANDS, copyToClipboard } from './clipboard.ts';
 describe('copyToClipboard', () => {
   test('uses the first tool that exits 0', async () => {
     const tried: string[][] = [];
-    const result = await copyToClipboard('kortix sessions connect s1', async (command) => {
+    const result = await copyToClipboard('kortix sessions shell s1', async (command) => {
       tried.push(command);
       return command[0] === 'pbcopy' ? 0 : 1;
     });

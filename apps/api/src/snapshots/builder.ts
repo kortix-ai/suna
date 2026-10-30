@@ -52,7 +52,7 @@ export type { SandboxTemplateView } from './template-prebuilds';
 export { resolveTemplateBySlug as resolveTemplate };
 export { listSnapshotBuilds, reconcileStaleBuilds, buildLogProviderCandidates, shouldReconcileProviderState, recentlyBuiltStrict } from './builder-log';
 export type { ProjectSnapshotBuildSummary } from './builder-log';
-export { META_RUNTIME_SPEC, ensureMetaSandboxImage, metaSnapshotName, reapSupersededMetaSnapshots } from './runtime-images';
+export { META_RUNTIME_SPEC, ensureMetaSandboxImage, metaSnapshotName, reapSupersededMetaSnapshots, settleMetaImageBuilds } from './runtime-images';
 export { kickPreBuild, kickRoutedPreBuild, templateBuildProviders, kickProjectTemplatePrebuilds } from './template-prebuilds';
 
 export type SnapshotBuildSource =

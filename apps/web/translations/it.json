@@ -23989,7 +23989,23 @@
       "panelTitle": "Commenti e attività",
       "resizePanel": "Ridimensiona il pannello dei commenti",
       "unshareComments": "{count, plural, one {Verrà eliminato # commento.} other {Verranno eliminati # commenti.}}",
-      "systemActor": "Sistema"
+      "systemActor": "Sistema",
+      "draw": "Disegna un commento",
+      "drawPen": "Penna",
+      "drawArrow": "Freccia",
+      "drawRectangle": "Rettangolo",
+      "drawBlack": "Nero",
+      "drawRed": "Rosso",
+      "drawBlue": "Blu",
+      "drawUndo": "Annulla tratto",
+      "drawPageChanged": "La pagina è cambiata. Annulla e disegna di nuovo.",
+      "drawLimit": "Limite del disegno raggiunto. Annulla un tratto per continuare.",
+      "openScreenshot": "Apri schermata",
+      "drawingScreenshot": "Schermata del commento",
+      "screenshotReadFailed": "Impossibile caricare la schermata.",
+      "screenshotMissing": "Schermata non disponibile. Il disegno è salvato.",
+      "screenshotCaptureFailed": "Impossibile acquisire la schermata. Il commento includerà il disegno senza immagine.",
+      "sendScreenshotLimit": "Questo gruppo supera 20 schermate o 12 MiB per richiesta codificata. Invia meno immagini allegate o usa un modello solo testuale."
     }
   },
   "emailConnect": {

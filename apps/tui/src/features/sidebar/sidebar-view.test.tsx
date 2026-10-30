@@ -58,7 +58,6 @@ function props(overrides: Partial<SidebarViewProps> = {}): SidebarViewProps {
     onNavigate: () => {},
     onRename: () => {},
     onDelete: () => {},
-    onAttach: () => {},
     ...overrides,
   };
 }
@@ -246,9 +245,8 @@ describe('<SidebarView/> through the OpenTUI test renderer', () => {
     renderer.destroy();
   });
 
-  test('n creates a session and a asks the host to attach the selected one', async () => {
+  test('n creates a session', async () => {
     let created = 0;
-    const attached: string[] = [];
     const { flush, mockInput, renderer } = await testRender(
       <SidebarView
         {...props({
@@ -256,7 +254,6 @@ describe('<SidebarView/> through the OpenTUI test renderer', () => {
           onNewSession: () => {
             created += 1;
           },
-          onAttach: (id) => attached.push(id),
         })}
       />,
       SIZE,
@@ -265,10 +262,6 @@ describe('<SidebarView/> through the OpenTUI test renderer', () => {
     await act(async () => mockInput.pressKey('n'));
     await flush();
     expect(created).toBe(1);
-
-    await act(async () => mockInput.pressKey('a'));
-    await flush();
-    expect(attached).toEqual(['root-1']);
     renderer.destroy();
   });
 

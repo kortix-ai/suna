@@ -167,6 +167,7 @@ export {
   artifacts,
   artifactCommentThreads,
   artifactComments,
+  artifactCommentScreenshotObjects,
   artifactCommentWriteLimits,
   artifactEvents,
   driveCommitAuthors,

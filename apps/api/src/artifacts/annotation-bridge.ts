@@ -1,4 +1,5 @@
 import {
+  ARTIFACT_ANNOTATION_LIMITS as limits,
   parseArtifactAnnotationFrameMessage,
   parseArtifactAnnotationHostMessage,
   type ArtifactAnnotationFrameMessage,
@@ -8,6 +9,8 @@ import {
   annotationInventory, annotationLayoutChunks, annotationPoint, annotationRect, annotationSelection,
   type AnnotationInventory,
 } from './annotation-dom';
+
+import { captureArtifactRegion, ArtifactCaptureError } from './annotation-capture';
 
 function install() {
   if (window.parent === window) return;
@@ -31,6 +34,7 @@ function install() {
   let active: number | null = null;
   let drag: { element: number; start: { x: number; y: number }; pointer: number } | null = null;
   let lastSelection = '';
+  let capture: { request: number; revision: number; abort: AbortController } | null = null;
   const scroll = () => ({ x: Math.max(0, window.scrollX), y: Math.max(0, window.scrollY) });
   const send = (message: ArtifactAnnotationFrameMessage) => {
     if (parseArtifactAnnotationFrameMessage(message)) window.parent.postMessage(message, '*');
@@ -79,6 +83,7 @@ function install() {
     for (const chunk of chunks) send(chunk);
   };
   const schedule = () => {
+    capture?.abort.abort('stale');
     dirty = true; hover.hidden = true; drag = null;
     if (timer === undefined) timer = setTimeout(() => requestAnimationFrame(report), 100);
   };
@@ -108,7 +113,86 @@ function install() {
     if (!message) return;
     if (message.type === 'mode') { mode = message.mode; hover.hidden = true; drag = null; lastSelection = ''; }
     else if (message.type === 'request_layout') schedule();
-    else if (!dirty && message.revision === revision) { drawn = message.pins; active = message.active; draw(message.focus); }
+    else if (message.type === "cancel_capture") {
+      if (capture?.request === message.request)
+        capture.abort.abort("cancelled");
+    } else if (message.type === "capture") {
+      if (dirty || !inventory.complete || message.revision !== revision) {
+        send({
+          kortix: "annotate",
+          v: 1,
+          type: "capture_error",
+          request: message.request,
+          revision: message.revision,
+          reason: "stale",
+        });
+        return;
+      }
+      capture?.abort.abort("cancelled");
+      const task = {
+        request: message.request,
+        revision,
+        abort: new AbortController(),
+      };
+      capture = task;
+      const timeout = window.setTimeout(
+        () => task.abort.abort("timeout"),
+        limits.captureTimeout,
+      );
+      void captureArtifactRegion(document, message.rect, task.abort.signal)
+        .then((result) => {
+          if (task.abort.signal.aborted || dirty || task.revision !== revision)
+            throw new ArtifactCaptureError("stale");
+          const shared = {
+            kortix: "annotate" as const,
+            v: 1 as const,
+            request: task.request,
+            revision: task.revision,
+          };
+          send({
+            ...shared,
+            type: "capture_start",
+            mime: "image/png",
+            width: result.width,
+            height: result.height,
+            bytes: result.bytes.length,
+            chunks: Math.ceil(result.bytes.length / limits.captureChunkBytes),
+          });
+          for (
+            let at = 0, index = 0;
+            at < result.bytes.length;
+            at += limits.captureChunkBytes, index++
+          )
+            send({
+              ...shared,
+              type: "capture_chunk",
+              index,
+              data: window.btoa(
+                String.fromCharCode(
+                  ...result.bytes.subarray(at, at + limits.captureChunkBytes),
+                ),
+              ),
+            });
+          send({ ...shared, type: "capture_complete" });
+        })
+        .catch((error) => {
+          send({
+            kortix: "annotate",
+            v: 1,
+            type: "capture_error",
+            request: task.request,
+            revision: task.revision,
+            reason:
+              error instanceof ArtifactCaptureError
+                ? error.reason
+                : "unavailable",
+          });
+        })
+        .finally(() => {
+          window.clearTimeout(timeout);
+          if (capture === task) capture = null;
+        });
+    } else if (message.type === 'draw' && !dirty && message.revision === revision) { drawn = message.pins; active = message.active; draw(message.focus); }
   });
   document.addEventListener('mouseup', selection);
   document.addEventListener('keyup', selection);

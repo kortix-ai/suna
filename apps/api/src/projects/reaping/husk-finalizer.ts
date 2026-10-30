@@ -15,7 +15,7 @@
  * resolved `readPinnedOpencodeSessionId()` and ignored
  * the session the caller asked about. It would abort the PINNED root, which is
  * a different root than a husk left by a secondary session. The abort here is
- * issued against the turn's own root through the OpenCode REST surface.
+ * issued against the turn's own root (`POST /kortix/runtime/sessions/:id/abort`).
  *
  * THE ABORT IS ROOT-SCOPED, THE EVIDENCE IS MESSAGE-SCOPED. Every prompt of a
  * session runs on ONE OpenCode root (extractTurnIdentity reads it from the
@@ -56,8 +56,7 @@ import {
   encodeKortixUserContext,
 } from '../../shared/kortix-user-context';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
-import { runtimeServesTurnVerbs, runtimeVerbPaths, turnVerbMissing } from '../session-lifecycle/runtime-fetch';
-import { legacyRuntimePaths } from '../session-lifecycle/legacy-runtime-rest';
+import { runtimeVerbPaths } from '../session-lifecycle/runtime-fetch';
 
 export type HuskFinalizeOutcome = 'finalized' | 'not_husk' | 'unreadable' | 'unconfirmed';
 
@@ -78,7 +77,7 @@ export interface HuskFinalizeOptions {
   settleMs?: number;
 }
 
-/** The daemon's control port; the OpenCode REST surface is proxied behind it. */
+/** The daemon's control port. */
 const DAEMON_PORT = 8000;
 
 /** Matches the daemon's own transcript read (opencode-turn-state.ts:76). */
@@ -87,7 +86,7 @@ const READ_TIMEOUT_MS = 5_000;
 /**
  * How many TRAILING messages each read asks for.
  *
- * `/session/:id/message` returns every message together with its full `parts`
+ * The transcript route returns every message together with its full `parts`
  * array — all tool output included — and `sandboxRuntimeRequestHeaders` forces
  * `Accept-Encoding: identity` (sandbox-fetch.ts:6-10), so an unbounded read
  * drags the entire conversation uncompressed across the provider ingress under
@@ -224,22 +223,18 @@ async function inspectRoot(
   endpoint: { url: string; headers: Record<string, string> },
   opencodeSessionId: string,
   messageId: string,
-  kortixRoutes: boolean,
 ): Promise<HuskInspection> {
   try {
-    const path = kortixRoutes
-      ? runtimeVerbPaths.messages(opencodeSessionId, { limit: READ_MESSAGE_LIMIT })
-      : legacyRuntimePaths.messages(opencodeSessionId, READ_MESSAGE_LIMIT);
+    const path = runtimeVerbPaths.messages(opencodeSessionId, { limit: READ_MESSAGE_LIMIT });
     const res = await fetch(`${endpoint.url}${path}`, {
       headers: sandboxRuntimeRequestHeaders(endpoint.headers),
       signal: AbortSignal.timeout(READ_TIMEOUT_MS),
     });
-    // Non-2xx (opencode answering but unhappy — e.g. mid-restart) is a read
+    // Non-2xx (the runtime answering but unhappy — e.g. mid-restart) is a read
     // failure, not "no messages".
     if (!res.ok) return UNKNOWN_INSPECTION;
-    const body = (await res.json()) as unknown;
-    // The Kortix route wraps the page; the legacy list is the bare array.
-    const messages = (kortixRoutes ? (body as { messages?: unknown } | null)?.messages : body) as Array<{
+    const body = (await res.json()) as { messages?: unknown } | null;
+    const messages = body?.messages as Array<{
       info?: {
         id?: string;
         role?: string;
@@ -255,9 +250,8 @@ async function inspectRoot(
       return { ...UNKNOWN_INSPECTION, known: true };
     }
     const lastMessageId = messages[messages.length - 1]?.info?.id ?? null;
-    // Search from the end: a retry or a revert can leave more than one
-    // assistant under the same user message, and the newest one is the one
-    // OpenCode is writing. (`findLastIndex` is ES2023; this tsconfig's lib is
+    // Search from the end: a retry can leave more than one assistant under the
+    // same user message, and the newest one is the one the runtime is writing. (`findLastIndex` is ES2023; this tsconfig's lib is
     // older, and the lib floor is not this commit's to move.)
     let targetIndex = -1;
     for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -308,15 +302,14 @@ export async function finalizeHuskTurn(
   if (!messageId) return 'not_husk';
   const endpoint = await resolveDaemonEndpoint(externalId, sandboxId);
   if (!endpoint) return 'unreadable';
-  const kortixRoutes = await runtimeServesTurnVerbs(externalId, async () => endpoint);
 
-  const first = await inspectRoot(endpoint, opencodeSessionId, messageId, kortixRoutes);
+  const first = await inspectRoot(endpoint, opencodeSessionId, messageId);
   if (!first.known) return 'unreadable';
   if (!isAbortableHusk(first)) return 'not_husk';
 
   await new Promise((resolve) => setTimeout(resolve, options?.settleMs ?? HUSK_SETTLE_MS));
 
-  const second = await inspectRoot(endpoint, opencodeSessionId, messageId, kortixRoutes);
+  const second = await inspectRoot(endpoint, opencodeSessionId, messageId);
   // Never abort on the strength of the first read alone (main.ts:1667-1673).
   if (!second.known) return 'unreadable';
   if (!isAbortableHusk(second)) return 'not_husk'; // it finished, or a newer turn owns the root
@@ -325,14 +318,11 @@ export async function finalizeHuskTurn(
   }
 
   try {
-    const abort = (path: string) =>
-      fetch(`${endpoint.url}${path}`, {
-        method: 'POST',
-        headers: endpoint.headers,
-        signal: AbortSignal.timeout(ABORT_TIMEOUT_MS),
-      });
-    let res = await abort(kortixRoutes ? runtimeVerbPaths.abort(opencodeSessionId) : legacyRuntimePaths.abort(opencodeSessionId));
-    if (kortixRoutes && turnVerbMissing(externalId, res)) res = await abort(legacyRuntimePaths.abort(opencodeSessionId));
+    const res = await fetch(`${endpoint.url}${runtimeVerbPaths.abort(opencodeSessionId)}`, {
+      method: 'POST',
+      headers: endpoint.headers,
+      signal: AbortSignal.timeout(ABORT_TIMEOUT_MS),
+    });
     if (!res.ok) {
       console.warn(`[husk-finalizer] abort declined for sandbox ${sandboxId}: ${res.status}`);
     }
@@ -355,7 +345,7 @@ export async function finalizeHuskTurn(
   // (box-reaper.ts:227) deletes the record either way, so a wrong 'finalized'
   // is never retried and the husk stays open forever — the bug this module
   // exists to fix.
-  const after = await inspectRoot(endpoint, opencodeSessionId, messageId, kortixRoutes);
+  const after = await inspectRoot(endpoint, opencodeSessionId, messageId);
   if (!after.known || !after.targetFound || after.targetOpen) return 'unconfirmed';
   console.info('[husk-finalizer] finalized orphaned turn', {
     sandboxId,

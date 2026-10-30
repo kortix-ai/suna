@@ -54,7 +54,7 @@ Scripts: `dev` (`bun run src/index.tsx`), `typecheck`, `keymap`, `test`
 `@tsconfig/bun`.
 
 **`@kortix/cli` deep-import allowlist.** `@kortix/cli` publishes no barrel for
-these, so the TUI reaches into its source. That is allowed for exactly seven
+these, so the TUI reaches into its source. That is allowed for exactly six
 modules and nothing else — anything not on this list is either SDK work or a
 new entry here, decided deliberately:
 
@@ -63,8 +63,7 @@ new entry here, decided deliberately:
 | `src/api/config.ts` | `Host`, `loadConfig`, `activeHostName`, `listHosts`, `getHost`, `upsertHost`, `removeHost`, `useHost`, `validateHostName`, `secureRemoteBase` | `auth/hosts.ts`, `features/login` |
 | `src/api/sdk.ts` | `sdkBackendUrl` — the one rule for when `http` is legitimate | `auth/hosts.ts`, `features/login` |
 | `src/web-url.ts` | `webDashboardUrl` — the billing/settings link the TUI prints instead of running checkout | `features/account/account-screen.tsx` |
-| `src/attach-opencode.ts` | `attachOpenCodeSession`, `AttachOpenCodeError` — SPEC §5.11's seam | `features/attach` |
-| `src/api/auth.ts` | `Auth`, the type that seam takes | `features/attach` |
+| `src/api/auth.ts` | `Auth`, the type the port-forward engine takes | `features/ports` |
 | `src/port-forward.ts` | `startPortForward`, `PortForwardError`, `PortForwardDeps` — the same engine `kortix sessions forward` runs | `features/ports` |
 | `src/session-runtime.ts` | `SessionRuntimeError` — to detect a stopped session and print the `sessions restart` remedy | `features/ports` |
 
@@ -276,27 +275,6 @@ Tabs: Agents · Skills · Secrets · Triggers · Connectors.
 - Members (`kortix.accounts.members`), invites, roles (read-only table).
 - Billing: `kortix.billing.accountState` → plan, credits, hard-block state.
 
-### 5.11 Attach mode — hand a session to the stock opencode TUI
-
-The CLI already ships a version-matched opencode attach (`kortix sessions
-connect`, memory `kortix-tui-attach-shipped`): resolve the session runtime,
-download the exact opencode binary the sandbox runs, start a localhost proxy
-that injects the Kortix token, `opencode attach <proxy> --session <id>`.
-The TUI reuses that seam instead of re-implementing it:
-
-- `a` on a session row, or `/attach` in the composer, or `Alt+O`.
-- Flow: `renderer.suspend()`-equivalent (leave the alternate screen, restore
-  the cursor, release stdin) → call `attachOpenCodeSession({ auth, projectId,
-  sessionId })` from `@kortix/cli` (extracted from `runSessionsConnect`, same
-  behavior, no stdout prints in library mode; status via callback) → on exit
-  re-enter the TUI on the same session, toast the exit code.
-- Non-running sessions restart first (the same `/start` poll the CLI uses).
-- Failure modes render as a toast + banner: binary download failure (offline),
-  proxy start failure, missing session. Never leave the terminal in the
-  alternate screen on any path.
-- This is the fallback chat surface while the native transcript (§5.3)
-  matures, and the "pro" surface afterwards.
-
 ### 5.10 Help overlay (`features/help`)
 
 - `?` renders the keymap table grouped by scope. Generated from `keymap.ts`.
@@ -316,7 +294,6 @@ The TUI reuses that seam instead of re-implementing it:
 | `Alt+A` | apps screen |
 | `Alt+C` | customize screen |
 | `Ctrl+H` | host switcher |
-| `a` (session row) / `Alt+O` / `/attach` | attach the session in the stock opencode TUI (§5.11) |
 | `Esc` | close modal / back / clear composer / (busy) stop prompt |
 | `j k ↑ ↓ g G PgUp PgDn` | list and transcript navigation |
 
@@ -331,7 +308,6 @@ The TUI reuses that seam instead of re-implementing it:
 | sessions list | `useProjectSessions` |
 | session | `useSession` |
 | models/agents | fields of `useSession`; `useSessionModelSelection`, `useProjectModels` |
-| attach | `@kortix/cli` `attachOpenCodeSession` (extracted from `sessions-connect.ts`) |
 | PTY | `useOpenCodePtyList`, `useCreatePty`, `getPtyWebSocketUrl` |
 | files | `kortix.session(pid,sid).files` |
 | review | `useChangeRequests` |
@@ -390,8 +366,7 @@ never patch around it in the TUI.
   `build-cli` job in `deploy-dev.yml` / `deploy-prod.yml` publishes them, plus
   a `.sha256` per asset, to the same release as the `kortix` binaries.
   `@kortix/tui` is no longer a dependency of `@kortix/cli`.
-- `kortix tui` is a launcher (`apps/cli/src/tui-bin.ts`, modeled on
-  `src/opencode-bin.ts`). Resolution: `KORTIX_TUI_BIN` →
+- `kortix tui` is a launcher (`apps/cli/src/tui-bin.ts`). Resolution: `KORTIX_TUI_BIN` →
   `~/.kortix/tui/<version>/kortix-tui` → download
   `<release base>/<tag>/kortix-tui-<os>-<arch>` for exactly this CLI's version
   (`v<version>`, or `dev-latest` for a `-dev.<sha>` build), checksum-verify it

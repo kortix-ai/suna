@@ -41,6 +41,9 @@ export {
   retireWarmProjectSessions,
 } from './session-lifecycle';
 export type { CreateSessionCommand } from './session-lifecycle';
+export type { PromptPartWire } from './session-lifecycle/prompt-payload';
+export { promptWireModel } from './lib/effort-default';
+export { continuationOverrides } from './session-lifecycle/queued-continue-delivery';
 export { sessionIsTombstoned } from './lib/session-visibility';
 
 // The shutdown hand-back of lifecycle claims (consumed by bootstrap.ts).
@@ -146,7 +149,7 @@ export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
 
 // Git reads (consumed by config-releases/publish.ts and config-releases/base-tip.ts).
 export { resolveCommitSha, resolveCommitShaAt } from './git/commits';
-export { refreshIntervalMs, refreshMirror } from './git/mirror';
+export { refreshIntervalMs, refreshMirror, useSharedTipProof } from './git/mirror';
 export type { GitBackedProject } from './git/types';
 
 // Who may stop a running turn (consumed by channels/core/turn-stop.ts and

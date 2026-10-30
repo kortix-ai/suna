@@ -23989,7 +23989,23 @@
       "panelTitle": "Comentários e atividade",
       "resizePanel": "Redimensionar painel de comentários",
       "unshareComments": "{count, plural, one {# comentário será excluído.} other {# comentários serão excluídos.}}",
-      "systemActor": "Sistema"
+      "systemActor": "Sistema",
+      "draw": "Desenhar comentário",
+      "drawPen": "Caneta",
+      "drawArrow": "Seta",
+      "drawRectangle": "Retângulo",
+      "drawBlack": "Preto",
+      "drawRed": "Vermelho",
+      "drawBlue": "Azul",
+      "drawUndo": "Desfazer traço",
+      "drawPageChanged": "A página mudou. Cancele e desenhe novamente.",
+      "drawLimit": "Limite de desenho atingido. Desfaça um traço para continuar.",
+      "openScreenshot": "Abrir captura",
+      "drawingScreenshot": "Captura do comentário",
+      "screenshotReadFailed": "Não foi possível carregar a captura.",
+      "screenshotMissing": "Captura indisponível. O desenho foi salvo.",
+      "screenshotCaptureFailed": "Não foi possível capturar a tela. Seu comentário incluirá o desenho sem imagem.",
+      "sendScreenshotLimit": "Este lote ultrapassa 20 capturas ou 12 MiB por solicitação codificada. Envie menos imagens anexadas ou use um modelo apenas de texto."
     }
   },
   "emailConnect": {

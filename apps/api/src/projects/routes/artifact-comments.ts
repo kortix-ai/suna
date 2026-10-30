@@ -1,6 +1,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { bodyLimit } from 'hono/body-limit';
+import { ArtifactCommentScreenshotError } from '../../artifacts/comment-screenshot-validation';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayPerform, getAgentGrant } from '../../iam/agent-scope';
@@ -44,7 +46,7 @@ const CommentSchema = z.object({
     z.object({ kind: z.literal('session'), session_id: z.string(), agent_name: z.string(), title: z.string().nullable() }),
   ]),
   can_edit: z.boolean(), can_delete: z.boolean(),
-  body: z.string(), mentions: z.unknown(), marks: z.unknown(), screenshot_key: nullableId,
+  body: z.string(), mentions: z.unknown(), marks: z.unknown(), screenshot_key: nullableId, screenshot_url: z.string().optional(),
   created_at: z.string(), edited_at: nullableDate, deleted_at: nullableDate,
 }).openapi('ArtifactComment');
 const ThreadSchema = z.object({
@@ -92,9 +94,9 @@ async function authorizeComments(c: Context, projectId: string, target: string |
 }
 
 function failure(c: Context, error: unknown) {
-  if (error instanceof ArtifactError || error instanceof ArtifactCommentError || error instanceof ArtifactCommentDeliveryError || error instanceof ArtifactActivityQueryError || error instanceof DriveStorageError) {
+  if (error instanceof ArtifactError || error instanceof ArtifactCommentError || error instanceof ArtifactCommentDeliveryError || error instanceof ArtifactActivityQueryError || error instanceof DriveStorageError || error instanceof ArtifactCommentScreenshotError) {
     if (error instanceof ArtifactCommentError && error.status === 429) c.header('Retry-After', String(error.retryAfterSeconds));
-    return c.json({ error: error.message, code: error.code }, error.status);
+    return c.json({ error: error.message, code: error.code, ...(error instanceof ArtifactCommentScreenshotError && error.limits ? { limits: error.limits } : {}) }, error.status);
   }
   if (error instanceof Error && error.name === 'ArtifactCommentAuthorityError') return c.json({ error: 'You cannot send Artifact comments to that agent', code: 'artifact_comment_agent_forbidden' }, 403);
   throw error;
@@ -133,10 +135,26 @@ export function registerArtifactCommentRoutes(): void {
     } catch (error) { return failure(c, error); }
   });
 
-  projectsApp.use('/:projectId/artifacts/:artifactId/comments*', bodyLimit({
-    maxSize: 64 * 1024,
-    onError: (c) => c.json({ error: 'A comment request cannot exceed 64 KiB', code: 'comment_too_large' }, 413),
-  }));
+  projectsApp.use('/:projectId/artifacts/:artifactId/comments*', async (c, next) => {
+    const imageBody = c.req.method === 'POST' && (c.req.path.endsWith('/comments') || c.req.path.endsWith('/replies'));
+    return bodyLimit({
+      maxSize: imageBody ? 4 * 1024 * 1024 : 64 * 1024,
+      onError: (context) => context.json({ error: 'Comment request is too large', code: imageBody ? 'screenshot_too_large' : 'comment_too_large' }, 413),
+    })(c, async () => {
+      if (imageBody) {
+        const text = await c.req.text();
+        if (Buffer.byteLength(text) > 64 * 1024) {
+          let input: Record<string, unknown> | null = null;
+          try { input = JSON.parse(text); } catch { }
+          if (!input || typeof input !== 'object' || !Object.hasOwn(input, 'marks') && !Object.hasOwn(input, 'screenshot_base64')) {
+            c.res = c.json({ error: 'A text comment request cannot exceed 64 KiB', code: 'comment_too_large' }, 413);
+            return;
+          }
+        }
+      }
+      await next();
+    });
+  });
 
   projectsApp.openapi(createRoute({
     method: 'get', path: '/{projectId}/artifacts/{artifactId}/comments/context', tags: ['artifacts'],
@@ -186,9 +204,34 @@ export function registerArtifactCommentRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
+    method: 'get', path: '/{projectId}/artifacts/{artifactId}/comments/{commentId}/screenshot', tags: ['artifacts'],
+    summary: 'Read a screenshot with current Artifact view access', ...auth,
+    request: { params: ArtifactParams.extend({ commentId: z.string().uuid() }) },
+    responses: { 200: { description: 'The private PNG or WebP bytes', content: { 'image/png': { schema: z.string().openapi({ format: 'binary' }) }, 'image/webp': { schema: z.string().openapi({ format: 'binary' }) } } }, ...responses },
+  }), async (c) => {
+    const { projectId, artifactId, commentId } = c.req.valid('param');
+    const notFound = () => c.json({ error: 'Screenshot not found', code: 'screenshot_not_found' }, 404);
+    let access;
+    try { access = await authorizeComments(c, projectId, artifactId, false); }
+    catch (error) { if (error instanceof HTTPException && (error.status === 403 || error.status === 404)) return notFound(); throw error; }
+    if (!access.ok) {
+      if (access.response.status === 403 && (await access.response.clone().json() as { code?: string }).code === 'feature_disabled') return access.response;
+      return notFound();
+    }
+    try {
+      const { readArtifactCommentScreenshot } = await import('../../artifacts/comment-screenshot-read');
+      const image = await readArtifactCommentScreenshot(access.scope, commentId);
+      return new Response(new Uint8Array(image.bytes), { headers: {
+        'Content-Type': image.mime, 'Content-Length': String(image.bytes.byteLength),
+        'Cache-Control': 'private, no-store', 'Vary': 'Authorization', 'X-Content-Type-Options': 'nosniff',
+      } });
+    } catch (error) { return failure(c, error); }
+  });
+
+  projectsApp.openapi(createRoute({
     method: 'post', path: '/{projectId}/artifacts/{artifactId}/comments', tags: ['artifacts'],
     summary: 'Open an anchored comment thread', ...auth,
-    request: { params: ArtifactParams, body: body(z.object({ anchor: z.unknown(), body: Body })) },
+    request: { params: ArtifactParams, body: body(z.object({ anchor: z.unknown(), body: Body, marks: z.unknown().optional(), screenshot_base64: z.unknown().optional() })) },
     responses: { 201: json(z.object({ thread: ThreadSchema }), 'The new thread'), ...responses },
   }), async (c) => {
     const { projectId, artifactId } = c.req.valid('param');
@@ -202,14 +245,14 @@ export function registerArtifactCommentRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'post', path: '/{projectId}/artifacts/{artifactId}/comments/{threadId}/replies', tags: ['artifacts'],
     summary: 'Reply in a comment thread', ...auth,
-    request: { params: ThreadParams, body: body(z.object({ body: Body })) },
+    request: { params: ThreadParams, body: body(z.object({ body: Body, marks: z.unknown().optional(), screenshot_base64: z.unknown().optional() })) },
     responses: { 201: json(z.object({ comment: CommentSchema }), 'The new reply'), ...responses },
   }), async (c) => {
     const { projectId, artifactId, threadId } = c.req.valid('param');
     const access = await authorizeComments(c, projectId, artifactId, true);
     if (!access.ok) return access.response;
     try {
-      return c.json({ comment: await replyArtifactCommentThread(access.actor, access.scope, threadId, c.req.valid('json').body) }, 201);
+      return c.json({ comment: await replyArtifactCommentThread(access.actor, access.scope, threadId, c.req.valid('json')) }, 201);
     } catch (error) { return failure(c, error); }
   });
 

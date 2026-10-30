@@ -19,11 +19,7 @@ import { abortRuntimeTurn } from './abort-runtime-turn';
 import { markTurnResumed, markTurnStopRequested } from '../session-turn-ledger';
 import { openUserAbove } from './forwarded-placement';
 import { type InterruptedTurn, findInterruptedTurn, interruptedTurnContinuationParts, interruptedTurnContinuationText } from './redelivery';
-import {
-  armQuickQueueInterrupt,
-  queuedContinueHasStagedRevert,
-  readInboxTranscriptState,
-} from './runtime-client';
+import { armQuickQueueInterrupt, readInboxTranscriptState } from './runtime-client';
 import { DELIVERY_FAILURE_COPY } from './types';
 import {
   remintWireMessageId,
@@ -227,19 +223,6 @@ export async function executeQueuedContinue(
 type WirePlacement = { wireMessageId: string | undefined; underPlaced: boolean; resume?: InterruptedTurn };
 type Placement = { outcome: 'succeeded' | 'queued' | 'failed' } | (WirePlacement & { placedIntoLiveTurn: boolean });
 
-async function settleStagedRevert(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload): Promise<'succeeded' | 'failed'> {
-  if (payload.clientMessageId) {
-    await markCommandFailed(row, 'queued before the session was rewound — send it again to run it',
-      { retryable: false, attempts: row.attempts, sessionId: row.sessionId });
-    return 'failed';
-  }
-  console.warn('[session-lifecycle] dropping queued continue — session has a staged revert', {
-    sessionId: row.sessionId, commandId: row.commandId,
-  });
-  await markCommandSucceeded(row, { status: 'skipped', reason: 'staged_revert' }, row.sessionId);
-  return 'succeeded';
-}
-
 async function checkTranscript(row: SessionLifecycleCommandRow,
   transcript: Awaited<ReturnType<typeof readInboxTranscriptState>>, deliveryAttempt: number,
   redeliveries: number, deliveredIds: string[]): Promise<'queued' | 'succeeded' | { resume: InterruptedTurn } | null> {
@@ -281,20 +264,12 @@ async function checkTranscript(row: SessionLifecycleCommandRow,
 async function placeQueuedContinue(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload,
   tl: ProvisionTimeline): Promise<Placement> {
   // A released Stop batch row (KRTX-683) waits behind its own siblings by
-  // design, and picks up the usual wait markers doing so. Whether it waited
-  // from BEFORE the session went idle — and so predates a rewind staged while
-  // stopped — is what the release recorded: held rows did, the send that
-  // released them did not, and that send may commit the rewind.
+  // design, and picks up the usual wait markers doing so.
   const batch = typeof payload.releasedBatchId === 'string';
   const waited = batch
     ? payload.releasedFromHold === true
     : payload.remintOnDelivery === true ||
       typeof (row.result as { admission_reason?: unknown } | null)?.admission_reason === 'string';
-  const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
-  const mayCommitStagedRevert = !!payload.clientMessageId && (promoted || !waited);
-  const stagedRevertPromise = mayCommitStagedRevert
-    ? Promise.resolve(false)
-    : queuedContinueHasStagedRevert(row);
   const redeliveries = Number(payload.redeliveries ?? 0);
   const deliveryAttempt = Number(payload.deliveryAttempt ?? 0);
   // Every batch row takes a fresh id above the sibling posted before it.
@@ -312,18 +287,13 @@ async function placeQueuedContinue(row: SessionLifecycleCommandRow, payload: Que
       turnLive = true;
     }
   }
-  const placement = await inspectWirePlacement(row, payload, tl, stagedRevertPromise, remintKnown, turnLive, deliveryAttempt, redeliveries);
+  const placement = await inspectWirePlacement(row, payload, tl, remintKnown, turnLive, deliveryAttempt, redeliveries);
   if ('outcome' in placement) return placement;
-  if (await stagedRevertPromise) {
-    tl.mark('staged-revert');
-    return { outcome: await settleStagedRevert(row, payload) };
-  }
-  tl.mark('staged-revert');
   return { ...placement, placedIntoLiveTurn: !!placement.wireMessageId && (turnLive || remintKnown) };
 }
 
 async function inspectWirePlacement(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload,
-  tl: ProvisionTimeline, stagedRevertPromise: Promise<boolean>, remintKnown: boolean,
+  tl: ProvisionTimeline, remintKnown: boolean,
   turnLive: boolean, deliveryAttempt: number, redeliveries: number): Promise<
     { outcome: 'succeeded' | 'queued' | 'failed' } | WirePlacement
   > {
@@ -336,14 +306,9 @@ async function inspectWirePlacement(row: SessionLifecycleCommandRow, payload: Qu
       payload.redeliveredMessageId,
       ...(payload.redeliveredMessageIds ?? []),
     ].filter((id): id is string => typeof id === 'string' && id.length > 0);
-    const transcriptPromise = readInboxTranscriptState(row, deliveredIds, {
+    const transcript = await readInboxTranscriptState(row, deliveredIds, {
       full: deliveryAttempt > 0 || redeliveries > 0,
     });
-    const stagedRevertEarly = await stagedRevertPromise;
-    if (stagedRevertEarly) {
-      return { outcome: await settleStagedRevert(row, payload) };
-    }
-    const transcript = await transcriptPromise;
     tl.mark('transcript-read');
     const checked = await checkTranscript(row, transcript, deliveryAttempt, redeliveries, deliveredIds);
     if (typeof checked === 'string') return { outcome: checked };

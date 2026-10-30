@@ -14,19 +14,21 @@ import { sessionHoldsLiveTurn } from './inbox-admission';
 import { recordSteerFallback } from './command-transitions';
 import { MAX_LIVE_PLACEMENT_REPAIRS, hasLaterForwardedSibling, recordRepairedForward, remintForRepair, remintWireMessageId, verifyLivePlacement } from './inbox-placement';
 import { MAX_RUNTIME_UNREACHABLE_RETRIES, markCommandFailed, parkPromptForUnreachableRuntime, markCommandForwarded, requeueForAdmission, requeueUnlandedPrompt, markCommandSucceeded, type SessionLifecycleCommandRow, type QueuedContinueSessionPayload } from './store';
-import type { PromptOverridesWire } from './prompt-payload';
+import type { PromptOverridesWire, PromptPartWire } from './prompt-payload';
 import { DELIVERY_FAILURE_COPY, type SessionDeliveryOutcome, type SessionInvocationSource } from './types';
 
 const NOT_LANDED_RETRY_DELAY_MS = 2_000;
 type Status = 'succeeded' | 'queued' | 'failed';
 
-export async function refreshArtifactCommentQueuedPrompt(row: SessionLifecycleCommandRow): Promise<{ text: string }> {
-  const { ArtifactCommentDeliveryError, rebuildArtifactCommentContinuePrompt } = await import('../../artifacts/comment-delivery');
+export async function refreshArtifactCommentQueuedPrompt(row: SessionLifecycleCommandRow, modelOverride?: { providerID?: string; modelID?: string }): Promise<{ text: string; parts?: PromptPartWire[] }> {
+  const { ArtifactCommentDeliveryError } = await import('../../artifacts/comment-delivery');
+  const { rebuildArtifactCommentScreenshotMessage } = await import('../../artifacts/comment-screenshot-delivery');
+  const { ArtifactCommentScreenshotError } = await import('../../artifacts/comment-screenshot-validation');
   const { ArtifactCommentAuthorityError } = await import('../../artifacts/comment-authority');
   try {
-    return { text: await rebuildArtifactCommentContinuePrompt(row) };
+    return await rebuildArtifactCommentScreenshotMessage(row, modelOverride);
   } catch (error) {
-    if (error instanceof ArtifactCommentDeliveryError || error instanceof ArtifactCommentAuthorityError) {
+    if (error instanceof ArtifactCommentDeliveryError || error instanceof ArtifactCommentAuthorityError || error instanceof ArtifactCommentScreenshotError && error.status !== 503) {
       throw new PromptDeliveryRefused(error.status, error.code, error.message);
     }
     throw error;
@@ -147,7 +149,6 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
   text: string, wireId: string | undefined, placedIntoLiveTurn: boolean, underPlaced: boolean,
   tl: ProvisionTimeline, noReply = false): Promise<Status> {
   let wireMessageId = wireId;
-  const isPendingFirstPrompt = row.idempotencyKey === `prompt:${row.sessionId}:pending-first`;
   try {
     const overrides = await continuationOverrides(row.sessionId!, payload.overrides ?? undefined);
     // Admission holds every other row until no turn is live. A direct
@@ -166,7 +167,7 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         ...(payload.parts?.length ? { parts: payload.parts } : {}),
         ...(overrides ? { overrides } : {}),
         ...(wireMessageId ? { wireMessageId } : {}),
-        materializationKey: row.commandId, isPendingFirstPrompt,
+        materializationKey: row.commandId,
         ...(noReply ? { noReply } : {}),
         ...(payload.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
         ...(payload.opencodeEnv ? { opencodeEnv: payload.opencodeEnv } : {}),
@@ -174,7 +175,7 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
       }, attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId, tl,
       payload.clientMessageId || row.source === 'system:artifact-comment' ? async () => {
         if (payload.clientMessageId) await assertInboxDeliveryActive(row);
-        if (row.source === 'system:artifact-comment') return refreshArtifactCommentQueuedPrompt(row);
+        if (row.source === 'system:artifact-comment') return refreshArtifactCommentQueuedPrompt(row, overrides?.model ?? undefined);
       } : undefined);
       tl.mark('delivered');
       if (delivery !== 'delivered') break;
@@ -242,8 +243,9 @@ export async function deliverSteer(row: SessionLifecycleCommandRow, payload: Que
     const target = await awakeDeliveryTarget(sessionId);
     if (!target?.externalId || !target.opencodeSessionId) throw new SteerNotTaken('turn_ended');
     if (row.source === 'system:artifact-comment') {
-      promptText = (await refreshArtifactCommentQueuedPrompt(row)).text;
-      payload.parts = undefined;
+      const fresh = await refreshArtifactCommentQueuedPrompt(row);
+      promptText = fresh.text;
+      payload.parts = fresh.parts;
     }
     const wireMessageId = payload.remintOnDelivery
       ? await remintWireMessageId(row, payload, await readInboxTranscriptState(row, []))

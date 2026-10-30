@@ -102,6 +102,7 @@ import { restorePiSessionLog, type PiRestoreTarget } from './session-log-restore
 import { assistantMessageError } from './turn-events'
 import { PI_HARNESS_VERSION } from './version'
 import { imageTagPaths } from './images'
+import type { PendingRecord } from './interactions'
 
 export interface PiChildSnapshot {
   id: string
@@ -144,6 +145,8 @@ export interface PiSessionSnapshot {
   reply: { id: string; timestamp: number } | null
   agent: string | null
   model: { provider: string; model: string } | null
+  /** The permission requests and questions waiting for an answer. Absent: none. */
+  pending?: { questions: PendingRecord[]; permissions: PendingRecord[] }
 }
 
 export const PI_VERSION = PI_HARNESS_VERSION.split('@').pop() ?? PI_HARNESS_VERSION
@@ -526,7 +529,7 @@ export function piSessionLog(s: PiSessionSnapshot): { log: SessionLog; hashes: M
     ...V, session_id: s.sessionId, title: s.title, created_at: created, restore_grade: 'native',
     harness: { current: 'pi', history: [{ harness: 'pi', version: PI_VERSION, from_seq: 1, at: created }] },
     selection: { agent: s.agent, model: s.model },
-    todos: [], pending: { questions: [], permissions: [] },
+    todos: [], pending: s.pending ?? { questions: [], permissions: [] },
     threads: [root, ...children],
   }
   return { log, hashes, images }

@@ -66,13 +66,13 @@ describe('scheduleLegacyRuntimeBootstrap — repair-storm guard', () => {
   });
 });
 
-function fakeDeps(over: Partial<LegacyBootstrapDeps> & { health?: unknown; status?: Record<string, unknown> | null }): LegacyBootstrapDeps {
+function fakeDeps(over: Partial<LegacyBootstrapDeps> & { health?: unknown; turn?: boolean | null }): LegacyBootstrapDeps {
   return {
     now: () => Date.parse('2026-09-27T00:00:00.000Z'),
     sleep: async () => {},
     manifestBuild: async () => 1790538288,
     fetchHealth: async () => over.health ?? null,
-    fetchOpencodeStatus: async () => (over.status === undefined ? {} : over.status),
+    fetchTurnInFlight: async () => (over.turn === undefined ? false : over.turn),
     exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
     patchMetadata: async () => {},
     claimRun: async () => true,
@@ -142,7 +142,7 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     let scheduledReason: string | undefined;
     const outcome = await guaranteeCurrentRuntimeOnOpen(
       row('sb-real-stale'),
-      fakeDeps({ health: REAL_STALE_HEALTH, status: {} }),
+      fakeDeps({ health: REAL_STALE_HEALTH, turn: false }),
       (_r, reason) => {
         scheduled += 1;
         scheduledReason = reason;
@@ -159,7 +159,7 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     let scheduled = 0;
     const outcome = await guaranteeCurrentRuntimeOnOpen(
       row('sb-real-stale-busy'),
-      fakeDeps({ health: REAL_STALE_HEALTH, status: { ses_1: { type: 'busy' } } }),
+      fakeDeps({ health: REAL_STALE_HEALTH, turn: true }),
       () => {
         scheduled += 1;
         return true;
@@ -173,7 +173,7 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     let scheduled = 0;
     const outcome = await guaranteeCurrentRuntimeOnOpen(
       row('sb-pinned'),
-      fakeDeps({ health: PINNED_HEALTH, status: {} }),
+      fakeDeps({ health: PINNED_HEALTH, turn: false }),
       () => {
         scheduled += 1;
         return true;
@@ -197,7 +197,7 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     };
     const outcome = await guaranteeCurrentRuntimeOnOpen(
       { ...row('sb-exhausted'), metadata },
-      fakeDeps({ health: REAL_STALE_HEALTH, status: {} }),
+      fakeDeps({ health: REAL_STALE_HEALTH, turn: false }),
       () => {
         scheduled += 1;
         return true;
@@ -221,7 +221,7 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     };
     const outcome = await guaranteeCurrentRuntimeOnOpen(
       { ...row('sb-cooldown'), metadata },
-      fakeDeps({ health: REAL_STALE_HEALTH, status: {} }),
+      fakeDeps({ health: REAL_STALE_HEALTH, turn: false }),
       () => {
         scheduled += 1;
         return true;
@@ -241,7 +241,7 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     const metadata = { legacyRuntimeCheck: { at: '2026-09-26T23:00:00.000Z', klass: 'current', staleReasons: [], manifestBuild: 1790538288, externalId: 'ext_sb-recent-current' } };
     const outcome = await guaranteeCurrentRuntimeOnOpen(
       { ...row('sb-recent-current'), metadata },
-      fakeDeps({ health: REAL_STALE_HEALTH, status: {} }),
+      fakeDeps({ health: REAL_STALE_HEALTH, turn: false }),
       () => {
         scheduled += 1;
         return true;
@@ -260,7 +260,7 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
       const sandboxId = `sb-${name.length}`;
       const outcome = await guaranteeCurrentRuntimeOnOpen(
         { ...row(sandboxId), metadata: { legacyRuntimeCheck: { at: '2026-09-26T23:00:00.000Z', klass: 'current', staleReasons: [], externalId: `ext_${sandboxId}`, ...check } } },
-        fakeDeps({ health, status: {} }),
+        fakeDeps({ health, turn: false }),
         () => {
           scheduled += 1;
           return true;
@@ -279,7 +279,7 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     const metadata = { legacyRuntimeCheck: { at: '2026-09-26T17:00:00.000Z', klass: 'current', staleReasons: [] } };
     const outcome = await guaranteeCurrentRuntimeOnOpen(
       { ...row('sb-old-current'), metadata },
-      fakeDeps({ health: REAL_STALE_HEALTH, status: {} }),
+      fakeDeps({ health: REAL_STALE_HEALTH, turn: false }),
       () => {
         scheduled += 1;
         return true;
@@ -296,7 +296,7 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     };
     const outcome = await guaranteeCurrentRuntimeOnOpen(
       { ...row('sb-staged'), provider: 'daytona', metadata },
-      fakeDeps({ health: REAL_STALE_HEALTH, status: {} }),
+      fakeDeps({ health: REAL_STALE_HEALTH, turn: false }),
       () => {
         scheduled += 1;
         return true;
@@ -318,7 +318,7 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
   };
   const openOn = async (sandboxId: string, health: unknown) => {
     let scheduled = 0;
-    const outcome = await guaranteeCurrentRuntimeOnOpen(row(sandboxId), fakeDeps({ health, status: {} }), () => {
+    const outcome = await guaranteeCurrentRuntimeOnOpen(row(sandboxId), fakeDeps({ health, turn: false }), () => {
       scheduled += 1;
       return true;
     });
