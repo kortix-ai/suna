@@ -1704,7 +1704,7 @@
   },
   "src/projects/lib/session-create.ts": {
     "no-console": {
-      "count": 6
+      "count": 5
     }
   },
   "src/projects/lib/session-reload.ts": {

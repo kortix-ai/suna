@@ -37,6 +37,7 @@ import { resourceDenierForRequest } from '../lib/project-resources';
 import { CommitSchema, projectsApp } from '../lib/app';
 import { isGitRefNotFoundError } from '../git/mirror';
 import { withProjectGitAuth } from '../lib/git';
+import { sessionReadRef } from '../lib/session-read-ref';
 import { projectReadView } from '../lib/project-read-view';
 import { withSessionLabels } from '../lib/session-branch-labels';
 import { normalizeString } from '../lib/serializers';
@@ -193,7 +194,7 @@ export function registerProjectFilesRoutes(): void {
 
     const query = c.req.valid('query');
     const gitProject = await withProjectGitAuth(loaded.row);
-    const ref = query.ref || loaded.row.defaultBranch;
+    const ref = await sessionReadRef(gitProject, query.ref || loaded.row.defaultBranch);
     const unavailable = (error: unknown) => {
       console.warn('[projects] repo file listing unavailable', {
         projectId,
@@ -300,7 +301,8 @@ export function registerProjectFilesRoutes(): void {
     }
 
     try {
-      const stream = await archiveRepoSubtree(await withProjectGitAuth(loaded.row), ref, path);
+      const gitProject = await withProjectGitAuth(loaded.row);
+      const stream = await archiveRepoSubtree(gitProject, await sessionReadRef(gitProject, ref), path);
       const fileName = (canonicalTreePath(path ?? '').split('/').pop() || 'workspace') + '.zip';
       return new Response(stream, {
         status: 200,
@@ -351,6 +353,7 @@ export function registerProjectFilesRoutes(): void {
 
     try {
       const gitProject = await withProjectGitAuth(loaded.row);
+      const readRef = await sessionReadRef(gitProject, ref);
       // Visibility isolation: never surface (path or content) a scoped-out
       // agent/skill in search results. One memo check when nothing is scoped.
       const denier = await resourceDenierForRequest({
@@ -361,11 +364,11 @@ export function registerProjectFilesRoutes(): void {
         row: loaded.row,
       });
       if (contentSearch) {
-        const matches = await grepRepoFiles(gitProject, query, ref, limit);
+        const matches = await grepRepoFiles(gitProject, query, readRef, limit);
         const results = denier ? matches.filter((m) => !denier.isDenied(m.path)) : matches;
         return c.json({ query, ref, content_search: true, results });
       }
-      const files = await searchRepoFileNames(gitProject, query, ref, limit);
+      const files = await searchRepoFileNames(gitProject, query, readRef, limit);
       const visible = denier ? files.filter((f) => !denier.isDenied(f.path)) : files;
       return c.json({
         query,
@@ -431,7 +434,8 @@ export function registerProjectFilesRoutes(): void {
 
     const ref = c.req.query('ref') || loaded.row.defaultBranch;
     try {
-      const bytes = await readRepoFileBytes(await withProjectGitAuth(loaded.row), treePath, ref, { freshOnMiss: true });
+      const gitProject = await withProjectGitAuth(loaded.row);
+      const bytes = await readRepoFileBytes(gitProject, treePath, await sessionReadRef(gitProject, ref), { freshOnMiss: true });
       const revision = createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
       return c.json({ path, ref, content: bytes.toString('utf8'), revision });
     } catch (error) {
@@ -498,7 +502,8 @@ export function registerProjectFilesRoutes(): void {
 
     const ref = c.req.query('ref') || loaded.row.defaultBranch;
     try {
-      const bytes = await readRepoFileBytes(await withProjectGitAuth(loaded.row), treePath, ref, { freshOnMiss: true });
+      const gitProject = await withProjectGitAuth(loaded.row);
+      const bytes = await readRepoFileBytes(gitProject, treePath, await sessionReadRef(gitProject, ref), { freshOnMiss: true });
       return new Response(new Uint8Array(bytes), {
         status: 200,
         headers: {
@@ -562,7 +567,8 @@ export function registerProjectFilesRoutes(): void {
     const limit = Number(c.req.query('limit') || '50');
     const skip = Number(c.req.query('skip') || '0');
     try {
-      const result = await getFileHistory(await withProjectGitAuth(loaded.row), treePath, { ref, limit, skip });
+      const gitProject = await withProjectGitAuth(loaded.row);
+      const result = await getFileHistory(gitProject, treePath, { ref: await sessionReadRef(gitProject, ref), limit, skip });
       return c.json({ path, ref, ...result });
     } catch (error) {
       rethrowDatabaseError(error);
@@ -574,9 +580,10 @@ export function registerProjectFilesRoutes(): void {
 
   // GET /v1/projects/:projectId/branches?q=...&limit=...&include_session_branches=...
   //
-  // A project's remote can carry thousands of auto-created session branches —
-  // createRemoteSessionBranch names each one after the session's own UUID (see
-  // ../git/branches.ts). The response is capped (default 500, the default
+  // A project's remote can carry thousands of session branches — each is
+  // named after its session's UUID, and the box pushes it with the session's
+  // first publish. Session create pushed one for every session until
+  // 2026-10-30, so older projects carry one per session. The response is capped (default 500, the default
   // branch always kept). Session branches stay in by default — the Files
   // version selector and the change-request head picker list them on purpose —
   // and `include_session_branches=false` drops them for a default-branch picker.
@@ -679,7 +686,8 @@ export function registerProjectFilesRoutes(): void {
     const limit = Number(c.req.query('limit') || '50');
     const skip = Number(c.req.query('skip') || '0');
     try {
-      const result = await listCommits(await withProjectGitAuth(loaded.row), { ref, path, limit, skip });
+      const gitProject = await withProjectGitAuth(loaded.row);
+      const result = await listCommits(gitProject, { ref: await sessionReadRef(gitProject, ref), path, limit, skip });
       return c.json({ ref, path: path ?? null, ...result });
     } catch (error) {
       rethrowDatabaseError(error);
@@ -817,7 +825,13 @@ export function registerProjectFilesRoutes(): void {
     }
 
     try {
-      const diff = await getBranchDiff(await withProjectGitAuth(loaded.row), intoRef, fromRef);
+      const gitProject = await withProjectGitAuth(loaded.row);
+      // An unpublished session diffs as its base (`sessionReadRef`).
+      const [intoRead, fromRead] = await Promise.all([
+        sessionReadRef(gitProject, intoRef),
+        sessionReadRef(gitProject, fromRef),
+      ]);
+      const diff = await getBranchDiff(gitProject, intoRead, fromRead);
       return c.json({
         from: fromRef,
         into: intoRef,

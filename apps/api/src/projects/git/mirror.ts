@@ -21,7 +21,15 @@ import { timeStage } from '../../lib/server-timing';
 export const execFileAsync = promisify(execFile);
 
 const refreshLocks = new Map<string, { promise: Promise<string>; forced: boolean; epoch: number }>();
+/** When the last whole-mirror fetch landed. Unforced reads fetch again once it is an interval old. */
 const lastRefreshAt = new Map<string, number>();
+/**
+ * When the last whole-mirror fetch landed, as proof for base-branch reads.
+ * Equals `lastRefreshAt` except after a session-branch push, which makes the
+ * next unforced read fetch (`noteSessionBranchPushed`) but moves no base.
+ */
+// replica-local: the same per-replica mirror as `lastRefreshAt`.
+const baseRefsProvenAt = new Map<string, number>();
 /** projectId → branch → when that branch was last proven to be at the remote's tip. */
 // replica-local: each API replica refreshes its own bare mirror on local disk
 // (`KORTIX_GIT_CACHE_DIR`), so the proof describes that replica's copy. Every
@@ -34,6 +42,31 @@ const tipProvenAt = new Map<string, Map<string, number>>();
 // replica-local: the broadcast increments every replica's counter, so a
 // cross-replica refresh never records across an invalidation that mattered.
 const invalidations = new Map<string, number>();
+/** When this process last dropped a project's proofs. A shared proof older than that proves nothing here. */
+// replica-local: `invalidateProjectMirror` sets it, and the base-move
+// broadcast runs that in every process.
+const invalidatedAt = new Map<string, number>();
+/** Bumped by every session-branch push: a whole-mirror fetch in flight across one does not mark the mirror fresh. */
+// replica-local: a push reaches only the process that proxied it.
+const sessionPushes = new Map<string, number>();
+/** projectId → branch → until when the remote is taken not to have that branch (`mirrorHoldsBranch`). */
+// replica-local: a cost memo. A push through this process clears it
+// (`noteSessionBranchPushed`); elsewhere it expires in one refresh interval.
+const missingBranches = new Map<string, Map<string, number>>();
+const MISSING_BRANCHES_PER_PROJECT = 500;
+
+/**
+ * Another process's proof that a branch is at the remote's tip: the tip it saw
+ * and when it asked (`config-releases/base-tip.ts`). Null when it has none.
+ */
+export type SharedTipProof = (projectId: string, ref: string) => Promise<{ tip: string; provenAt: number } | null>;
+
+let sharedTipProof: SharedTipProof | null = null;
+
+/** Boot wires the shared check (`bootstrap.ts`). Without it, each process proves tips itself. */
+export function useSharedTipProof(source: SharedTipProof | null): void {
+  sharedTipProof = source;
+}
 
 /**
  * How fresh a mirror read must be.
@@ -52,8 +85,48 @@ const invalidations = new Map<string, number>();
 export type MirrorRefresh = boolean | 'tip-proof';
 
 function tipProven(projectId: string, ref: string): boolean {
-  const at = Math.max(lastRefreshAt.get(projectId) ?? 0, tipProvenAt.get(projectId)?.get(ref) ?? 0);
+  const at = Math.max(baseRefsProvenAt.get(projectId) ?? 0, tipProvenAt.get(projectId)?.get(ref) ?? 0);
   return Date.now() - at < refreshIntervalMs();
+}
+
+function recordTipProof(projectId: string, ref: string, at: number): void {
+  const proofs = tipProvenAt.get(projectId) ?? new Map<string, number>();
+  if ((proofs.get(ref) ?? 0) < at) tipProvenAt.set(projectId, proofs.set(ref, at));
+}
+
+/** A whole-mirror fetch landed. It marks the mirror fresh only when no session branch was pushed during it. */
+function recordFullFetch(projectId: string, sessionBranchesCurrent: boolean): void {
+  const now = Date.now();
+  baseRefsProvenAt.set(projectId, now);
+  if (sessionBranchesCurrent) lastRefreshAt.set(projectId, now);
+}
+
+/**
+ * Adopt another process's proof that `ref` is at the remote's tip.
+ *
+ * The shared check records the tip it saw and when it asked the upstream.
+ * When this mirror holds that same tip, the mirror was current at that time
+ * too, and no network call is needed. The proof must be inside the refresh
+ * interval and newer than the last invalidation this process heard of: a
+ * check that ran before a base move proves the old tip.
+ */
+async function adoptSharedTipProof(
+  project: GitBackedProject,
+  repoPath: string,
+  ref: string,
+  unmoved: () => boolean,
+): Promise<boolean> {
+  if (!sharedTipProof || /^[0-9a-f]{7,40}$/i.test(ref) || !/^[\w.\-\/]+$/.test(ref)) return false;
+  const shared = await sharedTipProof(project.projectId, ref).catch(() => null);
+  if (!shared) return false;
+  const since = Math.max(Date.now() - refreshIntervalMs(), invalidatedAt.get(project.projectId) ?? 0);
+  if (shared.provenAt <= since) return false;
+  const local = await runGitCapture(['rev-parse', '--verify', '--quiet', `refs/heads/${ref}^{commit}`], repoPath).catch(
+    () => null,
+  );
+  if (local?.exitCode !== 0 || local.stdout.trim() !== shared.tip || !unmoved()) return false;
+  recordTipProof(project.projectId, ref, shared.provenAt);
+  return true;
 }
 
 /**
@@ -699,9 +772,12 @@ async function doRefreshMirror(
   project: GitBackedProject,
   force: MirrorRefresh = false,
   freshRef?: string,
+  branchOnly = false,
 ) {
   const epoch = invalidations.get(project.projectId) ?? 0;
   const unmoved = () => (invalidations.get(project.projectId) ?? 0) === epoch;
+  const pushes = sessionPushes.get(project.projectId) ?? 0;
+  const noSessionPush = () => (sessionPushes.get(project.projectId) ?? 0) === pushes;
   const repoPath = repoCachePath(project);
   await mkdir(dirname(repoPath), { recursive: true });
   if (existsSync(join(repoPath, 'shallow'))) {
@@ -715,10 +791,13 @@ async function doRefreshMirror(
     // surface "fatal: not a git repository" all the way up to session startup.
     await rm(repoPath, { recursive: true, force: true });
     lastRefreshAt.delete(project.projectId);
+    baseRefsProvenAt.delete(project.projectId);
     needsClone = true;
   }
-  if (!needsClone && force === 'tip-proof' && freshRef && tipProven(project.projectId, freshRef)) {
-    return repoPath;
+  if (!needsClone && force === 'tip-proof' && freshRef) {
+    if (tipProven(project.projectId, freshRef)) return repoPath;
+    // Another process asked the upstream inside the interval and saw the tip this mirror holds.
+    if (await adoptSharedTipProof(project, repoPath, freshRef, unmoved)) return repoPath;
   }
   const lastRefresh = lastRefreshAt.get(project.projectId) || 0;
   const needsFetch = !needsClone && (!!force || Date.now() - lastRefresh >= refreshIntervalMs());
@@ -754,7 +833,7 @@ async function doRefreshMirror(
         runGit([...cloneArgs], undefined, true, access.token, undefined, authHost, BARE_CLONE_TIMEOUT_MS, access.headers),
       cleanup: () => rm(repoPath, { recursive: true, force: true }),
     });
-    if (unmoved()) lastRefreshAt.set(project.projectId, Date.now());
+    if (unmoved()) recordFullFetch(project.projectId, noSessionPush());
     return repoPath;
   }
 
@@ -764,12 +843,14 @@ async function doRefreshMirror(
   // A caller that forced this refresh to read ONE branch fetches that branch
   // alone. `lastRefreshAt` is deliberately NOT bumped: only that branch was
   // fetched, so the next interval-driven refresh must still fetch the rest.
-  if (force && freshRef && (await fetchBranchTip(repoPath, access, authHost, freshRef))) {
-    if (unmoved()) {
-      const proofs = tipProvenAt.get(project.projectId) ?? new Map<string, number>();
-      tipProvenAt.set(project.projectId, proofs.set(freshRef, Date.now()));
+  if (force && freshRef) {
+    if (await fetchBranchTip(repoPath, access, authHost, freshRef)) {
+      if (unmoved()) recordTipProof(project.projectId, freshRef, Date.now());
+      return repoPath;
     }
-    return repoPath;
+    // The remote has no such branch (or the fetch failed): the caller asked
+    // about this branch only, so the rest of the mirror is not fetched.
+    if (branchOnly) return repoPath;
   }
   // A warm fetch hits the SAME transient upstream class as a cold clone (see
   // `fetchMirrorWithRetry`). Retry it in place — a failed fetch leaves the warm
@@ -778,7 +859,7 @@ async function doRefreshMirror(
     run: () =>
       runGit(['fetch', '--prune', 'origin'], repoPath, true, access.token, undefined, authHost, GIT_DEFAULT_TIMEOUT_MS, access.headers),
   });
-  if (unmoved()) lastRefreshAt.set(project.projectId, Date.now());
+  if (unmoved()) recordFullFetch(project.projectId, noSessionPush());
   return repoPath;
 }
 
@@ -839,6 +920,9 @@ export async function refreshMirror(
      *  Unforced, a full commit SHA the mirror already holds skips the fetch:
      *  nothing at a commit can change. */
     freshRef?: string;
+    /** Forced with `freshRef`: when that branch cannot be fetched, stop there
+     *  instead of fetching the whole mirror. */
+    branchOnly?: boolean;
   },
   epochRetries = 0,
 ) {
@@ -886,7 +970,7 @@ async function mirrorHoldingCommit(project: GitBackedProject, commit: string): P
 async function lockedRefreshMirror(
   project: GitBackedProject,
   force: MirrorRefresh,
-  opts?: { freshRef?: string },
+  opts?: { freshRef?: string; branchOnly?: boolean },
   epochRetries = 0,
 ): Promise<string> {
   // A ref-scoped refresh may skip the fetch, so it must not satisfy a caller
@@ -910,7 +994,7 @@ async function lockedRefreshMirror(
     return refreshMirror(project, force, opts, epochRetries);
   }
   const epoch = invalidations.get(project.projectId) ?? 0;
-  const next = doRefreshMirror(project, force, opts?.freshRef)
+  const next = doRefreshMirror(project, force, opts?.freshRef, opts?.branchOnly)
     .then(async (repoPath) => {
       // Bump the mirror dir's mtime on EVERY access (warm hits included) — the
       // size-budget reaper below uses it as the LRU signal, and a warm read
@@ -1019,9 +1103,54 @@ export async function reapGitCacheOverBudget(
  */
 export function invalidateProjectMirror(projectId: string): void {
   lastRefreshAt.delete(projectId);
+  baseRefsProvenAt.delete(projectId);
   tipProvenAt.delete(projectId);
   invalidations.set(projectId, (invalidations.get(projectId) ?? 0) + 1);
+  invalidatedAt.set(projectId, Date.now());
+  missingBranches.delete(projectId);
   invalidateBranchList(projectId);
+}
+
+/**
+ * A session branch was pushed: the next unforced read fetches, so a read at
+ * that branch sees the push. No base moved, so base-branch proofs stand and a
+ * base read in flight does not start over. A session branch is never a base
+ * (`pushedBaseCandidates`). `invalidateProjectMirror` used to run here: the
+ * company project's ~2,700 sessions a week dropped every proof that often,
+ * and each next prompt fetched 20,900 refs (2026-10-30).
+ */
+export function noteSessionBranchPushed(projectId: string): void {
+  lastRefreshAt.delete(projectId);
+  sessionPushes.set(projectId, (sessionPushes.get(projectId) ?? 0) + 1);
+  missingBranches.delete(projectId);
+  invalidateBranchList(projectId);
+}
+
+/**
+ * Does the remote have `branch`? Answered from the mirror, and with one
+ * single-branch fetch when the mirror lacks it, so a branch pushed moments
+ * ago counts. A branch the remote lacks is remembered for one refresh
+ * interval: a session that never pushed has no branch, and its Files view
+ * must not pay a fetch per click.
+ */
+export async function mirrorHoldsBranch(project: GitBackedProject, branch: string): Promise<boolean> {
+  validateRef(branch);
+  const held = async (repoPath: string) =>
+    (await runGitCapture(['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`], repoPath)).exitCode === 0;
+  if (await held(await refreshMirror(project, false, { freshRef: branch }))) return true;
+  const known = missingBranches.get(project.projectId);
+  if ((known?.get(branch) ?? 0) > Date.now()) return false;
+  const pushes = sessionPushes.get(project.projectId) ?? 0;
+  if (await held(await refreshMirror(project, true, { freshRef: branch, branchOnly: true }))) return true;
+  // A push during the fetch may have created it: remember nothing then.
+  if ((sessionPushes.get(project.projectId) ?? 0) === pushes) {
+    const refs = known ?? new Map<string, number>();
+    refs.delete(branch);
+    refs.set(branch, Date.now() + refreshIntervalMs());
+    while (refs.size > MISSING_BRANCHES_PER_PROJECT) refs.delete(refs.keys().next().value!);
+    missingBranches.set(project.projectId, refs);
+  }
+  return false;
 }
 
 /**
