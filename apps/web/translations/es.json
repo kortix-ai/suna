@@ -24115,5 +24115,17 @@
   "roleCapabilities": {
     "comment": "Comentar",
     "commentArea": "Comentar en {area}"
+  },
+  "sessionDesktop": {
+    "title": "Escritorio",
+    "openInNewTab": "Abrir en una pestaña nueva",
+    "notRunning": "El escritorio no está en ejecución en este equipo.",
+    "askToRun": "Pide a Kortix que ejecute",
+    "retry": "Reintentar",
+    "takeOver": "Tomar el control",
+    "userControl": "Tienes el control",
+    "agentControl": "Kortix tiene el control",
+    "returnControl": "Devolver el control",
+    "escape": "Esc"
   }
 }

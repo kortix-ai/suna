@@ -88,6 +88,7 @@ export function SendStopControl({
 }: SendStopControlProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('threads');
+  const tKeyboard = useTranslations('sessionDesktop');
   const tAttachments = useTranslations('hardcodedUi.composerAttachments');
   // One line, the same one the agent picker's tooltip carries — the two
   // controls are refusing for one reason and must not word it two ways.
@@ -199,7 +200,7 @@ export function SendStopControl({
                 ))}
               </span>
               <span className="flex items-center gap-1">
-                <Kbd className="h-4 w-auto">Esc</Kbd>
+                <Kbd className="h-4 w-auto">{tKeyboard('escape')}</Kbd>
                 <span className="tabular-nums">
                   {escCount === 1
                     ? tI18nComplete.raw('textb9ef397631ca')
@@ -215,7 +216,7 @@ export function SendStopControl({
             <span className="flex items-center gap-2">
               {tI18nComplete.raw('textcae7d57bc067')}
               <span className="flex items-center gap-1 opacity-60">
-                <Kbd className="h-4 w-auto">Esc</Kbd>
+                <Kbd className="h-4 w-auto">{tKeyboard('escape')}</Kbd>
                 <span className="tabular-nums">×3</span>
               </span>
             </span>

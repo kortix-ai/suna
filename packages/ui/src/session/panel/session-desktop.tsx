@@ -19,6 +19,7 @@
  * on a fresh keyframe, when the tab is shown again.
  */
 
+import { useTranslations } from '../../i18n';
 import { Button } from '../../primitives/button';
 import { ButtonGroup } from '../../primitives/button-group';
 import Loading from '../../primitives/loading';
@@ -50,6 +51,7 @@ export function SessionDesktop({
   projectSessionId?: string;
   onClose: () => void;
 }) {
+  const t = useTranslations('sessionDesktop');
   const isMobile = useIsMobile();
   const { proxyUrl } = useSandboxProxy();
   const src = usePreviewFrameUrl(DESKTOP_URL, proxyUrl(DESKTOP_URL) ?? DESKTOP_URL, {
@@ -83,7 +85,7 @@ export function SessionDesktop({
       <div className="flex shrink-0 items-center gap-1 px-2 py-1">
         <DetailSidebarToggle className="size-7" />
         <MonitorIcon className="text-muted-foreground ml-1 size-3.5 shrink-0" />
-        <span className="truncate text-sm font-medium">Desktop</span>
+        <span className="truncate text-sm font-medium">{t('title')}</span>
         <div className="flex-1" />
         <ButtonGroup className="shrink-0">
           <Button
@@ -91,7 +93,7 @@ export function SessionDesktop({
             size="icon"
             className="size-7"
             disabled={!live}
-            aria-label="Open in new tab"
+            aria-label={t('openInNewTab')}
             onClick={() => src && window.open(src, '_blank', 'noopener,noreferrer')}
           >
             <ArrowSquareOutIcon className="size-3.5" />
@@ -113,9 +115,9 @@ export function SessionDesktop({
           {state === 'off' ? (
             <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm">
               <MonitorIcon className="size-10 opacity-20" />
-              <p>The desktop is not running on this computer.</p>
+              <p>{t('notRunning')}</p>
               <p className="text-xs">
-                Ask Kortix to run <code>kortix-desktop start</code>.
+                {t('askToRun')}{' '}<code>kortix-desktop start</code>.
               </p>
               <Button
                 variant="secondary"
@@ -125,7 +127,7 @@ export function SessionDesktop({
                   setAttempt((n) => n + 1);
                 }}
               >
-                Retry
+                {t('retry')}
               </Button>
             </div>
           ) : !live || !visible ? (
@@ -137,7 +139,7 @@ export function SessionDesktop({
               <iframe
                 ref={frameRef}
                 src={src}
-                title="Desktop"
+                title={t('title')}
                 className="h-full w-full border-0"
                 sandbox={framePolicy('app', src).sandbox}
                 allow="clipboard-read; clipboard-write; autoplay; fullscreen"
@@ -146,7 +148,7 @@ export function SessionDesktop({
               {!control && (
                 <button
                   type="button"
-                  aria-label="Take over"
+                  aria-label={t('takeOver')}
                   data-slot="desktop-shield"
                   className="absolute inset-0 cursor-pointer"
                   onClick={takeOver}
@@ -160,7 +162,7 @@ export function SessionDesktop({
           {live && (
             <>
               <span className="text-muted-foreground">
-                {control ? 'You have control' : 'Kortix has control'}
+                {control ? t('userControl') : t('agentControl')}
               </span>
               <Button
                 variant={control ? 'secondary' : 'default'}
@@ -169,7 +171,7 @@ export function SessionDesktop({
                 aria-pressed={control}
                 onClick={control ? () => setControl(false) : takeOver}
               >
-                {control ? 'Return control' : 'Take over'}
+                {control ? t('returnControl') : t('takeOver')}
               </Button>
             </>
           )}

@@ -24115,5 +24115,17 @@
   "roleCapabilities": {
     "comment": "コメント",
     "commentArea": "{area}にコメント"
+  },
+  "sessionDesktop": {
+    "title": "デスクトップ",
+    "openInNewTab": "新しいタブで開く",
+    "notRunning": "このコンピューターではデスクトップが起動していません。",
+    "askToRun": "Kortix に次のコマンドの実行を依頼してください：",
+    "retry": "再試行",
+    "takeOver": "操作を引き継ぐ",
+    "userControl": "あなたが操作中です",
+    "agentControl": "Kortix が操作中です",
+    "returnControl": "操作を戻す",
+    "escape": "Esc"
   }
 }
