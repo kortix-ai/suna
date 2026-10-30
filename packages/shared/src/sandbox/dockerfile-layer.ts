@@ -505,7 +505,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // below still hard-fails the build if every attempt came up empty, so a total
     // failure never ships a browser-less image.
     '    && for pw_try in 1 2 3 4 5; do \\',
-    `        pnpm dlx playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium && break; \\`,
+    `        pnpm dlx playwright@${PLAYWRIGHT_VERSION} install --with-deps --no-shell chromium && break; \\`,
     '        echo "playwright chromium install attempt $pw_try failed, retrying..."; \\',
     '        sleep $((pw_try*10)); \\',
     '    done \\',
@@ -515,6 +515,16 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && ln -sf "$pw_chrome" /home/kortix/.local/bin/chromium \\',
     '    && mkdir -p /home/kortix/.agent-browser/browsers \\',
     '    && ln -sf "$(dirname "$pw_chrome")" /home/kortix/.agent-browser/browsers/chrome-linux64 \\',
+    // One browser on the machine: no separate headless shell (~260 MB). Its
+    // path, where Playwright's headless launches look, is the same Chromium.
+    // The markers stop a later `playwright install` from fetching it anyway.
+    '    && pw_rev="${pw_chrome#/opt/pw-browsers/chromium-}" && pw_rev="${pw_rev%%/*}" \\',
+    '    && pw_shell_dir="/opt/pw-browsers/chromium_headless_shell-${pw_rev}" \\',
+    '    && case "$(uname -m)" in x86_64) pw_shell=chrome-headless-shell-linux64/chrome-headless-shell ;; *) pw_shell=chrome-linux/headless_shell ;; esac \\',
+    '    && mkdir -p "$(dirname "${pw_shell_dir}/${pw_shell}")" \\',
+    '    && ln -sf "$pw_chrome" "${pw_shell_dir}/${pw_shell}" \\',
+    '    && touch "${pw_shell_dir}/INSTALLATION_COMPLETE" "${pw_shell_dir}/DEPENDENCIES_VALIDATED" \\',
+    '    && test -x "${pw_shell_dir}/${pw_shell}" \\',
     '    && chromium --version \\',
     // Assert agent-browser RESOLVES the browser via its env-independent cache —
     // match the resolved path (deterministic), not the browser NAME (which is
