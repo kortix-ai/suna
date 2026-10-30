@@ -67,12 +67,12 @@ if (import.meta.main) {
         process.exit(1)
       })
   } else if (subcommand === 'bake-runtime-assets-state') {
-    // Image build only: record which CLI, daemon, skill overlay and OpenCode
+    // Image build only: record which CLI, daemon, skill overlay and harness
     // this image carries, so a box booted from it states that on its FIRST
     // health read instead of after its first reconcile. A missing artifact
-    // fails the build rather than shipping a box that reports a lie. The
-    // image's harness (`KORTIX_HARNESS`, default OpenCode) reports its release.
-    registerHarnessAssets((cfg) => resolveHarness(cfg).assets)
+    // fails the build rather than shipping a box that reports a lie. Images
+    // carry no OpenCode, and every new box runs pi, so pi reports its release.
+    registerHarnessAssets(() => resolveHarness(undefined, 'pi').assets)
     bakeRuntimeAssetsState()
       .then((state) => {
         process.stdout.write(`${JSON.stringify(state)}\n`)

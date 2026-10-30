@@ -5,6 +5,17 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (portrait image grids)
+- `ImageGenGrid.strip`: `true` when the run's first call asks for portrait images (taller than
+  wide). Every row of a strip is its tiles side by side, up to four, the rows as even as they split
+  (5 = 3+2, 7 = 4+3, 10 = 4+3+3), and `imageGenGrid(views).rows` follows that split. Before, a
+  portrait run took the bento rows: the large tile of a row of three was about 1.19 × the grid's
+  width tall, and a run of ten 9:16 images took about four screens.
+- `ImageGenView.error.limit`: `'turn'` or `'session'` when the tool's own image cap refused the
+  whole call before any request (`Image limit for this turn reached …`). `imageGenGrid` gives such
+  a call no slot, and a host draws nothing for it. Before, each refused prompt took a grid slot that
+  showed the refusal text.
+
 ### Changed (no v1 transcript reads, P8.3)
 - No hook and no SDK read sends `GET …/transcript` any more. `useSession`, `useSessionSync`
   (root, `savedChild`, turn end, older pages), `readSavedSessionCopy` and

@@ -33,7 +33,7 @@ beforeEach(() => {
       return Response.json({ threads: [{ thread_id: 'thread-a', body: String(revision) }] });
     }
     revision++;
-    return Response.json({ thread: { thread_id: 'thread-a' }, comment: { comment_id: 'comment-a' } });
+    return Response.json({ thread: { thread_id: 'thread-a' }, comment: { comment_id: 'comment-a' }, session_id: 'next-session', created: true });
   }) as unknown as typeof fetch;
 });
 afterEach(async () => {
@@ -64,6 +64,7 @@ test('each comment write refreshes mounted Comments and Activity before the poll
     () => comments.setStatus('thread-a', 'resolved'),
     () => comments.edit('thread-a', 'comment-a', { body: 'Final.' }),
     () => comments.remove('thread-a', 'comment-a'),
+    () => comments.send({ thread_ids: ['thread-a'], batch_id: 'batch-a' }),
   ];
   for (let index = 0; index < writes.length; index++) {
     await act(async () => { await writes[index]!(); });

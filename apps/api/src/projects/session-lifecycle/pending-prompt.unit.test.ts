@@ -11,6 +11,22 @@ const BASE = {
 };
 
 describe('convertPendingPromptToInboxRow', () => {
+  test('Artifact pending-first prompts retain the source, artifact FK and trusted delivery reference', () => {
+    const reference = { job_id: 'job-one', target_key: 'artifact-comments:thread:comment' };
+    const result = convertPendingPromptToInboxRow({ ...BASE, source: 'system:artifact-comment', artifactId: 'artifact-one',
+      artifactCommentDelivery: reference, pendingPrompt: { text: 'Current comment text.', agent: 'reviewer' } });
+    expect(result.error).toBeNull();
+    expect(result.rowValues).toMatchObject({ source: 'system:artifact-comment', artifactId: 'artifact-one',
+      idempotencyKey: 'prompt:sess-1:pending-first', payload: { artifactCommentDelivery: reference } });
+    expect(result.metadataPicks).toEqual({ agent: 'reviewer' });
+  });
+
+  test('Artifact prompts cannot fall back to an unguarded first prompt when their delivery reference is missing', () => {
+    const result = convertPendingPromptToInboxRow({ ...BASE, source: 'system:artifact-comment', artifactId: 'artifact-one', pendingPrompt: { text: 'Feedback.' } });
+    expect(result.rowValues).toBeNull();
+    expect(result.error).toBe('Artifact comment delivery context is required');
+  });
+
   test('a text prompt becomes one durable row plus metadata picks without the text', () => {
     const result = convertPendingPromptToInboxRow({
       ...BASE,

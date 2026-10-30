@@ -560,6 +560,7 @@ const triggerDbMock: any = {
           }
           if (table === sessionLifecycleCommands) {
             const row: typeof sessionLifecycleCommands.$inferSelect = {
+              artifactId: values.artifactId ?? null,
               commandId: values.commandId ?? randomUUID(),
               commandType: values.commandType,
               source: values.source,
@@ -593,6 +594,7 @@ const triggerDbMock: any = {
             if (existing) return [];
             const now = new Date('2026-01-02T00:00:00Z');
             const row: typeof sessionLifecycleCommands.$inferSelect = {
+              artifactId: values.artifactId ?? null,
               commandId: values.commandId ?? randomUUID(),
               commandType: values.commandType,
               source: values.source,

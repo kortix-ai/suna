@@ -68,10 +68,11 @@ try/catching every call.
 
 ### 2b. Artifact comments and activity ✅
 
-`project(id).artifacts.comments.{list,get,create,reply,setStatus,edit,remove}`
+`project(id).artifacts.comments.{list,get,create,reply,setStatus,edit,remove,send}`
 and `.artifacts.activity` wrap the authenticated Artifact comment and activity
 routes. The `get` lookup takes a project-scoped thread id. User and session
-authors have separate identity shapes. `useArtifactComments` owns comment
+authors have separate identity shapes. `ArtifactCommentMention` distinguishes
+resolved people, sessions, and project agents. `useArtifactComments` owns comment
 writes and refreshes both tabs; `useArtifactActivity` reads cursor pages.
 Both hooks have a mounted 10-second polling fallback. Requires the default-off
 `artifact_comments` project flag and `artifacts`.

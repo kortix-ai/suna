@@ -54,7 +54,7 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@/contexts': { useAuthContext: () => ({ user: { id: 'user-1' } }) },
   '@/lib/haptics': { haptics: { tap() {}, selection() {} } },
   '@/lib/notifications/registration': { carryOverLegacyKinds: async () => spy('carryOver')() },
-  '@/lib/projects/hooks': { useHasNotificationCenterProject: () => centerOn },
+  '@/lib/projects/hooks': { useHasNotificationInboxProject: () => centerOn },
 };
 const real = new Set([
   'react',
@@ -197,6 +197,7 @@ describe('Settings → Notifications with a notification_center project', () => 
       'Capture computer stopped',
       'Capture computer recording again',
       'Message',
+      'Artifact comments',
       'Device settings',
     ]);
     expect(row('Turn failed').right.props.checked).toBe(false);

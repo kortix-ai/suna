@@ -105,7 +105,7 @@ const registeredHarnesses = (): readonly HarnessDefinition[] => [openCodeDefinit
 
 /**
  * Paths the static web server refuses for every registered harness. Every
- * harness's, on every box: the image ships all of them, so a pi box still
+ * harness's, on every box: a box that booted OpenCode before the sunset still
  * holds OpenCode's data directory.
  */
 export function harnessProtectedPathSegments(): string[] {

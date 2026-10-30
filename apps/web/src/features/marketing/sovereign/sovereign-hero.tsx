@@ -149,6 +149,8 @@ function Walkthrough() {
   };
 
   const step = steps[selected];
+  // An element, not a call: a call runs the view's hooks here, and their count changes per step.
+  const StepView = STEP_VIEWS[step.id];
   const fade = 'animate-in fade-in duration-slower ease-out';
 
   return (
@@ -188,7 +190,7 @@ function Walkthrough() {
       >
         {/* A fixed height keeps the band still while the steps change. */}
         <div key={step.id} className={cn('flex min-h-80 flex-col', fade)}>
-          {STEP_VIEWS[step.id]()}
+          <StepView />
         </div>
         <p
           key={`line-${step.id}`}

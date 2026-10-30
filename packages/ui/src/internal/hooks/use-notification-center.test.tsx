@@ -10,6 +10,10 @@ import {
   cachedNotificationCenterAnswer,
   useNotificationCenter,
   useNotificationHostGate,
+  anyCachedNotificationInbox,
+  cachedNotificationInboxAnswer,
+  notificationInboxOn,
+  useNotificationInboxEnabled,
 } from './use-notification-center';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
@@ -295,5 +299,66 @@ describe('a cache change made while another component renders', () => {
     }
     expect(errors.filter((args) => String(args[0]).includes('Cannot update a component'))).toEqual([]);
     expect(answer).toBe(true);
+  });
+});
+
+describe('Artifact comment inbox gating', () => {
+  test('both Artifact flags enable the inbox, while missing or nonboolean flags fail closed', () => {
+    expect(notificationInboxOn({ experimental: { artifacts: true, artifact_comments: true } })).toBe(true);
+    for (const experimental of [{}, { artifacts: true }, { artifact_comments: true }, { artifacts: false, artifact_comments: true }, { artifacts: true, artifact_comments: 'true' }]) {
+      expect(notificationInboxOn({ experimental } as never)).toBe(false);
+    }
+  });
+
+  test('cached flags belong to the same project and a loaded detail overrides its list', () => {
+    const queryClient = client();
+    queryClient.setQueryData(qk.projects.list(), [
+      { project_id: 'p1', experimental: { artifacts: true } },
+      { project_id: 'p2', experimental: { artifact_comments: true } },
+    ]);
+    expect(anyCachedNotificationInbox(queryClient)).toBe(false);
+    queryClient.setQueryData(qk.projects.list(), [{ project_id: 'p1', experimental: { artifacts: true, artifact_comments: true } }]);
+    expect(anyCachedNotificationInbox(queryClient)).toBe(true);
+    expect(cachedNotificationInboxAnswer(queryClient, 'p1')).toBe(true);
+    expect(anyCachedNotificationCenter(queryClient)).toBe(false);
+    queryClient.setQueryData(qk.project.detail('p1'), { project: { experimental: { artifacts: true, artifact_comments: false } } });
+    expect(cachedNotificationInboxAnswer(queryClient, 'p1')).toBe(false);
+    expect(cachedNotificationInboxAnswer(queryClient, 'missing')).toBeUndefined();
+    expect(queryClient.isFetching()).toBe(0);
+  });
+
+  test('the real inbox hook enables comments while the session mute/watch gate stays off', async () => {
+    const queryClient = client();
+    const project = (comments: boolean) => ({ project: { experimental: { notification_center: false, artifacts: true, artifact_comments: comments } } });
+    queryClient.setQueryData(qk.project.detail('p1'), project(true));
+    let answer: { inbox: boolean; center: boolean } | undefined;
+    function Probe() {
+      answer = { inbox: useNotificationInboxEnabled('p1'), center: useNotificationCenter('p1') };
+      return null;
+    }
+    await act(async () => {
+      renderer = create(createElement(QueryClientProvider, { client: queryClient }, createElement(Probe)));
+    });
+    expect(answer).toEqual({ inbox: true, center: false });
+    await act(async () => { queryClient.setQueryData(qk.project.detail('p1'), project(false)); await tick(); });
+    expect(answer).toEqual({ inbox: false, center: false });
+    expect(queryClient.isFetching()).toBe(0);
+  });
+
+  test('the global host keeps a cached comment-enabled project while loading and sends no detail request', async () => {
+    const queryClient = client();
+    queryClient.setQueryData(qk.projects.list(), [{ project_id: 'p1', experimental: { artifacts: true, artifact_comments: true } }]);
+    const gate = await mountGate(queryClient, null);
+    expect(gate.answer()).toBe(true);
+    await gate.go('p1');
+    expect(gate.answer()).toBe(true);
+    expect(queryClient.getQueryCache().find({ queryKey: qk.project.detail('p1') })).toBeUndefined();
+    expect(queryClient.getQueryCache().find({ queryKey: qk.project.detail('') })).toBeUndefined();
+    await act(async () => {
+      queryClient.setQueryData(qk.project.detail('p1'), { project: { experimental: { artifacts: true, artifact_comments: false } } });
+      await tick();
+    });
+    expect(gate.answer()).toBe(false);
+    expect(queryClient.isFetching()).toBe(0);
   });
 });

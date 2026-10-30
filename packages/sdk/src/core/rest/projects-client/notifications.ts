@@ -97,6 +97,7 @@ export const INBOX_NOTIFICATION_KINDS = [
   'capture_device_down',
   'capture_device_recovered',
   'message',
+  'artifact_comment',
 ] as const;
 
 /**
@@ -104,7 +105,8 @@ export const INBOX_NOTIFICATION_KINDS = [
  * agent asks (`question`, `permission`), a session was shared with you
  * (`shared`), an automation fails or works again, or a Capture computer stops
  * recording or records again (`capture_device_down`, `capture_device_recovered`),
- * or someone messaged you in a conversation (`message`, flag `agent_rooms`).
+ * or someone messaged you in a conversation (`message`, flag `agent_rooms`),
+ * or left Artifact feedback (`artifact_comment`, flag `artifact_comments`).
  */
 export type InboxNotificationKind = (typeof INBOX_NOTIFICATION_KINDS)[number];
 
@@ -124,6 +126,9 @@ export interface InboxNotification {
   trigger_slug: string | null;
   /** The conversation, for `message`. Absent from an API built before conversations. */
   room_id?: string | null;
+  /** The Artifact and comment thread. Absent from older APIs. */
+  artifact_id?: string | null;
+  artifact_thread_id?: string | null;
   /** Who caused it: the person who shared or prompted. */
   actor_user_id: string | null;
   /** The web path that opens the subject; its `?notification=<id>` marks the row read. */
@@ -207,6 +212,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences['kinds'] 
   capture_device_down: { push: true, email: true },
   capture_device_recovered: { push: true, email: false },
   message: { push: true, email: true },
+  artifact_comment: { push: true, email: true },
 };
 
 /** The caller's effective preferences (the defaults with their saved choices applied). */

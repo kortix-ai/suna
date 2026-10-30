@@ -162,7 +162,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'enterprise',
     title: 'Kortix for Enterprise',
     description:
-      'One AI Operating System for the whole company: every team’s agents, skills and memory in one place you own, on Kortix Cloud, your VPC or on-prem, with any model.',
+      'One CompanyOS for every team: agents, skills and memory in one place you own, on Kortix Cloud, your VPC or on-prem, with any model.',
     htmlPath: '/enterprise',
     markdownPath: '/markdown/enterprise.md',
   },

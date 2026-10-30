@@ -7,6 +7,6 @@ describe('the global 404 page sets the document title', () => {
     const metadata = await generateMetadata();
     // No root layout sits above this page, so it composes the full document
     // title itself — the [locale] layout's `title.template` never sees it.
-    expect(metadata.title).toBe('404 Page not found | Kortix');
+    expect(metadata.title).toBe('404 Page not found | Kortix CompanyOS');
   });
 });
