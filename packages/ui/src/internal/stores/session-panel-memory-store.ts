@@ -62,6 +62,9 @@ export function rememberedPanelOf({
   if (detailKey?.startsWith('app:'))
     return { kind: 'view', view: 'browser', target: { url: detailKey.slice(4) } };
   if (detailKey?.startsWith('file:')) return { kind: 'file', path: detailKey.slice(5) };
+  // An artifact opens through the browser request, as a clicked artifact link does.
+  if (detailKey?.startsWith('artifact:'))
+    return { kind: 'view', view: 'browser', target: { url: detailKey.slice(9) } };
   return null;
 }
 

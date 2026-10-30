@@ -10,6 +10,7 @@ import {
   useFeatureFlag,
   useInfiniteArtifactActivity,
 } from '@kortix/sdk/react';
+import { cn } from '@kortix/ui';
 import { reloadFrame } from '@kortix/ui/apps';
 import {
   Breadcrumb,
@@ -379,7 +380,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
       >
         {embedded ? null : <SidebarToggle />}
         <Breadcrumb
-          className={`${embedded ? '' : 'kx-titlebar-tabs'}flex h-10 min-w-0 flex-1 items-center px-3`}
+          className={cn(!embedded && 'kx-titlebar-tabs', 'flex h-10 min-w-0 flex-1 items-center px-3')}
         >
           <BreadcrumbList className="min-w-0 flex-nowrap gap-1.5 sm:gap-1.5">
             {embedded ? null : (
@@ -663,9 +664,10 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
         ) : null}
         {embedded ? (
           <div className="flex shrink-0 items-center">
+            {/* `data-no-panel`: the session's link interceptor would reopen it in this panel. */}
             <Hint label={t('openFullPage')}>
               <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} asChild>
-                <Link href={`/projects/${projectId}/artifacts/${artifactId}`}>
+                <Link href={`/projects/${projectId}/artifacts/${artifactId}`} data-no-panel>
                   <ArrowsOutSimpleIcon className="size-3.5" />
                 </Link>
               </Button>
