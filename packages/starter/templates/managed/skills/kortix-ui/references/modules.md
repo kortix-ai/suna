@@ -76,7 +76,7 @@ Names: `createTranslator`, `UiI18nHost`, `localizeUiCatalog`, `translateUiCatalo
 
 Source: `src/markdown/index.tsx`. Assistant and document markdown: code, math, links, GenUI fences, frontmatter.
 
-Props: `UnifiedMarkdown`: `content`, `trust` (`'agent'` for model text), `variant` (`'document'` for a file), `documentPath`, `isStreaming`, `className`.
+Props: `UnifiedMarkdown`: `content`, `trust` (`'agent'` for model text), `variant` (`'document'` for a file), `documentPath`, `isStreaming`, `genui` (render `openui` fences as GenUI blocks), `className`.
 
 ```tsx
 import { UnifiedMarkdown } from '@kortix/ui/markdown';
@@ -95,15 +95,15 @@ Names: `markdownPolicy`, `MarkdownPolicy`, `MarkdownTrust`, `MarkdownVariant`, `
 
 Source: `src/markdown/genui/index.ts`. Typed UI blocks inside assistant markdown: the block renderer, the component set, telemetry, copy-as-text.
 
-Props: none to mount: `UnifiedMarkdown` renders GenUI fences.
+Props: none to mount: `UnifiedMarkdown` with `genui` renders `openui` fences as blocks (the session thread sets it). Without `genui`, a fence is a code block. The viewer's preference (`useGenuiEnabled`, default on) can turn the blocks off.
 
 ```tsx
 import { mayHoldGenui } from '@kortix/ui/genui';
 import { UnifiedMarkdown } from '@kortix/ui/markdown';
 
-// GenUI fences render inside UnifiedMarkdown; mayHoldGenui is a cheap pre-check.
+// GenUI fences render inside UnifiedMarkdown with `genui`; mayHoldGenui is a cheap pre-check.
 export function Reply({ text }: { text: string }) {
-  return <UnifiedMarkdown content={text} trust="agent" className={mayHoldGenui(text) ? 'min-h-24' : undefined} />;
+  return <UnifiedMarkdown content={text} trust="agent" genui className={mayHoldGenui(text) ? 'min-h-24' : undefined} />;
 }
 ```
 
@@ -155,7 +155,7 @@ Names: `ChangeList`, `ChangeSummary`, `DiffLayoutToggle`, `ExpandAllButton`, `us
 
 Source: `src/files/index.ts`. Browse and edit files. Project files are the git-backed repo; sandbox files are a live session workspace.
 
-Mount: Project files: inside `ProjectFilesProvider` (`projectId`, optional git `ref`). Sandbox files: inside a mounted `useSession`. `FilePreviewHost`: once, on a page with no session side panel; a file open (`openPreview`) shows there. `SessionThread` mounts it already. `DriveUploadTray`: once per project shell; it lists the Drive uploads in flight and stays mounted across pages.
+Mount: Project files: inside `ProjectFilesProvider` (`value`: `projectId`, the git `ref`, optional `defaultBranch`). Sandbox files: inside a mounted `useSession`. `FilePreviewHost`: once, on a page with no session side panel; a file open (`openPreview`) shows there. `SessionThread` mounts it already. `DriveUploadTray`: once per project shell; it lists the Drive uploads in flight and stays mounted across pages.
 
 Props: `ProjectFilesView` (`@kortix/ui/workspace`): `projectId`. It fills its parent (`h-full`): the parent sets the height, or only the header shows. `FileExplorerPage`: `embedded`. `SandboxFileExplorer`: `embedded`, `shareContext`, `leading`. `FilePreviewHost`: none.
 
@@ -336,7 +336,7 @@ Source: `src/session/panel/index.ts`. The session side panel: provider, panel bo
 
 Mount: Inside `SessionPanelProvider` (`sessionId`, `projectId`, `projectSessionId`).
 
-Props: `SessionPanelProvider`: `sessionId` (runtime id), `projectId`, `projectSessionId`, `isSessionBusy`. `ActionPanel` takes none. `openSessionQuickView(view, source, target?)` opens a view (`browser`, `terminal`, `files`, `audit`) in the panel; with no panel mounted, `SessionThread` shows it in a dialog.
+Props: `SessionPanelProvider`: `sessionId` (runtime id), `projectId`, `projectSessionId`, `isSessionBusy`. `ActionPanel` takes none. `openSessionQuickView(view, source, target?)` opens a view (`browser`, `terminal`, `files`, `audit`, `reminders`, `desktop`) in the panel; with no panel mounted, `SessionThread` shows it in a dialog.
 
 ```tsx
 import { ActionPanel, SessionPanelProvider } from '@kortix/ui/session-panel';

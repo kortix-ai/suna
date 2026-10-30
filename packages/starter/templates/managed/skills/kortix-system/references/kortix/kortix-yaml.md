@@ -33,16 +33,16 @@ defaults keep today's behavior, so a valid file stays valid.
 
 | Key | Value |
 | --- | --- |
-| `description` | What the agent does. The caller of `task` reads it. |
+| `description` | What the agent does. The caller of `agent` reads it. |
 | `mode` | `primary`, `subagent` or `all`. A subagent target needs `subagent` or `all`. |
 | `prompt` / `prompt_file` | The system prompt inline, or a repository `.md` path. Not both. |
 | `model`, `variant` | Model id and reasoning tier. Omitted: the project default. |
 | `temperature`, `top_p`, `steps` | Sampling, and the most model steps in one turn. |
-| `color`, `hidden`, `options` | Display color, hide from pickers, provider options. |
+| `hidden` | `true` hides the agent from pickers. (`color` and `options` validate; pi ignores them.) |
 | `permission` | Tool rules (`../pi.md` → Permissions). Omitted: `allow`. No `skill` or `task` key. |
 | `enabled` | `false`: no session can start with this agent. Default `true`. |
 | `codemode` | `on` (default), `only`, `off`. |
-| `tools` | `all` (default), `none`, a list, or `{ exclude: [names] }`. |
+| `tools` | `all`, `none`, a list, or `{ exclude: [names] }`. Set it on every agent: omitted is every tool, with a warning. |
 | `skills`, `extensions` | `all`, `none` (default), registered names, or `{ exclude: [names] }`: every one but those. Kortix skills count as registered. |
 | `subagents`, `commands` | `all`, `none` (default) or registered names. `subagents` is who this agent may call with the `agent` tool. |
 | `connectors`, `secrets`, `apps` | `all`, `none` (default) or names. |
@@ -68,7 +68,7 @@ unless the user asks and `kortix projects features` lists
 spaces:
   sales: { label: Sales, order: 1, tabs: [{ type: apps }, { type: files, path: sales }] }
 agents:
-  closer: { space: sales, prompt: You run the sales pipeline. }
+  closer: { space: sales, prompt: You run the sales pipeline., tools: all }
 ```
 
 ## Registries
@@ -82,7 +82,7 @@ agents:
 - An extension sets `pi`: `"npm:<package>@<x.y.z>"`, a repository path, or
   `{ source, extensions, skills, prompts, themes }` to load part of a package.
 - A skill, command or extension reaches only the agents that grant it. A
-  tool reaches every agent whose `tools` allows it (default `all`).
+  tool reaches every agent whose `tools` allows it.
 
 ## kortix_permissions
 
@@ -238,15 +238,23 @@ error:
 | An agent or a trigger | That entry is off. A session that names the agent fails with the issue. |
 | A connector, App, skill, tool, command, extension, space or sandbox template | That entry is gone. |
 | `project` or `default_agent` | The key falls back to its default. |
-| Anything else (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, a retired format, YAML syntax) | Only My Kortix runs, so it can fix the file. |
+| Anything else (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, an unknown format version, YAML syntax) | Only My Kortix runs, so it can fix the file. |
 
 Each rule only takes access away. The project page shows the issues with
-**Fix with My Kortix**. Every session's system prompt lists them.
+**Fix with My Kortix**. Every session's system prompt lists the errors.
 
 A deprecated key is not an error: it still works, and `kortix validate`
 warns with its replacement and a fix id. Run `kortix validate --fix` to
 rewrite every deprecated key (and the files `imports:` names) to the latest
 shape, comments kept. Never write a deprecated key in new config.
+
+An older format still works: Kortix reads it converted, each agent `.md`
+frontmatter as the agent's keys and its body as the prompt. `kortix
+validate` warns once (`fix: legacy-format`), lists what has no place in
+this format, and validates the converted file. `kortix validate --fix`
+converts the files: it writes kortix.yaml, keeps only the prompt in each
+agent `.md`, and deletes the old files it replaces. Commit all of it in one
+CR. The other CLI commands that edit the file refuse until it is converted.
 
 ## Edits from the dashboard and the CLI
 

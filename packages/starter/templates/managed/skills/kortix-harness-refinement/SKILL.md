@@ -90,7 +90,8 @@ tool the trajectory shows raising exceptions. Prefer editing an existing
 skill over creating a near-duplicate. A new skill is a folder named after
 it (`skills/<name>/SKILL.md`), registered under `skills:` and added to the
 `skills` grant of each agent that needs it. A new tool is registered under
-`tools:`. An unregistered file reaches no agent.
+`tools:` and reaches each agent whose `tools` grant includes it. An
+unregistered file reaches no agent.
 
 **Pass 4 — Memory (ΔM).** Follow the `kortix-memory` skill's rubric with
 the `memory` tool: fill gaps the trajectory exposed, update stale
@@ -105,7 +106,7 @@ touch one or two components, not all five.
 <project-review-fanout>
 This section applies only to a top-level reflection run. If you
 loaded this skill as a subagent, skip the fan-out and review the sessions
-yourself — a subagent has no `task` tool, so it cannot start a subagent.
+yourself.
 
 For project-level reflection, do not skim a
 digest and call it a review. Work through every session:
@@ -114,12 +115,12 @@ digest and call it a review. Work through every session:
    `kortix sessions digest --since 24h --json` (add `--all` for a first
    ever run). Note per session: id, agent, status, title, whether a live
    transcript is available.
-2. **Fan out one read-only reviewer subagent per session** (batch a few
-   at a time in parallel; review every session, skip none silently). Each
+2. **Fan out one read-only reviewer subagent per session** with the `agent`
+   tool (at most 4 at a time; review every session, skip none silently). Each
    reviewer gets the session id and returns a structured findings report.
    Reviewers gather the FULL picture for their session:
-   - the transcript (available live for running sessions; for stopped
-     sessions reconstruct from what persists — see next line),
+   - the transcript: `kortix sessions log <id> --json` (a stopped session
+     reads its saved transcript),
    - the session's git branch: its commits, diffs, and files touched,
    - change requests the session opened and their review outcomes.
 3. **Aggregate** all reviewer reports. Deduplicate findings that recur

@@ -13,7 +13,7 @@ user's memory: what you keep about THIS person, read back in every session
 they start.
 
 - It is private to the user until they share their folder.
-- It syncs with the Kortix web app (Drive → My drive → Memory) within
+- It syncs with the Kortix web app (Drive → My files → Memory) within
   seconds. The user can read, edit and delete every file there.
 - It is plain markdown. Use the file tools (`read`, `write`, `edit`, `bash`).
   The `memory` tool covers only the project brain at `memory/`, not this

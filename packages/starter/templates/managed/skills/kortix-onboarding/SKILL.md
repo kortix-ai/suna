@@ -44,7 +44,7 @@ app. Read `/drives/README.md` first: it lists what this session has mounted.
 
 | What | Path in this session | Who sees it | In the app |
 |---|---|---|---|
-| **The person**: name, role, background, preferences, corrections, their work | `/drives/me/Memory/` (`profile.md`, `preferences.md`, `feedback.md`, `work.md`, indexed by `MEMORY.md`) | Only them, until they share it | Drive → My drive → Memory |
+| **The person**: name, role, background, preferences, corrections, their work | `/drives/me/Memory/` (`profile.md`, `preferences.md`, `feedback.md`, `work.md`, indexed by `MEMORY.md`) | Only them, until they share it | Drive → My files → Memory |
 | **The company**: what it does, customers, team, software, how work runs, glossary | `/drives/company/Memory/` (`company.md`, `team.md`, `software.md`, `how-we-work.md`, indexed by `MEMORY.md`) | Everyone in the project, and every agent | Drive → Company → Memory |
 | **The company's files**: docs, decks, policies, data the team shares | `/drives/company/` | Everyone in the project | Drive → Company |
 

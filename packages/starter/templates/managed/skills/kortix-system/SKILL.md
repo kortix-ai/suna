@@ -21,8 +21,7 @@ For one your list lacks, or outside a session:
 - `kortix system-skills file <name> <path>` prints one reference.
 
 A skill behind a project feature flag exists only while the flag is on.
-`kortix skills` is an alias. Optional skills: `kortix marketplace search
-<query>` (the `kortix-marketplace` skill).
+Optional skills: `kortix marketplace search <query>` (`kortix-marketplace`).
 </live-skills>
 
 <overview>
@@ -91,7 +90,7 @@ change request (CR) is the only way to the default branch. Do every step:
   `project.agent.write`; `triggers` needs `project.trigger.create|update|delete`.
   `503 CR_GOVERNANCE_UNVERIFIED`: nothing merged, retry after `Retry-After`.
 
-For people: https://kortix.com/docs/#git
+For people: https://kortix.com/docs/developers#change-requests
 </change-requests>
 
 <cli>
@@ -112,7 +111,7 @@ state. Use `git` and the file tools for files and commits.
 | Task | Command |
 | --- | --- |
 | What every session does, talk to one | `kortix sessions status`, `sessions log <id>` (read-only), `sessions chat <id> --prompt "…"` |
-| Hand a task to another agent | The `agent` tool (default `session: "separate"`: its own session; one call waits up to 30 min and returns its final message). Not `sessions new` + `wait-for` in bash: bash stops after 30 s |
+| Hand a task to another agent | The `agent` tool (default `session: "separate"`: its own session; one call waits up to 30 min and returns its final message), not `sessions new` + `wait-for` |
 | Change requests, the review inbox | `kortix cr ls\|show\|diff\|merge-preview`, `kortix review ls` |
 | Triggers | `kortix triggers ls\|info\|fire\|add\|set\|enable\|disable` |
 | Loops on this session | `kortix loop "…" --in 24h`, `kortix loops ls\|pause\|resume\|rm` |
@@ -127,7 +126,7 @@ state. Use `git` and the file tools for files and commits.
 
 `kortix triggers add|rm|enable|disable` edit the local `kortix.yaml` for
 your CR. With `--apply` they commit to the default branch through the API,
-gated by your `kortix_permissions`. For people: https://kortix.com/docs/#cli
+gated by your `kortix_permissions`. For people: https://kortix.com/docs/developers#cli
 </cli>
 
 <credentials>
@@ -194,9 +193,9 @@ Every session runs pi inside the Kortix daemon. Every model call goes through
 the Kortix LLM gateway. pi has:
 
 - `bash`, `read`, `write`, `edit` on `/workspace`; `glob`, `grep`, `question`.
-- The Kortix tools `web_search`, `image_search`, `scrape_webpage`, `memory`,
-  `show`; the project's registered tools; `codemode`.
-- Subagents through `task`: the agents your `subagents` grant names.
+- The Kortix tools `web_search`, `image_search`, `image_gen`,
+  `scrape_webpage`, `memory`, `show`; the project's tools; `codemode`.
+- Subagents through `agent`: the agents your `subagents` grant names.
 - Compaction near the context limit and on demand (`kortix sessions compact <id>`).
 - Slash commands from `commands:` and granted skills; pi extensions and
   packages from `extensions:`.
@@ -264,9 +263,9 @@ triggers:
   `{ exclude: [names] }`: every one but those.
 - A grant is `all`, `none` or a list of registered names. `subagents` names
   declared agents with `mode: subagent` or `all`.
-- `tools`: `all` (default), `none`, a list, or `{ exclude: [names] }`. The
-  Kortix tools are always registered; a `tools:` entry with a Kortix tool's
-  name replaces it.
+- `tools`: set it on every agent: `all`, `none`, a list, or `{ exclude:
+  [names] }`. Omitted, the agent gets every tool and `kortix validate` warns.
+  A `tools:` registry entry with a Kortix tool's name replaces that tool.
 - `permission`: per key `allow | ask | deny`, or a pattern map where the
   longest matching pattern wins. Omitted: `allow`.
 - `kortix_permissions`: what the agent may do to the project.
@@ -281,8 +280,9 @@ triggers:
 - A running project never stops on an error: it turns off or drops the
   broken part (`references/kortix/kortix-yaml.md` → Problems).
 - When your system prompt lists `kortix.yaml` issues, tell the user and fix
-  them through a CR when asked. A retired format: rewrite the file in this
-  format and keep its agents, prompts and skills.
+  them through a CR when asked. `kortix validate --fix` rewrites every
+  deprecated shape, and converts an older format (`fix: legacy-format`).
+  Keep every file that conversion writes or deletes.
 
 Keys, `imports:`, sandbox templates, triggers: `references/kortix/kortix-yaml.md`.
 Tools: `references/kortix/tools.md`. People: https://kortix.com/docs/developers#kortixyaml-reference
