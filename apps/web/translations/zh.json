@@ -23989,7 +23989,23 @@
       "panelTitle": "评论和动态",
       "resizePanel": "调整评论面板大小",
       "unshareComments": "{count, plural, other {将删除 # 条评论。}}",
-      "systemActor": "系统"
+      "systemActor": "系统",
+      "draw": "绘制反馈",
+      "drawPen": "画笔",
+      "drawArrow": "箭头",
+      "drawRectangle": "矩形",
+      "drawBlack": "黑色",
+      "drawRed": "红色",
+      "drawBlue": "蓝色",
+      "drawUndo": "撤销笔画",
+      "drawPageChanged": "页面已更改。请取消后重新绘制。",
+      "drawLimit": "已达到绘图上限。请撤销一笔后继续。",
+      "openScreenshot": "打开截图",
+      "drawingScreenshot": "反馈截图",
+      "screenshotReadFailed": "无法加载截图。",
+      "screenshotMissing": "截图不可用。绘图已保存。",
+      "screenshotCaptureFailed": "无法截取屏幕。评论将包含绘图，但不含图片。",
+      "sendScreenshotLimit": "此批次超过20张截图或每次编码请求12 MiB。请减少图片附件，或使用纯文本模型。"
     }
   },
   "emailConnect": {
