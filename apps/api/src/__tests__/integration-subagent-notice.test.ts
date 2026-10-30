@@ -173,6 +173,25 @@ describe('a background subagent turn end', () => {
     expect(rows[0]!.payload.text).toContain('<task_error>\nA person stopped it before it finished.\n</task_error>');
   });
 
+  test('a teammate always tells its lead, without notify_parent, and the notice names the tasks it still owns', async () => {
+    await insertSession(CHILD, { parent: PARENT, metadata: { team_lead: PARENT, spawned_by_session: PARENT, agent_handle: 'builder' } });
+    await db.execute(sql`
+      INSERT INTO kortix.session_tasks (project_id, lead_session_id, seq, subject, status, owner_handle, owner_session_id)
+      VALUES (${PROJECT_ID}::uuid, ${PARENT}, 1, 'Write the parser', 'in_progress', 'builder', ${CHILD}),
+             (${PROJECT_ID}::uuid, ${PARENT}, 2, 'Ship it', 'completed', 'builder', ${CHILD})`);
+    expect(await notifyParentOfSubagentTurn({ sessionId: CHILD, status: 'idle', turnMessageId: 'msg_team' })).toBe(true);
+    const [row] = await parentRows();
+    const text = row!.payload.text as string;
+    expect(text).toStartWith('Your teammate builder finished its turn and is idle.');
+    expect(text).toContain('Tasks builder still owns: #1 Write the parser (in progress).');
+    expect(text).not.toContain('Ship it');
+    // A team_lead the lead did not create (no spawned_by_session) is no teammate.
+    const forged = crypto.randomUUID();
+    await insertSession(forged, { parent: PARENT, metadata: { team_lead: PARENT } });
+    expect(await notifyParentOfSubagentTurn({ sessionId: forged, status: 'idle', turnMessageId: 'm' })).toBe(false);
+    await db.execute(sql`DELETE FROM kortix.session_tasks WHERE lead_session_id = ${PARENT}`);
+  });
+
   test('a child that never started reports failed, once', async () => {
     await insertSession(CHILD, { parent: PARENT, metadata: background, status: 'failed' });
     expect(await notifyParentOfFailedStart(CHILD, 'Sandbox provisioning failed: capacity')).toBe(true);
