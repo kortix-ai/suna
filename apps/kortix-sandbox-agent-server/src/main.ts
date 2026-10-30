@@ -40,7 +40,6 @@ async function main() {
   }
   const context: HarnessBootContext = { cfg, bootTime, bootState, bootMark, serve }
 
-  if (await selected.runWarmSeed?.(context)) return
   await selected.run(context)
 }
 

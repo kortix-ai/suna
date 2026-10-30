@@ -9,7 +9,7 @@ import type { ChannelPlatform } from './core/conversation';
  * be released with a sentinel or the turn hangs until the box is parked.
  *
  * That used to happen only inside the sandbox, gated on SLACK_THREAD_TS /
- * SLACK_CHANNEL_ID in BOTH harnesses (open-code/boot.ts and pi/relay.ts). A
+ * SLACK_CHANNEL_ID in BOTH harnesses (the OpenCode adapter, since deleted, and pi/relay.ts). A
  * Teams session carries MS_TEAMS_* instead, so a Teams agent that asked a
  * question hung after its card was posted. The daemons are image-baked, so
  * fixing them reaches only new sandboxes.

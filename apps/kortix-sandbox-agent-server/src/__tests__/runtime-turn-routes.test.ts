@@ -1,25 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import type { HarnessForwardInput } from '@/harness/contract/proxy'
-import { createOpenCodeTurnService } from '@/harness/open-code/turns'
 import type { HarnessTurnService, RuntimePromptInput } from '@/harness/contract/turns'
 import { KORTIX_SERVICE_CALL_HEADER } from '@/lib/kortix-api/kortix-user-context'
 import { createRuntimeRouter, parseRuntimePromptBody } from '@/routes/kortix/runtime'
-
-/** A proxy forward that records the native request and answers from a script. */
-function fakeProxy(answer: (input: HarnessForwardInput) => { status: number; body: unknown }) {
-  const seen: Array<{ method: string; path: string; search: string; body: unknown }> = []
-  return {
-    seen,
-    proxy: {
-      async forward(input: HarnessForwardInput) {
-        const text = input.body ? await new Response(input.body).text() : ''
-        seen.push({ method: input.method, path: input.path, search: input.search, body: text ? JSON.parse(text) : null })
-        const { status, body } = answer(input)
-        return { status, statusText: '', headers: new Headers(), body: body === null ? null : JSON.stringify(body) }
-      },
-    },
-  }
-}
 
 describe('parseRuntimePromptBody', () => {
   test.each([
@@ -45,7 +27,7 @@ describe('parseRuntimePromptBody', () => {
   })
 })
 
-describe('the turn system text on OpenCode', () => {
+describe('the turn system text', () => {
   test('the steer route drops a system field; the prompt route passes it on', async () => {
     const seen: Array<[string, RuntimePromptInput]> = []
     const record = (verb: string) => async (_id: string, input: RuntimePromptInput) => {
@@ -77,9 +59,14 @@ describe('the Kortix turn routes keep the runtime gate of the proxy they replace
     })
 
   test('a runtime that is not ready answers 503 with its boot phase, and the verb never runs', async () => {
-    const { proxy, seen } = fakeProxy(() => ({ status: 204, body: null }))
+    const seen: string[] = []
+    const verb = (name: string) => async () => {
+      seen.push(name)
+      return { status: 204, body: null }
+    }
+    const turns = { prompt: verb('prompt'), abort: verb('abort'), readMessage: verb('readMessage') } as unknown as HarnessTurnService
     const app = createRuntimeRouter(cfg, noQueries, {
-      turns: createOpenCodeTurnService(proxy, () => '/workspace'),
+      turns,
       readiness: async () => ({ ready: false, phase: 'workspace_not_ready', details: { reason: 'installing dependencies' } }),
     })
     for (const path of ['/sessions/ses_1/prompt', '/sessions/ses_1/abort']) {
@@ -95,13 +82,11 @@ describe('the Kortix turn routes keep the runtime gate of the proxy they replace
   })
 
   test('an upstream that cannot be reached answers 502, not 500', async () => {
-    const proxy = {
-      async forward(): Promise<never> {
-        throw new Error('connect ECONNREFUSED 127.0.0.1:4096')
-      },
+    const unreachable = async (): Promise<never> => {
+      throw new Error('connect ECONNREFUSED 127.0.0.1:4096')
     }
     const app = createRuntimeRouter(cfg, noQueries, {
-      turns: createOpenCodeTurnService(proxy, () => '/workspace'),
+      turns: { prompt: unreachable } as unknown as HarnessTurnService,
       readiness: async () => ({ ready: true }),
     })
     const res = await post(app, '/sessions/ses_1/prompt')

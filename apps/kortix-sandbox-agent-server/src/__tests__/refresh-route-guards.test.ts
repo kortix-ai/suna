@@ -10,9 +10,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Config } from '@/lib/config/config'
 import type { HarnessControlOperations } from '@/harness/contract/control'
-import { createOpenCodeQuickQueueInterrupt } from '@/harness/open-code/background'
-import { createOpenCodeControlService } from '@/harness/open-code/control'
-import type { Opencode } from '@/harness/open-code/lifecycle'
+import { createPiConfigReleases } from '@/harness/pi/config-release'
+import { createPiControlService } from '@/harness/pi/control'
 import { KORTIX_SERVICE_CALL_HEADER } from '@/lib/kortix-api/kortix-user-context'
 import { createRefreshRouter } from '@/routes/kortix/refresh'
 import { commitAll, git as gitIn, initRepo, write as writeIn } from './helpers/config-release-fixtures'
@@ -119,16 +118,11 @@ describe('base=1 requires a DIRECT service call', () => {
 
   function router() {
     // The rejection paths return before any repo or runtime work, so a config
-    // carrying just the token is all the route reads on these paths.
-    const cfg = { sandboxToken: TOKEN, opencodeInternalPort: 4096, opencodeStandbyPort: 4097, defaultOpencodeConfigDir: '/ephemeral/opencode' } as unknown as Config
-    const opencode = {
-      restart: async () => {
-        throw new Error('restart must not run on a refused request')
-      },
-      getState: () => 'ready',
-      getPid: () => 1,
-    } as unknown as Opencode
-    return createRefreshRouter(cfg, createOpenCodeControlService(opencode, createOpenCodeQuickQueueInterrupt(opencode, cfg)).bind({ cfg }))
+    // carrying just the token is all the route reads on these paths. The
+    // production pi control, over a runtime that never started.
+    const cfg = { sandboxToken: TOKEN } as Config
+    const control = createPiControlService(() => null, createPiConfigReleases({ cfg, env: {} }), () => {})
+    return createRefreshRouter(cfg, control.bind({ cfg }))
   }
 
   async function post(path: string, headers: Record<string, string>) {

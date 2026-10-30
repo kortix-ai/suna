@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import type { Config } from '@/lib/config/config'
 import { createToolsRouter } from '@/routes/kortix/tools'
 import { KORTIX_TOOLS, hostedTool, loadTools, runTool, sessionEnv, toolBridgeKey } from '@/services/tools/host'
-import { signTestUserContext } from './helpers/open-code-harness'
+import { signTestUserContext } from './helpers/daemon-test-app'
 
 /**
  * The tool host (services/tools/host.ts): what every harness loads, and the
