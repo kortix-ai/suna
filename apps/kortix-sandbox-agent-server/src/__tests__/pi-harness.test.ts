@@ -28,6 +28,12 @@ import { readHostHealth } from '@/harness/shared/host-health'
 import { sanitizeRuntimeEvent } from '@/harness/shared/audit-relay'
 import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
 import { logger } from '@/lib/log/logger'
+import { Hono } from 'hono'
+import type { Config } from '@/lib/config/config'
+import type { PiConfigReleases } from '@/harness/pi/config-release'
+import { createPiControlService } from '@/harness/pi/control'
+import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
+import { createEnvRouter } from '@/routes/kortix/env'
 import { expandCommandTemplate, type PiRuntimeHooks } from '@/harness/pi/runtime'
 import { MessageIdClock } from '@/harness/pi/message-id'
 import { createPiSessionLogPort, piSessionLog } from '@/harness/pi/session-log'
@@ -84,6 +90,9 @@ function startFakeGateway() {
   let images: ((body: { prompt: string }) => Response | Promise<Response>) | null = null
   /** `GET /models?scope=picker`, the live catalog pi sizes models from; null answers 503. */
   let catalog: Record<string, unknown> | null = null
+  let catalogCalls = 0
+  /** While set, `/models` answers only once it resolves. */
+  let catalogHold: Promise<void> | null = null
   const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
     `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
   const server = Bun.serve({
@@ -92,6 +101,8 @@ function startFakeGateway() {
       const url = new URL(req.url)
       if (req.method === 'POST' && images && url.pathname.endsWith('/images/generations')) return images((await req.json()) as { prompt: string })
       if (req.method === 'GET' && url.pathname.endsWith('/models') && url.searchParams.get('scope') === 'picker') {
+        catalogCalls += 1
+        if (catalogHold) await catalogHold
         return catalog ? Response.json({ models: catalog }) : new Response('down', { status: 503 })
       }
       if (req.method !== 'POST' || !url.pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
@@ -152,6 +163,16 @@ function startFakeGateway() {
     },
     catalog: (models: typeof catalog) => {
       catalog = models
+    },
+    catalogCalls: () => catalogCalls,
+    /** Hold `/models` until the returned function runs. */
+    holdCatalog: () => {
+      let release!: () => void
+      catalogHold = new Promise<void>((resolve) => (release = resolve))
+      return () => {
+        catalogHold = null
+        release()
+      }
     },
     stop: () => server.stop(true),
   }
@@ -3821,6 +3842,55 @@ describe('pi session-log export (P2.5)', () => {
     const restarted = await boot({ workspace, script: [], catalog: imageCatalog })
     const again = piSessionLog(restarted.service.runtime()!.sessionLogSnapshot()!)
     expect(again.hashes).toEqual(hashes)
+  })
+})
+
+describe('pi model list: neither boot nor an env push waits for it', () => {
+  /** `/kortix/env` bound to a rig's runtime, the way the daemon serves it. */
+  const envApp = (r: Rig) => {
+    const cfg = { sandboxToken: TOKEN, workspace: r.workspace, projectTarget: r.workspace, defaultBranch: 'main' } as unknown as Config
+    const releases = { governanceOwned: () => false, inFlight: () => false, converge: async () => ({ ok: false }) } as unknown as PiConfigReleases
+    const control = createPiControlService(() => r.service.runtime(), releases, () => undefined).bind({
+      cfg,
+      projectEnv: createProjectEnvStore({ KORTIX_PROJECT_SECRETS_REVISION: 'rev-1', KORTIX_PROJECT_SECRET_NAMES: '' } as NodeJS.ProcessEnv),
+      agentEnvFile: join(r.workspace, 'agent-env.sh'),
+    })
+    return new Hono().route('/kortix/env', createEnvRouter(cfg, control))
+  }
+
+  test('the list is fetched while the box is still cloning, and start does not fetch it again', async () => {
+    const before = gateway.catalogCalls()
+    const r = await boot({ script: [], start: false })
+    await waitFor(() => gateway.catalogCalls() === before + 1)
+    await r.service.lifecycle.start()
+    expect(gateway.catalogCalls()).toBe(before + 1)
+    expect(r.service.runtime()!.selectedModel()!.contextWindow).toBe(64_000)
+  })
+
+  test('an env push answers while the gateway holds the list, and the model is sized once it answers', async () => {
+    const r = await boot({ script: [] })
+    const rt = r.service.runtime()!
+    gateway.catalog(testModel({ limit: { context: 200_000, output: 8_000 } }))
+    const release = gateway.holdCatalog()
+    try {
+      const before = gateway.catalogCalls()
+      // Nothing changed on the box: the push the API sends before a session's first prompt.
+      const res = await envApp(r).request('/kortix/env', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ revision: 'rev-1', env: {}, names: [], refreshModels: true }),
+      })
+      expect(res.status).toBe(200)
+      // Answered with the list request still held at the gateway.
+      await waitFor(() => gateway.catalogCalls() > before)
+      expect(rt.selectedModel()!.contextWindow).toBe(64_000)
+      // A reconfigure builds from the list it has, without the gateway.
+      await rt.reconfigure()
+      expect(rt.selectedModel()!.contextWindow).toBe(64_000)
+    } finally {
+      release()
+    }
+    await waitFor(() => rt.selectedModel()?.contextWindow === 200_000)
   })
 })
 

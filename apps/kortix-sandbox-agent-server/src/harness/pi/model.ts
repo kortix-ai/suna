@@ -162,6 +162,8 @@ function gatewayModel(id: string, entry: CatalogModel | undefined, target: Gatew
 export async function createPiModels(input: {
   env?: NodeJS.ProcessEnv
   defaultModelRef?: string | null
+  /** The live catalog already fetched (null: it did not answer). Omitted: fetch it now. */
+  catalog?: Record<string, CatalogModel> | null
 }): Promise<PiModels> {
   const env = input.env ?? process.env
   const credentials = new InMemoryCredentialStore()
@@ -169,7 +171,7 @@ export async function createPiModels(input: {
 
   const target = resolveGatewayTarget(env)
   if (!target) throw new Error('pi harness needs KORTIX_LLM_BASE_URL and KORTIX_TOKEN (the Kortix LLM gateway)')
-  const live = await fetchPickerCatalog(env)
+  const live = input.catalog === undefined ? await fetchPickerCatalog(env) : input.catalog
   const catalog = live ?? {}
   const provider = createProvider({
     id: KORTIX_PROVIDER_ID,
