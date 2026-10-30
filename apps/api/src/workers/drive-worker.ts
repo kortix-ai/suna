@@ -45,7 +45,7 @@ export async function drainVolumeDeletions(limit = 20): Promise<{ deleted: numbe
       .limit(limit);
     for (const row of due) {
       try {
-        await deleteDriveVolume({ name: row.volumeName, region: row.region ?? null });
+        await deleteDriveVolume({ name: row.volumeName, region: row.region ?? null, unfenced: true });
         await db.delete(platinumVolumeDeletions).where(eq(platinumVolumeDeletions.volumeName, row.volumeName));
         deleted++;
         logger.info(`[drives] deleted volume ${row.volumeName} (${row.reason})`);

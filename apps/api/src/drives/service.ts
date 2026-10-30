@@ -241,10 +241,12 @@ export async function openVolumeFor(drive: DriveRow, signal?: AbortSignal): Prom
   const vol = await openDriveVolume(volume, signal);
   if (drive.platinumVolumeId !== vol.id) {
     const first = !drive.platinumVolumeId;
+    // Only while the row still names this volume: a row read before a region
+    // move swapped it must not put an old volume's id on the moved row.
     await db
       .update(drives)
       .set({ platinumVolumeId: vol.id, updatedAt: new Date() })
-      .where(eq(drives.driveId, drive.driveId));
+      .where(and(eq(drives.driveId, drive.driveId), eq(drives.platinumVolumeName, volume.name)));
     drive.platinumVolumeId = vol.id;
     if (first && drive.kind === 'project') {
       await writeVolumeFile(volume, `${COMPANY_MEMORY_DIR}/.keep`, new Uint8Array(), {
@@ -649,6 +651,19 @@ export interface SessionDriveMounts {
   skipped: SkippedDrive[];
   /** The region of the drive's volume (null = home): a sandbox mounts it only there. */
   region: string | null;
+}
+
+/**
+ * Whether a plan made earlier still mounts the drive's current volume. A
+ * region move may have fenced the drive, or pointed it at a new volume, since:
+ * a box created from the old plan would then write where nobody reads.
+ */
+export async function driveMountPlanCurrent(plan: SessionDriveMounts): Promise<boolean> {
+  const driveId = plan.mounts[0]?.driveId;
+  const planned = Object.values(plan.volumes)[0]?.volume;
+  if (!driveId || !planned) return true;
+  const drive = await getDrive(driveId);
+  return !!drive && drive.platinumVolumeName === planned && !driveVolume(drive).moving;
 }
 
 /** The same plan with no folder mounted: each planned folder is skipped for `reason`. */

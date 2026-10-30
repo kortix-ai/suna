@@ -12,7 +12,7 @@ mock.module('../shared/platinum', () => ({
 }));
 
 const { readVolumeFile, getDriveVolume, DriveStorageError } = await import('./volumes');
-const VOLUME = { name: 'synthetic-volume', region: null };
+const VOLUME = { name: 'synthetic-volume', region: null, unfenced: true as const };
 
 test('an unsatisfiable download range preserves 416 and the file size instead of reporting a storage outage', async () => {
   status = 416;

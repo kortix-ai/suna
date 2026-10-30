@@ -11,7 +11,7 @@ mock.module('../shared/platinum', () => ({
   },
 }));
 const { commitVolumeUpload, getVolumeCommit, listVolumeCommits, parseVolumeWriteCommit, writeVolumeFile, writeVolumeFiles } = await import('./volumes');
-const VOLUME = { name: 'volume', region: null };
+const VOLUME = { name: 'volume', region: null, unfenced: true as const };
 
 afterEach(() => { requests.length = 0; responses = []; });
 

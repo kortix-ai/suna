@@ -2,7 +2,10 @@
 // call here speaks the Platinum volumes API; nothing above this file does.
 
 import { createHash } from 'node:crypto';
+import { drives } from '@kortix/db';
+import { eq } from 'drizzle-orm';
 import { logger } from '../lib/logger';
+import { db } from '../shared/db';
 import { isPlatinumConfigured, platinumFetch, platinumRegionControlPlane } from '../shared/platinum';
 import { DEFAULT_SANDBOX_MOUNT_LIMIT } from './access';
 import { parseVolumeWriteCommit, type VolumeWriteCommit } from './volume-commit';
@@ -43,6 +46,31 @@ export interface DriveVolume {
   region: string | null;
   /** A region move is copying it (drives/region-move.ts): every write is refused. */
   moving?: boolean;
+  /**
+   * An operator's volume outside a drive row's life: a move's target, the
+   * purge, the deletion queue. Its writes skip the write fence.
+   */
+  unfenced?: true;
+}
+
+/**
+ * The write fence, checked when a write is sent, not when the caller read the
+ * drive row: a write that read the row before a region move fenced it, or
+ * before the move pointed the row at its new volume, is refused here instead
+ * of landing in the volume the move copies from. Only a row that still names
+ * this volume, with no move running, may write it. One indexed read per write.
+ */
+export async function assertDriveWritable(volume: DriveVolume): Promise<void> {
+  if (volume.unfenced) return;
+  if (!volume.moving) {
+    const [row] = await db
+      .select({ move: drives.platinumVolumeMove })
+      .from(drives)
+      .where(eq(drives.platinumVolumeName, volume.name))
+      .limit(1);
+    if (row && !(row.move && !row.move.finished_at)) return;
+  }
+  throw new DriveStorageError(503, DRIVE_MOVING_MESSAGE, 'drive_moving');
 }
 
 /** The control plane that owns the volume: its region's own, or the global origin for home. */
@@ -64,7 +92,8 @@ function volumeOrigin(volume: DriveVolume): string | undefined {
 async function call(volume: DriveVolume | null, path: string, init: RequestInit = {}, allowRangeRefusal = false): Promise<Response> {
   if (!driveStorageAvailable()) throw new DriveStorageError(503, 'Drive storage is not available', 'drive_storage_unavailable');
   const method = (init.method ?? 'GET').toUpperCase();
-  if (volume?.moving && method !== 'GET') throw new DriveStorageError(503, DRIVE_MOVING_MESSAGE, 'drive_moving');
+  // An upload's blocks change nothing until its commit, which is checked.
+  if (volume && method !== 'GET' && !/\/files\/upload\/[^/]+\/blocks\//.test(path)) await assertDriveWritable(volume);
   const origin = volume ? volumeOrigin(volume) : undefined;
   let res: Response;
   try {
@@ -350,6 +379,16 @@ export async function getVolumeCommit(volume: DriveVolume, commitId: string): Pr
   return callJson<VolumeCommit>(volume, `${v(volume)}/commits/${encodeURIComponent(commitId)}`);
 }
 
+/**
+ * Platinum's verdict on whether the volume holds everything written to it:
+ * `ok` once no mount, merge queue, open commit or block not yet in object
+ * storage holds a write. `probe=false` reads it from Platinum's database.
+ */
+export async function volumeHealth(volume: DriveVolume): Promise<{ status: string; reason: string | null }> {
+  const r = await callJson<{ status?: string; reason?: string | null }>(volume, `${v(volume)}/health?probe=false`, { signal: AbortSignal.timeout(15_000) });
+  return { status: r.status ?? 'unknown', reason: r.reason ?? null };
+}
+
 /** One mount of a volume on a sandbox, running or stopped. */
 export interface VolumeMount {
   sandboxId: string;
@@ -464,7 +503,8 @@ export async function attachSandboxVolume(
   mountPath: string,
   input: { volume: DriveVolume; readOnly: boolean; subdir?: string },
 ): Promise<void> {
-  if (input.volume.moving) throw new DriveStorageError(409, DRIVE_MOVING_MESSAGE, 'drive_moving');
+  // A box writes through its mount: the same fence as any write.
+  await assertDriveWritable(input.volume);
   try {
     await call(null, sandboxMount(externalId, mountPath), {
       method: 'POST',

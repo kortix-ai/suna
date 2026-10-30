@@ -853,6 +853,11 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
     providerCreateInput.volumes = undefined;
     return;
   }
+  if (state.driveMountsResolved && state.driveMounts?.mounts.length) {
+    // A retry reuses the plan; a region move may have moved the Files since.
+    const { driveMountPlanCurrent } = await import('../../drives/service');
+    if (!(await driveMountPlanCurrent(state.driveMounts))) state.driveMountsResolved = false;
+  }
   if (!state.driveMountsResolved) {
     state.driveMounts = await planDrives();
     state.driveMountsResolved = true;

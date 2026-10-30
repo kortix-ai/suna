@@ -11,7 +11,7 @@ mock.module('../shared/platinum', () => ({
   },
 }));
 const { getDriveVolume, deleteDriveVolume, DriveStorageError } = await import('./volumes');
-const VOLUME = { name: 'synthetic-volume', region: null };
+const VOLUME = { name: 'synthetic-volume', region: null, unfenced: true as const };
 const sleep = spyOn(Bun, 'sleep').mockResolvedValue(undefined);
 afterEach(() => { calls = 0; statuses = []; sleep.mockClear(); });
 afterAll(() => sleep.mockRestore());

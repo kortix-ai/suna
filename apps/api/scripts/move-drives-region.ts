@@ -5,18 +5,20 @@
  *
  *   dotenvx run -f apps/api/.env.dev -- bun run apps/api/scripts/move-drives-region.ts move --env dev --to us-east [--drive <id>…] [--apply]
  *   dotenvx run -f apps/api/.env.dev -- bun run apps/api/scripts/move-drives-region.ts purge --env dev [--older-than-days 14] [--apply]
+ *   dotenvx run -f apps/api/.env.dev -- bun run apps/api/scripts/move-drives-region.ts abort --env dev --drive <id>
  *
  * Without `--apply` it only reads and prints the plan. `--env` must equal the
  * environment the loaded profile names (INTERNAL_KORTIX_ENV), so a profile
  * mix-up cannot move another environment's Files. `move` without `--drive`
  * takes every project drive not in the target region, one at a time, paced
  * far below Platinum's write budget. A drive a running box mounts is skipped
- * and listed; run the command again later for those.
+ * and listed; run the command again later for those. `abort` lifts the fence
+ * of a move whose process died, and the drive stays where it was.
  */
 import { drives } from '@kortix/db';
 import { and, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { config } from '../src/config';
-import { moveDriveToRegion, purgeMovedVolumes, type DriveMoveReport, type MoveTarget } from '../src/drives/region-move';
+import { abortDriveMove, moveDriveToRegion, purgeMovedVolumes, type DriveMoveReport, type MoveTarget } from '../src/drives/region-move';
 import { db } from '../src/shared/db';
 
 const PACE_MS = 2_000;
@@ -85,7 +87,12 @@ async function main() {
     console.log(`[purge] ${reports.filter((r) => r.outcome === 'purged').length} purged, ${reports.filter((r) => r.outcome === 'kept').length} kept${opts.apply ? '' : ' (plan only; add --apply to delete)'}`);
     return;
   }
-  throw new Error('usage: move-drives-region.ts move|purge --env <env> …');
+  if (opts.command === 'abort') {
+    if (!opts.drives.length) throw new Error('--drive <id> is required');
+    for (const id of opts.drives) console.log(`[abort] drive ${id}: ${await abortDriveMove(id)}`);
+    return;
+  }
+  throw new Error('usage: move-drives-region.ts move|purge|abort --env <env> …');
 }
 
 main()

@@ -17,8 +17,12 @@
 //     every write (volumes.ts `drive_moving`), no new box mounts the drive and
 //     a hot-attach skips it (service.ts).
 //  3. Settle, then detach the mounts of stopped boxes (they committed at the
-//     stop) and drop them from those boxes' rows. A box that wakes later runs
-//     without these folders and says so; its next box mounts the new volume.
+//     stop) and drop them from those boxes' rows, and wait until Platinum
+//     reports the volume holds every write (`/health`). A box that wakes later
+//     runs without these folders and says so; its next box mounts the new one.
+//     Storage checks the fence when a write is sent (volumes.ts
+//     assertDriveWritable), so a caller that read the row before the fence is
+//     refused too.
 //  4. Copy: every directory and file, with its mode and mtime, in batches of
 //     one upload commit each, into a fresh volume opened in drive mode.
 //  5. Verify: the same paths, types and sizes, every file's sha256 read back
@@ -26,7 +30,8 @@
 //     began, and no mount on it.
 //  6. Swap the row (name, region, volume id, conflict scan head) and finish
 //     the move record. Any failure before this lifts the fence, deletes the
-//     half-made volume and leaves the drive where it was.
+//     half-made volume and leaves the drive where it was. A process that dies
+//     mid-move leaves the fence up: `abortDriveMove` lifts it.
 //
 // The commit history stays with the old volume: the new one starts with the
 // copy's commits. Version reads by an old commit id (file history, artifact
@@ -43,6 +48,7 @@ import { isDriveSyncBox } from './sync';
 import {
   type DriveVolume,
   DriveStorageError,
+  volumeHealth,
   commitVolumeUpload,
   deleteDriveVolume,
   detachSandboxVolume,
@@ -65,10 +71,12 @@ const BATCH_FILES = 2_000;
 const BATCH_BYTES = 64 * 1024 * 1024;
 /** The copy holds one file in memory: a larger one needs a streaming copy, so such a drive does not move. */
 const MAX_FILE_BYTES = 512 * 1024 * 1024;
-/** A write that read the row just before the fence lands within this; a later one fails the head check. */
-const FENCE_SETTLE_MS = 5_000;
-/** Mount states of a live guest: a move never runs under one. */
-const LIVE_MOUNT_STATES = new Set(['mounted', 'pulling', 'pending', 'unmounting', 'unflushed']);
+/** A write sent just before the fence lands within this; a later one fails the head check. */
+const FENCE_SETTLE_MS = 10_000;
+/** Mount states of a guest that is not running. Every other state counts as live: a move never runs under one. */
+const STOPPED_MOUNT_STATES = new Set(['parked', 'lost', 'failed']);
+/** The move asks Platinum this many times, 3 s apart (~1 min), whether the old volume holds every write. */
+const HEALTH_TRIES = 20;
 
 /** The region a drive moves to; null = Platinum's home region. */
 export type MoveTarget = string | null;
@@ -130,7 +138,18 @@ async function readAll(volume: DriveVolume, path: string): Promise<Uint8Array<Ar
 }
 
 function liveMounts(mounts: VolumeMount[]): VolumeMount[] {
-  return mounts.filter((m) => LIVE_MOUNT_STATES.has(m.state));
+  return mounts.filter((m) => !STOPPED_MOUNT_STATES.has(m.state));
+}
+
+/** Wait until Platinum reports the volume holds every write, or refuse the move. */
+async function awaitSaved(volume: DriveVolume): Promise<void> {
+  let last: { status: string; reason: string | null } = { status: 'unknown', reason: null };
+  for (let attempt = 1; attempt <= HEALTH_TRIES; attempt++) {
+    last = await volumeHealth(volume);
+    if (last.status === 'ok') return;
+    if (attempt < HEALTH_TRIES) await Bun.sleep(3_000);
+  }
+  throw new MoveRefusal(`the old volume does not hold every write yet (${last.status}: ${last.reason ?? 'no reason given'})`);
 }
 
 /** Why this drive cannot move to `to` now, or null. Reads only. */
@@ -223,11 +242,18 @@ async function verifyCopy(to: DriveVolume, tree: Tree, hashes: Map<string, strin
   }
 }
 
-async function liftFence(driveId: string, startedAt: string): Promise<void> {
-  await db
+/** Lift this move's fence, never a finished move's record. True when it was this move's and is lifted now. */
+async function liftFence(driveId: string, startedAt: string): Promise<boolean> {
+  const lifted = await db
     .update(drives)
     .set({ platinumVolumeMove: null, updatedAt: new Date() })
-    .where(and(eq(drives.driveId, driveId), sql`${drives.platinumVolumeMove}->>'started_at' = ${startedAt}`));
+    .where(and(
+      eq(drives.driveId, driveId),
+      sql`${drives.platinumVolumeMove}->>'started_at' = ${startedAt}`,
+      sql`not (${drives.platinumVolumeMove} ? 'finished_at')`,
+    ))
+    .returning({ driveId: drives.driveId });
+  return lifted.length > 0;
 }
 
 /**
@@ -239,7 +265,7 @@ export async function moveDriveToRegion(driveId: string, to: MoveTarget, opts: {
   const drive = await getDrive(driveId);
   if (!drive) throw new Error(`drive ${driveId} not found`);
   const from = driveVolume(drive);
-  const target: DriveVolume = { name: movedVolumeName(drive.driveId, to), region: to };
+  const target: DriveVolume = { name: movedVolumeName(drive.driveId, to), region: to, unfenced: true };
   const report: DriveMoveReport = {
     driveId, projectId: drive.projectId, from, to: target, outcome: 'planned', files: 0, dirs: 0, bytes: 0, detached: 0, ms: 0,
   };
@@ -295,6 +321,7 @@ export async function moveDriveToRegion(driveId: string, to: MoveTarget, opts: {
         await forgetDetachedMount(drive.driveId, m.sandboxId);
         report.detached++;
       }
+      await awaitSaved(from);
       fromHead = (await getDriveVolume(from)).head_commit_id ?? null;
       tree = await readTree(from);
       Object.assign(report, { files: tree.files.length, dirs: tree.dirs.length, bytes: tree.bytes });
@@ -339,15 +366,42 @@ export async function moveDriveToRegion(driveId: string, to: MoveTarget, opts: {
     });
     return done('moved');
   } catch (err) {
-    await liftFence(drive.driveId, startedAt).catch((e) =>
-      logger.error(`[drives] lifting the move fence of drive ${drive.driveId} failed:`, { error: e instanceof Error ? e.message : String(e) }),
-    );
-    if (created) await deleteDriveVolume(target).catch(() => undefined);
     const reason = err instanceof Error ? err.message : String(err);
+    const lifted = await liftFence(drive.driveId, startedAt).catch((e) => {
+      logger.error(`[drives] lifting the move fence of drive ${drive.driveId} failed:`, { error: e instanceof Error ? e.message : String(e) });
+      return false;
+    });
+    if (!lifted) {
+      // The swap may have landed though its answer did not: the row says.
+      const now = await getDrive(drive.driveId).catch(() => null);
+      if (now?.platinumVolumeName === target.name && now.platinumVolumeMove?.finished_at) return done('moved');
+      logger.error(`[drives] moving drive ${drive.driveId} failed and its fence is still up; run the abort command`, { error: reason });
+      return done('failed', `${reason}; the fence is still up: run the abort command for this drive`);
+    }
+    // The fence is down and the row names the old volume: the half-made one is nobody's.
+    if (created) await deleteDriveVolume(target).catch(() => undefined);
     if (err instanceof MoveRefusal) return done('skipped', reason);
     logger.warn(`[drives] moving drive ${drive.driveId} failed; it stays where it was:`, { error: reason });
     return done('failed', reason);
   }
+}
+
+/**
+ * Lift the fence of a move that will not finish (its process died): the drive
+ * stays where it was, and the half-made target volume, which no row names, is
+ * deleted. Refuses a move that finished.
+ */
+export async function abortDriveMove(driveId: string): Promise<string> {
+  const drive = await getDrive(driveId);
+  const move = drive?.platinumVolumeMove;
+  if (!drive || !move) return 'no move to abort';
+  if (move.finished_at) return 'the move finished; nothing to abort';
+  const to: MoveTarget = move.to === 'home' ? null : move.to;
+  const target: DriveVolume = { name: movedVolumeName(drive.driveId, to), region: to, unfenced: true };
+  if (!(await liftFence(drive.driveId, move.started_at))) return 'the move record changed; nothing done';
+  if (drive.platinumVolumeName !== target.name) await deleteDriveVolume(target);
+  logger.info(`[drives] aborted the move of drive ${drive.driveId} to ${move.to}`);
+  return `fence lifted; the drive stays in ${drive.platinumVolumeRegion ?? 'home'}`;
 }
 
 export interface PurgeReport {
@@ -370,7 +424,7 @@ export async function purgeMovedVolumes(opts: { olderThanMs: number; apply: bool
   const out: PurgeReport[] = [];
   for (const row of rows) {
     const move = row.platinumVolumeMove!;
-    const volume: DriveVolume = { name: move.from_name, region: move.from_region };
+    const volume: DriveVolume = { name: move.from_name, region: move.from_region, unfenced: true };
     if (Date.now() - Date.parse(move.finished_at!) < opts.olderThanMs) {
       out.push({ driveId: row.driveId, volume, outcome: 'kept', reason: 'inside the retention window' });
       continue;
@@ -386,6 +440,13 @@ export async function purgeMovedVolumes(opts: { olderThanMs: number; apply: bool
     if (info && (await listVolumeMounts(volume)).length) {
       out.push({ driveId: row.driveId, volume, outcome: 'kept', reason: 'a box still mounts it' });
       continue;
+    }
+    if (info) {
+      const health = await volumeHealth(volume);
+      if (health.status !== 'ok') {
+        out.push({ driveId: row.driveId, volume, outcome: 'kept', reason: `storage does not report it saved (${health.status})` });
+        continue;
+      }
     }
     if (!opts.apply) {
       out.push({ driveId: row.driveId, volume, outcome: 'planned' });

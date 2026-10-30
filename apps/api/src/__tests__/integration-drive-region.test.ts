@@ -26,7 +26,9 @@ const { createAccountToken } = await import('../repositories/account-tokens');
 const { insertIntoView } = await import('./helpers/compat-views');
 const { seedProject, seedSession } = await import('./helpers/integration-fixtures');
 const { __resetPlatinumSandboxOriginsForTests } = await import('../shared/platinum');
-const { moveDriveToRegion } = await import('../drives/region-move');
+const { abortDriveMove, moveDriveToRegion } = await import('../drives/region-move');
+const { driveVolume } = await import('../drives/service');
+const { writeVolumeFile } = await import('../drives/volumes');
 
 const OWNER = crypto.randomUUID();
 const PT = 'https://api.platinum.test';
@@ -46,6 +48,8 @@ const store = new Map<string, Map<string, FakeVolume>>([['eu-west', new Map()], 
 const uploads = new Map<string, { volume: FakeVolume; files: Array<{ path: string; size: number; blocks: string[]; mtime?: number; mode?: number }>; dirs: string[] }>();
 const blocks = new Map<string, Uint8Array>();
 let calls: Array<{ method: string; origin: string; path: string }> = [];
+/** What Platinum's `/health` answers for every volume. */
+let health = { status: 'ok', reason: null as string | null };
 
 const elsewhere = (region: string, name: string) => [...store.entries()].find(([r, vols]) => r !== region && vols.has(name))?.[0];
 const parentsOf = (path: string) => path.split('/').slice(1, -1).map((_, i, parts) => `/${parts.slice(0, i + 1).join('/')}`);
@@ -101,6 +105,7 @@ async function platinum(url: URL, method: string, init?: RequestInit): Promise<R
     return new Response(null, { status: 204 });
   }
   if (rest === '/mounts') return json({ mounts: v.mounts });
+  if (rest === '/health') return json(health);
   if (rest === '/files' && method === 'GET') return json({ entries: entries(v, q('path') ?? '/', q('recursive') === 'true'), next_cursor: null });
   if (rest === '/files/content' && method === 'GET') {
     const f = v.files.get(q('path')!);
@@ -194,6 +199,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   calls = [];
+  health = { status: 'ok', reason: null };
   __resetPlatinumSandboxOriginsForTests();
 });
 
@@ -320,6 +326,52 @@ describe('moving a drive to another region', () => {
     expect(old.mounts).toHaveLength(1);
     expect(store.get('us-east')!.has(`${drive.platinumVolumeName}-us-east`)).toBe(false);
     old.mounts = [];
+  });
+
+  test('a write sent with the drive row read before the move is refused after it, and the old volume stays as it was', async () => {
+    const p = await projectWith(false);
+    const drive = await driveOf(p.project_id);
+    await put(drive.driveId, '/Company/a.md', 'a');
+    const stale = driveVolume(drive);
+    expect((await moveDriveToRegion(drive.driveId, 'us-east', { apply: true })).outcome).toBe('moved');
+    const old = store.get('eu-west')!.get(drive.platinumVolumeName)!;
+    const before = head(old);
+    const refused = await writeVolumeFile(stale, '/Company/late.md', new TextEncoder().encode('late') as Uint8Array<ArrayBuffer>, { overwrite: false })
+      .catch((err: { code?: string }) => err.code);
+    expect(refused).toBe('drive_moving');
+    expect(head(old)).toBe(before);
+    expect(old.files.has('/Company/late.md')).toBe(false);
+  });
+
+  test('a volume Platinum does not report saved does not move, and the fence comes down', async () => {
+    const p = await projectWith(false);
+    const drive = await driveOf(p.project_id);
+    await put(drive.driveId, '/Company/a.md', 'a');
+    health = { status: 'degraded', reason: 'merge queue not empty' };
+    const report = await moveDriveToRegion(drive.driveId, 'us-east', { apply: true });
+    expect(report.outcome).toBe('skipped');
+    expect(report.reason).toContain('merge queue not empty');
+    const [row] = await db.select().from(drives).where(eq(drives.driveId, drive.driveId));
+    expect(row!.platinumVolumeMove).toBeNull();
+    expect(row!.platinumVolumeName).toBe(drive.platinumVolumeName);
+    expect((await put(drive.driveId, '/Company/b.md', 'b')).status).toBe(200);
+  });
+
+  test('abort lifts the fence of a move whose process died and deletes its half-made volume', async () => {
+    const p = await projectWith(false);
+    const drive = await driveOf(p.project_id);
+    await put(drive.driveId, '/Company/a.md', 'a');
+    await db.update(drives).set({
+      platinumVolumeMove: { to: 'us-east', from_name: drive.platinumVolumeName, from_region: null, started_at: new Date().toISOString() },
+    }).where(eq(drives.driveId, drive.driveId));
+    store.get('us-east')!.set(`${drive.platinumVolumeName}-us-east`, { id: 'vol_half', files: new Map(), dirs: new Set(), head: 0, mounts: [] });
+    expect((await put(drive.driveId, '/Company/b.md', 'b')).status).toBe(503);
+
+    expect(await abortDriveMove(drive.driveId)).toContain('fence lifted');
+    const [row] = await db.select().from(drives).where(eq(drives.driveId, drive.driveId));
+    expect(row!.platinumVolumeMove).toBeNull();
+    expect(store.get('us-east')!.has(`${drive.platinumVolumeName}-us-east`)).toBe(false);
+    expect((await put(drive.driveId, '/Company/b.md', 'b')).status).toBe(200);
   });
 
   test('deleting a moved drive queues its volume and its old one, each with its region', async () => {
