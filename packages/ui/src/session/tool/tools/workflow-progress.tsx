@@ -11,6 +11,7 @@ import { ToolResultCard } from '../shared/result-card';
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
 import {
+  ArrowClockwiseIcon,
   CaretRightIcon,
   CheckIcon,
   CircleDashedIcon,
@@ -110,6 +111,12 @@ export interface AgentStopState {
   /** Session ids whose stop is in flight. */
   pending: ReadonlySet<string>;
   stop: (agent: WorkflowRunAgent) => void;
+  /** Claude Code's `r`: stop a running agent and start it again with the same prompt. Absent: no Restart. */
+  restart?: {
+    /** The agent session whose restart is in flight. */
+    pending?: string;
+    run: (agent: WorkflowRunAgent) => void;
+  };
 }
 
 export function WorkflowProgress({
@@ -377,6 +384,7 @@ function AgentRow({
   stop: AgentStopState;
 }) {
   const t = useTranslations('tools.workflow');
+  const tm = useTranslations('multiAgent.workflow');
   const describedBy = useId();
   const [jsonOpen, setJsonOpen] = useState(false);
   const statusLabel = t(`status.${agent.status}`);
@@ -450,6 +458,27 @@ function AgentRow({
         {timed && (
           <span className="text-muted-foreground min-w-12 shrink-0 pr-1 text-right tabular-nums">
             {elapsed !== undefined ? formatElapsed(elapsed) : ''}
+          </span>
+        )}
+        {/* Restart sits before Stop, in its own fixed slot, for the same reason. */}
+        {live && stop.enabled && stop.restart && (
+          <span className="flex size-6 shrink-0 items-center justify-center">
+            {stop.restart.pending && stop.restart.pending === agent.sessionId ? (
+              <Loading className="text-muted-foreground size-3" />
+            ) : canStop && !stopping ? (
+              <Hint label={tm('restartHint')} side="top" sideOffset={4} alignOffset={0}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={tm('restartAgent', { label: agent.label })}
+                  onClick={() => stop.restart?.run(agent)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <ArrowClockwiseIcon className="size-3" />
+                </Button>
+              </Hint>
+            ) : null}
           </span>
         )}
         {/* While the run is live every row keeps the Stop slot, so a row that finishes does not shift its neighbours' columns. */}

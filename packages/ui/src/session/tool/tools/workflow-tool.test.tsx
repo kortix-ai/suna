@@ -1,4 +1,5 @@
 import { toolCallBlock } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import './register';
 import { TooltipProvider } from '../../../primitives/tooltip';
 import { ToolRunningContext } from '../shared/infrastructure';
@@ -28,13 +29,22 @@ import { SessionIdsProvider } from '../../../providers/session-ids';
 
 let intlErrors: unknown[] = [];
 
-function render(node: ReactNode, opts: { running?: boolean; projectId?: string } = {}) {
+function render(
+  node: ReactNode,
+  opts: { running?: boolean; projectId?: string; sessionId?: string; client?: QueryClient } = {},
+) {
   intlErrors = [];
   const running = opts.running ? <ToolRunningContext.Provider value>{node}</ToolRunningContext.Provider> : node;
-  const tree = opts.projectId ? <SessionIdsProvider projectId={opts.projectId}>{running}</SessionIdsProvider> : running;
+  const tree = opts.projectId ? (
+    <SessionIdsProvider projectId={opts.projectId} sessionId={opts.sessionId}>
+      {running}
+    </SessionIdsProvider>
+  ) : (
+    running
+  );
   const html = renderToStaticMarkup(
     <IntlTestProvider locale="en" onError={(error) => intlErrors.push(error)}>
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={opts.client ?? new QueryClient()}>
         <TooltipProvider>{tree}</TooltipProvider>
       </QueryClientProvider>
     </IntlTestProvider>,
@@ -195,14 +205,14 @@ describe('WorkflowTool — header', () => {
     expect(text).toContain('Saved workflow audit-routes · Up to 12 agents');
   });
 
-  test('a large run carries the "Large run" warning chip; a relaunch carries "Resumed"', () => {
+  test('a large run carries the "Large workflow" warning chip; a relaunch carries "Resumed"', () => {
     const html = render(<WorkflowTool call={call({ status: 'running', metadata: run({ large: true, resumedFrom: 'run-0' }) })} />, { running: true });
     const text = textOf(html);
-    expect(text).toContain('Large run');
+    expect(text).toContain('Large workflow');
     expect(text).toContain('Resumed');
     expect(html).toContain('data-slot="badge"');
     const plain = textOf(render(<WorkflowTool call={call({ status: 'running', metadata: run() })} />, { running: true }));
-    expect(plain).not.toContain('Large run');
+    expect(plain).not.toContain('Large workflow');
     expect(plain).not.toContain('Resumed');
   });
 });
@@ -220,6 +230,71 @@ describe('WorkflowTool — background run', () => {
     // No disclosure: the row itself leads to the run's session.
     expect(html).not.toContain('aria-expanded');
     expect(html).not.toContain('aria-label="Open Research');
+  });
+});
+
+describe('WorkflowTool — background run read live from its runner', () => {
+  const background = run({ agents: [], phases: [], background: { sessionId: 'ses_runner' } });
+  const settledCall = call({ status: 'completed', output: 'Started in the background', metadata: background });
+
+  function runnerHolds(runnerRun: Record<string, unknown>) {
+    const client = new QueryClient();
+    client.setQueryData(qk.project.sessionWorkflows('proj_1', 'ses_runner'), [runnerRun]);
+    return client;
+  }
+
+  test("after the parent's turn ended, the card shows the runner's live progress and keeps it open", () => {
+    const html = render(<WorkflowTool call={settledCall} />, { projectId: 'proj_1', sessionId: 'ses_lead', client: runnerHolds(run()) });
+    const text = textOf(html);
+    expect(text).toContain('Running in the background · 1 of 3 done');
+    expect(text).toContain('Research pricing');
+    expect(text).toContain('Draft the summary');
+    // Not folded: the run is still the thing to watch.
+    expect(html).toContain('aria-expanded="true"');
+    // The controls go to the runner: pause, stop, and a restart on a running agent row.
+    expect(html).toContain('aria-label="Pause the run"');
+    expect(html).toContain('aria-label="Stop the run"');
+    expect(html).toContain('aria-label="Restart Research features"');
+    expect(html).toContain('aria-label="Open the run&#x27;s session"');
+  });
+
+  test('the next poll of the runner updates the same card', () => {
+    const later = run({
+      agents: run().agents.map((agent) => ({ ...agent, status: 'done', sessionId: agent.sessionId ?? 'ses_a3' })),
+    });
+    const text = textOf(render(<WorkflowTool call={settledCall} />, { projectId: 'proj_1', sessionId: 'ses_lead', client: runnerHolds(later) }));
+    expect(text).toContain('Running in the background · 3 of 3 done');
+  });
+
+  test('a paused run says so and offers Resume', () => {
+    const html = render(<WorkflowTool call={settledCall} />, {
+      projectId: 'proj_1',
+      sessionId: 'ses_lead',
+      client: runnerHolds(run({ paused: true })),
+    });
+    expect(textOf(html)).toContain('Paused · 1 of 3 done');
+    expect(html).toContain('aria-label="Resume the run"');
+  });
+
+  test('a run that finished in its runner reads as finished, with no pause or stop', () => {
+    const done = run({ status: 'done', endedAt: 1_790_000_060_000, agents: run().agents.map((agent) => ({ ...agent, status: 'done' })) });
+    const html = render(<WorkflowTool call={settledCall} />, { projectId: 'proj_1', sessionId: 'ses_lead', client: runnerHolds(done) });
+    expect(textOf(html)).toContain('3 agents');
+    expect(html).not.toContain('aria-label="Pause the run"');
+    // A finished run folds away, as every finished run card does.
+    expect(html).toContain('aria-expanded="false"');
+  });
+
+  test('a started call names its runner as runnerSessionId or runner_session_id', () => {
+    expect(parseWorkflowRun({ ...run(), background: undefined, runnerSessionId: 'ses_r' })?.background).toEqual({ sessionId: 'ses_r' });
+    expect(parseWorkflowRun({ ...run(), background: undefined, runner_session_id: 'ses_r' })?.background).toEqual({ sessionId: 'ses_r' });
+    expect(parseWorkflowRun({ ...run(), status: 'started', agents: undefined })?.status).toBe('running');
+    expect(parseWorkflowRun(run({ paused: true }))?.paused).toBe(true);
+  });
+
+  test('more than 25 agents carry the Large workflow chip', () => {
+    const agents = Array.from({ length: 26 }, (_, i) => ({ id: `a${i}`, label: `Agent ${i}`, status: 'running', sessionId: `ses_${i}` }));
+    expect(textOf(render(<WorkflowTool call={call({ status: 'running', metadata: run({ agents }) })} />, { running: true }))).toContain('Large workflow');
   });
 });
 

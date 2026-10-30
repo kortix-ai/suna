@@ -60,6 +60,8 @@ export interface WorkflowRun {
   resumedFrom?: string;
   /** The run goes on in its own runner session; this call returned at once. */
   background?: { sessionId: string };
+  /** `pause` held new agents back; running agents finish. Cleared by `resume`. */
+  paused?: true;
 }
 
 const RUN_STATUSES = new Set<WorkflowRunStatus>(['running', 'done', 'failed', 'stopped']);
@@ -130,6 +132,9 @@ function logs(value: unknown): string[] {
 
 /** The run in a `workflow` call's metadata; `null` when the metadata is not a run. */
 export function parseWorkflowRun(metadata: unknown): WorkflowRun | null {
+  if (!isObject(metadata)) return null;
+  // A background call that handed its run to a runner may say `started`: the run runs.
+  if (metadata.status === 'started') metadata = { ...metadata, status: 'running', agents: Array.isArray(metadata.agents) ? metadata.agents : [] };
   if (!isObject(metadata) || !RUN_STATUSES.has(metadata.status as WorkflowRunStatus)) return null;
   if (!Array.isArray(metadata.agents)) return null;
   const agents: WorkflowRunAgent[] = [];
@@ -146,7 +151,12 @@ export function parseWorkflowRun(metadata: unknown): WorkflowRun | null {
   const maxAgents = count(metadata.maxAgents);
   const name = text(metadata.name);
   const resumedFrom = text(metadata.resumedFrom);
-  const backgroundSession = isObject(metadata.background) ? text(metadata.background.sessionId) : undefined;
+  // A background run names its runner session as `background.sessionId`, or (a started call's
+  // details) as `runnerSessionId` / `runner_session_id`.
+  const backgroundSession =
+    (isObject(metadata.background) ? text(metadata.background.sessionId) : undefined) ??
+    text(metadata.runnerSessionId) ??
+    text(metadata.runner_session_id);
   return {
     runId: text(metadata.runId) ?? '',
     title: text(metadata.title) ?? '',
@@ -162,6 +172,7 @@ export function parseWorkflowRun(metadata: unknown): WorkflowRun | null {
     ...(metadata.large === true ? { large: true as const } : {}),
     ...(resumedFrom ? { resumedFrom } : {}),
     ...(backgroundSession ? { background: { sessionId: backgroundSession } } : {}),
+    ...(metadata.paused === true ? { paused: true as const } : {}),
   };
 }
 

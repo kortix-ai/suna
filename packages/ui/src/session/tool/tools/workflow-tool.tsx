@@ -22,13 +22,20 @@ import type { ToolProps } from '../shared/types';
 import { ToolError } from '../tool-error';
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
-import { FlowArrowIcon, WarningIcon } from '@phosphor-icons/react';
+import { FlowArrowIcon } from '@phosphor-icons/react';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { qk, useProjectSession, useSessionChildren } from '@kortix/sdk/react';
 import { stopProjectSession, type ProjectSession } from '@kortix/sdk';
 import { useSessionIds } from '../../../providers/session-ids';
 import { WorkflowLogs, WorkflowProgress, type AgentStopState } from './workflow-progress';
+import {
+  isLargeRun,
+  LargeRunBadge,
+  useLiveWorkflowRun,
+  useRestartAgent,
+  WorkflowRunControls,
+} from '../../agents/workflow-run-controls';
 import {
   countAgents,
   elapsedMs,
@@ -94,7 +101,8 @@ function WorkflowTrigger({
 
 function RunChips({ run }: { run: WorkflowRun }) {
   const t = useTranslations('tools.workflow');
-  if (!run.large && !run.resumedFrom) return null;
+  const large = isLargeRun(run);
+  if (!large && !run.resumedFrom) return null;
   return (
     <>
       {run.resumedFrom && (
@@ -102,14 +110,7 @@ function RunChips({ run }: { run: WorkflowRun }) {
           <Badge variant="default">{t('resumed')}</Badge>
         </Hint>
       )}
-      {run.large && (
-        <Hint label={t('largeHint')} side="top">
-          <Badge variant="warning">
-            <WarningIcon weight="fill" aria-hidden />
-            {t('large')}
-          </Badge>
-        </Hint>
-      )}
+      {large && <LargeRunBadge />}
     </>
   );
 }
@@ -193,6 +194,7 @@ type OpenTarget = { sessionId: string; title: string };
 export function WorkflowTool(props: ToolProps) {
   const { call, defaultOpen, forceOpen, locked } = props;
   const t = useTranslations('tools.workflow');
+  const tm = useTranslations('multiAgent.workflow');
   const running = useContext(ToolRunningContext);
   const status = partStatus(call);
   const settled = status === 'completed' || status === 'error';
@@ -205,13 +207,18 @@ export function WorkflowTool(props: ToolProps) {
   const startedMs = call.started_at ? Date.parse(call.started_at) : NaN;
   const needChildren = !settled && !parsed && !!ids.projectId && !!ids.sessionId;
   const { sessions: children } = useSessionChildren(ids.projectId ?? '', ids.sessionId ?? '', { enabled: needChildren, limit: 20 });
-  const run = useMemo(
+  const cardRun = useMemo(
     () => parsed ?? (needChildren ? runFromChildren(children, startedMs, call.input) : null),
     [parsed, needChildren, children, startedMs, call.input],
   );
+  // A background run's progress lives on its runner's box: read it from there, so the card
+  // keeps updating after this session's turn ended (the call settled long ago).
+  const { run, controlSessionId, fromRunner } = useLiveWorkflowRun(ids.projectId, ids.sessionId, cardRun);
   // A background run's own session: whether it still works says what the header reads.
-  const runner = useProjectSession(ids.projectId, run?.background?.sessionId, { enabled: !!run?.background });
-  const live = !!run && run.status === 'running' && !settled && !run.background && running;
+  const runner = useProjectSession(ids.projectId, run?.background?.sessionId, { enabled: !!run?.background && !fromRunner });
+  // Live: a foreground run while its call runs, or a background run its runner still runs.
+  const live = !!run && run.status === 'running' && (fromRunner || (!settled && !run.background && running));
+  const restart = useRestartAgent(ids.projectId, controlSessionId, live ? run : null);
   const now = useNow(live);
   const [open, setOpen] = useState<OpenTarget | null>(null);
   const onOpen = useCallback(
@@ -242,6 +249,7 @@ export function WorkflowTool(props: ToolProps) {
     },
   });
   const { mutate: mutateStop } = stopAgent;
+  const { enabled: canRestart, restarting, restart: restartAgent } = restart;
   const stop = useMemo<AgentStopState>(
     () => ({
       enabled: !!ids.projectId,
@@ -251,8 +259,9 @@ export function WorkflowTool(props: ToolProps) {
         setStopping((previous) => new Set(previous).add(agent.sessionId!));
         mutateStop(agent);
       },
+      ...(canRestart ? { restart: { pending: restarting, run: restartAgent } } : {}),
     }),
-    [ids.projectId, stopping, mutateStop],
+    [ids.projectId, stopping, mutateStop, canRestart, restarting, restartAgent],
   );
 
   if (!isWorkflowTool(call.name) || (settled && !run)) {
@@ -285,7 +294,7 @@ export function WorkflowTool(props: ToolProps) {
     />
   );
 
-  if (run.background) {
+  if (run.background && !fromRunner) {
     const runnerSession = run.background.sessionId;
     const openRunner = () => setOpen({ sessionId: runnerSession, title });
     const subtitle = runner.data?.working?.state === 'idle' ? t('backgroundIdle') : t('background');
@@ -310,12 +319,13 @@ export function WorkflowTool(props: ToolProps) {
   const runElapsed = elapsedMs(run, live, now);
   const elapsed = runElapsed !== undefined && runElapsed >= 1_000 ? formatElapsed(runElapsed) : undefined;
   const join = (...parts: (string | undefined)[]) => parts.filter(Boolean).join(' · ') || undefined;
+  const paused = run.paused ? tm('paused') : undefined;
   const subtitle =
     run.status === 'running'
       ? // A call that returned while its run goes on: the run works on without this turn.
-        settled
-        ? join(t('background'), progress)
-        : join(progress, failedPart, elapsed)
+        settled || run.background
+        ? join(paused ?? t('background'), progress, failedPart)
+        : join(paused, progress, failedPart, elapsed)
       : run.status === 'failed'
         ? (run.error?.split('\n')[0] ?? (counts.total > 0 ? t('failedCount', { failed: counts.failed, total: counts.total }) : undefined))
         : run.status === 'stopped'
@@ -350,7 +360,20 @@ export function WorkflowTool(props: ToolProps) {
         locked={locked}
       >
         <>
-          {facts.length > 0 && <RunFacts facts={facts} />}
+          <RunToolbar
+            facts={facts}
+            controls={
+              live || (!!run.runId && !run.name && !!ids.sessionId) ? (
+                <WorkflowRunControls
+                  projectId={ids.projectId}
+                  controlSessionId={live ? controlSessionId : undefined}
+                  ownerSessionId={ids.sessionId}
+                  run={run}
+                />
+              ) : null
+            }
+            onOpen={run.background ? () => setOpen({ sessionId: run.background!.sessionId, title }) : undefined}
+          />
           <WorkflowLogs logs={run.logs} />
           {hasProgress && <WorkflowProgress run={run} live={live} now={now} onOpen={onOpen} stop={stop} />}
           {runError && run.status !== 'running' && <ToolError error={runError} toolName={call.name} />}
@@ -362,9 +385,27 @@ export function WorkflowTool(props: ToolProps) {
   );
 }
 
-function RunFacts({ facts }: { facts: string[] }) {
+/** The facts line and the run's controls, above the progress. A background run opens its runner session here too. */
+function RunToolbar({ facts, controls, onOpen }: { facts: string[]; controls: React.ReactNode; onOpen?: () => void }) {
+  const t = useTranslations('tools.workflow');
   const indent = useToolIndent();
-  return <p className={cn('text-muted-foreground text-xs', indent && 'mt-1.5', indent)}>{facts.join(' · ')}</p>;
+  if (facts.length === 0 && !controls && !onOpen) return null;
+  return (
+    <div className={cn('flex min-h-6 items-center gap-2 text-xs', indent && 'mt-1.5', indent)}>
+      <p className="text-muted-foreground min-w-0 flex-1 truncate">{facts.join(' · ')}</p>
+      {onOpen && (
+        <button
+          type="button"
+          aria-label={t('openRunLabel')}
+          onClick={onOpen}
+          className="text-muted-foreground hover:text-foreground cursor-pointer whitespace-nowrap underline-offset-2 transition-colors hover:underline"
+        >
+          {t('openRun')}
+        </button>
+      )}
+      {controls}
+    </div>
+  );
 }
 
 /** The script's return value, folded: pretty JSON in mono, anything else as Markdown. */
