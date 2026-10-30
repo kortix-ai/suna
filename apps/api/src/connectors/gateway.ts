@@ -245,8 +245,9 @@ export interface GatewayDeps {
   gateChannelRead?(input: ChannelReadInput): Promise<ChannelReadGate>;
   /**
    * Keeps a Slack write (post, edit, delete, reaction, join) out of other
-   * projects' channels and threads (channel-write-scope.ts): refused before
-   * the call, and a post that landed elsewhere is taken back after it.
+   * projects' channels and threads, and a Telegram write of a chat's session
+   * in that chat (channel-write-scope.ts): refused before the call, and a
+   * Slack post that landed elsewhere is taken back after it.
    * Absent = unconfined: production always wires it (db-deps.ts).
    */
   gateChannelWrite?(input: ChannelReadInput): Promise<ChannelWriteGate>;
@@ -877,6 +878,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   // project's conversation, or a write into it, never leaves the API.
   const channelInput: ChannelReadInput = {
     projectId: input.projectId,
+    sessionId: input.sessionId ?? null,
     platform: connector.platform ?? null,
     actionPath: input.actionPath,
     args: input.args ?? {},

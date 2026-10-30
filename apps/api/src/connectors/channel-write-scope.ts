@@ -1,7 +1,9 @@
 /**
- * Slack writes, kept out of other projects' conversations.
+ * Channel connector writes, kept in the conversations they belong to: Slack
+ * writes out of other projects' conversations, Telegram writes of a chat's
+ * session in that chat.
  *
- * Every project in a Slack workspace posts with the same bot token
+ * SLACK. Every project in a Slack workspace posts with the same bot token
  * (channel-read-scope.ts explains why). Reads are confined there. This module
  * confines the writes: posts, files, edits, deletes, reactions, joins, and
  * thread binds. Without it an agent in one project could post into another
@@ -32,14 +34,35 @@
  * landed anywhere but the checked conversation (or, for a user id, that
  * person's DM) is taken back and refused.
  *
- * Teams writes do not go through the connector: every send resolves through
- * `resolveTeamsProjectConversation` (channels/teams/post.ts), which already
- * addresses only this project's own conversations.
+ * TEAMS. Teams writes do not go through the connector: every send resolves
+ * through `resolveTeamsProjectConversation` (channels/teams/post.ts), which
+ * already addresses only this project's own conversations.
+ *
+ * TELEGRAM. Each project has its own bot, so the risk is inside one project:
+ * an agent in the session of chat A must not send to, edit or delete in chat
+ * B, another person's private chat or another group of the same bot.
+ *   1. A session a Telegram chat started (`metadata.source` and
+ *      `metadata.telegram.chat_id`, both server-managed keys) or a Telegram
+ *      chat is bound to (`chat_threads`, for example a reminder's successor)
+ *      writes only into that chat: `chat_id` must be its numeric id. Any forum
+ *      topic of the chat is fine. Another chat, a `@channel` name and a
+ *      malformed id are refused before the call.
+ *   2. Any other session (web, triggers, automations) and a call without a
+ *      session write to any chat of the bot: an automation that sends order
+ *      notifications relies on it.
+ *   3. Reads (`TELEGRAM_READS`) are not confined.
+ * Kortix's own replies (notices, questions, menus) do not go through the
+ * connector and are not checked here.
  */
+import { and, eq } from 'drizzle-orm';
+import { chatThreads, projectSessions } from '@kortix/db';
+import { isRecord } from '@kortix/shared/guards';
+import { db } from '../shared/db';
 import {
   CHANNEL_READ_SCOPES,
   CONVERSATION_NOT_IN_PROJECT,
   type ChannelOwnership,
+  type ChannelReadInput,
   type ChannelReadRefusal,
   SLACK_TS,
   dbChannelOwnership,
@@ -150,11 +173,70 @@ function refuse(message: string): ChannelWriteGate {
   return { refusal: { reason: CONVERSATION_NOT_IN_PROJECT, message }, misfire: () => null };
 }
 
+/**
+ * The Telegram catalog actions that do not write into a chat. Every other
+ * Telegram action is a write into the chat its `chat_id` names; a unit test
+ * pins the list against the catalog.
+ */
+export const TELEGRAM_READS: ReadonlySet<string> = new Set(['get_chat', 'get_me']);
+
+/**
+ * The chats a session answers, as numeric chat ids: the chat that started it
+ * and every chat bound to it. Null when no Telegram chat started it and none
+ * is bound to it: that session writes to any chat.
+ */
+export async function sessionTelegramChats(projectId: string, sessionId: string | null): Promise<string[] | null> {
+  if (!sessionId) return null;
+  const [[session], threads] = await Promise.all([
+    db
+      .select({ metadata: projectSessions.metadata })
+      .from(projectSessions)
+      .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
+      .limit(1),
+    db
+      .select({ threadId: chatThreads.threadId })
+      .from(chatThreads)
+      .where(
+        and(eq(chatThreads.projectId, projectId), eq(chatThreads.sessionId, sessionId), eq(chatThreads.platform, 'telegram')),
+      ),
+  ]);
+  // A thread is the chat id, or `<chat id>:<topic id>` for a forum topic.
+  const chats = new Set(threads.map((row) => row.threadId.split(':')[0]!));
+  const metadata = isRecord(session?.metadata) ? session.metadata : {};
+  const started = metadata.source === 'telegram';
+  const startedChat = isRecord(metadata.telegram) ? telegramChatId(metadata.telegram.chat_id) : null;
+  if (started && startedChat) chats.add(startedChat);
+  return started || chats.size ? [...chats] : null;
+}
+
+/** A chat id as Telegram issues it, normalized to its decimal string; null for anything else. */
+function telegramChatId(value: unknown): string | null {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? String(value) : null;
+  return typeof value === 'string' && /^-?[1-9]\d{0,19}$/.test(value) ? value : null;
+}
+
+/**
+ * Why a session that answers the chats `own` may not write into `chatId`, or
+ * null when it may. `own` null: the session answers no Telegram chat.
+ */
+export function telegramWriteRefusal(chatId: unknown, own: string[] | null): string | null {
+  if (!own) return null;
+  const id = telegramChatId(chatId);
+  if (id && own.includes(id)) return null;
+  const chats = own.length ? `Telegram chat ${own.join(' or ')}` : 'the Telegram chat that started it';
+  return `This session answers ${chats} only. It does not send to, edit or delete messages in other chats.`;
+}
+
 /** Reads are gated in channel-read-scope.ts; this gates the writes. */
 export async function gateChannelWrite(
-  input: { projectId: string; platform: string | null; actionPath: string; args: Record<string, unknown> },
+  input: Omit<ChannelReadInput, 'risk'>,
   ownership: ChannelOwnership = dbChannelOwnership,
 ): Promise<ChannelWriteGate> {
+  if (input.platform === 'telegram') {
+    if (TELEGRAM_READS.has(input.actionPath)) return PASS;
+    const refusal = telegramWriteRefusal(input.args.chat_id, await sessionTelegramChats(input.projectId, input.sessionId ?? null));
+    return refusal ? refuse(refusal) : PASS;
+  }
   if (input.platform !== 'slack' && input.platform !== 'teams') return PASS;
   const scopes = CHANNEL_READ_SCOPES[input.platform];
   if (!Object.hasOwn(scopes, input.actionPath) || scopes[input.actionPath] !== 'write') return PASS;

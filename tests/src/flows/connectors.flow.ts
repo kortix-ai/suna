@@ -2470,7 +2470,9 @@ flow(
 //      a declared connector with no credential answers `connector_not_connected`
 //      and lists as `needs_auth`;
 //   5. the turn-stream relay says WHY a step was not relayed;
-//   6. ten consecutive calls after a mid-session connector add keep the grant.
+//   6. ten consecutive calls after a mid-session connector add keep the grant;
+//   7. a Telegram send reaches any chat until a Telegram chat binds the
+//      session, then only that chat (`conversation_not_in_project`).
 flow(
   'CONN-27',
   {
@@ -2673,6 +2675,67 @@ flow(
           if (!after || after.connectors !== 'all') {
             throw new Error(`grant was not repaired: ${JSON.stringify(after)}`);
           }
+        },
+      );
+
+      await ctx.step(
+        'a Telegram send reaches any chat while no Telegram chat is bound to the session, and only the bound chat after a bind',
+        async () => {
+          const connector = await db.query<{ connector_id: string }>(
+            `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+             VALUES ($1, $2, 'kortix_telegram', 'Telegram', 'channel', $3::jsonb, 'active') RETURNING connector_id`,
+            [team.id, p.id, JSON.stringify({ platform: 'telegram' })],
+          );
+          await db.query(
+            `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+             VALUES ($1, $2, $3, 'project', 'Telegram', 'active', true, $4::jsonb)`,
+            [team.id, p.id, connector.rows[0]?.connector_id, JSON.stringify({ provider: 'channel', connector_slug: 'kortix_telegram' })],
+          );
+          await db.query(
+            `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+             VALUES ($1, 'send_message', 'Send message', null, $2::jsonb, 'write', $3::jsonb)`,
+            [
+              connector.rows[0]?.connector_id,
+              JSON.stringify({ type: 'object', properties: { chat_id: { type: 'string' }, text: { type: 'string' } }, required: ['chat_id', 'text'] }),
+              JSON.stringify({ kind: 'http', method: 'POST', path: '/sendMessage' }),
+            ],
+          );
+          // The bot on record makes the account a connected one.
+          const bot = `ke2e-bot-${sessionId.slice(0, 8)}`;
+          await db.query(`INSERT INTO kortix.chat_installs (platform, workspace_id, project_id) VALUES ('telegram', $1, $2)`, [
+            bot,
+            p.id,
+          ]);
+          const send = (chatId: number) =>
+            session.post(
+              '/v1/connectors/projects/:projectId/call',
+              { connector: 'kortix_telegram', action: 'send_message', args: { chat_id: chatId, text: 'ke2e' } },
+              { params: { projectId: p.id }, timeoutMs: 60_000 },
+            );
+          // The seeded connector has no base URL: a send that passes every
+          // check, the chat check included, fails building its request, and
+          // nothing reaches Telegram.
+          const passedEveryCheck = (r: Awaited<ReturnType<typeof send>>) =>
+            r.status(500).body().has('$.status', 'error').has('$.reason', 'http connector has no base_url');
+          passedEveryCheck(await send(444555666));
+          // A forum topic of a group binds the session, as a reminder's successor adopts its chat.
+          await db.query(
+            `INSERT INTO kortix.chat_threads (project_id, platform, workspace_id, thread_id, session_id)
+             VALUES ($1, 'telegram', $2, '-100777888:42', $3)`,
+            [p.id, bot, sessionId],
+          );
+          const other = await send(444555666);
+          other
+            .status(403)
+            .body()
+            .has('$.ok', false)
+            .has('$.status', 'denied')
+            .has('$.reason', 'conversation_not_in_project')
+            .has(
+              '$.message',
+              'This session answers Telegram chat -100777888 only. It does not send to, edit or delete messages in other chats.',
+            );
+          passedEveryCheck(await send(-100777888));
         },
       );
 

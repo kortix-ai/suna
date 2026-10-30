@@ -1,9 +1,11 @@
 /**
  * Integration test (real local PostgreSQL): a Slack write from one project
  * stays out of another project's channels and threads, and a thread bind
- * lands only in a workspace the project's install proved. Real: chat_installs,
- * chat_channel_bindings, chat_threads, project_secrets rows and their SQL.
- * Faked: Slack (the gateway's fetch).
+ * lands only in a workspace the project's install proved. A Telegram write
+ * from a session a chat started, or a chat is bound to, stays in that chat.
+ * Real: chat_installs, chat_channel_bindings, chat_threads, project_sessions,
+ * project_secrets rows and their SQL. Faked: Slack and Telegram (the gateway's
+ * fetch).
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accountMembers, chatChannelBindings, chatInstalls, chatThreads, projectSecrets, projectSessions } from '@kortix/db';
@@ -265,5 +267,131 @@ describe('the file upload and bind-thread routes', () => {
     const dm = await post('bind-thread', { session_id: mineSession, channel: D_OTHER, thread_ts: '1700000900.000900' });
     expect(dm.status).toBe(200);
     expect(await dm.json()).toMatchObject({ ok: true, bound: true, session_id: mineSession });
+  });
+});
+
+describe('Telegram writes stay in the chat that started or is bound to the session', () => {
+  const BOT = `7${RUN.replace(/\D/g, '').padEnd(6, '0').slice(0, 6)}`;
+  const OWN_CHAT = 111222333;
+  const GROUP = -100777888;
+  const OTHER_CHAT = 444555666;
+  let chatSession: string;
+  let boundSession: string;
+  let webSession: string;
+
+  beforeAll(async () => {
+    chatSession = await seedSession(mine, crypto.randomUUID());
+    boundSession = await seedSession(mine, crypto.randomUUID());
+    webSession = await seedSession(mine, crypto.randomUUID());
+    // The metadata the Telegram inbound path writes on a session a chat starts.
+    await db
+      .update(projectSessions)
+      .set({ metadata: { source: 'telegram', telegram: { bot_id: BOT, chat_id: OWN_CHAT, chat_type: 'private' } } })
+      .where(eq(projectSessions.sessionId, chatSession));
+    // A reminder's successor session: a trigger started it, and it adopted a
+    // forum topic of a group (`adoptChatThreads`).
+    await db.update(projectSessions).set({ metadata: { source: 'trigger' } }).where(eq(projectSessions.sessionId, boundSession));
+    await db.insert(chatThreads).values({
+      platform: 'telegram',
+      workspaceId: BOT,
+      threadId: `${GROUP}:42`,
+      projectId: mine.project_id,
+      sessionId: boundSession,
+    });
+  });
+
+  afterAll(async () => {
+    await db.delete(chatThreads).where(eq(chatThreads.workspaceId, BOT));
+  });
+
+  const gate = async (sessionId: string | null, actionPath: string, args: Record<string, unknown>) =>
+    (await gateChannelWrite({ projectId: mine.project_id, platform: 'telegram', sessionId, actionPath, args }))
+      .refusal;
+
+  test("a chat's session sends, edits and deletes in its own chat and any topic of it; every other chat is refused", async () => {
+    expect(await gate(chatSession, 'send_message', { chat_id: OWN_CHAT, text: 'done' })).toBeNull();
+    expect(await gate(chatSession, 'send_message', { chat_id: String(OWN_CHAT), message_thread_id: 7, text: 'done' })).toBeNull();
+    expect(await gate(chatSession, 'edit_message_text', { chat_id: OWN_CHAT, message_id: 5, text: 'done' })).toBeNull();
+    expect(await gate(chatSession, 'delete_message', { chat_id: OWN_CHAT, message_id: 5 })).toBeNull();
+    for (const [action, args] of [
+      ['send_message', { chat_id: OTHER_CHAT, text: 'hi' }],
+      ['edit_message_text', { chat_id: OTHER_CHAT, message_id: 5, text: 'hi' }],
+      ['delete_message', { chat_id: OTHER_CHAT, message_id: 5 }],
+      ['send_chat_action', { chat_id: OTHER_CHAT, action: 'typing' }],
+      ['send_message', { chat_id: '@other_channel', text: 'hi' }],
+      ['send_message', { chat_id: 'not-a-chat', text: 'hi' }],
+      ['send_message', { text: 'hi' }],
+    ] as const) {
+      expect(await gate(chatSession, action, args)).toEqual({
+        reason: CONVERSATION_NOT_IN_PROJECT,
+        message: `This session answers Telegram chat ${OWN_CHAT} only. It does not send to, edit or delete messages in other chats.`,
+      });
+    }
+  });
+
+  test('a session a chat is bound to writes to that chat (the binding names a topic) and to no other', async () => {
+    expect(await gate(boundSession, 'send_message', { chat_id: GROUP, text: 'reminder' })).toBeNull();
+    expect(await gate(boundSession, 'send_message', { chat_id: GROUP, message_thread_id: 42, text: 'reminder' })).toBeNull();
+    expect((await gate(boundSession, 'send_message', { chat_id: OWN_CHAT, text: 'reminder' }))?.message).toBe(
+      `This session answers Telegram chat ${GROUP} only. It does not send to, edit or delete messages in other chats.`,
+    );
+  });
+
+  test('a web session, an automation without a session, and every read reach any chat', async () => {
+    expect(await gate(webSession, 'send_message', { chat_id: OTHER_CHAT, text: 'order shipped' })).toBeNull();
+    expect(await gate(webSession, 'delete_message', { chat_id: OTHER_CHAT, message_id: 5 })).toBeNull();
+    expect(await gate(null, 'send_message', { chat_id: OTHER_CHAT, text: 'order shipped' })).toBeNull();
+    expect(await gate(chatSession, 'get_chat', { chat_id: OTHER_CHAT })).toBeNull();
+    expect(await gate(chatSession, 'get_me', {})).toBeNull();
+  });
+
+  test('the connector refuses another chat before Telegram, and sends into its own chat', async () => {
+    const run = async (sessionId: string, args: Record<string, unknown>) => {
+      const fetched: string[] = [];
+      const deps: GatewayDeps = {
+        loadConnectorBySlug: async () => ({
+          connectorId: 'conn-telegram',
+          slug: 'kortix_telegram',
+          provider: 'channel',
+          platform: 'telegram',
+          baseUrl: 'https://api.telegram.org',
+          auth: { type: 'custom', in: 'path', name: null, prefix: 'bot' },
+          hasAuth: true,
+          credentialMode: 'shared',
+          enabled: true,
+        }),
+        loadAction: async () => ({
+          path: 'kortix_telegram.send_message',
+          relPath: 'send_message',
+          inputSchema: { type: 'object', properties: { chat_id: {}, text: {} } },
+          risk: 'write',
+          binding: { kind: 'http', method: 'POST', path: '/sendMessage' },
+        }),
+        resolveCredential: async () => '123456:synthetic',
+        loadPolicies: async () => [],
+        recordExecution: async () => null,
+        gateChannelWrite: (input) => gateChannelWrite(input),
+        fetchImpl: async (url) => {
+          fetched.push(url);
+          return { status: 200, ok: true, text: async () => JSON.stringify({ ok: true, result: { message_id: 9 } }) };
+        },
+      };
+      const res = await handleCall(deps, {
+        projectId: mine.project_id,
+        accountId: mine.account_id,
+        subject: { userId: crypto.randomUUID(), groupIds: [] },
+        sessionId,
+        connectorSlug: 'kortix_telegram',
+        actionPath: 'send_message',
+        args,
+      });
+      return { res, fetched };
+    };
+    const refused = await run(chatSession, { chat_id: OTHER_CHAT, text: 'hi' });
+    expect(refused.res).toMatchObject({ status: 'denied', reason: CONVERSATION_NOT_IN_PROJECT });
+    expect(refused.fetched).toEqual([]);
+    const own = await run(chatSession, { chat_id: OWN_CHAT, text: 'done' });
+    expect(own.res.status).toBe('ok');
+    expect(own.fetched).toEqual(['https://api.telegram.org/bot123456:synthetic/sendMessage']);
   });
 });
