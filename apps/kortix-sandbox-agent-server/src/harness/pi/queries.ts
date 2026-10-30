@@ -1,5 +1,5 @@
 /**
- * The `/kortix/opencode/*` namespace for a pi session: state, transcript pages,
+ * The `/kortix/runtime/*` namespace for a pi session: state, transcript pages,
  * the sequenced event stream and attachment bytes. Same shapes as the OpenCode
  * adapter serves — the web client is not namespace-parameterized.
  */

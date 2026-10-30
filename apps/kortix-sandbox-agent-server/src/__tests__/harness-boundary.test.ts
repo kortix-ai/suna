@@ -87,18 +87,17 @@ describe('harness ownership boundary', () => {
     expect(response.status).toBe(200)
     // The route composes the host facts, the closed harness block (adapter
     // facts ride in `details`) and one readiness verdict (E19).
-    expect(await response.json()).toMatchObject({
+    const body = await response.json()
+    expect(body).toMatchObject({
       daemon: 'ok',
       capabilities: ['file.import', 'file.append', 'agent-config.env-gz.v1', 'runtime.turns.v1', 'runtime.retract.v1', 'session.subagents'],
       status: 'ok',
       runtimeReady: true,
       boot_error: null,
       harness: { id: 'test-only-adapter', version: '1.0.0', ready: true, details: { exclusiveFeature: 'preserved' } },
-      // The pre-W3 flat names, composed from the block for an older API.
-      opencode: 'ok',
-      opencode_session_id: 'ses_root',
-      opencode_session_required: true,
     })
+    // Kortix names only: no pre-W3 `opencode*` field, at the top or in `runtime.running`.
+    expect(JSON.stringify(body)).not.toMatch(/"opencode/)
     expect((await app.request('/session/native-command')).status).toBe(503)
 
     // The transport controller preserves features that are not common methods.

@@ -32,7 +32,7 @@ provider, so neither service imports the other.
 | --- | --- | --- |
 | `src/main.ts` | app | Entry point. Builds the config, the harness boot context and the HTTP `serve` function. |
 | `src/app/` | app | `server.ts` (Hono app, auth gate, route mounting), `shutdown.ts`, `cli.ts` (management CLI). |
-| `src/routes/kortix/` | app | `/kortix/*`: health, refresh, config, catalog, abort, env, part, logs, diag, the Runtime API (`/kortix/runtime/*`, also mounted at its pre-W3 path `/kortix/opencode/*`), pty, env-rpc, git. Each route checks its own credential. `legacy-names.ts` holds every pre-W3 wire name the routes still answer and accept. |
+| `src/routes/kortix/` | app | `/kortix/*`: health, refresh, config, catalog, abort, env, part, logs, diag, the Runtime API (`/kortix/runtime/*`), pty, env-rpc, git. Each route checks its own credential. |
 | `src/routes/workspace/` | app | `/file`, `/find`, `/presentation`: daemon-owned access to `/workspace`, behind the user-context gate. |
 | `src/routes/proxy/` | app | `/proxy/:port`, `/web-proxy`, and the catch-all to the harness, behind the user-context gate. |
 | `src/harness/` | harness | `harness.ts` (resolver, `loadConfig`, boot context), `contract/` (ports app and routes call), `shared/` (boot and relay steps that are not pi-specific), `pi/` (the one adapter). See its [README](src/harness/README.md). |
@@ -131,12 +131,10 @@ today, per file. The list only shrinks: an entry whose word no longer occurs in
 its file fails the lint, so the PR that removes a name deletes its entry. Do not
 add an entry; name the new code neutrally.
 
-Since W3 the list holds one file, `src/routes/kortix/legacy-names.ts`: the
-pre-W3 wire names (`opencode_pid`, `opencodeEnv`, `/kortix/opencode`, …) that an
-API deploy built before W3 still reads and sends. Every other module uses the
-Kortix names (`runtime_*`, `runtime_session_id`, `harness_version`). Delete the
-file, its callers' spreads and its entry when no such API deploy can run. The
-two pi entries (`src/harness/pi/config.ts`, `config-release.ts`) name the legacy
+The routes use the Kortix names only (`runtime_*`, `runtime_session_id`,
+`harness_version`). The pre-W3 wire names (`opencode_pid`, `opencodeEnv`,
+`/kortix/opencode`, …) are gone from the daemon since 2026-10-30. The two pi
+entries (`src/harness/pi/config.ts`, `config-release.ts`) name the legacy
 layout's config directory, `.kortix/opencode`, which a project that has not
 moved to the root layout still uses.
 

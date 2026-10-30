@@ -361,7 +361,7 @@ export interface RunningRuntimeAssets {
   staged_agent_sha256: string | null
   /** The harness `harness_version` describes. Null before a pass or bake recorded one. */
   harness: string | null
-  /** That harness's release on disk. `routes/kortix/health.ts` adds the pre-W3 alias. */
+  /** That harness's release on disk. */
   harness_version: string | null
   /** Highest manifest epoch this box has converged to, from DISK. */
   build: number | null
