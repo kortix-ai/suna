@@ -204,7 +204,9 @@ agent". Source: `code.claude.com/docs/en/agents` and `/sub-agents`, read
    whose `parent_session_id` equals the server-managed `spawned_by_session`.
    "Finished" means settled: a queued prompt, or a background grandchild still
    working, defers the notice to the turn that settles them (no storm up the
-   tree). A child whose box never started reports `failed` once.
+   tree). A child whose box never started reports `failed` once. A child
+   that someone other than its parent stops mid-turn reports `stopped` once
+   (the parent's own `kortix sessions stop` needs no notice).
 4. Cap: `live.count` (this box) plus the API-listed working background children.
 5. My Kortix's prompt: long or parallel work runs in the background; never wait
    or poll.
@@ -215,6 +217,10 @@ agent". Source: `code.claude.com/docs/en/agents` and `/sub-agents`, read
 2. Fork subagents: inherit the parent context (`fork_from_session_id`) in the background.
 3. Agent teams on rooms + `session.steer` (Pillar 4): sibling messages, a shared task list.
 4. Move a running foreground call to the background; per-account quota and billing roll-up for children.
+5. The inline spec is a nested `agent` object on the `agent` tool. On 2026-10-30
+   `deepseek-v4.1-flash` left it out in 5 of 6 first calls and got `Set
+   subagent_type …` each time. A flatter spec (or a distinct key name) would
+   let weaker models define ephemeral agents in one call.
 
 Known ceiling: the report is read between the child's turn end and the enqueue
 (~1 s). An API process killed in that window drops that one notice; the parent
