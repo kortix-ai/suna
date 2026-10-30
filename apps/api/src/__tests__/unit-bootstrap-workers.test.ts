@@ -29,8 +29,9 @@ mock.module('../platform/services/maintenance-setting', () => ({ maintenanceSett
 mock.module('../platform/services/runtime-settings', () => ({ refreshRuntimeSettings: async () => {} }));
 mock.module('../platform/services/github-app-identity', () => ({ refreshAppIdentity: async () => {} }));
 mock.module('../platform/services/managed-git-backend', () => ({ refreshGitBackend: async () => {} }));
-mock.module('../shared/pg-broadcast', () => ({ startConfigBaseMoveBroadcast: async () => false }));
-mock.module('../projects/surface', () => ({ handBackClaims: async () => 0 }));
+const realBroadcast = await import('../shared/pg-broadcast');
+mock.module('../shared/pg-broadcast', () => ({ ...realBroadcast, startConfigBaseMoveBroadcast: async () => false }));
+mock.module('../projects/surface', () => ({ handBackClaims: async () => 0, signalSessionRuntimeActive() {} }));
 
 const bootstrap = readFileSync(new URL('../bootstrap.ts', import.meta.url), 'utf8');
 const imports = /import\s*\{([\w,\s]+)\}\s*from\s*'(\.\/workers\/[^']+)'|\{([\w,\s]+)\}\s*=\s*await import\('(\.\/workers\/[^']+)'\)/g;
