@@ -24206,5 +24206,17 @@
   "roleCapabilities": {
     "comment": "Коментар",
     "commentArea": "Коментариши {area}"
+  },
+  "sessionDesktop": {
+    "title": "Радна површина",
+    "openTab": "Отвори у новој картици",
+    "offline": "Радна површина није покренута на овом рачунару.",
+    "start": "Затражите од Kortix-а да покрене",
+    "retry": "Покушај поново",
+    "takeOver": "Преузми контролу",
+    "userControl": "Ви имате контролу",
+    "agentControl": "Kortix има контролу",
+    "returnControl": "Врати контролу",
+    "escape": "Esc"
   }
 }

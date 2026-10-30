@@ -10,7 +10,8 @@
  * journal starts without the cursors `restore` returned.
  *
  * - The flag. apps/api sets `KORTIX_SESSION_LOG_RESTORE=1` when the project flag
- *   `session_log_restore` is on. Off: no manifest read, no restore; the box keeps its native
+ *   `session_log_restore` is on; `loadConfig` sets it on a box OpenCode booted before the sunset, which
+ *   boots pi on an empty store. Off: no manifest read, no restore; the box keeps its native
  *   state and journals at its persisted generation (0 when it never restored) with its persisted
  *   seq offsets (a box that lost its store numbers above the log after the first 422:
  *   `session-log-journal.ts`).

@@ -7,7 +7,6 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { logger } from '@/lib/log/logger'
-import { evaluateOpenCodePressure, formatOpenCodeMemoryGuardReason } from '@/harness/open-code/resource-diagnostics'
 import {
   type MemoryConsumer,
   type ResourceSnapshot,
@@ -122,7 +121,7 @@ describe('evaluatePressure', () => {
     expect(evaluatePressure(snapshot())).toEqual([])
   })
 
-  test('memory, cgroup, disk, load, duplicate opencode, oom-kill rise are each named', () => {
+  test('memory, cgroup, disk, load, duplicate runtime, oom-kill rise are each named', () => {
     const s = snapshot({
       memory: { totalMb: 3892, availableMb: 100, usedPct: 97, swapTotalMb: 0, swapFreeMb: 0 },
       cgroup: { currentMb: 2900, workingSetMb: 2900, maxMb: 3000, usedPct: 97, oomKills: 3 },
@@ -132,9 +131,6 @@ describe('evaluatePressure', () => {
     })
     const kinds = evaluatePressure(s, snapshot()).map((f) => f.kind).sort()
     expect(kinds).toEqual(['cgroup', 'disk', 'load', 'memory', 'oom-kill', 'runtime-duplicates'])
-    const nativeFindings = evaluateOpenCodePressure(s, snapshot())
-    expect(nativeFindings.map((f) => f.kind).sort()).toEqual(['cgroup', 'disk', 'load', 'memory', 'oom-kill', 'opencode-duplicates'])
-    expect(nativeFindings.find((f) => f.kind === 'opencode-duplicates')?.detail).toBe('2 opencode serve processes: 2423,7259')
   })
 
   test('null fields never produce findings', () => {
@@ -244,7 +240,6 @@ describe('memory guard', () => {
           runtime: { pid: 2423, rssMb: Math.round(8000 * usedPct / 100), threads: 8, state: 'R' },
         }),
       guard: {
-        formatReason: formatOpenCodeMemoryGuardReason,
         guardPct: 92,
         elevatedPct: 80,
         fastIntervalMs: 60_000,
@@ -272,7 +267,7 @@ describe('memory guard', () => {
     expect(aborts).toHaveLength(1)
     expect(aborts[0]).toContain('sandbox memory at 93%')
     expect(aborts[0]).toContain('7440 MB RSS')
-    expect(aborts[0]).toBe('sandbox memory at 93% (opencode 7440 MB RSS of 8000 MB): turn stopped to prevent a kernel OOM kill')
+    expect(aborts[0]).toBe('sandbox memory at 93% (runtime 7440 MB RSS of 8000 MB): no non-critical process to shed; turn stopped before the kernel would kill runtime')
     expect(relays).toEqual([{ aborted: true }])
 
     usedPct = 95

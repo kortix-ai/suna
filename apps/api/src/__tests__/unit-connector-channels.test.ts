@@ -258,6 +258,7 @@ const SLACK: GatewayConnector = {
   connectorId: 'conn-slack',
   slug: SLACK_CHANNEL_CONNECTOR_SLUG,
   provider: 'channel',
+  platform: 'slack',
   baseUrl: 'https://slack.com/api',
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
   hasAuth: true,

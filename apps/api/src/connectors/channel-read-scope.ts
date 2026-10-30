@@ -48,7 +48,9 @@ export interface ChannelReadRefusal {
 
 export interface ChannelReadInput {
   projectId: string;
-  /** The channel connector's platform. Only `slack` and `teams` are confined. */
+  /** The calling session, from its token; null for a call no session makes. Telegram writes are confined by it (channel-write-scope.ts). */
+  sessionId?: string | null;
+  /** The channel connector's platform. Reads are confined for `slack` and `teams`. */
   platform: string | null;
   actionPath: string;
   args: Record<string, unknown>;

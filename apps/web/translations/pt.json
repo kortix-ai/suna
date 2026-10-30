@@ -24206,5 +24206,17 @@
   "roleCapabilities": {
     "comment": "Comentar",
     "commentArea": "Comentar em {area}"
+  },
+  "sessionDesktop": {
+    "title": "Área de trabalho",
+    "openTab": "Abrir em nova aba",
+    "offline": "A área de trabalho não está em execução neste computador.",
+    "start": "Peça ao Kortix para executar",
+    "retry": "Tentar novamente",
+    "takeOver": "Assumir o controle",
+    "userControl": "Você está no controle",
+    "agentControl": "O Kortix está no controle",
+    "returnControl": "Devolver o controle",
+    "escape": "Esc"
   }
 }

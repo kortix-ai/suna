@@ -196,7 +196,9 @@ async function deliverToExisting(job: Job, payload: ArtifactCommentAgentPayload,
     let digestThreads = payload.threadIds;
     const [pending] = running ? await tx.select().from(sessionLifecycleCommands).where(and(eq(sessionLifecycleCommands.sessionId, target.sessionId),
       eq(sessionLifecycleCommands.status, 'queued'), eq(sessionLifecycleCommands.actorUserId, actor.userId),
-      sql`${sessionLifecycleCommands.payload}->'artifactCommentDigest'->>'artifactId' = ${payload.artifactId}`)).limit(1).for('update') : [];
+      sql`${sessionLifecycleCommands.payload}->'artifactCommentDigest'->>'artifactId' = ${payload.artifactId}`,
+      sql`coalesce((${sessionLifecycleCommands.payload}->>'bindTurnIdentity')::boolean, false) = ${!payload.callerSessionId}`,
+      sql`${sessionLifecycleCommands.payload}->>'authorSessionId' is not distinct from ${payload.callerSessionId}`)).limit(1).for('update') : [];
     if (pending) {
       const state = pending.payload.artifactCommentDigest as { threadIds: string[]; keys: string[]; deliveries: Array<{ job_id: string; target_key: string }> };
       if (!state.keys.includes(target.key)) {

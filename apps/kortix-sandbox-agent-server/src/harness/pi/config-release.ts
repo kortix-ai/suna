@@ -1,8 +1,7 @@
 /**
  * Config releases on pi.
  *
- * The contract is the OpenCode adapter's (open-code/config-release.ts and
- * open-code/boot-config-path.ts): the API assigns a release, the daemon
+ * The contract: the API assigns a release, the daemon
  * downloads it, verifies every file against its Git blob ID, seals it
  * read-only under `/opt/kortix/config/<release_id>`, and reports what it runs
  * in the health `config` block. `/workspace` is never a config source while

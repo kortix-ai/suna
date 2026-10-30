@@ -25,13 +25,12 @@ import type { ConfigReleaseReport } from '@/types/config-release'
  * with nobody told (the live 2026-09-26 incident this file answers).
  *
  * HARNESS BOUNDARY (eslint.config.mjs, ARCHITECTURE.md): this file is a
- * service, so it must never import a concrete adapter
- * (`harness/open-code/*`, `harness/pi/*`) directly. `cli`/`managed_skills`/
- * `daemon` read `./runtime-assets` directly because that module is already
- * harness-neutral. `config_release` and `catalog` are OpenCode-specific
- * concepts with no neutral contract of their own, so this file asks for them
+ * service, so it must never import a concrete adapter (`harness/pi/*`)
+ * directly. `cli`/`managed_skills`/`daemon` read `./runtime-assets` directly
+ * because that module is already harness-neutral. `config_release` and
+ * `catalog` have no neutral contract of their own, so this file asks for them
  * through injected closures (`RuntimeTruthDeps`) instead. The adapter wires
- * those closures — `harness/open-code/runtime-truth-glue.ts` — and calls
+ * those closures (pi: `harness/pi/boot.ts`, which supplies no catalog) and calls
  * `configureRuntimeTruth`/`startRuntimeTruthTicker` from its own boot path,
  * which is the ALLOWED import direction (an adapter may import host code).
  */
