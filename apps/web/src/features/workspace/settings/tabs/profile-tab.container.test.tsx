@@ -11,7 +11,7 @@ import * as realModal from '@kortix/ui/modal';
  * last. The state lives in the container's open handler, so this drives
  * `ProfileTab` — with the portal-based `Modal` replaced by a flat stand-in
  * (the app's Bun tests have no DOM; the same handling as
- * `sub-session-modal.characterization.test.tsx`) and the container's data
+ * `legacy-subagent-chat.test.tsx`) and the container's data
  * hooks mocked to static answers. Asserts the controlled input's `value`,
  * which is what the confirm button is gated on. The dialog's copy is pinned
  * by `profile-tab.test.tsx`.
