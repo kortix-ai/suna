@@ -503,7 +503,11 @@ export function Splash({
       row >= textTop && row < textTop + textRows ? [{ text: '', tone: 'half' as const }] : runs,
     );
     return (
+      // Distinct keys: the Life view and the resting view must not share a
+      // reused root box — its layout state outlived the switch and the symbol
+      // came home on row 0 (measured, draft-view.test.tsx).
       <box
+        key="life"
         width={width}
         height={total}
         flexShrink={0}
@@ -542,7 +546,14 @@ export function Splash({
   }
 
   return (
-    <box flexDirection="column" width={width} height={total} flexShrink={0} overflow="hidden">
+    <box
+      key="rest"
+      flexDirection="column"
+      width={width}
+      height={total}
+      flexShrink={0}
+      overflow="hidden"
+    >
       {band.map((row, index) => (
         <text key={index} fg={index === 0 ? theme.faint : theme.border} wrapMode="none" height={1}>
           {row}

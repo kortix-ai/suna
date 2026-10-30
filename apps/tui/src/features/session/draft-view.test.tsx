@@ -66,7 +66,8 @@ describe('the empty draft: a click on the symbol plays Game of Life', () => {
     await act(async () => setup.mockMouse.click(x, y));
     await wait(2500);
     await setup.renderOnce();
-    expect(setup.captureCharFrame()).toContain(SYMBOL_TOP);
+    // Home again: the very frame it started from, symbol on the same rows.
+    expect(setup.captureCharFrame()).toBe(resting);
   });
 
   test('a click on the input does not start it', async () => {
