@@ -272,7 +272,6 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       userDockerfile,
       runtimeProfile: input.runtimeProfile,
       appContext: input.appContext,
-      isShared: input.isShared,
       containerRuntime: input.containerRuntime,
     });
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);

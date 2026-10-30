@@ -4,7 +4,7 @@
  * The web terminal spawns `/bin/bash -l` (kortix-sandbox-agent-server
  * routes/pty.ts). A login shell sources /etc/profile, and Debian's /etc/profile
  * resets PATH for every non-root user to `/usr/local/bin:/usr/bin:/bin:…`. The
- * Kortix tool directories (pnpm-global `opencode`, uv's Python, bun) then drop
+ * Kortix tool directories (pnpm-global tools, uv's Python, bun) then drop
  * off PATH in the terminal, while the agent's non-login `bash -c` keeps them.
  * Ubuntu's /etc/profile leaves PATH alone, so the default image never showed it.
  *
@@ -164,7 +164,6 @@ describe('every image that runs the web terminal bakes the hook as root', () => 
   test('the layered image writes it after the last USER root and before the final USER kortix', () => {
     const image = buildLayeredDockerfile({
       userDockerfile: 'FROM debian:bookworm-slim\n',
-      opencodeVersion: '0.0.0',
       agentBinaryPath: 'kortix-agent.gz',
       cliBinaryPath: 'kortix.gz',
       entrypointScriptPath: 'kortix-entrypoint',
@@ -179,7 +178,7 @@ describe('every image that runs the web terminal bakes the hook as root', () => 
   });
 
   test('the toolchain-only render (local `kortix sandboxes build`) does not need it', () => {
-    expect(kortixToolchainLayer({ opencodeVersion: '0.0.0' })).not.toContain(KORTIX_SHELL_PROFILE_PATH);
+    expect(kortixToolchainLayer({})).not.toContain(KORTIX_SHELL_PROFILE_PATH);
   });
 
   test('the meta image (debian:bookworm-slim) writes it before its entrypoint', () => {

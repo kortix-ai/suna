@@ -11,7 +11,7 @@
  * These tests are what let RUNTIME_LAYER_VERSION stay put across the split.
  */
 import { describe, expect, test } from 'bun:test';
-import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '../../runtime-versions';
+import { AGENT_BROWSER_VERSION } from '../../runtime-versions';
 import {
   buildLayeredDockerfile,
   type BuildLayeredDockerfileOpts,
@@ -22,7 +22,6 @@ import {
 } from '../dockerfile-layer';
 
 const COMMON = {
-  opencodeVersion: OPENCODE_VERSION,
   agentBrowserVersion: AGENT_BROWSER_VERSION,
   agentBinaryPath: 'kortix-agent.gz',
   cliBinaryPath: 'kortix.gz',
@@ -59,15 +58,14 @@ WORKDIR /workspace
   },
 ];
 
-// The opts shapes the production builder actually renders: the shared default
-// image (no config warm) and the real default image (starter config + catalog).
+// The opts shapes the production builder actually renders: bare, and the real
+// default image (with the baked catalog).
 const OPT_SHAPES: Array<{ label: string; opts: Omit<BuildLayeredDockerfileOpts, 'userDockerfile'> }> = [
-  { label: 'bare (no opencodeConfigPath)', opts: { ...COMMON } },
+  { label: 'bare', opts: { ...COMMON } },
   {
-    label: 'with opencodeConfigPath + catalogPath',
+    label: 'with catalogPath',
     opts: {
       ...COMMON,
-      opencodeConfigPath: 'kortix-opencode-config',
       catalogPath: 'kortix-llm-catalog.json',
     },
   },
@@ -114,7 +112,6 @@ describe('the halves join without a seam', () => {
     const artifact = kortixArtifactLayer(opts);
     // Toolchain: installs from the network, stages nothing.
     expect(toolchain).toContain('# ─── Kortix runtime layer (auto-injected) ─');
-    expect(toolchain).toContain(`opencode-ai@${OPENCODE_VERSION}`);
     expect(toolchain).toContain(`agent-browser@${AGENT_BROWSER_VERSION}`);
     expect(toolchain).not.toContain('COPY ');
     expect(toolchain).not.toContain('ENTRYPOINT');
@@ -129,9 +126,8 @@ describe('the halves join without a seam', () => {
   });
 
   test('the toolchain half needs no staged artifacts — it renders from an empty context', () => {
-    // The local CLI omits the optional cache-warm script, keeping this renderer
-    // usable with its intentionally empty build context.
-    const toolchain = kortixToolchainLayer({ opencodeVersion: OPENCODE_VERSION });
+    // The local CLI renders it against an intentionally empty build context.
+    const toolchain = kortixToolchainLayer({});
     expect(toolchain).not.toContain('COPY ');
     expect(toolchain).toContain('RUN apt-get update \\');
   });

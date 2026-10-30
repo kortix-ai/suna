@@ -21,7 +21,6 @@ import { describe, expect, test } from 'bun:test';
 // is import-free, and kortixd bundles the same one.
 import { MANAGED_SKILLS_DIR, RUNTIME_ASSETS_STATE_PATH } from '../../../../api-contract/src/sandbox-layout';
 
-import { OPENCODE_VERSION } from '../../runtime-versions';
 import { kortixArtifactLayer, kortixToolchainLayer } from '../dockerfile-layer';
 import { buildMetaSandboxDockerfile } from '../meta-dockerfile';
 import {
@@ -48,7 +47,7 @@ const ARTIFACTS = kortixArtifactLayer({
 const IMAGES: Array<{ label: string; dockerfile: string }> = [
   {
     label: 'standard layer (platform default + custom templates)',
-    dockerfile: kortixToolchainLayer({ opencodeVersion: OPENCODE_VERSION }) + ARTIFACTS,
+    dockerfile: kortixToolchainLayer({}) + ARTIFACTS,
   },
   {
     label: 'meta-agent image',
@@ -100,6 +99,12 @@ describe('platform-owned binaries', () => {
 
     test(`${label} bakes the runtime-asset bookkeeping beside it`, () => {
       expect(dockerfile).toContain(SANDBOX_RUNTIME_ASSETS_STATE_COMMAND);
+    });
+
+    // Every new box runs pi. OpenCode in an image is ~580 MB nobody runs.
+    test(`${label} installs no OpenCode`, () => {
+      const instructions = dockerfile.split('\n').filter((line) => !/^\s*#/.test(line)).join('\n');
+      expect(instructions).not.toMatch(/opencode/i);
     });
   }
 

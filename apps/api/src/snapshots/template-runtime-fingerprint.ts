@@ -6,7 +6,6 @@ import {
   BUN_VERSION,
   NODE_VERSION,
   NPM_VERSION,
-  OPENCODE_VERSION,
   PI_SYSTEM_PACKAGES,
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
@@ -36,9 +35,6 @@ const AGENT_SRC_DIR = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src')
 const AGENT_PKG_JSON = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/package.json');
 const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
-/** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
-const OPENCODE_WARMUP_PATH = process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/opencode-warmup.sh');
 const MACHINE_DOC_PATH = process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.md');
 const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
@@ -216,7 +212,10 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // fresh worker sandbox until a manual chmod; KRTX-1814).
 // v51: the session desktop (Xvfb + XFCE + voxl on :6901, desktop.ts) and the
 // entrypoint that starts it; voxl's version and digests join the integrity key.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v51';
+// v52: no OpenCode in the image. Every new box runs pi, so the OpenCode binary
+// (twice on x86_64), its config deps, both warm-ups, the /workspace wipe and
+// the OpenCode config dir are gone (~580 MB on x86_64).
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v52';
 
 // The runtime layer bakes source artifacts into every template's rootfs. The
 // first set is the kortix-agent binary (its source, package.json and the shared
@@ -233,7 +232,6 @@ const AGENT_RUNTIME_ARTIFACTS = [
 ];
 const NON_AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },
-  { label: 'kortix-opencode-warmup', path: OPENCODE_WARMUP_PATH },
   { label: 'kortix-machine-doc', path: MACHINE_DOC_PATH },
   { label: 'kortix-slack-cli', path: SLACK_CLI_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
   { label: 'kortix-starter', path: STARTER_ROOT, excludeNames: FINGERPRINT_EXCLUDES },
@@ -253,7 +251,7 @@ export const RUNTIME_ARTIFACTS = [...AGENT_RUNTIME_ARTIFACTS, ...NON_AGENT_RUNTI
 // The rendered standard layer itself. Before this, a layer edit without a
 // RUNTIME_LAYER_VERSION bump rebuilt no image (2026-10-29: the desktop step).
 const RENDERED_LAYER_HASH = createHash('sha256')
-  .update(kortixToolchainLayer({ opencodeVersion: OPENCODE_VERSION }))
+  .update(kortixToolchainLayer({}))
   .update(kortixArtifactLayer({
     agentBinaryPath: 'a', cliBinaryPath: 'c', entrypointScriptPath: 'e',
     machineDocPath: 'm', slackCliPath: 's', managedSkillsPath: 'k',
@@ -274,9 +272,9 @@ const runtimeIntegrityKey = () =>
     VOXL_SHA256_ARM64,
   ].join(':');
 const runtimeVersionKey = () =>
-  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}:${ANYDOC_VERSION}:${PI_SYSTEM_PACKAGES.join(',')}:${runtimeIntegrityKey()}`;
+  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${AGENT_BROWSER_VERSION}:${ANYDOC_VERSION}:${PI_SYSTEM_PACKAGES.join(',')}:${runtimeIntegrityKey()}`;
 const sandboxVersionStr = () =>
-  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:ab:${AGENT_BROWSER_VERSION}:anydoc:${ANYDOC_VERSION}:pi:${PI_SYSTEM_PACKAGES.join(',')}:integrity:${runtimeIntegrityKey()}`;
+  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:ab:${AGENT_BROWSER_VERSION}:anydoc:${ANYDOC_VERSION}:pi:${PI_SYSTEM_PACKAGES.join(',')}:integrity:${runtimeIntegrityKey()}`;
 
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 let runtimeFingerprintInflight: Promise<string> | null = null;
@@ -305,7 +303,6 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
 
   runtimeFingerprintInflight = buildRuntimeArtifactFingerprint({
     sandboxVersion: sandboxVersionStr(),
-    opencodeVersion: OPENCODE_VERSION,
     artifacts: [...RUNTIME_ARTIFACTS],
   })
     .then((value) => {
@@ -336,7 +333,6 @@ export async function currentNonAgentRuntimeFingerprint(): Promise<string> {
 
   nonAgentFingerprintInflight = buildRuntimeArtifactFingerprint({
     sandboxVersion: sandboxVersionStr(),
-    opencodeVersion: OPENCODE_VERSION,
     artifacts: [...NON_AGENT_RUNTIME_ARTIFACTS],
   })
     .then((value) => {
