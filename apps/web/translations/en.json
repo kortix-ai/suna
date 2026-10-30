@@ -1095,7 +1095,7 @@
         },
         "reminders": {
           "name": "Loops",
-          "description": "Let agents and people schedule check-ins on a session, once or on repeat. Each fire re-prompts that session. Adds the Loops page, the session loop chip, and `kortix loop`."
+          "description": "Let agents and people schedule check-ins on a session, once or on repeat. Each fire re-prompts that session. Adds loops to the Triggers list, the session loop chip, and `kortix loop`."
         },
         "us_region": {
           "name": "US Region",

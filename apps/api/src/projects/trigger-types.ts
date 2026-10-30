@@ -2,8 +2,9 @@ import type { ManifestFormat, ResolvedManifest, TriggerFilter } from '@kortix/ma
 
 /**
  * The source of a trigger (a kortix.yaml trigger or a loop). `change_request` fires
- * when a change request of the project merges; only a runtime trigger
- * (`lib/runtime-triggers.ts`) can have it today, kortix.yaml cannot declare it.
+ * when a change request of the project merges through Kortix; a kortix.yaml
+ * trigger (`filter.base` names the branch) and a runtime trigger
+ * (`lib/runtime-triggers.ts`) can both have it.
  */
 export type GitTriggerType = 'cron' | 'webhook' | 'event' | 'app' | 'change_request';
 

@@ -1273,7 +1273,7 @@
         },
         "reminders": {
           "name": "Schleifen",
-          "description": "Agenten und Personen können Check-ins für eine Sitzung planen, einmalig oder wiederkehrend. Jede Auslösung spricht diese Sitzung erneut an. Fügt die Seite „Schleifen“, den Schleifen-Chip der Sitzung und `kortix loop` hinzu."
+          "description": "Agenten und Personen können Check-ins für eine Sitzung planen, einmalig oder wiederkehrend. Jede Auslösung spricht diese Sitzung erneut an. Fügt Schleifen zur Trigger-Liste, den Schleifen-Chip der Sitzung und `kortix loop` hinzu."
         },
         "us_region": {
           "name": "US-Region",

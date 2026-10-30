@@ -1273,7 +1273,7 @@
         },
         "reminders": {
           "name": "Ciclos",
-          "description": "Permite que agentes e pessoas agendem verificações em uma sessão, uma vez ou de forma recorrente. Cada disparo aciona essa sessão novamente. Adiciona a página Ciclos, o indicador de ciclos da sessão e `kortix loop`."
+          "description": "Permite que agentes e pessoas agendem verificações em uma sessão, uma vez ou de forma recorrente. Cada disparo aciona essa sessão novamente. Adiciona os ciclos à lista de Gatilhos, o indicador de ciclos da sessão e `kortix loop`."
         },
         "us_region": {
           "name": "Região dos EUA",

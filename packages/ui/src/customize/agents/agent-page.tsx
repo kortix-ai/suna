@@ -209,9 +209,12 @@ export function AgentPage({
   }
 
   if (!agent) {
+    // Only agents this page opens: a platform agent (My Kortix) is not found here either.
     const suggestion = closestAgentName(
       agentName,
-      toArray(config.agents).map((a) => a.name),
+      toArray(config.agents)
+        .filter((a) => !a.platform)
+        .map((a) => a.name),
     );
     return (
       <AgentStatePage title={t('notFoundHeader')}>

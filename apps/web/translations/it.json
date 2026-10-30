@@ -1273,7 +1273,7 @@
         },
         "reminders": {
           "name": "Cicli",
-          "description": "Consente ad agenti e persone di programmare controlli su una sessione, una volta o in modo ricorrente. Ogni attivazione richiama quella sessione. Aggiunge la pagina Cicli, l’indicatore dei cicli della sessione e `kortix loop`."
+          "description": "Consente ad agenti e persone di programmare controlli su una sessione, una volta o in modo ricorrente. Ogni attivazione richiama quella sessione. Aggiunge i cicli all’elenco dei Trigger, l’indicatore dei cicli della sessione e `kortix loop`."
         },
         "us_region": {
           "name": "Regione USA",

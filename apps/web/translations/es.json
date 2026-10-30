@@ -1273,7 +1273,7 @@
         },
         "reminders": {
           "name": "Bucles",
-          "description": "Permite que agentes y personas programen revisiones en una sesión, una vez o de forma recurrente. Cada activación vuelve a avisar a esa sesión. Añade la página Bucles, el indicador de bucles de la sesión y `kortix loop`."
+          "description": "Permite que agentes y personas programen revisiones en una sesión, una vez o de forma recurrente. Cada activación vuelve a avisar a esa sesión. Añade los bucles a la lista de Activadores, el indicador de bucles de la sesión y `kortix loop`."
         },
         "us_region": {
           "name": "Región de EE. UU.",

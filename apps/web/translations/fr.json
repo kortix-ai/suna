@@ -1273,7 +1273,7 @@
         },
         "reminders": {
           "name": "Boucles",
-          "description": "Permet aux agents et aux personnes de planifier des points de contrôle sur une session, une fois ou de façon récurrente. Chaque déclenchement relance cette session. Ajoute la page Boucles, l’indicateur de boucles de la session et `kortix loop`."
+          "description": "Permet aux agents et aux personnes de planifier des points de contrôle sur une session, une fois ou de façon récurrente. Chaque déclenchement relance cette session. Ajoute les boucles à la liste des Déclencheurs, l’indicateur de boucles de la session et `kortix loop`."
         },
         "us_region": {
           "name": "Région États-Unis",
