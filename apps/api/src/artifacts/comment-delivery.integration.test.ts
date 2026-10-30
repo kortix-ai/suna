@@ -9,6 +9,7 @@ import { config } from '../config';
 
 let stats = 0;
 let missingEntry = false;
+let callerSessionId: string | null = null;
 const refused = new Set<string>();
 const unavailable = new Set<string>();
 class ArtifactCommentAuthorityError extends Error { readonly status = 403; readonly code = 'artifact_comment_agent_forbidden'; }
@@ -16,7 +17,7 @@ const volumes = await import('../drives/volumes');
 mock.module('../drives/volumes', () => ({ ...volumes, statVolumeFile: async () => { stats++; return { version: missingEntry ? null : 'actual-entry-etag' }; } }));
 mock.module('./comment-authority', () => ({
   ArtifactCommentAuthorityError,
-  authorizeArtifactCommentAgent: async (actor: Actor, _project: unknown, agentName: string, session?: unknown) => ({ actor, agentName, canPromptExisting: !!session, callerSessionId: null }),
+  authorizeArtifactCommentAgent: async (actor: Actor, _project: unknown, agentName: string, session?: unknown) => ({ actor, agentName, canPromptExisting: !!session, callerSessionId }),
   assertArtifactCommentDeliveryAccess: async () => {},
   revalidateArtifactCommentContinue: async (row: { artifactId: string; projectId: string }, reference: { job_id: string; target_key: string }) => {
     if (unavailable.has(reference.target_key)) throw new Error('Credential validation is temporarily unavailable');
@@ -41,6 +42,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
   const storageKey = config.PLATINUM_API_KEY;
 
   beforeEach(async () => {
+    callerSessionId = null;
     stats = 0;
     missingEntry = false;
     refused.clear(); unavailable.clear();
@@ -185,6 +187,32 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
     expect(rows[0]!.payload.text).toContain('First concern.');
     expect(rows[0]!.payload.text).toContain('Second concern.');
     expect(await events()).toHaveLength(2);
+  });
+
+  for (const agentFirst of [true, false]) test(`a digest keeps person and agent identity separate (${agentFirst ? 'agent first' : 'person first'})`, async () => {
+    const token = crypto.randomUUID();
+    await db.insert(sessionSandboxes).values({ sandboxId: crypto.randomUUID(), sessionId, projectId: artifact.projectId, accountId: actor.accountId, provider: 'platinum', status: 'active',
+      metadata: { activeTurns: { [token]: { token, state: 'active', runtimeSessionId: 'synthetic-runtime', messageId: 'synthetic-message', startedAtMs: Date.now() } } } });
+    const authorSession = await seedSession(project, actor.userId);
+    for (const agent of [agentFirst, !agentFirst]) {
+      callerSessionId = agent ? authorSession : null;
+      const source = await thread(agent ? 'Agent feedback.' : 'Person feedback.', true);
+      const claimed = await job(source);
+      const payload: import('./comment-delivery').ArtifactCommentAgentPayload = { ...claimed.payload as import('./comment-delivery').ArtifactCommentAgentPayload, callerSessionId };
+      await db.update(jobQueue).set({ payload }).where(eq(jobQueue.jobId, claimed.jobId));
+      await runArtifactCommentAgentJob({ ...claimed, payload });
+    }
+    const rows = await commands();
+    expect(rows).toHaveLength(2);
+    const person = rows.find((row) => row.payload.bindTurnIdentity === true);
+    const agent = rows.find((row) => row.payload.authorSessionId === authorSession);
+    expect(person).toBeDefined();
+    expect(agent).toBeDefined();
+    expect(person?.payload.text).toContain('Person feedback.');
+    expect(person?.payload.text).not.toContain('Agent feedback.');
+    expect(agent?.payload.text).toContain('Agent feedback.');
+    expect(agent?.payload.text).not.toContain('Person feedback.');
+    expect(agent?.payload.bindTurnIdentity).not.toBe(true);
   });
 
   test('a digest drops a removed mention and still delivers the valid reference with cancellation state', async () => {
