@@ -2,15 +2,11 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { Config } from '@/lib/config/config'
-import { createToolsRouter } from '@/routes/kortix/tools'
-import { KORTIX_TOOLS, hostedTool, loadTools, runTool, sessionEnv, toolBridgeKey } from '@/services/tools/host'
-import { signTestUserContext } from './helpers/daemon-test-app'
+import { KORTIX_TOOLS, hostedTool, loadTools, runTool, sessionEnv } from '@/services/tools/host'
 
 /**
- * The tool host (services/tools/host.ts): what every harness loads, and the
- * route an out-of-process harness calls. A project tool is a plain module on
- * disk, as an author writes it.
+ * The tool host (services/tools/host.ts): what pi loads. A project tool is a
+ * plain module on disk, as an author writes it.
  */
 const LOOKUP = `export default {
   description: 'Look up an order by id.',
@@ -188,69 +184,12 @@ describe('sessionEnv', () => {
   })
 })
 
-describe('toolBridgeKey', () => {
-  test('one key per box, kept owner-only in the runtime state dir', () => {
-    const env = { KORTIX_RUNTIME_STATE_DIR: state }
-    const key = toolBridgeKey(env)
-    expect(key).toMatch(/^[0-9a-f]{64}$/)
-    expect(toolBridgeKey(env)).toBe(key)
-    expect(statSync(join(state, 'tool-bridge.key')).mode & 0o777).toBe(0o600)
-  })
-})
-
-describe('POST /kortix/tools/:name', () => {
-  const TOKEN = 'sandbox-token'
-  const compiled = JSON.stringify({ agent: { kortix: {}, reader: { tools: { '*': false, read: true } } } })
-  const env = () => ({ KORTIX_RUNTIME_STATE_DIR: state, KORTIX_SESSION_ID: 'ses_box', KORTIX_COMPILED_AGENT_CONFIG: compiled })
-  const call = (name: string, body: unknown, headers: Record<string, string>) =>
-    createToolsRouter({ sandboxToken: TOKEN, projectTarget: root } as Config, env()).request(`/${name}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...headers },
-      body: JSON.stringify(body),
-    })
-  const bridge = () => ({ Authorization: `Bearer ${toolBridgeKey(env())}` })
-
-  beforeEach(async () => {
+describe('the Kortix tools a project lists', () => {
+  test('a Kortix tool the project does not list is not loaded; a listed one is', async () => {
     write('tools/lookup.ts', LOOKUP)
-    await loadTools(root, { project_tools: { lookup_order: 'tools/lookup.ts' } })
-  })
-
-  test('the bridge key runs the tool for this box session', async () => {
-    const response = await call('lookup_order', { args: { id: '7' }, agent: 'kortix', directory: root }, bridge())
-    expect(response.status).toBe(200)
-    expect(JSON.parse(((await response.json()) as { output: string }).output)).toEqual({ order: '7', agent: 'kortix', directory: root, session: 'ses_box' })
-  })
-
-  test('the sandbox token and a signed user context are accepted too; anything else is 401', async () => {
-    expect((await call('lookup_order', { args: { id: '1' }, agent: 'kortix' }, { Authorization: `Bearer ${TOKEN}` })).status).toBe(200)
-    const userContext = signTestUserContext({ userId: 'u1', sandboxId: 's1', sandboxRole: 'owner' }, TOKEN)
-    expect((await call('lookup_order', { args: { id: '1' }, agent: 'kortix' }, { 'X-Kortix-User-Context': userContext })).status).toBe(200)
-    expect((await call('lookup_order', { args: { id: '1' }, agent: 'kortix' }, { Authorization: 'Bearer wrong' })).status).toBe(401)
-  })
-
-  test('a Kortix tool the project does not list is 404, like any tool that is not loaded', async () => {
     await loadTools(root, { kortix_tools: ['web_search', 'image_search', 'scrape_webpage', 'memory'], project_tools: { lookup_order: 'tools/lookup.ts' } })
-    const response = await call('show', { args: { action: 'show', type: 'text', content: 'hi' }, agent: 'kortix' }, bridge())
-    expect([response.status, await response.json()]).toEqual([404, { error: 'no tool named show is loaded' }])
-    expect((await call('memory', { args: { command: 'view', path: 'memory' }, agent: 'kortix' }, bridge())).status).toBe(200)
-  })
-
-  test('an unknown tool is 404, an agent without access is 403, a thrown error is 422', async () => {
-    expect(await (await call('nope', { agent: 'kortix' }, bridge())).json()).toEqual({ error: 'no tool named nope is loaded' })
-    const denied = await call('lookup_order', { args: { id: '1' }, agent: 'reader' }, bridge())
-    expect([denied.status, await denied.json()]).toEqual([403, { error: 'agent reader may not use lookup_order' }])
-    const thrown = await call('lookup_order', { args: { id: 'boom' }, agent: 'kortix' }, bridge())
-    expect([thrown.status, await thrown.json()]).toEqual([422, { error: 'order service is down' }])
-  })
-
-  // Pentest M-4: an unnamed agent skipped every tools map.
-  test('a call that names no agent is held to the default agent', async () => {
-    const restricted = { ...env(), KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ default_agent: 'reader', agent: { reader: { tools: { '*': false, read: true } } } }) }
-    const unnamed = await createToolsRouter({ sandboxToken: TOKEN, projectTarget: root } as Config, restricted).request('/lookup_order', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...bridge() },
-      body: JSON.stringify({ args: { id: '1' } }),
-    })
-    expect([unnamed.status, await unnamed.json()]).toEqual([403, { error: 'agent reader may not use lookup_order' }])
+    expect(hostedTool('show')).toBeUndefined()
+    expect(hostedTool('memory')?.name).toBe('memory')
+    expect(hostedTool('lookup_order')?.name).toBe('lookup_order')
   })
 })

@@ -3,15 +3,13 @@ import path from 'node:path'
 /**
  * File content-type + text/binary classification for the daemon file API.
  *
- * OpenCode's /file/content base64-encodes IMAGES only and returns empty content
- * for every other binary (Office docs, PDFs, archives, …). The daemon owns file
- * reads instead, so it must classify and label files itself. We mirror
- * OpenCode's binary-extension set and add the git "NUL byte in the first chunk"
- * heuristic so unknown-extension binaries are still detected.
+ * The daemon owns file reads, so it must classify and label files itself:
+ * every binary (Office docs, PDFs, archives, images, …) comes back base64
+ * with its real MIME type. A fixed binary-extension set plus the git "NUL
+ * byte in the first chunk" heuristic detects unknown-extension binaries too.
  */
 
-// Extensions OpenCode treats as binary (sst/opencode File.read `binary` set),
-// plus raster image types (OpenCode handles those via a separate image branch).
+// Extensions treated as binary, plus raster image types.
 const BINARY_EXTENSIONS = new Set<string>([
   // executables / objects / libs
   'exe', 'dll', 'pdb', 'bin', 'so', 'dylib', 'o', 'a', 'lib', 'class', 'jar', 'war', 'ear',

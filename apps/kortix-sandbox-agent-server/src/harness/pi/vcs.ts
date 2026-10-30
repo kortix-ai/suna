@@ -1,11 +1,11 @@
 /**
- * pi's answer to OpenCode's `/project/current` `vcs` field and `GET /vcs/diff`.
+ * pi's `/project/current` `vcs` field and `GET /vcs/diff`.
  *
  * The Changes tab reads both: it treats the project as tracked only when
  * `vcs === 'git'`, then reads `/vcs/diff?mode=branch`. pi used to answer `[]`
  * for every diff and omit `vcs`, so the tab was empty on every pi session.
  *
- * Same shape as OpenCode (`VcsFileDiff`): one row per file with a git-format
+ * The runtime wire's `VcsFileDiff` shape: one row per file with a git-format
  * patch, `additions`, `deletions` and `status`.
  *
  * - `git`: the working tree against HEAD, plus untracked files.

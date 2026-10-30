@@ -1,10 +1,10 @@
 /**
- * Subagents: the `agent` tool for pi (OpenCode called it `task`).
+ * Subagents: the `agent` tool for pi (`task` is the same tool under its older name).
  *
  * The tool spawns one subagent, either a named agent declared in the project
  * (`subagent_type`) or an inline ephemeral agent defined in the call (`agent`,
- * no manifest entry). It keeps OpenCode's contract end to end, because the
- * product already renders it: input `{ description, prompt, subagent_type?,
+ * no manifest entry). It keeps the `task` contract end to end, because the
+ * product renders it: input `{ description, prompt, subagent_type?,
  * agent?, task_id?, session? }`, the child session id in the tool part's
  * `metadata.sessionId` (the web client's `getChildSessionId` → `TaskTool`
  * preview and full view), and an output that starts `task_id: <id>` so the
@@ -74,7 +74,7 @@ export interface SpawnSessionInput {
   variant?: string
   /** Workspace tool names the child may use; all of them when absent. */
   tools?: string[]
-  /** OpenCode permission config for the child's tools. */
+  /** The compiled `permission` block for the child's tools. */
   permission?: unknown
   prompt: string
   signal?: AbortSignal
@@ -204,7 +204,7 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
   // the compiled agents, which change with a live agent-config update.
   pi.on('session_start', () => {
     const description = describe(subagentTypes(host))
-    // Several calls in one message run their subagents at the same time, like OpenCode.
+    // Several calls in one message run their subagents at the same time.
     const tool = (name: string, toolDescription: string) => ({
       name,
       label: name,
