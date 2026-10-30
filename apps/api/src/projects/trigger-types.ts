@@ -228,7 +228,7 @@ export interface ParsedManifest {
    * first write saves that shape (`manifestWrites`): the manifest, and the
    * prompt files from `overlay`.
    */
-  legacy?: { from: 1 | 2; overlay: Record<string, string>; dropped: string[]; error?: string };
+  legacy?: { from: 1 | 2; overlay: Record<string, string>; dropped: string[]; deletes: string[]; error?: string };
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */
