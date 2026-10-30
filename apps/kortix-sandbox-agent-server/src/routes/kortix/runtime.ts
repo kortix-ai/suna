@@ -268,6 +268,12 @@ export function createRuntimeRouter(
       return answer(c, () => turns.commands())
     })
 
+    app.get('/pending', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.pending())
+    })
+
     // The box's own session log: ahead of the API's copy while a turn runs.
     app.get('/log', async (c) => {
       const auth = authorize(cfg, c)

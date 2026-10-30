@@ -5359,12 +5359,23 @@ describe('session-log actions (runtime.actions.v1)', () => {
         asked_at: expect.any(String),
       },
     ])
+    // The pending route serves the same records, with what each thread does now.
+    expect(await call(r, '/pending', undefined, 'GET').then((res) => res.json())).toEqual({
+      statuses: { [rt.rootId]: 'busy' },
+      permissions: pending.permissions,
+      questions: [],
+    })
     const id = pending.permissions[0]!.id
     expect((await call(r, `/permissions/${id}/reply`, { reply: 'sideways' })).status).toBe(400)
     expect((await call(r, '/permissions/perm_none/reply', { reply: 'once' })).status).toBe(404)
     expect(await call(r, `/permissions/${id}/reply`, { reply: 'once' }).then((res) => res.json())).toEqual({ ok: true })
     await waitFor(() => !rt.busy())
     expect(piSessionLog(rt.sessionLogSnapshot()!).log.pending.permissions).toEqual([])
+    expect(await call(r, '/pending', undefined, 'GET').then((res) => res.json())).toEqual({
+      statuses: { [rt.rootId]: 'idle' },
+      permissions: [],
+      questions: [],
+    })
     const page = (await call(r, '/log', undefined, 'GET').then((res) => res.json())) as LogPage
     expect(toolCalls(page)).toMatchObject([{ name: 'bash', status: 'complete' }])
   })

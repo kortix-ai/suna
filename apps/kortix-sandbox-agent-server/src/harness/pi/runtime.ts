@@ -22,7 +22,7 @@ import { join } from 'node:path'
 import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
 import type { AgentSessionEvent, SessionEntry, SessionHeader, Skill } from '@earendil-works/pi-coding-agent'
-import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
+import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet, type RuntimePending } from '@kortix/api-contract/runtime-relay'
 import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, RuntimePermissionRequest, RuntimeQuestionRequest, RuntimeToolRef, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
@@ -2160,6 +2160,18 @@ export class PiRuntime {
 
   sessionStatus(): { type: 'idle' | 'busy' } {
     return { type: this.status }
+  }
+
+  /** What each thread does now and what waits on a person (`GET /kortix/runtime/pending`). */
+  pendingNow(): RuntimePending {
+    return {
+      statuses: Object.fromEntries([
+        [this.rootId, this.compaction ? 'compacting' : this.status],
+        ...[...this.children.values()].map((child) => [child.id, child.status === 'busy' ? 'busy' : 'idle']),
+      ]),
+      permissions: this.permissions.records(),
+      questions: this.questions.records(),
+    }
   }
 
   /** The runtime wire's `Session` object for this root. */

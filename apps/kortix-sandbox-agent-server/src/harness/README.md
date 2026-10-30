@@ -668,6 +668,7 @@ Under `/kortix/runtime`, in session-log terms (bodies and answers:
 | `POST /sessions/:id/command` | run a command, prompt template or skill by name |
 | `PUT /sessions/:id/grants` | the capabilities the session uses without asking (`*`: all); `[]` clears them; a `deny` still wins |
 | `GET /commands` | the commands, templates and granted skills, without their templates |
+| `GET /pending` | each thread's status (`idle`, `busy`, `compacting`) and the permission requests and questions that wait on a person |
 | `GET /log`, `GET /log/messages/:id`, `GET /log/blobs/:sha256` | the box's own session log, ahead of the API's copy while a turn runs, and its attachment bytes |
 | `GET /workspace`, `GET /workspace/diff?mode=branch\|git` | the checkout's path, home, VCS and default branch; its changes |
 

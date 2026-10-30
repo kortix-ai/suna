@@ -226,6 +226,11 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
       return answer(200, { commands })
     },
 
+    async pending() {
+      const rt = runtime()
+      return rt ? answer(200, rt.pendingNow()) : NOT_STARTED
+    },
+
     async readLog({ threadId, afterSeq, beforeSeq, limit }) {
       const rt = runtime()
       if (!rt) return NOT_STARTED

@@ -73,6 +73,8 @@ export interface HarnessTurnService {
   setGrants(runtimeSessionId: string, grants: string[]): Promise<HarnessTurnResponse>
   /** 200 `{ commands: RuntimeCommandInfo[] }`. */
   commands(): Promise<HarnessTurnResponse>
+  /** 200 `RuntimePending`: each thread's status and the requests that wait on a person. */
+  pending(): Promise<HarnessTurnResponse>
   /**
    * 200 `{ thread_id, messages, has_more }`: one page of a thread of the box's own
    * session log, oldest first. `threadId` null: the root. `afterSeq` reads forward

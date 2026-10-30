@@ -271,6 +271,7 @@ export const RUNTIME_RETRACT_CAPABILITY = 'runtime.retract.v1' as const;
  * | `POST /sessions/:id/command` | `RuntimeCommandBody` | `202 { message_id }`; `400` unknown command; `403 { error: 'command_not_enabled' }` |
  * | `PUT /sessions/:id/grants` | `RuntimeGrantsBody` | `200 { grants }` |
  * | `GET /commands` | none | `200 { commands: RuntimeCommandInfo[] }` |
+ * | `GET /pending` | none | `200 RuntimePending` |
  * | `GET /log?thread=&after_seq=&before_seq=&limit=` | none | `200 { generation, thread_id, messages: SessionLogMessage[], has_more }` |
  * | `GET /log/messages/:messageId` | none | `200 SessionLogMessage`; `404` |
  * | `GET /log/blobs/:sha256` | none | the attachment bytes; `404` |
@@ -318,6 +319,27 @@ export interface RuntimeCommandInfo {
   source: 'command' | 'template' | 'skill';
   /** The agents the command is enabled for; absent when every agent may run it. */
   agents?: string[];
+}
+
+/** What a thread does now (`log.status`); `retry` is reported as `busy` here. */
+export type RuntimeThreadStatus = 'idle' | 'busy' | 'compacting';
+
+/** One request the runtime waits on (the session log's `pending` record). */
+export interface RuntimePendingRecord {
+  id: string;
+  thread_id: string;
+  call_id?: string;
+  /** A permission: `{ permission, patterns, metadata }`. A question: `{ questions }`. */
+  payload: unknown;
+  asked_at: string;
+}
+
+/** `GET /kortix/runtime/pending`: what each thread does and what waits on a person. */
+export interface RuntimePending {
+  /** The root thread and each running or known subagent thread. */
+  statuses: Record<string, RuntimeThreadStatus>;
+  permissions: RuntimePendingRecord[];
+  questions: RuntimePendingRecord[];
 }
 
 /** `GET /kortix/runtime/workspace`. */
