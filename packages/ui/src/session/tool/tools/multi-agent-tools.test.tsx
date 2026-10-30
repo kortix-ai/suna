@@ -240,9 +240,17 @@ describe('team tasks and the older tools that share their names', () => {
 
   test('the dispatcher picks the card for a team task output, the older tool otherwise', () => {
     expect(isTeamTaskCall(done('task_list', LIST))).toBe(true);
+    // pi's inputs (extensions/team-tasks.ts): task_create { subject }, task_get / task_update { seq }.
     expect(isTeamTaskCall(running('task_update', { seq: 3, status: 'completed' }))).toBe(true);
+    expect(isTeamTaskCall(running('task_update', { seq: 3, claim: true }))).toBe(true);
+    expect(isTeamTaskCall(running('task_get', { seq: 1 }))).toBe(true);
     expect(isTeamTaskCall(running('task_create', { subject: 'Ship it' }))).toBe(true);
+    // The older plugin tools take neither a subject nor a task number.
     expect(isTeamTaskCall(running('task_create', { description: 'Build it', prompt: 'Build the site' }))).toBe(false);
+    expect(isTeamTaskCall(running('task_update', { task_id: 't-1', action: 'start', status: 'completed' }))).toBe(false);
+    expect(isTeamTaskCall(running('task_update', { task_id: 't-1', owner: 'writer' }))).toBe(false);
+    // pi's task_list {} has no input to tell: the older row draws until its output settles.
+    expect(isTeamTaskCall(running('task_list'))).toBe(false);
     // The registry still holds the older renderers' slots, now behind the dispatcher.
     expect(ToolRegistry.get('task_list')).not.toBe(TaskListTool);
     expect(ToolRegistry.get('task_create')).not.toBe(AgentSpawnTool);
@@ -256,9 +264,36 @@ describe('team tasks and the older tools that share their names', () => {
 });
 
 describe('task_stop', () => {
-  test('running says it stops an agent; done shows the card headline', () => {
-    expect(textOf(drawn('task_stop', running('task_stop', { session_id: 'ses-writer' }), { running: true }))).toContain('Stopping an agent…');
-    const stopped = { ok: true, tool: 'task_stop', action: 'stop', card: { title: 'Stopped @writer', status: 'done' }, data: { session_id: 'ses-writer', stopped: true } };
-    expect(textOf(drawn('task_stop', done('task_stop', stopped)))).toContain('Stopped @writer');
+  const stop = (stopped: boolean, extra: Record<string, unknown> = {}) => ({
+    ok: true,
+    tool: 'task_stop',
+    action: 'stop',
+    card: { title: stopped ? 'Stopped @writer' : '@writer had already ended', status: 'done' },
+    data: { sessionId: 'ses-writer', handle: 'writer', title: 'Draft the launch post', stopped, ...extra },
+  });
+
+  test('running says it stops an agent', () => {
+    expect(textOf(drawn('task_stop', running('task_stop', { name: 'writer' }), { running: true }))).toContain('Stopping an agent…');
+  });
+
+  test('done names the agent and its work, says it stopped, and opens its session', () => {
+    const html = drawn('task_stop', done('task_stop', stop(true)), { open: true });
+    const text = textOf(html);
+    expect(html).toContain('data-testid="stopped-child-body"');
+    expect(text).toContain('@writer');
+    expect(text).toContain('Draft the launch post');
+    expect(text).toContain('Stopped');
+    expect(text).not.toContain('Already ended');
+    expect(html).toContain('aria-label="Open session"');
+  });
+
+  test('an agent that had already ended says so', () => {
+    expect(textOf(drawn('task_stop', done('task_stop', stop(false)), { open: true }))).toContain('Already ended');
+  });
+
+  test('a child without a handle is named by its title', () => {
+    const text = textOf(drawn('task_stop', done('task_stop', stop(true, { handle: null })), { open: true }));
+    expect(text).toContain('Draft the launch post');
+    expect(text).not.toContain('@writer ·');
   });
 });

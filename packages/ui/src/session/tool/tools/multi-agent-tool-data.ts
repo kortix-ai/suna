@@ -33,6 +33,15 @@ export interface ReachableAgentRow {
   canReceive: boolean;
 }
 
+/** `task_stop`: `StopChildResult` (apps/kortix-sandbox-agent-server/src/harness/pi/cloud-subagent.ts). */
+export interface StoppedChild {
+  sessionId: string;
+  handle: string | null;
+  title: string | null;
+  /** False: it had already ended, and nothing was stopped. */
+  stopped: boolean;
+}
+
 export interface TeamTaskRow {
   seq: number;
   subject: string;
@@ -131,20 +140,22 @@ export function parseTasks(data: unknown): TeamTaskRow[] | null {
   return row ? [row] : null;
 }
 
+/** `task_stop`: the child it stopped, or null. */
+export function parseStoppedChild(data: unknown): StoppedChild | null {
+  if (!isObject(data) || typeof data.stopped !== 'boolean') return null;
+  const sessionId = text(data.sessionId);
+  if (!sessionId) return null;
+  return { sessionId, handle: handle(data.handle), title: text(data.title), stopped: data.stopped };
+}
+
 /**
- * True when a running call's input has the shape of pi's `task_*` tools (a
- * subject, a task number, a status or an owner), not the older plugin tools
- * that share their names.
+ * True when a running call's input has the shape of pi's `task_*` tools
+ * (apps/kortix-sandbox-agent-server/src/harness/pi/extensions/team-tasks.ts):
+ * `task_create { subject, … }`, `task_get { seq }`, `task_update { seq, … }`.
+ * The older plugin tools that share these names take neither. pi's
+ * `task_list {}` has no input to tell: its output decides once it settles.
  */
 export function looksLikeTeamTaskInput(input: unknown): boolean {
   if (!isObject(input)) return false;
-  return (
-    typeof input.subject === 'string' ||
-    typeof input.seq === 'number' ||
-    TASK_STATUSES.has(input.status as TeamTaskStatus) ||
-    'owner' in input ||
-    'claim' in input ||
-    'blocked_by' in input ||
-    'add_blocked_by' in input
-  );
+  return typeof input.subject === 'string' || typeof input.seq === 'number';
 }

@@ -1,21 +1,27 @@
 'use client';
 
 import { Badge } from '../../../primitives/badge';
+import { Button } from '../../../primitives/button';
+import { Hint } from '../../../primitives/hint';
 import { ToolResultCard } from '../shared/result-card';
+import { SubSessionModal } from '../../thread/sub-session-modal';
 import { useTranslations } from '../../../i18n';
 import {
+  ArrowSquareOutIcon,
   ListChecksIcon,
   PaperPlaneTiltIcon,
   StopCircleIcon,
   UsersThreeIcon,
   type Icon,
 } from '@phosphor-icons/react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { KortixToolResult, MultiAgentTool } from './kortix-tool-card';
 import {
   parsePeerSend,
   parseReachable,
+  parseStoppedChild,
   parseTasks,
+  type StoppedChild,
   type AgentBoardState,
   type PeerSendStatus,
   type PeerSendSummary,
@@ -179,6 +185,49 @@ function TaskLine({ task }: { task: TeamTaskRow }) {
   );
 }
 
+/** `task_stop`: the agent it stopped, whether it was still running, and a way into its session. */
+function StoppedChildBody({ child }: { child: StoppedChild }) {
+  const t = useTranslations('multiAgent.tools');
+  const [viewing, setViewing] = useState(false);
+  const name = child.handle ? `@${child.handle}` : (child.title ?? child.sessionId.slice(0, 8));
+  const detail = child.handle ? child.title : null;
+  return (
+    <ToolResultCard bodyClassName="py-0.5">
+      <div className={ROW_CLASS} data-testid="stopped-child-body">
+        <span className="text-foreground shrink-0 font-medium">{name}</span>
+        {detail ? (
+          <>
+            <span aria-hidden className="text-muted-foreground shrink-0">
+              ·
+            </span>
+            <span className="text-muted-foreground min-w-0 flex-1 truncate" title={detail}>
+              {detail}
+            </span>
+          </>
+        ) : (
+          <span className="flex-1" />
+        )}
+        <Badge variant="muted" size="sm" className="shrink-0">
+          {child.stopped ? t('stopped') : t('alreadyEnded')}
+        </Badge>
+        <Hint label={t('openSession')}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={t('openSession')}
+            onClick={() => setViewing(true)}
+            className="text-muted-foreground hover:text-foreground shrink-0"
+          >
+            <ArrowSquareOutIcon className="size-3.5 shrink-0" />
+          </Button>
+        </Hint>
+      </div>
+      <SubSessionModal open={viewing} onOpenChange={setViewing} sessionId={child.sessionId} title={name} />
+    </ToolResultCard>
+  );
+}
+
 function RowList({ children }: { children: ReactNode[] }) {
   return (
     <ToolResultCard bodyClassName="py-0.5">
@@ -226,7 +275,9 @@ export function multiAgentBody(tool: MultiAgentTool, result: KortixToolResult): 
         </RowList>
       );
     }
-    case 'task_stop':
-      return null;
+    case 'task_stop': {
+      const child = parseStoppedChild(result.data);
+      return child ? <StoppedChildBody child={child} /> : null;
+    }
   }
 }
