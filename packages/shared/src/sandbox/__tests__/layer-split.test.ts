@@ -58,17 +58,9 @@ WORKDIR /workspace
   },
 ];
 
-// The opts shapes the production builder actually renders: bare, and the real
-// default image (with the baked catalog).
+// The opts shapes the production builder actually renders.
 const OPT_SHAPES: Array<{ label: string; opts: Omit<BuildLayeredDockerfileOpts, 'userDockerfile'> }> = [
   { label: 'bare', opts: { ...COMMON } },
-  {
-    label: 'with catalogPath',
-    opts: {
-      ...COMMON,
-      catalogPath: 'kortix-llm-catalog.json',
-    },
-  },
   {
     label: 'agentBrowserVersion omitted (pinned default)',
     opts: (() => {
@@ -130,12 +122,5 @@ describe('the halves join without a seam', () => {
     const toolchain = kortixToolchainLayer({});
     expect(toolchain).not.toContain('COPY ');
     expect(toolchain).toContain('RUN apt-get update \\');
-  });
-
-  test('the optional catalog COPY only appears when catalogPath is set', () => {
-    expect(kortixArtifactLayer(opts)).not.toContain('/opt/kortix/llm-catalog.json');
-    expect(kortixArtifactLayer({ ...opts, catalogPath: 'kortix-llm-catalog.json' })).toContain(
-      'COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json',
-    );
   });
 });

@@ -7,12 +7,11 @@
  * daemon's localhost LLM proxy when one runs (credential injection, image
  * window) and at the gateway directly otherwise.
  *
- * The picker's catalog comes from the image-baked file the OpenCode path also
- * reads; the selected model comes from `KORTIX_MODEL` (the control
+ * The catalog is the project's servable list, fetched live from the gateway
+ * (`GET /models?scope=picker`); the selected model comes from `KORTIX_MODEL` (the control
  * plane's resolved session model — the variable is named for the first
  * harness, the value is harness-neutral), then the compiled agent config.
  */
-import { readFileSync } from 'node:fs'
 import type { Api, Model } from '@earendil-works/pi-ai'
 import {
   InMemoryCredentialStore,
@@ -28,11 +27,6 @@ import { logger } from '@/lib/log/logger'
 import type { KortixGatewayModel } from '@kortix/api-contract/fallback-models'
 import { variantsFromReasoningOptions } from '../shared/reasoning-variants'
 
-/** Staged unconditionally by apps/api's snapshot build-context. A host that
- *  really bakes one (every Kortix sandbox image) can hide it from the test
- *  suite through KORTIX_BAKED_LLM_CATALOG_PATH. */
-export const BAKED_LLM_CATALOG_PATH =
-  process.env.KORTIX_BAKED_LLM_CATALOG_PATH || '/opt/kortix/llm-catalog.json'
 export const KORTIX_PROVIDER_ID = 'kortix'
 const PI_THINKING_LEVELS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 
@@ -47,35 +41,29 @@ export interface CatalogModel {
   reasoning_options?: KortixGatewayModel['reasoning_options']
 }
 
-export function readCatalogFile(path: string = process.env.KORTIX_LLM_CATALOG_FILE || BAKED_LLM_CATALOG_PATH): Record<string, CatalogModel> {
-  try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { models?: Record<string, CatalogModel> } | Record<string, CatalogModel>
-    const models = (parsed && typeof parsed === 'object' && 'models' in parsed ? (parsed as { models?: Record<string, CatalogModel> }).models : (parsed as Record<string, CatalogModel>)) ?? {}
-    return models
-  } catch {
-    return {}
-  }
-}
-
 /**
  * The project's servable models with their real limits: `GET /models?scope=picker`,
- * the list the web picker shows. It carries what the image-baked catalog cannot:
- * custom endpoints, Platinum BYOK and models newer than the image. Empty on failure.
+ * the list the web picker shows, including custom endpoints and Platinum BYOK.
+ * Tried twice; null when both fail.
  */
-export async function fetchPickerCatalog(env: NodeJS.ProcessEnv): Promise<Record<string, CatalogModel>> {
+export async function fetchPickerCatalog(env: NodeJS.ProcessEnv): Promise<Record<string, CatalogModel> | null> {
   const base = env.KORTIX_LLM_BASE_URL?.trim()
   const token = env.KORTIX_TOKEN?.trim()
-  if (!base || !token) return {}
-  try {
-    const res = await fetch(`${base.replace(/\/+$/, '')}/models?scope=picker`, {
-      headers: { authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(3_000),
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return ((await res.json()) as { models?: Record<string, CatalogModel> }).models ?? {}
-  } catch (err) {
-    logger.warn('[pi] live model catalog unavailable; the baked catalog sizes the models', { err: String(err) })
-    return {}
+  if (!base || !token) return null
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(`${base.replace(/\/+$/, '')}/models?scope=picker`, {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(3_000),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return ((await res.json()) as { models?: Record<string, CatalogModel> }).models ?? {}
+    } catch (err) {
+      if (attempt === 2) {
+        logger.warn('[pi] live model catalog unavailable; models use default limits until it answers', { err: String(err) })
+        return null
+      }
+    }
   }
 }
 
@@ -145,6 +133,8 @@ export interface PiModels {
   select(modelId: string | null): SelectedModel
   /** The catalog the picker lists. */
   catalog: Record<string, CatalogModel>
+  /** False when the live catalog did not answer: every model runs on default limits. */
+  live: boolean
 }
 
 function gatewayModel(id: string, entry: CatalogModel | undefined, target: GatewayTarget): Model<'openai-completions'> {
@@ -179,7 +169,8 @@ export async function createPiModels(input: {
 
   const target = resolveGatewayTarget(env)
   if (!target) throw new Error('pi harness needs KORTIX_LLM_BASE_URL and KORTIX_TOKEN (the Kortix LLM gateway)')
-  const catalog = { ...readCatalogFile(env.KORTIX_LLM_CATALOG_FILE), ...(await fetchPickerCatalog(env)) }
+  const live = await fetchPickerCatalog(env)
+  const catalog = live ?? {}
   const provider = createProvider({
     id: KORTIX_PROVIDER_ID,
     name: 'Kortix',
@@ -191,17 +182,18 @@ export async function createPiModels(input: {
   models.setProvider(provider)
   await credentials.modify(KORTIX_PROVIDER_ID, async () => ({ type: 'api_key', key: target.apiKey }))
   const fallback = nativeModelId(input.defaultModelRef) ?? Object.keys(catalog)[0] ?? null
-  if (!fallback) throw new Error('pi harness has no model: no KORTIX_MODEL and no baked catalog')
-  logger.info('[pi] gateway models ready', { baseUrl: target.baseUrl, catalog: Object.keys(catalog).length, fallback })
+  if (!fallback) throw new Error('pi harness has no model: no KORTIX_MODEL and no live model catalog')
+  logger.info('[pi] gateway models ready', { baseUrl: target.baseUrl, catalog: Object.keys(catalog).length, live: live !== null, fallback })
 
   return {
     models,
     catalog,
+    live: live !== null,
     select(modelId) {
       const id = modelId ?? fallback
       const entry = catalog[id]
-      // A model the picker offers but the baked catalog lacks still routes:
-      // the gateway resolves ids server-side, the catalog only sizes the window.
+      // A model the catalog lacks still routes: the gateway resolves ids
+      // server-side, the catalog only sizes the window.
       const model = models.getModel(KORTIX_PROVIDER_ID, id) ?? gatewayModel(id, entry, target)
       return {
         model,

@@ -763,7 +763,11 @@ placeholder (`isPlaceholderOpencodeTitle`).
 Config it reads (all set by apps/api for every session, harness-neutral values):
 `KORTIX_MODEL` (the resolved session model), `KORTIX_COMPILED_AGENT_CONFIG`
 (agent prompt, model, permission policy), `KORTIX_AGENT_NAME`, `KORTIX_LLM_BASE_URL`
-+ `KORTIX_TOKEN`, the image-baked catalog at `/opt/kortix/llm-catalog.json`.
++ `KORTIX_TOKEN`. The model catalog is the project's live list,
+`GET <KORTIX_LLM_BASE_URL>/models?scope=picker`, fetched at boot and on every
+model reload; it only sizes models (window, output cap, images, reasoning). When
+it does not answer after two tries, models run on default limits and pi fetches
+it again after each turn. Images carry no catalog file.
 pi-only: `KORTIX_PI_STATE_DIR`.
 
 `KORTIX_AGENT_NAME` (else the config's `default_agent`) is the session's
