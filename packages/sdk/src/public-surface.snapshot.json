@@ -2075,6 +2075,7 @@
     "useRuntimeSupports",
     "useRuntimeTools",
     "useRuntimeVcsDiff",
+    "useRuntimeWorkspace",
     "useSandboxConnectionStore",
     "useSandboxImage",
     "useSandboxRuntimeReload",

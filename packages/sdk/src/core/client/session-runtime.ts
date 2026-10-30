@@ -5,6 +5,7 @@ import {
   type RuntimeVerbs,
   type TranscriptPage,
 } from '../session/runtime-verbs';
+import type { RuntimePending } from '../session/runtime-actions';
 import type { RuntimePermissionReply, RuntimeQuestionAnswer } from '../runtime/transcript-types';
 import type { SessionBindingContext } from './session-context';
 
@@ -26,8 +27,13 @@ export function bindSessionRuntime(ctx: SessionBindingContext) {
       before?: string;
       signal?: AbortSignal;
     }): Promise<TranscriptPage> => (await sessionVerbs()).messages(options),
-    /** Conversation statuses, and the permission requests and questions waiting for an answer. */
+    /**
+     * Conversation statuses, and the permission requests and questions waiting for an answer.
+     * @deprecated Read `pendingRequests()`, which answers in session-log terms.
+     */
     pending: async (): Promise<PendingInteractions> => (await sessionVerbs()).pending(),
+    /** Each thread's status (`idle`, `busy`, `compacting`) and the permission requests and questions that wait on a person. */
+    pendingRequests: async (): Promise<RuntimePending> => (await sessionVerbs()).pendingRequests(),
     /** Answer a permission request: `once`, `always` (the capability, for this session) or `reject`. */
     answerPermission: async (requestId: string, reply: RuntimePermissionReply, message?: string) =>
       (await sessionVerbs()).answerPermission(requestId, reply, message),
