@@ -61,6 +61,7 @@ export const runtimeActionPaths = {
   permissionReply: (requestId: string) => `/kortix/runtime/permissions/${segment(requestId)}/reply`,
   questionReply: (requestId: string) => `/kortix/runtime/questions/${segment(requestId)}/reply`,
   questionReject: (requestId: string) => `/kortix/runtime/questions/${segment(requestId)}/reject`,
+  abort: (runtimeSessionId: string) => `/kortix/runtime/sessions/${segment(runtimeSessionId)}/abort`,
   compact: (runtimeSessionId: string) => `/kortix/runtime/sessions/${segment(runtimeSessionId)}/compact`,
   command: (runtimeSessionId: string) => `/kortix/runtime/sessions/${segment(runtimeSessionId)}/command`,
   grants: (runtimeSessionId: string) => `/kortix/runtime/sessions/${segment(runtimeSessionId)}/grants`,
