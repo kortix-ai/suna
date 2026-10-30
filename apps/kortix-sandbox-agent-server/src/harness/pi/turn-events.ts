@@ -374,7 +374,7 @@ export class PiTurnEvents {
     ]
   }
 
-  /** `callID` is pi's tool call id, the one the model sent and the session log's `call_id` (as OpenCode's). */
+  /** `callID` is pi's tool call id, the one the model sent and the session log's `call_id`. */
   private toolPart(id: string, callID: string, tool: string, state: KortixToolState): TurnEventEmission {
     const sessionID = this.opts.sessionID
     return {

@@ -20,7 +20,8 @@
  * `.kortix/opencode/skills`), and its own config dir (the repository's
  * `pi.config_dir`, `harnesses/pi` or `.kortix/pi`: skills, extensions, prompts,
  * `settings.json`), and the project tools the governance declares
- * (kortix.yaml `tools`). OpenCode's files in the release are not pi's.
+ * (kortix.yaml `tools`). pi reads no other file a pre-sunset project kept
+ * for OpenCode in the release.
  * Extensions, prompts, settings and project tools are read when the runtime
  * starts, so a release that changes them restarts the runtime in place, while
  * it is idle.

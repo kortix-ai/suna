@@ -6,7 +6,7 @@ import { logger } from '../log/logger'
  * with, and the API's `/v1` root.
  *
  * One reader, so the relays cannot disagree about the URL. Nine copies used to
- * exist (OpenCode boot, background, pi, and the timeline and projection relays)
+ * exist (boot, background, pi, and the timeline and projection relays)
  * and six of them stripped only ONE trailing slash, so
  * `KORTIX_API_URL=https://api/v1//` became `https://api/v1//v1` in those six.
  *

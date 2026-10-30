@@ -2829,6 +2829,9 @@ export const sessionTurns = kortixSchema.table(
       sql`${table.endReason} IS NULL OR ${table.endReason} IN ('completed', 'runtime_gone', 'failed', 'abandoned', 'unknown')`,
     ),
     index('session_turns_session_idx').on(table.sessionId, table.startedAt.desc()),
+    index('session_turns_message_time_idx')
+      .on(table.sessionId, table.startedAt.desc())
+      .where(sql`${table.messageId} is not null`),
     // The stop writer settles every unsettled row of one sandbox in the same
     // transaction that erases its lifecycle authority. PARTIAL, on the exact
     // predicate that query uses: terminal rows are retained forever, so an

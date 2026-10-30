@@ -180,6 +180,8 @@ const CASES: Case[] = [
         type: 'telegram.message.created',
         time: new Date(DATE * 1000).toISOString(),
         subject: '777',
+        // The inbox orders a chat's events by Telegram's update_id (#11191).
+        sequence: 1001,
         projectId: LIVE,
         data: {
           message: { message_id: 1001, date: DATE, chat: { id: 777, type: 'private' }, from: { id: 111, username: 'synthetic' }, text: 'hello' },
@@ -221,6 +223,8 @@ const CASES: Case[] = [
         type: 'telegram.callback_query.created',
         time: expect.any(String),
         subject: '777',
+        // The inbox orders a chat's events by Telegram's update_id (#11191).
+        sequence: 1003,
         projectId: LIVE,
         data: {
           callback_query: {
@@ -290,6 +294,8 @@ const CASES: Case[] = [
         type: 'telegram.message.created',
         time: new Date(DATE * 1000).toISOString(),
         subject: '777',
+        // The inbox orders a chat's events by Telegram's update_id (#11191).
+        sequence: 1006,
         projectId: LIVE,
         data: { message: PHOTO },
       },

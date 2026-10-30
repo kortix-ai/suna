@@ -107,8 +107,8 @@ interface LocalChunk {
  *
  * Read through one reused buffer rather than `readFile`: two ~105 MB sources
  * on the heap is exactly the memory pressure that makes a box abort a turn
- * (the 2026-09-22 page-cache guard incident), and this runs beside a live
- * OpenCode process.
+ * (the 2026-09-22 page-cache guard incident), and this runs in the same
+ * process as the live pi runtime.
  */
 async function indexLocalChunks(
   paths: string[],

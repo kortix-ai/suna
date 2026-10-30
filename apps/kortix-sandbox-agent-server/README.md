@@ -104,7 +104,7 @@ import rules, and where new code goes; `bun run lint` enforces them.
 | Path                   | Purpose                                                               |
 | ---------------------- | --------------------------------------------------------------------- |
 | `GET /kortix/health`   | Daemon liveness + harness state + repo info (always 200 from daemon)  |
-| `POST /kortix/refresh` | Signed-context protected repo fast-forward + harness reload.          |
+| `POST /kortix/refresh` | Signed-context protected repo fast-forward + pi skill reload.         |
 | `/kortix/runtime/*`    | The Runtime API: the Kortix contract clients build on (transcript, turn verbs, agents). |
 | `/*`                   | The harness's own routes, answered by pi. 503 with `code: "runtime_not_ready"` while the runtime is not ready. |
 
@@ -149,11 +149,16 @@ import rules, and where new code goes; `bun run lint` enforces them.
 
 ### `POST /kortix/refresh`
 
-Requires a valid `X-Kortix-User-Context` signed with `KORTIX_TOKEN`. On success,
-the daemon fetches origin, runs `git pull --ff-only` for the session branch, and
-reloads the harness so project config changes are picked up without recreating the
-sandbox: pi re-reads its skills in place. Missing/invalid context returns `401`; no materialized repo or a
-non-fast-forward conflict returns `409`.
+Requires the sandbox service bearer or a valid `X-Kortix-User-Context` signed
+with `KORTIX_TOKEN`. On success, the daemon fetches origin, runs
+`git pull --ff-only` for the session branch, and pi re-reads its skills in
+place; nothing restarts. `?repo=0` skips the pull. `?on_boot=1` reruns the
+project's `sandbox.on_boot` command, for a direct service call only
+(`403 BOOT_HOOK_FORBIDDEN` otherwise). Every other query flag is ignored,
+including the OpenCode-era flags removed on 2026-10-30 (`base=1`, `base_sha`,
+`restart=0`, `base_config=1`, `config_dir=1`, `verify_fail=1`).
+Missing/invalid auth returns `401`; a refresh already running, no materialized
+repo or a non-fast-forward conflict returns `409`.
 
 ## What lives elsewhere
 

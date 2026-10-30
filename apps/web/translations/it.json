@@ -2880,7 +2880,6 @@
     },
     "unified": {
       "welcome": "Benvenuto su Kortix CompanyOS",
-      "tagline": "Il CompanyOS open-source",
       "email": "Email",
       "emailPlaceholder": "Il tuo indirizzo email",
       "password": "Password",
@@ -23906,6 +23905,10 @@
       "outdated": "Obsoleti",
       "outdatedHint": "Questo passaggio non è individuabile nel documento attuale.",
       "newComment": "Nuovo commento",
+      "annotationMode": "Fissa un commento",
+      "annotationModeHint": "Fai clic su un elemento per fissare un commento. Trascina per segnare un’area.",
+      "annotationLoading": "Caricamento delle annotazioni…",
+      "annotationUnavailable": "Le annotazioni non sono disponibili. Scegli {refresh} in {actions} per riprovare.",
       "commentLabel": "Commento",
       "commentPlaceholder": "Lascia un commento o menziona qualcuno…",
       "replyLabel": "Risposta",

@@ -337,9 +337,10 @@ function cmdVersion(binPath: string): number {
 // The smoke test the updater runs on a candidate binary, and a standalone
 // liveness probe. It boots a self-contained HTTP server on an ephemeral port,
 // answers /kortix/health, self-connects, and exits. It deliberately does NOT
-// touch opencode, a workspace, or the network: the point is to prove the
-// binary is a valid, runnable executable of the right architecture that can
-// bind a socket and serve HTTP — not to boot a full session.
+// start the agent runtime, touch a workspace, or use the network: the point
+// is to prove the binary is a valid, runnable executable of the right
+// architecture that can bind a socket and serve HTTP — not to boot a full
+// session.
 
 const HEALTH_PATH = '/kortix/health'
 

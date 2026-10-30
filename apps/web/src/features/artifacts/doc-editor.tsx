@@ -135,19 +135,18 @@ export function DocEditor({
   const holdsMedia = !artifact.path.endsWith(`/${artifact.entry}`);
 
   // A save from a closed editor of this doc still on its way: wait for it (undefined), then open on it.
-  const [handoff, setHandoff] = useState<Known | null | undefined>(() =>
-    pendingSave(artifact.artifact_id) ? undefined : null,
+  const [pendingHandoff] = useState(() => pendingSave(artifact.artifact_id));
+  const [handoff, setHandoff] = useState<Known | null | undefined>(
+    pendingHandoff ? undefined : null,
   );
   useEffect(() => {
-    const pending = pendingSave(artifact.artifact_id);
-    if (!pending) return;
+    if (!pendingHandoff) return;
     let live = true;
-    void pending.then((result) => live && setHandoff(result));
+    void pendingHandoff.then((result) => live && setHandoff(result));
     return () => {
       live = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [pendingHandoff]);
 
   // Usually already in the cache (prefetched by the project preloader or a hover).
   // Pinned to the version opened: our own saves move `entry_version` and must not refetch.

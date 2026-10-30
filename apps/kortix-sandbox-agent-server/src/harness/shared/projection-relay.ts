@@ -40,10 +40,10 @@ export interface RuntimeStateDoc {
 
 /**
  * apps/api keeps each session's list of runtime conversations (ids, parents,
- * titles) from the stored projection, so both adapters push when that list
+ * titles) from the stored projection, so the adapter pushes when that list
  * changes. The returned check is true for a frame that adds a session, removes
- * one, or changes a title — not for the `session.updated` OpenCode sends on
- * every step, which would push once per step.
+ * one, or changes a title — not for a `session.updated` that leaves the title
+ * as it was (pi's `time.compacting` change), which would push for nothing.
  */
 export function createSessionTreeWatch(): (event: { type?: string; properties?: unknown }) => boolean {
   const titles = new Map<string, string | null>()

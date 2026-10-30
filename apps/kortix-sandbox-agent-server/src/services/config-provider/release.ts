@@ -85,7 +85,7 @@ export function agentRepointSentence(
  *
  * Governance over 128 KiB is stored gzip-encoded (`setCompiledAgentConfigEnv`):
  * held raw in `process.env`, it would make every later child exec fail with
- * E2BIG, OpenCode's first.
+ * E2BIG.
  */
 export function deliverGovernance(
   governance: string | null,

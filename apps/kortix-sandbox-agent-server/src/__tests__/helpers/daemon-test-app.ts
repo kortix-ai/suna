@@ -81,8 +81,7 @@ export function fakeHarness(over: Partial<HarnessService> = {}): HarnessService 
     // `startProxy` starts it; an idle monitor that never ticks.
     background: { start: () => ({ stop: () => {}, latest: () => null, tick: unused('background.tick') }) },
     assets: {
-      harness: 'test', componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
-      reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
+      harness: 'test', componentNames: [],        reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
     },
     ...over,
   }
