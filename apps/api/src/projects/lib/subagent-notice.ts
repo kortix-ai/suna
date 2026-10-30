@@ -162,9 +162,6 @@ export async function notifyParentOfSubagent(input: {
     const read = child.createdBy
       ? await buildSessionTranscriptDigest({
         session: child,
-        projectId,
-        accountId: child.accountId,
-        userId: child.createdBy,
         limit: READ_BACK_MESSAGES,
         maxChars: 700,
         full: true,

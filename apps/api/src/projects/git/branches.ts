@@ -1,4 +1,4 @@
-// Branch listing + mutating ops (create/delete session branch). These write to
+// Branch listing + mutating ops (delete session branch, commit). These write to
 // the remote, so they own the auth-host + fresh-fetch dance. The commit writer
 // lives in ./commit-writer and is re-exported below so import paths keep
 // resolving.
@@ -7,8 +7,6 @@ import { rm } from 'node:fs/promises';
 import { mapLimit } from '@kortix/registry';
 import { validateRef } from '../git-ref';
 import { isUuid } from '../../shared/validate';
-import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from '../github';
-import { isMissingRemoteBranchError } from '../managed-repo-seed';
 import { FIELD_SEP } from './commits';
 import { authGitPush } from './commit-writer';
 import {
@@ -35,8 +33,8 @@ const BRANCH_COMPARE_CONCURRENCY = 8;
 const BRANCH_COMPARE_LIMIT = 100;
 const BRANCH_LIST_TIMEOUT_MS = 15_000;
 
-// A session branch's name IS the session id — createRemoteSessionBranch
-// (../lib/sessions.ts) never prefixes it, and every session id is a
+// A session branch's name IS the session id — the box pushes
+// `HEAD:refs/heads/<session id>` and never prefixes it, and every session id is a
 // validated UUID (isUuid, ../lib/sessions.ts) before a branch is ever cut
 // from it. A project with a long history can carry thousands of these, and
 // a human never picks one by name — every UI branch picker searches/limits
@@ -278,79 +276,6 @@ export async function resolveRemoteBranchTip(
   );
   const [sha, remoteRef] = result.stdout.trim().split(/\s+/);
   return /^[0-9a-f]{40}$/.test(sha) && remoteRef === `refs/heads/${ref}` ? sha : null;
-}
-
-export async function createRemoteSessionBranch(
-  project: GitBackedProject,
-  branchName: string,
-  baseRef?: string,
-) {
-  const base = validateRef(baseRef || project.defaultBranch);
-  const branch = validateRef(branchName);
-  const githubRepo = parseGitHubRepoUrl(project.repoUrl);
-  if (githubRepo && project.gitAuthToken) {
-    const auth = { token: project.gitAuthToken };
-    const sha = await getBranchCommitSha({
-      owner: githubRepo.owner,
-      repo: githubRepo.repo,
-      branch: base,
-      auth,
-    });
-    await createBranchRef({
-      owner: githubRepo.owner,
-      repo: githubRepo.repo,
-      branch,
-      sha,
-      auth,
-    });
-    invalidateProjectMirror(project.projectId);
-    return;
-  }
-
-  const authHost = hostFromRepoUrl(project.repoUrl);
-  const repoPath = await makeSessionBranchRepo(project.projectId);
-
-  try {
-    // Session start only needs the base branch tip so it can push a new branch.
-    // Avoid the shared full bare mirror here: first-session startup should not
-    // block on cloning every branch and all history from large repos.
-    await runGit(['init', '--bare', repoPath], undefined, false);
-    await runGit(['remote', 'add', 'origin', project.repoUrl], repoPath, false);
-    const fetchBase = () =>
-      runGit(
-        ['fetch', '--no-tags', '--depth=1', 'origin', `+refs/heads/${base}:refs/heads/${base}`],
-        repoPath,
-        true,
-        project.gitAuthToken,
-        undefined,
-        authHost,
-        undefined,
-        project.gitAuthHeaders,
-      );
-    try {
-      await fetchBase();
-    } catch (error) {
-      // `couldn't find remote ref refs/heads/<base>` on a MANAGED repo means the
-      // scaffold seed never landed — the repo is structurally empty and every
-      // surface built on it (files, agents, skills, manifest version, session
-      // start) is dead. Seed it on demand, then retry once. Reactive by design:
-      // the happy path pays nothing, and a repair only runs for the exact
-      // failure it can fix (see isMissingRemoteBranchError).
-      if (!isMissingRemoteBranchError(error)) throw error;
-      const { ensureManagedRepoSeeded } = await import('../managed-repo-seed');
-      const outcome = await ensureManagedRepoSeeded(project.projectId, 'session-branch');
-      if (!outcome.repaired) throw error;
-      await fetchBase();
-    }
-    await authGitPush(project, repoPath, [
-      'push',
-      'origin',
-      `refs/heads/${base}:refs/heads/${branch}`,
-    ]);
-    invalidateProjectMirror(project.projectId);
-  } finally {
-    await rm(repoPath, { recursive: true, force: true });
-  }
 }
 
 export async function deleteRemoteSessionBranch(

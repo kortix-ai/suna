@@ -134,9 +134,6 @@ export function registerSessionTranscriptsRoutes(): void {
 
       const transcript = await buildSessionTranscriptDigest({
         session: visible.row,
-        projectId,
-        accountId: loaded.row.accountId,
-        userId: loaded.userId,
         limit: limit.value,
         maxChars: maxChars.value,
         full: c.req.query('detail') === 'full',

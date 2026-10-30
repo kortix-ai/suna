@@ -29,7 +29,16 @@ mock.module('../../core/runtime/client', () => ({
   getClient: () => clientImpl,
 }));
 
-const { useRuntimeVcsDiff } = await import('./vcs');
+// The session-log action route of the active runtime: null = an older box (the default here).
+let actionImpl: (method: string, path: string) => Promise<Response | null> = async () => null;
+const actionCalls: unknown[] = [];
+const realRuntimeActions = await import('../../core/session/runtime-actions');
+mock.module('../../core/session/runtime-actions', () => ({
+  ...realRuntimeActions,
+  activeRuntimeAction: (method: string, path: string) => (actionCalls.push([method, path]), actionImpl(method, path)),
+}));
+
+const { useRuntimeVcsDiff, useRuntimeWorkspace } = await import('./vcs');
 const { runtimeKeys } = await import('./keys');
 
 type QueryConfig = {
@@ -42,6 +51,42 @@ beforeEach(() => {
   runtimeReady = true;
   runtimeState = { sandboxId: 'sbx_1' };
   clientImpl = {};
+  actionImpl = async () => null;
+  actionCalls.length = 0;
+});
+
+describe('on a box with the session-log actions', () => {
+  test('the diff is the workspace diff route, keyed by path', async () => {
+    actionImpl = async () =>
+      Response.json({ files: [{ path: 'src/a.ts', status: 'modified', additions: 3, deletions: 1, patch: '@@' }] });
+    const result = await (useRuntimeVcsDiff('git') as unknown as QueryConfig).queryFn();
+    expect(actionCalls).toEqual([['GET', '/kortix/runtime/workspace/diff?mode=git']]);
+    expect(result).toEqual([{ file: 'src/a.ts', status: 'modified', additions: 3, deletions: 1, patch: '@@' }]);
+  });
+
+  test('a refused diff throws the runtime message', async () => {
+    actionImpl = async () => Response.json({ error: 'not a git repository' }, { status: 500 });
+    await expect((useRuntimeVcsDiff('branch') as unknown as QueryConfig).queryFn()).rejects.toThrow('not a git repository');
+  });
+
+  test('useRuntimeWorkspace reads the workspace route', async () => {
+    const info = { directory: '/workspace/app', home: '/root', vcs: 'git', default_branch: 'main' };
+    actionImpl = async () => Response.json(info);
+    expect(await (useRuntimeWorkspace() as unknown as QueryConfig).queryFn()).toEqual(info);
+  });
+});
+
+test('useRuntimeWorkspace on an older box: the path and the current project', async () => {
+  clientImpl = {
+    path: { get: async () => ({ data: { home: '/root', directory: '/workspace', worktree: '/workspace', state: '', config: '' } }) },
+    project: { current: async () => ({ data: { id: 'p', worktree: '/workspace', vcs: 'git', time: { created: 0 }, sandboxes: [] } }) },
+  };
+  expect(await (useRuntimeWorkspace() as unknown as QueryConfig).queryFn()).toEqual({
+    directory: '/workspace',
+    home: '/root',
+    vcs: 'git',
+    default_branch: null,
+  });
 });
 
 /** Records what `client.vcs.diff()` was called with and answers with `body`. */

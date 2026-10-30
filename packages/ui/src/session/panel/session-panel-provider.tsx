@@ -51,9 +51,7 @@ import {
 } from '../../internal/stores/session-panel-memory-store';
 import { useUserPreferencesStore } from '../../internal/stores/user-preferences-store';
 import { getProjectSession, SANDBOX_PORTS } from '@kortix/sdk';
-import { qk } from '@kortix/sdk/react';
 import { FileTextIcon as FileText } from '@phosphor-icons/react';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   createContext,
   type ReactNode,
@@ -661,7 +659,6 @@ export function SessionPanelProvider({
   const sidePanelOpen = useKortixComputerStore((s) => s.isSidePanelOpen);
   const advancedPanel = useUserPreferencesStore((s) => s.preferences.panelMode === 'advanced');
   const isMobile = useIsMobile();
-  const queryClient = useQueryClient();
   // Nothing is recorded before the arrival is decided: until then the panel is
   // closed by the arrival itself, not by the person.
   const [restoreSettled, setRestoreSettled] = useState(false);
@@ -678,12 +675,11 @@ export function SessionPanelProvider({
     let alive = true;
     // A FRESH row, never the cached one: it can be 30 s old, and reopening a
     // Terminal on a session stopped since then wakes its computer (measured).
-    void queryClient
-      .fetchQuery({
-        queryKey: qk.project.session(projectId, projectSessionId),
-        queryFn: () => getProjectSession(projectId, projectSessionId, { showErrors: false }),
-        staleTime: 0,
-      })
+    // Its own request, not the query cache's: `fetchQuery` joins the page's
+    // in-flight fetch of the same row, a refetch on arrival cancels that
+    // (`CancelledError`), and the restore was dropped on about half the
+    // returns from another session (measured).
+    void getProjectSession(projectId, projectSessionId, { showErrors: false })
       .then((row) => {
         if (!alive) return;
         const panel = panelToRestore({
@@ -707,7 +703,7 @@ export function SessionPanelProvider({
       alive = false;
       setRestoreSettled(true);
     };
-  }, [isActivePanel, memoryKey, isMobile, projectId, projectSessionId, queryClient, sessionId]);
+  }, [isActivePanel, memoryKey, isMobile, projectId, projectSessionId, sessionId]);
   // A file preview reopens once the transcript has derived its output, and only
   // if the person has not opened something else meanwhile.
   useEffect(() => {

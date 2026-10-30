@@ -183,32 +183,91 @@ async function stageManagedSkills(outDir: string): Promise<void> {
 }
 
 
+/**
+ * Build-context names of the Kortix defaults' staged artifacts
+ * (`kortixDefaultsTail` in @kortix/shared/sandbox defaults.ts). Every image
+ * stages them through `stageDefaultArtifacts`, so a project agent's image and
+ * My Kortix's carry the same bytes.
+ */
+const DEFAULT_ARTIFACTS = {
+  agentBinaryPath: 'kortix-agent.gz',
+  cliBinaryPath: 'kortix.gz',
+  entrypointScriptPath: 'kortix-entrypoint',
+  machineDocPath: 'MACHINE.md',
+  slackCliPath: 'kortix-slack-cli',
+  managedSkillsPath: 'managed-skills',
+} as const;
+
+/** Refuse to stage the defaults from missing or stale build outputs. */
+async function assertDefaultArtifactsReady(): Promise<void> {
+  const AGENT_BIN_PATH = agentBinPath();
+  const CLI_BIN_PATH = cliBinPath();
+  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  await assertExists(CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
+  await assertExists(entrypointSrcPath(), 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
+  await assertExistsDir(slackCliSrcPath(), 'KORTIX_SNAPSHOT_SLACK_CLI_PATH');
+  await assertExists(machineDocSrcPath(), 'KORTIX_SNAPSHOT_MACHINE_DOC_PATH');
+  // Fingerprint/artifact skew guard: the snapshot identity hashes the agent
+  // SOURCE (templates.ts AGENT_SRC_DIR), but the image bakes this prebuilt
+  // dist binary — an edited src/ with a stale dist/ ships old code under a
+  // NEW content hash, which is worse than failing (caught live 2026-06-10: a
+  // daemon fix "rebuilt" into a fresh template whose forks still ran the old
+  // binary). Refuse to stage a context whose binary predates the source.
+  // Env-overridden binary paths skip this — the caller is pinning on purpose.
+  if (!process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH) {
+    const srcDir = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src');
+    if (await agentBinaryStale(AGENT_BIN_PATH, srcDir)) {
+      throw new Error(
+        `kortix-agent dist binary (${AGENT_BIN_PATH}) is older than its source ` +
+        `(${srcDir}) — run \`bun run build\` in apps/kortix-sandbox-agent-server ` +
+        `or the image will bake stale code under a fresh content hash`,
+      );
+    }
+  }
+  // The snapshot identity hashes CLI SOURCE, but the image bakes this compiled
+  // binary. Refuse source/binary skew before the provider sees a context. A
+  // local API with edited CLI source and stale dist previously poisoned the
+  // shared content-addressed image under the NEW source hash.
+  await assertCliArtifactAttested({
+    cliRoot: resolve(REPO_ROOT, 'apps/cli'),
+    binaryPath: CLI_BIN_PATH,
+    attestationPath: cliAttestationPath(),
+  });
+}
+
+/** Copy the defaults' artifacts into `contextDir` under `DEFAULT_ARTIFACTS` names. */
+async function stageDefaultArtifacts(contextDir: string): Promise<void> {
+  await gzipFile(agentBinPath(), join(contextDir, DEFAULT_ARTIFACTS.agentBinaryPath));
+  await gzipFile(cliBinPath(), join(contextDir, DEFAULT_ARTIFACTS.cliBinaryPath));
+  await copyFile(entrypointSrcPath(), join(contextDir, DEFAULT_ARTIFACTS.entrypointScriptPath));
+  await copyFile(machineDocSrcPath(), join(contextDir, DEFAULT_ARTIFACTS.machineDocPath));
+  await cp(slackCliSrcPath(), join(contextDir, DEFAULT_ARTIFACTS.slackCliPath), { recursive: true });
+  // Canonical scaffold repo baked at /opt/kortix/scaffold.git. Built from the
+  // DEFAULT starter with the SAME pinned commit metadata the project seeder
+  // uses (git-backends/seed.ts), so its root SHA equals every seeded project's
+  // root — the daemon then materializes a project repo as local-clone +
+  // delta-fetch instead of a full clone over the (slow) git path. Non-matching
+  // repos (imported, other starters) share no ancestor and transparently fall
+  // back to a full fetch through the same code.
+  await stageScaffoldRepo(contextDir);
+  // The managed `kortix-*` skill overlay. Without it a box downloads the whole
+  // overlay on its first reconcile. `kortix-starter` is a snapshot-fingerprint
+  // input, so a skill edit mints a new snapshot and the bake stays current.
+  await stageManagedSkills(join(contextDir, DEFAULT_ARTIFACTS.managedSkillsPath));
+}
+
+/** My Kortix's image: the Kortix defaults and its guide (my-kortix-dockerfile.ts). */
 export async function stageMyKortixBuildContext(): Promise<StagedContext> {
-  const agentPath = agentBinPath();
-  const cliPath = cliBinPath();
-  const entrypointPath = entrypointSrcPath();
-  await assertExists(agentPath, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
-  await assertExists(cliPath, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
-  await assertExists(entrypointPath, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
-
+  await assertDefaultArtifactsReady();
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-meta-snap-'));
-  await gzipFile(agentPath, join(contextDir, 'kortix-agent.gz'));
-  await gzipFile(cliPath, join(contextDir, 'kortix.gz'));
-  await copyFile(entrypointPath, join(contextDir, 'kortix-entrypoint'));
-  await stageManagedSkills(join(contextDir, 'managed-skills'));
-
-  const dockerfileName = 'Dockerfile';
-  const composedPath = join(contextDir, dockerfileName);
-  await writeFileFs(
-    composedPath,
-    buildMyKortixSandboxDockerfile({
-      agentBinaryPath: 'kortix-agent.gz',
-      cliBinaryPath: 'kortix.gz',
-      entrypointScriptPath: 'kortix-entrypoint',
-      managedSkillsPath: 'managed-skills',
-    }),
-  );
-  return { contextDir, composedPath, dockerfileName };
+  return removeStagedContextOnFailure(contextDir, async () => {
+    await stageDefaultArtifacts(contextDir);
+    const dockerfileName = 'Dockerfile';
+    const composedPath = join(contextDir, dockerfileName);
+    await writeComposedDockerfile(composedPath, buildMyKortixSandboxDockerfile(DEFAULT_ARTIFACTS));
+    await assertContextComplete(contextDir, dockerfileName);
+    return { contextDir, composedPath, dockerfileName };
+  });
 }
 
 export type RuntimeBuildProfile = 'standard' | 'mykortix' | 'app';
@@ -243,80 +302,16 @@ export async function stageBuildContext(
   userDockerfile: string,
   containerRuntime?: boolean,
 ): Promise<StagedContext> {
-  const AGENT_BIN_PATH = agentBinPath();
-  const CLI_BIN_PATH = cliBinPath();
-  const CLI_ATTESTATION_PATH = cliAttestationPath();
-  const ENTRYPOINT_PATH = entrypointSrcPath();
-  const SLACK_CLI_SRC_PATH = slackCliSrcPath();
-  const MACHINE_DOC_SRC_PATH = machineDocSrcPath();
-  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
-  await assertExists(CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
-  await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
-  await assertExistsDir(SLACK_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_SLACK_CLI_PATH');
-  await assertExists(MACHINE_DOC_SRC_PATH, 'KORTIX_SNAPSHOT_MACHINE_DOC_PATH');
-  // Fingerprint/artifact skew guard: the snapshot identity hashes the agent
-  // SOURCE (templates.ts AGENT_SRC_DIR), but the image bakes this prebuilt
-  // dist binary — an edited src/ with a stale dist/ ships old code under a
-  // NEW content hash, which is worse than failing (caught live 2026-06-10: a
-  // daemon fix "rebuilt" into a fresh template whose forks still ran the old
-  // binary). Refuse to stage a context whose binary predates the source.
-  // Env-overridden binary paths skip this — the caller is pinning on purpose.
-  if (!process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH) {
-    const srcDir = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src');
-    if (await agentBinaryStale(AGENT_BIN_PATH, srcDir)) {
-      throw new Error(
-        `kortix-agent dist binary (${AGENT_BIN_PATH}) is older than its source ` +
-        `(${srcDir}) — run \`bun run build\` in apps/kortix-sandbox-agent-server ` +
-        `or the image will bake stale code under a fresh content hash`,
-      );
-    }
-  }
-  // The snapshot identity hashes CLI SOURCE, but the image bakes this compiled
-  // binary. Refuse source/binary skew before the provider sees a context. A
-  // local API with edited CLI source and stale dist previously poisoned the
-  // shared content-addressed image under the NEW source hash.
-  await assertCliArtifactAttested({
-    cliRoot: resolve(REPO_ROOT, 'apps/cli'),
-    binaryPath: CLI_BIN_PATH,
-    attestationPath: CLI_ATTESTATION_PATH,
-  });
-
+  await assertDefaultArtifactsReady();
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-'));
   return removeStagedContextOnFailure(contextDir, async () => {
-    await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
-    await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
-    await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
-    await copyFile(MACHINE_DOC_SRC_PATH, join(contextDir, 'MACHINE.md'));
-    await cp(SLACK_CLI_SRC_PATH, join(contextDir, 'kortix-slack-cli'), { recursive: true });
-    // Canonical scaffold repo baked at /opt/kortix/scaffold.git. Built from the
-    // DEFAULT starter with the SAME pinned commit metadata the project seeder
-    // uses (git-backends/seed.ts), so its root SHA equals every seeded project's
-    // root — the daemon then materializes a project repo as local-clone +
-    // delta-fetch instead of a full clone over the (slow) git path. Non-matching
-    // repos (imported, other starters) share no ancestor and transparently fall
-    // back to a full fetch through the same code.
-    await stageScaffoldRepo(contextDir);
-
-    // The managed `kortix-*` skill overlay, baked like every other artifact.
-    // Only the meta image used to carry it, so an ordinary session sandbox —
-    // dev, prod and preview alike — booted with nothing at
-    // /opt/kortix/managed-skills and downloaded the whole overlay on its first
-    // reconcile. `kortix-starter` is already a snapshot-fingerprint input
-    // (templates.ts NON_AGENT_RUNTIME_ARTIFACTS), so a skill edit mints a new
-    // snapshot and the bake stays current.
-    await stageManagedSkills(join(contextDir, 'managed-skills'));
-
+    await stageDefaultArtifacts(contextDir);
     const dockerfileName = '.kortix-snapshot.Dockerfile';
     const composedPath = join(contextDir, dockerfileName);
     const composed = buildLayeredDockerfile({
       userDockerfile,
       agentBrowserVersion: AGENT_BROWSER_VERSION,
-      agentBinaryPath: 'kortix-agent.gz',
-      cliBinaryPath: 'kortix.gz',
-      entrypointScriptPath: 'kortix-entrypoint',
-      machineDocPath: 'MACHINE.md',
-      slackCliPath: 'kortix-slack-cli',
-      managedSkillsPath: 'managed-skills',
+      ...DEFAULT_ARTIFACTS,
       containerRuntime,
     });
 
@@ -327,7 +322,6 @@ export async function stageBuildContext(
     // "Path does not exist", and the auto-build can't tell it's a staging miss to
     // recover from. Assert at the source so a miss is caught here AND is retryable
     // (the daytona adapter re-stages on "staging incomplete").
-    // It was declared and never called, so it guarded nothing.
     await assertContextComplete(contextDir, dockerfileName);
     console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
     return { contextDir, composedPath, dockerfileName };

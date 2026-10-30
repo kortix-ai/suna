@@ -1480,9 +1480,9 @@ export function DriveExplorer({
                   />
                 ))}
 
-              {/* The mirror had nothing, but the branch push is best-effort, so the
-                  files may exist and simply be unreachable. "Empty folder" is the one
-                  thing this cannot state as fact. Same words as the Terminal panel. */}
+              {/* The mirror had nothing, but a read can fail, so the files may
+                  exist and simply be unreachable. "Empty folder" is the one thing
+                  this cannot state as fact. Same words as the Terminal panel. */}
               {isEmpty && parked && (
                 <EmptyState icon={MoonIcon} title={tHardcodedUi.raw('i18nComplete.text3915f5ca49b3')} />
               )}

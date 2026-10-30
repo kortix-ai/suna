@@ -20,8 +20,7 @@ import { adoptOrClearBakedCheckout, checkoutLocalSessionBranch, establishBaseRef
  * "Remote branch <base> not found in upstream origin", lay down a fresh local
  * repo at `base` with one empty commit, so the session branch has a base to
  * fork from and the session boots normally. The agent then populates the tree, and
- * the background remote-branch publish (createRemoteSessionBranch) / first push
- * seeds the upstream for real. A cold sandbox now boots exactly like a warm/
+ * the session's first push seeds the upstream for real. A cold sandbox now boots exactly like a warm/
  * baked one — entirely from local git, never blocked on the remote.
  *
  * `dir` is the tmp clone target; the caller renames it into place afterwards.

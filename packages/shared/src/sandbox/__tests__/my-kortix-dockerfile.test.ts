@@ -1,23 +1,27 @@
 import { describe, expect, test } from 'bun:test';
 
 import { PNPM_SHA256_AMD64, PNPM_SHA256_ARM64, PNPM_VERSION } from '../../runtime-versions';
+import { SANDBOX_DESKTOP_INSTALL_COMMAND } from '../desktop';
+import { kortixWorkstationTooling } from '../dockerfile-layer';
 import { buildMyKortixSandboxDockerfile } from '../my-kortix-dockerfile';
 
 const dockerfile = buildMyKortixSandboxDockerfile({
   agentBinaryPath: 'artifacts/kortix-agent.gz',
   cliBinaryPath: 'artifacts/kortix.gz',
   entrypointScriptPath: 'artifacts/kortix-entrypoint.sh',
+  machineDocPath: 'artifacts/MACHINE.md',
+  slackCliPath: 'artifacts/kortix-slack-cli',
   managedSkillsPath: 'artifacts/managed-skills',
 });
 
 describe('buildMyKortixSandboxDockerfile', () => {
-  test('contains only the platform coordination runtime', () => {
-    expect(dockerfile).toContain('FROM debian:bookworm-slim');
-    expect(dockerfile).toContain('pnpm runtime set node 22.23.1 --global');
+  test('is the Kortix defaults on the platform default\'s base, with no guide baked in', () => {
+    expect(dockerfile).toContain('FROM ubuntu:24.04');
+    expect(dockerfile).toContain('pnpm runtime set node 22.23.1 -g');
     expect(dockerfile).not.toContain('pnpm list -g');
     expect(dockerfile).not.toContain('pnpm root -g');
     expect(dockerfile).toContain('PNPM_HOME=/home/kortix/.local/share/pnpm');
-    expect(dockerfile).toContain('PATH="/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:${PATH}"');
+    expect(dockerfile).toContain('PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH');
     expect(dockerfile).toContain('/usr/local/bin/kortix-agent');
     expect(dockerfile).toContain('/usr/local/bin/kortix');
     // My Kortix's instructions ship in the API-served config (MY_KORTIX_PROMPT), not in the image.
@@ -28,9 +32,11 @@ describe('buildMyKortixSandboxDockerfile', () => {
     );
     expect(dockerfile).toContain('KORTIX_PROJECT_AUTO_CLONE=0');
 
+    // No project-agent workstation: My Kortix delegates that work.
+    expect(dockerfile).not.toContain(kortixWorkstationTooling({}));
+    expect(dockerfile).not.toContain(SANDBOX_DESKTOP_INSTALL_COMMAND);
     expect(dockerfile).not.toContain('playwright');
     expect(dockerfile).not.toContain('chromium');
-    expect(dockerfile).not.toContain('python');
     expect(dockerfile).not.toContain('libreoffice');
     expect(dockerfile).not.toContain('ffmpeg');
     expect(dockerfile).not.toContain('claude-agent-acp');
@@ -44,8 +50,6 @@ describe('buildMyKortixSandboxDockerfile', () => {
     // every image, including the meta box: install pnpm from its versioned
     // standalone release artifact after verifying the repository-controlled
     // checksum. The public installer script is not part of the trust path.
-    // ponytail: install text duplicated from dockerfile-layer.ts per the issue;
-    // share a stage builder when the toolchain-stage split lands.
     expect(dockerfile).not.toContain('get.pnpm.io');
     expect(dockerfile).not.toMatch(/curl[^|\n]*\|\s*(?:sh|bash)/);
     expect(dockerfile).toContain(
@@ -54,6 +58,6 @@ describe('buildMyKortixSandboxDockerfile', () => {
     expect(dockerfile).toContain(`pnpm_sha=${PNPM_SHA256_AMD64}`);
     expect(dockerfile).toContain(`pnpm_sha=${PNPM_SHA256_ARM64}`);
     expect(dockerfile).toContain('echo "${pnpm_sha}  /tmp/pnpm.tar.gz" | sha256sum -c -');
-    expect(dockerfile).toContain(`test "$(HOME=/home/kortix pnpm --version)" = "${PNPM_VERSION}"`);
+    expect(dockerfile).toContain(`test "$(pnpm --version)" = "${PNPM_VERSION}"`);
   });
 });

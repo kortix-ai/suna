@@ -26,7 +26,6 @@ import { turnEndNotificationContext, turnPromptSource } from '../lib/notificatio
 import { clearOpenQuestions } from '../lib/pending-questions';
 import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
 import { notifyTurnEnded } from '../lib/config-convergence-triggers';
-import { captureJournallessSessionLog } from '../lib/session-transcript-capture';
 import { recordTriggerRunEnd } from '../lib/trigger-run-outcome';
 import { childIdleGraceMs } from '../sandbox-deadline';
 import {
@@ -343,16 +342,6 @@ async function promoteAfterTurnEnd(
       ),
     );
   }
-  // THE TURN ENDED, SO THE TRANSCRIPT IS FINAL. A box without a journal
-  // gets its messages into the session log now (a box with a journal keeps
-  // its own log, and the capture returns at once). The box is definitionally
-  // reachable — it just relayed. Fire-and-forget beside the reconcile above:
-  // `captureJournallessSessionLog` never throws and must never fail a
-  // turn-end report.
-  //
-  // EVERY session, a coordinator-spawned one included: nobody may ever open
-  // it, so this turn end is the only moment its history is saved.
-  void captureJournallessSessionLog(sessionId);
   // The session is idle: a session a fallback took over moves back to its own
   // model when that model can serve again (never throws). Child sessions too:
   // the switch writes them, and their prompts then send the fallback pin.

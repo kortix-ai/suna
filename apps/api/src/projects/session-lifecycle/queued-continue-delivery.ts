@@ -147,7 +147,6 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
   text: string, wireId: string | undefined, placedIntoLiveTurn: boolean, underPlaced: boolean,
   tl: ProvisionTimeline, noReply = false): Promise<Status> {
   let wireMessageId = wireId;
-  const isPendingFirstPrompt = row.idempotencyKey === `prompt:${row.sessionId}:pending-first`;
   try {
     const overrides = await continuationOverrides(row.sessionId!, payload.overrides ?? undefined);
     // Admission holds every other row until no turn is live. A direct
@@ -166,7 +165,7 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         ...(payload.parts?.length ? { parts: payload.parts } : {}),
         ...(overrides ? { overrides } : {}),
         ...(wireMessageId ? { wireMessageId } : {}),
-        materializationKey: row.commandId, isPendingFirstPrompt,
+        materializationKey: row.commandId,
         ...(noReply ? { noReply } : {}),
         ...(payload.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
         ...(payload.opencodeEnv ? { opencodeEnv: payload.opencodeEnv } : {}),

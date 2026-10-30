@@ -5052,6 +5052,8 @@ const canCompact = runtimeSupports(health?.capabilities, 'session.compact');
 - A route for an unlisted feature answers `501` `feature_not_supported`.
 - `runtimeSupports` returns `true` before a health answer arrives, and for a list with no `session.*` entry.
 
+The session's computer can have a desktop, streamed on port `6901`. The daemon lists `machine.desktop` in the same `capabilities` when the image installs it. My Kortix's computer, and a template on a base other than Ubuntu 24.04, have no desktop. `hasSessionDesktop(health?.capabilities)` returns `true` only when the entry is listed: before a health answer it returns `false`.
+
 ### Control the session
 
 | Method | What it does |
@@ -6035,6 +6037,8 @@ function RewindButton({ session, messageId }: { session: UseSessionResult; messa
 ```
 
 The hook returns `true` until the runtime first answers, and for a runtime that lists no `session.*` capability. The capability list, what pi serves, and the framework-free `runtimeSupports(caps, name)` are in [Sessions from code > Gate on runtime capabilities](/docs/developers#gate-on-runtime-capabilities).
+
+`useHasSessionDesktop()` returns whether the open session's computer has a desktop (`machine.desktop`). It returns `undefined` until the runtime first answers, so a host can wait instead of showing "no desktop" on a computer that has one.
 
 ### Render messages yourself
 
