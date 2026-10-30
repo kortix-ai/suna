@@ -6,7 +6,9 @@
  * and that one name no platform (eslint.config.mjs).
  *
  * Add a channel:
- *   1. Adapter: a `ChannelInbound` in `channels/<platform>/inbound.ts`.
+ *   1. Adapter: a `ChannelInbound` in `channels/<platform>/inbound.ts`. Each event names its conversation
+ *      (`subject`) and, when the platform numbers its updates, its `sequence`: one conversation's events
+ *      then reach its session in send order.
  *   2. Consumer: `registerEventConsumer('<platform>.', …)`, in a module the
  *      adapter imports, so the consumer registers wherever the route loads.
  *   3. Mount: `app.route('/v1/webhooks/<platform>', channelWebhookRoutes(<platform>Inbound))` in app.ts.

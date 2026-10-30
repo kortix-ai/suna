@@ -7793,6 +7793,9 @@ export const jobQueue = kortixSchema.table(
     maxAttempts: integer('max_attempts').default(8).notNull(),
     lockedUntil: timestamp('locked_until', { withTimezone: true }),
     lastError: text('last_error'),
+    /** With `order_seq`: jobs of the queue that share this key run one at a time, lowest seq first (job-queue.ts `claimJobs`). */
+    orderKey: text('order_key'),
+    orderSeq: bigint('order_seq', { mode: 'number' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -7801,6 +7804,7 @@ export const jobQueue = kortixSchema.table(
     index('idx_job_queue_artifact').on(table.artifactId).where(sql`${table.artifactId} is not null`),
     uniqueIndex('idx_job_queue_key').on(table.queue, table.jobKey),
     index('idx_job_queue_due').on(table.queue, table.runAt).where(sql`${table.status} = 'queued'`),
+    index('idx_job_queue_order').on(table.queue, table.orderKey, table.orderSeq).where(sql`${table.status} = 'queued'`),
     index('idx_job_queue_finished').on(table.updatedAt).where(sql`${table.status} <> 'queued'`),
     check('job_queue_status', sql`${table.status} in ('queued', 'done', 'dead')`),
   ],

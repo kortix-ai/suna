@@ -1534,7 +1534,8 @@ describe('Telegram question buttons — migrated PostgreSQL', () => {
     expect(stored.map((j) => j.queue)).toEqual([INTEGRATION_EVENTS_QUEUE, INTEGRATION_EVENTS_QUEUE]);
     expect(JSON.stringify(stored.map((j) => j.payload))).not.toContain('Private Name');
 
-    await runJobBatch();
+    // One chat: the press runs after the message, in a second claim.
+    for (let i = 0; i < 2; i++) await runJobBatch();
     const settled = await db.select({ status: jobQueue.status }).from(jobQueue).where(like(jobQueue.jobKey, `telegram:${BOT_ID}:%`));
     expect(settled.map((j) => j.status)).toEqual(['done', 'done']);
     expect(delivered.map((d) => d.sessionId)).toEqual([sessionId, sessionId]);

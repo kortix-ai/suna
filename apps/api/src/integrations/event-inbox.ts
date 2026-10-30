@@ -7,6 +7,8 @@
  *
  * Each integration's events have their own queue, and its consumer is that
  * queue's handler. A consumer must be idempotent: an event runs at least once.
+ * An event with a `subject` and a `sequence` runs after the earlier events of
+ * its subject (shared/job-queue.ts `order`).
  * A throw retries the event; on `finalAttempt` a throw dead-letters it, so a
  * consumer tells its user there instead.
  *
@@ -40,6 +42,13 @@ export interface IntegrationEvent {
   time: string;
   /** Routing key for threads and keyed sessions, e.g. a chat id. */
   subject: string | null;
+  /**
+   * The platform's number for this event, rising in send order (Telegram: `update_id`).
+   * With a subject, the inbox runs the subject's events one at a time, in this order.
+   * Absent: the events run in any order.
+   * ponytail: a JS number; an id past 2^53 (a Discord snowflake) loses its low bits. Store it as text if one comes.
+   */
+  sequence?: number;
   projectId: string;
   data: Record<string, unknown>;
 }
@@ -89,6 +98,11 @@ export function emitIntegrationEvent(
     queueOf(event.type),
     `${event.source}:${event.id}`,
     jsonbSafeValue(event) as unknown as Record<string, unknown>,
-    { maxAttempts: opts.maxAttempts },
+    {
+      maxAttempts: opts.maxAttempts,
+      ...(event.subject != null && event.sequence !== undefined
+        ? { order: { key: `${event.source}:${event.subject}`, seq: event.sequence } }
+        : {}),
+    },
   );
 }
