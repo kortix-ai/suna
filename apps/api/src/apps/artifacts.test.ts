@@ -146,6 +146,22 @@ describe('App artifacts', () => {
     );
   });
 
+  test.each(['/outside-build-context', '../../outside-build-context'])(
+    'rejects unsafe link %s through the archive promise without extracting files', async (target) => {
+      const fixture = await mkdtemp(join(tmpdir(), 'kortix-artifact-invalid-'));
+      cleanup.push(fixture);
+      const source = join(fixture, 'source');
+      const archive = join(fixture, 'source.tar.gz');
+      const output = join(fixture, 'output');
+      await mkdir(source);
+      await symlink(target, join(source, 'link'));
+      await tar.c({ cwd: source, file: archive, gzip: true }, ['link']);
+
+      await expect(extractAppArchive(archive, output)).rejects.toThrow(/archive link/);
+      await expect(stat(output)).rejects.toThrow();
+    },
+  );
+
   // Each link passes the lexical check (`validateArchiveEntry`). Extracted in
   // this order, `e` resolves through `d/l` (created after it) to the parent of
   // the extraction root, and each further pair climbs one directory more.
