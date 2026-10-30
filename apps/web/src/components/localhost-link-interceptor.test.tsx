@@ -53,10 +53,11 @@ afterEach(async () => {
   useTabStore.getState().closeTab(sessionPreviewTabId(PANEL_SESSION));
 });
 
-function click(href: string): MouseEvent {
+function click(href: string, attrs: Record<string, string> = {}): MouseEvent {
   const anchor = document.createElement('a');
   anchor.href = href;
   anchor.target = '_blank';
+  for (const [name, value] of Object.entries(attrs)) anchor.setAttribute(name, value);
   host.appendChild(anchor);
   const event = new win.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
   anchor.dispatchEvent(event as unknown as Event);
@@ -93,5 +94,20 @@ describe('LocalhostLinkInterceptor — Kortix App links', () => {
   test('an ordinary external link is not taken over', () => {
     useSessionBrowserStore.getState().setActiveSessionId(PANEL_SESSION);
     expect(click('https://example.com/docs').defaultPrevented).toBe(false);
+  });
+});
+
+describe('LocalhostLinkInterceptor — artifact links', () => {
+  const ARTIFACT_URL =
+    'http://localhost:3000/projects/00000000-0000-4000-8000-000000000001/artifacts/00000000-0000-4000-8000-000000000002';
+
+  test('on a session page, an artifact link opens in the session panel', () => {
+    useSessionBrowserStore.getState().setActiveSessionId(PANEL_SESSION);
+    expect(click(ARTIFACT_URL).defaultPrevented).toBe(true);
+  });
+
+  test('a link marked data-no-panel (the panel\'s "Open full page") navigates', () => {
+    useSessionBrowserStore.getState().setActiveSessionId(PANEL_SESSION);
+    expect(click(ARTIFACT_URL, { 'data-no-panel': '' }).defaultPrevented).toBe(false);
   });
 });
