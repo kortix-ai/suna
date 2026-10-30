@@ -4,7 +4,8 @@
  * `workflow`, or its background runner session.
  *
  *   GET  /kortix/runtime/workflows                 → 200 { runs: WorkflowRunMetadata[] }, newest first
- *   POST /kortix/runtime/workflows/:runId/control  → 200 { ok: true, paused }; 404 unknown run
+ *   POST /kortix/runtime/workflows/:runId/control  → 200 { ok: true, paused }; 404 unknown run;
+ *        409 { code: 'run_in_runner', runner_session_id } for a background run asked on its parent
  */
 import { authenticatedFetch } from '../http/auth';
 import { ApiError } from '../http/api/errors';
@@ -18,16 +19,6 @@ import type {
 import { getSandboxUrlForExternalId } from './server-store/url-helpers';
 import { getSessionRuntime } from './session-runtime-registry';
 
-async function errorText(response: Response): Promise<string> {
-  const text = await response.text().catch(() => '');
-  try {
-    const body = JSON.parse(text) as { error?: string; message?: string };
-    return body.message || body.error || text || `HTTP ${response.status}`;
-  } catch {
-    return text || `HTTP ${response.status}`;
-  }
-}
-
 async function call<T>(runtimeUrl: string, method: string, path: string, body: unknown, what: string): Promise<T> {
   const base = runtimeUrl.replace(/\/$/, '');
   const response = await authenticatedFetch(`${base}${path}`, {
@@ -35,7 +26,19 @@ async function call<T>(runtimeUrl: string, method: string, path: string, body: u
     ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   });
   if (!response.ok) {
-    throw new ApiError(`${what}: ${await errorText(response)}`, { status: response.status, response });
+    const text = await response.text().catch(() => '');
+    let details: { error?: string; message?: string; code?: string } | undefined;
+    try {
+      details = JSON.parse(text);
+    } catch {
+      details = undefined;
+    }
+    const message = details?.message || details?.error || text || `HTTP ${response.status}`;
+    throw new ApiError(`${what}: ${message}`, {
+      status: response.status,
+      response,
+      ...(details ? { details, data: details, ...(typeof details.code === 'string' ? { code: details.code } : {}) } : {}),
+    });
   }
   return (await response.json()) as T;
 }
@@ -61,6 +64,53 @@ export function controlRuntimeWorkflowRun(
 }
 
 /**
+ * The runtime URL of a session that runs: the one this process already
+ * resolved, else the one its row names. Null for a session that does not run.
+ * Never starts a session.
+ */
+export async function runningSessionRuntimeUrl(projectId: string, sessionId: string): Promise<string | null> {
+  const known = getSessionRuntime(projectId, sessionId)?.runtimeUrl;
+  if (known) return known;
+  const row = await getProjectSession(projectId, sessionId, { showErrors: false }).catch(() => null);
+  const externalId = row ? projectSessionStartSeed(row)?.sandbox?.external_id : undefined;
+  return externalId ? getSandboxUrlForExternalId(externalId) : null;
+}
+
+async function requireRunningRuntimeUrl(projectId: string, sessionId: string): Promise<string> {
+  const url = await runningSessionRuntimeUrl(projectId, sessionId);
+  if (!url) throw new Error('This session is not running, so its workflow runs cannot change.');
+  return url;
+}
+
+/** The runner session a `409 run_in_runner` names, or null for any other error. */
+function runnerSessionOf(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.status !== 409 || error.code !== 'run_in_runner') return null;
+  const runner = (error.details as { runner_session_id?: unknown } | undefined)?.runner_session_id;
+  return typeof runner === 'string' && runner ? runner : null;
+}
+
+/**
+ * Control a run of `sessionId`. A background run lives in its runner session:
+ * the parent's box answers `409 run_in_runner`, and the control goes to that
+ * runner once. Never starts a session.
+ */
+export async function controlSessionWorkflowRun(
+  projectId: string,
+  sessionId: string,
+  runId: string,
+  body: WorkflowControlBody,
+): Promise<WorkflowControlResult> {
+  const url = await requireRunningRuntimeUrl(projectId, sessionId);
+  try {
+    return await controlRuntimeWorkflowRun(url, runId, body);
+  } catch (error) {
+    const runner = runnerSessionOf(error);
+    if (!runner || runner === sessionId) throw error;
+    return controlRuntimeWorkflowRun(await requireRunningRuntimeUrl(projectId, runner), runId, body);
+  }
+}
+
+/**
  * A session's runs, for a poll: the runtime this process already resolved for
  * the session, else the one its row names while it runs. A session that does
  * not run has no live runs, and this never starts it. A box without the
@@ -70,12 +120,7 @@ export async function readSessionWorkflowRuns(
   projectId: string,
   sessionId: string,
 ): Promise<{ runs: WorkflowRunMetadata[] }> {
-  let runtimeUrl = getSessionRuntime(projectId, sessionId)?.runtimeUrl;
-  if (!runtimeUrl) {
-    const row = await getProjectSession(projectId, sessionId, { showErrors: false }).catch(() => null);
-    const externalId = row ? projectSessionStartSeed(row)?.sandbox?.external_id : undefined;
-    if (externalId) runtimeUrl = getSandboxUrlForExternalId(externalId);
-  }
+  const runtimeUrl = await runningSessionRuntimeUrl(projectId, sessionId);
   if (!runtimeUrl) return { runs: [] };
   try {
     const answer = await listRuntimeWorkflowRuns(runtimeUrl);

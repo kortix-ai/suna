@@ -18,11 +18,7 @@ import {
   type WorkflowControlBody,
   type WorkflowRunMetadata,
 } from '../core/rest/projects-client';
-import { getProjectSession } from '../core/rest/projects-client/sessions';
-import { projectSessionStartSeed } from '../core/rest/projects-client/session-sandbox';
-import { controlRuntimeWorkflowRun, readSessionWorkflowRuns } from '../core/session/runtime-workflows';
-import { getSandboxUrlForExternalId } from '../core/session/server-store/url-helpers';
-import { getSessionRuntime } from '../core/session/session-runtime-registry';
+import { controlSessionWorkflowRun, readSessionWorkflowRuns } from '../core/session/runtime-workflows';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
@@ -128,15 +124,6 @@ export function useTeammates(
   });
 }
 
-/** The runtime URL a control goes to: the resolved one, else the one the running session's row names. */
-async function runtimeUrlFor(projectId: string, sessionId: string): Promise<string> {
-  const known = getSessionRuntime(projectId, sessionId)?.runtimeUrl;
-  if (known) return known;
-  const externalId = projectSessionStartSeed(await getProjectSession(projectId, sessionId))?.sandbox?.external_id;
-  if (!externalId) throw new Error('This session is not running, so its workflow runs cannot change.');
-  return getSandboxUrlForExternalId(externalId);
-}
-
 /**
  * The workflow runs on a session's box, newest first: the session that called
  * `workflow`, or a background run's runner session. A poll never starts a
@@ -160,8 +147,9 @@ export function useSessionWorkflows(
     refetchIntervalInBackground: false,
   });
   const control = useMutation({
-    mutationFn: async ({ runId, body }: { runId: string; body: WorkflowControlBody }) =>
-      controlRuntimeWorkflowRun(await runtimeUrlFor(projectId as string, sessionId as string), runId, body),
+    // A background run asked on its parent is followed once to its runner session (`409 run_in_runner`).
+    mutationFn: ({ runId, body }: { runId: string; body: WorkflowControlBody }) =>
+      controlSessionWorkflowRun(projectId as string, sessionId as string, runId, body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: key }),
   });
   return { ...query, control };

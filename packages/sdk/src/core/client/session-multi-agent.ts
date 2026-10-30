@@ -1,5 +1,5 @@
 import * as P from '../rest/projects-client';
-import { controlRuntimeWorkflowRun, listRuntimeWorkflowRuns } from '../session/runtime-workflows';
+import { controlSessionWorkflowRun, listRuntimeWorkflowRuns } from '../session/runtime-workflows';
 
 import type { SessionBindingContext } from './session-context';
 
@@ -32,12 +32,15 @@ export function bindSessionMultiAgent(ctx: SessionBindingContext) {
       update: (seq: number, body: P.SessionTaskUpdateBody) => P.updateSessionTask(projectId, sessionId, seq, body),
       remove: (seq: number) => P.deleteSessionTask(projectId, sessionId, seq),
     },
-    /** The workflow runs on this session's own box, newest first. Starts the session when it sleeps. */
+    /** The workflow runs on this session's own box, newest first (a background run with its runner session). `list` starts the session when it sleeps. */
     workflows: {
       list: async () => listRuntimeWorkflowRuns((await ctx.ensureReady()).runtimeUrl),
-      /** Pause, resume, stop a run, or restart one of its agents (`session_id`). */
-      control: async (runId: string, body: P.WorkflowControlBody) =>
-        controlRuntimeWorkflowRun((await ctx.ensureReady()).runtimeUrl, runId, body),
+      /**
+       * Pause, resume, stop a run, or restart one of its agents (`session_id`). A background
+       * run is controlled in its runner session: the parent's `409 run_in_runner` is followed
+       * once. Never starts a session.
+       */
+      control: (runId: string, body: P.WorkflowControlBody) => controlSessionWorkflowRun(projectId, sessionId, runId, body),
     },
   };
 }

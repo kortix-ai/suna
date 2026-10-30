@@ -191,6 +191,8 @@ export interface WorkflowRunMetadata {
   large?: true;
   resumedFrom?: string;
   background?: { sessionId: string };
+  /** The person paused the run: no new agent starts until `resume`; running agents finish. */
+  paused?: boolean;
 }
 
 /**
