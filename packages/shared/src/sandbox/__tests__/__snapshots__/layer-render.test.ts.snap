@@ -133,7 +133,6 @@ COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
 COPY MACHINE.md /MACHINE.md
 COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
-COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json
 COPY scaffold.git /opt/kortix/scaffold.git
 RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
     && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\
@@ -310,7 +309,6 @@ COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
 COPY MACHINE.md /MACHINE.md
 COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
-COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json
 COPY scaffold.git /opt/kortix/scaffold.git
 RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
     && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\

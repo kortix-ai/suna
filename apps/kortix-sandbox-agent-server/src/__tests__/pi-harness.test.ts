@@ -82,6 +82,8 @@ function startFakeGateway() {
   const sampling: Array<{ temperature?: number; top_p?: number; tool_choice?: unknown; tools: number; toolNames: string[]; reasoning_effort?: string }> = []
   /** `/images/generations` (the image_gen tool's route), when a test sets it. */
   let images: ((body: { prompt: string }) => Response | Promise<Response>) | null = null
+  /** `GET /models?scope=picker`, the live catalog pi sizes models from; null answers 503. */
+  let catalog: Record<string, unknown> | null = null
   const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
     `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
   const server = Bun.serve({
@@ -89,6 +91,9 @@ function startFakeGateway() {
     async fetch(req) {
       const url = new URL(req.url)
       if (req.method === 'POST' && images && url.pathname.endsWith('/images/generations')) return images((await req.json()) as { prompt: string })
+      if (req.method === 'GET' && url.pathname.endsWith('/models') && url.searchParams.get('scope') === 'picker') {
+        return catalog ? Response.json({ models: catalog }) : new Response('down', { status: 503 })
+      }
       if (req.method !== 'POST' || !url.pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
       const json = (await req.json()) as { messages: Array<{ role: string; content: unknown }>; temperature?: number; top_p?: number; tool_choice?: unknown; tools?: Array<{ function?: { name?: string } }>; reasoning_effort?: string }
       sent.push(json.messages)
@@ -145,12 +150,14 @@ function startFakeGateway() {
     images: (handle: typeof images) => {
       images = handle
     },
+    catalog: (models: typeof catalog) => {
+      catalog = models
+    },
     stop: () => server.stop(true),
   }
 }
 
 let gateway: ReturnType<typeof startFakeGateway>
-let catalogDir: string
 let previousManagedSkills: string | undefined
 beforeAll(() => {
   // The image's baked managed-skills overlay: the rigs pin exactly the skills
@@ -159,14 +166,11 @@ beforeAll(() => {
   previousManagedSkills = process.env.KORTIX_MANAGED_SKILLS_DIR
   process.env.KORTIX_MANAGED_SKILLS_DIR = join(tmpdir(), 'kortix-absent-managed-skills')
   gateway = startFakeGateway()
-  catalogDir = mkdtempSync(join(tmpdir(), 'pi-catalog-'))
-  writeFileSync(join(catalogDir, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', limit: { context: 64_000, output: 4_096 } } } }))
 })
 afterAll(() => {
   if (previousManagedSkills === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
   else process.env.KORTIX_MANAGED_SKILLS_DIR = previousManagedSkills
   gateway.stop()
-  rmSync(catalogDir, { recursive: true, force: true })
 })
 
 interface Rig {
@@ -185,7 +189,6 @@ function rigEnv(workspace: string, env: Record<string, string> = {}): NodeJS.Pro
   return {
     KORTIX_HARNESS: 'pi',
     KORTIX_LLM_BASE_URL: gateway.baseUrl,
-    KORTIX_LLM_CATALOG_FILE: join(catalogDir, 'catalog.json'),
     KORTIX_PI_STATE_DIR: join(workspace, '.state'),
     // Never the machine's ~/.pi or the image's /opt/kortix/pi-agent.
     KORTIX_PI_AGENT_DIR: join(workspace, '.pi-agent'),
@@ -202,9 +205,16 @@ function rigEnv(workspace: string, env: Record<string, string> = {}): NodeJS.Pro
   }
 }
 
+/** The live catalog a rig's gateway serves unless the test names its own. */
+const TEST_CATALOG = { [MODEL_ID]: { name: 'Test Model', limit: { context: 64_000, output: 4_096 } } }
+/** The test model, with `fields` over the default sizing. */
+const testModel = (fields: Record<string, unknown>) => ({ [MODEL_ID]: { ...TEST_CATALOG[MODEL_ID], ...fields } })
+
 async function boot(input: {
   script: Step[]
   env?: Record<string, string>
+  /** The live catalog (`GET /models?scope=picker`); null makes it answer 503. */
+  catalog?: Record<string, unknown> | null
   start?: boolean
   workspace?: string
   /** Runs on the fresh workspace before the runtime starts. */
@@ -216,6 +226,7 @@ async function boot(input: {
   const workspace = input.workspace ?? mkdtempSync(join(tmpdir(), 'pi-harness-'))
   input.prepare?.(workspace)
   gateway.script(input.script)
+  gateway.catalog(input.catalog === undefined ? TEST_CATALOG : input.catalog)
   const env = rigEnv(workspace, input.env)
   const cfg = requirePiConfig(loadConfig(env))
   const service = createPiHarnessService(cfg, undefined, { env, hooks: input.hooks, releases: input.releases })
@@ -677,15 +688,11 @@ describe('pi harness', () => {
     // The gateway catalog states effort as `reasoning_options` values, not `variants` keys.
     // Prod 2026-10-19: pi read only the option's `type` ('effort'), so every variant ran with thinking off.
     const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
-    writeFileSync(join(workspace, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: {
-      name: 'Test Model', reasoning: true, limit: { context: 64_000, output: 4_096 },
-      reasoning_options: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
-    } } }))
     const r = await boot({
       workspace,
       script: [{ text: 'one' }, { text: 'two' }, { text: 'three' }],
+      catalog: testModel({ reasoning: true, reasoning_options: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }] }),
       env: {
-        KORTIX_LLM_CATALOG_FILE: join(workspace, 'catalog.json'),
         KORTIX_AGENT_NAME: 'lens',
         KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { lens: { prompt: 'You judge.', variant: 'high' } } }),
       },
@@ -3045,11 +3052,9 @@ describe('pi compaction', () => {
     // 128,000 window and a 32,768 output limit: a request needs 32,768 tokens of room for the
     // answer, so compaction must start at 95,232, not at pi's default window - 16,384 = 111,616.
     const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
-    const catalog = join(workspace, 'catalog.json')
-    writeFileSync(catalog, JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', limit: { context: 128_000, output: 32_768 } } } }))
     const r = await boot({
       workspace,
-      env: { KORTIX_LLM_CATALOG_FILE: catalog },
+      catalog: testModel({ limit: { context: 128_000, output: 32_768 } }),
       // 100,001 tokens is over 95,232 and under 111,616: the report the session meter shows.
       script: [{ text: 'first answer', promptTokens: 100_000 }, ...SUMMARY, { text: 'answer after compaction' }],
       prepare: compactEverything,
@@ -3070,13 +3075,11 @@ describe('pi compaction', () => {
     // The project asks pi to cut at 28,000 (reserve 100,000 of a 128,000 window, capped at 64,000),
     // well before this model's own 32,768 reserve would (95,232). A 70,000-token reply is over.
     const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
-    const catalog = join(workspace, 'catalog.json')
-    writeFileSync(catalog, JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', limit: { context: 128_000, output: 32_768 } } } }))
     mkdirSync(join(workspace, 'harnesses/pi'), { recursive: true })
     writeFileSync(join(workspace, 'harnesses/pi/settings.json'), JSON.stringify({ compaction: { keepRecentTokens: 1, reserveTokens: 100_000 } }))
     const r = await boot({
       workspace,
-      env: { KORTIX_LLM_CATALOG_FILE: catalog },
+      catalog: testModel({ limit: { context: 128_000, output: 32_768 } }),
       script: [{ text: 'first answer', promptTokens: 70_000 }, ...SUMMARY, { text: 'answer after compaction' }],
     })
     const root = r.service.runtime()!.rootId
@@ -3744,17 +3747,14 @@ describe('pi session-log export (P2.5)', () => {
   const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
   const TASK = { tool: 'task', args: { description: 'Write the note', prompt: 'write sub.txt', subagent_type: 'general' } }
   /** The model reads images, so the attachment reaches pi as image content. */
-  const imageCatalog = (workspace: string) => {
-    writeFileSync(join(workspace, 'image-catalog.json'), JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', attachment: true, limit: { context: 64_000, output: 4_096 } } } }))
-    compactEverything(workspace)
-  }
+  const imageCatalog = testModel({ attachment: true })
 
   test('a real session exports with Kortix ids and v1 part ids, and its hashes survive a restart', async () => {
     const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
     const r = await boot({
       workspace,
-      prepare: imageCatalog,
-      env: { KORTIX_LLM_CATALOG_FILE: join(workspace, 'image-catalog.json') },
+      prepare: compactEverything,
+      catalog: imageCatalog,
       script: [
         { text: 'an image' },
         { tool: 'bash', args: { command: 'printf a > a.txt && ls' } }, { text: 'listed' },
@@ -3818,7 +3818,7 @@ describe('pi session-log export (P2.5)', () => {
     // A daemon restart restores the id maps and the header: every native hash is the same.
     await r.service.lifecycle.stop()
     rigs.splice(rigs.indexOf(r), 1)
-    const restarted = await boot({ workspace, script: [], env: { KORTIX_LLM_CATALOG_FILE: join(workspace, 'image-catalog.json') } })
+    const restarted = await boot({ workspace, script: [], catalog: imageCatalog })
     const again = piSessionLog(restarted.service.runtime()!.sessionLogSnapshot()!)
     expect(again.hashes).toEqual(hashes)
   })
@@ -3830,10 +3830,9 @@ describe('pi prompt images', () => {
   for (const [name, catalog, image] of [['reads images', { attachment: true }, true], ['does not read images', {}, false]] as const) {
     test(`a prompt's inbox image tag reaches a model that ${name} ${image ? 'as image content, tag kept' : 'as the tag alone'}`, async () => {
       const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
-      writeFileSync(join(workspace, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', ...catalog, limit: { context: 64_000, output: 4_096 } } } }))
       mkdirSync(join(workspace, 'uploads/.kortix-inbox/cmd_1'), { recursive: true })
       writeFileSync(join(workspace, 'uploads/.kortix-inbox/cmd_1/1-swatch.png'), PNG)
-      const r = await boot({ workspace, script: [{ text: 'seen' }], env: { KORTIX_LLM_CATALOG_FILE: join(workspace, 'catalog.json') } })
+      const r = await boot({ workspace, script: [{ text: 'seen' }], catalog: testModel(catalog) })
       const rt = r.service.runtime()!
       const tag = `<file path="${join(workspace, 'uploads/.kortix-inbox/cmd_1/1-swatch.png')}" mime="image/png" filename="swatch.png">\nThis file has been uploaded and is available at the path above.\n</file>`
       const before = gateway.sent.length
@@ -3853,9 +3852,8 @@ describe('pi prompt images', () => {
       // A fresh box restored from the log: pi has the image again; the transcript shows it through its tag alone, as live.
       const { log } = piSessionLog(rt.sessionLogSnapshot()!)
       const fresh = mkdtempSync(join(tmpdir(), 'pi-harness-'))
-      writeFileSync(join(fresh, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', ...catalog, limit: { context: 64_000, output: 4_096 } } } }))
       await restorePiSessionLog(log, { stateDir: join(fresh, '.state'), sessionId: log.session_id, cwd: fresh, readAttachment: async () => PNG })
-      const restored = await boot({ workspace: fresh, script: [{ text: 'still seen' }], env: { KORTIX_LLM_CATALOG_FILE: join(fresh, 'catalog.json') } })
+      const restored = await boot({ workspace: fresh, script: [{ text: 'still seen' }], catalog: testModel(catalog) })
       const wire = (await restored.bearer(`/kortix/runtime/messages/${restored.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
       const shown = wire.messages.find((m) => m.info.id === messageID)!
       expect(shown.parts.map((p) => p.type)).toEqual(['text'])
@@ -3866,6 +3864,28 @@ describe('pi prompt images', () => {
       expect(again.blocks).toEqual(message.blocks)
     })
   }
+  test('a box that booted while the live catalog was down learns the model reads images after its first turn', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    const path = join(workspace, 'uploads/.kortix-inbox/cmd_1/1-swatch.png')
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, PNG)
+    // The API names the session model; the catalog only sizes it.
+    const r = await boot({ workspace, script: [{ text: 'blind' }, { text: 'seen' }], catalog: null, env: { KORTIX_MODEL: `kortix/${MODEL_ID}` } })
+    const rt = r.service.runtime()!
+    expect(rt.selectedModel()).toMatchObject({ images: false, contextWindow: 128_000 })
+    const tag = `<file path="${path}" mime="image/png" filename="swatch.png">\nThis file has been uploaded and is available at the path above.\n</file>`
+    const image = `data:image/png;base64,${PNG.toString('base64')}`
+    gateway.catalog(testModel({ attachment: true }))
+    const first = gateway.sent.length
+    await promptAndSettle(r, `what colours? ${tag}`)
+    expect(JSON.stringify(gateway.sent[first]!)).not.toContain(image)
+    // The turn's end fetched the catalog again: the model is sized for the next turn.
+    await waitFor(() => rt.selectedModel()?.images === true)
+    expect(rt.selectedModel()!.contextWindow).toBe(64_000)
+    const second = gateway.sent.length
+    await promptAndSettle(r, `and now? ${tag}`)
+    expect(JSON.stringify(gateway.sent[second]!)).toContain(image)
+  })
 })
 
 /**

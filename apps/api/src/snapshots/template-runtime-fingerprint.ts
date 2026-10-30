@@ -215,7 +215,9 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // v52: no OpenCode in the image. Every new box runs pi, so the OpenCode binary
 // (twice on x86_64), its config deps, both warm-ups, the /workspace wipe and
 // the OpenCode config dir are gone (~580 MB on x86_64).
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v52';
+// v53: no baked model catalog (/opt/kortix/llm-catalog.json, 5.4 MB, 8,279
+// models). pi sizes models from the project's live list only.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v53';
 
 // The runtime layer bakes source artifacts into every template's rootfs. The
 // first set is the kortix-agent binary (its source, package.json and the shared

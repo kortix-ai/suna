@@ -242,17 +242,10 @@ export interface KortixArtifactLayerOpts {
    */
   slackCliPath: string;
   /**
-   * Path (in the build context) to the baked full gateway model catalog JSON.
-   * COPY'd into the image so the no-restart warm seed — which has no sandbox
-   * token / projectId to fetch the catalog at PARK — gets the full model picker
-   * instead of the daemon's minimal fallback. Optional; omit to skip.
-   */
-  catalogPath?: string;
-  /**
    * Build-context path to the staged managed `kortix-*` skill overlay, baked
    * at {@link SANDBOX_MANAGED_SKILLS_DIR}.
    *
-   * REQUIRED, unlike `catalogPath`. Optional is how this diverged in the first
+   * REQUIRED. Optional is how this diverged in the first
    * place: the meta image passed a path, the standard layer had no field at
    * all, and every ordinary session sandbox — dev, prod and preview alike —
    * booted with nothing to overlay and downloaded the whole overlay on its
@@ -567,8 +560,8 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
 
 /**
  * The staged-artifact half of the Kortix runtime layer: the COPYs of Kortix's
- * own build outputs (agent + CLI binaries, entrypoint, slack-cli, the optional
- * LLM catalog, scaffold.git), the unpack/shim RUN
+ * own build outputs (agent + CLI binaries, entrypoint, slack-cli,
+ * scaffold.git), the unpack/shim RUN
  * that puts them on PATH, and the container's ENV/WORKDIR/EXPOSE/ENTRYPOINT.
  *
  * Every path here must exist in the build context — see
@@ -581,7 +574,6 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     entrypointScriptPath,
     machineDocPath,
     slackCliPath,
-    catalogPath,
     managedSkillsPath,
   } = opts;
 
@@ -593,9 +585,6 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     `COPY ${machineDocPath} /MACHINE.md`,
     // The channel shims delegate Connector calls to the compiled `kortix` CLI.
     `COPY ${slackCliPath}/ /opt/kortix/apps/sandbox/slack-cli/`,
-    // Full gateway model catalog, baked at build so the token-less no-restart
-    // warm seed serves the full picker (daemon reads KORTIX_LLM_CATALOG_FILE).
-    ...(catalogPath ? [`COPY ${catalogPath} /opt/kortix/llm-catalog.json`] : []),
     // Canonical scaffold repo (bare). Its root commit matches every seeded
     // project's root (pinned dates, seed.ts), enabling local-clone +
     // delta-fetch repo materialization in the daemon (git.ts).

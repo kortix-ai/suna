@@ -1185,6 +1185,8 @@ export class PiRuntime {
       turn.resolve(outcome)
       this.hooks.onTurnEnd?.({ rootId: this.rootId, messageId: turn.messageId, status: outcome === 'error' ? 'error' : 'idle', ...(error ? { error } : {}) })
     }
+    // Started while the live model list was down: fetch it again, so the next turn runs on real limits.
+    if (this.models?.live === false) void this.refreshModels().catch((err) => logger.warn('[pi] model list refresh failed', { err: String(err) }))
     // Steered messages the turn did not read. A stopped turn drops them (the
     // API's Stop path owns them). Otherwise they start the next turn: the first
     // is its prompt, the rest are read before its first model call. Same queue

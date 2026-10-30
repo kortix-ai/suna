@@ -7,7 +7,6 @@ const dockerfile = buildMetaSandboxDockerfile({
   agentBinaryPath: 'artifacts/kortix-agent.gz',
   cliBinaryPath: 'artifacts/kortix.gz',
   entrypointScriptPath: 'artifacts/kortix-entrypoint.sh',
-  catalogPath: 'artifacts/llm-catalog.json',
   managedSkillsPath: 'artifacts/managed-skills',
 });
 
@@ -48,7 +47,7 @@ describe('buildMetaSandboxDockerfile', () => {
       'It cannot access another project, account administration, project secrets, or connectors.',
     );
     expect(dockerfile).not.toContain('artifacts/AGENTS.md');
-    expect(dockerfile).toContain('/opt/kortix/llm-catalog.json');
+    expect(dockerfile).not.toContain('llm-catalog');
     expect(dockerfile).toContain(
       'COPY --chown=kortix:kortix artifacts/managed-skills /opt/kortix/managed-skills',
     );
