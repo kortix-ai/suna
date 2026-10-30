@@ -145,15 +145,19 @@ export function createRuntimeVerbs(input: RuntimeVerbsInput) {
 
     /**
      * Summarize the conversation so far into a shorter context. Uses `model`,
-     * else the runtime's default model; throws an `ApiError` with code
-     * `MODEL_REQUIRED` when neither names one. Resolves with the model it used.
+     * else the model the runtime runs (its `kortix.runtime.v1` state document);
+     * throws an `ApiError` with code `MODEL_REQUIRED` when neither names one.
+     * Resolves with the model it used.
      */
     compact: async (model?: { providerID: string; modelID: string }): Promise<{ providerID: string; modelID: string }> => {
       let chosen = model;
       if (!chosen) {
-        // An unreadable config names no model: never guess one.
-        const config = await client.global.config.get().then((result) => (result.error === undefined ? result.data : null));
-        const reference = typeof config?.model === 'string' ? config.model : '';
+        // An unreadable state document names no model: never guess one.
+        const state = await input
+          .fetch(new Request(`${base}/kortix/runtime/state`, { method: 'GET' }))
+          .then((response) => (response.ok ? (response.json() as Promise<{ config?: { value?: { model?: unknown } | null } }>) : null))
+          .catch(() => null);
+        const reference = typeof state?.config?.value?.model === 'string' ? state.config.value.model : '';
         const slash = reference.indexOf('/');
         if (slash > 0 && slash < reference.length - 1) {
           chosen = { providerID: reference.slice(0, slash), modelID: reference.slice(slash + 1) };

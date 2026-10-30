@@ -194,7 +194,20 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
         if (child) {
           return json(501, { code: 'feature_not_supported', error: 'a pi subagent session is read-only; its parent task drives it' })
         }
-        if (sub === '' && method === 'PATCH') return json(200, rt.sessionObject())
+        if (sub === '' && method === 'PATCH') {
+          // The session ruleset: "Allow all for this session" and its reset (see `PermissionBroker.setSessionRules`).
+          let body: { permission?: unknown }
+          try {
+            body = (await readJsonBody(input.body)) as { permission?: unknown }
+          } catch {
+            return json(400, { error: 'invalid json body' })
+          }
+          if (body?.permission !== undefined) {
+            if (!Array.isArray(body.permission)) return json(400, { error: 'permission must be a list of rules' })
+            rt.setSessionPermission(body.permission)
+          }
+          return json(200, rt.sessionObject())
+        }
 
         if ((sub === 'prompt_async' || sub === 'message' || sub === 'command') && method === 'POST') {
           let prompt
