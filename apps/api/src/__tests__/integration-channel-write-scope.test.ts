@@ -345,6 +345,65 @@ describe('Telegram writes stay in the chat that started or is bound to the sessi
     expect(await gate(chatSession, 'get_me', {})).toBeNull();
   });
 
+  describe('the confinement follows the lineage (`spawned_by_session`, `reminder_successor_of`)', () => {
+    const withMetadata = async (metadata: Record<string, unknown>) => {
+      const id = await seedSession(mine, crypto.randomUUID());
+      await db.update(projectSessions).set({ metadata }).where(eq(projectSessions.sessionId, id));
+      return id;
+    };
+    const OTHER_CHAT_REFUSAL = {
+      reason: CONVERSATION_NOT_IN_PROJECT,
+      message: `This session answers Telegram chat ${OWN_CHAT} only. It does not send to, edit or delete messages in other chats.`,
+    } as const;
+
+    test("a session a chat's session started writes to the parent's chat and to no other; so does its own child", async () => {
+      const child = await withMetadata({ source: 'agent', spawned_by_session: chatSession });
+      const grandchild = await withMetadata({ source: 'agent', spawned_by_session: child });
+      for (const id of [child, grandchild]) {
+        expect(await gate(id, 'send_message', { chat_id: OWN_CHAT, text: 'done' })).toBeNull();
+        expect(await gate(id, 'send_message', { chat_id: OTHER_CHAT, text: 'from a worker session' })).toEqual(OTHER_CHAT_REFUSAL);
+        expect(await gate(id, 'delete_message', { chat_id: OTHER_CHAT, message_id: 5 })).toEqual(OTHER_CHAT_REFUSAL);
+      }
+    });
+
+    test("a reminder's successor whose thread row is gone stays in its predecessor's chat", async () => {
+      const successor = await withMetadata({ source: 'trigger:reminder', reminder_successor_of: chatSession });
+      expect(await gate(successor, 'send_message', { chat_id: OWN_CHAT, text: 'reminder' })).toBeNull();
+      expect(await gate(successor, 'send_message', { chat_id: OTHER_CHAT, text: 'reminder' })).toEqual(OTHER_CHAT_REFUSAL);
+    });
+
+    test("the chats of every session in the lineage add up: a bound child of a chat's session writes to both", async () => {
+      const child = await withMetadata({ source: 'agent', spawned_by_session: chatSession });
+      await db.insert(chatThreads).values({ platform: 'telegram', workspaceId: BOT, threadId: `${GROUP}:43`, projectId: mine.project_id, sessionId: child });
+      expect(await gate(child, 'send_message', { chat_id: GROUP, text: 'a' })).toBeNull();
+      expect(await gate(child, 'send_message', { chat_id: OWN_CHAT, text: 'a' })).toBeNull();
+      expect((await gate(child, 'send_message', { chat_id: OTHER_CHAT, text: 'a' }))?.message).toBe(
+        `This session answers Telegram chat ${GROUP} or ${OWN_CHAT} only. It does not send to, edit or delete messages in other chats.`,
+      );
+    });
+
+    test("a web session's child, and a lineage that loops, write to any chat", async () => {
+      const child = await withMetadata({ source: 'agent', spawned_by_session: webSession });
+      expect(await gate(child, 'send_message', { chat_id: OTHER_CHAT, text: 'order shipped' })).toBeNull();
+      const a = await withMetadata({ source: 'agent' });
+      const b = await withMetadata({ source: 'agent', spawned_by_session: a });
+      await db.update(projectSessions).set({ metadata: { source: 'agent', spawned_by_session: b } }).where(eq(projectSessions.sessionId, a));
+      expect(await gate(b, 'send_message', { chat_id: OTHER_CHAT, text: 'order shipped' })).toBeNull();
+    });
+
+    test('a lineage deeper than 8 sessions, or one whose parent row is gone, writes to no chat', async () => {
+      const NO_CHAT = {
+        reason: CONVERSATION_NOT_IN_PROJECT,
+        message: "This session's Telegram chat is not on record, so it writes to no chat. It does not send to, edit or delete messages in other chats.",
+      } as const;
+      let tip = webSession;
+      for (let depth = 0; depth < 9; depth++) tip = await withMetadata({ source: 'agent', spawned_by_session: tip });
+      expect(await gate(tip, 'send_message', { chat_id: OTHER_CHAT, text: 'a' })).toEqual(NO_CHAT);
+      const orphan = await withMetadata({ source: 'agent', spawned_by_session: crypto.randomUUID() });
+      expect(await gate(orphan, 'send_message', { chat_id: OTHER_CHAT, text: 'a' })).toEqual(NO_CHAT);
+    });
+  });
+
   test('the connector refuses another chat before Telegram, and sends into its own chat', async () => {
     const run = async (sessionId: string, args: Record<string, unknown>) => {
       const fetched: string[] = [];

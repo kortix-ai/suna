@@ -258,9 +258,9 @@ describe('Telegram writes', () => {
     );
   });
 
-  test("a Telegram-started session whose chat is not on record writes nowhere", () => {
+  test('a confined session whose chat is not on record writes nowhere', () => {
     expect(telegramWriteRefusal(111222333, [])).toBe(
-      'This session answers the Telegram chat that started it only. It does not send to, edit or delete messages in other chats.',
+      "This session's Telegram chat is not on record, so it writes to no chat. It does not send to, edit or delete messages in other chats.",
     );
   });
 });

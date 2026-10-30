@@ -52,14 +52,18 @@
  *      writes only into that chat: `chat_id` must be its numeric id. Any forum
  *      topic of the chat is fine. Another chat, a `@channel` name and a
  *      malformed id are refused before the call.
- *   2. Any other session (web, triggers, automations) and a call without a
+ *   2. Rule 1 follows the lineage: a session that such a session started
+ *      (`spawned_by_session`), or a reminder successor that replaces it
+ *      (`reminder_successor_of`), writes only into the chats of every session
+ *      up its lineage (`sessionTelegramChats`).
+ *   3. Any other session (web, triggers, automations) and a call without a
  *      session write to any chat of the bot: an automation that sends order
  *      notifications relies on it.
- *   3. Reads (`TELEGRAM_READS`) are not confined.
+ *   4. Reads (`TELEGRAM_READS`) are not confined.
  * Kortix's own replies (notices, questions, menus) do not go through the
  * connector and are not checked here.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { chatThreads, projectSessions } from '@kortix/db';
 import { isRecord } from '@kortix/shared/guards';
 import { db } from '../shared/db';
@@ -185,33 +189,63 @@ function refuse(message: string): ChannelWriteGate {
  */
 export const TELEGRAM_READS: ReadonlySet<string> = new Set(['get_chat', 'get_me']);
 
+/** How many sessions up the lineage `sessionTelegramChats` reads. */
+const LINEAGE_HOPS = 8;
+
 /**
- * The chats a session answers, as numeric chat ids: the chat that started it
- * and every chat bound to it. Null when no Telegram chat started it and none
- * is bound to it: that session writes to any chat.
+ * The chats a session answers, as numeric chat ids: every chat that started or
+ * is bound to the session or a session before it. The lineage runs up
+ * `spawned_by_session` (a session another session started) and
+ * `reminder_successor_of` (the session a failed reminder's successor
+ * replaces), both server-managed keys. Null when no Telegram chat started and
+ * none is bound to any of them: that session writes to any chat.
+ *
+ * A session cannot shed its chat by starting another one: a lineage that is
+ * longer than LINEAGE_HOPS, or that names a session that is not on record,
+ * answers only the chats found so far (none: it writes to no chat).
  */
 export async function sessionTelegramChats(projectId: string, sessionId: string | null): Promise<string[] | null> {
   if (!sessionId) return null;
-  const [[session], threads] = await Promise.all([
-    db
-      .select({ metadata: projectSessions.metadata })
-      .from(projectSessions)
-      .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
-      .limit(1),
-    db
-      .select({ threadId: chatThreads.threadId })
-      .from(chatThreads)
-      .where(
-        and(eq(chatThreads.projectId, projectId), eq(chatThreads.sessionId, sessionId), eq(chatThreads.platform, 'telegram')),
-      ),
-  ]);
-  // A thread is the chat id, or `<chat id>:<topic id>` for a forum topic.
-  const chats = new Set(threads.map((row) => row.threadId.split(':')[0]!));
-  const metadata = isRecord(session?.metadata) ? session.metadata : {};
-  const started = metadata.source === 'telegram';
-  const startedChat = isRecord(metadata.telegram) ? telegramChatId(metadata.telegram.chat_id) : null;
-  if (started && startedChat) chats.add(startedChat);
-  return started || chats.size ? [...chats] : null;
+  const chats = new Set<string>();
+  const seen = new Set<string>();
+  let confined = false;
+  let frontier = [sessionId];
+  for (let hop = 0; frontier.length > 0; hop++) {
+    if (hop > LINEAGE_HOPS) {
+      confined = true;
+      break;
+    }
+    for (const id of frontier) seen.add(id);
+    const [sessions, threads] = await Promise.all([
+      db
+        .select({ metadata: projectSessions.metadata })
+        .from(projectSessions)
+        .where(and(inArray(projectSessions.sessionId, frontier), eq(projectSessions.projectId, projectId))),
+      db
+        .select({ threadId: chatThreads.threadId })
+        .from(chatThreads)
+        .where(
+          and(eq(chatThreads.projectId, projectId), inArray(chatThreads.sessionId, frontier), eq(chatThreads.platform, 'telegram')),
+        ),
+    ]);
+    // A thread is the chat id, or `<chat id>:<topic id>` for a forum topic.
+    for (const row of threads) chats.add(row.threadId.split(':')[0]!);
+    if (hop > 0 && sessions.length < frontier.length) confined = true;
+    const parents = new Set<string>();
+    for (const row of sessions) {
+      const metadata = isRecord(row.metadata) ? row.metadata : {};
+      if (metadata.source === 'telegram') {
+        confined = true;
+        const chat = isRecord(metadata.telegram) ? telegramChatId(metadata.telegram.chat_id) : null;
+        if (chat) chats.add(chat);
+      }
+      for (const parent of [metadata.spawned_by_session, metadata.reminder_successor_of]) {
+        if (typeof parent === 'string' && parent && !seen.has(parent)) parents.add(parent);
+      }
+    }
+    frontier = [...parents];
+  }
+  return confined || chats.size ? [...chats] : null;
 }
 
 /** A chat id as Telegram issues it, normalized to its decimal string; null for anything else. */
@@ -228,8 +262,10 @@ export function telegramWriteRefusal(chatId: unknown, own: string[] | null): str
   if (!own) return null;
   const id = telegramChatId(chatId);
   if (id && own.includes(id)) return null;
-  const chats = own.length ? `Telegram chat ${own.join(' or ')}` : 'the Telegram chat that started it';
-  return `This session answers ${chats} only. It does not send to, edit or delete messages in other chats.`;
+  const answers = own.length
+    ? `This session answers Telegram chat ${own.join(' or ')} only.`
+    : "This session's Telegram chat is not on record, so it writes to no chat.";
+  return `${answers} It does not send to, edit or delete messages in other chats.`;
 }
 
 /** Reads are gated in channel-read-scope.ts; this gates the writes. */
