@@ -4,6 +4,7 @@
  * implements them (pi in-process), so the host speaks only Kortix names.
  */
 
+import type { WorkflowControlBody } from '@kortix/api-contract/multi-agent'
 import type { RuntimeCommandBody, RuntimePermissionReplyBody } from '@kortix/api-contract/runtime-relay'
 
 /** A validated `POST /kortix/runtime/sessions/:id/prompt` body. */
@@ -85,4 +86,15 @@ export interface HarnessTurnService {
   readLogMessage(messageId: string): Promise<HarnessTurnResponse>
   /** The bytes of an attachment the session log names by `sha256`, or null. */
   readBlob(sha256: string): Promise<{ bytes: Uint8Array; mime: string } | null>
+
+  // Workflow runs (`@kortix/api-contract/multi-agent`, the workflow tool).
+
+  /** 200 `{ runs: WorkflowRunMetadata[] }`: this session's runs, newest first. */
+  workflows(): Promise<HarnessTurnResponse>
+  /**
+   * 200 `{ ok: true, paused }`; 404 unknown run; 409 `{ code: 'run_in_runner',
+   * runner_session_id }` for a background run (its runner's box controls it),
+   * `{ code: 'run_ended' }`, or `{ code: 'agent_not_running' }`.
+   */
+  controlWorkflow(runId: string, body: WorkflowControlBody): Promise<HarnessTurnResponse>
 }

@@ -682,11 +682,12 @@ are in `details`), `runtimeReady` computed once from both, and
 `capabilities`: the host's `file.import`/`file.append`, the control's
 `config.release.v1`, and the session features pi serves
 (`HarnessDiagnosticsService.capabilities()`, read on each health call:
-`session.subagents`, `session.compact`, `session.commands`, `session.steer`,
-`session.log.v2`, `session.messaging` (the `send_message` and `list_agents`
-tools) and `session.team_tasks` (the `task_*` tools; listed only where the
-project flag `agent_teams` is on)). A client gates a control on one with
-`runtimeSupports`. The pre-W3 flat fields (`opencode`, `opencode_pid`,
+`session.subagents`, `session.compact`, `session.commands`, `session.steer`
+and `session.log.v2`), plus what this box serves on top
+(`PiRuntime.multiAgentCapabilities`): `session.messaging` where the box has a
+control plane, and `session.team_tasks` while the project's `agent_teams`
+flag is on and the session leads a team or is a teammate ("Agents working together"
+below). The pre-W3 flat fields (`opencode`, `opencode_pid`,
 `opencode_port`, `opencode_session_id`, …) are gone since 2026-10-30.
 
 The host retains its entrypoint (`src/app/`), Git/files/PTYs,
@@ -988,7 +989,9 @@ pi's jiti loader. In the compiled daemon, pi supplies `typebox` and the
 TypeScript package importing both in 24 ms, and its tool ran.
 
 In-process extensions are `InlineExtension`s (`{ name, factory }`): `kortix-subagents`,
-the hidden `kortix-turn`, which adds a prompt's `system` field for that turn,
+`kortix-workflow`, `kortix-messaging` and `kortix-team-tasks` ("Agents working together" below),
+the hidden `kortix-turn`, which adds a prompt's `system` field for that turn (and the
+`ultracode` line),
 the hidden `kortix-nested-calls` gate and `codemode`.
 
 ### codemode
@@ -1324,20 +1327,39 @@ in the closed `harness` block ("Health and capabilities" above).
 
 ## Agents working together (`session.messaging`, `session.team_tasks`)
 
-The wire contract is `@kortix/api-contract/multi-agent`: every route, body,
-result, limit and metadata key. The delivered text is
-`packages/shared/src/peer-message-prompt.ts` (`peerMessagePromptText`). The
-pi tools return the `KortixToolResult` shape (`{ data, card, error? }`,
-`@kortix/api-contract/kortix-tool-card`) with `data` = the contract object.
-The API owns resolution, authorization, inbound modes, limits and delivery;
-the tools call it with the box token.
+Kortix's version of Claude Code's subagents, agent teams, cross-session
+messaging and dynamic workflows. The wire contract is
+`@kortix/api-contract/multi-agent`; the tools reach the API with the session's
+own token (`pi/extensions/control-plane.ts`), so every call acts as this
+session for its person. No tool waits on another session: each call is one
+API request (at most `CONTROL_PLANE_CALL_TIMEOUT_MS`, 10 s), and a person's
+message during the turn is steered in at the next step as always.
 
-| Tool | Route | `data` |
+| Tool | Where | What |
 | --- | --- | --- |
-| `send_message` | `POST /projects/:id/sessions/:sid/peer-messages` (`:sid` = this session) | `PeerMessageSendResult` |
-| `list_agents` | `GET /projects/:id/sessions/:sid/reachable?scope=mine\|project` | `ReachableAgents` |
-| `task_create` · `task_list` · `task_get` · `task_update` | `/projects/:id/sessions/:lead/tasks[/:seq]` (`:lead` = this session, or its metadata `team_lead`) | `SessionTask`, `{ tasks }` |
-| `task_stop` | stops a background child or a workflow run of this session | the stopped child |
+| `send_message`, `list_agents` | a box with a control plane (`session.messaging`) | `POST …/sessions/:self/peer-messages`, `GET …/sessions/:self/reachable?scope=&project_id=`. `held`, `refused`, `dropped` and an ambiguous `to` (`409`) are results with a card, never errors. |
+| `task_create`, `task_list`, `task_get`, `task_update` | flag `agent_teams`, a lead (depth 0) or a teammate (`kortix.team.lead` in `runtime_context`) (`session.team_tasks`) | the lead's list, `…/sessions/:lead/tasks`; `claim: true` is atomic in the API (`409 task_taken`/`task_blocked`). |
+| `task_stop` | a box with a control plane | stop one child of this session by `task_id` or name (`cloudStopChild`). |
+| `agent` | every session | `name` (metadata `agent_handle`, unique among live children), `fork` (`fork_from_session_id` = this session), `run_in_background` default true for a separate session at depth 0. In an `agent_teams` project a named, non-fork spawn at depth 0 is a teammate: metadata `team_lead`, always background, teammate instructions in `initial_context`. |
+| `workflow` | every session | background by default at depth 0; refused in a turn whose prompt is a peer message, a room message or a trigger (`pi/prompt-origin.ts`); `ultracode` in the person's prompt adds a per-turn line asking for a workflow; a plan above 25 agents says "Large workflow" in the approval. |
+
+Each result is a `KortixToolResult`-shaped document (`{ ok, tool, action, card,
+data?, error? }`) as the tool's JSON output and its part `details`; the tools
+are in `NATIVE_PART_TOOLS`, so a codemode script's call gets its own card. Their
+grant follows the `agent` tool's unless the agent's `tools` names them; a
+teammate always keeps messaging and the task list.
+
+Workflow runs: `GET /kortix/runtime/workflows` → `{ runs: WorkflowRunMetadata[] }`
+(the live runs, then every saved run, newest first; a background run is listed
+on the parent with `background.sessionId`, its runner session, and its last
+known state). `POST /kortix/runtime/workflows/:runId/control`
+(`WorkflowControlBody`) → `200 { ok, paused }`: `pause` (no new `agent()`
+starts; running agents finish), `resume`, `restart_agent` (stop that child and
+start it again with the same prompt, counted as an attempt), `stop`. `404`
+for an unknown run; `409 run_in_runner` with `runner_session_id` for a
+background run (control it on the runner's box), `409 run_ended`, `409
+agent_not_running`. Saved workflows of the checkout and the bundled
+`deep-research` (`pi/extensions/bundled-workflows.ts`) are `/name` commands.
 
 - **Names.** `agent({ name })` writes metadata `agent_handle` on the child;
   with flag `agent_teams` on, a named child of a depth-0 session is a
@@ -1349,11 +1371,6 @@ the tools call it with the box token.
 - **Limits.** 16,000 characters, 30 messages per minute per sender, a duplicate
   within 60 s is dropped, a held message expires after 5 minutes, at most 100
   held, a `notify_when_idle` watch lapses after 12 hours.
-- **Workflow controls.** `POST /kortix/runtime/workflows/:runId/control`
-  (`WorkflowControlBody`: `pause`, `resume`, `restart_agent` + `session_id`,
-  `stop`) → `200 { ok: true, paused }`, `404` for an unknown run;
-  `GET /kortix/runtime/workflows` → `200 { runs }`, newest first. A run with
-  more than 25 agents (`WORKFLOW_LARGE_AGENT_COUNT`) is marked large.
 
 Kortix differs from Claude Code's design on purpose: separate children nest
 2 levels deep (not 3), a workflow runs 8 agents at once (not 16), every

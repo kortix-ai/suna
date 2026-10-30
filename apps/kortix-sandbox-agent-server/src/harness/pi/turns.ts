@@ -222,7 +222,8 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
       const commands: RuntimeCommandInfo[] = rt.commandList().map((command) => ({
         name: command.name,
         description: command.description || null,
-        source: command.source === 'skill' ? 'skill' : command.agents ? 'command' : 'template',
+        // A workflow command (`/deep-research`) lists as a template: a prompt the runtime expands.
+        source: command.source === 'skill' ? 'skill' : command.source === 'command' && command.agents ? 'command' : 'template',
         ...(command.agents ? { agents: command.agents } : {}),
       }))
       return answer(200, { commands })
@@ -274,6 +275,18 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
       const data = exported?.images.get(sha256)
       if (data === undefined) return null
       return { bytes: Buffer.from(data, 'base64'), mime: mimeOf(exported!.log, sha256) ?? 'application/octet-stream' }
+    },
+
+    async workflows() {
+      const rt = runtime()
+      return rt ? answer(200, { runs: rt.workflowList() }) : NOT_STARTED
+    },
+
+    async controlWorkflow(runId, body) {
+      const rt = runtime()
+      if (!rt) return NOT_STARTED
+      const result = rt.controlWorkflow(runId, body)
+      return answer(result.status, result.body)
     },
 
     async agents() {

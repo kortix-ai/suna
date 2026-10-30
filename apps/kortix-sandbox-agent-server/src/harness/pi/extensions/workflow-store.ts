@@ -16,6 +16,7 @@
  *    through a change request when the person asks.
  */
 import { createHash } from 'node:crypto'
+import type { WorkflowRunMetadata } from '@kortix/api-contract/kortix-tool-card'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -55,6 +56,8 @@ export interface RunRecord {
   /** A background run: its runner session holds the agents' records. */
   background?: { sessionId: string }
   agents: RecordedAgent[]
+  /** The run's card document as last written: what `GET /kortix/runtime/workflows` lists. */
+  doc?: WorkflowRunMetadata
 }
 
 /** The key that decides whether a relaunched agent may reuse a saved result. */
@@ -90,6 +93,22 @@ export class RunStore {
     const temp = `${path}.${process.pid}.tmp`
     writeFileSync(temp, JSON.stringify(record), { mode: 0o600 })
     renameSync(temp, path)
+  }
+
+  /** Every saved run, newest first. A file that does not parse is skipped. */
+  list(): RunRecord[] {
+    let files: string[]
+    try {
+      files = readdirSync(join(this.dir, 'runs')).filter((file) => file.endsWith('.json'))
+    } catch {
+      return []
+    }
+    const records: RunRecord[] = []
+    for (const file of files) {
+      const record = RUN_ID.test(file.slice(0, -5)) ? this.load(file.slice(0, -5)) : null
+      if (record) records.push(record)
+    }
+    return records.sort((a, b) => b.startedAt - a.startedAt)
   }
 
   /** The person chose "don't ask again" in this session. */

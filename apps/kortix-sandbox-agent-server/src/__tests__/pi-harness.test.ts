@@ -2063,7 +2063,8 @@ describe('pi subagents extension', () => {
         },
       }
       const r = await boot({
-        script: [TASK({ subagent_type: 'reviewer', prompt: 'review it' }), TASK({ subagent_type: 'general', prompt: 'look' }), { text: 'parent done' }],
+        // Foreground: a top-level session runs a separate subagent in the background by default.
+        script: [TASK({ subagent_type: 'reviewer', prompt: 'review it', run_in_background: false }), TASK({ subagent_type: 'general', prompt: 'look', run_in_background: false }), { text: 'parent done' }],
         env: {
           KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(compiled),
           KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1`,
@@ -2074,7 +2075,8 @@ describe('pi subagents extension', () => {
       expect(creates.map((c) => c.agent_name)).toEqual(['reviewer', 'build'])
       for (const create of creates) {
         expect(create.runtime_context['kortix.subagent.depth']).toBe(1)
-        expect(String(create.runtime_context['kortix.subagent.tools']).split(',').sort()).toEqual(['grep', 'read', 'task', 'workflow'])
+        // The multi-agent tools follow the `task` grant, like workflow.
+        expect(String(create.runtime_context['kortix.subagent.tools']).split(',').sort()).toEqual(['grep', 'list_agents', 'read', 'send_message', 'task', 'task_stop', 'workflow'])
       }
       const root = r.service.runtime()!.rootId
       const wire = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
@@ -2126,7 +2128,7 @@ describe('pi subagents extension', () => {
       expect(part.state.metadata).toMatchObject({ sessionId: 'bg-child-1', session: 'separate', background: true })
       expect(part.state.output).toContain('task_id: bg-child-1 (for resuming to continue this task if needed)\nsession: separate\n')
       expect(part.state.output).toContain('<task_started>\nThe subagent runs in the background in its own session.')
-      expect(part.state.output).toContain('kortix sessions stop bg-child-1')
+      expect(part.state.output).toContain('task_stop({ task_id: "bg-child-1" })')
       expect(JSON.stringify(page)).toContain('parent keeps working')
     } finally {
       server.stop(true)
@@ -2801,7 +2803,7 @@ describe('config releases on pi', () => {
     })
     expect(((await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>).config.source).toBe('release')
     expect(await skillsOf(r)).toEqual([['review', 'review from the release']])
-    const loaded = r.service.runtime()!.extensionStatus().loaded.filter((name) => name !== 'kortix-subagents' && name !== 'kortix-workflow')
+    const loaded = r.service.runtime()!.extensionStatus().loaded.filter((name) => !['kortix-subagents', 'kortix-workflow', 'kortix-messaging'].includes(name))
     expect(loaded).toHaveLength(1)
     expect(loaded[0]!.startsWith(join(dir, 'store')) && loaded[0]!.endsWith('/extensions/package.ts')).toBe(true)
     const first = await ask(r, 'first question')
