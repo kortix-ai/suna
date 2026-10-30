@@ -148,6 +148,14 @@ describe('proxy policy: what a member token may do', () => {
     ['POST', `${RT}/session/ses_1/revert`],
     ['POST', `${RT}/question/que_1/reply`],
     ['POST', `${RT}/permission/per_1/reply`],
+    // The same reads and answers on a box with the session-log actions (runtime.actions.v1).
+    ['GET', `${RT}/kortix/runtime/pending`],
+    ['GET', `${RT}/kortix/runtime/commands`],
+    ['GET', `${RT}/kortix/runtime/workspace`],
+    ['POST', `${RT}/kortix/runtime/permissions/perm_1/reply`],
+    ['POST', `${RT}/kortix/runtime/questions/que_1/reply`],
+    ['POST', `${RT}/kortix/runtime/questions/que_1/reject`],
+    ['POST', `${RT}/kortix/runtime/sessions/ses_1/abort`],
   ];
 
   test.each(OBSERVED)('%s %s passes', (method, path) => {
@@ -183,6 +191,12 @@ describe('proxy policy: what a member token may do', () => {
     ['GET', `${P}/files/raw`],
     ['POST', `${RT}/kortix/runtime/sessions/ses_1/prompt`],
     ['POST', `${RT}/kortix/runtime/anything`],
+    // Session-log actions the session UI never calls here: no compaction, commands, grants or diffs.
+    ['POST', `${RT}/kortix/runtime/sessions/ses_1/compact`],
+    ['POST', `${RT}/kortix/runtime/sessions/ses_1/command`],
+    ['PUT', `${RT}/kortix/runtime/sessions/ses_1/grants`],
+    ['GET', `${RT}/kortix/runtime/workspace/diff`],
+    ['GET', `${RT}/kortix/runtime/log`],
     ['POST', `${RT}/kortix/abort`],
     ['POST', `${RT}/session/ses_1/prompt_async`],
     ['POST', `${RT}/session/ses_1/message`],

@@ -112,6 +112,9 @@ const RULES: readonly Rule[] = [
   // Runtime writes: abort, edit-and-rewind, permission and question replies.
   rule('POST', `${RT}/session/${SEG}/(?:abort|revert)`),
   rule('POST', `${RT}/(?:permission|question)/${SEG}/(?:reply|reject)`),
+  // The same reads and writes on a box with the session-log actions (runtime.actions.v1).
+  rule('GET', `${RT}/kortix/runtime/(?:pending|commands|workspace)`),
+  rule('POST', `${RT}/kortix/runtime/(?:permissions/${SEG}/reply|questions/${SEG}/(?:reply|reject)|sessions/${SEG}/abort)`),
 ];
 
 const RUNTIME_FILE = new RegExp(`^${RT}/(?:file|find)(?:/|$)`);
