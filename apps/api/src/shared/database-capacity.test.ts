@@ -9,6 +9,7 @@ import {
   PROD_DB_NON_API_RESERVE,
   PROD_DB_ROLLING_CONNECTION_CEILING,
   PROD_DB_USABLE_CONNECTIONS,
+  PROD_WORKER_TASKS,
   ROLLING_TASK_OVERLAP,
 } from './database-capacity';
 
@@ -67,10 +68,12 @@ describe('production database connection capacity', () => {
     // Recomputed from the pins above, not trusted: the exported ceiling must
     // equal tasks × overlap × per-task long-lived pools. The boot schema probe
     // is no longer a term — it rides the request pool.
-    const perTaskPools =
-      DEFAULT_DB_POOL_MAX + DEFAULT_AUDIT_POOL_MAX + LEADER_ELECTION_POOL_MAX + PG_BROADCAST_POOL_MAX;
+    // A web task never opens the leader-election client; the worker does.
+    const webTask = DEFAULT_DB_POOL_MAX + DEFAULT_AUDIT_POOL_MAX + PG_BROADCAST_POOL_MAX;
+    const workerTask = webTask + LEADER_ELECTION_POOL_MAX;
+    expect(PROD_WORKER_TASKS).toBe(1);
     expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBe(
-      PROD_API_MAX_TASKS * ROLLING_TASK_OVERLAP * perTaskPools,
+      PROD_API_MAX_TASKS * ROLLING_TASK_OVERLAP * webTask + PROD_WORKER_TASKS * ROLLING_TASK_OVERLAP * workerTask,
     );
     expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBe(200);
     expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBeLessThanOrEqual(

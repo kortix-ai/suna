@@ -1,57 +1,35 @@
 import { logger as appLogger, isLoggingTransportError } from './lib/logger';
 import { config } from './config';
 import { captureException, flushSentry } from './lib/sentry';
-import { stopModelPricing } from './router/config/model-pricing';
+import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { warmPipedreamCatalog } from './connectors/pipedream';
-import { runtimeAssetsManifest, warmRuntimeChunkIndex } from './runtime-assets';
+import { runtimeAssetsManifest, warmRuntimeChunkIndex } from './runtime-assets/manifest';
 import { shutdownAuditEvents } from './shared/audit';
+import { primeComposioTransientClassifier } from './shared/composio-transient';
+import { primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
+import { primeDaytonaTransientClassifier } from './shared/daytona-transient';
 import { drainRequests } from './shared/drain';
 import {
   runsSingletonWorkers,
   startLeaderElection,
   stopLeaderElection,
 } from './shared/leader-election';
-import { kickStartupPreBuild } from './snapshots/builder';
 import { warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
 import { maintenanceSetting } from './platform/services/maintenance-setting';
-// Every background loop: its timer, start/stop and runWorkerTick call live in workers/.
-import { startAccessControlCache, stopAccessControlCache } from './workers/access-control-cache-worker';
-import { startAccountDeletionSchedule, stopAccountDeletionSchedule } from './workers/account-deletion-worker';
-import { startActiveTurnRenewal, stopActiveTurnRenewal } from './workers/active-turn-renewal-worker';
-import { startAppDeploymentWorker, stopAppDeploymentWorker } from './workers/app-deployment-worker';
-import { startAppIdleReaper, stopAppIdleReaper } from './workers/app-idle-reaper-worker';
-import { startAuditArchiveWorker, stopAuditArchiveWorker } from './workers/audit-archive-worker';
-import { startAuditPartitionWorker, stopAuditPartitionWorker } from './workers/audit-partition-worker';
-import { startAuditActivityWorker, stopAuditActivityWorker } from './workers/audit-activity-worker';
-import {
-  startAuditReconciliationWorker,
-  stopAuditReconciliationWorker,
-} from './workers/audit-reconciliation-worker';
-import { startAuditWebhookWorker, stopAuditWebhookWorker } from './workers/audit-webhook-worker';
-import { startCaptureHealthWorker, stopCaptureHealthWorker } from './workers/capture-health-worker';
-import { startCaptureWorkers, stopCaptureWorkers } from './workers/capture-worker';
-import { startBillingRotation, stopBillingRotation } from './workers/billing-rotation-worker';
-import { startEventLoopLagSampler, stopEventLoopLagSampler } from './workers/event-loop-lag-worker';
-import { startGatewaySpendBackfillWorker, stopGatewaySpendBackfillWorker } from './workers/gateway-spend-backfill-worker';
-import { startResidentialProxyBillingWorker, stopResidentialProxyBillingWorker } from './workers/residential-proxy-billing-worker';
-import { startJobWorker, stopJobWorker } from './workers/job-queue-worker';
-import { startManagedLineupRefresh, stopManagedLineupRefresh } from './workers/managed-lineup-worker';
-import { startNotificationWorker, stopNotificationWorker } from './workers/notification-worker';
-import { startProjectMaintenance, stopProjectMaintenance } from './workers/project-maintenance-worker';
-import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers/project-snapshot-worker';
-import { startProviderTransitionWorker, stopProviderTransitionWorker } from './workers/provider-transition-worker';
-import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './workers/session-lifecycle-worker';
-import { startSessionLogPurgeWorker, stopSessionLogPurgeWorker } from './workers/session-log-purge-worker';
-import { startSessionModelFallbackWorker, stopSessionModelFallbackWorker } from './workers/session-model-fallback-worker';
 import { handBackClaims } from './projects/surface';
-import { startSlackTurnGc, stopSlackTurnGc } from './workers/slack-turn-gc-worker';
-import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './workers/teams-bot-token-refresh-worker';
-import { startTeamsTurnGc, stopTeamsTurnGc } from './workers/teams-turn-gc-worker';
-import { startTmpReaper, stopTmpReaper } from './workers/tmp-reaper-worker';
-import { startTriggerEventPollWorker, stopTriggerEventPollWorker } from './workers/trigger-event-poll-worker';
-import { startProjectTriggerScheduler, stopProjectTriggerScheduler } from './workers/trigger-scheduler-worker';
-import { startTunnelService, stopTunnelService } from './workers/tunnel-worker';
+// Loops every API process runs: their timer, start/stop and runWorkerTick call
+// live in replica/. The scheduled jobs live in worker/jobs/ and run only on the
+// lease holder (bootServices below).
+import { startAccessControlCache, stopAccessControlCache } from './replica/access-control-cache';
+import { startEventLoopLagSampler, stopEventLoopLagSampler } from './replica/event-loop-lag';
+import { startJobWorker, stopJobWorker } from './replica/job-queue';
+import { loadManagedLineupAtBoot, startManagedLineupRefresh, stopManagedLineupRefresh } from './replica/managed-lineup';
+import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './replica/session-lifecycle';
+import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './replica/teams-bot-token-refresh';
+import { startTmpReaper, stopTmpReaper } from './replica/tmp-reaper';
+import { startTriggerEventPollWorker, stopTriggerEventPollWorker } from './replica/trigger-event-poll';
+import { startTunnelService, stopTunnelService } from './replica/tunnel';
 
 // ─── Process-level crash guards ───────────────────────────────────────────────
 // A stray rejected promise or throw escaping any fire-and-forget path — the
@@ -134,17 +112,64 @@ export function markSchemaReady(): void {
   schemaReady = true;
 }
 
-// Ensure DB schema exists before starting services that depend on it.
-// This is idempotent — safe to run on every startup.
-// Services that run on EVERY replica. The access-control cache and tunnel
-// service serve request-path needs (per-node caches + the WS acceptor), so they
-// must be live on each node behind the load balancer.
-async function startReplicaServices() {
+/**
+ * Which entry point this process runs.
+ *
+ * - `api` (`src/index.ts`): behind the load balancer. With the default
+ *   `KORTIX_PROCESS_ROLE=all` it also joins the leader election and runs the
+ *   scheduled jobs; with `web` it never does.
+ * - `worker` (`src/worker.ts`): no load balancer, no WebSockets. It joins the
+ *   leader election and runs the scheduled jobs, plus the caches they read.
+ */
+export type ProcessKind = 'api' | 'worker';
+let processKind: ProcessKind = 'api';
+
+/**
+ * Boot steps every API process needs before it serves a request or runs a
+ * job: the provider error classifiers, model pricing, the managed model lineup
+ * and the gateway model catalog. `entry` is false when a test or a tool
+ * imports the app without starting it.
+ */
+export async function prepareProcess(options: { entry: boolean }): Promise<void> {
+  // Pre-load the provider SDK error classes, so the synchronous classifiers
+  // (`app.onError`, provider retries) have their strongest instanceof signal
+  // from the first failure on. Fire-and-forget: each classifier's name /
+  // status / message fallbacks cover a failure that throws before these
+  // resolve (shared/daytona-rate-limit.ts, daytona-transient.ts,
+  // composio-transient.ts).
+  void primeDaytonaRateLimitClassifier();
+  void primeDaytonaTransientClassifier();
+  void primeComposioTransientClassifier();
+  // Local REST tests use the bundled model catalog and never contact models.dev.
+  if (config.KORTIX_MODEL_PRICING_LIVE_ENABLED !== '0') {
+    await initModelPricing().catch((err) =>
+      appLogger.error('[startup] Model pricing init failed (will retry in 24h)', {
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
+  // Kortix managed models come from Platinum Inference: read the lineup before serving.
+  if (options.entry) await loadManagedLineupAtBoot();
+  if (config.KORTIX_MODEL_CATALOG_LIVE_ENABLED !== '0') {
+    runtimeModelCatalog.start().catch((err) =>
+      appLogger.error('[startup] Gateway model catalog init failed (keeping bundled snapshot)', {
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
+}
+
+// Services that run on EVERY process. The access-control cache and the caches
+// below serve both requests and jobs. The tunnel, the job queue, the message
+// delivery drain and the event polls serve web traffic, so the worker skips
+// them: no load balancer routes a WebSocket or a request to it.
+async function startReplicaServices(kind: ProcessKind) {
+  const serving = kind === 'api';
   warnIfPreviewOriginsMissing(appLogger);
   startEventLoopLagSampler();
   startAccessControlCache();
   if (config.KORTIX_WORKERS_ENABLED) startManagedLineupRefresh();
-  startTunnelService();
+  if (serving) startTunnelService();
   // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
   // toggles (warm_snapshot / provider_fallback) are honored from
   // request #1. Without this a fresh pod serves the cold-cache defaults for the
@@ -167,28 +192,28 @@ async function startReplicaServices() {
   // Warm the maintenance config, so a fresh pod serves the stored config from
   // request #1, not the cold-cache default.
   await maintenanceSetting.refresh().catch(() => {});
-  // The durable job queue (Capture ingest, held connector calls): every replica runs jobs.
-  if (config.KORTIX_WORKERS_ENABLED || config.KORTIX_JOB_WORKER_ENABLED) startJobWorker();
-  // Every replica stages snapshot/session-boot build contexts in tmpdir and can
-  // leak them on error paths; sweep stale ones so they don't fill node disk and
-  // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
+  // The durable job queue (Capture ingest, held connector calls): every web process runs jobs.
+  if (serving && (config.KORTIX_WORKERS_ENABLED || config.KORTIX_JOB_WORKER_ENABLED)) startJobWorker();
   if (config.KORTIX_WORKERS_ENABLED) {
+    // Every process stages snapshot/session-boot build contexts and git
+    // mirrors in tmpdir, the worker most of all, and can leak them on error
+    // paths; sweep stale ones so they don't fill the disk.
     startTmpReaper();
-    startSessionLifecycleWorker();
-    // Kortix-polled app events: every replica checks due streams.
-    startTriggerEventPollWorker();
     // Keep the shared Teams bot token warm before the first message.
     startTeamsBotTokenRefresh();
-  }
-  // Fill the Composio catalogue snapshot, the hidden-toolkit list, the toolkit
-  // metadata and the first discovery page in the background, so the first
-  // Customize → Connectors view on a fresh replica reads memory instead of
-  // waiting ~2 s on Composio round trips. Not awaited: boot never waits on a
-  // third party.
-  if (config.KORTIX_WORKERS_ENABLED) {
-    void import('./connectors/composio')
-      .then((composio) => composio.warmComposioDiscovery())
-      .catch(() => {});
+    if (serving) {
+      startSessionLifecycleWorker();
+      // Kortix-polled app events: every web process checks due streams.
+      startTriggerEventPollWorker();
+      // Fill the Composio catalogue snapshot, the hidden-toolkit list, the toolkit
+      // metadata and the first discovery page in the background, so the first
+      // Customize → Connectors view on a fresh replica reads memory instead of
+      // waiting ~2 s on Composio round trips. Not awaited: boot never waits on a
+      // third party.
+      void import('./connectors/composio')
+        .then((composio) => composio.warmComposioDiscovery())
+        .catch(() => {});
+    }
   }
   // A tip-proof read adopts the base tip another process asked the upstream
   // for (config-releases/base-tip.ts) when this mirror holds it: the per-prompt
@@ -218,144 +243,38 @@ async function startReplicaServices() {
   });
 }
 
-// Singleton background WORKERS — must run on EXACTLY ONE replica at a time
-// (the elected leader). On ECS Fargate the API runs as N replicas (prod: min 2,
-// up to 10); running these on every replica would double-fire cron triggers
-// (N duplicate paid agent sessions + duplicate external side effects) and
-// double-run legacy migrations. Leader
-// election (shared/leader-election.ts) starts/stops these via onAcquire/onRelease.
-// The guard makes start/stop idempotent across leadership flaps.
-let singletonWorkersRunning = false;
-// The stops of the workers started from a dynamic import, so stopSingletonWorkers can call every
-// stop before its first await.
-const lazyStops: Array<() => void> = [];
-async function startSingletonWorkers() {
-  if (!config.KORTIX_WORKERS_ENABLED || singletonWorkersRunning) return;
-  singletonWorkersRunning = true;
-  startActiveTurnRenewal();
-  startProjectMaintenance();
-  startProjectTriggerScheduler();
-  // Mint the global platform-default sandbox image once per leadership term so
-  // the first session anywhere lands on a cache hit. Idempotent + best-effort;
-  // the session-boot graceful path is the lazy fallback if this is skipped.
-  kickStartupPreBuild();
-  // Resume durable sandbox-provider migrations (prepare→verify→activate) that
-  // were mid-flight when the API last stopped — a crash at building/ready/
-  // activating converges instead of stranding. Safe across replicas (lease CAS).
-  startProviderTransitionWorker();
-  startAppDeploymentWorker();
-  startAppIdleReaper();
-  startAuditWebhookWorker();
-  startAuditReconciliationWorker();
-  // Weekly partitions of kortix.audit_events, 8 weeks ahead.
-  startAuditPartitionWorker();
-  // Per-day account activity rollup (kortix.audit_activity_daily) behind GET /accounts/:id/audit/activity.
-  startAuditActivityWorker();
-  // Archive weeks older than 90 days to S3 (Object Lock) and drop their partitions. Off by default.
-  startAuditArchiveWorker();
-  // Prebuilt project snapshot archives (S3 config provider). Idle unless
-  // KORTIX_PROJECT_SNAPSHOT_S3_BUCKET is set; see git-proxy/project-snapshot.ts.
-  startProjectSnapshotWorker();
-  // Kortix Capture: index polling, maintenance, and the SQS events reader when configured.
-  startCaptureWorkers();
-  // Fleet health: tells the people with capture.manage when a computer stops recording, and when it records again.
-  startCaptureHealthWorker();
-  // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
-  // that just transitioned to expired. Engine already filters expired rows out
-  // of authorize() so correctness doesn't depend on this — it's the audit trail.
-  const { startGrantExpirySweeper, stopGrantExpirySweeper } = await import('./workers/grant-expiry-worker');
-  startGrantExpirySweeper();
-  lazyStops.push(stopGrantExpirySweeper);
-  // Connector approvals: close pending approvals past expires_at every 60s
-  // (status expired, audit event, chat card replaced). Never resumes a session.
-  const { startApprovalExpirySweeper, stopApprovalExpirySweeper } = await import('./workers/approval-expiry-worker');
-  startApprovalExpirySweeper();
-  lazyStops.push(stopApprovalExpirySweeper);
-  // OAuth housekeeping: expired authorization requests, abandoned self-registered clients.
-  const { startOAuthSweeper, stopOAuthSweeper } = await import('./workers/oauth-sweep-worker');
-  startOAuthSweeper();
-  lazyStops.push(stopOAuthSweeper);
-  // Kortix Drive: conflict-copy scanner + the volume deletion queue.
-  const { startDriveWorkers, stopDriveWorkers } = await import('./workers/drive-worker');
-  startDriveWorkers();
-  lazyStops.push(stopDriveWorkers);
-  // Hourly trial expiry + credit rotations. Idempotent per account and month,
-  // so a leadership flap that runs one twice costs a scan, not money.
-  startBillingRotation();
-  // Close Slack/Teams live cards whose run ended without a reply.
-  startSlackTurnGc();
-  startTeamsTurnGc();
-  // Execute scheduled account deletions past their 14-day grace. The only
-  // processor of the managed table — its SQL never reached `kortix` before
-  // (KRTX-1260). First tick runs immediately to drain the inherited backlog.
-  startAccountDeletionSchedule();
-  // Notification inbox: the unread-row email digest and the 90-day retention sweep.
-  startNotificationWorker();
-  // Retention purge of session content: rows after the D6 windows, files 7 days later.
-  startSessionLogPurgeWorker();
-  // Idle sessions off a fallback model once their own model serves again.
-  startSessionModelFallbackWorker();
-  // Closed pending days of the gateway spend running total, recomputed from the log rows.
-  startGatewaySpendBackfillWorker();
-  // Residential proxy charges from Platinum's billing feed, debited once per event.
-  startResidentialProxyBillingWorker();
-}
-// Every stop runs before the first await, then the in-flight ticks drain together. A stop after an
-// await left its worker "started" across that await; a re-acquire then started nothing, and the
-// stop ran after it (2026-10-16 prod: 18 workers stayed off after a lease flap).
-async function stopSingletonWorkers() {
-  if (!singletonWorkersRunning) return;
-  singletonWorkersRunning = false;
-  stopActiveTurnRenewal();
-  stopProjectTriggerScheduler();
-  stopProjectMaintenance();
-  stopProviderTransitionWorker();
-  stopAppDeploymentWorker();
-  stopAppIdleReaper();
-  const drains = [stopAuditWebhookWorker(), stopAuditReconciliationWorker()];
-  stopAuditPartitionWorker();
-  stopAuditActivityWorker();
-  stopAuditArchiveWorker();
-  drains.push(stopProjectSnapshotWorker());
-  stopCaptureWorkers();
-  stopCaptureHealthWorker();
-  for (const stop of lazyStops.splice(0)) stop();
-  stopBillingRotation();
-  stopSlackTurnGc();
-  stopTeamsTurnGc();
-  drains.push(stopAccountDeletionSchedule());
-  stopNotificationWorker();
-  stopSessionLogPurgeWorker();
-  stopSessionModelFallbackWorker();
-  stopGatewaySpendBackfillWorker();
-  stopResidentialProxyBillingWorker();
-  await Promise.all(drains);
-}
-
-// Boot the per-node services, then begin leader election. The leader runs the
-// singleton workers; every other replica just serves requests. Works with one
-// replica (sole leader) or many (exactly one leader), and with no DATABASE_URL
-// (self-host single node → sole leader, no coordination).
-export async function bootServices() {
-  await startReplicaServices();
-  // Only pods that actually run singleton workers join the election. An API-only
-  // pod (workers disabled) that won the lease would become a dead-weight leader,
-  // holding it while running nothing and starving the scheduler fleet-wide.
-  const eligible = config.KORTIX_WORKERS_ENABLED && runsSingletonWorkers();
-  if (!eligible) {
+// Boot the per-process services, then begin leader election. The lease holder
+// runs the scheduled jobs (worker/jobs/index.ts); every other process just
+// serves requests. Works with one process (sole leader) or many (exactly one
+// leader), and with no DATABASE_URL (self-host single node → sole leader, no
+// coordination).
+export async function bootServices(kind: ProcessKind = 'api') {
+  processKind = kind;
+  await startReplicaServices(kind);
+  // Only a process that runs the scheduled jobs joins the election. One that
+  // runs none but won the lease would become a dead-weight leader, holding it
+  // while running nothing and starving the scheduler fleet-wide.
+  const runsJobs = kind === 'worker' || config.KORTIX_PROCESS_ROLE === 'all';
+  const eligible = runsJobs && config.KORTIX_WORKERS_ENABLED && runsSingletonWorkers();
+  if (!runsJobs) {
+    appLogger.info('[workers] Web process — the worker service runs the scheduled jobs; not joining leader election');
+  } else if (!eligible) {
     appLogger.info(
       config.KORTIX_WORKERS_ENABLED
         ? '[workers] Singleton workers disabled; not joining leader election'
         : '[workers] API-only pod — background workers disabled; not joining leader election',
     );
   }
+  // A web process never loads the job modules.
+  const jobs = eligible ? await import('./worker/runtime/jobs') : null;
   startLeaderElection(
     {
-      onAcquire: () => startSingletonWorkers(),
-      onRelease: () => stopSingletonWorkers(),
+      onAcquire: () => jobs?.startJobs(),
+      onRelease: () => jobs?.stopJobs(),
     },
     { eligible },
   );
+  if (kind === 'worker') return;
   // Build the Pipedream catalogue index in the background. Deliberately NOT
   // awaited: the crawl is ~33 requests / ~48s, and readiness must not wait on
   // a third party. Until it lands, the catalogue routes answer from the live
@@ -421,7 +340,7 @@ async function runShutdown(signal: string): Promise<void> {
   draining = true;
   appLogger.info(`Shutting down gracefully`, { signal });
   setTimeout(() => process.exit(1), HARD_EXIT_MS).unref();
-  // Stop claiming lifecycle rows now. The leader's slow singleton stops used to
+  // Stop claiming lifecycle rows now. The leader's slow job stops used to
   // run first, so this replica kept claiming prompts while it waited to die.
   stopSessionLifecycleWorker();
   // Stop claiming queued jobs too; the request drain waits for the ones running.
@@ -429,11 +348,13 @@ async function runShutdown(signal: string): Promise<void> {
   const handBack = handBackClaims()
     .then((count) => count > 0 && appLogger.info('Handed back lifecycle claims', { count }))
     .catch((error) => appLogger.warn('Lifecycle claim hand-back failed', { error }));
-  // Releases the lease (a peer takes over at once) and stops the singleton
-  // workers via onRelease, if this node was the leader. Runs beside the request
+  // Releases the lease (a peer takes over at once) and stops the scheduled
+  // jobs via onRelease, if this process was the leader. Runs beside the request
   // drain, bounded: a stuck worker stop must not eat the drain or the flush.
   const leaderStop = within(stopLeaderElection(), WORKER_STOP_BUDGET_MS, 'stopLeaderElection');
-  const drained = await drainRequests({ propagationMs: DRAIN_PROPAGATION_MS, budgetMs: DRAIN_BUDGET_MS });
+  // No load balancer routes to the worker, so it has no deregistration to wait for.
+  const propagationMs = processKind === 'api' ? DRAIN_PROPAGATION_MS : 0;
+  const drained = await drainRequests({ propagationMs, budgetMs: DRAIN_BUDGET_MS });
   if (drained.remaining > 0) {
     appLogger.warn('Request drain budget ended with work in flight', { remaining: drained.remaining });
   }

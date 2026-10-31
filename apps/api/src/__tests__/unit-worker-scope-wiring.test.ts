@@ -1,24 +1,30 @@
 /**
- * Every background job in the API runs its tick as a named worker.
+ * Every background job in the API runs its tick as a named worker, and every
+ * scheduled job runs only on the lease holder (the worker service in production).
  *
  * A job's tick has no request behind it, so without `runWorkerTick` every row
  * it writes defaults to `actor_type: system, source: api` and never names the
- * job. This guard fails in three ways:
+ * job. A scheduled job that runs on every web process runs once per process
+ * (N cron fires) and puts its CPU on the autoscaled web servers. This guard
+ * fails when:
  *
  *  1. a registered worker module stops calling `runWorkerTick('<name>'`;
  *  2. a file in `apps/api/src` starts a `setInterval` and is neither a
  *     registered worker nor a classified non-job timer below;
- *  3. `startSingletonWorkers` / `startReplicaServices` in `bootstrap.ts` starts
- *     something that is neither;
- *  4. a module starts a timer at import time: it then runs on every replica
- *     (not leader-gated) and nothing can stop it;
- *  5. `bootstrap.ts` starts a loop from a module outside `workers/`: each loop
- *     has one owner of its timer, start/stop and `runWorkerTick` call.
+ *  3. a module starts a timer at import time: it then runs on every process
+ *     and nothing can stop it;
+ *  4. a worker is neither a scheduled job in the registry
+ *     (`worker/jobs/index.ts`) nor an approved per-process loop (PER_PROCESS);
+ *  5. `bootstrap.ts` starts something on every process that is not an
+ *     approved per-process loop, or starts a loop from outside `replica/`;
+ *  6. a module outside `worker/` and the composition roots imports a job.
  *
- * Adding a background job: put its timer and start/stop in
- * `workers/<name>-worker.ts`, keep the tick in its domain module, wrap the tick
- * in `runWorkerTick('<name>', …)` and register it in WORKERS. A timer that only keeps a connection alive or
- * refreshes a cache goes in NOT_WORKERS with the reason.
+ * Adding a scheduled job: put its timer and start/stop in
+ * `worker/jobs/<name>.ts`, keep the tick in its domain module, wrap the tick in
+ * `runWorkerTick('<name>', …)`, add it to the registry and to WORKERS. A loop
+ * every web process must run goes in `replica/` and in PER_PROCESS with the
+ * reason it cannot run on one process. A timer that only keeps a connection
+ * alive or refreshes a cache goes in NOT_WORKERS with the reason.
  */
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -29,46 +35,59 @@ const read = (file: string) => readFileSync(join(SRC, file), 'utf8');
 
 /** Worker name → the file whose tick is wrapped in `runWorkerTick('<name>'`. */
 const WORKERS: Record<string, string> = {
-  'active-turn-renewal': 'workers/active-turn-renewal-worker.ts',
-  'project-maintenance': 'workers/project-maintenance-worker.ts',
-  'trigger-scheduler': 'workers/trigger-scheduler-worker.ts',
+  'active-turn-renewal': 'worker/jobs/active-turn-renewal.ts',
+  'project-maintenance': 'worker/jobs/project-maintenance.ts',
+  'trigger-scheduler': 'worker/jobs/trigger-scheduler.ts',
   'startup-prebuild': 'snapshots/builder.ts',
-  'provider-transition': 'workers/provider-transition-worker.ts',
+  'provider-transition': 'worker/jobs/provider-transition.ts',
   'app-deployments': 'apps/deployment-worker.ts',
-  'app-idle-reaper': 'workers/app-idle-reaper-worker.ts',
-  'app-keep-alive': 'workers/app-idle-reaper-worker.ts',
-  'audit-webhooks': 'workers/audit-webhook-worker.ts',
-  'audit-reconciliation': 'workers/audit-reconciliation-worker.ts',
-  'audit-partitions': 'workers/audit-partition-worker.ts',
-  'audit-activity': 'workers/audit-activity-worker.ts',
-  'audit-archive': 'workers/audit-archive-worker.ts',
-  'project-snapshots': 'workers/project-snapshot-worker.ts',
-  'iam-grant-expiry': 'workers/grant-expiry-worker.ts',
-  'approval-expiry': 'workers/approval-expiry-worker.ts',
-  'oauth-sweep': 'workers/oauth-sweep-worker.ts',
-  'session-model-fallback': 'workers/session-model-fallback-worker.ts',
+  'app-idle-reaper': 'worker/jobs/app-idle-reaper.ts',
+  'app-keep-alive': 'worker/jobs/app-idle-reaper.ts',
+  'audit-webhooks': 'worker/jobs/audit-webhook.ts',
+  'audit-reconciliation': 'worker/jobs/audit-reconciliation.ts',
+  'audit-partitions': 'worker/jobs/audit-partition.ts',
+  'audit-activity': 'worker/jobs/audit-activity.ts',
+  'audit-archive': 'worker/jobs/audit-archive.ts',
+  'project-snapshots': 'worker/jobs/project-snapshot.ts',
+  'iam-grant-expiry': 'worker/jobs/grant-expiry.ts',
+  'approval-expiry': 'worker/jobs/approval-expiry.ts',
+  'oauth-sweep': 'worker/jobs/oauth-sweep.ts',
+  'session-model-fallback': 'worker/jobs/session-model-fallback.ts',
   'session-lifecycle': 'projects/session-lifecycle/drain.ts',
-  'tunnel-cleanup': 'workers/tunnel-worker.ts',
+  'tunnel-cleanup': 'worker/jobs/tunnel-cleanup.ts',
+  'tunnel-forward-expiry': 'worker/jobs/tunnel-forward-expiry.ts',
   'tunnel-rpc-forwarder': 'tunnel/core/cluster-forwarder.ts',
-  'billing-trial-expiry': 'workers/billing-rotation-worker.ts',
-  'billing-yearly-rotation': 'workers/billing-rotation-worker.ts',
-  'billing-free-tier-rotation': 'workers/billing-rotation-worker.ts',
-  'account-deletion': 'workers/account-deletion-worker.ts',
-  'slack-turn-gc': 'workers/slack-turn-gc-worker.ts',
-  'teams-turn-gc': 'workers/teams-turn-gc-worker.ts',
-  'job-queue': 'workers/job-queue-worker.ts',
-  'trigger-event-poll': 'workers/trigger-event-poll-worker.ts',
-  'capture-index-reader': 'workers/capture-worker.ts',
-  'capture-maintenance': 'workers/capture-worker.ts',
-  'capture-events-reader': 'workers/capture-worker.ts',
-  'capture-health': 'workers/capture-health-worker.ts',
-  'drive-conflict-scan': 'workers/drive-worker.ts',
-  'volume-deletions': 'workers/drive-worker.ts',
-  'drive-mount-revocations': 'workers/drive-worker.ts',
-  'notification-digest': 'workers/notification-worker.ts',
-  'session-log-purge': 'workers/session-log-purge-worker.ts',
-  'gateway-spend-backfill': 'workers/gateway-spend-backfill-worker.ts',
-  'residential-proxy-billing': 'workers/residential-proxy-billing-worker.ts',
+  'billing-trial-expiry': 'worker/jobs/billing-rotation.ts',
+  'billing-yearly-rotation': 'worker/jobs/billing-rotation.ts',
+  'billing-free-tier-rotation': 'worker/jobs/billing-rotation.ts',
+  'account-deletion': 'worker/jobs/account-deletion.ts',
+  'slack-turn-gc': 'worker/jobs/slack-turn-gc.ts',
+  'teams-turn-gc': 'worker/jobs/teams-turn-gc.ts',
+  'job-queue': 'replica/job-queue.ts',
+  'trigger-event-poll': 'replica/trigger-event-poll.ts',
+  'capture-index-reader': 'worker/jobs/capture.ts',
+  'capture-maintenance': 'worker/jobs/capture.ts',
+  'capture-events-reader': 'worker/jobs/capture.ts',
+  'capture-health': 'worker/jobs/capture-health.ts',
+  'drive-conflict-scan': 'worker/jobs/drive.ts',
+  'volume-deletions': 'worker/jobs/drive.ts',
+  'drive-mount-revocations': 'worker/jobs/drive.ts',
+  'notification-digest': 'worker/jobs/notification.ts',
+  'session-log-purge': 'worker/jobs/session-log-purge.ts',
+  'gateway-spend-backfill': 'worker/jobs/gateway-spend-backfill.ts',
+  'residential-proxy-billing': 'worker/jobs/residential-proxy-billing.ts',
+};
+
+/**
+ * The only workers that run on every web process, and why one process cannot
+ * run them. Everything else is a scheduled job: registry only.
+ */
+const PER_PROCESS: Record<string, string> = {
+  'session-lifecycle':
+    'message delivery: a request queues a prompt and kicks the drain on its own process; every web process drains the shared queue',
+  'job-queue': 'the durable job queue (held connector calls, Capture ingest): any web process claims a job with SKIP LOCKED',
+  'trigger-event-poll': 'Kortix-polled app events: every web process claims due streams under a lease',
+  'tunnel-rpc-forwarder': 'forwards RPCs to the agents connected to this process: it claims only rows addressed to its own instance id',
 };
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
@@ -84,61 +103,33 @@ const NOT_WORKERS: Record<string, string> = {
   'router/config/model-pricing.ts': 'refreshes the in-memory model pricing',
   'sandbox-proxy/ws-proxy.ts': 'keepalive ping on one open preview WebSocket',
   'shared/stream-access-recheck.ts': 're-checks access for one open session stream; runs inside that stream',
-  'workers/access-control-cache-worker.ts': 'refreshes the in-memory access-control cache',
-  'workers/app-deployment-worker.ts': 'timer that calls triggerAppDeploymentWorker, which wraps itself',
-  'workers/event-loop-lag-worker.ts': 'measures event-loop lag',
-  'workers/managed-lineup-worker.ts': 'refreshes the in-memory managed lineup from Platinum Inference',
-  'workers/session-lifecycle-worker.ts': 'timer that calls drainSessionLifecycleQueue, which wraps itself',
-  'workers/teams-bot-token-refresh-worker.ts': 'refreshes the in-memory Teams bot token',
-  'workers/tmp-reaper-worker.ts': 'deletes stale local tmp directories; no database writes',
+  'replica/access-control-cache.ts': 'refreshes the in-memory access-control cache',
+  'replica/event-loop-lag.ts': 'measures event-loop lag',
+  'replica/managed-lineup.ts': 'refreshes the in-memory managed lineup from Platinum Inference',
+  'replica/session-lifecycle.ts': 'timer that calls drainSessionLifecycleQueue, which wraps itself',
+  'replica/teams-bot-token-refresh.ts': 'refreshes the in-memory Teams bot token',
+  'replica/tmp-reaper.ts': 'deletes stale local tmp directories; no database writes',
+  'replica/tunnel.ts': "clears this process's in-memory tunnel rate-limit buckets",
+  'worker/jobs/app-deployment.ts': 'timer that calls triggerAppDeploymentWorker, which wraps itself',
+  'worker/runtime/heartbeat.ts': 'reports the in-memory tick times as one stdout line; no database writes',
 };
 
-/** Start calls in bootstrap.ts → the worker they run, or why they are not one. */
-const STARTS: Record<string, string> = {
-  startActiveTurnRenewal: 'active-turn-renewal',
-  startProjectMaintenance: 'project-maintenance',
-  startProjectTriggerScheduler: 'trigger-scheduler',
-  kickStartupPreBuild: 'startup-prebuild',
-  startProviderTransitionWorker: 'provider-transition',
-  startAppDeploymentWorker: 'app-deployments',
-  startAppIdleReaper: 'app-idle-reaper',
-  startAuditWebhookWorker: 'audit-webhooks',
-  startAuditReconciliationWorker: 'audit-reconciliation',
-  startAuditPartitionWorker: 'audit-partitions',
-  startAuditActivityWorker: 'audit-activity',
-  startAuditArchiveWorker: 'audit-archive',
-  startProjectSnapshotWorker: 'project-snapshots',
-  startGrantExpirySweeper: 'iam-grant-expiry',
-  startApprovalExpirySweeper: 'approval-expiry',
-  startDriveWorkers: 'drive-conflict-scan',
-  startOAuthSweeper: 'oauth-sweep',
-  startBillingRotation: 'billing-trial-expiry',
-  startAccountDeletionSchedule: 'account-deletion',
-  startSlackTurnGc: 'slack-turn-gc',
-  startTeamsTurnGc: 'teams-turn-gc',
-  startCaptureWorkers: 'capture-index-reader',
-  startCaptureHealthWorker: 'capture-health',
-  startJobWorker: 'job-queue',
-  startTriggerEventPollWorker: 'trigger-event-poll',
-  startNotificationWorker: 'notification-digest',
-  startSessionLogPurgeWorker: 'session-log-purge',
-  startSessionModelFallbackWorker: 'session-model-fallback',
-  startGatewaySpendBackfillWorker: 'gateway-spend-backfill',
-  startResidentialProxyBillingWorker: 'residential-proxy-billing',
-  startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
+/** Start calls in bootstrap.ts's per-process services → the worker they run, or why they are not one. */
+const PROCESS_STARTS: Record<string, string> = {
   startEventLoopLagSampler: 'not a worker: measures this process event-loop lag',
-  startSessionLifecycleWorker: 'session-lifecycle',
-  startTunnelService: 'tunnel-cleanup',
   startAccessControlCache: 'not a worker: in-memory cache',
   startManagedLineupRefresh: 'not a worker: in-memory managed lineup',
+  startTunnelService: 'tunnel-rpc-forwarder',
+  startJobWorker: 'job-queue',
   startTmpReaper: 'not a worker: local tmp directories only',
-  startConfigBaseMoveBroadcast:
-    'not a worker: one LISTEN connection, event-driven, no timer and no tick',
+  startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
+  startSessionLifecycleWorker: 'session-lifecycle',
+  startTriggerEventPollWorker: 'trigger-event-poll',
+  startConfigBaseMoveBroadcast: 'not a worker: one LISTEN connection, event-driven, no timer and no tick',
 };
 
-/** Start calls that are not a loop, so they stay outside workers/. */
+/** Start calls that are not a loop, so they stay outside replica/. */
 const NOT_LOOPS: Record<string, string> = {
-  kickStartupPreBuild: 'one-shot per leadership term; no timer',
   startConfigBaseMoveBroadcast: 'one LISTEN connection; no timer',
 };
 
@@ -162,13 +153,17 @@ function functionBody(source: string, name: string): string {
   throw new Error(`unbalanced ${name}`);
 }
 
-/** Every start/kick call in startSingletonWorkers and startReplicaServices. */
-function bootstrapStarts(): string[] {
-  const bootstrap = read('bootstrap.ts');
-  return ['startSingletonWorkers', 'startReplicaServices'].flatMap((fn) =>
-    [...functionBody(bootstrap, fn).matchAll(/\b((?:start|kick)[A-Z]\w*)\(/g)].map((m) => m[1]!),
+/** Every start/kick call in startReplicaServices. */
+function processStarts(): string[] {
+  return [...functionBody(read('bootstrap.ts'), 'startReplicaServices').matchAll(/\b((?:start|kick)[A-Z]\w*)\(/g)].map(
+    (m) => m[1]!,
   );
 }
+
+// Read from the source: importing the registry would load every job module and the config.
+const registryTicks = [...read('worker/jobs/index.ts').matchAll(/ticks: \[([^\]]*)\]/g)].flatMap((m) =>
+  [...m[1]!.matchAll(/'([^']+)'/g)].map((name) => name[1]!),
+);
 
 describe('background jobs run as named workers', () => {
   test.each(Object.entries(WORKERS))('%s wraps its tick in runWorkerTick', (name, file) => {
@@ -192,26 +187,56 @@ describe('background jobs run as named workers', () => {
     const atImport = sourceFiles(SRC).filter((file) => /^(?:setInterval|setTimeout)\(/m.test(read(file)));
     expect(atImport).toEqual([]);
   });
+});
 
-  test('everything bootstrap.ts starts on the leader or every replica is classified', () => {
-    const started = bootstrapStarts();
-    expect(started.filter((call) => !(call in STARTS))).toEqual([]);
-    for (const worker of Object.values(STARTS)) {
-      if (!worker.startsWith('not a worker')) expect(WORKERS[worker]).toBeDefined();
+describe('scheduled jobs run only on the lease holder', () => {
+  test('every worker is a scheduled job in the registry or an approved per-process loop, never both', () => {
+    const unplaced = Object.keys(WORKERS).filter((name) => !registryTicks.includes(name) && !(name in PER_PROCESS));
+    const both = Object.keys(PER_PROCESS).filter((name) => registryTicks.includes(name));
+    expect(unplaced).toEqual([]);
+    expect(both).toEqual([]);
+  });
+
+  test('every registry tick name is a registered worker, listed once', () => {
+    expect(registryTicks.filter((name) => !(name in WORKERS))).toEqual([]);
+    expect(registryTicks.length).toBe(new Set(registryTicks).size);
+  });
+
+  test('every job module in worker/jobs/ is in the registry', () => {
+    const registry = read('worker/jobs/index.ts');
+    const modules = readdirSync(join(SRC, 'worker/jobs'))
+      .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts') && file !== 'index.ts')
+      .map((file) => file.replace(/\.ts$/, ''));
+    expect(modules.filter((name) => !registry.includes(`from './${name}'`))).toEqual([]);
+  });
+
+  test('bootstrap.ts starts only approved per-process loops on every process', () => {
+    const started = processStarts();
+    expect(started.filter((call) => !(call in PROCESS_STARTS))).toEqual([]);
+    for (const worker of Object.values(PROCESS_STARTS)) {
+      if (!worker.startsWith('not a worker')) expect(PER_PROCESS[worker]).toBeDefined();
     }
   });
 
-  test('bootstrap.ts imports every loop it starts from workers/', () => {
+  test('bootstrap.ts imports every per-process loop it starts from replica/ and no job module', () => {
     const bootstrap = read('bootstrap.ts');
-    const started = bootstrapStarts();
-    const outside = started
+    const outside = processStarts()
       .filter((call) => !(call in NOT_LOOPS))
       .filter((call) => {
-        const from = new RegExp(
-          `import \\{[^}]*\\b${call}\\b[^}]*\\} from '([^']+)'|\\{[^}]*\\b${call}\\b[^}]*\\} = await import\\('([^']+)'\\)`,
-        ).exec(bootstrap);
-        return !(from?.[1] ?? from?.[2])?.startsWith('./workers/');
+        const from = new RegExp(`import \\{[^}]*\\b${call}\\b[^}]*\\} from '([^']+)'`).exec(bootstrap);
+        return !from?.[1]?.startsWith('./replica/');
       });
     expect(outside).toEqual([]);
+    expect(bootstrap).not.toMatch(/from '\.\/worker\/jobs/);
+  });
+
+  test('no module outside worker/ and the composition roots imports a job', () => {
+    const importers = sourceFiles(SRC).filter(
+      (file) =>
+        !file.startsWith('worker/') &&
+        !['bootstrap.ts', 'worker.ts', 'index.ts'].includes(file) &&
+        /from '(?:\.\.?\/)+worker\/jobs\b|import\('(?:\.\.?\/)+worker\/jobs\b/.test(read(file)),
+    );
+    expect(importers).toEqual([]);
   });
 });

@@ -16,7 +16,7 @@ export {
   type GitProxyAuth,
 } from './lib/git';
 
-// Idle sessions off a fallback model (consumed by workers/session-model-fallback-worker).
+// Idle sessions off a fallback model (consumed by worker/jobs/session-model-fallback).
 export { revertIdleSessionFallbacks } from './lib/session-model-fallback-revert';
 
 // A person's pins and archive (consumed by account erasure and offboarding).
@@ -49,13 +49,10 @@ export { sessionIsTombstoned } from './lib/session-visibility';
 // The shutdown hand-back of lifecycle claims (consumed by bootstrap.ts).
 export { handBackClaims } from './session-lifecycle/claim-handover';
 
-// Trigger + manifest helpers (consumed by channels / connector / the boot
-// sequence in src/index.ts).
+// Trigger + manifest helpers (consumed by channels and connectors).
 export {
   drainTriggerExecutionQueue,
   runProjectTriggerSweep,
-  startProjectTriggerScheduler,
-  stopProjectTriggerScheduler,
   schedulerSweepIsStale,
   loadManifestForEdit,
   commitManifest,
@@ -118,7 +115,7 @@ export const reconcileEventSubscriptionsFromCatalog: typeof import('./trigger-ev
   async (...args) => (await eventSubscriptions()).reconcileEventSubscriptionsFromCatalog(...args);
 export const releaseProjectEventSubscriptions: typeof import('./trigger-events/subscriptions').releaseProjectEventSubscriptions =
   async (...args) => (await eventSubscriptions()).releaseProjectEventSubscriptions(...args);
-// Kortix-polled app events (consumed by workers/trigger-event-poll-worker.ts). Loading the
+// Kortix-polled app events (consumed by replica/trigger-event-poll.ts). Loading the
 // module registers the delivery queue's job handler. Lazy for the same cycle as above.
 export const runDueEventPolls = async (onSlotFree?: () => void): Promise<number> =>
   (await import('./trigger-events/mcp-poll')).runDueEventPolls(onSlotFree);
@@ -144,7 +141,7 @@ export { readStoredTranscriptWindow } from './session-log-read';
 // channels/core/commands.ts, on a chat's /stop and /new).
 export { abortRuntimeTurn } from './session-lifecycle/abort-runtime-turn';
 
-// The retention purge of session content (consumed by workers/session-log-purge-worker.ts).
+// The retention purge of session content (consumed by worker/jobs/session-log-purge.ts).
 export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
 
 // Git reads (consumed by config-releases/publish.ts and config-releases/base-tip.ts).
