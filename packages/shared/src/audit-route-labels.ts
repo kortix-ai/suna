@@ -749,7 +749,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/content': { action: 'session.drive_sync.read', title: 'Downloaded a drive file to a session' },
   'PUT /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/content': { action: 'session.drive_sync.write', title: 'Uploaded a drive file from a session' },
   'POST /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload': { action: 'session.drive_sync.upload_plan', title: 'Planned a drive upload from a session' },
-  'PUT /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload/:uploadId/blocks/:sha': { action: 'session.drive_sync.upload_block', title: 'Uploaded a drive file block' },
+  'PUT /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload/:uploadId/blocks/:sha': { action: 'session.drive_sync.upload_block', title: 'Uploaded a session drive-sync file block' },
   'POST /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload/:uploadId/commit': { action: 'session.drive_sync.upload_commit', title: 'Committed a drive upload from a session' },
   'POST /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/move': { action: 'session.drive_sync.move', title: 'Moved a drive file from a session' },
   'DELETE /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files': { action: 'session.drive_sync.delete', title: 'Deleted a drive file from a session' },
