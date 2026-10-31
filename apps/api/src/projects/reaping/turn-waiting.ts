@@ -118,7 +118,7 @@ export function turnWaitingInPending(pending: unknown, rootId: string): TurnWait
   if (!Array.isArray(permissions) || !Array.isArray(questions)) return 'unknown';
   if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)) return 'unknown';
   // The box always lists its root. Without `rootId` it answers about another root (a stale id).
-  if (!(rootId in statuses)) return 'unknown';
+  if (!Object.hasOwn(statuses, rootId)) return 'unknown';
   const running = Object.entries(statuses as Record<string, unknown>)
     .filter(([, status]) => status === 'busy' || status === 'compacting')
     .map(([id]) => id);

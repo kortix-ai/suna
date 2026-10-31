@@ -61,6 +61,8 @@ export const runtimeVerbPaths = {
   log: (opts: { limit: number; beforeSeq?: number | null }) =>
     `/kortix/runtime/log?limit=${opts.limit}${opts.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ''}`,
   logMessage: (messageId: string) => `/kortix/runtime/log/messages/${segment(messageId)}`,
+  /** What each thread does and what waits on a person (`runtime.actions.v1`). */
+  pending: '/kortix/runtime/pending',
 } as const;
 
 const CAPABILITIES_TTL_MS = 5 * 60_000;

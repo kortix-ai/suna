@@ -179,14 +179,15 @@ const logTime = (iso: string | null | undefined): number | null => {
 export function placementTipOfLog(messages: readonly SessionLogMessage[]): PlacementTipMessage[] {
   return messages.flatMap((message) => {
     if (typeof message?.message_id !== 'string' || typeof message.role !== 'string') return [];
-    const autoCompaction = message.kind === 'compaction' && message.blocks.some((block) => block.type === 'compaction' && block.trigger === 'auto');
+    const blocks = Array.isArray(message.blocks) ? message.blocks : [];
+    const autoCompaction = message.kind === 'compaction' && blocks.some((block) => block.type === 'compaction' && block.trigger === 'auto');
     return [{
       id: message.message_id,
       role: message.role,
       parentID: message.reply_to ?? null,
       created: logTime(message.created_at),
       completed: message.status === 'streaming' ? null : logTime(message.completed_at ?? message.created_at),
-      partIds: message.blocks.flatMap((block) => (typeof block.id === 'string' ? [block.id] : [])),
+      partIds: blocks.flatMap((block) => (typeof block?.id === 'string' ? [block.id] : [])),
       ...(autoCompaction ? { autoCompaction: true } : {}),
     }];
   });

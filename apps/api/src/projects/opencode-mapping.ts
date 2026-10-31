@@ -40,7 +40,7 @@ import {
   type OpencodeSessionLite,
 } from './opencode-session-resolver';
 import { sandboxRuntimeRequestHeaders } from './sandbox-fetch';
-import { runtimeServesLog } from './session-lifecycle/runtime-fetch';
+import { runtimeServesLog, runtimeVerbPaths } from './session-lifecycle/runtime-fetch';
 
 export { pickCanonicalRoot, resolveRootSessionId, type OpencodeSessionLite };
 
@@ -217,31 +217,43 @@ export async function listSandboxOpencodeSessions(
 /**
  * The session's root, from a box that serves its own session log (`runtime.log.v1`): its health
  * names the root thread once the runtime started (`harness.session.root_thread_id`). Ready means
- * what the OpenCode session list meant: the runtime answers. Not `harness.ready`, which also waits
- * for the config release proof and would hold `/start` longer than before.
+ * what the OpenCode session list meant: the runtime answers a signed read. Not `harness.ready`,
+ * which also waits for the config release proof and would hold `/start` longer than before.
  */
 export async function readRuntimeRoot(
   ep: { url: string; headers: Record<string, string> },
 ): Promise<{ ok: true; root: string } | Extract<ListResult, { ok: false }>> {
   try {
-    const res = await fetch(`${ep.url}/kortix/health`, {
-      method: 'GET',
-      headers: sandboxRuntimeRequestHeaders(ep.headers),
-      signal: AbortSignal.timeout(3_000),
-    });
-    if (res.status === 503) return { ok: false, reason: 'not_ready' };
-    if (!res.ok) {
-      const responder = res.headers.get('server')?.trim().slice(0, 40) || null;
-      const snippet = (await res.text().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 120);
+    const read = (path: string) =>
+      fetch(`${ep.url}${path}`, {
+        method: 'GET',
+        headers: sandboxRuntimeRequestHeaders(ep.headers),
+        signal: AbortSignal.timeout(3_000),
+      });
+    // `/kortix/health` names the root and checks no signature. `/pending` checks it, so a box whose
+    // service key drifted is refused here with the daemon's reason (the `bad_signature` repair).
+    const [health, signed] = await Promise.all([read('/kortix/health'), read(runtimeVerbPaths.pending)]);
+    const refused = [signed, health].find((res) => !res.ok && res.status !== 503);
+    const notReady = [signed, health].find((res) => res.status === 503);
+    if (refused) {
+      const responder = refused.headers.get('server')?.trim().slice(0, 40) || null;
+      const snippet = (await refused.text().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 120);
+      await Promise.all([signed, health].filter((res) => res !== refused).map((res) => res.body?.cancel().catch(() => {})));
       return {
         ok: false,
         reason: 'unreachable',
-        cause: res.status === 401 ? 'unsigned_context' : `http_${res.status}`,
+        cause: refused.status === 401 ? 'unsigned_context' : `http_${refused.status}`,
         ...(responder ? { responder } : {}),
         ...(snippet ? { detail: snippet } : {}),
       };
     }
-    const body = (await res.json().catch(() => null)) as {
+    await signed.body?.cancel().catch(() => {});
+    if (notReady) {
+      const bootPhase = notReady.headers.get(BOOT_PHASE_HEADER)?.trim() || undefined;
+      await health.body?.cancel().catch(() => {});
+      return { ok: false, reason: 'not_ready', ...(bootPhase ? { bootPhase } : {}) };
+    }
+    const body = (await health.json().catch(() => null)) as {
       harness?: { state?: unknown; session?: { root_thread_id?: unknown } };
     } | null;
     const root = body?.harness?.session?.root_thread_id;
