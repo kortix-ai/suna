@@ -268,7 +268,7 @@ describe('kortix_schedules follow-through', () => {
     const data = second.data as { text: string; fallback_text: boolean; text_note: string }
     expect(data.fallback_text).toBe(true)
     expect(data.text).toStartWith('Follow-up "bakery-quotes-check" set ')
-    expect(data.text_note).toContain('do not set it again')
+    expect(data.text_note).toContain('do not remove it, replace it or set it again')
     expect(argvs()).toEqual([`loop ${data.text} --in=4d --json`])
     // A call with text in between: the next missing text is refused again.
     expect((await run('kortix_schedules', { action: 'follow_up', in: '4d', text: TEXT })).ok).toBe(true)
