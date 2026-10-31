@@ -25,7 +25,7 @@ Every Kortix computer has:
 A project agent's computer (the default image and custom templates) also has:
 
 - These Python packages, pre-installed: lxml, markitdown, openpyxl, pandas, pdf2docx, pdf2image, pdfplumber, pillow (`PIL`), playwright, pymupdf (`fitz`), pypdf, pypdfium2, pytesseract, python-docx (`docx`), python-pptx (`pptx`), reportlab. Run scripts that use them with plain `python3`.
-- `agent-browser` and Chromium.
+- `agent-browser` and Chromium, and `agent-desktop` for desktop apps.
 - ffmpeg, LibreOffice, Pandoc, LaTeX, Poppler, qpdf, and Tesseract. Never use `docx2pdf` (requires MS Word; fails on Linux) — convert Office documents with `soffice --headless --convert-to pdf`.
 - The desktop below, on an Ubuntu 24.04 base.
 
@@ -50,6 +50,11 @@ port 6901.
 - Browse only in the default session, with its flags as set. A named
   `--session` starts a second browser the user does not share, and a flag
   such as `--headed false` restarts the shared one.
+- `agent-desktop` operates desktop apps (the file manager, the terminal,
+  LibreOffice, any dialog) through the accessibility tree: snapshot, act on a
+  ref, snapshot again. Run `agent-desktop skills get desktop` and
+  `agent-desktop skills get platform` before the first use. Use
+  `agent-browser` for web pages.
 - `curl -o shot.png localhost:6901/screenshot` captures the screen as a PNG.
 - After a GUI action, `curl localhost:6901/wait` returns when the screen is
   still for 300 ms. Do not sleep.
