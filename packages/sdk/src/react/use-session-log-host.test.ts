@@ -77,6 +77,10 @@ beforeEach(() => {
       const all = page();
       return Response.json(before === null ? { ...all, messages: all.messages.slice(4), has_more: true } : { ...all, messages: all.messages.slice(0, 4), has_more: false });
     }
+    // The box's own page (`runtime.log.v1`): the API's page.
+    if (path.endsWith('/kortix/runtime/log')) return Response.json(page());
+    if (path.endsWith('/kortix/runtime/pending')) return Response.json({ statuses: {}, permissions: [], questions: [] });
+    if (path.endsWith('/kortix/health')) return Response.json({ capabilities: ['runtime.actions.v1', 'runtime.log.v1'] });
     // The session stream: an open SSE body that never ends.
     if (serveLog && path.endsWith('/events')) return new Response(new ReadableStream({ start() {} }), { headers: { 'content-type': 'text/event-stream' } });
     // The turn record of a session that never ran a turn.
@@ -306,5 +310,44 @@ describe('useSession with its chat engine: the session log owns the history once
     expect(urls).toContain(`${base}/log?limit=40`);
     expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
     expect(seen.result!.savedTranscript).toBe('none');
+  });
+
+  describe('a box that serves its log (runtime.log.v1): the session log is the only transcript read', () => {
+    const readyStart = (capabilities: string[]) =>
+      queryClient.setQueryData(sessionStartKey(PROJECT_ID, SESSION_ID), {
+        stage: 'ready', agent_name: 'default', retriable: false, reason: 'unchanged', runtime_session_id: 'ses_log_host', runtime_url: '/p/sbx_log/8000', capabilities,
+        sandbox: { sandbox_id: SESSION_ID, session_id: SESSION_ID, project_id: PROJECT_ID, account_id: 'acct', provider: 'platinum', external_id: 'sbx_log', base_url: null, status: 'active', config: {}, metadata: {}, last_used_at: null, created_at: '2026-10-14T00:00:00Z', updated_at: '2026-10-14T00:00:00Z' },
+      } as unknown as SessionStartResult);
+    /** The box routes the open read, without the health probe. */
+    const boxReads = () => urls.filter((u) => u.startsWith('/p/sbx_log/8000/') && !u.includes('/kortix/health')).map((u) => u.replace('/p/sbx_log/8000', '').split('?')[0]);
+    const open = async (capabilities: string[]) => {
+      serveLog = true;
+      readyStart(capabilities);
+      function Host() {
+        useSession(PROJECT_ID, SESSION_ID, { chatEngine: true, replayStartStash: false });
+        return null;
+      }
+      act(() => {
+        renderer = create(createElement(QueryClientProvider, { client: queryClient }, createElement(Host)));
+      });
+      act(() => setRuntimeCapabilities(capabilities));
+      await flush();
+      await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    };
+
+    test('the box page is read; no v1 transcript, session record, status, permission, question or diagnostics read goes to the box', async () => {
+      await open(['session.log.v2', 'runtime.actions.v1', 'runtime.log.v1']);
+      const reads = boxReads();
+      expect(reads).toContain('/kortix/runtime/log');
+      // The session list (`GET /session`) still answers the hosts' sub-agent links; it is the one left.
+      expect([...new Set(reads.filter((r) => !r.startsWith('/kortix/')))]).toEqual(['/session']);
+    });
+
+    test('control: the same open on a box without runtime.log.v1 still reads the v1 routes', async () => {
+      await open(['session.log.v2', 'runtime.actions.v1']);
+      const reads = boxReads();
+      expect(reads).not.toContain('/kortix/runtime/log');
+      expect(reads.filter((r) => !r.startsWith('/kortix/')).length).toBeGreaterThan(0);
+    });
   });
 });

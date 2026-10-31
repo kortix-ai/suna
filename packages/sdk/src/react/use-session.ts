@@ -37,6 +37,8 @@ import {
   seedConnectionFromReadyStart,
 } from '../browser/stores/sandbox-connection-store';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
+import { authenticatedFetch } from '../core/http/auth';
+import { RUNTIME_LOG_CAPABILITY, readRuntimeLogPage } from '../core/session/runtime-actions';
 import { getBackendUrl } from '../core/session/server-store/url-helpers';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
@@ -1385,7 +1387,24 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // render: the open asks the snapshot for no transcript window, no saved copy is read
   // (`useSessionSync` `sessionLog`), and older pages come from `GET …/log`. No project flag is
   // read, and no v1 transcript (`GET …/transcript`, P8.3) is read, whatever the log answers.
-  const logDialect = useSessionLogSync(projectId, sessionId, { enabled: startEnabled });
+  // The box's own page, while `/start` says the box is ready and serves it (`runtime.log.v1`):
+  // ahead of the API's copy (the reply it streams, a prompt waiting on it), and a new session's
+  // log before the API holds one.
+  const liveLogBoxId =
+    startData?.stage === 'ready' && startData.capabilities?.includes(RUNTIME_LOG_CAPABILITY) ? (startData.sandbox?.external_id ?? null) : null;
+  const livePage = useMemo(
+    () =>
+      liveLogBoxId
+        ? (query: { limit: number }) =>
+            readRuntimeLogPage(getSandboxUrlForExternalId(liveLogBoxId), authenticatedFetch as typeof globalThis.fetch, query)
+        : null,
+    [liveLogBoxId],
+  );
+  // The box serves its log: the session log is the only transcript read. No v1 transcript, session
+  // record, status, permission, question or diagnostics read goes to the box (see each gate below).
+  const logNative = liveLogBoxId !== null;
+  const logReloadRef = useRef<(() => void) | null>(null);
+  const logDialect = useSessionLogSync(projectId, sessionId, { enabled: startEnabled, livePage, reloadRef: logReloadRef });
   // `'missing'`: no page yet (a new session, an unconverted mirror, a failed read). Nothing saved
   // is on its way; the runtime's rows are the history.
   const logOwned = chatEngine && logDialect !== 'v1';
@@ -1553,7 +1572,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // StreamProvider); calling the underlying hook here means the host mounts
   // nothing. It self-gates on the connection store's healthy flag (seeded above).
   // R5.3: its events come from the session stream mounted in 1c.
-  useRuntimeEventStream({ enabled: switched, projectId, sessionId });
+  useRuntimeEventStream({ enabled: switched, projectId, sessionId, logNative });
 
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
@@ -1627,7 +1646,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // which would make the sync layer read the log page a second time.
     mirror: null,
     sessionLog: logOwned,
-    networkEnabled: switched,
+    // A box that serves its log: the rows come from the log, so no v1 read or liveness poll runs.
+    networkEnabled: switched && !logNative,
     working: working.state === 'working',
     // The control plane holding a turn open keeps the transcript verification
     // poll on even when the projection's answer is idle — the repair for a
@@ -1646,7 +1666,20 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       ? selectTranscriptShapeKey(state, ocSessionId)
       : '',
   );
-  const sync = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
+  const syncRows = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
+  // On a box that serves its log, loading, freshness and the retry are the log's.
+  const sync = useMemo(
+    () =>
+      logNative && chatEngine
+        ? {
+            ...syncRows,
+            isLoading: logHistory === 'loading',
+            freshness: (logHistory === 'loading' ? 'loading' : 'fresh') as typeof syncRows.freshness,
+            retryTranscript: () => logReloadRef.current?.(),
+          }
+        : syncRows,
+    [logNative, chatEngine, syncRows, logHistory],
+  );
   const runtimePhase = useRuntimePhase();
   // T22 — the revert record lives in the sync store, not component state.
   // Component state made the boundary math wrong in two ways at once: it
@@ -1740,10 +1773,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // ring replays it on a reconnect and a resync re-reads the pending lists —
   // so these polls run only while the stream is down.
   useQuestionSelfHeal(ocSessionId, sync.messages, {
-    enabled: switched && chatEngine && !!ocSessionId && !streamConnected,
+    enabled: switched && chatEngine && !!ocSessionId && !streamConnected && !logNative,
   });
   usePermissionSelfHeal(ocSessionId, sync.messages, {
-    enabled: switched && chatEngine && !!ocSessionId && !streamConnected,
+    enabled: switched && chatEngine && !!ocSessionId && !streamConnected && !logNative,
   });
 
   // 6. Interactive prompts live in the pending store (the SSE writes them there,
@@ -1762,7 +1795,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // same cache entry `session.compacted` and `session.updated` already write
   // (`runtimeKeys.runtimeSession`), so reading it here costs no extra request
   // in a host that mounts the session row anyway.
-  const runtimeSessionRow = useRuntimeSession(switched ? ocSessionId : '');
+  // A box that serves its log reports compaction as `log.status` (the compaction store above).
+  const runtimeSessionRow = useRuntimeSession(switched && !logNative ? ocSessionId : '');
   const compactionInputs = {
     optimisticAtMs: optimisticCompactionAtMs,
     serverCompactingAtMs: runtimeSessionRow.data?.time?.compacting ?? null,

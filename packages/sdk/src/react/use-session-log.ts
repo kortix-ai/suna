@@ -15,6 +15,7 @@ import {
   SESSION_LOG_OLDER_PAGE_LIMIT,
   type LoadSessionLogPage,
   type SessionLogDialect,
+  type SessionLogPage,
   type SessionLogSyncState,
   type SessionLogRead,
 } from '../core/session-log/source';
@@ -221,6 +222,14 @@ export function useSessionLogOlder(
  *    `Retry-After` (503 `session_log_converting`), at most 60 s.
  * Both are read again at the next turn end and after a stream reconnect, one request at a time.
  * Unmounting drops the log and cancels a pending retry.
+ *
+ * `livePage`: the box's own page (`GET /kortix/runtime/log`), passed while the session's box is
+ * ready and serves it (`runtime.log.v1`). It is ahead of the API's: it holds the reply the box
+ * streams and a prompt waiting behind it. With it, the box page is read after the API page and
+ * on each re-read (a reconnect, a `kortix.resync`, a visible tab) in place of the API page, and a
+ * session the API holds no log for yet (a new session) reads it and switches to v2 at once. A
+ * loader that arrives later (the box got ready after the first read) reads the box page then.
+ * A box read that fails changes nothing.
  */
 export function useSessionLogSync(
   projectId: string,
@@ -228,6 +237,10 @@ export function useSessionLogSync(
   options: {
     enabled: boolean;
     loader?: LoadSessionLogPage | null;
+    /** The box's own newest page of the root thread; null while the box is not ready or does not serve it. */
+    livePage?: ((query: { limit: number }) => Promise<SessionLogPage | null>) | null;
+    /** Filled with a re-read of the newest page (the box's, else the API's) while the log is read. */
+    reloadRef?: { current: (() => void) | null };
     /** Test seam: joins the session stream. */
     joinStream?: (options: SessionControlStreamOptions) => { close: () => void };
     /** Test seam: runs a timed retry after `ms`; returns its cancel. */
@@ -243,6 +256,12 @@ export function useSessionLogSync(
   // The last read answered no page: the session has no log to show yet.
   const [missingKey, setMissingKey] = useState<string | null>(null);
   const state: SessionLogSyncState = negotiated !== 'v2' ? 'v1' : missingKey === key ? 'missing' : 'v2';
+  // The box page loader as of this render; the effect reads it when it reads a page.
+  const livePageRef = useRef(options.livePage ?? null);
+  livePageRef.current = options.livePage ?? null;
+  // The running effect's box read, for a loader that arrives after its first read.
+  const readLiveRef = useRef<(() => void) | null>(null);
+  const reloadRef = options.reloadRef;
 
   useEffect(() => {
     if (negotiated !== 'v2' || !loader) return;
@@ -273,6 +292,19 @@ export function useSessionLogSync(
       }
       return read;
     };
+    // The box's page, when the box serves one: true when it went in the store.
+    const loadLive = async (): Promise<boolean> => {
+      const live = livePageRef.current;
+      if (!live) return false;
+      const page = await live({ limit: SESSION_LOG_FIRST_PAGE_LIMIT }).catch(() => null);
+      if (stopped || !page) return false;
+      store().applySessionLogPage(sessionId, page);
+      return true;
+    };
+    // A re-read: the box's page while the box serves one, else the API's.
+    const reload = async (): Promise<void> => {
+      if (!(await loadLive())) await load();
+    };
     // Re-read after a reconnect (`up` after a drop); the first report is the connection already up.
     const onReconnect = (run: () => void) => {
       let connected = true;
@@ -281,22 +313,37 @@ export function useSessionLogSync(
         connected = up;
       };
     };
+    const goV2 = () => {
+      failures = 0;
+      cancelRetry?.();
+      cancelRetry = null;
+      setMissingKey(null);
+      // A v2 connection resumes at the v1 cursor; a server on another epoch answers
+      // `kortix.resync` and replays nothing, so the page is read again then, as after a reconnect.
+      join({ schema: 'v2', onConnectionChange: onReconnect(() => void reload()), onRuntimeResync: () => void reload() });
+    };
+    // A box loader that arrived after the first read: its page, and v2 if the API had none.
+    readLiveRef.current = () => {
+      if (busy || stopped) return;
+      void loadLive().then((live) => {
+        if (!live || stopped || onV2) return;
+        onV2 = true;
+        goV2();
+      });
+    };
     const attempt = async (): Promise<void> => {
       if (busy || stopped) return;
       cancelRetry?.();
       cancelRetry = null;
       busy = true;
       const { answer, retryAfterMs } = await load();
+      const live = await loadLive();
       busy = false;
       if (stopped) return;
       const page = answer === 'missing' ? null : answer;
-      onV2 = !!page;
-      if (page) {
-        failures = 0;
-        setMissingKey(null);
-        // A v2 connection resumes at the v1 cursor; a server on another epoch answers
-        // `kortix.resync` and replays nothing, so the page is read again then, as after a reconnect.
-        join({ schema: 'v2', onConnectionChange: onReconnect(() => void load()), onRuntimeResync: () => void load() });
+      onV2 = !!page || live;
+      if (onV2) {
+        goV2();
         return;
       }
       setMissingKey(`${projectId}/${sessionId}`);
@@ -333,9 +380,12 @@ export function useSessionLogSync(
     // its stream silently): read the newest page again, as the v1 transcript reads its tail.
     // A refused session waits for its next turn end or reconnect instead.
     const stopVisible = onTabVisible(() => {
-      if (onV2) void load();
+      if (onV2) void reload();
     });
+    if (reloadRef) reloadRef.current = () => void (onV2 ? reload() : attempt());
     return () => {
+      readLiveRef.current = null;
+      if (reloadRef) reloadRef.current = null;
       stopVisible();
       stopped = true;
       cancelRetry?.();
@@ -344,6 +394,14 @@ export function useSessionLogSync(
       store().dropSessionLog(sessionId);
     };
   }, [negotiated, loader, joinStream, schedule, projectId, sessionId]);
+
+  // A loader that arrives after mount: the first read already read the one present at mount.
+  const hasLivePage = !!options.livePage;
+  const hadLivePage = useRef(hasLivePage);
+  useEffect(() => {
+    if (hasLivePage && !hadLivePage.current) readLiveRef.current?.();
+    hadLivePage.current = hasLivePage;
+  }, [hasLivePage]);
 
   return state;
 }
