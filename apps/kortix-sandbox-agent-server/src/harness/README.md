@@ -101,17 +101,22 @@ mechanism T3 Code and OpenCode use (OpenCode's `claude-agent` provider).
   `<piStateDir>/claude-records/`, Claude Code's state in `<piStateDir>/claude/`
   (`CLAUDE_CONFIG_DIR`, never the box's `~/.claude`).
 - **Processes.** One `claude` process per thread; it stops after 5 minutes
-  idle, never while it waits for tool results. A changed login, system prompt
-  or tool set restarts it. A step with no tools (pi's compaction summary) runs
+  idle, never while it waits for tool results. A changed gateway credential, system
+  prompt or tool set restarts it. A step with no tools (pi's compaction summary) runs
   in a throwaway process that saves no Claude session.
-- **Login.** apps/api delivers the session user's Claude subscription token
-  (`claude setup-token`) as `KORTIX_CLAUDE_OAUTH_TOKEN` at boot and as
-  `claudeOauthToken` on `POST /kortix/env` before a prompt (the prompting
-  user's, or null). `takeClaudeLogin` removes it from `process.env` before
-  any shell exists, so no agent shell inherits it; only the `claude` process
-  receives it, as `CLAUDE_CODE_OAUTH_TOKEN`. `claudeEnv` removes every
-  variable that would pick another login (`ANTHROPIC_API_KEY`, a project
-  secret, would otherwise bill an API key) and every `KORTIX_*` variable.
+- **Login.** No Claude token is in the sandbox. Claude Code's model calls go
+  to the LLM gateway's Claude Code passthrough: `ANTHROPIC_BASE_URL` is
+  `$KORTIX_LLM_PROXY_URL/claude-code` with a fixed placeholder
+  `CLAUDE_CODE_OAUTH_TOKEN` (the localhost proxy swaps in the session
+  credential), else `$KORTIX_LLM_BASE_URL/claude-code` with `KORTIX_TOKEN`.
+  The gateway picks the project's Claude account for the request (the
+  session's selected accounts, the session owner's own, or one shared with
+  the project), adds its token and forwards the request to Anthropic
+  unchanged (`packages/llm-gateway/src/claude-code/passthrough.ts`).
+  `claudeEnv` removes every variable that would pick another login or
+  endpoint (`ANTHROPIC_API_KEY`, a project secret, would otherwise bill an
+  API key) and every `KORTIX_*` variable. A changed gateway or session
+  credential restarts the `claude` process.
 - **Errors.** Claude Code retries its own calls, so pi does not retry a
   `claude-agent` error (`isTransientModelError`). A plan limit reads "Your
   Claude subscription limit is reached (…). It resets at …".

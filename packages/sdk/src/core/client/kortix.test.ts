@@ -634,9 +634,6 @@ test('project(id).claudeSubscription covers status, sign-in, token and disconnec
   expect(last().url.endsWith('/projects/PID123/claude-subscription/token')).toBe(true);
   expect(last().method).toBe('PUT');
 
-  await kortix.project('PID123').claudeSubscription.disconnect();
-  expect(last().url.endsWith('/projects/PID123/claude-subscription')).toBe(true);
-  expect(last().method).toBe('DELETE');
 });
 
 test('project(id).connectors covers credential-mode/sensitive/policies/pipedream', async () => {

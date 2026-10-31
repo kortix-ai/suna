@@ -108,9 +108,10 @@ Example:
 const LOGIN_HELP = help`Usage: kortix providers login <provider> [options]
 
 Start the OAuth device-code flow for openai, opencode, or opencode-go.
-\`claude\` connects your own Claude Pro or Max subscription: Claude models
-(claude-agent/opus, fable, sonnet, haiku) run through Claude Code on it in your
-sessions. You approve on claude.com and paste the code it shows.
+\`claude\` adds your own Claude Pro or Max subscription as a Claude account of the
+project, private to you: Claude models (claude-agent/opus, fable, sonnet, haiku)
+run through Claude Code on it. You approve on claude.com and paste the code it
+shows. Share it with the project in the web under Models → Providers → Anthropic.
 
 Options:
   --project <id>      Operate on this project id (default: linked).
@@ -387,19 +388,19 @@ async function providersLs(opts: CtxOpts, json = false): Promise<number> {
 const CLAUDE_CLI_PROVIDER = 'claude';
 
 interface ClaudeLoginStartResponse { flow_id: string; authorize_url: string; expires_at: string }
-interface ClaudeStatusResponse { connected: boolean; usable: boolean }
+interface ClaudeConnectedResponse { connected: boolean; secret_id?: string }
 
 async function claudeLogin(opts: CtxOpts, tokenStdin: boolean): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
-  const done = (result: ClaudeStatusResponse) => {
-    if (!result.connected) {
+  const done = (result: ClaudeConnectedResponse) => {
+    if (!result.connected || !result.secret_id) {
       process.stderr.write(`${status.err('Kortix did not store the Claude login. Run the command again.')}\n`);
       return 1;
     }
     process.stdout.write(
       `\n${status.ok('Connected your Claude subscription')}\n` +
-        `  ${C.dim}Claude models (claude-agent/opus, fable, sonnet, haiku) now run on your plan in your sessions.${C.reset}\n\n`,
+        `  ${C.dim}Added a Claude account, private to you. Claude models (claude-agent/opus, fable, sonnet, haiku) now run on your plan in your sessions.${C.reset}\n\n`,
     );
     return 0;
   };
@@ -407,14 +408,14 @@ async function claudeLogin(opts: CtxOpts, tokenStdin: boolean): Promise<number> 
     const token = (await Bun.stdin.text()).trim();
     if (!token) return fail('stdin is empty: pipe the token `claude setup-token` printed');
     try {
-      return done(await ctx.client.put<ClaudeStatusResponse>(`/projects/${ctx.projectId}/claude-subscription/token`, { token }));
+      return done(await ctx.client.put<ClaudeConnectedResponse>(`/projects/${ctx.projectId}/claude-subscription/token`, { token, sharing: { mode: 'private' } }));
     } catch (err) {
       return surfaceApiError(err);
     }
   }
   let flow: ClaudeLoginStartResponse;
   try {
-    flow = await ctx.client.post<ClaudeLoginStartResponse>(`/projects/${ctx.projectId}/claude-subscription/login/start`, {});
+    flow = await ctx.client.post<ClaudeLoginStartResponse>(`/projects/${ctx.projectId}/claude-subscription/login/start`, { sharing: { mode: 'private' } });
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -428,7 +429,7 @@ async function claudeLogin(opts: CtxOpts, tokenStdin: boolean): Promise<number> 
   const code = (await readVisible('  Code from claude.com: ')).trim();
   if (!code) return fail('No code entered. Run the command again.');
   try {
-    return done(await ctx.client.post<ClaudeStatusResponse>(`/projects/${ctx.projectId}/claude-subscription/login/complete`, { flow_id: flow.flow_id, code }));
+    return done(await ctx.client.post<ClaudeConnectedResponse>(`/projects/${ctx.projectId}/claude-subscription/login/complete`, { flow_id: flow.flow_id, code }));
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -604,7 +605,7 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
     } catch (err) {
       return surfaceApiError(err);
     }
-    process.stdout.write(`${status.ok('Disconnected your Claude subscription')}\n  ${C.dim}Claude models stop working in your sessions until you connect again.${C.reset}\n`);
+    process.stdout.write(`${status.ok('Deleted your Claude accounts in this project')}\n  ${C.dim}Claude accounts others shared with you stay.${C.reset}\n`);
     return 0;
   }
 

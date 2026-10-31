@@ -196,7 +196,7 @@ describe('jsonProxyError — CORS follows the preview allowlist', () => {
   });
 });
 
-describe('runPrePromptEnvSync — a Claude subscription turn needs the prompter login', () => {
+describe('runPrePromptEnvSync — a Claude subscription turn needs a usable Claude account', () => {
   const claudePrompt = (model: unknown) =>
     new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text: 'hello' }], ...(model ? { model } : {}) })).buffer as ArrayBuffer;
   const json = new Headers({ 'content-type': 'application/json' });
@@ -223,7 +223,7 @@ describe('runPrePromptEnvSync — a Claude subscription turn needs the prompter 
       provider_id: 'claude-agent',
       model: 'claude-agent/opus',
     });
-    expect(seen).toEqual([{ accountId: 'acct-1', sessionId: 'sess-1', userId: 'user-1', promptModel: 'claude-agent/opus' }]);
+    expect(seen).toEqual([{ accountId: 'acct-1', projectId: 'proj-1', sessionId: 'sess-1', userId: 'user-1', promptModel: 'claude-agent/opus' }]);
     expect(log).toEqual([]);
   });
 

@@ -6,7 +6,8 @@
  *   complete (any replica) writes the pasted code to the flow row, then waits
  *            for the row to say `connected` or `failed`.
  *   owner    (the replica that started the flow) polls its row every 500 ms,
- *            feeds a written code to the process, stores the token and records
+ *            feeds a written code to the process, stores the token as the Claude
+ *            account the flow names (a new one, or a reconnect) and records
  *            the outcome. It also marks the row as alive, so a complete call
  *            fails fast when the owner stopped.
  *
@@ -20,8 +21,9 @@ import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
 import { SetupTokenError, startSetupToken, type SetupTokenRun } from './setup-token';
-import { pushClaudeLoginToSessions } from './delivery';
-import { saveClaudeLogin } from '../../claude-subscription/store';
+import type { SharingIntent } from '../../connectors/share';
+import { CLAUDE_ACCOUNT } from '../../claude-subscription/accounts';
+import { reconnectProviderAccount, writeProviderAccount } from '../../secrets/provider-accounts';
 
 export const FLOW_TTL_MS = 10 * 60_000;
 const OWNER_POLL_MS = 500;
@@ -54,7 +56,31 @@ export interface StartedClaudeLogin {
   expiresAt: string;
 }
 
-export async function startClaudeLogin(input: { accountId: string; userId: string }): Promise<StartedClaudeLogin> {
+/** What a completed sign-in writes: a new account, or a fresh login for an existing one. */
+export type ClaudeAccountTarget =
+  | { kind: 'new'; secretId: string; label: string; sharing: SharingIntent }
+  | { kind: 'reconnect'; secretId: string };
+
+export interface ClaudeLoginInput {
+  accountId: string;
+  userId: string;
+  projectId: string;
+  target: ClaudeAccountTarget;
+}
+
+/** Store a token as the target account. Returns the account id, or null when a reconnected account is gone. */
+export async function storeClaudeAccount(input: ClaudeLoginInput & { token: string }): Promise<string | null> {
+  const { accountId, userId, projectId, target, token } = input;
+  if (target.kind === 'reconnect') {
+    const row = await reconnectProviderAccount({ secretId: target.secretId, accountId, userId, projectId, value: token, kind: CLAUDE_ACCOUNT });
+    return row?.secretId ?? null;
+  }
+  return writeProviderAccount({
+    secretId: target.secretId, accountId, userId, projectId, label: target.label, value: token, kind: CLAUDE_ACCOUNT, sharing: target.sharing,
+  });
+}
+
+export async function startClaudeLogin(input: ClaudeLoginInput): Promise<StartedClaudeLogin> {
   if (liveRuns.size >= MAX_LIVE_RUNS) {
     throw new ClaudeLoginFlowError('busy', 'Too many Claude sign-ins are running. Try again in a minute.', 429);
   }
@@ -101,6 +127,11 @@ export async function startClaudeLogin(input: { accountId: string; userId: strin
         status: 'awaiting_code',
         authorizeUrl: run.authorizeUrl,
         expiresAt,
+        projectId: input.projectId,
+        resourceId: input.target.secretId,
+        reconnect: input.target.kind === 'reconnect',
+        resourceLabel: input.target.kind === 'new' ? input.target.label : null,
+        sharing: input.target.kind === 'new' ? input.target.sharing : null,
       })
       .returning({ flowId: claudeSubscriptionLoginFlows.flowId });
     flowId = row!.flowId;
@@ -109,7 +140,7 @@ export async function startClaudeLogin(input: { accountId: string; userId: strin
     throw err;
   }
   liveRuns.set(flowId, run);
-  void ownFlow(flowId, input.accountId, input.userId, run, expiresAt.getTime());
+  void ownFlow(flowId, input, run, expiresAt.getTime());
   return { flowId, authorizeUrl: run.authorizeUrl, expiresAt: expiresAt.toISOString() };
 }
 
@@ -121,7 +152,8 @@ async function setFlow(flowId: string, values: Partial<typeof claudeSubscription
 }
 
 /** The owner loop of one flow. Never throws: every exit records an outcome. */
-async function ownFlow(flowId: string, accountId: string, userId: string, run: SetupTokenRun, expiresAtMs: number): Promise<void> {
+async function ownFlow(flowId: string, login: ClaudeLoginInput, run: SetupTokenRun, expiresAtMs: number): Promise<void> {
+  const { accountId } = login;
   try {
     while (true) {
       await Bun.sleep(OWNER_POLL_MS);
@@ -150,9 +182,8 @@ async function ownFlow(flowId: string, accountId: string, userId: string, run: S
       }
       try {
         const token = await run.submit(code);
-        await saveClaudeLogin(accountId, userId, token, 'setup_token');
-        await setFlow(flowId, { status: 'connected', error: null });
-        void onClaudeLoginChanged(accountId, userId);
+        const stored = await storeClaudeAccount({ ...login, token });
+        await setFlow(flowId, stored ? { status: 'connected', error: null } : { status: 'failed', error: 'account_gone' });
       } catch (err) {
         const reason = err instanceof SetupTokenError ? err.code : 'login_failed';
         await setFlow(flowId, { status: 'failed', error: reason });
@@ -175,6 +206,7 @@ const FAILURES: Record<string, ClaudeLoginFlowError> = {
   expired: new ClaudeLoginFlowError('expired', 'This Claude sign-in expired. Start it again.', 410),
   restarted: new ClaudeLoginFlowError('expired', 'Kortix restarted during your sign-in. Sign in with Claude again.', 410),
   replaced: new ClaudeLoginFlowError('expired', 'A newer Claude sign-in replaced this one.', 410),
+  account_gone: new ClaudeLoginFlowError('not_found', 'This Claude account is no longer available. Add it again.', 404),
   invalid_code: new ClaudeLoginFlowError('invalid_code', 'Claude did not accept that code. Sign in with Claude again and paste the new code.', 400),
 };
 
@@ -183,11 +215,11 @@ function failure(error: string | null): ClaudeLoginFlowError {
 }
 
 /** Hand the pasted code to the flow's owner and wait for the outcome. */
-export async function completeClaudeLogin(input: { accountId: string; userId: string; flowId: string; code: string }): Promise<void> {
+export async function completeClaudeLogin(input: { accountId: string; userId: string; flowId: string; code: string }): Promise<{ secretId: string | null }> {
   const code = input.code.trim();
   if (!code || code.length > 2048) throw new ClaudeLoginFlowError('invalid_code', 'Paste the code claude.com showed you.', 400);
   const [row] = await db
-    .select({ status: claudeSubscriptionLoginFlows.status, error: claudeSubscriptionLoginFlows.error, expiresAt: claudeSubscriptionLoginFlows.expiresAt, ownerSeenAt: claudeSubscriptionLoginFlows.ownerSeenAt })
+    .select({ status: claudeSubscriptionLoginFlows.status, error: claudeSubscriptionLoginFlows.error, expiresAt: claudeSubscriptionLoginFlows.expiresAt, ownerSeenAt: claudeSubscriptionLoginFlows.ownerSeenAt, resourceId: claudeSubscriptionLoginFlows.resourceId })
     .from(claudeSubscriptionLoginFlows)
     .where(
       and(
@@ -198,7 +230,8 @@ export async function completeClaudeLogin(input: { accountId: string; userId: st
     )
     .limit(1);
   if (!row) throw new ClaudeLoginFlowError('not_found', 'No such Claude sign-in', 404);
-  if (row.status === 'connected') return;
+  const done = { secretId: row.resourceId };
+  if (row.status === 'connected') return done;
   if (row.status === 'failed') throw failure(row.error);
   if (row.expiresAt.getTime() < Date.now()) throw FAILURES.expired!;
   if (Date.now() - row.ownerSeenAt.getTime() > OWNER_STALE_MS) {
@@ -222,7 +255,7 @@ export async function completeClaudeLogin(input: { accountId: string; userId: st
       .limit(1);
     if (!next) throw new ClaudeLoginFlowError('not_found', 'No such Claude sign-in', 404);
     const status = next.status as FlowStatus;
-    if (status === 'connected') return;
+    if (status === 'connected') return done;
     if (status === 'failed') throw failure(next.error);
     if (status === 'awaiting_code' && Date.now() - next.ownerSeenAt.getTime() > OWNER_STALE_MS) {
       await setFlow(input.flowId, { status: 'failed', error: 'restarted', codeEnc: null });
@@ -263,13 +296,4 @@ export async function cancelClaudeLogins(accountId: string, userId: string): Pro
         ne(claudeSubscriptionLoginFlows.status, 'failed'),
       ),
     );
-}
-
-/** Push a changed login to the member's running sessions. Best effort: never throws. */
-export async function onClaudeLoginChanged(accountId: string, userId: string): Promise<void> {
-  try {
-    await pushClaudeLoginToSessions(accountId, userId);
-  } catch (err) {
-    logger.warn('[claude-subscription] pushing a changed login to running sessions failed', { error: err instanceof Error ? err.message : String(err) });
-  }
 }

@@ -47,6 +47,10 @@ export const config = {
   // Inline-image cap per request (see @kortix/llm-gateway pipeline/image-window.ts).
   // Default 20 (Bedrock Converse's hard limit); on overflow the 12 most recent
   // images survive. GATEWAY_MAX_INLINE_IMAGES=0 disables pruning.
+  // Anthropic's origin for Claude Code's model calls on Claude accounts
+  // (@kortix/llm-gateway claude-code/passthrough.ts). A test points it at a
+  // local stand-in.
+  claudeCodeUpstream: process.env.CLAUDE_CODE_UPSTREAM_URL || 'https://api.anthropic.com',
   imageWindow: {
     maxImages: optionalInt('GATEWAY_MAX_INLINE_IMAGES', DEFAULT_IMAGE_WINDOW.maxImages),
     keepOnOverflow: optionalInt(

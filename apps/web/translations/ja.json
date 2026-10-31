@@ -96,7 +96,7 @@
     "deleteError": "シークレットを削除できませんでした",
     "accessError": "アクセス権を変更できませんでした",
     "sharedTitle": "プロバイダー接続",
-    "sharedDescription": "API キーと ChatGPT アカウントを追加できます。新しい接続は共有するまで自分専用です。セッションごとに使用する接続を選択できます。",
+    "sharedDescription": "API キー、ChatGPT アカウント、Claude アカウントを追加します。新しいものは共有するまで自分専用です。各セッションで使うものを選びます。",
     "legacyProjectKey": "既存のプロジェクトキー · このセッションでキーを選択していない場合に使用",
     "keyCount": "{count, plural, other {# 個のキー}}",
     "providerKeysFor": "{provider} の API キー",
@@ -163,7 +163,19 @@
     "opencodeGoConnect": "OpenCode Go を接続",
     "opencodeGoReconnect": "OpenCode Go を再接続",
     "opencodeGoDisconnect": "OpenCode Go の接続を解除",
-    "opencodeGoFailed": "OpenCode Go に接続できませんでした"
+    "opencodeGoFailed": "OpenCode Go に接続できませんでした",
+    "claudeAccounts": "Claude アカウント",
+    "noClaudeAccounts": "Claude アカウントはまだありません",
+    "connectClaude": "Claude でサインイン",
+    "claudeOauthPrivateDescription": "このプロジェクトの Claude モデルで Claude Pro または Max プランを使います。新しいアカウントは共有するまで自分専用です。",
+    "claudeOauthCreationDescription": "Claude Pro または Max のアカウントでサインインします。Kortix はログインを暗号化して保存し、表示しません。",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Claude アカウントを接続しました",
+    "claudeAccountReconnected": "Claude アカウントを再接続しました",
+    "claudeConnectFailed": "Claude のサインインが完了しませんでした。もう一度お試しください。",
+    "claudeReconnectDescription": "もう一度 Claude でサインインします。アカウントの名前、アクセス、セッションの選択はそのまま残ります。",
+    "claudeAccountLabelPlaceholder": "例: 自分の Claude アカウント",
+    "claudeDeleteAccountConfirmTitle": "この Claude アカウントを全員分削除しますか?"
   },
   "secrets": {
     "undecryptable": {

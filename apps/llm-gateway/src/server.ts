@@ -131,6 +131,8 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       resolveUpstream: api.resolveUpstream,
       notePoolRateLimit: api.notePoolRateLimit,
       refreshCredential: api.refreshCredential,
+      claudeCredentials: api.claudeCredentials,
+      claudeRefused: api.claudeRefused,
       assertBillingActive: api.assertBillingActive,
       assertBudget: api.assertBudget,
       recordUsage: api.recordUsage,
@@ -142,7 +144,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
         await Promise.allSettled(sinks);
       },
     },
-    { logger, imageWindow: config.imageWindow },
+    { logger, imageWindow: config.imageWindow, claudeCodeUpstream: config.claudeCodeUpstream },
   );
   const app = new Hono();
   app.use('*', async (c, next) => {

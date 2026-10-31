@@ -57,13 +57,6 @@ export interface SessionRuntimeEnvInput {
   piPackages?: unknown[];
   /** The prebuilt bundle of those packages (apps/api/src/pi-packages/bundle.ts); null when not built. */
   piPackagesBundle?: { digest: string; url: string; fallbackUrl: string } | null;
-  /**
-   * The Claude subscription token of the session's personal owner, for Claude
-   * Code in the box (`KORTIX_CLAUDE_OAUTH_TOKEN`). Only a private session of a
-   * member with a Claude login has one. The daemon keeps it out of the agent's
-   * shells.
-   */
-  claudeOauthToken?: string | null;
 }
 
 /**
@@ -163,7 +156,6 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // out: an unset KORTIX_HARNESS marks a box OpenCode booted before the sunset,
     // and kortixd restores the session log into pi on it.
     KORTIX_HARNESS: 'pi',
-    ...(input.claudeOauthToken ? { KORTIX_CLAUDE_OAUTH_TOKEN: input.claudeOauthToken } : {}),
     ...(input.piPackages?.length ? { KORTIX_PI_PACKAGES: JSON.stringify(input.piPackages) } : {}),
     ...(input.piCodemode ? { KORTIX_PI_CODEMODE: input.piCodemode } : {}),
     ...(input.piPackagesBundle

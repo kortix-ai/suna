@@ -96,7 +96,7 @@
     "deleteError": "Geheimnis konnte nicht gelöscht werden",
     "accessError": "Zugriff konnte nicht geändert werden",
     "sharedTitle": "Anbieter-Verbindungen",
-    "sharedDescription": "Fügen Sie API-Schlüssel und ChatGPT-Konten hinzu. Neue Verbindungen sind privat, bis Sie sie teilen. Wählen Sie pro Sitzung, welche genutzt werden.",
+    "sharedDescription": "Füge API-Schlüssel, ChatGPT-Konten und Claude-Konten hinzu. Neue sind privat, bis du sie teilst. Wähle, welche jede Sitzung verwendet.",
     "legacyProjectKey": "Bestehender Projektschlüssel · Wird verwendet, wenn für diese Sitzung keine Schlüssel ausgewählt sind",
     "keyCount": "{count, plural, one {# Schlüssel} other {# Schlüssel}}",
     "providerKeysFor": "API-Schlüssel für {provider}",
@@ -163,7 +163,19 @@
     "opencodeGoConnect": "OpenCode Go verbinden",
     "opencodeGoReconnect": "OpenCode Go erneut verbinden",
     "opencodeGoDisconnect": "OpenCode Go trennen",
-    "opencodeGoFailed": "OpenCode Go konnte nicht verbunden werden"
+    "opencodeGoFailed": "OpenCode Go konnte nicht verbunden werden",
+    "claudeAccounts": "Claude-Konten",
+    "noClaudeAccounts": "Noch keine Claude-Konten",
+    "connectClaude": "Mit Claude anmelden",
+    "claudeOauthPrivateDescription": "Nutze deinen Claude-Pro- oder Max-Plan für Claude-Modelle in diesem Projekt. Neue Konten sind privat, bis du sie teilst.",
+    "claudeOauthCreationDescription": "Melde dich mit deinem Claude-Pro- oder Max-Konto an. Kortix speichert die Anmeldung verschlüsselt und zeigt sie nie an.",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Claude-Konto verbunden",
+    "claudeAccountReconnected": "Claude-Konto neu verbunden",
+    "claudeConnectFailed": "Die Claude-Anmeldung wurde nicht abgeschlossen. Versuche es erneut.",
+    "claudeReconnectDescription": "Melde dich erneut mit Claude an. Das Konto behält Namen, Zugriff und Sitzungsauswahl.",
+    "claudeAccountLabelPlaceholder": "z. B. Mein Claude-Konto",
+    "claudeDeleteAccountConfirmTitle": "Dieses Claude-Konto für alle löschen?"
   },
   "secrets": {
     "undecryptable": {

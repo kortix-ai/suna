@@ -1,6 +1,8 @@
 /**
- * A member's Claude subscription login (spec §15 SEC-CLAUDE-1): stored for
- * that member only, in every project of the account, and never returned.
+ * Claude accounts (spec §15 SEC-CLAUDE-1, SEC-CLAUDE-2): a member's Claude Pro
+ * or Max login is a named provider account of the project, like a ChatGPT
+ * account: private to its creator until shared, never returned, and used only
+ * by the LLM gateway for Claude Code's model calls.
  */
 import { flow } from '../core/flow';
 import { createDatabaseSession } from '../fixtures/database-project';
@@ -18,6 +20,9 @@ flow(
       'POST /v1/projects/:projectId/claude-subscription/login/start',
       'POST /v1/projects/:projectId/claude-subscription/login/complete',
       'DELETE /v1/projects/:projectId/claude-subscription',
+      'GET /v1/accounts/:accountId/secret-resources',
+      'PUT /v1/accounts/:accountId/secret-resources/:secretId/access',
+      'PUT /v1/accounts/:accountId/secret-resources/:secretId/value',
     ],
   },
   async (ctx) => {
@@ -31,10 +36,10 @@ flow(
     const path = '/v1/projects/:projectId/claude-subscription';
     const params = { projectId: project.id };
     const leaks = (text: string) => text.includes(TOKEN) || text.includes('sk-ant-oat01-');
+    let secretId = '';
 
-    await ctx.step('a member with no login reads connected: false', async () => {
-      (await owner.get(path, { params })).status(200).body()
-        .has('$.connected', false).has('$.source', null).has('$.connected_at', null).has('$.usable', false);
+    await ctx.step('a member with no Claude account reads connected: false, accounts: 0', async () => {
+      (await owner.get(path, { params })).status(200).body().has('$.connected', false).has('$.accounts', 0);
     });
 
     await ctx.step('a malformed token → 400 invalid_token, nothing stored', async () => {
@@ -43,30 +48,44 @@ flow(
       (await owner.get(path, { params })).status(200).body().has('$.connected', false);
     });
 
-    await ctx.step('the owner pastes a token → connected, source pasted, the value never in the answer', async () => {
+    await ctx.step('the owner pastes a token → a Claude account private to them, the value never in the answer', async () => {
       const stored = await owner.put(`${path}/token`, { token: TOKEN }, { params });
-      stored.status(200).body().has('$.connected', true).has('$.source', 'pasted').has('$.usable', true).exists('$.connected_at');
+      stored.status(200).body().has('$.connected', true).exists('$.secret_id');
       if (leaks(stored.text())) throw new Error('the token is in the PUT answer');
+      secretId = stored.json<{ secret_id: string }>().secret_id;
+      (await owner.get(path, { params })).status(200).body().has('$.connected', true).has('$.accounts', 1);
     });
 
-    await ctx.step('the same login reads connected in another project of the account', async () => {
-      const read = await owner.get(path, { params: { projectId: other.id } });
-      read.status(200).body().has('$.connected', true).has('$.source', 'pasted');
-      if (leaks(read.text())) throw new Error('the token is in the status answer');
-    });
-
-    await ctx.step('no secret listing carries the token', async () => {
+    await ctx.step('the account list shows it as a private Claude account, without the token', async () => {
+      const listed = await owner.get('/v1/accounts/:accountId/secret-resources', { params: { accountId: team.id }, query: { project_id: project.id } });
+      listed.status(200);
+      if (leaks(listed.text())) throw new Error('the token is in the account list');
+      const row = listed.json<{ secrets: any[] }>().secrets.find((entry) => entry.secret_id === secretId);
+      if (!row) throw new Error('the Claude account is not in the account list');
+      if (row.provider_id !== 'claude-agent' || row.label !== 'Claude' || row.access_mode !== 'members' || row.project_id !== project.id) {
+        throw new Error(`unexpected Claude account row: ${JSON.stringify({ ...row, granted_user_ids: undefined })}`);
+      }
       const secrets = await owner.get('/v1/projects/:projectId/secrets', { params });
       secrets.status(200);
       if (leaks(secrets.text())) throw new Error('the token is in the project secret list');
-      const resources = await owner.get('/v1/accounts/:accountId/secret-resources', { params: { accountId: team.id } });
-      resources.status(200);
-      if (leaks(resources.text())) throw new Error('the token is in the account secret resources');
     });
 
-    await ctx.step('another member sees only their own state and cannot remove the owner login', async () => {
-      (await asMember.get(path, { params })).status(200).body().has('$.connected', false);
-      (await asMember.del(path, { params })).status(200).body().has('$.connected', false);
+    await ctx.step('the account belongs to this project only, and another member cannot use it until it is shared', async () => {
+      (await owner.get(path, { params: { projectId: other.id } })).status(200).body().has('$.connected', false);
+      (await asMember.get(path, { params })).status(200).body().has('$.connected', false).has('$.accounts', 0);
+      (await owner.put('/v1/accounts/:accountId/secret-resources/:secretId/access', { mode: 'project', user_ids: [] }, { params: { accountId: team.id, secretId } }))
+        .status(200).body().has('$.access_mode', 'project');
+      (await asMember.get(path, { params })).status(200).body().has('$.connected', true).has('$.accounts', 1);
+    });
+
+    await ctx.step('a Claude login is reconnected, never rotated; only its creator reconnects it', async () => {
+      (await owner.put('/v1/accounts/:accountId/secret-resources/:secretId/value', { value: TOKEN }, { params: { accountId: team.id, secretId } })).status(400);
+      (await asMember.put(`${path}/token`, { token: TOKEN, resource_id: secretId }, { params })).status(403);
+      (await owner.put(`${path}/token`, { token: TOKEN, resource_id: secretId }, { params })).status(200).body().has('$.secret_id', secretId);
+    });
+
+    await ctx.step('another member\'s DELETE removes only their own accounts', async () => {
+      (await asMember.del(path, { params })).status(200).body().has('$.connected', true);
       (await owner.get(path, { params })).status(200).body().has('$.connected', true);
     });
 
@@ -82,7 +101,8 @@ flow(
     });
 
     await ctx.step('start runs claude setup-token → a claude.com sign-in link, or 503 where Claude Code is not installed', async () => {
-      const started = await owner.post(`${path}/login/start`, {}, { params });
+      (await owner.post(`${path}/login/start`, { resource_label: '' }, { params })).status(400);
+      const started = await owner.post(`${path}/login/start`, { resource_label: 'Work plan', sharing: { mode: 'private' } }, { params });
       if (started.statusCode === 503) {
         started.body().has('$.code', 'claude_unavailable');
         return;
@@ -94,9 +114,9 @@ flow(
       }
     });
 
-    await ctx.step('disconnect → connected: false here and in the other project', async () => {
+    await ctx.step('the owner deletes their Claude accounts → nobody is connected', async () => {
       (await owner.del(path, { params })).status(200).body().has('$.connected', false);
-      (await owner.get(path, { params: { projectId: other.id } })).status(200).body().has('$.connected', false);
+      (await asMember.get(path, { params })).status(200).body().has('$.connected', false);
     });
   },
 );
@@ -113,6 +133,7 @@ flow(
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
       'PUT /v1/projects/:projectId/claude-subscription/token',
       'DELETE /v1/projects/:projectId/claude-subscription',
+      'PUT /v1/projects/:projectId/model-access',
     ],
   },
   async (ctx) => {
@@ -136,8 +157,8 @@ flow(
       const body = picker.json<any>();
       const ids = (body.claudeSubscription.models as any[]).map((model) => model.id);
       if (ids.join(', ') !== VALID) throw new Error(`picker group ids: ${ids.join(', ')}`);
-      if ((body.claudeSubscription.models as any[]).some((model) => model.requires !== 'claude_subscription' || model.connected !== false)) {
-        throw new Error('a picker entry is not marked requires: claude_subscription, connected: false');
+      if ((body.claudeSubscription.models as any[]).some((model) => model.requires !== 'claude_subscription' || model.connected !== false || model.enabled !== true)) {
+        throw new Error('a picker entry is not marked requires: claude_subscription, connected: false, enabled: true');
       }
       if (Object.keys(body.models ?? {}).some((id) => id.startsWith('claude-agent/'))) throw new Error('a Claude subscription model is in the gateway list');
     });
@@ -173,6 +194,16 @@ flow(
         .has('$.code', 'claude_subscription_required')
         .has('$.message', 'Connect your Claude subscription to use Claude models.')
         .has('$.provider_id', 'claude-agent');
+    });
+
+    await ctx.step('a model turned off in the model settings reads enabled: false and a session cannot switch to it', async () => {
+      (await owner.put('/v1/projects/:projectId/model-access', { target: 'model', id: 'claude-agent/fable', enabled: false }, { params })).status(200);
+      const models = (await owner.get('/v1/projects/:projectId/model-picker', { params })).json<any>().claudeSubscription.models as any[];
+      const enabled = Object.fromEntries(models.map((model) => [model.id, model.enabled]));
+      if (enabled['claude-agent/fable'] !== false || enabled['claude-agent/opus'] !== true) throw new Error(`enabled after turning fable off: ${JSON.stringify(enabled)}`);
+      const switched = await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', { model: 'claude-agent/fable' }, { params: sessionParams });
+      if (switched.statusCode < 400) throw new Error(`a session switched to a turned-off model: ${switched.statusCode}`);
+      (await owner.put('/v1/projects/:projectId/model-access', { target: 'model', id: 'claude-agent/fable', enabled: true }, { params })).status(200);
     });
 
     await ctx.step('after the login the picker reads connected and the prompt passes the Claude gate', async () => {
