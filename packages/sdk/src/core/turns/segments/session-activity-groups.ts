@@ -181,6 +181,7 @@ export const STANDALONE_TOOLS: ReadonlySet<string> = new Set([
   'kortix_people',
   'kortix_access',
   'kortix_usage',
+  'kortix_change_requests',
   'send_message',
   'list_agents',
   'task_create',

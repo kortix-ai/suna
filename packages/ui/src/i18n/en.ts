@@ -1908,6 +1908,14 @@ const catalog = {
         "usage": {
           "read": "Checking usage…",
           "change": "Checking usage…"
+        },
+        "changeRequests": {
+          "read": "Checking change requests…",
+          "change": "Updating a change request…"
+        },
+        "memory": {
+          "read": "Checking memory…",
+          "change": "Updating memory…"
         }
       },
       "status": {
@@ -8568,7 +8576,8 @@ const catalog = {
         "title": "All",
         "explainCompany": "Kortix memory: what agents know about this project. They read it before every reply.",
         "explainChannel": "Kortix memory: what agents know about {place}. They read it before every reply.",
-        "explainDm": "Kortix memory: what agents know about you and {place}. They read it before every reply."
+        "explainDm": "Kortix memory: what agents know about you and {place}. They read it before every reply.",
+        "explainMyKortix": "What My Kortix remembers about you. It reads this at the start of every chat. Only you see it."
       },
       "allPages": "All pages",
       "noMatches": "No page matches “{query}”.",
@@ -8641,7 +8650,9 @@ const catalog = {
         "title": "No memory in {place} yet",
         "titleDm": "No memory with {place} yet",
         "description": "Agents save what they learn here, and read it before every reply.",
+        "descriptionMyKortix": "Tell My Kortix “remember that…” in a chat, and it keeps it here. It reads this at the start of every chat. Only you see it.",
         "titleCompany": "No Company memory yet",
+        "titleMyKortix": "My Kortix remembers nothing about you yet",
         "openCompany": "Open Company memory · {count, plural, one {# page} other {# pages}}"
       },
       "source": {
@@ -8665,9 +8676,12 @@ const catalog = {
       },
       "company": {
         "subtitle": "What every agent in this project knows.",
+        "subtitleMyKortix": "What My Kortix remembers about you. Only you see it.",
         "gateDescription": "Company memory comes with Channels: every agent in this project starts each thread with what the team saved here.",
         "title": "Memory",
-        "place": "Company"
+        "place": "Company",
+        "placeMyKortix": "My Kortix",
+        "layers": "Memory"
       },
       "rememberThis": {
         "label": "Remember this",
@@ -8687,6 +8701,10 @@ const catalog = {
       "companyLink": "Company memory · {count, plural, one {# page} other {# pages}}",
       "companyLinkHint": "The agent here also uses Company memory.",
       "group": {
+        "user": "About you",
+        "feedback": "How you like it",
+        "project": "Your work",
+        "reference": "Where things are",
         "other": "About",
         "people": "People",
         "decisions": "Decisions",
@@ -9365,28 +9383,29 @@ const catalog = {
       "label": "Agents",
       "agents": "{count, plural, one {# agent} other {# agents}}",
       "working": "{count} working",
-      "needsInput": "{count, plural, one {# needs you} other {# need you}}",
-      "workflows": "{count, plural, one {# workflow} other {# workflows}}{running, plural, =0 {} other { running}}",
+      "workflows": "{count, plural, one {# workflow} other {# workflows}}",
+      "workflowsRunning": "{count, plural, one {# workflow running} other {# workflows running}}",
+      "newest": "{name} {state}",
       "tasks": "Tasks",
-      "tasksHint": "Show the team's tasks (Ctrl+T)",
       "team": "Team",
       "workflowsGroup": "Workflows",
-      "idleFolded": "{count, plural, one {# idle agent} other {# idle agents}}",
-      "idleCollapse": "Fold idle agents",
       "state": {
-        "working": "Working",
-        "needs_input": "Needs you",
-        "idle": "Idle",
-        "completed": "Done",
-        "failed": "Didn't finish",
-        "stopped": "Stopped"
+        "working": "working",
+        "needs_input": "needs you",
+        "idle": "done",
+        "completed": "done",
+        "failed": "failed",
+        "stopped": "stopped"
       },
+      "workingFor": "working · {elapsed}",
+      "runsAs": "runs as {agent}",
+      "teamRole": "Role for this session only",
       "attention": {
         "question": "Has a question for you",
         "approval": "Waits for your approval"
       },
       "openAgent": "Open {name}",
-      "stopHint": "Stop this agent (x)",
+      "stopHint": "Stop this agent",
       "stopAgent": "Stop {name}",
       "stopAgentFailed": "Could not stop {name}",
       "stopFailed": "Could not stop the agent",
@@ -9401,6 +9420,21 @@ const catalog = {
       "runFallback": "Workflow",
       "openRun": "Open run",
       "runNoAgents": "No agents yet"
+    },
+    "subagent": {
+      "fallbackTitle": "Agent",
+      "openPage": "Open page",
+      "close": "Close",
+      "messagePlaceholder": "Message {name}…",
+      "messageLabel": "Message {name}",
+      "send": "Send",
+      "sent": "Message sent",
+      "sendFailed": "Could not send the message",
+      "loadFailed": "Could not load this agent’s messages",
+      "retry": "Try again",
+      "emptyTitle": "Nothing yet",
+      "emptyDescription": "Its messages show here as it works.",
+      "loadOlder": "Show earlier messages"
     },
     "tasks": {
       "label": "Team tasks",
@@ -9496,8 +9530,6 @@ const catalog = {
         "failed": "Failed",
         "stopped": "Stopped"
       },
-      "result": "Result",
-      "noResult": "No answer yet.",
       "replyPlaceholder": "Reply. It reaches the agent at its next step.",
       "replyLabel": "Reply to {title}",
       "sendReply": "Send reply",

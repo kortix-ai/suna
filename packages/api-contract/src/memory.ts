@@ -36,8 +36,17 @@ export const MEMORY_FILED_PAGE_TYPES = ['people', 'decisions', 'workstreams', 'p
 export const MemoryFiledPageTypeSchema = z.enum(MEMORY_FILED_PAGE_TYPES);
 export type MemoryFiledPageType = z.infer<typeof MemoryFiledPageTypeSchema>;
 
-/** Every page type: the 4 filed types, `note` (a `Notes.md`) and `other` (any other Markdown file). */
-export const MEMORY_PAGE_TYPES = [...MEMORY_FILED_PAGE_TYPES, 'note', 'other'] as const;
+/**
+ * The 4 types of a page My Kortix keeps about one person (`kortix_memory`), from front-matter `type:`:
+ * `user` (who they are), `feedback` (how they want the work done), `project` (what they work on),
+ * `reference` (where something is).
+ */
+export const MEMORY_PERSON_PAGE_TYPES = ['user', 'feedback', 'project', 'reference'] as const;
+export const MemoryPersonPageTypeSchema = z.enum(MEMORY_PERSON_PAGE_TYPES);
+export type MemoryPersonPageType = z.infer<typeof MemoryPersonPageTypeSchema>;
+
+/** Every page type: the 4 filed types, the 4 person types, `note` (a `Notes.md`) and `other` (any other Markdown file). */
+export const MEMORY_PAGE_TYPES = [...MEMORY_FILED_PAGE_TYPES, ...MEMORY_PERSON_PAGE_TYPES, 'note', 'other'] as const;
 export const MemoryPageTypeSchema = z.enum(MEMORY_PAGE_TYPES);
 export type MemoryPageType = z.infer<typeof MemoryPageTypeSchema>;
 
@@ -52,8 +61,14 @@ export type MemoryChangeOp = z.infer<typeof MemoryChangeOpSchema>;
 export const MemorySourceKindSchema = z.enum(['thread', 'person', 'outside', 'import']);
 export type MemorySourceKind = z.infer<typeof MemorySourceKindSchema>;
 
-/** A layer in a route path: `company`, or the space id of a channel or DM. */
-export const MemoryLayerKeySchema = z.union([z.literal('company'), z.string().uuid()]);
+/**
+ * The layer key of what My Kortix remembers about the caller: their own
+ * `/Users/<person>/Memory/mykortix` folder. Each person reads only their own.
+ */
+export const MY_KORTIX_MEMORY_LAYER_KEY = 'mykortix';
+
+/** A layer in a route path: `company`, `mykortix` (the caller's My Kortix memory), or the space id of a channel or DM. */
+export const MemoryLayerKeySchema = z.union([z.literal('company'), z.literal(MY_KORTIX_MEMORY_LAYER_KEY), z.string().uuid()]);
 export type MemoryLayerKey = z.infer<typeof MemoryLayerKeySchema>;
 
 /** Who last changed a page: front-matter `updated_by`, else `system`. */
@@ -97,7 +112,7 @@ export const MemoryLayerSchema = z
     scope: MemoryLayerScopeSchema,
     /** Null for the Company layer. */
     space_id: z.string().nullable(),
-    /** "Company", "#marketing", or the DM's agent name. */
+    /** "Company", "#marketing", the DM's agent name, or "My Kortix". */
     name: z.string(),
     /** Pages per type. */
     counts: z
@@ -106,6 +121,10 @@ export const MemoryLayerSchema = z
         decisions: z.number().int(),
         workstreams: z.number().int(),
         playbooks: z.number().int(),
+        user: z.number().int(),
+        feedback: z.number().int(),
+        project: z.number().int(),
+        reference: z.number().int(),
         note: z.number().int(),
         other: z.number().int(),
       })
@@ -279,3 +298,80 @@ export const MemoryUsageSchema = z
   })
   .strict();
 export type MemoryUsage = z.infer<typeof MemoryUsageSchema>;
+
+// ─── My Kortix memory (`kortix_memory`) ─────────────────────────────────────
+
+/**
+ * What My Kortix remembers about one person: one fact per page, in their own
+ * `/Users/<person>/Memory/mykortix` folder (the `mykortix` layer). Pages are
+ * addressed by `name` (front-matter `name`, else the file name without `.md`).
+ * Routes: `/v1/projects/:projectId/memory/me/agent/mykortix[/pages/:name]`,
+ * the caller's own folder only, for the person and for their My Kortix session.
+ */
+export const MY_KORTIX_MEMORY_LIMITS = {
+  name_chars: 64,
+  description_chars: 200,
+  /** One fact, not a document. */
+  body_bytes: 16_384,
+  /** The newest pages the index lists; a save past it answers 409 `memory_full`. */
+  pages: 200,
+  /** The index text a My Kortix turn starts with, at most. */
+  index_chars: 8_000,
+} as const;
+
+/** A page name: a short lower-case slug (`likes-short-replies`). */
+export const MY_KORTIX_MEMORY_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const MyKortixMemoryNameSchema = z.string().max(MY_KORTIX_MEMORY_LIMITS.name_chars).regex(MY_KORTIX_MEMORY_NAME_RE, 'name is a lower-case slug: letters, digits and single dashes');
+
+export const MyKortixMemoryEntrySchema = z
+  .object({
+    name: z.string(),
+    title: z.string(),
+    /** One line: what the page is about, read to decide whether it matters now. */
+    description: z.string(),
+    type: MemoryPageTypeSchema,
+    page_id: z.string(),
+    /** The file, a Drive path. */
+    path: z.string(),
+    updated_at: z.string(),
+  })
+  .strict();
+export type MyKortixMemoryEntry = z.infer<typeof MyKortixMemoryEntrySchema>;
+
+export const MyKortixMemoryIndexSchema = z
+  .object({
+    layer_id: z.literal(MY_KORTIX_MEMORY_LAYER_KEY),
+    /** `/Users/<person>/Memory/mykortix`. */
+    folder: z.string(),
+    /** Newest first, at most `MY_KORTIX_MEMORY_LIMITS.pages`. */
+    entries: z.array(MyKortixMemoryEntrySchema),
+    truncated: z.boolean(),
+    /** The index as a My Kortix turn reads it: one `- [Title](name.md) — description` line per page, capped. */
+    index: z.string(),
+  })
+  .strict();
+export type MyKortixMemoryIndex = z.infer<typeof MyKortixMemoryIndexSchema>;
+
+export const MyKortixMemoryPageSchema = MyKortixMemoryEntrySchema.extend({
+  /** The fact: the file's Markdown without front-matter and without its `# ` title line. */
+  body: z.string(),
+}).strict();
+export type MyKortixMemoryPage = z.infer<typeof MyKortixMemoryPageSchema>;
+
+/** `PUT …/pages/:name`: create the page, or replace the one with that name. The byte cap (413) and secrets (422) are the API's. */
+export const MyKortixMemorySaveInputSchema = z
+  .object({
+    /** Default: the name with spaces. */
+    title: TitleInput.optional(),
+    description: z.string().trim().min(1).max(MY_KORTIX_MEMORY_LIMITS.description_chars).regex(/^[^\r\n]*$/, 'description is one line'),
+    type: MemoryPersonPageTypeSchema,
+    body: z.string().trim().min(1),
+  })
+  .strict();
+export type MyKortixMemorySaveInput = z.infer<typeof MyKortixMemorySaveInputSchema>;
+
+export const MyKortixMemorySaveResultSchema = z.object({ created: z.boolean(), page: MyKortixMemoryPageSchema }).strict();
+export type MyKortixMemorySaveResult = z.infer<typeof MyKortixMemorySaveResultSchema>;
+
+export const MyKortixMemoryDeleteResultSchema = z.object({ ok: z.literal(true), name: z.string(), title: z.string() }).strict();
+export type MyKortixMemoryDeleteResult = z.infer<typeof MyKortixMemoryDeleteResultSchema>;

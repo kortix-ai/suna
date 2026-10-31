@@ -3115,6 +3115,14 @@
         "usage": {
           "read": "正在查看用量…",
           "change": "正在查看用量…"
+        },
+        "changeRequests": {
+          "read": "正在查看更改请求…",
+          "change": "正在更新更改请求…"
+        },
+        "memory": {
+          "read": "正在查看记忆…",
+          "change": "正在更新记忆…"
         }
       },
       "status": {
@@ -24286,7 +24294,8 @@
         "title": "全部",
         "explainCompany": "Kortix 记忆：智能体对此项目的了解。它们会在每次回复前阅读。",
         "explainChannel": "Kortix 记忆：智能体对 {place} 的了解。它们会在每次回复前阅读。",
-        "explainDm": "Kortix 记忆：智能体对你和 {place} 的了解。它们会在每次回复前阅读。"
+        "explainDm": "Kortix 记忆：智能体对你和 {place} 的了解。它们会在每次回复前阅读。",
+        "explainMyKortix": "My Kortix 记住的关于你的事。每次聊天开始时它都会读取。只有你能看到。"
       },
       "allPages": "所有页面",
       "noMatches": "没有与“{query}”匹配的页面。",
@@ -24359,7 +24368,9 @@
         "title": "{place} 中还没有记忆",
         "titleDm": "与 {place} 还没有记忆",
         "description": "智能体会把学到的内容保存在这里，并在每次回复前阅读。",
+        "descriptionMyKortix": "在聊天中告诉 My Kortix「记住……」，它会保存在这里。每次聊天开始时它都会读取。只有你能看到。",
         "titleCompany": "还没有公司记忆",
+        "titleMyKortix": "My Kortix 还没有记住关于你的任何事",
         "openCompany": "打开公司记忆 · {count, plural, other {# 个页面}}"
       },
       "source": {
@@ -24383,9 +24394,12 @@
       },
       "company": {
         "subtitle": "此项目中每个智能体都知道的内容。",
+        "subtitleMyKortix": "My Kortix 记住的关于你的事。只有你能看到。",
         "gateDescription": "公司记忆随频道功能提供：此项目中的每个智能体在每个线程开始时都会读取团队保存在这里的内容。",
         "title": "记忆",
-        "place": "公司"
+        "place": "公司",
+        "placeMyKortix": "My Kortix",
+        "layers": "记忆"
       },
       "rememberThis": {
         "label": "记住这个",
@@ -24405,6 +24419,10 @@
       "companyLink": "公司记忆 · {count, plural, other {# 个页面}}",
       "companyLinkHint": "这里的智能体也会使用公司记忆。",
       "group": {
+        "user": "关于你",
+        "feedback": "你喜欢的方式",
+        "project": "你的工作",
+        "reference": "东西在哪里",
         "other": "概况",
         "people": "人员",
         "decisions": "决策",
@@ -24923,28 +24941,29 @@
       "label": "智能体",
       "agents": "{count, plural, other {# 个智能体}}",
       "working": "{count} 个工作中",
-      "needsInput": "{count, plural, other {# 个需要你处理}}",
-      "workflows": "{count, plural, other {# 个工作流}}{running, plural, =0 {} other { 运行中}}",
+      "workflows": "{count, plural, other {# 个工作流}}",
+      "workflowsRunning": "{count, plural, other {# 个工作流运行中}}",
+      "newest": "{name} {state}",
       "tasks": "任务",
-      "tasksHint": "显示团队任务 (Ctrl+T)",
       "team": "团队",
       "workflowsGroup": "工作流",
-      "idleFolded": "{count, plural, other {# 个空闲智能体}}",
-      "idleCollapse": "收起空闲智能体",
       "state": {
         "working": "工作中",
         "needs_input": "需要你处理",
-        "idle": "空闲",
+        "idle": "已完成",
         "completed": "已完成",
-        "failed": "未完成",
+        "failed": "失败",
         "stopped": "已停止"
       },
+      "workingFor": "工作中 · {elapsed}",
+      "runsAs": "以 {agent} 运行",
+      "teamRole": "仅限本会话的角色",
       "attention": {
         "question": "有问题要问你",
         "approval": "等待你的批准"
       },
       "openAgent": "打开 {name}",
-      "stopHint": "停止此智能体 (x)",
+      "stopHint": "停止此智能体",
       "stopAgent": "停止 {name}",
       "stopAgentFailed": "无法停止 {name}",
       "stopFailed": "无法停止该智能体",
@@ -24959,6 +24978,21 @@
       "runFallback": "工作流",
       "openRun": "打开运行",
       "runNoAgents": "还没有智能体"
+    },
+    "subagent": {
+      "fallbackTitle": "智能体",
+      "openPage": "打开页面",
+      "close": "关闭",
+      "messagePlaceholder": "给 {name} 发消息…",
+      "messageLabel": "给 {name} 发消息",
+      "send": "发送",
+      "sent": "消息已发送",
+      "sendFailed": "无法发送消息",
+      "loadFailed": "无法加载此智能体的消息",
+      "retry": "重试",
+      "emptyTitle": "暂无内容",
+      "emptyDescription": "它工作时的消息会显示在这里。",
+      "loadOlder": "显示更早的消息"
     },
     "tasks": {
       "label": "团队任务",
@@ -25054,8 +25088,6 @@
         "failed": "失败",
         "stopped": "已停止"
       },
-      "result": "结果",
-      "noResult": "还没有回答。",
       "replyPlaceholder": "回复。智能体会在下一步收到。",
       "replyLabel": "回复 {title}",
       "sendReply": "发送回复",

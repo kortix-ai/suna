@@ -94,7 +94,7 @@ it (`skills/<name>/SKILL.md`), registered under `skills:` and added to the
 unregistered file reaches no agent.
 
 **Pass 4 — Memory (ΔM).** Follow the `kortix-memory` skill's rubric with
-the `memory` tool: fill gaps the trajectory exposed, update stale
+the file tools on `memory/`: fill gaps the trajectory exposed, update stale
 entries, demote or delete entries about areas the project has moved past.
 Keep `MEMORY.md` in sync.
 

@@ -444,7 +444,7 @@ export const HARNESS_TOOL_NAMES = [
  * MCP-era `kortix-connectors_call` / `kortix-connectors_describe` meta-tools
  * were re-added once (#9902) and removed again; a test pins them out.
  */
-export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show'] as const;
+export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'image_gen', 'scrape_webpage', 'show'] as const;
 /** Kortix tools a v2 `tools:` map loaded without naming them. Only the legacy converter reads this. */
 export const DEFAULT_ON_KORTIX_TOOLS = ['image_gen'] as const;
 /** True for a `DEFAULT_ON_KORTIX_TOOLS` name. */
@@ -453,10 +453,22 @@ export function isDefaultOnKortixTool(name: string): boolean {
 }
 /**
  * Kortix tools that no longer exist. Manifests written while #9902 was live
- * still name them (the v2 starter, v3 agent excludes). Naming one is
- * a warning, not an error: no session can load it, so the name has no effect.
+ * still name the connector meta-tools (the v2 starter, v3 agent excludes);
+ * `memory` was a Kortix tool until 2026-10-30. Naming one is a warning, not
+ * an error: no session can load it, so the name has no effect. A project that
+ * registers its own module under the name (`tools.memory`, the ejected copy)
+ * keeps it as a project tool, and its grants stay valid.
  */
-export const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe'];
+export const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe', 'memory'];
+
+/** What to do instead of a retired Kortix tool: the validator's warning names it. */
+export const RETIRED_KORTIX_TOOL_HINTS: Readonly<Record<string, string>> = {
+  'kortix-connectors_call': 'Agents reach connectors with the `kortix connectors` CLI.',
+  'kortix-connectors_describe': 'Agents reach connectors with the `kortix connectors` CLI.',
+  memory:
+    'Agents read and write `memory/` with the file tools (the kortix-memory skill), and My Kortix remembers each person with `kortix_memory`. To keep the old tool, register a copy under `tools.memory`.',
+};
+
 /** A v2 `tools:` value that kept a Kortix tool: `kortix:<name>`. The current format rejects it. */
 export const KORTIX_TOOL_PREFIX = 'kortix:';
 

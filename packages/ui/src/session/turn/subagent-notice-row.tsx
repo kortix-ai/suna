@@ -9,7 +9,7 @@ import { UnifiedMarkdown } from '../../markdown/unified-markdown';
 import { Button } from '../../primitives/button';
 import { Hint } from '../../primitives/hint';
 import { useSessionIds } from '../../providers/session-ids';
-import { SubSessionModal } from '../thread/sub-session-modal';
+import { SubagentDialog } from '../agents/subagent-view';
 import type { SubagentNotice } from './subagent-notice';
 
 /**
@@ -107,7 +107,7 @@ export function SubagentNoticeRow({ notice }: { notice: SubagentNotice }) {
           <UnifiedMarkdown content={notice.result} trust="agent" isStreaming={false} />
         </div>
       )}
-      <SubSessionModal open={viewing} onOpenChange={setViewing} sessionId={notice.sessionId} title={name} />
+      <SubagentDialog open={viewing} onOpenChange={setViewing} sessionId={notice.sessionId} title={name} />
     </div>
   );
 }

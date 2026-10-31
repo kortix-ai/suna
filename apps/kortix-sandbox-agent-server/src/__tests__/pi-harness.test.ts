@@ -690,7 +690,7 @@ describe('pi harness', () => {
     }
     expect(await r.user('/command').then((res) => res.json())).toEqual([])
     const tools = toolIds(r)
-    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'agent', 'task', 'workflow'])
+    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'show', 'question', 'codemode', 'agent', 'task', 'workflow'])
     expect((await r.user('/session/status').then((res) => res.json()))).toEqual({})
     expect((await r.user('/no/such/route')).status).toBe(404)
   })
@@ -707,8 +707,8 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
     // Step 2 of 2 is the last: the model may not call another tool.
     expect(gateway.sampling.slice(before)).toEqual([
-      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 17, toolNames: expect.arrayContaining(['bash', 'codemode']) },
-      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 17, toolNames: expect.arrayContaining(['bash', 'codemode']) },
+      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 16, toolNames: expect.arrayContaining(['bash', 'codemode']) },
+      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 16, toolNames: expect.arrayContaining(['bash', 'codemode']) },
     ])
   })
 
@@ -1593,14 +1593,14 @@ describe('project tools on pi', () => {
       env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ lookup_order: 'integrations/orders/lookup.ts' }) },
       prepare: (workspace) => write(workspace, 'integrations/orders/lookup.ts', LOOKUP),
     })
-    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'codemode', 'agent', 'task', 'workflow'])
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'show', 'lookup_order', 'question', 'codemode', 'agent', 'task', 'workflow'])
     await promptAndSettle(r, 'look up order 42')
     const part = toolParts(await page(r), 'lookup_order')[0]!
     expect(part.state.status).toBe('completed')
     expect(JSON.parse(part.state.output)).toEqual({ order: '42', status: 'shipped', agent: 'build', directory: r.workspace, session: 'sess-pi-test' })
   })
 
-  test('a project tool replaces the Kortix tool of its name; a module that does not load is left out', async () => {
+  test('a project tool loads under its name (an ejected `memory` copy too); a module that does not load is left out', async () => {
     const r = await boot({
       script: [{ tool: 'memory', args: { command: 'view', path: 'memory' } }, { text: 'done' }],
       env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ memory: 'tools/memory.ts', broken: 'tools/broken.ts', missing: 'tools/missing.ts' }) },
@@ -1617,17 +1617,19 @@ describe('project tools on pi', () => {
     expect(toolParts(await page(r), 'memory')[0]!.state.output).toBe('the project memory')
   })
 
-  test('a Kortix tool the project does not list is not offered, and a call to it is refused', async () => {
+  test('a Kortix tool the project does not list is not offered, and a call to it is refused; the retired `memory` loads nothing', async () => {
     const r = await boot({
       script: [{ tool: 'show', args: { action: 'show', type: 'text', content: 'hi' } }, { tool: 'memory', args: { command: 'view', path: 'memory' } }, { text: 'done' }],
       env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: {} }, kortix_tools: ['web_search', 'image_search', 'scrape_webpage', 'memory'] }) },
     })
-    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'question', 'codemode', 'agent', 'task', 'workflow'])
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'question', 'codemode', 'agent', 'task', 'workflow'])
     await promptAndSettle(r, 'show hi, then view memory')
     const show = toolParts(await page(r), 'show')[0]!
     expect(show.state.status).toBe('error')
     expect(String(show.state.error)).toBe('Tool show not found')
-    expect(toolParts(await page(r), 'memory')[0]!.state.status).toBe('completed')
+    const memory = toolParts(await page(r), 'memory')[0]!
+    expect(memory.state.status).toBe('error')
+    expect(String(memory.state.error)).toBe('Tool memory not found')
   })
 
   test("an agent's tool list allows only the tools it names; any other call is denied", async () => {
@@ -2163,6 +2165,47 @@ describe('pi subagents extension', () => {
       const part = toolParts(page, 'agent')[0]!
       expect(part.state.status).toBe('completed')
       expect(part.state.output).toContain('<task_started>')
+      expect(part.state.output).toContain('This continued your earlier subagent in its same session (bg-child-7): it keeps its context and its computer. No new session was started.')
+      expect(part.state.metadata).toMatchObject({ sessionId: 'bg-child-7', continued: true })
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('agent with the name of a finished child continues that child: no new session, and the result says so', async () => {
+    const creates: unknown[] = []
+    const prompts: Array<Record<string, any>> = []
+    const finished = { session_id: 'bg-child-9', parent_session_id: 'sess-pi-test', name: 'Upgrade the manifest', status: 'running', board_state: 'idle', metadata: { notify_parent: true, agent_handle: 'manifest-upgrader' }, working: { state: 'idle' } }
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const url = new URL(req.url)
+        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') return Response.json([finished])
+        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+          creates.push(await req.json())
+          return Response.json({ session_id: 'bg-child-10' }, { status: 201 })
+        }
+        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions/bg-child-9') return Response.json(finished)
+        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions/bg-child-9/prompts') {
+          prompts.push((await req.json()) as Record<string, any>)
+          return Response.json({ prompt_id: 'p1', state: 'queued' }, { status: 202 })
+        }
+        return new Response('not found', { status: 404 })
+      },
+    })
+    try {
+      const r = await boot({
+        script: [{ tool: 'agent', args: { description: 'Dead config cleanup', prompt: 'remove the dead config too', subagent_type: 'general', name: 'manifest-upgrader' } }, { text: 'asked the same colleague' }],
+        env: { KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1` },
+      })
+      await promptAndSettle(r, 'also clean up the dead config')
+      expect(creates).toEqual([])
+      expect(prompts.map((p) => p.parts)).toEqual([[{ type: 'text', text: 'remove the dead config too' }]])
+      const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      const part = toolParts(page, 'agent')[0]!
+      expect(part.state.status).toBe('completed')
+      expect(part.state.output).toContain('task_id: bg-child-9 (for resuming to continue this task if needed)\nsession: separate\nThis continued your earlier subagent "manifest-upgrader" in its same session (bg-child-9)')
+      expect(part.state.metadata).toMatchObject({ sessionId: 'bg-child-9', name: 'manifest-upgrader', continued: true, background: true })
     } finally {
       server.stop(true)
     }
@@ -2428,14 +2471,14 @@ describe('pi subagents extension', () => {
     const compiled = (tools?: Record<string, boolean>) => JSON.stringify({ agent: { build: { tools } } })
     const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ bash: false }) } })
     const ids = async () => toolIds(r)
-    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'agent', 'task', 'workflow'])
+    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'show', 'question', 'codemode', 'agent', 'task', 'workflow'])
     const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled()
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'agent', 'task', 'workflow'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'show', 'question', 'codemode', 'agent', 'task', 'workflow'])
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled({ grep: false })
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'agent', 'task', 'workflow'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'show', 'question', 'codemode', 'agent', 'task', 'workflow'])
   })
 
   test('several task calls in one message run their subagents concurrently', async () => {

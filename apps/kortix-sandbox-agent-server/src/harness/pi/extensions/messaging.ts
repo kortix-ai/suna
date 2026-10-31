@@ -49,6 +49,8 @@ export interface MessagingHost {
 const SEND_DESCRIPTION = [
   'Send a message to another Kortix session: a subagent you started, your parent, a teammate, or another session of this project the person runs.',
   '',
+  'Reuse first: to continue work that builds on an earlier hand-off, continue THAT agent: send_message to its name, or agent with its task_id. It keeps its context and its computer is already warm. Start a new agent only for independent or parallel work. A message to a subagent that finished wakes it in its same session; when it was started in the background (or is a teammate), its next report arrives here by itself.',
+  '',
   'When to use it:',
   '- You learned something another session needs mid-task: a finding, a decision, a change that breaks what it builds on. Summarize it for that session instead of making the person repeat it.',
   '- You need a status or an answer from a session that is working on something else.',
@@ -174,7 +176,7 @@ function sendCard(result: PeerMessageSendResult, to: string, watching: boolean):
   const name = result.to?.handle ?? result.message?.to_handle ?? to
   const what = result.message?.type === 'shutdown_request' ? 'Shutdown request' : result.message?.type === 'shutdown_response' ? 'Shutdown answer' : 'Message'
   const rows: KortixCardRow[] = result.to ? [agentRow(result.to)] : []
-  const subtitle = result.note || undefined
+  const subtitle = [result.note, result.status === 'delivered' && (result.message?.type ?? 'message') === 'message' ? continuesLine(result.to) : ''].filter(Boolean).join(' ') || undefined
   switch (result.status) {
     case 'delivered':
       return { title: `${what} sent to ${name}`, ...(subtitle ? { subtitle } : watching ? { subtitle: `You get one notice when ${name} finishes its turn.` } : {}), status: 'done', rows }
@@ -187,6 +189,13 @@ function sendCard(result: PeerMessageSendResult, to: string, watching: boolean):
     default:
       return { title: `${what} to ${name}: ${result.status}`, ...(subtitle ? { subtitle } : {}), status: 'done', rows }
   }
+}
+
+/** A message to a subagent or teammate of this session that finished its turn continues that same session. */
+function continuesLine(to: ReachableAgent | null): string {
+  if (!to || (to.relation !== 'child' && to.relation !== 'teammate')) return ''
+  if (to.state === 'working' || to.state === 'needs_input') return ''
+  return `It continues in its same session (${to.short_id}) with its context from before; no new session was started.`
 }
 
 // ── list_agents ───────────────────────────────────────────────────────────

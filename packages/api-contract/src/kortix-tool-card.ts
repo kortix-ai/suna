@@ -1,7 +1,7 @@
 /**
  * The output of a My Kortix platform tool (`kortix_agents`, `kortix_sessions`,
  * `kortix_schedules`, `kortix_connectors`, `kortix_people`,
- * `kortix_access`, `kortix_usage`): one JSON object, the tool's whole text
+ * `kortix_access`, `kortix_usage`, `kortix_change_requests`, `kortix_memory`): one JSON object, the tool's whole text
  * output. The model reads `data` and `error`; the web client renders `card`
  * (`packages/ui/src/session/tool/tools/kortix-action-tool.tsx` parses this
  * shape defensively, because it does not depend on this package).
@@ -18,6 +18,9 @@ export const KORTIX_PLATFORM_TOOL_NAMES = [
   'kortix_people',
   'kortix_access',
   'kortix_usage',
+  'kortix_change_requests',
+  // What My Kortix remembers about the person (apps/kortix-sandbox-agent-server/src/services/tools/platform/kortix_memory.ts).
+  'kortix_memory',
 ] as const;
 export type KortixPlatformToolName = (typeof KORTIX_PLATFORM_TOOL_NAMES)[number];
 

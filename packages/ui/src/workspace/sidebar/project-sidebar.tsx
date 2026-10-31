@@ -85,6 +85,8 @@ export function ProjectSidebar({
   const accountId = useBillingAccountId();
   // Channels replace New session and the session list (fail-closed: off until the project answers).
   const channels = useFeatureFlag(projectId, 'project_channels').enabled;
+  // Files on: the Memory row shows the viewer's My Kortix memory even with Channels off.
+  const files = useFeatureFlag(projectId, 'drives').enabled;
   const chrome = useFeatureFlag(projectId, 'chrome').enabled;
 
   // Open the project composer without creating a durable session.
@@ -310,8 +312,8 @@ export function ProjectSidebar({
               {/* Customize, Apps, Files: order and
                   visibility come from "Customize sidebar". They moved up here
                   from the footer (Jay, 2026-10-12) to keep the footer short. */}
-              {/* Channels on: the Company memory, the first row under the new-thread slot. */}
-              {channels ? <ProjectMemoryNavItem projectId={projectId} /> : null}
+              {/* Channels or Files on: Memory (Company, and what My Kortix remembers), the first row under the new-thread slot. */}
+              {channels || files ? <ProjectMemoryNavItem projectId={projectId} /> : null}
               <ProjectNavItems projectId={projectId} />
             </SidebarMenu>
           </SidebarGroup>

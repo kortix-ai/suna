@@ -14,7 +14,8 @@ export interface MemoryLayerRef {
 }
 
 /**
- * Where a memory page opens: the Company Memory page, or its channel's or DM's
+ * Where a memory page opens: the Memory page (Company, or My Kortix with
+ * `?layer=mykortix`), or its channel's or DM's
  * Memory tab, with `?page=` (`&history=1` opens its History too). A channel or
  * DM the reader is on keeps its other params, so an open thread stays beside
  * the tab. Null when the host serves no such page or the space is not loaded.
@@ -28,10 +29,11 @@ export function useMemoryPageHref(
   const spaces = useProjectSpaces(projectId, { enabled }).data;
   return useCallback((layer, pageId, options) => {
     if (!projectId) return null;
-    if (layer.scope === 'company') {
+    // Company memory and the viewer's My Kortix memory (`mykortix`) both open on the Memory page.
+    if (layer.scope === 'company' || layer.key === 'mykortix') {
       const memory = uiRoutes().memory(projectId);
       if (!memory) return null;
-      const params = new URLSearchParams({ page: pageId });
+      const params = new URLSearchParams({ ...(layer.key === 'mykortix' ? { layer: 'mykortix' } : {}), page: pageId });
       if (options?.history) params.set('history', '1');
       return `${memory}?${params.toString()}`;
     }

@@ -4,7 +4,7 @@ import { Badge } from '../../../primitives/badge';
 import { Hint } from '../../../primitives/hint';
 import { TextShimmer } from '../../../primitives/text-shimmer';
 import { errorToast } from '../../../primitives/toast';
-import { SubSessionModal } from '../../thread/sub-session-modal';
+import { SubagentDialog } from '../../agents/subagent-view';
 import { GenericTool } from '../generic-tool';
 import {
   BasicTool,
@@ -58,7 +58,7 @@ import {
  * with a "Large run" chip past 25 agents and a "Resumed" chip for a relaunch. The
  * body is the script's newest log lines, then the phases with their agents
  * (`workflow-progress.tsx`): a row opens that agent's session in place, as a task
- * row does (`SubSessionModal`), and a running row has a Stop button. A finished run
+ * row does (`SubagentDialog`), and a running row has a Stop button. A finished run
  * folds the script's result away under "Result".
  *
  * A run started with `background: true` returned at once: its progress lives in its
@@ -284,7 +284,7 @@ export function WorkflowTool(props: ToolProps) {
 
   const title = run.title || run.name || t('fallbackTitle');
   const modal = open && (
-    <SubSessionModal
+    <SubagentDialog
       open
       onOpenChange={(next) => {
         if (!next) setOpen(null);

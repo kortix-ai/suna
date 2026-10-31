@@ -55,7 +55,7 @@ describe('grouping exemptions', () => {
   });
 
   test('a hand-off, a workflow run and a My Kortix action card always stand on their own', () => {
-    for (const name of ['agent', 'task', 'workflow', 'kortix_agents', 'kortix_sessions', 'kortix_schedules', 'kortix_connectors', 'kortix_people', 'kortix_access', 'kortix_usage', 'send_message', 'list_agents', 'task_create', 'task_list', 'task_get', 'task_update', 'task_stop']) {
+    for (const name of ['agent', 'task', 'workflow', 'kortix_agents', 'kortix_sessions', 'kortix_schedules', 'kortix_connectors', 'kortix_people', 'kortix_access', 'kortix_usage', 'kortix_change_requests', 'send_message', 'list_agents', 'task_create', 'task_list', 'task_get', 'task_update', 'task_stop']) {
       expect({ name, standalone: isStandaloneActivityTool(name) }).toEqual({ name, standalone: true });
     }
     expect(isStandaloneActivityTool('n8n_workflow')).toBe(false);

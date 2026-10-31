@@ -79,6 +79,7 @@ kind('platform', [
   'kortix_people',
   'kortix_access',
   'kortix_usage',
+  'kortix_change_requests',
   // The multi-agent tools (`@kortix/api-contract/multi-agent`): the same one-JSON-result card.
   // pi's `task_create`, `task_list`, `task_get` and `task_update` keep the legacy `delegate` kind
   // below: an older transcript's plugin tools share those names, and the web card tells the two

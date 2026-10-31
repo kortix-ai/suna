@@ -3115,6 +3115,14 @@
         "usage": {
           "read": "Vérification de l’utilisation…",
           "change": "Vérification de l’utilisation…"
+        },
+        "changeRequests": {
+          "read": "Vérification des demandes de modification…",
+          "change": "Mise à jour d’une demande de modification…"
+        },
+        "memory": {
+          "read": "Consultation de la mémoire…",
+          "change": "Mise à jour de la mémoire…"
         }
       },
       "status": {
@@ -24286,7 +24294,8 @@
         "title": "Tout",
         "explainCompany": "Mémoire Kortix : ce que les agents savent de ce projet. Ils la lisent avant chaque réponse.",
         "explainChannel": "Mémoire Kortix : ce que les agents savent de {place}. Ils la lisent avant chaque réponse.",
-        "explainDm": "Mémoire Kortix : ce que les agents savent de vous et de {place}. Ils la lisent avant chaque réponse."
+        "explainDm": "Mémoire Kortix : ce que les agents savent de vous et de {place}. Ils la lisent avant chaque réponse.",
+        "explainMyKortix": "Ce que My Kortix retient de vous. Il le lit au début de chaque chat. Vous seul le voyez."
       },
       "allPages": "Toutes les pages",
       "noMatches": "Aucune page ne correspond à « {query} ».",
@@ -24359,7 +24368,9 @@
         "title": "Pas encore de mémoire dans {place}",
         "titleDm": "Pas encore de mémoire avec {place}",
         "description": "Les agents enregistrent ici ce qu’ils apprennent et le lisent avant chaque réponse.",
+        "descriptionMyKortix": "Dites à My Kortix « retiens que… » dans un chat, et il le garde ici. Il le lit au début de chaque chat. Vous seul le voyez.",
         "titleCompany": "Pas encore de mémoire d’entreprise",
+        "titleMyKortix": "My Kortix ne retient encore rien de vous",
         "openCompany": "Ouvrir la mémoire d’entreprise · {count, plural, one {# page} other {# pages}}"
       },
       "source": {
@@ -24383,9 +24394,12 @@
       },
       "company": {
         "subtitle": "Ce que sait chaque agent de ce projet.",
+        "subtitleMyKortix": "Ce que My Kortix retient de vous. Vous seul le voyez.",
         "gateDescription": "La mémoire de l’entreprise fait partie des canaux : chaque agent de ce projet commence chaque fil avec ce que l’équipe a enregistré ici.",
         "title": "Mémoire",
-        "place": "Entreprise"
+        "place": "Entreprise",
+        "placeMyKortix": "My Kortix",
+        "layers": "Mémoire"
       },
       "rememberThis": {
         "label": "Mémoriser",
@@ -24405,6 +24419,10 @@
       "companyLink": "Mémoire de l’entreprise · {count, plural, one {# page} other {# pages}}",
       "companyLinkHint": "L’agent d’ici utilise aussi la mémoire de l’entreprise.",
       "group": {
+        "user": "À propos de vous",
+        "feedback": "Comme vous aimez",
+        "project": "Votre travail",
+        "reference": "Où trouver les choses",
         "other": "À propos",
         "people": "Personnes",
         "decisions": "Décisions",
@@ -24923,28 +24941,29 @@
       "label": "Agents",
       "agents": "{count, plural, one {# agent} other {# agents}}",
       "working": "{count} en cours",
-      "needsInput": "{count, plural, one {# vous attend} other {# vous attendent}}",
-      "workflows": "{count, plural, one {# workflow} other {# workflows}}{running, plural, =0 {} other { en cours}}",
+      "workflows": "{count, plural, one {# workflow} other {# workflows}}",
+      "workflowsRunning": "{count, plural, one {# workflow en cours} other {# workflows en cours}}",
+      "newest": "{name} : {state}",
       "tasks": "Tâches",
-      "tasksHint": "Afficher les tâches de l’équipe (Ctrl+T)",
       "team": "Équipe",
       "workflowsGroup": "Workflows",
-      "idleFolded": "{count, plural, one {# agent inactif} other {# agents inactifs}}",
-      "idleCollapse": "Réduire les agents inactifs",
       "state": {
-        "working": "En cours",
-        "needs_input": "Vous attend",
-        "idle": "Inactif",
-        "completed": "Terminé",
-        "failed": "Non terminé",
-        "stopped": "Arrêté"
+        "working": "en cours",
+        "needs_input": "vous attend",
+        "idle": "terminé",
+        "completed": "terminé",
+        "failed": "échec",
+        "stopped": "arrêté"
       },
+      "workingFor": "en cours · {elapsed}",
+      "runsAs": "s’exécute en tant que {agent}",
+      "teamRole": "Rôle pour cette session uniquement",
       "attention": {
         "question": "A une question pour vous",
         "approval": "Attend votre approbation"
       },
       "openAgent": "Ouvrir {name}",
-      "stopHint": "Arrêter cet agent (x)",
+      "stopHint": "Arrêter cet agent",
       "stopAgent": "Arrêter {name}",
       "stopAgentFailed": "Impossible d’arrêter {name}",
       "stopFailed": "Impossible d’arrêter l’agent",
@@ -24959,6 +24978,21 @@
       "runFallback": "Workflow",
       "openRun": "Ouvrir l’exécution",
       "runNoAgents": "Aucun agent pour l’instant"
+    },
+    "subagent": {
+      "fallbackTitle": "Agent",
+      "openPage": "Ouvrir la page",
+      "close": "Fermer",
+      "messagePlaceholder": "Message à {name}…",
+      "messageLabel": "Message à {name}",
+      "send": "Envoyer",
+      "sent": "Message envoyé",
+      "sendFailed": "Impossible d’envoyer le message",
+      "loadFailed": "Impossible de charger les messages de cet agent",
+      "retry": "Réessayer",
+      "emptyTitle": "Rien pour l’instant",
+      "emptyDescription": "Ses messages s’affichent ici pendant qu’il travaille.",
+      "loadOlder": "Afficher les messages précédents"
     },
     "tasks": {
       "label": "Tâches de l’équipe",
@@ -25054,8 +25088,6 @@
         "failed": "Échouée",
         "stopped": "Arrêtée"
       },
-      "result": "Résultat",
-      "noResult": "Pas encore de réponse.",
       "replyPlaceholder": "Répondez. Votre réponse parvient à l’agent à sa prochaine étape.",
       "replyLabel": "Répondre à {title}",
       "sendReply": "Envoyer la réponse",

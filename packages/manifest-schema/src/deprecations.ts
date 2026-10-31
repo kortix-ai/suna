@@ -244,16 +244,22 @@ export const DEPRECATIONS: readonly Deprecation[] = [
   {
     id: 'tool-retired',
     since: '2026-10-19',
-    summary: 'a retired Kortix tool name does nothing: it is removed from the list.',
-    apply: (doc) =>
-      agentBlocks(doc).flatMap(([name, block]) => {
+    summary:
+      'a retired Kortix tool name does nothing: it is removed from the list, unless the project registers its own tool under that name. ' +
+      'For `memory`: agents edit `memory/` with the file tools, and My Kortix remembers each person with `kortix_memory`.',
+    apply: (doc) => {
+      // `tools.memory: tools/memory.ts` (an ejected copy) keeps `memory` a live project tool.
+      const registry = doc.get('tools', true);
+      const owned = (name: string) => isMap(registry) && registry.has(name);
+      return agentBlocks(doc).flatMap(([name, block]) => {
         const tools = block.get('tools', true);
         const list = isSeq(tools) ? tools : isMap(tools) && isSeq(tools.get('exclude', true)) ? (tools.get('exclude', true) as typeof tools) : null;
         if (!list || !isSeq(list)) return [];
         const before = list.items.length;
-        list.items = list.items.filter((item) => !(isScalar(item) && RETIRED_KORTIX_TOOLS.includes(String(item.value))));
+        list.items = list.items.filter((item) => !(isScalar(item) && RETIRED_KORTIX_TOOLS.includes(String(item.value)) && !owned(String(item.value))));
         return list.items.length < before ? [`agents.${name}.tools`] : [];
-      }),
+      });
+    },
   },
 ];
 

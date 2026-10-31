@@ -111,9 +111,9 @@ state. Use `git` and the file tools for files and commits.
 | Task | Command |
 | --- | --- |
 | What every session does, talk to one | `kortix sessions status`, `sessions log <id>` (read-only), `sessions chat <id> --prompt "…"` |
-| Hand a task to another agent | The `agent` tool (default `session: "separate"`: its own session). From a session a person started it runs in the background: the report arrives later as a message. Deeper, one call waits up to 30 min. Not `sessions new` + `wait-for` |
-| Tell another session something; a team's task list | `send_message` (`list_agents` lists who you can reach), `task_create`/`task_list`/`task_update` (flag `agent_teams`); from a shell `kortix sessions message <to> "…"`, `sessions reachable`, `sessions inbound <id> accept\|hold\|refuse`, `kortix tasks ls\|add\|claim\|done` |
-| Change requests, the review inbox | `kortix cr ls\|show\|diff\|merge-preview`, `kortix review ls` |
+| Hand a task to another agent | The `agent` tool (default `session: "separate"`: its own session). From a session a person started it runs in the background: the report arrives later as a message. Deeper, one call waits up to 30 min. A follow-up goes to the same agent: `send_message` to its name, or `agent` with its `task_id` or name; a new agent only for separate parallel work. Not `sessions new` + `wait-for` |
+| Tell another session something; a team's task list | `send_message` (`list_agents` lists who you can reach), `task_create`/`task_list`/`task_update` (flag `agent_teams`; a teammate starts with `agent({ name, team: true })`, its role is for its session only); from a shell `kortix sessions message <to> "…"`, `sessions reachable`, `sessions inbound <id> accept\|hold\|refuse`, `kortix tasks ls\|add\|claim\|done` |
+| Change requests, the review inbox | `kortix cr ls\|show\|diff\|merge-preview`, `kortix review ls`; My Kortix: the `kortix_change_requests` tool |
 | Triggers | `kortix triggers ls\|info\|fire\|add\|set\|enable\|disable` |
 | Loops on this session | `kortix loop "…" --in 24h`, `kortix loops ls\|pause\|resume\|rm` |
 | Secrets | `kortix secrets ls\|set\|request\|sync` |
@@ -194,8 +194,8 @@ Every session runs pi inside the Kortix daemon. Every model call goes through
 the Kortix LLM gateway. pi has:
 
 - `bash`, `read`, `write`, `edit` on `/workspace`; `glob`, `grep`, `question`.
-- The Kortix tools `web_search`, `image_search`, `image_gen`,
-  `scrape_webpage`, `memory`, `show`; the project's tools; `codemode`.
+- The Kortix tools `web_search`, `image_search`, `image_gen`, `scrape_webpage`,
+  `show` (`memory` is retired: use the file tools); project tools; `codemode`.
 - Subagents through `agent` (the agents your `subagents` grant names; `name` one to message it, `task_stop` stops it); `send_message`, `list_agents`.
 - Compaction near the context limit and on demand (`kortix sessions compact <id>`).
 - Slash commands from `commands:` and granted skills; pi extensions and packages from `extensions:`.

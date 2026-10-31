@@ -4,7 +4,7 @@ import { Badge } from '../../../primitives/badge';
 import { Button } from '../../../primitives/button';
 import { Hint } from '../../../primitives/hint';
 import { ToolResultCard } from '../shared/result-card';
-import { SubSessionModal } from '../../thread/sub-session-modal';
+import { SubagentDialog } from '../../agents/subagent-view';
 import { useTranslations } from '../../../i18n';
 import {
   ArrowSquareOutIcon,
@@ -223,7 +223,7 @@ function StoppedChildBody({ child }: { child: StoppedChild }) {
           </Button>
         </Hint>
       </div>
-      <SubSessionModal open={viewing} onOpenChange={setViewing} sessionId={child.sessionId} title={name} />
+      <SubagentDialog open={viewing} onOpenChange={setViewing} sessionId={child.sessionId} title={name} />
     </ToolResultCard>
   );
 }

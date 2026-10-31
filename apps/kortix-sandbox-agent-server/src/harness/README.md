@@ -730,7 +730,7 @@ and answers `400 { error }` for a malformed one.
 
 | Field | What the turn does with it |
 | --- | --- |
-| `system` | A string of 16,000 characters at most (`MAX_TURN_SYSTEM_CHARS`), trimmed; blank is none. Added to this turn's system prompt only: pi sets it through the hidden `kortix-turn` extension (`before_agent_start`). apps/api sends the thread's memory file list here (`project_channels`): titles and paths of the Drive Memory folders the thread mounts; the agent reads and writes those files with its file tools. A prompt without it runs without it; a daemon that predates the field ignores it. `/steer` drops it ("Steering"). |
+| `system` | A string of 16,000 characters at most (`MAX_TURN_SYSTEM_CHARS`), trimmed; blank is none. Added to this turn's system prompt only: pi sets it through the hidden `kortix-turn` extension (`before_agent_start`). apps/api sends the thread's memory file list here (`project_channels`): titles and paths of the Drive Memory folders the thread mounts; the agent reads and writes those files with its file tools. For a My Kortix session it sends the session owner's `kortix_memory` index instead, with Files on and `project_channels` on or off. A prompt without it runs without it; a daemon that predates the field ignores it. `/steer` drops it ("Steering"). |
 
 ## Steering
 
@@ -942,8 +942,9 @@ session create, `KORTIX_CONFIG_RELEASE`: read from the store, no API call) or
 
 A permission rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES` in
 `@kortix/api-contract/transcript`: `read`, `edit`, `bash`, `webfetch`, …), not
-one tool. pi maps its tools onto them: `write` is `edit`, `memory` is `edit`
-(`read` for the `view` command), and `web_search`/`image_search` and
+one tool. pi maps its tools onto them: `write` is `edit`, `memory` (a project's
+ejected copy of the retired Kortix tool) is `edit` (`read` for the `view`
+command), and `web_search`/`image_search` and
 `scrape_webpage` follow `websearch` and `webfetch` (`pi/interactions.ts`
 `toolCapability`); pi asks for them like any other tool. A rule under the
 tool's own name wins over its capability. The Kortix tools that write files
@@ -1362,7 +1363,7 @@ message during the turn is steered in at the next step as always.
 | `send_message`, `list_agents` | a box with a control plane (`session.messaging`) | `POST …/sessions/:self/peer-messages`, `GET …/sessions/:self/reachable?scope=&project_id=`. `held`, `refused`, `dropped` and an ambiguous `to` (`409`) are results with a card, never errors. |
 | `task_create`, `task_list`, `task_get`, `task_update` | flag `agent_teams`, a lead (depth 0) or a teammate (`kortix.team.lead` in `runtime_context`) (`session.team_tasks`) | the lead's list, `…/sessions/:lead/tasks`; `claim: true` is atomic in the API (`409 task_taken`/`task_blocked`). |
 | `task_stop` | a box with a control plane | stop one child of this session by `task_id` or name (`cloudStopChild`). |
-| `agent` | every session | `name` (metadata `agent_handle`, unique among live children), `fork` (`fork_from_session_id` = this session), `run_in_background` default true for a separate session at depth 0. In an `agent_teams` project a named, non-fork spawn at depth 0 is a teammate: metadata `team_lead`, always background, teammate instructions in `initial_context`. |
+| `agent` | every session | `name` (metadata `agent_handle`), `fork` (`fork_from_session_id` = this session), `run_in_background` default true for a separate session at depth 0. Reuse first: the `name` of a finished child of this session (idle, completed, stopped) is a follow-up to that child, as its `task_id` is, and the result says it continued the same session (`continued: true`); the name of a child that still works is refused. `team: true` (with a name, flag `agent_teams`, depth 0, no fork) starts a teammate: metadata `team_lead`, always background, teammate instructions in `initial_context`; without the flag or deeper it fails with the reason. A name without `team` is never a teammate. |
 | `workflow` | every session | background by default at depth 0; refused in a turn whose prompt is a peer message, a room message or a trigger (`pi/prompt-origin.ts`); `ultracode` in the person's prompt adds a per-turn line asking for a workflow; a plan above 25 agents says "Large workflow" in the approval. |
 
 Each result is a `KortixToolResult`-shaped document (`{ ok, tool, action, card,
@@ -1384,9 +1385,16 @@ agent_not_running`. Saved workflows of the checkout and the bundled
 `deep-research` (`pi/extensions/bundled-workflows.ts`) are `/name` commands.
 
 - **Names.** `agent({ name })` writes metadata `agent_handle` on the child;
-  with flag `agent_teams` on, a named child of a depth-0 session is a
-  teammate (metadata `team_lead` = this session). `to` resolves a handle, a
+  `agent({ name, team: true })` from a depth-0 session with flag
+  `agent_teams` on starts a teammate (metadata `team_lead` = this session).
+  A teammate's name and role are context for its own session only; nothing
+  in `kortix.yaml` changes and no team is saved. `to` resolves a handle, a
   session id or an 8+ character prefix, `parent`/`main`, or `@name`.
+- **Reuse.** The `agent` and `send_message` descriptions tell the model to
+  continue the agent that did the earlier work (`send_message` to its name,
+  or `agent` with its `task_id`) and to start a new one only for independent
+  or parallel work. A delivered message to a finished child or teammate says
+  in its card that it continues in the same session.
 - **Delivery.** A delivered message reaches a working receiver as a steer at
   its next step and starts a turn on an idle one. It carries no authority: it
   never answers a permission request or a question.
@@ -1409,8 +1417,9 @@ process.
 | Module | What |
 | --- | --- |
 | `services/tools/tool.ts` | The contract: a default export `{ description, parameters (JSON Schema), execute(args, context) }`, with `context` = `{ sessionId, agent, directory, env, signal }`. |
-| `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show` (an entry whose `path` is an image file of at most 32 MiB gains `sha256`, hashed streamed and concurrently within 2 s; a read error or the deadline leaves it out), `image_gen` (any image model the project can use). Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. `image_gen` takes 1–4 `prompts` and posts one request per prompt, all at once (`n: 1` each), to the LLM gateway (`KORTIX_LLM_BASE_URL` + `/images/{generations,edits}`, `KORTIX_TOKEN`); the platform picks the image model (`auto` or the one asked for) and resolves its credential. Each image is written under `<checkout>/output/images/<prompt slug>-<time>.{png,jpg,webp}` (the bytes decide the type; never overwriting). The output is `{ action, model, provider, images: [{ path, size, prompt, sha256 }], failed?: [{ prompt, error }] }` (`sha256`: hex digest of the saved bytes); when every prompt fails the call throws the first failure (`… [<code>]`). Code caps it at 10 images per turn and 50 per session, counted before the first await (a batch that would pass a cap is refused whole). The turn is `context.turnId` (pi: the turn's message id, `ToolContext.turnId` in `services/tools/tool.ts`), so direct, parallel, script, retried and subagent calls of one turn share the 10; a call that names no turn keys the turn cap on its abort signal; a reference image must be a real png/jpeg/webp inside the checkout. |
-| `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all six when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
+| `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `show` (an entry whose `path` is an image file of at most 32 MiB gains `sha256`, hashed streamed and concurrently within 2 s; a read error or the deadline leaves it out), `image_gen` (any image model the project can use). Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. `image_gen` takes 1–4 `prompts` and posts one request per prompt, all at once (`n: 1` each), to the LLM gateway (`KORTIX_LLM_BASE_URL` + `/images/{generations,edits}`, `KORTIX_TOKEN`); the platform picks the image model (`auto` or the one asked for) and resolves its credential. Each image is written under `<checkout>/output/images/<prompt slug>-<time>.{png,jpg,webp}` (the bytes decide the type; never overwriting). The output is `{ action, model, provider, images: [{ path, size, prompt, sha256 }], failed?: [{ prompt, error }] }` (`sha256`: hex digest of the saved bytes); when every prompt fails the call throws the first failure (`… [<code>]`). Code caps it at 10 images per turn and 50 per session, counted before the first await (a batch that would pass a cap is refused whole). The turn is `context.turnId` (pi: the turn's message id, `ToolContext.turnId` in `services/tools/tool.ts`), so direct, parallel, script, retried and subagent calls of one turn share the 10; a call that names no turn keys the turn cap on its abort signal; a reference image must be a real png/jpeg/webp inside the checkout. |
+| `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
+| `services/tools/platform/<name>.ts` | The My Kortix platform tools, loaded only when `kortix_tools` names them (the platform's My Kortix config does). `kortix_agents`, `kortix_sessions`, `kortix_schedules`, `kortix_connectors`, `kortix_people`, `kortix_access`, `kortix_usage` run the in-box `kortix` CLI (`platform.ts`). `kortix_memory` (`list`, `view`, `save`, `delete`) calls `/v1/projects/:id/memory/me/agent/mykortix[/pages/:name]` with `KORTIX_TOKEN`: one page per slug name in the session person's `/Users/<person>/Memory/mykortix`, refused in plain words when Files is off. `memory` was a Kortix tool until 2026-10-30; a project's ejected `tools/memory.ts` loads as a project tool. |
 
 pi loads them at `start()` and registers each as an `AgentTool`
 (`pi/tools.ts` `createWorkspaceTools`); subagents get them too. A release that

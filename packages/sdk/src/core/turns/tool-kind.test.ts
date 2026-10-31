@@ -24,6 +24,7 @@ describe('toolKind', () => {
     ['kortix_people', 'platform'],
     ['kortix_access', 'platform'],
     ['kortix_usage', 'platform'],
+    ['kortix_change_requests', 'platform'],
     // The multi-agent tools (`@kortix/api-contract/multi-agent`): the same `KortixToolResult` card.
     ['send_message', 'platform'],
     ['list_agents', 'platform'],

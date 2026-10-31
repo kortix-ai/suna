@@ -1153,29 +1153,30 @@ harnessFlow(
   async (ctx, harness) => {
     const session = await bootSession(ctx, harness);
     const { projectId, sessionId } = session;
-    const path = `memory/ke2e-run12-${Date.now()}.md`;
+    const path = `output/ke2e-run12-${Date.now()}.md`;
     const content = `ke2e-run12-${crypto.randomUUID()}`;
     const done = `RUN12_DONE_${Date.now()}`;
     // The daemon hosts both tools (services/tools) and runs the same module for
     // either harness: pi in process, OpenCode through the bridge plugin.
-    await ctx.step('the agent writes project memory with `memory` and presents it with `show`', async () => {
+    // `memory` was a Kortix tool until 2026-10-30; `show` is the Kortix tool here, after a harness `write`.
+    await ctx.step('the agent writes a file with `write` and presents it with the Kortix `show` tool', async () => {
       await sendPrompt(
         ctx,
         projectId,
         sessionId,
-        `Call the memory tool with command "create", path "${path}" and file_text "${content}". ` +
+        `Call the write tool with path "${path}" and content "${content}". ` +
           `Then call the show tool with action "show", type "file" and path "${path}". ` +
           `Use no other tool. Then reply with exactly: ${done}`,
       );
       const messages = await waitForAssistantText(ctx, projectId, sessionId, done);
       const tools = messages.flatMap((m) => m.tools ?? []);
-      for (const tool of ['memory', 'show']) {
+      for (const tool of ['write', 'show']) {
         if (!tools.some((t) => t.tool === tool && t.status === 'completed')) {
           throw new Error(`no completed ${tool} call on ${harness}: ${JSON.stringify(tools)}`);
         }
       }
     });
-    await ctx.step('the memory file exists in the workspace with the requested content', async () => {
+    await ctx.step('the file exists in the workspace with the requested content', async () => {
       const file = await ctx.client
         .as(ctx.P.OWNER)
         .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
@@ -1464,14 +1465,14 @@ harnessFlow(
           .matches('$.content', new RegExp(`^EJECTED ${query}$`));
       });
 
-      await ctx.step('show is excluded: no show call completes, and the box reports memory among its tools and no show', async () => {
+      await ctx.step('show is excluded: no show call completes, and the box reports image_search among its tools and no show', async () => {
         const { messages } = await readTranscript(ctx, session.projectId, session.sessionId);
         const shown = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'show' && t.status === 'completed');
         if (shown.length > 0) throw new Error(`a show call completed on ${harness}: ${JSON.stringify(shown)}`);
         const diag = await ctx.client.as(ctx.P.OWNER).get(runtimePath(session.sandboxId, '/kortix/diag?tail=1'));
         diag.status(200);
         const tools = diag.json<{ pi?: { tools?: string[] } }>().pi?.tools ?? [];
-        if (tools.includes('show') || !tools.includes('memory')) throw new Error(`the box's tools on ${harness} are ${JSON.stringify(tools)}`);
+        if (tools.includes('show') || !tools.includes('image_search')) throw new Error(`the box's tools on ${harness} are ${JSON.stringify(tools)}`);
       });
     } finally {
       cli.dispose();

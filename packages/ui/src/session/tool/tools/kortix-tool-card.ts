@@ -16,6 +16,8 @@ export const KORTIX_PLATFORM_TOOLS = [
   'kortix_people',
   'kortix_access',
   'kortix_usage',
+  'kortix_change_requests',
+  'kortix_memory',
 ] as const;
 export type KortixPlatformTool = (typeof KORTIX_PLATFORM_TOOLS)[number];
 
@@ -245,7 +247,7 @@ export function parseKortixToolResult(raw: string | undefined, callName?: string
 }
 
 /** The actions that only read; every other action changes something (the SDK narration uses the same set). */
-const READ_ACTIONS = new Set(['', 'list', 'get', 'read', 'find', 'show', 'search', 'check', 'status', 'pending', 'who']);
+const READ_ACTIONS = new Set(['', 'list', 'get', 'read', 'find', 'show', 'view', 'search', 'check', 'status', 'pending', 'who']);
 
 export function isReadAction(action: unknown): boolean {
   return READ_ACTIONS.has(typeof action === 'string' ? action : '');

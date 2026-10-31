@@ -3115,6 +3115,14 @@
         "usage": {
           "read": "Revisando el uso…",
           "change": "Revisando el uso…"
+        },
+        "changeRequests": {
+          "read": "Revisando las solicitudes de cambio…",
+          "change": "Actualizando una solicitud de cambio…"
+        },
+        "memory": {
+          "read": "Revisando la memoria…",
+          "change": "Actualizando la memoria…"
         }
       },
       "status": {
@@ -24286,7 +24294,8 @@
         "title": "Todo",
         "explainCompany": "Memoria de Kortix: lo que los agentes saben de este proyecto. La leen antes de cada respuesta.",
         "explainChannel": "Memoria de Kortix: lo que los agentes saben de {place}. La leen antes de cada respuesta.",
-        "explainDm": "Memoria de Kortix: lo que los agentes saben de ti y de {place}. La leen antes de cada respuesta."
+        "explainDm": "Memoria de Kortix: lo que los agentes saben de ti y de {place}. La leen antes de cada respuesta.",
+        "explainMyKortix": "Lo que My Kortix recuerda de ti. Lo lee al empezar cada chat. Solo tú lo ves."
       },
       "allPages": "Todas las páginas",
       "noMatches": "Ninguna página coincide con «{query}».",
@@ -24359,7 +24368,9 @@
         "title": "Aún no hay memoria en {place}",
         "titleDm": "Aún no hay memoria con {place}",
         "description": "Los agentes guardan aquí lo que aprenden y lo leen antes de cada respuesta.",
+        "descriptionMyKortix": "Dile a My Kortix «recuerda que…» en un chat y lo guardará aquí. Lo lee al empezar cada chat. Solo tú lo ves.",
         "titleCompany": "Aún no hay memoria de la empresa",
+        "titleMyKortix": "My Kortix aún no recuerda nada de ti",
         "openCompany": "Abrir memoria de la empresa · {count, plural, one {# página} other {# páginas}}"
       },
       "source": {
@@ -24383,9 +24394,12 @@
       },
       "company": {
         "subtitle": "Lo que sabe cada agente de este proyecto.",
+        "subtitleMyKortix": "Lo que My Kortix recuerda de ti. Solo tú lo ves.",
         "gateDescription": "La memoria de la empresa viene con Canales: cada agente de este proyecto empieza cada hilo con lo que el equipo guardó aquí.",
         "title": "Memoria",
-        "place": "Empresa"
+        "place": "Empresa",
+        "placeMyKortix": "My Kortix",
+        "layers": "Memoria"
       },
       "rememberThis": {
         "label": "Recordar esto",
@@ -24405,6 +24419,10 @@
       "companyLink": "Memoria de la empresa · {count, plural, one {# página} other {# páginas}}",
       "companyLinkHint": "El agente de aquí también usa la memoria de la empresa.",
       "group": {
+        "user": "Sobre ti",
+        "feedback": "Cómo te gusta",
+        "project": "Tu trabajo",
+        "reference": "Dónde están las cosas",
         "other": "Acerca de",
         "people": "Personas",
         "decisions": "Decisiones",
@@ -24923,28 +24941,29 @@
       "label": "Agentes",
       "agents": "{count, plural, one {# agente} other {# agentes}}",
       "working": "{count} trabajando",
-      "needsInput": "{count, plural, one {# te necesita} other {# te necesitan}}",
-      "workflows": "{count, plural, one {# flujo de trabajo} other {# flujos de trabajo}}{running, plural, =0 {} other { en curso}}",
+      "workflows": "{count, plural, one {# flujo de trabajo} other {# flujos de trabajo}}",
+      "workflowsRunning": "{count, plural, one {# flujo de trabajo en curso} other {# flujos de trabajo en curso}}",
+      "newest": "{name}: {state}",
       "tasks": "Tareas",
-      "tasksHint": "Mostrar las tareas del equipo (Ctrl+T)",
       "team": "Equipo",
       "workflowsGroup": "Flujos de trabajo",
-      "idleFolded": "{count, plural, one {# agente inactivo} other {# agentes inactivos}}",
-      "idleCollapse": "Contraer los agentes inactivos",
       "state": {
-        "working": "Trabajando",
-        "needs_input": "Te necesita",
-        "idle": "Inactivo",
-        "completed": "Hecho",
-        "failed": "No terminó",
-        "stopped": "Detenido"
+        "working": "trabajando",
+        "needs_input": "te necesita",
+        "idle": "hecho",
+        "completed": "hecho",
+        "failed": "falló",
+        "stopped": "detenido"
       },
+      "workingFor": "trabajando · {elapsed}",
+      "runsAs": "se ejecuta como {agent}",
+      "teamRole": "Rol solo para esta sesión",
       "attention": {
         "question": "Tiene una pregunta para ti",
         "approval": "Espera tu aprobación"
       },
       "openAgent": "Abrir {name}",
-      "stopHint": "Detener este agente (x)",
+      "stopHint": "Detener este agente",
       "stopAgent": "Detener {name}",
       "stopAgentFailed": "No se pudo detener {name}",
       "stopFailed": "No se pudo detener el agente",
@@ -24959,6 +24978,21 @@
       "runFallback": "Flujo de trabajo",
       "openRun": "Abrir ejecución",
       "runNoAgents": "Aún no hay agentes"
+    },
+    "subagent": {
+      "fallbackTitle": "Agente",
+      "openPage": "Abrir página",
+      "close": "Cerrar",
+      "messagePlaceholder": "Mensaje para {name}…",
+      "messageLabel": "Mensaje para {name}",
+      "send": "Enviar",
+      "sent": "Mensaje enviado",
+      "sendFailed": "No se pudo enviar el mensaje",
+      "loadFailed": "No se pudieron cargar los mensajes de este agente",
+      "retry": "Reintentar",
+      "emptyTitle": "Nada todavía",
+      "emptyDescription": "Sus mensajes aparecen aquí mientras trabaja.",
+      "loadOlder": "Mostrar mensajes anteriores"
     },
     "tasks": {
       "label": "Tareas del equipo",
@@ -25054,8 +25088,6 @@
         "failed": "Fallida",
         "stopped": "Detenida"
       },
-      "result": "Resultado",
-      "noResult": "Aún no hay respuesta.",
       "replyPlaceholder": "Responde. Le llega al agente en su siguiente paso.",
       "replyLabel": "Responder a {title}",
       "sendReply": "Enviar respuesta",

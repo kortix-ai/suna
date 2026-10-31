@@ -27,7 +27,7 @@ export function MemoryAll({
   onSelect,
   className,
 }: {
-  kind: 'company' | 'channel' | 'dm';
+  kind: 'company' | 'channel' | 'dm' | 'mykortix';
   /** "#marketing" or the DM's agent. */
   place: string;
   /** Sorted by `sortMemoryPages`. */
@@ -49,7 +49,7 @@ export function MemoryAll({
             <SunDimIcon aria-hidden className="size-3.5" />
           </span>
           <span className="min-w-0 text-pretty">
-            {t(kind === 'company' ? 'all.explainCompany' : kind === 'dm' ? 'all.explainDm' : 'all.explainChannel', { place })}
+            {t(kind === 'mykortix' ? 'all.explainMyKortix' : kind === 'company' ? 'all.explainCompany' : kind === 'dm' ? 'all.explainDm' : 'all.explainChannel', { place })}
           </span>
         </p>
         {groupMemoryPages(pages).map((group) => (

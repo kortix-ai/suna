@@ -3115,6 +3115,14 @@
         "usage": {
           "read": "使用量を確認中…",
           "change": "使用量を確認中…"
+        },
+        "changeRequests": {
+          "read": "変更リクエストを確認中…",
+          "change": "変更リクエストを更新中…"
+        },
+        "memory": {
+          "read": "メモリを確認しています…",
+          "change": "メモリを更新しています…"
         }
       },
       "status": {
@@ -24286,7 +24294,8 @@
         "title": "すべて",
         "explainCompany": "Kortix メモリ: エージェントがこのプロジェクトについて知っていること。毎回の返信の前に読みます。",
         "explainChannel": "Kortix メモリ: エージェントが {place} について知っていること。毎回の返信の前に読みます。",
-        "explainDm": "Kortix メモリ: エージェントがあなたと {place} について知っていること。毎回の返信の前に読みます。"
+        "explainDm": "Kortix メモリ: エージェントがあなたと {place} について知っていること。毎回の返信の前に読みます。",
+        "explainMyKortix": "My Kortix があなたについて覚えていること。毎回のチャットの始めに読みます。見られるのはあなただけです。"
       },
       "allPages": "すべてのページ",
       "noMatches": "「{query}」に一致するページはありません。",
@@ -24359,7 +24368,9 @@
         "title": "{place} のメモリはまだありません",
         "titleDm": "{place} とのメモリはまだありません",
         "description": "エージェントは学んだことをここに保存し、毎回の返信の前に読みます。",
+        "descriptionMyKortix": "チャットで My Kortix に「〜を覚えておいて」と伝えると、ここに保存されます。毎回のチャットの始めに読みます。見られるのはあなただけです。",
         "titleCompany": "会社のメモリはまだありません",
+        "titleMyKortix": "My Kortix はまだあなたについて何も覚えていません",
         "openCompany": "会社のメモリを開く · {count, plural, other {# ページ}}"
       },
       "source": {
@@ -24383,9 +24394,12 @@
       },
       "company": {
         "subtitle": "このプロジェクトのすべてのエージェントが知っていること。",
+        "subtitleMyKortix": "My Kortix があなたについて覚えていること。見られるのはあなただけです。",
         "gateDescription": "会社のメモリはチャンネルの機能です。このプロジェクトのすべてのエージェントは、チームがここに保存した内容を持ってスレッドを始めます。",
         "title": "メモリ",
-        "place": "会社"
+        "place": "会社",
+        "placeMyKortix": "My Kortix",
+        "layers": "メモリー"
       },
       "rememberThis": {
         "label": "これを覚える",
@@ -24405,6 +24419,10 @@
       "companyLink": "会社のメモリ · {count, plural, other {# ページ}}",
       "companyLinkHint": "ここのエージェントは会社のメモリも使います。",
       "group": {
+        "user": "あなたについて",
+        "feedback": "好みのやり方",
+        "project": "あなたの仕事",
+        "reference": "情報の場所",
         "other": "概要",
         "people": "メンバー",
         "decisions": "決定事項",
@@ -24923,28 +24941,29 @@
       "label": "エージェント",
       "agents": "{count, plural, other {# 個のエージェント}}",
       "working": "{count} 件作業中",
-      "needsInput": "{count, plural, other {# 件で対応が必要}}",
-      "workflows": "{count, plural, other {# 件のワークフロー}}{running, plural, =0 {} other { 実行中}}",
+      "workflows": "{count, plural, other {# 件のワークフロー}}",
+      "workflowsRunning": "{count, plural, other {# 件のワークフローが実行中}}",
+      "newest": "{name} {state}",
       "tasks": "タスク",
-      "tasksHint": "チームのタスクを表示 (Ctrl+T)",
       "team": "チーム",
       "workflowsGroup": "ワークフロー",
-      "idleFolded": "{count, plural, other {待機中のエージェント # 個}}",
-      "idleCollapse": "待機中のエージェントを折りたたむ",
       "state": {
         "working": "作業中",
         "needs_input": "対応が必要",
-        "idle": "待機中",
+        "idle": "完了",
         "completed": "完了",
-        "failed": "完了しませんでした",
+        "failed": "失敗",
         "stopped": "停止"
       },
+      "workingFor": "作業中 · {elapsed}",
+      "runsAs": "{agent} として実行",
+      "teamRole": "このセッション限りの役割",
       "attention": {
         "question": "質問があります",
         "approval": "承認を待っています"
       },
       "openAgent": "{name} を開く",
-      "stopHint": "このエージェントを停止 (x)",
+      "stopHint": "このエージェントを停止",
       "stopAgent": "{name} を停止",
       "stopAgentFailed": "{name} を停止できませんでした",
       "stopFailed": "エージェントを停止できませんでした",
@@ -24959,6 +24978,21 @@
       "runFallback": "ワークフロー",
       "openRun": "実行を開く",
       "runNoAgents": "エージェントはまだありません"
+    },
+    "subagent": {
+      "fallbackTitle": "エージェント",
+      "openPage": "ページを開く",
+      "close": "閉じる",
+      "messagePlaceholder": "{name} にメッセージ…",
+      "messageLabel": "{name} にメッセージ",
+      "send": "送信",
+      "sent": "メッセージを送信しました",
+      "sendFailed": "メッセージを送信できませんでした",
+      "loadFailed": "このエージェントのメッセージを読み込めませんでした",
+      "retry": "再試行",
+      "emptyTitle": "まだ何もありません",
+      "emptyDescription": "作業中のメッセージがここに表示されます。",
+      "loadOlder": "以前のメッセージを表示"
     },
     "tasks": {
       "label": "チームのタスク",
@@ -25054,8 +25088,6 @@
         "failed": "失敗",
         "stopped": "停止"
       },
-      "result": "結果",
-      "noResult": "まだ回答はありません。",
       "replyPlaceholder": "返信します。エージェントの次のステップで届きます。",
       "replyLabel": "{title} に返信",
       "sendReply": "返信を送信",
