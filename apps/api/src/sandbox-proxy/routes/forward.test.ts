@@ -54,7 +54,11 @@ mock.module('../../shared/preview-ownership', () => ({
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
 }));
+const realSandboxEnvSync = await import('../../projects/lib/sandbox-env-sync');
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the session-open graph imports `pushSessionAgentConfigToSandbox` from it.
+  ...realSandboxEnvSync,
   syncSandboxEnvForPrompt: async () => {},
 }));
 // The real grant re-mint fails a prompt CLOSED when it cannot read the session
@@ -81,6 +85,7 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
+const realSessionOpen = await import('../../projects/session-open');
 // The ledger identity the proxy begins the turn under.
 let begunTurns: Array<{ runtimeSessionId: string; messageId: string | null; source?: string }> = [];
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
@@ -96,6 +101,9 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   abandonSandboxTurn: async () => true,
 }));
 mock.module('../../projects/session-open', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the lifecycle graph imports `openSession` from it.
+  ...realSessionOpen,
   resumeStoppedSandboxByExternalId: async () => true,
   stoppedSandboxWakePending: async () => false,
 }));
@@ -143,6 +151,11 @@ mock.module('../../projects/surface', () => ({
     keepsIdsAsks.push({ externalId, userId });
     return boxKeepsMessageIds;
   },
+  // The pre-prompt Claude gate rides this module (#11335); no case in this
+  // suite prompts a Claude model, so both stay inert. A missing name is a
+  // module LINK error, not a null.
+  missingClaudeSubscription: async () => null,
+  sessionModelPin: async () => null,
 }));
 
 const { forwardToSandbox } = await import('./preview');
