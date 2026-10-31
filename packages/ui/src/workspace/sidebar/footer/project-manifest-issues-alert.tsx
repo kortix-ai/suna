@@ -21,7 +21,7 @@
 
 import { type ManifestIssue, type ProjectManifestHealth } from '@kortix/sdk';
 import { useProjectConfig } from '@kortix/sdk/react';
-import { MY_KORTIX_AGENT_NAME } from '@kortix/shared/my-kortix-agent';
+import { MY_KORTIX_AGENT_NAME } from '@kortix/shared';
 import { FileCodeIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
