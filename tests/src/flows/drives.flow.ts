@@ -49,6 +49,7 @@ flow(
       'GET /v1/drives/:driveId/access',
       'PUT /v1/drives/:driveId/access',
       'GET /v1/drives/:driveId/principals',
+      'GET /v1/drives/:driveId/mounts',
       'GET /v1/drives/:driveId/agents/:agentName/mounts',
       'POST /v1/drives/:driveId/restore',
       'DELETE /v1/drives/:driveId/access/:grantId',
@@ -180,6 +181,16 @@ flow(
         const r = (await owner.get('/v1/drives/:driveId/principals', { params: { driveId } })).status(200);
         if (!JSON.stringify(r.json()).includes(member.userId!)) throw new Error(`member missing from principals: ${r.text()}`);
         if (!JSON.stringify(r.json()).includes(outsider.userId!)) throw new Error(`owner cannot name an account member: ${r.text()}`);
+      });
+
+      await ctx.step('project mounts exclude personal folders; ANON cannot read them', async () => {
+        const plan = (await owner.get('/v1/drives/:driveId/mounts', { params: { driveId } }))
+          .status(200)
+          .json<{ mounts: { path: string; mountPath: string }[]; slots: number }>();
+        if (!(plan.slots > 0)) throw new Error(`slots ${plan.slots}`);
+        if (!plan.mounts.every((mount) => mount.mountPath.startsWith('/drives/'))) throw new Error('invalid project mount path');
+        if (plan.mounts.some((mount) => mount.path.startsWith('/Users'))) throw new Error('personal folder leaked into project mounts');
+        (await ctx.client.as(ctx.P.ANON).get('/v1/drives/:driveId/mounts', { params: { driveId } })).status(401);
       });
 
       await ctx.step("an agent's mounts are the session plan: the project's folders at /drives paths; ANON 401", async () => {

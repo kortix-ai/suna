@@ -6,6 +6,7 @@
  *
  * Maps to spec §13 (PROJ-2 for BYO create; PROJ-9..PROJ-17 minted here).
  */
+import { parse as parseYaml } from 'yaml';
 import { flow } from '../core/flow';
 import { withDb } from '../fixtures/chat';
 import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixtures/database-project';
@@ -487,6 +488,7 @@ flow(
     routes: [
       'GET /v1/projects/:projectId/agents/:agentName/config',
       'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'GET /v1/projects/:projectId/capabilities',
       'GET /v1/projects/:projectId/agents/:agentName/capabilities',
       'GET /v1/projects/:projectId/files/content',
     ],
@@ -500,7 +502,7 @@ flow(
       });
       file.status(200);
       const content = file.json<{ content: string }>().content;
-      return content.slice(content.indexOf('\n  worker:'));
+      return parseYaml(content).agents.worker;
     };
 
     await ctx.step(
@@ -529,8 +531,8 @@ flow(
         read.status(200).body().has('$.block.repository_access', access);
         if ('workspace' in read.json<any>().block) throw new Error('response exposes legacy workspace');
         const block = await workerBlock();
-        if (!block.includes(`workspace:\n      project_repository: ${access}`) || block.includes('repository_access')) {
-          throw new Error(`kortix.yaml must store workspace.project_repository: ${access}, got:\n${block}`);
+        if (block.workspace?.project_repository !== access || Object.hasOwn(block, 'repository_access')) {
+          throw new Error(`kortix.yaml must store workspace.project_repository: ${access}, got:\n${JSON.stringify(block)}`);
         }
       });
     }
@@ -622,6 +624,11 @@ flow(
     await ctx.step(
       'GET capabilities lists every tool, built-in skill and platform extension; an undeclared agent → 404; no grant → 403',
       async () => {
+        const projectPath = '/v1/projects/:projectId/capabilities';
+        const projectCatalog = (await ctx.client.as(ctx.P.OWNER).get(projectPath, { params: { projectId: project.id } })).status(200);
+        const projectTools = projectCatalog.json<{ tools: Array<{ id: string }> }>().tools;
+        if (!projectTools.some((tool) => tool.id === 'agent')) throw new Error('project catalog omits the agent tool');
+        if (Object.hasOwn(projectCatalog.json(), 'agent')) throw new Error('project catalog unexpectedly identifies one agent');
         const path = '/v1/projects/:projectId/agents/:agentName/capabilities';
         const r = await ctx.client.as(ctx.P.OWNER).get(path, { params: { projectId: project.id, agentName: 'worker' } });
         r.status(200).body().has('$.agent', 'worker');
@@ -640,6 +647,7 @@ flow(
         (await ctx.client.as(ctx.P.OWNER).get(path, { params: { projectId: project.id, agentName: 'ghost' } }))
           .status(404).body().has('$.code', 'agent_not_found');
         const bare = await team.addMember('member');
+        (await ctx.client.as(bare).get(projectPath, { params: { projectId: project.id } })).status(403);
         (await ctx.client.as(bare).get(path, { params: { projectId: project.id, agentName: 'worker' } })).status(403);
       },
     );
