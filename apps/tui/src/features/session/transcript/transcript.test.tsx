@@ -3,7 +3,14 @@ import { act } from 'react';
 
 import { testRender } from '@opentui/react/test-utils';
 
-import { fakeSession, message, seedSessionStore, shellOutput, textPart, toolPart } from './test-session.ts';
+import {
+  fakeSession,
+  message,
+  seedSessionStore,
+  shellOutput,
+  textPart,
+  toolPart,
+} from './test-session.ts';
 import { type SessionState, Transcript } from './transcript.tsx';
 
 // React 19 needs this before `act`. Without `act` a key press updates state but
@@ -58,8 +65,16 @@ describe('<Transcript/> turns', () => {
   test('a compaction is one message: its marker and its summary under one compaction header', async () => {
     const session = fakeSession({
       messages: [
-        message('m1', 'user', [{ id: 'pc', sessionID: 's1', messageID: 'm1', type: 'compaction', auto: false }]),
-        message('m2', 'assistant', [textPart('p2', 'SUMMARY of the work so far.')], { agent: 'compaction', mode: 'compaction', summary: true, parentID: 'm1', time: { created: Date.now() - 50_000, completed: Date.now() - 49_000 } }),
+        message('m1', 'user', [
+          { id: 'pc', sessionID: 's1', messageID: 'm1', type: 'compaction', auto: false },
+        ]),
+        message('m2', 'assistant', [textPart('p2', 'SUMMARY of the work so far.')], {
+          agent: 'compaction',
+          mode: 'compaction',
+          summary: true,
+          parentID: 'm1',
+          time: { created: Date.now() - 50_000, completed: Date.now() - 49_000 },
+        }),
       ],
     });
     const { captureCharFrame, flush, renderer } = await render(session);

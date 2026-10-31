@@ -24,16 +24,27 @@
 import type { KeyEvent } from '@opentui/core';
 
 import { ACCOUNT_KEYS } from './features/account/keys.ts';
+import { APPROVALS_KEYS } from './features/approvals/keys.ts';
 import { APPS_KEYS } from './features/apps/keys.ts';
+import { ARTIFACTS_KEYS } from './features/artifacts/keys.ts';
+import { AUDIT_KEYS } from './features/audit/keys.ts';
 import { CUSTOMIZE_KEYS } from './features/customize/keys.ts';
+import { DRIVE_KEYS } from './features/drive/keys.ts';
 import { FILES_KEYS } from './features/files/keys.ts';
+import { GOALS_KEYS } from './features/goals/keys.ts';
+import { INBOX_KEYS } from './features/inbox/keys.ts';
 import { LINKS_KEYS } from './features/links/keys.ts';
 import { LOGIN_KEYS } from './features/login/keys.ts';
+import { LOOPS_KEYS } from './features/loops/keys.ts';
+import { MEMORY_KEYS } from './features/memory/keys.ts';
 import { PORTS_KEYS } from './features/ports/keys.ts';
+import { REPO_KEYS } from './features/repo/keys.ts';
 import { REVIEW_KEYS } from './features/review/keys.ts';
+import { ROOMS_KEYS } from './features/rooms/keys.ts';
 import { COMPOSER_KEYMAP } from './features/session/composer/keys.ts';
 import { TRANSCRIPT_KEYS } from './features/session/transcript/keys.ts';
 import { SIDEBAR_KEYS } from './features/sidebar/keys.ts';
+import { SPACES_KEYS } from './features/spaces/keys.ts';
 import { TERMINAL_KEYMAP } from './features/terminal/keys.ts';
 
 /**
@@ -51,6 +62,17 @@ export type KeyScope =
   | 'composer'
   | 'terminal'
   | 'files'
+  | 'drive'
+  | 'repo'
+  | 'artifacts'
+  | 'inbox'
+  | 'approvals'
+  | 'goals'
+  | 'memory'
+  | 'spaces'
+  | 'rooms'
+  | 'loops'
+  | 'audit'
   | 'review'
   | 'apps'
   | 'customize'
@@ -68,6 +90,17 @@ export const SCOPE_ORDER: readonly KeyScope[] = [
   'composer',
   'terminal',
   'files',
+  'drive',
+  'repo',
+  'artifacts',
+  'inbox',
+  'approvals',
+  'goals',
+  'memory',
+  'spaces',
+  'rooms',
+  'loops',
+  'audit',
   'review',
   'apps',
   'customize',
@@ -85,6 +118,17 @@ export const SCOPE_TITLE: Record<KeyScope, string> = {
   composer: 'Composer',
   terminal: 'Terminal panel',
   files: 'Files',
+  drive: 'Drive',
+  repo: 'Repository',
+  artifacts: 'Artifacts',
+  inbox: 'Inbox',
+  approvals: 'Approvals',
+  goals: 'Goals',
+  memory: 'Company memory',
+  spaces: 'Channels and DMs',
+  rooms: 'Rooms',
+  loops: 'Loops',
+  audit: 'Session audit',
   review: 'Review',
   apps: 'Apps',
   customize: 'Customize',
@@ -144,7 +188,8 @@ export const KEYMAP: readonly Binding[] = [
     id: 'focus.next',
     scope: 'global',
     chords: [chord('tab')],
-    description: 'Focus the next region: sidebar → transcript → composer → terminal.',
+    description:
+      'Focus the next region: sidebar → transcript → composer → terminal. With the sidebar hidden, Tab stays in the input (or moves to an open terminal).',
   },
   {
     id: 'focus.prev',
@@ -156,25 +201,43 @@ export const KEYMAP: readonly Binding[] = [
     id: 'switcher',
     scope: 'global',
     chords: [chord('p', { ctrl: true })],
-    description: 'Open the session switcher.',
+    description: 'Pick a session above the input. Same as /sessions.',
   },
   {
     id: 'session.new',
     scope: 'global',
     chords: [chord('n', { ctrl: true })],
-    description: 'Create a session in this project and open it.',
+    description: 'Start a new session. Same as /new.',
   },
   {
     id: 'panel.terminal',
     scope: 'global',
-    chords: [chord('t', { alt: true })],
+    chords: [chord('t', { alt: true }), chord('t', { ctrl: true })],
     description: 'Toggle the terminal panel.',
   },
   {
     id: 'panel.sidebar',
     scope: 'global',
     chords: [chord('b', { alt: true })],
-    description: 'Hide or show the sidebar. Ctrl+P still switches sessions while it is hidden.',
+    description: 'Show or hide the sidebar. Same as /sidebar; the choice is remembered.',
+  },
+  {
+    id: 'panel.info',
+    scope: 'global',
+    chords: [chord('i', { alt: true })],
+    description: 'Show or hide the info panel. Same as /info.',
+  },
+  {
+    id: 'tabs.prev',
+    scope: 'global',
+    chords: [chord('[', { alt: true }), chord('pageup', { ctrl: true })],
+    description: 'Open the previous session tab.',
+  },
+  {
+    id: 'tabs.next',
+    scope: 'global',
+    chords: [chord(']', { alt: true }), chord('pagedown', { ctrl: true })],
+    description: 'Open the next session tab.',
   },
   {
     id: 'links',
@@ -279,6 +342,17 @@ function featureTables(): readonly (readonly Binding[])[] {
     COMPOSER_KEYMAP,
     TERMINAL_KEYMAP,
     FILES_KEYS,
+    DRIVE_KEYS,
+    REPO_KEYS,
+    ARTIFACTS_KEYS,
+    INBOX_KEYS,
+    APPROVALS_KEYS,
+    GOALS_KEYS,
+    MEMORY_KEYS,
+    SPACES_KEYS,
+    ROOMS_KEYS,
+    LOOPS_KEYS,
+    AUDIT_KEYS,
     REVIEW_KEYS,
     APPS_KEYS,
     CUSTOMIZE_KEYS,
@@ -353,7 +427,54 @@ export function altPressed(event: KeyEvent): boolean {
 }
 
 /** True when `event` is this chord. */
+/**
+ * What macOS Option+key types on a US layout, back to the key.
+ *
+ * Terminal.app, iTerm2 and Ghostty send Option as a character, not as Alt,
+ * unless the user turns on "Use Option as Meta" / `macos-option-as-alt`:
+ * Option+B arrives as `∫`, Option+T as `†`. Without this table every Alt
+ * chord was dead on a stock Mac (reported). Option+E, I, N, U and ` are dead
+ * keys there: they send nothing until the next key, so no app can see them —
+ * those chords have a slash command (`/effort`, `/info`, `/account`).
+ */
+export const MAC_OPTION_KEYS: Readonly<Record<string, string>> = {
+  å: 'a',
+  '∫': 'b',
+  ç: 'c',
+  '∂': 'd',
+  ƒ: 'f',
+  '©': 'g',
+  '˙': 'h',
+  '∆': 'j',
+  '˚': 'k',
+  '¬': 'l',
+  µ: 'm',
+  ø: 'o',
+  π: 'p',
+  œ: 'q',
+  '®': 'r',
+  ß: 's',
+  '†': 't',
+  '√': 'v',
+  '∑': 'w',
+  '≈': 'x',
+  '¥': 'y',
+  Ω: 'z',
+  '“': '[',
+  '‘': ']',
+};
+
+/** The key a macOS Option character stands for, or null. */
+export function macOptionKey(event: KeyEvent): string | null {
+  if (event.ctrl) return null;
+  const typed = event.sequence ?? event.name ?? '';
+  return MAC_OPTION_KEYS[typed] ?? null;
+}
+
 export function matchesChord(event: KeyEvent, target: Chord): boolean {
+  // A stock macOS terminal: Option+key arrives as a character, not as Alt.
+  if (target.alt && !target.ctrl && !target.shift && macOptionKey(event) === target.key)
+    return true;
   if (!event.name) return false;
   const pressed = normalizeKey(event.name, Boolean(event.shift));
   const wanted = normalizeKey(target.key, Boolean(target.shift));

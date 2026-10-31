@@ -41,6 +41,8 @@ export type SessionState = ReturnType<typeof useSession>;
 export interface TranscriptProps {
   session: SessionState;
   focused: boolean;
+  /** The input has focus: PgUp/PgDn still scroll the transcript. */
+  pageKeys?: boolean;
   width: number;
   height: number;
   onToast?(message: string, kind?: 'info' | 'error'): void;
@@ -66,6 +68,7 @@ const CLOCK_INTERVAL_MS = 1000;
 export function Transcript({
   session,
   focused,
+  pageKeys = false,
   width,
   height,
   onToast,
@@ -124,7 +127,20 @@ export function Transcript({
   useKeyboard((key) => {
     // An open prompt owns the keyboard: `j`/`k` must move its option cursor,
     // not scroll the transcript out from under the question.
-    if (!focused || promptOpen) return;
+    if (promptOpen) return;
+    // From the input (`pageKeys`), only PgUp/PgDn reach the transcript: every
+    // other key is a character being typed. Tab no longer enters the
+    // transcript while the sidebar is hidden, so this is how it scrolls.
+    if (!focused) {
+      if (!pageKeys) return;
+      if (
+        !matchesTranscriptBinding(key, 'transcript.older') &&
+        !matchesTranscriptBinding(key, 'transcript.pageDown')
+      ) {
+        return;
+      }
+      key.preventDefault();
+    }
 
     if (matchesTranscriptBinding(key, 'transcript.bottom')) {
       setSticky(true);

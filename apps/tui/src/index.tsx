@@ -24,7 +24,15 @@ const code = await runTui({
       ? { agentName: process.env.KORTIX_TUI_AGENT?.trim() || undefined }
       : null,
   openTerminal: process.env.KORTIX_TUI_TERMINAL === '1',
-  hideSidebar: process.env.KORTIX_TUI_SIDEBAR === '0',
+  // KORTIX_TUI_SIDEBAR=1|0 (`--sidebar` / `--no-sidebar`) wins; unset reads
+  // the saved choice inside `runTui`.
+  showSidebar:
+    process.env.KORTIX_TUI_SIDEBAR === '1'
+      ? true
+      : process.env.KORTIX_TUI_SIDEBAR === '0'
+        ? false
+        : undefined,
+  version: process.env.KORTIX_TUI_VERSION,
   mouse: process.env.KORTIX_TUI_MOUSE === '1',
 });
 

@@ -250,6 +250,9 @@ export function useSessionLogOlder(
  *    screen stays, and the page is read again after 2 s, 10 s and 30 s, or after the API's
  *    `Retry-After` (503 `session_log_converting`), at most 60 s.
  * Both are read again at the next turn end and after a stream reconnect, one request at a time.
+ * A session with no log is also read 6 s after each turn starts (pi journals mid-turn every
+ * 5 s): a new session's first prompt can run before this tab's runtime connection, which is
+ * live-only, so the user message frame was never seen.
  * Unmounting drops the log and cancels a pending retry.
  */
 export function useSessionLogSync(
@@ -293,6 +296,8 @@ export function useSessionLogSync(
     let busy = false;
     // The last turn end the session stream reported, kept across re-joins: a different one is a turn end.
     let lastEnded: string | null | undefined;
+    // The running turns a mid-turn read was scheduled for, kept across re-joins: one read per turn.
+    const midTurn = new Set<string>();
     // The page answered: the stream is on `schema=v2`.
     let onV2 = false;
     // Failed reads since the last answer, and the pending timed retry.
@@ -355,10 +360,20 @@ export function useSessionLogSync(
       join({
         onControl: (frame) => {
           if (frame.type !== 'kortix.control.turn') return;
-          const ended = (frame.payload as { last_ended?: { turn_token?: string } | null })?.last_ended?.turn_token ?? null;
+          const payload = frame.payload as { turns?: { turn_token?: string }[]; last_ended?: { turn_token?: string } | null } | null;
+          const ended = payload?.last_ended?.turn_token ?? null;
           const seen = lastEnded;
           lastEnded = ended;
-          if (seen !== undefined && ended !== seen) void attempt();
+          if (seen !== undefined && ended !== seen) return void attempt();
+          // A running turn (also one the state at join holds): its user message frame may have
+          // passed before this tab's runtime connection, which is live-only. pi journals while a
+          // turn runs, so the page holds that message after the next mid-turn post.
+          for (const turn of payload?.turns ?? []) {
+            const token = turn?.turn_token;
+            if (!token || midTurn.has(token)) continue;
+            midTurn.add(token);
+            if (!cancelRetry) cancelRetry = schedule(() => void attempt(), SESSION_LOG_MID_TURN_READ_MS);
+          }
         },
         onConnectionChange: onReconnect(() => void attempt()),
       });
@@ -391,6 +406,8 @@ export function useSessionLogSync(
 
 /** The waits before the timed re-reads of a page that failed: three tries in about 42 s. */
 const SESSION_LOG_RETRY_DELAYS_MS = [2_000, 10_000, 30_000];
+/** A running turn's read on a session with no log yet: after pi's mid-turn journal post (5 s). */
+const SESSION_LOG_MID_TURN_READ_MS = 6_000;
 /** The longest wait a `Retry-After` can set. */
 const SESSION_LOG_RETRY_MAX_MS = 60_000;
 
