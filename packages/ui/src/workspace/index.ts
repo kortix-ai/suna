@@ -79,6 +79,8 @@ export {
   useGoalClock,
   useGoalIssueText,
 } from '../internal/goals/goal-meta';
+
+export { SessionStatusMark } from './sidebar/session-status-mark';
 // Spaces: the per-viewer active space and the space filter the Goals and Artifacts pages share.
 export { useActiveSpace } from '../internal/stores/active-space-store';
 export { ALL_SPACES } from '../customize/shared/catalog/catalog-space-tabs';
