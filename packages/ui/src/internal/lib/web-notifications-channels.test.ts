@@ -7,6 +7,7 @@ import {
   isViewingSession,
   markSessionOnScreen,
   notificationChannels,
+  notifyPermissionRequest,
   notifyQuestion,
   type WebNotificationType,
 } from './web-notifications';
@@ -59,8 +60,8 @@ describe('notificationChannels: one policy decides toast, sound, favicon dot and
     expect(onScreen('completion', true)).toEqual({ toast: false, sound: false, attention: false, os: false });
   });
 
-  test('session on screen, focused, error: toast only', () => {
-    expect(onScreen('error', true)).toEqual({ toast: true, sound: false, attention: false, os: false });
+  test('session on screen, focused, error: nothing', () => {
+    expect(onScreen('error', true)).toEqual({ toast: false, sound: false, attention: false, os: false });
   });
 
   test('session on screen, not focused, question or permission: sound and OS, no toast', () => {
@@ -73,8 +74,8 @@ describe('notificationChannels: one policy decides toast, sound, favicon dot and
     expect(onScreen('completion', false)).toEqual({ toast: false, sound: true, attention: true, os: true });
   });
 
-  test('session on screen, not focused, error: toast, sound and OS', () => {
-    expect(onScreen('error', false)).toEqual({ toast: true, sound: true, attention: false, os: true });
+  test('session on screen, not focused, error: sound and OS, no toast', () => {
+    expect(onScreen('error', false)).toEqual({ toast: false, sound: true, attention: false, os: true });
   });
 
   test('another session of this project, any focus: every channel, favicon dot for a completion', () => {
@@ -116,9 +117,9 @@ describe('notificationChannels: one policy decides toast, sound, favicon dot and
     ).toEqual({ toast: false, sound: false, attention: false, os: true });
   });
 
-  test('a kind outside the session turn on the session on screen is silent only while focused', () => {
+  test('a kind outside the session turn on the session on screen never toasts', () => {
     expect(onScreen('shared', true)).toEqual({ toast: false, sound: false, attention: false, os: false });
-    expect(onScreen('shared', false)).toEqual({ toast: true, sound: true, attention: false, os: true });
+    expect(onScreen('shared', false)).toEqual({ toast: false, sound: true, attention: false, os: true });
   });
 });
 
@@ -208,11 +209,11 @@ describe('markSessionOnScreen: a mounted surface whose session id is not in the 
   });
 });
 
-describe('notifyQuestion: the body names the session without its creation time', () => {
+describe('notifyQuestion and notifyPermissionRequest', () => {
   const realWindow = globalThis.window;
   const realNotification = globalThis.Notification;
   const realPreferences = useWebNotificationStore.getState().preferences;
-  const t = { raw: (key: string) => key } as unknown as UiTranslator;
+  const t = Object.assign((key: string) => key, { raw: (key: string) => key }) as unknown as UiTranslator;
   const bodies: (string | undefined)[] = [];
 
   /** The OS channel is the one that exposes the body without a DOM. */
@@ -227,7 +228,7 @@ describe('notifyQuestion: the body names the session without its creation time',
   beforeEach(() => {
     bodies.length = 0;
     useWebNotificationStore.setState({
-      preferences: { ...realPreferences, enabled: true, onQuestion: true, playSound: false },
+      preferences: { ...realPreferences, enabled: true, onQuestion: true, onPermission: true, playSound: false },
     });
     globalThis.Notification = FakeNotification as unknown as typeof Notification;
     globalThis.window = {
@@ -245,5 +246,37 @@ describe('notifyQuestion: the body names the session without its creation time',
   test('a default title drops its ISO suffix', () => {
     notifyQuestion('session-label-1', 'Which branch?', 'New session - 2026-10-31T12:00:00.000Z', t);
     expect(bodies).toEqual(['"New session": Which branch?']);
+  });
+
+  // In this harness the window has focus, so another project raises nothing on
+  // the OS channel and this project raises it. The URL shows project p1.
+  test('a question of the project on screen reaches the channels', () => {
+    notifyQuestion('session-label-2', 'Which branch?', 'Named', t, 'p1');
+    expect(bodies).toHaveLength(1);
+  });
+
+  test('a question names its own project: the URL does not decide', () => {
+    notifyQuestion('session-label-3', 'Which branch?', 'Named', t, 'p2');
+    expect(bodies).toEqual([]);
+  });
+
+  test('a question without a project falls back to the URL', () => {
+    notifyQuestion('session-label-4', 'Which branch?', 'Named', t);
+    expect(bodies).toHaveLength(1);
+  });
+
+  test('a permission request of the project on screen reaches the channels', () => {
+    notifyPermissionRequest('session-label-5', 'bash', 'Named', t, 'p1');
+    expect(bodies).toHaveLength(1);
+  });
+
+  test('a permission request names its own project: the URL does not decide', () => {
+    notifyPermissionRequest('session-label-6', 'bash', 'Named', t, 'p2');
+    expect(bodies).toEqual([]);
+  });
+
+  test('a permission request without a project falls back to the URL', () => {
+    notifyPermissionRequest('session-label-7', 'bash', 'Named', t);
+    expect(bodies).toHaveLength(1);
   });
 });

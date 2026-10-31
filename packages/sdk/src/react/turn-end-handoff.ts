@@ -41,8 +41,10 @@ function announce(...[handoff, outcome, watchedSinceMs]: Parameters<TurnEndWatch
   }
 }
 
-/** The session's control stream as the watch's push source: each
- *  `kortix.control.turn` frame is the `/turn` answer, pushed. */
+/** The session's stream as the watch's push source: each
+ *  `kortix.control.turn` frame is the `/turn` answer, pushed. The watch joins
+ *  with no channel of its own. A connection that is not a full holder cannot
+ *  rely on these frames: `pushLive` answers false, and the poll reads the end. */
 function subscribeTurnFrames(
   projectId: string,
   sessionId: string,

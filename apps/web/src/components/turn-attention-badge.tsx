@@ -10,7 +10,12 @@ import {
   onTurnComplete,
   type TurnCompleteMsg,
 } from '@kortix/ui/internal/lib/turn-broadcast';
-import { isTabHidden, isViewingSession, notifyTaskCompleteFor } from '@kortix/ui/internal/lib/web-notifications';
+import {
+  dismissStaleNotificationToasts,
+  isTabHidden,
+  isViewingSession,
+  notifyTaskCompleteFor,
+} from '@kortix/ui/internal/lib/web-notifications';
 import { useTabStore } from '@kortix/ui/internal/stores/tab-store';
 import { useTurnAttentionStore } from '@kortix/ui/internal/stores/turn-attention-store';
 
@@ -167,8 +172,10 @@ export function TurnAttentionBadge() {
   useEffect(() => onTurnComplete(receiveTurnComplete), [receiveTurnComplete]);
 
   // Viewing a session clears it: active tab, route, or returning to the tab.
+  // A toast that no longer qualifies leaves with the page it was raised on.
   useEffect(() => {
     markViewedSeen();
+    dismissStaleNotificationToasts();
   }, [unseen, activeTabId, pathname]);
 
   useEffect(() => {

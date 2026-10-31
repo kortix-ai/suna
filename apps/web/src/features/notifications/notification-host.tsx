@@ -38,6 +38,7 @@
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
 import {
+  dismissStaleNotificationToasts,
   isOtherProject,
   isViewingSession,
   sendWebNotification,
@@ -96,6 +97,13 @@ function SignedInNotificationHost({ userId }: { userId: string }) {
   const notificationCenter = useNotificationHostGate(projectIdFromPathname(usePathname()));
   const enabled = useWebNotificationStore((s) => s.preferences.enabled);
   const permission = useWebNotificationStore((s) => s.permission);
+  const search = useSearchParams();
+
+  // `?thread=` opens a session with no pathname change. This part mounts with
+  // every project flag off, so the session on screen loses its toast there too.
+  useEffect(() => {
+    dismissStaleNotificationToasts();
+  }, [search]);
 
   useEffect(() => {
     if (!webPushSupported()) return;

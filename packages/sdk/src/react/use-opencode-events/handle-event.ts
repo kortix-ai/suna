@@ -47,6 +47,8 @@ export function createEventHandler(deps: {
    *  care about the Kortix-session-mirror refetch keep compiling; production
    *  always passes it (`use-opencode-events/index.ts`). */
   projectId?: string | null;
+  /** Required, so a new call site cannot silently fall back to the host's URL. */
+  notificationProjectId: string | null;
   /**
    * The Kortix session of the stream this handler serves (R5.3). Its `log.*`
    * frames go to that session's log (`applySessionLogEvent`); without it they

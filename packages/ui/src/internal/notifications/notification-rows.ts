@@ -54,10 +54,11 @@ export function newArrivals(
  * granted, and this renderer has no Web Push), every other row goes to the OS
  * path: `sendWebNotification` applies the channel policy to it.
  *
- * Otherwise each row toasts, except a row about the session on screen or about
- * a project other than the one on screen. `showInAppNotification` applies no
- * policy, so both filters live here. They run before the cap, so a row that
- * never toasts takes no slot from a row that does.
+ * Otherwise each row toasts, except a row of any kind about the session on
+ * screen, and a row about a project other than the one on screen.
+ * `showInAppNotification` applies no policy, so both filters live here. They
+ * run before the cap, so a row that never toasts takes no slot from a row that
+ * does.
  */
 export function planArrivals(
   fresh: readonly InboxNotification[],
