@@ -143,6 +143,20 @@ describe('cloudSpawnSession — create', () => {
     })
   })
 
+  test('a named agent with a model override: the child runs as that agent on that model, narrowed to the parent tools; its own prompt stays its own', async () => {
+    const { impl, calls } = fakeApi({ rows: [IDLE], transcript: report('done') })
+    const result = await cloudSpawnSession(
+      api(impl, { toolAllowlist: ['read', 'grep'] }),
+      { title: 'x', agent: 'reviewer', systemPrompt: 'the reviewer prompt', model: 'kortix/codex/gpt-5', tools: ['grep', 'bash'], prompt: 'go' },
+      fast,
+    )
+    expect(result.model).toEqual({ providerID: 'kortix', modelID: 'codex/gpt-5' })
+    const body = calls.find((c) => c.method === 'POST')!.body
+    expect(body).toMatchObject({ agent_name: 'reviewer', model: 'kortix/codex/gpt-5', runtime_context: { 'kortix.subagent.tools': 'grep' } })
+    // A named agent brings its own instructions: none ride along.
+    expect(body).not.toHaveProperty('initial_context')
+  })
+
   test('a turn that started and ended between two polls still settles (idle with a new `since`)', async () => {
     const { impl } = fakeApi({ rows: [IDLE], transcript: report('quick') })
     const result = await cloudSpawnSession(api(impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go' }, fast)

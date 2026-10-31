@@ -1171,7 +1171,7 @@ provider hooks to the same runner. `ctx.ui` has no UI bound (`hasUI` is false):
 tools and events work, TUI-only rendering does nothing.
 
 `kortix-subagents` is the `agent` tool (OpenCode called it `task`): input `{
-description, prompt, subagent_type?, agent?, task_id?, session?,
+description, prompt, model?, subagent_type?, agent?, task_id?, session?,
 run_in_background? }`, the child id
 in the part's `metadata.sessionId` (set while the child runs), output `task_id:
 <id>`, a `session: separate|same` line (with the reason when a separate call
@@ -1207,7 +1207,15 @@ or `all`; a kortix.yaml set (`schema: 3`) has only the declared agents. The call
 the list and refuses a call to it. Or an inline ephemeral agent `agent: {
 instructions, model?, tools?, description? }`, defined on the fly with no
 manifest entry, run under the agent name `inline`; it has no name to deny, so
-the session's own tool rules are its only gate. A `same` child gets no
+the session's own tool rules are its only gate. Its `tools` must all be tools
+this session has (`checkChildTools`): a name it lacks is refused, never cut
+quietly. The top-level `model` (a `provider/model` ref, `checkModelRef`)
+overrides the model of a named `subagent_type`, an inline agent and a fork; a
+follow-up (`task_id`) keeps its model, and a `model` there is refused. A
+workflow's `agent(prompt, { model, instructions, tools })` takes the same three:
+`instructions` makes it an inline agent (refused with a named `agent`), and
+`tools` narrows a named agent to the ones its type also allows; all three join
+the resume key (`agentKey`). A `same` child gets no
 `agent`/`task` (no nesting) and no `question`. On the root, several `agent`
 calls in one message run concurrently; a batch that includes any other tool
 stays sequential (see "Tool concurrency" below). A child runs its own calls one

@@ -83,9 +83,11 @@ export interface KortixHost {
   /**
    * The running turn failed its task, though its model answered: the turn ends
    * `error` with this, so the API reports it failed (a workflow runner whose
-   * workflow did not finish). No effect outside a turn.
+   * workflow did not finish). `null` clears it: a runner's turn starts failed
+   * (`WorkflowRuns.turnStarted`), and a workflow that ends done clears it. No
+   * effect outside a turn.
    */
-  failTurn(failure: { name: string; message: string }): void
+  failTurn(failure: { name: string; message: string } | null): void
   /** The workflow runs of this session (the control routes read the same instance). */
   workflowRuns(): WorkflowRuns
   /** `task_stop`: stop one child of this session, by id or name. */
@@ -111,6 +113,8 @@ export interface KortixHost {
   anyProjectAgent?(): boolean
   /** The agent this session runs as (its resolved name). */
   currentAgentName?(): string
+  /** Every tool this session's agent may use: a child's `tools` must name only these. */
+  toolNames(): string[]
   /** Run one prompt in a child (separate or same session, see `session`) and return its final answer. */
   spawnSession(input: SpawnSessionInput): Promise<SpawnSessionResult>
   /** The `workflow` tool's limits on this box (`extensions/workflow.ts`). */
@@ -221,6 +225,32 @@ export const SUBAGENT_PROMPT = [
   'Complete the task end to end with the tools you have. Your final message is returned to that agent, not shown to the user: make it a concise, complete report of what you did and found.',
 ].join('\n')
 
+/** A model ref: `provider/model`, the model id may hold more slashes (`kortix/codex/gpt-5`). */
+const MODEL_REF = /^[A-Za-z0-9][\w.-]*\/[\w.:@+/-]+$/
+
+/** `ref` when it is a `provider/model` ref; throws a plain-words error naming `where` otherwise. */
+export function checkModelRef(ref: string, where: string): string {
+  const trimmed = ref.trim()
+  if (trimmed.length > 200 || !MODEL_REF.test(trimmed)) {
+    throw new Error(`${where}: "${ref}" is not a model ref. Use provider/model, for example kortix/glm-5.3 or claude-agent/claude-opus-4-1.`)
+  }
+  return trimmed
+}
+
+/**
+ * `tools` when the calling session has every one of them; throws naming the
+ * ones it lacks. A child never gets a tool its caller lacks.
+ */
+export function checkChildTools(tools: unknown, own: string[], where: string): string[] {
+  if (!Array.isArray(tools) || tools.some((name) => typeof name !== 'string' || !name.trim())) throw new Error(`${where}: tools must be a list of tool names.`)
+  const names = [...new Set((tools as string[]).map((name) => name.trim()))]
+  const missing = names.filter((name) => !own.includes(name))
+  if (missing.length > 0) {
+    throw new Error(`${where}: this session has no tool ${missing.map((name) => `"${name}"`).join(', ')}, so a subagent cannot get it. Its tools: ${own.join(', ') || 'none'}.`)
+  }
+  return names
+}
+
 const BUILT_IN: Record<string, SubagentType> = {
   general: {
     description: 'General-purpose agent for researching complex questions and executing multi-step tasks. Use it to run independent units of work.',
@@ -281,6 +311,12 @@ const parameters = Type.Object({
     }),
   ),
   prompt: Type.String({ description: 'The task for the agent to perform' }),
+  model: Type.Optional(
+    Type.String({
+      description:
+        'A `provider/model` ref for this hand-off, such as kortix/glm-5.3: it overrides the model of the named subagent_type, the inline agent and a fork. The agent\'s own model (else this session\'s) when absent. A follow-up (task_id) keeps its model.',
+    }),
+  ),
   subagent_type: Type.Optional(Type.String({ description: 'The named agent to use for this task. Omitted: the general-purpose agent `general` (for the platform coordinator: the default agent of the project). Ignored when you pass an inline `agent` spec.' })),
   agent: Type.Optional(inlineAgent),
   task_id: Type.Optional(Type.String({ description: 'Set only to resume a previous task: the task_id a previous task output returned. The task resumes in the session it was created in.' })),
@@ -301,6 +337,7 @@ const parameters = Type.Object({
 type SubagentParams = {
   description: string
   prompt: string
+  model?: string
   subagent_type?: string
   agent?: InlineAgent
   task_id?: string
@@ -327,7 +364,8 @@ function describe(types: Map<string, SubagentType>, anyProjectAgent = false, top
       : ['Available agent types:', ...[...types].map(([name, type]) => `- ${name}: ${type.description}`)]),
     '',
     'Usage:',
-    '- Set subagent_type to one of the types above (omitted: general), OR pass an inline `agent` spec ({ instructions, model?, tools?, description? }) to define one on the fly.',
+    '- Set subagent_type to one of the types above (omitted: general), OR pass an inline `agent` spec ({ instructions, model?, tools?, description? }) to define one on the fly: its own system prompt, its own model, and a subset of your tools.',
+    '- model (provider/model) runs this hand-off on another model, for a named subagent_type too.',
     '- Write a complete prompt: the subagent sees nothing of this conversation.',
     '- Launch several subagents in one message when their work is independent.',
     '- The result is not shown to the user; summarize what matters in your own reply.',
@@ -541,8 +579,19 @@ function spawnShape(params: SubagentParams, host: KortixHost): Pick<SpawnSession
   return { ...(background ? { background: true } : {}), ...(name && !params.task_id ? { handle: name } : {}), ...(fork ? { fork: true } : {}) }
 }
 
-/** The spawn input for a call: an inline ephemeral agent, else the named subagent type. */
+/** The spawn input for a call, with the call's `model` over the agent's own. */
 function resolveSpawn(params: SubagentParams, host: KortixHost): Omit<SpawnSessionInput, 'prompt' | 'signal' | 'onSession' | 'sessionId' | 'session' | 'background'> {
+  const model = typeof params.model === 'string' && params.model.trim() ? checkModelRef(params.model, 'model') : undefined
+  if (model && params.task_id) throw new Error('model picks the model of a new subagent; a follow-up (task_id) keeps its own. Omit model, or omit task_id to start a new one.')
+  if (params.agent?.model) checkModelRef(params.agent.model, 'agent.model')
+  // A child never gets a tool this session lacks: an inline spec's list is checked, not quietly cut.
+  if (params.agent?.tools !== undefined) checkChildTools(params.agent.tools, host.toolNames(), 'agent.tools')
+  const spec = resolveSpec(params, host)
+  return model ? { ...spec, model } : spec
+}
+
+/** The spawn input for a call: an inline ephemeral agent, else the named subagent type. */
+function resolveSpec(params: SubagentParams, host: KortixHost): Omit<SpawnSessionInput, 'prompt' | 'signal' | 'onSession' | 'sessionId' | 'session' | 'background'> {
   // A fork continues this conversation as this session's own agent.
   if (params.fork === true && !params.subagent_type && !params.agent) {
     return { title: `${params.description} (fork)`, agent: INLINE_AGENT, systemPrompt: FORK_PROMPT }
@@ -564,7 +613,7 @@ function resolveSpawn(params: SubagentParams, host: KortixHost): Omit<SpawnSessi
     // separate child ignores the spec, and the runtime refuses an in-process one without it.
     if (params.task_id) return { title: params.description, agent: '', systemPrompt: '' }
     // No type named: the general-purpose agent, where this session may start it.
-    if (types.has('general')) return resolveSpawn({ ...params, subagent_type: 'general' }, host)
+    if (types.has('general')) return resolveSpec({ ...params, subagent_type: 'general' }, host)
     // The platform coordinator has no built-ins: its child names no agent, so the API runs the project's default agent.
     if (anyProjectAgent && params.session !== 'same') return { title: `${params.description} (default agent)`, agent: INLINE_AGENT, systemPrompt: SUBAGENT_PROMPT }
     throw new Error(anyProjectAgent ? "Set subagent_type to a project agent's name (kortix_agents list shows them), or pass an inline `agent` spec." : SUBAGENT_SPEC_REQUIRED)
