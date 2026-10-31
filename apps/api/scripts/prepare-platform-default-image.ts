@@ -23,7 +23,7 @@
  */
 import { config } from '../src/config';
 import { platinumUsRegion } from '../src/shared/platinum-region';
-import { buildPlatformDefaultImageForRelease, ensureMetaSandboxImage } from '../src/snapshots/builder';
+import { buildPlatformDefaultImageForRelease, ensureMyKortixSandboxImage } from '../src/snapshots/builder';
 import { preparePlatinumTemplateRegion } from '../src/snapshots/providers/platinum-templates';
 
 /** Longest observed EU→US copy of a Kortix image (2026-10-02) was 255 s. */
@@ -43,12 +43,12 @@ async function main(): Promise<void> {
   // through process.exit, and the other way round.
   const builds = await Promise.allSettled([
     buildPlatformDefaultImageForRelease('platinum'),
-    ensureMetaSandboxImage({ source: 'startup', provider: 'platinum' }),
+    ensureMyKortixSandboxImage({ source: 'startup', provider: 'platinum' }),
   ]);
   const ready: string[] = [];
   const failures: string[] = [];
   builds.forEach((build, index) => {
-    const label = index === 0 ? 'platform default' : 'meta';
+    const label = index === 0 ? 'platform default' : 'My Kortix';
     if (build.status === 'rejected') {
       failures.push(`${label}: ${build.reason instanceof Error ? build.reason.message : String(build.reason)}`);
       return;

@@ -23,7 +23,7 @@ agents:
     skills: all
 `;
 
-const RETIRED_MANIFEST = `kortix_version: 2
+const V2_MANIFEST = `kortix_version: 2
 default_agent: kortix
 agents:
   kortix:
@@ -122,14 +122,14 @@ describe('POST /v1/projects/:projectId/skills', () => {
     expect(await listedSkillPaths(entry)).toContain('skills/release-notes/SKILL.md');
   });
 
-  test('a retired-format kortix.yaml answers 409 manifest_invalid naming the issue, and changes nothing', async () => {
-    const entry = await seed(RETIRED_MANIFEST);
-    const before = execFileSync('git', ['--git-dir', entry.upstream.repoUrl, 'rev-parse', 'main'], { encoding: 'utf8' });
+  test('a kortix_version 2 kortix.yaml still works: the skill lands, and the same commit converts the file', async () => {
+    const entry = await seed(V2_MANIFEST);
     const res = await create(entry, 'Release notes');
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { code: string; issues?: Array<{ path: string }> };
-    expect(body.code).toBe('manifest_invalid');
-    expect(body.issues?.map((issue) => issue.path)).toContain('agents.kortix.file');
-    expect(execFileSync('git', ['--git-dir', entry.upstream.repoUrl, 'rev-parse', 'main'], { encoding: 'utf8' })).toBe(before);
+    expect(res.status).toBe(201);
+    const yaml = show(entry, 'kortix.yaml');
+    expect(yaml).toContain('release-notes: skills/release-notes');
+    expect(yaml).not.toContain('kortix_version');
+    expect(yaml).not.toContain('file: agents/kortix.md');
+    expect(await listedSkillPaths(entry)).toContain('skills/release-notes/SKILL.md');
   });
 });

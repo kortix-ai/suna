@@ -216,10 +216,11 @@ function resolveRule(config: PermissionRuleConfig | undefined, subject: string |
 /**
  * pi's tools whose name is not their capability: `write` and the Kortix tools
  * that write files (`KORTIX_EDIT_TOOLS`) are `edit`; the search and scrape
- * tools reach the web.
+ * tools reach the web; `workflow` starts subagents, as `task` does.
  */
 const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
   write: 'edit',
+  workflow: 'task',
   web_search: 'websearch',
   image_search: 'websearch',
   scrape_webpage: 'webfetch',
@@ -228,7 +229,7 @@ const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
 
 /**
  * The capability a permission rule names for this call (`RUNTIME_PERMISSION_CAPABILITIES`); any other tool is its own.
- * `memory`'s `view` command only reads, so it is `read`; its other commands are `edit`.
+ * `memory` (a project's ejected copy of the retired Kortix tool): `view` only reads, so it is `read`; its other commands are `edit`.
  */
 export function toolCapability(tool: string, args?: unknown): string {
   if (tool === 'memory') return (args as { command?: unknown } | null | undefined)?.command === 'view' ? 'read' : 'edit'

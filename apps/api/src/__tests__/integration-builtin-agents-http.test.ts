@@ -1,5 +1,5 @@
 /**
- * My Kortix, the built-in agent (slug `meta`), and its kortix.yaml switch
+ * My Kortix, the built-in agent (slug `mykortix`), and its kortix.yaml switch
  * `builtin_agents.my_kortix` (absent = on). The agent page and the CLI read
  * `GET /agents/meta/config`; it answered `404 No agent "meta" declared in
  * kortix.yaml` for an agent `/detail` lists. In-process app, real DB, real git.
@@ -83,17 +83,20 @@ describe('builtin_agents.my_kortix absent (on)', () => {
   test('GET /detail lists My Kortix first and makes it the default agent', async () => {
     const config = await detail(ON);
     expect(config.builtin_agents).toEqual({ my_kortix: true });
-    expect(config.default_agent).toBe('meta');
-    expect(config.agents.map((agent) => agent.name)).toEqual(['meta', 'kortix']);
+    expect(config.default_agent).toBe('mykortix');
+    expect(config.agents.map((agent) => agent.name)).toEqual(['mykortix', 'kortix']);
     expect(config.agents[0]).toMatchObject({ platform: true });
     expect(config.agents[0]?.description).toContain('The one agent you talk to');
   });
 
-  test('GET /agents/meta/config answers the read-only built-in view, not 404', async () => {
-    const res = await call(ON, '/agents/meta/config');
+  test('GET /agents/mykortix/config, and the old /agents/meta/config, answer the read-only built-in view, not 404', async () => {
+    const legacy = await call(ON, '/agents/meta/config');
+    expect(legacy.status).toBe(200);
+    expect(await legacy.json()).toMatchObject({ agent: 'mykortix', builtin: 'my_kortix', editable: false });
+    const res = await call(ON, '/agents/mykortix/config');
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
-      agent: 'meta',
+      agent: 'mykortix',
       builtin: 'my_kortix',
       editable: false,
       block: null,
@@ -103,13 +106,13 @@ describe('builtin_agents.my_kortix absent (on)', () => {
   });
 
   test('a write to the built-in agent is refused with builtin_agent_managed, and nothing commits', async () => {
-    const config = await call(ON, '/agents/meta/config', { method: 'PUT', body: JSON.stringify({ connectors: 'all' }) });
+    const config = await call(ON, '/agents/mykortix/config', { method: 'PUT', body: JSON.stringify({ connectors: 'all' }) });
     expect(config.status).toBe(409);
     expect(await config.json()).toMatchObject({ code: 'builtin_agent_managed' });
     const scope = await call(ON, '/agents/meta/scope', { method: 'PUT', body: JSON.stringify({ connectors: 'all' }) });
     expect(scope.status).toBe(409);
     expect(await scope.json()).toMatchObject({ code: 'builtin_agent_managed' });
-    expect((await detail(ON)).agents.map((agent) => agent.name)).toEqual(['meta', 'kortix']);
+    expect((await detail(ON)).agents.map((agent) => agent.name)).toEqual(['mykortix', 'kortix']);
   });
 
   test('an undeclared agent still answers 404 agent_not_found', async () => {

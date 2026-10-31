@@ -1330,6 +1330,10 @@
         "chrome": {
           "name": "Chrome 中的 Kortix",
           "description": "允许会话使用已连接的 Chrome 浏览器。你可以随时接管或停止。"
+        },
+        "agent_teams": {
+          "name": "智能体团队",
+          "description": "主导会话启动有名字的队友，共享一个任务列表。每个队友领取一个任务，在自己的会话中完成，完成后通知主导会话。你可以在主导会话的输入框下方看到每个队友及其任务。会话之间的消息无需此开关即可使用。"
         }
       },
       "channelsSwitch": {
@@ -3081,6 +3085,116 @@
       "scriptFailed": "脚本运行失败",
       "calls": "{count, plural, other {# 次工具调用}}",
       "noOutput": "无输出"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "正在查看智能体…",
+          "change": "正在更新智能体…"
+        },
+        "sessions": {
+          "read": "正在查看会话…",
+          "change": "正在更新会话…"
+        },
+        "schedules": {
+          "read": "正在查看计划…",
+          "change": "正在更新计划…"
+        },
+        "connectors": {
+          "read": "正在查看连接器…",
+          "change": "正在更新连接器…"
+        },
+        "people": {
+          "read": "正在查看成员…",
+          "change": "正在更新成员…"
+        },
+        "access": {
+          "read": "正在查看访问权限…",
+          "change": "正在更新访问权限…"
+        },
+        "usage": {
+          "read": "正在查看用量…",
+          "change": "正在查看用量…"
+        },
+        "changeRequests": {
+          "read": "正在查看更改请求…",
+          "change": "正在更新更改请求…"
+        },
+        "memory": {
+          "read": "正在查看记忆…",
+          "change": "正在更新记忆…"
+        }
+      },
+      "status": {
+        "done": "已完成",
+        "needsYou": "需要你处理",
+        "denied": "需要权限",
+        "error": "未完成",
+        "running": "运行中"
+      },
+      "deniedTitle": "需要权限",
+      "grantors": "可以授予权限的人",
+      "grantorsUnknown": "任何管理此项目的人都可以授予。",
+      "newSetting": "新增",
+      "removedSetting": "已移除",
+      "opensInNewTab": "在新标签页中打开",
+      "showDetails": "显示详情"
+    },
+    "workflow": {
+      "fallbackTitle": "工作流",
+      "starting": "正在启动工作流…",
+      "progress": "已完成 {done}/{total}",
+      "failedCount": "{failed}/{total} 失败",
+      "agents": "{count, plural, other {# 个智能体}}",
+      "background": "在后台运行",
+      "status": {
+        "starting": "启动中",
+        "running": "运行中",
+        "done": "已完成",
+        "failed": "失败",
+        "stopped": "已停止",
+        "pending": "未开始"
+      },
+      "openAgent": "打开 {label}",
+      "showDetails": "显示详情",
+      "failedSuffix": "{count} 个失败",
+      "resumed": "已恢复",
+      "resumedHint": "上次运行中已完成的智能体保留了各自的回答。",
+      "large": "大型运行",
+      "largeHint": "此次运行会启动超过 25 个智能体。你可以在每一行停止对应的智能体。",
+      "openRun": "打开运行",
+      "openRunLabel": "打开此次运行的会话",
+      "backgroundIdle": "在独立会话中",
+      "savedName": "已保存的工作流 {name}",
+      "upTo": "最多 {count, plural, other {# 个智能体}}",
+      "result": "结果",
+      "logLabel": "工作流日志",
+      "agentsLabel": "工作流智能体",
+      "filter": {
+        "label": "显示智能体",
+        "all": "全部",
+        "running": "运行中",
+        "failed": "失败",
+        "done": "已完成"
+      },
+      "filterEmpty": {
+        "running": "没有正在运行的智能体。",
+        "failed": "没有失败的智能体。",
+        "done": "还没有完成的智能体。"
+      },
+      "showAll": "显示全部 {count} 个",
+      "retry": "重试 {count}",
+      "cached": "来自上次运行",
+      "stopAgent": "停止 {label}",
+      "stopHint": "停止此智能体",
+      "stopFailed": "无法停止 {label}",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, other {JSON · # 个键}}",
+      "jsonItems": "{count, plural, other {JSON · # 项}}"
+    },
+    "agent": {
+      "backgroundWorking": "正在后台工作",
+      "backgroundSession": "在独立会话中"
     }
   },
   "agentRunLimit": {
@@ -7791,8 +7905,7 @@
       "legendTool": "工具结果",
       "legendOther": "其他",
       "subAgentsLabel": "子代理",
-      "subAgentsNote": "此会话启动了辅助会话。以下总计包含它们。",
-      "combinedCost": "合计费用",
+      "subAgentsNote": "在此会话中运行的辅助代理。它们的费用计入此会话的费用。",
       "combinedMessages": "合计消息",
       "tokensIn": "输入令牌",
       "tokensOut": "输出令牌",
@@ -7816,7 +7929,20 @@
       "rawFilterUser": "你",
       "rawFilterAssistant": "助手",
       "rawNoMatches": "没有匹配的消息",
-      "detailsLabel": "详情"
+      "detailsLabel": "详情",
+      "costSplit": "此会话 {own} · {count} 个已启动会话 {spawned}",
+      "costEstimated": "根据对话记录估算",
+      "detailModelRequests": "模型请求",
+      "spawnedLabel": "已启动的会话",
+      "spawnedNote": "此会话启动的会话,以及这些会话启动的会话。它们的费用已计入总费用。",
+      "spawnedCount": "此会话和 {count} 个已启动会话",
+      "spawnedRequests": "请求",
+      "spawnedCost": "费用",
+      "spawnedThisSession": "此会话",
+      "spawnedTotal": "合计",
+      "spawnedHidden": "未包含 {count} 个你无法打开的已启动会话。",
+      "spawnedTruncated": "仅包含前 500 个已启动会话,最多 10 层。",
+      "spawnedUntitled": "未命名会话"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "统一视图",
@@ -24737,5 +24863,230 @@
     "tools": "Tools",
     "extensions": "Extensions",
     "drives": "Drives"
+  },
+  "multiAgent": {
+    "peer": {
+      "message": "来自 {from} 的消息",
+      "idleNotice": "{from} 已完成",
+      "shutdownRequest": "来自 {from} 的关闭请求",
+      "shutdownResponse": "{from} 的关闭请求答复",
+      "expand": "显示完整消息",
+      "collapse": "收起消息"
+    },
+    "notice": {
+      "completed": "{name} 已完成",
+      "failed": "{name} 未完成",
+      "stopped": "{name} 已停止",
+      "fallbackName": "你的智能体",
+      "openSession": "打开会话",
+      "expand": "显示完整结果",
+      "collapse": "收起结果",
+      "batchTitle": "{count, plural, other {# 个智能体已完成}}",
+      "ownsTasks": "仍负责 {tasks}"
+    },
+    "tools": {
+      "running": {
+        "sending": "正在发送消息…",
+        "checkingAgents": "正在查看其他智能体…",
+        "checkingTasks": "正在查看团队任务…",
+        "updatingTasks": "正在更新团队任务…",
+        "stopping": "正在停止智能体…"
+      },
+      "to": "收件人",
+      "peerStatus": {
+        "delivered": "已送达",
+        "held": "等待批准",
+        "refused": "未发送",
+        "denied": "已拒绝",
+        "expired": "已过期",
+        "dropped": "未再次发送"
+      },
+      "relation": {
+        "parent": "上级",
+        "child": "助手",
+        "lead": "负责人",
+        "teammate": "队友",
+        "session": "会话"
+      },
+      "cannotReceive": "无法接收消息",
+      "state": {
+        "working": "工作中",
+        "needsInput": "等待你的回复",
+        "idle": "空闲",
+        "completed": "已完成",
+        "failed": "未完成",
+        "stopped": "已停止"
+      },
+      "taskStatus": {
+        "pending": "待处理",
+        "inProgress": "进行中",
+        "completed": "已完成"
+      },
+      "blockedBy": "被 {tasks} 阻塞",
+      "stopped": "已停止",
+      "alreadyEnded": "已结束",
+      "openSession": "打开会话"
+    },
+    "strip": {
+      "label": "智能体",
+      "agents": "{count, plural, other {# 个智能体}}",
+      "working": "{count} 个工作中",
+      "workflows": "{count, plural, other {# 个工作流}}",
+      "workflowsRunning": "{count, plural, other {# 个工作流运行中}}",
+      "newest": "{name} {state}",
+      "tasks": "任务",
+      "team": "团队",
+      "workflowsGroup": "工作流",
+      "state": {
+        "working": "工作中",
+        "needs_input": "需要你处理",
+        "idle": "已完成",
+        "completed": "已完成",
+        "failed": "失败",
+        "stopped": "已停止"
+      },
+      "workingFor": "工作中 · {elapsed}",
+      "runsAs": "以 {agent} 运行",
+      "teamRole": "仅限本会话的角色",
+      "attention": {
+        "question": "有问题要问你",
+        "approval": "等待你的批准"
+      },
+      "openAgent": "打开 {name}",
+      "stopHint": "停止此智能体",
+      "stopAgent": "停止 {name}",
+      "stopAgentFailed": "无法停止 {name}",
+      "stopFailed": "无法停止该智能体",
+      "runProgress": "已完成 {done}/{total}",
+      "runBackground": "在后台运行",
+      "runRunning": "运行中",
+      "runStatus": {
+        "done": "已完成",
+        "failed": "未完成",
+        "stopped": "已停止"
+      },
+      "runFallback": "工作流",
+      "openRun": "打开运行",
+      "runNoAgents": "还没有智能体"
+    },
+    "subagent": {
+      "fallbackTitle": "智能体",
+      "openPage": "打开页面",
+      "close": "关闭",
+      "messagePlaceholder": "给 {name} 发消息…",
+      "messageLabel": "给 {name} 发消息",
+      "send": "发送",
+      "sent": "消息已发送",
+      "sendFailed": "无法发送消息",
+      "loadFailed": "无法加载此智能体的消息",
+      "retry": "重试",
+      "emptyTitle": "暂无内容",
+      "emptyDescription": "它工作时的消息会显示在这里。",
+      "loadOlder": "显示更早的消息"
+    },
+    "tasks": {
+      "label": "团队任务",
+      "empty": "团队计划的任务会显示在这里。",
+      "group": {
+        "pending": "待处理",
+        "in_progress": "进行中",
+        "completed": "已完成"
+      },
+      "blockedBy": "被 {tasks} 阻塞",
+      "unowned": "未分配"
+    },
+    "held": {
+      "label": "等你处理的消息",
+      "title": "来自 {from} 的消息",
+      "titleShutdown": "{from} 请求停止此会话",
+      "waiting": "等待你的批准。5 分钟后过期。",
+      "deny": "拒绝",
+      "approve": "批准",
+      "approveFailed": "无法送达消息",
+      "denyFailed": "无法拒绝消息"
+    },
+    "workflow": {
+      "large": "大型工作流",
+      "largeHint": "此次运行会启动超过 25 个智能体。你可以在这里停止整个运行，或停止任意智能体。",
+      "paused": "已暂停",
+      "pause": "暂停运行",
+      "resume": "恢复运行",
+      "pauseHint": "暂停：不再启动新的智能体，正在运行的智能体会完成 (p)",
+      "resumeHint": "恢复运行 (p)",
+      "stop": "停止运行",
+      "stopHint": "停止所有智能体并结束运行 (x)",
+      "save": "保存",
+      "saveHint": "将此次运行的脚本保存为可再次运行的工作流 (s)",
+      "savePrompt": "请将工作流运行“{title}”（运行 {runId}）保存为已保存的工作流：把它的脚本写入 {file}，并为此发起一个变更请求。",
+      "saveSent": "已请求保存工作流",
+      "saveFailed": "无法请求保存工作流",
+      "restartHint": "用相同的提示词重启此智能体 (r)",
+      "restartAgent": "重启 {label}",
+      "failed": {
+        "pause": "无法暂停运行",
+        "resume": "无法恢复运行",
+        "stop": "无法停止运行",
+        "restart": "无法重启 {label}"
+      }
+    },
+    "board": {
+      "layoutLabel": "布局",
+      "layoutList": "列表",
+      "layoutBoard": "看板",
+      "dispatchLabel": "启动会话或筛选看板",
+      "dispatchPlaceholder": "启动会话：@agent 加一个任务。筛选：s:working a:agent",
+      "tooShort": "太短",
+      "dispatched": "会话已启动",
+      "dispatchFailed": "无法启动会话",
+      "openSession": "打开会话",
+      "stopSession": "停止会话",
+      "stopped": "会话已停止",
+      "stopFailed": "无法停止会话",
+      "stateFilter": "按状态筛选",
+      "agentFilter": "按智能体筛选",
+      "allStates": "所有状态",
+      "allAgents": "所有智能体",
+      "loadError": "无法加载会话。请重试。",
+      "retry": "重试",
+      "emptyTitle": "你启动的会话会显示在这里",
+      "emptyDescription": "在上方输入任务并按 Enter。每个任务都在各自的会话中运行。",
+      "noMatches": "没有会话符合这些筛选条件",
+      "clearFilters": "清除筛选条件",
+      "listLabel": "按状态分组的会话",
+      "loadMore": "加载更多会话",
+      "loadingMore": "正在加载更多会话…",
+      "more": "… 另有 {count} 个",
+      "keys": {
+        "move": "移动",
+        "peek": "预览",
+        "open": "打开",
+        "stop": "停止"
+      },
+      "group": {
+        "pinned": "已置顶",
+        "needs_input": "等待你的回复",
+        "working": "工作中",
+        "review": "待审核",
+        "completed": "已完成",
+        "ended": "失败 · 已停止"
+      },
+      "state": {
+        "working": "工作中",
+        "needs_input": "等待你的回复",
+        "idle": "空闲",
+        "completed": "已完成",
+        "failed": "失败",
+        "stopped": "已停止"
+      },
+      "replyPlaceholder": "回复。智能体会在下一步收到。",
+      "replyLabel": "回复 {title}",
+      "sendReply": "发送回复",
+      "replySent": "回复已发送",
+      "replyFailed": "无法发送回复"
+    },
+    "ultracode": {
+      "hint": "以智能体工作流的方式运行",
+      "dismiss": "{key} 作为普通提示词发送"
+    }
   }
 }

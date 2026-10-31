@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { act } from 'react';
 
 import { testRender } from '@opentui/react/test-utils';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import type { TreeNode } from './file-tree.ts';
 import type { ReadResult } from './file-viewer.tsx';
@@ -297,18 +298,30 @@ function sessionStub(overrides: Partial<SessionState>): SessionState {
   } as unknown as SessionState;
 }
 
+/**
+ * `FilesScreen` reads the session's Drive mounts (`useSessionDrives`), so it
+ * needs the QueryClient `main.tsx` provides. No client is initialized here, so
+ * the mounts read fails once (no retry) and the tree is the sandbox alone.
+ */
+function withQueryClient(element: React.ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return <QueryClientProvider client={client}>{element}</QueryClientProvider>;
+}
+
 describe('<FilesScreen/> readiness gate', () => {
   test('a session that is not ready renders its phase instead of spinning', async () => {
     const { captureCharFrame, flush, renderer } = await testRender(
-      <FilesScreen
-        projectId="p1"
-        sessionId="s1"
-        focused
-        width={SIZE.width}
-        height={SIZE.height}
-        onBack={() => {}}
-        session={sessionStub({ reason: 'runtime_waking', activelyStarting: true })}
-      />,
+      withQueryClient(
+        <FilesScreen
+          projectId="p1"
+          sessionId="s1"
+          focused
+          width={SIZE.width}
+          height={SIZE.height}
+          onBack={() => {}}
+          session={sessionStub({ reason: 'runtime_waking', activelyStarting: true })}
+        />,
+      ),
       SIZE,
     );
     await settle(flush);
@@ -322,25 +335,27 @@ describe('<FilesScreen/> readiness gate', () => {
   test('a failed runtime says so and Esc still leaves', async () => {
     let backs = 0;
     const { captureCharFrame, flush, mockInput, renderer } = await testRender(
-      <FilesScreen
-        projectId="p1"
-        sessionId="s1"
-        focused
-        width={SIZE.width}
-        height={SIZE.height}
-        onBack={() => {
-          backs += 1;
-        }}
-        session={sessionStub({
-          phase: 'error',
-          stage: 'failed',
-          // `SessionStartError` carries a `terminal` flag on top of Error; the
-          // gate only reads `.message`.
-          startError: Object.assign(new Error('no capacity'), {
-            terminal: true,
-          }) as SessionState['startError'],
-        })}
-      />,
+      withQueryClient(
+        <FilesScreen
+          projectId="p1"
+          sessionId="s1"
+          focused
+          width={SIZE.width}
+          height={SIZE.height}
+          onBack={() => {
+            backs += 1;
+          }}
+          session={sessionStub({
+            phase: 'error',
+            stage: 'failed',
+            // `SessionStartError` carries a `terminal` flag on top of Error; the
+            // gate only reads `.message`.
+            startError: Object.assign(new Error('no capacity'), {
+              terminal: true,
+            }) as SessionState['startError'],
+          })}
+        />,
+      ),
       SIZE,
     );
     await settle(flush);

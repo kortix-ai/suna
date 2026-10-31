@@ -177,7 +177,7 @@ export function sessionComposerReadiness(input: {
  * `GET .../turn`), already delay-hidden 300ms by the caller — never the raw
  * SSE slot, which this tab can miss frames from: a dropped end-of-turn frame
  * latched the slot busy and shimmered a finished answer until reload. A
- * transient sub-session (`sub-session-modal.tsx` mounts `SessionChat` with no
+ * transient sub-session (`legacy-subagent-chat.tsx` mounts `SessionChat` with no
  * `projectSessionId`) has no Kortix session row for `/turn` to answer about,
  * so it keeps the raw slot — the same split `session-layout.tsx` makes for
  * its busy indicator. A non-last turn is NEVER working: that is a fact about

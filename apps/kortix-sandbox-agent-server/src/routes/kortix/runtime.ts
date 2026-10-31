@@ -9,6 +9,7 @@ import {
   type RuntimeWorkspaceFileDiff,
   type RuntimeWorkspaceInfo,
 } from '@kortix/api-contract/runtime-relay'
+import { WorkflowControlBodySchema } from '@kortix/api-contract/multi-agent'
 import type { z } from 'zod'
 import type { Config } from '@/lib/config/config'
 import { logger } from '@/lib/log/logger'
@@ -260,6 +261,32 @@ export function createRuntimeRouter(
       const body = await parsedBody(c, RuntimeGrantsBodySchema)
       if (body instanceof Response) return body
       return answer(c, () => turns.setGrants(c.req.param('sessionId'), body.grants))
+    })
+
+    /**
+     * The workflow runs of this session (`@kortix/api-contract/multi-agent`).
+     * `GET /workflows` lists the runs this box ran or started, newest first:
+     * its own live runs with their live document, and every earlier run as
+     * last saved. A background run is listed on the parent box with
+     * `background.sessionId` (its runner session) and its last known state;
+     * the runner session's own `GET /workflows` serves its live progress.
+     * `POST /workflows/:runId/control` pauses, resumes, restarts one agent
+     * or stops a run this box runs. A background run answers 409
+     * `run_in_runner` with `runner_session_id` here: send the control to the
+     * runner session's box, which runs it.
+     */
+    app.get('/workflows', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.workflows())
+    })
+
+    app.post('/workflows/:runId/control', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      const body = await parsedBody(c, WorkflowControlBodySchema)
+      if (body instanceof Response) return body
+      return answer(c, () => turns.controlWorkflow(c.req.param('runId'), body))
     })
 
     app.get('/commands', async (c) => {

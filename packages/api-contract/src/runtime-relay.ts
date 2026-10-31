@@ -241,6 +241,13 @@ export const RUNTIME_CAPABILITIES = [
    * `SESSION_LOG_EVENTS`). Without `schema` the stream is the v1 stream.
    */
   'session.log.v2',
+  /**
+   * Cross-session messages: the `send_message` and `list_agents` tools
+   * (`@kortix/api-contract/multi-agent`).
+   */
+  'session.messaging',
+  /** A team's shared task list: the `task_*` tools (flag `agent_teams`). */
+  'session.team_tasks',
 ] as const;
 export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 
@@ -258,6 +265,17 @@ export const RUNTIME_TURNS_CAPABILITY = 'runtime.turns.v1' as const;
  * message, `409 { code: MESSAGE_READ_CODE }` when a model call read it.
  */
 export const RUNTIME_RETRACT_CAPABILITY = 'runtime.retract.v1' as const;
+
+/**
+ * The runtime keeps a delivered prompt's `message_id` as its user message id,
+ * orders the transcript by position (admission order), not by id, and answers
+ * a repeated id `200 { deduplicated: true }` without storing a second message.
+ * A client may send an id minted long before delivery (a prompt that waited
+ * behind a turn), and a redelivery may send the same id again. apps/api keeps
+ * the wire id on a box that lists this; without it apps/api re-mints the id
+ * above the transcript, because OpenCode orders by id. pi lists it.
+ */
+export const RUNTIME_STABLE_MESSAGE_ID_CAPABILITY = 'runtime.stable_message_id.v1' as const;
 
 /**
  * Session metadata key, value `true`: a cloud subagent its parent started in
@@ -495,9 +513,10 @@ export interface CompiledAgentSet {
    */
   project_tools?: Record<string, string>;
   /**
-   * The Kortix tools the project lists as `<name>: kortix:<name>`. Present
-   * only when kortix.yaml has a `tools` key; then only these Kortix tools load,
-   * plus the ones `project_tools` replaces. Absent: all of them load.
+   * The Kortix tools this compiled set loads, plus the ones `project_tools`
+   * replaces. Only the platform's My Kortix config sets it; a project's
+   * compiled set omits it, and then every Kortix tool loads (an agent's
+   * `tools` grant decides what it may call).
    */
   kortix_tools?: string[];
   /**

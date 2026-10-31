@@ -53,15 +53,15 @@ process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum,daytona';
 const { config } = await import('../config');
 
 // Committed manifest text served by the git mock; null = a blank project.
-// A declared agent only gets the project checkout with `repository_access: true`
-// (KRTX-165), so a test that names a non-default agent declares it here.
+// A declared agent only gets the project checkout with `workspace: { project_repository: true }`
+// (KRTX-165), so a test that names a non-default agent declares it here. The mocked
+// `readManifestFromRepo` returns the text as is, so it is in the current format.
 let manifestYaml: string | null = null;
 const REVIEWER_MANIFEST = [
-  'kortix_version: 2',
   'default_agent: kortix',
   'agents:',
-  '  kortix: { connectors: all, secrets: all, kortix_permissions: all, skills: all, repository_access: true }',
-  '  reviewer: { connectors: all, secrets: all, kortix_permissions: all, skills: all, repository_access: true }',
+  '  kortix: { tools: all, connectors: all, secrets: all, kortix_permissions: all, skills: all, workspace: { project_repository: true } }',
+  '  reviewer: { tools: all, connectors: all, secrets: all, kortix_permissions: all, skills: all, workspace: { project_repository: true } }',
   '',
 ].join('\n');
 let sandboxProvisionCalls = 0;
@@ -387,9 +387,9 @@ mock.module('../snapshots/builder', () => ({
     built: false,
     isDefault: true,
   }),
-  ensureMetaSandboxImage: async () => ({
-    snapshotName: 'kortix-meta-test',
-    slug: 'meta',
+  ensureMyKortixSandboxImage: async () => ({
+    snapshotName: 'kortix-mykortix-test',
+    slug: 'mykortix',
     contentHash: 'b'.repeat(64),
     built: false,
     isDefault: false,
@@ -1296,9 +1296,9 @@ describe('project session runtime guards', () => {
     expect(response.status).toBe(201);
     const createdMeta = await response.json();
     expect(createdMeta).toMatchObject({
-      agent_name: 'meta',
+      agent_name: 'mykortix',
       metadata: {
-        sandbox_slug: 'meta',
+        sandbox_slug: 'mykortix',
       },
     });
     // A browser (supabase) create is not an in-session spawn — its Supabase
@@ -1306,10 +1306,10 @@ describe('project session runtime guards', () => {
     expect(createdMeta.metadata?.spawned_by_session).toBeUndefined();
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(lastProvisionInput).toMatchObject({
-      agentName: 'meta',
-      sandboxSlug: 'meta',
+      agentName: 'mykortix',
+      sandboxSlug: 'mykortix',
       extraEnvVars: {
-        KORTIX_AGENT_NAME: 'meta',
+        KORTIX_AGENT_NAME: 'mykortix',
         KORTIX_META_AGENT: '1',
         KORTIX_PROJECT_AUTO_CLONE: '0',
       },
@@ -1398,7 +1398,7 @@ describe('project session runtime guards', () => {
   });
   test('a meta session with an omitted agent spawns the project default, not another meta', async () => {
     enableMetaAgent();
-    sessionRow = { ...sessionRow!, agentName: 'meta' };
+    sessionRow = { ...sessionRow!, agentName: 'mykortix' };
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1414,7 +1414,7 @@ describe('project session runtime guards', () => {
     // The fixture project is blank, so it synthesizes `default_agent: 'worker'` — a meta-session
     // spawn resolves to it, never to another platform meta coordinator.
     expect(created.agent_name).toBe('worker');
-    expect(created.metadata?.sandbox_slug).not.toBe('meta');
+    expect(created.metadata?.sandbox_slug).not.toBe('mykortix');
     expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
   });
 
@@ -2570,10 +2570,10 @@ describe('project session runtime guards', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'stopped',
-      agentName: 'meta',
+      agentName: 'mykortix',
       metadata: {
         ...((sessionRow!.metadata as Record<string, unknown>) ?? {}),
-        sandbox_slug: 'meta',
+        sandbox_slug: 'mykortix',
       },
     };
     sessionSandboxRows = [];
@@ -2585,9 +2585,9 @@ describe('project session runtime guards', () => {
     expect([200, 202]).toContain(res.status);
     await flushUntil(() => sandboxProvisionCalls === 1);
     // The rebuilt env must keep the meta runtime — losing it makes the daemon
-    // clone the project over the meta workspace and wipe /workspace/AGENTS.md.
+    // clone the project over My Kortix's empty workspace.
     expect(lastProvisionInput).toMatchObject({
-      agentName: 'meta',
+      agentName: 'mykortix',
       extraEnvVars: {
         KORTIX_META_AGENT: '1',
         KORTIX_PROJECT_AUTO_CLONE: '0',

@@ -30,7 +30,7 @@ export function StepsGroup({ tools, expanded, cursor, width }: StepsGroupProps) 
   return (
     <box flexDirection="column">
       <box flexDirection="row">
-        <text fg={theme.accent}>{marker}</text>
+        <text fg={theme.dim}>{marker}</text>
         {summary.running ? (
           <Spinner label={label} />
         ) : (

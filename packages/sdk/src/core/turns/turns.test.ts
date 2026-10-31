@@ -363,6 +363,20 @@ describe('getChildSessionId', () => {
     expect(getChildSessionId(part)).toBe('ses_meta1');
   });
 
+  test("reads sessionId from pi's agent tool metadata, running and settled", () => {
+    const running: ToolPartLike = {
+      type: 'tool',
+      tool: 'agent',
+      callID: 'c1',
+      state: { status: 'running', metadata: { sessionId: 'ses_agent1', model: { providerID: 'p', modelID: 'm' } } },
+    };
+    expect(getChildSessionId(running)).toBe('ses_agent1');
+    // A background hand-off returns at once: the settled call still names its child.
+    const settled = { ...running, state: { status: 'completed', metadata: { sessionId: 'ses_agent1', background: true } } } as ToolPartLike;
+    expect(getChildSessionId(settled)).toBe('ses_agent1');
+    expect(getChildSessionId({ ...running, state: { status: 'error', error: 'The subagent was aborted. task_id: ses_agent2' } })).toBe('ses_agent2');
+  });
+
   test('reads a failed task child from its task_id error when metadata is absent', () => {
     const part: ToolPartLike = {
       type: 'tool',

@@ -46,19 +46,24 @@ export interface UploadBatchPartition<T extends UploadCandidate> {
  * can only surface "Upload failed (413): Request Entity Too Large", naming
  * neither the file nor a limit.
  */
-export function uploadRejectionReason(file: UploadCandidate): string | null {
-  if (file.size <= MAX_UPLOAD_BYTES) return null;
-  return `${file.name} is ${formatFileSize(file.size)} — the upload limit is ${MAX_UPLOAD_LABEL}`;
+export function uploadRejectionReason(
+  file: UploadCandidate,
+  limit: number | null = MAX_UPLOAD_BYTES,
+): string | null {
+  if (limit === null || file.size <= limit) return null;
+  const label = limit === MAX_UPLOAD_BYTES ? MAX_UPLOAD_LABEL : formatFileSize(limit);
+  return `${file.name} is ${formatFileSize(file.size)} — the upload limit is ${label}`;
 }
 
-/** Split a batch into what will be sent and what is refused up front. */
+/** Split a batch into what will be sent and what is refused up front. `limit` null takes any size. */
 export function partitionUploadBatch<T extends UploadCandidate>(
   files: readonly T[],
+  limit: number | null = MAX_UPLOAD_BYTES,
 ): UploadBatchPartition<T> {
   const accepted: T[] = [];
   const rejected: RejectedUpload<T>[] = [];
   for (const file of files) {
-    const reason = uploadRejectionReason(file);
+    const reason = uploadRejectionReason(file, limit);
     if (reason) rejected.push({ file, reason });
     else accepted.push(file);
   }

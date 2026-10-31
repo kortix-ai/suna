@@ -47,6 +47,31 @@
  * survives this box restarting. A `task_id` resumes a background child in the
  * background.
  *
+ * Workflow inputs (`extensions/workflow.ts`): `runtimeContext` adds keys to
+ * the create body's `runtime_context` (the subagent keys win; the whole object
+ * must fit the API's 16 KiB), `waitMs` replaces the 30 min wait ceiling, and
+ * `stallMs` watches the child's transcript tail at most once a minute: no new
+ * message, text or tool state, and no tool call still running, for `stallMs`
+ * stops the child and returns an error with `stalled: true`.
+ *
+ * Names, teams and forks (`agent({ name, fork })`, `extensions/subagents.ts`):
+ *  - `handle` stores metadata `agent_handle` (and `kortix.agent.handle` in
+ *    `runtime_context`): the name `send_message` resolves. Reuse first: when
+ *    the newest child of this session with that name finished its turn
+ *    (idle, completed or stopped), the call is a follow-up to it, exactly a
+ *    `task_id` resume, and the result carries `continued: true`. A child with
+ *    that name that still works (or waits for its person) refuses the call
+ *    and is named. A failed, archived or deleted child frees the name.
+ *  - `teammate` (`team: true`, flag `agent_teams`, depth 0) also stores
+ *    metadata `team_lead` = this session and `kortix.team.lead` in
+ *    `runtime_context`, always runs in the background, and its
+ *    `initial_context` tells it about `send_message` and the task list.
+ *  - `fork` sets `fork_from_session_id` = this session: the API copies this
+ *    session's history into the child, which then runs the prompt.
+ *
+ * Stop (`task_stop`): {@link cloudStopChild} stops one child of this session,
+ * by id or by its handle.
+ *
  * Guardrails: at most `maxLive` children run at once per parent: the ones this
  * box waits on or is creating, plus its background children the API still
  * lists as working. A child at depth `maxDepth` cannot start another separate
@@ -54,6 +79,7 @@
  * refuse with an error that names `session: "same"` as the way out. An
  * aborted parent call stops its child.
  */
+import { AGENT_HANDLE_KEY, TEAM_LEAD_KEY } from '@kortix/api-contract/multi-agent'
 import { SUBAGENT_NOTIFY_PARENT_KEY } from '@kortix/api-contract/runtime-relay'
 import { logger } from '@/lib/log/logger'
 import type { SpawnSessionInput, SpawnSessionResult, SubagentSession } from './extensions/subagents'
@@ -95,6 +121,12 @@ export function routeSubagent(input: {
 export const SUBAGENT_DEPTH_KEY = 'kortix.subagent.depth'
 /** `runtime_context` key: comma-separated tool names this session may use (absent = no narrowing). */
 export const SUBAGENT_TOOLS_KEY = 'kortix.subagent.tools'
+/** `runtime_context` key: the name the parent gave this session (`agent({ name })`). */
+export const AGENT_HANDLE_CONTEXT_KEY = 'kortix.agent.handle'
+/** `runtime_context` key: the lead session of this teammate (agent teams). */
+export const TEAM_LEAD_CONTEXT_KEY = 'kortix.team.lead'
+/** A name `agent({ name })` takes: what `send_message` addresses. */
+export const AGENT_HANDLE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/
 
 /** Defaults for the two guardrails; the box env can override both (config.ts). */
 export const DEFAULT_MAX_LIVE_CLOUD_SUBAGENTS = 4
@@ -103,6 +135,7 @@ export const DEFAULT_MAX_CLOUD_SUBAGENT_DEPTH = 2
 /** The API's caps on the two create fields this module fills (`@kortix/api-contract`). */
 const INITIAL_CONTEXT_MAX_CHARS = 8_192
 const RUNTIME_CONTEXT_STRING_MAX = 4_096
+const RUNTIME_CONTEXT_MAX_BYTES = 16 * 1024
 const TOOL_NAME = /^[A-Za-z0-9_.:-]{1,128}$/
 
 /** The API callback target and this parent's limits, from the box env. */
@@ -131,6 +164,10 @@ export interface CloudSubagentApi {
 export interface SubagentContext {
   depth: number
   tools?: string[]
+  /** The name the parent gave this session. */
+  handle?: string
+  /** The lead session of this teammate. */
+  teamLead?: string
 }
 
 /** Parse `KORTIX_SESSION_CONTEXT` (the API's JSON envelope of `runtime_context`). Malformed = a root session. */
@@ -146,10 +183,13 @@ export function subagentContextFrom(raw: string | undefined): SubagentContext {
   const record = parsed as Record<string, unknown>
   const rawDepth = record[SUBAGENT_DEPTH_KEY]
   const depth = typeof rawDepth === 'number' && Number.isInteger(rawDepth) && rawDepth > 0 ? rawDepth : 0
+  const handle = typeof record[AGENT_HANDLE_CONTEXT_KEY] === 'string' && AGENT_HANDLE.test(record[AGENT_HANDLE_CONTEXT_KEY] as string) ? (record[AGENT_HANDLE_CONTEXT_KEY] as string) : undefined
+  const lead = typeof record[TEAM_LEAD_CONTEXT_KEY] === 'string' && (record[TEAM_LEAD_CONTEXT_KEY] as string).trim() ? (record[TEAM_LEAD_CONTEXT_KEY] as string).trim() : undefined
+  const named = { depth, ...(handle ? { handle } : {}), ...(lead ? { teamLead: lead } : {}) }
   const rawTools = record[SUBAGENT_TOOLS_KEY]
-  if (typeof rawTools !== 'string') return { depth }
+  if (typeof rawTools !== 'string') return named
   // A present key always narrows: an empty or all-invalid list means no tools, never all tools.
-  return { depth, tools: rawTools.split(',').map((name) => name.trim()).filter((name) => TOOL_NAME.test(name)) }
+  return { ...named, tools: rawTools.split(',').map((name) => name.trim()).filter((name) => TOOL_NAME.test(name)) }
 }
 
 /** Resolve the callback target, or null when the box has no control plane (a local/offline box). */
@@ -199,6 +239,8 @@ const CLOUD_UNMAPPABLE_AGENTS = new Set(['general', 'explore', 'inline'])
 // ponytail: fixed 30 min ceiling + 2 s poll; make it env-tunable if a real subagent run needs longer.
 const WAIT_CEILING_MS = 30 * 60_000
 const POLL_INTERVAL_MS = 2_000
+/** A stall watch (`SpawnSessionInput.stallMs`) reads the child's transcript tail at most this often. */
+const STALL_CHECK_MS = 60_000
 /** Messages read back from the child's transcript to find its last report. */
 const READ_BACK_MESSAGES = 20
 
@@ -217,10 +259,13 @@ interface Http {
 
 interface SessionRow {
   session_id?: string
+  name?: string | null
   status?: string
   parent_session_id?: string | null
   metadata?: Record<string, unknown> | null
   working?: { state?: string; since?: string | null; pending_delivery?: boolean }
+  /** The API's board state (`SessionBoardState`); absent from an older API. */
+  board_state?: string
 }
 
 function sessionUrl(http: Http, childId: string, suffix = ''): string {
@@ -260,6 +305,17 @@ export async function cloudSpawnSession(
       `Separate subagent sessions nest at most ${api.maxDepth} levels and this session is level ${api.depth}. Pass session: "same" to run it inside this session, or do the task here.`,
     )
   }
+  if (input.fork && !api.sessionId) throw new Error('This session has no session id to fork from, so fork is not possible here.')
+  const handle = checkedHandle(input)
+  // Reuse first: the name of a finished child of this session continues that child.
+  const earlier = handle ? await namedChild(api, http, handle) : null
+  if (earlier) {
+    if (input.fork) {
+      throw new Error(`The name "${handle}" belongs to your subagent ${earlier}, so a fork cannot take it. Omit fork to continue that subagent, or pick another name for the fork.`)
+    }
+    const result = await resumeChild(api, http, { ...input, sessionId: earlier }, model, opts)
+    return { ...result, continued: true }
+  }
   const createBody = buildCreateBody(api, input)
   // Reserved before the first await: parallel `agent` calls in one message all pass through here.
   reserveLiveSlot(api)
@@ -287,8 +343,8 @@ export async function cloudSpawnSession(
     // Publish the child id to the tool part NOW, so the UI links the real child while it works.
     input.onSession?.({ sessionId: childId, model })
     // From here the API lists the child as working, so the slot is released below.
-    if (input.background) return { sessionId: childId, status: 'started', text: '', model }
-    return await settleAndRead(http, childId, null, input.signal, model, opts)
+    if (input.background || input.teammate) return { sessionId: childId, status: 'started', text: '', model }
+    return await settleAndRead(http, childId, null, input, model, opts)
   } finally {
     api.live.count -= 1
   }
@@ -316,17 +372,74 @@ async function refuseOverLiveCap(api: CloudSubagentApi, http: Http): Promise<voi
   if (!api.sessionId) return
   let background = 0
   try {
-    const res = await http.fetchImpl(
-      `${http.origin}/v1/projects/${encodeURIComponent(http.projectId)}/sessions?parent=${encodeURIComponent(api.sessionId)}&limit=200`,
-      { headers: http.headers },
-    )
-    const rows = res.status === 200 ? ((await res.json().catch(() => [])) as SessionRow[]) : []
-    background = Array.isArray(rows) ? rows.filter(isWorkingBackgroundChild).length : 0
+    background = (await listChildren(api, http)).filter(isWorkingBackgroundChild).length
   } catch (err) {
     logger.warn('[pi] cloud subagent child list failed; counting only this box', { err: errorText(err) })
   }
   if (api.live.count + background > api.maxLive) throw liveCapError(api, api.live.count - 1 + background)
 }
+
+/** The call's name, checked before any request. */
+function checkedHandle(input: SpawnSessionInput): string | undefined {
+  const handle = input.teammate?.handle ?? input.handle
+  if (handle !== undefined && !AGENT_HANDLE.test(handle)) {
+    throw new Error(`"${handle}" is not a name for a subagent: use 1-40 letters, digits, "-" or "_", starting with a letter or digit.`)
+  }
+  return handle
+}
+
+/**
+ * The child of this session that holds `handle` and finished its turn: its id,
+ * for a follow-up. Null when no child holds it (or the list cannot be read: a
+ * new child then takes the name). Throws when the newest child with the name
+ * still works or waits for its person: the name is taken.
+ */
+async function namedChild(api: CloudSubagentApi, http: Http, handle: string): Promise<string | null> {
+  if (!api.sessionId) return null
+  let rows: SessionRow[]
+  try {
+    rows = await listChildren(api, http)
+  } catch (err) {
+    logger.warn('[pi] cloud subagent child list failed; the name is not checked', { err: errorText(err) })
+    return null
+  }
+  // Newest first: the newest child with the name is the one send_message reaches.
+  const holder = rows.find((row) => sameHandle(row.metadata?.[AGENT_HANDLE_KEY], handle) && !FREES_NAME.has(row.status ?? '') && row.board_state !== 'failed')
+  if (!holder?.session_id) return null
+  if (isBusy(holder)) {
+    throw new Error(
+      `The name "${handle}" is taken: your subagent ${holder.session_id} (${holder.name ?? 'untitled'}) still works under it. Message it with send_message({ to: "${handle}" }), stop it with task_stop({ name: "${handle}" }), or pick another name.`,
+    )
+  }
+  return holder.session_id
+}
+
+/** A child in one of these states no longer holds its name: a new child may take it. */
+const FREES_NAME = new Set(['failed', 'archived', 'deleted'])
+
+/** A child that still works, or waits for its person: a follow-up cannot start now. */
+function isBusy(row: SessionRow): boolean {
+  if (row.board_state) return row.board_state === 'working' || row.board_state === 'needs_input'
+  return row.status === 'provisioning' || (row.status === 'running' && (row.working?.state === 'working' || row.working?.pending_delivery === true))
+}
+
+/** This session's children, newest first (`GET …/sessions?parent=`). Throws when the list cannot be read. */
+async function listChildren(api: CloudSubagentApi, http: Http): Promise<SessionRow[]> {
+  const res = await http.fetchImpl(
+    `${http.origin}/v1/projects/${encodeURIComponent(http.projectId)}/sessions?parent=${encodeURIComponent(api.sessionId ?? '')}&limit=200`,
+    { headers: http.headers },
+  )
+  if (res.status !== 200) throw new Error(`the child list answered ${res.status}`)
+  const rows = (await res.json().catch(() => [])) as SessionRow[]
+  return Array.isArray(rows) ? rows : []
+}
+
+/** A child that still holds its name: not stopped, failed, completed or archived. */
+function isLive(row: SessionRow): boolean {
+  return !['stopped', 'failed', 'completed', 'archived', 'deleted'].includes(row.status ?? '')
+}
+
+const sameHandle = (value: unknown, handle: string) => typeof value === 'string' && value.toLowerCase() === handle.toLowerCase()
 
 function isWorkingBackgroundChild(row: SessionRow): boolean {
   if (row.metadata?.[SUBAGENT_NOTIFY_PARENT_KEY] !== true) return false
@@ -339,9 +452,6 @@ function buildCreateBody(api: CloudSubagentApi, input: SpawnSessionInput): Recor
   const agentName = named ?? api.parentAgent
   // A named agent brings its own prompt. A built-in or inline spec has only this one.
   const instructions = named ? '' : input.systemPrompt.trim()
-  if (instructions.length > INITIAL_CONTEXT_MAX_CHARS) {
-    throw new Error(`Inline agent instructions are ${instructions.length} characters; a separate subagent session takes at most ${INITIAL_CONTEXT_MAX_CHARS}.`)
-  }
   // Every child, named or not, is narrowed to the parent's tools (the in-process path's `rootToolAllowed`).
   const tools = childToolAllowlist(api.toolAllowlist, input.tools)
   const invalid = (tools ?? []).filter((name) => !TOOL_NAME.test(name))
@@ -350,18 +460,38 @@ function buildCreateBody(api: CloudSubagentApi, input: SpawnSessionInput): Recor
   if (toolsValue && toolsValue.length > RUNTIME_CONTEXT_STRING_MAX) {
     throw new Error(`The tool list for a separate subagent session is longer than ${RUNTIME_CONTEXT_STRING_MAX} characters.`)
   }
+  const teammate = input.teammate
+  const handle = checkedHandle(input)
+  const context = [instructions, teammate ? teammate.instructions.trim() : ''].filter(Boolean).join('\n\n')
+  if (context.length > INITIAL_CONTEXT_MAX_CHARS) {
+    throw new Error(`Inline agent instructions are ${context.length} characters; a separate subagent session takes at most ${INITIAL_CONTEXT_MAX_CHARS}.`)
+  }
+  const runtimeContext = {
+    ...input.runtimeContext,
+    [SUBAGENT_DEPTH_KEY]: api.depth + 1,
+    ...(tools ? { [SUBAGENT_TOOLS_KEY]: toolsValue ?? '' } : {}),
+    ...(handle ? { [AGENT_HANDLE_CONTEXT_KEY]: handle } : {}),
+    ...(teammate ? { [TEAM_LEAD_CONTEXT_KEY]: teammate.lead } : {}),
+  }
+  const bytes = new TextEncoder().encode(JSON.stringify(runtimeContext)).byteLength
+  if (bytes > RUNTIME_CONTEXT_MAX_BYTES) {
+    throw new Error(`The context of a separate subagent session is ${bytes} bytes; the API takes at most ${RUNTIME_CONTEXT_MAX_BYTES}.`)
+  }
+  const metadata = {
+    // The API tells this session when a background child finishes (projects/subagent-notice.ts).
+    ...(input.background || teammate ? { [SUBAGENT_NOTIFY_PARENT_KEY]: true } : {}),
+    ...(handle ? { [AGENT_HANDLE_KEY]: handle } : {}),
+    ...(teammate ? { [TEAM_LEAD_KEY]: teammate.lead } : {}),
+  }
   return {
     initial_prompt: input.prompt,
     name: input.title,
     ...(agentName ? { agent_name: agentName } : {}),
     ...(input.model ? { model: input.model } : {}),
-    ...(instructions ? { initial_context: instructions } : {}),
-    // The API tells this session when a background child finishes (projects/subagent-notice.ts).
-    ...(input.background ? { metadata: { [SUBAGENT_NOTIFY_PARENT_KEY]: true } } : {}),
-    runtime_context: {
-      [SUBAGENT_DEPTH_KEY]: api.depth + 1,
-      ...(tools ? { [SUBAGENT_TOOLS_KEY]: toolsValue ?? '' } : {}),
-    },
+    ...(context ? { initial_context: context } : {}),
+    ...(Object.keys(metadata).length ? { metadata } : {}),
+    ...(input.fork && api.sessionId ? { fork_from_session_id: api.sessionId } : {}),
+    runtime_context: runtimeContext,
   }
 }
 
@@ -413,7 +543,7 @@ async function resumeChild(
     }
     input.onSession?.({ sessionId: childId, model })
     if (background) return { sessionId: childId, status: 'started', text: '', model }
-    return await settleAndRead(http, childId, baseline, input.signal, model, opts)
+    return await settleAndRead(http, childId, baseline, input, model, opts)
   } finally {
     api.live.count -= 1
   }
@@ -423,11 +553,17 @@ async function settleAndRead(
   http: Http,
   childId: string,
   baseline: string | null,
-  signal: AbortSignal | undefined,
+  input: Pick<SpawnSessionInput, 'signal' | 'stallMs' | 'waitMs'>,
   model: { providerID: string; modelID: string },
   opts: CloudSubagentOptions,
 ): Promise<SpawnSessionResult> {
-  const settled = await waitForIdle(http, childId, baseline, signal, opts)
+  const signal = input.signal
+  const settled = await waitForIdle(http, childId, baseline, signal, { ...opts, ...(input.waitMs ? { waitCeilingMs: input.waitMs } : {}) }, input.stallMs)
+  if (settled.status === 'stalled') {
+    // A new attempt starts in a new session: this one must not keep working beside it.
+    await stopChild(http, childId)
+    return { sessionId: childId, status: 'error', text: '', error: settled.error, model, stalled: true }
+  }
   if (settled.status === 'aborted') {
     // The parent gave up on the call: do not leave the child working (and billing) on its own.
     if (signal?.aborted) await stopChild(http, childId)
@@ -444,7 +580,7 @@ async function settleAndRead(
   return { sessionId: childId, status: 'completed', text: report.text, model }
 }
 
-type Settled = { status: 'completed' | 'error' | 'aborted' | 'timeout'; error?: string }
+type Settled = { status: 'completed' | 'error' | 'aborted' | 'timeout' | 'stalled'; error?: string }
 
 /**
  * Poll `GET /v1/projects/:projectId/sessions/:childId` until the child's turn
@@ -458,12 +594,14 @@ async function waitForIdle(
   baseline: string | null,
   signal: AbortSignal | undefined,
   opts: CloudSubagentOptions,
+  stallMs?: number,
 ): Promise<Settled> {
   const now = opts.now ?? (() => Date.now())
   const ceiling = opts.waitCeilingMs ?? WAIT_CEILING_MS
   const interval = opts.pollIntervalMs ?? POLL_INTERVAL_MS
   const deadline = now() + ceiling
   let everWorked = false
+  const stall = stallMs && stallMs > 0 ? { lastProgress: now(), lastCheck: now(), signature: undefined as string | undefined } : null
   for (;;) {
     if (signal?.aborted) return { status: 'aborted' }
     if (now() > deadline) return { status: 'timeout', error: `child session did not settle within ${Math.round(ceiling / 60_000)} min` }
@@ -489,7 +627,38 @@ async function waitForIdle(
     } else if (res.status === 404) {
       return { status: 'error', error: 'child session disappeared' }
     }
+    if (stall && stallMs && now() - stall.lastCheck >= Math.min(STALL_CHECK_MS, stallMs)) {
+      stall.lastCheck = now()
+      const probe = await progressProbe(http, childId)
+      // The first read is the baseline; a change after it, or a tool call still running, is progress.
+      if (probe && (probe.toolRunning || (stall.signature !== undefined && probe.signature !== stall.signature))) stall.lastProgress = now()
+      if (probe) stall.signature = probe.signature
+      if (now() - stall.lastProgress > stallMs) {
+        return { status: 'stalled', error: `agent stalled: no new output for ${Math.round(stallMs / 60_000)} min` }
+      }
+    }
     await delay(interval, signal)
+  }
+}
+
+/**
+ * The child's transcript tail as a signature (message ids, text lengths, tool
+ * states), and whether a tool call still runs. Null when it could not be read:
+ * an unreadable tail is never a stall.
+ */
+async function progressProbe(http: Http, childId: string): Promise<{ signature: string; toolRunning: boolean } | null> {
+  try {
+    const res = await http.fetchImpl(sessionUrl(http, childId, '/transcript?limit=3'), { headers: http.headers })
+    if (res.status !== 200) return null
+    const body = (await res.json().catch(() => null)) as { messages?: Array<CompactMessage & { id?: string | null; tools?: Array<{ status?: string | null }> }> } | null
+    const messages = body?.messages ?? []
+    const last = messages.at(-1)
+    return {
+      signature: JSON.stringify(messages.map((m) => [m.id ?? null, m.role ?? null, m.text?.length ?? 0, (m.tools ?? []).map((t) => t.status ?? null)])),
+      toolRunning: (last?.tools ?? []).some((tool) => tool.status === 'running' || tool.status === 'pending'),
+    }
+  } catch {
+    return null
   }
 }
 
@@ -500,6 +669,54 @@ function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {
     const timer = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve() }, ms)
     signal?.addEventListener('abort', onAbort, { once: true })
   })
+}
+
+/** What `task_stop` came to. */
+export interface StopChildResult {
+  sessionId: string
+  handle: string | null
+  title: string | null
+  /** False: it had already ended; nothing was stopped. */
+  stopped: boolean
+}
+
+/**
+ * `task_stop`: stop one child of this session, by its session id or by the
+ * name it was started with. Throws a plain-words error when no child of this
+ * session matches, or the API refuses the stop.
+ */
+export async function cloudStopChild(api: CloudSubagentApi, target: { taskId?: string; name?: string }): Promise<StopChildResult> {
+  const http: Http = {
+    fetchImpl: api.fetchImpl ?? fetch,
+    origin: apiOrigin(api.apiUrl),
+    headers: { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' },
+    projectId: api.projectId,
+  }
+  let row: SessionRow | undefined
+  const name = target.name?.trim().replace(/^@/, '')
+  if (target.taskId?.trim()) {
+    const id = target.taskId.trim()
+    const res = await http.fetchImpl(sessionUrl(http, id), { headers: http.headers })
+    const read = res.status === 200 ? ((await res.json().catch(() => null)) as SessionRow | null) : null
+    if (!read || (api.sessionId && read.parent_session_id !== api.sessionId)) throw new Error(`task_id ${id} is not a subagent session of this session.`)
+    row = { ...read, session_id: read.session_id ?? id }
+  } else if (name) {
+    const rows = await listChildren(api, http)
+    const matches = rows.filter((candidate) => sameHandle(candidate.metadata?.[AGENT_HANDLE_KEY], name))
+    row = matches.find(isLive) ?? matches[0]
+    if (!row?.session_id) throw new Error(`No subagent of this session is named "${name}". list_agents with scope "mine" shows your subagents.`)
+  } else {
+    throw new Error('Name the subagent to stop: task_id, or the name you started it with.')
+  }
+  const sessionId = row.session_id!
+  const handle = typeof row.metadata?.[AGENT_HANDLE_KEY] === 'string' ? (row.metadata[AGENT_HANDLE_KEY] as string) : null
+  if (!isLive(row)) return { sessionId, handle, title: row.name ?? null, stopped: false }
+  const res = await http.fetchImpl(sessionUrl(http, sessionId, '/stop'), { method: 'POST', headers: http.headers, body: '{}' })
+  if (res.status !== 200 && res.status !== 202 && res.status !== 204) {
+    const body = (await res.text().catch(() => '')).slice(0, 300)
+    throw new Error(`The stop of ${handle ?? sessionId} was refused: the API answered ${res.status}${body ? `: ${body}` : ''}.`)
+  }
+  return { sessionId, handle, title: row.name ?? null, stopped: true }
 }
 
 /** Best effort: `POST …/sessions/:childId/stop`. The parent box token owns the child, so it may stop it. */

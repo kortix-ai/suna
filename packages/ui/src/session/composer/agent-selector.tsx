@@ -17,7 +17,7 @@ import { useUiHostConfig } from '../../providers/ui-provider';
 import { cn } from '../../lib/utils';
 import { TRIGGER_CARET_CLASS, triggerVariants } from '../../primitives/trigger-variants';
 import type { Agent } from '@kortix/sdk/react';
-import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
+import { capitalizeWords, isMyKortixAgentName, MY_KORTIX_DISPLAY_NAME } from '@kortix/shared';
 import { CaretDownIcon, CheckIcon } from '@phosphor-icons/react';
 import { AgentMark } from '../../internal/components/agent-mark';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
@@ -58,7 +58,7 @@ function resolveDisplayedAgentName(primaryAgents: Agent[], selectedAgent: string
 export function agentDisplayLabel(agents: Agent[], selectedAgent: string | null): string {
   const name = resolveDisplayedAgentName(composerSelectableAgents(agents), selectedAgent);
   if (!name) return 'Agent';
-  return isMetaAgentName(name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(name);
+  return isMyKortixAgentName(name) ? MY_KORTIX_DISPLAY_NAME : capitalizeWords(name);
 }
 
 export function AgentSelector({
@@ -116,7 +116,7 @@ export function AgentSelector({
   );
   const primaryAgents = useMemo(() => composerSelectableAgents(offered), [offered]);
   const label = (name: string) =>
-    agentLabels?.[name] ?? (isMetaAgentName(name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(name));
+    agentLabels?.[name] ?? (isMyKortixAgentName(name) ? MY_KORTIX_DISPLAY_NAME : capitalizeWords(name));
 
   // A `flash` state, a `prevAgentRef` feeding it, two effects and a 400ms
   // timer used to live here. Nothing ever READ `flash` — it was written on
@@ -139,11 +139,11 @@ export function AgentSelector({
   }, [primaryAgents, search, agentLabels]);
 
   const filteredMeta = useMemo(
-    () => filteredPrimary.filter((a) => isMetaAgentName(a.name)),
+    () => filteredPrimary.filter((a) => isMyKortixAgentName(a.name)),
     [filteredPrimary],
   );
   const filteredProject = useMemo(
-    () => filteredPrimary.filter((a) => !isMetaAgentName(a.name)),
+    () => filteredPrimary.filter((a) => !isMyKortixAgentName(a.name)),
     [filteredPrimary],
   );
   // The place's agents, in its order, then every other agent.
@@ -410,7 +410,7 @@ export function AgentSelector({
                 heading={featured.label}
                 className="[&_[cmdk-group-items]]:flex [&_[cmdk-group-items]]:flex-col [&_[cmdk-group-items]]:gap-px"
               >
-                {filteredFeatured.map((agent) => renderAgentItem(agent, isMetaAgentName(agent.name)))}
+                {filteredFeatured.map((agent) => renderAgentItem(agent, isMyKortixAgentName(agent.name)))}
               </CommandGroup>
               {filteredPrimary.length > filteredFeatured.length && (
                 <CommandGroup
@@ -420,7 +420,7 @@ export function AgentSelector({
                 >
                   {filteredPrimary
                     .filter((agent) => !filteredFeatured.includes(agent))
-                    .map((agent) => renderAgentItem(agent, isMetaAgentName(agent.name)))}
+                    .map((agent) => renderAgentItem(agent, isMyKortixAgentName(agent.name)))}
                 </CommandGroup>
               )}
             </>

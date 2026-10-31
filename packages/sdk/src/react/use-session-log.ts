@@ -7,6 +7,8 @@ import { useSyncStore } from '../browser/stores/sync-store';
 import { openSessionStream, type SessionControlStreamOptions } from '../core/session/control-stream';
 import { savedSessionLogCopies } from '../core/session-log/saved-log';
 import { sessionLogOfV1Rows, sessionLogThreadWithV1Rows } from '../core/session-log/v1-view';
+import { sessionLogThreadWithPrompts } from '../core/session-log/prompts-view';
+import type { SessionPrompt, SessionSentPrompt } from '../core/rest/projects-client/sessions';
 import {
   fetchSessionLogPage,
   readSessionLog,
@@ -122,10 +124,20 @@ function readThread(projectId: string, sessionId: string, threadId: string): voi
  * failed read (the journal has not posted the thread yet) retries when the thread's next
  * message arrives, at most every 5 s.
  */
+export interface SessionLogThreadOptions extends SessionMessagesOptions {
+  /**
+   * The session's inbox (`useSessionPrompts`): its `prompts` and `sent`. The prompts the
+   * thread does not hold join it as provisional user messages under their own `message_id`
+   * (`sessionLogThreadWithPrompts`), and the log's put of that id replaces them. A booting
+   * session with no log yet shows its first prompt. Root thread only.
+   */
+  prompts?: { prompts: readonly SessionPrompt[]; sent: readonly SessionSentPrompt[] };
+}
+
 export function useSessionLogThread(
   session: SessionMessagesSource,
   threadId?: string | null,
-  options?: SessionMessagesOptions,
+  options?: SessionLogThreadOptions,
 ): SessionLogThread | null {
   const throttleMs = options?.throttleMs && options.throttleMs > 0 ? options.throttleMs : 0;
   const select = (state: ReturnType<typeof useSyncStore.getState>) => {
@@ -151,7 +163,25 @@ export function useSessionLogThread(
   useEffect(() => {
     if (unread >= 0 && projectId && threadId) readThread(projectId, sessionId, threadId);
   }, [unread, projectId, sessionId, threadId]);
-  return v2 !== undefined ? v2 : (v1?.threads[0] ?? null);
+  const thread = v2 !== undefined ? v2 : (v1?.threads[0] ?? null);
+  const inbox = threadId ? undefined : options?.prompts;
+  // The server can re-mint a prompt's id at delivery. The inbox row and `sent` name both ids,
+  // and the sync store keeps the pairing, so the log's message under the new id replaces the
+  // optimistic one sent under the old id, after the row leaves the inbox too.
+  const runtimeThreadId = thread?.thread_id ?? null;
+  useEffect(() => {
+    if (!inbox || !runtimeThreadId) return;
+    const store = useSyncStore.getState();
+    for (const p of [...inbox.prompts, ...inbox.sent]) {
+      const wire = p.wire_message_id;
+      if (wire && p.message_id && wire !== p.message_id) store.registerOptimisticEcho(runtimeThreadId, wire, p.message_id);
+    }
+  }, [inbox?.prompts, inbox?.sent, runtimeThreadId]);
+  const revs = useSyncStore((state) => (inbox ? state.sessionLogs[session.sessionId]?.revs : undefined));
+  return useMemo(
+    () => (inbox ? sessionLogThreadWithPrompts(session.sessionId, thread, inbox.prompts, inbox.sent, revs) : thread),
+    [inbox?.prompts, inbox?.sent, revs, thread, session.sessionId],
+  );
 }
 
 /**
@@ -221,6 +251,9 @@ export function useSessionLogOlder(
  *    screen stays, and the page is read again after 2 s, 10 s and 30 s, or after the API's
  *    `Retry-After` (503 `session_log_converting`), at most 60 s.
  * Both are read again at the next turn end and after a stream reconnect, one request at a time.
+ * A session with no log is also read 6 s after each turn starts (pi journals mid-turn every
+ * 5 s): a new session's first prompt can run before this tab's runtime connection, which is
+ * live-only, so the user message frame was never seen.
  * Unmounting drops the log and cancels a pending retry.
  *
  * `livePage`: the box's own page (`GET /kortix/runtime/log`), passed while the session's box is
@@ -245,12 +278,21 @@ export function useSessionLogSync(
     joinStream?: (options: SessionControlStreamOptions) => { close: () => void };
     /** Test seam: runs a timed retry after `ms`; returns its cancel. */
     schedule?: (run: () => void, ms: number) => () => void;
+    /** Each first-page read's outcome: a page, no log yet (`missing`), or a failed read. */
+    onRead?: (outcome: 'page' | 'missing' | 'failed') => void;
+    /** A new value reads the log again from the start (a host's "Try again"). */
+    revision?: number;
   },
 ): SessionLogSyncState {
   const loader = options.loader === undefined ? loadSessionLogPage : options.loader;
   const joinStream = options.joinStream ?? openSessionStream;
   const schedule = options.schedule ?? scheduleRetry;
   const active = options.enabled && !!loader && !!projectId && !!sessionId;
+  const onRead = useRef(options.onRead);
+  useEffect(() => {
+    onRead.current = options.onRead;
+  });
+  const revision = options.revision ?? 0;
   const key = `${projectId}/${sessionId}`;
   const negotiated: SessionLogDialect = active ? 'v2' : 'v1';
   // The last read answered no page: the session has no log to show yet.
@@ -273,6 +315,8 @@ export function useSessionLogSync(
     let busy = false;
     // The last turn end the session stream reported, kept across re-joins: a different one is a turn end.
     let lastEnded: string | null | undefined;
+    // The running turns a mid-turn read was scheduled for, kept across re-joins: one read per turn.
+    const midTurn = new Set<string>();
     // The page answered: the stream is on `schema=v2`.
     let onV2 = false;
     // Failed reads since the last answer, and the pending timed retry.
@@ -342,6 +386,8 @@ export function useSessionLogSync(
       if (stopped) return;
       const page = answer === 'missing' ? null : answer;
       onV2 = !!page || live;
+      // The box's page is a page too: a new session the API holds no log for reads as one.
+      onRead.current?.(onV2 ? 'page' : answer === 'missing' ? 'missing' : 'failed');
       if (onV2) {
         goV2();
         return;
@@ -362,10 +408,20 @@ export function useSessionLogSync(
       join({
         onControl: (frame) => {
           if (frame.type !== 'kortix.control.turn') return;
-          const ended = (frame.payload as { last_ended?: { turn_token?: string } | null })?.last_ended?.turn_token ?? null;
+          const payload = frame.payload as { turns?: { turn_token?: string }[]; last_ended?: { turn_token?: string } | null } | null;
+          const ended = payload?.last_ended?.turn_token ?? null;
           const seen = lastEnded;
           lastEnded = ended;
-          if (seen !== undefined && ended !== seen) void attempt();
+          if (seen !== undefined && ended !== seen) return void attempt();
+          // A running turn (also one the state at join holds): its user message frame may have
+          // passed before this tab's runtime connection, which is live-only. pi journals while a
+          // turn runs, so the page holds that message after the next mid-turn post.
+          for (const turn of payload?.turns ?? []) {
+            const token = turn?.turn_token;
+            if (!token || midTurn.has(token)) continue;
+            midTurn.add(token);
+            if (!cancelRetry) cancelRetry = schedule(() => void attempt(), SESSION_LOG_MID_TURN_READ_MS);
+          }
         },
         onConnectionChange: onReconnect(() => void attempt()),
       });
@@ -393,7 +449,8 @@ export function useSessionLogSync(
       stream?.close();
       store().dropSessionLog(sessionId);
     };
-  }, [negotiated, loader, joinStream, schedule, projectId, sessionId]);
+    // `revision` is read only as a dependency: a new value re-runs the whole read.
+  }, [negotiated, loader, joinStream, schedule, projectId, sessionId, revision]);
 
   // A loader that arrives after mount: the first read already read the one present at mount.
   const hasLivePage = !!options.livePage;
@@ -408,6 +465,8 @@ export function useSessionLogSync(
 
 /** The waits before the timed re-reads of a page that failed: three tries in about 42 s. */
 const SESSION_LOG_RETRY_DELAYS_MS = [2_000, 10_000, 30_000];
+/** A running turn's read on a session with no log yet: after pi's mid-turn journal post (5 s). */
+const SESSION_LOG_MID_TURN_READ_MS = 6_000;
 /** The longest wait a `Retry-After` can set. */
 const SESSION_LOG_RETRY_MAX_MS = 60_000;
 

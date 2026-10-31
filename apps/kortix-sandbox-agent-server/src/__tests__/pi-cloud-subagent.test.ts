@@ -9,12 +9,16 @@
  * per mode. Background (`run_in_background`): the create body asks the API to
  * notify the parent, the call returns once the child exists, a resume of a
  * background child does not wait, and the live cap counts background children
- * the API lists as working. No real time, no network.
+ * the API lists as working. Names, teammates and forks: the create body's
+ * metadata and runtime context, a name a working child holds, the name of a
+ * finished child as a follow-up to that same child, and
+ * `task_stop` by id and by name (`cloudStopChild`). No real time, no network.
  */
 import { describe, expect, test } from 'bun:test'
 import {
   childToolAllowlist,
   cloudSpawnSession,
+  cloudStopChild,
   cloudSubagentApiFrom,
   FOREGROUND_NOTICE,
   NO_CONTROL_PLANE_NOTICE,
@@ -429,5 +433,136 @@ describe('routeSubagent — where one agent call runs', () => {
     expect(routeSubagent({ ...ready, taskId: 'ses_local', localChild: true })).toEqual({ session: 'same' })
     expect(routeSubagent({ ...ready, taskId: 'ses_local', localChild: true, requested: 'separate' })).toEqual({ session: 'same' })
     expect(routeSubagent({ ...ready, taskId: 'child-7', requested: 'same' })).toEqual({ session: 'separate' })
+  })
+})
+
+describe('cloudSpawnSession — names, teammates, forks', () => {
+  test('a name rides in metadata agent_handle and in the runtime context', async () => {
+    const { impl, calls } = fakeApi({})
+    await cloudSpawnSession(api(impl), { title: 'Review', agent: 'reviewer', systemPrompt: 'p', prompt: 'review it', background: true, handle: 'reviewer' }, fast)
+    expect(calls.find((c) => c.method === 'POST')!.body).toEqual({
+      initial_prompt: 'review it',
+      name: 'Review',
+      agent_name: 'reviewer',
+      metadata: { notify_parent: true, agent_handle: 'reviewer' },
+      runtime_context: { 'kortix.subagent.depth': 1, 'kortix.agent.handle': 'reviewer' },
+    })
+  })
+
+  test('a name a working child holds refuses the call and names that child; a failed child frees it', async () => {
+    const holder = { session_id: 'child-9', parent_session_id: PARENT, name: 'Review the API', status: 'running', metadata: { agent_handle: 'Reviewer' }, working: { state: 'working' } }
+    for (const busy of [holder, { ...holder, working: { state: 'idle' }, board_state: 'needs_input' }, { ...holder, status: 'provisioning', working: undefined }]) {
+      const taken = fakeApi({ children: [busy] })
+      await expect(cloudSpawnSession(api(taken.impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go', background: true, handle: 'reviewer' }, fast)).rejects.toThrow(
+        'The name "reviewer" is taken: your subagent child-9 (Review the API) still works under it. Message it with send_message({ to: "reviewer" }), stop it with task_stop({ name: "reviewer" }), or pick another name.',
+      )
+      expect(taken.calls.some((c) => c.method === 'POST')).toBe(false)
+    }
+    const free = fakeApi({ children: [{ ...holder, status: 'failed' }] })
+    expect((await cloudSpawnSession(api(free.impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go', background: true, handle: 'reviewer' }, fast)).status).toBe('started')
+    expect(free.calls.find((c) => c.method === 'POST')!.url).toBe('https://api.example.com/v1/projects/proj-1/sessions')
+  })
+
+  test('the name of a finished child is a follow-up to that child: no new session, the same session gets the prompt', async () => {
+    const finished = { session_id: 'child-9', parent_session_id: PARENT, name: 'Upgrade the manifest', status: 'running', metadata: { agent_handle: 'manifest-upgrader', notify_parent: true }, board_state: 'idle', working: { state: 'idle', since: '2026-10-30T09:00:00.000Z' } }
+    for (const row of [finished, { ...finished, status: 'stopped', board_state: 'stopped' }, { ...finished, status: 'completed', board_state: undefined }]) {
+      const { impl, calls } = fakeApi({ children: [row], rows: [row] })
+      const result = await cloudSpawnSession(api(impl), { title: 'Clean up', agent: 'general', systemPrompt: 'p', prompt: 'now remove the dead config', background: true, handle: 'Manifest-Upgrader' }, fast)
+      expect(result).toEqual({ sessionId: 'child-9', status: 'started', text: '', model: { providerID: 'kortix', modelID: 'default' }, continued: true })
+      const posts = calls.filter((c) => c.method === 'POST')
+      expect(posts.map((c) => c.url)).toEqual(['https://api.example.com/v1/projects/proj-1/sessions/child-9/prompts'])
+      expect(posts[0]!.body.parts).toEqual([{ type: 'text', text: 'now remove the dead config' }])
+    }
+  })
+
+  test('a foreground follow-up by name waits for the same child and returns its new report', async () => {
+    const finished = { session_id: 'child-9', parent_session_id: PARENT, status: 'running', metadata: { agent_handle: 'writer' }, working: { state: 'idle', since: '2026-10-30T09:00:00.000Z' } }
+    const { impl, calls } = fakeApi({ children: [finished], rows: [finished, IDLE], transcript: report('second draft done') })
+    const result = await cloudSpawnSession(api(impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'shorter, please', handle: 'writer' }, fast)
+    expect(result).toMatchObject({ sessionId: 'child-9', status: 'completed', text: 'second draft done', continued: true })
+    expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/sessions'))).toBe(false)
+  })
+
+  test('a teammate name is looked up too, and a fork cannot take the name of a finished child', async () => {
+    const finished = { session_id: 'child-9', parent_session_id: PARENT, status: 'running', metadata: { agent_handle: 'researcher', team_lead: PARENT, notify_parent: true }, board_state: 'idle', working: { state: 'idle' } }
+    const mate = fakeApi({ children: [finished], rows: [finished] })
+    const resumed = await cloudSpawnSession(api(mate.impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'one more source', teammate: { lead: PARENT, handle: 'researcher', instructions: 'You are a teammate.' } }, fast)
+    expect(resumed).toMatchObject({ sessionId: 'child-9', status: 'started', continued: true })
+    expect(mate.calls.filter((c) => c.method === 'POST').map((c) => new URL(c.url).pathname)).toEqual(['/v1/projects/proj-1/sessions/child-9/prompts'])
+
+    const fork = fakeApi({ children: [finished] })
+    await expect(cloudSpawnSession(api(fork.impl), { title: 'x', agent: 'inline', systemPrompt: 'f', prompt: 'try B', background: true, fork: true, handle: 'researcher' }, fast)).rejects.toThrow(
+      'The name "researcher" belongs to your subagent child-9, so a fork cannot take it.',
+    )
+    expect(fork.calls.some((c) => c.method === 'POST')).toBe(false)
+  })
+
+  test('a name outside the handle form is refused before any call', async () => {
+    const { impl, calls } = fakeApi({})
+    await expect(cloudSpawnSession(api(impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go', handle: 'two words' }, fast)).rejects.toThrow('"two words" is not a name for a subagent')
+    expect(calls).toHaveLength(0)
+  })
+
+  test('a teammate: metadata team_lead, always notify_parent, its instructions in initial_context, and it returns at once', async () => {
+    const { impl, calls } = fakeApi({})
+    const result = await cloudSpawnSession(
+      api(impl),
+      { title: 'Research', agent: 'reviewer', systemPrompt: 'p', prompt: 'research it', teammate: { lead: PARENT, handle: 'researcher', instructions: 'You are a teammate.' } },
+      fast,
+    )
+    expect(result.status).toBe('started')
+    expect(calls.find((c) => c.method === 'POST')!.body).toEqual({
+      initial_prompt: 'research it',
+      name: 'Research',
+      agent_name: 'reviewer',
+      initial_context: 'You are a teammate.',
+      metadata: { notify_parent: true, agent_handle: 'researcher', team_lead: PARENT },
+      runtime_context: { 'kortix.subagent.depth': 1, 'kortix.agent.handle': 'researcher', 'kortix.team.lead': PARENT },
+    })
+  })
+
+  test('a fork names this session as fork_from_session_id and runs as the parent agent', async () => {
+    const { impl, calls } = fakeApi({})
+    await cloudSpawnSession(api(impl), { title: 'Try B (fork)', agent: 'inline', systemPrompt: 'You are a fork.', prompt: 'try B', background: true, fork: true }, fast)
+    expect(calls.find((c) => c.method === 'POST')!.body).toEqual({
+      initial_prompt: 'try B',
+      name: 'Try B (fork)',
+      agent_name: 'builder',
+      initial_context: 'You are a fork.',
+      metadata: { notify_parent: true },
+      fork_from_session_id: PARENT,
+      runtime_context: { 'kortix.subagent.depth': 1 },
+    })
+  })
+
+  test('subagentContextFrom reads the handle and the team lead', () => {
+    expect(subagentContextFrom(JSON.stringify({ 'kortix.subagent.depth': 1, 'kortix.agent.handle': 'researcher', 'kortix.team.lead': PARENT }))).toEqual({ depth: 1, handle: 'researcher', teamLead: PARENT })
+    expect(subagentContextFrom(JSON.stringify({ 'kortix.subagent.depth': 1, 'kortix.agent.handle': 'no spaces allowed' }))).toEqual({ depth: 1 })
+  })
+})
+
+describe('cloudStopChild — task_stop', () => {
+  test('by name: the live child with that handle is stopped', async () => {
+    const children = [
+      { session_id: 'child-1', name: 'Old', status: 'stopped', metadata: { agent_handle: 'reviewer' } },
+      { session_id: 'child-2', name: 'Review', status: 'running', metadata: { agent_handle: 'reviewer' } },
+    ]
+    const { impl, calls } = fakeApi({ children })
+    expect(await cloudStopChild(api(impl), { name: '@reviewer' })).toEqual({ sessionId: 'child-2', handle: 'reviewer', title: 'Review', stopped: true })
+    expect(calls.filter((c) => c.method === 'POST').map((c) => new URL(c.url).pathname)).toEqual(['/v1/projects/proj-1/sessions/child-2/stop'])
+  })
+
+  test('by id: only a child of this session; one that already ended is not stopped again', async () => {
+    const ended = fakeApi({ rows: [{ session_id: 'child-3', parent_session_id: PARENT, status: 'completed', metadata: {} }] })
+    expect(await cloudStopChild(api(ended.impl), { taskId: 'child-3' })).toEqual({ sessionId: 'child-3', handle: null, title: null, stopped: false })
+    expect(ended.calls.some((c) => c.method === 'POST')).toBe(false)
+    const foreign = fakeApi({ rows: [{ session_id: 'child-4', parent_session_id: 'someone-else', status: 'running' }] })
+    await expect(cloudStopChild(api(foreign.impl), { taskId: 'child-4' })).rejects.toThrow('task_id child-4 is not a subagent session of this session.')
+  })
+
+  test('an unknown name and no target are plain-words errors', async () => {
+    const { impl } = fakeApi({ children: [] })
+    await expect(cloudStopChild(api(impl), { name: 'ghost' })).rejects.toThrow('No subagent of this session is named "ghost".')
+    await expect(cloudStopChild(api(impl), {})).rejects.toThrow('Name the subagent to stop')
   })
 })

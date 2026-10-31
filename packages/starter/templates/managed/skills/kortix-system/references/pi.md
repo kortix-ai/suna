@@ -21,7 +21,6 @@ its config from `kortix.yaml` and the files it names.
 | `image_search` | Searches for images. | `websearch` |
 | `scrape_webpage` | Fetches pages as markdown. Comma-separated URLs. | `webfetch` |
 | `image_gen` | Generates or edits an image file. | `edit` |
-| `memory` | Reads and writes the project brain in `memory/` (the `kortix-memory` skill). | `edit` (`read` for `view`) |
 | `show` | Shows a file, an image, a URL or content to the user. | `show` |
 
 - The three web tools (`web_search`, `image_search`, `scrape_webpage`) bill

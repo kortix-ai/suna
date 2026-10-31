@@ -1330,6 +1330,10 @@
         "chrome": {
           "name": "Kortix in Chrome",
           "description": "Consenti a una sessione di usare il browser Chrome collegato. Puoi riprendere il controllo o interromperla in qualsiasi momento."
+        },
+        "agent_teams": {
+          "name": "Team di agenti",
+          "description": "Una sessione principale avvia compagni di squadra con un nome che condividono un elenco di attività. Ogni compagno prende un’attività, la svolge nella propria sessione e avvisa la sessione principale quando ha finito. Vedi ogni compagno e le sue attività sotto il campo di scrittura della sessione principale. I messaggi tra sessioni funzionano anche senza questa opzione."
         }
       },
       "channelsSwitch": {
@@ -3081,6 +3085,116 @@
       "scriptFailed": "Script non riuscito",
       "calls": "{count, plural, one {# chiamata a strumento} other {# chiamate a strumenti}}",
       "noOutput": "Nessun output"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "Controllo degli agenti…",
+          "change": "Aggiornamento degli agenti…"
+        },
+        "sessions": {
+          "read": "Controllo delle sessioni…",
+          "change": "Aggiornamento delle sessioni…"
+        },
+        "schedules": {
+          "read": "Controllo delle pianificazioni…",
+          "change": "Aggiornamento delle pianificazioni…"
+        },
+        "connectors": {
+          "read": "Controllo dei connettori…",
+          "change": "Aggiornamento dei connettori…"
+        },
+        "people": {
+          "read": "Controllo dei membri…",
+          "change": "Aggiornamento dei membri…"
+        },
+        "access": {
+          "read": "Controllo degli accessi…",
+          "change": "Aggiornamento degli accessi…"
+        },
+        "usage": {
+          "read": "Controllo dell’utilizzo…",
+          "change": "Controllo dell’utilizzo…"
+        },
+        "changeRequests": {
+          "read": "Controllo delle richieste di modifica…",
+          "change": "Aggiornamento di una richiesta di modifica…"
+        },
+        "memory": {
+          "read": "Controllo della memoria…",
+          "change": "Aggiornamento della memoria…"
+        }
+      },
+      "status": {
+        "done": "Fatto",
+        "needsYou": "Serve il tuo intervento",
+        "denied": "Serve un permesso",
+        "error": "Non completato",
+        "running": "In corso"
+      },
+      "deniedTitle": "Serve un permesso",
+      "grantors": "Chi può concederlo",
+      "grantorsUnknown": "Chiunque gestisca questo progetto può concederlo.",
+      "newSetting": "Nuovo",
+      "removedSetting": "Rimosso",
+      "opensInNewTab": "Si apre in una nuova scheda",
+      "showDetails": "Mostra dettagli"
+    },
+    "workflow": {
+      "fallbackTitle": "Workflow",
+      "starting": "Avvio del workflow…",
+      "progress": "{done} di {total} fatti",
+      "failedCount": "{failed} di {total} non riusciti",
+      "agents": "{count, plural, one {# agente} other {# agenti}}",
+      "background": "In background",
+      "status": {
+        "starting": "Avvio",
+        "running": "In corso",
+        "done": "Fatto",
+        "failed": "Non riuscito",
+        "stopped": "Interrotto",
+        "pending": "Non avviata"
+      },
+      "openAgent": "Apri {label}",
+      "showDetails": "Mostra dettagli",
+      "failedSuffix": "{count} non riusciti",
+      "resumed": "Ripresa",
+      "resumedHint": "Gli agenti completati nell'esecuzione precedente conservano le loro risposte.",
+      "large": "Esecuzione grande",
+      "largeHint": "Questa esecuzione avvia più di 25 agenti. Puoi interrompere ogni agente dalla sua riga.",
+      "openRun": "Apri esecuzione",
+      "openRunLabel": "Apri la sessione dell'esecuzione",
+      "backgroundIdle": "Nella sua sessione",
+      "savedName": "Workflow salvato {name}",
+      "upTo": "Fino a {count, plural, one {# agente} other {# agenti}}",
+      "result": "Risultato",
+      "logLabel": "Log del workflow",
+      "agentsLabel": "Agenti del workflow",
+      "filter": {
+        "label": "Mostra agenti",
+        "all": "Tutti",
+        "running": "In corso",
+        "failed": "Non riusciti",
+        "done": "Fatti"
+      },
+      "filterEmpty": {
+        "running": "Nessun agente è in corso.",
+        "failed": "Nessun agente non è riuscito.",
+        "done": "Nessun agente ha ancora finito."
+      },
+      "showAll": "Mostra tutti e {count}",
+      "retry": "nuovo tentativo {count}",
+      "cached": "dall'ultima esecuzione",
+      "stopAgent": "Interrompi {label}",
+      "stopHint": "Interrompi questo agente",
+      "stopFailed": "Impossibile interrompere {label}",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, one {JSON · # chiave} other {JSON · # chiavi}}",
+      "jsonItems": "{count, plural, one {JSON · # elemento} other {JSON · # elementi}}"
+    },
+    "agent": {
+      "backgroundWorking": "Al lavoro in background",
+      "backgroundSession": "Nella sua sessione"
     }
   },
   "agentRunLimit": {
@@ -7791,8 +7905,7 @@
       "legendTool": "Risultati degli strumenti",
       "legendOther": "Altro",
       "subAgentsLabel": "Sub-agenti",
-      "subAgentsNote": "Questa sessione ha avviato sessioni ausiliarie. I totali qui sotto le includono.",
-      "combinedCost": "Costo combinato",
+      "subAgentsNote": "Assistenti eseguiti all’interno di questa sessione. Il loro costo fa parte del costo di questa sessione.",
       "combinedMessages": "Messaggi combinati",
       "tokensIn": "Token in entrata",
       "tokensOut": "Token in uscita",
@@ -7816,7 +7929,20 @@
       "rawFilterUser": "Tu",
       "rawFilterAssistant": "Assistente",
       "rawNoMatches": "Nessun messaggio corrispondente",
-      "detailsLabel": "Dettagli"
+      "detailsLabel": "Dettagli",
+      "costSplit": "{own} questa sessione · {spawned} in {count, plural, one {# sessione avviata} other {# sessioni avviate}}",
+      "costEstimated": "Stimato dalla trascrizione",
+      "detailModelRequests": "Richieste al modello",
+      "spawnedLabel": "Sessioni avviate",
+      "spawnedNote": "Le sessioni avviate da questa sessione e quelle che queste hanno avviato. Il loro costo è incluso nel costo totale.",
+      "spawnedCount": "{count, plural, one {Questa sessione e # sessione avviata} other {Questa sessione e # sessioni avviate}}",
+      "spawnedRequests": "Richieste",
+      "spawnedCost": "Costo",
+      "spawnedThisSession": "Questa sessione",
+      "spawnedTotal": "Totale",
+      "spawnedHidden": "{count, plural, one {# sessione avviata che non puoi aprire non è inclusa.} other {# sessioni avviate che non puoi aprire non sono incluse.}}",
+      "spawnedTruncated": "Sono incluse solo le prime 500 sessioni avviate, fino a 10 livelli di profondità.",
+      "spawnedUntitled": "Sessione senza titolo"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "Vista unificata",
@@ -24737,5 +24863,230 @@
     "tools": "Tools",
     "extensions": "Extensions",
     "drives": "Drives"
+  },
+  "multiAgent": {
+    "peer": {
+      "message": "Messaggio da {from}",
+      "idleNotice": "{from} ha finito",
+      "shutdownRequest": "Richiesta di chiusura da {from}",
+      "shutdownResponse": "Risposta alla richiesta di chiusura di {from}",
+      "expand": "Mostra tutto il messaggio",
+      "collapse": "Nascondi il messaggio"
+    },
+    "notice": {
+      "completed": "{name} ha finito",
+      "failed": "{name} non ha finito",
+      "stopped": "{name} è stato interrotto",
+      "fallbackName": "Il tuo agente",
+      "openSession": "Apri sessione",
+      "expand": "Mostra tutto il risultato",
+      "collapse": "Nascondi il risultato",
+      "batchTitle": "{count, plural, one {# agente ha finito} other {# agenti hanno finito}}",
+      "ownsTasks": "Ha ancora {tasks}"
+    },
+    "tools": {
+      "running": {
+        "sending": "Invio di un messaggio…",
+        "checkingAgents": "Controllo degli altri agenti…",
+        "checkingTasks": "Controllo delle attività del team…",
+        "updatingTasks": "Aggiornamento delle attività del team…",
+        "stopping": "Interruzione di un agente…"
+      },
+      "to": "A",
+      "peerStatus": {
+        "delivered": "Consegnato",
+        "held": "In attesa di approvazione",
+        "refused": "Non inviato",
+        "denied": "Negato",
+        "expired": "Scaduto",
+        "dropped": "Non inviato di nuovo"
+      },
+      "relation": {
+        "parent": "Principale",
+        "child": "Aiutante",
+        "lead": "Responsabile",
+        "teammate": "Compagno di squadra",
+        "session": "Sessione"
+      },
+      "cannotReceive": "Non può ricevere messaggi",
+      "state": {
+        "working": "Al lavoro",
+        "needsInput": "Serve una risposta",
+        "idle": "Inattivo",
+        "completed": "Fatto",
+        "failed": "Non completato",
+        "stopped": "Interrotto"
+      },
+      "taskStatus": {
+        "pending": "In attesa",
+        "inProgress": "In corso",
+        "completed": "Fatta"
+      },
+      "blockedBy": "bloccata da {tasks}",
+      "stopped": "Interrotto",
+      "alreadyEnded": "Già terminato",
+      "openSession": "Apri sessione"
+    },
+    "strip": {
+      "label": "Agenti",
+      "agents": "{count, plural, one {# agente} other {# agenti}}",
+      "working": "{count} al lavoro",
+      "workflows": "{count, plural, one {# workflow} other {# workflow}}",
+      "workflowsRunning": "{count, plural, one {# workflow in corso} other {# workflow in corso}}",
+      "newest": "{name}: {state}",
+      "tasks": "Attività",
+      "team": "Team",
+      "workflowsGroup": "Workflow",
+      "state": {
+        "working": "al lavoro",
+        "needs_input": "serve il tuo intervento",
+        "idle": "fatto",
+        "completed": "fatto",
+        "failed": "non riuscito",
+        "stopped": "interrotto"
+      },
+      "workingFor": "al lavoro · {elapsed}",
+      "runsAs": "esegue come {agent}",
+      "teamRole": "Ruolo solo per questa sessione",
+      "attention": {
+        "question": "Ha una domanda per te",
+        "approval": "Aspetta la tua approvazione"
+      },
+      "openAgent": "Apri {name}",
+      "stopHint": "Interrompi questo agente",
+      "stopAgent": "Interrompi {name}",
+      "stopAgentFailed": "Impossibile interrompere {name}",
+      "stopFailed": "Impossibile interrompere l’agente",
+      "runProgress": "{done} di {total} fatti",
+      "runBackground": "In background",
+      "runRunning": "In corso",
+      "runStatus": {
+        "done": "Fatto",
+        "failed": "Non completato",
+        "stopped": "Interrotto"
+      },
+      "runFallback": "Workflow",
+      "openRun": "Apri esecuzione",
+      "runNoAgents": "Ancora nessun agente"
+    },
+    "subagent": {
+      "fallbackTitle": "Agente",
+      "openPage": "Apri pagina",
+      "close": "Chiudi",
+      "messagePlaceholder": "Messaggio a {name}…",
+      "messageLabel": "Messaggio a {name}",
+      "send": "Invia",
+      "sent": "Messaggio inviato",
+      "sendFailed": "Impossibile inviare il messaggio",
+      "loadFailed": "Impossibile caricare i messaggi di questo agente",
+      "retry": "Riprova",
+      "emptyTitle": "Ancora niente",
+      "emptyDescription": "I suoi messaggi compaiono qui mentre lavora.",
+      "loadOlder": "Mostra i messaggi precedenti"
+    },
+    "tasks": {
+      "label": "Attività del team",
+      "empty": "Le attività pianificate dal team compariranno qui.",
+      "group": {
+        "pending": "In attesa",
+        "in_progress": "In corso",
+        "completed": "Completate"
+      },
+      "blockedBy": "Bloccata da {tasks}",
+      "unowned": "Non assegnata"
+    },
+    "held": {
+      "label": "Messaggi in attesa di te",
+      "title": "Messaggio da {from}",
+      "titleShutdown": "{from} chiede di interrompere questa sessione",
+      "waiting": "In attesa della tua approvazione. Scade dopo 5 minuti.",
+      "deny": "Nega",
+      "approve": "Approva",
+      "approveFailed": "Impossibile consegnare il messaggio",
+      "denyFailed": "Impossibile negare il messaggio"
+    },
+    "workflow": {
+      "large": "Workflow grande",
+      "largeHint": "Questa esecuzione avvia più di 25 agenti. Da qui puoi interromperla, o interrompere qualsiasi agente.",
+      "paused": "In pausa",
+      "pause": "Metti in pausa l’esecuzione",
+      "resume": "Riprendi l’esecuzione",
+      "pauseHint": "Pausa: nessun nuovo agente parte, gli agenti in corso finiscono (p)",
+      "resumeHint": "Riprendi l’esecuzione (p)",
+      "stop": "Interrompi l’esecuzione",
+      "stopHint": "Interrompi tutti gli agenti e termina l’esecuzione (x)",
+      "save": "Salva",
+      "saveHint": "Salva lo script di questa esecuzione come workflow che puoi rieseguire (s)",
+      "savePrompt": "Salva l’esecuzione del workflow «{title}» (esecuzione {runId}) come workflow salvato: scrivi il suo script in {file} e apri una richiesta di modifica per esso.",
+      "saveSent": "Salvataggio del workflow richiesto",
+      "saveFailed": "Impossibile richiedere il salvataggio del workflow",
+      "restartHint": "Riavvia questo agente con lo stesso prompt (r)",
+      "restartAgent": "Riavvia {label}",
+      "failed": {
+        "pause": "Impossibile mettere in pausa l’esecuzione",
+        "resume": "Impossibile riprendere l’esecuzione",
+        "stop": "Impossibile interrompere l’esecuzione",
+        "restart": "Impossibile riavviare {label}"
+      }
+    },
+    "board": {
+      "layoutLabel": "Vista",
+      "layoutList": "Elenco",
+      "layoutBoard": "Bacheca",
+      "dispatchLabel": "Avvia una sessione o filtra la bacheca",
+      "dispatchPlaceholder": "Avvia una sessione: @agent e un’attività. Filtra: s:working a:agent",
+      "tooShort": "Troppo corto",
+      "dispatched": "Sessione avviata",
+      "dispatchFailed": "Impossibile avviare la sessione",
+      "openSession": "Apri sessione",
+      "stopSession": "Interrompi sessione",
+      "stopped": "Sessione interrotta",
+      "stopFailed": "Impossibile interrompere la sessione",
+      "stateFilter": "Filtra per stato",
+      "agentFilter": "Filtra per agente",
+      "allStates": "Tutti gli stati",
+      "allAgents": "Tutti gli agenti",
+      "loadError": "Impossibile caricare le sessioni. Riprova.",
+      "retry": "Riprova",
+      "emptyTitle": "Le sessioni che avvii compariranno qui",
+      "emptyDescription": "Scrivi un’attività qui sopra e premi Enter. Ogni attività viene eseguita nella sua sessione.",
+      "noMatches": "Nessuna sessione corrisponde a questi filtri",
+      "clearFilters": "Cancella filtri",
+      "listLabel": "Sessioni per stato",
+      "loadMore": "Carica altre sessioni",
+      "loadingMore": "Caricamento di altre sessioni…",
+      "more": "… altre {count}",
+      "keys": {
+        "move": "sposta",
+        "peek": "anteprima",
+        "open": "apri",
+        "stop": "interrompi"
+      },
+      "group": {
+        "pinned": "Fissate",
+        "needs_input": "Serve una risposta",
+        "working": "Al lavoro",
+        "review": "Pronte da rivedere",
+        "completed": "Completate",
+        "ended": "Non riuscite · Interrotte"
+      },
+      "state": {
+        "working": "Al lavoro",
+        "needs_input": "Serve una risposta",
+        "idle": "Inattiva",
+        "completed": "Completata",
+        "failed": "Non riuscita",
+        "stopped": "Interrotta"
+      },
+      "replyPlaceholder": "Rispondi. La risposta arriva all’agente al suo prossimo passo.",
+      "replyLabel": "Rispondi a {title}",
+      "sendReply": "Invia risposta",
+      "replySent": "Risposta inviata",
+      "replyFailed": "Impossibile inviare la risposta"
+    },
+    "ultracode": {
+      "hint": "Viene eseguito come workflow di agenti",
+      "dismiss": "{key} per inviarlo come prompt normale"
+    }
   }
 }

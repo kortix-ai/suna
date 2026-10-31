@@ -22,7 +22,7 @@ import { and, eq, isNull, or } from 'drizzle-orm';
 import { auth, boundedIssues, errors, json } from '../../openapi';
 import { extractAgents, grantsByAgent } from '../agents';
 import { projectBuiltinAgents } from '../lib/builtin-agents';
-import { builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/platform-meta-agent';
+import { builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/my-kortix-agent';
 import { extractConnectors } from '../connectors';
 import { canonicalConnectorAlias } from '../../shared/connector-alias';
 import { policySetNameError } from '@kortix/manifest-schema';
