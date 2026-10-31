@@ -2200,6 +2200,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     ];
     const spies: Array<{ mockRestore(): void }> = [
       spyOn(selection, 'listProjectAgents').mockResolvedValue(agents),
+      spyOn(selection, 'loadProjectAgentGovernance').mockResolvedValue({ agents, declared: true }),
       spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer']),
     ];
     try {
@@ -2230,6 +2231,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     await holdClaim(7049);
     const spies: Array<{ mockRestore(): void }> = [
       spyOn(selection, 'listProjectAgents').mockResolvedValue([{ name: 'reviewer', description: 'Reviews changes', mode: null }]),
+      spyOn(selection, 'loadProjectAgentGovernance').mockResolvedValue({ agents: [{ name: 'reviewer', description: 'Reviews changes', mode: null }], declared: true }),
       spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer']),
     ];
     try {
@@ -2279,6 +2281,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       .where(eq(projectSessions.sessionId, deleted));
     const spies: Array<{ mockRestore(): void }> = [
       spyOn(selection, 'listProjectAgents').mockResolvedValue([{ name: 'reviewer', description: 'Reviews changes', mode: null }]),
+      spyOn(selection, 'loadProjectAgentGovernance').mockResolvedValue({ agents: [{ name: 'reviewer', description: 'Reviews changes', mode: null }], declared: true }),
       spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer']),
     ];
     try {
@@ -2314,6 +2317,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     beforeEach(() => {
       spies = [
         spyOn(selection, 'listProjectAgents').mockResolvedValue([{ name: 'reviewer', description: 'Reviews changes', mode: null }]),
+        spyOn(selection, 'loadProjectAgentGovernance').mockResolvedValue({ agents: [{ name: 'reviewer', description: 'Reviews changes', mode: null }], declared: true }),
         spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer']),
         spyOn(defaultModel, 'isModelServableForAccount').mockResolvedValue(true),
       ];
@@ -2595,7 +2599,11 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     });
 
     test('an agent pick runs /agent <name>; a forged pick of an agent a grant restricts is out of date', async () => {
-      const spies = [spyOn(selection, 'listProjectAgents').mockResolvedValue(AGENTS), spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer'])];
+      const spies = [
+        spyOn(selection, 'listProjectAgents').mockResolvedValue(AGENTS),
+        spyOn(selection, 'loadProjectAgentGovernance').mockResolvedValue({ agents: AGENTS, declared: true }),
+        spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer']),
+      ];
       try {
         await handleTelegramEvent(update('/agents', ALLOWED, 7111));
         const menu = lastSent();
