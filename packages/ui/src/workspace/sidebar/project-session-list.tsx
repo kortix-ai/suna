@@ -49,7 +49,7 @@ import {
 import { SessionsEmptyState } from '../sessions/sessions-empty-state';
 import { RenameSessionModal } from './modal/rename-session-modal';
 import { SessionDeleteModal } from '../../session/actions/session-delete-modal';
-import { subagentTitle } from '../../session/header/subagent-hover-card';
+import { subagentTitle } from '../../session/agents/agent-model';
 import { SessionLabelsModal } from './modal/session-labels-modal';
 import { ShareSessionModal } from './modal/share-session-modal';
 import {

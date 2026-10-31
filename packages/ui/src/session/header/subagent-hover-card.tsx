@@ -10,12 +10,9 @@ import { useTranslations } from '../../i18n';
 import type { ProjectRuntimeSession } from '@kortix/sdk';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useState, type ReactElement } from 'react';
+import { subagentTitle } from '../agents/agent-model';
 import { childSessionHref } from '../tool/tools/session-spawn-urls';
 
-/** A subsession's own title, without OpenCode's "(@general subagent)" suffix. */
-export function subagentTitle(title: string): string {
-  return title.replace(/\s*\(@[^)]*subagent\)$/, '');
-}
 
 /**
  * The parent session's title, on hover: the subagent sessions it spawned.
