@@ -25,6 +25,7 @@ import { accountTokens } from '@kortix/db';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const steps: string[] = [];
 let releaseError: Error | null = null;
+let screenshotError: Error | null = null;
 let repoError: Error | null = null;
 let connectorError: Error | null = null;
 
@@ -52,6 +53,7 @@ mock.module('../artifacts/comment-screenshot-objects', () => ({
   ...realScreenshots,
   releaseArtifactCommentScreenshotsForProject: async () => {
     steps.push('release-screenshots');
+    if (screenshotError) throw screenshotError;
   },
 }));
 
@@ -105,6 +107,7 @@ const deleteProject = () => projectsApp.request(`/${PROJECT_ID}`, { method: 'DEL
 beforeEach(() => {
   steps.length = 0;
   releaseError = null;
+  screenshotError = null;
   repoError = null;
   connectorError = null;
 });
@@ -136,6 +139,15 @@ describe('DELETE /projects/:projectId step order', () => {
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'Failed to purge project connectors' });
     expect(steps).toEqual(['release', 'release-screenshots', 'delete-repo', 'purge-connectors']);
+  });
+
+  test('a failed screenshot release answers 500 before the repository is touched', async () => {
+    screenshotError = new Error('screenshot storage unavailable');
+
+    const res = await deleteProject();
+
+    expect(res.status).toBe(500);
+    expect(steps).toEqual(['release', 'release-screenshots']);
   });
 
   test('a failed attachment release answers 500 before the repository is touched', async () => {
