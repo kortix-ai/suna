@@ -2274,7 +2274,7 @@ describe('pi subagents extension', () => {
     const olderPage = await r.user(`/session/${childId}/message?limit=10&cursor=${newest[0]!.info.id}`)
     expect(((await olderPage.json()) as unknown[]).length).toBe(2)
     expect(olderPage.headers.get('x-next-cursor')).toBeNull()
-    expect(await r.user(`/session/${childId}`).then((res) => res.json())).toMatchObject({ id: childId, parentID: root, title: expect.stringContaining('Write the note') })
+    expect(await r.user(`/session/${childId}`).then((res) => res.json())).toMatchObject({ id: childId, parentID: root, title: 'Write the note' })
     expect((await children(r)).map((s) => s.id)).toEqual([childId])
     expect(((await r.user('/session').then((res) => res.json())) as Array<{ id: string }>).map((s) => s.id)).toEqual([root, childId])
     // The root transcript holds no child message.

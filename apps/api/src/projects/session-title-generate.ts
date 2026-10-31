@@ -25,14 +25,22 @@ import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
 //   - first HTTP prompt: sessions created empty (the whole web UI, warm claim,
 //     CLI/SDK) carry their first prompt as an OpenCode REST request body.
 // At most two bounded calls to the internal LLM gateway use only that text. A
-// deterministic prompt excerpt guarantees a title when both calls fail.
+// deterministic prompt excerpt guarantees a title when both calls fail. That
+// excerpt is a fallback (`title_fallback_attempts`): the next prompt or turn end
+// tries the model again, up to MAX_TITLE_FALLBACK_ATTEMPTS times in all.
 // Nothing else writes `metadata.name`.
 //
 // Fire-and-forget by contract: idempotent, best-effort, and it never blocks or
 // fails the request it hangs off.
 
 const MAX_TITLE_LENGTH = 64;
-const DEFAULT_GENERATION_TIMEOUT_MS = 15_000;
+// Two attempts fit in the old single 15 s budget. A title completion takes
+// ~1-3 s; an attempt still open at 8 s is a stalled upstream, and the next call
+// is the faster way to a title.
+const DEFAULT_GENERATION_TIMEOUT_MS = 8_000;
+
+/** Model attempts a session gets before its prompt-excerpt title is final. */
+export const MAX_TITLE_FALLBACK_ATTEMPTS = 3;
 // OpenAI-compatible reasoning models count hidden reasoning and visible text
 // against the same output ceiling. A 24-token ceiling let the managed
 // DeepSeek fallback spend every token on reasoning and return empty content.
@@ -289,13 +297,23 @@ function metadataText(metadata: Record<string, unknown>, key: string): string | 
   return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
+/** Model attempts that ended in the prompt-excerpt title so far; 0 for a model
+ *  title or none. Only a jsonb number counts, as in the CAS in `persistTitle`. */
+function fallbackAttempts(metadata: Record<string, unknown>): number {
+  const value = metadata.title_fallback_attempts;
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
 /** A session still needs a title unless the user named it or a real (non
- *  placeholder) title already exists — matches opencode-title-capture. */
+ *  placeholder) title already exists. A prompt-excerpt fallback title is not
+ *  real until it has used up its model attempts. */
 function needsTitle(row: ProjectSessionRow): boolean {
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
   if (metadataText(metadata, 'custom_name')?.trim()) return false;
   const name = metadataText(metadata, 'name')?.trim();
-  return !(name && !isPlaceholderOpencodeTitle(name));
+  if (!name || isPlaceholderOpencodeTitle(name)) return true;
+  const attempts = fallbackAttempts(metadata);
+  return attempts >= 1 && attempts < MAX_TITLE_FALLBACK_ATTEMPTS;
 }
 
 /** The clean text a session was created to be titled from — set at create when
@@ -368,6 +386,19 @@ function sessionModel(row: ProjectSessionRow): string | null {
 const JS_WHITESPACE = sql.raw("E' \\t\\n\\r\\f\\v'");
 const trimmedName = sql`btrim(${projectSessions.metadata}->>'name', ${JS_WHITESPACE})`;
 const trimmedCustomName = sql`btrim(${projectSessions.metadata}->>'custom_name', ${JS_WHITESPACE})`;
+// CASE, not AND: PostgreSQL does not promise to evaluate the type check before
+// the cast, and a non-number value must read as 0 (`fallbackAttempts`).
+const fallbackAttemptsLeft = sql`CASE WHEN jsonb_typeof(${projectSessions.metadata}->'title_fallback_attempts') = 'number'
+  THEN (${projectSessions.metadata}->>'title_fallback_attempts')::numeric >= 1
+    AND (${projectSessions.metadata}->>'title_fallback_attempts')::numeric < ${MAX_TITLE_FALLBACK_ATTEMPTS}
+  ELSE false END`;
+
+/** A prompt-excerpt title: the model attempts it took so far, and the text a
+ *  later attempt titles from (the turn-end hook reads it as `title_source`). */
+export interface TitleFallback {
+  attempts: number;
+  source: string;
+}
 
 /**
  * Compare-and-set the title.
@@ -382,10 +413,21 @@ const trimmedCustomName = sql`btrim(${projectSessions.metadata}->>'custom_name',
  *
  * Exported for the integration test that exercises the CAS against a real row.
  */
-export async function persistTitle(row: ProjectSessionRow, title: string): Promise<void> {
+export async function persistTitle(
+  row: ProjectSessionRow,
+  title: string,
+  fallback?: TitleFallback,
+): Promise<void> {
+  const metadata = fallback
+    ? projectSessionMetadataMerge({
+        name: title,
+        title_fallback_attempts: fallback.attempts,
+        title_source: fallback.source.slice(0, TITLE_SOURCE_MAX_CHARS),
+      })
+    : sql`(coalesce(${projectSessions.metadata}, '{}'::jsonb) - 'title_fallback_attempts') || ${JSON.stringify({ name: title })}::jsonb`;
   await db
     .update(projectSessions)
-    .set({ metadata: projectSessionMetadataMerge({ name: title }), updatedAt: new Date() })
+    .set({ metadata, updatedAt: new Date() })
     .where(
       and(
         eq(projectSessions.sessionId, row.sessionId),
@@ -395,6 +437,7 @@ export async function persistTitle(row: ProjectSessionRow, title: string): Promi
         or(
           sql`nullif(${trimmedName}, '') IS NULL`,
           sql`${trimmedName} ~* ${PLACEHOLDER_TITLE_SQL_PATTERN}`,
+          fallbackAttemptsLeft,
         ),
       ),
     );
@@ -422,7 +465,7 @@ export interface GenerateSessionTitleOptions {
     userId: string,
   ) => Promise<{ secret: string; keyId: string } | null>;
   revokeKey?: (projectId: string, keyId: string) => Promise<void>;
-  persist?: (row: ProjectSessionRow, title: string) => Promise<void>;
+  persist?: (row: ProjectSessionRow, title: string, fallback?: TitleFallback) => Promise<void>;
   fallbackModel?: (
     input: GenerateSessionTitleInput,
     excludedModel?: string,
@@ -543,32 +586,40 @@ export async function generateSessionTitleFromFirstPrompt(
             ),
           );
           if (!title) {
-            const retryModel = await fallbackModel(input, model);
-            if (retryModel && retryModel !== model) {
-              appLogger.warn('[title-generate] retrying with servable fallback model', {
-                sessionId: input.sessionId,
-                rejectedModel: model,
+            // A different servable model when there is one. Otherwise the same
+            // model again: most failures are one stalled or closed upstream
+            // connection, and the next call to that model succeeds.
+            const retryModel = (await fallbackModel(input, model)) || model;
+            appLogger.warn('[title-generate] retrying title model', {
+              sessionId: input.sessionId,
+              rejectedModel: model,
+              retryModel,
+            });
+            title = sanitizeGeneratedTitle(
+              await generateWithDeadline(
+                generate,
                 retryModel,
-              });
-              title = sanitizeGeneratedTitle(
-                await generateWithDeadline(
-                  generate,
-                  retryModel,
-                  `Bearer ${minted.secret}`,
-                  promptText,
-                  input.sessionId,
-                  generationTimeoutMs,
-                ),
-              );
-            }
+                `Bearer ${minted.secret}`,
+                promptText,
+                input.sessionId,
+                generationTimeoutMs,
+              ),
+            );
           }
         } finally {
           await revoke(input.projectId, minted.keyId).catch(() => {});
         }
       }
     }
+    let fallback: TitleFallback | undefined;
     if (!title) {
       title = deterministicTitleFromPrompt(promptText);
+      // Only a model that failed can succeed later. A few-word prompt is its
+      // own title, and with no servable model a retry spends nothing and
+      // changes nothing.
+      if (title && model) {
+        fallback = { attempts: fallbackAttempts((row.metadata ?? {}) as Record<string, unknown>) + 1, source: promptText };
+      }
       if (title && !shortPrompt) {
         appLogger.warn('[title-generate] using deterministic prompt fallback', {
           sessionId: input.sessionId,
@@ -581,10 +632,11 @@ export async function generateSessionTitleFromFirstPrompt(
     // the actual guarantee that a concurrent rename wins.
     const fresh = await load(input.sessionId, input.projectId);
     if (!fresh || !needsTitle(fresh)) return;
-    await persist(fresh, title);
+    await persist(fresh, title, fallback);
     appLogger.info('[title-generate] titled session from first prompt', {
       sessionId: input.sessionId,
       title,
+      ...(fallback ? { fallback_attempts: fallback.attempts } : {}),
     });
   } catch (err) {
     appLogger.warn('[title-generate] failed', {

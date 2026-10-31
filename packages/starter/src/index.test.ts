@@ -245,8 +245,9 @@ describe('getStarterFiles', () => {
       'xlsx',
       // Platform front door.
       'kortix-cli',
-      // Computer basics — driving a real browser.
+      // Computer basics — driving a real browser and desktop apps.
       'agent-browser',
+      'agent-desktop',
       // Web artifacts, and the skill that puts them on a public URL.
       'web-publishing-and-deployments',
       'webapp',

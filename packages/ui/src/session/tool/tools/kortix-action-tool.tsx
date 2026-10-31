@@ -65,7 +65,8 @@ import {
  * The tool returns one `KortixToolResult` (`packages/api-contract/src/kortix-tool-card.ts`),
  * and the person reads its `card`: a headline, a status mark, the rows it found,
  * the settings it changed, and the links to open. The model reads `data`; this
- * card never shows it, except folded under "Show details".
+ * card never shows it, except folded under "Show details" when no rich body
+ * draws it.
  *
  * A refused action is not a failure: Kortix's permission check worked, and a
  * person can grant the permission. It reads as "Needs a permission" with the
@@ -378,10 +379,11 @@ export function KortixActionTool(props: ToolProps) {
   const { card, error } = result;
   const denied = card.status === 'denied';
   const failure = card.status === 'error' && error && error.message && error.message !== card.title ? error.message : undefined;
-  // `fail()` puts the error message in the subtitle; the open card shows it in full instead.
-  const subtitleInBody = denied || (failure !== undefined && failure === card.subtitle);
   // A multi-agent result draws its own body from `data`; the card's rows would say it twice.
   const rich = multi && !denied ? multiAgentBody(multi, result) : null;
+  // `fail()` puts the error message in the subtitle, and a rich body says what
+  // the subtitle sums up: the open card shows it in full instead.
+  const subtitleInBody = denied || Boolean(rich) || (failure !== undefined && failure === card.subtitle);
   const hasBody = denied || Boolean(failure) || Boolean(rich) || card.rows.length > 0 || card.changes.length > 0 || card.links.length > 0 || Boolean(raw);
   // What the person must see or act on opens itself: a refusal, a change, a sign-in link.
   const attention = denied || card.status === 'needs_you' || card.changes.length > 0 || card.links.some((link) => link.external);
@@ -426,7 +428,8 @@ export function KortixActionTool(props: ToolProps) {
               </ToolResultCard>
             )}
             {card.links.length > 0 && <CardLinks links={card.links} />}
-            {raw && <CardDetails raw={raw} />}
+            {/* The raw result is for the model. A rich body already shows every field a person reads. */}
+            {raw && !rich && <CardDetails raw={raw} />}
           </>
         ) : undefined}
       </BasicTool>

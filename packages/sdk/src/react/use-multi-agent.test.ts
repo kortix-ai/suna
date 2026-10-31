@@ -17,6 +17,10 @@ mock.module('@tanstack/react-query', () => ({
     setQueryData: (key: unknown[], update: (old: unknown) => unknown) => {
       cache.set(JSON.stringify(key), update(cache.get(JSON.stringify(key))));
     },
+    setQueriesData: (filters: { queryKey: unknown[] }, update: (old: unknown) => unknown) => {
+      const prefix = JSON.stringify(filters.queryKey).slice(0, -1);
+      for (const [key, value] of cache) if (key.startsWith(prefix)) cache.set(key, update(value));
+    },
   }),
 }));
 
@@ -139,5 +143,64 @@ describe('useSessionChildren', () => {
     const live = useSessionChildren('p1', 's1', { refetchInterval: 5_000 }) as any;
     expect(live.refetchInterval).toBe(5_000);
     expect(live.refetchIntervalInBackground).toBe(false);
+  });
+});
+
+describe('useSessionChildren keeps the parent row in the session list current', () => {
+  const session = (session_id: string, child_count?: number) => ({ session_id, child_count });
+  const listKey = (filters: Record<string, unknown>) =>
+    JSON.stringify(qk.project.sessionsPaged('p1', 'visible', filters));
+  const pageOf = (items: unknown[]) => ({ pages: [{ items, next_cursor: null }], pageParams: [null] });
+  const childCountIn = (key: string, sessionId: string) =>
+    ((cache.get(key) as any).pages[0].items as Array<{ session_id: string; child_count?: number }>).find(
+      (row) => row.session_id === sessionId,
+    )?.child_count;
+
+  async function readChildren(count: number, q?: string) {
+    globalThis.fetch = mock(async () =>
+      new Response(JSON.stringify(Array.from({ length: count }, (_, i) => session(`c${i}`))), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    ) as unknown as typeof fetch;
+    const { configureKortix } = await import('../core/http/config');
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+    const { useSessionChildren } = await import('./use-project-sessions');
+    await (useSessionChildren('p1', 's1', q ? { q } : undefined) as any).queryFn({ pageParam: null });
+  }
+
+  // A spawned session showed in the sidebar only after a reload: the sidebar
+  // opens a row's children only when the row's `child_count` is above 0, and
+  // that list did not refresh when a child was created.
+  test('a child the parent row does not count yet raises its child_count in every list', async () => {
+    const roots = listKey({ parent: 'root' });
+    const pinned = listKey({ parent: 'root', view: 'pinned' });
+    cache.set(roots, pageOf([session('s1', 0), session('s2', 0)]));
+    cache.set(pinned, pageOf([session('s1')]));
+
+    await readChildren(2);
+
+    expect(childCountIn(roots, 's1')).toBe(2);
+    expect(childCountIn(pinned, 's1')).toBe(2);
+    expect(childCountIn(roots, 's2')).toBe(0);
+  });
+
+  test('never lowers a count: the parent counts children this viewer cannot list', async () => {
+    const roots = listKey({ parent: 'root' });
+    const before = pageOf([session('s1', 5)]);
+    cache.set(roots, before);
+
+    await readChildren(2);
+
+    expect(cache.get(roots)).toBe(before);
+  });
+
+  test('a search over the children says nothing about how many there are', async () => {
+    const roots = listKey({ parent: 'root' });
+    cache.set(roots, pageOf([session('s1', 0)]));
+
+    await readChildren(1, 'website');
+
+    expect(childCountIn(roots, 's1')).toBe(0);
   });
 });

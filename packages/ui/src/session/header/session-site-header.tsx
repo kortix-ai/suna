@@ -36,7 +36,8 @@ import { SessionPendingApprovalsIndicator } from './session-pending-approvals-in
 import { SessionGoalIndicator } from './session-goal-indicator';
 import { SessionRemindersIndicator } from './session-reminders-indicator';
 import { SessionTitleInput } from './session-title-input';
-import { SubagentHoverCard, subagentTitle } from './subagent-hover-card';
+import { subagentTitle } from '../agents/agent-model';
+import { SubagentHoverCard } from './subagent-hover-card';
 import { Copy } from '../../icons/copy';
 import { Home } from '../../internal/icons/home';
 import { openSessionQuickView } from '../panel/open-session-quick-view';

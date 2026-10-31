@@ -6,8 +6,12 @@ import { Hint } from '../../../primitives/hint';
 import { ToolResultCard } from '../shared/result-card';
 import { SubagentDialog } from '../../agents/subagent-view';
 import { useTranslations } from '../../../i18n';
+import { AgentStateMark } from '../../agents/agent-state-mark';
+import { subagentTitle } from '../../agents/agent-model';
+import { agentDisplayName } from '../../../internal/components/agent-mark';
 import {
   ArrowSquareOutIcon,
+  ArrowUpRightIcon,
   ListChecksIcon,
   PaperPlaneTiltIcon,
   StopCircleIcon,
@@ -76,15 +80,6 @@ const PEER_VARIANT: Record<PeerSendStatus, BadgeVariant> = {
   dropped: 'muted',
 };
 
-const STATE_VARIANT: Record<AgentBoardState, BadgeVariant> = {
-  working: 'success',
-  needs_input: 'warning',
-  idle: 'muted',
-  completed: 'success',
-  failed: 'destructive',
-  stopped: 'muted',
-};
-
 const TASK_VARIANT: Record<TeamTaskStatus, BadgeVariant> = {
   pending: 'muted',
   in_progress: 'info',
@@ -131,32 +126,67 @@ function PeerSendBody({ send }: { send: PeerSendSummary }) {
   );
 }
 
+/** Row actions: shown on hover and on keyboard focus, always on a touch screen (as in the agents line). */
+const ROW_ACTIONS =
+  'flex shrink-0 items-center pr-1 opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 [@media(hover:none)]:opacity-100';
+
+/**
+ * One agent `list_agents` found, drawn as the agents line draws it: the state
+ * mark, the handle and its state, then one muted line with what it works on
+ * and how it relates to this session. The row opens the agent's session.
+ */
 function AgentLine({ agent }: { agent: ReachableAgentRow }) {
   const t = useTranslations('multiAgent.tools');
-  const detail = agent.title ?? agent.agentName;
+  const tStrip = useTranslations('multiAgent.strip');
+  const [viewing, setViewing] = useState(false);
+  const title = agent.title ? subagentTitle(agent.title) || null : null;
   const relation = t.has(`relation.${agent.relation}`) ? t(`relation.${agent.relation}`) : null;
+  const meta = [
+    title ?? (agent.agentName ? tStrip('runsAs', { agent: agentDisplayName(agent.agentName) }) : null),
+    relation,
+    agent.canReceive ? null : t('cannotReceive'),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const name = `@${agent.handle}`;
   return (
-    <div className={ROW_CLASS}>
-      <span className="text-foreground shrink-0 font-medium">@{agent.handle}</span>
-      {relation && <span className="text-muted-foreground shrink-0">{relation}</span>}
-      {detail ? (
-        <span className="text-muted-foreground min-w-0 flex-1 truncate" title={detail}>
-          {detail}
+    <li className="group/row hover:bg-hover focus-within:bg-hover flex min-w-0 items-center gap-1 rounded-sm" data-agent-row={agent.sessionId}>
+      <button
+        type="button"
+        onClick={() => setViewing(true)}
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1.5 pl-2 text-left text-xs outline-none"
+      >
+        {agent.state ? <AgentStateMark state={agent.state} /> : <span aria-hidden className="size-3 shrink-0" />}
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span className="text-foreground min-w-0 truncate font-medium">{name}</span>
+            {agent.state && (
+              <span className="text-muted-foreground shrink-0">{t(`state.${STATE_KEY[agent.state]}`)}</span>
+            )}
+          </span>
+          {meta && (
+            <span className="text-muted-foreground block truncate" title={meta}>
+              {meta}
+            </span>
+          )}
         </span>
-      ) : (
-        <span className="flex-1" />
-      )}
-      {!agent.canReceive && (
-        <Badge variant="muted" size="sm" className="shrink-0">
-          {t('cannotReceive')}
-        </Badge>
-      )}
-      {agent.state && (
-        <Badge variant={STATE_VARIANT[agent.state]} size="sm" className="shrink-0">
-          {t(`state.${STATE_KEY[agent.state]}`)}
-        </Badge>
-      )}
-    </div>
+      </button>
+      <div className={ROW_ACTIONS}>
+        <Hint label={tStrip('openAgent', { name })} side="top">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={tStrip('openAgent', { name })}
+            onClick={() => setViewing(true)}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <ArrowUpRightIcon className="size-3.5 shrink-0" />
+          </Button>
+        </Hint>
+      </div>
+      <SubagentDialog open={viewing} onOpenChange={setViewing} sessionId={agent.sessionId} title={name} />
+    </li>
   );
 }
 
@@ -250,13 +280,13 @@ export function multiAgentBody(tool: MultiAgentTool, result: KortixToolResult): 
       const agents = parseReachable(result.data);
       if (!agents || agents.length === 0) return null;
       return (
-        <RowList>
-          {agents.map((agent) => (
-            <li key={agent.sessionId}>
-              <AgentLine agent={agent} />
-            </li>
-          ))}
-        </RowList>
+        <ToolResultCard bodyClassName="p-1">
+          <ul>
+            {agents.map((agent) => (
+              <AgentLine key={agent.sessionId} agent={agent} />
+            ))}
+          </ul>
+        </ToolResultCard>
       );
     }
     case 'task_create':
