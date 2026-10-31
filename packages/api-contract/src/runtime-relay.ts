@@ -241,6 +241,13 @@ export const RUNTIME_CAPABILITIES = [
    * `SESSION_LOG_EVENTS`). Without `schema` the stream is the v1 stream.
    */
   'session.log.v2',
+  /**
+   * Cross-session messages: the `send_message` and `list_agents` tools
+   * (`@kortix/api-contract/multi-agent`).
+   */
+  'session.messaging',
+  /** A team's shared task list: the `task_*` tools (flag `agent_teams`). */
+  'session.team_tasks',
 ] as const;
 export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 
@@ -252,12 +259,39 @@ export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 export const RUNTIME_TURNS_CAPABILITY = 'runtime.turns.v1' as const;
 
 /**
+ * The box runs Claude subscription models (`claude-agent/<id>`, `./claude-agent`): its image
+ * has the `claude` program and its daemon has the provider. A box without it answers a turn on
+ * such a model with an error, so a client offers those models only where this is listed.
+ */
+export const RUNTIME_CLAUDE_AGENT_CAPABILITY = 'models.claude_agent.v1' as const;
+
+/**
  * The daemon serves `POST /kortix/runtime/messages/:id/:messageId/retract`:
  * take back a user message that no model call has read, on every harness.
  * `200 { retracted: true }` when it is gone, `404` when there is no such
  * message, `409 { code: MESSAGE_READ_CODE }` when a model call read it.
  */
 export const RUNTIME_RETRACT_CAPABILITY = 'runtime.retract.v1' as const;
+
+/**
+ * The runtime keeps a delivered prompt's `message_id` as its user message id,
+ * orders the transcript by position (admission order), not by id, and answers
+ * a repeated id `200 { deduplicated: true }` without storing a second message.
+ * A client may send an id minted long before delivery (a prompt that waited
+ * behind a turn), and a redelivery may send the same id again. apps/api keeps
+ * the wire id on a box that lists this; without it apps/api re-mints the id
+ * above the transcript, because OpenCode orders by id. pi lists it.
+ */
+export const RUNTIME_STABLE_MESSAGE_ID_CAPABILITY = 'runtime.stable_message_id.v1' as const;
+
+/**
+ * Session metadata key, value `true`: a cloud subagent its parent started in
+ * the background (the pi `agent` tool's `run_in_background`, kortixd
+ * `harness/pi/cloud-subagent.ts`). The parent's tool call returned at once,
+ * so the API delivers each finished turn of this session into the parent as
+ * a new message (apps/api `projects/subagent-notice.ts`).
+ */
+export const SUBAGENT_NOTIFY_PARENT_KEY = 'notify_parent' as const;
 
 /**
  * The daemon serves the session-log action routes, under `/kortix/runtime`:
@@ -272,7 +306,7 @@ export const RUNTIME_RETRACT_CAPABILITY = 'runtime.retract.v1' as const;
  * | `PUT /sessions/:id/grants` | `RuntimeGrantsBody` | `200 { grants }` |
  * | `GET /commands` | none | `200 { commands: RuntimeCommandInfo[] }` |
  * | `GET /pending` | none | `200 RuntimePending` |
- * | `GET /log?thread=&after_seq=&before_seq=&limit=` | none | `200 { generation, thread_id, messages: SessionLogMessage[], has_more }` |
+ * | `GET /log?thread=&after_seq=&before_seq=&limit=` | none | `200 { generation, thread_id, messages: SessionLogMessage[], has_more }`; with `RUNTIME_LOG_CAPABILITY`, a whole `SessionLogPage` |
  * | `GET /log/messages/:messageId` | none | `200 SessionLogMessage`; `404` |
  * | `GET /log/blobs/:sha256` | none | the attachment bytes; `404` |
  * | `GET /workspace` | none | `200 RuntimeWorkspaceInfo` |
@@ -282,6 +316,17 @@ export const RUNTIME_RETRACT_CAPABILITY = 'runtime.retract.v1' as const;
  * while a turn runs (the journal sends at most 5 s later).
  */
 export const RUNTIME_ACTIONS_CAPABILITY = 'runtime.actions.v1' as const;
+
+/**
+ * The box's log reads stand in for the API's copy:
+ *  - `GET /kortix/runtime/log` answers a whole `SessionLogPage` (`session`, `generation`, thread heads),
+ *    at the seqs the API stores;
+ *  - a prompt the box admitted and pi has not appended yet (queued behind a running turn) is in
+ *    the log from its admission, at a provisional seq above every real one, on `GET /log`,
+ *    `GET /log/messages/:id` and the v2 stream; its real seq replaces it when its turn starts;
+ *  - `GET /kortix/health` `harness.session.root_thread_id` names the log's root thread.
+ */
+export const RUNTIME_LOG_CAPABILITY = 'runtime.log.v1' as const;
 
 /** `POST /kortix/runtime/permissions/:id/reply`. `always` grants the capability for the session. */
 export const RuntimePermissionReplyBodySchema = z.object({
@@ -475,9 +520,10 @@ export interface CompiledAgentSet {
    */
   project_tools?: Record<string, string>;
   /**
-   * The Kortix tools the project lists as `<name>: kortix:<name>`. Present
-   * only when kortix.yaml has a `tools` key; then only these Kortix tools load,
-   * plus the ones `project_tools` replaces. Absent: all of them load.
+   * The Kortix tools this compiled set loads, plus the ones `project_tools`
+   * replaces. Only the platform's My Kortix config sets it; a project's
+   * compiled set omits it, and then every Kortix tool loads (an agent's
+   * `tools` grant decides what it may call).
    */
   kortix_tools?: string[];
   /**
@@ -560,6 +606,8 @@ export const HarnessHealthSchema = z.object({
     id: z.string().nullable(),
     /** apps/api asked this box to create the root at boot. */
     required: z.boolean(),
+    /** The root thread of the box's session log (`RUNTIME_LOG_CAPABILITY`); null while the runtime is down. */
+    root_thread_id: z.string().nullable().optional(),
   }),
   /** Present only for `?turn=1`. */
   turn: z

@@ -1,6 +1,8 @@
 import { afterAll, afterEach, expect, mock, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 
+const projects = await import('../projects/surface');
+
 const config = {
   KORTIX_WORKERS_ENABLED: false,
   KORTIX_PROCESS_ROLE: 'all' as 'all' | 'web',
@@ -42,6 +44,7 @@ mock.module('../shared/pg-broadcast', () => ({
 }));
 mock.module('../config-releases/base-tip', () => ({ storedBaseTipProof: async () => null }));
 mock.module('../projects/surface', () => ({
+  ...projects,
   handBackClaims: async () => 0,
   signalSessionRuntimeActive() {},
   useSharedTipProof() {},

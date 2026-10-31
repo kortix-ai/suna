@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MY_KORTIX_SANDBOX_SLUG } from '@kortix/shared';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
+import { DEFAULT_CPU, DEFAULT_DISK_GB, DEFAULT_MEMORY_GB } from './build-context';
 import { recentlyBuiltStrict } from './builder-log';
 import type { EnsureSandboxImageResult, SnapshotBuildSource, SandboxImageSpec } from './builder';
 import type { ProviderState } from './providers';
@@ -12,7 +14,7 @@ import { computeTemplateIdentity, type ResolvedTemplate } from './templates';
 import { canServeLastKnownGoodRuntime } from './runtime-freshness';
 import { LAST_READY_IMAGE_MAX_AGE_MS, type ReadyImage } from './last-ready-image';
 import { sessionSandboxes } from '@kortix/db';
-import { and, desc, gte, like, sql } from 'drizzle-orm';
+import { and, desc, gte, like, or, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 
 export class SnapshotBuildError extends Error {
@@ -22,16 +24,25 @@ export class SnapshotBuildError extends Error {
   }
 }
 
-export const META_RUNTIME_SPEC: SandboxImageSpec = Object.freeze({ cpu: 1, memoryGb: 2, diskGb: 8 });
+/**
+ * My Kortix's machine: the default session machine. Its image is the platform
+ * default's computer, desktop and browser included (my-kortix-dockerfile.ts),
+ * which needs the same room: ~7.4 GB of image, ~380 MB RAM for the desktop.
+ */
+export const MY_KORTIX_RUNTIME_SPEC: SandboxImageSpec = Object.freeze({
+  cpu: DEFAULT_CPU,
+  memoryGb: DEFAULT_MEMORY_GB,
+  diskGb: DEFAULT_DISK_GB,
+});
 
-const metaImageBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
+const myKortixImageBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
 let metaRuntimeFingerprint: Promise<string> | null = null;
 
 function currentMetaRuntimeFingerprint(): Promise<string> {
   if (metaRuntimeFingerprint) return metaRuntimeFingerprint;
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
   metaRuntimeFingerprint = buildRuntimeArtifactFingerprint({
-    sandboxVersion: 'meta-v4',
+    sandboxVersion: 'meta-v5',
     artifacts: [
       { label: 'agent', path: resolve(root, 'apps/kortix-sandbox-agent-server/src') },
       { label: 'agent-package', path: resolve(root, 'apps/kortix-sandbox-agent-server/package.json') },
@@ -43,7 +54,7 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
       // same inputs as a project agent's image fingerprint.
       { label: 'machine-doc', path: resolve(root, 'apps/sandbox/MACHINE.md') },
       { label: 'slack-cli', path: resolve(root, 'apps/sandbox/slack-cli') },
-      { label: 'meta-renderer', path: resolve(root, 'packages/shared/src/sandbox/meta-dockerfile.ts') },
+      { label: 'meta-renderer', path: resolve(root, 'packages/shared/src/sandbox/my-kortix-dockerfile.ts') },
       { label: 'sdk', path: resolve(root, 'packages/sdk/src') },
       { label: 'llm-catalog', path: resolve(root, 'packages/llm-catalog/src') },
       { label: 'manifest-schema', path: resolve(root, 'packages/manifest-schema/src') },
@@ -67,8 +78,14 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
  */
 const RUNTIME_REAP_PROTECT_MS = 60 * 60 * 1000;
 
-/** Names are `kortix-meta-<env>-<hash16>`; see `metaSnapshotName`. */
-const META_SNAPSHOT_PREFIX = 'kortix-meta';
+/** Names are `kortix-mykortix-<env>-<hash16>`; see `myKortixSnapshotName`. */
+const MY_KORTIX_SNAPSHOT_PREFIX = 'kortix-mykortix';
+/**
+ * The prefix before the My Kortix rename (2026-10-30). The reap still tidies
+ * its superseded images, and a served legacy image stays a fallback and stays
+ * protected until a newer served image of either prefix replaces it.
+ */
+const LEGACY_MY_KORTIX_SNAPSHOT_PREFIX = 'kortix-meta';
 
 /**
  * The meta image name, namespaced by environment.
@@ -83,8 +100,8 @@ const META_SNAPSHOT_PREFIX = 'kortix-meta';
  * not match this prefix pattern and are left alone by the reap; they need one
  * deliberate cleanup.
  */
-export function metaSnapshotName(contentHash: string): string {
-  return `${META_SNAPSHOT_PREFIX}-${config.INTERNAL_KORTIX_ENV}-${contentHash.slice(0, 16)}`;
+export function myKortixSnapshotName(contentHash: string): string {
+  return `${MY_KORTIX_SNAPSHOT_PREFIX}-${config.INTERNAL_KORTIX_ENV}-${contentHash.slice(0, 16)}`;
 }
 
 /**
@@ -92,7 +109,7 @@ export function metaSnapshotName(contentHash: string): string {
  *
  * The meta fingerprint hashes the source trees of the agent, CLI, SDK, shared,
  * starter and friends, so it changes on essentially every commit that touches
- * them — roughly every deploy. Nothing reaped the old ones: `ensureMetaSandboxImage`
+ * them — roughly every deploy. Nothing reaped the old ones: `ensureMyKortixSandboxImage`
  * deleted a snapshot only when its own build had FAILED, never when a newer one
  * superseded it. Measured 2026-08-12: 118 `kortix-meta-*` snapshots, all under
  * 14 days old, ~8 per day, against a 200-snapshot organisation quota that was
@@ -102,19 +119,15 @@ export function metaSnapshotName(contentHash: string): string {
  * Best-effort by construction: a reap failure must never fail the build that
  * triggered it. The image is already there; tidying is not on the critical path.
  */
-export async function reapSupersededMetaSnapshots(
+export async function reapSupersededMyKortixSnapshots(
   provider: Pick<SandboxProviderAdapter, 'listSnapshots' | 'deleteSnapshot'>,
   keepName: string,
-  /** Test seam for the protection lookup; production uses `metaReapProtection`. */
-  recentLookup: (names: string[], withinMs: number) => Promise<Set<string>> = metaReapProtection,
+  /** Test seam for the protection lookup; production uses `myKortixReapProtection`. */
+  recentLookup: (names: string[], withinMs: number) => Promise<Set<string>> = myKortixReapProtection,
 ): Promise<void> {
-  return reapSupersededEnvironmentRuntimeSnapshots(
-    provider,
-    META_SNAPSHOT_PREFIX,
-    'meta',
-    keepName,
-    recentLookup,
-  );
+  for (const prefix of [MY_KORTIX_SNAPSHOT_PREFIX, LEGACY_MY_KORTIX_SNAPSHOT_PREFIX]) {
+    await reapSupersededEnvironmentRuntimeSnapshots(provider, prefix, 'mykortix', keepName, recentLookup);
+  }
 }
 
 async function reapSupersededEnvironmentRuntimeSnapshots(
@@ -173,9 +186,9 @@ const defaultRegionResident: RegionResidentCheck = async (...args) =>
   (await import('./builder')).templateRegionResident(...args);
 
 /** How long a session start waits for the image to reach its region before it falls back. */
-const META_BOOT_REGION_WAIT_MS = 3_000;
+const MY_KORTIX_BOOT_REGION_WAIT_MS = 3_000;
 
-export interface MetaImageDeps {
+export interface MyKortixImageDeps {
   /** Test seam; production reads `session_sandboxes`. */
   readServed?: () => Promise<ReadyImage[]>;
   /** Test seam; production asks Platinum. */
@@ -196,14 +209,14 @@ export interface MetaImageDeps {
  * Before this, the first meta session after every deploy waited for the build:
  * 80–111 s on dev, 6 times on 2026-10-30.
  */
-export async function ensureMetaSandboxImage(
+export async function ensureMyKortixSandboxImage(
   opts: {
     source?: SnapshotBuildSource;
     provider: string;
     /** The session's project. It decides the Platinum region the image must be in. */
     projectId?: string;
   },
-  deps: MetaImageDeps = {},
+  deps: MyKortixImageDeps = {},
 ): Promise<EnsureSandboxImageResult> {
   const provider = getSandboxProvider(opts.provider);
   if (!provider.isConfigured()) {
@@ -211,28 +224,28 @@ export async function ensureMetaSandboxImage(
   }
   const fingerprint = await currentMetaRuntimeFingerprint();
   const contentHash = createHash('sha256').update(`meta-runtime-v1\0${fingerprint}`).digest('hex');
-  const snapshotName = metaSnapshotName(contentHash);
+  const snapshotName = myKortixSnapshotName(contentHash);
   const buildKey = `${opts.provider}:${snapshotName}`;
   const regionResident = deps.regionResident ?? defaultRegionResident;
   const source = opts.source ?? 'session-start';
 
   if (canServeLastKnownGoodRuntime({ source })) {
     const ready =
-      !metaImageBuilds.has(buildKey) &&
+      !myKortixImageBuilds.has(buildKey) &&
       (await provider.getSnapshotState(snapshotName).catch(() => 'unknown' as const)) === 'active' &&
       (!opts.projectId ||
-        (await regionResident(opts.projectId, opts.provider, snapshotName, META_BOOT_REGION_WAIT_MS)));
-    if (ready) return metaImageResult(snapshotName, contentHash, false);
-    const fallback = await findServableMetaFallback(provider, {
+        (await regionResident(opts.projectId, opts.provider, snapshotName, MY_KORTIX_BOOT_REGION_WAIT_MS)));
+    if (ready) return myKortixImageResult(snapshotName, contentHash, false);
+    const fallback = await findServableMyKortixFallback(provider, {
       currentName: snapshotName,
       projectId: opts.projectId,
-      readServed: deps.readServed ?? servedMetaImages,
+      readServed: deps.readServed ?? servedMyKortixImages,
       regionResident,
     });
     if (fallback) {
       // The in-process map dedupes this with any build already running here;
       // `waitForProviderBuild` dedupes it with another replica's build.
-      void ensureMetaSandboxImage({ ...opts, source: 'background' }, deps).catch((err) => {
+      void ensureMyKortixSandboxImage({ ...opts, source: 'background' }, deps).catch((err) => {
         logger.warn('[snapshots] meta: background build failed', {
           snapshotName,
           error: err instanceof Error ? err.message : String(err),
@@ -242,40 +255,40 @@ export async function ensureMetaSandboxImage(
         snapshotName,
         fallback: fallback.snapshotName,
       });
-      return metaImageResult(fallback.snapshotName, fallback.contentHash ?? contentHash, false);
+      return myKortixImageResult(fallback.snapshotName, fallback.contentHash ?? contentHash, false);
     }
     logger.warn('[snapshots] meta: no ready image to serve; waiting for the build', { snapshotName });
   }
 
-  let image = metaImageBuilds.get(buildKey);
+  let image = myKortixImageBuilds.get(buildKey);
   let ownsImage = false;
   if (!image) {
     ownsImage = true;
     image = (async () => {
       let state = await provider.getSnapshotState(snapshotName);
       if (state === 'building') state = await waitForProviderBuild(provider, snapshotName);
-      if (state === 'active') return metaImageResult(snapshotName, contentHash, false);
+      if (state === 'active') return myKortixImageResult(snapshotName, contentHash, false);
       if (state === 'build_failed') await provider.deleteSnapshot(snapshotName);
       await provider.buildSnapshot({
         snapshotName,
         userDockerfile: '# platform meta runtime',
-        spec: { ...META_RUNTIME_SPEC },
-        slug: 'meta',
+        spec: { ...MY_KORTIX_RUNTIME_SPEC },
+        slug: MY_KORTIX_SANDBOX_SLUG,
         isShared: true,
-        runtimeProfile: 'meta' as const,
+        runtimeProfile: 'mykortix' as const,
       });
       // Tidy only after the replacement is actually active, so a failed build
       // can never leave the environment with nothing to boot.
-      await reapSupersededMetaSnapshots(provider, snapshotName);
-      return metaImageResult(snapshotName, contentHash, true);
+      await reapSupersededMyKortixSnapshots(provider, snapshotName);
+      return myKortixImageResult(snapshotName, contentHash, true);
     })();
-    metaImageBuilds.set(buildKey, image);
+    myKortixImageBuilds.set(buildKey, image);
   }
   let result: EnsureSandboxImageResult;
   try {
     result = await image;
   } finally {
-    if (ownsImage) metaImageBuilds.delete(buildKey);
+    if (ownsImage) myKortixImageBuilds.delete(buildKey);
   }
   // Copy the image to the session's region now, so the create is not refused
   // with `409 replicating` and retried. A failed copy answers false; the create
@@ -285,35 +298,38 @@ export async function ensureMetaSandboxImage(
 }
 
 /** Test seam: settles once every meta build this process started has finished. */
-export async function settleMetaImageBuilds(): Promise<void> {
-  while (metaImageBuilds.size > 0) await Promise.allSettled([...metaImageBuilds.values()]);
+export async function settleMyKortixImageBuilds(): Promise<void> {
+  while (myKortixImageBuilds.size > 0) await Promise.allSettled([...myKortixImageBuilds.values()]);
 }
 
-function metaImageResult(snapshotName: string, contentHash: string, built: boolean): EnsureSandboxImageResult {
+function myKortixImageResult(snapshotName: string, contentHash: string, built: boolean): EnsureSandboxImageResult {
   return {
     snapshotName,
-    slug: 'meta',
+    slug: MY_KORTIX_SANDBOX_SLUG,
     contentHash,
     built,
     isDefault: false,
-    runtimeProfile: 'meta' as const,
-    spec: { ...META_RUNTIME_SPEC },
+    runtimeProfile: 'mykortix' as const,
+    spec: { ...MY_KORTIX_RUNTIME_SPEC },
   };
 }
 
 /** How many served meta images are kept by the reap and probed as fallbacks. */
-export const META_SERVED_IMAGE_LIMIT = 3;
+export const MY_KORTIX_SERVED_IMAGE_LIMIT = 3;
 
 /**
- * Meta images a session of this environment booted, newest first.
+ * My Kortix images a session of this environment booted, newest first, under
+ * either prefix (`kortix-mykortix-<env>-` and the legacy `kortix-meta-<env>-`):
+ * on the first deploy after the rename, the only served images are legacy, and
+ * they stay fallbacks and stay protected from the reap.
  *
- * Provenance matters here. Local stacks share the `kortix-meta-dev-` namespace
+ * Provenance matters here. Local stacks share the `kortix-mykortix-dev-` namespace
  * and the provider organisation with deployed dev, and they build images from
  * uncommitted source. Their sessions live in their own database, so this list
  * only ever names images that this environment's API built and a real session
  * booted. A provider listing cannot tell the two apart.
  */
-export async function servedMetaImages(input: {
+export async function servedMyKortixImages(input: {
   limit?: number;
   now?: Date;
 } = {}): Promise<ReadyImage[]> {
@@ -329,13 +345,16 @@ export async function servedMetaImages(input: {
     .where(
       and(
         gte(sessionSandboxes.createdAt, cutoff),
-        like(template, `${META_SNAPSHOT_PREFIX}-${config.INTERNAL_KORTIX_ENV}-%`),
+        or(
+          like(template, `${MY_KORTIX_SNAPSHOT_PREFIX}-${config.INTERNAL_KORTIX_ENV}-%`),
+          like(template, `${LEGACY_MY_KORTIX_SNAPSHOT_PREFIX}-${config.INTERNAL_KORTIX_ENV}-%`),
+        ),
         sql`${sessionSandboxes.metadata} ? 'initSucceededAt'`,
       ),
     )
     .groupBy(template)
     .orderBy(desc(lastBoot))
-    .limit(input.limit ?? META_SERVED_IMAGE_LIMIT);
+    .limit(input.limit ?? MY_KORTIX_SERVED_IMAGE_LIMIT);
   return rows.filter((row) => !!row.snapshotName);
 }
 
@@ -344,7 +363,7 @@ export async function servedMetaImages(input: {
  * the session's region. Answers null on any read failure: this is an
  * optimisation, and the caller then waits for the build as before.
  */
-async function findServableMetaFallback(
+async function findServableMyKortixFallback(
   provider: Pick<SandboxProviderAdapter, 'id' | 'getSnapshotState' | 'findFirstActiveSnapshot'>,
   input: {
     currentName: string;
@@ -362,7 +381,7 @@ async function findServableMetaFallback(
       const servable = candidates[index]!;
       if (
         !input.projectId ||
-        (await input.regionResident(input.projectId, provider.id, activeName, META_BOOT_REGION_WAIT_MS))
+        (await input.regionResident(input.projectId, provider.id, activeName, MY_KORTIX_BOOT_REGION_WAIT_MS))
       ) {
         return servable;
       }
@@ -383,8 +402,19 @@ async function findServableMetaFallback(
  * fallbacks a session start boots while the next image builds). Throws when
  * either read fails, so the reap fails closed.
  */
-async function metaReapProtection(names: string[], withinMs: number): Promise<Set<string>> {
-  const [recent, served] = await Promise.all([recentlyBuiltStrict(names, withinMs), servedMetaImages()]);
+export async function myKortixReapProtection(
+  names: string[],
+  withinMs: number,
+  /** Test seams; production reads `snapshot_build_log` and `session_sandboxes`. */
+  deps: {
+    recentlyBuilt?: (names: string[], withinMs: number) => Promise<Set<string>>;
+    readServed?: () => Promise<ReadyImage[]>;
+  } = {},
+): Promise<Set<string>> {
+  const [recent, served] = await Promise.all([
+    (deps.recentlyBuilt ?? recentlyBuiltStrict)(names, withinMs),
+    (deps.readServed ?? servedMyKortixImages)(),
+  ]);
   for (const image of served) recent.add(image.snapshotName);
   return recent;
 }

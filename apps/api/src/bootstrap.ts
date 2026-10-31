@@ -352,6 +352,13 @@ async function runShutdown(signal: string): Promise<void> {
   // jobs via onRelease, if this process was the leader. Runs beside the request
   // drain, bounded: a stuck worker stop must not eat the drain or the flush.
   const leaderStop = within(stopLeaderElection(), WORKER_STOP_BUDGET_MS, 'stopLeaderElection');
+  // A Claude sign-in this task runs (`claude setup-token`) dies with it: give the
+  // member the request drain's budget to paste the code, then fail it as restarted.
+  const claudeLogins = within(
+    import('./projects/surface').then((m) => m.drainClaudeLogins(DRAIN_BUDGET_MS)),
+    DRAIN_BUDGET_MS + 5_000,
+    'claude logins',
+  );
   // No load balancer routes to the worker, so it has no deregistration to wait for.
   const propagationMs = processKind === 'api' ? DRAIN_PROPAGATION_MS : 0;
   const drained = await drainRequests({ propagationMs, budgetMs: DRAIN_BUDGET_MS });
@@ -359,6 +366,7 @@ async function runShutdown(signal: string): Promise<void> {
     appLogger.warn('Request drain budget ended with work in flight', { remaining: drained.remaining });
   }
   await leaderStop;
+  await claudeLogins;
   stopModelPricing();
   runtimeModelCatalog.stop();
   stopTunnelService();

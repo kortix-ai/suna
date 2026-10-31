@@ -1,5 +1,5 @@
 import type { Model } from '../runtime/runtime-types';
-import { modelKeyToWire } from './model-key';
+import { CLAUDE_AGENT_PROVIDER_ID, modelKeyToWire } from './model-key';
 import { GATEWAY_PROVIDER_IDS, type ProviderListResponse } from './provider-selection';
 
 /**
@@ -173,7 +173,8 @@ export function flattenModels(
   const result: ModelOption[] = [];
   for (const p of all) {
     if (!connected.includes(p.id)) continue;
-    if (!GATEWAY_PROVIDER_IDS.has(p.id)) continue;
+    // The gateway's models, and Claude subscription models (run through Claude Code, not the gateway).
+    if (!GATEWAY_PROVIDER_IDS.has(p.id) && p.id !== CLAUDE_AGENT_PROVIDER_ID) continue;
     for (const [modelID, model] of Object.entries(p.models) as Array<[string, LooseModel]>) {
       // Old sandboxes can carry a baked catalog from before the synthetic model
       // was removed. Never expose or send those stale entries.

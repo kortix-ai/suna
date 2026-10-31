@@ -459,6 +459,31 @@ every given label, and `useProjectSessions(projectId, { labels })` does the same
 React. Each label is 1–64 characters, at most 20 per session; one metadata write is at
 most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
 
+### Agents working together
+
+The session-scoped surface for messages between sessions, agent teams and
+workflow runs. The wire contract is `@kortix/api-contract/multi-agent`; the
+product docs are "Agents working together" in `apps/web/content/docs/developers.mdx`.
+
+| Call | Route | Resolves |
+|---|---|---|
+| `session.reachable({ scope })` | `GET …/sessions/:sid/reachable?scope=mine\|project` | `ReachableAgents`: `{ self, agents }` |
+| `session.peerMessages.send(body)` | `POST …/sessions/:sid/peer-messages` (this session is the sender) | `PeerMessageSendResult`; `409 ambiguous_recipient` throws `ApiError` with the `candidates` |
+| `session.peerMessages.list({ direction })` | `GET …/sessions/:sid/peer-messages?direction=in\|out` | `{ messages }` |
+| `session.peerMessages.approve(id)` · `.deny(id)` | `POST …/peer-messages/:mid/approve\|deny` (this session is the receiver) | `PeerMessage` |
+| `session.setInbound(inbound)` | `PUT …/sessions/:sid/inbound` | `{ inbound }`: `accept`, `hold` or `refuse` |
+| `session.tasks.list()` · `.create(body)` · `.update(seq, body)` · `.remove(seq)` | `…/sessions/:lead/tasks` (this session is the lead; flag `agent_teams`) | `SessionTask`; a lost claim throws `ApiError` `409 task_taken` |
+| `session.workflows.list()` · `.control(runId, body)` | the runtime's `GET /kortix/runtime/workflows`, `POST …/workflows/:runId/control` | `{ runs }`; `{ ok, paused }` |
+
+React (`@kortix/sdk/react`): `useReachableAgents(pid, sid, scope?)`,
+`usePeerMessages(pid, sid, direction?)`, `useTeamTasks(pid, leadSid)`,
+`useSessionWorkflows(pid, sid)`, `useTeammates(pid, leadSid)`. Session rows
+carry `board_state`, `attention`, `last_activity_at`, `result_excerpt`,
+`agent_handle`, `team_lead_session_id` and `inbound`.
+
+Limits: 16,000 characters per message, 30 messages per minute per sender, a
+held message expires after 5 minutes.
+
 ### Who wrote each message
 
 `kortix.session(projectId, sessionId).messageAuthors()` (or `getSessionMessageAuthors`) returns
@@ -508,6 +533,35 @@ model when the gateway rerouted after a failed attempt, whether or not the fallb
 `turns` maps the runtime message id of each prompt to `{ served_models, fallback_from, billed_cost }`.
 A transcript message carries only the model its turn asked for. In React,
 `useSessionModelUsage(projectId, sessionId)` reads the same record.
+
+### Agents that work together: messages, teams, workflows
+
+A session can message another session, lead a team with a shared task list, and run
+workflows of many agents. Every call acts as the caller: a session may message another
+only where its person may prompt it, and a refusal is a result, never a silent drop.
+
+```ts
+const s = kortix.session(projectId, sessionId)
+await s.reachable({ scope: 'mine' })            // { self, agents }: parent, children, lead, teammates
+await s.peerMessages.send({ to: 'reviewer', message: 'The migration finished.', summary: 'Migration done' })
+await s.peerMessages.list({ direction: 'in' })  // held messages wait for approve(id) / deny(id)
+await s.setInbound('hold')                      // 'accept' | 'hold' | 'refuse'
+await s.tasks.list()                            // the team this session leads (flag agent_teams)
+await s.tasks.update(3, { status: 'completed' })
+await s.workflows.list()                        // the runs on this session's own box
+await s.workflows.control(runId, { action: 'pause' }) // 'resume' | 'stop' | 'restart_agent' + session_id
+```
+
+`send` answers `{ status, message, to, note }`: `delivered`, `held` (the receiver's person
+approves it), `refused`, or `dropped` (a duplicate). A `to` that names several sessions is a
+`409` with the candidates. A session row carries `board_state` (`working`, `needs_input`,
+`idle`, `completed`, `failed`, `stopped`), `attention`, `last_activity_at`, `result_excerpt`,
+`agent_handle`, `team_lead_session_id` and `inbound`; `listProjectSessionsPage(projectId,
+{ teamLead })` lists a lead's teammates. In React: `useReachableAgents(pid, sid, scope?)`,
+`usePeerMessages(pid, sid, direction?)` (with `approve` and `deny`), `useTeamTasks(pid, lead)`,
+`useTeammates(pid, lead)` and `useSessionWorkflows(pid, sid)` (with `control`). Each polls
+every 5 s while the page is visible, a running workflow every 2 s. A workflow poll never
+starts a stopped session.
 
 ### React runtime
 
@@ -835,6 +889,16 @@ v1 hooks (`useSessionMessages`, `useSession().messages`) return the same rows
 either way. `useSessionLogOlder(session, threadId?)` pages one thread of a v2 session back
 (`GET …/log?thread=&before_seq=`). See the
 [reference](https://kortix.com/docs/#render-blocks-from-the-session-log).
+
+`useSessionView(projectId, sessionId, { enabled?, throttleMs? })` is a read-only view of any
+session from the API alone: its log (`GET …/log`) and the session stream on the v2 schema,
+live. It sends no `POST /start`, so it does not wake the session's computer, and it does not
+point the app's runtime at the session's box. Mount it beside the session `useSession` owns:
+a sub-agent's dialog over its lead's chat, a board preview. `status` is `loading`, `ready`
+(the root thread has messages), `empty` (no log yet, or no message) or `error` (the read
+failed; it is read again after 2 s, 10 s and 30 s, and `retry()` reads it now). `thread` is
+the root thread; `hasOlder`, `isLoadingOlder` and `loadOlder` page it back. Files, previews
+and a terminal need the box: open the session for them.
 
 Three transitional functions bridge a host that renders blocks while its rows are
 still v1:
@@ -1234,12 +1298,14 @@ interface KortixPlatformConfig {
 
 `onNotify` receives the session events a host shows as notifications:
 `task-complete` (`sessionTitle`), `session-error` (`errorTitle`), `question`
-(`questionText`) and `permission` (`toolName`), each with `sessionId`.
+(`questionText`) and `permission` (`toolName`), each with `sessionId`, and with
+`projectId` when the SDK knows the session's project. A host uses that
+`projectId`, not its current route: the route may already show another project.
 `useSession` raises them from its event stream. When its view unmounts with a
-turn still running, a watch follows the turn on the session's control stream
-(`kortix.control.turn`; `GET …/turn` while the stream is down) and raises
-`task-complete` or `session-error` itself, with `projectId`; `task-complete`
-also carries `watchedSinceMs`, the watch's start in `Date.now()`. Mounting the
+turn still running, a watch reads `GET …/turn` until the turn ends and raises
+`task-complete` or `session-error` itself. A browser throttles the timers of a
+hidden window, so the end can arrive late there. `task-complete` also carries
+`watchedSinceMs`, the watch's start in `Date.now()`. Mounting the
 view again ends the watch. Without `onNotify`, no watch runs. See
 `src/core/session/turn-end-watch.ts`.
 

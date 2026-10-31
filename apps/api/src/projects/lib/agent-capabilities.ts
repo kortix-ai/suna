@@ -76,7 +76,6 @@ const KORTIX_TOOL_DESCRIPTIONS: Record<(typeof KORTIX_TOOL_NAMES)[number], strin
   image_search: 'Kortix image search: images from the web.',
   image_gen: 'Kortix image generation, with an image model the project can use.',
   scrape_webpage: 'Kortix page reader: web pages as clean text.',
-  memory: 'Kortix project memory: read and write the files in memory/.',
   show: 'Show you a file, image or result in the Kortix conversation.',
 };
 

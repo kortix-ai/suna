@@ -55,7 +55,7 @@ const OPENCODE_TO_PI: SwitchGap[] = [
   // OpenCode shows another model's reasoning as text; pi drops it.
   { feature: 'reasoning_replay', detail: 'other_model', status: 'lost' },
   { feature: 'todos', status: 'lost' },
-  ...['session.rewind', 'session.fork', 'session.mcp', 'session.todo', 'session.shell', 'session.attach', 'session.config'].map((feature): SwitchGap => ({ feature, status: 'lost' })),
+  ...['session.rewind', 'session.fork', 'session.mcp', 'session.todo', 'session.shell', 'session.attach', 'session.config', 'session.messaging', 'session.team_tasks'].map((feature): SwitchGap => ({ feature, status: 'lost' })),
 ];
 
 describe('switchPreflight: the loss report of a harness switch', () => {

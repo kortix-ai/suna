@@ -6,12 +6,12 @@ import { createElement } from 'react';
  * Provides a thin wrapper around the browser Notification API that respects
  * the user's preferences stored in the web-notification-store.
  *
- * All notification dispatching flows through `sendWebNotification()`. The
- * in-app channels — toast, sound, favicon badge — fire whenever the user is
- * NOT watching the session (another browser tab, another app, or another
- * in-app session), with no permission or preference prerequisite: a default
- * profile must still see that a turn finished. The native OS notification
- * additionally checks:
+ * All notification dispatching flows through `sendWebNotification()`.
+ * `notificationChannels()` decides the toast, the sound, the favicon dot and
+ * the OS gate from one table: a toast belongs to the project on screen, and
+ * never to the session on screen. The in-app channels have no permission or
+ * preference prerequisite: a default profile must still see that a turn
+ * finished. The native OS notification additionally checks:
  *  1. Browser support for the Notification API
  *  2. Permission is granted
  *  3. Master enable toggle is on
@@ -65,6 +65,7 @@ import { getSharedQueryClient } from './query-client-singleton';
 import { playSound } from './sounds';
 import type { SoundEvent } from '../stores/sound-store';
 import { openTabAndNavigate, useTabStore } from '../stores/tab-store';
+import { projectIdFromPathname } from '../stores/project-switch-store';
 import { useTurnAttentionStore } from '../stores/turn-attention-store';
 import { useWebNotificationStore } from '../stores/web-notification-store';
 import {
@@ -226,18 +227,31 @@ const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
 // ============================================================================
 
 /**
- * The project a session belongs to, read from the URL at the moment the
- * notification is RAISED — not when it is clicked.
+ * The project in the URL. The fallback for an event that names no project: the
+ * SDK names the project whenever its stream knows it, because the URL may
+ * already show the next project when the event lands.
  *
- * The event that raises a notification comes off that session's own live
- * stream, so the user is on `/projects/<id>/sessions/<sid>` right then. By the
- * time they click, minutes later, they may be anywhere, so reading the path at
- * click time would resolve the wrong project or none at all.
+ * It is read when the notification is RAISED, not when it is clicked. By the
+ * time they click, minutes later, the person may be anywhere, so reading the
+ * path at click time would resolve the wrong project or none at all.
+ *
+ * An optional two-letter locale segment leads (`/de/projects/…`).
+ * `/projects/new` and `/projects/start` are pages, not projects.
  */
 function currentProjectId(): string | null {
   if (typeof window === 'undefined') return null;
-  const match = window.location.pathname.match(/^\/projects\/([^/]+)/);
-  return match ? match[1] : null;
+  const path = normalizeAppPathname(window.location.pathname);
+  return projectIdFromPathname(path.replace(/^\/[a-z]{2}(?=\/projects(?:\/|$))/, ''));
+}
+
+/**
+ * The payload names a project and the URL shows a different one. Both sides
+ * must be known: on a page outside any project this answers false.
+ */
+export function isOtherProject(projectId: string | null | undefined): boolean {
+  if (!projectId) return false;
+  const current = currentProjectId();
+  return current !== null && current !== projectId;
 }
 
 /**
@@ -321,6 +335,24 @@ export function spacesThreadHref(
   return `${location.pathname}?${params.toString()}`;
 }
 
+/** Mounts per session of a surface that shows it outside its route. */
+const sessionsOnScreen = new Map<string, number>();
+
+/**
+ * Report a session as on screen while a surface shows it outside its route,
+ * such as a side sheet. Takes the Kortix `session_id`. Returns the cleanup. A
+ * session registered twice stays on screen until both cleanups run.
+ */
+export function markSessionOnScreen(sessionId: string): () => void {
+  sessionsOnScreen.set(sessionId, (sessionsOnScreen.get(sessionId) ?? 0) + 1);
+  dismissStaleNotificationToasts();
+  return () => {
+    const count = (sessionsOnScreen.get(sessionId) ?? 1) - 1;
+    if (count > 0) sessionsOnScreen.set(sessionId, count);
+    else sessionsOnScreen.delete(sessionId);
+  };
+}
+
 /**
  * Check if the user is currently viewing a specific session.
  * Checks the tab store (dashboard session tabs) and the current URL
@@ -330,6 +362,8 @@ export function spacesThreadHref(
  * whatever session the user is looking at.
  */
 export function isViewingSession(sessionId: string): boolean {
+  // A mounted surface whose session id is in neither the URL nor the tab store.
+  if (sessionsOnScreen.has(sessionId)) return true;
   // Dashboard: the active tab ID is the session ID for session tabs. The
   // persisted tab ID can outlive navigation (the store never clears it when
   // the user clicks elsewhere), so only trust it while the URL still agrees
@@ -364,6 +398,54 @@ export function isNotificationSupported(): boolean {
 }
 
 /**
+ * The one policy for the in-app channels and the OS gate. `os` answers only
+ * for what is on screen and which project it is: `sendWebNotification` keeps
+ * the permission, preference, kind and `onlyWhenHidden` gates.
+ *
+ * - Another project wins: no toast and no sound. A finished or failed turn
+ *   marks the favicon dot. The OS fires only while the window is in the
+ *   background.
+ * - The session on screen gets no toast of any kind, with or without focus:
+ *   the chat shows it. A question or a permission keeps its sound: the agent
+ *   is blocked.
+ * - The dot needs a session id, because the attention store is per session.
+ */
+export function notificationChannels(input: {
+  type: WebNotificationType;
+  /** The payload names a session. */
+  hasSession: boolean;
+  /** That session is on screen, whichever window has focus. */
+  sessionOnScreen: boolean;
+  /** The window is visible and has focus (`!isTabHidden()`). */
+  windowFocused: boolean;
+  /** `isOtherProject(payload.projectId)`. */
+  otherProject: boolean;
+}): { toast: boolean; sound: boolean; attention: boolean; os: boolean } {
+  const { type, hasSession, windowFocused } = input;
+  const completion = type === 'completion';
+  const error = type === 'error';
+
+  if (input.otherProject) {
+    return {
+      toast: false,
+      sound: false,
+      attention: hasSession && (completion || error),
+      os: !windowFocused,
+    };
+  }
+
+  const blocking = type === 'question' || type === 'permission';
+  const onScreen = hasSession && input.sessionOnScreen;
+  const watching = windowFocused && (onScreen || !hasSession);
+  return {
+    toast: !onScreen && (error || !watching),
+    sound: blocking || !watching,
+    attention: hasSession && completion && !watching,
+    os: !(windowFocused && onScreen),
+  };
+}
+
+/**
  * Send a browser web notification, respecting user preferences.
  *
  * Returns the Notification instance if one was created, or null.
@@ -376,36 +458,31 @@ export function sendWebNotification(
   const { preferences } = useWebNotificationStore.getState();
   const notificationCenter = fromNotificationCenter(payload);
 
-  // The user watching the session live already sees the turn finish in the
-  // chat — repeating it as a toast, a sound, a badge or an OS notification
-  // would only be noise. `force` (the settings test button) never counts as
-  // watching: it exists to prove the channels work.
-  const watching =
-    !force && !isTabHidden() && (!payload.sessionId || isViewingSession(payload.sessionId));
+  // `force` (the settings test button) never counts as on screen, focused or
+  // another project: it exists to prove the channels work.
+  const { sessionId } = payload;
+  const channels = notificationChannels({
+    type: payload.type,
+    hasSession: !!sessionId,
+    sessionOnScreen: !force && !!sessionId && isViewingSession(sessionId),
+    windowFocused: !force && !isTabHidden(),
+    otherProject: !force && isOtherProject(payload.projectId),
+  });
 
   // The in-app channels come first and answer to nobody: the toast is the one
   // channel that works on a default profile — permission untouched, browser
   // notifications disabled — which is exactly where the completion signal
   // used to die (the old permission gates returned before the toast ran).
-  // A failed turn toasts even to the person watching it: the toast is how an
-  // error is noticed. A finished turn does not: the chat already shows it.
-  if (!watching || payload.type === 'error') showInAppToast(payload);
-  if (!watching) {
-    if (payload.type === 'completion' && payload.sessionId) {
-      // The toast fades after 8 s; the favicon badge is what a returning
-      // user still sees, so a finished turn registers for it here.
-      useTurnAttentionStore.getState().markTurnComplete(payload.sessionId);
-    }
+  if (channels.toast) showInAppToast(payload);
+  // The toast fades after 8 s; the favicon badge is what a returning user
+  // still sees.
+  if (channels.attention && sessionId) {
+    useTurnAttentionStore.getState().markTurnComplete(sessionId);
   }
 
   // Sound plays independently of browser notification preferences — the sound
-  // store has its own pack/event/volume settings to control it. A question or
-  // permission request is worth interrupting even while the user watches the
-  // session (the agent is blocked); everything else only plays when the
-  // session is not being watched.
-  const isBlockingType = payload.type === 'question' || payload.type === 'permission';
-  const skipSound = !isBlockingType && watching;
-  if (!skipSound && (force || preferences.playSound !== false)) {
+  // store has its own pack/event/volume settings to control it.
+  if (channels.sound && (force || preferences.playSound !== false)) {
     playSound(TYPE_TO_SOUND[payload.type]);
   }
 
@@ -429,12 +506,8 @@ export function sendWebNotification(
       if (prefKey && !preferences[prefKey]) return null;
     }
 
-    // Active session check — skip notifications for the session the user
-    // is currently looking at (they can already see the question/permission
-    // inline in the chat).
-    if (payload.sessionId && !isTabHidden() && isViewingSession(payload.sessionId)) {
-      return null;
-    }
+    // On-screen and other-project check: see `notificationChannels`.
+    if (!channels.os) return null;
 
     // Visibility check — questions and permissions always show since the
     // agent is blocked waiting for user input
@@ -573,6 +646,59 @@ function openPayload(payload: WebNotificationPayload, forceNavigation: boolean) 
   }
 }
 
+/** What a toast on screen is about. */
+type ToastSubject = { sessionId?: string | null; projectId?: string | null };
+
+/**
+ * Whether a toast on screen no longer qualifies: its session is on screen, or
+ * its project is another project. A toast about another session of the project
+ * on screen stays. Pure: `view` answers for the screen.
+ */
+export function isStaleToast(
+  toast: ToastSubject,
+  view: {
+    onScreen: (sessionId: string) => boolean;
+    otherProject: (projectId: string | null | undefined) => boolean;
+  },
+): boolean {
+  return (!!toast.sessionId && view.onScreen(toast.sessionId)) || view.otherProject(toast.projectId);
+}
+
+const toastView = () => ({ onScreen: isViewingSession, otherProject: isOtherProject });
+
+/**
+ * The bound of `liveToasts`. A toast that never mounts never closes, so its
+ * entry would stay: the oldest entry leaves first.
+ */
+const MAX_LIVE_TOASTS = 32;
+
+/** The generic notification toasts on screen. Session cards: `shownSessionToasts`. */
+const liveToasts = new Map<string, ToastSubject & { id: string }>();
+
+function trackLiveToast(toast: ToastSubject & { id: string }) {
+  // Nothing can make it stale.
+  if (!toast.sessionId && !toast.projectId) return;
+  liveToasts.delete(toast.id);
+  liveToasts.set(toast.id, toast);
+  if (liveToasts.size > MAX_LIVE_TOASTS) liveToasts.delete(liveToasts.keys().next().value!);
+}
+
+/**
+ * Dismiss every notification toast that no longer qualifies, after the screen
+ * moved to another route or tab. A stack drops those items: the rest stay as a
+ * stack, or as a single toast when one remains.
+ */
+export function dismissStaleNotificationToasts() {
+  const view = toastView();
+  for (const toast of [...liveToasts.values()]) {
+    if (!isStaleToast(toast, view)) continue;
+    liveToasts.delete(toast.id);
+    dismissToast(toast.id);
+  }
+  const kept = shownSessionToasts.filter((item) => !isStaleToast(item, view));
+  if (kept.length !== shownSessionToasts.length) renderSessionToasts(kept);
+}
+
 /**
  * Show an in-app toast notification.
  * This always works regardless of OS notification settings.
@@ -587,8 +713,10 @@ function showInAppToast(payload: WebNotificationPayload) {
     const { sessionId, href, actionLabel } = payload;
     const automation =
       payload.type === 'automation_failed' || payload.type === 'automation_recovered';
+    trackLiveToast({ id, sessionId, projectId: payload.projectId });
     TOAST_BY_VARIANT[NOTIFICATION_TOAST_VARIANT[payload.type]](payload.inAppTitle ?? payload.title, {
       id,
+      onClose: () => liveToasts.delete(id),
       // With an entity row the subject is named there; the body is only the detail.
       description: payload.entityLabel ? payload.preview : payload.body,
       entity: payload.entityLabel
@@ -623,7 +751,10 @@ export const showInAppNotification = (payload: WebNotificationPayload) => showIn
 // Session turns: one card per turn, a stack when several land together
 // ----------------------------------------------------------------------------
 
-type ShownSessionToast = SessionStackItem & { payload: WebNotificationPayload };
+type ShownSessionToast = SessionStackItem & {
+  projectId: string | null | undefined;
+  payload: WebNotificationPayload;
+};
 
 /** The finished or failed turns on screen right now, oldest first. */
 let shownSessionToasts: ShownSessionToast[] = [];
@@ -635,55 +766,79 @@ const singleSessionToastId = (sessionId: string) => `web-notification-session-${
 
 /**
  * Show a finished (entity toast) or failed (agent card) turn. While one is on
- * screen, the next turn replaces it with a stack listing both.
+ * screen, the next turn replaces it with a stack listing both. An item that no
+ * longer qualifies stays out of the stack.
  */
 function showSessionToast(payload: WebNotificationPayload, sessionId: string) {
-  const previous = shownSessionToasts.filter((item) => item.sessionId !== sessionId);
-  const item: ShownSessionToast = {
-    sessionId,
-    label: payload.entityLabel ?? payload.title,
-    failed: payload.type === 'error',
-    at: Date.now(),
-    payload,
-  };
+  const view = toastView();
+  const previous = shownSessionToasts.filter(
+    (item) => item.sessionId !== sessionId && !isStaleToast(item, view),
+  );
+  renderSessionToasts([
+    ...previous,
+    {
+      sessionId,
+      projectId: payload.projectId,
+      label: payload.entityLabel ?? payload.title,
+      failed: payload.type === 'error',
+      at: Date.now(),
+      payload,
+    },
+  ]);
+}
+
+function openSessionToast(target: ShownSessionToast) {
+  openPayload(target.payload, false);
+  target.payload.onClick?.();
+}
+
+/**
+ * Put `items` on screen: nothing, one single toast, or one stack. Any other
+ * session toast on screen leaves.
+ */
+function renderSessionToasts(items: ShownSessionToast[]) {
+  const before = shownSessionToasts;
   const generation = ++sessionToastGeneration;
   const onClose = () => {
     if (generation === sessionToastGeneration) shownSessionToasts = [];
   };
-  shownSessionToasts = [...previous, item];
+  shownSessionToasts = items;
 
-  const open = (target: ShownSessionToast) => {
-    openPayload(target.payload, false);
-    target.payload.onClick?.();
-  };
-  const openLabel = payload.actionLabel ?? 'Open';
+  const only = items.length === 1 ? items[0] : null;
+  // A dismissal lands a frame later, so the toast about to show is not dismissed.
+  for (const shown of before) {
+    if (shown.sessionId !== only?.sessionId) dismissToast(singleSessionToastId(shown.sessionId));
+  }
+  if (before.length > 1 && items.length < 2) dismissToast(SESSION_STACK_ID);
 
-  if (previous.length > 0) {
-    for (const shown of previous) dismissToast(singleSessionToastId(shown.sessionId));
-    const items = shownSessionToasts;
-    customToast(
-      (dismiss) => (
-        createElement(SessionStackCard, {
-          title: payload.stackTitle?.(items.length) ?? `${items.length} tasks finished`,
-          items,
-          openLabel,
-          onOpen: (id: string) => {
-            const target = items.find((shown) => shown.sessionId === id);
-            if (target) open(target);
-          },
-          onDismiss: dismiss,
-        })
-      ),
-      { id: SESSION_STACK_ID, duration: NOTIFICATION_VISIBLE_MS, onClose },
-    );
+  if (only) {
+    showSingleSessionToast(only, onClose);
     return;
   }
+  if (items.length === 0) return;
+  const { payload } = items[items.length - 1];
+  const openLabel = payload.actionLabel ?? 'Open';
+  customToast(
+    (dismiss) => (
+      createElement(SessionStackCard, {
+        title: payload.stackTitle?.(items.length) ?? `${items.length} tasks finished`,
+        items,
+        openLabel,
+        onOpen: (id: string) => {
+          const target = items.find((shown) => shown.sessionId === id);
+          if (target) openSessionToast(target);
+        },
+        onDismiss: dismiss,
+      })
+    ),
+    { id: SESSION_STACK_ID, duration: NOTIFICATION_VISIBLE_MS, onClose },
+  );
+}
 
+function showSingleSessionToast(item: ShownSessionToast, onClose: () => void) {
+  const { payload, sessionId } = item;
+  const openLabel = payload.actionLabel ?? 'Open';
   const id = singleSessionToastId(sessionId);
-  // A toast for the session on screen (it fired while the window had no
-  // focus) names nothing and opens nothing: the person is already there.
-  // Read at render, so it follows where the person is now.
-  const elsewhere = () => !isViewingSession(sessionId);
   const cr = payload.changeRequest;
   // `?cr=` opens the change request's review dialog on the session page.
   const review = () => {
@@ -698,10 +853,10 @@ function showSessionToast(payload: WebNotificationPayload, sessionId: string) {
       (dismiss) =>
         createElement(SessionFailedCard, {
           title: payload.inAppTitle ?? payload.title,
-          label: elsewhere() ? item.label : undefined,
+          label: item.label,
           detail: payload.preview,
           openLabel,
-          onOpen: elsewhere() ? () => open(item) : undefined,
+          onOpen: () => openSessionToast(item),
           onDismiss: dismiss,
         }),
       { id, duration: NOTIFICATION_VISIBLE_MS, onClose },
@@ -715,23 +870,17 @@ function showSessionToast(payload: WebNotificationPayload, sessionId: string) {
         message: payload.inAppTitle ?? payload.title,
         icon: toastIcon('success'),
         variant: 'success',
-        // On the session itself the change request card is in the transcript,
-        // so the toast only says it is there.
-        options: elsewhere()
-          ? {
-              entity: {
-                icon: cr ? createElement(GitPullRequestIcon, { className: 'size-3.5' }) : undefined,
-                label: item.label,
-              },
-              description: cr?.detail,
-              actions: [
-                ...(cr ? [{ label: cr.reviewLabel, onClick: review }] : []),
-                { label: payload.openSessionLabel ?? openLabel, onClick: () => open(item) },
-              ],
-            }
-          : cr
-            ? { description: cr.detail }
-            : undefined,
+        options: {
+          entity: {
+            icon: cr ? createElement(GitPullRequestIcon, { className: 'size-3.5' }) : undefined,
+            label: item.label,
+          },
+          description: cr?.detail,
+          actions: [
+            ...(cr ? [{ label: cr.reviewLabel, onClick: review }] : []),
+            { label: payload.openSessionLabel ?? openLabel, onClick: () => openSessionToast(item) },
+          ],
+        },
         onDismiss: dismiss,
       }),
     { id, duration: NOTIFICATION_VISIBLE_MS, onClose },
@@ -767,19 +916,20 @@ export function notifyTaskComplete(
   sessionId: string,
   sessionTitle: string | undefined,
   tI18nComplete: UiTranslator,
-  /** Set when the SDK's turn-end watch found this end: the session page was
-   *  not mounted here. `watchedSinceMs` is when the watch started; `projectId`
-   *  is the session's project, which the page on screen may not be. */
-  handoff?: { watchedSinceMs?: number; projectId?: string },
+  /** `projectId`: the session's project, from the SDK's live stream or its
+   *  turn-end watch. The page on screen may belong to another project.
+   *  `watchedSinceMs`: set only when the watch found this end, because the
+   *  session page was not mounted here: when the watch started. */
+  extra?: { watchedSinceMs?: number; projectId?: string },
 ) {
   // Another tab's stream already announced this end and its relay reached
   // this tab: the watch is the second announcer of the same end.
-  const since = handoff?.watchedSinceMs;
+  const since = extra?.watchedSinceMs;
   if (since !== undefined && turnCompleteShownSince(sessionId, since)) return;
-  // Captured now, while the raising event proves which project is open — a
-  // receiving tab may be on a page whose path holds no project id, and may
-  // never have loaded the project's `notification_center` flag.
-  const projectId = handoff?.projectId ?? currentProjectId();
+  // Resolved here and relayed whole: a receiving tab may be on a page whose
+  // path holds no project id, and may never have loaded the project's
+  // `notification_center` flag.
+  const projectId = extra?.projectId ?? currentProjectId();
   const msg = {
     sessionId,
     sessionTitle,
@@ -873,8 +1023,8 @@ export function notifySessionError(
   errorTitle: string,
   sessionTitle: string | undefined,
   tI18nComplete: UiTranslator,
-  /** The session's project, from the SDK's turn-end watch (see `notifyTaskComplete`). */
-  projectIdOverride?: string,
+  /** The session's project, from the SDK (see `notifyTaskComplete`). */
+  projectId?: string,
 ) {
   const name = sessionDisplayName(sessionTitle, sessionId);
   const label = sessionTitle ? `"${name.slice(0, 50)}"` : name;
@@ -889,9 +1039,14 @@ export function notifySessionError(
     tag: `error:${sessionId}`,
     sessionId,
     actionLabel: tI18nComplete.raw('texted077f3d8125'),
-    // Captured now, while the raising event proves which project is open.
-    projectId: projectIdOverride ?? currentProjectId(),
+    projectId: projectId ?? currentProjectId(),
   });
+}
+
+/** The session as a question or a permission names it in its body. */
+function blockedSessionLabel(sessionTitle: string | undefined, sessionId: string): string {
+  const name = sessionDisplayName(sessionTitle, sessionId);
+  return sessionTitle ? `"${name.slice(0, 40)}"` : name;
 }
 
 /**
@@ -902,10 +1057,10 @@ export function notifyQuestion(
   questionText: string,
   sessionTitle: string | undefined,
   tI18nComplete: UiTranslator,
+  /** The session's project, from the SDK (see `notifyTaskComplete`). */
+  projectId?: string,
 ) {
-  const label = sessionTitle
-    ? `"${sessionTitle.slice(0, 40)}"`
-    : `Session ${sessionId.slice(0, 8)}`;
+  const label = blockedSessionLabel(sessionTitle, sessionId);
 
   sendWebNotification({
     type: 'question',
@@ -914,8 +1069,7 @@ export function notifyQuestion(
     tag: `question:${sessionId}`,
     sessionId,
     actionLabel: tI18nComplete.raw('texted077f3d8125'),
-    // Captured now, while the raising event proves which project is open.
-    projectId: currentProjectId(),
+    projectId: projectId ?? currentProjectId(),
   });
 }
 
@@ -927,10 +1081,10 @@ export function notifyPermissionRequest(
   toolName: string,
   sessionTitle: string | undefined,
   tI18nComplete: UiTranslator,
+  /** The session's project, from the SDK (see `notifyTaskComplete`). */
+  projectId?: string,
 ) {
-  const label = sessionTitle
-    ? `"${sessionTitle.slice(0, 40)}"`
-    : `Session ${sessionId.slice(0, 8)}`;
+  const label = blockedSessionLabel(sessionTitle, sessionId);
 
   sendWebNotification({
     type: 'permission',
@@ -939,7 +1093,6 @@ export function notifyPermissionRequest(
     tag: `permission:${sessionId}`,
     sessionId,
     actionLabel: tI18nComplete.raw('texted077f3d8125'),
-    // Captured now, while the raising event proves which project is open.
-    projectId: currentProjectId(),
+    projectId: projectId ?? currentProjectId(),
   });
 }

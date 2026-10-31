@@ -66,7 +66,7 @@ import { buildFeatureFlagSandboxEnv } from './feature-flag-env';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { recordedWorkspaceVolume } from '../../platform/services/workspace-volume';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
-import { buildPlatformMetaOpenCodeConfig } from './platform-meta-agent';
+import { buildMyKortixConfig } from './my-kortix-agent';
 
 import { resolveSessionPersonalOwner } from './personal-resources';
 
@@ -164,7 +164,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
   // same `defaultBranch` presence as the `agents:` grant resolution below
   // (both need git context; optional call sites that omit it get neither).
   let compiledAgentConfig: string | null = input.platformMetaAgent
-    ? buildPlatformMetaOpenCodeConfig()
+    ? buildMyKortixConfig()
     : null;
   // The agent's pi packages and codemode, read off the SAME fetch that
   // compiles the agent config, so they cost no extra git round trip.

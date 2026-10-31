@@ -16,7 +16,13 @@
  * `formatElapsed` is NOT redeclared here — `lib/transcript-view.ts` owns it.
  */
 
-import type { ClassifiedPart, ClassifiedToolPart, DiffLine, SessionLogMessage, SessionLogTurn } from '@kortix/sdk';
+import type {
+  ClassifiedPart,
+  ClassifiedToolPart,
+  DiffLine,
+  SessionLogMessage,
+  SessionLogTurn,
+} from '@kortix/sdk';
 
 // ============================================================================
 // Rows

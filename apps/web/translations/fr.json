@@ -69,7 +69,6 @@
     "oauthExpired": "L’autorisation a expiré. Réessayez.",
     "oauthPrivateDescription": "Utilisez votre abonnement ChatGPT Plus ou Pro dans ce projet. Les nouveaux comptes restent privés jusqu’à ce que vous les partagiez.",
     "chatGptSubscription": "Abonnement ChatGPT",
-    "useYourChatGpt": "Utiliser votre abonnement ChatGPT",
     "manageChatGptAccounts": "Gérer les comptes ChatGPT",
     "connect": "Connecter",
     "connectChatGpt": "Connecter ChatGPT",
@@ -96,7 +95,7 @@
     "deleteError": "Impossible de supprimer le secret",
     "accessError": "Impossible de modifier l’accès",
     "sharedTitle": "Connexions aux fournisseurs",
-    "sharedDescription": "Ajoutez des clés API et des comptes ChatGPT. Les nouveaux restent privés jusqu’à ce que vous les partagiez. Choisissez ceux que chaque session utilise.",
+    "sharedDescription": "Ajoutez des clés API, des comptes ChatGPT et des comptes Claude. Les nouveaux restent privés jusqu’à ce que vous les partagiez. Choisissez ceux que chaque session utilise.",
     "legacyProjectKey": "Clé de projet existante · Utilisée si aucune clé n’est sélectionnée pour cette session",
     "keyCount": "{count, plural, one {# clé} other {# clés}}",
     "providerKeysFor": "Clés API de {provider}",
@@ -163,7 +162,19 @@
     "opencodeGoConnect": "Connecter OpenCode Go",
     "opencodeGoReconnect": "Reconnecter OpenCode Go",
     "opencodeGoDisconnect": "Déconnecter OpenCode Go",
-    "opencodeGoFailed": "Impossible de connecter OpenCode Go"
+    "opencodeGoFailed": "Impossible de connecter OpenCode Go",
+    "claudeAccounts": "Comptes Claude",
+    "noClaudeAccounts": "Aucun compte Claude pour le moment",
+    "connectClaude": "Se connecter avec Claude",
+    "claudeOauthPrivateDescription": "Utilisez votre forfait Claude Pro ou Max pour les modèles Claude de ce projet. Les nouveaux comptes restent privés jusqu’à ce que vous les partagiez.",
+    "claudeOauthCreationDescription": "Connectez-vous avec votre compte Claude Pro ou Max. Kortix stocke la connexion chiffrée et ne l’affiche jamais.",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Compte Claude connecté",
+    "claudeAccountReconnected": "Compte Claude reconnecté",
+    "claudeConnectFailed": "La connexion Claude n’a pas abouti. Réessayez.",
+    "claudeReconnectDescription": "Reconnectez-vous avec Claude. Le compte conserve son nom, ses accès et les sélections de session.",
+    "claudeAccountLabelPlaceholder": "p. ex. Mon compte Claude",
+    "claudeDeleteAccountConfirmTitle": "Supprimer ce compte Claude pour tout le monde ?"
   },
   "secrets": {
     "undecryptable": {
@@ -1330,6 +1341,10 @@
         "chrome": {
           "name": "Kortix dans Chrome",
           "description": "Autorisez une session à utiliser votre navigateur Chrome connecté. Vous pouvez reprendre le contrôle ou l’arrêter à tout moment."
+        },
+        "agent_teams": {
+          "name": "Équipes d’agents",
+          "description": "Une session principale lance des coéquipiers nommés qui partagent une liste de tâches. Chaque coéquipier prend une tâche, la traite dans sa propre session et prévient la session principale quand elle est terminée. Vous voyez chaque coéquipier et ses tâches sous la zone de saisie de la session principale. Les messages entre sessions fonctionnent sans cette option."
         }
       },
       "channelsSwitch": {
@@ -3081,6 +3096,116 @@
       "scriptFailed": "Échec du script",
       "calls": "{count, plural, one {# appel d’outil} other {# appels d’outils}}",
       "noOutput": "Aucune sortie"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "Vérification des agents…",
+          "change": "Mise à jour des agents…"
+        },
+        "sessions": {
+          "read": "Vérification des sessions…",
+          "change": "Mise à jour des sessions…"
+        },
+        "schedules": {
+          "read": "Vérification des planifications…",
+          "change": "Mise à jour des planifications…"
+        },
+        "connectors": {
+          "read": "Vérification des connecteurs…",
+          "change": "Mise à jour des connecteurs…"
+        },
+        "people": {
+          "read": "Vérification des membres…",
+          "change": "Mise à jour des membres…"
+        },
+        "access": {
+          "read": "Vérification des accès…",
+          "change": "Mise à jour des accès…"
+        },
+        "usage": {
+          "read": "Vérification de l’utilisation…",
+          "change": "Vérification de l’utilisation…"
+        },
+        "changeRequests": {
+          "read": "Vérification des demandes de modification…",
+          "change": "Mise à jour d’une demande de modification…"
+        },
+        "memory": {
+          "read": "Consultation de la mémoire…",
+          "change": "Mise à jour de la mémoire…"
+        }
+      },
+      "status": {
+        "done": "Terminé",
+        "needsYou": "Vous attend",
+        "denied": "Nécessite une autorisation",
+        "error": "Non terminé",
+        "running": "En cours"
+      },
+      "deniedTitle": "Nécessite une autorisation",
+      "grantors": "Qui peut l’accorder",
+      "grantorsUnknown": "Toute personne qui gère ce projet peut l’accorder.",
+      "newSetting": "Nouveau",
+      "removedSetting": "Supprimé",
+      "opensInNewTab": "S’ouvre dans un nouvel onglet",
+      "showDetails": "Afficher les détails"
+    },
+    "workflow": {
+      "fallbackTitle": "Workflow",
+      "starting": "Démarrage du workflow…",
+      "progress": "{done} sur {total} terminés",
+      "failedCount": "{failed} sur {total} en échec",
+      "agents": "{count, plural, one {# agent} other {# agents}}",
+      "background": "En arrière-plan",
+      "status": {
+        "starting": "Démarrage",
+        "running": "En cours",
+        "done": "Terminé",
+        "failed": "Échec",
+        "stopped": "Arrêté",
+        "pending": "Pas commencé"
+      },
+      "openAgent": "Ouvrir {label}",
+      "showDetails": "Afficher les détails",
+      "failedSuffix": "{count} en échec",
+      "resumed": "Repris",
+      "resumedHint": "Les agents terminés lors de l'exécution précédente gardent leurs réponses.",
+      "large": "Grande exécution",
+      "largeHint": "Cette exécution lance plus de 25 agents. Vous pouvez arrêter chaque agent depuis sa ligne.",
+      "openRun": "Ouvrir l'exécution",
+      "openRunLabel": "Ouvrir la session de l'exécution",
+      "backgroundIdle": "Dans sa propre session",
+      "savedName": "Workflow enregistré {name}",
+      "upTo": "Jusqu'à {count, plural, one {# agent} other {# agents}}",
+      "result": "Résultat",
+      "logLabel": "Journal du workflow",
+      "agentsLabel": "Agents du workflow",
+      "filter": {
+        "label": "Afficher les agents",
+        "all": "Tous",
+        "running": "En cours",
+        "failed": "En échec",
+        "done": "Terminés"
+      },
+      "filterEmpty": {
+        "running": "Aucun agent n'est en cours.",
+        "failed": "Aucun agent n'a échoué.",
+        "done": "Aucun agent n'a encore terminé."
+      },
+      "showAll": "Tout afficher ({count})",
+      "retry": "nouvel essai {count}",
+      "cached": "de la dernière exécution",
+      "stopAgent": "Arrêter {label}",
+      "stopHint": "Arrêter cet agent",
+      "stopFailed": "Impossible d'arrêter {label}",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, one {JSON · # clé} other {JSON · # clés}}",
+      "jsonItems": "{count, plural, one {JSON · # élément} other {JSON · # éléments}}"
+    },
+    "agent": {
+      "backgroundWorking": "Travaille en arrière-plan",
+      "backgroundSession": "Dans sa propre session"
     }
   },
   "agentRunLimit": {
@@ -7791,8 +7916,7 @@
       "legendTool": "Résultats d'outils",
       "legendOther": "Autre",
       "subAgentsLabel": "Sous-agents",
-      "subAgentsNote": "Cette session a lancé des sessions auxiliaires. Les totaux ci-dessous les incluent.",
-      "combinedCost": "Coût combiné",
+      "subAgentsNote": "Assistants exécutés dans cette session. Leur coût fait partie du coût de cette session.",
       "combinedMessages": "Messages combinés",
       "tokensIn": "Tokens entrants",
       "tokensOut": "Tokens sortants",
@@ -7816,7 +7940,20 @@
       "rawFilterUser": "Vous",
       "rawFilterAssistant": "Assistant",
       "rawNoMatches": "Aucun message correspondant",
-      "detailsLabel": "Détails"
+      "detailsLabel": "Détails",
+      "costSplit": "{own} cette session · {spawned} dans {count, plural, one {# session lancée} other {# sessions lancées}}",
+      "costEstimated": "Estimé à partir de la transcription",
+      "detailModelRequests": "Requêtes au modèle",
+      "spawnedLabel": "Sessions lancées",
+      "spawnedNote": "Les sessions lancées par cette session, et celles qu’elles ont lancées. Leur coût est inclus dans le coût total.",
+      "spawnedCount": "{count, plural, one {Cette session et # session lancée} other {Cette session et # sessions lancées}}",
+      "spawnedRequests": "Requêtes",
+      "spawnedCost": "Coût",
+      "spawnedThisSession": "Cette session",
+      "spawnedTotal": "Total",
+      "spawnedHidden": "{count, plural, one {# session lancée que vous ne pouvez pas ouvrir n’est pas incluse.} other {# sessions lancées que vous ne pouvez pas ouvrir ne sont pas incluses.}}",
+      "spawnedTruncated": "Seules les 500 premières sessions lancées, sur 10 niveaux au plus, sont incluses.",
+      "spawnedUntitled": "Session sans titre"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "Vue unifiée",
@@ -20322,10 +20459,6 @@
       "textc86ce3b8097b": "p. ex. 5000",
       "textfaaf56a699c2": "Limite (crédits)",
       "texte7a241debad5": "URL",
-      "text3dd46a7b552c": "Ajouter une app",
-      "text68cf13547e38": "Ajouter une app par URL",
-      "text46bc646c9bfe": "Affichez dans ce projet un site hébergé n’importe où. Kortix l’ouvre sur place, à côté des apps qu’il exécute.",
-      "text08e6480e9b78": "{value0} ajoutée",
       "text6241684827b2": "Ce site n’autorise pas Kortix à l’afficher ici.",
       "textdae75dce541f": "Met en pause toutes les planifications et tous les webhooks de ce projet.",
       "textced57bebd466": "Réactive les planifications et les webhooks de ce projet.",
@@ -24737,5 +24870,247 @@
     "tools": "Tools",
     "extensions": "Extensions",
     "drives": "Drives"
+  },
+  "multiAgent": {
+    "peer": {
+      "message": "Message de {from}",
+      "idleNotice": "{from} a terminé",
+      "shutdownRequest": "Demande d’arrêt de {from}",
+      "shutdownResponse": "Réponse à la demande d’arrêt de {from}",
+      "expand": "Afficher tout le message",
+      "collapse": "Masquer le message"
+    },
+    "notice": {
+      "completed": "{name} a terminé",
+      "failed": "{name} n’a pas terminé",
+      "stopped": "{name} a été arrêté",
+      "fallbackName": "Votre agent",
+      "openSession": "Ouvrir la session",
+      "expand": "Afficher tout le résultat",
+      "collapse": "Masquer le résultat",
+      "batchTitle": "{count, plural, one {# agent a terminé} other {# agents ont terminé}}",
+      "ownsTasks": "A encore {tasks}"
+    },
+    "tools": {
+      "running": {
+        "sending": "Envoi d’un message…",
+        "checkingAgents": "Vérification des autres agents…",
+        "checkingTasks": "Vérification des tâches de l’équipe…",
+        "updatingTasks": "Mise à jour des tâches de l’équipe…",
+        "stopping": "Arrêt d’un agent…"
+      },
+      "to": "À",
+      "peerStatus": {
+        "delivered": "Transmis",
+        "held": "En attente d’approbation",
+        "refused": "Non envoyé",
+        "denied": "Refusé",
+        "expired": "Expiré",
+        "dropped": "Non renvoyé"
+      },
+      "relation": {
+        "parent": "Parent",
+        "child": "Assistant",
+        "lead": "Responsable",
+        "teammate": "Coéquipier",
+        "session": "Session"
+      },
+      "cannotReceive": "Ne peut pas recevoir de messages",
+      "state": {
+        "working": "En cours",
+        "needsInput": "Réponse requise",
+        "idle": "Inactif",
+        "completed": "Terminé",
+        "failed": "Non terminé",
+        "stopped": "Arrêté"
+      },
+      "taskStatus": {
+        "pending": "En attente",
+        "inProgress": "En cours",
+        "completed": "Terminée"
+      },
+      "blockedBy": "bloquée par {tasks}",
+      "stopped": "Arrêté",
+      "alreadyEnded": "Déjà terminé",
+      "openSession": "Ouvrir la session"
+    },
+    "strip": {
+      "label": "Agents",
+      "agents": "{count, plural, one {# agent} other {# agents}}",
+      "working": "{count} en cours",
+      "workflows": "{count, plural, one {# workflow} other {# workflows}}",
+      "workflowsRunning": "{count, plural, one {# workflow en cours} other {# workflows en cours}}",
+      "newest": "{name} : {state}",
+      "tasks": "Tâches",
+      "team": "Équipe",
+      "workflowsGroup": "Workflows",
+      "state": {
+        "working": "en cours",
+        "needs_input": "vous attend",
+        "idle": "terminé",
+        "completed": "terminé",
+        "failed": "échec",
+        "stopped": "arrêté"
+      },
+      "workingFor": "en cours · {elapsed}",
+      "runsAs": "s’exécute en tant que {agent}",
+      "teamRole": "Rôle pour cette session uniquement",
+      "attention": {
+        "question": "A une question pour vous",
+        "approval": "Attend votre approbation"
+      },
+      "openAgent": "Ouvrir {name}",
+      "stopHint": "Arrêter cet agent",
+      "stopAgent": "Arrêter {name}",
+      "stopAgentFailed": "Impossible d’arrêter {name}",
+      "stopFailed": "Impossible d’arrêter l’agent",
+      "runProgress": "{done} sur {total} terminés",
+      "runBackground": "En arrière-plan",
+      "runRunning": "En cours",
+      "runStatus": {
+        "done": "Terminé",
+        "failed": "Non terminé",
+        "stopped": "Arrêté"
+      },
+      "runFallback": "Workflow",
+      "openRun": "Ouvrir l’exécution",
+      "runNoAgents": "Aucun agent pour l’instant"
+    },
+    "subagent": {
+      "fallbackTitle": "Agent",
+      "openPage": "Ouvrir la page",
+      "close": "Fermer",
+      "messagePlaceholder": "Message à {name}…",
+      "messageLabel": "Message à {name}",
+      "send": "Envoyer",
+      "sent": "Message envoyé",
+      "sendFailed": "Impossible d’envoyer le message",
+      "loadFailed": "Impossible de charger les messages de cet agent",
+      "retry": "Réessayer",
+      "emptyTitle": "Rien pour l’instant",
+      "emptyDescription": "Ses messages s’affichent ici pendant qu’il travaille.",
+      "loadOlder": "Afficher les messages précédents"
+    },
+    "tasks": {
+      "label": "Tâches de l’équipe",
+      "empty": "Les tâches que l’équipe planifie apparaîtront ici.",
+      "group": {
+        "pending": "En attente",
+        "in_progress": "En cours",
+        "completed": "Terminées"
+      },
+      "blockedBy": "Bloquée par {tasks}",
+      "unowned": "Non assignée"
+    },
+    "held": {
+      "label": "Messages qui vous attendent",
+      "title": "Message de {from}",
+      "titleShutdown": "{from} demande d’arrêter cette session",
+      "waiting": "En attente de votre approbation. Elle expire au bout de 5 minutes.",
+      "deny": "Refuser",
+      "approve": "Approuver",
+      "approveFailed": "Impossible de transmettre le message",
+      "denyFailed": "Impossible de refuser le message"
+    },
+    "workflow": {
+      "large": "Grand workflow",
+      "largeHint": "Cette exécution lance plus de 25 agents. Vous pouvez l’arrêter, ou arrêter n’importe quel agent, depuis ici.",
+      "paused": "En pause",
+      "pause": "Mettre l’exécution en pause",
+      "resume": "Reprendre l’exécution",
+      "pauseHint": "Pause : aucun nouvel agent ne démarre, les agents en cours terminent (p)",
+      "resumeHint": "Reprendre l’exécution (p)",
+      "stop": "Arrêter l’exécution",
+      "stopHint": "Arrêter tous les agents et terminer l’exécution (x)",
+      "save": "Enregistrer",
+      "saveHint": "Enregistrer le script de cette exécution comme un workflow que vous pourrez relancer (s)",
+      "savePrompt": "Enregistrez l’exécution de workflow « {title} » (exécution {runId}) comme workflow enregistré : écrivez son script dans {file} et ouvrez une demande de modification pour celui-ci.",
+      "saveSent": "Enregistrement du workflow demandé",
+      "saveFailed": "Impossible de demander l’enregistrement du workflow",
+      "restartHint": "Redémarrer cet agent avec le même prompt (r)",
+      "restartAgent": "Redémarrer {label}",
+      "failed": {
+        "pause": "Impossible de mettre l’exécution en pause",
+        "resume": "Impossible de reprendre l’exécution",
+        "stop": "Impossible d’arrêter l’exécution",
+        "restart": "Impossible de redémarrer {label}"
+      }
+    },
+    "board": {
+      "layoutLabel": "Affichage",
+      "layoutList": "Liste",
+      "layoutBoard": "Tableau",
+      "dispatchLabel": "Démarrer une session ou filtrer le tableau",
+      "dispatchPlaceholder": "Démarrez une session : @agent et une tâche. Filtrez : s:working a:agent",
+      "tooShort": "Trop court",
+      "dispatched": "Session démarrée",
+      "dispatchFailed": "Impossible de démarrer la session",
+      "openSession": "Ouvrir la session",
+      "stopSession": "Arrêter la session",
+      "stopped": "Session arrêtée",
+      "stopFailed": "Impossible d’arrêter la session",
+      "stateFilter": "Filtrer par état",
+      "agentFilter": "Filtrer par agent",
+      "allStates": "Tous les états",
+      "allAgents": "Tous les agents",
+      "loadError": "Impossible de charger les sessions. Réessayez.",
+      "retry": "Réessayer",
+      "emptyTitle": "Les sessions que vous démarrez apparaîtront ici",
+      "emptyDescription": "Saisissez une tâche ci-dessus et appuyez sur Enter. Chaque tâche s’exécute dans sa propre session.",
+      "noMatches": "Aucune session ne correspond à ces filtres",
+      "clearFilters": "Effacer les filtres",
+      "listLabel": "Sessions par état",
+      "loadMore": "Charger plus de sessions",
+      "loadingMore": "Chargement d’autres sessions…",
+      "more": "… {count} de plus",
+      "keys": {
+        "move": "déplacer",
+        "peek": "aperçu",
+        "open": "ouvrir",
+        "stop": "arrêter"
+      },
+      "group": {
+        "pinned": "Épinglées",
+        "needs_input": "Réponse requise",
+        "working": "En cours",
+        "review": "Prêtes à vérifier",
+        "completed": "Terminées",
+        "ended": "Échouées · Arrêtées"
+      },
+      "state": {
+        "working": "En cours",
+        "needs_input": "Réponse requise",
+        "idle": "Inactive",
+        "completed": "Terminée",
+        "failed": "Échouée",
+        "stopped": "Arrêtée"
+      },
+      "replyPlaceholder": "Répondez. Votre réponse parvient à l’agent à sa prochaine étape.",
+      "replyLabel": "Répondre à {title}",
+      "sendReply": "Envoyer la réponse",
+      "replySent": "Réponse envoyée",
+      "replyFailed": "Impossible d’envoyer la réponse"
+    },
+    "ultracode": {
+      "hint": "S’exécute comme un workflow d’agents",
+      "dismiss": "{key} pour l’envoyer comme un prompt normal"
+    }
+  },
+  "claudeSubscription": {
+    "title": "Utiliser votre abonnement Claude",
+    "description": "Les modèles Claude passent par Claude Code avec votre propre forfait Claude Pro ou Max. Seules vos sessions utilisent votre forfait.",
+    "starting": "Ouverture de Claude…",
+    "approveDescription": "Connectez-vous avec le compte Claude qui a votre forfait, autorisez la demande et copiez le code que Claude affiche.",
+    "codeLabel": "Code de claude.com",
+    "connect": "Connecter Claude",
+    "connecting": "Connexion…",
+    "connectedTitle": "Votre abonnement Claude est connecté",
+    "connected": "Abonnement Claude connecté",
+    "disconnect": "Déconnecter Claude",
+    "disconnected": "Abonnement Claude déconnecté",
+    "startError": "Impossible de lancer la connexion à Claude. Réessayez.",
+    "codeError": "Impossible de connecter Claude avec ce code. Reconnectez-vous et collez le nouveau code.",
+    "connectClaude": "Connecter Claude",
+    "reconnectClaude": "Reconnecter Claude"
   }
 }

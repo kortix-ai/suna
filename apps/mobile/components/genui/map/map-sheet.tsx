@@ -50,7 +50,7 @@ const openWindow = (event: WebViewOpenWindowEvent) => openGenuiLink(event.native
 const ACTIONS: readonly PlaceAction[] = ['directions', 'website', 'call'];
 
 /** No `load` from the page within this long counts as a failed basemap. */
-export const MAP_LOAD_TIMEOUT_MS = 10_000;
+const MAP_LOAD_TIMEOUT_MS = 10_000;
 
 /**
  * The page's messages, validated: a popup button's `{ type: 'place', index, action }` (the page holds no link,

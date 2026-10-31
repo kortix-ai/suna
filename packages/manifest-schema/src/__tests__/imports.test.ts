@@ -130,8 +130,8 @@ describe('resolveManifestImports', () => {
     const none = await resolve({ 'kortix.yaml': root, 'extra.yaml': 'agents:\n  b: {}\n' });
     expect(none.raw.tools).toBeUndefined();
     expect(selectedKortixTools(none.raw.tools)).toEqual([...KORTIX_TOOL_NAMES]);
-    const listed = await resolve({ 'kortix.yaml': root, 'extra.yaml': 'tools:\n  memory: kortix:memory\n' });
-    expect(selectedKortixTools(listed.raw.tools)).toEqual(['image_gen', 'memory']);
+    const listed = await resolve({ 'kortix.yaml': root, 'extra.yaml': 'tools:\n  show: kortix:show\n' });
+    expect(selectedKortixTools(listed.raw.tools)).toEqual(['image_gen', 'show']);
     // An empty `tools` in an imported file still counts: it lists no Kortix tool; the default-on ones load.
     for (const empty of ['tools: {}\n', 'tools:\n']) {
       const merged = await resolve({ 'kortix.yaml': root, 'extra.yaml': empty });

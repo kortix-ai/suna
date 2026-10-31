@@ -10,7 +10,7 @@ import {
   type GrantSetV2,
 } from '@kortix/manifest-schema';
 import { readAgentBlockV2 } from '../lib/agent-config-v2';
-import { declaredBuiltinAgents } from '../lib/platform-meta-agent';
+import { declaredBuiltinAgents } from '../lib/my-kortix-agent';
 import {
   MANIFEST_FILENAME,
   type AgentParseError,

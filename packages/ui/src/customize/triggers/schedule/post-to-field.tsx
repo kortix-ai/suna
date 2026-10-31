@@ -1,7 +1,7 @@
 'use client';
 
 import { useFeatureFlag, useProjectSpaces } from '@kortix/sdk/react';
-import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
+import { capitalizeWords, isMyKortixAgentName, MY_KORTIX_DISPLAY_NAME } from '@kortix/shared';
 import { HashIcon, LockSimpleIcon } from '@phosphor-icons/react';
 
 import { useTranslations } from '../../../i18n';
@@ -112,5 +112,5 @@ export function PostToField({
 }
 
 function agentLabel(name: string): string {
-  return isMetaAgentName(name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(name);
+  return isMyKortixAgentName(name) ? MY_KORTIX_DISPLAY_NAME : capitalizeWords(name);
 }

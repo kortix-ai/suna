@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { MY_KORTIX_DISPLAY_NAME } from '@kortix/shared';
 import type {
   AgentConfigBlock,
   AgentConfigResponse,
@@ -196,7 +197,9 @@ function renderAgent(
   if (mode && mode !== 'primary') markers.push(mode);
   if (agent.enabled === false) markers.push('disabled');
   const tail = markers.length > 0 ? ` ${C.dim}· ${markers.join(' · ')}${C.reset}` : '';
-  return `  ${pad(agent.name, width)}   ${C.dim}${agent.path}${C.reset}   ${modelText}${tail}\n`;
+  // A built-in agent has no file: say what it is instead of a path.
+  const where = agent.platform ? `${MY_KORTIX_DISPLAY_NAME}, built in` : agent.path;
+  return `  ${pad(agent.name, width)}   ${C.dim}${where}${C.reset}   ${modelText}${tail}\n`;
 }
 
 async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
@@ -228,6 +231,9 @@ async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
               name: agent.name,
               path: agent.path,
               model: agentModel(agent, pins[agent.name]),
+              ...(agent.description ? { description: agent.description } : {}),
+              ...(agent.platform ? { builtin: true } : {}),
+              ...(agent.enabled === false ? { enabled: false } : {}),
             })),
           },
     );
@@ -505,7 +511,7 @@ async function agentsScope(
 }
 
 /**
- * A built-in agent (My Kortix, slug `meta`) has no kortix.yaml block: the
+ * A built-in agent (My Kortix, slug `mykortix`) has no kortix.yaml block: the
  * config GET answers `block: null`. Print what it actually holds, never the
  * block defaults (`secrets all`), and never a "Change it" hint: every write
  * answers 409 builtin_agent_managed.

@@ -6,7 +6,7 @@ import type { Agent, Command, Session } from '@kortix/sdk/react';
 import type { Editor, JSONContent } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
 import { EditorContent, useEditor } from '@tiptap/react';
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 
 import { textToParagraphs } from '../composer-logic';
 import { COMPOSER_TEXT_METRICS } from '../composer-text-metrics';
@@ -22,6 +22,7 @@ import { isCursorOnFirstVisualLine } from './first-visual-line';
 import { MentionNode } from './mention-node';
 import { serializeDocument } from './serialize';
 import { createSuggestionExtension } from './suggestion';
+import { UltracodeHighlight } from './ultracode';
 
 export interface ComposerEditorHandle {
   /**
@@ -360,6 +361,12 @@ export function insertTextAtCursor(editor: Editor | null, text: string): void {
   editor.commands.insertContent(content);
 }
 
+/** The dismiss shortcut as the person's keyboard prints it. */
+function dismissKeyLabel(): string {
+  const platform = typeof navigator !== 'undefined' ? navigator.platform || navigator.userAgent : '';
+  return /Mac|iPhone|iPad/.test(platform) ? '⌥W' : 'Alt+W';
+}
+
 export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorProps>(
   function ComposerEditor(
     {
@@ -384,6 +391,9 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     ref,
   ) {
     const t = useTranslations('threads');
+    const tUltracode = useTranslations('multiAgent.ultracode');
+    // A marked `ultracode` keyword: the one-line hint under the text says what it does.
+    const [ultracodeActive, setUltracodeActive] = useState(false);
     const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
     const defaultActions = useMemo(() => localizedSlashActions(tI18nComplete), [tI18nComplete]);
     // Mirrors use-composer-focus.ts's onTypeAheadRef: @tiptap/react only
@@ -523,6 +533,8 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       extensions: [
         ...baseExtensions(() => placeholderRef.current),
         MentionNode,
+        // `setUltracodeActive` is a state setter: stable, so freezing it at construction is safe.
+        UltracodeHighlight.configure({ onActiveChange: setUltracodeActive }),
         // The one `@tiptap/suggestion` code path both `@` and `/` register
         // through (editor/suggestion.ts's `createSuggestionExtension`).
         // Built fresh every render like every extension above, but only the
@@ -687,17 +699,28 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     );
 
     return (
-      <EditorContent
-        editor={editor}
-        className={cn(
-          // `text-base` (16px) on mobile, NOT 15px: iOS Safari force-zooms the
-          // page on focus for any input under 16px, and the composer is the one
-          // field on the screen. `sm:text-sm` above 640px, which is the size
-          // `styles/components.css`'s slash-trigger rule already documents.
-          'kortix-composer-editor w-full text-sm',
-          disabled && 'opacity-50',
-        )}
-      />
+      <>
+        <EditorContent
+          editor={editor}
+          className={cn(
+            // `text-base` (16px) on mobile, NOT 15px: iOS Safari force-zooms the
+            // page on focus for any input under 16px, and the composer is the one
+            // field on the screen. `sm:text-sm` above 640px, which is the size
+            // `styles/components.css`'s slash-trigger rule already documents.
+            'kortix-composer-editor w-full text-sm',
+            disabled && 'opacity-50',
+          )}
+        />
+        {ultracodeActive ? (
+          <p data-slot="ultracode-hint" className="text-muted-foreground mt-1 truncate text-xs">
+            {tUltracode('hint')}
+            <span aria-hidden className="px-1">
+              ·
+            </span>
+            {tUltracode('dismiss', { key: dismissKeyLabel() })}
+          </p>
+        ) : null}
+      </>
     );
   },
 );

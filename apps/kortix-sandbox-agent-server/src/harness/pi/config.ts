@@ -47,6 +47,10 @@ const EnvironmentSchema = z.object({
   // once, and the depth a cloud child may still delegate from. Invalid: the default.
   KORTIX_PI_CLOUD_SUBAGENTS_MAX: z.coerce.number().int().positive().optional().catch(undefined),
   KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH: z.coerce.number().int().nonnegative().optional().catch(undefined),
+  // The workflow tool (extensions/workflow.ts): agents one run may start, and how many work at once
+  // (never above KORTIX_PI_CLOUD_SUBAGENTS_MAX). Invalid: the default.
+  KORTIX_WORKFLOW_MAX_AGENTS: z.coerce.number().int().positive().optional().catch(undefined),
+  KORTIX_WORKFLOW_MAX_CONCURRENT: z.coerce.number().int().positive().optional().catch(undefined),
 })
 
 export interface PiEnvironment {
@@ -64,11 +68,22 @@ export interface PiEnvironment {
   piCloudSubagentsMax: number
   /** A session at this subagent depth starts no cloud child. */
   piCloudSubagentsMaxDepth: number
+  /** `agent()` calls one workflow run may make. */
+  workflowMaxAgents: number
+  /** Workflow children working at once, before the cloud cap applies. */
+  workflowMaxConcurrent: number
 }
+
+/** Defaults of the workflow limits: Claude Code's size guideline `large` (fewer than 50 agents), 8 at once. */
+export const DEFAULT_WORKFLOW_MAX_AGENTS = 50
+export const DEFAULT_WORKFLOW_MAX_CONCURRENT = 8
 
 export const DEFAULT_PI_AGENT_DIR = '/opt/kortix/pi-agent'
 
 export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
+  // An API from before the gateway kept Claude logins delivered one at boot. Drop it before
+  // any shell exists: Claude Code reaches its account through the gateway (claude/sdk.ts).
+  delete env.KORTIX_CLAUDE_OAUTH_TOKEN
   const parsed = EnvironmentSchema.parse({
     KORTIX_PI_STATE_DIR: env.KORTIX_PI_STATE_DIR,
     KORTIX_PI_AGENT_DIR: env.KORTIX_PI_AGENT_DIR,
@@ -82,6 +97,8 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     KORTIX_PI_CODEMODE: env.KORTIX_PI_CODEMODE?.trim() || undefined,
     KORTIX_PI_CLOUD_SUBAGENTS_MAX: env.KORTIX_PI_CLOUD_SUBAGENTS_MAX?.trim() || undefined,
     KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH: env.KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH?.trim() || undefined,
+    KORTIX_WORKFLOW_MAX_AGENTS: env.KORTIX_WORKFLOW_MAX_AGENTS?.trim() || undefined,
+    KORTIX_WORKFLOW_MAX_CONCURRENT: env.KORTIX_WORKFLOW_MAX_CONCURRENT?.trim() || undefined,
   })
   return {
     piStateDir: parsed.KORTIX_PI_STATE_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi'),
@@ -96,6 +113,8 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     piCodemode: parsed.KORTIX_PI_CODEMODE,
     piCloudSubagentsMax: parsed.KORTIX_PI_CLOUD_SUBAGENTS_MAX ?? DEFAULT_MAX_LIVE_CLOUD_SUBAGENTS,
     piCloudSubagentsMaxDepth: parsed.KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH ?? DEFAULT_MAX_CLOUD_SUBAGENT_DEPTH,
+    workflowMaxAgents: parsed.KORTIX_WORKFLOW_MAX_AGENTS ?? DEFAULT_WORKFLOW_MAX_AGENTS,
+    workflowMaxConcurrent: parsed.KORTIX_WORKFLOW_MAX_CONCURRENT ?? DEFAULT_WORKFLOW_MAX_CONCURRENT,
   }
 }
 

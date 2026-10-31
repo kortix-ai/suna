@@ -17,6 +17,7 @@ import { handleSessionEvent } from './handle-session-event';
 import { handleWorkspaceEvent } from './handle-workspace-event';
 import { pendingEventsOfLogState, sessionStatusOfLogFrame } from './log-control';
 import type { HandlerContext } from './handler-context';
+import { cachedSessionName } from './helpers';
 import type { NormalizeDiagnosticPaths, RuntimeEvent } from './types';
 export const USER_PARTS_GRACE_MS = 1_500;
 export function createEventHandler(deps: {
@@ -46,26 +47,43 @@ export function createEventHandler(deps: {
    *  care about the Kortix-session-mirror refetch keep compiling; production
    *  always passes it (`use-opencode-events/index.ts`). */
   projectId?: string | null;
+  /** Required, so a new call site cannot silently fall back to the host's URL. */
+  notificationProjectId: string | null;
   /**
    * The Kortix session of the stream this handler serves (R5.3). Its `log.*`
    * frames go to that session's log (`applySessionLogEvent`); without it they
    * are dropped: the frames name no session.
    */
   sessionId?: string | null;
+  /**
+   * The box serves its log (`runtime.log.v1`): the session log holds the transcript, so a turn
+   * end, an error or a compaction re-reads no transcript tail and no session record.
+   */
+  logNative?: boolean;
+  /** A `log.status` `compacting` starts the thread's compaction; its next status ends it. */
+  startCompaction?: (sessionID: string) => void;
 }) {
   const { queryClient, client } = deps;
-  const reconcileTail =
-    deps.reconcileSessionTail ??
-    (async (sessionID: string) => {
-      const result = await client.session.messages({ sessionID, limit: SESSION_SYNC_PAGE_SIZE });
-      if (result.data) useSyncStore.getState().hydrate(sessionID, result.data);
-    });
+  const reconcileTail = deps.logNative
+    ? async () => {}
+    : (deps.reconcileSessionTail ??
+      (async (sessionID: string) => {
+        const result = await client.session.messages({ sessionID, limit: SESSION_SYNC_PAGE_SIZE });
+        if (result.data) useSyncStore.getState().hydrate(sessionID, result.data);
+      }));
   const ctx: HandlerContext = {
     ...deps,
     projectId: deps.projectId ?? null,
     userPartsGraceMs: deps.userPartsGraceMs ?? USER_PARTS_GRACE_MS,
     reconcileTail,
     getSessionTitle(sessionID) {
+      // The stream's session, not `sessionID`: a sub-agent's request names the
+      // session the notification opens.
+      const named =
+        deps.projectId && deps.sessionId
+          ? cachedSessionName(queryClient, deps.projectId, deps.sessionId)
+          : undefined;
+      if (named) return named;
       const sessions = queryClient.getQueryData<Session[]>(runtimeKeys.sessions());
       return (
         sessions?.find((s) => s.id === sessionID)?.title ||
@@ -97,6 +115,9 @@ export function createEventHandler(deps: {
       // The control frames drive the stores the runtime's own events drive.
       const status = sessionStatusOfLogFrame(event);
       if (status) {
+        const compacting = (event.properties as { status?: unknown }).status === 'compacting';
+        if (compacting) deps.startCompaction?.(status.properties.sessionID);
+        else deps.stopCompaction(status.properties.sessionID);
         const before = useSyncStore.getState().sessionStatus[status.properties.sessionID];
         deps.applySyncEvent(status as OpenCodeSdkEvent);
         handleSessionEvent(status, ctx, before);

@@ -1,6 +1,6 @@
 /** Project model catalog, picker, access, enablement, and default-model preferences. */
 import { readModelAccess } from '../../llm-gateway/model-access';
-import { changeProjectModelAccess } from '../../repositories/project-model-access';
+import { changeProjectModelAccess, getProjectModelAccess } from '../../repositories/project-model-access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -32,11 +32,13 @@ import { projectsApp } from '../lib/app';
 import { requestPersonalOwner } from '../lib/personal-resources';
 import { agentNotDeclaredError } from '../agents';
 import { projectBuiltinAgents } from '../lib/builtin-agents';
-import { builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/platform-meta-agent';
+import { builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/my-kortix-agent';
 import { readAgentBlockV2 } from '../lib/agent-config-v2';
 import { loadManifestForEdit } from '../lib/triggers';
 import type { ProjectRow } from '../lib/serializers';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { claudeSubscriptionPickerGroup } from '../claude-subscription/picker';
+import { checkClaudeAgentRef } from '../../llm-gateway/resolution/claude-agent';
 
 // Explicit inference controls are separate from legacy picker visibility.
 const modelAccessChangeBody = z.object({
@@ -201,6 +203,16 @@ export function registerModelsRoutes(): void {
         catalog: unavailableCatalog(gatewayModelCatalog(projectId), catalog.models),
         // Model prices are base prices: the platform fee is stated once, beside them.
         platformFeePercent: Math.round((llmPriceMarkup() - 1) * 1000) / 10,
+        // Claude models on Claude accounts (Claude Code). A separate group,
+        // never in `models`: they do not run through the gateway's model
+        // pipeline, and the sandbox's boot list (`servableProjectCatalog`)
+        // must not carry them. Each model's `enabled` follows the same model
+        // settings as `models`.
+        claudeSubscription: await claudeSubscriptionPickerGroup({
+          accountId, projectId, userId: loaded.userId,
+          access: await getProjectModelAccess(projectId),
+          modelOverrides: catalog.modelOverrides,
+        }),
       });
     },
   );
@@ -487,6 +499,8 @@ export function registerModelsRoutes(): void {
         if (notDeclared) return c.json(notDeclared, 409);
       }
 
+      const claudeAgent = checkClaudeAgentRef(model);
+      if (claudeAgent.kind === 'invalid') return c.json({ error: claudeAgent.message, code: 'invalid_model' }, 400);
       const freeModelsOnly = !(await accountMayUseManagedModels(ownerAccountId));
       const servable = await isModelServableForAccount({
         userId,

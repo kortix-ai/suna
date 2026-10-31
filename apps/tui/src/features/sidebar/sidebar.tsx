@@ -14,7 +14,7 @@ import type { ResolvedHost } from '../../auth/hosts.ts';
 import { kortix } from '../../kortix.ts';
 import { filterSessionsByTitle, groupSessionsByDay } from '../../lib/session-groups.ts';
 import { ColumnPicker } from './column-picker.tsx';
-import { type SidebarScreen, SidebarView } from './sidebar-view.tsx';
+import { type SidebarNavItem, type SidebarScreen, SidebarView } from './sidebar-view.tsx';
 
 export interface SidebarProps {
   host: ResolvedHost;
@@ -26,7 +26,15 @@ export interface SidebarProps {
   height: number;
   onOpenSession(sessionId: string): void;
   onNewSession(sessionId: string): void;
-  onNavigate(screen: 'customize' | 'apps' | 'review' | 'files'): void;
+  /**
+   * `+ New session` / `n`, session-first: open the draft instead of creating
+   * an empty session on the server. The draft's first prompt creates it, the
+   * same as `/new`. Without it the row creates the session at once.
+   */
+  onStartDraft?(): void;
+  onNavigate(screen: SidebarScreen): void;
+  /** The screen rows. Default: the four the sidebar always had. */
+  nav?: readonly SidebarNavItem[];
   onProjectChange(projectId: string, accountId: string): void;
   onAccountChange(accountId: string): void;
   /**
@@ -66,7 +74,9 @@ export function Sidebar({
   height,
   onOpenSession,
   onNewSession,
+  onStartDraft,
   onNavigate,
+  nav,
   onProjectChange,
   onAccountChange,
   onAccountResolved,
@@ -242,6 +252,7 @@ export function Sidebar({
       accountName={accountName}
       projectName={projectName}
       reviewCount={reviewCount}
+      nav={nav}
       groups={groups}
       selectedSessionId={selectedSessionId}
       focused={focused}
@@ -258,7 +269,7 @@ export function Sidebar({
       onOpenProjectPicker={() =>
         authError && projects.length === 0 ? onToast?.(authError, 'error') : setPicker('project')
       }
-      onNewSession={() => void createSession()}
+      onNewSession={() => (onStartDraft ? onStartDraft() : void createSession())}
       onNavigate={(screen: SidebarScreen) => onNavigate(screen)}
       onRename={(sessionId, name) => void renameSession(sessionId, name)}
       onDelete={(sessionId) => void deleteSession(sessionId)}

@@ -21,7 +21,7 @@
 
 import { type ManifestIssue, type ProjectManifestHealth } from '@kortix/sdk';
 import { useProjectConfig } from '@kortix/sdk/react';
-import { META_AGENT_NAME } from '@kortix/shared/meta-agent';
+import { MY_KORTIX_AGENT_NAME } from '@kortix/shared';
 import { FileCodeIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
@@ -160,7 +160,7 @@ export function ProjectManifestIssuesAlert({ projectId }: { projectId: string })
       onFix={() =>
         configure.start({
           text: manifestFixPrompt(health),
-          agent: myKortix ? META_AGENT_NAME : null,
+          agent: myKortix ? MY_KORTIX_AGENT_NAME : null,
           model: null,
           variant: null,
         })

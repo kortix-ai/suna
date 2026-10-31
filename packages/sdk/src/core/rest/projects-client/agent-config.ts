@@ -128,7 +128,7 @@ export interface AgentConfigResponse {
   harness?: string;
   /** The `behavior` settings that harness ignores (pi: `options`, `color`). Absent from an older API. */
   ignored_settings?: string[];
-  /** Set for a built-in agent (`my_kortix` for `meta`): platform-owned, never
+  /** Set for a built-in agent (`my_kortix` for `mykortix`): platform-owned, never
    *  editable, `block` is null. Absent for a declared agent and from an older API. */
   builtin?: 'my_kortix';
 }

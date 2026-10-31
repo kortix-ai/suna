@@ -77,6 +77,34 @@ describe('useSessionLog / useSessionLogThread', () => {
   });
 });
 
+describe('useSessionLogThread prompts: the prompts the log does not hold yet', () => {
+  const sentFirst = { message_id: 'msg_initialprompt0000001', prompt_id: null, text: 'first words', attachments: [], author_user_id: null, created_at: '2030-01-01T00:00:01.000Z' };
+
+  test('a booting session (no log, no rows) shows its initial prompt; the log put of the same id replaces it', () => {
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      seen.push(useSessionLogThread({ projectId: PROJECT, sessionId: SESSION }, undefined, { prompts: { prompts: [], sent: [sentFirst] } }));
+      return null;
+    });
+    expect(seen.at(-1)!.messages.map((m) => [m.message_id, m.role])).toEqual([['msg_initialprompt0000001', 'user']]);
+
+    const held = { ...log.threads[0]!.messages.find((m) => m.role === 'user')!, message_id: 'msg_initialprompt0000001' };
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, { ...page(), messages: [...page().messages, { ...held, seq: 999 }] }));
+    const ids = seen.at(-1)!.messages.map((m) => m.message_id);
+    expect(ids.filter((id) => id === 'msg_initialprompt0000001')).toHaveLength(1);
+    expect(seen.at(-1)!.messages.find((m) => m.message_id === 'msg_initialprompt0000001')!.seq).toBe(999);
+  });
+
+  test('without the option the thread is unchanged (null while nothing is stored)', () => {
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      seen.push(useSessionLogThread({ projectId: PROJECT, sessionId: SESSION }));
+      return null;
+    });
+    expect(seen.at(-1)).toBeNull();
+  });
+});
+
 describe('useSessionLogThread on v2: throttleMs paces the thread', () => {
   const put = (i: number) => ({ ...log.threads[0]!.messages.at(-1)!, message_id: `msg_zzzpaced${String(i).padStart(2, '0')}`, seq: 1000 + i });
   const apply = (i: number) => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.message', properties: { rev: i, message: put(i) } });
@@ -299,6 +327,31 @@ describe('useSessionLog / useSessionLogThread without v2: the fromV1 view of the
     expect(ids).not.toContain(stub.id);
   });
 
+  test('prompts option: the inbox row (and sent) names the re-mint, so the SDK pairs the optimistic send itself; the log copy shows once', () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    const stub = { id: 'msg_zzzhost', sessionID: RS, role: 'user', time: { created: Date.now() }, agent: 'build', model: { providerID: 'p', modelID: 'm' } };
+    act(() => useSyncStore.getState().optimisticAdd(RS, stub as never, [{ id: 'prt_zzzhost', sessionID: RS, messageID: stub.id, type: 'text', text: 'sent' } as never]));
+    const at = new Date().toISOString();
+    // Delivered: the row left the inbox; `sent` names both ids until the log holds the new one.
+    const inbox = {
+      prompts: [],
+      sent: [{ message_id: 'msg_zzzreminted', wire_message_id: stub.id, prompt_id: 'p1', text: 'sent', attachments: [], author_user_id: null, created_at: at }],
+    };
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      seen.push(useSessionLogThread(session, undefined, { prompts: inbox }));
+      return null;
+    });
+    // One copy while the log lacks it: the optimistic one (the sent entry names its wire id).
+    expect(seen.at(-1)!.messages.filter((m) => m.role === 'user' && (m.blocks[0] as { text?: string })?.text === 'sent')).toHaveLength(1);
+    const put = { ...log.threads[0]!.messages.at(-1)!, message_id: 'msg_zzzreminted', seq: 999 };
+    act(() => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.message', properties: { rev: 1, message: put } }));
+    const ids = seen.at(-1)!.messages.map((m) => m.message_id);
+    expect(ids.at(-1)).toBe('msg_zzzreminted');
+    expect(ids).not.toContain(stub.id);
+  });
+
   test('null without a runtime session id; source v2 once a page is in the store', () => {
     act(() => useSyncStore.getState().hydrate(RS, rows as never));
     const seen: Array<{ none: unknown; log: ReturnType<typeof useSessionLog> }> = [];
@@ -346,10 +399,13 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
   beforeEach(() => {
     timers = [];
   });
-  function mount(options: { enabled?: boolean; loader?: ((...a: unknown[]) => Promise<unknown>) | null }) {
-    const state = { dialect: '' };
+  type LivePage = ((query: { limit: number }) => Promise<unknown>) | null;
+  function mount(options: { enabled?: boolean; loader?: ((...a: unknown[]) => Promise<unknown>) | null; livePage?: LivePage }) {
+    const state = { dialect: '', setLivePage: (_: LivePage) => {} };
     render(() => {
-      state.dialect = useSessionLogSync(PROJECT, SESSION, { enabled: options.enabled ?? true, loader: options.loader as never, joinStream: joinStream as never, schedule });
+      const [livePage, setLivePage] = useState<LivePage>(() => options.livePage ?? null);
+      state.setLivePage = (next) => setLivePage(() => next);
+      state.dialect = useSessionLogSync(PROJECT, SESSION, { enabled: options.enabled ?? true, loader: options.loader as never, livePage: livePage as never, joinStream: joinStream as never, schedule });
       return null;
     });
     return state;
@@ -534,6 +590,89 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(calls).toBe(2);
     expect(state.dialect).toBe('v2');
     expect(joined.at(-1)!.options.schema).toBe('v2');
+  });
+
+  describe('a box that serves its log (runtime.log.v1): the box page is the newest page', () => {
+    const missing = () => Object.assign(new Error('No session log for this session'), { status: 404, code: 'session_log_missing' });
+    /** The box's page: the API's, plus the reply it streams and a prompt waiting behind it. */
+    const boxPage = () => {
+      const p = page();
+      const last = p.messages.at(-1)!;
+      const streaming = { ...structuredClone(last), message_id: 'msg_box_streaming', role: 'assistant' as const, seq: last.seq + 1, status: 'streaming' as const, blocks: [] };
+      const queued = { ...structuredClone(last), message_id: 'msg_box_queued', role: 'user' as const, seq: Number.MAX_SAFE_INTEGER, status: 'complete' as const, blocks: [{ type: 'text' as const, id: 'q0', text: 'waiting' }] };
+      return { ...p, messages: [...p.messages, streaming, queued] };
+    };
+    const held = () => (useSyncStore.getState().sessionLogs[SESSION]?.messages[page().thread_id] ?? []).map((m) => m.message_id);
+
+    test('a new session the API holds no log for: the box page goes in the store and the stream switches to schema v2 at once', async () => {
+      let boxReads = 0;
+      const state = mount({ loader: async () => { throw missing(); }, livePage: async () => { boxReads++; return boxPage(); } });
+      await flush();
+      expect(boxReads).toBe(1);
+      expect(state.dialect).toBe('v2');
+      expect(held()).toContain('msg_box_streaming');
+      expect(joined.at(-1)!.options.schema).toBe('v2');
+    });
+
+    test('the box page adds the streaming reply and the waiting prompt the API page lacks; a reconnect re-reads the box page, not the API', async () => {
+      let apiReads = 0;
+      let boxReads = 0;
+      mount({ loader: async () => { apiReads++; return page(); }, livePage: async () => { boxReads++; return boxPage(); } });
+      await flush();
+      expect([apiReads, boxReads]).toEqual([1, 1]);
+      expect(held().slice(-2)).toEqual(['msg_box_streaming', 'msg_box_queued']);
+      const v2 = joined.at(-1)!;
+      act(() => v2.options.onConnectionChange(true));
+      act(() => v2.options.onConnectionChange(false));
+      act(() => v2.options.onConnectionChange(true));
+      await flush();
+      expect([apiReads, boxReads]).toEqual([1, 2]);
+    });
+
+    test('the box loader arriving after the first read (the box got ready later) reads the box page then, and a missing log turns v2', async () => {
+      let boxReads = 0;
+      const state = mount({ loader: async () => { throw missing(); } });
+      await flush();
+      expect(state.dialect).toBe('missing');
+      expect(joined.map((j) => j.options.schema)).toEqual([undefined]);
+      act(() => state.setLivePage(async () => { boxReads++; return boxPage(); }));
+      await flush();
+      expect(boxReads).toBe(1);
+      expect(state.dialect).toBe('v2');
+      expect(joined.at(-1)!.options.schema).toBe('v2');
+    });
+
+    test('a box read that fails changes nothing: the API page stays, and the stream stays on schema v2', async () => {
+      mount({ loader: async () => page(), livePage: async () => { throw new Error('daemon 503'); } });
+      await flush();
+      expect(held()).toEqual(page().messages.map((m) => m.message_id));
+      expect(joined.at(-1)!.options.schema).toBe('v2');
+    });
+  });
+
+  test('session_log_missing while a turn runs: the page is read 6 s after the turn starts, once per turn, not only at its end', async () => {
+    // A new session's first prompt can run before this tab's runtime connection exists: that
+    // connection is live-only, so the user message frame is gone, and pi journals mid-turn
+    // every 5 s. Measured in the TUI: the first message showed only at the turn end.
+    let calls = 0;
+    let stored = false;
+    const running = (token: string) => ({
+      type: 'kortix.control.turn', cseq: 1, cepoch: 'c', at: 1,
+      payload: { known: true, turns: [{ turn_token: token, state: 'active' }], last_ended: null },
+    });
+    const missing = () => Object.assign(new Error('No session log for this session'), { status: 404, code: 'session_log_missing' });
+    const state = mount({ loader: async () => { calls++; if (!stored) throw missing(); return v1Page(); } });
+    await flush();
+    expect(state.dialect).toBe('missing');
+    expect(timers).toEqual([]);
+    // The state at join already holds the running turn: that counts as its start.
+    act(() => joined[0]!.options.onControl(running('t1')));
+    act(() => joined[0]!.options.onControl(running('t1')));
+    expect(timers.map((t) => t.ms)).toEqual([6_000]);
+    stored = true;
+    await runTimers();
+    expect(calls).toBe(2);
+    expect(state.dialect).toBe('v2');
   });
 
   test('a kortix.resync on the v2 connection re-reads the page once, with no duplicate messages', async () => {

@@ -77,6 +77,9 @@ const cases = [
   ['adapter to a route', 'src/harness/pi/boot.ts', "import '@/routes/kortix/health';", false],
   ['adapter to hono', 'src/harness/pi/boot.ts', "import { Hono } from 'hono';", false],
   ['pi to pi packages', 'src/harness/pi/runtime.ts', "import '@earendil-works/pi-agent-core';", true],
+  ['pi to the Claude Agent SDK', 'src/harness/pi/claude/session.ts', "import { query } from '@anthropic-ai/claude-agent-sdk';", true],
+  ['pi to the MCP SDK', 'src/harness/pi/claude/server.ts', "import { Server } from '@modelcontextprotocol/sdk/server/index.js';", true],
+  ['a service to the Claude Agent SDK', 'src/services/tools/host.ts', "import { query } from '@anthropic-ai/claude-agent-sdk';", false],
   ['pi to bun:sqlite', 'src/harness/pi/runtime.ts', "import { Database } from 'bun:sqlite';", false],
   ['resolver to an adapter', 'src/harness/harness.ts', "import './pi/service';", true],
   ['contract to an adapter', 'src/harness/contract/control.ts', "import '../pi/boot';", false],
@@ -84,6 +87,8 @@ const cases = [
   ['shared to the resolver', 'src/harness/shared/agent-env-file.ts', "import '../harness';", true],
   ['shared to the message-id codec', 'src/harness/shared/session-log-boot.ts', "import { mintWireMessageId } from '@kortix/sdk/wire-message-id';", true],
   ['route to the message-id codec', 'src/routes/kortix/health.ts', "import { wireIdClock } from '@kortix/sdk/wire-message-id';", false],
+  ['pi to the peer-message envelope', 'src/harness/pi/runtime.ts', "import { parsePeerMessagePrompt } from '@kortix/shared/peer-message-prompt';", true],
+  ['service to the room envelope', 'src/services/tools/host.ts', "import { parseRoomPrompt } from '@kortix/shared/room-prompt';", false],
 
   // routes/ — controllers
   ['route to SSRF guard', 'src/routes/proxy/web-proxy.ts', "import '@kortix/shared/ssrf-guard';", true],

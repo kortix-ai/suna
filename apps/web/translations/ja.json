@@ -69,7 +69,6 @@
     "oauthExpired": "認証がタイムアウトしました。もう一度お試しください。",
     "oauthPrivateDescription": "このプロジェクトで ChatGPT Plus または Pro プランを使用します。新しいアカウントは共有するまで自分専用です。",
     "chatGptSubscription": "ChatGPT サブスクリプション",
-    "useYourChatGpt": "自分の ChatGPT サブスクリプションを使う",
     "manageChatGptAccounts": "ChatGPT アカウントを管理",
     "connect": "接続",
     "connectChatGpt": "ChatGPT を接続",
@@ -96,7 +95,7 @@
     "deleteError": "シークレットを削除できませんでした",
     "accessError": "アクセス権を変更できませんでした",
     "sharedTitle": "プロバイダー接続",
-    "sharedDescription": "API キーと ChatGPT アカウントを追加できます。新しい接続は共有するまで自分専用です。セッションごとに使用する接続を選択できます。",
+    "sharedDescription": "API キー、ChatGPT アカウント、Claude アカウントを追加します。新しいものは共有するまで自分専用です。各セッションで使うものを選びます。",
     "legacyProjectKey": "既存のプロジェクトキー · このセッションでキーを選択していない場合に使用",
     "keyCount": "{count, plural, other {# 個のキー}}",
     "providerKeysFor": "{provider} の API キー",
@@ -163,7 +162,19 @@
     "opencodeGoConnect": "OpenCode Go を接続",
     "opencodeGoReconnect": "OpenCode Go を再接続",
     "opencodeGoDisconnect": "OpenCode Go の接続を解除",
-    "opencodeGoFailed": "OpenCode Go に接続できませんでした"
+    "opencodeGoFailed": "OpenCode Go に接続できませんでした",
+    "claudeAccounts": "Claude アカウント",
+    "noClaudeAccounts": "Claude アカウントはまだありません",
+    "connectClaude": "Claude でサインイン",
+    "claudeOauthPrivateDescription": "このプロジェクトの Claude モデルで Claude Pro または Max プランを使います。新しいアカウントは共有するまで自分専用です。",
+    "claudeOauthCreationDescription": "Claude Pro または Max のアカウントでサインインします。Kortix はログインを暗号化して保存し、表示しません。",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Claude アカウントを接続しました",
+    "claudeAccountReconnected": "Claude アカウントを再接続しました",
+    "claudeConnectFailed": "Claude のサインインが完了しませんでした。もう一度お試しください。",
+    "claudeReconnectDescription": "もう一度 Claude でサインインします。アカウントの名前、アクセス、セッションの選択はそのまま残ります。",
+    "claudeAccountLabelPlaceholder": "例: 自分の Claude アカウント",
+    "claudeDeleteAccountConfirmTitle": "この Claude アカウントを全員分削除しますか?"
   },
   "secrets": {
     "undecryptable": {
@@ -1330,6 +1341,10 @@
         "chrome": {
           "name": "Chrome で Kortix",
           "description": "セッションが接続済みの Chrome ブラウザを操作できるようにします。いつでも操作を引き継ぐか停止できます。"
+        },
+        "agent_teams": {
+          "name": "エージェントチーム",
+          "description": "リードセッションが名前付きのチームメイトを起動し、1つのタスクリストを共有します。各チームメイトはタスクを引き受け、自分のセッションで作業し、終わったらリードに知らせます。リードの入力欄の下で、すべてのチームメイトとそのタスクを確認できます。セッション間のメッセージはこのフラグがなくても使えます。"
         }
       },
       "channelsSwitch": {
@@ -3081,6 +3096,116 @@
       "scriptFailed": "スクリプトが失敗しました",
       "calls": "{count, plural, other {# 件のツール呼び出し}}",
       "noOutput": "出力なし"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "エージェントを確認中…",
+          "change": "エージェントを更新中…"
+        },
+        "sessions": {
+          "read": "セッションを確認中…",
+          "change": "セッションを更新中…"
+        },
+        "schedules": {
+          "read": "スケジュールを確認中…",
+          "change": "スケジュールを更新中…"
+        },
+        "connectors": {
+          "read": "コネクタを確認中…",
+          "change": "コネクタを更新中…"
+        },
+        "people": {
+          "read": "メンバーを確認中…",
+          "change": "メンバーを更新中…"
+        },
+        "access": {
+          "read": "アクセス権を確認中…",
+          "change": "アクセス権を更新中…"
+        },
+        "usage": {
+          "read": "使用量を確認中…",
+          "change": "使用量を確認中…"
+        },
+        "changeRequests": {
+          "read": "変更リクエストを確認中…",
+          "change": "変更リクエストを更新中…"
+        },
+        "memory": {
+          "read": "メモリを確認しています…",
+          "change": "メモリを更新しています…"
+        }
+      },
+      "status": {
+        "done": "完了",
+        "needsYou": "対応が必要",
+        "denied": "権限が必要",
+        "error": "完了しませんでした",
+        "running": "実行中"
+      },
+      "deniedTitle": "権限が必要です",
+      "grantors": "付与できる人",
+      "grantorsUnknown": "このプロジェクトを管理している人なら誰でも付与できます。",
+      "newSetting": "新規",
+      "removedSetting": "削除済み",
+      "opensInNewTab": "新しいタブで開きます",
+      "showDetails": "詳細を表示"
+    },
+    "workflow": {
+      "fallbackTitle": "ワークフロー",
+      "starting": "ワークフローを開始中…",
+      "progress": "{total} 件中 {done} 件完了",
+      "failedCount": "{total} 件中 {failed} 件失敗",
+      "agents": "{count, plural, other {# 個のエージェント}}",
+      "background": "バックグラウンドで実行中",
+      "status": {
+        "starting": "開始中",
+        "running": "実行中",
+        "done": "完了",
+        "failed": "失敗",
+        "stopped": "停止",
+        "pending": "未開始"
+      },
+      "openAgent": "{label} を開く",
+      "showDetails": "詳細を表示",
+      "failedSuffix": "{count} 件失敗",
+      "resumed": "再開",
+      "resumedHint": "前回の実行で完了したエージェントは、その回答をそのまま使います。",
+      "large": "大規模な実行",
+      "largeHint": "この実行は 25 個を超えるエージェントを起動します。各エージェントは行から停止できます。",
+      "openRun": "実行を開く",
+      "openRunLabel": "実行のセッションを開く",
+      "backgroundIdle": "専用のセッションで実行",
+      "savedName": "保存済みワークフロー {name}",
+      "upTo": "最大 {count, plural, other {# 個のエージェント}}",
+      "result": "結果",
+      "logLabel": "ワークフローのログ",
+      "agentsLabel": "ワークフローのエージェント",
+      "filter": {
+        "label": "エージェントを表示",
+        "all": "すべて",
+        "running": "実行中",
+        "failed": "失敗",
+        "done": "完了"
+      },
+      "filterEmpty": {
+        "running": "実行中のエージェントはありません。",
+        "failed": "失敗したエージェントはありません。",
+        "done": "完了したエージェントはまだありません。"
+      },
+      "showAll": "{count} 件すべて表示",
+      "retry": "再試行 {count}",
+      "cached": "前回の実行から",
+      "stopAgent": "{label} を停止",
+      "stopHint": "このエージェントを停止",
+      "stopFailed": "{label} を停止できませんでした",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, other {JSON · # 個のキー}}",
+      "jsonItems": "{count, plural, other {JSON · # 個の項目}}"
+    },
+    "agent": {
+      "backgroundWorking": "バックグラウンドで作業中",
+      "backgroundSession": "専用のセッションで実行"
     }
   },
   "agentRunLimit": {
@@ -7791,8 +7916,7 @@
       "legendTool": "ツール結果",
       "legendOther": "その他",
       "subAgentsLabel": "サブエージェント",
-      "subAgentsNote": "このセッションは補助セッションを開始しました。以下の合計に含まれます。",
-      "combinedCost": "合計コスト",
+      "subAgentsNote": "このセッション内で実行された補助エージェントです。その費用はこのセッションの費用に含まれます。",
       "combinedMessages": "合計メッセージ",
       "tokensIn": "入力トークン",
       "tokensOut": "出力トークン",
@@ -7816,7 +7940,20 @@
       "rawFilterUser": "あなた",
       "rawFilterAssistant": "アシスタント",
       "rawNoMatches": "一致するメッセージがありません",
-      "detailsLabel": "詳細"
+      "detailsLabel": "詳細",
+      "costSplit": "このセッション {own} · 起動したセッション {count} 件 {spawned}",
+      "costEstimated": "トランスクリプトからの推定値",
+      "detailModelRequests": "モデルリクエスト",
+      "spawnedLabel": "起動したセッション",
+      "spawnedNote": "このセッションが起動したセッションと、それらが起動したセッションです。その費用は合計コストに含まれます。",
+      "spawnedCount": "このセッションと起動したセッション {count} 件",
+      "spawnedRequests": "リクエスト",
+      "spawnedCost": "費用",
+      "spawnedThisSession": "このセッション",
+      "spawnedTotal": "合計",
+      "spawnedHidden": "開けない起動セッション {count} 件は含まれていません。",
+      "spawnedTruncated": "最初の 500 件の起動セッション(最大 10 階層)のみ含まれます。",
+      "spawnedUntitled": "無題のセッション"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "コネクタービュー",
@@ -20322,10 +20459,6 @@
       "textc86ce3b8097b": "例：5000",
       "textfaaf56a699c2": "上限（クレジット）",
       "texte7a241debad5": "URL",
-      "text3dd46a7b552c": "アプリを追加",
-      "text68cf13547e38": "URL でアプリを追加",
-      "text46bc646c9bfe": "任意の場所でホストされているサイトをこのプロジェクトに表示します。Kortix は実行中のアプリと並べてその場で開きます。",
-      "text08e6480e9b78": "{value0} を追加しました",
       "text6241684827b2": "このサイトは Kortix での表示を許可していません。",
       "textdae75dce541f": "このプロジェクトのすべてのスケジュールと Webhook を一時停止します。",
       "textced57bebd466": "このプロジェクトのスケジュールと Webhook を再開します。",
@@ -24737,5 +24870,247 @@
     "tools": "Tools",
     "extensions": "Extensions",
     "drives": "Drives"
+  },
+  "multiAgent": {
+    "peer": {
+      "message": "{from} からのメッセージ",
+      "idleNotice": "{from} が完了しました",
+      "shutdownRequest": "{from} からの終了リクエスト",
+      "shutdownResponse": "{from} からの終了リクエストへの返答",
+      "expand": "メッセージ全体を表示",
+      "collapse": "メッセージを隠す"
+    },
+    "notice": {
+      "completed": "{name} が完了しました",
+      "failed": "{name} は完了しませんでした",
+      "stopped": "{name} は停止されました",
+      "fallbackName": "あなたのエージェント",
+      "openSession": "セッションを開く",
+      "expand": "結果全体を表示",
+      "collapse": "結果を隠す",
+      "batchTitle": "{count, plural, other {# 個のエージェントが完了しました}}",
+      "ownsTasks": "未完了のタスク: {tasks}"
+    },
+    "tools": {
+      "running": {
+        "sending": "メッセージを送信中…",
+        "checkingAgents": "ほかのエージェントを確認中…",
+        "checkingTasks": "チームのタスクを確認中…",
+        "updatingTasks": "チームのタスクを更新中…",
+        "stopping": "エージェントを停止中…"
+      },
+      "to": "宛先",
+      "peerStatus": {
+        "delivered": "配信済み",
+        "held": "承認待ち",
+        "refused": "未送信",
+        "denied": "拒否済み",
+        "expired": "期限切れ",
+        "dropped": "再送なし"
+      },
+      "relation": {
+        "parent": "親",
+        "child": "ヘルパー",
+        "lead": "リード",
+        "teammate": "チームメイト",
+        "session": "セッション"
+      },
+      "cannotReceive": "メッセージを受信できません",
+      "state": {
+        "working": "作業中",
+        "needsInput": "回答待ち",
+        "idle": "待機中",
+        "completed": "完了",
+        "failed": "完了しませんでした",
+        "stopped": "停止"
+      },
+      "taskStatus": {
+        "pending": "保留中",
+        "inProgress": "進行中",
+        "completed": "完了"
+      },
+      "blockedBy": "{tasks} によりブロック中",
+      "stopped": "停止",
+      "alreadyEnded": "すでに終了しています",
+      "openSession": "セッションを開く"
+    },
+    "strip": {
+      "label": "エージェント",
+      "agents": "{count, plural, other {# 個のエージェント}}",
+      "working": "{count} 件作業中",
+      "workflows": "{count, plural, other {# 件のワークフロー}}",
+      "workflowsRunning": "{count, plural, other {# 件のワークフローが実行中}}",
+      "newest": "{name} {state}",
+      "tasks": "タスク",
+      "team": "チーム",
+      "workflowsGroup": "ワークフロー",
+      "state": {
+        "working": "作業中",
+        "needs_input": "対応が必要",
+        "idle": "完了",
+        "completed": "完了",
+        "failed": "失敗",
+        "stopped": "停止"
+      },
+      "workingFor": "作業中 · {elapsed}",
+      "runsAs": "{agent} として実行",
+      "teamRole": "このセッション限りの役割",
+      "attention": {
+        "question": "質問があります",
+        "approval": "承認を待っています"
+      },
+      "openAgent": "{name} を開く",
+      "stopHint": "このエージェントを停止",
+      "stopAgent": "{name} を停止",
+      "stopAgentFailed": "{name} を停止できませんでした",
+      "stopFailed": "エージェントを停止できませんでした",
+      "runProgress": "{total} 件中 {done} 件完了",
+      "runBackground": "バックグラウンドで実行中",
+      "runRunning": "実行中",
+      "runStatus": {
+        "done": "完了",
+        "failed": "完了しませんでした",
+        "stopped": "停止"
+      },
+      "runFallback": "ワークフロー",
+      "openRun": "実行を開く",
+      "runNoAgents": "エージェントはまだありません"
+    },
+    "subagent": {
+      "fallbackTitle": "エージェント",
+      "openPage": "ページを開く",
+      "close": "閉じる",
+      "messagePlaceholder": "{name} にメッセージ…",
+      "messageLabel": "{name} にメッセージ",
+      "send": "送信",
+      "sent": "メッセージを送信しました",
+      "sendFailed": "メッセージを送信できませんでした",
+      "loadFailed": "このエージェントのメッセージを読み込めませんでした",
+      "retry": "再試行",
+      "emptyTitle": "まだ何もありません",
+      "emptyDescription": "作業中のメッセージがここに表示されます。",
+      "loadOlder": "以前のメッセージを表示"
+    },
+    "tasks": {
+      "label": "チームのタスク",
+      "empty": "チームが計画したタスクがここに表示されます。",
+      "group": {
+        "pending": "保留中",
+        "in_progress": "進行中",
+        "completed": "完了"
+      },
+      "blockedBy": "{tasks} によりブロック中",
+      "unowned": "未割り当て"
+    },
+    "held": {
+      "label": "あなたを待っているメッセージ",
+      "title": "{from} からのメッセージ",
+      "titleShutdown": "{from} がこのセッションの停止を求めています",
+      "waiting": "承認を待っています。5 分後に期限切れになります。",
+      "deny": "拒否",
+      "approve": "承認",
+      "approveFailed": "メッセージを配信できませんでした",
+      "denyFailed": "メッセージを拒否できませんでした"
+    },
+    "workflow": {
+      "large": "大規模なワークフロー",
+      "largeHint": "この実行は 25 個を超えるエージェントを起動します。ここから実行全体、または各エージェントを停止できます。",
+      "paused": "一時停止中",
+      "pause": "実行を一時停止",
+      "resume": "実行を再開",
+      "pauseHint": "一時停止: 新しいエージェントは起動せず、実行中のエージェントは完了します (p)",
+      "resumeHint": "実行を再開 (p)",
+      "stop": "実行を停止",
+      "stopHint": "すべてのエージェントを停止して実行を終了 (x)",
+      "save": "保存",
+      "saveHint": "この実行のスクリプトを、再実行できるワークフローとして保存 (s)",
+      "savePrompt": "ワークフローの実行「{title}」(実行 {runId}) を保存済みワークフローとして保存してください。スクリプトを {file} に書き込み、そのための変更リクエストを作成してください。",
+      "saveSent": "ワークフローの保存を依頼しました",
+      "saveFailed": "ワークフローの保存を依頼できませんでした",
+      "restartHint": "同じプロンプトでこのエージェントを再起動 (r)",
+      "restartAgent": "{label} を再起動",
+      "failed": {
+        "pause": "実行を一時停止できませんでした",
+        "resume": "実行を再開できませんでした",
+        "stop": "実行を停止できませんでした",
+        "restart": "{label} を再起動できませんでした"
+      }
+    },
+    "board": {
+      "layoutLabel": "レイアウト",
+      "layoutList": "リスト",
+      "layoutBoard": "ボード",
+      "dispatchLabel": "セッションを開始、またはボードを絞り込み",
+      "dispatchPlaceholder": "セッションを開始: @agent とタスク。絞り込み: s:working a:agent",
+      "tooShort": "短すぎます",
+      "dispatched": "セッションを開始しました",
+      "dispatchFailed": "セッションを開始できませんでした",
+      "openSession": "セッションを開く",
+      "stopSession": "セッションを停止",
+      "stopped": "セッションを停止しました",
+      "stopFailed": "セッションを停止できませんでした",
+      "stateFilter": "状態で絞り込み",
+      "agentFilter": "エージェントで絞り込み",
+      "allStates": "すべての状態",
+      "allAgents": "すべてのエージェント",
+      "loadError": "セッションを読み込めませんでした。再試行してください。",
+      "retry": "再試行",
+      "emptyTitle": "開始したセッションがここに表示されます",
+      "emptyDescription": "上にタスクを入力して Enter を押してください。タスクごとに専用のセッションで実行されます。",
+      "noMatches": "この条件に一致するセッションはありません",
+      "clearFilters": "フィルターをクリア",
+      "listLabel": "状態別のセッション",
+      "loadMore": "さらにセッションを読み込む",
+      "loadingMore": "セッションをさらに読み込み中…",
+      "more": "… ほか {count} 件",
+      "keys": {
+        "move": "移動",
+        "peek": "プレビュー",
+        "open": "開く",
+        "stop": "停止"
+      },
+      "group": {
+        "pinned": "ピン留め",
+        "needs_input": "回答待ち",
+        "working": "作業中",
+        "review": "レビュー待ち",
+        "completed": "完了",
+        "ended": "失敗 · 停止"
+      },
+      "state": {
+        "working": "作業中",
+        "needs_input": "回答待ち",
+        "idle": "待機中",
+        "completed": "完了",
+        "failed": "失敗",
+        "stopped": "停止"
+      },
+      "replyPlaceholder": "返信します。エージェントの次のステップで届きます。",
+      "replyLabel": "{title} に返信",
+      "sendReply": "返信を送信",
+      "replySent": "返信を送信しました",
+      "replyFailed": "返信を送信できませんでした"
+    },
+    "ultracode": {
+      "hint": "エージェントのワークフローとして実行されます",
+      "dismiss": "{key} で通常のプロンプトとして送信"
+    }
+  },
+  "claudeSubscription": {
+    "title": "Claude サブスクリプションを使う",
+    "description": "Claude モデルは Claude Code を通じて、あなたの Claude Pro または Max プランで動きます。プランを使うのはあなたのセッションだけです。",
+    "starting": "Claude を開いています…",
+    "approveDescription": "プランのある Claude アカウントでサインインし、リクエストを承認して、Claude に表示されたコードをコピーしてください。",
+    "codeLabel": "claude.com のコード",
+    "connect": "Claude を接続",
+    "connecting": "接続しています…",
+    "connectedTitle": "Claude サブスクリプションは接続済みです",
+    "connected": "Claude サブスクリプションを接続しました",
+    "disconnect": "Claude を切断",
+    "disconnected": "Claude サブスクリプションを切断しました",
+    "startError": "Claude のサインインを開始できませんでした。もう一度お試しください。",
+    "codeError": "そのコードで Claude を接続できませんでした。もう一度サインインし、新しいコードを貼り付けてください。",
+    "connectClaude": "Claude を接続",
+    "reconnectClaude": "Claude を再接続"
   }
 }

@@ -35,7 +35,7 @@ export const HEX40 = /^[0-9a-f]{40}$/;
  * config dir. Its box holds no project checkout and its image has no `bun`,
  * so a project config dir with tool dependencies can never load there.
  */
-export type ConfigReleaseVariant = 'project' | 'none' | 'meta' | `agent:${string}`;
+export type ConfigReleaseVariant = 'project' | 'none' | 'mykortix' | `agent:${string}`;
 
 /** One tracked file: `[path relative to the repository root, git mode, blob ID]`. */
 export type ConfigReleaseFile = [path: string, mode: string, blob: string];

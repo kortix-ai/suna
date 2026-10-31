@@ -25,7 +25,7 @@ defaults keep today's behavior, so a valid file stays valid.
 | `apps` | Map of Apps and their settings (the `kortix-apps` skill). |
 | `triggers` | List of triggers (below). |
 | `policy`, `policies`, `approvals` | Connector call policies and how long a held call stays decidable (`approvals.ttl`: `30m`, `4h`, `7d`; default 24h). Approve runs the held call once, as its caller, and resumes the agent with the result: the agent does not repeat it. A caller without a project-scoped token repeats it within 15 minutes. |
-| `builtin_agents` | `my_kortix: false` removes My Kortix, the built-in agent (slug `meta`). Absent = on. |
+| `builtin_agents` | `my_kortix: false` removes My Kortix, the built-in agent (slug `mykortix`). Absent = on. |
 | `spaces` | Work in progress: channels per area of work (below). |
 | `agents` | Map of agent name → agent block. Omitted: My Kortix only. |
 
@@ -188,7 +188,8 @@ triggers:
 | `every` | Each fixed period: `5m`, `2h`; at least `60s`. |
 | `at` | Once, at an ISO-8601 instant. |
 | `webhook: { secret: <NAME> }` | On a signed `POST /v1/webhooks/projects/<project_id>/<slug>`. |
-| `event: <name> \| "*"`, `app: <slug>` | When that App posts the event (`../scheduling.md` → App events). |
+| `event: <name> \| "*"`, `app: <slug>` | When that App posts the event (`../scheduling.md` → Watch 24/7). |
+| `event: <TYPE>`, `connector: <slug>` | When the connected app reports that event (flag `event_triggers`; types: `kortix triggers events --connector <slug>`). |
 
 | `run:` | Does |
 | --- | --- |

@@ -19,7 +19,7 @@ export interface NativeContextMenuAction {
   systemImage?: string;
 }
 
-export interface NativeContextMenuProps extends ViewProps {
+interface NativeContextMenuProps extends ViewProps {
   /** The menu's header line (empty: none). */
   menuTitle?: string;
   actions: NativeContextMenuAction[];

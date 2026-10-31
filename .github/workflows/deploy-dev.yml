@@ -914,7 +914,12 @@ jobs:
   verify-gateway-dev-parity:
     name: Verify gateway dev commit parity
     needs: [detect-changes, deploy-gateway-ecs]
-    if: needs.detect-changes.outputs.gateway == 'true'
+    # `always()`: deploy-gateway-ecs runs after a skipped terraform-dev-api, and a
+    # plain `if:` inherits that skip, so the parity check and the gateway `:dev`
+    # promotion never ran when no dev Terraform changed.
+    if: ${{ always()
+      && needs.detect-changes.outputs.gateway == 'true'
+      && needs.deploy-gateway-ecs.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 15
     env:

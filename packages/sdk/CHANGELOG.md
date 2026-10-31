@@ -5,6 +5,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (session notifications)
+- `onNotify`: `question` and `permission` events carry `projectId` when the SDK knows the session's
+  project, and `task-complete` and `session-error` now carry it from the live stream too. Additive.
+- `useSessionStreamConnected` answers `false` on a `channels=control` connection, which serves the
+  queue only. The polls that stand down on it read again there, and a turn-end watch announces the
+  end of a turn from `GET …/turn`.
+
 ### Added (built-in skills)
 - `getBuiltinSkill(name)` and the `BuiltinSkill` / `BuiltinSkillReference` types: one skill Kortix
   ships (`GET /v1/skills/:name`), with its description, the full SKILL.md body, the feature flag

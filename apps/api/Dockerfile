@@ -57,6 +57,8 @@ COPY patches/undici@8.12.2.patch /repo/patches/undici@8.12.2.patch
 RUN bun install --frozen-lockfile
 
 COPY packages/api-contract /repo/packages/api-contract
+COPY packages/shared/src/peer-message-prompt.ts /repo/packages/shared/src/peer-message-prompt.ts
+COPY packages/shared/src/room-prompt.ts /repo/packages/shared/src/room-prompt.ts
 COPY packages/shared/src/ssrf-guard.ts /repo/packages/shared/src/ssrf-guard.ts
 COPY packages/sdk/src/core/session/wire-message-id.ts /repo/packages/sdk/src/core/session/wire-message-id.ts
 COPY apps/kortix-sandbox-agent-server/ ./
@@ -102,6 +104,21 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
     && BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} \
        KORTIX_CLI_VERSION="${KORTIX_VERSION}+$(printf '%s' "${KORTIX_COMMIT}" | cut -c1-8)" \
        bash apps/cli/scripts/build.sh
+
+# ---- Claude Code Stage ----
+# The Claude subscription sign-in runs the UNMODIFIED Claude Code binary's
+# `claude setup-token` (apps/api/src/projects/claude-subscription/). The binary
+# is the native one the Claude Agent SDK ships per platform, at the version
+# kortixd pins (apps/kortix-sandbox-agent-server/package.json
+# `@anthropic-ai/claude-agent-sdk`); tests/unit/claude-code-pin.test.ts keeps
+# the two equal.
+FROM node:22-slim AS claude-code
+ARG CLAUDE_AGENT_SDK_VERSION=0.3.316
+RUN mkdir -p /out /tmp/claude && cd /tmp/claude \
+    && npm pack --silent "@anthropic-ai/claude-agent-sdk-linux-x64@${CLAUDE_AGENT_SDK_VERSION}" \
+    && tar -xzf anthropic-ai-claude-agent-sdk-linux-x64-*.tgz \
+    && install -m 0755 package/claude /out/claude \
+    && /out/claude --version
 
 # ---- Deps Stage ----
 # Install with pnpm (matches lockfile), run with bun
@@ -283,6 +300,10 @@ COPY --from=sandbox-cli /cli/apps/cli/dist/kortix.version ./apps/cli/dist/kortix
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix-connectors-runtime.attestation.json ./apps/cli/dist/kortix-connectors-runtime.attestation.json
 COPY --from=app-runtime /out/kortix-appd ./apps/kortix-app-runtime/dist/kortix-appd-linux-amd64
 COPY --from=app-runtime /out/caddy ./apps/kortix-app-runtime/dist/caddy-linux-amd64
+# Claude Code for the Claude subscription sign-in (`claude setup-token` runs
+# under `script`, from util-linux's bsdutils, which the Debian base carries).
+COPY --from=claude-code /out/claude /usr/local/bin/claude
+RUN command -v script >/dev/null && claude --version
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
 COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md
 COPY apps/sandbox/slack-cli ./apps/sandbox/slack-cli

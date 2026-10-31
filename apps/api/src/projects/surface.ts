@@ -64,6 +64,8 @@ export { mentionTokens, mentionsMember } from './rooms/envelope';
 export { resolveAndAuthorizeAgentAs } from './lib/agent-access';
 export { loadVisibleSession } from './lib/session-visibility';
 export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
+// Does a sandbox's runtime keep a prompt's message id (consumed by the sandbox proxy's wire-id placement).
+export { sandboxKeepsMessageIds } from './session-lifecycle/inbox-admission';
 
 // Project access, the route app and the secret envelope.
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
@@ -169,3 +171,7 @@ export { recordChannelsReenabled } from './lib/channels-onboarding';
 // Author names written into memory files (consumed by ../memory/layers.ts).
 export { resolveUserIdentities } from './lib/user-identity';
 export { readPublicResponse } from './lib/public-response';
+// Shutdown: the Claude sign-ins this task runs (bootstrap.ts).
+export { drainClaudeLogins } from './claude-subscription/flows';
+// The turn gate for Claude subscription models (sandbox-proxy/forward/turn-start.ts).
+export { missingClaudeSubscription, sessionModelPin } from './claude-subscription/gate';

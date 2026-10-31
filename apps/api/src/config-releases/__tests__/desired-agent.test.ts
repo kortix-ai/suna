@@ -98,8 +98,8 @@ describe('the platform meta coordinator', () => {
       { project: PROJECT, baseRef: 'main', sessionAgent: 'meta', repositoryAccess: true },
       deps(),
     );
-    expect(built).toEqual(['meta']);
-    expect(desired.variant).toBe('meta');
+    expect(built).toEqual(['mykortix']);
+    expect(desired.variant).toBe('mykortix');
     expect(desired.descriptor.agent_repoint).toBeNull();
   });
 });
