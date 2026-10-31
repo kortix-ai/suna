@@ -174,3 +174,5 @@ export { recordChannelsReenabled } from './lib/channels-onboarding';
 // Author names written into memory files (consumed by ../memory/layers.ts).
 export { resolveUserIdentities } from './lib/user-identity';
 export { readPublicResponse } from './lib/public-response';
+// Shutdown: the Claude sign-ins this task runs (bootstrap.ts).
+export { drainClaudeLogins } from './claude-subscription/flows';

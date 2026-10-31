@@ -800,7 +800,7 @@ Choose a model in the composer's model picker. A stopped session uses the new mo
 <Step title="Connect your own provider">
 Open **Project admin → Models → Providers** and paste a key. For a ChatGPT subscription, choose **Use your ChatGPT subscription** in the model picker, then **Connect ChatGPT**.
 
-For a Claude subscription, choose **Use your Claude subscription** in the model picker (or a Claude model there), then **Sign in to Claude**. Approve Kortix on claude.com, paste the code Claude shows you, and choose **Connect Claude**. In a terminal, run `kortix providers login claude`. A token you made with `claude setup-token` works too: choose **Paste a token instead**, or pipe it to `kortix providers login claude --token-stdin`.
+For a Claude subscription, open **Project admin → Models → Providers → Anthropic** and choose **Sign in with Claude**. Approve Kortix on claude.com, paste the code Claude shows you, and choose **Connect Claude**. The Claude models then appear in the model picker under **Claude subscription**. In a terminal, run `kortix providers login claude`. A token you made with `claude setup-token` works too: pipe it to `kortix providers login claude --token-stdin`.
 </Step>
 <Step title="Set a budget">
 Open **Project admin → Models → Costs**. Set a limit per day, week or month. Choose **Block** to refuse new requests at the limit, or **Warn only** to let them run.

@@ -73,3 +73,21 @@ test('a refused code rejects with the server message', async () => {
   next = { status: 400, body: { error: 'invalid_code', code: 'invalid_code', message: 'Claude did not accept that code.' } };
   await expect(completeClaudeSubscriptionLogin('p1', { flowId: 'f1', code: 'bad' })).rejects.toThrow('Claude did not accept that code.');
 });
+
+test('a refused sign-in or token reaches the caller only: the caller shows it beside the field, so no app-wide error toast', async () => {
+  const reported: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError: (error) => reported.push(error) });
+  try {
+    next = { status: 400, body: { error: 'invalid_code', message: 'Claude did not accept that code.', code: 'invalid_code' } };
+    await expect(completeClaudeSubscriptionLogin('p1', { flowId: 'f1', code: 'nope' })).rejects.toThrow('Claude did not accept that code.');
+    next = { status: 400, body: { error: 'invalid_token', message: 'Paste the whole token.', code: 'invalid_token' } };
+    await expect(setClaudeSubscriptionToken('p1', 'nope')).rejects.toThrow('Paste the whole token.');
+    next = { status: 503, body: { error: 'claude_unavailable', message: 'Claude Code is not installed on this server' } };
+    await expect(startClaudeSubscriptionLogin('p1')).rejects.toThrow();
+    next = { status: 502, body: { error: 'failed', message: 'Could not disconnect.' } };
+    await expect(disconnectClaudeSubscription('p1')).rejects.toThrow();
+    expect(reported).toEqual([]);
+  } finally {
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  }
+});
