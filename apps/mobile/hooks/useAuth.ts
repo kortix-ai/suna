@@ -516,7 +516,8 @@ export function useAuth() {
    * - Android Other: Linking.openURL (external browser) + deep link callback
    * - Apple: Native Apple Authentication on iOS
    * - 'sso': enterprise SSO for `ssoEmail`, completed by the web auth page
-   *   (registration handoff), then the same browser + callback path as Google
+   *   (registration handoff), then the same browser + callback path as Google,
+   *   but in an ephemeral session
    */
   const signInWithOAuth = useCallback(async (provider: OAuthProvider | 'sso', ssoEmail?: string) => {
     try {

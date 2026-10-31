@@ -11,11 +11,12 @@ export function oauthQueryParams(provider: OAuthProvider): Record<string, string
 }
 
 /**
- * iOS: `ASWebAuthenticationSession.prefersEphemeralWebBrowserSession`. An
- * ephemeral session has no Safari cookies, so Google shows an empty sign-in
- * form instead of the accounts on the device. SSO stays ephemeral: it opens web
- * auth on kortix.com, which would sign out or hand back a Safari Kortix login.
+ * iOS: `ASWebAuthenticationSession.prefersEphemeralWebBrowserSession`. Only
+ * Google uses the shared session. An ephemeral session has no Safari cookies,
+ * so Google would show an empty sign-in form instead of the accounts signed in
+ * to Safari. SSO must stay ephemeral. It opens web auth on kortix.com, which
+ * would sign out or hand back a Safari Kortix login.
  */
 export function prefersEphemeralAuthSession(provider: OAuthProvider | 'sso'): boolean {
-  return provider === 'sso';
+  return provider !== 'google';
 }
