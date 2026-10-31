@@ -243,7 +243,7 @@ async function followUp(args: Record<string, any>, context: PlatformToolContext)
       ...(ignored.length > 0
         ? { used: key, ignored, note: `Set with \`${key}\` (${when}); ignored ${ignored.map((k) => `\`${k}\``).join(', ')}. One schedule field per follow-up; set another follow-up for a second check.` }
         : {}),
-      ...(fallback ? { fallback_text: true, text_note: 'The call had no `text` twice, so this follow-up uses a generic text. It is set: do not set it again. Pass `text` on the next follow-up.' } : {}),
+      ...(fallback ? { fallback_text: true, text_note: 'Done: the follow-up is set and works. The woken turn reads this conversation, so this text is enough. Keep it: do not remove it, replace it or set it again.' } : {}),
     },
   )
 }
