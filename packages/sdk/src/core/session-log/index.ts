@@ -50,5 +50,14 @@ export { toolCallError, toolCallRawOutput, toolCallStatus } from './tool-call';
 // The same bridge for rows a host reads without a `useSession` (a sub-agent's chat): the
 // `fromV1` live view `useSessionLogThread` serves on v1 (`./v1-view.ts`).
 export { sessionLogOfV1Rows } from './v1-view';
+// The prompts the log does not hold yet (the inbox and `sent`) as provisional user messages
+// under their own ids, and the mark that tells them apart (`./prompts-view.ts`).
+export {
+  SESSION_LOG_PROMPT_EXT,
+  SESSION_LOG_PROMPT_EXT_VERSION,
+  sessionLogMessageDelivery,
+  sessionLogThreadWithPrompts,
+  type SessionLogPromptDelivery,
+} from './prompts-view';
 // The block turn layer (`./turns`): the turn model a transcript renders blocks from.
 export * from './turns';

@@ -398,3 +398,41 @@ describe('<Transcript/> paging and prompts', () => {
     renderer.destroy();
   });
 });
+
+describe('<Transcript/> inbox prompts', () => {
+  const at = '2030-01-01T00:00:01.000Z';
+  const queued = {
+    prompt_id: 'p2',
+    client_message_id: 'c2',
+    message_id: 'msg_queuedprompt000000002',
+    wire_message_id: 'msg_queuedprompt000000002',
+    state: 'queued' as const,
+    reason: null,
+    text: 'and then this',
+    full_text: 'and then this',
+    attempts: 0,
+    last_error: null,
+    attachments: [],
+    created_at: at,
+    available_at: at,
+  };
+
+  test('a booting session draws its first prompt and a queued one, not "No messages yet"', async () => {
+    const session = fakeSession({ messages: [] });
+    seedSessionStore(session);
+    const inbox = {
+      prompts: [queued],
+      sent: [{ message_id: 'msg_firstprompt0000000001', prompt_id: null, text: 'yo', attachments: [], author_user_id: null, created_at: at }],
+    };
+    const { captureCharFrame, flush } = await testRender(
+      <Transcript session={session} focused width={70} height={22} inbox={inbox} />,
+      SIZE,
+    );
+    await settle(flush);
+    const frame = captureCharFrame();
+    expect(frame).not.toContain('No messages yet');
+    expect(frame).toContain('yo');
+    expect(frame).toContain('you · queued');
+    expect(frame).toContain('and then this');
+  });
+});

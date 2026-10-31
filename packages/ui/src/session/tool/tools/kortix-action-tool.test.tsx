@@ -92,8 +92,9 @@ const DENIED = {
 };
 
 describe('KortixActionTool registration', () => {
-  test('one renderer draws all seven platform tools', () => {
-    expect(KORTIX_PLATFORM_TOOLS).toHaveLength(7);
+  test('one renderer draws all nine platform tools', () => {
+    expect(KORTIX_PLATFORM_TOOLS).toHaveLength(9);
+    expect(KORTIX_PLATFORM_TOOLS).toContain('kortix_change_requests');
     for (const name of KORTIX_PLATFORM_TOOLS) expect(ToolRegistry.get(name)).toBe(KortixActionTool);
   });
 });
@@ -112,6 +113,18 @@ describe('KortixActionTool — running', () => {
       { running: true },
     );
     expect(textOf(html)).toContain('Updating schedules…');
+  });
+
+  test('change requests: reading checks them, a change updates one', () => {
+    const read = render(<KortixActionTool call={toolCallBlock(part('kortix_change_requests', { status: 'running' }, { action: 'list' }))} />, {
+      running: true,
+    });
+    expect(textOf(read)).toContain('Checking change requests…');
+    const change = render(
+      <KortixActionTool call={toolCallBlock(part('kortix_change_requests', { status: 'running' }, { action: 'merge' }))} />,
+      { running: true },
+    );
+    expect(textOf(change)).toContain('Updating a change request…');
   });
 });
 

@@ -51,12 +51,12 @@ const HEAD = 'default_agent: kortix\nagents:\n  kortix:\n    mode: primary\n    
 const TOOLS = `# ─── Tools ───
 tools:
   lookup_order: tools/lookup_order.ts   # your own tool: a module in your repo
-  memory: tools/memory.ts               # replaces the Kortix memory tool
+  show: tools/show.ts               # replaces the Kortix show tool
 
 # ─── Triggers ───
 `;
 const LOOKUP = "export default { description: 'Look up an order.', parameters: { type: 'object', properties: {} }, execute: () => 'ok' }\n";
-const FILES = { 'tools/lookup_order.ts': LOOKUP, 'tools/memory.ts': LOOKUP };
+const FILES = { 'tools/lookup_order.ts': LOOKUP, 'tools/show.ts': LOOKUP };
 
 describe('kortix validate — tools', () => {
   test('a module that exists validates; a kortix:<name> value is an error at its line', () => {
@@ -73,7 +73,7 @@ describe('kortix validate — tools', () => {
   }, SPAWN_TEST_MS);
 
   test('a module that does not exist is an error', () => {
-    const cwd = project({ 'kortix.yaml': HEAD + TOOLS, 'tools/memory.ts': LOOKUP });
+    const cwd = project({ 'kortix.yaml': HEAD + TOOLS, 'tools/show.ts': LOOKUP });
     expect(kortix(cwd, 'validate').code).toBe(1);
     expect(issues(cwd)).toEqual([
       expect.objectContaining({ path: 'tools.lookup_order', message: '"tools/lookup_order.ts" does not exist in the project files.', severity: 'error', line: 8, column: 3 }),
@@ -91,7 +91,7 @@ describe('kortix tools ls', () => {
 
   test('lists kind and source per tool, and reads imported files', () => {
     const cwd = project({
-      'kortix.yaml': `${HEAD}imports: [team/kortix.yaml]\ntools:\n  memory: tools/memory.ts\n`,
+      'kortix.yaml': `${HEAD}imports: [team/kortix.yaml]\ntools:\n  show: tools/show.ts\n`,
       'team/kortix.yaml': 'tools:\n  lookup_order: team/tools/lookup_order.ts\n',
     });
     const text = kortix(cwd, 'tools', 'ls');
@@ -103,8 +103,7 @@ describe('kortix tools ls', () => {
         'image_search    kortix               kortix:image_search',
         'image_gen       kortix               kortix:image_gen',
         'scrape_webpage  kortix               kortix:scrape_webpage',
-        'memory          kortix (overridden)  tools/memory.ts',
-        'show            kortix               kortix:show',
+        'show            kortix (overridden)  tools/show.ts',
         'lookup_order    project              team/tools/lookup_order.ts',
       ].join('\n'),
     );
@@ -112,8 +111,18 @@ describe('kortix tools ls', () => {
     expect(json.code).toBe(0);
     const listed = JSON.parse(json.stdout) as { manifest: string; tools: Array<{ name: string; kind: string; source: string }> };
     expect(listed.manifest).toBe(join(realpathSync(cwd), 'kortix.yaml'));
-    expect(listed.tools.find((tool) => tool.name === 'memory')).toEqual({ name: 'memory', kind: 'kortix (overridden)', source: 'tools/memory.ts' });
+    expect(listed.tools.find((tool) => tool.name === 'show')).toEqual({ name: 'show', kind: 'kortix (overridden)', source: 'tools/show.ts' });
     expect(listed.tools.at(-1)).toEqual({ name: 'lookup_order', kind: 'project', source: 'team/tools/lookup_order.ts' });
+  }, SPAWN_TEST_MS);
+
+  test('an ejected copy of the retired memory tool lists as a project tool, and eject no longer offers it', () => {
+    const cwd = project({ 'kortix.yaml': `${HEAD}tools:\n  memory: tools/memory.ts\n`, 'tools/memory.ts': LOOKUP });
+    const listed = JSON.parse(kortix(cwd, 'tools', 'ls', '--json').stdout) as { tools: Array<{ name: string; kind: string; source: string }> };
+    expect(listed.tools.find((tool) => tool.name === 'memory')).toEqual({ name: 'memory', kind: 'project', source: 'tools/memory.ts' });
+    expect(issues(cwd).filter((issue) => issue.severity === 'error')).toEqual([]);
+    const refused = kortix(cwd, 'tools', 'eject', 'memory');
+    expect(refused.code).toBe(2);
+    expect(refused.stderr).toContain('"memory" is not a Kortix tool.');
   }, SPAWN_TEST_MS);
 
   test('no manifest is exit 2', () => {
@@ -129,7 +138,7 @@ describe('kortix tools eject', () => {
     expect(result.code).toBe(0);
     expect(read(cwd, 'tools/web_search.ts')).toBe((KORTIX_TOOL_SOURCES as Record<string, string>).web_search!);
     expect(read(cwd, 'kortix.yaml')).toBe(
-      HEAD + TOOLS.replace('# replaces the Kortix memory tool\n', '# replaces the Kortix memory tool\n  web_search: tools/web_search.ts  # ejected from kortix:web_search\n'),
+      HEAD + TOOLS.replace('# replaces the Kortix show tool\n', '# replaces the Kortix show tool\n  web_search: tools/web_search.ts  # ejected from kortix:web_search\n'),
     );
     expect(result.stdout).toContain('Ejected web_search');
     expect(result.stdout).toContain('2. kortix validate');
@@ -145,28 +154,28 @@ describe('kortix tools eject', () => {
   }, SPAWN_TEST_MS);
 
   test('an entry declared in an imported file is edited in that file', () => {
-    const cwd = project({ 'kortix.yaml': `${HEAD}imports: [team.yaml]\n`, 'team.yaml': 'tools:\n  memory: team/memory.ts  # team memory\n', 'team/memory.ts': LOOKUP });
-    expect(kortix(cwd, 'tools', 'eject', 'memory', '--force').code).toBe(0);
-    expect(read(cwd, 'team.yaml')).toBe('tools:\n  memory: tools/memory.ts  # ejected from kortix:memory\n');
+    const cwd = project({ 'kortix.yaml': `${HEAD}imports: [team.yaml]\n`, 'team.yaml': 'tools:\n  show: team/show.ts  # team show\n', 'team/show.ts': LOOKUP });
+    expect(kortix(cwd, 'tools', 'eject', 'show', '--force').code).toBe(0);
+    expect(read(cwd, 'team.yaml')).toBe('tools:\n  show: tools/show.ts  # ejected from kortix:show\n');
     expect(read(cwd, 'kortix.yaml')).toBe(`${HEAD}imports: [team.yaml]\n`);
     expect(issues(cwd).filter((issue) => issue.severity === 'error')).toEqual([]);
   }, SPAWN_TEST_MS);
 
   test('refuses an existing file without --force, and a name that is not a Kortix tool', () => {
-    const cwd = project({ 'kortix.yaml': HEAD, 'tools/memory.ts': 'mine\n' });
-    const refused = kortix(cwd, 'tools', 'eject', 'memory');
+    const cwd = project({ 'kortix.yaml': HEAD, 'tools/show.ts': 'mine\n' });
+    const refused = kortix(cwd, 'tools', 'eject', 'show');
     expect(refused.code).toBe(1);
-    expect(refused.stderr).toContain('tools/memory.ts exists.');
-    expect(read(cwd, 'tools/memory.ts')).toBe('mine\n');
+    expect(refused.stderr).toContain('tools/show.ts exists.');
+    expect(read(cwd, 'tools/show.ts')).toBe('mine\n');
     expect(read(cwd, 'kortix.yaml')).toBe(HEAD);
 
-    expect(kortix(cwd, 'tools', 'eject', 'memory', '--force').code).toBe(0);
-    expect(read(cwd, 'tools/memory.ts')).toBe((KORTIX_TOOL_SOURCES as Record<string, string>).memory!);
+    expect(kortix(cwd, 'tools', 'eject', 'show', '--force').code).toBe(0);
+    expect(read(cwd, 'tools/show.ts')).toBe((KORTIX_TOOL_SOURCES as Record<string, string>).show!);
 
     const unknown = kortix(cwd, 'tools', 'eject', 'lookup_order');
     expect(unknown.code).toBe(2);
     expect(unknown.stderr).toContain('"lookup_order" is not a Kortix tool.');
-    expect(unknown.stderr).toContain('Eject one of: web_search, image_search, image_gen, scrape_webpage, memory, show.');
+    expect(unknown.stderr).toContain('Eject one of: web_search, image_search, image_gen, scrape_webpage, show.');
     expect(existsSync(join(cwd, 'tools/lookup_order.ts'))).toBe(false);
   }, SPAWN_TEST_MS);
 });

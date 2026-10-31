@@ -7,6 +7,8 @@ import { useSyncStore } from '../browser/stores/sync-store';
 import { openSessionStream, type SessionControlStreamOptions } from '../core/session/control-stream';
 import { savedSessionLogCopies } from '../core/session-log/saved-log';
 import { sessionLogOfV1Rows, sessionLogThreadWithV1Rows } from '../core/session-log/v1-view';
+import { sessionLogThreadWithPrompts } from '../core/session-log/prompts-view';
+import type { SessionPrompt, SessionSentPrompt } from '../core/rest/projects-client/sessions';
 import {
   fetchSessionLogPage,
   readSessionLog,
@@ -121,10 +123,20 @@ function readThread(projectId: string, sessionId: string, threadId: string): voi
  * failed read (the journal has not posted the thread yet) retries when the thread's next
  * message arrives, at most every 5 s.
  */
+export interface SessionLogThreadOptions extends SessionMessagesOptions {
+  /**
+   * The session's inbox (`useSessionPrompts`): its `prompts` and `sent`. The prompts the
+   * thread does not hold join it as provisional user messages under their own `message_id`
+   * (`sessionLogThreadWithPrompts`), and the log's put of that id replaces them. A booting
+   * session with no log yet shows its first prompt. Root thread only.
+   */
+  prompts?: { prompts: readonly SessionPrompt[]; sent: readonly SessionSentPrompt[] };
+}
+
 export function useSessionLogThread(
   session: SessionMessagesSource,
   threadId?: string | null,
-  options?: SessionMessagesOptions,
+  options?: SessionLogThreadOptions,
 ): SessionLogThread | null {
   const throttleMs = options?.throttleMs && options.throttleMs > 0 ? options.throttleMs : 0;
   const select = (state: ReturnType<typeof useSyncStore.getState>) => {
@@ -150,7 +162,25 @@ export function useSessionLogThread(
   useEffect(() => {
     if (unread >= 0 && projectId && threadId) readThread(projectId, sessionId, threadId);
   }, [unread, projectId, sessionId, threadId]);
-  return v2 !== undefined ? v2 : (v1?.threads[0] ?? null);
+  const thread = v2 !== undefined ? v2 : (v1?.threads[0] ?? null);
+  const inbox = threadId ? undefined : options?.prompts;
+  // The server can re-mint a prompt's id at delivery. The inbox row and `sent` name both ids,
+  // and the sync store keeps the pairing, so the log's message under the new id replaces the
+  // optimistic one sent under the old id, after the row leaves the inbox too.
+  const runtimeThreadId = thread?.thread_id ?? null;
+  useEffect(() => {
+    if (!inbox || !runtimeThreadId) return;
+    const store = useSyncStore.getState();
+    for (const p of [...inbox.prompts, ...inbox.sent]) {
+      const wire = p.wire_message_id;
+      if (wire && p.message_id && wire !== p.message_id) store.registerOptimisticEcho(runtimeThreadId, wire, p.message_id);
+    }
+  }, [inbox?.prompts, inbox?.sent, runtimeThreadId]);
+  const revs = useSyncStore((state) => (inbox ? state.sessionLogs[session.sessionId]?.revs : undefined));
+  return useMemo(
+    () => (inbox ? sessionLogThreadWithPrompts(session.sessionId, thread, inbox.prompts, inbox.sent, revs) : thread),
+    [inbox?.prompts, inbox?.sent, revs, thread, session.sessionId],
+  );
 }
 
 /**
@@ -235,12 +265,21 @@ export function useSessionLogSync(
     joinStream?: (options: SessionControlStreamOptions) => { close: () => void };
     /** Test seam: runs a timed retry after `ms`; returns its cancel. */
     schedule?: (run: () => void, ms: number) => () => void;
+    /** Each first-page read's outcome: a page, no log yet (`missing`), or a failed read. */
+    onRead?: (outcome: 'page' | 'missing' | 'failed') => void;
+    /** A new value reads the log again from the start (a host's "Try again"). */
+    revision?: number;
   },
 ): SessionLogSyncState {
   const loader = options.loader === undefined ? loadSessionLogPage : options.loader;
   const joinStream = options.joinStream ?? openSessionStream;
   const schedule = options.schedule ?? scheduleRetry;
   const active = options.enabled && !!loader && !!projectId && !!sessionId;
+  const onRead = useRef(options.onRead);
+  useEffect(() => {
+    onRead.current = options.onRead;
+  });
+  const revision = options.revision ?? 0;
   const key = `${projectId}/${sessionId}`;
   const negotiated: SessionLogDialect = active ? 'v2' : 'v1';
   // The last read answered no page: the session has no log to show yet.
@@ -296,6 +335,7 @@ export function useSessionLogSync(
       if (stopped) return;
       const page = answer === 'missing' ? null : answer;
       onV2 = !!page;
+      onRead.current?.(page ? 'page' : answer === 'missing' ? 'missing' : 'failed');
       if (page) {
         failures = 0;
         setMissingKey(null);
@@ -358,7 +398,8 @@ export function useSessionLogSync(
       stream?.close();
       store().dropSessionLog(sessionId);
     };
-  }, [negotiated, loader, joinStream, schedule, projectId, sessionId]);
+    // `revision` is read only as a dependency: a new value re-runs the whole read.
+  }, [negotiated, loader, joinStream, schedule, projectId, sessionId, revision]);
 
   return state;
 }

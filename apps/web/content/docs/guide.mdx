@@ -200,10 +200,11 @@ My Kortix runs your work while you keep talking to it. Ask for three things in a
 - **Results come to you.** When an agent finishes, My Kortix tells you the outcome in a line or two, with a link to the work.
 - **Ask how it's going.** "How's the post writer doing?" gets the current state, without waiting for the end.
 - **Change course.** "Tell the post writer to keep it under 500 words" sends that agent a message. "Stop the research" stops it.
+- **Follow up with the same agent.** "Ask the post writer to add a summary too" goes to the agent that wrote the post, in its own session, with everything it already knows. My Kortix starts a new agent only for separate work at the same time.
 - **Talk to another session.** "Tell the session working on the pricing page that the copy is approved" sends that session a message. Type `@` to pick the session by name. "Tell me when it's done" gets you one notice when that session finishes.
 - **Messages from other sessions** show as one line, **Message from @reviewer**. A message from another session never approves anything for you. To decide each message yourself, set the session to **Hold messages**: each one waits for your **Approve** or **Deny** for 5 minutes. **Refuse messages** turns them all away.
 - **Workflows.** For a big job, such as checking every page of a site, My Kortix runs a workflow: a plan that runs many agents at once. You approve it first. Its card shows each agent's progress, and has **Pause**, **Restart**, **Stop** and **Save**. Write `ultracode` in your message to ask for a workflow. A workflow with more than 25 agents shows **Large workflow**. One workflow runs at most 50 agents, 8 at a time, for at most 2 hours.
-- **Teams.** A team is a group of agents that share one to-do list and talk to each other. Ask for one: "Start a team of three: one researches, one writes, one checks the facts." The team leader splits the work into items, each teammate takes the next free item, and the leader puts the answers together for you. Teams are experimental and off by default: turn on **Agent teams** in **Customize** → **Settings** → **Feature flags**.
+- **Teams.** A team is a group of agents that share one to-do list and talk to each other. Ask for one: "Start a team of three: one researches, one writes, one checks the facts." The team leader splits the work into items, each teammate takes the next free item, and the leader puts the answers together for you. Each teammate runs one of your agents. Its role, such as "fact checker", applies to that teammate's session only: no agent is created or changed, and the team is not saved. It lives in the conversation that started it. Teams are experimental and off by default: turn on **Agent teams** in **Customize** → **Settings** → **Feature flags**.
 - **See everything at once.** The board view of the session list groups every session by state: working, needs you, idle, done, failed and stopped. A session that needs you shows what it waits for: a question or an approval.
 
 ### Create your own agent
@@ -416,7 +417,9 @@ Memory is Markdown files in Drive: facts about the company, its people, its conv
 
 Agents read and write Memory files through the folders their session opens. Kortix does not paste memory into every prompt: a built-in skill tells each agent to read memory at the start of a task.
 
-The project repository can hold memory too: a `memory/` folder with `MEMORY.md` as its index. The built-in `memory` tool edits it, and every edit lands through a change request. The reflection agent that ships with every project tidies it when you turn on its daily schedule.
+**My Kortix remembers you.** Tell My Kortix "remember that I like short replies", or correct how it works, and it saves one short page about it. Say "forget that I work on the launch", and it deletes the page. It says what it did in one line: "💡 Noted: you like replies short." My Kortix reads these pages at the start of every chat in this project. They live in your own folder, under `Memory/mykortix`, and only you see them. Ask "what do you remember about me?" to see them. This needs Files.
+
+The project repository can hold memory too: a `memory/` folder with `MEMORY.md` as its index. Agents edit it with their file tools, and every edit lands through a change request. The reflection agent that ships with every project tidies it when you turn on its daily schedule.
 
 <Callout type="warning">
 Never put passwords, API keys or personal data in memory. Store credentials as project secrets instead.

@@ -826,7 +826,7 @@ Each row still works. `kortix validate --fix` writes the replacement with the sa
 | `sandbox-singular` | Image keys (`image`, `dockerfile`, `context`, …) set on `sandbox` itself | One `sandbox.templates` entry, named as `sandbox.default` |
 | `acp-runtimes` | `runtimes`, and an agent's `runtime` and `agent` | Nothing: delete them. Every session runs pi. |
 | `permission-renamed` | A renamed Kortix permission, such as `project.cr.open` | Its new name (`kortix validate --scopes` lists them) |
-| `tool-retired` | A retired Kortix tool name in `tools` | Nothing: the name is removed. |
+| `tool-retired` | A retired Kortix tool name in `tools`: `kortix-connectors_call`, `kortix-connectors_describe`, `memory` | Nothing: the name is removed, unless the project registers its own tool under it (`tools.memory`). For `memory`: agents edit `memory/` with the file tools. |
 
 When a deprecated key and its replacement are both set with different values, Kortix does not guess: it is an error.
 
@@ -986,7 +986,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 - **`workspace.project_repository` defaults to `false`.** Set `true` on every agent that reads or changes the repository, runs its scripts, or opens change requests.
 - **Names must exist.** A listed skill, command, extension, subagent or tool that is not registered or built in is an error.
 - **`secrets` reaches the sandbox.** A granted secret is an environment variable or a network-enforced secret in the agent's sandbox. Model logins, connector and git credentials stay with Kortix services: the agent's model and connector settings decide their use.
-- **Built in, with no entry.** The Kortix skills: `kortix-cli`, `kortix-memory` and the other `kortix-*` skills. The Kortix tools: `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `memory`, `show`. See [Kortix tools](/docs/developers#kortix-tools). The built-in tools: `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `task`. An agent loads a Kortix skill only when its `skills` grant names it or is `all`.
+- **Built in, with no entry.** The Kortix skills: `kortix-cli`, `kortix-memory` and the other `kortix-*` skills. The Kortix tools: `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `show`. See [Kortix tools](/docs/developers#kortix-tools). The built-in tools: `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `task`. An agent loads a Kortix skill only when its `skills` grant names it or is `all`.
 - **My Kortix is built in.** A session or trigger that names no agent runs My Kortix. `builtin_agents: { my_kortix: false }` turns it off; then such a session runs `default_agent`. A session My Kortix starts without naming an agent also runs `default_agent`.
 - **Extensions** are packages for the agent runtime. A package holds runtime extensions, skills, prompts or themes. The change request merge builds npm packages, and a session never installs them. A session loads its extensions when its runtime starts, so a change reaches a running session at its next start.
 
@@ -1227,7 +1227,7 @@ permission:
 
 - **Value.** One action for every tool: `allow`, `ask` or `deny`. Or a map of key → action, or of key → map of glob → action.
 - **Keys.** A capability: `read`, `edit`, `glob`, `grep`, `bash`, `external_directory`, `question`, `webfetch`, `websearch`. Or a tool's own name, which wins over its capability.
-- **Tools that follow a capability.** `write` follows `edit`. `memory` follows `edit`, or `read` when it only views. `image_gen` follows `edit`. `web_search` and `image_search` follow `websearch`. `scrape_webpage` follows `webfetch`.
+- **Tools that follow a capability.** `write` follows `edit`. A project's own `memory` tool (the ejected copy of the retired Kortix tool) follows `edit`, or `read` when it only views. `image_gen` follows `edit`. `web_search` and `image_search` follow `websearch`. `scrape_webpage` follows `webfetch`.
 - **Action only.** `question`, `webfetch` and `websearch` take an action, not a glob map.
 - **`bash` globs** match each command of a line. In `a; b`, `a | b` or `$(b)`, the strictest answer wins: `deny`, then `ask`, then `allow`.
 - **Path globs** match the file, relative to `/workspace`. A path outside `/workspace` also answers to `external_directory`. A path rule does not govern `bash`.
@@ -1346,7 +1346,7 @@ error imports: triggers "weekly-report" is declared in both triggers/a.yaml and 
 
 ### Kortix tools
 
-Kortix maintains six tools. Every project registers all six with no entry. Every agent gets them unless its `tools` narrows them. The sandbox runs the same module on both harnesses, with the same name, arguments and output.
+Kortix maintains five tools. Every project registers all five with no entry. Every agent gets them unless its `tools` narrows them. The sandbox runs the same module on both harnesses, with the same name, arguments and output.
 
 | Tool | What it does |
 | --- | --- |
@@ -1354,16 +1354,16 @@ Kortix maintains six tools. Every project registers all six with no entry. Every
 | `image_search` | Searches for images. Returns image URLs, titles, source pages, and dimensions. |
 | `image_gen` | Generates or edits 1 to 4 images with an image model the project can use, and saves them in the workspace. See [Generate images](/docs/developers#generate-images). |
 | `scrape_webpage` | Fetches one or more pages and returns them as Markdown. |
-| `memory` | Views, creates, edits, renames, and deletes files under `memory/`, the project memory. |
 | `show` | Presents a file, image, URL, document, or text to the person in the session. Each shown item whose path is an image file (png, jpg, jpeg, webp, gif, avif, svg) of at most 32 MiB carries `sha256`, the lowercase hex SHA-256 of its bytes, when the file is read within 2 s. |
 
 - **See what a session gets:** run `kortix tools ls` from the project root.
-- **Own a Kortix tool:** `kortix tools eject <name>` writes the source the sandbox runs to `tools/<name>.ts` and points the tool at it. The copy imports only `node:*` modules. `web_search`, `image_search`, and `scrape_webpage` call the Kortix API with `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env`. `image_gen` calls the Kortix LLM gateway with `KORTIX_LLM_BASE_URL` and `KORTIX_TOKEN`. `memory` and `show` work on files in the project checkout.
+- **Own a Kortix tool:** `kortix tools eject <name>` writes the source the sandbox runs to `tools/<name>.ts` and points the tool at it. The copy imports only `node:*` modules. `web_search`, `image_search`, and `scrape_webpage` call the Kortix API with `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env`. `image_gen` calls the Kortix LLM gateway with `KORTIX_LLM_BASE_URL` and `KORTIX_TOKEN`. `show` works on files in the project checkout.
+- **`memory` is retired** (2026-10-30). It was a Kortix tool for `memory/` in the project checkout. A kortix.yaml that still names it in an agent's `tools` gets a warning, never an error, and the name does nothing; `kortix validate --fix` deletes it. A project that ejected it keeps `tools/memory.ts` as its own tool, with the same `edit` rule. Agents edit `memory/` with `read`, `write` and `edit`. My Kortix remembers each person with [`kortix_memory`](#my-kortix-memory).
 - **`context.turnId`** is optional in the `context` a tool's `execute(args, context)` receives: the turn the call belongs to, when the harness names it. pi sets it, and it is the same for every call of one turn, also for calls from a `codemode` script or a subagent. `context.signal` can differ per call. Key a per-turn limit on `turnId`. An OpenCode session does not set it.
 
 ### My Kortix tools
 
-My Kortix, the built-in agent, has seven more tools. Each one runs the in-sandbox `kortix` CLI with `--json` and returns one JSON object: a `card` the web app shows in the session, `data` for the model, and an `error` when Kortix refused or the command failed. The contract is `@kortix/api-contract/kortix-tool-card`. The tools load only when a compiled config names them in `kortix_tools`. The platform's My Kortix config names them; a project's own agents do not get them.
+My Kortix, the built-in agent, has nine more tools. Eight run the in-sandbox `kortix` CLI with `--json`; `kortix_memory` calls the API. Each returns one JSON object: a `card` the web app shows in the session, `data` for the model, and an `error` when Kortix refused or the command failed. The contract is `@kortix/api-contract/kortix-tool-card`. The tools load only when a compiled config names them in `kortix_tools`. The platform's My Kortix config names them; a project's own agents do not get them.
 
 | Tool | Actions | CLI it runs |
 | --- | --- | --- |
@@ -1374,11 +1374,25 @@ My Kortix, the built-in agent, has seven more tools. Each one runs the in-sandbo
 | `kortix_people` | `list`, `pending`, `invite`, `set_role`, `remove` | `kortix access ls`, `access pending`, `access invite`, `access grant`, `access revoke` |
 | `kortix_access` | `me`, `who_can_grant` | `kortix whoami`, `kortix access ls` |
 | `kortix_usage` | `summary`, `top_sessions` | `kortix billing costs` |
+| `kortix_change_requests` | `list`, `get`, `merge`, `close` | `kortix cr ls`, `cr show`, `cr diff`, `cr merge`, `cr close` |
+| `kortix_memory` | `list`, `view`, `save`, `delete` | No CLI: `/v1/projects/:id/memory/me/agent/mykortix`. See [My Kortix memory](#my-kortix-memory). |
 
 - **Permissions.** Each tool acts with the session token, so Kortix checks every action against the person's own project role. A refusal comes back as `error.kind: "denied"` with `error.grantors`: the project managers, account owners and admins who can grant it. The card shows them.
 - **Machine-readable errors.** The CLI writes one `{"kortix_error":{…}}` line to stderr instead of its human footer when `KORTIX_ERROR_FORMAT=json` is set. The line has `kind` (`denied` or `failed`), `status`, `code`, `action` and `message`, each when known. Any program that runs the CLI can set it.
 - **Start work** with the `agent` tool, not with these tools. Each hand-off is its own session. From My Kortix it runs in the background by default: the call returns the child's `task_id` at once, and the API delivers the child's report into the calling session as a new message when the child finishes. See [Agents working together](#agents-working-together).
+- **Change requests.** `kortix_change_requests` lists the open change requests (number, title, author, status), reads one (summary, files changed, whether it can merge), and merges or closes one. My Kortix merges only after the person agreed in the conversation. A change request needs `project.review.act` to merge or close.
 - **Run several agents** with the `workflow` tool: a short script with `agent()`, `parallel()`, `pipeline()` and `phase()`. Each `agent()` is a real child session. The session shows the run as a live card. See [Workflows](/docs/developers#workflows).
+
+#### My Kortix memory
+
+`kortix_memory` is what My Kortix remembers about the person it talks to, across every session with them in the project. It is on by default for My Kortix only: a project's own agents never get it.
+
+- **Storage.** One Markdown file per fact in the person's own folder, `/Users/<person>/Memory/mykortix/<name>.md`. Nothing is stored anywhere else. There is no screen for it: the person asks My Kortix what it remembers, to change a page, or to forget one. Another member never sees them.
+- **A page.** Front-matter `name` (a lower-case slug, at most 64 characters), `description` (one line, at most 200 characters, read to decide relevance) and `type`, then `# Title` and the fact (at most 16,384 bytes). Types: `user` (who they are), `feedback` (how they want the work done), `project` (what they work on), `reference` (where something is). A `feedback` or `project` page ends with **Why:** and **How to apply:** lines. `[[other-name]]` links a related page. A file the person writes in the folder without `name` is named after its file.
+- **Actions.** `list` (the index), `view` (`name`), `save` (`name`, `type`, `description`, `body`, optional `title`), `delete` (`name`). `save` replaces the page with that name or creates it, so one fact is never saved twice. A name that is not a slug is refused before any request. A key or a password is refused (`422 secret_detected`). At most 200 pages per person (`409 memory_full`). The card says `Remembered: …`, `Updated: …` or `Forgot: …`.
+- **Recall.** Every My Kortix turn starts with the index of the session owner's pages, one `- [Title](name.md) — description` line each, at most 8,000 characters, appended to the turn's system prompt. It needs Files only, not Channels. Another member who prompts the session gets no index.
+- **Files off.** Every action answers `403 feature_disabled`, and the tool says: "Memory lives in Files, and Files is off in this project. Ask a project admin to turn Files on."
+- **API.** `GET /v1/projects/:id/memory/me/agent/mykortix` (the index), `GET`, `PUT` and `DELETE …/pages/:name`. The caller is the person with their login, or their My Kortix session with its session token (the token's `on_behalf_of` person). Any other session token gets `403 my_kortix_only`. The shapes are `MyKortixMemory*` in `@kortix/api-contract/memory`.
 
 #### Workflows
 
@@ -1451,9 +1465,10 @@ A session a person started is an orchestrator: nothing it starts blocks its conv
 
 #### Named agents and forks
 
-- **A name.** `agent({ name: "post-writer", … })` gives the child a handle. Kortix stores it in the child's metadata `agent_handle` (`AGENT_HANDLE_KEY`). A handle is unique among one lead's live children. `send_message` takes it as `to`, and the session list shows it as `@post-writer`.
+- **A name.** `agent({ name: "post-writer", … })` gives the child a handle. Kortix stores it in the child's metadata `agent_handle` (`AGENT_HANDLE_KEY`). `send_message` takes it as `to`, and the session list shows it as `@post-writer`. A name alone never makes a teammate: that needs `team: true` (see [Agent teams](#agent-teams)).
 - **A fork.** `agent({ fork: true, … })` starts the child with a copy of this session's conversation instead of an empty one. Use it when the child needs everything said so far. A plain child sees only its prompt.
-- **Continue a child.** `agent` with a `task_id` sends a finished child a follow-up. The child keeps its conversation.
+- **Reuse first.** Work that builds on an earlier hand-off goes to that same child: `send_message` to its name, or `agent` with its `task_id`. The child keeps its conversation, and its computer is already running. Start a new child only for independent or parallel work. The `agent` and `send_message` tool descriptions tell the model this rule.
+- **Continue a child.** `agent` with a `task_id` sends a finished child a follow-up in its same session. `agent` with the `name` of a finished child (idle, completed or stopped) does the same: no new session starts, and the result says `This continued your earlier subagent "<name>" in its same session` (tool metadata `continued: true`). A `name` whose child still works, or waits for its person, is refused. A failed child frees its name. A message to a finished child wakes it in its same session, and a background child or teammate then sends its next report by itself.
 - **Stop a child.** `task_stop` with the child's `task_id` or name stops its session.
 - **Depth.** A separate child may start its own separate children down to depth 2 (`KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH`). One session runs at most 4 separate children at the same time (`KORTIX_PI_CLOUD_SUBAGENTS_MAX`).
 
@@ -1504,7 +1519,8 @@ Inside a session the CLI sends as `$KORTIX_SESSION_ID`. Outside one, pass `--fro
 
 An agent team is one lead session and the teammates it starts. They share one task list and message each other by name. Teams are experimental and off by default: a project admin turns on the feature flag `agent_teams` (`kortix projects features enable agent_teams`). A runtime that serves the task tools lists `session.team_tasks` in `GET /kortix/health` `capabilities`.
 
-- **Teammates.** With the flag on, a named `agent({ name })` from the lead starts a teammate: a child session whose metadata `team_lead` (`TEAM_LEAD_KEY`) is the lead and whose `agent_handle` is its name. `GET /projects/:id/sessions?team_lead=<sid>` lists one lead's teammates. A teammate cannot start teammates of its own.
+- **Teammates.** With the flag on, `agent({ name, team: true })` from the lead starts a teammate: a child session whose metadata `team_lead` (`TEAM_LEAD_KEY`) is the lead and whose `agent_handle` is its name. A `name` without `team` is a plain named child, also with the flag on. `team: true` without the flag, without a name, with `fork`, or from a session at depth 1 or deeper fails with the reason. `GET /projects/:id/sessions?team_lead=<sid>` lists one lead's teammates. A teammate cannot start teammates of its own.
+- **Roles are per session.** A teammate runs an existing agent: a project agent by `subagent_type`, or the default agent. Its name and the role in its prompt are context for that one child session (`initial_context` and the prompt). Nothing in `kortix.yaml` changes, and no team is saved: a team lives in its lead session.
 - **The task list.** `task_create`, `task_list`, `task_get` and `task_update` read and change the lead's list. A task has a number (`seq`, shown as `#3`), a `subject`, a `description`, a `status` (`pending`, `in_progress`, `completed`), an owner, and `blocked_by`: the numbers it waits for. `blocked` stays `true` until every task in `blocked_by` is completed.
 - **Claim.** A teammate takes the next pending, unowned, unblocked task with `task_update({ claim: true })`. The claim is atomic: the loser of a race gets `409 task_taken`, and a blocked task answers `409 task_blocked`. The lead may assign a task with `owner`.
 - **Idle notices.** When a teammate's turn ends, the lead gets one notice with the teammate's final answer. The lead combines the answers for the person.
@@ -1636,7 +1652,7 @@ agents:
 ```
 
 - Set `image_gen: ask` to approve each call.
-- `image_gen` writes a file, so `edit: deny` also denies it, unless the agent sets a rule for `image_gen`. The same applies to `memory`, on both harnesses.
+- `image_gen` writes a file, so `edit: deny` also denies it, unless the agent sets a rule for `image_gen`. The same applies to a project's own `memory` tool, on both harnesses.
 - On OpenCode (deprecated), these tools cannot ask: `edit: ask` or an `edit` pattern map denies them.
 
 #### Replace the image tool

@@ -32,7 +32,7 @@
  */
 
 import { platformConfig } from '../http/config';
-import type { SessionPrompt } from '../rest/projects-client/sessions';
+import type { SessionPrompt, SessionSentPrompt } from '../rest/projects-client/sessions';
 import type { RuntimeEvent } from '../stream/event-stream';
 import { platformEventTransport } from '../stream/platform-event-transport';
 
@@ -40,6 +40,8 @@ import { platformEventTransport } from '../stream/platform-event-transport';
 export interface SessionControlQueue {
   known: boolean;
   prompts: SessionPrompt[];
+  /** Accepted prompts the session log does not hold yet. An older API omits it. */
+  sent?: SessionSentPrompt[];
   held: boolean;
   /** The server clock when the reconciler asked for this list. */
   observed_at?: string;

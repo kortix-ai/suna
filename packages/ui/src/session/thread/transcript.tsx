@@ -105,7 +105,7 @@ import {
 import { Button } from '../../primitives/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../primitives/disclosure';
 import { useUserPreferencesStore, type ConversationDensity } from '../../internal/stores/user-preferences-store';
-import { SubSessionModal } from './sub-session-modal';
+import { SubagentDialog } from '../agents/subagent-view';
 import { parseNoticeBatch, parseSubagentNotice, type NoticeBatchItem, type SubagentNotice } from '../turn/subagent-notice';
 import { SubagentNoticeRow } from '../turn/subagent-notice-row';
 import { NoticeBatchGroup } from '../turn/notice-batch-group';
@@ -1523,7 +1523,7 @@ function TurnSessionReport({ report }: { report: SessionReport }) {
         report={report}
         onOpen={() => setSessionReportModalOpen(true)}
       />
-      <SubSessionModal
+      <SubagentDialog
         open={sessionReportModalOpen}
         onOpenChange={setSessionReportModalOpen}
         sessionId={report.sessionId}

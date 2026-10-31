@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 // The app's Bun tests have no DOM and Radix's portal renders nothing under
 // `renderToStaticMarkup`; the dialog-content tests below need that markup, so
 // the portal-based `Modal` is replaced by a flat stand-in — the same handling
-// as `sub-session-modal.characterization.test.tsx`. The real modal behavior
+// as `legacy-subagent-chat.test.tsx`. The real modal behavior
 // is exercised by the browser journeys.
 const uiModalMock = () => ({
   Modal: ({ open, children }: { open: boolean; children: ReactNode }) =>

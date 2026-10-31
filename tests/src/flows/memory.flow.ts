@@ -1,5 +1,5 @@
 /**
- * MEMORY-1..6, 12, 16 — Memory: the Markdown files of the project's Drive,
+ * MEMORY-1..6, 12, 16, 17 — Memory: the Markdown files of the project's Drive,
  * read and edited as pages over `/v1/projects/:projectId/memory/*`, "Used
  * memory" (`/sessions/:sessionId/memory-usage`) and Channels onboarding
  * (`/onboarding/channels`, MEMORY-16). Spec: tests/spec/end-to-end.md § 7b.
@@ -18,6 +18,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   ChannelsOnboardingSchema,
+  MyKortixMemoryDeleteResultSchema,
+  MyKortixMemoryIndexSchema,
+  MyKortixMemoryPageSchema,
+  MyKortixMemorySaveResultSchema,
   MemoryDeleteResultSchema,
   MemoryLayerSchema,
   MemoryPageListSchema,
@@ -113,13 +117,18 @@ async function channel(world: AgentPrincipalsWorld, name: string): Promise<Space
 }
 
 /** An agent's thread: a session row and a project token bound to it (what an agent's `KORTIX_TOKEN` is). `world.close()` deletes both. */
-async function thread(ctx: FlowContext, world: AgentPrincipalsWorld, spaceId: string | null): Promise<{ sessionId: string; client: Client }> {
+async function thread(
+  ctx: FlowContext,
+  world: AgentPrincipalsWorld,
+  spaceId: string | null,
+  opts: { agent?: string; onBehalfOf?: string } = {},
+): Promise<{ sessionId: string; client: Client }> {
   const sessionId = randomUUID();
   world.sessions.push(sessionId);
   await world.db.query(
     `INSERT INTO kortix.project_sessions (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, space_id)
-     VALUES ($1, $2, $3, $1, 'worker', 'stopped', $4, 'project', $5)`,
-    [sessionId, world.accountId, world.projectId, world.ownerUserId, spaceId],
+     VALUES ($1, $2, $3, $1, $6, 'stopped', $4, 'project', $5)`,
+    [sessionId, world.accountId, world.projectId, world.ownerUserId, spaceId, opts.agent ?? 'worker'],
   );
   // A session credential needs a live sandbox lease (`validateAccountToken`); `world.close()` deletes it.
   await world.db.query(
@@ -132,6 +141,8 @@ async function thread(ctx: FlowContext, world: AgentPrincipalsWorld, spaceId: st
     .json<{ token_id: string; secret_key: string }>();
   world.tokens.push(minted.token_id);
   await world.db.query('UPDATE kortix.account_tokens SET session_id = $2 WHERE token_id = $1::uuid', [minted.token_id, sessionId]);
+  // The person a session acts for (`on_behalf_of`): a human-started session's token carries it.
+  if (opts.onBehalfOf) await world.db.query('UPDATE kortix.account_tokens SET on_behalf_of_user_id = $2::uuid WHERE token_id = $1::uuid', [minted.token_id, opts.onBehalfOf]);
   return { sessionId, client: ctx.client.withBearer(minted.secret_key, `thread ${sessionId.slice(0, 8)}`) };
 }
 
@@ -654,3 +665,92 @@ flow(
     }
   },
 );
+
+const MINE = {
+  index: 'GET /v1/projects/:projectId/memory/me/agent/:agent',
+  read: 'GET /v1/projects/:projectId/memory/me/agent/:agent/pages/:name',
+  save: 'PUT /v1/projects/:projectId/memory/me/agent/:agent/pages/:name',
+  forget: 'DELETE /v1/projects/:projectId/memory/me/agent/:agent/pages/:name',
+} as const;
+const MINE_INDEX = '/v1/projects/:projectId/memory/me/agent/:agent';
+const MINE_PAGE = '/v1/projects/:projectId/memory/me/agent/:agent/pages/:name';
+const FACT = { description: 'Wants replies of one to three sentences', type: 'feedback', body: 'Keep replies short.\n\n**Why:** reads on a phone.\n\n**How to apply:** one to three sentences.' };
+
+flow('MEMORY-17', meta([...Object.values(MINE), FEATURES, TOKEN_MINT, ...STORAGE_PROBE]), async (ctx) => {
+  const { team, project, world } = await openWorld(ctx);
+  const projectId = project.id;
+  try {
+    const member = await team.addMember('member');
+    await team.grantProjectRole(projectId, member.userId!, 'member');
+    const asMember = ctx.client.as(member);
+    const page = (name: string, agent = 'mykortix') => ({ params: { projectId, agent, name } });
+    const every = (client: Client) =>
+      Promise.all([
+        client.get(MINE_INDEX, { params: { projectId, agent: 'mykortix' } }),
+        client.get(MINE_PAGE, page('likes-short-replies')),
+        client.put(MINE_PAGE, FACT, page('likes-short-replies')),
+        client.del(MINE_PAGE, page('likes-short-replies')),
+      ]);
+
+    await ctx.step('with Files (volumes) off, every My Kortix memory route → 403 feature_disabled, with project_channels off too', async () => {
+      await world.setFeature('volumes', false);
+      for (const r of await every(world.owner)) r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'drives');
+      await world.setFeature('volumes', true);
+    });
+
+    await ctx.step('another agent → 404 memory_not_found; a path- or option-shaped name and a bad body → 400 invalid_input', async () => {
+      (await world.owner.get(MINE_INDEX, { params: { projectId, agent: 'worker' } })).status(404).body().has('$.code', 'memory_not_found');
+      for (const name of ['-rf', 'Bad_Name', 'a..b']) (await world.owner.get(MINE_PAGE, page(name))).status(400).body().has('$.code', 'invalid_input');
+      (await world.owner.put(MINE_PAGE, { ...FACT, type: 'secret' }, page('x'))).status(400).body().has('$.code', 'invalid_input');
+      (await world.owner.put(MINE_PAGE, { ...FACT, description: 'two\nlines' }, page('x'))).status(400).body().has('$.code', 'invalid_input');
+      (await world.owner.put(MINE_PAGE, { ...FACT, extra: true }, page('x'))).status(400).body().has('$.code', 'invalid_input');
+    });
+
+    await ctx.step('a session token of any other agent → 403 my_kortix_only; a My Kortix token that acts for nobody → 403 my_kortix_only', async () => {
+      const worker = await thread(ctx, world, null, { onBehalfOf: world.ownerUserId });
+      for (const r of await every(worker.client)) r.status(403).body().has('$.code', 'my_kortix_only');
+      const unattended = await thread(ctx, world, null, { agent: 'mykortix' });
+      for (const r of await every(unattended.client)) r.status(403).body().has('$.code', 'my_kortix_only');
+    });
+
+    const mine = await thread(ctx, world, null, { agent: 'mykortix', onBehalfOf: world.ownerUserId });
+    if (!(await hasStorage(world))) {
+      await ctx.step('no drive storage on this target: the owner’s My Kortix session passes the gate and reads → 503 drive_storage_unavailable', async () => {
+        (await mine.client.get(MINE_INDEX, { params: { projectId, agent: 'mykortix' } })).status(503).body().has('$.code', 'drive_storage_unavailable');
+      });
+      await noStorage(ctx, world);
+      return;
+    }
+
+    await ctx.step('the owner’s My Kortix session saves a page → 201; the same name again → 200 created:false; the index lists it once', async () => {
+      read((await mine.client.put(MINE_PAGE, { title: 'Likes short replies', ...FACT }, page('likes-short-replies'))).status(201), (b) =>
+        b.schema(MyKortixMemorySaveResultSchema).has('$.created', true).has('$.page.name', 'likes-short-replies').has('$.page.type', 'feedback'));
+      read((await mine.client.put(MINE_PAGE, { ...FACT, description: 'Wants replies of one or two sentences' }, page('likes-short-replies'))).status(200), (b) =>
+        b.schema(MyKortixMemorySaveResultSchema).has('$.created', false).has('$.page.title', 'Likes short replies'));
+      const index = read<{ entries: { name: string }[]; index: string; folder: string }>((await mine.client.get(MINE_INDEX, { params: { projectId, agent: 'mykortix' } })).status(200), (b) =>
+        b.schema(MyKortixMemoryIndexSchema));
+      if (index.entries.filter((e) => e.name === 'likes-short-replies').length !== 1) fail('one page per name', index.entries);
+      if (!index.index.includes('- [Likes short replies](likes-short-replies.md) — Wants replies of one or two sentences')) fail('the index line', index.index);
+      const { personalFolder } = await driveOf(world.owner, projectId);
+      if (index.folder !== `${personalFolder}/Memory/mykortix`) fail('the owner’s own folder', index.folder);
+    });
+
+    await ctx.step('the owner reads the same page with their login; another member sees none of it and gets 404 on its name', async () => {
+      read((await world.owner.get(MINE_PAGE, page('likes-short-replies'))).status(200), (b) => b.schema(MyKortixMemoryPageSchema).has('$.description', 'Wants replies of one or two sentences'));
+      const theirs = (await asMember.get(MINE_INDEX, { params: { projectId, agent: 'mykortix' } })).status(200).json<{ entries: unknown[] }>();
+      if (theirs.entries.length !== 0) fail('another member reads the owner’s memory', theirs.entries);
+      (await asMember.get(MINE_PAGE, page('likes-short-replies'))).status(404).body().has('$.code', 'memory_not_found');
+      (await asMember.del(MINE_PAGE, page('likes-short-replies'))).status(404);
+    });
+
+    await ctx.step('a key shape → 422 secret_detected, not echoed; delete → 200, then the name → 404', async () => {
+      const r = await mine.client.put(MINE_PAGE, { ...FACT, body: FAKE_KEY }, page('api-key'));
+      r.status(422).body().has('$.code', 'secret_detected');
+      if (r.text().includes(FAKE_KEY)) fail('the secret was echoed', r.text());
+      read((await mine.client.del(MINE_PAGE, page('likes-short-replies'))).status(200), (b) => b.schema(MyKortixMemoryDeleteResultSchema).has('$.title', 'Likes short replies'));
+      (await mine.client.get(MINE_PAGE, page('likes-short-replies'))).status(404).body().has('$.code', 'memory_not_found');
+    });
+  } finally {
+    await world.close();
+  }
+});

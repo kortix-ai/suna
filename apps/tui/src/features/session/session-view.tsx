@@ -28,7 +28,7 @@ import {
   type SessionLogMessage,
   classifySessionLogMessage,
 } from '@kortix/sdk';
-import { useSession, useSessionLogThread } from '@kortix/sdk/react';
+import { useSession, useSessionLogThread, useSessionPrompts } from '@kortix/sdk/react';
 import type { BoxRenderable, MouseEvent } from '@opentui/core';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -246,6 +246,8 @@ export function SessionView({
   // known, so this is cheap in practice and never double-forwards.
   // biome-ignore lint/correctness/useExhaustiveDependencies(ports.notice): stable (see `usePorts`'s memoized return); only a transcript change should retrigger this scan.
   const thread = useSessionLogThread(session);
+  // One inbox read for the column: the transcript draws its prompts, the composer its count.
+  const inbox = useSessionPrompts(projectId, sessionId);
   useEffect(() => {
     const found = portsInTranscript(thread?.messages ?? []);
     if (found.length) ports.notice(found, 'transcript');
@@ -297,7 +299,13 @@ export function SessionView({
   const frame = borderless ? 0 : 2;
   const contentRows = Math.max(height - frame, 1);
   const innerWidth = Math.max(sessionWidth - frame - 2, 12);
-  const empty = (thread?.messages.length ?? 0) === 0 && !session.isBusy;
+  // Empty: no message and no prompt the API accepted (a booting session's first prompt is
+  // drawn from the inbox, not hidden under the splash).
+  const empty =
+    (thread?.messages.length ?? 0) === 0 &&
+    !session.isBusy &&
+    !inbox.prompts.some((p) => !p.synthetic && p.state !== 'failed') &&
+    inbox.sent.length === 0;
   const columnRef = useRef<BoxRenderable>(null);
   const [clicks, setClicks] = useState(0);
   const composerContext = useMemo<CommandContext>(
@@ -406,6 +414,7 @@ export function SessionView({
                 height={rows}
                 onToast={onToast}
                 renderPrompts={false}
+                inbox={inbox}
               />
             )}
 

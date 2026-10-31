@@ -56,10 +56,13 @@
  *
  * Names, teams and forks (`agent({ name, fork })`, `extensions/subagents.ts`):
  *  - `handle` stores metadata `agent_handle` (and `kortix.agent.handle` in
- *    `runtime_context`): the name `send_message` resolves. It is unique among
- *    this session's live children: a clash refuses the call and names the
- *    child that holds it.
- *  - `teammate` (flag `agent_teams`, a named spawn at depth 0) also stores
+ *    `runtime_context`): the name `send_message` resolves. Reuse first: when
+ *    the newest child of this session with that name finished its turn
+ *    (idle, completed or stopped), the call is a follow-up to it, exactly a
+ *    `task_id` resume, and the result carries `continued: true`. A child with
+ *    that name that still works (or waits for its person) refuses the call
+ *    and is named. A failed, archived or deleted child frees the name.
+ *  - `teammate` (`team: true`, flag `agent_teams`, depth 0) also stores
  *    metadata `team_lead` = this session and `kortix.team.lead` in
  *    `runtime_context`, always runs in the background, and its
  *    `initial_context` tells it about `send_message` and the task list.
@@ -261,6 +264,8 @@ interface SessionRow {
   parent_session_id?: string | null
   metadata?: Record<string, unknown> | null
   working?: { state?: string; since?: string | null; pending_delivery?: boolean }
+  /** The API's board state (`SessionBoardState`); absent from an older API. */
+  board_state?: string
 }
 
 function sessionUrl(http: Http, childId: string, suffix = ''): string {
@@ -301,11 +306,21 @@ export async function cloudSpawnSession(
     )
   }
   if (input.fork && !api.sessionId) throw new Error('This session has no session id to fork from, so fork is not possible here.')
+  const handle = checkedHandle(input)
+  // Reuse first: the name of a finished child of this session continues that child.
+  const earlier = handle ? await namedChild(api, http, handle) : null
+  if (earlier) {
+    if (input.fork) {
+      throw new Error(`The name "${handle}" belongs to your subagent ${earlier}, so a fork cannot take it. Omit fork to continue that subagent, or pick another name for the fork.`)
+    }
+    const result = await resumeChild(api, http, { ...input, sessionId: earlier }, model, opts)
+    return { ...result, continued: true }
+  }
   const createBody = buildCreateBody(api, input)
   // Reserved before the first await: parallel `agent` calls in one message all pass through here.
   reserveLiveSlot(api)
   try {
-    await refuseOverLiveCap(api, http, input.handle)
+    await refuseOverLiveCap(api, http)
     let created: Response
     try {
       created = await http.fetchImpl(`${http.origin}/v1/projects/${encodeURIComponent(api.projectId)}/sessions`, {
@@ -353,25 +368,59 @@ function reserveLiveSlot(api: CloudSubagentApi): void {
  * a box restart, when the counter starts at 0. An unreadable list counts 0:
  * the counter still bounds one burst.
  */
-async function refuseOverLiveCap(api: CloudSubagentApi, http: Http, handle?: string): Promise<void> {
+async function refuseOverLiveCap(api: CloudSubagentApi, http: Http): Promise<void> {
   if (!api.sessionId) return
   let background = 0
-  let rows: SessionRow[] = []
   try {
-    rows = await listChildren(api, http)
-    background = rows.filter(isWorkingBackgroundChild).length
+    background = (await listChildren(api, http)).filter(isWorkingBackgroundChild).length
   } catch (err) {
     logger.warn('[pi] cloud subagent child list failed; counting only this box', { err: errorText(err) })
   }
-  if (handle) {
-    const holder = rows.find((row) => isLive(row) && sameHandle(row.metadata?.[AGENT_HANDLE_KEY], handle))
-    if (holder) {
-      throw new Error(
-        `The name "${handle}" is taken: your subagent ${holder.session_id ?? ''} (${holder.name ?? 'untitled'}) still runs under it. Message it with send_message({ to: "${handle}" }), stop it with task_stop({ name: "${handle}" }), or pick another name.`,
-      )
-    }
-  }
   if (api.live.count + background > api.maxLive) throw liveCapError(api, api.live.count - 1 + background)
+}
+
+/** The call's name, checked before any request. */
+function checkedHandle(input: SpawnSessionInput): string | undefined {
+  const handle = input.teammate?.handle ?? input.handle
+  if (handle !== undefined && !AGENT_HANDLE.test(handle)) {
+    throw new Error(`"${handle}" is not a name for a subagent: use 1-40 letters, digits, "-" or "_", starting with a letter or digit.`)
+  }
+  return handle
+}
+
+/**
+ * The child of this session that holds `handle` and finished its turn: its id,
+ * for a follow-up. Null when no child holds it (or the list cannot be read: a
+ * new child then takes the name). Throws when the newest child with the name
+ * still works or waits for its person: the name is taken.
+ */
+async function namedChild(api: CloudSubagentApi, http: Http, handle: string): Promise<string | null> {
+  if (!api.sessionId) return null
+  let rows: SessionRow[]
+  try {
+    rows = await listChildren(api, http)
+  } catch (err) {
+    logger.warn('[pi] cloud subagent child list failed; the name is not checked', { err: errorText(err) })
+    return null
+  }
+  // Newest first: the newest child with the name is the one send_message reaches.
+  const holder = rows.find((row) => sameHandle(row.metadata?.[AGENT_HANDLE_KEY], handle) && !FREES_NAME.has(row.status ?? '') && row.board_state !== 'failed')
+  if (!holder?.session_id) return null
+  if (isBusy(holder)) {
+    throw new Error(
+      `The name "${handle}" is taken: your subagent ${holder.session_id} (${holder.name ?? 'untitled'}) still works under it. Message it with send_message({ to: "${handle}" }), stop it with task_stop({ name: "${handle}" }), or pick another name.`,
+    )
+  }
+  return holder.session_id
+}
+
+/** A child in one of these states no longer holds its name: a new child may take it. */
+const FREES_NAME = new Set(['failed', 'archived', 'deleted'])
+
+/** A child that still works, or waits for its person: a follow-up cannot start now. */
+function isBusy(row: SessionRow): boolean {
+  if (row.board_state) return row.board_state === 'working' || row.board_state === 'needs_input'
+  return row.status === 'provisioning' || (row.status === 'running' && (row.working?.state === 'working' || row.working?.pending_delivery === true))
 }
 
 /** This session's children, newest first (`GET …/sessions?parent=`). Throws when the list cannot be read. */
@@ -412,10 +461,7 @@ function buildCreateBody(api: CloudSubagentApi, input: SpawnSessionInput): Recor
     throw new Error(`The tool list for a separate subagent session is longer than ${RUNTIME_CONTEXT_STRING_MAX} characters.`)
   }
   const teammate = input.teammate
-  const handle = teammate?.handle ?? input.handle
-  if (handle !== undefined && !AGENT_HANDLE.test(handle)) {
-    throw new Error(`"${handle}" is not a name for a subagent: use 1-40 letters, digits, "-" or "_", starting with a letter or digit.`)
-  }
+  const handle = checkedHandle(input)
   const context = [instructions, teammate ? teammate.instructions.trim() : ''].filter(Boolean).join('\n\n')
   if (context.length > INITIAL_CONTEXT_MAX_CHARS) {
     throw new Error(`Inline agent instructions are ${context.length} characters; a separate subagent session takes at most ${INITIAL_CONTEXT_MAX_CHARS}.`)

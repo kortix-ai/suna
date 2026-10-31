@@ -152,61 +152,6 @@ describe('sessionLogRowsFor: merged with the v1 store rows', () => {
   });
 });
 
-describe('sessionLogThreadWithV1Rows: the server re-minted the id of an optimistic send (v2 stream, no echo frame)', () => {
-  // The prompt inbox re-mints a prompt's id at delivery, and a v2 stream carries no
-  // `message.updated` frame to pair the two: the log holds the user's text under the
-  // server's id while the tab still paints it under its own. Measured in the TUI: the
-  // prompt showed twice for the whole turn.
-  const sent = (id: string, created: number, text: string): V1MessageRow => ({
-    info: { id, sessionID: ROOT, role: 'user', time: { created } } as unknown as Message,
-    parts: [{ id: `${id}-p`, sessionID: ROOT, messageID: id, type: 'text', text } as unknown as Part],
-  });
-  const userMessage = (state: SessionLogState, id: string, seq: number, createdAt: string, text: string) =>
-    applySessionLogEvent(
-      state,
-      ev('log.message', {
-        rev: Number.MAX_SAFE_INTEGER - 1,
-        message: {
-          ...golden.threads[0]!.messages.find((m) => m.role === 'user')!,
-          message_id: id, seq, created_at: createdAt, completed_at: createdAt,
-          blocks: [{ id: `${id}-b`, type: 'text', text }],
-        },
-      }),
-    );
-  const base = stateOf(v1Golden);
-  const lastSeq = selectSessionLogThread(base)!.messages.at(-1)!.seq;
-  const at = Date.parse('2030-01-01T00:00:10.000Z');
-
-  test('the log holds the same text from the send on: one user message, not two', () => {
-    const state = userMessage(base, 'msg_server_1', lastSeq + 1, new Date(at).toISOString(), 'what can u do for me');
-    const thread = selectSessionLogThread(state)!;
-    expect(thread.messages.at(-1)?.message_id).toBe('msg_server_1');
-    const merged = sessionLogThreadWithV1Rows(state, thread, [sent('msg_local_1', at - 400, 'what can u do for me')]);
-    expect(merged.messages).toHaveLength(thread.messages.length);
-  });
-
-  test('the same text sent twice: each send retires one log message, the second still waits', () => {
-    const state = userMessage(base, 'msg_server_1', lastSeq + 1, new Date(at).toISOString(), 'again');
-    const thread = selectSessionLogThread(state)!;
-    const merged = sessionLogThreadWithV1Rows(state, thread, [sent('msg_local_1', at - 400, 'again'), sent('msg_local_2', at + 200, 'again')]);
-    expect(merged.messages).toHaveLength(thread.messages.length + 1);
-  });
-
-  test('the v1-row view retires the send the same way', () => {
-    const state = userMessage(base, 'msg_server_1', lastSeq + 1, new Date(at).toISOString(), 'what can u do for me');
-    const own = sessionLogRowsFor({ s: state }, ROOT, NONE);
-    const rows = sessionLogRowsFor({ s: state }, ROOT, [sent('msg_local_1', at - 400, 'what can u do for me')]);
-    expect(rows.map((r) => r.info.id)).toEqual(own.map((r) => r.info.id));
-  });
-
-  test('an older log message with the same text does not retire a new send', () => {
-    const state = userMessage(base, 'msg_server_old', lastSeq + 1, new Date(at - 10 * 60_000).toISOString(), 'hi');
-    const thread = selectSessionLogThread(state)!;
-    const merged = sessionLogThreadWithV1Rows(state, thread, [sent('msg_local_new', at, 'hi')]);
-    expect(merged.messages).toHaveLength(thread.messages.length + 1);
-  });
-});
-
 describe('sessionLogThreadWithV1Rows: a v2 thread with the v1 rows the log lacks (an optimistic send)', () => {
   const optimistic = (id: string, created: number, text: string): V1MessageRow => ({
     info: { id, sessionID: ROOT, role: 'user', time: { created }, agent: 'build', model: { providerID: 'p', modelID: 'm' } } as unknown as Message,

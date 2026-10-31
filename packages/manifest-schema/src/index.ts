@@ -114,7 +114,7 @@ export {
   renderManifest,
   splitFrontmatter,
 } from './legacy';
-export { type AppliedFix, type Deprecation, DEPRECATIONS, applyDeprecations, fixManifestText } from './deprecations';
+export { type AppliedFix, type Deprecation, DEPRECATIONS, applyDeprecations, fixManifestText, rewriteManifestText } from './deprecations';
 export {
   type PolicyArgCondition,
   FORBIDDEN_ARG_SEGMENTS,

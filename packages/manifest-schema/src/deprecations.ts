@@ -20,6 +20,7 @@
  * named (`RETIRED_*_KEYS` in `./index.v3.ts`).
  */
 
+import { isDeepStrictEqual } from 'node:util';
 import { type Document, isMap, isScalar, isSeq, type Node, type Pair, parseDocument, Scalar, type YAMLMap } from 'yaml';
 import { DEPRECATED_KORTIX_PERMISSION_ALIASES, LEGACY_SANDBOX_KEYS, RETIRED_KORTIX_TOOLS } from './constants';
 
@@ -243,16 +244,22 @@ export const DEPRECATIONS: readonly Deprecation[] = [
   {
     id: 'tool-retired',
     since: '2026-10-19',
-    summary: 'a retired Kortix tool name does nothing: it is removed from the list.',
-    apply: (doc) =>
-      agentBlocks(doc).flatMap(([name, block]) => {
+    summary:
+      'a retired Kortix tool name does nothing: it is removed from the list, unless the project registers its own tool under that name. ' +
+      'For `memory`: agents edit `memory/` with the file tools, and My Kortix remembers each person with `kortix_memory`.',
+    apply: (doc) => {
+      // `tools.memory: tools/memory.ts` (an ejected copy) keeps `memory` a live project tool.
+      const registry = doc.get('tools', true);
+      const owned = (name: string) => isMap(registry) && registry.has(name);
+      return agentBlocks(doc).flatMap(([name, block]) => {
         const tools = block.get('tools', true);
         const list = isSeq(tools) ? tools : isMap(tools) && isSeq(tools.get('exclude', true)) ? (tools.get('exclude', true) as typeof tools) : null;
         if (!list || !isSeq(list)) return [];
         const before = list.items.length;
-        list.items = list.items.filter((item) => !(isScalar(item) && RETIRED_KORTIX_TOOLS.includes(String(item.value))));
+        list.items = list.items.filter((item) => !(isScalar(item) && RETIRED_KORTIX_TOOLS.includes(String(item.value)) && !owned(String(item.value))));
         return list.items.length < before ? [`agents.${name}.tools`] : [];
-      }),
+      });
+    },
   },
 ];
 
@@ -263,11 +270,105 @@ export function applyDeprecations(doc: Document): AppliedFix[] {
 
 /**
  * `text` rewritten to the latest shape, comments kept. Unchanged (the same
- * bytes) when nothing is deprecated or the YAML does not parse.
+ * bytes) when nothing is deprecated or the YAML does not parse. Every line a
+ * deprecation does not change keeps its bytes (`keepUnchangedLines`).
  */
 export function fixManifestText(text: string): { text: string; fixed: AppliedFix[] } {
   const doc = parseDocument(text);
   if (doc.errors.length > 0) return { text, fixed: [] };
   const fixed = applyDeprecations(doc);
-  return fixed.length === 0 ? { text, fixed } : { text: doc.toString(), fixed };
+  if (fixed.length === 0) return { text, fixed };
+  // No folding of long lines, no padding inside `[a, b]`.
+  const rendered = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
+  return { text: keepUnchangedLines(text, rendered), fixed };
+}
+
+/**
+ * `source` with its content replaced by `desired`, written into the file's own
+ * YAML document: every comment and every line the edit does not touch keep
+ * their bytes. Deprecated shapes are rewritten first (`fixManifestText`). Null
+ * when `source` does not parse or the result would not read as `desired`: the
+ * caller then renders `desired` from scratch.
+ */
+export function rewriteManifestText(source: string, desired: Record<string, unknown>): string | null {
+  const healed = fixManifestText(source).text;
+  const doc = parseDocument(healed);
+  if (doc.errors.length > 0 || !isMap(doc.contents)) return null;
+  syncNode(doc, doc.contents, desired);
+  const text = keepUnchangedLines(healed, doc.toString({ lineWidth: 0, flowCollectionPadding: false }));
+  const read = parseDocument(text);
+  if (read.errors.length > 0 || !isDeepStrictEqual(read.toJS(), desired)) return null;
+  return text;
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+/** Make `node` hold `value`: a map or a list of the same length is synced entry by entry, anything else replaced. */
+function syncNode(doc: Document, node: unknown, value: unknown): unknown {
+  if (isMap(node) && isPlainObject(value)) {
+    // An empty `{}` that gains entries is written as a block; a filled flow map keeps its style.
+    if (node.flow && node.items.length === 0 && Object.keys(value).length > 0) node.flow = false;
+    for (const pair of [...node.items]) {
+      const key = isScalar(pair.key) ? String(pair.key.value) : String(pair.key);
+      if (!Object.hasOwn(value, key)) node.delete(pair.key);
+    }
+    for (const [key, next] of Object.entries(value)) {
+      if (next === undefined) continue;
+      const pair = node.items.find((item) => (isScalar(item.key) ? String(item.key.value) : String(item.key)) === key);
+      if (!pair) node.set(doc.createNode(key), doc.createNode(next));
+      else pair.value = syncNode(doc, pair.value, next) as Node;
+    }
+    return node;
+  }
+  // An empty `[]` that gains items is written as a block list.
+  if (isSeq(node) && Array.isArray(value) && node.items.length === 0 && value.length > 0) return doc.createNode(value);
+  if (isSeq(node) && Array.isArray(value) && node.items.length === value.length) {
+    node.items = node.items.map((item, index) => syncNode(doc, item, value[index]) as Node);
+    return node;
+  }
+  const current = node && typeof node === 'object' && 'toJSON' in node ? (node as { toJSON: () => unknown }).toJSON() : node;
+  if (isDeepStrictEqual(current, value)) return node;
+  return doc.createNode(value);
+}
+
+/** A line without the whitespace the YAML renderer may change in a line it did not edit: runs, and space beside `[]{},:`. */
+const lineShape = (line: string) => line.replace(/\s+/g, ' ').replace(/ ?([[\]{},:]) ?/g, '$1').trim();
+
+/**
+ * `rendered` with each line that matches an original line, apart from
+ * whitespace, put back as the original wrote it: a heal changes only the lines
+ * it rewrites, not comment spacing or list indentation. The lines are paired
+ * in order (longest common subsequence). When the result does not read as
+ * `rendered` does, `rendered` is returned.
+ */
+function keepUnchangedLines(original: string, rendered: string): string {
+  const a = original.split('\n');
+  const b = rendered.split('\n');
+  const as = a.map(lineShape);
+  const bs = b.map(lineShape);
+  // ponytail: O(n·m) table; a manifest is at most a few thousand lines.
+  const lcs = Array.from({ length: a.length + 1 }, () => new Uint32Array(b.length + 1));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      lcs[i]![j] = as[i] === bs[j] ? lcs[i + 1]![j + 1]! + 1 : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!);
+    }
+  }
+  const out: string[] = [];
+  let i = 0;
+  let j = 0;
+  while (j < b.length) {
+    if (i < a.length && as[i] === bs[j]) {
+      out.push(a[i]!);
+      i++;
+      j++;
+    } else if (i < a.length && lcs[i + 1]![j]! >= lcs[i]![j + 1]!) i++;
+    else out.push(b[j++]!);
+  }
+  const merged = out.join('\n');
+  const read = (yaml: string) => {
+    const parsed = parseDocument(yaml);
+    return parsed.errors.length > 0 ? null : JSON.stringify(parsed.toJS());
+  };
+  return read(merged) !== null && read(merged) === read(rendered) ? merged : rendered;
 }

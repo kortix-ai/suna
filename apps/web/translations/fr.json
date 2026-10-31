@@ -3115,6 +3115,14 @@
         "usage": {
           "read": "Vérification de l’utilisation…",
           "change": "Vérification de l’utilisation…"
+        },
+        "changeRequests": {
+          "read": "Vérification des demandes de modification…",
+          "change": "Mise à jour d’une demande de modification…"
+        },
+        "memory": {
+          "read": "Consultation de la mémoire…",
+          "change": "Mise à jour de la mémoire…"
         }
       },
       "status": {
@@ -24923,28 +24931,29 @@
       "label": "Agents",
       "agents": "{count, plural, one {# agent} other {# agents}}",
       "working": "{count} en cours",
-      "needsInput": "{count, plural, one {# vous attend} other {# vous attendent}}",
-      "workflows": "{count, plural, one {# workflow} other {# workflows}}{running, plural, =0 {} other { en cours}}",
+      "workflows": "{count, plural, one {# workflow} other {# workflows}}",
+      "workflowsRunning": "{count, plural, one {# workflow en cours} other {# workflows en cours}}",
+      "newest": "{name} : {state}",
       "tasks": "Tâches",
-      "tasksHint": "Afficher les tâches de l’équipe (Ctrl+T)",
       "team": "Équipe",
       "workflowsGroup": "Workflows",
-      "idleFolded": "{count, plural, one {# agent inactif} other {# agents inactifs}}",
-      "idleCollapse": "Réduire les agents inactifs",
       "state": {
-        "working": "En cours",
-        "needs_input": "Vous attend",
-        "idle": "Inactif",
-        "completed": "Terminé",
-        "failed": "Non terminé",
-        "stopped": "Arrêté"
+        "working": "en cours",
+        "needs_input": "vous attend",
+        "idle": "terminé",
+        "completed": "terminé",
+        "failed": "échec",
+        "stopped": "arrêté"
       },
+      "workingFor": "en cours · {elapsed}",
+      "runsAs": "s’exécute en tant que {agent}",
+      "teamRole": "Rôle pour cette session uniquement",
       "attention": {
         "question": "A une question pour vous",
         "approval": "Attend votre approbation"
       },
       "openAgent": "Ouvrir {name}",
-      "stopHint": "Arrêter cet agent (x)",
+      "stopHint": "Arrêter cet agent",
       "stopAgent": "Arrêter {name}",
       "stopAgentFailed": "Impossible d’arrêter {name}",
       "stopFailed": "Impossible d’arrêter l’agent",
@@ -24959,6 +24968,21 @@
       "runFallback": "Workflow",
       "openRun": "Ouvrir l’exécution",
       "runNoAgents": "Aucun agent pour l’instant"
+    },
+    "subagent": {
+      "fallbackTitle": "Agent",
+      "openPage": "Ouvrir la page",
+      "close": "Fermer",
+      "messagePlaceholder": "Message à {name}…",
+      "messageLabel": "Message à {name}",
+      "send": "Envoyer",
+      "sent": "Message envoyé",
+      "sendFailed": "Impossible d’envoyer le message",
+      "loadFailed": "Impossible de charger les messages de cet agent",
+      "retry": "Réessayer",
+      "emptyTitle": "Rien pour l’instant",
+      "emptyDescription": "Ses messages s’affichent ici pendant qu’il travaille.",
+      "loadOlder": "Afficher les messages précédents"
     },
     "tasks": {
       "label": "Tâches de l’équipe",
@@ -25054,8 +25078,6 @@
         "failed": "Échouée",
         "stopped": "Arrêtée"
       },
-      "result": "Résultat",
-      "noResult": "Pas encore de réponse.",
       "replyPlaceholder": "Répondez. Votre réponse parvient à l’agent à sa prochaine étape.",
       "replyLabel": "Répondre à {title}",
       "sendReply": "Envoyer la réponse",

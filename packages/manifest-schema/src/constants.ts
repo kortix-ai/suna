@@ -436,15 +436,16 @@ export const HARNESS_TOOL_NAMES = [
 ] as const;
 /**
  * The Kortix tools (apps/kortix-sandbox-agent-server `src/services/tools/kortix/`).
- * A project lists one in `tools:` as `<name>: kortix:<name>`, or replaces it
- * with its own module under the same name.
+ * Every session loads them; an agent's `tools` grant names them like any
+ * other tool. A project replaces one with its own module under the same name
+ * in `tools:`.
  *
  * Connector access is the `kortix connectors` CLI, never a built-in tool. The
  * MCP-era `kortix-connectors_call` / `kortix-connectors_describe` meta-tools
  * were re-added once (#9902) and removed again; a test pins them out.
  */
-export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show'] as const;
-/** Kortix tools a manifest's `tools:` list loads unless it names the key. */
+export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'image_gen', 'scrape_webpage', 'show'] as const;
+/** Kortix tools a v2 `tools:` map loaded without naming them. Only the legacy converter reads this. */
 export const DEFAULT_ON_KORTIX_TOOLS = ['image_gen'] as const;
 /** True for a `DEFAULT_ON_KORTIX_TOOLS` name. */
 export function isDefaultOnKortixTool(name: string): boolean {
@@ -452,11 +453,23 @@ export function isDefaultOnKortixTool(name: string): boolean {
 }
 /**
  * Kortix tools that no longer exist. Manifests written while #9902 was live
- * still name them (the v2 starter, v3 agent excludes). Naming one is
- * a warning, not an error: no session can load it, so the name has no effect.
+ * still name the connector meta-tools (the v2 starter, v3 agent excludes);
+ * `memory` was a Kortix tool until 2026-10-30. Naming one is a warning, not
+ * an error: no session can load it, so the name has no effect. A project that
+ * registers its own module under the name (`tools.memory`, the ejected copy)
+ * keeps it as a project tool, and its grants stay valid.
  */
-export const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe'];
-/** A `tools:` value that keeps a Kortix tool: `kortix:<name>`. */
+export const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe', 'memory'];
+
+/** What to do instead of a retired Kortix tool: the validator's warning names it. */
+export const RETIRED_KORTIX_TOOL_HINTS: Readonly<Record<string, string>> = {
+  'kortix-connectors_call': 'Agents reach connectors with the `kortix connectors` CLI.',
+  'kortix-connectors_describe': 'Agents reach connectors with the `kortix connectors` CLI.',
+  memory:
+    'Agents read and write `memory/` with the file tools (the kortix-memory skill), and My Kortix remembers each person with `kortix_memory`. To keep the old tool, register a copy under `tools.memory`.',
+};
+
+/** A v2 `tools:` value that kept a Kortix tool: `kortix:<name>`. The current format rejects it. */
 export const KORTIX_TOOL_PREFIX = 'kortix:';
 
 /** The name a `kortix:<name>` value refers to, or null for any other value. */
@@ -465,7 +478,8 @@ export function kortixToolRef(value: unknown): string | null {
 }
 
 /**
- * The Kortix tools a project's sessions get. With no `tools` key (`undefined`):
+ * The Kortix tools a v2 project's sessions got (the legacy converter turns the
+ * rest into each agent's `exclude`). With no `tools` key (`undefined`):
  * all of them, so a project that never lists them keeps them. With a `tools`
  * key, even an empty one: the ones it lists, as `kortix:<name>` or as a
  * module that replaces the tool, plus each `DEFAULT_ON_KORTIX_TOOLS` name it

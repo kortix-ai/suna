@@ -32,6 +32,8 @@ import {
   ChartBarIcon,
   ChatsCircleIcon,
   CheckIcon,
+  GitPullRequestIcon,
+  SunDimIcon,
   HandPointingIcon,
   LockKeyIcon,
   PlugIcon,
@@ -77,7 +79,7 @@ import {
  * A result that does not parse renders as the generic tool card.
  */
 
-type ObjectKey = 'agents' | 'sessions' | 'schedules' | 'connectors' | 'people' | 'access' | 'usage';
+type ObjectKey = 'agents' | 'sessions' | 'schedules' | 'connectors' | 'people' | 'access' | 'usage' | 'changeRequests' | 'memory';
 
 const TOOL_META: Record<KortixPlatformTool, { icon: Icon; object: ObjectKey }> = {
   kortix_agents: { icon: RobotIcon, object: 'agents' },
@@ -87,6 +89,8 @@ const TOOL_META: Record<KortixPlatformTool, { icon: Icon; object: ObjectKey }> =
   kortix_people: { icon: UsersIcon, object: 'people' },
   kortix_access: { icon: LockKeyIcon, object: 'access' },
   kortix_usage: { icon: ChartBarIcon, object: 'usage' },
+  kortix_change_requests: { icon: GitPullRequestIcon, object: 'changeRequests' },
+  kortix_memory: { icon: SunDimIcon, object: 'memory' },
 };
 
 /** Row badge words that name a state with a hue (color.md status table). Any other word stays neutral. */

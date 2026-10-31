@@ -1,7 +1,7 @@
 /**
- * The agent strip's model: which child sessions it lists, in which group, in
- * which order, and which rows fold. Pure, so the rules are tested without a
- * render tree.
+ * The agents line's model: which child sessions it lists, in which group and
+ * in which order, and what the one line under the composer says. Pure, so the
+ * rules are tested without a render tree.
  *
  * Claude Code's agent panel lists the agents a session started (subagents and
  * teammates) under the prompt; Kortix lists the child sessions of this session.
@@ -10,16 +10,22 @@
  * the agent rows: the "Workflows" group shows the run instead.
  */
 import type { ProjectSession, SessionBoardState } from '@kortix/sdk';
+import { agentDisplayName } from '../../internal/components/agent-mark';
 
-/** The states the strip draws, Claude's agent view states. */
+/** The states a row draws, Claude's agent view states. */
 export type AgentRowState = SessionBoardState;
 
 export interface AgentRow {
   sessionId: string;
-  /** What the strip calls it: the agent handle, else the session name, else the agent. */
+  /**
+   * What the line calls it: the agent handle, else the session name, else the
+   * agent's display name (`kortix` → "Kortix"), never a raw slug.
+   */
   handle: string;
-  /** The project agent it runs as, when it differs from the handle. */
+  /** The project agent slug it runs as. */
   agent: string | null;
+  /** The handle is a name of its own (a handle or a session name), so "runs as <agent>" adds something. */
+  named: boolean;
   state: AgentRowState;
   /** What it waits for, when `needs_input`. */
   attention: 'question' | 'approval' | null;
@@ -27,13 +33,13 @@ export interface AgentRow {
   line: string | null;
   /** Epoch ms of its newest activity, for the order inside a state. */
   activityMs: number;
+  /** Epoch ms its current turn started, while it works and the API says when. */
+  workingSinceMs: number | null;
 }
 
-/** A child older than this that has settled is no longer "recent": it leaves the strip. */
+/** A child older than this that has settled is no longer "recent": it leaves the line. */
 export const RECENT_MS = 60 * 60_000;
-/** More idle rows than this fold into one "N idle agents" row, as in Claude Code. */
-export const IDLE_FOLD_FROM = 3;
-/** The strip lists at most this many agent rows per group. */
+/** The popover lists at most this many agent rows per group. */
 export const MAX_ROWS = 20;
 
 const STATE_ORDER: Record<AgentRowState, number> = {
@@ -65,30 +71,35 @@ export function boardStateOf(session: ProjectSession): AgentRowState {
   }
 }
 
-/** True while a row works or waits on its person: a reason to keep the strip open. */
+/** True while a row works or waits on its person: it can be stopped. */
 export function isActive(state: AgentRowState): boolean {
   return state === 'working' || state === 'needs_input';
 }
 
 function stripTitleSuffix(name: string): string {
-  // A spawned child is named `<description> (@agent subagent)`: the strip shows the agent apart.
+  // A spawned child is named `<description> (@agent subagent)`: the row shows the agent apart.
   return name.replace(/\s*\(@[^)]*\)\s*$/, '').trim();
 }
 
 export function agentRowOf(session: ProjectSession): AgentRow {
   const name = session.name ? stripTitleSuffix(session.name) : '';
-  const handle = session.agent_handle?.trim() || name || session.agent_name || session.session_id.slice(0, 8);
-  const agent = session.agent_name && session.agent_name !== handle ? session.agent_name : null;
+  const own = session.agent_handle?.trim() || name;
+  const agent = session.agent_name?.trim() || null;
+  const handle = own || (agent ? agentDisplayName(agent) : session.session_id.slice(0, 8));
   const excerpt = session.result_excerpt?.replace(/\s+/g, ' ').trim() || null;
   const activity = Date.parse(session.last_activity_at ?? session.updated_at ?? session.created_at);
+  const state = boardStateOf(session);
+  const since = state === 'working' && session.working?.since ? Date.parse(session.working.since) : NaN;
   return {
     sessionId: session.session_id,
     handle,
     agent,
-    state: boardStateOf(session),
+    named: !!own,
+    state,
     attention: session.attention ?? null,
     line: excerpt ?? (name && name !== handle ? name : null),
     activityMs: Number.isFinite(activity) ? activity : 0,
+    workingSinceMs: Number.isFinite(since) ? since : null,
   };
 }
 
@@ -100,7 +111,7 @@ export interface StripGroups {
 /**
  * The agent rows of a session: its children and its teammates, each once.
  * `exclude` holds the sessions a workflow run owns (its agents and its runner).
- * A settled row older than {@link RECENT_MS} leaves the strip.
+ * A settled row older than {@link RECENT_MS} leaves the line.
  */
 export function stripGroups(input: {
   leadSessionId: string;
@@ -125,29 +136,6 @@ export function stripGroups(input: {
   return { agents: agents.sort(order).slice(0, MAX_ROWS), team: team.sort(order).slice(0, MAX_ROWS) };
 }
 
-export interface FoldedRows {
-  /** The rows drawn on their own. */
-  shown: AgentRow[];
-  /** The idle rows folded into one "N idle agents" row (empty when nothing folds). */
-  folded: AgentRow[];
-}
-
-/**
- * Claude Code: when more than three agents are idle, the idle rows beyond the
- * first three fold into one row that counts them. A working, failed or
- * waiting row keeps its own row, and so does the selected one.
- */
-export function foldIdle(rows: readonly AgentRow[], expanded: boolean, selected?: string | null): FoldedRows {
-  const idle = rows.filter((row) => row.state === 'idle');
-  if (expanded || idle.length <= IDLE_FOLD_FROM) return { shown: [...rows], folded: [] };
-  const keep = new Set(idle.slice(0, IDLE_FOLD_FROM).map((row) => row.sessionId));
-  if (selected) keep.add(selected);
-  return {
-    shown: rows.filter((row) => row.state !== 'idle' || keep.has(row.sessionId)),
-    folded: idle.filter((row) => !keep.has(row.sessionId)),
-  };
-}
-
 export interface StripCounts {
   agents: number;
   working: number;
@@ -162,34 +150,43 @@ export function stripCounts(rows: readonly AgentRow[]): StripCounts {
   };
 }
 
-/** What a key does while the strip has focus. Claude Code's agent panel keys, plus Ctrl+T for the task list. */
-export type StripKeyAction = 'up' | 'down' | 'open' | 'stop' | 'clear' | 'toggleTasks' | null;
+/**
+ * The one mark at the head of the agents line: needs you (an agent waits on the
+ * person), working (an agent or a workflow run works), failed (the newest agent
+ * did not finish), done (everything else: every agent ended its turn).
+ */
+export type LineMark = 'needs_input' | 'working' | 'failed' | 'done';
 
-export function stripKeyAction(event: { key: string; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; shiftKey?: boolean }): StripKeyAction {
-  if (event.ctrlKey && !event.metaKey && !event.altKey && (event.key === 't' || event.key === 'T')) return 'toggleTasks';
-  if (event.ctrlKey || event.metaKey || event.altKey) return null;
-  switch (event.key) {
-    case 'ArrowUp':
-      return 'up';
-    case 'ArrowDown':
-      return 'down';
-    case 'Enter':
-      return 'open';
-    case 'x':
-    case 'X':
-      return event.shiftKey ? null : 'stop';
-    case 'Escape':
-      return 'clear';
-    default:
-      return null;
-  }
+export interface LineSummary extends StripCounts {
+  mark: LineMark;
+  /** Workflow runs listed, and how many of them run. */
+  runs: number;
+  runningRuns: number;
+  /** The agent with the newest activity, named on the line while nothing works. */
+  newest: AgentRow | null;
 }
 
-/** The next selected row id after an up or down move; wraps at neither end. */
-export function moveSelection(ids: readonly string[], current: string | null, direction: 'up' | 'down'): string | null {
-  if (ids.length === 0) return null;
-  const index = current ? ids.indexOf(current) : -1;
-  if (index === -1) return direction === 'down' ? ids[0]! : ids[ids.length - 1]!;
-  const next = index + (direction === 'down' ? 1 : -1);
-  return ids[Math.max(0, Math.min(ids.length - 1, next))]!;
+/** What the agents line says: `2 agents · 1 working`, `2 agents · poet done`, `1 workflow running`. */
+export function lineSummary(rows: readonly AgentRow[], runs: readonly { status: string }[]): LineSummary {
+  const counts = stripCounts(rows);
+  const runningRuns = runs.filter((run) => run.status === 'running').length;
+  let newest: AgentRow | null = null;
+  for (const row of rows) if (!newest || row.activityMs > newest.activityMs) newest = row;
+  const mark: LineMark =
+    counts.needsInput > 0
+      ? 'needs_input'
+      : counts.working > 0 || runningRuns > 0
+        ? 'working'
+        : newest?.state === 'failed'
+          ? 'failed'
+          : 'done';
+  return { ...counts, mark, runs: runs.length, runningRuns, newest };
+}
+
+/** `12s`, `4m`, `2h`: the short elapsed time of a working row. */
+export function shortElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h`;
 }

@@ -1908,6 +1908,14 @@ const catalog = {
         "usage": {
           "read": "Checking usage…",
           "change": "Checking usage…"
+        },
+        "changeRequests": {
+          "read": "Checking change requests…",
+          "change": "Updating a change request…"
+        },
+        "memory": {
+          "read": "Checking memory…",
+          "change": "Updating memory…"
         }
       },
       "status": {
@@ -9365,28 +9373,29 @@ const catalog = {
       "label": "Agents",
       "agents": "{count, plural, one {# agent} other {# agents}}",
       "working": "{count} working",
-      "needsInput": "{count, plural, one {# needs you} other {# need you}}",
-      "workflows": "{count, plural, one {# workflow} other {# workflows}}{running, plural, =0 {} other { running}}",
+      "workflows": "{count, plural, one {# workflow} other {# workflows}}",
+      "workflowsRunning": "{count, plural, one {# workflow running} other {# workflows running}}",
+      "newest": "{name} {state}",
       "tasks": "Tasks",
-      "tasksHint": "Show the team's tasks (Ctrl+T)",
       "team": "Team",
       "workflowsGroup": "Workflows",
-      "idleFolded": "{count, plural, one {# idle agent} other {# idle agents}}",
-      "idleCollapse": "Fold idle agents",
       "state": {
-        "working": "Working",
-        "needs_input": "Needs you",
-        "idle": "Idle",
-        "completed": "Done",
-        "failed": "Didn't finish",
-        "stopped": "Stopped"
+        "working": "working",
+        "needs_input": "needs you",
+        "idle": "done",
+        "completed": "done",
+        "failed": "failed",
+        "stopped": "stopped"
       },
+      "workingFor": "working · {elapsed}",
+      "runsAs": "runs as {agent}",
+      "teamRole": "Role for this session only",
       "attention": {
         "question": "Has a question for you",
         "approval": "Waits for your approval"
       },
       "openAgent": "Open {name}",
-      "stopHint": "Stop this agent (x)",
+      "stopHint": "Stop this agent",
       "stopAgent": "Stop {name}",
       "stopAgentFailed": "Could not stop {name}",
       "stopFailed": "Could not stop the agent",
@@ -9401,6 +9410,21 @@ const catalog = {
       "runFallback": "Workflow",
       "openRun": "Open run",
       "runNoAgents": "No agents yet"
+    },
+    "subagent": {
+      "fallbackTitle": "Agent",
+      "openPage": "Open page",
+      "close": "Close",
+      "messagePlaceholder": "Message {name}…",
+      "messageLabel": "Message {name}",
+      "send": "Send",
+      "sent": "Message sent",
+      "sendFailed": "Could not send the message",
+      "loadFailed": "Could not load this agent’s messages",
+      "retry": "Try again",
+      "emptyTitle": "Nothing yet",
+      "emptyDescription": "Its messages show here as it works.",
+      "loadOlder": "Show earlier messages"
     },
     "tasks": {
       "label": "Team tasks",
@@ -9496,8 +9520,6 @@ const catalog = {
         "failed": "Failed",
         "stopped": "Stopped"
       },
-      "result": "Result",
-      "noResult": "No answer yet.",
       "replyPlaceholder": "Reply. It reaches the agent at its next step.",
       "replyLabel": "Reply to {title}",
       "sendReply": "Send reply",

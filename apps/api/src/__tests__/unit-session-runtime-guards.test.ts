@@ -53,15 +53,15 @@ process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum,daytona';
 const { config } = await import('../config');
 
 // Committed manifest text served by the git mock; null = a blank project.
-// A declared agent only gets the project checkout with `repository_access: true`
-// (KRTX-165), so a test that names a non-default agent declares it here.
+// A declared agent only gets the project checkout with `workspace: { project_repository: true }`
+// (KRTX-165), so a test that names a non-default agent declares it here. The mocked
+// `readManifestFromRepo` returns the text as is, so it is in the current format.
 let manifestYaml: string | null = null;
 const REVIEWER_MANIFEST = [
-  'kortix_version: 2',
   'default_agent: kortix',
   'agents:',
-  '  kortix: { connectors: all, secrets: all, kortix_permissions: all, skills: all, repository_access: true }',
-  '  reviewer: { connectors: all, secrets: all, kortix_permissions: all, skills: all, repository_access: true }',
+  '  kortix: { tools: all, connectors: all, secrets: all, kortix_permissions: all, skills: all, workspace: { project_repository: true } }',
+  '  reviewer: { tools: all, connectors: all, secrets: all, kortix_permissions: all, skills: all, workspace: { project_repository: true } }',
   '',
 ].join('\n');
 let sandboxProvisionCalls = 0;

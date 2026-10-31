@@ -246,6 +246,30 @@ describe('pi send_message', () => {
     })
   })
 
+  test('a message to a finished subagent says it continues in the same session; a working one or another session gets no such line', async () => {
+    const idle = { ...REACHABLE.agents[0]!, state: 'idle' as const }
+    const answers = [
+      { ...sendResult('delivered', { message: 'one' }, 'Sent to reviewer. It starts a turn to read it, waking first if it is stopped.'), to: idle },
+      sendResult('delivered', { message: 'two' }, 'Sent to reviewer. It reads it at its next step.'),
+      { ...sendResult('delivered', { message: 'three' }, 'Sent to docs-writer. It starts a turn to read it, waking first if it is stopped.'), to: REACHABLE.agents[1]! },
+    ]
+    let n = 0
+    api.onSend(() => ({ status: 200, body: answers[n++]! }))
+    const { rt, frames } = await boot([
+      { tool: 'send_message', args: { to: 'reviewer', message: 'Now remove the dead config too.' } },
+      { tool: 'send_message', args: { to: 'reviewer', message: 'two' } },
+      { tool: 'send_message', args: { to: 'docs-writer', message: 'three' } },
+      { text: 'done' },
+    ])
+    await rt.admit({ text: 'follow up', files: [] }).done
+    const subtitles = frames.filter((f) => f.tool === 'send_message' && f.state.status === 'completed').map((f) => JSON.parse(f.state.output!).card.subtitle)
+    expect(subtitles).toEqual([
+      'Sent to reviewer. It starts a turn to read it, waking first if it is stopped. It continues in its same session (7c1d2e3f) with its context from before; no new session was started.',
+      'Sent to reviewer. It reads it at its next step.',
+      'Sent to docs-writer. It starts a turn to read it, waking first if it is stopped.',
+    ])
+  })
+
   test('held, refused and dropped are results with plain-words cards, never errors', async () => {
     const answers: Array<PeerMessageSendResult['status']> = ['held', 'refused', 'dropped']
     let n = 0

@@ -77,6 +77,34 @@ describe('useSessionLog / useSessionLogThread', () => {
   });
 });
 
+describe('useSessionLogThread prompts: the prompts the log does not hold yet', () => {
+  const sentFirst = { message_id: 'msg_initialprompt0000001', prompt_id: null, text: 'first words', attachments: [], author_user_id: null, created_at: '2030-01-01T00:00:01.000Z' };
+
+  test('a booting session (no log, no rows) shows its initial prompt; the log put of the same id replaces it', () => {
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      seen.push(useSessionLogThread({ projectId: PROJECT, sessionId: SESSION }, undefined, { prompts: { prompts: [], sent: [sentFirst] } }));
+      return null;
+    });
+    expect(seen.at(-1)!.messages.map((m) => [m.message_id, m.role])).toEqual([['msg_initialprompt0000001', 'user']]);
+
+    const held = { ...log.threads[0]!.messages.find((m) => m.role === 'user')!, message_id: 'msg_initialprompt0000001' };
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, { ...page(), messages: [...page().messages, { ...held, seq: 999 }] }));
+    const ids = seen.at(-1)!.messages.map((m) => m.message_id);
+    expect(ids.filter((id) => id === 'msg_initialprompt0000001')).toHaveLength(1);
+    expect(seen.at(-1)!.messages.find((m) => m.message_id === 'msg_initialprompt0000001')!.seq).toBe(999);
+  });
+
+  test('without the option the thread is unchanged (null while nothing is stored)', () => {
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      seen.push(useSessionLogThread({ projectId: PROJECT, sessionId: SESSION }));
+      return null;
+    });
+    expect(seen.at(-1)).toBeNull();
+  });
+});
+
 describe('useSessionLogThread on v2: throttleMs paces the thread', () => {
   const put = (i: number) => ({ ...log.threads[0]!.messages.at(-1)!, message_id: `msg_zzzpaced${String(i).padStart(2, '0')}`, seq: 1000 + i });
   const apply = (i: number) => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.message', properties: { rev: i, message: put(i) } });
@@ -296,6 +324,31 @@ describe('useSessionLog / useSessionLogThread without v2: the fromV1 view of the
     act(() => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.message', properties: { rev: 1, message: put } }));
     const ids = seen.at(-1)!.messages.map((m) => m.message_id);
     expect(ids.at(-1)).toBe('msg_zzzecho');
+    expect(ids).not.toContain(stub.id);
+  });
+
+  test('prompts option: the inbox row (and sent) names the re-mint, so the SDK pairs the optimistic send itself; the log copy shows once', () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    const stub = { id: 'msg_zzzhost', sessionID: RS, role: 'user', time: { created: Date.now() }, agent: 'build', model: { providerID: 'p', modelID: 'm' } };
+    act(() => useSyncStore.getState().optimisticAdd(RS, stub as never, [{ id: 'prt_zzzhost', sessionID: RS, messageID: stub.id, type: 'text', text: 'sent' } as never]));
+    const at = new Date().toISOString();
+    // Delivered: the row left the inbox; `sent` names both ids until the log holds the new one.
+    const inbox = {
+      prompts: [],
+      sent: [{ message_id: 'msg_zzzreminted', wire_message_id: stub.id, prompt_id: 'p1', text: 'sent', attachments: [], author_user_id: null, created_at: at }],
+    };
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      seen.push(useSessionLogThread(session, undefined, { prompts: inbox }));
+      return null;
+    });
+    // One copy while the log lacks it: the optimistic one (the sent entry names its wire id).
+    expect(seen.at(-1)!.messages.filter((m) => m.role === 'user' && (m.blocks[0] as { text?: string })?.text === 'sent')).toHaveLength(1);
+    const put = { ...log.threads[0]!.messages.at(-1)!, message_id: 'msg_zzzreminted', seq: 999 };
+    act(() => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.message', properties: { rev: 1, message: put } }));
+    const ids = seen.at(-1)!.messages.map((m) => m.message_id);
+    expect(ids.at(-1)).toBe('msg_zzzreminted');
     expect(ids).not.toContain(stub.id);
   });
 

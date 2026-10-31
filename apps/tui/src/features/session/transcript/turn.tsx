@@ -15,6 +15,7 @@ import {
   type ClassifiedPart,
   type SessionLogMessage,
   classifySessionLogMessage,
+  sessionLogMessageDelivery,
 } from '@kortix/sdk';
 import { useMemo } from 'react';
 
@@ -116,7 +117,16 @@ function Header({
         ? 'compaction'
         : message.agent || 'agent';
   const created = Date.parse(message.created_at);
-  const age = Number.isFinite(created) ? formatRelativeTime(created, now) : '';
+  // A prompt the log does not hold yet says where it is instead of its age.
+  const delivery = sessionLogMessageDelivery(message)?.delivery;
+  const age =
+    delivery === 'queued'
+      ? 'queued'
+      : delivery === 'delivering'
+        ? 'sending'
+        : Number.isFinite(created)
+          ? formatRelativeTime(created, now)
+          : '';
   return (
     <text fg={theme.dim} width={Math.max(width, 4)}>
       <span fg={theme.accent}>{ROLE_GLYPH[role]}</span>

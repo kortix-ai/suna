@@ -13,12 +13,13 @@ import imageGen from './kortix/image_gen'
 import imageSearch from './kortix/image_search'
 import kortixAccess from './platform/kortix_access'
 import kortixAgents from './platform/kortix_agents'
+import kortixChangeRequests from './platform/kortix_change_requests'
 import kortixConnectors from './platform/kortix_connectors'
+import kortixMemory from './platform/kortix_memory'
 import kortixPeople from './platform/kortix_people'
 import kortixSchedules from './platform/kortix_schedules'
 import kortixSessions from './platform/kortix_sessions'
 import kortixUsage from './platform/kortix_usage'
-import memory from './kortix/memory'
 import scrapeWebpage from './kortix/scrape_webpage'
 import show from './kortix/show'
 import webSearch from './kortix/web_search'
@@ -30,14 +31,15 @@ export type { KortixTool, ToolContext } from './tool'
  * The Kortix tools. Each is one self-contained module in `kortix/` that
  * follows the project tool contract, so `kortix tools eject <name>` gives a
  * project a copy that runs as its own tool. A project tool of the same name
- * replaces one.
+ * replaces one. `memory` was one until 2026-10-30: a project that ejected it
+ * keeps its copy as a project tool (`tools.memory`), and My Kortix now
+ * remembers people with the `kortix_memory` platform tool.
  */
 export const KORTIX_TOOLS: Readonly<Record<string, KortixTool>> = {
   web_search: webSearch,
   image_search: imageSearch,
   image_gen: imageGen,
   scrape_webpage: scrapeWebpage,
-  memory,
   show,
 }
 
@@ -45,8 +47,8 @@ export const KORTIX_TOOLS: Readonly<Record<string, KortixTool>> = {
  * The My Kortix platform tools: typed fronts for the in-sandbox `kortix` CLI
  * (`platform/platform.ts`). They share that helper, so they are not ejectable,
  * and they load only when the compiled config names them in `kortix_tools`
- * (the platform's My Kortix config does): a project that lists no `tools`
- * key, which loads every Kortix tool above, never gets these.
+ * (the platform's My Kortix config does): a project's compiled set, which
+ * omits `kortix_tools` and loads every Kortix tool above, never gets these.
  */
 export const PLATFORM_TOOLS: Readonly<Record<string, KortixTool>> = {
   kortix_agents: kortixAgents,
@@ -56,6 +58,8 @@ export const PLATFORM_TOOLS: Readonly<Record<string, KortixTool>> = {
   kortix_people: kortixPeople,
   kortix_access: kortixAccess,
   kortix_usage: kortixUsage,
+  kortix_change_requests: kortixChangeRequests,
+  kortix_memory: kortixMemory,
 }
 
 export interface HostedTool extends KortixTool {
@@ -74,8 +78,8 @@ let loaded = new Map<string, HostedTool>()
 
 /**
  * Load the session's tools from its compiled config. The Kortix tools: the
- * ones `kortix_tools` lists, or all of them when it is absent (a project with
- * no kortix.yaml `tools` key, or a config compiled before the key existed).
+ * ones `kortix_tools` lists (My Kortix), or all of them when it is absent (every
+ * project's compiled set).
  * Then the project tools (`project_tools`: tool name → module path, relative
  * to `root`, the checkout the runtime reads its config from); one with a
  * Kortix tool's name replaces it. A module is imported again when its file

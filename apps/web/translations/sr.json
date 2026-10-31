@@ -3115,6 +3115,14 @@
         "usage": {
           "read": "Проверава се потрошња…",
           "change": "Проверава се потрошња…"
+        },
+        "changeRequests": {
+          "read": "Проверавају се захтеви за измену…",
+          "change": "Ажурира се захтев за измену…"
+        },
+        "memory": {
+          "read": "Провера меморије…",
+          "change": "Ажурирање меморије…"
         }
       },
       "status": {
@@ -24923,28 +24931,29 @@
       "label": "Агенти",
       "agents": "{count, plural, one {# агент} few {# агента} other {# агената}}",
       "working": "{count, plural, one {# ради} few {# раде} other {# ради}}",
-      "needsInput": "{count, plural, one {# чека тебе} few {# чекају тебе} other {# чека тебе}}",
-      "workflows": "{count, plural, one {# ток рада} few {# тока рада} other {# токова рада}}{running, plural, =0 {} other { у току}}",
+      "workflows": "{count, plural, one {# ток рада} few {# тока рада} other {# токова рада}}",
+      "workflowsRunning": "{count, plural, one {# ток рада у току} few {# тока рада у току} other {# токова рада у току}}",
+      "newest": "{name}: {state}",
       "tasks": "Задаци",
-      "tasksHint": "Прикажи задатке тима (Ctrl+T)",
       "team": "Тим",
       "workflowsGroup": "Токови рада",
-      "idleFolded": "{count, plural, one {# неактиван агент} few {# неактивна агента} other {# неактивних агената}}",
-      "idleCollapse": "Скупи неактивне агенте",
       "state": {
-        "working": "Ради",
-        "needs_input": "Потребан си",
-        "idle": "Неактивно",
-        "completed": "Готово",
-        "failed": "Није завршено",
-        "stopped": "Заустављено"
+        "working": "ради",
+        "needs_input": "потребан си",
+        "idle": "готово",
+        "completed": "готово",
+        "failed": "није успело",
+        "stopped": "заустављено"
       },
+      "workingFor": "ради · {elapsed}",
+      "runsAs": "ради као {agent}",
+      "teamRole": "Улога само за ову сесију",
       "attention": {
         "question": "Има питање за тебе",
         "approval": "Чека твоје одобрење"
       },
       "openAgent": "Отвори {name}",
-      "stopHint": "Заустави овог агента (x)",
+      "stopHint": "Заустави овог агента",
       "stopAgent": "Заустави {name}",
       "stopAgentFailed": "Није могуће зауставити {name}",
       "stopFailed": "Није могуће зауставити агента",
@@ -24959,6 +24968,21 @@
       "runFallback": "Ток рада",
       "openRun": "Отвори покретање",
       "runNoAgents": "Још нема агената"
+    },
+    "subagent": {
+      "fallbackTitle": "Агент",
+      "openPage": "Отвори страницу",
+      "close": "Затвори",
+      "messagePlaceholder": "Порука за {name}…",
+      "messageLabel": "Порука за {name}",
+      "send": "Пошаљи",
+      "sent": "Порука је послата",
+      "sendFailed": "Порука није послата",
+      "loadFailed": "Поруке овог агента нису учитане",
+      "retry": "Покушај поново",
+      "emptyTitle": "Још ништа",
+      "emptyDescription": "Његове поруке се појављују овде док ради.",
+      "loadOlder": "Прикажи раније поруке"
     },
     "tasks": {
       "label": "Задаци тима",
@@ -25054,8 +25078,6 @@
         "failed": "Неуспело",
         "stopped": "Заустављено"
       },
-      "result": "Резултат",
-      "noResult": "Још нема одговора.",
       "replyPlaceholder": "Одговори. Одговор стиже до агента при његовом следећем кораку.",
       "replyLabel": "Одговори на {title}",
       "sendReply": "Пошаљи одговор",

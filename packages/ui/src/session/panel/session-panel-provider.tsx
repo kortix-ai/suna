@@ -126,7 +126,7 @@ export const SessionPanelContext = createContext<SessionPanelValue | null>(null)
  * The panel value, or null outside a provider.
  *
  * Optional on purpose, exactly as `useOptionalSidebar` is: `SessionChat` has a
- * second call site in `sub-session-modal.tsx` that renders it read-only and
+ * second call site in `legacy-subagent-chat.tsx` that renders it read-only and
  * OUTSIDE `SessionLayout`. The floating overlay self-gates to null there rather
  * than every call site having to know which tree it is in.
  */

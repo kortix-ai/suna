@@ -890,6 +890,16 @@ either way. `useSessionLogOlder(session, threadId?)` pages one thread of a v2 se
 (`GET …/log?thread=&before_seq=`). See the
 [reference](https://kortix.com/docs/#render-blocks-from-the-session-log).
 
+`useSessionView(projectId, sessionId, { enabled?, throttleMs? })` is a read-only view of any
+session from the API alone: its log (`GET …/log`) and the session stream on the v2 schema,
+live. It sends no `POST /start`, so it does not wake the session's computer, and it does not
+point the app's runtime at the session's box. Mount it beside the session `useSession` owns:
+a sub-agent's dialog over its lead's chat, a board preview. `status` is `loading`, `ready`
+(the root thread has messages), `empty` (no log yet, or no message) or `error` (the read
+failed; it is read again after 2 s, 10 s and 30 s, and `retry()` reads it now). `thread` is
+the root thread; `hasOlder`, `isLoadingOlder` and `loadOlder` page it back. Files, previews
+and a terminal need the box: open the session for them.
+
 Three transitional functions bridge a host that renders blocks while its rows are
 still v1:
 

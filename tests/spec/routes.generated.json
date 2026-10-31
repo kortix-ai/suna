@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1007,
+  "count": 1011,
   "routes": [
     {
       "method": "GET",
@@ -2793,6 +2793,22 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/memory/layers/:layerKey/pages"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/me/agent/:agent"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/memory/me/agent/:agent/pages/:name"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/me/agent/:agent/pages/:name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/memory/me/agent/:agent/pages/:name"
     },
     {
       "method": "DELETE",

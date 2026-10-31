@@ -1,8 +1,8 @@
 /**
  * `kortix_permissions` is the manifest key for an agent's project permissions.
  * A retired action spelling keeps its exact capability; `kortix_cli` (the key's
- * retired alias) is a validation error: a running project turns that agent off
- * instead of guessing which key wins.
+ * old name) is the deprecation `agent-kortix-cli`: it reads as
+ * `kortix_permissions`, and the agent keeps its grant.
  */
 import { describe, expect, test } from 'bun:test';
 import { extractAgents, grantFromLoadedAgents } from '../projects/agents';
@@ -38,11 +38,13 @@ describe('kortix_permissions', () => {
     expect(grantFromLoadedAgents('w', loaded)?.permissions).toEqual(['project.read']);
   });
 
-  test('the retired `kortix_cli` key turns the agent off at runtime and grants nothing', () => {
-    const applied = runtimeManifest(manifest('    kortix_cli: all\n'));
-    expect(applied.issues.map((issue) => issue.path)).toContain('agents.w.kortix_cli');
+  test('the old `kortix_cli` key reads as `kortix_permissions`: the agent stays on with its grant', () => {
+    const applied = runtimeManifest(manifest('    tools: all\n    kortix_cli: [project.read]\n'));
+    // The reader already holds the latest shape; the warning is in the file's health, not here.
+    expect(applied.raw.agents).toEqual({ w: { tools: 'all', kortix_permissions: ['project.read'] } });
+    expect(applied.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
     const loaded = extractAgents(applied);
-    expect(loaded.specs.find((spec) => spec.name === 'w')?.enabled).toBe(false);
-    expect(grantFromLoadedAgents('w', loaded)).toEqual({ agent: 'w', permissions: [], connectors: [], env: [] });
+    expect(loaded.specs.find((spec) => spec.name === 'w')?.enabled).not.toBe(false);
+    expect(grantFromLoadedAgents('w', loaded)?.permissions).toEqual(['project.read']);
   });
 });
