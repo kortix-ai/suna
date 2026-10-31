@@ -458,7 +458,8 @@ export async function readRuntimeMessage(session: ResolvedSessionRuntime, messag
 /**
  * The wire `messageID` is SUPPLIED, never minted here. The runtime records a
  * message once per id. The browser/CLI mints it for a first delivery; the
- * redelivery path re-reads the transcript before it re-mints (see
+ * drain re-reads the transcript before it sends a prompt that waited or a
+ * redelivery, and re-mints it only for a runtime that orders by id (see
  * `remintWireMessageId`). Every other producer (triggers, Slack, approval
  * resume) sends no `messageID` and gets a root-scoped turn.
  *

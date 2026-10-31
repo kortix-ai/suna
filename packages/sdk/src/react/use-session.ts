@@ -746,8 +746,14 @@ export function markDispatchedForPartIds(sessionId: string, parts: PromptPart[])
 export function beginOptimisticPlainTextSend(
   sessionId: string,
   text: string,
+  /**
+   * The prompt's wire id (`mintSessionWireMessageId`): the message is drawn under the id the
+   * runtime and the session log will hold it by. Omitted: a local id, which the server never
+   * keeps (`ascendingId` is not the wire codec's clock).
+   */
+  wireMessageId?: string,
 ): { messageId: string; parts: PromptPart[] } {
-  const messageId = ascendingId('msg');
+  const messageId = wireMessageId ?? ascendingId('msg');
   const partId = ascendingId('prt');
   const optimisticParts: Part[] = text.trim()
     ? [
@@ -1964,9 +1970,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // T15 — one user bubble: the optimistic message and the outgoing
     // part share one minted id, so the server's echo can be correlated back
     // to it instead of leaving both on screen until the idle sweep.
-    const { messageId, parts } = beginOptimisticPlainTextSend(ocSessionId, text);
-    // The optimistic message's id is the prompt's wire id: the log holds the user message
-    // under it, so the log's put replaces the optimistic message by id.
+    // One id from the optimistic message to the session log: minted by the wire codec, drawn
+    // here, sent as the prompt's wire id, kept by a runtime that keeps ids, and replaced by
+    // the log's put of the same id.
+    const { messageId, parts } = beginOptimisticPlainTextSend(ocSessionId, text, mintSessionWireMessageId(ocSessionId));
     void sendParts(parts, { ...override, messageId }).catch((error) => {
       // The send never reached (or was refused by) the server — nothing to
       // rehydrate, so drop the optimistic message outright rather than leave

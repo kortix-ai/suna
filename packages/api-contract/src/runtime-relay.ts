@@ -267,6 +267,17 @@ export const RUNTIME_TURNS_CAPABILITY = 'runtime.turns.v1' as const;
 export const RUNTIME_RETRACT_CAPABILITY = 'runtime.retract.v1' as const;
 
 /**
+ * The runtime keeps a delivered prompt's `message_id` as its user message id,
+ * orders the transcript by position (admission order), not by id, and answers
+ * a repeated id `200 { deduplicated: true }` without storing a second message.
+ * A client may send an id minted long before delivery (a prompt that waited
+ * behind a turn), and a redelivery may send the same id again. apps/api keeps
+ * the wire id on a box that lists this; without it apps/api re-mints the id
+ * above the transcript, because OpenCode orders by id. pi lists it.
+ */
+export const RUNTIME_STABLE_MESSAGE_ID_CAPABILITY = 'runtime.stable_message_id.v1' as const;
+
+/**
  * Session metadata key, value `true`: a cloud subagent its parent started in
  * the background (the pi `agent` tool's `run_in_background`, kortixd
  * `harness/pi/cloud-subagent.ts`). The parent's tool call returned at once,

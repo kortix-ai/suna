@@ -408,6 +408,13 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
  * fewer round-trip. Any client can send that header, so it skips only
  * the READ: an id far ahead of the clock (the pre-fix CLI's high-bits
  * mint) is re-minted on the id alone either way.
+ *
+ * A runtime that keeps message ids (`RUNTIME_STABLE_MESSAGE_ID_CAPABILITY`,
+ * pi) orders by position, so a stale id is no harm there: the read is
+ * skipped and the client's id goes through. A far-ahead or malformed id is
+ * still re-minted on the id alone. The capability read is the inbox's own
+ * (`sandboxKeepsMessageIds`, memoized per box for 5 min); a failed read
+ * places the id against the transcript as before.
  */
 export async function placePromptWireId(
   req: ForwardRequest,
@@ -419,39 +426,50 @@ export async function placePromptWireId(
   const clientWireId = promptBodyMessageId(state.requestBody);
   const placedByInbox = incomingHeaders.get(WIRE_ID_PLACED_HEADER) === '1';
   if (
-    promptDelivery &&
-    !sandboxAuthored &&
-    state.effectiveMessageId === null &&
-    isPromptWireIdRepairPath(remainingPath) &&
+    !promptDelivery ||
+    sandboxAuthored ||
+    state.effectiveMessageId !== null ||
+    !isPromptWireIdRepairPath(remainingPath) ||
     // No client id, nothing to place — OpenCode mints, and the read is
     // skipped entirely so a plain body pays nothing.
-    clientWireId !== null &&
-    (!placedByInbox || isWireIdAheadOf(clientWireId, Date.now()))
-  ) {
-    const readUrl =
-      previewUrl.replace(/\/$/, '') +
-      promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
-    const newestKnownTime = placedByInbox
-      ? null
-      : await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
-    ptl.mark('wire-id-read');
-    const placed = repairPromptWireId({
-      body: state.requestBody,
-      newestKnownTime,
-      nowMs: Date.now(),
+    clientWireId === null
+  ) return;
+  if (placedByInbox && !isWireIdAheadOf(clientWireId, Date.now())) return;
+  // No read: the inbox placed the id, or the runtime keeps ids. With no
+  // transcript, `repairPromptWireId` re-mints only an id that is wrong on its own.
+  let skipRead = placedByInbox;
+  if (!skipRead) {
+    try {
+      // Dynamic: the proxy's static graph stays out of projects/ (module-graph.test.ts).
+      const { sandboxKeepsMessageIds } = await import('../../projects/surface');
+      skipRead = await sandboxKeepsMessageIds(sandboxId, req.userId);
+    } catch {
+      skipRead = false;
+    }
+  }
+  const readUrl =
+    previewUrl.replace(/\/$/, '') +
+    promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
+  const newestKnownTime = skipRead
+    ? null
+    : await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
+  ptl.mark('wire-id-read');
+  const placed = repairPromptWireId({
+    body: state.requestBody,
+    newestKnownTime,
+    nowMs: Date.now(),
+  });
+  if (placed.outcome === 'reminted') {
+    console.warn('[prompt-wire-id] re-minted a stale or malformed client wire id', {
+      sandboxId,
+      sessionId: record.sessionId,
+      path: remainingPath,
+      effectiveMessageId: placed.effectiveMessageId,
     });
-    if (placed.outcome === 'reminted') {
-      console.warn('[prompt-wire-id] re-minted a stale or malformed client wire id', {
-        sandboxId,
-        sessionId: record.sessionId,
-        path: remainingPath,
-        effectiveMessageId: placed.effectiveMessageId,
-      });
-      state.requestBody = placed.body;
-    }
-    state.effectiveMessageId = placed.effectiveMessageId ?? '';
-    if (turnIdentity && placed.effectiveMessageId) {
-      turnIdentity.messageId = placed.effectiveMessageId;
-    }
+    state.requestBody = placed.body;
+  }
+  state.effectiveMessageId = placed.effectiveMessageId ?? '';
+  if (turnIdentity && placed.effectiveMessageId) {
+    turnIdentity.messageId = placed.effectiveMessageId;
   }
 }
